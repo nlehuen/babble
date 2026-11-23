@@ -213,7 +213,7 @@ public class OwnershipTestCase {
         ScopeAnalysis analysis = analyzed.analysis();
         Assertions.assertEquals(List.of(), analysis.typeDiagnostics());
         BabbleParser.FunctionLiteralContext fn = findFn(analyzed.file(), "buildStats");
-        EffectSet eff = analysis.callableEffects(fn);
+        EffectSet eff = analysis.effects().callableEffects(fn);
         Assertions.assertTrue(eff.isPure(), "buildStats should infer pure");
         Assertions.assertTrue(eff.isDeterministic(), "buildStats should infer deterministic");
         Assertions.assertTrue(eff.isNothrow(), "buildStats should infer nothrow");
@@ -692,12 +692,12 @@ public class OwnershipTestCase {
         ScopeAnalysis analysis = analyzed.analysis();
         Assertions.assertEquals(List.of(), analysis.typeDiagnostics());
         BabbleParser.FileContext file = analyzed.file();
-        Assertions.assertTrue(analysis.callableEffects(findFn(file, "straight")).terminating());
-        Assertions.assertFalse(analysis.callableEffects(findFn(file, "loopy")).terminating());
-        Assertions.assertFalse(analysis.callableEffects(findFn(file, "rec")).terminating());
-        Assertions.assertFalse(analysis.callableEffects(findFn(file, "even")).terminating());
-        Assertions.assertFalse(analysis.callableEffects(findFn(file, "odd")).terminating());
-        Assertions.assertFalse(analysis.callableEffects(findFn(file, "callsLoopy")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "straight")).terminating());
+        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "loopy")).terminating());
+        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "rec")).terminating());
+        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "even")).terminating());
+        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "odd")).terminating());
+        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "callsLoopy")).terminating());
 
         // Unused pure nothrow expression rejected; discard(...) accepted (BIP007-D8)
         assertHasError("""

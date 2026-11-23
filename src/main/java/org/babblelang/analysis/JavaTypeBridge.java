@@ -740,8 +740,8 @@ final class JavaTypeBridge {
 
     sealed interface JavaSamResolution permits JavaSamResolution.Valid, JavaSamResolution.NotFunctional, JavaSamResolution.None {
         record Valid(Type.JavaInstance samType, Method samMethod, List<Class<?>> markers) implements JavaSamResolution {
-            ScopeAnalysis.JavaSamTarget toTarget() {
-                return new ScopeAnalysis.JavaSamTarget(samType.type(), markers.toArray(Class<?>[]::new));
+            LoweringTargets.JavaSamTarget toTarget() {
+                return new LoweringTargets.JavaSamTarget(samType.type(), markers.toArray(Class<?>[]::new));
             }
         }
 
@@ -967,7 +967,7 @@ final class JavaTypeBridge {
      * to report ; {@code checked} when it is a field whose generic type needs a runtime check
      * ({@code T9}), and the static {@code fieldTarget} of a public, accessible field.
      */
-    record JavaMember(Type type, String error, boolean checked, ScopeAnalysis.JavaFieldTarget fieldTarget) {
+    record JavaMember(Type type, String error, boolean checked, LoweringTargets.JavaFieldTarget fieldTarget) {
     }
 
     /**
@@ -994,8 +994,8 @@ final class JavaTypeBridge {
         Type fieldType = makeAccessible(fromJavaType(genericType, field.getAnnotatedType(), env,
                 true, false, JavaNullability.fieldNullness(field), false), algebra);
         boolean checked = !field.getType().isPrimitive() && !Type.containsNull(fieldType);
-        ScopeAnalysis.JavaFieldTarget target = Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())
-                ? new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic) : null;
+        LoweringTargets.JavaFieldTarget target = Modifier.isPublic(field.getModifiers()) && JavaTypes.isAccessible(field.getDeclaringClass())
+                ? new LoweringTargets.JavaFieldTarget(field, isStatic, !isStatic) : null;
         return new JavaMember(fieldType, null, checked, target);
     }
 
@@ -1016,14 +1016,14 @@ final class JavaTypeBridge {
         }
 
         /** The static write target for a value of that type, or null when it must go through {@code JavaClass.assign}. */
-        ScopeAnalysis.JavaFieldTarget target(Type value) {
+        LoweringTargets.JavaFieldTarget target(Type value) {
             if (Modifier.isFinal(field.getModifiers()) || !Modifier.isPublic(field.getModifiers())
                     || !JavaTypes.isAccessible(field.getDeclaringClass())
                     || !guaranteedApplicable(field.getType(), value) || !supportedStaticJavaArg(field.getType(), value)) {
                 return null;
             }
             boolean isStatic = Modifier.isStatic(field.getModifiers());
-            return new ScopeAnalysis.JavaFieldTarget(field, isStatic, !isStatic);
+            return new LoweringTargets.JavaFieldTarget(field, isStatic, !isStatic);
         }
     }
 

@@ -1,6 +1,6 @@
 package org.babblelang.opt.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirModule;
@@ -72,7 +72,7 @@ public final class AlgebraicSimplifyPass implements HirPass {
             HirExpr inner = ConstFoldPass.unwrapTransparent(u.operand());
             if (inner instanceof HirExpr.Unary innerNot && innerNot.op() == HirExpr.UnaryOp.NOT) {
                 HirExpr b = ConstFoldPass.unwrapTransparent(innerNot.operand());
-                if (b.meta().kind() == ScopeAnalysis.PrimitiveKind.BOOL && b.meta().wideningRank() < 0) {
+                if (b.meta().kind() == PrimitiveKind.BOOL && b.meta().wideningRank() < 0) {
                     return b;
                 }
             }
@@ -84,12 +84,12 @@ public final class AlgebraicSimplifyPass implements HirPass {
         if (b.meta().checkedType() != null) {
             return null;
         }
-        ScopeAnalysis.PrimitiveKind rk = b.meta().kind();
-        ScopeAnalysis.PrimitiveKind lk = b.left().meta().kind();
-        ScopeAnalysis.PrimitiveKind rrk = b.right().meta().kind();
+        PrimitiveKind rk = b.meta().kind();
+        PrimitiveKind lk = b.left().meta().kind();
+        PrimitiveKind rrk = b.right().meta().kind();
 
         // Boolean comparison identities: b == true -> b, b == false -> not b, etc.
-        if (lk == ScopeAnalysis.PrimitiveKind.BOOL && rrk == ScopeAnalysis.PrimitiveKind.BOOL
+        if (lk == PrimitiveKind.BOOL && rrk == PrimitiveKind.BOOL
                 && b.meta().wideningRank() < 0
                 && (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ)) {
             HirExpr l = ConstFoldPass.unwrapTransparent(b.left());
@@ -184,7 +184,7 @@ public final class AlgebraicSimplifyPass implements HirPass {
                     && lrc.value() instanceof String lrs
                     && lrs.length() + rs.length() <= 4096) {
                 HirExpr.Const merged = new HirExpr.Const(lrs + rs,
-                        new ExprMeta(b.meta().line(), ScopeAnalysis.PrimitiveKind.NONE, -1, null, b.meta().effects(), true, true));
+                        new ExprMeta(b.meta().line(), PrimitiveKind.NONE, -1, null, b.meta().effects(), true, true));
                 return new HirExpr.Binary(HirExpr.BinaryOp.ADD, lb.left(), merged, lb.leftText(), "\"...\"", b.meta());
             }
         }
@@ -258,19 +258,19 @@ public final class AlgebraicSimplifyPass implements HirPass {
 
     private static Long asIntegral(HirExpr expr) {
         if (expr instanceof HirExpr.Const c && c.value() instanceof Number n) {
-            if (c.meta().kind() == ScopeAnalysis.PrimitiveKind.INT) {
+            if (c.meta().kind() == PrimitiveKind.INT) {
                 return (long) n.intValue();
             }
-            if (c.meta().kind() == ScopeAnalysis.PrimitiveKind.LONG) {
+            if (c.meta().kind() == PrimitiveKind.LONG) {
                 return n.longValue();
             }
         }
         return null;
     }
 
-    private static HirExpr.Const makeIntegralConst(ScopeAnalysis.PrimitiveKind kind, long value, ExprMeta meta) {
+    private static HirExpr.Const makeIntegralConst(PrimitiveKind kind, long value, ExprMeta meta) {
         Object boxed;
-        if (kind == ScopeAnalysis.PrimitiveKind.LONG) {
+        if (kind == PrimitiveKind.LONG) {
             boxed = Long.valueOf(value);
         } else {
             boxed = Integer.valueOf((int) value);

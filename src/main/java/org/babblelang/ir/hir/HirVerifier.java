@@ -1,6 +1,6 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.PrimitiveKind;
 
 import java.util.List;
 
@@ -270,11 +270,11 @@ public final class HirVerifier {
 
     private static void verifyConst(HirExpr.Const c) {
         Object v = c.value();
-        ScopeAnalysis.PrimitiveKind k = c.meta().kind();
-        if (v == null && k != ScopeAnalysis.PrimitiveKind.NONE) {
+        PrimitiveKind k = c.meta().kind();
+        if (v == null && k != PrimitiveKind.NONE) {
             throw new IllegalStateException("HirVerifier : null Const has primitive kind " + k);
         }
-        if (v instanceof String && k != ScopeAnalysis.PrimitiveKind.NONE) {
+        if (v instanceof String && k != PrimitiveKind.NONE) {
             throw new IllegalStateException("HirVerifier : String Const has primitive kind " + k);
         }
     }

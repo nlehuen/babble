@@ -1,6 +1,6 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.runtime.ClassShape;
 
 import java.util.Collections;
@@ -22,7 +22,7 @@ public record HirClass(
         List<HirVar> declaredVars,
         List<HirVar> capturedVars,
         List<HirParam> params,
-        ScopeAnalysis.PrimitiveKind[] memberKinds,
+        PrimitiveKind[] memberKinds,
         int[] primDefBits,
         int primDefCount,
         Map<String, Integer> methodFunctionIds,
@@ -38,7 +38,7 @@ public record HirClass(
         declaredVars = List.copyOf(declaredVars);
         capturedVars = List.copyOf(capturedVars);
         params = List.copyOf(params);
-        memberKinds = memberKinds != null ? memberKinds.clone() : new ScopeAnalysis.PrimitiveKind[0];
+        memberKinds = memberKinds != null ? memberKinds.clone() : new PrimitiveKind[0];
         primDefBits = primDefBits != null ? primDefBits.clone() : new int[0];
         methodFunctionIds = Collections.unmodifiableMap(new LinkedHashMap<>(methodFunctionIds));
         Map<String, List<Integer>> ovCopy = new LinkedHashMap<>();

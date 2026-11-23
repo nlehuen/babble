@@ -1,8 +1,9 @@
 package org.babblelang.opt.hir;
 
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.Resolution;
-import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
@@ -124,7 +125,7 @@ public final class HirLicmPass implements HirPass {
         }
         // Top-down: if this whole subexpression is a nontrivial loop-invariant pure expression, hoist it as one unit!
         if (isWorthHoisting(expr) && isLoopInvariant(expr, modified, module)) {
-            ScopeAnalysis.PrimitiveKind varKind = effectiveKind(expr.meta());
+            PrimitiveKind varKind = effectiveKind(expr.meta());
             int id = nextVarId[0]++;
             String name = "$licm" + id;
             HirVar var = new HirVar(id, name, Resolution.Variable.Kind.DEFINITION, ownerFnId,
@@ -132,7 +133,7 @@ public final class HirLicmPass implements HirPass {
             hoistedVars.add(var);
             ExprMeta defMeta = new ExprMeta(expr.meta().line(), varKind, expr.meta().wideningRank(),
                     null, EffectSet.EMPTY, expr.meta().deeplyImmutable(), expr.meta().stringType());
-            hoistedDefs.add(new HirExpr.Def(name, new ScopeAnalysis.DefTarget(ScopeAnalysis.DefKind.LEXICAL, -1),
+            hoistedDefs.add(new HirExpr.Def(name, new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
                     var, expr, defMeta));
             ExprMeta readMeta = new ExprMeta(expr.meta().line(), varKind, -1, null,
                     EffectSet.EMPTY, expr.meta().deeplyImmutable(), expr.meta().stringType());
@@ -273,16 +274,16 @@ public final class HirLicmPass implements HirPass {
         }
     }
 
-    private static ScopeAnalysis.PrimitiveKind effectiveKind(ExprMeta meta) {
+    private static PrimitiveKind effectiveKind(ExprMeta meta) {
         if (meta.wideningRank() < 0) {
             return meta.kind();
         }
         return switch (meta.wideningRank()) {
-            case 1 -> ScopeAnalysis.PrimitiveKind.SHORT;
-            case 2 -> ScopeAnalysis.PrimitiveKind.INT;
-            case 3 -> ScopeAnalysis.PrimitiveKind.LONG;
-            case 4 -> ScopeAnalysis.PrimitiveKind.FLOAT;
-            case 5 -> ScopeAnalysis.PrimitiveKind.DOUBLE;
+            case 1 -> PrimitiveKind.SHORT;
+            case 2 -> PrimitiveKind.INT;
+            case 3 -> PrimitiveKind.LONG;
+            case 4 -> PrimitiveKind.FLOAT;
+            case 5 -> PrimitiveKind.DOUBLE;
             default -> meta.kind();
         };
     }

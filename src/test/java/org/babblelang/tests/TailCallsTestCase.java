@@ -32,7 +32,7 @@ public class TailCallsTestCase {
     }
 
     private static void collect(ParseTree tree, ScopeAnalysis analysis, List<String> result) {
-        if (tree instanceof BabbleParser.CallContext call && analysis.isSelfTailCall(call)) {
+        if (tree instanceof BabbleParser.CallContext call && analysis.calls().isSelfTailCall(call)) {
             result.add(call.getText());
         }
         for (int i = 0; i < tree.getChildCount(); i++) {

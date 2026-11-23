@@ -162,7 +162,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         self.typed(pass.summary);
         // The shapes now carry the declared types of members and statics.
         for (TypeNode type : pass.types) {
-            pass.analysis.setShape(type.ctx, type.shape());
+            pass.analysis.hierarchy().setShape(type.ctx, type.shape());
             if (session == null) {
                 type.detachAst();
             }
@@ -357,7 +357,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 if (ctx.type() != null) {
                     visit(ctx.type());
                 }
-                analysis.setParameters(ctx, parameters.toArray(new String[0]), required, kwStart, restIndex);
+                analysis.calls().setParameters(ctx, parameters.toArray(new String[0]), required, kwStart, restIndex);
                 visitChildren(ctx.functionBlock);
             });
         });
@@ -597,11 +597,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         switch (scope.kind) {
             case CLASS_BODY -> {
                 TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function, overload != null, overloadFns);
-                analysis.setDefTarget(ctx, new ScopeAnalysis.DefTarget(ScopeAnalysis.DefKind.MEMBER, member.index));
+                analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(LoweringTargets.DefKind.MEMBER, member.index));
             }
             case STATIC_BODY -> {
                 TypeNode.Member member = addMember(scope.type.statics, ctx.name, flags, ctx, function, overload != null, overloadFns);
-                analysis.setDefTarget(ctx, new ScopeAnalysis.DefTarget(ScopeAnalysis.DefKind.STATIC, member.index));
+                analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(LoweringTargets.DefKind.STATIC, member.index));
             }
             case INTERFACE_BODY -> {
                 if (isPrivate) {
@@ -611,8 +611,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                     throw error("An interface default must be a function literal : " + ctx.name.getText(), ctx.name);
                 }
                 TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function, overload != null, overloadFns);
-                analysis.setDefTarget(ctx, new ScopeAnalysis.DefTarget(
-                        (function != null || overload != null) ? ScopeAnalysis.DefKind.DEFAULT : ScopeAnalysis.DefKind.REQUIRED, member.index));
+                analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(
+                        (function != null || overload != null) ? LoweringTargets.DefKind.DEFAULT : LoweringTargets.DefKind.REQUIRED, member.index));
             }
             default -> {
                 if (isPrivate) {

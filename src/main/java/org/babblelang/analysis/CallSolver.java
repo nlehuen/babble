@@ -37,8 +37,8 @@ final class CallSolver {
     private final Map<ParserRuleContext, Method> resolvedMethods = new java.util.IdentityHashMap<>();
     private final Map<ParserRuleContext, Constructor<?>> resolvedConstructors = new java.util.IdentityHashMap<>();
     private final Set<ParserRuleContext> resolvedVarArgs = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    private final Map<ParserRuleContext, ScopeAnalysis.SpreadAdapt[]> resolvedSpreadAdapts = new java.util.IdentityHashMap<>();
-    private final Map<ParserRuleContext, ScopeAnalysis.PrimitiveKind> resolvedRestKinds = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.SpreadAdapt[]> resolvedSpreadAdapts = new java.util.IdentityHashMap<>();
+    private final Map<ParserRuleContext, PrimitiveKind> resolvedRestKinds = new java.util.IdentityHashMap<>();
 
     private record JavaCallMatch<E extends Executable>(List<E> applicable, boolean varArgs) {
     }
@@ -84,11 +84,11 @@ final class CallSolver {
         return resolvedVarArgs.contains(call);
     }
 
-    ScopeAnalysis.SpreadAdapt[] resolvedSpreadAdapts(ParserRuleContext call) {
+    LoweringTargets.SpreadAdapt[] resolvedSpreadAdapts(ParserRuleContext call) {
         return resolvedSpreadAdapts.get(call);
     }
 
-    ScopeAnalysis.PrimitiveKind resolvedRestKind(ParserRuleContext call) {
+    PrimitiveKind resolvedRestKind(ParserRuleContext call) {
         return resolvedRestKinds.get(call);
     }
 
@@ -464,11 +464,11 @@ final class CallSolver {
         }
         int[] matched = res.paramToArg();
         boolean[] checked = new boolean[arguments.size()];
-        ScopeAnalysis.SpreadAdapt[] adapts = null;
+        LoweringTargets.SpreadAdapt[] adapts = null;
         for (int index = 0; index < parameters.size(); index++) {
             Type.Parameter parameter = parameters.get(index);
             if (parameter.rest()) {
-                resolvedRestKinds.put(ctx, ScopeAnalysis.PrimitiveKind.of(parameter.type()));
+                resolvedRestKinds.put(ctx, PrimitiveKind.of(parameter.type()));
                 boolean borrowReadOnly = frozenBorrowSafe && parameter.borrow() && !parameter.mut();
                 Type expectedElem = parameter.type();
                 if (forwardedEffectParams.contains(index) && expectedElem instanceof Type.Function cbType) {
@@ -485,7 +485,7 @@ final class CallSolver {
                             if (elem == null) {
                                 checker.warn("Type error : expected iterable or array, got " + actual, argument);
                             } else if (!TypeChecker.isUnresolved(elem) && !TypeChecker.isUnresolved(expectedElem)) {
-                                ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(expectedElem);
+                                LoweringTargets.JavaSamTarget elemSam = samTargetForElement(expectedElem);
                                 boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(elem);
                                 TypeAlgebra.RelateMode mode = needsSamAdapt
                                         ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -495,9 +495,9 @@ final class CallSolver {
                                     checker.warn("Type error : expected " + expectedElem + " elements, got " + elem, argument);
                                 } else if (needsSamAdapt) {
                                     if (adapts == null) {
-                                        adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
+                                        adapts = new LoweringTargets.SpreadAdapt[arguments.size()];
                                     }
-                                    adapts[argIdx] = ScopeAnalysis.SpreadAdapt.toIterable(elemSam);
+                                    adapts[argIdx] = LoweringTargets.SpreadAdapt.toIterable(elemSam);
                                 }
                             }
                         }
@@ -527,12 +527,12 @@ final class CallSolver {
             if (ScopeAnalysis.isSpread(argCtx)) {
                 Type actual = checker.check(argument, null);
                 boolean borrowReadOnly = frozenBorrowSafe && parameter.borrow() && !parameter.mut();
-                ScopeAnalysis.SpreadAdapt adapt = checkSpreadIntoParam(
+                LoweringTargets.SpreadAdapt adapt = checkSpreadIntoParam(
                         argument, actual, parameter.name(), expectedParam,
                         parameter.borrow(), parameter.mut(), borrowReadOnly);
                 if (adapt != null) {
                     if (adapts == null) {
-                        adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
+                        adapts = new LoweringTargets.SpreadAdapt[arguments.size()];
                     }
                     adapts[found] = adapt;
                 }
@@ -590,7 +590,7 @@ final class CallSolver {
         return null;
     }
 
-    private static ScopeAnalysis.JavaSamTarget samTargetForElement(Type elemType) {
+    private static LoweringTargets.JavaSamTarget samTargetForElement(Type elemType) {
         if (JavaTypeBridge.resolveJavaSam(elemType) instanceof JavaTypeBridge.JavaSamResolution.Valid valid) {
             return valid.toTarget();
         }
@@ -601,7 +601,7 @@ final class CallSolver {
      * Classifies the adaptation needed to spread {@code sourceType} into a non-rest parameter of
      * type {@code targetParamType}, returning null if incompatible (without reporting errors).
      */
-    ScopeAnalysis.SpreadAdapt classifySpread(Type sourceType, Type targetParamType,
+    LoweringTargets.SpreadAdapt classifySpread(Type sourceType, Type targetParamType,
                                              boolean targetBorrowed, boolean targetMut,
                                              boolean borrowReadOnly) {
         if (TypeChecker.isUnresolved(sourceType) || TypeChecker.isUnresolved(targetParamType)) {
@@ -615,29 +615,29 @@ final class CallSolver {
             return null;
         }
         Type targetElem = sequenceTargetElement(targetParamType);
-        ScopeAnalysis.JavaSamTarget elemSam = targetElem != null ? samTargetForElement(targetElem) : null;
+        LoweringTargets.JavaSamTarget elemSam = targetElem != null ? samTargetForElement(targetElem) : null;
         boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(sourceElem);
         if (!needsSamAdapt && checker.algebra().relate(sourceType, targetParamType, TypeAlgebra.RelateMode.ASSIGNABLE,
                 null, borrowReadOnly, targetBorrowed && !targetMut)) {
-            return ScopeAnalysis.SpreadAdapt.AS_IS;
+            return LoweringTargets.SpreadAdapt.AS_IS;
         }
         Type baseTarget = TypeAlgebra.unwrapFrozen(Type.withoutNull(targetParamType));
         if (baseTarget instanceof Type.JavaInstance ji && ji.type() == Iterable.class && ji.typeArguments().size() == 1) {
             if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false)) {
                 if (sourceType instanceof Type.Frozen && !borrowReadOnly
                         && !(Type.withoutNull(targetParamType) instanceof Type.Frozen)) {
-                    return ScopeAnalysis.SpreadAdapt.toList(false, needsSamAdapt ? elemSam : null);
+                    return LoweringTargets.SpreadAdapt.toList(false, needsSamAdapt ? elemSam : null);
                 }
-                return ScopeAnalysis.SpreadAdapt.toIterable(needsSamAdapt ? elemSam : null);
+                return LoweringTargets.SpreadAdapt.toIterable(needsSamAdapt ? elemSam : null);
             }
             return null;
         }
         if (baseTarget instanceof Type.JavaInstance ji && ji.type() == List.class && ji.typeArguments().size() == 1) {
             if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.SUBTYPE, null, borrowReadOnly, false)) {
                 if (!needsSamAdapt && TypeAlgebra.unwrapFrozen(sourceType) instanceof Type.Array && borrowReadOnly) {
-                    return ScopeAnalysis.SpreadAdapt.TO_LIST_BORROWED;
+                    return LoweringTargets.SpreadAdapt.TO_LIST_BORROWED;
                 }
-                return ScopeAnalysis.SpreadAdapt.toList(false, needsSamAdapt ? elemSam : null);
+                return LoweringTargets.SpreadAdapt.toList(false, needsSamAdapt ? elemSam : null);
             }
             return null;
         }
@@ -645,7 +645,7 @@ final class CallSolver {
             if (checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, null, false, false)) {
                 Class<?> arrCls = JavaTypeBridge.checkedArrayClass(arr);
                 Class<?> comp = arrCls != null ? arrCls.getComponentType() : Object.class;
-                return ScopeAnalysis.SpreadAdapt.toArray(comp, needsSamAdapt ? elemSam : null);
+                return LoweringTargets.SpreadAdapt.toArray(comp, needsSamAdapt ? elemSam : null);
             }
             return null;
         }
@@ -653,7 +653,7 @@ final class CallSolver {
     }
 
     /** Validates a spread into a non-rest parameter, emitting {@code BIP021-D7} diagnostics on failure. */
-    private ScopeAnalysis.SpreadAdapt checkSpreadIntoParam(BabbleParser.ExpressionContext argument, Type actual,
+    private LoweringTargets.SpreadAdapt checkSpreadIntoParam(BabbleParser.ExpressionContext argument, Type actual,
                                                            String paramName, Type expectedParam,
                                                            boolean targetBorrowed, boolean targetMut,
                                                            boolean borrowReadOnly) {
@@ -669,7 +669,7 @@ final class CallSolver {
             checker.warn("Type error : expected iterable or array, got " + actual, argument);
             return null;
         }
-        ScopeAnalysis.SpreadAdapt adapt = classifySpread(actual, expectedParam, targetBorrowed, targetMut, borrowReadOnly);
+        LoweringTargets.SpreadAdapt adapt = classifySpread(actual, expectedParam, targetBorrowed, targetMut, borrowReadOnly);
         if (adapt != null) {
             return adapt;
         }
@@ -972,7 +972,7 @@ final class CallSolver {
                     Type.Function alt = set.alternatives().get(altIdx);
                     Type branchResult = compResults.get(idx);
                     List<String> descs = OverloadSolver.runtimeTestDescriptors(comp);
-                    ScopeAnalysis.OverloadSplitCheck check = new ScopeAnalysis.OverloadSplitCheck(0, descs, comp == Type.NULL);
+                    LoweringTargets.OverloadSplitCheck check = new LoweringTargets.OverloadSplitCheck(0, descs, comp == Type.NULL);
                     BabbleParser.FunctionLiteralContext directTarget = (altLiterals != null && altIdx < altLiterals.size())
                             ? altLiterals.get(altIdx) : null;
                     branches.add(new TypeChecker.ResolvedSplitBranch(List.of(check), altIdx, alt, exactSet,
@@ -1170,7 +1170,7 @@ final class CallSolver {
             return false;
         }
         if (param != null && param.rest()) {
-            ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(paramPattern);
+            LoweringTargets.JavaSamTarget elemSam = samTargetForElement(paramPattern);
             boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(sourceElem);
             TypeAlgebra.RelateMode mode = needsSamAdapt
                     ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -1640,7 +1640,7 @@ final class CallSolver {
         return checker.algebra().relate(actual, paramPat, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrow, !mut);
     }
 
-    private ScopeAnalysis.SpreadAdapt classifyJavaSpread(Type sourceType, Type paramType, Class<?> rawParam,
+    private LoweringTargets.SpreadAdapt classifyJavaSpread(Type sourceType, Type paramType, Class<?> rawParam,
                                                          java.lang.reflect.Type genericParam,
                                                          boolean borrow, boolean mut) {
         if (TypeChecker.isUnresolved(sourceType) || TypeChecker.isUnresolved(paramType)) {
@@ -1656,7 +1656,7 @@ final class CallSolver {
             if (!checker.algebra().relate(sourceElem, targetElem, TypeAlgebra.RelateMode.ASSIGNABLE, null, false, false)) {
                 return null;
             }
-            ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(targetElem);
+            LoweringTargets.JavaSamTarget elemSam = samTargetForElement(targetElem);
             if (elemSam == null && genericParam != null) {
                 java.lang.reflect.Type compGen = null;
                 if (genericParam instanceof GenericArrayType gat) {
@@ -1674,10 +1674,10 @@ final class CallSolver {
             if (!needsSamAdapt && !(sourceType instanceof Type.Frozen) && sourceType instanceof Type.Array srcArr) {
                 Class<?> srcCls = JavaTypeBridge.checkedArrayClass(srcArr);
                 if (srcCls != null && rawParam.isAssignableFrom(srcCls)) {
-                    return ScopeAnalysis.SpreadAdapt.AS_IS;
+                    return LoweringTargets.SpreadAdapt.AS_IS;
                 }
             }
-            return ScopeAnalysis.SpreadAdapt.toArray(rawParam.getComponentType(), needsSamAdapt ? elemSam : null);
+            return LoweringTargets.SpreadAdapt.toArray(rawParam.getComponentType(), needsSamAdapt ? elemSam : null);
         }
         return classifySpread(sourceType, paramType, borrow, mut, borrow && !mut);
     }
@@ -1752,7 +1752,7 @@ final class CallSolver {
     private void checkJavaArgumentWidening(Executable candidate, Map<TypeVariable<?>, Type> env,
                                            List<BabbleParser.CallParameterContext> arguments, List<Type> argumentTypes,
                                            boolean varArgs, ParserRuleContext ctx) {
-        ScopeAnalysis.SpreadAdapt[] adapts = null;
+        LoweringTargets.SpreadAdapt[] adapts = null;
         for (int i = 0; i < arguments.size(); i++) {
             if (i < argumentTypes.size()) {
                 BabbleParser.CallParameterContext argCtx = arguments.get(i);
@@ -1763,12 +1763,12 @@ final class CallSolver {
                         : JavaTypeBridge.javaExecutableParamType(candidate, i, env);
                 if (ScopeAnalysis.isSpread(argCtx)) {
                     int pIdx = varArgs ? Math.min(i, candidate.getParameterCount() - 1) : i;
-                    ScopeAnalysis.SpreadAdapt adapt = classifyJavaSpread(argType, paramType,
+                    LoweringTargets.SpreadAdapt adapt = classifyJavaSpread(argType, paramType,
                             candidate.getParameterTypes()[pIdx], candidate.getGenericParameterTypes()[pIdx],
                             isJavaParamBorrow(candidate, pIdx), isJavaParamMut(candidate, pIdx));
                     if (adapt != null) {
                         if (adapts == null) {
-                            adapts = new ScopeAnalysis.SpreadAdapt[arguments.size()];
+                            adapts = new LoweringTargets.SpreadAdapt[arguments.size()];
                         }
                         adapts[i] = adapt;
                     }
@@ -1910,9 +1910,9 @@ final class CallSolver {
             return false;
         }
 
-        ScopeAnalysis.ArgumentBinding toArgumentBinding(List<BabbleParser.CallParameterContext> arguments,
-                                                        ScopeAnalysis.PrimitiveKind restElementKind,
-                                                        ScopeAnalysis.SpreadAdapt[] argAdapts) {
+        LoweringTargets.ArgumentBinding toArgumentBinding(List<BabbleParser.CallParameterContext> arguments,
+                                                        PrimitiveKind restElementKind,
+                                                        LoweringTargets.SpreadAdapt[] argAdapts) {
             int argCount = arguments.size();
             boolean reordered = restParam >= 0;
             int missingParamBits = 0;
@@ -1940,9 +1940,9 @@ final class CallSolver {
                     restSpreads[i] = ScopeAnalysis.isSpread(arguments.get(restArgs[i]));
                 }
             }
-            return new ScopeAnalysis.ArgumentBinding(paramToArg, argCount, reordered, missingParamBits,
+            return new LoweringTargets.ArgumentBinding(paramToArg, argCount, reordered, missingParamBits,
                     restParam, restArgs, restSpreads,
-                    restElementKind != null ? restElementKind : ScopeAnalysis.PrimitiveKind.NONE,
+                    restElementKind != null ? restElementKind : PrimitiveKind.NONE,
                     argAdapts);
         }
     }
@@ -2029,17 +2029,17 @@ final class CallSolver {
         return new BindResult(map, unknown, outOfPosError, dupError, extra, posCount, distinct.size(), kwStart, restIdx, restArgs);
     }
 
-    static ScopeAnalysis.ArgumentBinding computeArgumentBinding(List<Type.Parameter> parameters,
+    static LoweringTargets.ArgumentBinding computeArgumentBinding(List<Type.Parameter> parameters,
                                                                 List<BabbleParser.CallParameterContext> arguments,
-                                                                ScopeAnalysis.PrimitiveKind restElementKind,
-                                                                ScopeAnalysis.SpreadAdapt[] argAdapts) {
+                                                                PrimitiveKind restElementKind,
+                                                                LoweringTargets.SpreadAdapt[] argAdapts) {
         BindResult res = bindArguments(parameters, argumentNames(arguments));
         if (res.hasErrors(parameters)) {
             return null;
         }
-        ScopeAnalysis.PrimitiveKind rk = restElementKind;
+        PrimitiveKind rk = restElementKind;
         if (rk == null && res.restParam() >= 0) {
-            rk = ScopeAnalysis.PrimitiveKind.of(parameters.get(res.restParam()).type());
+            rk = PrimitiveKind.of(parameters.get(res.restParam()).type());
         }
         return res.toArgumentBinding(arguments, rk, argAdapts);
     }
@@ -2916,7 +2916,7 @@ final class CallSolver {
     private record OverloadCandidate(int index, Type.Function alt, BindResult bind,
                                      List<Type> effectiveParams, int maxSpreadRank,
                                      Map<Type.TypeVar, Type> genericEnv,
-                                     ScopeAnalysis.SpreadAdapt[] spreadAdapts) {
+                                     LoweringTargets.SpreadAdapt[] spreadAdapts) {
     }
 
     private enum ResolutionKind { UNIQUE, NONE, AMBIGUOUS_SPREAD, AMBIGUOUS_LAMBDA }
@@ -3087,7 +3087,7 @@ final class CallSolver {
             return null;
         }
         int argCount = arguments.size();
-        ScopeAnalysis.SpreadAdapt[] adapts = null;
+        LoweringTargets.SpreadAdapt[] adapts = null;
         int maxSpreadRank = 0;
         List<Type> effectiveParams = new ArrayList<>(argCount);
 
@@ -3116,7 +3116,7 @@ final class CallSolver {
                         if (seqElem == null) {
                             return null;
                         }
-                        ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(paramType);
+                        LoweringTargets.JavaSamTarget elemSam = samTargetForElement(paramType);
                         boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(seqElem);
                         TypeAlgebra.RelateMode mode = needsSamAdapt
                                 ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -3125,14 +3125,14 @@ final class CallSolver {
                         }
                         if (needsSamAdapt) {
                             if (adapts == null) {
-                                adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                                adapts = new LoweringTargets.SpreadAdapt[argCount];
                             }
-                            adapts[i] = ScopeAnalysis.SpreadAdapt.toIterable(elemSam);
+                            adapts[i] = LoweringTargets.SpreadAdapt.toIterable(elemSam);
                         }
                         int rank = !needsSamAdapt && isIterableDirectly(argTypes[i]) ? 0 : 1;
                         maxSpreadRank = Math.max(maxSpreadRank, rank);
                     } else {
-                        ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(paramType);
+                        LoweringTargets.JavaSamTarget elemSam = samTargetForElement(paramType);
                         boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i]);
                         TypeAlgebra.RelateMode mode = needsSamAdapt
                                 ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -3142,20 +3142,20 @@ final class CallSolver {
                         }
                         if (needsSamAdapt) {
                             if (adapts == null) {
-                                adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                                adapts = new LoweringTargets.SpreadAdapt[argCount];
                             }
-                            adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(elemSam);
+                            adapts[i] = LoweringTargets.SpreadAdapt.toSam(elemSam);
                         }
                     }
                     effectiveParams.add(paramType);
                 } else if (ScopeAnalysis.isSpread(arguments.get(i))) {
-                    ScopeAnalysis.SpreadAdapt adapt = classifySpread(argTypes[i], paramType,
+                    LoweringTargets.SpreadAdapt adapt = classifySpread(argTypes[i], paramType,
                             param.borrow(), param.mut(), borrowReadOnly);
                     if (adapt == null) {
                         return null;
                     }
                     if (adapts == null) {
-                        adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                        adapts = new LoweringTargets.SpreadAdapt[argCount];
                     }
                     adapts[i] = adapt;
                     maxSpreadRank = Math.max(maxSpreadRank, spreadRank(adapt.kind()));
@@ -3166,12 +3166,12 @@ final class CallSolver {
                     if (!ok && !OverloadSolver.paramAccepts(checker.algebra(), paramType, argTypes[i], borrowReadOnly)) {
                         return null;
                     }
-                    ScopeAnalysis.JavaSamTarget argSam = samTargetForElement(paramType);
+                    LoweringTargets.JavaSamTarget argSam = samTargetForElement(paramType);
                     if (argSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i])) {
                         if (adapts == null) {
-                            adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                            adapts = new LoweringTargets.SpreadAdapt[argCount];
                         }
-                        adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(argSam);
+                        adapts[i] = LoweringTargets.SpreadAdapt.toSam(argSam);
                     }
                     effectiveParams.add(paramType);
                 }
@@ -3204,7 +3204,7 @@ final class CallSolver {
                     if (seqElem == null) {
                         return null;
                     }
-                    ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(pattern);
+                    LoweringTargets.JavaSamTarget elemSam = samTargetForElement(pattern);
                     boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(seqElem);
                     TypeAlgebra.RelateMode mode = needsSamAdapt
                             ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -3280,7 +3280,7 @@ final class CallSolver {
                     if (seqElem == null) {
                         return null;
                     }
-                    ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(instParam);
+                    LoweringTargets.JavaSamTarget elemSam = samTargetForElement(instParam);
                     boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(seqElem);
                     TypeAlgebra.RelateMode mode = needsSamAdapt
                             ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -3289,14 +3289,14 @@ final class CallSolver {
                     }
                     if (needsSamAdapt) {
                         if (adapts == null) {
-                            adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                            adapts = new LoweringTargets.SpreadAdapt[argCount];
                         }
-                        adapts[i] = ScopeAnalysis.SpreadAdapt.toIterable(elemSam);
+                        adapts[i] = LoweringTargets.SpreadAdapt.toIterable(elemSam);
                     }
                     int rank = !needsSamAdapt && isIterableDirectly(argTypes[i]) ? 0 : 1;
                     maxSpreadRank = Math.max(maxSpreadRank, rank);
                 } else {
-                    ScopeAnalysis.JavaSamTarget elemSam = samTargetForElement(instParam);
+                    LoweringTargets.JavaSamTarget elemSam = samTargetForElement(instParam);
                     boolean needsSamAdapt = elemSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i]);
                     TypeAlgebra.RelateMode mode = needsSamAdapt
                             ? TypeAlgebra.RelateMode.ASSIGNABLE : TypeAlgebra.RelateMode.SUBTYPE;
@@ -3306,19 +3306,19 @@ final class CallSolver {
                     }
                     if (needsSamAdapt) {
                         if (adapts == null) {
-                            adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                            adapts = new LoweringTargets.SpreadAdapt[argCount];
                         }
-                        adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(elemSam);
+                        adapts[i] = LoweringTargets.SpreadAdapt.toSam(elemSam);
                     }
                 }
             } else if (ScopeAnalysis.isSpread(arguments.get(i))) {
-                ScopeAnalysis.SpreadAdapt adapt = classifySpread(argTypes[i], instParam,
+                LoweringTargets.SpreadAdapt adapt = classifySpread(argTypes[i], instParam,
                         param.borrow(), param.mut(), borrowReadOnly);
                 if (adapt == null) {
                     return null;
                 }
                 if (adapts == null) {
-                    adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                    adapts = new LoweringTargets.SpreadAdapt[argCount];
                 }
                 adapts[i] = adapt;
                 maxSpreadRank = Math.max(maxSpreadRank, spreadRank(adapt.kind()));
@@ -3328,12 +3328,12 @@ final class CallSolver {
                 if (!ok && !OverloadSolver.paramAccepts(checker.algebra(), instParam, argTypes[i], borrowReadOnly)) {
                     return null;
                 }
-                ScopeAnalysis.JavaSamTarget argSam = samTargetForElement(instParam);
+                LoweringTargets.JavaSamTarget argSam = samTargetForElement(instParam);
                 if (argSam != null && TypeAlgebra.mayContainBabbleCallable(argTypes[i])) {
                     if (adapts == null) {
-                        adapts = new ScopeAnalysis.SpreadAdapt[argCount];
+                        adapts = new LoweringTargets.SpreadAdapt[argCount];
                     }
-                    adapts[i] = ScopeAnalysis.SpreadAdapt.toSam(argSam);
+                    adapts[i] = LoweringTargets.SpreadAdapt.toSam(argSam);
                 }
             }
         }
@@ -3544,13 +3544,13 @@ final class CallSolver {
         for (int ci : order) {
             Type[] combo = combos.get(ci);
             OverloadCandidate win = winners.get(ci);
-            List<ScopeAnalysis.OverloadSplitCheck> checks = new ArrayList<>(unionArgIndices.size());
+            List<LoweringTargets.OverloadSplitCheck> checks = new ArrayList<>(unionArgIndices.size());
             for (int pos : unionArgIndices) {
                 Type comp = combo[pos];
                 if (comp == Type.NULL) {
-                    checks.add(new ScopeAnalysis.OverloadSplitCheck(pos, List.of(), true));
+                    checks.add(new LoweringTargets.OverloadSplitCheck(pos, List.of(), true));
                 } else {
-                    checks.add(new ScopeAnalysis.OverloadSplitCheck(pos, OverloadSolver.runtimeTestDescriptors(comp), false));
+                    checks.add(new LoweringTargets.OverloadSplitCheck(pos, OverloadSolver.runtimeTestDescriptors(comp), false));
                 }
             }
             Type branchResult = win.genericEnv().isEmpty()
@@ -3559,7 +3559,7 @@ final class CallSolver {
             branchResults.add(branchResult);
             BabbleParser.FunctionLiteralContext directLit = localLits != null && win.index() < localLits.size()
                     ? localLits.get(win.index()) : null;
-            ScopeAnalysis.PrimitiveKind restKind = ScopeAnalysis.PrimitiveKind.NONE;
+            PrimitiveKind restKind = PrimitiveKind.NONE;
             int restIdx = win.alt().restIndex();
             if (restIdx >= 0) {
                 Type elemType = win.genericEnv().isEmpty()
@@ -3595,7 +3595,7 @@ final class CallSolver {
         return -1;
     }
 
-    private static int spreadRank(ScopeAnalysis.SpreadKind kind) {
+    private static int spreadRank(LoweringTargets.SpreadKind kind) {
         return switch (kind) {
             case NONE, AS_IS, TO_SAM -> 0;
             case TO_ITERABLE, TO_LIST_BORROWED -> 1;

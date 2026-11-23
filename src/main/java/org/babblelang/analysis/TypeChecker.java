@@ -94,7 +94,7 @@ final class TypeChecker {
     private final Map<BabbleParser.FunctionLiteralContext, Type> contextualReturnTypes = new IdentityHashMap<>();
     private final Map<BabbleParser.FunctionLiteralContext, List<Type.TypeVar>> contextualTypeParams = new IdentityHashMap<>();
     record ForIterableInfo(
-            ScopeAnalysis.ForKind kind,
+            LoweringTargets.ForKind kind,
             Class<?> arrayClass,
             Type elemType,
             Type.Instance babbleIterable,
@@ -146,10 +146,10 @@ final class TypeChecker {
     private final Set<ParserRuleContext> failedDefs = Collections.newSetFromMap(new IdentityHashMap<>());
 
     /** One branch of a statically verified union-split overload call (BIP021-D11 #4). */
-    record ResolvedSplitBranch(List<ScopeAnalysis.OverloadSplitCheck> checks, int altIndex,
+    record ResolvedSplitBranch(List<LoweringTargets.OverloadSplitCheck> checks, int altIndex,
                                Type.Function altType, boolean exactSet,
                                BabbleParser.FunctionLiteralContext directTarget, Type resultType,
-                               ScopeAnalysis.SpreadAdapt[] spreadAdapts, ScopeAnalysis.PrimitiveKind restKind) {
+                               LoweringTargets.SpreadAdapt[] spreadAdapts, PrimitiveKind restKind) {
     }
 
     /** Resolution result for a call to an overload set (single alternative or union split). */
@@ -162,27 +162,27 @@ final class TypeChecker {
     }
 
     private final Map<BabbleParser.OverloadExpressionContext, List<BabbleParser.FunctionLiteralContext>> overloadAltLiterals = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.OverloadSelection> overloadSelections = new IdentityHashMap<>();
     private final Map<ParserRuleContext, ResolvedOverloadCall> resolvedOverloadCalls = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, ScopeAnalysis.JavaSamTarget> samTargets = new IdentityHashMap<>();
-    private final Map<BabbleParser.ForExpressionContext, ScopeAnalysis.JavaSamTarget> forElemSamTargets = new IdentityHashMap<>();
-    private final Map<BabbleParser.AsExpressionContext, ScopeAnalysis.JavaSamTarget> asSamTargets = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.JavaSamTarget> samTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.ForExpressionContext, LoweringTargets.JavaSamTarget> forElemSamTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.AsExpressionContext, LoweringTargets.JavaSamTarget> asSamTargets = new IdentityHashMap<>();
     private final List<Diagnostic> demoteDiagnostics = new ArrayList<>();
     private boolean needsReResolve;
 
-    Map<ParserRuleContext, ScopeAnalysis.OverloadSelection> overloadSelections() {
+    Map<ParserRuleContext, LoweringTargets.OverloadSelection> overloadSelections() {
         return overloadSelections;
     }
 
-    Map<ParserRuleContext, ScopeAnalysis.JavaSamTarget> samTargets() {
+    Map<ParserRuleContext, LoweringTargets.JavaSamTarget> samTargets() {
         return samTargets;
     }
 
-    Map<BabbleParser.ForExpressionContext, ScopeAnalysis.JavaSamTarget> forElemSamTargets() {
+    Map<BabbleParser.ForExpressionContext, LoweringTargets.JavaSamTarget> forElemSamTargets() {
         return forElemSamTargets;
     }
 
-    Map<BabbleParser.AsExpressionContext, ScopeAnalysis.JavaSamTarget> asSamTargets() {
+    Map<BabbleParser.AsExpressionContext, LoweringTargets.JavaSamTarget> asSamTargets() {
         return asSamTargets;
     }
 
@@ -792,8 +792,8 @@ final class TypeChecker {
             @Override
             public Void visitDefExpression(BabbleParser.DefExpressionContext def) {
                 if (def.type() == null && !failedDefs.contains(def)) {
-                    ScopeAnalysis.DefKind kind = pass.analysis.defTarget(def).kind();
-                    Type inferred = (kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
+                    LoweringTargets.DefKind kind = pass.analysis.lowering().defTarget(def).kind();
+                    Type inferred = (kind == LoweringTargets.DefKind.MEMBER || kind == LoweringTargets.DefKind.STATIC)
                             ? inferredMembers.get(def) : inferredDefs.get(def);
                     if (inferred == null || isUnresolved(inferred) || inferred == Type.NULL) {
                         warn("Missing type : " + def.name.getText(), def);
@@ -875,9 +875,9 @@ final class TypeChecker {
         }
         if (singleSimple != null && singleSimple.typeName().coreTypeKeyword() != null && singleSimple.question == null
                 && singleSimple.OF() == null) {
-            pass.analysis.setIsBuiltin(ctx, singleSimple.typeName().getText());
+            pass.analysis.lowering().setIsBuiltin(ctx, singleSimple.typeName().getText());
         }
-        pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
+        pass.analysis.lowering().setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
         isTargetTypes.put(ctx, target);
         return target;
     }
@@ -1704,7 +1704,7 @@ final class TypeChecker {
                         ? ret.expression()
                         : site;
                 boolean exactSet = isExactOverloadSetExpr(exprSite);
-                overloadSelections.put(exprSite, new ScopeAnalysis.OverloadSelection(
+                overloadSelections.put(exprSite, new LoweringTargets.OverloadSelection(
                         idx, OverloadSolver.signatureKey(chosen), exactSet));
             }
         }
@@ -1842,7 +1842,7 @@ final class TypeChecker {
                 }
             }
             if (nodeDemoted) {
-                pass.analysis.setShape(node.ctx, node.shape());
+                pass.analysis.hierarchy().setShape(node.ctx, node.shape());
             }
         }
         return demotedAny;
@@ -2297,8 +2297,8 @@ final class TypeChecker {
         }
 
         private Type visitDefExpression(BabbleParser.DefExpressionContext ctx, Type expected, Role role) {
-            ScopeAnalysis.DefKind kind = pass.analysis.defTarget(ctx).kind();
-            if (kind == ScopeAnalysis.DefKind.REQUIRED) {
+            LoweringTargets.DefKind kind = pass.analysis.lowering().defTarget(ctx).kind();
+            if (kind == LoweringTargets.DefKind.REQUIRED) {
                 return Type.NULL;
             }
             Type declared = ctx.type() != null ? annotator.declaredType(ctx) : null;
@@ -2311,7 +2311,7 @@ final class TypeChecker {
             }
             ParserRuleContext errorSite = ctx.value != null ? ctx.value : ctx;
             if (declared != null) {
-                if (kind == ScopeAnalysis.DefKind.DEFAULT && declared != Type.ERROR
+                if (kind == LoweringTargets.DefKind.DEFAULT && declared != Type.ERROR
                         && ((ctx.value instanceof BabbleParser.FunctionLiteralContext && !(declared instanceof Type.Function))
                         || (ctx.value instanceof BabbleParser.OverloadExpressionContext && !(declared instanceof Type.Overloaded)))) {
                     if (algebra.assignable(value, declared)) {
@@ -2323,23 +2323,23 @@ final class TypeChecker {
                     return Type.ERROR;
                 }
                 subsumes(errorSite, ctx, value, declared);
-                if ((kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC)
+                if ((kind == LoweringTargets.DefKind.MEMBER || kind == LoweringTargets.DefKind.STATIC)
                         && samTargets.containsKey(ctx)) {
                     ScopeNode bodyScope = scopeOf(ctx);
                     if (bodyScope != null && bodyScope.type != null) {
-                        boolean isStatic = kind == ScopeAnalysis.DefKind.STATIC;
+                        boolean isStatic = kind == LoweringTargets.DefKind.STATIC;
                         TypeNode.Member member = isStatic
                                 ? bodyScope.type.statics.get(ctx.name.getText())
                                 : bodyScope.type.members.get(ctx.name.getText());
                         if (member != null && member.isMethod()) {
                             demoteMemberToField(bodyScope.type, member, ctx, isStatic);
-                            pass.analysis.setShape(bodyScope.type.ctx, bodyScope.type.shape());
+                            pass.analysis.hierarchy().setShape(bodyScope.type.ctx, bodyScope.type.shape());
                             needsReResolve = true;
                         }
                     }
                 }
             } else {
-                flowInto(ctx, kind == ScopeAnalysis.DefKind.MEMBER || kind == ScopeAnalysis.DefKind.STATIC, value, errorSite, ctx);
+                flowInto(ctx, kind == LoweringTargets.DefKind.MEMBER || kind == LoweringTargets.DefKind.STATIC, value, errorSite, ctx);
             }
             return value;
         }
@@ -2749,7 +2749,7 @@ final class TypeChecker {
                 return source;
             }
             Type nonNull = Type.withoutNull(source);
-            pass.analysis.setNonNullAssertionTarget(ctx, nonNull.toString());
+            pass.analysis.lowering().setNonNullAssertionTarget(ctx, nonNull.toString());
             return nonNull;
         }
 
@@ -2795,7 +2795,7 @@ final class TypeChecker {
                     asSamTargets.put(ctx, valid.toTarget());
                 }
             }
-            pass.analysis.setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
+            pass.analysis.lowering().setCheckedType(ctx, LoweringAnalyzer.descriptor(target));
             return target;
         }
 

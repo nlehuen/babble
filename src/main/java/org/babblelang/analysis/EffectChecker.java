@@ -641,8 +641,8 @@ final class EffectChecker {
             cur = cur.getParent();
         }
         if (cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
-            ScopeAnalysis.DefTarget target = pass.analysis.defTarget(def);
-            return target != null && target.kind() == ScopeAnalysis.DefKind.DEFAULT;
+            LoweringTargets.DefTarget target = pass.analysis.lowering().defTarget(def);
+            return target != null && target.kind() == LoweringTargets.DefKind.DEFAULT;
         }
         return false;
     }
@@ -1015,8 +1015,8 @@ final class EffectChecker {
             summaries.put(callable, internal);
             CallableSummary visible = buildVisibleSummary(callable, internal);
             visibleSummaries.put(callable, visible);
-            pass.analysis.setCallableEffects(callable, visible.effects());
-            pass.analysis.setCallableType(callable, checker.rawTypeOf(callable));
+            pass.analysis.effects().setCallableEffects(callable, visible.effects());
+            pass.analysis.effects().setCallableType(callable, checker.rawTypeOf(callable));
         }
     }
 
@@ -2821,7 +2821,7 @@ final class EffectChecker {
             if (probe.nothrow) {
                 effs.add(Effect.NOTHROW);
             }
-            pass.analysis.setCallEffects(call, EffectSet.ofInferred(effs, false, false, probe.uniqueResult, probe.terminating));
+            pass.analysis.effects().setCallEffects(call, EffectSet.ofInferred(effs, false, false, probe.uniqueResult, probe.terminating));
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             recordAllCallEffects(tree.getChild(i));
@@ -3781,8 +3781,8 @@ final class EffectChecker {
                 return decl;
             }
             ScopeNode declScope = pass.definitionScopes.get(decl);
-            ScopeAnalysis.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
-                    ? pass.analysis.defTarget(d).kind() : null;
+            LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
+                    ? pass.analysis.lowering().defTarget(d).kind() : null;
             if (owner instanceof BabbleParser.FunctionLiteralContext && isOwnedScopeLocal(decl, declScope, dKind)) {
                 return decl;
             }
@@ -4059,7 +4059,7 @@ final class EffectChecker {
             }
             if (ctx instanceof BabbleParser.NonNullAssertionContext nna) {
                 Origin orig = eval(nna.expression());
-                if (pass.analysis.nonNullAssertionTarget(nna) != null) {
+                if (pass.analysis.lowering().nonNullAssertionTarget(nna) != null) {
                     nothrow = false;
                 }
                 Type dst = checker.rawTypeOf(nna);
@@ -4113,14 +4113,14 @@ final class EffectChecker {
 
         private Origin evalDef(BabbleParser.DefExpressionContext def) {
             stmtHasSideEffect = true;
-            ScopeAnalysis.DefKind kind = pass.analysis.defTarget(def).kind();
-            if (kind == ScopeAnalysis.DefKind.REQUIRED) {
+            LoweringTargets.DefKind kind = pass.analysis.lowering().defTarget(def).kind();
+            if (kind == LoweringTargets.DefKind.REQUIRED) {
                 return Origin.IMMUTABLE;
             }
             Origin init = def.value != null ? eval(def.value) : Origin.IMMUTABLE;
             ScopeNode defScope = pass.definitionScopes.get(def);
             Type defType = checker.typeOfDeclarationForEffects(def);
-            if (kind == ScopeAnalysis.DefKind.MEMBER) {
+            if (kind == LoweringTargets.DefKind.MEMBER) {
                 if (!constructingSelf) {
                     hermetic = false;
                 }
@@ -4143,8 +4143,8 @@ final class EffectChecker {
             return Origin.IMMUTABLE;
         }
 
-        private boolean isOwnedScopeLocal(ParserRuleContext decl, ScopeNode declScope, ScopeAnalysis.DefKind kind) {
-            if (kind == ScopeAnalysis.DefKind.STATIC || declScope == null || escapedCapturedLocals.contains(decl)) {
+        private boolean isOwnedScopeLocal(ParserRuleContext decl, ScopeNode declScope, LoweringTargets.DefKind kind) {
+            if (kind == LoweringTargets.DefKind.STATIC || declScope == null || escapedCapturedLocals.contains(decl)) {
                 return false;
             }
             BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
@@ -4196,8 +4196,8 @@ final class EffectChecker {
                     }
                     BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                     ScopeNode declScope = pass.definitionScopes.get(decl);
-                    ScopeAnalysis.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
-                            ? pass.analysis.defTarget(d).kind() : null;
+                    LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
+                            ? pass.analysis.lowering().defTarget(d).kind() : null;
                     if (isOwnedScopeLocal(decl, declScope, dKind)) {
                         Type dType = checker.typeOfDeclarationForEffects(decl);
                         Origin next = compoundOp != null ? Origin.IMMUTABLE
@@ -4280,8 +4280,8 @@ final class EffectChecker {
                     }
                     BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                     ScopeNode declScope = pass.definitionScopes.get(decl);
-                    ScopeAnalysis.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
-                            ? pass.analysis.defTarget(d).kind() : null;
+                    LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
+                            ? pass.analysis.lowering().defTarget(d).kind() : null;
                     if (isOwnedScopeLocal(decl, declScope, dKind)) {
                         if (escapedCapturedLocals.contains(decl) && checker.isReassigned(decl)) {
                             deterministic = false;
@@ -4321,7 +4321,7 @@ final class EffectChecker {
             String fieldName = ScopeAnalysis.selectorName(sel);
 
             // Check Java static or instance field access:
-            ScopeAnalysis.JavaFieldTarget jft = checker.javaFieldTargetOf(sel);
+            LoweringTargets.JavaFieldTarget jft = checker.javaFieldTargetOf(sel);
             if (jft != null) {
                 Field jf = jft.field();
                 if (Modifier.isStatic(jf.getModifiers())) {
@@ -5278,7 +5278,7 @@ final class EffectChecker {
         private Origin applyBabbleCallableMember(ParserRuleContext call,
                                                  BabbleParser.ExpressionContext calleeExpr,
                                                  Type.Function fn,
-                                                 ScopeAnalysis.SpreadAdapt[] explicitAdapts,
+                                                 LoweringTargets.SpreadAdapt[] explicitAdapts,
                                                  BabbleParser.ExpressionContext receiverExpr,
                                                  Origin recvOrig,
                                                  List<BabbleParser.CallParameterContext> args,
@@ -5623,7 +5623,7 @@ final class EffectChecker {
                                                List<BabbleParser.CallParameterContext> args,
                                                BabbleParser.ExpressionContext[] argExprs,
                                                Origin[] argOrigins,
-                                               ScopeAnalysis.SpreadAdapt[] explicitAdapts,
+                                               LoweringTargets.SpreadAdapt[] explicitAdapts,
                                                boolean[] outMutableCopiedSpread) {
             if (receiverExpr != null && containsFrozen(effectiveType(receiverExpr))) {
                 if (mutRecv) {
@@ -5659,11 +5659,11 @@ final class EffectChecker {
                 boolean mutCopiedSpread = false;
                 if (ScopeAnalysis.isSpread(args.get(i))) {
                     recordTargetRead(argOrigins[i], argType);
-                    ScopeAnalysis.SpreadAdapt adapt = explicitAdapts != null
+                    LoweringTargets.SpreadAdapt adapt = explicitAdapts != null
                             ? (i < explicitAdapts.length ? explicitAdapts[i] : null)
                             : checker.spreadAdapt(call, i);
-                    if (adapt != null && (adapt.kind() == ScopeAnalysis.SpreadKind.TO_LIST_COPY
-                            || adapt.kind() == ScopeAnalysis.SpreadKind.TO_ARRAY)) {
+                    if (adapt != null && (adapt.kind() == LoweringTargets.SpreadKind.TO_LIST_COPY
+                            || adapt.kind() == LoweringTargets.SpreadKind.TO_ARRAY)) {
                         copiedSpread = true;
                         Type elemType = checker.extractSequenceElement(argType);
                         if ((elemType != null && isDeeplyImmutable(elemType))

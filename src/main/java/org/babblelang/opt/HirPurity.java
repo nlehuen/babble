@@ -1,7 +1,8 @@
 package org.babblelang.opt;
 
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.EffectSet;
-import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.effects.Effect;
 import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
@@ -28,24 +29,24 @@ public final class HirPurity {
     private HirPurity() {
     }
 
-    public static boolean isNumericKind(ScopeAnalysis.PrimitiveKind kind) {
+    public static boolean isNumericKind(PrimitiveKind kind) {
         return switch (kind) {
             case BYTE, SHORT, INT, LONG, FLOAT, DOUBLE -> true;
             default -> false;
         };
     }
 
-    public static boolean isIntegralKind(ScopeAnalysis.PrimitiveKind kind) {
-        return kind == ScopeAnalysis.PrimitiveKind.INT || kind == ScopeAnalysis.PrimitiveKind.LONG;
+    public static boolean isIntegralKind(PrimitiveKind kind) {
+        return kind == PrimitiveKind.INT || kind == PrimitiveKind.LONG;
     }
 
     public static boolean canLowerComparison(HirExpr.Binary b) {
-        ScopeAnalysis.PrimitiveKind lk = b.left().meta().kind();
-        ScopeAnalysis.PrimitiveKind rk = b.right().meta().kind();
-        if (lk == ScopeAnalysis.PrimitiveKind.BOOL && rk == ScopeAnalysis.PrimitiveKind.BOOL) {
+        PrimitiveKind lk = b.left().meta().kind();
+        PrimitiveKind rk = b.right().meta().kind();
+        if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL) {
             return b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ;
         }
-        if (lk == ScopeAnalysis.PrimitiveKind.CHAR && rk == ScopeAnalysis.PrimitiveKind.CHAR) {
+        if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR) {
             return true;
         }
         return isNumericKind(lk) && isNumericKind(rk);
@@ -238,7 +239,7 @@ public final class HirPurity {
             case HirExpr.As a -> a.samTarget() == null && isDeterministic(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isDeterministic(t.inner(), module, visitingFns);
             case HirExpr.ThisFieldGet g -> isDeterministic(g.receiver(), module, visitingFns);
-            case HirExpr.ArrayOp op -> op.kind() == ScopeAnalysis.ArrayOpKind.SIZE
+            case HirExpr.ArrayOp op -> op.kind() == LoweringTargets.ArrayOpKind.SIZE
                     && isDeterministic(op.receiver(), module, visitingFns);
             case HirExpr.DirectBabbleCall c -> {
                 boolean calleeOk = isDeterministic(c.callee(), module, visitingFns)
@@ -443,7 +444,7 @@ public final class HirPurity {
         });
         Set<String> result = new HashSet<>();
         for (HirExpr stmt : module.topLevelStatements()) {
-            if (stmt instanceof HirExpr.Def d && d.var() == null && d.target().kind() == ScopeAnalysis.DefKind.LEXICAL) {
+            if (stmt instanceof HirExpr.Def d && d.var() == null && d.target().kind() == LoweringTargets.DefKind.LEXICAL) {
                 HirExpr val = unwrapTransparent(d.value());
                 if (val instanceof HirExpr.FunctionRef) {
                     if (!reassignedNames.contains(d.name())) {

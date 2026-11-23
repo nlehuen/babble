@@ -59,7 +59,7 @@ final class Resolver {
             }
         }
         for (BlockScopes.PendingSuper pending : pass.supers) {
-            BabbleParser.TypeContext target = pass.analysis.superTarget(pending.ctx());
+            BabbleParser.TypeContext target = pass.analysis.hierarchy().superTarget(pending.ctx());
             bind(pending.ctx(), firstName(target), pending.scope());
             bind(pending.ctx().getParent(), "this", pending.scope());
         }

@@ -58,7 +58,7 @@ public final class AnalysisSession {
     private final List<ClassLoader> classLoaders = new ArrayList<>();
     private final Map<String, String> interfaceJvmNames = new LinkedHashMap<>();
     private final Map<String, String> classJvmNames = new LinkedHashMap<>();
-    private final Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies = new LinkedHashMap<>();
+    private final Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies = new LinkedHashMap<>();
 
     /**
      * Makes an analysed input part of the session, for the inputs that follow.
@@ -72,7 +72,7 @@ public final class AnalysisSession {
         definitionScopes.putAll(pass.definitionScopes);
         scopeNodes.putAll(pass.scopeNodes);
         modules.putAll(pass.modules);
-        typeHierarchies.putAll(analysis.typeHierarchies());
+        typeHierarchies.putAll(analysis.hierarchy().typeHierarchies());
         TypedModuleSummary summary = pass.summary;
         if (summary != null) {
             typeNodeVars.putAll(summary.typeNodeVarsMap());
@@ -148,7 +148,7 @@ public final class AnalysisSession {
         return Map.copyOf(classJvmNames);
     }
 
-    public ScopeAnalysis.TypeHierarchyInfo typeHierarchy(String id) {
+    public LoweringTargets.TypeHierarchyInfo typeHierarchy(String id) {
         return id != null ? typeHierarchies.get(id) : null;
     }
 }

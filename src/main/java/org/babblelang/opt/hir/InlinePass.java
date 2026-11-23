@@ -1,7 +1,8 @@
 package org.babblelang.opt.hir;
 
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
-import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
@@ -237,7 +238,7 @@ public final class InlinePass implements HirPass {
         });
     }
 
-    private static boolean isSamTargetCrossModuleAccessible(ScopeAnalysis.JavaSamTarget target) {
+    private static boolean isSamTargetCrossModuleAccessible(LoweringTargets.JavaSamTarget target) {
         if (target == null || !org.babblelang.runtime.JavaTypes.isAccessible(target.samInterface())) {
             return false;
         }
@@ -514,7 +515,7 @@ public final class InlinePass implements HirPass {
             HirExpr arg = args.get(i);
             ExprMeta defMeta = new ExprMeta(arg.meta().line(), freshParam.primitiveKind(), p.wideningRank(),
                     null, arg.meta().effects(), arg.meta().deeplyImmutable(), arg.meta().stringType());
-            stmts.add(new HirExpr.Def(p.name(), new ScopeAnalysis.DefTarget(ScopeAnalysis.DefKind.LEXICAL, -1),
+            stmts.add(new HirExpr.Def(p.name(), new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
                     freshParam, arg, defMeta));
         }
 
@@ -536,13 +537,13 @@ public final class InlinePass implements HirPass {
         return new HirExpr.Block(stmts, false, new String[0], blockDeclared, calleeFn.bodyWideningRank(), callMeta);
     }
 
-    private static boolean isNoOpWidening(ScopeAnalysis.PrimitiveKind kind, int rank) {
+    private static boolean isNoOpWidening(PrimitiveKind kind, int rank) {
         return switch (rank) {
-            case 1 -> kind == ScopeAnalysis.PrimitiveKind.SHORT;
-            case 2 -> kind == ScopeAnalysis.PrimitiveKind.INT;
-            case 3 -> kind == ScopeAnalysis.PrimitiveKind.LONG;
-            case 4 -> kind == ScopeAnalysis.PrimitiveKind.FLOAT;
-            case 5 -> kind == ScopeAnalysis.PrimitiveKind.DOUBLE;
+            case 1 -> kind == PrimitiveKind.SHORT;
+            case 2 -> kind == PrimitiveKind.INT;
+            case 3 -> kind == PrimitiveKind.LONG;
+            case 4 -> kind == PrimitiveKind.FLOAT;
+            case 5 -> kind == PrimitiveKind.DOUBLE;
             default -> false;
         };
     }

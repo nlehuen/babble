@@ -1,475 +1,62 @@
 package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.ClassShape;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
- * What the analysis computes for a file : which constructs open a scope, the names each
- * scope defines, and the shapes of classes, objects and interfaces.
+ * Root analysis record for a file : declared scope names, exports, diagnostics, session/module
+ * links, and four focused sub-views ({@link #lowering()}, {@link #calls()}, {@link #hierarchy()},
+ * and {@link #effects()}) (BIP027-D3).
  */
 public final class ScopeAnalysis {
     private static final String[] NONE = new String[0];
 
-    /** What a {@code def} defines. */
-    public enum DefKind {
-        /** A lexical variable. */
-        LEXICAL,
-        /** A member of a class or object, initialised on the instance being constructed. */
-        MEMBER,
-        /** A static member of a class or interface value. */
-        STATIC,
-        /** A default method of an interface. */
-        DEFAULT,
-        /** A required member of an interface : nothing happens at runtime. */
-        REQUIRED
-    }
-
-    public record DefTarget(DefKind kind, int index) {
-    }
-
-    /** A warning, at a line, and at a column (from 1) when it has one, else -1. */
+    /** A warning or diagnostic, at a line, and at a column (from 1) when it has one, else -1. */
     public record Warning(String message, int line, int column) {
     }
 
-    public enum PrimitiveKind {
-        NONE,
-        BYTE,
-        SHORT,
-        INT,
-        LONG,
-        FLOAT,
-        DOUBLE,
-        BOOL,
-        CHAR;
-
-        public boolean isPrimitive() {
-            return this != NONE;
-        }
-
-        public int slots() {
-            return (this == LONG || this == DOUBLE) ? 2 : 1;
-        }
-
-        static PrimitiveKind of(Type type) {
-            if (type == Type.BYTE) {
-                return BYTE;
-            }
-            if (type == Type.SHORT) {
-                return SHORT;
-            }
-            if (type == Type.INT) {
-                return INT;
-            }
-            if (type == Type.LONG) {
-                return LONG;
-            }
-            if (type == Type.FLOAT) {
-                return FLOAT;
-            }
-            if (type == Type.DOUBLE) {
-                return DOUBLE;
-            }
-            if (type == Type.BOOL) {
-                return BOOL;
-            }
-            if (type == Type.CHAR) {
-                return CHAR;
-            }
-            return NONE;
-        }
-    }
-
-    public record JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver, boolean varArgs) {
-        public JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver) {
-            this(method, isStatic, unwrapReceiver, false);
-        }
-    }
-
-    public record JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor, boolean varArgs) {
-        public JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor) {
-            this(constructor, false);
-        }
-    }
-
-    public record JavaFieldTarget(java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {
-    }
-
-    public record ModuleExportTarget(int index, String name, String moduleName) {
-        public ModuleExportTarget(int index, String name) {
-            this(index, name, null);
-        }
-    }
-
-    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits, int restIndex) {
-        public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
-            this(parameterKinds, returnKind, 0, -1);
-        }
-
-        public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits) {
-            this(parameterKinds, returnKind, optionalParamBits, -1);
-        }
-
-        public int optionalCount() {
-            return Integer.bitCount(optionalParamBits);
-        }
-
-        public boolean hasOptionalMask() {
-            return optionalParamBits != 0;
-        }
-
-        public boolean isOptional(int index) {
-            return index < 32 && (optionalParamBits & (1 << index)) != 0;
-        }
-    }
-
-    /** How a spread call argument ({@code ...e}) is adapted to its target parameter ({@code BIP021-D7}). */
-    public enum SpreadKind {
-        NONE,
-        AS_IS,
-        TO_ITERABLE,
-        TO_LIST_BORROWED,
-        TO_LIST_COPY,
-        TO_ARRAY,
-        TO_SAM
-    }
-
-    /** Per-argument spread adaptation metadata ({@code BIP021-D7}, {@code BIP022-D7}). */
-    public record SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType, JavaSamTarget elementSamTarget) {
-        public static final SpreadAdapt NONE = new SpreadAdapt(SpreadKind.NONE, null, null);
-        public static final SpreadAdapt AS_IS = new SpreadAdapt(SpreadKind.AS_IS, null, null);
-        public static final SpreadAdapt TO_ITERABLE = new SpreadAdapt(SpreadKind.TO_ITERABLE, null, null);
-        public static final SpreadAdapt TO_LIST_BORROWED = new SpreadAdapt(SpreadKind.TO_LIST_BORROWED, null, null);
-        public static final SpreadAdapt TO_LIST_COPY = new SpreadAdapt(SpreadKind.TO_LIST_COPY, null, null);
-
-        public SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType) {
-            this(kind, arrayComponentType, null);
-        }
-
-        public static SpreadAdapt toArray(Class<?> componentType) {
-            return new SpreadAdapt(SpreadKind.TO_ARRAY, componentType, null);
-        }
-
-        public static SpreadAdapt toArray(Class<?> componentType, JavaSamTarget elementSamTarget) {
-            return new SpreadAdapt(SpreadKind.TO_ARRAY, componentType, elementSamTarget);
-        }
-
-        public static SpreadAdapt toList(boolean borrowed, JavaSamTarget elementSamTarget) {
-            if (elementSamTarget == null) {
-                return borrowed ? TO_LIST_BORROWED : TO_LIST_COPY;
-            }
-            return new SpreadAdapt(borrowed ? SpreadKind.TO_LIST_BORROWED : SpreadKind.TO_LIST_COPY, null, elementSamTarget);
-        }
-
-        public static SpreadAdapt toIterable(JavaSamTarget elementSamTarget) {
-            return elementSamTarget == null ? TO_ITERABLE
-                    : new SpreadAdapt(SpreadKind.TO_ITERABLE, null, elementSamTarget);
-        }
-
-        public static SpreadAdapt toSam(JavaSamTarget elementSamTarget) {
-            return elementSamTarget == null ? NONE
-                    : new SpreadAdapt(SpreadKind.TO_SAM, null, elementSamTarget);
-        }
-    }
-
-    /**
-     * Static argument binding for a Babble call ({@code BIP021-D4}, {@code BIP021-D5}, {@code BIP021-D7}).
-     * {@code paramToArg[p]} is the source call-argument index {@code 0..argCount-1} supplying
-     * parameter {@code p}, or {@code -1} if parameter {@code p} is omitted (or is the rest parameter).
-     * {@code missingParamBits} has bit {@code p} set when {@code p < 32 && paramToArg[p] < 0 && p != restParam}.
-     */
-    public record ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits,
-                                  int restParam, int[] restArgs, boolean[] restArgIsSpread,
-                                  PrimitiveKind restElementKind, SpreadAdapt[] argAdapts) {
-        private static final int[] NO_INTS = new int[0];
-        private static final boolean[] NO_BOOLS = new boolean[0];
-
-        public ArgumentBinding {
-            restArgs = restArgs != null ? restArgs : NO_INTS;
-            restArgIsSpread = restArgIsSpread != null ? restArgIsSpread : NO_BOOLS;
-            restElementKind = restElementKind != null ? restElementKind : PrimitiveKind.NONE;
-        }
-
-        public ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits) {
-            this(paramToArg, argCount, reordered, missingParamBits, -1, NO_INTS, NO_BOOLS, PrimitiveKind.NONE, null);
-        }
-
-        public boolean hasRest() {
-            return restParam >= 0;
-        }
-
-        public boolean hasSpreads() {
-            if (argAdapts != null) {
-                for (SpreadAdapt a : argAdapts) {
-                    if (a != null && a.kind() != SpreadKind.NONE) {
-                        return true;
-                    }
-                }
-            }
-            for (boolean s : restArgIsSpread) {
-                if (s) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        public SpreadAdapt adaptForArg(int argIndex) {
-            return argAdapts != null && argIndex >= 0 && argIndex < argAdapts.length && argAdapts[argIndex] != null
-                    ? argAdapts[argIndex] : SpreadAdapt.NONE;
-        }
-
-        public boolean hasOmitted() {
-            for (int p = 0; p < paramToArg.length; p++) {
-                if (p != restParam && paramToArg[p] < 0) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        public int paramCount() {
-            return paramToArg.length;
-        }
-
-        public boolean isIdentityPositional() {
-            return !reordered && !hasOmitted() && !hasRest() && !hasSpreads() && paramToArg.length == argCount;
-        }
-
-        /** Computes the callee's {@code $spec} optional-ordinal mask from {@code calleeOptionalParamBits}. */
-        public int specMaskFor(int calleeOptionalParamBits, int calleeParamCount) {
-            int mask = 0;
-            int optBit = 0;
-            for (int p = 0; p < calleeParamCount; p++) {
-                if ((calleeOptionalParamBits & (1 << p)) != 0) {
-                    if (p >= paramToArg.length || (p != restParam && paramToArg[p] < 0)) {
-                        mask |= (1 << optBit);
-                    }
-                    optBit++;
-                }
-            }
-            return mask;
-        }
-    }
-
-    public record ParentRef(String babbleTypeId, Class<?> javaClass) {
-    }
-
-    public record MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature,
-                             List<FunctionSignature> overloadSignatures, List<String> overloadSignatureKeys) {
-        public MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature) {
-            this(name, hasDefault, required, callable, declaredSignature, List.of(), List.of());
-        }
-
-        public boolean isOverloaded() {
-            return overloadSignatures != null && !overloadSignatures.isEmpty();
-        }
-    }
-
-    public record TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
-                                    java.util.Set<String> allBabbleInterfaceIds, java.util.Set<Class<?>> allJavaInterfaces,
-                                    Map<String, MemberSpec> interfaceMembers,
-                                    Map<String, Integer> javaBridgeOverloads,
-                                    Map<String, Integer> babbleBridgeOverloads) {
-        public TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
-                                 java.util.Set<String> allBabbleInterfaceIds, java.util.Set<Class<?>> allJavaInterfaces,
-                                 Map<String, MemberSpec> interfaceMembers) {
-            this(id, kind, name, directParents, allBabbleInterfaceIds, allJavaInterfaces, interfaceMembers, Map.of(), Map.of());
-        }
-    }
-
-    public record SuperTargetInfo(String ownerTypeId, boolean ownerIsInterface,
-                                  String directBabbleTypeId, Class<?> directJavaClass,
-                                  String providerBabbleTypeId, Class<?> providerJavaClass,
-                                  String memberName) {
-    }
-
-    public record IsTarget(String typeId, ClassShape.Kind kind, String jvmInternalName) {
-        public IsTarget(String typeId, ClassShape.Kind kind) {
-            this(typeId, kind, null);
-        }
-    }
-
-    /** Java SAM interface (plus optional marker interfaces) for eager callable conversion ({@code BIP022-D7}). */
-    public record JavaSamTarget(Class<?> samInterface, Class<?>[] markers) {
-        private static final Class<?>[] NO_MARKERS = new Class<?>[0];
-
-        public JavaSamTarget {
-            markers = markers == null || markers.length == 0 ? NO_MARKERS : markers.clone();
-        }
-
-        public JavaSamTarget(Class<?> samInterface) {
-            this(samInterface, NO_MARKERS);
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            return o instanceof JavaSamTarget other
-                    && samInterface == other.samInterface
-                    && java.util.Arrays.equals(markers, other.markers);
-        }
-
-        @Override
-        public int hashCode() {
-            return 31 * java.util.Objects.hashCode(samInterface) + java.util.Arrays.hashCode(markers);
-        }
-    }
-
-    public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {
-    }
-
-    /** Per-alternative runtime metadata for {@code overload (...)} construction (BIP021-D16). */
-    public record OverloadAltMetaInfo(String signatureKey, String display, int minArity, int maxArity,
-                                      int restIndex, String[] paramDescriptors) {
-    }
-
-    /** Coercion from an overload set expression to a single alternative (BIP021-D12). */
-    public record OverloadSelection(int index, String signatureKey, boolean exactSet) {
-    }
-
-    /** One statically resolved alternative of an overload set call (BIP021-D11, BIP021-D16). */
-    public record OverloadCallTarget(int altIndex, String signatureKey, boolean exactSet,
-                                     BabbleParser.FunctionLiteralContext directTarget,
-                                     FunctionSignature signature, ArgumentBinding binding) {
-    }
-
-    /** One runtime type check at a union-split argument position (BIP021-D11 #4). */
-    public record OverloadSplitCheck(int argIndex, List<String> descriptors, boolean isNull) {
-    }
-
-    /** One branch in a union-split overload dispatch, ordered most-specific-first. */
-    public record OverloadSplitBranch(List<OverloadSplitCheck> checks, OverloadCallTarget target,
-                                      PrimitiveKind resultKind) {
-    }
-
-    /** Call-site lowering target for calls to an overload set (resolved directly or via union split). */
-    public record OverloadDispatchTarget(OverloadCallTarget direct, List<OverloadSplitBranch> splitBranches,
-                                         PrimitiveKind resultKind) {
-        public boolean isSplit() {
-            return splitBranches != null && !splitBranches.isEmpty();
-        }
-    }
-
-    public enum ForKind {
-        ARRAY,
-        JAVA_ITERABLE,
-        JAVA_ITERATOR,
-        BABBLE_TO_JAVA_ITERABLE,
-        BABBLE_ITERABLE,
-        BABBLE_ITERATOR,
-        DYNAMIC_UNION
-    }
-
-    public record ForLoopTarget(
-            ForKind kind,
-            Class<?> arrayClass,
-            PrimitiveKind elemKind,
-            String elemCheck,
-            int elemWidenRank,
-            InterfaceCallTarget iteratorInterfaceTarget,
-            FunctionSignature hasNextSig,
-            InterfaceCallTarget hasNextInterfaceTarget,
-            FunctionSignature nextSig,
-            InterfaceCallTarget nextInterfaceTarget
-    ) {
-    }
-
-    public enum ArrayCreationKind {
-        SIZE,
-        OF,
-        FROM
-    }
-
-    public record ArrayCreationTarget(
-            ArrayCreationKind kind,
-            PrimitiveKind elemKind,
-            Class<?> componentClass,
-            String babbleTypeId,
-            String babbleDisplayName,
-            Set<String> babbleConformIds,
-            int nestedDims
-    ) {
-    }
-
-    public enum ArrayOpKind {
-        SIZE,
-        GET,
-        SET,
-        EQUALS,
-        HASH_CODE,
-        TO_STRING
-    }
-
-    public record ArrayOpTarget(
-            ArrayOpKind kind,
-            PrimitiveKind elemKind,
-            Class<?> arrayClass,
-            Class<?> componentClass
-    ) {
-    }
-
-    private final ParseTreeProperty<ForLoopTarget> forLoopTargets = new ParseTreeProperty<>();
-
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
-    private final ParseTreeProperty<String[]> parameters = new ParseTreeProperty<>();
-    private final ParseTreeProperty<Integer> requiredParameters = new ParseTreeProperty<>();
-    private final ParseTreeProperty<Integer> keywordOnlyStarts = new ParseTreeProperty<>();
-    private final ParseTreeProperty<Integer> restIndices = new ParseTreeProperty<>();
-    private final ParseTreeProperty<ArgumentBinding> argumentBindings = new ParseTreeProperty<>();
-    private final ParseTreeProperty<SpreadAdapt[]> callSpreadAdapts = new ParseTreeProperty<>();
-    private final ParseTreeProperty<ClassShape> shapes = new ParseTreeProperty<>();
-    private final ParseTreeProperty<DefTarget> defTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<SuperTargetInfo> superTargetInfos = new ParseTreeProperty<>();
-    private final ParseTreeProperty<IsTarget> isTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<List<IsTarget>> isIntersectionTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<IsTarget> asTargets = new ParseTreeProperty<>();
-    private final Map<ParserRuleContext, JavaSamTarget> javaSamTargets = new java.util.IdentityHashMap<>();
-    private final Map<BabbleParser.ForExpressionContext, JavaSamTarget> forElemSamTargets = new java.util.IdentityHashMap<>();
-    private final Map<ParserRuleContext, JavaSamTarget> asSamTargets = new java.util.IdentityHashMap<>();
-    private final ParseTreeProperty<InterfaceCallTarget> interfaceCallTargets = new ParseTreeProperty<>();
+    private final Set<String> exports = new LinkedHashSet<>();
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
     private String resultType;
-    private final ParseTreeProperty<String> checkedTypes = new ParseTreeProperty<>();
-    private final ParseTreeProperty<String> isBuiltins = new ParseTreeProperty<>();
-    private final java.util.Map<ParserRuleContext, Integer> numericWidenings = new java.util.IdentityHashMap<>();
-    private final java.util.Map<ParserRuleContext, Object> resolvedLiterals = new java.util.IdentityHashMap<>();
-    private final java.util.Set<String> exports = new java.util.LinkedHashSet<>();
-    private final ParseTreeProperty<PrimitiveKind> expressionKinds = new ParseTreeProperty<>();
-    private final java.util.Set<ParserRuleContext> expressionDeeplyImmutable = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    private final java.util.Set<ParserRuleContext> expressionStrings = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    private final ParseTreeProperty<PrimitiveKind> declarationKinds = new ParseTreeProperty<>();
-    private final ParseTreeProperty<PrimitiveKind> functionReturnKinds = new ParseTreeProperty<>();
-    private final java.util.Set<ParserRuleContext> definitelyDefined = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    private final ParseTreeProperty<JavaCallTarget> javaCallTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<JavaConstructorTarget> javaConstructorTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<JavaFieldTarget> javaFieldTargets = new ParseTreeProperty<>();
-    private final java.util.Map<ParserRuleContext, ArrayCreationTarget> arrayCreationTargets = new java.util.IdentityHashMap<>();
-    private final java.util.Map<ParserRuleContext, ArrayOpTarget> arrayOpTargets = new java.util.IdentityHashMap<>();
-    private final ParseTreeProperty<ModuleExportTarget> moduleExportTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<BabbleParser.FunctionLiteralContext> babbleCallFunctions = new ParseTreeProperty<>();
-    private final ParseTreeProperty<FunctionSignature> babbleCallSignatures = new ParseTreeProperty<>();
-    private final Map<BabbleParser.OverloadExpressionContext, List<OverloadAltMetaInfo>> overloadMetas = new java.util.IdentityHashMap<>();
-    private final Map<ParserRuleContext, OverloadSelection> overloadSelections = new java.util.IdentityHashMap<>();
-    private final Map<ParserRuleContext, OverloadDispatchTarget> overloadDispatches = new java.util.IdentityHashMap<>();
-    private final java.util.Set<BabbleParser.CallContext> selfTailCalls = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-    private final Map<String, TypeHierarchyInfo> typeHierarchies = new java.util.LinkedHashMap<>();
     private AnalysisSession session;
     private List<ModuleInterface> importedModules = List.of();
     private Resolution resolution;
     private ModuleInterface moduleInterface;
+    private BlockScopes pass;
+
+    private final LoweringMetadata lowering = new LoweringMetadata();
+    private final CallMetadata calls = new CallMetadata();
+    private final HierarchyMetadata hierarchy = new HierarchyMetadata(this);
+    private final EffectMetadata effects = new EffectMetadata();
+
+    public LoweringMetadata lowering() {
+        return lowering;
+    }
+
+    public CallMetadata calls() {
+        return calls;
+    }
+
+    public HierarchyMetadata hierarchy() {
+        return hierarchy;
+    }
+
+    public EffectMetadata effects() {
+        return effects;
+    }
 
     void setSession(AnalysisSession session) {
         this.session = session;
@@ -479,60 +66,12 @@ public final class ScopeAnalysis {
         return session;
     }
 
-    void setImportedModules(java.util.Collection<ModuleInterface> modules) {
+    void setImportedModules(Collection<ModuleInterface> modules) {
         this.importedModules = modules != null && !modules.isEmpty() ? List.copyOf(modules) : List.of();
     }
 
     public List<ModuleInterface> importedModules() {
         return importedModules;
-    }
-
-    void setTypeHierarchy(String id, TypeHierarchyInfo info) {
-        if (id != null && info != null) {
-            typeHierarchies.put(id, info);
-        }
-    }
-
-    public Map<String, TypeHierarchyInfo> typeHierarchies() {
-        return Map.copyOf(typeHierarchies);
-    }
-
-    public TypeHierarchyInfo typeHierarchy(String id) {
-        if (id == null) {
-            return null;
-        }
-        TypeHierarchyInfo local = typeHierarchies.get(id);
-        if (local != null) {
-            return local;
-        }
-        if (session != null) {
-            TypeHierarchyInfo fromSession = session.typeHierarchy(id);
-            if (fromSession != null) {
-                return fromSession;
-            }
-        }
-        if (!importedModules.isEmpty()) {
-            java.util.Queue<ModuleInterface> queue = new java.util.ArrayDeque<>();
-            java.util.Set<ModuleInterface> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
-            for (ModuleInterface mod : importedModules) {
-                if (mod != null && visited.add(mod)) {
-                    queue.add(mod);
-                }
-            }
-            while (!queue.isEmpty()) {
-                ModuleInterface mod = queue.poll();
-                TypeHierarchyInfo fromModule = mod.typeHierarchy(id);
-                if (fromModule != null) {
-                    return fromModule;
-                }
-                for (ModuleInterface dep : mod.dependencies()) {
-                    if (dep != null && visited.add(dep)) {
-                        queue.add(dep);
-                    }
-                }
-            }
-        }
-        return null;
     }
 
     void setModuleInterface(ModuleInterface moduleInterface) {
@@ -542,107 +81,6 @@ public final class ScopeAnalysis {
     /** What a file importing this one knows of it : its exports, and the interfaces among them. */
     public ModuleInterface moduleInterface() {
         return moduleInterface;
-    }
-    private BlockScopes pass;
-
-    void addExport(String name) {
-        exports.add(name);
-    }
-
-    boolean exportsName(String name) {
-        return exports.contains(name);
-    }
-
-    /** The names the file exports, in source order : what a module importing it can read. */
-    public String[] exports() {
-        return exports.toArray(NONE);
-    }
-
-    void setDeclared(ParserRuleContext owner, String[] names) {
-        declared.put(owner, names);
-    }
-
-    void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required) {
-        setParameters(function, names, required, names.length, -1);
-    }
-
-    void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required, int keywordOnlyStart) {
-        setParameters(function, names, required, keywordOnlyStart, -1);
-    }
-
-    void setParameters(BabbleParser.FunctionLiteralContext function, String[] names, int required, int keywordOnlyStart, int restIndex) {
-        parameters.put(function, names);
-        requiredParameters.put(function, required);
-        keywordOnlyStarts.put(function, keywordOnlyStart);
-        restIndices.put(function, restIndex);
-    }
-
-    void setArgumentBinding(BabbleParser.CallContext call, ArgumentBinding binding) {
-        argumentBindings.put(call, binding);
-    }
-
-    void setCallSpreadAdapts(BabbleParser.CallContext call, SpreadAdapt[] adapts) {
-        callSpreadAdapts.put(call, adapts);
-    }
-
-    void setShape(ParserRuleContext type, ClassShape shape) {
-        shapes.put(type, shape);
-    }
-
-    void setDefTarget(BabbleParser.DefExpressionContext def, DefTarget target) {
-        defTargets.put(def, target);
-    }
-
-    void setSuperTarget(BabbleParser.SuperExpressionContext superExpression, BabbleParser.TypeContext type) {
-        superTargets.put(superExpression, type);
-    }
-
-    void setSuperTargetInfo(BabbleParser.SuperExpressionContext superExpression, SuperTargetInfo info) {
-        superTargetInfos.put(superExpression, info);
-    }
-
-    void setIsTarget(BabbleParser.IsExpressionContext ctx, IsTarget target) {
-        isTargets.put(ctx, target);
-    }
-
-    void setIsIntersectionTargets(BabbleParser.IsExpressionContext ctx, List<IsTarget> targets) {
-        if (targets == null || targets.isEmpty()) {
-            isIntersectionTargets.removeFrom(ctx);
-        } else {
-            isIntersectionTargets.put(ctx, List.copyOf(targets));
-        }
-    }
-
-    void setAsTarget(BabbleParser.AsExpressionContext ctx, IsTarget target) {
-        asTargets.put(ctx, target);
-    }
-
-    void setJavaSamTarget(ParserRuleContext ctx, JavaSamTarget target) {
-        if (target == null) {
-            javaSamTargets.remove(ctx);
-        } else {
-            javaSamTargets.put(ctx, target);
-        }
-    }
-
-    void setForElemSamTarget(BabbleParser.ForExpressionContext ctx, JavaSamTarget target) {
-        if (target == null) {
-            forElemSamTargets.remove(ctx);
-        } else {
-            forElemSamTargets.put(ctx, target);
-        }
-    }
-
-    void setAsSamTarget(ParserRuleContext ctx, JavaSamTarget target) {
-        if (target == null) {
-            asSamTargets.remove(ctx);
-        } else {
-            asSamTargets.put(ctx, target);
-        }
-    }
-
-    void setInterfaceCallTarget(BabbleParser.CallContext ctx, InterfaceCallTarget target) {
-        interfaceCallTargets.put(ctx, target);
     }
 
     void setPass(BlockScopes pass) {
@@ -663,266 +101,21 @@ public final class ScopeAnalysis {
         return resolution;
     }
 
-    void warn(String message, int line) {
-        warn(message, line, -1);
+    void addExport(String name) {
+        exports.add(name);
     }
 
-    void warn(String message, int line, int column) {
-        warnings.add(new Warning(message, line, column));
+    boolean exportsName(String name) {
+        return exports.contains(name);
     }
 
-    void typeDiagnostic(String message, int line, int column) {
-        typeDiagnostics.add(new Warning(message, line, column));
+    /** The names the file exports, in source order : what a module importing it can read. */
+    public String[] exports() {
+        return exports.toArray(NONE);
     }
 
-    void setCheckedType(ParserRuleContext ctx, String descriptor) {
-        checkedTypes.put(ctx, descriptor);
-    }
-
-    void setForLoopTarget(BabbleParser.ForExpressionContext ctx, ForLoopTarget target) {
-        forLoopTargets.put(ctx, target);
-    }
-
-    public ForLoopTarget forLoopTarget(BabbleParser.ForExpressionContext ctx) {
-        return forLoopTargets.get(ctx);
-    }
-
-    void setIsBuiltin(BabbleParser.IsExpressionContext ctx, String type) {
-        isBuiltins.put(ctx, type);
-    }
-
-    void widenNumeric(ParserRuleContext ctx, int targetRank) {
-        if (targetRank >= 1 && targetRank <= 5) {
-            numericWidenings.merge(ctx, targetRank, Math::max);
-        }
-    }
-
-    void widenToDouble(ParserRuleContext ctx) {
-        widenNumeric(ctx, 5);
-    }
-
-    void setResolvedLiteral(ParserRuleContext ctx, Object value) {
-        if (value == null) {
-            resolvedLiterals.remove(ctx);
-        } else {
-            resolvedLiterals.put(ctx, value);
-        }
-    }
-
-    void setExpressionKind(ParserRuleContext ctx, PrimitiveKind kind) {
-        if (kind != PrimitiveKind.NONE) {
-            expressionKinds.put(ctx, kind);
-        }
-    }
-
-    void markExpressionDeeplyImmutable(ParserRuleContext ctx) {
-        expressionDeeplyImmutable.add(ctx);
-    }
-
-    void markExpressionString(ParserRuleContext ctx) {
-        expressionStrings.add(ctx);
-    }
-
-    void setDeclarationKind(ParserRuleContext decl, PrimitiveKind kind) {
-        if (kind != PrimitiveKind.NONE) {
-            declarationKinds.put(decl, kind);
-        }
-    }
-
-    void setFunctionReturnKind(BabbleParser.FunctionLiteralContext function, PrimitiveKind kind) {
-        if (kind != PrimitiveKind.NONE) {
-            functionReturnKinds.put(function, kind);
-        }
-    }
-
-    void markDefinitelyDefined(ParserRuleContext decl) {
-        definitelyDefined.add(decl);
-    }
-
-    void setJavaCallTarget(ParserRuleContext ctx, JavaCallTarget target) {
-        javaCallTargets.put(ctx, target);
-    }
-
-    void setJavaConstructorTarget(ParserRuleContext ctx, JavaConstructorTarget target) {
-        javaConstructorTargets.put(ctx, target);
-    }
-
-    void setJavaFieldTarget(ParserRuleContext ctx, JavaFieldTarget target) {
-        javaFieldTargets.put(ctx, target);
-    }
-
-    void setArrayCreationTarget(ParserRuleContext ctx, ArrayCreationTarget target) {
-        arrayCreationTargets.put(ctx, target);
-    }
-
-    void setArrayOpTarget(ParserRuleContext ctx, ArrayOpTarget target) {
-        arrayOpTargets.put(ctx, target);
-    }
-
-    void setModuleExportTarget(ParserRuleContext ctx, ModuleExportTarget target) {
-        moduleExportTargets.put(ctx, target);
-    }
-
-    void setBabbleCallFunction(ParserRuleContext ctx, BabbleParser.FunctionLiteralContext function) {
-        babbleCallFunctions.put(ctx, function);
-    }
-
-    void setSelfTailCall(BabbleParser.CallContext call) {
-        selfTailCalls.add(call);
-    }
-
-    /**
-     * Whether a call is a self tail call (docs/design/bip024_tail-calls.md) : both backends
-     * run it as a jump back to the start of the calling function instead of a nested call.
-     */
-    public boolean isSelfTailCall(BabbleParser.CallContext call) {
-        return selfTailCalls.contains(call);
-    }
-
-    void setBabbleCallSignature(ParserRuleContext ctx, FunctionSignature signature) {
-        babbleCallSignatures.put(ctx, signature);
-    }
-
-    void setOverloadMetas(BabbleParser.OverloadExpressionContext ctx, List<OverloadAltMetaInfo> metas) {
-        overloadMetas.put(ctx, List.copyOf(metas));
-    }
-
-    public List<OverloadAltMetaInfo> overloadMetas(BabbleParser.OverloadExpressionContext ctx) {
-        return overloadMetas.get(ctx);
-    }
-
-    void setOverloadSelection(ParserRuleContext ctx, OverloadSelection selection) {
-        if (selection == null) {
-            overloadSelections.remove(ctx);
-        } else {
-            overloadSelections.put(ctx, selection);
-        }
-    }
-
-    public OverloadSelection overloadSelection(ParserRuleContext ctx) {
-        return overloadSelections.get(ctx);
-    }
-
-    void setOverloadDispatch(ParserRuleContext ctx, OverloadDispatchTarget target) {
-        overloadDispatches.put(ctx, target);
-    }
-
-    public OverloadDispatchTarget overloadDispatch(ParserRuleContext ctx) {
-        return overloadDispatches.get(ctx);
-    }
-
-    /**
-     * The type checker's diagnostics, reported as errors before execution.
-     */
-    public List<Warning> typeDiagnostics() {
-        return typeDiagnostics;
-    }
-
-    void setResultType(String type) {
-        resultType = type;
-    }
-
-    /**
-     * The static type of the file's last statement, as type diagnostics show it, or null
-     * for an empty file : what {@code :type} shows in the interactive mode
-     * (docs/design/bip004_repl.md §9).
-     */
-    public String resultType() {
-        return resultType;
-    }
-
-    /**
-     * The target type to check at runtime (a {@code Types} descriptor) for an {@code as}
-     * cast, or null when no cast check applies.
-     */
-    public String checkedType(ParserRuleContext ctx) {
-        return checkedTypes.get(ctx);
-    }
-
-    /** The built-in type name a {@code value is T} test checks, or null for a normal type expression. */
-    public String isBuiltin(BabbleParser.IsExpressionContext ctx) {
-        return isBuiltins.get(ctx);
-    }
-
-    /** Target numeric rank (1=short, 2=int, 3=long, 4=float, 5=double) if this construct widens numerically, else -1. */
-    public int numericWideningRank(ParserRuleContext ctx) {
-        Integer rank = numericWidenings.get(ctx);
-        return rank != null ? rank : -1;
-    }
-
-    /** Whether the value produced by this construct must be converted to double. */
-    public boolean widensToDouble(ParserRuleContext ctx) {
-        return numericWideningRank(ctx) == 5;
-    }
-
-    /** Contextually typed or range-folded literal value, or null to use default literal parsing. */
-    public Object resolvedLiteral(ParserRuleContext ctx) {
-        return resolvedLiterals.get(ctx);
-    }
-
-    /** The primitive kind of an expression, or {@link PrimitiveKind#NONE} for references/boxed values. */
-    public PrimitiveKind expressionKind(ParserRuleContext ctx) {
-        PrimitiveKind kind = expressionKinds.get(ctx);
-        return kind != null ? kind : PrimitiveKind.NONE;
-    }
-
-    /** Whether the converged static type of {@code ctx} is deeply immutable (scalars, null, frozen, deep record/entry). */
-    public boolean isExpressionDeeplyImmutable(ParserRuleContext ctx) {
-        return expressionDeeplyImmutable.contains(ctx);
-    }
-
-    /** Whether the converged static type of {@code ctx} is {@code string}. */
-    public boolean isExpressionString(ParserRuleContext ctx) {
-        return expressionStrings.contains(ctx);
-    }
-
-    /** The storage primitive kind of a declaration, or {@link PrimitiveKind#NONE}. */
-    public PrimitiveKind declarationKind(ParserRuleContext decl) {
-        PrimitiveKind kind = declarationKinds.get(decl);
-        return kind != null ? kind : PrimitiveKind.NONE;
-    }
-
-    /** The return primitive kind of a function literal, or {@link PrimitiveKind#NONE}. */
-    public PrimitiveKind functionReturnKind(BabbleParser.FunctionLiteralContext function) {
-        PrimitiveKind kind = functionReturnKinds.get(function);
-        return kind != null ? kind : PrimitiveKind.NONE;
-    }
-
-    /** Whether a {@code def} is provably initialized before any read or closure capture can observe it. */
-    public boolean isDefinitelyDefined(ParserRuleContext decl) {
-        return definitelyDefined.contains(decl);
-    }
-
-    public JavaCallTarget javaCallTarget(ParserRuleContext ctx) {
-        return javaCallTargets.get(ctx);
-    }
-
-    public JavaConstructorTarget javaConstructorTarget(ParserRuleContext ctx) {
-        return javaConstructorTargets.get(ctx);
-    }
-
-    public JavaFieldTarget javaFieldTarget(ParserRuleContext ctx) {
-        return javaFieldTargets.get(ctx);
-    }
-
-    public ArrayCreationTarget arrayCreationTarget(ParserRuleContext ctx) {
-        return arrayCreationTargets.get(ctx);
-    }
-
-    public ArrayOpTarget arrayOpTarget(ParserRuleContext ctx) {
-        return arrayOpTargets.get(ctx);
-    }
-
-    public ModuleExportTarget moduleExportTarget(ParserRuleContext ctx) {
-        return moduleExportTargets.get(ctx);
-    }
-
-    public BabbleParser.FunctionLiteralContext babbleCallFunction(ParserRuleContext ctx) {
-        return babbleCallFunctions.get(ctx);
-    }
-
-    public FunctionSignature babbleCallSignature(ParserRuleContext ctx) {
-        return babbleCallSignatures.get(ctx);
+    void setDeclared(ParserRuleContext owner, String[] names) {
+        declared.put(owner, names);
     }
 
     /**
@@ -946,133 +139,38 @@ public final class ScopeAnalysis {
         return names != null && names.length > 0;
     }
 
-    public String[] parameters(BabbleParser.FunctionLiteralContext function) {
-        return parameters.get(function);
+    void warn(String message, int line) {
+        warn(message, line, -1);
     }
 
-    /** The number of parameters without a default value. */
-    public int requiredParameters(BabbleParser.FunctionLiteralContext function) {
-        return requiredParameters.get(function);
-    }
-
-    /** The index of the first keyword-only parameter (after {@code ...} or rest), or {@code parameters.length}. */
-    public int keywordOnlyStart(BabbleParser.FunctionLiteralContext function) {
-        Integer start = keywordOnlyStarts.get(function);
-        return start != null ? start : parameters(function).length;
-    }
-
-    /** The index of the variadic rest parameter, or {@code -1} if none. */
-    public int restIndex(BabbleParser.FunctionLiteralContext function) {
-        Integer idx = restIndices.get(function);
-        return idx != null ? idx : -1;
-    }
-
-    /** Static argument binding for a Babble call ({@code BIP021-D4}), or {@code null}. */
-    public ArgumentBinding argumentBinding(BabbleParser.CallContext call) {
-        return argumentBindings.get(call);
-    }
-
-    /** Spread adaptations for a Java/non-Babble call ({@code BIP021-D7}), or {@code null}. */
-    public SpreadAdapt[] callSpreadAdapts(BabbleParser.CallContext call) {
-        return callSpreadAdapts.get(call);
-    }
-
-    /** The shape of a class, object or interface expression. */
-    public ClassShape shape(ParserRuleContext type) {
-        return shapes.get(type);
-    }
-
-    public DefTarget defTarget(BabbleParser.DefExpressionContext def) {
-        DefTarget target = defTargets.get(def);
-        return target != null ? target : new DefTarget(DefKind.LEXICAL, -1);
-    }
-
-    /**
-     * The interface a {@code super} call goes to : its qualifier, or for an unqualified
-     * call, the entry of the implements or extends list that provides the default.
-     */
-    public BabbleParser.TypeContext superTarget(BabbleParser.SuperExpressionContext superExpression) {
-        return superTargets.get(superExpression);
-    }
-
-    public SuperTargetInfo superTargetInfo(BabbleParser.SuperExpressionContext superExpression) {
-        return superTargetInfos.get(superExpression);
-    }
-
-    public IsTarget isTarget(BabbleParser.IsExpressionContext ctx) {
-        return isTargets.get(ctx);
-    }
-
-    public List<IsTarget> isIntersectionTargets(BabbleParser.IsExpressionContext ctx) {
-        List<IsTarget> targets = isIntersectionTargets.get(ctx);
-        return targets != null ? targets : List.of();
-    }
-
-    public IsTarget asTarget(BabbleParser.AsExpressionContext ctx) {
-        return asTargets.get(ctx);
-    }
-
-    public JavaSamTarget javaSamTarget(ParserRuleContext ctx) {
-        return javaSamTargets.get(ctx);
-    }
-
-    public JavaSamTarget forElemSamTarget(BabbleParser.ForExpressionContext ctx) {
-        return forElemSamTargets.get(ctx);
-    }
-
-    public JavaSamTarget asSamTarget(ParserRuleContext ctx) {
-        return asSamTargets.get(ctx);
-    }
-
-    public InterfaceCallTarget interfaceCallTarget(BabbleParser.CallContext ctx) {
-        return interfaceCallTargets.get(ctx);
-    }
-
-    private final Map<ParserRuleContext, EffectSet> callableEffects = new HashMap<>();
-    private final Map<ParserRuleContext, Type> callableTypes = new HashMap<>();
-    private final Map<BabbleParser.CallContext, EffectSet> callEffects = new HashMap<>();
-
-    void setCallableEffects(ParserRuleContext callable, EffectSet effects) {
-        callableEffects.put(callable, effects);
-    }
-
-    /** The converged or declared effect summary of a function literal or class constructor. */
-    public EffectSet callableEffects(ParserRuleContext callable) {
-        return callableEffects.getOrDefault(callable, EffectSet.EMPTY);
-    }
-
-    void setCallableType(ParserRuleContext callable, Type type) {
-        if (type != null) {
-            callableTypes.put(callable, type);
-        }
-    }
-
-    Type callableType(ParserRuleContext callable) {
-        return callableTypes.get(callable);
-    }
-
-    void setCallEffects(BabbleParser.CallContext call, EffectSet effects) {
-        callEffects.put(call, effects);
-    }
-
-    /** The resolved effect summary of a call site. */
-    public EffectSet callEffects(BabbleParser.CallContext call) {
-        return callEffects.getOrDefault(call, EffectSet.EMPTY);
-    }
-
-    private final Map<BabbleParser.NonNullAssertionContext, String> nonNullAssertionTargets = new HashMap<>();
-
-    void setNonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx, String expectedType) {
-        nonNullAssertionTargets.put(ctx, expectedType);
-    }
-
-    /** The non-null target type name for {@code e!}, or {@code null} if {@code e} is statically non-null. */
-    public String nonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx) {
-        return nonNullAssertionTargets.get(ctx);
+    void warn(String message, int line, int column) {
+        warnings.add(new Warning(message, line, column));
     }
 
     public List<Warning> warnings() {
         return warnings;
+    }
+
+    void typeDiagnostic(String message, int line, int column) {
+        typeDiagnostics.add(new Warning(message, line, column));
+    }
+
+    /** The type checker's diagnostics, reported as errors before execution. */
+    public List<Warning> typeDiagnostics() {
+        return typeDiagnostics;
+    }
+
+    void setResultType(String type) {
+        resultType = type;
+    }
+
+    /**
+     * The static type of the file's last statement, as type diagnostics show it, or null
+     * for an empty file : what {@code :type} shows in the interactive mode
+     * (docs/design/bip004_repl.md §9).
+     */
+    public String resultType() {
+        return resultType;
     }
 
     /** Name selected by a qualified ({@code expr.memberName}) or unqualified ({@code ID}) selector. */
@@ -1081,7 +179,7 @@ public final class ScopeAnalysis {
     }
 
     /** Token of the name selected by a qualified or unqualified selector. */
-    public static org.antlr.v4.runtime.Token selectorToken(BabbleParser.SelectorContext ctx) {
+    public static Token selectorToken(BabbleParser.SelectorContext ctx) {
         return ctx.memberName() != null ? ctx.memberName().getStart() : ctx.ID().getSymbol();
     }
 
@@ -1095,18 +193,13 @@ public final class ScopeAnalysis {
         return ctx.lhs instanceof BabbleParser.SelectorContext sel ? sel.expression() : null;
     }
 
-    /** Member name context of a qualified assignment ({@code expr.member = v}), or {@code null} for {@code x = v}. */
-    public static BabbleParser.MemberNameContext assignMember(BabbleParser.AssignExpressionContext ctx) {
-        return ctx.lhs instanceof BabbleParser.SelectorContext sel ? sel.memberName() : null;
-    }
-
     /** Target name of a qualified ({@code expr.member = v}) or unqualified ({@code x = v}) assignment. */
     public static String assignName(BabbleParser.AssignExpressionContext ctx) {
         return ctx.lhs instanceof BabbleParser.SelectorContext sel ? selectorName(sel) : null;
     }
 
     /** Token of the target name of an assignment. */
-    public static org.antlr.v4.runtime.Token assignToken(BabbleParser.AssignExpressionContext ctx) {
+    public static Token assignToken(BabbleParser.AssignExpressionContext ctx) {
         return ctx.lhs instanceof BabbleParser.SelectorContext sel ? selectorToken(sel) : ctx.lhs.getStart();
     }
 
@@ -1279,11 +372,6 @@ public final class ScopeAnalysis {
             return ftp.paramModifier();
         }
         throw new IllegalArgumentException("Not a parameter context: " + param);
-    }
-
-    /** True when a class parameter is marked {@code private}. */
-    public static boolean paramIsPrivate(ParserRuleContext param) {
-        return param instanceof BabbleParser.ClassParamContext cp && cp.PRIVATE() != null;
     }
 
     /** True when a class parameter is marked {@code def}. */

@@ -98,7 +98,7 @@ final class TypeChecks {
             checkAccess(access);
         }
         for (TypeNode type : pass.types) {
-            analysis.setShape(type.ctx, type.shape());
+            analysis.hierarchy().setShape(type.ctx, type.shape());
         }
     }
 
@@ -299,8 +299,8 @@ final class TypeChecks {
         Map<String, Provider> result = mergeDefaults(iface, iface.parents);
         for (TypeNode.Member member : iface.members.values()) {
             if (member.function != null) {
-                int max = analysis.parameters(member.function).length;
-                int min = analysis.requiredParameters(member.function);
+                int max = analysis.calls().parameters(member.function).length;
+                int min = analysis.calls().requiredParameters(member.function);
                 result.put(member.name, new Provider(iface, member.name, member.function, true, min, max, member.function.getStart().getLine()));
             } else if (member.isOverload) {
                 result.put(member.name, new Provider(iface, member.name, null, true, 0, Integer.MAX_VALUE,
@@ -468,8 +468,8 @@ final class TypeChecks {
                     min = provider.minParams();
                     line = provider.line();
                 } else {
-                    max = analysis.restIndex(function) >= 0 ? Integer.MAX_VALUE : analysis.parameters(function).length;
-                    min = analysis.requiredParameters(function);
+                    max = analysis.calls().restIndex(function) >= 0 ? Integer.MAX_VALUE : analysis.calls().parameters(function).length;
+                    min = analysis.calls().requiredParameters(function);
                     line = function.getStart().getLine();
                 }
                 int passed = method.getParameterCount();
@@ -503,8 +503,8 @@ final class TypeChecks {
                 throw noDefault(target, member, line);
             }
             pass.superProviders.put(pending.ctx(), provider);
-            analysis.setSuperTarget(pending.ctx(), qualifier);
-            analysis.setSuperTargetInfo(pending.ctx(), superTargetInfo(owner, target, provider, member));
+            analysis.hierarchy().setSuperTarget(pending.ctx(), qualifier);
+            analysis.hierarchy().setSuperTargetInfo(pending.ctx(), superTargetInfo(owner, target, provider, member));
             return;
         }
 
@@ -533,13 +533,13 @@ final class TypeChecks {
         }
         Map.Entry<Provider, Integer> chosen = providers.entrySet().iterator().next();
         pass.superProviders.put(pending.ctx(), chosen.getKey());
-        analysis.setSuperTarget(pending.ctx(), owner.parentTypes.get(chosen.getValue()));
-        analysis.setSuperTargetInfo(pending.ctx(),
+        analysis.hierarchy().setSuperTarget(pending.ctx(), owner.parentTypes.get(chosen.getValue()));
+        analysis.hierarchy().setSuperTargetInfo(pending.ctx(),
                 superTargetInfo(owner, owner.parents.get(chosen.getValue()), chosen.getKey(), member));
     }
 
-    private static ScopeAnalysis.SuperTargetInfo superTargetInfo(TypeNode owner, Object direct, Provider provider, String memberName) {
-        return new ScopeAnalysis.SuperTargetInfo(
+    private static LoweringTargets.SuperTargetInfo superTargetInfo(TypeNode owner, Object direct, Provider provider, String memberName) {
+        return new LoweringTargets.SuperTargetInfo(
                 owner.id,
                 owner.isInterface(),
                 direct instanceof TypeNode tn ? tn.id : null,

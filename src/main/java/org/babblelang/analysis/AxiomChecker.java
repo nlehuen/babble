@@ -94,7 +94,7 @@ public final class AxiomChecker {
                     || !(def.value instanceof BabbleParser.FunctionLiteralContext fn)) {
                 continue;
             }
-            EffectSet effects = analysis.callableEffects(fn);
+            EffectSet effects = analysis.effects().callableEffects(fn);
             if (!effects.axiomatic()) {
                 continue;
             }
@@ -104,7 +104,7 @@ public final class AxiomChecker {
                 skipped.add(new Skipped(name, "binding not callable"));
                 continue;
             }
-            Type rawType = analysis.callableType(fn);
+            Type rawType = analysis.effects().callableType(fn);
             if (!(rawType instanceof Type.Function fnType)) {
                 skipped.add(new Skipped(name, "unknown function type"));
                 continue;

@@ -1,6 +1,6 @@
 package org.babblelang.opt.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
@@ -169,7 +169,7 @@ public final class ConstFoldPass implements HirPass {
             HirExpr nc = foldExpr(w.cond(), env, assigned, rewrites);
             if (nc instanceof HirExpr.Const c && !Truth.test(c.value())) {
                 rewrites[0]++;
-                return new HirExpr.Const(null, w.meta().withKind(ScopeAnalysis.PrimitiveKind.NONE).withWideningRank(-1));
+                return new HirExpr.Const(null, w.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
             }
             HirExpr nb = foldExpr(w.body(), new HashMap<>(env), assigned, rewrites);
             return (nc == w.cond() && nb == w.body()) ? w : new HirExpr.While(nc, nb, w.meta());
@@ -256,7 +256,7 @@ public final class ConstFoldPass implements HirPass {
         HirExpr chosen = takeThen ? i.thenBranch() : i.elseBranch();
         ExprMeta ifMeta = i.meta();
         if (chosen == null) {
-            if (ifMeta.kind() == ScopeAnalysis.PrimitiveKind.NONE && ifMeta.wideningRank() < 0) {
+            if (ifMeta.kind() == PrimitiveKind.NONE && ifMeta.wideningRank() < 0) {
                 return new HirExpr.Const(null, ifMeta);
             }
             return null;
@@ -288,13 +288,13 @@ public final class ConstFoldPass implements HirPass {
         }
         if (u.op() == HirExpr.UnaryOp.NOT) {
             return new HirExpr.Const(!Truth.test(c.value()),
-                    u.meta().withKind(ScopeAnalysis.PrimitiveKind.BOOL).withWideningRank(-1));
+                    u.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
         }
         // NEGATE
         if (!(c.value() instanceof Number n)) {
             return null;
         }
-        ScopeAnalysis.PrimitiveKind rk = u.meta().kind();
+        PrimitiveKind rk = u.meta().kind();
         Object negated = switch (rk) {
             case INT -> -n.intValue();
             case LONG -> -n.longValue();
@@ -318,19 +318,19 @@ public final class ConstFoldPass implements HirPass {
             return null;
         }
         if (b.op().isComparison() && HirPurity.canLowerComparison(b)) {
-            ScopeAnalysis.PrimitiveKind lk = b.left().meta().kind();
-            ScopeAnalysis.PrimitiveKind rk = b.right().meta().kind();
+            PrimitiveKind lk = b.left().meta().kind();
+            PrimitiveKind rk = b.right().meta().kind();
             int cmp;
-            if (lk == ScopeAnalysis.PrimitiveKind.BOOL && rk == ScopeAnalysis.PrimitiveKind.BOOL
+            if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL
                     && lc.value() instanceof Boolean lb && rc.value() instanceof Boolean rb) {
                 boolean eq = lb.booleanValue() == rb.booleanValue();
                 boolean res = b.op() == HirExpr.BinaryOp.EQ ? eq : !eq;
-                return new HirExpr.Const(res, b.meta().withKind(ScopeAnalysis.PrimitiveKind.BOOL).withWideningRank(-1));
-            } else if (lk == ScopeAnalysis.PrimitiveKind.CHAR && rk == ScopeAnalysis.PrimitiveKind.CHAR
+                return new HirExpr.Const(res, b.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
+            } else if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR
                     && lc.value() instanceof Character lch && rc.value() instanceof Character rch) {
                 cmp = Character.compare(lch, rch);
             } else if (lc.value() instanceof Number ln && rc.value() instanceof Number rn) {
-                ScopeAnalysis.PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
+                PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
                 cmp = switch (common) {
                     case BYTE, SHORT, INT -> Integer.compare(ln.intValue(), rn.intValue());
                     case LONG -> Long.compare(ln.longValue(), rn.longValue());
@@ -350,7 +350,7 @@ public final class ConstFoldPass implements HirPass {
                 case GT -> cmp > 0;
                 default -> throw new IllegalStateException();
             };
-            return new HirExpr.Const(res, b.meta().withKind(ScopeAnalysis.PrimitiveKind.BOOL).withWideningRank(-1));
+            return new HirExpr.Const(res, b.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
         }
 
         // String concatenation
@@ -358,14 +358,14 @@ public final class ConstFoldPass implements HirPass {
                 && lc.value() instanceof String ls && rc.value() instanceof String rs) {
             if (ls.length() + rs.length() <= MAX_FOLDED_STRING_LENGTH) {
                 return new HirExpr.Const(ls + rs,
-                        new ExprMeta(b.meta().line(), ScopeAnalysis.PrimitiveKind.NONE, -1, null,
+                        new ExprMeta(b.meta().line(), PrimitiveKind.NONE, -1, null,
                                 b.meta().effects(), true, true));
             }
             return null;
         }
 
         // Numeric primitive arithmetic
-        ScopeAnalysis.PrimitiveKind rk = b.meta().kind();
+        PrimitiveKind rk = b.meta().kind();
         if (!rk.isPrimitive() || !(lc.value() instanceof Number ln) || !(rc.value() instanceof Number rn)) {
             return null;
         }
@@ -415,18 +415,18 @@ public final class ConstFoldPass implements HirPass {
         boolean lv = Truth.test(lc.value());
         if (l.op() == HirExpr.LogicOp.AND) {
             if (!lv) {
-                return new HirExpr.Const(false, l.meta().withKind(ScopeAnalysis.PrimitiveKind.BOOL).withWideningRank(-1));
+                return new HirExpr.Const(false, l.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
             }
-            if (l.right().meta().kind() == ScopeAnalysis.PrimitiveKind.BOOL && l.meta().wideningRank() < 0) {
+            if (l.right().meta().kind() == PrimitiveKind.BOOL && l.meta().wideningRank() < 0) {
                 return l.right();
             }
             return null;
         }
         // OR
         if (lv) {
-            return new HirExpr.Const(true, l.meta().withKind(ScopeAnalysis.PrimitiveKind.BOOL).withWideningRank(-1));
+            return new HirExpr.Const(true, l.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
         }
-        if (l.right().meta().kind() == ScopeAnalysis.PrimitiveKind.BOOL && l.meta().wideningRank() < 0) {
+        if (l.right().meta().kind() == PrimitiveKind.BOOL && l.meta().wideningRank() < 0) {
             return l.right();
         }
         return null;
@@ -457,8 +457,8 @@ public final class ConstFoldPass implements HirPass {
             }
             try {
                 Object res = m.invoke(null, jArgs);
-                ScopeAnalysis.PrimitiveKind rk = javaRetKind(m.getReturnType());
-                if (rk != ScopeAnalysis.PrimitiveKind.NONE && res != null) {
+                PrimitiveKind rk = javaRetKind(m.getReturnType());
+                if (rk != PrimitiveKind.NONE && res != null) {
                     return applyWidening(res, rk, c.meta());
                 }
             } catch (Exception ignored) {
@@ -480,13 +480,13 @@ public final class ConstFoldPass implements HirPass {
             try {
                 Object res = m.invoke(s);
                 if (res instanceof Integer iVal) {
-                    return applyWidening(iVal, ScopeAnalysis.PrimitiveKind.INT, c.meta());
+                    return applyWidening(iVal, PrimitiveKind.INT, c.meta());
                 }
                 if (res instanceof Boolean bVal) {
-                    return new HirExpr.Const(bVal, c.meta().withKind(ScopeAnalysis.PrimitiveKind.BOOL).withWideningRank(-1));
+                    return new HirExpr.Const(bVal, c.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
                 }
                 if (res instanceof String sVal) {
-                    return new HirExpr.Const(sVal, new ExprMeta(c.meta().line(), ScopeAnalysis.PrimitiveKind.NONE,
+                    return new HirExpr.Const(sVal, new ExprMeta(c.meta().line(), PrimitiveKind.NONE,
                             -1, null, c.meta().effects(), true, true));
                 }
             } catch (Exception ignored) {
@@ -496,22 +496,22 @@ public final class ConstFoldPass implements HirPass {
         return null;
     }
 
-    private static ScopeAnalysis.PrimitiveKind javaRetKind(Class<?> ret) {
-        if (ret == int.class) return ScopeAnalysis.PrimitiveKind.INT;
-        if (ret == long.class) return ScopeAnalysis.PrimitiveKind.LONG;
-        if (ret == float.class) return ScopeAnalysis.PrimitiveKind.FLOAT;
-        if (ret == double.class) return ScopeAnalysis.PrimitiveKind.DOUBLE;
-        if (ret == boolean.class) return ScopeAnalysis.PrimitiveKind.BOOL;
-        if (ret == byte.class) return ScopeAnalysis.PrimitiveKind.BYTE;
-        if (ret == short.class) return ScopeAnalysis.PrimitiveKind.SHORT;
-        if (ret == char.class) return ScopeAnalysis.PrimitiveKind.CHAR;
-        return ScopeAnalysis.PrimitiveKind.NONE;
+    private static PrimitiveKind javaRetKind(Class<?> ret) {
+        if (ret == int.class) return PrimitiveKind.INT;
+        if (ret == long.class) return PrimitiveKind.LONG;
+        if (ret == float.class) return PrimitiveKind.FLOAT;
+        if (ret == double.class) return PrimitiveKind.DOUBLE;
+        if (ret == boolean.class) return PrimitiveKind.BOOL;
+        if (ret == byte.class) return PrimitiveKind.BYTE;
+        if (ret == short.class) return PrimitiveKind.SHORT;
+        if (ret == char.class) return PrimitiveKind.CHAR;
+        return PrimitiveKind.NONE;
     }
 
     private static HirExpr.Const coerceConstForVar(HirExpr.Const c, HirVar var, int defWideningRank) {
-        ScopeAnalysis.PrimitiveKind vk = var.primitiveKind();
+        PrimitiveKind vk = var.primitiveKind();
         Object val = c.value();
-        ScopeAnalysis.PrimitiveKind ck = c.meta().kind();
+        PrimitiveKind ck = c.meta().kind();
         if (defWideningRank >= 0) {
             HirExpr.Const widened = applyWidening(val, ck, c.meta().withWideningRank(defWideningRank));
             if (widened == null) return null;
@@ -523,12 +523,12 @@ public final class ConstFoldPass implements HirPass {
         }
         // Only propagate NONE-kind constants (String, null) to NONE-kind locals so primitive boxing is never altered.
         if (val == null || val instanceof String) {
-            return new HirExpr.Const(val, c.meta().withKind(ScopeAnalysis.PrimitiveKind.NONE).withWideningRank(-1));
+            return new HirExpr.Const(val, c.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
         }
         return null;
     }
 
-    static HirExpr.Const applyWidening(Object value, ScopeAnalysis.PrimitiveKind currentKind, ExprMeta meta) {
+    static HirExpr.Const applyWidening(Object value, PrimitiveKind currentKind, ExprMeta meta) {
         int rank = meta.wideningRank();
         if (rank < 0) {
             return new HirExpr.Const(value, meta.withKind(currentKind).withWideningRank(-1));
@@ -537,22 +537,22 @@ public final class ConstFoldPass implements HirPass {
             return null;
         }
         return switch (rank) {
-            case 1 -> new HirExpr.Const(n.shortValue(), meta.withKind(ScopeAnalysis.PrimitiveKind.SHORT).withWideningRank(-1));
-            case 2 -> new HirExpr.Const(n.intValue(), meta.withKind(ScopeAnalysis.PrimitiveKind.INT).withWideningRank(-1));
-            case 3 -> new HirExpr.Const(n.longValue(), meta.withKind(ScopeAnalysis.PrimitiveKind.LONG).withWideningRank(-1));
-            case 4 -> new HirExpr.Const(n.floatValue(), meta.withKind(ScopeAnalysis.PrimitiveKind.FLOAT).withWideningRank(-1));
-            case 5 -> new HirExpr.Const(n.doubleValue(), meta.withKind(ScopeAnalysis.PrimitiveKind.DOUBLE).withWideningRank(-1));
+            case 1 -> new HirExpr.Const(n.shortValue(), meta.withKind(PrimitiveKind.SHORT).withWideningRank(-1));
+            case 2 -> new HirExpr.Const(n.intValue(), meta.withKind(PrimitiveKind.INT).withWideningRank(-1));
+            case 3 -> new HirExpr.Const(n.longValue(), meta.withKind(PrimitiveKind.LONG).withWideningRank(-1));
+            case 4 -> new HirExpr.Const(n.floatValue(), meta.withKind(PrimitiveKind.FLOAT).withWideningRank(-1));
+            case 5 -> new HirExpr.Const(n.doubleValue(), meta.withKind(PrimitiveKind.DOUBLE).withWideningRank(-1));
             default -> null;
         };
     }
 
-    private static HirExpr.Const convertConstToKind(Object val, ScopeAnalysis.PrimitiveKind from,
-                                                    ScopeAnalysis.PrimitiveKind to, ExprMeta meta) {
+    private static HirExpr.Const convertConstToKind(Object val, PrimitiveKind from,
+                                                    PrimitiveKind to, ExprMeta meta) {
         if (from == to) {
             return applyWidening(val, to, meta);
         }
-        if (to == ScopeAnalysis.PrimitiveKind.NONE && (val == null || val instanceof String)) {
-            return new HirExpr.Const(val, meta.withKind(ScopeAnalysis.PrimitiveKind.NONE).withWideningRank(-1));
+        if (to == PrimitiveKind.NONE && (val == null || val instanceof String)) {
+            return new HirExpr.Const(val, meta.withKind(PrimitiveKind.NONE).withWideningRank(-1));
         }
         if (val instanceof Number n && HirPurity.isNumericKind(to)) {
             Object conv = switch (to) {
@@ -578,7 +578,7 @@ public final class ConstFoldPass implements HirPass {
         return expr;
     }
 
-    private static int numericOrder(ScopeAnalysis.PrimitiveKind kind) {
+    private static int numericOrder(PrimitiveKind kind) {
         return switch (kind) {
             case BYTE -> 0;
             case SHORT -> 1;

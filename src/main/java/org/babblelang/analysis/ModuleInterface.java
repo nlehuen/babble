@@ -27,7 +27,7 @@ public final class ModuleInterface {
     private volatile ClassLoader compiledClassLoader;
     private volatile Map<String, String> interfaceJvmNames = Map.of();
     private volatile Map<String, String> classJvmNames = Map.of();
-    private volatile Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies = Map.of();
+    private volatile Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies = Map.of();
 
     ModuleInterface(BlockScopes pass) {
         String[] ordered = pass.analysis.exports();
@@ -93,15 +93,15 @@ public final class ModuleInterface {
         return classJvmNames;
     }
 
-    void setTypeHierarchies(Map<String, ScopeAnalysis.TypeHierarchyInfo> hierarchies) {
+    void setTypeHierarchies(Map<String, LoweringTargets.TypeHierarchyInfo> hierarchies) {
         this.typeHierarchies = hierarchies != null ? Map.copyOf(hierarchies) : Map.of();
     }
 
-    public Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies() {
+    public Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies() {
         return typeHierarchies;
     }
 
-    public ScopeAnalysis.TypeHierarchyInfo typeHierarchy(String id) {
+    public LoweringTargets.TypeHierarchyInfo typeHierarchy(String id) {
         return id != null ? typeHierarchies.get(id) : null;
     }
 

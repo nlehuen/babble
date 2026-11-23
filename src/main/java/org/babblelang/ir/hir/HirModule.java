@@ -1,6 +1,6 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.analysis.LoweringTargets;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -21,7 +21,7 @@ public record HirModule(
         Map<Integer, HirFunction> functions,
         Map<Integer, HirClass> classes,
         Map<Integer, HirInterface> interfaces,
-        Map<String, ScopeAnalysis.TypeHierarchyInfo> typeHierarchies,
+        Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies,
         Map<String, String> allInterfaceJvmNames,
         Map<String, String> allClassJvmNames,
         Map<String, String> ownInterfaceJvmNames,
@@ -55,7 +55,7 @@ public record HirModule(
         return interfaces.get(id);
     }
 
-    public ScopeAnalysis.TypeHierarchyInfo typeHierarchy(String id) {
+    public LoweringTargets.TypeHierarchyInfo typeHierarchy(String id) {
         return typeHierarchies.get(id);
     }
 
