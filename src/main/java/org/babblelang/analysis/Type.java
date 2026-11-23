@@ -700,6 +700,9 @@ sealed interface Type {
             if (type == java.util.Map.Entry.class) {
                 return "entry";
             }
+            if (type == org.babblelang.runtime.BabbleException.class) {
+                return "exception";
+            }
             return type.getName();
         }
     }

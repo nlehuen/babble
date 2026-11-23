@@ -133,6 +133,14 @@ final class TypedProgram {
         return checker.algebra().subtype(from, to);
     }
 
+    Type catchTargetType(BabbleParser.CatchClauseContext ctx) {
+        return checker.catchTargetType(ctx);
+    }
+
+    boolean isCatchSubtype(Type a, Type b) {
+        return checker.isCatchSubtype(a, b);
+    }
+
     // ---------------------------------------------------------------- calls and Java
 
     Class<?> findJavaClass(String name) {

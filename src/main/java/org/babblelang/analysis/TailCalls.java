@@ -228,6 +228,10 @@ final class TailCalls {
 
     /** The statements of a block in statement position, the last one in tail position when the block is. */
     private void block(BabbleParser.FunctionLiteralContext function, BabbleParser.BlockContext block, boolean tail) {
+        block(function, block, tail, false);
+    }
+
+    private void block(BabbleParser.FunctionLiteralContext function, BabbleParser.BlockContext block, boolean tail, boolean inHandler) {
         ParseTree last = null;
         for (ParseTree child : block.children) {
             if (child instanceof BabbleParser.ExpressionContext) {
@@ -235,19 +239,31 @@ final class TailCalls {
             }
         }
         for (BabbleParser.ExpressionContext statement : block.expression()) {
-            statement(function, statement, tail && statement == last);
+            statement(function, statement, tail && statement == last, inHandler);
         }
     }
 
     /** An expression in statement position : nothing waits on the operand stack below its value. */
-    private void statement(BabbleParser.FunctionLiteralContext function, BabbleParser.ExpressionContext expression, boolean tail) {
+    private void statement(BabbleParser.FunctionLiteralContext function, BabbleParser.ExpressionContext expression,
+                           boolean tail, boolean inHandler) {
         switch (expression) {
-            case BabbleParser.BlockExpressionContext b -> block(function, b.block(), tail);
-            case BabbleParser.IfExpressionContext i -> ifExpr(function, i.ifExpr(), tail);
-            case BabbleParser.WhileExpressionContext w -> block(function, w.whileBlock, false);
-            case BabbleParser.ForExpressionContext f -> block(function, f.forBlock, false);
-            case BabbleParser.ReturnExpressionContext r -> statement(function, r.expression(), true);
-            case BabbleParser.ForeverExpressionContext f -> statement(function, f.expression(), tail);
+            case BabbleParser.BlockExpressionContext b -> block(function, b.block(), tail, inHandler);
+            case BabbleParser.IfExpressionContext i -> ifExpr(function, i.ifExpr(), tail, inHandler);
+            case BabbleParser.WhileExpressionContext w -> block(function, w.whileBlock, false, inHandler);
+            case BabbleParser.ForExpressionContext f -> block(function, f.forBlock, false, inHandler);
+            case BabbleParser.TryExpressionContext t -> {
+                // tryBlock runs under catch/finally handlers -> never tail, and return inside it is not tail.
+                block(function, t.tryBlock, false, true);
+                boolean hasFinally = t.finallyBlock != null;
+                for (BabbleParser.CatchClauseContext cc : t.catchClause()) {
+                    block(function, cc.catchBlock, tail && !hasFinally, inHandler || hasFinally);
+                }
+                if (hasFinally) {
+                    block(function, t.finallyBlock, false, true);
+                }
+            }
+            case BabbleParser.ReturnExpressionContext r -> statement(function, r.expression(), !inHandler, inHandler);
+            case BabbleParser.ForeverExpressionContext f -> statement(function, f.expression(), tail, inHandler);
             case BabbleParser.CallContext call -> {
                 if (tail && isSelfTailCall(function, call)) {
                     analysis.calls().setSelfTailCall(call);
@@ -258,12 +274,13 @@ final class TailCalls {
         }
     }
 
-    private void ifExpr(BabbleParser.FunctionLiteralContext function, BabbleParser.IfExprContext ifExpr, boolean tail) {
-        block(function, ifExpr.thenBlock, tail);
+    private void ifExpr(BabbleParser.FunctionLiteralContext function, BabbleParser.IfExprContext ifExpr,
+                        boolean tail, boolean inHandler) {
+        block(function, ifExpr.thenBlock, tail, inHandler);
         if (ifExpr.elseIf != null) {
-            ifExpr(function, ifExpr.elseIf, tail);
+            ifExpr(function, ifExpr.elseIf, tail, inHandler);
         } else if (ifExpr.elseBlock != null) {
-            block(function, ifExpr.elseBlock, tail);
+            block(function, ifExpr.elseBlock, tail, inHandler);
         }
     }
 

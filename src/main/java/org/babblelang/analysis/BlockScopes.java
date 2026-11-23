@@ -84,6 +84,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
     private ReturnTarget returnTarget = ReturnTarget.NONE;
     private int loopDepth = 0;
+    private boolean inFinally = false;
+    private int finallyLoopFloor = 0;
 
     /** The key of the module analysed, its types' ids derive from, or null : see {@link ModuleLoader#moduleKey}. */
     private String moduleKey;
@@ -186,13 +188,19 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private void inReturnTarget(ReturnTarget target, Runnable body) {
         ReturnTarget outer = returnTarget;
         int outerLoopDepth = loopDepth;
+        boolean outerInFinally = inFinally;
+        int outerFinallyLoopFloor = finallyLoopFloor;
         returnTarget = target;
         loopDepth = 0;
+        inFinally = false;
+        finallyLoopFloor = 0;
         try {
             body.run();
         } finally {
             returnTarget = outer;
             loopDepth = outerLoopDepth;
+            inFinally = outerInFinally;
+            finallyLoopFloor = outerFinallyLoopFloor;
         }
     }
 
@@ -637,12 +645,46 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     @Override
+    public Void visitTryExpression(BabbleParser.TryExpressionContext ctx) {
+        visit(ctx.tryBlock);
+        for (BabbleParser.CatchClauseContext clause : ctx.catchClause()) {
+            if (clause.type() != null) {
+                visit(clause.type());
+            }
+            inScope(ScopeNode.Kind.BLOCK, clause.catchBlock, null, () -> {
+                if (clause.name != null) {
+                    declare(clause.name, clause, false);
+                }
+                visitChildren(clause.catchBlock);
+            });
+        }
+        if (ctx.finallyBlock != null) {
+            boolean outerInFinally = inFinally;
+            int outerFinallyLoopFloor = finallyLoopFloor;
+            inFinally = true;
+            finallyLoopFloor = loopDepth;
+            try {
+                visit(ctx.finallyBlock);
+            } finally {
+                inFinally = outerInFinally;
+                finallyLoopFloor = outerFinallyLoopFloor;
+            }
+        }
+        return null;
+    }
+
+    @Override
     public Void visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
         switch (returnTarget) {
             case NONE -> throw error("return outside of a function", ctx);
             case DEFAULT -> throw error("return in a parameter default", ctx);
             case CLASS_BODY -> throw error("return in a class body", ctx);
-            case FUNCTION -> visit(ctx.expression());
+            case FUNCTION -> {
+                if (inFinally) {
+                    throw error("Cannot return from a finally block", ctx);
+                }
+                visit(ctx.expression());
+            }
         }
         return null;
     }
@@ -651,6 +693,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     public Void visitBreakExpression(BabbleParser.BreakExpressionContext ctx) {
         if (loopDepth == 0) {
             throw error("break outside of a loop", ctx);
+        }
+        if (inFinally && loopDepth <= finallyLoopFloor) {
+            throw error("Cannot break out of a finally block", ctx);
         }
         if (ctx.expression() != null) {
             visit(ctx.expression());
@@ -662,6 +707,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     public Void visitContinueExpression(BabbleParser.ContinueExpressionContext ctx) {
         if (loopDepth == 0) {
             throw error("continue outside of a loop", ctx);
+        }
+        if (inFinally && loopDepth <= finallyLoopFloor) {
+            throw error("Cannot continue out of a finally block", ctx);
         }
         return null;
     }

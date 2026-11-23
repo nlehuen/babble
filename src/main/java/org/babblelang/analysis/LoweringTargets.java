@@ -342,4 +342,20 @@ public final class LoweringTargets {
             Class<?> componentClass
     ) {
     }
+
+    /** Static lowering info for {@code throw expr} ({@code BIP028-D2}). */
+    public record ThrowTarget(boolean isJavaThrowable) {
+    }
+
+    /** Static lowering info for a {@code catch} clause ({@code BIP028-D2}, {@code BIP028-D4}). */
+    public record CatchTarget(
+            String typeDescriptor,
+            List<String> jvmCatchTypes,
+            boolean catchesBabble,
+            boolean catchesNonErrorAny,
+            boolean catchesJavaThrowable,
+            boolean skipsThrownException,
+            List<IsTarget> babbleTargets
+    ) {
+    }
 }

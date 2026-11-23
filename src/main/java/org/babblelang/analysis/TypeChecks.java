@@ -73,6 +73,10 @@ final class TypeChecks {
                 throw new AnalysisException("Cannot assign to loop variable : " + assignment.name(),
                         assignment.ctx().lhs.getStart().getLine());
             }
+            if (definition instanceof BabbleParser.CatchClauseContext) {
+                throw new AnalysisException("Cannot assign to catch parameter : " + assignment.name(),
+                        assignment.ctx().lhs.getStart().getLine());
+            }
             if (definition != null) {
                 reassigned.add(definition);
             }

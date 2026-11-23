@@ -214,6 +214,7 @@ axiom java.lang.Thread: class (
 ;; inferred, since it calls cause.toString().
 axiom java.lang.Throwable: class (
     def fillInStackTrace: fn mut nothrow (): java.lang.Throwable
+    def getStackTrace: fn volatile nothrow (): array of java.lang.StackTraceElement
 ) static (
     def new: fn nothrow fresh ()
     def new: fn nothrow (shared message: string?)
