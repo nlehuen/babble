@@ -640,3 +640,44 @@ def S = class (def s: string) implements jl.CharSequence (
 )
 assert(S("ok").toString() == "ok")
 }}}}}
+
+{{{{{
+def ext = 0 ; ext = 1
+def VolCmp = class (def v: int) implements java.lang.Comparable of VolCmp (
+  def compareTo = fn volatile (other: VolCmp): int -> (this.v - other.v + ext)
+)
+}}}}}
+Function compareTo violates deterministic guarantee of axiom java.lang.Comparable.compareTo
+
+{{{{{
+def box = (list of any)()
+def SharedCmp = class (def v: int) implements java.lang.Comparable of SharedCmp (
+  def compareTo = fn (shared other: SharedCmp): int -> (this.v - other.v)
+)
+}}}}}
+Function compareTo violates borrow guarantee of axiom java.lang.Comparable.compareTo
+
+{{{{{
+axiom java.util.function.IntUnaryOperator.applyAsInt: fn pure nothrow (x: int): int
+def BadOp = class () implements java.util.function.IntUnaryOperator (
+  def applyAsInt = fn (x: int): int -> (assert(x >= 0) ; x)
+)
+}}}}}
+Function applyAsInt violates nothrow guarantee of axiom java.util.function.IntUnaryOperator.applyAsInt
+
+{{{{{
+axiom java.util.function.IntUnaryOperator.applyAsInt: fn pure idempotent (x: int): int
+def BadIdem = class () implements java.util.function.IntUnaryOperator (
+  def applyAsInt = fn (x: int): int -> (x + 1)
+)
+}}}}}
+Function applyAsInt violates idempotent guarantee of axiom java.util.function.IntUnaryOperator.applyAsInt
+
+{{{{{
+axiom java.util.function.Supplier.get: fn pure (): unique any?
+def BadSup = class () implements java.util.function.Supplier of any (
+  def get = fn (): any -> (this)
+)
+}}}}}
+Function get violates unique guarantee of axiom java.util.function.Supplier.get
+

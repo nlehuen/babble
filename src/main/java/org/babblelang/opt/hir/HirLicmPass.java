@@ -218,9 +218,7 @@ public final class HirLicmPass implements HirPass {
                 return;
             }
             case HirExpr.JavaMethodCall c -> {
-                if (!c.target().isStatic()) {
-                    checkOperandsInvariant(c.receiver(), modified, ok);
-                } else if (!c.pureStaticReceiver()) {
+                if (!c.target().isStatic() || !c.pureStaticReceiver()) {
                     checkOperandsInvariant(c.receiver(), modified, ok);
                 }
                 for (HirExpr arg : c.args()) {

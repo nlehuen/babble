@@ -303,3 +303,43 @@ def hit = for h in Items() then (
 )
 assert(skipped == 1 and hit == 77)
 }}}}}
+
+{{{{{
+;; Iterable intersection (`Iterable & Serializable`)
+def sumInter = fn (xs : java.lang.Iterable of int & java.io.Serializable) : int -> (
+    def s = 0 ; for v in xs then ( s += v ) ; s
+)
+assert(sumInter(java.util.ArrayList of int (list(2, 3))) == 5)
+}}}}}
+
+{{{{{
+;; Frozen bounded-TypeVar iterable
+def sumBound of (T : java.lang.Iterable of int) = fn (xs : frozen T) : int -> (
+    def s = 0 ; for v in xs then ( s += v ) ; s
+)
+assert(sumBound(freeze(java.util.ArrayList of int (list(4, 5)))) == 9)
+}}}}}
+
+{{{{{
+;; Union with a non-iterable branch is rejected
+def bad = fn (x : list of int | int) -> ( for v in x then ( discard(v) ) )
+}}}}}
+Not iterable : list(int) | int
+
+{{{{{
+;; Babble class with wrong hasNext return type is not iterable
+def BadIt = class () (
+    def hasNext = fn () : int -> ( 0 )
+    def next = fn () : int -> ( 0 )
+)
+for v in BadIt() then ( discard(v) )
+}}}}}
+Not iterable : BadIt
+
+{{{{{
+;; Babble class whose iterator() takes a required parameter is not iterable
+def BadCol = class () ( def iterator = fn (k : int) : int -> ( k ) )
+for v in BadCol() then ( discard(v) )
+}}}}}
+Not iterable : BadCol
+

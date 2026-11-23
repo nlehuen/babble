@@ -264,56 +264,32 @@ public final class HirPurity {
 
     /** Whether a pure expression is also guaranteed deterministic (safe to CSE / LICM / fold). */
     public static boolean isDeterministic(HirExpr expr, HirModule module) {
-        return isDeterministic(expr, module, new HashSet<>());
-    }
-
-    private static boolean isDeterministic(HirExpr expr, HirModule module, Set<Integer> visitingFns) {
         if (expr == null) {
             return true;
         }
-        return switch (expr) {
-            case HirExpr.Const c -> true;
-            case HirExpr.CoreCollectionRef r -> true;
-            case HirExpr.FunctionRef f -> true;
-            case HirExpr.VarRead v -> true;
-            case HirExpr.ThisRef t -> true;
-            case HirExpr.Unary u -> isDeterministic(u.operand(), module, visitingFns);
-            case HirExpr.Binary b -> isDeterministic(b.left(), module, visitingFns)
-                    && isDeterministic(b.right(), module, visitingFns);
-            case HirExpr.Logic l -> isDeterministic(l.left(), module, visitingFns)
-                    && isDeterministic(l.right(), module, visitingFns);
-            case HirExpr.Block b -> b.statements().stream().allMatch(s -> isDeterministic(s, module, visitingFns));
-            case HirExpr.If i -> isDeterministic(i.cond(), module, visitingFns)
-                    && isDeterministic(i.thenBranch(), module, visitingFns)
-                    && (i.elseBranch() == null || isDeterministic(i.elseBranch(), module, visitingFns));
-            case HirExpr.As a -> a.samTarget() == null && isDeterministic(a.left(), module, visitingFns);
-            case HirExpr.TypeApply t -> isDeterministic(t.inner(), module, visitingFns);
-            case HirExpr.ThisFieldGet g -> isDeterministic(g.receiver(), module, visitingFns);
-            case HirExpr.ArrayOp op -> op.kind() == LoweringTargets.ArrayOpKind.SIZE
-                    && isDeterministic(op.receiver(), module, visitingFns);
-            case HirExpr.DirectBabbleCall c -> {
-                boolean calleeOk = isDeterministic(c.callee(), module, visitingFns)
-                        || (c.callee() instanceof HirExpr.NameRead nr
-                        && isDefinitelyInitializedTopLevelFn(nr.name(), module));
-                if (!calleeOk) yield false;
-                for (HirExpr a : c.args()) {
-                    if (!isDeterministic(a, module, visitingFns)) yield false;
-                }
-                HirFunction fn = module.function(c.targetFunctionId());
-                if (fn == null || fn.namespaceScope() || !fn.capturedVars().isEmpty()) yield false;
-                EffectSet fx = fn.effects();
-                yield fx.isDeterministic();
+        if (expr instanceof HirExpr.DirectBabbleCall c) {
+            HirFunction fn = module.function(c.targetFunctionId());
+            EffectSet fx = fn != null ? fn.effects() : c.meta().effects();
+            if (!fx.isDeterministic()) {
+                return false;
             }
-            case HirExpr.JavaMethodCall c -> {
-                if (!c.target().isStatic() && !isDeterministic(c.receiver(), module, visitingFns)) yield false;
-                for (HirExpr a : c.args()) {
-                    if (!isDeterministic(a, module, visitingFns)) yield false;
-                }
-                Method m = c.target().method();
-                yield isFoldableJava(m) || c.meta().effects().isDeterministic();
+        } else if (expr instanceof HirExpr.JavaMethodCall c) {
+            if (!isFoldableJava(c.target().method()) && !c.meta().effects().isDeterministic()) {
+                return false;
             }
-            default -> false;
-        };
+        } else if (expr instanceof HirExpr.For f) {
+            if (!f.meta().effects().isDeterministic()) {
+                return false;
+            }
+        }
+        boolean[] ok = {true};
+        HirRewriter.rewriteChildren(expr, child -> {
+            if (ok[0] && !isDeterministic(child, module)) {
+                ok[0] = false;
+            }
+            return child;
+        });
+        return ok[0];
     }
 
     public static boolean isIdempotentCall(HirExpr expr, HirModule module) {

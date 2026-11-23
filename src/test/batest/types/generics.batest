@@ -95,3 +95,58 @@ assert(Cell(5).get() == 5)
 assert(add(2)(3) == 5)
 assert(java.util.List.of(10).size() == 1)
 }}}}}
+
+{{{{{
+def ov = overload (fn (x: int): int -> (x), fn (s: string): int -> (s.length()))
+def bad = ov of int
+}}}}}
+Cannot apply type arguments to an overload set : ov
+
+{{{{{
+def bad = (list of int) of string
+}}}}}
+(listofint) is not generic
+
+{{{{{
+def bad = list of (int, string)
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+def plain = fn (x: int): int -> (x)
+def bad = plain of int
+}}}}}
+plain is not generic
+
+{{{{{
+def bad = id of (int, string)
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+def firstOf of T = fn (xs: array of T): T -> (xs.get(0))
+def bad = firstOf of int
+}}}}}
+Type error : type argument int cannot be a primitive in array of T
+
+{{{{{
+def bad = (Box of int) of string
+}}}}}
+(Boxofint) is not generic
+
+{{{{{
+def bad = Box of (int, string)
+}}}}}
+Wrong number of type arguments : expected 1, got 2
+
+{{{{{
+def ArrBox of T = class (def xs: array of T) ()
+def bad = ArrBox of int
+}}}}}
+Type error : type argument int cannot be a primitive in array of T
+
+{{{{{
+def bad = (java.util.ArrayList of int) of string
+}}}}}
+(java.util.ArrayListofint) is not generic
+

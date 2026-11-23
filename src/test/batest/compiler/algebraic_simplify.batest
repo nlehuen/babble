@@ -134,3 +134,15 @@ def r = (bump() + 0) + (0 + bump()) + (bump() - 0) + (bump() * 1) + (1 * bump())
 assert(r == 15 and tick == 5)
 }}}}}
 
+{{{{{
+;; Idempotent collapse on complex deterministic expressions (HirPurity.isDeterministic)
+def idT of T = fn (x: T): T -> (x)
+def checkDet = fn (arr: array of int, s: string, flag: bool): int -> (
+    def a = bigClamp(bigClamp(if flag and true then (arr.size() + s.length()) else (idT of int(1))))
+    def b = java.lang.Math.abs(java.lang.Math.abs(int(arr.size() as double)))
+    a + b
+)
+assert(checkDet((array of int).of(1, 2), "abc", true) == 7)
+}}}}}
+
+

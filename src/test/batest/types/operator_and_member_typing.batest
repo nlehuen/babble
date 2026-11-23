@@ -246,3 +246,73 @@ def arr = java.lang.String("abc").toCharArray()
 arr.length = 5
 }}}}}
 No such field in array of char : length (use size())
+
+{{{{{
+;; Assigning to a field of a frozen value is rejected
+def Cell = class (def v : int) ()
+def fb : frozen Cell = freeze(Cell(1))
+fb.v = 2
+}}}}}
+Cannot assign to field of frozen value
+
+{{{{{
+;; Reading and writing fields through a bounded TypeVar and a generic instance
+def GCell of T = class (def v : T) ()
+def setCell of (T : GCell of int) = fn (mut b : T, x : int) -> ( b.v = x )
+def b = GCell of int (1)
+setCell(b, 9)
+assert(b.v == 9)
+}}}}}
+
+{{{{{
+;; Selecting a member on an unbounded TypeVar is rejected
+def bad of T = fn (x : T) -> ( x.foo )
+}}}}}
+Not a scope : x
+
+{{{{{
+;; CoreCollection static member errors and sortedset/sortedmap/entry selection
+def bad = sortedset.missing
+}}}}}
+No such name in java.util.SortedSet : missing
+
+{{{{{
+def bad = (list of int).missing
+}}}}}
+No such name in java.util.List : missing
+
+{{{{{
+def bad = sortedmap.missing
+}}}}}
+No such name in java.util.SortedMap : missing
+
+{{{{{
+def bad = entry.missing
+}}}}}
+No such name in java.util.Map.Entry : missing
+
+{{{{{
+;; Interface conformance : incompatible override return type is rejected
+def IFoo = interface ( def get : fn () : int )
+def BadFoo = class () implements IFoo ( def get = fn () : string -> ( "no" ) )
+}}}}}
+Type error : expected () : int, got () : string
+
+{{{{{
+;; Inherited default method conformance mismatch against sibling required interface
+def IBase = interface ( def get = fn () : any -> ( 1 ) )
+def IReq = interface ( def get : fn () : int )
+def BadSub = class () implements IBase, IReq ()
+}}}}}
+Type error : expected () : int, got () : any
+
+{{{{{
+;; Inherited member lookup across multi-level interface hierarchy and Java field selection
+def IA = interface ( def a = fn () : int -> ( 1 ) )
+def IB = interface extends IA ( def b = fn () : int -> ( 2 ) )
+def Impl = class () implements IB ()
+def p = java.awt.Point(3, 4)
+assert(Impl().a() + Impl().b() + p.x + p.y == 10)
+}}}}}
+
+
