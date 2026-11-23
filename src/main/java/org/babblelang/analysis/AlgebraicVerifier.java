@@ -1,37 +1,101 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.effects.Effect;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.ClassShape;
+import org.babblelang.ir.egraph.AlgebraicRules;
+import org.babblelang.ir.egraph.EGraph;
+import org.babblelang.ir.egraph.ENode;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.BiPredicate;
 
 /**
- * Algebraic signature validation and compositional property verification
- * ({@code idempotent}, {@code commutative}, {@code associative}, {@code monotone},
- * {@code injective}) extracted from {@link EffectChecker} ({@code BIP027-I3};
- * upgraded onto {@code org.babblelang.ir.egraph} in {@code BIP027-P6}).
+ * ANTLR-free algebraic signature validation, bounded E-graph equational law verification
+ * ({@code idempotent}, {@code commutative}, {@code associative}), and partial-derivative
+ * sign &amp; bijectivity analysis ({@code monotone}, {@code injective})
+ * ({@code BIP027-P6}, {@code BIP027-D1}).
+ *
+ * <p>Reuses {@link EGraph} and {@link AlgebraicRules#verifierRules()} directly so the
+ * optimizer and effect verifier share one single source of truth for integral, boolean,
+ * string, order-lattice, and strict IEEE-754 floating-point algebraic laws.
  */
 final class AlgebraicVerifier {
-    private final EffectChecker ec;
+    static final int VERIFIER_MAX_ITERS = 8;
+    static final int VERIFIER_MAX_NODES = 256;
 
-    AlgebraicVerifier(EffectChecker ec) {
-        this.ec = ec;
+    private AlgebraicVerifier() {
     }
 
-    // ================================================================ 9. Algebraic Validation & Composition
+    // ---------------------------------------------------------------- pure & mut algebraic terms (ANTLR-free)
 
-    void validateAlgebraicSignature(Set<Effect> effects, List<Type.Parameter> params, Type result,
-                                            boolean mutThis, boolean axiomatic, ParserRuleContext at) {
-        if (effects.isEmpty()) {
-            return;
+    /** Normalized ANTLR-free pure expression term over a function's parameters. */
+    sealed interface Term permits Param, Const, Opaque, Unary, Binary, Call, Ite, Cast, Ctor {
+        Type type();
+
+        PrimitiveKind kind();
+    }
+
+    record Param(int index, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Const(Object value, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Opaque(String id, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Unary(ENode.Op op, Term operand, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Binary(ENode.Op op, Term left, Term right, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Call(String symbol, List<Term> args, EffectSet calleeEffects, EGraph.CallProps props,
+                Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Ite(Term cond, Term thenBranch, Term elseBranch, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Cast(Term operand, Type srcType, Type type, PrimitiveKind kind) implements Term {
+    }
+
+    record Ctor(String symbol, List<Term> args, boolean injectiveValueCtor, Type type) implements Term {
+        @Override
+        public PrimitiveKind kind() {
+            return PrimitiveKind.NONE;
         }
+    }
+
+    /** Normalized ANTLR-free representation of a mutating method/function body. */
+    sealed interface MutBody permits ForwardMutCall, FieldTransition {
+    }
+
+    record ForwardMutCall(EffectSet calleeEffects) implements MutBody {
+    }
+
+    /**
+     * Single-field state transition {@code target.field = nextState(params..., oldField)} where
+     * {@code stateParamIndex == paramCount} represents {@code oldField}, and {@code targetParamIndex}
+     * is {@code -1} for {@code this} or the index of the mutated parameter.
+     */
+    record FieldTransition(int stateParamIndex, int targetParamIndex, int paramCount,
+                           List<PrimitiveKind> paramKinds, PrimitiveKind stateKind,
+                           Term nextState) implements MutBody {
+    }
+
+    // ---------------------------------------------------------------- signature validation
+
+    static List<String> validateAlgebraicSignature(Set<Effect> effects, List<Type.Parameter> params, Type result,
+                                                   boolean mutThis, boolean axiomatic,
+                                                   BiPredicate<Type, Type> sameDomain) {
+        if (effects.isEmpty()) {
+            return List.of();
+        }
+        List<String> errors = new ArrayList<>();
         boolean anyMutParam = params.stream().anyMatch(Type.Parameter::mut);
         boolean hasMut = mutThis || anyMutParam;
         boolean isPure = effects.contains(Effect.PURE);
@@ -39,57 +103,49 @@ final class AlgebraicVerifier {
         if (effects.contains(Effect.ASSOCIATIVE)) {
             if (!isPure || hasMut || params.size() != 2
                     || result == Type.NULL || result == Type.NOTHING
-                    || !sameDomainType(params.get(0).type(), params.get(1).type())
-                    || !sameDomainType(params.get(0).type(), result)) {
-                ec.checker.effectDiagnostic("associative requires a pure binary (T, T) : T signature", at);
+                    || !sameDomain.test(params.get(0).type(), params.get(1).type())
+                    || !sameDomain.test(params.get(0).type(), result)) {
+                errors.add("associative requires a pure binary (T, T) : T signature");
             }
         }
         if (effects.contains(Effect.COMMUTATIVE)) {
             if (!hasMut) {
-                if (!isPure || params.size() != 2 || !sameDomainType(params.get(0).type(), params.get(1).type())) {
-                    ec.checker.effectDiagnostic("commutative without mut requires a pure binary (T, T) : R signature", at);
+                if (!isPure || params.size() != 2 || !sameDomain.test(params.get(0).type(), params.get(1).type())) {
+                    errors.add("commutative without mut requires a pure binary (T, T) : R signature");
                 }
             } else if (mutThis ? params.isEmpty() : params.size() < 2) {
-                ec.checker.effectDiagnostic("mut commutative requires a value parameter on the mutated target", at);
+                errors.add("mut commutative requires a value parameter on the mutated target");
             }
         }
         if (effects.contains(Effect.IDEMPOTENT)) {
             if (!hasMut && !(axiomatic && !isPure)) {
-                if (!isPure || params.size() != 1 || result == Type.NULL || !sameDomainType(params.get(0).type(), result)) {
-                    ec.checker.effectDiagnostic("idempotent without mut requires a pure unary (T) : T signature or an effectful axiom", at);
+                if (!isPure || params.size() != 1 || result == Type.NULL || !sameDomain.test(params.get(0).type(), result)) {
+                    errors.add("idempotent without mut requires a pure unary (T) : T signature or an effectful axiom");
                 }
             }
         }
         if (effects.contains(Effect.MONOTONE)) {
-            if (hasMut || params.isEmpty() || !isOrderedType(params.get(0).type()) || !isOrderedType(result)) {
-                ec.checker.effectDiagnostic("monotone requires ordered parameter and return types without mut", at);
+            if (hasMut || params.isEmpty() || !isOrderedType(result)
+                    || params.stream().noneMatch(p -> isOrderedType(p.type()))) {
+                errors.add("monotone requires ordered parameter and return types without mut");
             }
         }
         if (effects.contains(Effect.INJECTIVE)) {
-            if (hasMut || params.isEmpty() || result == Type.NULL || result == Type.NOTHING || result == Type.BOOL && !isBoolType(params.get(0).type())) {
-                if (result == Type.NULL || result == Type.NOTHING || hasMut || params.isEmpty()) {
-                    ec.checker.effectDiagnostic("injective requires at least one parameter, no mut, and a non-null return type", at);
-                }
+            if (result == Type.NULL || result == Type.NOTHING || hasMut || params.isEmpty()) {
+                errors.add("injective requires at least one parameter, no mut, and a non-null return type");
             }
         }
-    }
-
-    private boolean sameDomainType(Type a, Type b) {
-        if (a == Type.ERROR || b == Type.ERROR) {
-            return true;
-        }
-        return a.equals(b) || (ec.checker.assignable(a, b) && ec.checker.assignable(b, a));
-    }
-
-    private static boolean isBoolType(Type t) {
-        return t == Type.BOOL;
+        return errors;
     }
 
     static boolean isOrderedType(Type t) {
         if (t == Type.ERROR) {
             return true;
         }
-        if (t == Type.INT || t == Type.DOUBLE || t == Type.BOOL || t == Type.STRING) {
+        if (t instanceof Type.Frozen f) {
+            return isOrderedType(f.of());
+        }
+        if (Type.isNumericScalar(t) || t == Type.CHAR || t == Type.BOOL || t == Type.STRING) {
             return true;
         }
         if (t instanceof Type.JavaInstance ji) {
@@ -98,509 +154,584 @@ final class AlgebraicVerifier {
         return false;
     }
 
-    void inferAlgebraicProperties(BabbleParser.FunctionLiteralContext fn,
-                                          EnumSet<Effect> effs,
-                                          boolean[] mutParams,
-                                          boolean mutThis) {
-        List<BabbleParser.FnParamContext> paramDecls = fn.fnParameters().fnParam();
-        Type fnRaw = ec.checker.rawTypeOf(fn);
-        if (!(fnRaw instanceof Type.Function tf)) {
+    static PrimitiveKind primitiveKindOf(Type type) {
+        if (type == null) {
+            return PrimitiveKind.NONE;
+        }
+        if (type instanceof Type.Frozen f) {
+            type = f.of();
+        }
+        if (type == Type.BYTE) return PrimitiveKind.BYTE;
+        if (type == Type.SHORT) return PrimitiveKind.SHORT;
+        if (type == Type.INT) return PrimitiveKind.INT;
+        if (type == Type.LONG) return PrimitiveKind.LONG;
+        if (type == Type.FLOAT) return PrimitiveKind.FLOAT;
+        if (type == Type.DOUBLE) return PrimitiveKind.DOUBLE;
+        if (type == Type.BOOL) return PrimitiveKind.BOOL;
+        if (type == Type.CHAR) return PrimitiveKind.CHAR;
+        return PrimitiveKind.NONE;
+    }
+
+    // ---------------------------------------------------------------- pure verification (E-graph + RelSignDomain)
+
+    static void verifyPureProperties(Term body, List<Type.Parameter> params, Type result,
+                                     BiPredicate<Type, Type> sameDomain, EnumSet<Effect> out) {
+        if (body == null || params.isEmpty()) {
             return;
         }
-        List<Type.Parameter> params = tf.parameters();
-        Type result = tf.result();
-        BabbleParser.ExpressionContext single = singleBodyExpression(fn.functionBlock);
-
-        boolean anyMut = mutThis || EffectChecker.anyTrue(mutParams);
-        if (!anyMut && effs.contains(Effect.PURE) && effs.contains(Effect.DETERMINISTIC) && single != null) {
-            // 1. Compositional monotone & injective in parameter 0 (when other parameters are untouched constants).
-            if (!paramDecls.isEmpty()) {
-                BabbleParser.FnParamContext p0 = paramDecls.get(0);
-                RelProps rel = relationalProps(single, p0);
-                if (rel.monotoneSign == 1 && isOrderedType(params.get(0).type()) && isOrderedType(result)) {
-                    effs.add(Effect.MONOTONE);
-                }
-                if (rel.injective && result != Type.NULL && result != Type.NOTHING) {
-                    effs.add(Effect.INJECTIVE);
-                }
+        // 1. Order & bijectivity via partial-derivative sign domain across all parameter positions.
+        if (isMonotone(body, params, result)) {
+            out.add(Effect.MONOTONE);
+        }
+        if (isInjective(body, params, result)) {
+            out.add(Effect.INJECTIVE);
+        }
+        // 2. Binary equational laws via bounded E-graph equivalence saturation.
+        if (params.size() == 2 && sameDomain.test(params.get(0).type(), params.get(1).type())) {
+            PrimitiveKind pk = primitiveKindOf(params.get(0).type());
+            if (checkCommutative(body, pk)) {
+                out.add(Effect.COMMUTATIVE);
             }
-            // 2. Binary single-op wrapper for commutative & associative.
-            if (paramDecls.size() == 2 && sameDomainType(params.get(0).type(), params.get(1).type())) {
-                BabbleParser.FnParamContext p0 = paramDecls.get(0);
-                BabbleParser.FnParamContext p1 = paramDecls.get(1);
-                WrapperProps wp = binaryWrapperProps(single, p0, p1);
-                if (wp.commutative) {
-                    effs.add(Effect.COMMUTATIVE);
-                }
-                if (wp.associative && sameDomainType(params.get(0).type(), result)
-                        && result != Type.NULL && result != Type.NOTHING) {
-                    effs.add(Effect.ASSOCIATIVE);
-                }
+            if (sameDomain.test(params.get(0).type(), result)
+                    && result != Type.NULL && result != Type.NOTHING
+                    && checkAssociative(body, pk)) {
+                out.add(Effect.ASSOCIATIVE);
             }
-            // 3. Unary single-op wrapper for idempotent.
-            if (paramDecls.size() == 1 && sameDomainType(params.get(0).type(), result) && result != Type.NULL) {
-                if (isUnaryIdempotentWrapper(single, paramDecls.get(0))) {
-                    effs.add(Effect.IDEMPOTENT);
-                }
-            }
-        } else if (anyMut && effs.contains(Effect.HERMETIC) && single != null) {
-            // Effect-form single-op wrapper or invariant field overwrite!
-            if (isMutIdempotentBody(fn, single, paramDecls, mutParams, mutThis)) {
-                effs.add(Effect.IDEMPOTENT);
-            }
-            if (isMutCommutativeBody(fn, single, paramDecls, mutParams, mutThis)) {
-                effs.add(Effect.COMMUTATIVE);
+        }
+        // 3. Unary idempotence via bounded E-graph equivalence saturation.
+        if (params.size() == 1 && sameDomain.test(params.get(0).type(), result) && result != Type.NULL) {
+            PrimitiveKind pk = primitiveKindOf(params.get(0).type());
+            if (checkIdempotent(body, pk)) {
+                out.add(Effect.IDEMPOTENT);
             }
         }
     }
 
-    private record RelProps(int monotoneSign, boolean injective, boolean usesTarget) {
-        static final RelProps NONE = new RelProps(0, false, true);
-        static final RelProps CONST = new RelProps(0, false, false);
-    }
-
-    private record WrapperProps(boolean commutative, boolean associative) {
-        static final WrapperProps NONE = new WrapperProps(false, false);
-    }
-
-    private static BabbleParser.ExpressionContext singleBodyExpression(BabbleParser.BlockContext block) {
-        if (block == null || block.expression().size() != 1) {
-            return null;
+    static void verifyMutProperties(MutBody body, EnumSet<Effect> out) {
+        if (body == null) {
+            return;
         }
-        BabbleParser.ExpressionContext e = block.expression(0);
-        while (true) {
-            if (e instanceof BabbleParser.ReturnExpressionContext ret && ret.expression() != null) {
-                e = ret.expression();
-            } else if (e instanceof BabbleParser.BlockExpressionContext be
-                    && be.block().expression().size() == 1) {
-                e = be.block().expression(0);
+        if (body instanceof ForwardMutCall fwd) {
+            EffectSet effs = fwd.calleeEffects();
+            if (effs != null) {
+                if (effs.has(Effect.IDEMPOTENT)) {
+                    out.add(Effect.IDEMPOTENT);
+                }
+                if (effs.has(Effect.COMMUTATIVE)) {
+                    out.add(Effect.COMMUTATIVE);
+                }
+            }
+            return;
+        }
+        FieldTransition ft = (FieldTransition) body;
+        if (checkMutIdempotent(ft)) {
+            out.add(Effect.IDEMPOTENT);
+        }
+        if (checkMutCommutative(ft)) {
+            out.add(Effect.COMMUTATIVE);
+        }
+    }
+
+    // ---------------------------------------------------------------- bounded E-graph equivalence checks
+
+    static boolean checkCommutative(Term body, PrimitiveKind argKind) {
+        EGraph g = new EGraph();
+        int a = g.add(ENode.opaque("$a", argKind));
+        int b = g.add(ENode.opaque("$b", argKind));
+        int ab = lower(body, new int[]{a, b}, g);
+        int ba = lower(body, new int[]{b, a}, g);
+        g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
+        return g.areEquivalent(ab, ba);
+    }
+
+    static boolean checkAssociative(Term body, PrimitiveKind argKind) {
+        EGraph g = new EGraph();
+        int a = g.add(ENode.opaque("$a", argKind));
+        int b = g.add(ENode.opaque("$b", argKind));
+        int c = g.add(ENode.opaque("$c", argKind));
+        int ab = lower(body, new int[]{a, b}, g);
+        int lhs = lower(body, new int[]{ab, c}, g);
+        int bc = lower(body, new int[]{b, c}, g);
+        int rhs = lower(body, new int[]{a, bc}, g);
+        g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
+        return g.areEquivalent(lhs, rhs);
+    }
+
+    static boolean checkIdempotent(Term body, PrimitiveKind argKind) {
+        EGraph g = new EGraph();
+        int a = g.add(ENode.opaque("$a", argKind));
+        int fa = lower(body, new int[]{a}, g);
+        int ffa = lower(body, new int[]{fa}, g);
+        g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
+        return g.areEquivalent(fa, ffa);
+    }
+
+    private static boolean checkMutIdempotent(FieldTransition ft) {
+        EGraph g = new EGraph();
+        int[] env1 = new int[ft.paramCount() + 1];
+        for (int i = 0; i < ft.paramCount(); i++) {
+            env1[i] = g.add(ENode.opaque("$p" + i, ft.paramKinds().get(i)));
+        }
+        int s0 = g.add(ENode.opaque("$s0", ft.stateKind()));
+        env1[ft.stateParamIndex()] = s0;
+        int s1 = lower(ft.nextState(), env1, g);
+        int[] env2 = env1.clone();
+        env2[ft.stateParamIndex()] = s1;
+        int s2 = lower(ft.nextState(), env2, g);
+        g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
+        return g.areEquivalent(s1, s2);
+    }
+
+    private static boolean checkMutCommutative(FieldTransition ft) {
+        int valueParams = ft.targetParamIndex() >= 0 ? ft.paramCount() - 1 : ft.paramCount();
+        if (valueParams < 1) {
+            return false;
+        }
+        EGraph g = new EGraph();
+        int s0 = g.add(ENode.opaque("$s0", ft.stateKind()));
+        int[] xEnv = new int[ft.paramCount() + 1];
+        int[] yEnv = new int[ft.paramCount() + 1];
+        for (int i = 0; i < ft.paramCount(); i++) {
+            PrimitiveKind pk = ft.paramKinds().get(i);
+            if (i == ft.targetParamIndex()) {
+                int tgt = g.add(ENode.opaque("$tgt", pk));
+                xEnv[i] = tgt;
+                yEnv[i] = tgt;
             } else {
-                return e;
+                xEnv[i] = g.add(ENode.opaque("$x" + i, pk));
+                yEnv[i] = g.add(ENode.opaque("$y" + i, pk));
             }
+        }
+        xEnv[ft.stateParamIndex()] = s0;
+        int sx = lower(ft.nextState(), xEnv, g);
+        yEnv[ft.stateParamIndex()] = sx;
+        int sxy = lower(ft.nextState(), yEnv, g);
+
+        yEnv[ft.stateParamIndex()] = s0;
+        int sy = lower(ft.nextState(), yEnv, g);
+        xEnv[ft.stateParamIndex()] = sy;
+        int syx = lower(ft.nextState(), xEnv, g);
+
+        g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
+        return g.areEquivalent(sxy, syx);
+    }
+
+    private static int lower(Term term, int[] paramIds, EGraph g) {
+        return switch (term) {
+            case Param p -> paramIds[p.index()];
+            case Const c -> g.add(ENode.constVal(c.value(), c.kind()));
+            case Opaque o -> g.add(ENode.opaque(o.id(), o.kind()));
+            case Unary u -> g.add(ENode.unary(u.op(), u.kind(), lower(u.operand(), paramIds, g)));
+            case Binary b -> g.add(ENode.binary(b.op(), b.kind(), lower(b.left(), paramIds, g), lower(b.right(), paramIds, g)));
+            case Ite ite -> g.add(ENode.ite(ite.kind(),
+                    lower(ite.cond(), paramIds, g),
+                    lower(ite.thenBranch(), paramIds, g),
+                    lower(ite.elseBranch(), paramIds, g)));
+            case Cast c -> {
+                int inner = lower(c.operand(), paramIds, g);
+                yield c.srcType().equals(c.type()) ? inner : g.add(ENode.call("$cast:" + c.kind(), c.kind(), inner));
+            }
+            case Call c -> {
+                if (c.props() != null && !c.props().equals(EGraph.CallProps.NONE)) {
+                    g.registerCallProps(c.symbol(), c.props());
+                }
+                int[] kids = new int[c.args().size()];
+                for (int i = 0; i < kids.length; i++) {
+                    kids[i] = lower(c.args().get(i), paramIds, g);
+                }
+                yield g.add(ENode.call(c.symbol(), c.kind(), kids));
+            }
+            case Ctor c -> {
+                int[] kids = new int[c.args().size()];
+                for (int i = 0; i < kids.length; i++) {
+                    kids[i] = lower(c.args().get(i), paramIds, g);
+                }
+                yield g.add(ENode.call(c.symbol(), PrimitiveKind.NONE, kids));
+            }
+        };
+    }
+
+    // ---------------------------------------------------------------- partial-derivative sign & bijectivity domain
+
+    /** Abstract partial-derivative sign lattice ({@code BIP027} §3.5). */
+    enum Sign {
+        BOT,
+        CONST,
+        INC,
+        DEC,
+        TOP;
+
+        Sign negate() {
+            return switch (this) {
+                case INC -> DEC;
+                case DEC -> INC;
+                default -> this;
+            };
+        }
+
+        static Sign join(Sign a, Sign b) {
+            if (a == BOT) return b;
+            if (b == BOT) return a;
+            if (a == b) return a;
+            if (a == CONST) return b;
+            if (b == CONST) return a;
+            return TOP;
+        }
+
+        static Sign add(Sign a, Sign b) {
+            if (a == CONST) return b;
+            if (b == CONST) return a;
+            if (a == b && (a == INC || a == DEC)) return a;
+            return TOP;
         }
     }
 
-    static BabbleParser.ExpressionContext unwrapParens(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext be
-                && be.block().expression().size() == 1) {
-            expr = be.block().expression(0);
-        }
-        return expr;
+    record RelVal(Sign sign, boolean injective) {
+        static final RelVal CONST = new RelVal(Sign.CONST, false);
+        static final RelVal TOP = new RelVal(Sign.TOP, false);
     }
 
-    private RelProps relationalProps(BabbleParser.ExpressionContext raw, BabbleParser.FnParamContext targetParam) {
-        BabbleParser.ExpressionContext expr = unwrapParens(raw);
-        if (!referencesDecl(expr, targetParam)) {
-            return RelProps.CONST;
+    static boolean isMonotone(Term body, List<Type.Parameter> params, Type result) {
+        if (params.isEmpty() || !isOrderedType(result)) {
+            return false;
         }
-        if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
-            if (resolved == targetParam) {
-                Type t = ec.checker.rawTypeOf(sel);
-                return new RelProps(isOrderedType(t) ? 1 : 0, true, true);
+        boolean anyInc = false;
+        for (int i = 0; i < params.size(); i++) {
+            RelVal rv = evalRel(body, i);
+            if (rv.sign() == Sign.CONST) {
+                continue;
             }
-            return RelProps.CONST;
+            if (rv.sign() == Sign.INC && isOrderedType(params.get(i).type())) {
+                anyInc = true;
+                continue;
+            }
+            return false;
         }
-        if (expr instanceof BabbleParser.NegateContext neg) {
-            RelProps sub = relationalProps(neg.operand, targetParam);
-            if (!sub.usesTarget) {
-                return RelProps.CONST;
-            }
-            Type resType = ec.checker.rawTypeOf(neg);
-            if (resType == Type.INT) {
-                // Wrapping 32-bit negation is an involution (injective), NOT monotone!
-                return new RelProps(0, sub.injective, true);
-            }
-            if (resType == Type.DOUBLE) {
-                return new RelProps(-sub.monotoneSign, sub.injective, true);
-            }
-            return RelProps.NONE;
+        return anyInc;
+    }
+
+    static boolean isInjective(Term body, List<Type.Parameter> params, Type result) {
+        if (params.isEmpty() || result == Type.NULL || result == Type.NOTHING) {
+            return false;
         }
-        if (expr instanceof BabbleParser.BinaryOpContext bin) {
-            String op = bin.op.getText();
-            RelProps l = relationalProps(bin.left, targetParam);
-            RelProps r = relationalProps(bin.right, targetParam);
-            Type resType = ec.checker.rawTypeOf(bin);
-            if (resType == Type.INT) {
-                // Wrapping 32-bit int arithmetic is NEVER monotone (§3.2, §4.6)!
-                if (l.usesTarget && !r.usesTarget) {
-                    boolean inj = switch (op) {
-                        case "+", "-" -> l.injective;
-                        case "*" -> l.injective && isOddIntConstant(bin.right);
-                        default -> false;
-                    };
-                    return new RelProps(0, inj, true);
-                }
-                if (!l.usesTarget && r.usesTarget) {
-                    boolean inj = switch (op) {
-                        case "+", "-" -> r.injective;
-                        case "*" -> r.injective && isOddIntConstant(bin.left);
-                        default -> false;
-                    };
-                    return new RelProps(0, inj, true);
-                }
-                return RelProps.NONE;
-            }
-            if (resType == Type.DOUBLE) {
-                // IEEE-754 double arithmetic: monotone on +, -, and * (k >= 0), NOT injective (§4.6).
-                if ("+".equals(op)) {
-                    int sign = combineAddSigns(l, r);
-                    return new RelProps(sign, false, true);
-                }
-                if ("-".equals(op)) {
-                    RelProps negR = r.usesTarget ? new RelProps(-r.monotoneSign, false, true) : RelProps.CONST;
-                    int sign = combineAddSigns(l, negR);
-                    return new RelProps(sign, false, true);
-                }
-                if ("*".equals(op)) {
-                    if (l.usesTarget && !r.usesTarget) {
-                        Double k = doubleConstant(bin.right);
-                        int sign = k == null ? 0 : (k >= 0.0 ? l.monotoneSign : -l.monotoneSign);
-                        return new RelProps(sign, false, true);
+        int n = params.size();
+        if (n == 1) {
+            return evalRel(body, 0).injective();
+        }
+        // Multi-parameter triangular recovery across a record constructor's fields.
+        if (body instanceof Ctor ctor && ctor.injectiveValueCtor() && ctor.args().size() >= n) {
+            BitSet recovered = new BitSet(n);
+            boolean progress = true;
+            while (progress && recovered.cardinality() < n) {
+                progress = false;
+                for (Term arg : ctor.args()) {
+                    int unknownParam = -1;
+                    boolean multipleUnknown = false;
+                    for (int p = 0; p < n; p++) {
+                        if (recovered.get(p)) {
+                            continue;
+                        }
+                        if (evalRel(arg, p).sign() != Sign.CONST) {
+                            if (unknownParam >= 0) {
+                                multipleUnknown = true;
+                                break;
+                            }
+                            unknownParam = p;
+                        }
                     }
-                    if (!l.usesTarget && r.usesTarget) {
-                        Double k = doubleConstant(bin.left);
-                        int sign = k == null ? 0 : (k >= 0.0 ? r.monotoneSign : -r.monotoneSign);
-                        return new RelProps(sign, false, true);
+                    if (!multipleUnknown && unknownParam >= 0 && evalRel(arg, unknownParam).injective()) {
+                        recovered.set(unknownParam);
+                        progress = true;
                     }
                 }
-                return RelProps.NONE;
             }
-            if (resType == Type.STRING && "+".equals(op)) {
-                Type lt = ec.checker.rawTypeOf(bin.left);
-                Type rt = ec.checker.rawTypeOf(bin.right);
-                if (l.usesTarget && !r.usesTarget) {
-                    boolean inj = l.injective && isLosslessToStringType(lt);
-                    return new RelProps(0, inj, true);
-                }
-                if (!l.usesTarget && r.usesTarget) {
-                    boolean inj = r.injective && isLosslessToStringType(rt);
-                    return new RelProps(0, inj, true);
-                }
-                return RelProps.NONE;
-            }
-            return RelProps.NONE;
+            return recovered.cardinality() == n;
         }
-        if (expr instanceof BabbleParser.CallContext call) {
-            List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-            if (args.isEmpty()) {
-                return RelProps.NONE;
-            }
-            for (int i = 1; i < args.size(); i++) {
-                if (referencesDecl(args.get(i).expression(), targetParam)) {
-                    return RelProps.NONE;
-                }
-            }
-            if (call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() != null
-                    && referencesDecl(sel.expression(), targetParam)) {
-                return RelProps.NONE;
-            }
-            RelProps arg0 = relationalProps(args.get(0).expression(), targetParam);
-            if (!arg0.usesTarget) {
-                return RelProps.CONST;
-            }
-            EffectSet calleeEffects = calleeIntrinsicOrResolvedEffects(call);
-            if (calleeEffects == null || !calleeEffects.isPure() || !calleeEffects.isDeterministic()) {
-                return RelProps.NONE;
-            }
-            int mono = (calleeEffects.has(Effect.MONOTONE) && arg0.monotoneSign == 1) ? 1 : 0;
-            boolean inj = calleeEffects.has(Effect.INJECTIVE) && arg0.injective;
-            return new RelProps(mono, inj, true);
-        }
-        if (expr instanceof BabbleParser.AsExpressionContext asExpr) {
-            Type src = ec.checker.rawTypeOf(asExpr.left);
-            Type dst = ec.checker.rawTypeOf(asExpr);
-            if (src == Type.INT && dst == Type.DOUBLE) {
-                return relationalProps(asExpr.left, targetParam);
-            }
-        }
-        return RelProps.NONE;
+        return false;
     }
 
-    private static int combineAddSigns(RelProps l, RelProps r) {
-        if (l.usesTarget && !r.usesTarget) {
-            return l.monotoneSign;
+    static RelVal evalRel(Term term, int targetParam) {
+        return switch (term) {
+            case Param p -> p.index() == targetParam
+                    ? new RelVal(isOrderedType(p.type()) ? Sign.INC : Sign.TOP, true)
+                    : RelVal.CONST;
+            case Const c -> RelVal.CONST;
+            case Opaque o -> RelVal.CONST;
+            case Unary u -> evalUnaryRel(u, targetParam);
+            case Binary b -> evalBinaryRel(b, targetParam);
+            case Cast c -> evalCastRel(c, targetParam);
+            case Ite ite -> evalIteRel(ite, targetParam);
+            case Call c -> evalCallRel(c, targetParam);
+            case Ctor c -> evalCtorRel(c, targetParam);
+        };
+    }
+
+    private static RelVal evalUnaryRel(Unary u, int targetParam) {
+        RelVal sub = evalRel(u.operand(), targetParam);
+        if (sub.sign() == Sign.CONST) {
+            return RelVal.CONST;
         }
-        if (!l.usesTarget && r.usesTarget) {
-            return r.monotoneSign;
+        if (u.op() == ENode.Op.NEG) {
+            if (u.kind() == PrimitiveKind.INT || u.kind() == PrimitiveKind.LONG) {
+                // Wrapping negation is an involution (injective), NOT monotone.
+                return new RelVal(Sign.TOP, sub.injective());
+            }
+            if (u.kind() == PrimitiveKind.FLOAT || u.kind() == PrimitiveKind.DOUBLE) {
+                return new RelVal(sub.sign().negate(), sub.injective());
+            }
         }
-        if (l.usesTarget && r.usesTarget && l.monotoneSign != 0 && l.monotoneSign == r.monotoneSign) {
-            return l.monotoneSign;
+        if (u.op() == ENode.Op.NOT && u.kind() == PrimitiveKind.BOOL) {
+            return new RelVal(sub.sign().negate(), sub.injective());
         }
-        return 0;
+        return RelVal.TOP;
+    }
+
+    private static RelVal evalBinaryRel(Binary b, int targetParam) {
+        RelVal l = evalRel(b.left(), targetParam);
+        RelVal r = evalRel(b.right(), targetParam);
+        if (l.sign() == Sign.CONST && r.sign() == Sign.CONST) {
+            return RelVal.CONST;
+        }
+        if (b.kind() == PrimitiveKind.INT || b.kind() == PrimitiveKind.LONG) {
+            // Wrapping 32/64-bit integer arithmetic is never monotone.
+            if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
+                boolean inj = switch (b.op()) {
+                    case ADD, SUB -> l.injective();
+                    case MUL -> l.injective() && isOddIntegralConst(b.right());
+                    default -> false;
+                };
+                return new RelVal(Sign.TOP, inj);
+            }
+            if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
+                boolean inj = switch (b.op()) {
+                    case ADD, SUB -> r.injective();
+                    case MUL -> r.injective() && isOddIntegralConst(b.left());
+                    default -> false;
+                };
+                return new RelVal(Sign.TOP, inj);
+            }
+            return RelVal.TOP;
+        }
+        if (b.kind() == PrimitiveKind.DOUBLE || b.kind() == PrimitiveKind.FLOAT) {
+            if (b.op() == ENode.Op.ADD) {
+                return new RelVal(Sign.add(l.sign(), r.sign()), false);
+            }
+            if (b.op() == ENode.Op.SUB) {
+                return new RelVal(Sign.add(l.sign(), r.sign().negate()), false);
+            }
+            if (b.op() == ENode.Op.MUL) {
+                if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
+                    Double k = evalConstDouble(b.right());
+                    return new RelVal(k == null ? Sign.TOP : (k >= 0.0 ? l.sign() : l.sign().negate()), false);
+                }
+                if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
+                    Double k = evalConstDouble(b.left());
+                    return new RelVal(k == null ? Sign.TOP : (k >= 0.0 ? r.sign() : r.sign().negate()), false);
+                }
+            }
+            if (b.op() == ENode.Op.DIV && l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
+                Double k = evalConstDouble(b.right());
+                if (k != null && k != 0.0) {
+                    return new RelVal(k > 0.0 ? l.sign() : l.sign().negate(), false);
+                }
+            }
+            return RelVal.TOP;
+        }
+        if (b.op() == ENode.Op.STR_ADD) {
+            if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
+                return new RelVal(Sign.TOP, l.injective() && isLosslessToStringType(b.left().type()));
+            }
+            if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
+                return new RelVal(Sign.TOP, r.injective() && isLosslessToStringType(b.right().type()));
+            }
+        }
+        return RelVal.TOP;
+    }
+
+    private static RelVal evalCastRel(Cast c, int targetParam) {
+        RelVal sub = evalRel(c.operand(), targetParam);
+        if (sub.sign() == Sign.CONST) {
+            return RelVal.CONST;
+        }
+        Type src = c.srcType();
+        Type dst = c.type();
+        if (src.equals(dst)) {
+            return sub;
+        }
+        if (isMonotoneNumericWidening(src, dst)) {
+            boolean lossless = isLosslessWidening(src, dst);
+            return new RelVal(sub.sign(), lossless && sub.injective());
+        }
+        return RelVal.TOP;
+    }
+
+    private static RelVal evalIteRel(Ite ite, int targetParam) {
+        RelVal c = evalRel(ite.cond(), targetParam);
+        RelVal t = evalRel(ite.thenBranch(), targetParam);
+        RelVal e = evalRel(ite.elseBranch(), targetParam);
+        if (c.sign() == Sign.CONST) {
+            return new RelVal(Sign.join(t.sign(), e.sign()), t.injective() && e.injective());
+        }
+        // Order-preserving min/max patterns: `if a < b then (a) else (b)` etc.
+        if (isOrderedType(ite.type()) && isMinMaxIte(ite)) {
+            return new RelVal(Sign.join(t.sign(), e.sign()), false);
+        }
+        return RelVal.TOP;
+    }
+
+    private static boolean isMinMaxIte(Ite ite) {
+        if (!(ite.cond() instanceof Binary cmp)) {
+            return false;
+        }
+        if (cmp.op() != ENode.Op.LT && cmp.op() != ENode.Op.LTE
+                && cmp.op() != ENode.Op.GT && cmp.op() != ENode.Op.GTE) {
+            return false;
+        }
+        return (cmp.left().equals(ite.thenBranch()) && cmp.right().equals(ite.elseBranch()))
+                || (cmp.left().equals(ite.elseBranch()) && cmp.right().equals(ite.thenBranch()));
+    }
+
+    private static RelVal evalCallRel(Call call, int targetParam) {
+        List<Term> args = call.args();
+        if (args.isEmpty()) {
+            return RelVal.CONST;
+        }
+        RelVal[] argRels = new RelVal[args.size()];
+        int nonConstCount = 0;
+        int singleNonConst = -1;
+        for (int i = 0; i < args.size(); i++) {
+            argRels[i] = evalRel(args.get(i), targetParam);
+            if (argRels[i].sign() != Sign.CONST) {
+                nonConstCount++;
+                singleNonConst = i;
+            }
+        }
+        if (nonConstCount == 0) {
+            return RelVal.CONST;
+        }
+        EffectSet fx = call.calleeEffects();
+        if (fx == null || !fx.isPure() || !fx.isDeterministic()) {
+            return RelVal.TOP;
+        }
+        Sign monoSign = Sign.TOP;
+        if (fx.has(Effect.MONOTONE)) {
+            Sign combined = Sign.CONST;
+            for (RelVal ar : argRels) {
+                combined = Sign.join(combined, ar.sign());
+            }
+            if (combined == Sign.INC || combined == Sign.DEC) {
+                monoSign = combined;
+            }
+        }
+        boolean inj = fx.has(Effect.INJECTIVE) && nonConstCount == 1
+                && singleNonConst == 0 && argRels[0].injective();
+        return new RelVal(monoSign, inj);
+    }
+
+    private static RelVal evalCtorRel(Ctor ctor, int targetParam) {
+        boolean anyDepends = false;
+        boolean anyInj = false;
+        for (Term arg : ctor.args()) {
+            RelVal ar = evalRel(arg, targetParam);
+            if (ar.sign() != Sign.CONST) {
+                anyDepends = true;
+                if (ctor.injectiveValueCtor() && ar.injective()) {
+                    anyInj = true;
+                }
+            }
+        }
+        if (!anyDepends) {
+            return RelVal.CONST;
+        }
+        return new RelVal(Sign.TOP, anyInj);
     }
 
     private static boolean isLosslessToStringType(Type type) {
-        return type == Type.STRING || type == Type.INT || type == Type.BOOL;
+        return type == Type.STRING || type == Type.BYTE || type == Type.SHORT
+                || type == Type.INT || type == Type.LONG || type == Type.CHAR || type == Type.BOOL;
     }
 
-    private static boolean isOddIntConstant(BabbleParser.ExpressionContext raw) {
-        BabbleParser.ExpressionContext e = unwrapParens(raw);
-        if (e instanceof BabbleParser.NegateContext neg) {
-            return isOddIntConstant(neg.operand);
+    private static boolean isMonotoneNumericWidening(Type src, Type dst) {
+        if (src == Type.CHAR) {
+            return dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
         }
-        if (e instanceof BabbleParser.IntegerContext ic) {
-            try {
-                int v = Integer.parseInt(ic.getText());
-                return (v & 1) != 0;
-            } catch (NumberFormatException ignored) {
-                return false;
+        return Type.isNumericScalar(src) && Type.isNumericScalar(dst) && Type.numericRank(src) <= Type.numericRank(dst);
+    }
+
+    private static boolean isLosslessWidening(Type src, Type dst) {
+        if (src == Type.CHAR) {
+            return dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
+        }
+        if (src == Type.BYTE) {
+            return dst == Type.SHORT || dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
+        }
+        if (src == Type.SHORT) {
+            return dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
+        }
+        if (src == Type.INT) {
+            return dst == Type.LONG || dst == Type.DOUBLE;
+        }
+        return src == Type.FLOAT && dst == Type.DOUBLE;
+    }
+
+    private static boolean isOddIntegralConst(Term term) {
+        Long v = evalConstLong(term);
+        return v != null && (v & 1L) != 0L;
+    }
+
+    private static Long evalConstLong(Term term) {
+        if (term instanceof Const c && c.value() instanceof Number n
+                && (c.kind() == PrimitiveKind.BYTE || c.kind() == PrimitiveKind.SHORT
+                || c.kind() == PrimitiveKind.INT || c.kind() == PrimitiveKind.LONG)) {
+            return c.kind() == PrimitiveKind.LONG ? n.longValue() : (long) n.intValue();
+        }
+        if (term instanceof Unary u && u.op() == ENode.Op.NEG) {
+            Long sub = evalConstLong(u.operand());
+            return sub != null ? (u.kind() == PrimitiveKind.LONG ? -sub : (long) (-(int) sub.longValue())) : null;
+        }
+        if (term instanceof Binary b && (b.kind() == PrimitiveKind.INT || b.kind() == PrimitiveKind.LONG)) {
+            Long l = evalConstLong(b.left());
+            Long r = evalConstLong(b.right());
+            if (l == null || r == null) {
+                return null;
             }
+            return switch (b.op()) {
+                case ADD -> b.kind() == PrimitiveKind.LONG ? l + r : (long) ((int) l.longValue() + (int) r.longValue());
+                case SUB -> b.kind() == PrimitiveKind.LONG ? l - r : (long) ((int) l.longValue() - (int) r.longValue());
+                case MUL -> b.kind() == PrimitiveKind.LONG ? l * r : (long) ((int) l.longValue() * (int) r.longValue());
+                default -> null;
+            };
         }
-        return false;
+        return null;
     }
 
-    private static Double doubleConstant(BabbleParser.ExpressionContext raw) {
-        BabbleParser.ExpressionContext e = unwrapParens(raw);
-        if (e instanceof BabbleParser.NegateContext neg) {
-            Double sub = doubleConstant(neg.operand);
+    private static Double evalConstDouble(Term term) {
+        if (term instanceof Const c && c.value() instanceof Number n) {
+            double d = n.doubleValue();
+            return Double.isNaN(d) ? null : d;
+        }
+        if (term instanceof Unary u && u.op() == ENode.Op.NEG) {
+            Double sub = evalConstDouble(u.operand());
             return sub != null ? -sub : null;
         }
-        if (e instanceof BabbleParser.IntegerContext ic) {
-            try {
-                return (double) Integer.parseInt(ic.getText());
-            } catch (NumberFormatException ignored) {
+        if (term instanceof Cast c && isMonotoneNumericWidening(c.srcType(), c.type())) {
+            return evalConstDouble(c.operand());
+        }
+        if (term instanceof Binary b) {
+            Double l = evalConstDouble(b.left());
+            Double r = evalConstDouble(b.right());
+            if (l == null || r == null) {
                 return null;
             }
-        }
-        if (e instanceof BabbleParser.DoubleContext dc) {
-            try {
-                double d = Double.parseDouble(dc.getText());
-                return Double.isNaN(d) ? null : d;
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
-    }
-
-    private WrapperProps binaryWrapperProps(BabbleParser.ExpressionContext raw,
-                                            BabbleParser.FnParamContext p0,
-                                            BabbleParser.FnParamContext p1) {
-        BabbleParser.ExpressionContext expr = unwrapParens(raw);
-        if (expr instanceof BabbleParser.BinaryOpContext bin) {
-            int order = matchBinaryParams(bin.left, bin.right, p0, p1);
-            if (order == 0) {
-                return WrapperProps.NONE;
-            }
-            String op = bin.op.getText();
-            Type res = ec.checker.rawTypeOf(bin);
-            Type lt = ec.checker.rawTypeOf(bin.left);
-            Type rt = ec.checker.rawTypeOf(bin.right);
-            if ("+".equals(op)) {
-                if (res == Type.INT) {
-                    return new WrapperProps(true, true);
-                }
-                if (res == Type.DOUBLE) {
-                    return new WrapperProps(true, false);
-                }
-                if (lt == Type.STRING && rt == Type.STRING) {
-                    return new WrapperProps(false, order == 1);
-                }
-            } else if ("*".equals(op)) {
-                if (res == Type.INT) {
-                    return new WrapperProps(true, true);
-                }
-                if (res == Type.DOUBLE) {
-                    return new WrapperProps(true, false);
-                }
-            } else if ("==".equals(op) || "!=".equals(op) || "<>".equals(op)) {
-                return new WrapperProps(true, false);
-            }
-            return WrapperProps.NONE;
-        }
-        if (expr instanceof BabbleParser.CallContext call) {
-            List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-            if (args.size() != 2 || ScopeAnalysis.callParamName(args.get(0)) != null || ScopeAnalysis.callParamName(args.get(1)) != null) {
-                return WrapperProps.NONE;
-            }
-            int order = matchBinaryParams(args.get(0).expression(), args.get(1).expression(), p0, p1);
-            if (order == 0) {
-                return WrapperProps.NONE;
-            }
-            EffectSet effs = calleeIntrinsicOrResolvedEffects(call);
-            if (effs == null || !effs.isPure()) {
-                return WrapperProps.NONE;
-            }
-            return new WrapperProps(effs.has(Effect.COMMUTATIVE), order == 1 && effs.has(Effect.ASSOCIATIVE));
-        }
-        return WrapperProps.NONE;
-    }
-
-    private int matchBinaryParams(BabbleParser.ExpressionContext a, BabbleParser.ExpressionContext b,
-                                  BabbleParser.FnParamContext p0,
-                                  BabbleParser.FnParamContext p1) {
-        Object ra = resolvePlainParam(unwrapParens(a));
-        Object rb = resolvePlainParam(unwrapParens(b));
-        if (ra == p0 && rb == p1) {
-            return 1;
-        }
-        if (ra == p1 && rb == p0) {
-            return -1;
-        }
-        return 0;
-    }
-
-    private boolean isUnaryIdempotentWrapper(BabbleParser.ExpressionContext raw,
-                                             BabbleParser.FnParamContext p0) {
-        BabbleParser.ExpressionContext expr = unwrapParens(raw);
-        if (resolvePlainParam(expr) == p0) {
-            // Identity function `(x) -> (x)` is idempotent!
-            return true;
-        }
-        if (expr instanceof BabbleParser.CallContext call) {
-            List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-            if (args.size() == 1 && ScopeAnalysis.callParamName(args.get(0)) == null && resolvePlainParam(unwrapParens(args.get(0).expression())) == p0) {
-                EffectSet effs = calleeIntrinsicOrResolvedEffects(call);
-                return effs != null && effs.isPure() && effs.has(Effect.IDEMPOTENT);
-            }
-            if (args.isEmpty() && call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() != null
-                    && resolvePlainParam(unwrapParens(sel.expression())) == p0) {
-                EffectSet effs = calleeIntrinsicOrResolvedEffects(call);
-                return effs != null && effs.isPure() && effs.has(Effect.IDEMPOTENT);
-            }
-        }
-        return false;
-    }
-
-    private boolean isMutIdempotentBody(BabbleParser.FunctionLiteralContext fn,
-                                        BabbleParser.ExpressionContext raw,
-                                        List<BabbleParser.FnParamContext> params,
-                                        boolean[] mutParams,
-                                        boolean mutThis) {
-        BabbleParser.ExpressionContext expr = unwrapParens(raw);
-        // 1. Direct overwrite `this.field = val` or `mutParam.field = val` where `val` does not read the overwritten field!
-        if (expr instanceof BabbleParser.AssignExpressionContext assign && "=".equals(assign.op.getText()) && ScopeAnalysis.assignReceiver(assign) != null) {
-            BabbleParser.ExpressionContext ns = unwrapParens(ScopeAnalysis.assignReceiver(assign));
-            if ((mutThis && ns instanceof BabbleParser.ThisExpressionContext)
-                    || (resolvePlainParam(ns) instanceof BabbleParser.FnParamContext p
-                    && params.indexOf(p) >= 0 && mutParams[params.indexOf(p)])) {
-                if (!readsField(assign.value, ScopeAnalysis.assignName(assign))) {
-                    return true;
-                }
-            }
-        }
-        // 2. Forwarding to an `idempotent` mut method!
-        if (expr instanceof BabbleParser.CallContext call) {
-            EffectSet effs = calleeIntrinsicOrResolvedEffects(call);
-            return effs != null && effs.has(Effect.IDEMPOTENT);
-        }
-        return false;
-    }
-
-    private boolean isMutCommutativeBody(BabbleParser.FunctionLiteralContext fn,
-                                         BabbleParser.ExpressionContext raw,
-                                         List<BabbleParser.FnParamContext> params,
-                                         boolean[] mutParams,
-                                         boolean mutThis) {
-        BabbleParser.ExpressionContext expr = unwrapParens(raw);
-        // `this.x += delta` on int (`+` is associative & commutative!) or forwarding to a `mut commutative` method!
-        if (expr instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) != null) {
-            BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
-            String op = assign.op.getText();
-            Type targetType = ec.checker.rawTypeOf(assign);
-            if ("+=".equals(op) && targetType == Type.INT && params.size() == 1
-                    && resolvePlainParam(unwrapParens(assign.value)) == params.get(0)) {
-                return true;
-            }
-            if ("=".equals(op) && targetType == Type.INT && params.size() == 1
-                    && assign.value instanceof BabbleParser.BinaryOpContext bin && "+".equals(bin.op.getText())) {
-                String assignedName = ScopeAnalysis.assignName(assign);
-                if ((sameTargetField(recv, assignedName, bin.left)
-                        && resolvePlainParam(unwrapParens(bin.right)) == params.get(0))
-                        || (sameTargetField(recv, assignedName, bin.right)
-                        && resolvePlainParam(unwrapParens(bin.left)) == params.get(0))) {
-                    return true;
-                }
-            }
-        }
-        if (expr instanceof BabbleParser.CallContext call) {
-            EffectSet effs = calleeIntrinsicOrResolvedEffects(call);
-            return effs != null && effs.has(Effect.COMMUTATIVE);
-        }
-        return false;
-    }
-
-    private boolean sameTargetField(BabbleParser.ExpressionContext ns, String field, BabbleParser.ExpressionContext expr) {
-        expr = unwrapParens(expr);
-        if (!(expr instanceof BabbleParser.SelectorContext sel) || sel.expression() == null || !field.equals(ScopeAnalysis.selectorName(sel))) {
-            return false;
-        }
-        BabbleParser.ExpressionContext r1 = unwrapParens(ns);
-        BabbleParser.ExpressionContext r2 = unwrapParens(sel.expression());
-        return r1 instanceof BabbleParser.ThisExpressionContext && r2 instanceof BabbleParser.ThisExpressionContext;
-    }
-
-    private static boolean readsField(ParseTree tree, String fieldName) {
-        if (tree instanceof BabbleParser.SelectorContext sel && sel.expression() != null
-                && fieldName.equals(ScopeAnalysis.selectorName(sel))) {
-            return true;
-        }
-        for (int i = 0; i < tree.getChildCount(); i++) {
-            if (readsField(tree.getChild(i), fieldName)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private Object resolvePlainParam(BabbleParser.ExpressionContext expr) {
-        if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object r = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
-            if (r instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc)) {
-                return r;
-            }
+            double res = switch (b.op()) {
+                case ADD -> l + r;
+                case SUB -> l - r;
+                case MUL -> l * r;
+                case DIV -> l / r;
+                default -> Double.NaN;
+            };
+            return Double.isNaN(res) ? null : res;
         }
         return null;
     }
-
-    private boolean referencesDecl(ParseTree tree, ParserRuleContext targetDecl) {
-        if (tree instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            return ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel)) == targetDecl;
-        }
-        for (int i = 0; i < tree.getChildCount(); i++) {
-            if (referencesDecl(tree.getChild(i), targetDecl)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    EffectSet calleeIntrinsicOrResolvedEffects(BabbleParser.CallContext call) {
-        Method rm = ec.checker.resolvedJavaMethodOf(call);
-        if (rm != null) {
-            return ec.javaResolver.resolveJavaMethodProfile(rm.getDeclaringClass(), rm.getName(), rm).effects();
-        }
-        Constructor<?> rc = ec.checker.resolvedJavaConstructorOf(call);
-        if (rc != null) {
-            return ec.javaResolver.resolveJavaConstructorProfile(rc.getDeclaringClass(), rc).effects();
-        }
-        Type callee = ec.checker.rawTypeOf(call.expression());
-        if (callee instanceof Type.JavaMethod jm) {
-            return ec.javaResolver.resolveJavaMethodProfile(jm.owner(), jm.name(), null).effects();
-        }
-        if (callee instanceof Type.JavaClassValue jcv) {
-            return ec.javaResolver.resolveJavaConstructorProfile(jcv.type(), null).effects();
-        }
-        if (callee instanceof Type.ClassValue cv) {
-            EffectChecker.CallableSummary cs = ec.constructorSummary(cv.node());
-            if (cs != null) {
-                boolean isVal = cv.node().kind == ClassShape.Kind.VALUE_CLASS;
-                EnumSet<Effect> set = EffectSet.copySet(cs.effects().effects());
-                if (isVal && set.contains(Effect.PURE) && set.contains(Effect.DETERMINISTIC) && !cv.node().parameters.isEmpty()) {
-                    set.add(Effect.INJECTIVE);
-                }
-                return EffectSet.ofInferred(set, false, false);
-            }
-        }
-        if (callee instanceof Type.Function fn) {
-            BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
-            if (lit != null && ec.summaries.containsKey(lit)) {
-                return ec.summaries.get(lit).effects();
-            }
-            return fn.effects();
-        }
-        return null;
-    }
-
 }

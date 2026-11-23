@@ -933,7 +933,7 @@ final class CallEffectAnalyzer {
     }
 
     private boolean isForwardedParamExpr(BabbleParser.ExpressionContext expr) {
-        BabbleParser.ExpressionContext unwrapped = AlgebraicVerifier.unwrapParens(expr);
+        BabbleParser.ExpressionContext unwrapped = EffectBodyWalker.unwrapParens(expr);
         if (!(unwrapped instanceof BabbleParser.SelectorContext s) || s.expression() != null) {
             return false;
         }
@@ -1038,7 +1038,7 @@ final class CallEffectAnalyzer {
                     w.stmtHasSideEffect = true;
                 }
                 if (cbEffects.mutThis()) {
-                    BabbleParser.ExpressionContext unwrapped = AlgebraicVerifier.unwrapParens(argExpr);
+                    BabbleParser.ExpressionContext unwrapped = EffectBodyWalker.unwrapParens(argExpr);
                     if (unwrapped instanceof BabbleParser.SelectorContext s && s.expression() != null) {
                         Reachability.Origin boundRecvOrig = w.boundMethodReceivers.get(s);
                         if (boundRecvOrig != null) {

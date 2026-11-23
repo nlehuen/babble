@@ -197,7 +197,7 @@ final class EffectChecker {
     final TypedProgram checker;
     final EffectModifiers modifiers;
     final JavaEffectResolver javaResolver;
-    final AlgebraicVerifier algebraic;
+    final EffectAstExtractors algebraic;
 
     /** BIP019 structured axioms from imports, session, and this file (tier 1). */
     AxiomData.AxiomTable localAxioms = AxiomData.AxiomTable.EMPTY;
@@ -233,7 +233,7 @@ final class EffectChecker {
         this.modifiers = new EffectModifiers(this);
         this.javaResolver = new JavaEffectResolver(pass.hostEffects, checker, () -> this.localAxioms,
                 m -> m.function != null ? summaries.get(m.function) : null);
-        this.algebraic = new AlgebraicVerifier(this);
+        this.algebraic = new EffectAstExtractors(this);
         for (ModuleInterface module : pass.modules.values()) {
             localAxioms = localAxioms.mergeOver(module.exportedAxioms());
         }

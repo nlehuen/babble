@@ -225,7 +225,7 @@ public final class EGraph {
 
     private ENode tryConstantFold(ENode node) {
         int n = node.arity();
-        if (n == 0 || node.op() == ENode.Op.CALL || node.op() == ENode.Op.OPAQUE) {
+        if (n == 0 || n > 2 || node.op() == ENode.Op.CALL || node.op() == ENode.Op.OPAQUE) {
             return null;
         }
         ENode c0 = constOf.get(find(node.child(0)));
@@ -525,6 +525,7 @@ public final class EGraph {
             case OPAQUE -> 2;
             case NOT, NEG -> 3;
             case ADD, SUB, MUL, DIV, STR_ADD, EQ, NEQ, LT, LTE, GT, GTE, AND, OR -> 4;
+            case ITE -> 5;
             case CALL -> 10;
         };
     }
