@@ -142,7 +142,7 @@ Work on **Capturing Types** (`[BGO23]`, `[Odersky+22]`), **second-class values**
   3. Parametric argument-flow matrix $\text{Flow}[i][m]$ (`BitSet` of caller roots passed to argument $m$ of callback $p_i$).
   4. Capture set $\text{Cap}(F)$.
 - Instantiating *any* HOF call (intra-file, cross-module, interface, or REPL) becomes an $O(k)$ bitvector evaluation:
-  $$E(F(\vec{a})) = E_{\mathrm{base}} \sqcap \bigsqcap_{i \in C_{\mathrm{called}}} E(a_i), \qquad \text{mut}(F(\vec{a})) = \text{mut}_{\mathrm{base}} \cup \bigcup_{i \in C_{\mathrm{called}}} \bigcup_{m \in \text{mut}(a_i)} \text{Flow}[i][m]$$
+  $$E(F(\vec{a})) = E_{\mathrm{base}} \wedge \bigwedge_{i \in C_{\mathrm{called}}} E(a_i), \qquad \text{mut}(F(\vec{a})) = \text{mut}_{\mathrm{base}} \cup \bigcup_{i \in C_{\mathrm{called}}} \bigcup_{m \in \text{mut}(a_i)} \text{Flow}[i][m]$$
   (and identically for `BIP019` $\text{read}(F(\vec{a}))$!). This **eliminates** `buildCallableTemplate`'s $1 + k + \sum \text{arity}(cb_i)$ probing re-walks, eliminates `trySpecializeCall` and `specializationCache`, and gives exact parity across module boundaries.
 
 ### 3.3 Pillar 3 — Modal Axes & Algebraic Mode Crossing (OxCaml / DRFCaml)
