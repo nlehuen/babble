@@ -236,32 +236,31 @@ Structural decomposition inside `org.babblelang.compiler` (strictly zero-bytecod
 
 Because `EffectChecker` runs *inside* `TypeChecker.run` (between slot-inference convergence round 1 and round 2 so inferred effects populate `Type.Function` and `TypedModuleSummary`), it stays in `org.babblelang.analysis` rather than moving after `HirBuilder`. However, mirroring `BIP010`'s `TypeAlgebra`/`JavaTypeBridge`, **all algorithmic cores have zero ANTLR imports**, insulated behind one thin `EffectBodyWalker` adapter for `BIP015`:
 
-```
-                    ┌────────────────────────────────────────┐
-                    │   Thin AST Adapter (sole ANTLR layer)  │
-                    │  EffectModifiers  +  EffectBodyWalker  │
-                    └───────────────────┬────────────────────┘
-                                        │
-          ┌─────────────────────────────┼─────────────────────────────┐
-          ▼                             ▼                             ▼
-┌───────────────────┐       ┌───────────────────────┐     ┌───────────────────────┐
-│  ReachabilityEnv  │       │ SymbolicEffectSummary │     │   ModalKindTable      │
-│ (§3.1: q, ♦,      │       │ (§3.2: C_called,      │     │ (§3.3: locality,      │
-│  AccessPath, ∇)   │       │  Flow[i][m], Cap)     │     │  unique, contention)  │
-└─────────┬─────────┘       └───────────┬───────────┘     └───────────┬───────────┘
-          └─────────────────────────────┼─────────────────────────────┘
-                                        ▼
-                    ┌────────────────────────────────────────┐
-                    │   EffectFixpointDriver (Bourdoncle WTO │
-                    │   + single Verification pass, §3.4)    │
-                    └───────────────────┬────────────────────┘
-                      ┌─────────────────┼─────────────────┐
-                      ▼                 ▼                 ▼
-            ┌──────────────────┐ ┌─────────────┐ ┌──────────────────┐
-            │JavaEffectResolver│ │AlgebraicVer.│ │SizeChangeTermin. │
-            │(7-tier + unified │ │(ir.egraph + │ │(§3.6: SCP)       │
-            │ purity lattice)  │ │ RelSignDom) │ │                  │
-            └──────────────────┘ └─────────────┘ └──────────────────┘
+```mermaid
+flowchart TD
+    subgraph Adapter["Thin AST Adapter (sole ANTLR layer)"]
+        AST["EffectModifiers + EffectBodyWalker"]
+    end
+
+    subgraph Core["ANTLR-Free Algorithmic Cores"]
+        RE["ReachabilityEnv (§3.1: q, ♦, AccessPath, widening)"]
+        SES["SymbolicEffectSummary (§3.2: C_called, Flow, Cap)"]
+        MK["ModalKindTable (§3.3: locality, unique, contention)"]
+        DRV["EffectFixpointDriver (Bourdoncle WTO + single Verification pass, §3.4)"]
+        JER["JavaEffectResolver (7-tier + unified purity lattice)"]
+        ALG["AlgebraicVerifier (org.babblelang.ir.egraph + RelSignDom, §3.5)"]
+        SCP["SizeChangeTermination (§3.6: polynomial SCP)"]
+    end
+
+    AST --> RE
+    AST --> SES
+    AST --> MK
+    RE --> DRV
+    SES --> DRV
+    MK --> DRV
+    DRV --> JER
+    DRV --> ALG
+    DRV --> SCP
 ```
 
 The four progressive phases cleanly separate **pure zero-behavior-change refactoring** from **algorithmic upgrades**:
