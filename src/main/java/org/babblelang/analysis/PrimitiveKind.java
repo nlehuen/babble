@@ -23,6 +23,30 @@ public enum PrimitiveKind {
         return (this == LONG || this == DOUBLE) ? 2 : 1;
     }
 
+    public int numericRank() {
+        return switch (this) {
+            case BYTE -> 0;
+            case SHORT -> 1;
+            case INT -> 2;
+            case LONG -> 3;
+            case FLOAT -> 4;
+            case DOUBLE -> 5;
+            default -> -1;
+        };
+    }
+
+    public static PrimitiveKind ofJavaClass(Class<?> cls) {
+        if (cls == int.class) return INT;
+        if (cls == long.class) return LONG;
+        if (cls == float.class) return FLOAT;
+        if (cls == double.class) return DOUBLE;
+        if (cls == boolean.class) return BOOL;
+        if (cls == byte.class) return BYTE;
+        if (cls == short.class) return SHORT;
+        if (cls == char.class) return CHAR;
+        return NONE;
+    }
+
     static PrimitiveKind of(Type type) {
         if (type == Type.BYTE) {
             return BYTE;

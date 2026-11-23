@@ -118,3 +118,19 @@ def checkGuard = fn (x: int) -> (
 )
 checkGuard(-5)
 }}}}}
+
+{{{{{
+;; Non-dropping idempotent collapse on impure arguments (`f(f(impure())) -> f(impure())`)
+def bumpStr = fn io (): string -> (tick += 1 ; "  ok  ")
+def a = bigClamp(bigClamp(bump() - 10))
+def b = java.lang.Math.abs(java.lang.Math.abs(bump() - 10))
+def s = bumpStr().trim().trim()
+assert(a == 0 and b == 8 and s == "ok" and tick == 3)
+}}}}}
+
+{{{{{
+;; Non-dropping arithmetic identities with impure operands (`e + 0`, `0 + e`, `e - 0`, `e * 1`, `1 * e`)
+def r = (bump() + 0) + (0 + bump()) + (bump() - 0) + (bump() * 1) + (1 * bump())
+assert(r == 15 and tick == 5)
+}}}}}
+

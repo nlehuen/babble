@@ -586,7 +586,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                     && lc.value() instanceof Character lch && rc.value() instanceof Character rch) {
                 cmp = Character.compare(lch, rch);
             } else if (lc.value() instanceof Number ln && rc.value() instanceof Number rn) {
-                PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
+                PrimitiveKind common = lk.numericRank() >= rk.numericRank() ? lk : rk;
                 cmp = switch (common) {
                     case BYTE, SHORT, INT -> Integer.compare(ln.intValue(), rn.intValue());
                     case LONG -> Long.compare(ln.longValue(), rn.longValue());
@@ -697,7 +697,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
             try {
                 Object res = m.invoke(null, jArgs);
-                PrimitiveKind rk = javaRetKind(m.getReturnType());
+                PrimitiveKind rk = PrimitiveKind.ofJavaClass(m.getReturnType());
                 if (rk != PrimitiveKind.NONE && res != null) {
                     return applyWidening(res, rk, c.meta());
                 }
@@ -738,18 +738,6 @@ public final class HirEGraphSimplifyPass implements HirPass {
         return null;
     }
 
-    private static PrimitiveKind javaRetKind(Class<?> ret) {
-        if (ret == int.class) return PrimitiveKind.INT;
-        if (ret == long.class) return PrimitiveKind.LONG;
-        if (ret == float.class) return PrimitiveKind.FLOAT;
-        if (ret == double.class) return PrimitiveKind.DOUBLE;
-        if (ret == boolean.class) return PrimitiveKind.BOOL;
-        if (ret == byte.class) return PrimitiveKind.BYTE;
-        if (ret == short.class) return PrimitiveKind.SHORT;
-        if (ret == char.class) return PrimitiveKind.CHAR;
-        return PrimitiveKind.NONE;
-    }
-
     private static HirExpr.Const coerceConstForVar(HirExpr.Const c, HirVar var, int defWideningRank) {
         PrimitiveKind vk = var.primitiveKind();
         Object val = c.value();
@@ -769,22 +757,21 @@ public final class HirEGraphSimplifyPass implements HirPass {
         return null;
     }
 
+    private static final PrimitiveKind[] WIDENING_KINDS = {
+            PrimitiveKind.BYTE, PrimitiveKind.SHORT, PrimitiveKind.INT,
+            PrimitiveKind.LONG, PrimitiveKind.FLOAT, PrimitiveKind.DOUBLE
+    };
+
     static HirExpr.Const applyWidening(Object value, PrimitiveKind currentKind, ExprMeta meta) {
         int rank = meta.wideningRank();
         if (rank < 0) {
             return new HirExpr.Const(value, meta.withKind(currentKind).withWideningRank(-1));
         }
-        if (!(value instanceof Number n)) {
+        if (!(value instanceof Number n) || rank >= WIDENING_KINDS.length) {
             return null;
         }
-        return switch (rank) {
-            case 1 -> new HirExpr.Const(n.shortValue(), meta.withKind(PrimitiveKind.SHORT).withWideningRank(-1));
-            case 2 -> new HirExpr.Const(n.intValue(), meta.withKind(PrimitiveKind.INT).withWideningRank(-1));
-            case 3 -> new HirExpr.Const(n.longValue(), meta.withKind(PrimitiveKind.LONG).withWideningRank(-1));
-            case 4 -> new HirExpr.Const(n.floatValue(), meta.withKind(PrimitiveKind.FLOAT).withWideningRank(-1));
-            case 5 -> new HirExpr.Const(n.doubleValue(), meta.withKind(PrimitiveKind.DOUBLE).withWideningRank(-1));
-            default -> null;
-        };
+        PrimitiveKind target = WIDENING_KINDS[rank];
+        return new HirExpr.Const(convertNumber(n, target), meta.withKind(target).withWideningRank(-1));
     }
 
     private static HirExpr.Const convertConstToKind(Object val, PrimitiveKind from, PrimitiveKind to, ExprMeta meta) {
@@ -795,31 +782,19 @@ public final class HirEGraphSimplifyPass implements HirPass {
             return new HirExpr.Const(val, meta.withKind(PrimitiveKind.NONE).withWideningRank(-1));
         }
         if (val instanceof Number n && HirPurity.isNumericKind(to)) {
-            Object conv = switch (to) {
-                case BYTE -> n.byteValue();
-                case SHORT -> n.shortValue();
-                case INT -> n.intValue();
-                case LONG -> n.longValue();
-                case FLOAT -> n.floatValue();
-                case DOUBLE -> n.doubleValue();
-                default -> null;
-            };
-            if (conv != null) {
-                return applyWidening(conv, to, meta);
-            }
+            return applyWidening(convertNumber(n, to), to, meta);
         }
         return null;
     }
 
-    private static int numericOrder(PrimitiveKind kind) {
-        return switch (kind) {
-            case BYTE -> 0;
-            case SHORT -> 1;
-            case INT -> 2;
-            case LONG -> 3;
-            case FLOAT -> 4;
-            case DOUBLE -> 5;
-            default -> -1;
+    private static Number convertNumber(Number n, PrimitiveKind to) {
+        return switch (to) {
+            case BYTE -> n.byteValue();
+            case SHORT -> n.shortValue();
+            case INT -> n.intValue();
+            case LONG -> n.longValue();
+            case FLOAT -> n.floatValue();
+            default -> n.doubleValue();
         };
     }
 

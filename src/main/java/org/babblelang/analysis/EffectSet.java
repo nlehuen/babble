@@ -315,19 +315,7 @@ public final class EffectSet {
     }
 
     public static String keywordOf(Effect effect) {
-        return switch (effect) {
-            case PURE -> "pure";
-            case HERMETIC -> "hermetic";
-            case VOLATILE -> "volatile";
-            case MUT -> "mut";
-            case BORROW -> "borrow";
-            case SHARED -> "shared";
-            case UNIQUE -> "unique";
-            case DETERMINISTIC -> "deterministic";
-            case NOTHROW -> "nothrow";
-            case IO -> "io";
-            default -> effect.name().toLowerCase(java.util.Locale.ROOT);
-        };
+        return effect.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     /** Formats explicitly written BIP016 surface modifiers for default type display. */

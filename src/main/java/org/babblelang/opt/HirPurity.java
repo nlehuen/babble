@@ -110,7 +110,7 @@ public final class HirPurity {
             }
             case HirExpr.Logic l -> isPureNothrowTerminating(l.left(), module, visitingFns)
                     && isPureNothrowTerminating(l.right(), module, visitingFns);
-            case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, module, visitingFns);
+            case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, Set.of(), module, visitingFns);
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
@@ -163,11 +163,12 @@ public final class HirPurity {
         };
     }
 
-    private static boolean isPureLocalBlock(HirExpr.Block b, HirModule module, Set<Integer> visitingFns) {
-        if (b.declaredVars().isEmpty()) {
+    private static boolean isPureLocalBlock(HirExpr.Block b, Set<Integer> outerLocals,
+                                            HirModule module, Set<Integer> visitingFns) {
+        if (b.declaredVars().isEmpty() && outerLocals.isEmpty()) {
             return allPureNothrowTerminating(b.statements(), module, visitingFns);
         }
-        Set<Integer> localIds = new HashSet<>();
+        Set<Integer> localIds = b.declaredVars().isEmpty() ? outerLocals : new HashSet<>(outerLocals);
         for (HirVar v : b.declaredVars()) {
             if (!v.cell()) {
                 localIds.add(v.id());
@@ -193,16 +194,7 @@ public final class HirPurity {
             return isPureNothrowTerminating(a.value(), module, visitingFns);
         }
         if (s instanceof HirExpr.Block inner && !inner.opensNamespaceScope()) {
-            Set<Integer> extended = localIds;
-            if (!inner.declaredVars().isEmpty()) {
-                extended = new HashSet<>(localIds);
-                for (HirVar v : inner.declaredVars()) {
-                    if (!v.cell()) {
-                        extended.add(v.id());
-                    }
-                }
-            }
-            return allPureWithLocals(inner.statements(), extended, module, visitingFns);
+            return isPureLocalBlock(inner, localIds, module, visitingFns);
         }
         if (s instanceof HirExpr.For f) {
             EffectSet fx = f.meta().effects();

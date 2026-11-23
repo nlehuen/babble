@@ -205,3 +205,146 @@ def ok = fn (n : int) : int -> (
 )
 assert(ok(3) == 3)
 }}}}}
+
+{{{{{
+;; SCP : Math.floorDiv, long guarded descent, flipped constant guards (`0L < n`), and `n + (-1L)`
+def halving = fn (n : int) : int -> (
+    if n <= 0 then ( 0 ) else ( 1 + halving(java.lang.Math.floorDiv(n, 2)) )
+)
+def downL = fn (n : long) : long -> (
+    if 0L < n then ( 1L + downL(n + (-1L)) ) else ( 0L )
+)
+assert(halving(8) == 4 and downL(4L) == 4L)
+}}}}}
+
+{{{{{
+;; SCP : boolean `not`, `and`, `!=` tightening, and early-return guard refinement
+def fNot = fn (n : int) : int -> (
+    if not (n <= 0) then ( 1 + fNot(n - 1) ) else ( 0 )
+)
+def fNeq = fn (n : int) : int -> (
+    if n >= 0 and n != 0 then ( 1 + fNeq(n - 1) ) else ( 0 )
+)
+def fEarly = fn (n : int) : int -> (
+    if n <= 0 then ( return 0 )
+    1 + fEarly(n - 1)
+)
+assert(fNot(3) == 3 and fNeq(3) == 3 and fEarly(3) == 3)
+}}}}}
+
+{{{{{
+;; SCP : early-return in else-branch (`alwaysExitsBlock`), `a < b`, and `a >= b` parameter guards
+def fElseExit = fn (n : int) : int -> (
+    if n > 0 then ( 0 ) else ( return 0 )
+    1 + fElseExit(n - 1)
+)
+def subLt = fn (a : int, b : int) : int -> (
+    if a >= 1 and a < b then ( subLt(a, b - a) ) else ( a + b )
+)
+assert(fElseExit(3) == 3 and subLt(3, 10) == 4)
+}}}}}
+
+{{{{{
+;; SCP : multi-param Ackermann (lexicographic) and parameter-swap (Kuhn bipartite matching)
+def ack = fn (m : int, n : int) : int -> (
+    if m <= 0 then ( n + 1 )
+    else if n <= 0 then ( ack(m - 1, 1) )
+    else ( ack(m - 1, ack(m, n - 1)) )
+)
+def swapDown = fn (a : int, b : int) : int -> (
+    if a > 0 and b > 0 then ( 1 + swapDown(b, a - 1) ) else ( 0 )
+)
+assert(ack(2, 2) == 7 and swapDown(3, 2) == 4)
+}}}}}
+
+{{{{{
+;; SCP : fan-out calls (Criterion 2 max-measure) and guarded mutual recursion
+def fanOut = fn (a : int, b : int) : int -> (
+    if a > 0 and b > 0 then ( fanOut(a - 1, a - 1) + fanOut(b - 1, b - 1) ) else ( 1 )
+)
+def evenM = fn (n : int) : bool -> ( if n <= 0 then ( true ) else ( oddM(n - 1) ) )
+def oddM = fn (n : int) : bool -> ( if n <= 0 then ( false ) else ( evenM(n - 1) ) )
+assert(fanOut(2, 2) == 4 and evenM(4) and not oddM(4))
+}}}}}
+
+{{{{{
+;; SCP : recursive method `this.down(n - 1)` certified terminating (BIP027-D8)
+def Counter = record (k : int) (
+    def down = fn (n : int) : int -> (
+        if n <= 0 then ( this.k ) else ( 1 + this.down(n - 1) )
+    )
+)
+def bad = fn (c : Counter, n : int) : int -> (
+    c.down(n)
+    0
+)
+}}}}}
+Unused pure expression
+
+{{{{{
+;; SCP : negative cases (reassigned param, escaping ref) stay non-terminating
+def fReassign = fn (n : int) : int -> ( if n <= 0 then ( 0 ) else ( n = n - 1 ; fReassign(n) ) )
+def fEscape = fn (n : int) : int -> ( def g = fEscape ; if n <= 0 then ( 0 ) else ( g(n - 1) ) )
+def ok = fn (n : int) : int -> ( fReassign(n) ; fEscape(n) ; n )
+assert(ok(2) == 2)
+}}}}}
+
+{{{{{
+;; SCP : `forever` and recursive `toString` stay non-terminating
+def fFor = fn (n : int) : int -> ( if n <= 0 then ( 0 ) else ( forever ( fFor(n - 1) ) ) )
+def RStr = class (def n : int) (
+    def toString = fn () : string -> ( if this.n <= 0 then ( "" ) else ( "" + RStr(this.n - 1) ) )
+)
+def ok = fn (n : int) : int -> ( fFor(n) ; discard(RStr(0).toString()) ; n )
+assert(ok(1) == 1)
+}}}}}
+
+{{{{{
+;; RelSignDomain : scalar widenings (char/short/int/float) and bool not
+def c2i = fn monotone injective (c : char) : int -> ( int(c) )
+def s2d = fn monotone injective (s : short) : double -> ( double(s) )
+def i2l = fn monotone injective (x : int) : long -> ( long(x) )
+assert(c2i('a') == 97 and s2d(short(2)) == 2.0 and i2l(3) == 3L)
+}}}}}
+
+{{{{{
+def f2d = fn monotone injective (x : float) : double -> ( double(x) )
+def bNot = fn injective (b : bool) : bool -> ( not b )
+assert(f2d(1.5f) == 1.5 and not bNot(true))
+}}}}}
+
+{{{{{
+;; RelSignDomain : constant-folded multipliers, negative slopes, long odd mul, non-injective Pair
+def scaleD = fn monotone (x : double) : double -> ( (2.0 + 1.0) * x + (-(-x)) / 2.0 )
+def scaleL = fn injective (x : long) : long -> ( (2L + 1L) * x - 4L )
+def negDiv = fn monotone (x : double) : double -> ( -(x / (-2.0)) )
+assert(scaleD(2.0) == 7.0 and scaleL(3L) == 5L and negDiv(4.0) == 2.0)
+}}}}}
+
+{{{{{
+;; RelSignDomain : non-triangular multi-param record ctor is rejected as injective
+def badPair = fn injective (a : int, b : int) : Pair -> ( Pair(a + b, a + b) )
+}}}}}
+Function badPair declared injective violates injective guarantee
+
+{{{{{
+;; Mut algebraic properties on `mut` parameter and with `return`
+def setVal = fn idempotent (mut b : Box, v : int) -> ( return (b.v = v) )
+def addVal = fn commutative (mut b : Box, d : int) -> ( b.v += d )
+def b = Box(0)
+setVal(b, 5)
+setVal(b, 5)
+addVal(b, 3)
+assert(b.v == 8)
+}}}}}
+
+{{{{{
+;; BIP027-D8 : `discard(sumList(xs))` and `discard(for ...)` stay valid and execute cleanly
+def f = fn (xs : list of int) : int -> (
+    discard(sumList(xs))
+    discard(for x in xs then ( x + 1 ))
+    xs.size()
+)
+assert(f(list(1, 2, 3)) == 3)
+}}}}}
+
