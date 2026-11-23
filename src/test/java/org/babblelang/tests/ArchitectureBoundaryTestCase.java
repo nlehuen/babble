@@ -38,7 +38,9 @@ public class ArchitectureBoundaryTestCase {
             "org/babblelang/analysis/TypeAlgebra",
             "org/babblelang/analysis/JavaTypeBridge",
             "org/babblelang/analysis/TypeDisplay",
-            "org/babblelang/analysis/OverloadSolver"
+            "org/babblelang/analysis/OverloadSolver",
+            "org/babblelang/analysis/Reachability",
+            "org/babblelang/analysis/JavaEffectResolver"
     );
 
     /**
@@ -48,7 +50,8 @@ public class ArchitectureBoundaryTestCase {
      */
     private static final List<String> SIZE_CAPPED_SOURCES = List.of(
             "src/main/java/org/babblelang/analysis/CallSolver.java",
-            "src/main/java/org/babblelang/compiler/HirEmitter.java"
+            "src/main/java/org/babblelang/compiler/HirEmitter.java",
+            "src/main/java/org/babblelang/analysis/EffectChecker.java"
     );
 
     private static Path classesDirectory() throws URISyntaxException {
@@ -178,6 +181,25 @@ public class ArchitectureBoundaryTestCase {
             }
             if (lines > MAX_REFACTORED_LOC) {
                 violations.add(relativePath + " has " + lines + " LOC (ceiling is " + MAX_REFACTORED_LOC + ")");
+            }
+        }
+        Assertions.assertEquals(List.of(), violations);
+    }
+
+    @Test
+    public void effectCheckerIsolatesReflection() throws Exception {
+        Path root = classesDirectory();
+        List<String> violations = new ArrayList<>();
+        for (String name : compiledClassesUnder(root, "org/babblelang/analysis")) {
+            if (!topLevelClass(name).equals("org/babblelang/analysis/EffectChecker")) {
+                continue;
+            }
+            try (InputStream in = Files.newInputStream(root.resolve(name + ".class"))) {
+                for (String ref : RuntimeBoundaryTestCase.referencedClasses(in)) {
+                    if (ref.startsWith("java/lang/reflect/")) {
+                        violations.add(name + " -> " + ref);
+                    }
+                }
             }
         }
         Assertions.assertEquals(List.of(), violations);

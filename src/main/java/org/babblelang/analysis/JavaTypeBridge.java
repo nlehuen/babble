@@ -864,7 +864,7 @@ final class JavaTypeBridge {
         Type returnType = fromJavaType(sam.getGenericReturnType(), sam.getAnnotatedReturnType(), env,
                 false, false, JavaNullability.returnNullness(sam), JavaNullability.isNullMarked(sam));
         Type.Function raw = new Type.Function(params, returnType);
-        return effectChecker != null ? effectChecker.applySamJavaEffects(sam, raw) : raw;
+        return effectChecker != null ? effectChecker.javaResolver().applySamJavaEffects(sam, raw) : raw;
     }
 
     static boolean hasJavaMethod(Class<?> iface, String name) {
