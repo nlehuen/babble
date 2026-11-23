@@ -124,7 +124,6 @@ final class EffectBodyWalker {
                 && owner instanceof BabbleParser.FunctionLiteralContext
                 && !declaredPrefix.axiom()
                 && !declaredPrefix.explicitVolatile()
-                && !declaredPrefix.io()
                 && forwardedParams.isEmpty()
                 && !params.isEmpty();
         this.symParamFlow = trackSymbolic ? new long[params.size()][] : null;

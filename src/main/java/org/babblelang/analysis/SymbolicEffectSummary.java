@@ -154,9 +154,6 @@ final class SymbolicEffectSummary {
                         for (int j = 0; j < mutParams.length && j < 64; j++) {
                             if ((mask & (1L << j)) != 0) {
                                 mutParams[j] = true;
-                                if (j < borrowParams.length) {
-                                    borrowParams[j] = false;
-                                }
                             }
                         }
                         if (tFlow != null && m < tFlow.length && tFlow[m]) {
