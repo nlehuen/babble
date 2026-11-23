@@ -47,8 +47,14 @@ final class EffectBodyWalker {
     boolean constructingSelf;
     final EffectChecker.ParsedPrefix declaredPrefix;
     final Set<BabbleParser.FunctionLiteralContext> frameChain;
-    final Map<ParserRuleContext, Type.Function> specializedParams;
     final boolean emitDiagnostics;
+
+    /** True during single-pass inference of a non-locked function body to build SymbolicEffectSummary (BIP027-P4). */
+    final boolean trackSymbolic;
+    final BitSet calledCallbacks = new BitSet();
+    final long[][] symParamFlow;
+    final boolean[][] symThisFlow;
+    final boolean[][] symExtFlow;
 
     boolean hermetic = true;
     boolean deterministic = true;
@@ -64,8 +70,8 @@ final class EffectBodyWalker {
     boolean stmtHasError = false;
     ParserRuleContext discardedExpr = null;
 
-    final Set<BabbleParser.FunctionLiteralContext> frameReadOwners = Collections.newSetFromMap(new IdentityHashMap<>());
-    final Set<BabbleParser.FunctionLiteralContext> frameWriteOwners = Collections.newSetFromMap(new IdentityHashMap<>());
+    final Set<Object> frameReadOwners = Collections.newSetFromMap(new IdentityHashMap<>());
+    final Set<Object> frameWriteOwners = Collections.newSetFromMap(new IdentityHashMap<>());
 
     Map<ParserRuleContext, Reachability.Origin> env = new IdentityHashMap<>();
     final Set<String> reportedMessages = new HashSet<>();
@@ -95,7 +101,6 @@ final class EffectBodyWalker {
                  boolean borrowThis,
                  EffectChecker.ParsedPrefix declaredPrefix,
                  Set<BabbleParser.FunctionLiteralContext> frameChain,
-                 Map<ParserRuleContext, Type.Function> specializedParams,
                  boolean emitDiagnostics) {
         this.ec = ec;
         this.calls = new CallEffectAnalyzer(ec, this);
@@ -111,11 +116,20 @@ final class EffectBodyWalker {
         this.borrowThis = borrowThis;
         this.declaredPrefix = declaredPrefix;
         this.frameChain = frameChain;
-        this.specializedParams = specializedParams;
         this.emitDiagnostics = emitDiagnostics;
         this.terminating = !ec.cyclicCallables.contains(owner);
         this.forwardedParams = owner instanceof BabbleParser.FunctionLiteralContext fn
                 ? EffectModifiers.resolveForwardedParamIndices(fn) : Set.of();
+        this.trackSymbolic = !emitDiagnostics
+                && owner instanceof BabbleParser.FunctionLiteralContext
+                && !declaredPrefix.axiom()
+                && !declaredPrefix.explicitVolatile()
+                && !declaredPrefix.io()
+                && forwardedParams.isEmpty()
+                && !params.isEmpty();
+        this.symParamFlow = trackSymbolic ? new long[params.size()][] : null;
+        this.symThisFlow = trackSymbolic ? new boolean[params.size()][] : null;
+        this.symExtFlow = trackSymbolic ? new boolean[params.size()][] : null;
         if (owner instanceof BabbleParser.FunctionLiteralContext fn && EffectModifiers.capturesCallbacks(fn)) {
             for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
                 ParserRuleContext captured = TypeAnnotations.enclosingParameter(fn.effectPrefix(), id.getText());
@@ -1105,12 +1119,13 @@ final class EffectBodyWalker {
         nothrow = true;
         try {
             int iter = 0;
-            while (iter++ < 8) {
+            while (true) {
                 Map<ParserRuleContext, Reachability.Origin> before = new IdentityHashMap<>(env);
                 eval(ctx.test);
                 bodyOrig = eval(ctx.whileBlock);
-                Map<ParserRuleContext, Reachability.Origin> merged = mergeEnvs(before, env);
-                if (merged.equals(before)) {
+                Map<ParserRuleContext, Reachability.Origin> merged = iter++ < 2
+                        ? mergeEnvs(before, env) : widenEnvs(before, env);
+                if (envsEqual(merged, before)) {
                     env = merged;
                     break;
                 }
@@ -1219,13 +1234,14 @@ final class EffectBodyWalker {
         Reachability.Origin bodyOrig = Reachability.Origin.IMMUTABLE;
         try {
             int iter = 0;
-            while (iter++ < 8) {
+            while (true) {
                 Map<ParserRuleContext, Reachability.Origin> before = new IdentityHashMap<>(env);
                 env.put(ctx, elemOrig);
                 bodyOrig = eval(ctx.forBlock);
                 env.remove(ctx);
-                Map<ParserRuleContext, Reachability.Origin> merged = mergeEnvs(before, env);
-                if (merged.equals(before)) {
+                Map<ParserRuleContext, Reachability.Origin> merged = iter++ < 2
+                        ? mergeEnvs(before, env) : widenEnvs(before, env);
+                if (envsEqual(merged, before)) {
                     env = merged;
                     break;
                 }
@@ -1311,6 +1327,98 @@ final class EffectBodyWalker {
         return out;
     }
 
+    private static boolean envsEqual(Map<ParserRuleContext, Reachability.Origin> a,
+                                     Map<ParserRuleContext, Reachability.Origin> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (Map.Entry<ParserRuleContext, Reachability.Origin> e : a.entrySet()) {
+            if (!Objects.equals(e.getValue(), b.get(e.getKey()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    Map<ParserRuleContext, Reachability.Origin> widenEnvs(Map<ParserRuleContext, Reachability.Origin> a,
+                                                        Map<ParserRuleContext, Reachability.Origin> b) {
+        Map<ParserRuleContext, Reachability.Origin> out = new IdentityHashMap<>();
+        Set<ParserRuleContext> keys = Collections.newSetFromMap(new IdentityHashMap<>());
+        keys.addAll(a.keySet());
+        keys.addAll(b.keySet());
+        for (ParserRuleContext k : keys) {
+            Reachability.Origin oa = a.get(k);
+            Reachability.Origin ob = b.get(k);
+            if (oa == null) {
+                out.put(k, ob);
+            } else if (ob == null) {
+                out.put(k, oa);
+            } else {
+                out.put(k, oa.widen(ob));
+            }
+        }
+        return out;
+    }
+
+    int resolveParamCallbackIndex(BabbleParser.ExpressionContext expr) {
+        if (!trackSymbolic || expr == null) {
+            return -1;
+        }
+        BabbleParser.ExpressionContext u = AlgebraicVerifier.unwrapParens(expr);
+        if (u instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
+            Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+            if (resolved instanceof ParserRuleContext decl) {
+                Integer idx = paramIndex.get(decl);
+                if (idx != null && !forwardedParams.contains(idx)) {
+                    return idx;
+                }
+            }
+        }
+        return -1;
+    }
+
+    void recordCallbackArgFlow(int cbIdx, int slotIdx, Reachability.Origin argOrigin) {
+        if (!trackSymbolic || cbIdx < 0 || cbIdx >= symParamFlow.length || slotIdx < 0) {
+            return;
+        }
+        calledCallbacks.set(cbIdx);
+        ensureFlowCapacity(cbIdx, slotIdx + 1);
+        if (argOrigin == null || argOrigin == Reachability.Origin.IMMUTABLE) {
+            return;
+        }
+        Reachability.Origin flat = argOrigin.hasElementTaint() ? argOrigin.flattenElements() : argOrigin;
+        long mask = 0L;
+        for (int p = flat.params.nextSetBit(0); p >= 0 && p < 64; p = flat.params.nextSetBit(p + 1)) {
+            mask |= (1L << p);
+        }
+        symParamFlow[cbIdx][slotIdx] |= mask;
+        if (flat.aliasesThis) {
+            symThisFlow[cbIdx][slotIdx] = true;
+        }
+        if (flat.external) {
+            symExtFlow[cbIdx][slotIdx] = true;
+        }
+    }
+
+    private void ensureFlowCapacity(int cbIdx, int minSlots) {
+        if (symParamFlow[cbIdx] == null || symParamFlow[cbIdx].length < minSlots) {
+            symParamFlow[cbIdx] = symParamFlow[cbIdx] == null
+                    ? new long[minSlots] : Arrays.copyOf(symParamFlow[cbIdx], minSlots);
+            symThisFlow[cbIdx] = symThisFlow[cbIdx] == null
+                    ? new boolean[minSlots] : Arrays.copyOf(symThisFlow[cbIdx], minSlots);
+            symExtFlow[cbIdx] = symExtFlow[cbIdx] == null
+                    ? new boolean[minSlots] : Arrays.copyOf(symExtFlow[cbIdx], minSlots);
+        }
+    }
+
+    SymbolicEffectSummary buildSymbolicSummary(EffectChecker.CallableSummary residual, EffectSet[] defaultCbEffects) {
+        return new SymbolicEffectSummary(residual, false, residual.effects(),
+                residual.mutParams().clone(), residual.borrowParams().clone(),
+                residual.readParams().clone(), residual.readsThis(),
+                (BitSet) calledCallbacks.clone(), defaultCbEffects,
+                symParamFlow, symThisFlow, symExtFlow);
+    }
+
     /** The type of an expression where it occurs, narrowed by the tests that guard it (as the typing walk recorded it). */
     Type effectiveType(BabbleParser.ExpressionContext expr) {
         BabbleParser.ExpressionContext unwrapped = AlgebraicVerifier.unwrapParens(expr);
@@ -1340,7 +1448,7 @@ final class EffectBodyWalker {
 
     void applyCallableSummaryEffects(EffectChecker.CallableSummary summary) {
         applyEffects(summary.effects());
-        for (BabbleParser.FunctionLiteralContext readOwner : summary.frameReadOwners()) {
+        for (Object readOwner : summary.frameReadOwners()) {
             if (readOwner != owner) {
                 if (frameChain.contains(readOwner)) {
                     frameReadOwners.add(readOwner);
@@ -1349,7 +1457,7 @@ final class EffectBodyWalker {
                 }
             }
         }
-        for (BabbleParser.FunctionLiteralContext writeOwner : summary.frameWriteOwners()) {
+        for (Object writeOwner : summary.frameWriteOwners()) {
             stmtHasSideEffect = true;
             if (writeOwner != owner) {
                 if (frameChain.contains(writeOwner)) {

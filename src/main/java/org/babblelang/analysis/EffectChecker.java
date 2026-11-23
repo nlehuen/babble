@@ -34,7 +34,6 @@ import java.util.Set;
  * and call-site effect propagation/specialization to {@link CallEffectAnalyzer}.
  */
 final class EffectChecker {
-    static final int MAX_SPECIALIZATION_DEPTH = 4;
 
     record ParsedPrefix(EnumSet<Effect> effects,
                         boolean mutThis,
@@ -61,15 +60,15 @@ final class EffectChecker {
     static final BitSet EMPTY_SUMMARY_BITS = new BitSet(0);
 
     record CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
-                           Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
-                           Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                           Set<Object> frameReadOwners,
+                           Set<Object> frameWriteOwners,
                            boolean deepMutThis,
                            BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
                            BitSet ctorStoredParams,
                            boolean[] readParams, boolean readsThis) {
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
-                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
-                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                        Set<Object> frameReadOwners,
+                        Set<Object> frameWriteOwners,
                         boolean deepMutThis,
                         BitSet returnParams, boolean returnThis, boolean returnExternal, boolean returnKnown,
                         BitSet ctorStoredParams) {
@@ -79,8 +78,8 @@ final class EffectChecker {
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
-                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
-                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners,
+                        Set<Object> frameReadOwners,
+                        Set<Object> frameWriteOwners,
                         boolean deepMutThis) {
             this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, deepMutThis,
                     EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
@@ -88,16 +87,16 @@ final class EffectChecker {
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams, boolean[] uniqueParams,
-                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
-                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
+                        Set<Object> frameReadOwners,
+                        Set<Object> frameWriteOwners) {
             this(effects, mutParams, borrowParams, uniqueParams, frameReadOwners, frameWriteOwners, false,
                     EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
                     new boolean[mutParams.length], false);
         }
 
         CallableSummary(EffectSet effects, boolean[] mutParams, boolean[] borrowParams,
-                        Set<BabbleParser.FunctionLiteralContext> frameReadOwners,
-                        Set<BabbleParser.FunctionLiteralContext> frameWriteOwners) {
+                        Set<Object> frameReadOwners,
+                        Set<Object> frameWriteOwners) {
             this(effects, mutParams, borrowParams, new boolean[mutParams.length], frameReadOwners, frameWriteOwners, false,
                     EMPTY_SUMMARY_BITS, false, false, false, EMPTY_SUMMARY_BITS,
                     new boolean[mutParams.length], false);
@@ -182,11 +181,7 @@ final class EffectChecker {
         }
     }
 
-
     record PendingAxiomDiag(String message, ParserRuleContext at) {
-    }
-
-    record SpecKey(BabbleParser.FunctionLiteralContext fn, List<Object> callbackBindings) {
     }
 
     final BlockScopes pass;
@@ -223,15 +218,13 @@ final class EffectChecker {
 
     /** Converged internal summaries for all callables (FunctionLiteralContext and ClassExpressionContext). */
     final Map<ParserRuleContext, CallableSummary> summaries = new IdentityHashMap<>();
+    /** Single-pass symbolic HOF summaries computed alongside {@link #summaries} ({@code BIP027-P4}). */
+    final Map<ParserRuleContext, SymbolicEffectSummary> symbolicSummaries = new IdentityHashMap<>();
     final Map<BabbleParser.WhileExpressionContext, Boolean> loopNothrow = new IdentityHashMap<>();
     /** Caller-visible summaries (locked to declared contract for annotated callables per BIP007-D2). */
     final Map<ParserRuleContext, CallableSummary> visibleSummaries = new IdentityHashMap<>();
-    /** Callables belonging to a cyclic SCC (self-recursive or mutually recursive) — cannot be @TERMINATING. */
+    /** Callables belonging to a cyclic WTO component (self-recursive or mutually recursive). */
     final Set<ParserRuleContext> cyclicCallables = Collections.newSetFromMap(new IdentityHashMap<>());
-
-    /** Active call-site specialization stack to bound recursive higher-order specialization. */
-    final Deque<SpecKey> activeSpecializations = new ArrayDeque<>();
-    final Map<SpecKey, CallableSummary> specializationCache = new HashMap<>();
 
     EffectChecker(BlockScopes pass, TypedProgram checker) {
         this.pass = pass;
@@ -309,7 +302,15 @@ final class EffectChecker {
     }
 
     TypedModuleSummary.CallableEffectTemplate buildCallableTemplate(BabbleParser.FunctionLiteralContext lit, Type.Function fn) {
-        return CallEffectAnalyzer.buildCallableTemplate(this, lit, fn);
+        SymbolicEffectSummary sym = symbolicSummaries.get(lit);
+        if (sym != null) {
+            return new TypedModuleSummary.CallableEffectTemplate(sym);
+        }
+        CallableSummary base = visibleSummaries.getOrDefault(lit, summaries.get(lit));
+        if (base == null || fn == null) {
+            return null;
+        }
+        return new TypedModuleSummary.CallableEffectTemplate(SymbolicEffectSummary.fixed(base, true));
     }
 
     // ================================================================ 2. Pre-Pass & Inference Driver
@@ -327,43 +328,29 @@ final class EffectChecker {
             summaries.put(callable, initialSummary(callable));
         }
 
-        // Build call graph among intra-file callables and condense into SCCs (Tarjan).
+        // Build call graph among intra-file callables and decompose via Bourdoncle WTO (BIP027-P4).
         Map<ParserRuleContext, Set<ParserRuleContext>> edges = buildCallGraph(callables);
-        List<List<ParserRuleContext>> sccs = tarjanScc(callables, edges);
+        List<EffectFixpointDriver.WtoElement<ParserRuleContext>> wto = EffectFixpointDriver.buildWto(callables, edges);
+        cyclicCallables.addAll(EffectFixpointDriver.cyclicNodes(wto));
 
-        // Tarjan emits SCCs in reverse topological order (callees before callers)!
-        for (List<ParserRuleContext> scc : sccs) {
-            boolean cyclic = scc.size() > 1
-                    || (scc.size() == 1 && edges.getOrDefault(scc.get(0), Set.of()).contains(scc.get(0)));
-            if (cyclic) {
-                cyclicCallables.addAll(scc);
-            }
-            int iter = 0;
-            boolean changed;
-            do {
-                changed = false;
-                for (ParserRuleContext callable : scc) {
-                    if (isFixedSummary(callable)) {
-                        continue;
-                    }
-                    specializationCache.clear();
-                    CallableSummary prev = summaries.get(callable);
-                    CallableSummary next = recomputeSummary(callable, prev, null, false);
-                    if (!next.equals(prev)) {
-                        summaries.put(callable, next);
-                        changed = true;
-                    }
-                }
-            } while (changed && ++iter < 32);
-        }
+        EffectFixpointDriver.solve(wto, summaries, this::isFixedSummary,
+                (callable, prev) -> recomputeSummary(callable, prev, false));
 
         // Finalize PURE (= HERMETIC && no mutThis && no mutParams) & algebraic composition,
-        // and build caller-visible contracts (BIP007-D2).
+        // and build caller-visible contracts (BIP007-D2) + finalized symbolic HOF summaries (BIP027-P4).
         for (ParserRuleContext callable : callables) {
             CallableSummary internal = finalizeSummary(callable, summaries.get(callable));
             summaries.put(callable, internal);
             CallableSummary visible = buildVisibleSummary(callable, internal);
             visibleSummaries.put(callable, visible);
+            if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
+                ParsedPrefix prefix = parseFunctionPrefix(fn, false);
+                boolean locked = prefix.axiom() || prefix.explicitVolatile() || prefix.io();
+                SymbolicEffectSummary rawSym = symbolicSummaries.get(fn);
+                symbolicSummaries.put(fn, rawSym != null
+                        ? rawSym.withFinalizedBase(visible, locked)
+                        : SymbolicEffectSummary.fixed(visible, locked));
+            }
             pass.analysis.effects().setCallableEffects(callable, visible.effects());
             pass.analysis.effects().setCallableType(callable, checker.rawTypeOf(callable));
         }
@@ -760,80 +747,30 @@ final class EffectChecker {
         }
     }
 
-    private static List<List<ParserRuleContext>> tarjanScc(List<ParserRuleContext> nodes,
-                                                           Map<ParserRuleContext, Set<ParserRuleContext>> edges) {
-        Map<ParserRuleContext, Integer> indexMap = new IdentityHashMap<>();
-        Map<ParserRuleContext, Integer> lowlink = new IdentityHashMap<>();
-        Set<ParserRuleContext> onStack = Collections.newSetFromMap(new IdentityHashMap<>());
-        Deque<ParserRuleContext> stack = new ArrayDeque<>();
-        List<List<ParserRuleContext>> result = new ArrayList<>();
-        int[] index = {0};
-
-        class Dfs {
-            void visit(ParserRuleContext v) {
-                indexMap.put(v, index[0]);
-                lowlink.put(v, index[0]);
-                index[0]++;
-                stack.push(v);
-                onStack.add(v);
-                for (ParserRuleContext w : edges.getOrDefault(v, Set.of())) {
-                    if (!indexMap.containsKey(w)) {
-                        visit(w);
-                        lowlink.put(v, Math.min(lowlink.get(v), lowlink.get(w)));
-                    } else if (onStack.contains(w)) {
-                        lowlink.put(v, Math.min(lowlink.get(v), indexMap.get(w)));
-                    }
-                }
-                if (lowlink.get(v).equals(indexMap.get(v))) {
-                    List<ParserRuleContext> scc = new ArrayList<>();
-                    while (true) {
-                        ParserRuleContext w = stack.pop();
-                        onStack.remove(w);
-                        scc.add(w);
-                        if (w == v) {
-                            break;
-                        }
-                    }
-                    result.add(scc);
-                }
-            }
-        }
-        Dfs dfs = new Dfs();
-        for (ParserRuleContext n : nodes) {
-            if (!indexMap.containsKey(n)) {
-                dfs.visit(n);
-            }
-        }
-        return result;
-    }
-
-
     // ================================================================ 7. Body Transfer & Alias Analyzer
 
     CallableSummary recomputeSummary(ParserRuleContext callable,
-                                             CallableSummary current,
-                                             Map<ParserRuleContext, Type.Function> specializedParams,
-                                             boolean emitDiagnostics) {
+                                     CallableSummary current,
+                                     boolean emitDiagnostics) {
         if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
-            return analyzeFunctionBody(fn, current, specializedParams, emitDiagnostics);
+            return analyzeFunctionBody(fn, current, emitDiagnostics);
         }
         return analyzeConstructorBody((BabbleParser.ClassExpressionContext) callable, current, emitDiagnostics);
     }
 
     private CallableSummary analyzeFunctionBody(BabbleParser.FunctionLiteralContext fn,
                                                 CallableSummary current,
-                                                Map<ParserRuleContext, Type.Function> specializedParams,
                                                 boolean emitDiagnostics) {
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
         List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
-        boolean untyped = modifiers.isCompletelyUntyped(fn) && specializedParams == null;
+        boolean untyped = modifiers.isCompletelyUntyped(fn);
 
         boolean[] mutParams = current.mutParams().clone();
         boolean[] borrowParams = current.borrowParams().clone();
         boolean mutThis = current.effects().mutThis();
         boolean borrowThis = current.effects().borrowThis();
 
-        EffectBodyWalker analyzer = new EffectBodyWalker(this, 
+        EffectBodyWalker analyzer = new EffectBodyWalker(this,
                 fn,
                 checker.scopeOf(fn),
                 params,
@@ -845,7 +782,6 @@ final class EffectChecker {
                 borrowThis,
                 prefix,
                 activeFrameChain(fn),
-                specializedParams,
                 emitDiagnostics);
 
         // Parameter defaults execute when omitted at call sites.
@@ -879,10 +815,34 @@ final class EffectChecker {
                 false,
                 false,
                 false);
-        return new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
+        CallableSummary residual = new CallableSummary(nextSet, analyzer.mutParams, analyzer.borrowParams, current.uniqueParams(),
                 Set.copyOf(analyzer.frameReadOwners), Set.copyOf(analyzer.frameWriteOwners), analyzer.deepMutThis,
                 (BitSet) analyzer.returnParams.clone(), analyzer.returnThis, analyzer.returnExternal, true, EMPTY_SUMMARY_BITS,
                 analyzer.readParams, analyzer.readsThis);
+
+        if (analyzer.trackSymbolic && !analyzer.calledCallbacks.isEmpty()) {
+            int n = params.size();
+            Type.Function[] defaultCbs = new Type.Function[n];
+            EffectSet[] defaultCbEffects = new EffectSet[n];
+            for (int i = analyzer.calledCallbacks.nextSetBit(0); i >= 0 && i < n; i = analyzer.calledCallbacks.nextSetBit(i + 1)) {
+                Type pt = checker.typeOfDeclarationForEffects(params.get(i));
+                if (pt instanceof Type.Function tf) {
+                    defaultCbs[i] = tf;
+                    defaultCbEffects[i] = tf.effects();
+                } else {
+                    defaultCbEffects[i] = EffectSet.EMPTY;
+                }
+            }
+            SymbolicEffectSummary sym = analyzer.buildSymbolicSummary(residual, defaultCbEffects);
+            CallableSummary defaultInst = sym.instantiate(defaultCbs, null);
+            symbolicSummaries.put(fn, sym.withFinalizedBase(defaultInst, false));
+            return defaultInst;
+        }
+        if (!emitDiagnostics) {
+            symbolicSummaries.put(fn, SymbolicEffectSummary.fixed(residual,
+                    prefix.axiom() || prefix.explicitVolatile() || prefix.io()));
+        }
+        return residual;
     }
 
     private CallableSummary analyzeConstructorBody(BabbleParser.ClassExpressionContext cls,
@@ -899,7 +859,7 @@ final class EffectChecker {
                         false, false, false, false, false, false, false, true)
                 : ParsedPrefix.EMPTY;
 
-        EffectBodyWalker analyzer = new EffectBodyWalker(this, 
+        EffectBodyWalker analyzer = new EffectBodyWalker(this,
                 cls,
                 checker.scopeOf(cls),
                 params,
@@ -911,7 +871,6 @@ final class EffectChecker {
                 false,
                 pseudoPrefix,
                 Set.of(),
-                null,
                 emitDiagnostics);
         analyzer.constructingSelf = true;
 
@@ -1101,12 +1060,12 @@ final class EffectChecker {
             }
             if (prefix.axiom()) {
                 // Axiom body is trusted for effect guarantees, but still check static mut exclusivity inside it!
-                recomputeSummary(fn, summaries.get(fn), null, false);
+                recomputeSummary(fn, summaries.get(fn), false);
                 return;
             }
             // Re-run body analysis with emitDiagnostics = true to report undeclared mut, borrow escape, exclusivity, etc.
             CallableSummary converged = summaries.get(fn);
-            CallableSummary verified = finalizeSummary(fn, recomputeSummary(fn, converged, null, true));
+            CallableSummary verified = finalizeSummary(fn, recomputeSummary(fn, converged, true));
 
             if (!modifiers.isCompletelyUntyped(fn)) {
                 EffectSet actual = verified.effects();
@@ -1144,7 +1103,7 @@ final class EffectChecker {
         // ClassExpressionContext:
         BabbleParser.ClassExpressionContext cls = (BabbleParser.ClassExpressionContext) callable;
         CallableSummary converged = summaries.get(cls);
-        recomputeSummary(cls, converged, null, true);
+        recomputeSummary(cls, converged, true);
         TypeNode node = pass.typeNodes.get(cls);
         if (node != null && node.kind == ClassShape.Kind.VALUE_CLASS) {
             if (!converged.effects().isPure()) {
@@ -1243,7 +1202,7 @@ final class EffectChecker {
         EffectBodyWalker top = new EffectBodyWalker(this, 
                 file, pass.fileScope, List.of(), false,
                 new boolean[0], new boolean[0], new boolean[0], false, false,
-                ParsedPrefix.EMPTY, Set.of(), null, true);
+                ParsedPrefix.EMPTY, Set.of(), true);
         for (BabbleParser.ExpressionContext expr : file.expression()) {
             top.eval(expr);
         }
@@ -1276,7 +1235,7 @@ final class EffectChecker {
         EffectBodyWalker ba = new EffectBodyWalker(this, 
                 block, scope, List.of(), false,
                 new boolean[0], new boolean[0], new boolean[0], false, false,
-                req, Set.of(), null, true);
+                req, Set.of(), true);
         ba.evalBlock(block, false, true);
         if (constraints.contains(Effect.PURE) && !ba.hermetic) {
             checker.effectDiagnostic("static block inside pure function violates pure guarantee", block);
@@ -1292,7 +1251,7 @@ final class EffectChecker {
             EffectBodyWalker probe = new EffectBodyWalker(this, 
                     call, checker.occurrenceScopeOf(call), List.of(), false,
                     new boolean[0], new boolean[0], new boolean[0], false, false,
-                    ParsedPrefix.EMPTY, Set.of(), null, false);
+                    ParsedPrefix.EMPTY, Set.of(), false);
             probe.eval(call);
             EnumSet<Effect> effs = EnumSet.noneOf(Effect.class);
             if (probe.hermetic) {
