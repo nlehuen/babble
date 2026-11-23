@@ -271,7 +271,7 @@ public final class Overloads {
      * Whether every parameter of {@code candidate} could be passed on to {@code other},
      * i.e. whether {@code candidate} is at least as specific as it.
      */
-    private static boolean isMoreSpecific(Executable candidate, Executable other) {
+    public static boolean isMoreSpecific(Executable candidate, Executable other) {
         Class<?>[] candidateTypes = candidate.getParameterTypes();
         Class<?>[] otherTypes = other.getParameterTypes();
         for (int i = 0; i < candidateTypes.length; i++) {
@@ -283,7 +283,7 @@ public final class Overloads {
     }
 
     /** JLS §15.12.2.5 variable-arity specificity comparison between two varargs executables. */
-    private static boolean isVarArgsMoreSpecific(Executable candidate, Executable other) {
+    public static boolean isVarArgsMoreSpecific(Executable candidate, Executable other) {
         Class<?>[] cTypes = candidate.getParameterTypes();
         Class<?>[] oTypes = other.getParameterTypes();
         int m = cTypes.length;

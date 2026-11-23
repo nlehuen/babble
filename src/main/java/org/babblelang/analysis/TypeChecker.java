@@ -2461,148 +2461,11 @@ final class TypeChecker {
                 warn("Type error : cannot iterate over nullable type " + iterType, ctx.iterable);
                 return null;
             }
-            ForIterableInfo resolved = resolveNonNullIterable(iterType, ctx);
+            ForIterableInfo resolved = members.resolveNonNullIterable(iterType);
             if (resolved == null) {
                 warn("Not iterable : " + iterType, ctx.iterable);
             }
             return resolved;
-        }
-
-        private ForIterableInfo resolveNonNullIterable(Type iterType, BabbleParser.ForExpressionContext ctx) {
-            boolean frozenIterable = iterType instanceof Type.Frozen;
-            Type unwrapped = frozenIterable ? ((Type.Frozen) iterType).of() : iterType;
-            if (unwrapped instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
-                return resolveNonNullIterable(frozenIterable ? Type.frozen(tv.bound()) : tv.bound(), ctx);
-            }
-            if (unwrapped instanceof Type.Intersection intersection) {
-                for (Type member : intersection.members()) {
-                    ForIterableInfo sub = resolveNonNullIterable(frozenIterable ? Type.frozen(member) : member, ctx);
-                    if (sub != null) {
-                        return sub;
-                    }
-                }
-                return null;
-            }
-            if (unwrapped instanceof Type.Union union) {
-                Type joinedElem = null;
-                ScopeAnalysis.ForKind commonKind = null;
-                boolean sameKind = true;
-                for (Type member : union.members()) {
-                    Type effMember = frozenIterable ? Type.frozen(member) : member;
-                    ForIterableInfo sub = resolveNonNullIterable(effMember, ctx);
-                    if (sub == null) {
-                        return null;
-                    }
-                    joinedElem = joinedElem == null ? sub.elemType() : algebra.join(joinedElem, sub.elemType());
-                    if (joinedElem == null) {
-                        joinedElem = Type.NULLABLE_ANY;
-                    }
-                    if (commonKind == null) {
-                        commonKind = sub.kind();
-                    } else if (commonKind != sub.kind()) {
-                        sameKind = false;
-                    }
-                }
-                ScopeAnalysis.ForKind kind = (sameKind && (commonKind == ScopeAnalysis.ForKind.JAVA_ITERABLE
-                        || commonKind == ScopeAnalysis.ForKind.JAVA_ITERATOR))
-                        ? commonKind : ScopeAnalysis.ForKind.DYNAMIC_UNION;
-                return new ForIterableInfo(kind, null, joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
-                        null, null, null, null, null);
-            }
-            if (unwrapped instanceof Type.Array arr) {
-                Type elem = frozenIterable ? Type.frozen(arr.element()) : arr.element();
-                return new ForIterableInfo(ScopeAnalysis.ForKind.ARRAY, JavaTypeBridge.checkedArrayClass(arr), elem,
-                        null, null, null, null, null);
-            }
-            if (unwrapped instanceof Type.JavaInstance ji) {
-                if (java.lang.Iterable.class.isAssignableFrom(ji.type())) {
-                    Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
-                    Type elem = envMap.get(java.lang.Iterable.class.getTypeParameters()[0]);
-                    if (elem == null) {
-                        elem = Type.NULLABLE_ANY;
-                    }
-                    if (frozenIterable) {
-                        elem = Type.frozen(elem);
-                    }
-                    return new ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERABLE, null, elem,
-                            null, null, null, null, null);
-                }
-                if (java.util.Iterator.class.isAssignableFrom(ji.type())) {
-                    Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
-                    Type elem = envMap.get(java.util.Iterator.class.getTypeParameters()[0]);
-                    if (elem == null) {
-                        elem = Type.NULLABLE_ANY;
-                    }
-                    if (frozenIterable) {
-                        elem = Type.frozen(elem);
-                    }
-                    return new ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERATOR, null, elem,
-                            null, null, null, null, null);
-                }
-                return null;
-            }
-            if (unwrapped instanceof Type.Instance inst) {
-                Type.Function iterFn = resolveBabbleZeroArgMethod(inst, "iterator");
-                if (iterFn != null) {
-                    Type iterRes = iterFn.result();
-                    if (iterRes != null && !Type.containsNull(iterRes)) {
-                        Type unwrappedIter = iterRes instanceof Type.Frozen f ? f.of() : iterRes;
-                        if (unwrappedIter instanceof Type.JavaInstance ji && java.util.Iterator.class.isAssignableFrom(ji.type())) {
-                            Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
-                            Type elem = envMap.get(java.util.Iterator.class.getTypeParameters()[0]);
-                            if (elem == null) {
-                                elem = Type.NULLABLE_ANY;
-                            }
-                            if (frozenIterable) {
-                                elem = Type.frozen(elem);
-                            }
-                            return new ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE, null, elem,
-                                    inst, null, iterFn, null, null);
-                        }
-                        if (unwrappedIter instanceof Type.Instance iterInst) {
-                            Type.Function hasNextFn = resolveBabbleZeroArgMethod(iterInst, "hasNext");
-                            Type.Function nextFn = resolveBabbleZeroArgMethod(iterInst, "next");
-                            if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
-                                Type elem = nextFn.result();
-                                if (frozenIterable) {
-                                    elem = Type.frozen(elem);
-                                }
-                                return new ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERABLE, null, elem,
-                                        inst, iterInst, iterFn, hasNextFn, nextFn);
-                            }
-                        }
-                    }
-                }
-                Type.Function hasNextFn = resolveBabbleZeroArgMethod(inst, "hasNext");
-                Type.Function nextFn = resolveBabbleZeroArgMethod(inst, "next");
-                if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
-                    Type elem = nextFn.result();
-                    if (frozenIterable) {
-                        elem = Type.frozen(elem);
-                    }
-                    return new ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERATOR, null, elem,
-                            null, inst, null, hasNextFn, nextFn);
-                }
-                return null;
-            }
-            return null;
-        }
-
-        private Type.Function resolveBabbleZeroArgMethod(Type.Instance inst, String name) {
-            MemberTypes.ResolvedMember resolved = members.findMember(inst, name);
-            if (resolved == null || resolved.member().isPrivate()) {
-                return null;
-            }
-            Type raw = memberType(resolved.owner(), resolved.member());
-            if (raw == null || raw == Type.ERROR) {
-                return null;
-            }
-            Type substituted = algebra.substitute(raw, resolved.env());
-            if (substituted instanceof Type.Function fn && fn.typeParameters().isEmpty()
-                    && fn.parameters().stream().allMatch(Type.Parameter::optional)) {
-                return fn;
-            }
-            return null;
         }
 
         private Type visitClassExpression(BabbleParser.ClassExpressionContext ctx, Type expected, Role role) {
@@ -3172,7 +3035,7 @@ final class TypeChecker {
                 case LValue.Implicit imp -> imp.currentType();
             };
             Type value = synth(ctx.value);
-            Type result = operators.binaryOp(operators.arithmeticToken(operator), operator, ctx, org.babblelang.engine.impl.Interpreter.targetText(ctx), ctx, current,
+            Type result = operators.binaryOp(operators.arithmeticToken(operator), operator, ctx, SyntaxText.targetText(ctx), ctx, current,
                     ctx.value.getText(), ctx.value, value);
             if (target instanceof LValue.JavaField jf) {
                 subsumes(ctx, result, jf.declaredType());

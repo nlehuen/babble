@@ -4,10 +4,11 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.analysis.ScopeAnalysis;
-import org.babblelang.engine.impl.Interpreter;
+import org.babblelang.analysis.SyntaxText;
 import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
+import org.babblelang.parser.StringLiterals;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.JavaTypes;
@@ -745,7 +746,7 @@ public final class HirBuilder {
                             scopes.numericWideningRank(d), scopes.checkedType(d), EffectSet.EMPTY, true, false));
         }
         if (ctx instanceof BabbleParser.CharLiteralContext c) {
-            return new HirExpr.Const(Interpreter.unescapeChar(c.CHAR_LIT().getText()),
+            return new HirExpr.Const(StringLiterals.decodeChar(c.CHAR_LIT().getText()),
                     new ExprMeta(c.getStart().getLine(), ScopeAnalysis.PrimitiveKind.CHAR,
                             scopes.numericWideningRank(c), scopes.checkedType(c), EffectSet.EMPTY, true, false));
         }
@@ -1028,7 +1029,7 @@ public final class HirBuilder {
         String operator = Operators.compound(ctx.op.getText());
         String name = ScopeAnalysis.assignName(ctx);
         BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(ctx);
-        String targetText = Interpreter.targetText(ctx);
+        String targetText = SyntaxText.targetText(ctx);
         String valueText = ctx.value.getText();
         HirExpr value = wrapJavaSam(lowerExpr(ctx.value), ctx);
         ExprMeta meta = metaOf(ctx);
@@ -1064,7 +1065,7 @@ public final class HirBuilder {
         EffectSet callFx = scopes.callEffects(ctx);
         ExprMeta meta = metaOf(ctx, callFx);
         List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
-        String[] names = Interpreter.callNames(ctx);
+        String[] names = SyntaxText.callNames(ctx);
         ScopeAnalysis.ArgumentBinding binding = scopes.argumentBinding(ctx);
         ScopeAnalysis.SpreadAdapt[] spreadAdapts = scopes.callSpreadAdapts(ctx);
 
@@ -1088,7 +1089,7 @@ public final class HirBuilder {
                     lowerCallArgs(params, spreadAdapts),
                     binding,
                     (binding != null || names == null) ? scopes.babbleCallSignature(ctx) : null,
-                    Interpreter.callSite(ctx, sourceName),
+                    SyntaxText.callSite(ctx, sourceName),
                     meta
             );
         }
@@ -1163,7 +1164,7 @@ public final class HirBuilder {
                     lowerTypeRef(scopes.superTarget(superExpr), superExpr),
                     lowerCallArgs(params, spreadAdapts),
                     binding,
-                    Interpreter.callSite(ctx, sourceName),
+                    SyntaxText.callSite(ctx, sourceName),
                     meta
             );
         }
@@ -1224,7 +1225,7 @@ public final class HirBuilder {
                             functionIds.get(directFn),
                             lowerCallArgs(params, spreadAdapts),
                             target.binding(),
-                            Interpreter.callSite(ctx, sourceName),
+                            SyntaxText.callSite(ctx, sourceName),
                             meta
                     );
                 }
@@ -1249,7 +1250,7 @@ public final class HirBuilder {
                         lowerCallArgs(params, spreadAdapts),
                         target.binding(),
                         target.signature(),
-                        Interpreter.callSite(ctx, sourceName),
+                        SyntaxText.callSite(ctx, sourceName),
                         meta);
             }
             List<HirExpr.OverloadBranch> hirBranches = new ArrayList<>(ovDispatch.splitBranches().size());
@@ -1269,7 +1270,7 @@ public final class HirBuilder {
             return new HirExpr.OverloadDispatch(
                     lowerExpr(ctx.expression()),
                     ctx.expression().getText(),
-                    Interpreter.callSite(ctx, sourceName),
+                    SyntaxText.callSite(ctx, sourceName),
                     lowerPositionalArgs(params, null),
                     hirBranches,
                     meta);
@@ -1302,7 +1303,7 @@ public final class HirBuilder {
                                 functionIds.get(methodLit),
                                 lowerCallArgs(params, spreadAdapts),
                                 binding,
-                                Interpreter.callSite(ctx, sourceName),
+                                SyntaxText.callSite(ctx, sourceName),
                                 meta
                         );
                     }
@@ -1367,7 +1368,7 @@ public final class HirBuilder {
                 lowerCallArgs(params, spreadAdapts),
                 binding,
                 (binding != null || names == null) ? scopes.babbleCallSignature(ctx) : null,
-                Interpreter.callSite(ctx, sourceName),
+                SyntaxText.callSite(ctx, sourceName),
                 meta
         );
     }
@@ -1413,7 +1414,7 @@ public final class HirBuilder {
                                           BabbleParser.ExpressionContext argExpr, String argText,
                                           ScopeAnalysis.OverloadDispatchTarget ovDispatch) {
         int ln = ctx.getStart().getLine();
-        CallSite site = Interpreter.operatorSite(ctx, recvText, method, argText, sourceName);
+        CallSite site = SyntaxText.operatorSite(ctx, recvText, method, argText, sourceName);
         ExprMeta meta = metaOf(ctx);
         if (!ovDispatch.isSplit()) {
             ScopeAnalysis.OverloadCallTarget target = ovDispatch.direct();

@@ -655,4 +655,124 @@ final class MemberTypes {
             }
         }
     }
+
+    /** Resolves a non-null iterable/iterator type to its lowering protocol and element type (BIP013, BIP027-P1). */
+    TypeChecker.ForIterableInfo resolveNonNullIterable(Type iterType) {
+        boolean frozenIterable = iterType instanceof Type.Frozen;
+        Type unwrapped = frozenIterable ? ((Type.Frozen) iterType).of() : iterType;
+        if (unwrapped instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+            return resolveNonNullIterable(frozenIterable ? Type.frozen(tv.bound()) : tv.bound());
+        }
+        if (unwrapped instanceof Type.Intersection intersection) {
+            for (Type member : intersection.members()) {
+                TypeChecker.ForIterableInfo sub = resolveNonNullIterable(frozenIterable ? Type.frozen(member) : member);
+                if (sub != null) {
+                    return sub;
+                }
+            }
+            return null;
+        }
+        if (unwrapped instanceof Type.Union union) {
+            Type joinedElem = null;
+            ScopeAnalysis.ForKind commonKind = null;
+            boolean sameKind = true;
+            for (Type member : union.members()) {
+                Type effMember = frozenIterable ? Type.frozen(member) : member;
+                TypeChecker.ForIterableInfo sub = resolveNonNullIterable(effMember);
+                if (sub == null) {
+                    return null;
+                }
+                joinedElem = joinedElem == null ? sub.elemType() : checker.algebra().join(joinedElem, sub.elemType());
+                if (joinedElem == null) {
+                    joinedElem = Type.NULLABLE_ANY;
+                }
+                if (commonKind == null) {
+                    commonKind = sub.kind();
+                } else if (commonKind != sub.kind()) {
+                    sameKind = false;
+                }
+            }
+            ScopeAnalysis.ForKind kind = (sameKind && (commonKind == ScopeAnalysis.ForKind.JAVA_ITERABLE
+                    || commonKind == ScopeAnalysis.ForKind.JAVA_ITERATOR))
+                    ? commonKind : ScopeAnalysis.ForKind.DYNAMIC_UNION;
+            return new TypeChecker.ForIterableInfo(kind, null, joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
+                    null, null, null, null, null);
+        }
+        if (unwrapped instanceof Type.Array arr) {
+            Type elem = frozenIterable ? Type.frozen(arr.element()) : arr.element();
+            return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.ARRAY, JavaTypeBridge.checkedArrayClass(arr), elem,
+                    null, null, null, null, null);
+        }
+        if (unwrapped instanceof Type.JavaInstance ji) {
+            if (java.lang.Iterable.class.isAssignableFrom(ji.type())) {
+                Type elem = javaIteratorElement(ji, java.lang.Iterable.class, frozenIterable);
+                return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERABLE, null, elem,
+                        null, null, null, null, null);
+            }
+            if (java.util.Iterator.class.isAssignableFrom(ji.type())) {
+                Type elem = javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
+                return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.JAVA_ITERATOR, null, elem,
+                        null, null, null, null, null);
+            }
+            return null;
+        }
+        if (unwrapped instanceof Type.Instance inst) {
+            Type.Function iterFn = resolveBabbleZeroArgMethod(inst, "iterator");
+            if (iterFn != null) {
+                Type iterRes = iterFn.result();
+                if (iterRes != null && !Type.containsNull(iterRes)) {
+                    Type unwrappedIter = iterRes instanceof Type.Frozen f ? f.of() : iterRes;
+                    if (unwrappedIter instanceof Type.JavaInstance ji && java.util.Iterator.class.isAssignableFrom(ji.type())) {
+                        Type elem = javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
+                        return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_TO_JAVA_ITERABLE, null, elem,
+                                inst, null, iterFn, null, null);
+                    }
+                    if (unwrappedIter instanceof Type.Instance iterInst) {
+                        Type.Function hasNextFn = resolveBabbleZeroArgMethod(iterInst, "hasNext");
+                        Type.Function nextFn = resolveBabbleZeroArgMethod(iterInst, "next");
+                        if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
+                            Type elem = frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
+                            return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERABLE, null, elem,
+                                    inst, iterInst, iterFn, hasNextFn, nextFn);
+                        }
+                    }
+                }
+            }
+            Type.Function hasNextFn = resolveBabbleZeroArgMethod(inst, "hasNext");
+            Type.Function nextFn = resolveBabbleZeroArgMethod(inst, "next");
+            if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
+                Type elem = frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
+                return new TypeChecker.ForIterableInfo(ScopeAnalysis.ForKind.BABBLE_ITERATOR, null, elem,
+                        null, inst, null, hasNextFn, nextFn);
+            }
+            return null;
+        }
+        return null;
+    }
+
+    private static Type javaIteratorElement(Type.JavaInstance ji, Class<?> rawInterface, boolean frozenIterable) {
+        Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
+        Type elem = envMap.get(rawInterface.getTypeParameters()[0]);
+        if (elem == null) {
+            elem = Type.NULLABLE_ANY;
+        }
+        return frozenIterable ? Type.frozen(elem) : elem;
+    }
+
+    private Type.Function resolveBabbleZeroArgMethod(Type.Instance inst, String name) {
+        ResolvedMember resolved = findMember(inst, name);
+        if (resolved == null || resolved.member().isPrivate()) {
+            return null;
+        }
+        Type raw = checker.memberType(resolved.owner(), resolved.member());
+        if (raw == null || raw == Type.ERROR) {
+            return null;
+        }
+        Type substituted = checker.algebra().substitute(raw, resolved.env());
+        if (substituted instanceof Type.Function fn && fn.typeParameters().isEmpty()
+                && fn.parameters().stream().allMatch(Type.Parameter::optional)) {
+            return fn;
+        }
+        return null;
+    }
 }

@@ -729,6 +729,27 @@ final class TypeAnnotations {
         return body != null && Type.withoutNull(body) instanceof Type.Array;
     }
 
+    /**
+     * Resolves and validates arity of explicit {@code of ...} type arguments.
+     * Returns {@code null} on diagnostic failure (caller returns {@link Type#ERROR}).
+     */
+    private List<Type> resolveValidatedTypeArguments(BabbleParser.SimpleTypeContext simple, ScopeNode scope,
+                                                     int expected, boolean forbidParameterized) {
+        if (forbidParameterized) {
+            checker.warn("Cannot cast to parameterized type : " + sourceText(simple), simple);
+            return null;
+        }
+        List<Type> args = resolveTypeArguments(simple, scope);
+        if (args == null) {
+            return null;
+        }
+        if (args.size() != expected) {
+            checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
+            return null;
+        }
+        return args;
+    }
+
     private Type instantiateBabbleType(TypeNode node, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
         int expected = node.typeParameters.size();
         if (simple.OF() == null) {
@@ -741,19 +762,8 @@ final class TypeAnnotations {
             checker.warn("Missing type arguments : " + sourceText(simple), simple);
             return Type.ERROR;
         }
-        if (allowRaw) {
-            checker.warn("Cannot cast to parameterized type : " + sourceText(simple), simple);
-            return Type.ERROR;
-        }
-        List<Type> args = resolveTypeArguments(simple, scope);
-        if (args == null) {
-            return Type.ERROR;
-        }
-        if (args.size() != expected) {
-            checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
-            return Type.ERROR;
-        }
-        if (!checkTypeParamBounds(typeVarsOf(node), args, simple)) {
+        List<Type> args = resolveValidatedTypeArguments(simple, scope, expected, allowRaw);
+        if (args == null || !checkTypeParamBounds(typeVarsOf(node), args, simple)) {
             return Type.ERROR;
         }
         JavaTypeBridge.BadJavaArrayTypeArg badArr = checkBabbleNodeArrayTypeArgs(node, args);
@@ -917,16 +927,8 @@ final class TypeAnnotations {
             checker.warn("Missing type arguments : " + sourceText(simple), simple);
             return Type.ERROR;
         }
-        if (allowRaw) {
-            checker.warn("Cannot cast to parameterized type : " + sourceText(simple), simple);
-            return Type.ERROR;
-        }
-        List<Type> args = resolveTypeArguments(simple, scope);
+        List<Type> args = resolveValidatedTypeArguments(simple, scope, expected, allowRaw);
         if (args == null) {
-            return Type.ERROR;
-        }
-        if (args.size() != expected) {
-            checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
             return Type.ERROR;
         }
         int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, checker.algebra());
@@ -1051,15 +1053,8 @@ final class TypeAnnotations {
             checker.warn("Missing type arguments : " + sourceText(simple), simple);
             return Type.ERROR;
         }
-        List<Type> args = resolveTypeArguments(simple, scope);
-        if (args == null) {
-            return Type.ERROR;
-        }
-        if (args.size() != expected) {
-            checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
-            return Type.ERROR;
-        }
-        if (!checkTypeParamBounds(alias.typeParameters(), args, simple)) {
+        List<Type> args = resolveValidatedTypeArguments(simple, scope, expected, false);
+        if (args == null || !checkTypeParamBounds(alias.typeParameters(), args, simple)) {
             return Type.ERROR;
         }
         Map<Type.TypeVar, Type> bindings = new HashMap<>();
