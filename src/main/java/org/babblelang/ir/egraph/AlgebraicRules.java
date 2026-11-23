@@ -291,6 +291,8 @@ public final class AlgebraicRules {
         if (n.op() == ENode.Op.SUB) {
             int negB = g.add(ENode.unary(ENode.Op.NEG, n.kind(), n.child(1)));
             out.addAndUnion(id, ENode.binary(ENode.Op.ADD, n.kind(), n.child(0), negB));
+            int bSubA = g.add(ENode.binary(ENode.Op.SUB, n.kind(), n.child(1), n.child(0)));
+            out.addAndUnion(id, ENode.unary(ENode.Op.NEG, n.kind(), bSubA));
         }
         if (n.op() == ENode.Op.NEG) {
             for (ENode inner : g.nodesIn(n.child(0))) {

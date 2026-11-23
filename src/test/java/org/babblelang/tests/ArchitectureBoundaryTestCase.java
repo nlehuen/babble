@@ -45,7 +45,9 @@ public class ArchitectureBoundaryTestCase {
             "org/babblelang/analysis/SymbolicEffectSummary",
             "org/babblelang/analysis/ModalKindTable",
             "org/babblelang/analysis/Purity",
-            "org/babblelang/analysis/HostEffects"
+            "org/babblelang/analysis/HostEffects",
+            "org/babblelang/analysis/AlgebraicVerifier",
+            "org/babblelang/analysis/SizeChangeTermination"
     );
 
     /**

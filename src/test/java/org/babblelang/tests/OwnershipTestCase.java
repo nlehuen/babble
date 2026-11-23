@@ -676,6 +676,7 @@ public class OwnershipTestCase {
     @Test
     public void testTerminatingAndUnusedPureExpressions() throws Exception {
         Analyzed analyzed = analyzeFull("""
+                def Node = record (v: int, next: Node?) ()
                 def straight = fn (x: int): int -> ( x + 1 )
                 def loopy = fn (n: int): int -> (
                     def i = 0
@@ -685,6 +686,32 @@ public class OwnershipTestCase {
                 def rec = fn (n: int): int -> (
                     if n <= 0 then ( 0 ) else ( recurse(n - 1) )
                 )
+                def fib = fn (n: int): int -> (
+                    if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) )
+                )
+                def gcdSub = fn (a: int, b: int): int -> (
+                    if a <= 0 or b <= 0 then ( a + b )
+                    else if a > b then ( gcdSub(a - b, b) )
+                    else ( gcdSub(a, b - a) )
+                )
+                def log2 = fn (n: int): int -> (
+                    if n <= 1 then ( 0 ) else ( 1 + log2(int(n / 2)) )
+                )
+                def len = fn (xs: Node?): int -> (
+                    if xs == null then ( 0 ) else ( 1 + len(xs.next) )
+                )
+                def sumList = fn (xs: list of int): int -> (
+                    def s = 0
+                    for x in xs then ( s += x )
+                    s
+                )
+                def mutFor = fn io (mut xs: list of int): int -> (
+                    def s = 0
+                    for x in xs then ( xs.add(x) ; s += x )
+                    s
+                )
+                def evenGuarded = fn (n: int): bool -> ( if n <= 0 then ( true ) else ( oddGuarded(n - 1) ) )
+                def oddGuarded = fn (n: int): bool -> ( if n <= 0 then ( false ) else ( evenGuarded(n - 1) ) )
                 def even = fn (n: int): bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )
                 def odd = fn (n: int): bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )
                 def callsLoopy = fn (n: int): int -> ( loopy(n) )
@@ -694,16 +721,44 @@ public class OwnershipTestCase {
         BabbleParser.FileContext file = analyzed.file();
         Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "straight")).terminating());
         Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "loopy")).terminating());
-        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "rec")).terminating());
+        // BIP027-P6 : polynomial SCP certifies guarded integer & acyclic record recursion and curated finite for-loops!
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "rec")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "fib")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "gcdSub")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "log2")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "len")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "sumList")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "evenGuarded")).terminating());
+        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "oddGuarded")).terminating());
+        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "mutFor")).terminating());
+        // Unguarded `n == 0` diverges on negative `n`, so SCP stays conservatively false:
         Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "even")).terminating());
         Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "odd")).terminating());
         Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "callsLoopy")).terminating());
 
-        // Unused pure nothrow expression rejected; discard(...) accepted (BIP007-D8)
+        // Unused pure nothrow @TERMINATING expression rejected; discard(...) accepted (BIP007-D8, BIP027-D8)
         assertHasError("""
                 def f = fn (s: string): string -> (
                     s.trim()
                     s
+                )
+                """, "Unused pure expression");
+        assertHasError("""
+                def fib = fn (n: int): int -> ( if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) ) )
+                def f = fn (n: int): int -> (
+                    fib(n)
+                    n
+                )
+                """, "Unused pure expression");
+        assertHasError("""
+                def sumList = fn (xs: list of int): int -> (
+                    def s = 0
+                    for x in xs then ( s += x )
+                    s
+                )
+                def f = fn (xs: list of int): int -> (
+                    sumList(xs)
+                    0
                 )
                 """, "Unused pure expression");
         String withDiscard = """

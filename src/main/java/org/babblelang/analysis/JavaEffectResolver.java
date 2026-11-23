@@ -234,8 +234,12 @@ final class JavaEffectResolver {
 
     /** Profile of converting {@code type} to string in {@code string + x} (bip007_effects.md §4.3, §4.6). */
     EffectSet toStringProfile(Type type) {
+        return toStringProfile(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private EffectSet toStringProfile(Type type, Set<TypeNode> visiting) {
         if (type instanceof Type.Frozen f) {
-            return toStringProfile(f.of());
+            return toStringProfile(f.of(), visiting);
         }
         if (type == null || type == Type.ERROR) {
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
@@ -246,7 +250,7 @@ final class JavaEffectResolver {
         if (type instanceof Type.Union u) {
             EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
             for (Type m : u.members()) {
-                acc = acc.intersect(toStringProfile(m));
+                acc = acc.intersect(toStringProfile(m, visiting));
             }
             return acc;
         }
@@ -265,16 +269,23 @@ final class JavaEffectResolver {
             }
             if (node.kind == ClassShape.Kind.VALUE_CLASS) {
                 EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-                for (TypeNode.Member m : node.members.values()) {
-                    if (!m.hasFunction) {
-                        Type mt = checker.instanceMemberTypeForEffects(inst, m);
-                        if (mt == null) {
-                            return EffectSet.EMPTY;
-                        }
-                        acc = acc.intersect(toStringProfile(mt));
-                    }
+                if (!visiting.add(node)) {
+                    return acc;
                 }
-                return acc;
+                try {
+                    for (TypeNode.Member m : node.members.values()) {
+                        if (!m.hasFunction) {
+                            Type mt = checker.instanceMemberTypeForEffects(inst, m);
+                            if (mt == null) {
+                                return EffectSet.EMPTY;
+                            }
+                            acc = acc.intersect(toStringProfile(mt, visiting));
+                        }
+                    }
+                    return acc;
+                } finally {
+                    visiting.remove(node);
+                }
             }
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.NOTHROW), false, true, false, true);
         }
@@ -282,7 +293,7 @@ final class JavaEffectResolver {
             return resolveJavaMethodProfile(ji.type(), "toString", lookupPublicMethod(ji.type(), "toString")).effects();
         }
         if (type instanceof Type.Array arr) {
-            return toStringProfile(arr.element());
+            return toStringProfile(arr.element(), visiting);
         }
         return EffectSet.EMPTY;
     }
@@ -292,8 +303,12 @@ final class JavaEffectResolver {
     }
 
     EffectSet singleEqualityProfile(Type type) {
+        return singleEqualityProfile(type, Collections.newSetFromMap(new IdentityHashMap<>()));
+    }
+
+    private EffectSet singleEqualityProfile(Type type, Set<TypeNode> visiting) {
         if (type instanceof Type.Frozen f) {
-            return singleEqualityProfile(f.of());
+            return singleEqualityProfile(f.of(), visiting);
         }
         if (type == null || type == Type.ERROR || Type.isCoreScalar(type) || type == Type.NULL
                 || type instanceof Type.Function || type instanceof Type.ClassValue
@@ -303,22 +318,29 @@ final class JavaEffectResolver {
         if (type instanceof Type.Union u) {
             EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
             for (Type m : u.members()) {
-                acc = acc.intersect(singleEqualityProfile(m));
+                acc = acc.intersect(singleEqualityProfile(m, visiting));
             }
             return acc;
         }
         if (type instanceof Type.Instance inst) {
             if (inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
                 EffectSet acc = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-                for (TypeNode.Member m : inst.node().members.values()) {
-                    if (!m.hasFunction) {
-                        Type mt = checker.instanceMemberTypeForEffects(inst, m);
-                        if (mt != null) {
-                            acc = acc.intersect(singleEqualityProfile(mt));
+                if (!visiting.add(inst.node())) {
+                    return acc;
+                }
+                try {
+                    for (TypeNode.Member m : inst.node().members.values()) {
+                        if (!m.hasFunction) {
+                            Type mt = checker.instanceMemberTypeForEffects(inst, m);
+                            if (mt != null) {
+                                acc = acc.intersect(singleEqualityProfile(mt, visiting));
+                            }
                         }
                     }
+                    return acc;
+                } finally {
+                    visiting.remove(inst.node());
                 }
-                return acc;
             }
             return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
         }
@@ -326,7 +348,7 @@ final class JavaEffectResolver {
             return resolveJavaMethodProfile(ji.type(), "equals", lookupPublicMethod(ji.type(), "equals", Object.class)).effects();
         }
         if (type instanceof Type.Array arr) {
-            return singleEqualityProfile(arr.element());
+            return singleEqualityProfile(arr.element(), visiting);
         }
         return EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
     }

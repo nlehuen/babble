@@ -318,6 +318,35 @@ public class OptimizerTestCase {
                 "Unreachable side() after return should be removed:\n" + fIr);
     }
 
+    @Test
+    public void testDceEliminatesScpTerminatingCallsAndPreservesNonTerminatingOnes() throws Exception {
+        String src = ""
+                + "def fib = fn (n : int) : int -> ( if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) ) )\n"
+                + "def sumList = fn (xs : list of int) : int -> (\n"
+                + "  def total = 0\n"
+                + "  for x in xs then ( total += x )\n"
+                + "  total\n"
+                + ")\n"
+                + "def unguarded = fn (n : int) : int -> ( if n == 0 then ( 0 ) else ( unguarded(n - 1) ) )\n"
+                + "def caller = fn (n : int, xs : list of int) : int -> (\n"
+                + "  def deadFib = fib(n)\n"
+                + "  def deadSum = sumList(xs)\n"
+                + "  def maybeInf = unguarded(0)\n"
+                + "  n + 1\n"
+                + ")\n"
+                + "caller(6, list.of(1, 2, 3))";
+
+        Assertions.assertEquals(7, assertThreeWayEqual(src));
+
+        String ir = HirPrinter.print(optimizeHir(src, 1));
+        int callerStart = ir.indexOf("[fn$3$caller]");
+        Assertions.assertTrue(callerStart >= 0, ir);
+        String callerIr = ir.substring(callerStart);
+        Assertions.assertFalse(callerIr.contains("deadFib"), "SCP-certified fib(n) dead local should be eliminated:\n" + callerIr);
+        Assertions.assertFalse(callerIr.contains("deadSum"), "Finite-collection sumList(xs) dead local should be eliminated:\n" + callerIr);
+        Assertions.assertTrue(callerIr.contains("maybeInf"), "Non-terminating unguarded(0) dead local must be preserved:\n" + callerIr);
+    }
+
     // ------------------------------------------------------------------ O6 : HirLicmPass
 
     @Test

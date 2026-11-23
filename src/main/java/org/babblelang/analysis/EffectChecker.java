@@ -226,6 +226,8 @@ final class EffectChecker {
     final Map<ParserRuleContext, CallableSummary> visibleSummaries = new IdentityHashMap<>();
     /** Callables belonging to a cyclic WTO component (self-recursive or mutually recursive). */
     final Set<ParserRuleContext> cyclicCallables = Collections.newSetFromMap(new IdentityHashMap<>());
+    /** Cyclic callables certified terminating by polynomial SCP ({@code BIP027-P6}). */
+    final Set<ParserRuleContext> scpTerminatingCallables = Collections.newSetFromMap(new IdentityHashMap<>());
 
     EffectChecker(BlockScopes pass, TypedProgram checker) {
         this.pass = pass;
@@ -323,6 +325,14 @@ final class EffectChecker {
         Map<ParserRuleContext, Set<ParserRuleContext>> edges = buildCallGraph(callables);
         List<EffectFixpointDriver.WtoElement<ParserRuleContext>> wto = EffectFixpointDriver.buildWto(callables, edges);
         cyclicCallables.addAll(EffectFixpointDriver.cyclicNodes(wto));
+        for (EffectFixpointDriver.WtoElement<ParserRuleContext> el : wto) {
+            if (el instanceof EffectFixpointDriver.Component<ParserRuleContext> comp) {
+                List<ParserRuleContext> compNodes = EffectFixpointDriver.componentNodes(comp);
+                if (algebraic.certifyComponentTermination(compNodes)) {
+                    scpTerminatingCallables.addAll(compNodes);
+                }
+            }
+        }
 
         EffectFixpointDriver.solve(wto, summaries, this::isFixedSummary,
                 (callable, prev) -> recomputeSummary(callable, prev, false));
