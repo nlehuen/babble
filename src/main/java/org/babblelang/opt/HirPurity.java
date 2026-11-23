@@ -82,6 +82,7 @@ public final class HirPurity {
         return switch (expr) {
             case HirExpr.Const c -> true;
             case HirExpr.CoreCollectionRef r -> true;
+            case HirExpr.CoreExceptionRef r -> true;
             case HirExpr.FunctionRef f -> true;
             case HirExpr.VarRead v -> !v.var().mayBeUndefined() || v.var().definitelyDefined();
             case HirExpr.ThisRef t -> t.var() != null && (!t.var().mayBeUndefined() || t.var().definitelyDefined());
@@ -114,6 +115,8 @@ public final class HirPurity {
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
+            case HirExpr.Try t -> isTryPureNothrowTerminating(t, Set.of(), module, visitingFns);
+            case HirExpr.Throw th -> false;
             case HirExpr.As a -> a.targetDescriptor() == null && a.samTarget() == null
                     && isPureNothrowTerminating(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isPureNothrowTerminating(t.inner(), module, visitingFns);
@@ -165,16 +168,44 @@ public final class HirPurity {
 
     private static boolean isPureLocalBlock(HirExpr.Block b, Set<Integer> outerLocals,
                                             HirModule module, Set<Integer> visitingFns) {
-        if (b.declaredVars().isEmpty() && outerLocals.isEmpty()) {
-            return allPureNothrowTerminating(b.statements(), module, visitingFns);
+        return isPureStatements(b.statements(), b.declaredVars(), outerLocals, module, visitingFns);
+    }
+
+    /** Whether a scoped statement list (e.g. a {@code try} body) is pure, nothrow, and terminating. */
+    public static boolean isPureStatements(List<HirExpr> stmts, List<HirVar> declaredVars, HirModule module) {
+        return isPureStatements(stmts, declaredVars, Set.of(), module, new HashSet<>());
+    }
+
+    private static boolean isPureStatements(List<HirExpr> stmts, List<HirVar> declaredVars,
+                                            Set<Integer> outerLocals, HirModule module, Set<Integer> visitingFns) {
+        if (declaredVars.isEmpty() && outerLocals.isEmpty()) {
+            return allPureNothrowTerminating(stmts, module, visitingFns);
         }
-        Set<Integer> localIds = b.declaredVars().isEmpty() ? outerLocals : new HashSet<>(outerLocals);
-        for (HirVar v : b.declaredVars()) {
+        Set<Integer> localIds = declaredVars.isEmpty() ? outerLocals : new HashSet<>(outerLocals);
+        for (HirVar v : declaredVars) {
             if (!v.cell()) {
                 localIds.add(v.id());
             }
         }
-        return allPureWithLocals(b.statements(), localIds, module, visitingFns);
+        return allPureWithLocals(stmts, localIds, module, visitingFns);
+    }
+
+    private static boolean isTryPureNothrowTerminating(HirExpr.Try t, Set<Integer> outerLocals,
+                                                       HirModule module, Set<Integer> visitingFns) {
+        if (t.tryOpensNamespaceScope() || t.finallyOpensNamespaceScope()) {
+            return false;
+        }
+        if (!isPureStatements(t.tryBody(), t.tryDeclaredVars(), outerLocals, module, visitingFns)) {
+            return false;
+        }
+        for (HirExpr.HirCatch cc : t.catches()) {
+            if (cc.opensNamespaceScope()
+                    || !isPureStatements(cc.body(), cc.declaredVars(), outerLocals, module, visitingFns)) {
+                return false;
+            }
+        }
+        return !t.hasFinally()
+                || isPureStatements(t.finallyBody(), t.finallyDeclaredVars(), outerLocals, module, visitingFns);
     }
 
     private static boolean allPureWithLocals(List<HirExpr> stmts, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
@@ -334,6 +365,21 @@ public final class HirPurity {
                 out.add(f.loopVar().id());
             }
             for (HirVar v : f.bodyDeclaredVars()) {
+                out.add(v.id());
+            }
+        } else if (expr instanceof HirExpr.Try t) {
+            for (HirVar v : t.tryDeclaredVars()) {
+                out.add(v.id());
+            }
+            for (HirExpr.HirCatch cc : t.catches()) {
+                if (cc.var() != null) {
+                    out.add(cc.var().id());
+                }
+                for (HirVar v : cc.declaredVars()) {
+                    out.add(v.id());
+                }
+            }
+            for (HirVar v : t.finallyDeclaredVars()) {
                 out.add(v.id());
             }
         }

@@ -235,6 +235,10 @@ public final class InlinePass implements HirPass {
                 ok[0] = false;
                 return;
             }
+            case HirExpr.Try t -> {
+                ok[0] = false;
+                return;
+            }
             case HirExpr.SelfRecurseCall c -> {
                 ok[0] = false;
                 return;

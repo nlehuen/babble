@@ -100,6 +100,7 @@ public final class HirPrinter {
             }
             case HirExpr.IntParseFallback f -> sb.append("int-parse(\"").append(f.text()).append("\")");
             case HirExpr.CoreCollectionRef r -> sb.append("core-col(").append(r.collectionKind()).append(')');
+            case HirExpr.CoreExceptionRef r -> sb.append("core-exception");
             case HirExpr.VarRead v -> sb.append("var(").append(v.var().name()).append('#').append(v.var().id()).append(')');
             case HirExpr.NameRead n -> sb.append("name(").append(n.name()).append(')');
             case HirExpr.ThisRef t -> sb.append("this");
@@ -278,6 +279,35 @@ public final class HirPrinter {
                 }
                 sb.append("))");
             }
+            case HirExpr.Try t -> {
+                sb.append("(try (block");
+                for (HirExpr s : t.tryBody()) {
+                    sb.append(' ');
+                    printExpr(sb, s, depth + 1);
+                }
+                sb.append(')');
+                for (HirExpr.HirCatch cc : t.catches()) {
+                    sb.append(" (catch ");
+                    sb.append(cc.var() != null ? cc.var().name() + "#" + cc.var().id() : "_");
+                    if (cc.target() != null && cc.target().typeDescriptor() != null) {
+                        sb.append(':').append(cc.target().typeDescriptor());
+                    }
+                    for (HirExpr s : cc.body()) {
+                        sb.append(' ');
+                        printExpr(sb, s, depth + 1);
+                    }
+                    sb.append(')');
+                }
+                if (t.hasFinally()) {
+                    sb.append(" (finally");
+                    for (HirExpr s : t.finallyBody()) {
+                        sb.append(' ');
+                        printExpr(sb, s, depth + 1);
+                    }
+                    sb.append(')');
+                }
+                sb.append(')');
+            }
             case HirExpr.Break b -> {
                 sb.append("(break");
                 if (b.value() != null) {
@@ -290,6 +320,11 @@ public final class HirPrinter {
             case HirExpr.Return r -> {
                 sb.append("(return ");
                 printExpr(sb, r.value(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.Throw th -> {
+                sb.append("(throw ");
+                printExpr(sb, th.value(), depth + 1);
                 sb.append(')');
             }
             case HirExpr.CoreCollectionCall c -> {
