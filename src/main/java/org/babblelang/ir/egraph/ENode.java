@@ -31,6 +31,7 @@ public final class ENode {
         AND,
         OR,
         STR_ADD,
+        ITE,
         CALL
     }
 
@@ -103,6 +104,10 @@ public final class ENode {
         return new ENode(op, null, null, kind, new int[]{left, right});
     }
 
+    public static ENode ite(PrimitiveKind kind, int cond, int thenBranch, int elseBranch) {
+        return new ENode(Op.ITE, null, null, kind, new int[]{cond, thenBranch, elseBranch});
+    }
+
     public static ENode call(String symbol, PrimitiveKind kind, int... args) {
         return new ENode(Op.CALL, symbol, null, kind, args);
     }
@@ -144,6 +149,12 @@ public final class ENode {
 
     public boolean isIntegral() {
         return kind == PrimitiveKind.INT || kind == PrimitiveKind.LONG;
+    }
+
+    public boolean isExactOrdered() {
+        return kind == PrimitiveKind.BYTE || kind == PrimitiveKind.SHORT
+                || kind == PrimitiveKind.INT || kind == PrimitiveKind.LONG
+                || kind == PrimitiveKind.CHAR;
     }
 
     public boolean isFloating() {

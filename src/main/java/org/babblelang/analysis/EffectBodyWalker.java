@@ -207,8 +207,16 @@ final class EffectBodyWalker {
         return orig == Reachability.Origin.IMMUTABLE || ec.javaResolver.isDeeplyImmutable(type) || (orig.unique && orig.uniqueOwner == null);
     }
 
+    static BabbleParser.ExpressionContext unwrapParens(BabbleParser.ExpressionContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext be
+                && be.block().expression().size() == 1) {
+            expr = be.block().expression(0);
+        }
+        return expr;
+    }
+
     ParserRuleContext resolveOwnedLocalDecl(BabbleParser.ExpressionContext expr) {
-        BabbleParser.ExpressionContext unwrapped = AlgebraicVerifier.unwrapParens(expr);
+        BabbleParser.ExpressionContext unwrapped = unwrapParens(expr);
         if (!(unwrapped instanceof BabbleParser.SelectorContext sel) || sel.expression() != null) {
             return null;
         }
@@ -332,7 +340,7 @@ final class EffectBodyWalker {
         stmtHasSideEffect = false;
         stmtHasError = false;
         ParserRuleContext prevDiscarded = discardedExpr;
-        discardedExpr = AlgebraicVerifier.unwrapParens(stmt);
+        discardedExpr = unwrapParens(stmt);
         try {
             eval(stmt);
         } finally {
@@ -1362,7 +1370,7 @@ final class EffectBodyWalker {
         if (!trackSymbolic || expr == null) {
             return -1;
         }
-        BabbleParser.ExpressionContext u = AlgebraicVerifier.unwrapParens(expr);
+        BabbleParser.ExpressionContext u = unwrapParens(expr);
         if (u instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
             Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
             if (resolved instanceof ParserRuleContext decl) {
@@ -1419,7 +1427,7 @@ final class EffectBodyWalker {
 
     /** The type of an expression where it occurs, narrowed by the tests that guard it (as the typing walk recorded it). */
     Type effectiveType(BabbleParser.ExpressionContext expr) {
-        BabbleParser.ExpressionContext unwrapped = AlgebraicVerifier.unwrapParens(expr);
+        BabbleParser.ExpressionContext unwrapped = unwrapParens(expr);
         return ec.checker.rawTypeOf(unwrapped instanceof BabbleParser.SelectorContext sel && sel.expression() == null ? unwrapped : expr);
     }
     boolean isRedundantCast(Type src, Type dst) {

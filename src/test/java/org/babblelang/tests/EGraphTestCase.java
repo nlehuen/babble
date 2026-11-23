@@ -144,4 +144,66 @@ public class EGraphTestCase {
         Assertions.assertEquals(ENode.Op.NOT, negExtracted.node().op());
         Assertions.assertTrue(g.totalNodes() <= 32);
     }
+
+    @Test
+    public void testVerifierIteMinMaxClampAbsAndIeeeSoundness() {
+        // 1. Integral min(a, b) is commutative & associative
+        {
+            EGraph g = new EGraph();
+            int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+            int b = g.add(ENode.opaque("b", PrimitiveKind.INT));
+            int c = g.add(ENode.opaque("c", PrimitiveKind.INT));
+            int minAB = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, b)), a, b));
+            int minBA = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, b, a)), b, a));
+            int minAB_C = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, minAB, c)), minAB, c));
+            int minBC = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, b, c)), b, c));
+            int minA_BC = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, minBC)), a, minBC));
+            g.saturate(AlgebraicRules.verifierRules(), 6, 128);
+            Assertions.assertTrue(g.areEquivalent(minAB, minBA));
+            Assertions.assertTrue(g.areEquivalent(minAB_C, minA_BC));
+        }
+
+        // 2. clamp(x) = min(max(x, 0), 100) is idempotent
+        {
+            EGraph g = new EGraph();
+            int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int hundred = g.add(ENode.constVal(100, PrimitiveKind.INT));
+            int lo1 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, zero)), zero, a));
+            int clamp1 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, lo1, hundred)), hundred, lo1));
+            int lo2 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, clamp1, zero)), zero, clamp1));
+            int clamp2 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, lo2, hundred)), hundred, lo2));
+            g.saturate(AlgebraicRules.verifierRules(), 8, 256);
+            Assertions.assertTrue(g.areEquivalent(clamp1, clamp2));
+        }
+
+        // 3. abs(a - b) == abs(b - a)
+        {
+            EGraph g = new EGraph();
+            int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+            int b = g.add(ENode.opaque("b", PrimitiveKind.INT));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int aSubB = g.add(ENode.binary(ENode.Op.SUB, PrimitiveKind.INT, a, b));
+            int bSubA = g.add(ENode.binary(ENode.Op.SUB, PrimitiveKind.INT, b, a));
+            int absAB = g.add(ENode.ite(PrimitiveKind.INT,
+                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, aSubB, zero)),
+                    g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, aSubB)), aSubB));
+            int absBA = g.add(ENode.ite(PrimitiveKind.INT,
+                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, bSubA, zero)),
+                    g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, bSubA)), bSubA));
+            g.saturate(AlgebraicRules.verifierRules(), 6, 128);
+            Assertions.assertTrue(g.areEquivalent(absAB, absBA));
+        }
+
+        // 4. IEEE-754 double `if a < b then (a) else (b)` is NOT commutative (NaN / signed zero)
+        {
+            EGraph gd = new EGraph();
+            int da = gd.add(ENode.opaque("da", PrimitiveKind.DOUBLE));
+            int db = gd.add(ENode.opaque("db", PrimitiveKind.DOUBLE));
+            int dMinAB = gd.add(ENode.ite(PrimitiveKind.DOUBLE, gd.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, da, db)), da, db));
+            int dMinBA = gd.add(ENode.ite(PrimitiveKind.DOUBLE, gd.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, db, da)), db, da));
+            gd.saturate(AlgebraicRules.verifierRules(), 6, 128);
+            Assertions.assertFalse(gd.areEquivalent(dMinAB, dMinBA));
+        }
+    }
 }
