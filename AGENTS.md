@@ -54,7 +54,7 @@ The image matches CI's JDK 21; mounting `~/.m2` caches dependencies between runs
 - Pull requests are merged as new commits (rebase or squash), so a merged branch's commits are not ancestors of `master`: start the next change from a fresh `origin/master`, not from the old branch.
 - Always watch a pull request after creating it (subscribe to its activity): follow its CI and reviews and fix what fails, without asking first.
 
-## Babble Improvement Proposals (BIPs)
+## Babble Improvement Proposals (BIPs) and Roadmap
 
 Design documents live in `docs/design/` as numbered BIPs; see `docs/design/README.md` for the authoritative index of all implemented and planned BIPs (`BIP001` onward), their statuses, and the milestone roadmap.
 
