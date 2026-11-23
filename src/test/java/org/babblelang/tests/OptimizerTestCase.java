@@ -17,6 +17,8 @@ import org.babblelang.opt.PassManager;
 import org.babblelang.parser.BabbleParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
@@ -390,6 +392,7 @@ public class OptimizerTestCase {
     // ------------------------------------------------------------------ Dump IR & Plumbing
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     public void testDumpIrEmitsPreAndPostHir() throws Exception {
         BabbleScriptEngine engine = newEngine();
         engine.put(BabbleScriptEngine.MODE, "compile");

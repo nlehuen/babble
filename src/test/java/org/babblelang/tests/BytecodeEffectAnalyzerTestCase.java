@@ -6,6 +6,8 @@ import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.lang.reflect.Method;
 
@@ -250,6 +252,7 @@ public class BytecodeEffectAnalyzerTestCase {
     }
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     public void testDumpAxiomsAndReportSwitches() throws Exception {
         String oldDump = System.getProperty("babble.dumpAxioms");
         String oldReport = System.getProperty("babble.axioms.report");

@@ -159,9 +159,13 @@ public final class BytecodeEffectAnalyzer {
     /** Per-(BuiltinAxioms, ClassLoader) cache for converged bytecode analysis results. */
     private static final Map<BuiltinAxioms, Map<ClassLoader, Map<MethodKey, Result>>> CACHES =
             Collections.synchronizedMap(new IdentityHashMap<>());
+    /** Lock-free fast-path cache for standard axioms + bootstrap class loader (java.base). */
+    private static final ConcurrentHashMap<MethodKey, Result> STANDARD_BOOTSTRAP_CACHE = new ConcurrentHashMap<>();
     /** ClassNode cache per ClassLoader so each class file is parsed with ASM only once. */
     private static final Map<ClassLoader, Map<String, ClassNode>> CLASS_NODE_CACHES =
             Collections.synchronizedMap(new WeakHashMap<>());
+    /** Lock-free fast-path ClassNode cache for bootstrap class loader (java.base). */
+    private static final ConcurrentHashMap<String, ClassNode> BOOTSTRAP_CLASS_NODES = new ConcurrentHashMap<>();
     private static final ClassLoader NULL_LOADER_SENTINEL = new ClassLoader(null) {};
     private static final ClassNode MISSING_CLASS_NODE = new ClassNode();
 
@@ -170,6 +174,9 @@ public final class BytecodeEffectAnalyzer {
 
     private static Map<MethodKey, Result> cacheFor(BuiltinAxioms axioms, ClassLoader loader) {
         BuiltinAxioms keyAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
+        if (loader == null && keyAxioms == BuiltinAxioms.standard()) {
+            return STANDARD_BOOTSTRAP_CACHE;
+        }
         ClassLoader keyLoader = loader != null ? loader : NULL_LOADER_SENTINEL;
         Map<ClassLoader, Map<MethodKey, Result>> byLoader;
         synchronized (CACHES) {
@@ -1311,10 +1318,13 @@ public final class BytecodeEffectAnalyzer {
     }
 
     private static ClassNode loadClassNode(String ownerInternal, ClassLoader loader) {
-        ClassLoader key = loader != null ? loader : NULL_LOADER_SENTINEL;
         Map<String, ClassNode> byName;
-        synchronized (CLASS_NODE_CACHES) {
-            byName = CLASS_NODE_CACHES.computeIfAbsent(key, k -> new ConcurrentHashMap<>());
+        if (loader == null) {
+            byName = BOOTSTRAP_CLASS_NODES;
+        } else {
+            synchronized (CLASS_NODE_CACHES) {
+                byName = CLASS_NODE_CACHES.computeIfAbsent(loader, k -> new ConcurrentHashMap<>());
+            }
         }
         ClassNode cached = byName.get(ownerInternal);
         if (cached != null) {

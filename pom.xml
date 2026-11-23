@@ -17,6 +17,9 @@
         <batest.inspect></batest.inspect>
         <batest.includes>**/BatestTestCase.java</batest.includes>
         <maven.test.redirectTestOutputToFile>true</maven.test.redirectTestOutputToFile>
+        <!-- Cap test JVM heap and use ParallelGC for higher batch throughput and lower RSS under
+             in-JVM JUnit parallel execution (src/test/resources/junit-platform.properties). -->
+        <surefire.jvmArgs>-Xmx768m -XX:+UseParallelGC</surefire.jvmArgs>
     </properties>
 
     <dependencies>
@@ -86,6 +89,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.6.1</version>
                 <configuration>
+                    <argLine>${surefire.jvmArgs}</argLine>
                     <!-- The first run interprets scripts, which is not the default mode : the
                          interpreter is the reference the compiled run is compared with. -->
                     <systemPropertyVariables>
@@ -362,7 +366,7 @@
                         <artifactId>maven-surefire-plugin</artifactId>
                         <version>3.6.1</version>
                         <configuration>
-                            <argLine>${jacocoInterpretArgLine}</argLine>
+                            <argLine>${jacocoInterpretArgLine} ${surefire.jvmArgs}</argLine>
                             <includes>
                                 <include>${batest.includes}</include>
                             </includes>
@@ -380,7 +384,7 @@
                                     <goal>test</goal>
                                 </goals>
                                 <configuration>
-                                    <argLine>${jacocoCompileArgLine}</argLine>
+                                    <argLine>${jacocoCompileArgLine} ${surefire.jvmArgs}</argLine>
                                     <reportsDirectory>${project.build.directory}/surefire-reports-compiled</reportsDirectory>
                                     <includes>
                                         <include>${batest.includes}</include>
@@ -402,7 +406,7 @@
                                     <goal>test</goal>
                                 </goals>
                                 <configuration>
-                                    <argLine>${jacocoCompileO0ArgLine}</argLine>
+                                    <argLine>${jacocoCompileO0ArgLine} ${surefire.jvmArgs}</argLine>
                                     <reportsDirectory>${project.build.directory}/surefire-reports-compiled-O0</reportsDirectory>
                                     <includes>
                                         <include>${batest.includes}</include>

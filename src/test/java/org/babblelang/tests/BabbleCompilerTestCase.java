@@ -10,6 +10,8 @@ import org.babblelang.runtime.CompiledFunction;
 import org.babblelang.runtime.ScriptRuntime;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
@@ -90,6 +92,7 @@ public class BabbleCompilerTestCase {
     }
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     public void testScriptsAreCompiledByDefault() throws Exception {
         String previous = System.getProperty(BabbleScriptEngine.MODE);
         System.clearProperty(BabbleScriptEngine.MODE);
@@ -345,6 +348,7 @@ public class BabbleCompilerTestCase {
     }
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     public void aModuleCompilesToTheSameClassesEveryTime() throws Exception {
         java.nio.file.Path first = java.nio.file.Files.createTempDirectory("babble-dump");
         java.nio.file.Path second = java.nio.file.Files.createTempDirectory("babble-dump");
@@ -636,6 +640,7 @@ public class BabbleCompilerTestCase {
     }
 
     @Test
+    @ResourceLock(Resources.GLOBAL)
     public void testRm001StaticJavaDispatchAndIndexedModuleExports() throws Exception {
         CompiledBabbleScript typedJava = compile(
                 "def work = fn io (shared sb : java.lang.StringBuilder, items : java.util.List of int, xs) : double -> (\n"
