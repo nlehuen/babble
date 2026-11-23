@@ -223,3 +223,25 @@ def applyIo = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
 def bad = fn (x: int): int -> (applyIo(fn (n: int): int -> (n + 1), x))
 }}}}}
 Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
+
+{{{{{
+;; SymbolicEffectSummary : thisFlow (mutThis propagation) and extFlow (external mutation -> io)
+def Cell = class (def v: int) (
+    def applySelf = fn mut calling f (f: fn (mut Cell): int): int -> (f(this))
+)
+def g = Cell(1)
+def applyGlobal = fn io calling f (f: fn (mut Cell): int): int -> (f(g))
+def inc = fn (mut c: Cell): int -> (c.v += 1 ; c.v)
+def c = Cell(10)
+assert(c.applySelf(inc) == 11 and applyGlobal(inc) == 2)
+}}}}}
+
+{{{{{
+;; SymbolicEffectSummary : non-borrowed (`shared`) callback parameter propagates shared to HOF arg
+def sink = (list of (java.lang.StringBuilder))()
+def passTo = fn calling f (shared b: java.lang.StringBuilder, f: fn io (shared java.lang.StringBuilder)) -> (f(b))
+def keep = fn io (shared b: java.lang.StringBuilder) -> (sink.add(b) ; null)
+passTo(java.lang.StringBuilder("hi"), keep)
+assert(sink.size() == 1)
+}}}}}
+

@@ -52,18 +52,7 @@ final class TypeAlgebra {
         boolean callableSatisfies(Type from, Type.Function target);
 
         /** Whether a value of {@code type} is deeply immutable (scalars, null, frozen, deep record, deep entry). */
-        default boolean isDeeplyImmutable(Type type) {
-            if (type == null || Type.isCoreScalar(type) || type == Type.NULL || type instanceof Type.Frozen) {
-                return true;
-            }
-            if (type instanceof Type.Union u) {
-                return u.members().stream().allMatch(this::isDeeplyImmutable);
-            }
-            if (type instanceof Type.JavaInstance ji && ji.type() == java.util.Map.Entry.class) {
-                return !ji.typeArguments().isEmpty() && ji.typeArguments().stream().allMatch(this::isDeeplyImmutable);
-            }
-            return false;
-        }
+        boolean isDeeplyImmutable(Type type);
 
         /** {@link #substitute} derived {@code to} from {@code from} (to track which literal a function type comes from). */
         default void derived(Type.Function from, Type.Function to) {
@@ -939,9 +928,6 @@ final class TypeAlgebra {
         }
         if (a == Type.NULL || b == Type.NULL) {
             return a == b;
-        }
-        if (a instanceof Type.Frozen af && b instanceof Type.Frozen bf) {
-            return overlapsErased(af.of(), bf.of());
         }
         if (a instanceof Type.Frozen af) {
             return overlapsErased(af.of(), b);

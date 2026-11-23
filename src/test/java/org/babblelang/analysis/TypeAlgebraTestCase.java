@@ -36,6 +36,11 @@ public class TypeAlgebraTestCase {
         public boolean callableSatisfies(Type from, Type.Function target) {
             return false;
         }
+
+        @Override
+        public boolean isDeeplyImmutable(Type type) {
+            return type == null || Type.isCoreScalar(type) || type == Type.NULL || type instanceof Type.Frozen;
+        }
     });
 
     @Test

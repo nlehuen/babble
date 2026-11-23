@@ -653,85 +653,71 @@ final class AlgebraicVerifier {
 
     private static boolean isMonotoneNumericWidening(Type src, Type dst) {
         if (src == Type.CHAR) {
-            return dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
+            return Type.isNumericScalar(dst) && Type.numericRank(dst) >= 2;
         }
         return Type.isNumericScalar(src) && Type.isNumericScalar(dst) && Type.numericRank(src) <= Type.numericRank(dst);
     }
 
     private static boolean isLosslessWidening(Type src, Type dst) {
         if (src == Type.CHAR) {
-            return dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
+            return Type.isNumericScalar(dst) && Type.numericRank(dst) >= 2;
         }
-        if (src == Type.BYTE) {
-            return dst == Type.SHORT || dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
+        if (!Type.isNumericScalar(src) || !Type.isNumericScalar(dst)) {
+            return false;
         }
-        if (src == Type.SHORT) {
-            return dst == Type.INT || dst == Type.LONG || dst == Type.FLOAT || dst == Type.DOUBLE;
-        }
-        if (src == Type.INT) {
-            return dst == Type.LONG || dst == Type.DOUBLE;
-        }
-        return src == Type.FLOAT && dst == Type.DOUBLE;
+        int sr = Type.numericRank(src);
+        int dr = Type.numericRank(dst);
+        return sr < dr && !(sr == 2 && dr == 4) && !(sr == 3 && dr >= 4);
     }
 
     private static boolean isOddIntegralConst(Term term) {
-        Long v = evalConstLong(term);
-        return v != null && (v & 1L) != 0L;
-    }
-
-    private static Long evalConstLong(Term term) {
-        if (term instanceof Const c && c.value() instanceof Number n
-                && (c.kind() == PrimitiveKind.BYTE || c.kind() == PrimitiveKind.SHORT
-                || c.kind() == PrimitiveKind.INT || c.kind() == PrimitiveKind.LONG)) {
-            return c.kind() == PrimitiveKind.LONG ? n.longValue() : (long) n.intValue();
-        }
-        if (term instanceof Unary u && u.op() == ENode.Op.NEG) {
-            Long sub = evalConstLong(u.operand());
-            return sub != null ? (u.kind() == PrimitiveKind.LONG ? -sub : (long) (-(int) sub.longValue())) : null;
-        }
-        if (term instanceof Binary b && (b.kind() == PrimitiveKind.INT || b.kind() == PrimitiveKind.LONG)) {
-            Long l = evalConstLong(b.left());
-            Long r = evalConstLong(b.right());
-            if (l == null || r == null) {
-                return null;
-            }
-            return switch (b.op()) {
-                case ADD -> b.kind() == PrimitiveKind.LONG ? l + r : (long) ((int) l.longValue() + (int) r.longValue());
-                case SUB -> b.kind() == PrimitiveKind.LONG ? l - r : (long) ((int) l.longValue() - (int) r.longValue());
-                case MUL -> b.kind() == PrimitiveKind.LONG ? l * r : (long) ((int) l.longValue() * (int) r.longValue());
-                default -> null;
-            };
-        }
-        return null;
+        Number n = evalConstNumber(term);
+        return (n instanceof Byte || n instanceof Short || n instanceof Integer || n instanceof Long)
+                && (n.longValue() & 1L) != 0L;
     }
 
     private static Double evalConstDouble(Term term) {
-        if (term instanceof Const c && c.value() instanceof Number n) {
-            double d = n.doubleValue();
-            return Double.isNaN(d) ? null : d;
+        Number n = evalConstNumber(term);
+        if (n == null) {
+            return null;
         }
-        if (term instanceof Unary u && u.op() == ENode.Op.NEG) {
-            Double sub = evalConstDouble(u.operand());
-            return sub != null ? -sub : null;
+        double d = n.doubleValue();
+        return Double.isFinite(d) ? d : null;
+    }
+
+    private static Number evalConstNumber(Term term) {
+        if (term instanceof Const c && c.value() instanceof Number n) {
+            return n;
         }
         if (term instanceof Cast c && isMonotoneNumericWidening(c.srcType(), c.type())) {
-            return evalConstDouble(c.operand());
+            return evalConstNumber(c.operand());
+        }
+        EGraph g = new EGraph();
+        int id = lowerConst(term, g);
+        if (id < 0) {
+            return null;
+        }
+        ENode c = g.constantOf(id);
+        return c != null && c.literal() instanceof Number n ? n : null;
+    }
+
+    private static int lowerConst(Term term, EGraph g) {
+        if (term instanceof Const c && c.value() instanceof Number) {
+            return g.add(ENode.constVal(c.value(), c.kind()));
+        }
+        if (term instanceof Cast c && isMonotoneNumericWidening(c.srcType(), c.type())) {
+            Number n = evalConstNumber(c.operand());
+            return n != null ? g.add(ENode.constVal(n, c.kind())) : -1;
+        }
+        if (term instanceof Unary u && u.op() == ENode.Op.NEG) {
+            int sub = lowerConst(u.operand(), g);
+            return sub >= 0 ? g.add(ENode.unary(ENode.Op.NEG, u.kind(), sub)) : -1;
         }
         if (term instanceof Binary b) {
-            Double l = evalConstDouble(b.left());
-            Double r = evalConstDouble(b.right());
-            if (l == null || r == null) {
-                return null;
-            }
-            double res = switch (b.op()) {
-                case ADD -> l + r;
-                case SUB -> l - r;
-                case MUL -> l * r;
-                case DIV -> l / r;
-                default -> Double.NaN;
-            };
-            return Double.isNaN(res) ? null : res;
+            int l = lowerConst(b.left(), g);
+            int r = lowerConst(b.right(), g);
+            return l >= 0 && r >= 0 ? g.add(ENode.binary(b.op(), b.kind(), l, r)) : -1;
         }
-        return null;
+        return -1;
     }
 }

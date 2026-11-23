@@ -142,3 +142,41 @@ def run = fn (p: int): double -> (
 )
 assert(run(3) == 6.0)
 }}}}}
+
+{{{{{
+;; HirDcePass & HirPurity : dead pure-local Block with nested Block + finite-collection for loop
+def sumL = fn (xs: list of int): int -> (def s = 0 ; for e in xs then (s += e) ; s)
+def run = fn (xs: list of int, p: int): int -> (
+  def deadSum = sumL(xs)
+  def deadBlk = (def a = p + 1 ; (def b = a + 2 ; b))
+  xs.size()
+)
+assert(run(list(1, 2, 3), 4) == 3)
+}}}}}
+
+{{{{{
+;; HirPurity : dead mutable-arg call and throwing/non-terminating for loop stay preserved
+def Box = class (def v: int) ()
+def touch = fn (mut b: Box): int -> (b.v += 1 ; b.v)
+def run = fn (mut b: Box, xs: list of int): int -> (
+  def d1 = touch(b)
+  def d2 = for x in xs then (assert(x > 0) ; x)
+  b.v
+)
+assert(run(Box(0), list(1, 2)) == 1)
+}}}}}
+
+{{{{{
+;; HirLicmPass & HirPurity.isDeterministic : loop-invariant ArrayOp.SIZE, As, TypeApply, Logic, and If
+def idT of T = fn (x: T): T -> (x)
+def run = fn (arr: array of int, flag: bool, n: int): double -> (
+  def i = 0 ; def acc = 0.0
+  while i < n then (
+    def k = double(arr.size()) + (if flag and true then (idT of double(1.0)) else (0.0)) + (1 as double)
+    acc += k ; i += 1
+  )
+  acc
+)
+assert(run((array of int).of(10, 20), true, 3) == 12.0)
+}}}}}
+

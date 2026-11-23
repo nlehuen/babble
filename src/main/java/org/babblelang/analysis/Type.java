@@ -833,22 +833,8 @@ sealed interface Type {
             return true;
         }
         return switch (this) {
-            case Union u -> {
-                for (Type m : u.members()) {
-                    if (m.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case Intersection i -> {
-                for (Type m : i.members()) {
-                    if (m.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
+            case Union u -> anyMatchList(u.members(), predicate);
+            case Intersection i -> anyMatchList(i.members(), predicate);
             case Frozen f -> f.of().anyMatch(predicate);
             case Array a -> a.element().anyMatch(predicate);
             case Function fn -> {
@@ -859,46 +845,11 @@ sealed interface Type {
                 }
                 yield fn.result().anyMatch(predicate);
             }
-            case Overloaded ov -> {
-                for (Function alt : ov.alternatives()) {
-                    if (alt.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case Instance inst -> {
-                for (Type a : inst.typeArguments()) {
-                    if (a.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case JavaInstance ji -> {
-                for (Type a : ji.typeArguments()) {
-                    if (a.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case CoreCollection cc -> {
-                for (Type a : cc.typeArguments()) {
-                    if (a.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
-            case JavaMethod jm -> {
-                for (Type a : jm.typeArguments()) {
-                    if (a.anyMatch(predicate)) {
-                        yield true;
-                    }
-                }
-                yield false;
-            }
+            case Overloaded ov -> anyMatchList(ov.alternatives(), predicate);
+            case Instance inst -> anyMatchList(inst.typeArguments(), predicate);
+            case JavaInstance ji -> anyMatchList(ji.typeArguments(), predicate);
+            case CoreCollection cc -> anyMatchList(cc.typeArguments(), predicate);
+            case JavaMethod jm -> anyMatchList(jm.typeArguments(), predicate);
             case ArrayOfFactory af -> af.element() != null && af.element().anyMatch(predicate);
             case Simple ignored -> false;
             case TypeVar ignored -> false;
@@ -908,6 +859,15 @@ sealed interface Type {
             case JavaPackage ignored -> false;
             case JavaClassValue ignored -> false;
         };
+    }
+
+    private static boolean anyMatchList(List<? extends Type> types, Predicate<Type> predicate) {
+        for (Type t : types) {
+            if (t.anyMatch(predicate)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -922,22 +882,8 @@ sealed interface Type {
         }
         return switch (this) {
             case Union u -> {
-                List<Type> src = u.members();
-                List<Type> out = null;
-                for (int i = 0; i < src.size(); i++) {
-                    Type orig = src.get(i);
-                    Type mapped = orig.mapTypes(mapper);
-                    if (out != null) {
-                        out.add(mapped);
-                    } else if (mapped != orig) {
-                        out = new ArrayList<>(src.size());
-                        for (int j = 0; j < i; j++) {
-                            out.add(src.get(j));
-                        }
-                        out.add(mapped);
-                    }
-                }
-                yield out != null ? union(out) : u;
+                List<Type> mapped = mapList(u.members(), mapper);
+                yield mapped != u.members() ? union(mapped) : u;
             }
             case Intersection i -> {
                 List<Type> mapped = mapList(i.members(), mapper);
@@ -952,45 +898,22 @@ sealed interface Type {
                 yield elem != a.element() ? new Array(elem) : a;
             }
             case Function fn -> {
-                List<Parameter> src = fn.parameters();
-                List<Parameter> out = null;
-                for (int i = 0; i < src.size(); i++) {
-                    Parameter orig = src.get(i);
+                List<Parameter> mappedParams = mapElements(fn.parameters(), orig -> {
                     Type mappedType = orig.type().mapTypes(mapper);
-                    if (out != null) {
-                        out.add(mappedType != orig.type() ? orig.withType(mappedType) : orig);
-                    } else if (mappedType != orig.type()) {
-                        out = new ArrayList<>(src.size());
-                        for (int j = 0; j < i; j++) {
-                            out.add(src.get(j));
-                        }
-                        out.add(orig.withType(mappedType));
-                    }
-                }
+                    return mappedType != orig.type() ? orig.withType(mappedType) : orig;
+                });
                 Type res = fn.result().mapTypes(mapper);
-                yield (out != null || res != fn.result())
-                        ? new Function(fn.typeParameters(), out != null ? out : src, res, fn.effects(),
+                yield (mappedParams != fn.parameters() || res != fn.result())
+                        ? new Function(fn.typeParameters(), mappedParams, res, fn.effects(),
                                 fn.forwardedEffectParams(), fn.capturedCallings())
                         : fn;
             }
             case Overloaded ov -> {
-                List<Function> src = ov.alternatives();
-                List<Function> out = null;
-                for (int i = 0; i < src.size(); i++) {
-                    Function orig = src.get(i);
-                    Type mapped = orig.mapTypes(mapper);
-                    Function mappedFn = mapped instanceof Function mf ? mf : orig;
-                    if (out != null) {
-                        out.add(mappedFn);
-                    } else if (mappedFn != orig) {
-                        out = new ArrayList<>(src.size());
-                        for (int j = 0; j < i; j++) {
-                            out.add(src.get(j));
-                        }
-                        out.add(mappedFn);
-                    }
-                }
-                yield out != null ? new Overloaded(out) : ov;
+                List<Function> mapped = mapElements(ov.alternatives(), orig -> {
+                    Type m = orig.mapTypes(mapper);
+                    return m instanceof Function mf ? mf : orig;
+                });
+                yield mapped != ov.alternatives() ? new Overloaded(mapped) : ov;
             }
             case Instance inst -> {
                 List<Type> mapped = mapList(inst.typeArguments(), mapper);
@@ -1016,13 +939,17 @@ sealed interface Type {
     }
 
     private static List<Type> mapList(List<Type> src, UnaryOperator<Type> mapper) {
+        return mapElements(src, t -> t.mapTypes(mapper));
+    }
+
+    private static <E> List<E> mapElements(List<E> src, UnaryOperator<E> mapper) {
         if (src.isEmpty()) {
             return src;
         }
-        List<Type> out = null;
+        List<E> out = null;
         for (int i = 0; i < src.size(); i++) {
-            Type orig = src.get(i);
-            Type mapped = orig.mapTypes(mapper);
+            E orig = src.get(i);
+            E mapped = mapper.apply(orig);
             if (out != null) {
                 out.add(mapped);
             } else if (mapped != orig) {

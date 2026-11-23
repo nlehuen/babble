@@ -79,13 +79,6 @@ final class Reachability {
             this.pathKey = pathKey;
         }
 
-        Origin(BitSet params, boolean aliasesThis, boolean external, boolean unique, boolean moved,
-               Object uniqueOwner, Set<Object> directKeys, PathKey pathKey) {
-            this(params, aliasesThis, external, unique,
-                    unique && params.isEmpty() && !aliasesThis && !external ? Provenance.EMPTY : null, moved,
-                    uniqueOwner, directKeys, pathKey);
-        }
-
         Origin(BitSet params, boolean aliasesThis, boolean external, Set<Object> directKeys, PathKey pathKey) {
             this(params, aliasesThis, external, false, null, false, null, directKeys, pathKey);
         }

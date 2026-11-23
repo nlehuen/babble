@@ -704,17 +704,6 @@ final class EffectAstExtractors {
         if (callee instanceof Type.JavaClassValue jcv) {
             return ec.javaResolver.resolveJavaConstructorProfile(jcv.type(), null).effects();
         }
-        if (callee instanceof Type.ClassValue cv) {
-            EffectChecker.CallableSummary cs = ec.constructorSummary(cv.node());
-            if (cs != null) {
-                boolean isVal = cv.node().kind == ClassShape.Kind.VALUE_CLASS;
-                EnumSet<Effect> set = EffectSet.copySet(cs.effects().effects());
-                if (isVal && set.contains(Effect.PURE) && set.contains(Effect.DETERMINISTIC) && !cv.node().parameters.isEmpty()) {
-                    set.add(Effect.INJECTIVE);
-                }
-                return EffectSet.ofInferred(set, false, false);
-            }
-        }
         if (callee instanceof Type.Function fn) {
             BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
             if (lit != null && ec.summaries.containsKey(lit)) {
