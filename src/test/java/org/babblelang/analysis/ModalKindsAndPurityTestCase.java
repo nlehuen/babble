@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Direct unit tests for the ANTLR-free {@code BIP027-P5} cores : {@link ModalKindTable} (mode
+ * Direct unit tests for the ANTLR-free {@code BIP027-I5} cores : {@link ModalKindTable} (mode
  * crossing), the shallow modality of {@link Reachability.Origin}, the {@link Purity} lattice, and
  * the lowering of host registrations into axioms ({@link HostEffects.Registry}).
  */

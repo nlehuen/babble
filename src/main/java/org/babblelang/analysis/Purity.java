@@ -2,7 +2,7 @@ package org.babblelang.analysis;
 
 /**
  * The purity lattice Java call profiles ({@link EffectChecker.JavaCallProfile}) and Babble callable
- * summaries ({@link EffectChecker.CallableSummary}) share ({@code BIP027-P5}), after OPAL's unified
+ * summaries ({@link EffectChecker.CallableSummary}) share ({@code BIP027-I5}), after OPAL's unified
  * purity lattice (Helm et al., ASE 2018) : how far a callee is from pure, as the product of three
  * bits, joined pointwise.
  *

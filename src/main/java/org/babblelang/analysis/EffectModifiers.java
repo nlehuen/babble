@@ -483,10 +483,13 @@ final class EffectModifiers {
         for (EffectChecker.PendingAxiomDiag diag : ec.pendingAxiomDiags) {
             ec.checker.effectDiagnostic(diag.message(), diag.at());
         }
-        // 1. An axiom cannot vouch for what a verified function it is nested in calls.
+        // 1. An axiom about Java cannot vouch for what a verified function it is nested in calls
+        // (an axiom typing a host binding by name may : BIP019 §3.2).
         if (ec.pass.hostEffects.allowAxioms()) {
             for (BlockScopes.PendingAxiomExpr pending : ec.pass.axiomExpressions) {
-                checkDeclarationPlacement(pending.scope(), pending.ctx());
+                if (!AxiomData.isBabbleNameAxiom(pending.ctx())) {
+                    checkDeclarationPlacement(pending.scope(), pending.ctx());
+                }
             }
         }
     }

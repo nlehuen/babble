@@ -53,7 +53,7 @@ final class Reachability {
         final boolean external;
         final boolean unique;
         /**
-         * The shallow modality (BIP016-D9, {@code BIP027-P5}) : non-null for a fresh local allocation whose
+         * The shallow modality (BIP016-D9, {@code BIP027-I5}) : non-null for a fresh local allocation whose
          * own shell has not escaped (even after storing non-unique elements), holding what its elements
          * reach — propagated on reads, deep mutations, or escapes, never to the shell itself.
          */

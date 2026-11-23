@@ -95,7 +95,7 @@ final class TypedProgram {
     }
 
     /** A member's type as seen through an instance, with its type arguments. */
-    /** Deep immutability by mode crossing ({@link ModalKindTable}, BIP027-P5). */
+    /** Deep immutability by mode crossing ({@link ModalKindTable}, BIP027-I5). */
     boolean isDeeplyImmutable(Type type) {
         return checker.isDeeplyImmutable(type);
     }
