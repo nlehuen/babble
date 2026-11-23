@@ -372,20 +372,58 @@ public final class ArraySupport {
         return raw != null && raw.getClass().isArray() ? deepToString(raw) : String.valueOf(raw);
     }
 
-    /** Normalizes compiled class names in runtime exceptions (e.g. {@link ArrayStoreException}). */
+    /** Formats a host Java {@link Throwable} consistently across modes (stripping Helpful NPE details). */
+    public static String formatJavaException(Throwable t) {
+        String name = t.getClass().getName();
+        String msg = t instanceof NullPointerException ? null : t.getMessage();
+        return msg == null ? name : name + " : " + msg;
+    }
+
+    /** Whether the top stack frame points to internal Babble compiler/interpreter code (not user throw). */
+    private static boolean isInternalEngineFrame(StackTraceElement top) {
+        String cls = top.getClassName();
+        if (cls.equals("org.babblelang.engine.impl.Interpreter") && "visitThrowExpression".equals(top.getMethodName())) {
+            return false;
+        }
+        if (cls.equals("org.babblelang.compiler.ScriptClassLoader")
+                || cls.equals("org.babblelang.compiler.CompositeClassLoader")) {
+            return false;
+        }
+        return cls.startsWith("org.babblelang.engine.impl.")
+                && !cls.startsWith("org.babblelang.engine.impl.natives.")
+                || cls.startsWith("org.babblelang.analysis.")
+                || cls.startsWith("org.babblelang.compiler.")
+                || cls.startsWith("org.babblelang.ir.")
+                || cls.startsWith("org.babblelang.opt.");
+    }
+
+    /** Normalizes uncaught runtime exceptions for script boundaries (BIP028-D3). */
     public static String formatThrowable(Throwable t) {
-        String raw = t.toString();
-        if (!(t instanceof ArrayStoreException)) {
-            return raw;
+        if (t instanceof BabbleException) {
+            return t.toString();
         }
-        Matcher arrMatcher = COMPILED_ARRAY_CLASS.matcher(raw);
-        StringBuilder sb = new StringBuilder();
-        while (arrMatcher.find()) {
-            String prefix = "array of ".repeat(arrMatcher.group(1).length());
-            arrMatcher.appendReplacement(sb, Matcher.quoteReplacement(prefix + arrMatcher.group(2)));
+        if (t instanceof ThrownException te) {
+            return BabbleException.class.getName() + ": " + format(te.value());
         }
-        arrMatcher.appendTail(sb);
-        return COMPILED_BABBLE_CLASS.matcher(sb.toString()).replaceAll("$1");
+        if (t instanceof ArrayStoreException) {
+            String raw = t.toString();
+            Matcher arrMatcher = COMPILED_ARRAY_CLASS.matcher(raw);
+            StringBuilder sb = new StringBuilder();
+            while (arrMatcher.find()) {
+                String prefix = "array of ".repeat(arrMatcher.group(1).length());
+                arrMatcher.appendReplacement(sb, Matcher.quoteReplacement(prefix + arrMatcher.group(2)));
+            }
+            arrMatcher.appendTail(sb);
+            return COMPILED_BABBLE_CLASS.matcher(sb.toString()).replaceAll("$1");
+        }
+        if (t instanceof ArrayIndexOutOfBoundsException || t instanceof NegativeArraySizeException) {
+            return t.toString();
+        }
+        StackTraceElement[] stack = t.getStackTrace();
+        if (stack.length > 0 && isInternalEngineFrame(stack[0])) {
+            return t.toString();
+        }
+        return BabbleException.class.getName() + ": " + formatJavaException(t);
     }
 
     // ---------------------------------------------------------------- dynamic member dispatch

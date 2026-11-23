@@ -36,6 +36,10 @@ public class BabbleCompiledScript extends BabbleScript {
             return interpreter.visitFile(file);
         } catch (Exception e) {
             throw new ScriptException(ArraySupport.formatThrowable(e), sourceName, interpreter.getLast().getStart().getLine());
+        } catch (Error e) {
+            throw e;
+        } catch (Throwable t) {
+            throw new ScriptException(ArraySupport.formatThrowable(t), sourceName, interpreter.getLast().getStart().getLine());
         } finally {
             BabbleScriptEngine.flush(runtime.writer());
         }
