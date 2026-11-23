@@ -95,6 +95,11 @@ final class TypedProgram {
     }
 
     /** A member's type as seen through an instance, with its type arguments. */
+    /** Deep immutability by mode crossing ({@link ModalKindTable}, BIP027-P5). */
+    boolean isDeeplyImmutable(Type type) {
+        return checker.isDeeplyImmutable(type);
+    }
+
     Type instanceMemberTypeForEffects(Type.Instance inst, TypeNode.Member member) {
         return checker.algebra().substitute(checker.memberType(inst.node(), member), checker.algebra().instanceEnv(inst));
     }

@@ -315,30 +315,17 @@ static block inside deterministic function violates deterministic guarantee
 
 {{{{{
 def f = fn (): int -> (
-    axiom pure on java.lang.Math.abs
+    axiom java.lang.Math.abs: fn pure
     1
 )
 }}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
 axiom declaration is not allowed inside a verified constrained function
 
 {{{{{
-def y = 1
-def x = axiom on y
-}}}}}
-Invalid axiom target : expected a Java class, Java method, or function
-
-{{{{{
-io on java.lang.System.nanoTime
+axiom java.lang.System.nanoTime: fn io
 def f = fn io (): int -> ( 1 )
 def t = java.lang.System.nanoTime()
 assert(f() == 1)
 assert(t == t)
 }}}}}
-Warning : Deprecated syntax : 'io on ...' is deprecated, use 'axiom Target: fn io' instead
 
-{{{{{
-axiom on java.lang.Math.abs
-}}}}}
-Warning : Deprecated syntax : 'axiom ... on ...' is deprecated, use 'axiom Target: fn ...' instead
-axiom requires at least one effect modifier

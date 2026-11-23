@@ -392,10 +392,10 @@ public class OwnershipTestCase {
         assertClean(javaUnique);
         Assertions.assertEquals(42, evalBothModes(javaUnique));
 
-        // `axiom pure unique on ...` also produces a `unique` list!
+        // `axiom ...: fn pure unique` also produces a `unique` list!
         String axiomUnique = """
                 def UF = import("org.babblelang.tests").OwnershipTestCase.UniqueFactory
-                axiom pure unique on UF.unannotatedList
+                axiom org.babblelang.tests.OwnershipTestCase.UniqueFactory.unannotatedList: fn pure unique
                 def make = fn (): frozen java.util.List of int? -> (
                     def xs = UF.unannotatedList()!
                     xs.add(7)

@@ -2,8 +2,7 @@ grammar Babble;
 
 // Zero @parser::members. Zero semantic predicates. Single bracket type: ().
 
-file: sep? (effectDeclaration | expression)
-      (sep (effectDeclaration | expression))* sep? EOF;
+file: sep? expression (sep expression)* sep? EOF;
 
 // Statements are separated by newlines or semicolons.
 // Newlines are ignored only after tokens that require a continuation
@@ -21,12 +20,6 @@ effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
 memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER;
-
-effectDeclaration: EXPORT? effectClause ON effectTarget (ctorOpen='(' ctorClose=')')?;
-
-effectTarget: (ID '(' STRING ')' | memberName) ('.' memberName)*;
-
-effectClause: (AXIOM | IO) (effectWord | UNIQUE)*;
 
 effectPrefix: effectWord+ callingClause?
             | callingClause;
@@ -52,7 +45,7 @@ axiomMember: DEF (memberName | '*') ':' axiomType;
 expression:
           ifExpr                                              # ifExpression
           | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
-                     ('=' NL* (effectClause ON)? value=expression)?   # defExpression
+                     ('=' NL* value=expression)?   # defExpression
           | EXPORT? AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType   # axiomExpression
           | TYPE NL* aliased=type                             # typeAliasExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
@@ -114,8 +107,7 @@ ifExpr: IF test=expression THEN NL* thenBlock=block
         (NL* ELSE NL* (elseIf=ifExpr | elseBlock=block))?;
 
 block: '(' sep? ')'
-     | '(' sep? (effectDeclaration | expression)
-       (sep (effectDeclaration | expression))* sep? ')';
+     | '(' sep? expression (sep expression)* sep? ')';
 
 classParameters: '(' NL* classParam (NL* ',' NL* classParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=classParam)*)? NL* ')'
                | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=classParam)* NL* ')'
@@ -279,7 +271,6 @@ EXPORT: 'export';
 FN: 'fn';
 OVERLOAD: 'overload';
 OF: 'of';
-ON: 'on';
 CALLING: 'calling';
 AXIOM: 'axiom';
 PURE: 'pure';

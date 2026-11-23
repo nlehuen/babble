@@ -168,7 +168,7 @@ final class EffectBodyWalker {
         if (orig == null || orig == Reachability.Origin.IMMUTABLE) {
             return;
         }
-        if ((orig.unique || orig.localFresh) && !orig.external && orig.params.isEmpty() && !orig.aliasesThis) {
+        if (orig.owned() && !orig.external && orig.params.isEmpty() && !orig.aliasesThis) {
             return;
         }
         for (int p = orig.params.nextSetBit(0); p >= 0; p = orig.params.nextSetBit(p + 1)) {
@@ -187,7 +187,7 @@ final class EffectBodyWalker {
     void demoteUniqueOwner(Object ownerKey, Reachability.Origin taint) {
         if (ownerKey instanceof ParserRuleContext decl) {
             Reachability.Origin cur = env.get(decl);
-            if (cur != null && (cur.unique || cur.localFresh)) {
+            if (cur != null && cur.owned()) {
                 env.put(decl, cur.demoteAlias(taint));
             }
         }
@@ -196,7 +196,7 @@ final class EffectBodyWalker {
     void absorbElementIntoLocalContainer(Object ownerKey, Reachability.Origin taint) {
         if (ownerKey instanceof ParserRuleContext decl) {
             Reachability.Origin cur = env.get(decl);
-            if (cur != null && (cur.unique || cur.localFresh)
+            if (cur != null && cur.owned()
                     && !cur.external && !cur.aliasesThis && cur.params.isEmpty()) {
                 env.put(decl, cur.absorbElement(taint));
             }
@@ -236,13 +236,12 @@ final class EffectBodyWalker {
         if (rhs.unique && rhs.uniqueOwner == null) {
             return Reachability.Origin.ofUnique(decl, decl, false);
         }
-        if (rhs.localFresh && rhs.uniqueOwner == null) {
+        if (rhs.localFresh() && rhs.uniqueOwner == null) {
             return new Reachability.Origin((BitSet) rhs.params.clone(), rhs.aliasesThis, rhs.external,
-                    false, true, false, decl,
-                    (BitSet) rhs.elementParams.clone(), rhs.elementThis, rhs.elementExternal,
+                    false, rhs.elements(), false, decl,
                     Set.of(decl), new Reachability.PathKey(decl, List.of()));
         }
-        if ((rhs.unique || rhs.localFresh) && rhs.uniqueOwner != null) {
+        if (rhs.owned() && rhs.uniqueOwner != null) {
             // Aliasing a live unique/localFresh local without move(...) drops uniqueness while preserving provenance.
             demoteUniqueOwner(rhs.uniqueOwner, Reachability.Origin.IMMUTABLE);
             return withLocalAliasKey(rhs.demoteAlias(Reachability.Origin.IMMUTABLE), decl, localType);
@@ -848,7 +847,7 @@ final class EffectBodyWalker {
         }
         // In BIP007-I2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of a unique local/param)
         // stays confined (hermetic/pure) without tainting stored elements!
-        if ((target.unique || (target.localFresh && shallow))
+        if ((target.unique || (target.localFresh() && shallow))
                 && !target.external && target.params.isEmpty() && !target.aliasesThis) {
             return;
         }
@@ -897,11 +896,11 @@ final class EffectBodyWalker {
         if (value == Reachability.Origin.IMMUTABLE) {
             return;
         }
-        if ((target.unique || target.localFresh) && !target.external && target.params.isEmpty() && !target.aliasesThis) {
+        if (target.owned() && !target.external && target.params.isEmpty() && !target.aliasesThis) {
             // Storing into a fresh local container: absorb element provenance without escaping yet!
             if (!isUnattachedUniqueOrImmutable(value, valueType)) {
                 absorbElementIntoLocalContainer(target.uniqueOwner, value);
-                if ((value.unique || value.localFresh) && value.uniqueOwner != null) {
+                if (value.owned() && value.uniqueOwner != null) {
                     demoteUniqueOwner(value.uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
             }
@@ -909,14 +908,14 @@ final class EffectBodyWalker {
         }
         if (constructingSelf && target.aliasesThis && target.params.isEmpty() && !target.external) {
             // Storing into `this`'s own fields during construction stays confined inside the new object!
-            Reachability.Origin flat = value.hasElementTaint() ? value.flattenElements() : value;
+            Reachability.Origin flat = value.flattenElements();
             ctorStoredParams.or(flat.params);
-            if ((value.unique || value.localFresh) && value.uniqueOwner != null) {
+            if (value.owned() && value.uniqueOwner != null) {
                 demoteUniqueOwner(value.uniqueOwner, Reachability.Origin.IMMUTABLE);
             }
             return;
         }
-        if ((value.unique || value.localFresh) && value.uniqueOwner != null) {
+        if (value.owned() && value.uniqueOwner != null) {
             demoteUniqueOwner(value.uniqueOwner, Reachability.Origin.IMMUTABLE);
         }
         // Storing `this` (or a sub-reference of `this`) back into `this`'s own field does not escape `this`!
@@ -932,7 +931,7 @@ final class EffectBodyWalker {
         if (value == Reachability.Origin.IMMUTABLE) {
             return;
         }
-        Reachability.Origin flat = value.hasElementTaint() ? value.flattenElements() : value;
+        Reachability.Origin flat = value.flattenElements();
         if (flat.aliasesThis && !ignoreThis) {
             if (borrowThis) {
                 borrowThis = false;
@@ -989,7 +988,7 @@ final class EffectBodyWalker {
         if (retOrigin == Reachability.Origin.IMMUTABLE) {
             return;
         }
-        Reachability.Origin flat = retOrigin.hasElementTaint() ? retOrigin.flattenElements() : retOrigin;
+        Reachability.Origin flat = retOrigin.flattenElements();
         if (!retOrigin.unique || !flat.params.isEmpty() || flat.aliasesThis || flat.external) {
             uniqueResult = false;
         } else if (at instanceof BabbleParser.ReturnExpressionContext
@@ -1065,7 +1064,7 @@ final class EffectBodyWalker {
                 continue;
             }
             if (paramIndex.containsKey(decl) || pseudoForwarded.containsKey(decl)) {
-                Reachability.Origin flat = orig.hasElementTaint() ? orig.flattenElements() : orig;
+                Reachability.Origin flat = orig.flattenElements();
                 Reachability.Origin alias = flat.stripDirectIdentity(false);
                 closure = closure == Reachability.Origin.IMMUTABLE ? alias : closure.join(alias);
             } else {
@@ -1221,9 +1220,9 @@ final class EffectBodyWalker {
         if (loopVarType == null || ec.javaResolver.isDeeplyImmutable(loopVarType)) {
             elemOrig = Reachability.Origin.IMMUTABLE;
         } else {
-            Reachability.Origin flat = iterOrig.hasElementTaint() ? iterOrig.flattenElements() : iterOrig;
-            elemOrig = new Reachability.Origin(flat.params, flat.aliasesThis, flat.external, false, false, false, null,
-                    Reachability.Origin.EMPTY_BITS, false, false, Set.of(ctx), new Reachability.PathKey(ctx, List.of()));
+            Reachability.Origin flat = iterOrig.flattenElements();
+            elemOrig = new Reachability.Origin(flat.params, flat.aliasesThis, flat.external, false, null, false, null,
+                    Set.of(ctx), new Reachability.PathKey(ctx, List.of()));
         }
         Reachability.Origin[] breakAcc = new Reachability.Origin[1];
         loopBreakOrigins.push(breakAcc);
@@ -1385,7 +1384,7 @@ final class EffectBodyWalker {
         if (argOrigin == null || argOrigin == Reachability.Origin.IMMUTABLE) {
             return;
         }
-        Reachability.Origin flat = argOrigin.hasElementTaint() ? argOrigin.flattenElements() : argOrigin;
+        Reachability.Origin flat = argOrigin.flattenElements();
         long mask = 0L;
         for (int p = flat.params.nextSetBit(0); p >= 0 && p < 64; p = flat.params.nextSetBit(p + 1)) {
             mask |= (1L << p);

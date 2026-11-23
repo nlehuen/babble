@@ -83,7 +83,7 @@ final class TailCalls {
     private static BabbleParser.ExpressionContext lastExpression(BabbleParser.BlockContext block) {
         ParseTree last = null;
         for (ParseTree child : block.children) {
-            if (child instanceof BabbleParser.ExpressionContext || child instanceof BabbleParser.EffectDeclarationContext) {
+            if (child instanceof BabbleParser.ExpressionContext) {
                 last = child;
             }
         }
@@ -230,7 +230,7 @@ final class TailCalls {
     private void block(BabbleParser.FunctionLiteralContext function, BabbleParser.BlockContext block, boolean tail) {
         ParseTree last = null;
         for (ParseTree child : block.children) {
-            if (child instanceof BabbleParser.ExpressionContext || child instanceof BabbleParser.EffectDeclarationContext) {
+            if (child instanceof BabbleParser.ExpressionContext) {
                 last = child;
             }
         }

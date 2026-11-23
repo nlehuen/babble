@@ -336,13 +336,13 @@ public class ReplTestCase {
 
         // Top-level `axiom` persists across REPL turns:
         assertFails(session, "def badSep = fn (): string -> (java.lang.System.lineSeparator())", "violates deterministic guarantee");
-        session.eval("axiom pure nothrow on java.lang.System.lineSeparator");
+        session.eval("axiom java.lang.System.lineSeparator: fn pure nothrow");
         session.eval("def okSep = fn nothrow (): string -> (java.lang.System.lineSeparator())");
         Assertions.assertEquals(System.lineSeparator(), session.eval("okSep()"));
 
         // Multi-line incomplete classification with effect headers:
         Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("def f = fn io (x: int): int -> ("));
-        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("axiom pure on java.lang.Math"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("axiom java.lang.Math.abs: fn pure"));
     }
 
     // ---------------------------------------------------------------- :type and :load (§9)

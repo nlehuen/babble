@@ -164,7 +164,7 @@ final class AlgebraicVerifier {
     }
 
     private static BabbleParser.ExpressionContext singleBodyExpression(BabbleParser.BlockContext block) {
-        if (block == null || block.expression().size() != 1 || !block.effectDeclaration().isEmpty()) {
+        if (block == null || block.expression().size() != 1) {
             return null;
         }
         BabbleParser.ExpressionContext e = block.expression(0);
@@ -172,7 +172,7 @@ final class AlgebraicVerifier {
             if (e instanceof BabbleParser.ReturnExpressionContext ret && ret.expression() != null) {
                 e = ret.expression();
             } else if (e instanceof BabbleParser.BlockExpressionContext be
-                    && be.block().expression().size() == 1 && be.block().effectDeclaration().isEmpty()) {
+                    && be.block().expression().size() == 1) {
                 e = be.block().expression(0);
             } else {
                 return e;
@@ -182,7 +182,7 @@ final class AlgebraicVerifier {
 
     static BabbleParser.ExpressionContext unwrapParens(BabbleParser.ExpressionContext expr) {
         while (expr instanceof BabbleParser.BlockExpressionContext be
-                && be.block().expression().size() == 1 && be.block().effectDeclaration().isEmpty()) {
+                && be.block().expression().size() == 1) {
             expr = be.block().expression(0);
         }
         return expr;

@@ -138,9 +138,9 @@ public class ParserGrammarTestCase extends BabbleTestBase {
     @Test
     public void testBip007OwnershipSllGrammar() {
         parsePureSll("""
-                axiom pure unique on java.util.ArrayList()
-                axiom volatile on java.nio.file.Files.readString
-                io on java.net.URL.equals
+                axiom java.util.ArrayList: class () static (def new: fn pure unique)
+                axiom java.nio.file.Files.readString: fn volatile
+                axiom java.net.URL.equals: fn io
                 def f = fn (unique a: Box, shared b: Box, mut c: Box): unique Box -> (
                     def x: frozen list of int = freeze(list(1, 2))
                     def y: frozen (Box | int)? = null
@@ -154,6 +154,21 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                 def h = fn io (cb: fn io (x: int): int): int -> ( cb(1) )
                 def ft: fn (unique Box): unique Box = f
                 """);
+    }
+
+    @Test
+    public void testDeprecatedAxiomOnSyntaxIsGone() {
+        // BIP027-D6 : `axiom ... on ...`, `io on ...` and `def x = axiom ... on ...` no longer parse,
+        // and `on` is an ordinary name.
+        for (String retired : List.of(
+                "axiom pure on java.lang.Math.abs",
+                "io on java.lang.System.nanoTime",
+                "export axiom pure on java.lang.Math",
+                "axiom pure unique on java.util.ArrayList()",
+                "def m = axiom pure on java.lang.Math.abs")) {
+            Assertions.assertThrows(ParseCancellationException.class, () -> parsePureSll(retired), retired);
+        }
+        parsePureSll("def on = 1\non + 1");
     }
 
     private void assertTypeCheckFails(String source, String expectedMessage) {

@@ -299,7 +299,6 @@ public final class HirBuilder {
             } else if (parent instanceof BabbleParser.BlockContext block
                     && block.getParent() instanceof BabbleParser.BlockExpressionContext blockExpr
                     && blockExpr.block() == block
-                    && block.effectDeclaration().isEmpty()
                     && block.expression().size() == 1
                     && !scopes.opensScope(block)) {
                 cur = blockExpr;

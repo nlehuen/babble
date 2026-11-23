@@ -184,9 +184,7 @@ public final class Formatter {
                         && parent.getParent() instanceof BabbleParser.CallContext call
                         && call.expression() instanceof BabbleParser.TypeApplyContext;
                 callParentheses[index] = (parent instanceof BabbleParser.CallParametersContext && !isTypeApplyCall)
-                        || parent instanceof BabbleParser.SuperExpressionContext
-                        || parent instanceof BabbleParser.EffectDeclarationContext
-                        || parent instanceof BabbleParser.EffectTargetContext;
+                        || parent instanceof BabbleParser.SuperExpressionContext;
                 // What a block of an "if", a function, a class... encloses is indented from
                 // the line where that expression starts, wherever its parenthesis is.
                 anchors[index] = parent instanceof BabbleParser.BlockContext block

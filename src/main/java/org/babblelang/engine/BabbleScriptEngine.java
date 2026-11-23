@@ -119,7 +119,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     private boolean allowAxioms = true;
     private boolean bytecodeEffectAnalysis = true;
-    private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> hostEffectOverrides = new LinkedHashMap<>();
+    private final HostEffects.Registry hostRegistrations = new HostEffects.Registry();
     private org.babblelang.analysis.BuiltinAxioms builtinAxioms = org.babblelang.analysis.BuiltinAxioms.standard();
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
@@ -197,9 +197,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     /** Registers a per-engine effect assumption for all methods and constructors of {@code target}. */
     public BabbleScriptEngine assumeEffects(Class<?> target, org.babblelang.effects.Effect... effects) {
         Objects.requireNonNull(target, "target");
-        HostEffects.OverrideEntry entry = HostEffects.OverrideEntry.fromEffects(HostEffects.TargetKind.CLASS, effects);
         synchronized (moduleLock) {
-            hostEffectOverrides.put(HostEffects.JavaTarget.ofClass(target), entry);
+            hostRegistrations.assumeClass(target, effects);
             moduleCache.clear();
         }
         return this;
@@ -212,9 +211,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         if (!HostEffects.hasMethodNamed(owner, methodName)) {
             throw new IllegalArgumentException("No such method : " + methodName + " on " + owner.getName());
         }
-        HostEffects.OverrideEntry entry = HostEffects.OverrideEntry.fromEffects(HostEffects.TargetKind.METHOD, effects);
         synchronized (moduleLock) {
-            hostEffectOverrides.put(HostEffects.JavaTarget.ofMethod(owner, methodName), entry);
+            hostRegistrations.assumeMethod(owner, methodName, effects);
             moduleCache.clear();
         }
         return this;
@@ -223,9 +221,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     /** Registers a per-engine effect assumption for constructors of {@code target} only. */
     public BabbleScriptEngine assumeConstructorEffects(Class<?> target, org.babblelang.effects.Effect... effects) {
         Objects.requireNonNull(target, "target");
-        HostEffects.OverrideEntry entry = HostEffects.OverrideEntry.fromEffects(HostEffects.TargetKind.CONSTRUCTOR, effects);
         synchronized (moduleLock) {
-            hostEffectOverrides.put(HostEffects.JavaTarget.ofConstructor(target), entry);
+            hostRegistrations.assumeConstructor(target, effects);
             moduleCache.clear();
         }
         return this;
@@ -235,7 +232,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     public BabbleScriptEngine markIO(Class<?> target) {
         Objects.requireNonNull(target, "target");
         synchronized (moduleLock) {
-            hostEffectOverrides.put(HostEffects.JavaTarget.ofClass(target), HostEffects.OverrideEntry.ioEntry());
+            hostRegistrations.markIO(target);
             moduleCache.clear();
         }
         return this;
@@ -256,7 +253,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
         synchronized (moduleLock) {
             for (String name : methodNames) {
-                hostEffectOverrides.put(HostEffects.JavaTarget.ofMethod(owner, name), HostEffects.OverrideEntry.ioEntry());
+                hostRegistrations.markIO(owner, name);
             }
             moduleCache.clear();
         }
@@ -265,11 +262,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     HostEffects hostEffects() {
         synchronized (moduleLock) {
-            if (allowAxioms && bytecodeEffectAnalysis && hostEffectOverrides.isEmpty()
-                    && builtinAxioms == org.babblelang.analysis.BuiltinAxioms.standard()) {
-                return HostEffects.DEFAULT;
-            }
-            return new HostEffects(allowAxioms, bytecodeEffectAnalysis, hostEffectOverrides, builtinAxioms);
+            return hostRegistrations.toHostEffects(allowAxioms, bytecodeEffectAnalysis, builtinAxioms);
         }
     }
 

@@ -22,11 +22,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.Deque;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
@@ -48,59 +46,47 @@ final class JavaEffectResolver {
     private final HostEffects hostEffects;
     private final TypedProgram checker;
     private final Supplier<AxiomData.AxiomTable> localAxioms;
-    private final Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> localJavaEffects;
     private final Function<TypeNode.Member, EffectChecker.CallableSummary> memberSummaryLookup;
     private final Set<String> reportedRedundantAxioms = new HashSet<>();
 
     JavaEffectResolver(HostEffects hostEffects,
                        TypedProgram checker,
                        Supplier<AxiomData.AxiomTable> localAxioms,
-                       Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> localJavaEffects,
                        Function<TypeNode.Member, EffectChecker.CallableSummary> memberSummaryLookup) {
         this.hostEffects = hostEffects;
         this.checker = checker;
         this.localAxioms = localAxioms;
-        this.localJavaEffects = localJavaEffects;
         this.memberSummaryLookup = memberSummaryLookup;
     }
 
     EffectChecker.JavaCallProfile resolveJavaMethodProfile(Class<?> owner, String methodName, Method exactMethod) {
         AxiomData.AxiomTable axioms = localAxioms.get();
-        // Tier 1: File / module / session method override (BIP019 structured axioms first, then legacy effectDeclarations).
+        // Tier 1: File / module / session axioms (BIP019).
         if (!axioms.isEmpty()) {
             AxiomData.MemberAxiom localAx = AxiomData.lookupMethod(owner, methodName, exactMethod, axioms::directMembers);
             if (localAx != null) {
                 return localAx.toProfile(exactMethod);
             }
         }
-        HostEffects.OverrideEntry localMethod = lookupHierarchyMethod(localJavaEffects, owner, methodName);
-        if (localMethod != null) {
-            return profileFromOverride(localMethod, exactMethod, localMethod.effects().contains(Effect.NOTHROW));
-        }
-        // Tier 2: Engine method override.
-        HostEffects.OverrideEntry hostMethod = lookupHierarchyMethod(hostEffects.overrides(), owner, methodName);
-        if (hostMethod != null) {
-            return profileFromOverride(hostMethod, exactMethod, hostMethod.effects().contains(Effect.NOTHROW));
+        // Tier 2: Engine method assumptions (host axioms naming the method, BIP027-D6).
+        AxiomData.AxiomTable host = hostEffects.hostAxioms();
+        if (!host.isEmpty()) {
+            AxiomData.MemberAxiom hostAx = AxiomData.lookupMethod(owner, methodName, exactMethod, c -> named(host, c));
+            if (hostAx != null) {
+                return hostAx.toProfile(exactMethod);
+            }
         }
         // Tier 3: Java method annotations (@Pure, @Hermetic, @Mut, ...).
         if (exactMethod != null && hasAnyEffectAnnotation(exactMethod)) {
             return profileFromAnnotations(exactMethod, exactMethod.getDeclaringClass(), false);
         }
-        // Tier 4: File / module / session or engine bare-class override.
+        // Tier 4: Engine class assumptions (exact host wildcards on the owner or the declaring class).
         Class<?> declOwner = exactMethod != null ? exactMethod.getDeclaringClass() : owner;
-        HostEffects.OverrideEntry localClass = localJavaEffects.get(HostEffects.JavaTarget.ofClass(owner));
-        if (localClass == null && declOwner != owner) {
-            localClass = localJavaEffects.get(HostEffects.JavaTarget.ofClass(declOwner));
-        }
-        if (localClass != null) {
-            return profileFromOverride(localClass, exactMethod, localClass.effects().contains(Effect.NOTHROW));
-        }
-        HostEffects.OverrideEntry hostClass = hostEffects.lookup(HostEffects.JavaTarget.ofClass(owner));
-        if (hostClass == null && declOwner != owner) {
-            hostClass = hostEffects.lookup(HostEffects.JavaTarget.ofClass(declOwner));
-        }
-        if (hostClass != null) {
-            return profileFromOverride(hostClass, exactMethod, hostClass.effects().contains(Effect.NOTHROW));
+        if (!host.isEmpty()) {
+            AxiomData.MemberAxiom hostClass = AxiomData.lookupMethod(owner, methodName, exactMethod, c -> wildcards(host, c));
+            if (hostClass != null) {
+                return hostClass.toProfile(exactMethod);
+            }
         }
         // Tier 5: Java class-level annotations on owner / declaring class.
         if (hasClassEffectAnnotation(owner)) {
@@ -131,34 +117,31 @@ final class JavaEffectResolver {
 
     EffectChecker.JavaCallProfile resolveJavaConstructorProfile(Class<?> owner, Constructor<?> exactCtor) {
         AxiomData.AxiomTable axioms = localAxioms.get();
-        // Tier 1: File / module / session constructor override (BIP019 structured axioms first, then legacy).
+        // Tier 1: File / module / session constructor axioms (BIP019).
         if (!axioms.isEmpty()) {
             AxiomData.MemberAxiom localAx = AxiomData.lookupConstructor(owner, exactCtor, axioms::directMembers);
             if (localAx != null) {
                 return localAx.toProfile(exactCtor);
             }
         }
-        HostEffects.OverrideEntry localCtor = localJavaEffects.get(HostEffects.JavaTarget.ofConstructor(owner));
-        if (localCtor != null) {
-            return profileFromOverride(localCtor, exactCtor, localCtor.effects().contains(Effect.NOTHROW));
-        }
-        // Tier 2: Engine constructor override.
-        HostEffects.OverrideEntry hostCtor = hostEffects.lookup(HostEffects.JavaTarget.ofConstructor(owner));
-        if (hostCtor != null) {
-            return profileFromOverride(hostCtor, exactCtor, hostCtor.effects().contains(Effect.NOTHROW));
+        // Tier 2: Engine constructor assumptions.
+        AxiomData.AxiomTable host = hostEffects.hostAxioms();
+        if (!host.isEmpty()) {
+            AxiomData.MemberAxiom hostCtor = AxiomData.lookupConstructor(owner, exactCtor, c -> named(host, c));
+            if (hostCtor != null) {
+                return hostCtor.toProfile(exactCtor);
+            }
         }
         // Tier 3: Java constructor annotations.
         if (exactCtor != null && hasAnyEffectAnnotation(exactCtor)) {
             return profileFromAnnotations(exactCtor, owner, false);
         }
-        // Tier 4: Bare-class override.
-        HostEffects.OverrideEntry localClass = localJavaEffects.get(HostEffects.JavaTarget.ofClass(owner));
-        if (localClass != null) {
-            return profileFromOverride(localClass, exactCtor, localClass.effects().contains(Effect.NOTHROW));
-        }
-        HostEffects.OverrideEntry hostClass = hostEffects.lookup(HostEffects.JavaTarget.ofClass(owner));
-        if (hostClass != null) {
-            return profileFromOverride(hostClass, exactCtor, hostClass.effects().contains(Effect.NOTHROW));
+        // Tier 4: Engine class assumptions.
+        if (!host.isEmpty()) {
+            AxiomData.MemberAxiom hostClass = AxiomData.lookupConstructor(owner, exactCtor, c -> wildcards(host, c));
+            if (hostClass != null) {
+                return hostClass.toProfile(exactCtor);
+            }
         }
         // Tier 5: Java class-level annotations.
         if (hasClassEffectAnnotation(owner)) {
@@ -214,51 +197,7 @@ final class JavaEffectResolver {
     }
 
     boolean isDeeplyImmutable(Type type) {
-        if (type instanceof Type.JavaInstance ji) {
-            return isJavaClassDeeplyImmutable(ji.type());
-        }
-        return isDeeplyImmutable(type, Collections.newSetFromMap(new IdentityHashMap<>()));
-    }
-
-    private boolean isDeeplyImmutable(Type type, Set<TypeNode> visiting) {
-        if (type == null || type == Type.ERROR || type == Type.NOTHING) {
-            return true;
-        }
-        if (Type.isCoreScalar(type) || type == Type.NULL) {
-            return true;
-        }
-        if (type instanceof Type.Frozen) {
-            return true;
-        }
-        if (type instanceof Type.JavaInstance ji) {
-            return isJavaClassDeeplyImmutable(ji.type());
-        }
-        if (type instanceof Type.Union u) {
-            return u.members().stream().allMatch(m -> isDeeplyImmutable(m, visiting));
-        }
-        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.OBJECT) {
-            for (TypeNode.Member m : inst.node().members.values()) {
-                if (!m.hasFunction) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (type instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
-            if (!visiting.add(inst.node())) {
-                return true;
-            }
-            for (TypeNode.Member m : inst.node().members.values()) {
-                if (!m.hasFunction) {
-                    Type mt = checker.instanceMemberTypeForEffects(inst, m);
-                    if (mt == null || !isDeeplyImmutable(mt, visiting)) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-        return false;
+        return checker.isDeeplyImmutable(type);
     }
 
     boolean isImmutableConstantValue(Type type) {
@@ -492,76 +431,16 @@ final class JavaEffectResolver {
         return false;
     }
 
-    private static HostEffects.OverrideEntry lookupHierarchyMethod(
-            Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> table, Class<?> owner, String methodName) {
-        if (table.isEmpty() || owner == null) {
-            return null;
-        }
-        HostEffects.OverrideEntry direct = table.get(HostEffects.JavaTarget.ofMethod(owner, methodName));
-        if (direct != null) {
-            return direct;
-        }
-        for (Class<?> c = owner.getSuperclass(); c != null; c = c.getSuperclass()) {
-            HostEffects.OverrideEntry found = table.get(HostEffects.JavaTarget.ofMethod(c, methodName));
-            if (found != null) {
-                return found;
-            }
-        }
-        Deque<Class<?>> queue = new ArrayDeque<>(List.of(owner.getInterfaces()));
-        Set<Class<?>> visited = new HashSet<>();
-        while (!queue.isEmpty()) {
-            Class<?> iface = queue.poll();
-            if (!visited.add(iface)) {
-                continue;
-            }
-            HostEffects.OverrideEntry found = table.get(HostEffects.JavaTarget.ofMethod(iface, methodName));
-            if (found != null) {
-                return found;
-            }
-            Collections.addAll(queue, iface.getInterfaces());
-        }
-        return null;
+    /** The host axioms naming a member of {@code owner} (tier 2). */
+    private static List<AxiomData.MemberAxiom> named(AxiomData.AxiomTable host, Class<?> owner) {
+        List<AxiomData.MemberAxiom> members = host.directMembers(owner);
+        return members.isEmpty() ? members : members.stream().filter(m -> !m.isWildcard()).toList();
     }
 
-    private static EffectChecker.JavaCallProfile profileFromOverride(HostEffects.OverrideEntry entry,
-                                                                     Executable exec,
-                                                                     boolean explicitNothrow) {
-        int paramCount = exec != null ? exec.getParameterCount() : 0;
-        boolean[] mutParams = new boolean[paramCount];
-        boolean[] borrowParams = new boolean[paramCount];
-        if (entry.io()) {
-            return new EffectChecker.JavaCallProfile(EffectSet.IO_DECLARED, false, false, mutParams, borrowParams, false);
-        }
-        boolean isStaticOrCtor = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
-        boolean mutReceiver = !isStaticOrCtor && entry.mutReceiver() && exec.getDeclaringClass() != String.class;
-        if (isStaticOrCtor && !(exec instanceof Constructor<?>) && entry.mutReceiver() && paramCount > 0) {
-            mutParams[0] = true;
-        }
-        boolean borrowAll = entry.borrowReceiver();
-        if (borrowAll) {
-            for (int i = 0; i < paramCount; i++) {
-                borrowParams[i] = true;
-            }
-        }
-        boolean[] uniqueParams = new boolean[paramCount];
-        if (exec != null) {
-            Parameter[] params = exec.getParameters();
-            for (int i = 0; i < params.length; i++) {
-                if (params[i].isAnnotationPresent(Mut.class) && params[i].getType() != String.class) {
-                    mutParams[i] = true;
-                }
-                if (params[i].isAnnotationPresent(Shared.class)) {
-                    borrowParams[i] = false;
-                }
-                if (params[i].isAnnotationPresent(Unique.class)) {
-                    uniqueParams[i] = true;
-                    borrowParams[i] = false;
-                }
-            }
-        }
-        EffectSet set = EffectSet.ofDeclared(entry.effects(), mutReceiver, isStaticOrCtor || borrowAll,
-                !isStaticOrCtor && !borrowAll, entry.uniqueResult(), false, entry.volatileEffect(), true);
-        return new EffectChecker.JavaCallProfile(set, mutReceiver, !isStaticOrCtor && borrowAll, mutParams, borrowParams, uniqueParams, explicitNothrow);
+    /** The host wildcards about all of {@code owner}'s members (tier 4). */
+    private static List<AxiomData.MemberAxiom> wildcards(AxiomData.AxiomTable host, Class<?> owner) {
+        List<AxiomData.MemberAxiom> members = host.directMembers(owner);
+        return members.isEmpty() ? members : members.stream().filter(AxiomData.MemberAxiom::isWildcard).toList();
     }
 
     private static boolean allParamsPrimitiveOrString(Executable exec) {

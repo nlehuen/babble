@@ -80,6 +80,19 @@ final class AxiomData {
             boolean[] readParams,
             boolean curated) {
 
+        /**
+         * An axiom without a signature stating {@code effects}, which a host registered on its
+         * engine ({@link HostEffects.Registry}) rather than a program declared.
+         */
+        static MemberAxiom host(Class<?> owner, String name, MemberKind kind, boolean exact, EffectSet effects,
+                                boolean mutReceiver, boolean sharedReceiver, boolean nothrow) {
+            return new MemberAxiom(owner, name, kind, exact, false,
+                    List.of(), null, new JavaNullability.Nullness[0], new JavaNullability.Nullness[0], null,
+                    effects, mutReceiver, !sharedReceiver, sharedReceiver,
+                    new boolean[0], new boolean[0], new boolean[0], new boolean[0],
+                    false, false, false, false, nothrow, true, new boolean[0], false);
+        }
+
         boolean isWildcard() {
             return "*".equals(name);
         }

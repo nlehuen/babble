@@ -74,8 +74,8 @@ public final class Benchmarks {
                         + ")\n"
                         + "run(300000)");
         scripts.put("opt : loop-invariant pure call (LICM)",
-                "axiom pure nothrow on java.lang.Math.sqrt\n"
-                        + "axiom pure nothrow on java.lang.Math.sin\n"
+                "axiom java.lang.Math.sqrt: fn pure nothrow\n"
+                        + "axiom java.lang.Math.sin: fn pure nothrow\n"
                         + "def heavy = fn (x : double) : double -> ( java.lang.Math.sqrt(x * x + 1.0) + java.lang.Math.sin(x) )\n"
                         + "def run = fn (n : int, a : double) : double -> (\n"
                         + "    def i = 0\n"

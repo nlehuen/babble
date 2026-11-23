@@ -119,10 +119,6 @@ public final class ModuleInterface {
         return summary;
     }
 
-    Map<HostEffects.JavaTarget, HostEffects.OverrideEntry> exportedJavaEffects() {
-        return summary != null ? summary.exportedJavaEffects() : Map.of();
-    }
-
     AxiomData.AxiomTable exportedAxioms() {
         return summary != null ? summary.exportedAxioms() : AxiomData.AxiomTable.EMPTY;
     }
