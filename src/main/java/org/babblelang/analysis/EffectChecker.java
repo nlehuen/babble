@@ -345,8 +345,9 @@ final class EffectChecker {
             visibleSummaries.put(callable, visible);
             if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
                 ParsedPrefix prefix = parseFunctionPrefix(fn, false);
-                boolean locked = prefix.axiom() || prefix.explicitVolatile() || prefix.io();
                 SymbolicEffectSummary rawSym = symbolicSummaries.get(fn);
+                boolean locked = prefix.axiom() || prefix.explicitVolatile()
+                        || (prefix.io() && (rawSym == null || rawSym.calledCallbacks.isEmpty()));
                 symbolicSummaries.put(fn, rawSym != null
                         ? rawSym.withFinalizedBase(visible, locked)
                         : SymbolicEffectSummary.fixed(visible, locked));
