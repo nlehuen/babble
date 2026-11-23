@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 028 |
 | **Date** | 2026-11-23 |
-| **Status** | Draft (`BIP028-Q1`–`Q10` open; `BIP028-P1`–`P5` planned) |
+| **Status** | Decided (`BIP028-D1`–`D10` settled, resolving `BIP028-Q1`–`Q10`; `BIP028-P1`–`P5` planned) |
 | **Depends on** | Object model & plain compiled classes ([bip002_object-model.md](bip002_object-model.md), `RM003`, `BIP020-D18`), interactive mode ([bip004_repl.md](bip004_repl.md)), `java.base`-only runtime boundary ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static typing, unions, narrowing & `Type.NOTHING` ([bip008_static-typing.md](bip008_static-typing.md), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), core types & Java nullability ([bip011_core-types.md](bip011_core-types.md)), predicate-free single-bracket `()` grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), `for` loops & `break`/`continue` ([bip013_iterators.md](bip013_iterators.md)), ANTLR-free `HIR` & Nanopass optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md), [bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md)), pure-by-default effects, ownership & HOF forwarding ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md), [bip019_refactoring-axioms.md](bip019_refactoring-axioms.md)), self tail calls & `forever` ([bip024_tail-calls.md](bip024_tail-calls.md)), WebAssembly 3.0 `try_table`/`exnref` alignment ([bip025_compile-to-wasm.md](bip025_compile-to-wasm.md)) |
-| **Scope** | Expression-oriented `try`, `catch`, `finally`, and `throw` across `Babble.g4`, `Formatter`, REPL `BabbleSession.classify`, `BlockScopes`/`Resolver`/`TypeChecker`/`Narrowing`/`TailCalls`/`EffectChecker`/`LoweringAnalyzer`, direct JVM `Throwable` propagation & custom Babble exception values in `org.babblelang.runtime`, `Interpreter`, `HirExpr.Try`/`HirExpr.Throw` lowering & JVM `exception_table`/`finally` bytecode emission, `BIP014` Nanopass optimizer soundness, and `AutoCloseable` resource cleanup |
+| **Scope** | Expression-oriented `try`, `catch`, `finally`, and `throw` plus the core `exception` type across `Babble.g4`, `Formatter`, REPL `BabbleSession.classify`, `BlockScopes`/`Resolver`/`TypeChecker`/`Narrowing`/`TailCalls`/`EffectChecker`/`LoweringAnalyzer`, direct JVM `Throwable` propagation & custom Babble exception values via `ThrownException` in `org.babblelang.runtime`, `Interpreter` (`ControlFlowSignal`), `HirExpr.Try`/`HirExpr.Throw` lowering & JVM `exception_table`/`finally` bytecode emission with automatic `addSuppressed`, and `BIP014` Nanopass optimizer soundness |
 
 ---
 
@@ -26,20 +26,20 @@ Today, Babble has **no structured way to catch exceptions, guarantee cleanup, or
 
 ### 1.2 What this proposal introduces
 
-`BIP028` adds expression-oriented `try`, `catch`, `finally`, and `throw` tailored to Babble's idioms — single bracket `()`, predicate-free `PredictionMode.SLL` grammar, native union types `A | B` for multi-catch, `Type.NOTHING` for `throw`, pure-by-default `BIP016` effects and ownership soundness, and 3-way `interpret` / `-O0` / `-O1` parity:
+`BIP028` adds expression-oriented `try`, `catch`, `finally`, `throw`, and the core `exception` type tailored to Babble's idioms — single bracket `()`, predicate-free `PredictionMode.SLL` grammar, native union types `A | B` for multi-catch, `Type.NOTHING` for `throw`, automatic `addSuppressed` on `finally`, pure-by-default `BIP016` effects and local-catch provenance soundness, and 3-way `interpret` / `-O0` / `-O1` parity:
 
 ```babble
-;; (Illustrative — using the recommended option package from §3–§8)
-
-;; 1. Expression-oriented try / catch with native union multi-catch
+;; 1. Expression-oriented try / catch with native union multi-catch & unnamed catch
 def parsePort = fn nothrow (text: string): int -> (
     try (
         def n = java.lang.Integer.parseInt(text)
         if n < 1 or n > 65535 then (
-            throw java.lang.IllegalArgumentException("port out of range : " + text)
+            throw exception("port out of range : " + text)
         )
         n
-    ) catch e: java.lang.NumberFormatException | java.lang.IllegalArgumentException then (
+    ) catch : java.lang.NumberFormatException | exception then (
+        8080
+    ) catch then (
         8080
     )
 )
@@ -50,7 +50,7 @@ def ParseError = record (def line: int, def message: string) ()
 def parseLine = fn (line: int, raw: string): int -> (
     try (
         java.lang.Integer.parseInt(raw)
-    ) catch e: java.lang.NumberFormatException then (
+    ) catch : java.lang.NumberFormatException then (
         throw ParseError(line, "expected integer, got " + raw)
     )
 )
@@ -64,7 +64,8 @@ def result = try (
     println("done")
 )
 
-;; 3. try / finally for guaranteed cleanup (runs on normal exit, return, break, continue, and throw)
+;; 3. try / finally for guaranteed cleanup (runs on normal exit, return, break, continue, and throw;
+;;    if reader.close() throws while an exception is in flight, it is attached via addSuppressed!)
 def readFirstLine = fn io (path: java.nio.file.Path): string? -> (
     def reader = java.nio.file.Files.newBufferedReader(path)
     try (
@@ -78,11 +79,11 @@ def readFirstLine = fn io (path: java.nio.file.Path): string? -> (
 ### 1.3 Goals and non-goals
 
 **Goals:**
-1. **Expression-oriented `try` / `catch` / `finally` and `throw`** consistent with `if`, `while`, `for`, `return`, `break`, and `continue`, preserving Babble's single-bracket `()` grammar and pure `PredictionMode.SLL` parsing with zero predicates (`ParserGrammarTestCase`).
-2. **First-class Java exception interop** with **no checked-exception ceremony**: Java exceptions propagate with their true runtime type across both `Interpreter` and compiled bytecode, retiring the per-call `emitWrappedJavaInvoke` wrapper while keeping existing uncaught error formatting byte-identical.
-3. **Ergonomic custom Babble exceptions** (`record`/`class`/`object` domain errors) that compose naturally with Babble's unions `A | B`, `is` narrowing, `frozen` immutability, and future WebAssembly 3.0 `try_table`/`exnref` lowering (`BIP025`).
-4. **Sound integration with Babble's static type, effect, and ownership systems:** `Type.NOTHING` for `throw`, unreachable-catch rejection, `nothrow` restoration on exhaustive catch-all handlers, conservative `@MOVED`/`unique` joins across `try` → `catch`/`finally`, `@BORROWED` escape prevention on `throw`, and exact `BIP024` tail-call interaction.
-5. **Verified JVM bytecode lowering & Nanopass soundness:** empty-operand-stack invariant for `try` inside compound expressions (`1 + try (...)`), native JVM `exception_table` dispatch, sound `finally` duplication with `try`-range splitting and non-local exit handling (`return`/`break`/`continue`), passing `HirVerifier` and ASM `CheckClassAdapter` across `-O0`, `-O1`, and `-O2`, with zero runtime dependencies outside `java.base` (`RuntimeBoundaryTestCase`).
+1. **Expression-oriented `try` / `catch` / `finally` and `throw`** (`BIP028-D1`, `BIP028-D5`) consistent with `if`, `while`, `for`, `return`, `break`, and `continue`, preserving Babble's single-bracket `()` grammar and pure `PredictionMode.SLL` parsing with zero predicates (`ParserGrammarTestCase`).
+2. **First-class Java exception interop** (`BIP028-D3`) with **no checked-exception ceremony**: Java exceptions propagate with their true runtime type across both `Interpreter` and compiled bytecode, retiring the per-call `emitWrappedJavaInvoke` wrapper while keeping existing uncaught error formatting byte-identical.
+3. **Ergonomic custom Babble exceptions & core `exception` type** (`BIP028-D2`): open nominal `record`/`class`/`object`/`interface` domain errors via `ThrownException` plus core `exception` aliasing `BabbleException`, composing naturally with Babble's unions `A | B`, `is` narrowing, `frozen` immutability, and future WebAssembly 3.0 `try_table`/`exnref` lowering (`BIP025`).
+4. **Sound integration with Babble's static type, effect, and ownership systems:** `Type.NOTHING` for `throw`, unreachable-catch rejection, automatic `addSuppressed` & forbidden jumps out of `finally` (`BIP028-D6`), `nothrow` restoration on exhaustive catch-all handlers (`BIP028-D7`), conservative `@MOVED`/`unique` joins across `try` → `catch`/`finally`, intra-procedural local-catch `@BORROWED` provenance (`BIP028-D8`), and exact `BIP024` tail-call interaction.
+5. **Verified JVM bytecode lowering & Nanopass soundness (`BIP028-D9`):** empty-operand-stack invariant for `try` inside compound expressions (`1 + try (...)`), native JVM `exception_table` dispatch, pure inline `finally` duplication with `try`-range splitting and non-local exit handling (`return`/`break`/`continue`), passing `HirVerifier` and ASM `CheckClassAdapter` across `-O0`, `-O1`, and `-O2`, with zero runtime dependencies outside `java.base` (`RuntimeBoundaryTestCase`).
 
 **Non-goals:**
 * **Java-style checked `throws` clauses on function types.** Babble already tracks throwability via opt-in `nothrow` (`BIP007` / `BIP016`) and `fn calling f` (`BIP017`). Adding checked exception lists to every function signature would conflict with Babble's lightweight, pure-by-default ergonomics; fine-grained typed throw-sets are noted only as a possible future extension (§6.1).
@@ -116,77 +117,63 @@ Key lessons for Babble:
 
 ### 3.1 Keyword audit
 
-Four new lexer tokens are proposed:
+Five new lexer tokens are added (`BIP028-D1`, `BIP028-D2`):
 
 ```antlr
-TRY:     'try';
-CATCH:   'catch';
-FINALLY: 'finally';
-THROW:   'throw';
+TRY:       'try';
+CATCH:     'catch';
+FINALLY:   'finally';
+THROW:     'throw';
+EXCEPTION: 'exception';
 ```
 
-All four are exempted in `memberName` (`memberName: ... | TRY | CATCH | FINALLY | THROW;`), following `BIP011-D11`, `BIP012-D7`, `BIP013-D1`, and `BIP024-D9`, so Java methods/fields or named arguments with those names continue to work after `.` / `?.` and in `name: value` call arguments.
+`EXCEPTION` joins `coreTypeKeyword` (aliasing `org.babblelang.runtime.BabbleException`, usable both as a type and as a constructor `exception("msg")` / `exception("msg", cause)`, like `string`/`list`). All five tokens are exempted in `memberName` (`memberName: ... | TRY | CATCH | FINALLY | THROW;`, with `EXCEPTION` covered via `coreTypeKeyword`), following `BIP011-D11`, `BIP012-D7`, `BIP013-D1`, and `BIP024-D9`, so Java methods/fields or named arguments with those names continue to work after `.` / `?.` and in `name: value` call arguments.
 
-**Corpus impact check:** Searching all `.ba` scripts (`src/test/babble/`, `examples/`, `src/main/java/org/babblelang/axioms/`) and all `.batest` files (`src/test/batest/`) confirms **zero identifier collisions** for `try`, `catch`, `finally`, and `throw` (every existing match is inside comments or prose).
+**Corpus impact check:** Searching all `.ba` scripts (`src/test/babble/`, `examples/`, `src/main/java/org/babblelang/axioms/`) and all `.batest` files (`src/test/batest/`) confirms **zero identifier collisions** for `try`, `catch`, `finally`, `throw`, and `exception` (every existing match is inside comments or prose).
 
-### 3.2 `try` / `catch` / `finally` and `throw` grammar (`BIP028-Q1`)
+### 3.2 `try` / `catch` / `finally` and `throw` grammar (`BIP028-D1`)
 
-A `try` expression must have at least one `catch` clause, a `finally` block, or both (bare `try (...)` with neither is a syntax error). Two candidate syntaxes for `catch` clauses fit Babble's single-bracket `()` grammar with **zero predicates and pure `PredictionMode.SLL`**:
+A `try` expression must have at least one `catch` clause, a `finally` block, or both (bare `try (...)` with neither is a syntax error). **`BIP028-D1`** adopts the `then`-delimited header — mirroring `for name (: type)? in ... then (...)`, `while ... then (...)`, and `if ... then (...)` — with **zero predicates and pure `PredictionMode.SLL`**:
 
-* **Option 1A (Recommended) — `then`-delimited header, mirroring `for name (: type)? in ... then (...)` and `if ... then (...)`:**
-  ```antlr
-  expression:
-            ...
-            | TRY NL* tryBlock=block
-              ( (NL* catchClause)+ (NL* FINALLY NL* finallyBlock=block)?
-              | NL* FINALLY NL* finallyBlock=block
-              )                                               # tryExpression
-            ...
-            | RETURN expression                               # returnExpression
-            | FOREVER expression                              # foreverExpression
-            | BREAK expression?                               # breakExpression
-            | CONTINUE                                        # continueExpression
-            | THROW expression                                # throwExpression
-            ;
+```antlr
+expression:
+          ...
+          | TRY NL* tryBlock=block
+            ( (NL* catchClause)+ (NL* FINALLY NL* finallyBlock=block)?
+            | NL* FINALLY NL* finallyBlock=block
+            )                                               # tryExpression
+          ...
+          | EXCEPTION                                       # coreExceptionRef
+          ...
+          | RETURN expression                               # returnExpression
+          | FOREVER expression                              # foreverExpression
+          | BREAK expression?                               # breakExpression
+          | CONTINUE                                        # continueExpression
+          | THROW expression                                # throwExpression
+          ;
 
-  catchClause: CATCH NL* name=ID (':' type)? THEN NL* catchBlock=block;
-  ```
-  Example:
-  ```babble
-  def x = try (
-      risky()
-  ) catch e: java.io.IOException | java.lang.IllegalArgumentException then (
-      fallback(e)
-  ) catch e then (
-      recover(e)
-  ) finally (
-      cleanup()
-  )
-  ```
-  *Why Option 1A is recommended:*
-  - Matches `if test then (...)`, `while test then (...)`, and `for name: T in xs then (...)` uniformly — every control-flow construct uses `then (...)` rather than introducing a second parenthesis group.
-  - Strictly **LL(1)** and **pure `SLL`**: `THEN` cannot appear anywhere inside `type` (`nullableType (('|' | '&') NL* nullableType)*`), so `name=ID` → `':'` vs `THEN` is a single-token decision.
-  - Keeps parentheses strictly for blocks, call arguments, function/class parameter lists, and type grouping — avoiding `catch (e: T) (...)` which visually resembles a curried call.
-  - Note on unnamed/discarded catch variable: if a user does not need the exception object, should `catch _: T then (...)` (or `catch : T then (...)` / `catch then (...)`) also be supported? Adding `catchClause: CATCH (NL* name=ID)? (':' type)? THEN NL* catchBlock=block;` stays strictly LL(1) (`ID` vs `':'` vs `THEN`) and lets users write `catch : java.lang.NumberFormatException then (0)` or `catch then (0)` without unused-binding noise!
+catchClause: CATCH (NL* name=ID)? (':' type)? THEN NL* catchBlock=block;
+```
 
-* **Option 1B — Arrow-delimited parenthesized parameter, mirroring `fn (e: T) -> (...)`:**
-  ```antlr
-  catchClause: CATCH NL* '(' NL* name=ID (':' type)? NL* ')' NL* '->' NL* catchBlock=block;
-  ```
-  Example:
-  ```babble
-  def x = try (
-      risky()
-  ) catch (e: java.io.IOException) -> (
-      fallback(e)
-  ) finally (
-      cleanup()
-  )
-  ```
-  *Trade-offs:* Familiar to Java/Kotlin developers and stresses that a catch handler is like a 1-parameter lambda, but adds two tokens (`(`, `)`, `->`) compared to Option 1A and diverges from `for x: T in xs then (...)`.
+All four catch-clause shapes parse strictly in LL(1) / `PredictionMode.SLL` (`ID` vs. `':'` vs. `THEN`, since `THEN` cannot appear anywhere inside `type`):
 
-* **Option 1C — Parenthesized parameter + `then` (`catch (e: T) then (...)`) or bare block (`catch (e: T) (...)`):**
-  Both are LL(1)/SLL, but `catch (e: T) (...)` puts two `(...)` groups side by side (which `BIP012` intentionally eliminated from Babble), and `catch (e: T) then (...)` adds redundant parentheses around a single binding.
+```babble
+def x = try (
+    risky()
+) catch e: java.io.IOException | java.lang.IllegalArgumentException then (
+    fallback(e)
+) catch : java.lang.NumberFormatException then (   ;; unnamed typed catch
+    0
+) catch e then (                                   ;; untyped catch-all (non-Error, BIP028-D4)
+    recover(e)
+) finally (
+    cleanup()
+)
+
+def y = try (risky()) catch then (0)               ;; unnamed catch-all (non-Error)
+```
+
+*(Alternatives considered and rejected in `BIP028-Q1` → `BIP028-D1`: `catch (e: T) -> (...)`, `catch (e: T) then (...)`, and Java-style `catch (e: T) (...)`, which add extra parentheses or adjacent `)(` groups diverging from `for`/`if`/`while`.)*
 
 **`throw` precedence:**
 `THROW expression` sits at the bottom of `expression` alongside `RETURN expression`, `FOREVER expression`, `BREAK expression?`, and `CONTINUE`. Thus `throw IllegalArgumentException("bad: " + x)` parses as `throw (IllegalArgumentException("bad: " + x))`, while `if bad then (throw err) else (ok)` and `def x = if ok then (1) else (throw err)` parse naturally. Unlike `break expression?`, `throw` always requires an expression (`throw e` to rethrow), eliminating any newline-termination ambiguity.
@@ -215,7 +202,7 @@ Following [`Formatter.java`](../../src/main/java/org/babblelang/format/Formatter
 
 ## 4. Exception Model, Throwing & Java Interop
 
-### 4.1 Retiring per-call Java exception wrapping (`BIP028-Q3`)
+### 4.1 Retiring per-call Java exception wrapping (`BIP028-D3`)
 
 Today, Java exceptions are wrapped eagerly at **every** Java call boundary:
 * `JavaMethod.invoke` catches `Throwable` and calls `JavaTypes.wrapInvocationException(t)`.
@@ -223,12 +210,9 @@ Today, Java exceptions are wrapped eagerly at **every** Java call boundary:
 * `JavaClass` wraps constructor/field reflection errors via `JavaTypes.wrapInvocationException`.
 * `CallEmitter.emitWrappedJavaInvoke` wraps **every** statically lowered Java method/constructor call in bytecode with a synthetic `visitTryCatchBlock(..., "java/lang/Throwable")` calling `JavaTypes.wrapInvocationException` and rethrowing `BabbleException`.
 
-That design made sense before `try`/`catch` existed because it unified uncaught formatting and bypassed `javac`'s checked-exception rules on `Callable.call`. With `try`/`catch`, eager wrapping is actively harmful:
-1. Catching `java.io.IOException` or `java.lang.NumberFormatException` would fail on a naive JVM `exception_table` because the thrown object is actually a `BabbleException` whose `getCause()` is the `IOException`!
-2. Compiled Babble classes implementing Java interfaces (`RM003` direct `implements` bridges) would leak `BabbleException` wrappers back into Java callers expecting `IOException` or `UnsupportedOperationException`.
-3. Every statically lowered Java call pays bytecode size and exception-table bloat for `emitWrappedJavaInvoke`.
+That design made sense before `try`/`catch` existed because it unified uncaught formatting and bypassed `javac`'s checked-exception rules on `Callable.call`. With `try`/`catch`, eager wrapping breaks native JVM `exception_table` dispatch, leaks `BabbleException` wrappers back into Java callers of `RM003` bridges, and bloats bytecode at every Java call site.
 
-**Proposed architecture (Option 3A — Recommended: direct `Throwable` propagation with boundary formatting):**
+**Settled architecture (`BIP028-D3` — direct `Throwable` propagation with boundary formatting):**
 
 ```mermaid
 flowchart TD
@@ -242,33 +226,26 @@ flowchart TD
     Boundary --> Format["Format identically to today:\nBabbleException -> message\nNPE -> 'java.lang.NullPointerException'\nJava Throwable -> 'ClassName : msg'"]
 ```
 
-Let's verify every consequence of Option 3A:
+Key pieces of `BIP028-D3`:
 1. **`org.babblelang.runtime.Throwables`** (tiny `java.base`-only utility in `org.babblelang.runtime`):
-   * `public static RuntimeException sneakyThrow(Throwable t)`: standard type-erased generic rethrow (`throw (T) t;`), allowing checked exceptions (such as `IOException`) to propagate unmodified through `Interpreter`, `JavaMethod.invoke`, `Callable.call`, and `JavaLinker` with zero wrapping!
-   * `public static Throwable unwrapReflection(Throwable t)`: peels `InvocationTargetException` (and `Error` passes straight through) and calls `sneakyThrow(t)`.
-2. **`CallEmitter.emitWrappedJavaInvoke` is deleted!** Direct Java `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`/`NEW` simply emits the instruction directly. If Java throws `NumberFormatException` or `IOException`, the JVM propagates the exact exception object with zero wrapper allocation.
+   * `public static RuntimeException sneakyThrow(Throwable t)`: type-erased generic rethrow (`throw (T) t;`), allowing checked exceptions (such as `IOException`) to propagate unmodified through `Interpreter`, `JavaMethod.invoke`, `Callable.call`, and `JavaLinker` with zero wrapping.
+   * `public static RuntimeException unwrapReflection(Throwable t)`: peels `InvocationTargetException` (with `Error` passing straight through) and calls `sneakyThrow(t)`.
+   * `public static void addSuppressed(Throwable primary, Throwable secondary)`: attaches `secondary` to `primary` with a `if (primary != secondary)` self-suppression guard (`BIP028-D6`).
+2. **`CallEmitter.emitWrappedJavaInvoke` is deleted.** Direct Java `INVOKEVIRTUAL`/`INVOKESTATIC`/`INVOKEINTERFACE`/`NEW` emits the instruction directly; if Java throws `NumberFormatException` or `IOException`, the JVM propagates the exact exception object with zero wrapper allocation.
 3. **Top-level uncaught formatting stays 100% backwards-compatible:**
    `ArraySupport.formatThrowable(Throwable t)` (called by `BabbleCompiledScript.eval`, `CompiledBabbleScript.eval`, and `Launcher.message`) formats uncaught exceptions identically to today:
    * `BabbleException` → `org.babblelang.runtime.BabbleException: <msg>` (or `<msg>` in `Launcher`)
-   * `ThrownException` → `org.babblelang.runtime.BabbleException: <ArraySupport.format(value)>` (consistent uncaught formatting for custom Babble exceptions)
-   * `NullPointerException` → `java.lang.NullPointerException` (omitting JDK 14+ Helpful NPE text that leaks synthetic compiler local names, preserving `BIP009` parity!)
+   * `ThrownException` → `org.babblelang.runtime.BabbleException: <ArraySupport.format(value)>`
+   * `NullPointerException` → `java.lang.NullPointerException` (omitting JDK 14+ Helpful NPE text that leaks synthetic compiler local names, preserving `BIP009` parity)
    * `ArrayStoreException` → existing compiled-class-name normalizer in `ArraySupport.formatThrowable`
-   * Any other non-`Error` `Throwable` → `t.getMessage() == null ? name : name + " : " + t.getMessage()` (exact space-before-colon match with `src/test/batest/java/exceptions_and_nulls.batest`!).
-4. **`PrintFunction` (`print`/`println` to a custom `Appendable`):** Currently wraps `IOException` into `new BabbleException(e)`. Under Option 3A, rethrowing `IOException` directly via `Throwables.sneakyThrow(e)` allows `try (println("hi", to: brokenWriter)) catch e: java.io.IOException then (...)` to catch it naturally.
-5. **Alternative (Option 3B — Keep `BabbleException` wrapping, unwrap inside `catch`):** Keeps `emitWrappedJavaInvoke` and unwraps `BabbleException.getCause()` at every `catch` handler. Rejected as primary recommendation because it bloats bytecode, breaks direct JVM `exception_table` matching (forcing every `catch e: IOException` to catch `BabbleException` + `IOException` and inspect `getCause()`), and breaks Java callers of `RM003` bridges.
+   * Any other non-`Error` `Throwable` → `t.getMessage() == null ? name : name + " : " + t.getMessage()` (exact space-before-colon match with `src/test/batest/java/exceptions_and_nulls.batest`).
+4. **`PrintFunction` (`print`/`println` to a custom `Appendable`):** Rethrows `IOException` directly via `Throwables.sneakyThrow(e)` so `try (println("hi", to: brokenWriter)) catch e: java.io.IOException then (...)` catches it naturally.
 
-### 4.2 Custom Babble exceptions & what `throw` accepts (`BIP028-Q2`)
+### 4.2 Custom Babble exceptions, `ThrownException`, and what `throw` accepts (`BIP028-D2`)
 
-Because Babble classes are plain JVM classes extending `java.lang.Object` (`BIP020-D18`) with no class inheritance (only interface `implements`), Babble cannot simply tell users "subclass `java.lang.Exception`". Three design options exist:
+Because Babble classes are plain JVM classes extending `java.lang.Object` (`BIP020-D18`) with no class inheritance (only interface `implements`), **`BIP028-D2`** adopts the open nominal carrier model:
 
-| Option | What `throw expr` accepts | How custom Babble errors are written | JVM representation | `BIP025` Wasm compatibility |
-|---|---|---|---|---|
-| **Option 2A — `java.lang.Throwable` only** | `expr: java.lang.Throwable` (incl. `BabbleException`) | Cannot define custom Babble exception classes; must use Java exception classes or `BabbleException("msg")` | Direct `ATHROW` | Weak (ties user errors to `java.lang.*`) |
-| **Option 2B (Recommended) — `java.lang.Throwable` OR Babble nominal/object values via `ThrownException` carrier** | Any non-null `java.lang.Throwable`, Babble `class` / `record` / `object` / `interface` instance (and unions thereof; optionally restricted to a marker interface `Exception` — see sub-question below) | `def ParseError = record (def line: int, def msg: string) ()` → `throw ParseError(4, "bad")` | Java `Throwable`: direct `ATHROW`; Babble object: `new ThrownException(val)` (`extends RuntimeException`) + `ATHROW` | **Native fit:** maps 1-to-1 to Wasm `tag $babble_exn (param anyref)` + `br_on_cast` |
-| **Option 2C — Dedicated `exception class` / `class ... extends RuntimeException`** | `java.lang.Throwable` + `exception` classes | `def ParseError = exception (def line: int, def msg: string) ()` | Compiled mode: subclass of `RuntimeException`; Interpreter: still requires `ThrownException(InterpretedInstance)` carrier! | Requires special runtime hierarchy |
-
-**Why Option 2B is recommended:**
-1. **Zero new class-declaration syntax** and preserves `BIP020-D18` (all compiled Babble classes stay plain `extends java.lang.Object`).
+1. **What `throw expr` accepts:** Any non-null `java.lang.Throwable` (including `exception`) OR any Babble nominal instance (`class`, `record`, `object`, `interface`, or union/intersection thereof). `throw` statically rejects `null`, nullable `T?`, `void`, primitives (`byte`..`char`), `string`, `array of T`, functions, overload sets, class values, modules, and packages (`Type error : cannot throw <type>`).
 2. **Works seamlessly with `record`, interfaces, unions, and `frozen`:**
    ```babble
    def AppError = interface (def code: fn (): int)
@@ -279,38 +256,36 @@ Because Babble classes are plain JVM classes extending `java.lang.Object` (`BIP0
        def code = fn (): int -> (403)
    )
    ```
-   A caller can catch `e: NotFound`, `e: NotFound | Denied`, `e: AppError`, or `e: AppError | java.io.IOException`!
-3. **Both backends stay symmetric:** `ThrownException` is a tiny `final class` in `org.babblelang.runtime` (`extends RuntimeException`, holding `private final Object value`, overriding `getMessage()` via `ArraySupport.format(value)`). Java callers catching `RuntimeException` or `ThrownException` can inspect `getValue()`, while Babble `catch` clauses see the unwrapped Babble object directly (`e: ParseError`).
-4. **Static guard against nonsense throws:** `throw` **always** rejects `null` and nullable types `T?` at compile time (`Type error : cannot throw nullable type ...`), as well as `void`, primitives (`int`, `bool`, ...), functions, classes/modules/packages (values of `Type.ClassValue`/`Type.Module`/`Type.Package`), and arrays. Two sub-variants remain open inside **`BIP028-Q2`**:
-   * **2B-i (Open nominal):** Allow throwing any `java.lang.Throwable` OR any Babble instance (`class`, `record`, `object`, `interface`, or union/intersection thereof — plus `string`? No: keep `string` disallowed so users throw structured types or `BabbleException("msg")`, avoiding JS-style `throw "oops"`).
-   * **2B-ii (Marker interface):** Require Babble thrown objects to implement a built-in marker interface (e.g., `Error` or `Failure`) so ordinary domain objects like `Vec3` cannot be accidentally thrown.
+   A caller can catch `e: NotFound`, `e: NotFound | Denied`, `e: AppError`, or `e: AppError | java.io.IOException`, with zero new class-declaration syntax and full `BIP025` WebAssembly portability (`tag $babble_exn (param anyref)` + `br_on_cast`).
+3. **`org.babblelang.runtime.ThrownException extends RuntimeException` (`BIP028-D2`):**
+   * `ThrownException` is a `public final class ThrownException extends RuntimeException` holding `private final Object value` and overriding `getMessage()` via `ArraySupport.format(value)`.
+   * Extending `RuntimeException` makes thrown Babble objects friendly to Java host callers (`Runnable`, `Comparator`, `ExecutorService`, JUnit): Java's `catch (RuntimeException e)` and `catch (Exception e)` catch it cleanly without sneaky checked-`Throwable` surprises, and callers can inspect `e.value()`.
+   * **Type-honest Babble `catch` isolation:** Inside Babble `try`/`catch`, handlers targeting `java.lang.Exception` or `java.lang.RuntimeException` explicitly skip `ThrownException` (a 3-instruction guard in compiled bytecode, zero cost on the happy path). Thus `catch e: java.lang.Exception` catches only Java `Exception`s (including `exception`), `catch e: ParseError` catches `ParseError` in any clause order, untyped `catch e then (...)` catches both Java `Exception`s and Babble thrown values (unwrapped, `e: any`), and `catch e: java.lang.Throwable` catches every `Throwable` (including `ThrownException` as a `Throwable` for infrastructure code).
 
-### 4.3 Exposing `BabbleException` and built-in Babble failures
+### 4.3 The core `exception` type (`BIP028-D2`)
 
-Babble's own runtime errors — `assert(false, ...)`, `x as T`, `e!`, `int("bad")`, `Name used before definition`, dynamic `import(...)` failures — all throw `org.babblelang.runtime.BabbleException` (which extends `java.lang.RuntimeException`).
+Babble's own runtime errors — `assert(false, ...)`, `x as T`, `e!`, `Name used before definition`, dynamic `import(...)` failures — all throw `org.babblelang.runtime.BabbleException` (`extends RuntimeException`).
 
-* **Note on `int("bad")` / `double("bad")`:** Look at [`ConvertFunction.java`](../../src/main/java/org/babblelang/engine/impl/natives/ConvertFunction.java) and `src/test/batest/runtime/values_and_operators.batest`: `int("bad")` calls `Integer.parseInt` and throws `NumberFormatException` (currently wrapped in `BabbleException`, becoming direct `NumberFormatException` under Option 3A, or `BabbleException` for range/type failures like `int(1e30)`). We should audit `ConvertFunction` in `BIP028-P1` so every conversion failure's exception class is documented and tested identically in all 3 modes!
-* **How users name `BabbleException` in `catch`:**
-  1. `catch e: java.lang.RuntimeException` and `catch e: java.lang.Exception` already catch `BabbleException` (since `BabbleException extends RuntimeException`).
-  2. Users can write `org.babblelang.runtime.BabbleException` directly (just like any Java class), OR Babble can expose a short implicit/core alias (e.g., `def BabbleException` in `Implicits` / prelude, or a `std/errors` re-export — tracked in **`BIP028-Q2`**). Note: `org.babblelang.runtime.BabbleException` is already part of the public `java.base`-only runtime boundary (`BIP006` §3), so exposing it does not widen `RuntimeBoundaryTestCase`.
+* **`exception` core type keyword (`BIP028-D2`):** Reserved lowercase core type keyword (in `coreTypeKeyword` and `memberName`, like `string` and `list`) aliasing `org.babblelang.runtime.BabbleException`:
+  * In type positions: `catch e: exception then (...)`, `e is exception`, `fn (): exception` (and `org.babblelang.runtime.BabbleException` resolves to the exact same type, just as `string` == `java.lang.String`).
+  * In expression positions: constructible via `exception("message")` and `exception("message", cause)` (matching `BabbleException`'s constructors).
+  * Portable to `BIP025` WebAssembly without naming `org.babblelang.runtime.*`.
+* **Note on `int("bad")` / `double("bad")`:** [`ConvertFunction.java`](../../src/main/java/org/babblelang/engine/impl/natives/ConvertFunction.java) calls `Integer.parseInt` / `Double.parseDouble` (throwing `NumberFormatException` directly under `BIP028-D3`) and throws `BabbleException` (`exception`) for range/type failures like `int(1e30)`. `BIP028-P1` audits `ConvertFunction` so every conversion failure's exception class is documented and verified identically in all 3 modes.
 
-### 4.4 Fatal JVM `Error`s, wildcard `catch`, and internal signals (`BIP028-Q4`)
+### 4.4 Fatal JVM `Error`s, wildcard `catch`, and `ControlFlowSignal` (`BIP028-D4`)
 
 Three distinct categories of `Throwable` can fly past a `try` block on the JVM:
 
 | Category | Examples | Caught by `catch e: T` (explicit `T`)? | Caught by untyped `catch e then (...)` / `catch then (...)`? | Runs `finally`? |
 |---|---|---|---|---|
 | **Interpreter control-flow signals** | `ControlFlowSignal` (`ReturnException`, `BreakException`, `ContinueException`, see §7.3) | **NEVER** (even `catch e: java.lang.Throwable`) | **NEVER** | **YES** (for `finally` blocks between jump and target) |
-| **Normal exceptions** | `java.lang.Exception`, `RuntimeException`, `IOException`, `BabbleException`, Babble `ThrownException` | Yes, if runtime value matches `T` | **YES** | **YES** |
-| **JVM `Error`s** | `OutOfMemoryError`, `StackOverflowError`, `LinkageError`, `AssertionError` | Yes **only** if `T` explicitly accepts `Error` (e.g., `java.lang.Error`, `java.lang.StackOverflowError`, `java.lang.Throwable`) | **NO** (recommended — see `BIP028-Q4`) | **YES** (standard JVM `catch-all` `finally`) |
+| **Normal exceptions** | `java.lang.Exception`, `RuntimeException`, `IOException`, `exception` (`BabbleException`), Babble `ThrownException` | Yes, if runtime value matches `T` | **YES** (binds `e: any`) | **YES** |
+| **JVM `Error`s** | `OutOfMemoryError`, `StackOverflowError`, `LinkageError`, `AssertionError` | Yes **only** if `T` explicitly accepts `Error` (e.g., `java.lang.Error`, `java.lang.StackOverflowError`, `java.lang.Throwable`) | **NO** (`BIP028-D4`) | **YES** (standard JVM `catch-all` `finally`) |
 
-**Why untyped `catch e then (...)` should NOT catch `java.lang.Error` (`BIP028-Q4`):**
-* Today, [`CompiledBabbleScript.java`](../../src/main/java/org/babblelang/compiler/CompiledBabbleScript.java) and [`JavaTypes.wrapInvocationException`](../../src/main/java/org/babblelang/runtime/JavaTypes.java) deliberately let `java.lang.Error` escape unwrapped.
-* If untyped `catch e then (...)` binds `e: java.lang.Exception` (or `java.lang.Exception | any` excluding `java.lang.Error` — specifically, catching `java.lang.Exception` and `ThrownException` in Option 2B, giving `e: any` or `e: java.lang.Exception` depending on `BIP028-Q2`), then:
-  - Beginners writing `try (...) catch e then (...)` catch every Java `Exception`, every `BabbleException`, and every thrown Babble object, while **never** silently masking an `OutOfMemoryError` or `StackOverflowError`.
-  - Expert code that genuinely wants to intercept `AssertionError` or `StackOverflowError` or every `Throwable` (such as `using` in §8) writes `catch e: java.lang.Throwable then (...)` or `catch e: java.lang.AssertionError then (...)` explicitly.
-* **Sub-question inside `BIP028-Q4`:** Should untyped `catch e then (...)` even be allowed, or should `catch` always require an explicit type (e.g., `catch e: java.lang.Exception then (...)`)?
-  - Allowing untyped `catch e then (...)` (defaulting to non-`Error` exceptions) is very friendly for beginners — one of Babble's core goals in [`README.md`](../../README.md) — while still keeping `e` statically typed (`java.lang.Exception` under Option 2A, or `any` / `java.lang.Exception | Error` under Option 2B).
+Under **`BIP028-D4`**:
+* Untyped `catch e then (...)` (and unnamed `catch then (...)`) catches **all non-`Error` exceptions** — every Java `Exception`, every `exception` (`BabbleException`), and every Babble thrown object (unwrapped) — binding `e: any`, while **never** silently swallowing `OutOfMemoryError` or `StackOverflowError`.
+* Code that explicitly wants to intercept `AssertionError`, `StackOverflowError`, or every `Throwable` writes `catch e: java.lang.Error` / `catch e: java.lang.Throwable` explicitly.
+* `ControlFlowSignal` bypasses every `catch` clause (even `java.lang.Throwable`) while running every intervening `finally`.
 
 ---
 
@@ -330,7 +305,7 @@ Three distinct categories of `Throwable` can fly past a `try` block on the JVM:
     ```
   * Statements following an unconditional `throw` in the same block are unreachable (same handling as after `return`/`break`/`continue`).
 
-### 5.2 `try` / `catch` / `finally` expression typing (`BIP028-Q5`)
+### 5.2 `try` / `catch` / `finally` expression typing (`BIP028-D5`)
 
 Consistent with `if` / `else`, `while`, and `for`:
 
@@ -343,8 +318,8 @@ Consistent with `if` / `else`, `while`, and `for`:
      $$T_{\text{try}} = \text{join}(T_0, T_1, \dots, T_k)$$
      (if all branches have type `Type.NOTHING` — e.g., every branch returns or throws — then $T_{\text{try}} = \text{Type.NOTHING}$).
    * If there are **no `catch` clauses** (`try (...) finally (...)`), $T_{\text{try}} = T_0$.
-   * **Numeric widening (`BIP008-D7`, `BIP011-D4`):** If `tryBlock` yields `int` and a `catchBlock` yields `double`, `join(int, double) == double`, and `TypeChecker.coerce` records widening on the `int` branch just as it does for `if`/`else`!
-   * **Unboxed primitive results (`RM001` / `RM005`):** When $T_{\text{try}}$ is a non-nullable core primitive (`byte`..`char`), `LoweringAnalyzer` gives the `HirExpr.Try` that `PrimitiveKind`, so `def n: int = try (parseInt(s)) catch e: java.lang.NumberFormatException then (0)` never boxes the `int` result!
+   * **Numeric widening (`BIP008-D7`, `BIP011-D4`):** If `tryBlock` yields `int` and a `catchBlock` yields `double`, `join(int, double) == double`, and `TypeChecker.coerce` records widening on the `int` branch just as it does for `if`/`else`.
+   * **Unboxed primitive results (`RM001` / `RM005`):** When $T_{\text{try}}$ is a non-nullable core primitive (`byte`..`char`), `LoweringAnalyzer` gives the `HirExpr.Try` that `PrimitiveKind`, so `def n: int = try (parseInt(s)) catch : java.lang.NumberFormatException then (0)` never boxes the `int` result.
    * **Edge case — `finallyBlock` has type `Type.NOTHING` (always throws):**
      If `finallyBlock` unconditionally throws (e.g., `finally (throw Fatal())`), then the `try` expression can never complete normally, so $T_{\text{try}} = \text{Type.NOTHING}$ (and `TypeChecker` may emit a warning if a non-`NOTHING` `try`/`catch` result is unconditionally masked by a throwing `finally`).
 
@@ -352,7 +327,7 @@ Consistent with `if` / `else`, `while`, and `for`:
 
 For every `catchClause` with type annotation `C`:
 1. **Valid catch types:**
-   * Each member of `C` (after flattening `Type.Union`) must be a reifiable catchable type: a `java.lang.Throwable` class (or under Option 2B, also a Babble `class`, `record`, `object`, or `interface` — or `A & B` intersection of Babble/Java interfaces!).
+   * Each member of `C` (after flattening `Type.Union`) must be a reifiable catchable type (`BIP028-D2`): a `java.lang.Throwable` class (including `exception`), OR a Babble `class`, `record`, `object`, or `interface` (or `A & B` intersection of Babble/Java interfaces).
    * **Rejected statically** (mirroring `resolveIsTarget` in [`TypeChecker.java`](../../src/main/java/org/babblelang/analysis/TypeChecker.java)):
      - `null` or nullable `T?` (`Cannot catch nullable type : ...`)
      - `void`, primitives (`int`, `double`, ...), `string`, `array of T`, function types, overload sets (`Cannot catch non-exception type : ...`)
@@ -362,45 +337,46 @@ For every `catchClause` with type annotation `C`:
      - Non-`Throwable` Java classes (e.g., `catch e: java.lang.String` or `catch e: java.util.List` — `Type error : java.lang.String is not a Throwable`).
 2. **Multi-catch unions (`A | B`):**
    * `catch e: java.io.IOException | java.lang.IllegalArgumentException then (...)` requires zero new syntax.
-   * Inside `catchBlock`, `e` has static type `java.io.IOException | java.lang.IllegalArgumentException`. Common supertypes/members work through `MemberTypes`, and `if e is java.io.IOException then (...)` narrows `e` using Babble's existing `Narrowing` pass!
-   * Redundant union members within one `catch` clause (`catch e: java.lang.Exception | java.io.IOException`) are rejected (or flagged): `Redundant catch type : java.io.IOException is already a subtype of java.lang.Exception`.
+   * Inside `catchBlock`, `e` has static type `java.io.IOException | java.lang.IllegalArgumentException`. Common supertypes/members work through `MemberTypes`, and `if e is java.io.IOException then (...)` narrows `e` using Babble's existing `Narrowing` pass.
+   * Redundant union members within one `catch` clause (`catch e: java.lang.Exception | java.io.IOException`) are rejected: `Redundant catch type : java.io.IOException is already a subtype of java.lang.Exception`.
 3. **Unreachable catch clauses (compile-time error):**
-   * Clauses are checked in source order. Maintaining the accumulated union $U_{<i}$ of types caught by clauses $1 \dots i-1$:
+   * Clauses are checked in source order. Maintaining the accumulated union $U_{<i}$ of types caught by clauses $1 \dots i-1$ (with untyped `catch` subsuming all non-`Error` types, and `java.lang.Throwable` subsuming everything):
      - If every member of clause $i$'s type $C_i$ is subsumed by $U_{<i}$, report a compile-time error: `Unreachable catch clause : <C_i> is already caught by <earlier>`.
      - If a member $M$ of a union catch $C_i = M \mid N$ is already subsumed by $U_{<i}$, report `Unreachable catch type : <M> is already caught by <earlier>`.
 
 ### 5.4 Block scoping, read-only binding, narrowing & definite initialization
 
 * **Scopes (`BlockScopes` & `Resolver`):**
-  * `tryBlock`, each `catchClause` (its binding `e` + `catchBlock`), and `finallyBlock` are separate lexical block scopes (child `ScopeNode`s).
+  * `tryBlock`, each `catchClause` (its binding `e`, if named, + `catchBlock`), and `finallyBlock` are separate lexical block scopes (child `ScopeNode`s).
   * `e` is bound in the `catchClause`'s scope and is **read-only** (`Assigning to catch parameter : e` is a compile-time error, matching `for`'s loop variable `BIP013-D6`).
   * `e` may be captured by closures inside `catchBlock` (promoted to a `Cell` by `Resolver` if captured, just like any block local).
   * Names `def`'d inside `tryBlock` are not visible in `catchBlock` or `finallyBlock`.
 * **Narrowing (`Narrowing` / `TypeEnv`):**
-  * **Into `catchBlock` and `finallyBlock`:** Start from the `TypeEnv` **before `try`** (NOT the `TypeEnv` at the end of `tryBlock`, because an exception may have been thrown on the very first line of `tryBlock` before any `!= null` or `is T` guard executed!). Furthermore, invalidate any narrowing on variables that are reassigned anywhere inside `tryBlock` (or `catchBlock` when entering `finallyBlock`), just like `while`/`for` loop invalidation.
+  * **Into `catchBlock` and `finallyBlock`:** Start from the `TypeEnv` **before `try`** (NOT the `TypeEnv` at the end of `tryBlock`, because an exception may have been thrown on the very first line of `tryBlock` before any `!= null` or `is T` guard executed). Furthermore, invalidate any narrowing on variables that are reassigned anywhere inside `tryBlock` (or `catchBlock` when entering `finallyBlock`), just like `while`/`for` loop invalidation.
   * **After `try` / `catch` / `finally`:** Intersect the post-narrowings of `tryBlock` and all non-`NOTHING` `catchBlock`s (re-applying any unconditional narrowing established in `finallyBlock`), dropping facts on variables reassigned in any branch.
 * **Definite initialization:**
   * A `def x: T` declared outside `try` without an initializer and assigned only inside `tryBlock` is **NOT** definitely initialized inside `catchBlock`, `finallyBlock`, or after `try` (unless also assigned in every non-`NOTHING` `catchBlock`, or in `finallyBlock`), keeping `mayBeUndefined = true` for `HirVar` so `Name used before definition` behaves identically in both backends.
 
-### 5.5 Non-local exits (`return`, `break`, `continue`) & `finally` (`BIP028-Q6`)
+### 5.5 Non-local exits (`return`, `break`, `continue`) & `finally` suppression (`BIP028-D6`)
 
 1. **`return`, `break`, `continue` inside `try` or `catch`:**
    * **Allowed** (whenever inside an enclosing function / loop, per `BlockScopes` placement rules).
    * The `return e` or `break e` value expression `e` is evaluated **before** `finally` runs; mutations inside `finally` do **not** alter the already-evaluated return/break value (matching Java, Kotlin, and Python).
    * All enclosing `finally` blocks between the jump and its target (enclosing function for `return`; enclosing loop for `break`/`continue`) execute innermost-to-outermost before control transfers.
-2. **`return`, `break`, `continue` inside `finally` (`BIP028-Q6`):**
-   * **Option 6A (Recommended — C# / Swift / Python PEP 765 rule): Statically forbidden** when targeting outside the `finally` block!
-     - `BlockScopes` tracks `finallyDepth` (and resets it inside a nested `fn` literal or nested loop inside `finally`, so a `return` inside a closure or a `break` inside a loop *contained within* `finally` remains 100% legal!).
-     - Diagnostics: `Cannot return from a finally block`, `Cannot break out of a finally block`, `Cannot continue out of a finally block`.
-     - *Rationale:* Prevents silently swallowing in-flight exceptions or clobbering pending return/break values, avoids subtle interpreter/compiler divergence, and removes an entire class of nasty control-flow bugs.
-   * **Option 6B (Java / Kotlin rule):** Allow `return` / `break` / `continue` escaping `finally`, discarding any pending exception or return value (with a compile-time warning).
-   * Note: `throw` inside `finally` is always legal (a `finally` block calling `stream.close()` can naturally throw `IOException`), and replaces the pending completion just as in Java/Kotlin.
+2. **`return`, `break`, `continue` escaping `finally` — statically forbidden (`BIP028-D6`):**
+   * `BlockScopes` tracks `finallyDepth` (resetting inside a nested `fn` literal or nested loop contained within `finally`, so a `return` inside a closure or a `break` inside an inner loop inside `finally` remains legal).
+   * Diagnostics: `Cannot return from a finally block`, `Cannot break out of a finally block`, `Cannot continue out of a finally block`.
+3. **Throwing inside `finally` — automatic `addSuppressed` (`BIP028-D6`):**
+   * `finally` **is allowed to throw** (so cleanup calls like `reader.close()` work directly inside `finally` without boilerplate).
+   * If `try`/`catch` exited **normally** (or via `return`/`break`/`continue`) and `finally` throws `secondary`, `secondary` propagates normally.
+   * If a **`primary` exception is already in flight** entering `finally` and `finally` throws `secondary`, Babble does **NOT** silently drop `primary` (unlike Java/Kotlin/Python's plain `try`/`finally`): instead, it attaches `secondary` to `primary` via `Throwables.addSuppressed(primary, secondary)` (with a `if (primary != secondary)` self-suppression guard) and rethrows `primary`!
+   * When `finallyBlock` is statically proven `nothrow` by `EffectChecker`, compiled bytecode omits the suppression handler around the abnormal `finally` copy completely (zero runtime overhead).
 
 ### 5.6 Interaction with self tail calls & `forever` (`BIP024`)
 
 [`TailCalls`](../../src/main/java/org/babblelang/analysis/TailCalls.java) must respect exception handlers and cleanup:
 * **`tryBlock` is NEVER in tail position:** `try (recurse(n - 1)) catch ...` and `try (recurse(n - 1)) finally (...)` must keep the stack frame active so the `catch`/`finally` handler executes if `recurse` throws or returns.
-* **`catchBlock` without `finally` IS in tail position** (when the `try` expression itself is in tail position): once inside `catch`, the `try` handler is no longer active and there is no cleanup left to run, so `try (...) catch e: E then (recurse(n - 1))` can tail-call cleanly!
+* **`catchBlock` without `finally` IS in tail position** (when the `try` expression itself is in tail position): once inside `catch`, the `try` handler is no longer active and there is no cleanup left to run, so `try (...) catch e: E then (recurse(n - 1))` can tail-call cleanly.
 * **`catchBlock` WITH `finally` is NEVER in tail position:** `finally` must run after `catch` finishes.
 * **`finallyBlock` is NEVER in tail position** (its result is discarded).
 * **`return e` inside `try` or `catch` when a `finally` is active is NEVER in tail position** (because `finally` must run after `e` returns).
@@ -410,65 +386,69 @@ For every `catchClause` with type annotation `C`:
 
 ## 6. Effect, Ownership & Axiom Integration
 
-Babble's static effect & ownership system (`BIP007`, `BIP016`, `BIP017`, `BIP019`, `BIP027`) interacts with `try`/`catch`/`finally`/`throw` in five concrete ways. Getting these right makes `BIP028` feel native to Babble rather than bolted on.
+Babble's static effect & ownership system (`BIP007`, `BIP016`, `BIP017`, `BIP019`, `BIP027`) interacts with `try`/`catch`/`finally`/`throw` in four concrete ways.
 
-### 6.1 `nothrow` inference & verification (`BIP028-Q7`)
+### 6.1 `nothrow` inference & dead-catch warnings (`BIP028-D7`)
 
 * **`throw expr`:** Immediately sets `walker.nothrow = false` (in [`EffectBodyWalker`](../../src/main/java/org/babblelang/analysis/EffectBodyWalker.java)) and marks `stmtHasSideEffect = true` (so `throw` is never flagged as `Unused pure expression`).
 * **`try` / `catch` / `finally`:**
   Save and isolate the `nothrow` flag across `tryBlock` (`tryNothrow`), each `catchBlock` (`catchNothrow[i]`), and `finallyBlock` (`finallyNothrow`):
-  * If `tryNothrow == true`: `tryBlock` cannot throw, so the `try` expression's `nothrow` depends only on `finallyNothrow` (Wait: what about `catch` blocks? They are unreachable at runtime, though still type- and effect-checked!).
-  * If `tryNothrow == false`:
-    * **Option 7A (Recommended for initial implementation — Sound catch-all restoration):**
-      The `try` expression restores `nothrow = true` iff:
-      1. The `catch` clauses collectively cover **all catchable non-`Error` exceptions** (i.e., an untyped catch-all `catch e then (...)`, or `java.lang.Throwable`, or `java.lang.Exception` plus all Babble thrown types — matching `BIP007`/`BIP016`'s existing JVM `nothrow` model, which treats asynchronous `VirtualMachineError`s like `OutOfMemoryError`/`StackOverflowError` as outside `nothrow`), **AND**
-      2. Every `catchBlock` has `catchNothrow[i] == true`, **AND**
-      3. `finallyBlock` (if present) has `finallyNothrow == true`.
-      Otherwise, `walker.nothrow = false`.
-    * **Option 7B (Future extension — Typed throw-set inference):**
-      Track a conservative set of potentially thrown exception types per expression/callable (plus `throws` axioms in `curated.ba`), so `try (java.lang.Integer.parseInt(s)) catch e: java.lang.NumberFormatException then (0)` is inferred `nothrow` even without a catch-all!
-      *Why Option 7A first:* In Java, unchecked `RuntimeException`s are omitted from bytecode `Exceptions` attributes (`List.get` throws `IndexOutOfBoundsException` without declaring it), so Option 7B would either be unsound on unannotated Java calls or require annotating exception sets across all of `curated.ba`. Option 7A is 100% sound today with zero axiom churn, and Option 7B can strictly relax it later without breaking any existing program!
-  * **Dead `try` / unreachable `catch` warning (`BIP028-Q7` sub-question):**
-    When `tryBlock` is statically proven `nothrow` (and does not depend on a `calling` callback parameter in `fn calling f`, `BIP017`), should `EffectChecker` emit a non-fatal warning (`Warning : try block cannot throw; catch clause is unreachable`)? Recommended: **yes (warning, not error)**, skipping functions with `calling` clauses where a callback may throw at some call sites.
+  * If `tryNothrow == true`: `tryBlock` cannot throw, so the `try` expression's `nothrow` equals `finallyNothrow`. When `catch` clauses are present and the enclosing function does **not** have a `calling` clause (`BIP017`, where a callback may throw at some call sites), `EffectChecker` emits a non-fatal warning: `Warning : try block cannot throw; catch clause is unreachable`. (A `try (nothrowExpr) finally (...)` *without* `catch` clauses is valid and emits no warning, since `finally` still runs on normal exit or `return`/`break`/`continue`.)
+  * If `tryNothrow == false` (`BIP028-D7`): the `try` expression restores `nothrow = true` iff:
+    1. The `catch` clauses include an **exhaustive catch-all** — an untyped `catch` (`catch e then (...)` / `catch then (...)`) or `java.lang.Throwable` (consistent with `BIP007`/`BIP016`'s JVM `nothrow` model, which treats asynchronous `VirtualMachineError`s as outside `nothrow`), **AND**
+    2. Every `catchBlock` has `catchNothrow[i] == true`, **AND**
+    3. `finallyBlock` (if present) has `finallyNothrow == true`.
+    Otherwise, `walker.nothrow = false`.
+  * *(Future refinement: full static throw-set inference per callable/Java method can strictly relax `BIP028-D7` later without breaking any existing program.)*
 
-### 6.2 Purity, hermeticity & determinism (`BIP028-Q8`)
+### 6.2 Purity, hermeticity & determinism (`BIP028-D8`)
 
-* **Pure `try`/`catch` is pure and deterministic:** Catching an exception thrown by a pure, deterministic computation (e.g., `Integer.parseInt(s)` throwing `NumberFormatException`) performs no I/O and reads no external mutable state. Therefore, `try`/`catch`/`finally` **preserves `pure` (`@HERMETIC`, `@DETERMINISTIC`)** as long as `tryBlock`, all `catchBlock`s, and `finallyBlock` are themselves `@HERMETIC` and `@DETERMINISTIC`!
+* **Pure `try`/`catch` is pure and deterministic:** Catching an exception thrown by a pure, deterministic computation (e.g., `Integer.parseInt(s)` throwing `NumberFormatException`) performs no I/O and reads no external mutable state. Therefore, `try`/`catch`/`finally` **preserves `pure` (`@HERMETIC`, `@DETERMINISTIC`)** as long as `tryBlock`, all `catchBlock`s, and `finallyBlock` are themselves `@HERMETIC` and `@DETERMINISTIC`.
 * **Union of side effects across all clauses:** Every `io`, `volatile`, `mut` (on `this`, parameters, or captured variables), `readsThis`, `readParams`, and callback invocation in `tryBlock`, ANY `catchBlock`, or `finallyBlock` joins into the enclosing callable's effect summary.
-* **Stack-trace inspection subtlety (`BIP028-Q8`):**
+* **Stack-trace inspection axioms (`BIP028-D8`):**
   * `Throwable.printStackTrace()` writes to `System.err` → already `io` via bytecode analysis / `curated.ba`.
-  * `Throwable.getMessage()`, `getCause()`, `getSuppressed()` → pure getters (already deterministic on immutable/local exceptions, or read-only on the caught exception).
-  * `Throwable.getStackTrace()` reflects the call stack (which varies with caller context and inlining); marking `getStackTrace` / `fillInStackTrace` appropriately in `src/main/java/org/babblelang/axioms/java/lang/curated.ba` ensures pure functions cannot observe optimizer inlining differences!
+  * `Throwable.getMessage()`, `getCause()`, `getSuppressed()` → pure getters.
+  * `Throwable.getStackTrace()` reflects the call stack (which varies with caller context and optimizer inlining) and is marked `volatile` in `src/main/java/org/babblelang/axioms/java/lang/curated.ba` (with `fillInStackTrace` already `mut nothrow`), ensuring pure functions cannot observe optimizer inlining differences.
   * `finallyBlock` statements are **all** in discarded position, so `Unused pure expression` (`BIP007-D8`) checks every statement in `finallyBlock` (catching bugs like `finally (x + 1)` that forgot to assign or call `close()`).
 
 ### 6.3 Ownership (`unique` / `@MOVED`) across `try` / `catch` / `finally`
 
-An exception can be thrown at **any potentially-throwing expression** inside `tryBlock`, transferring control immediately to `catchBlock` and `finallyBlock`. [`EffectBodyWalker`](../../src/main/java/org/babblelang/analysis/EffectBodyWalker.java) must therefore preserve ownership soundness across all possible unwind points:
+An exception can be thrown at **any potentially-throwing expression** inside `tryBlock`, transferring control immediately to `catchBlock` and `finallyBlock`. [`EffectBodyWalker`](../../src/main/java/org/babblelang/analysis/EffectBodyWalker.java) preserves ownership soundness across all possible unwind points:
 
 1. **Snapshot before `try`:** Save `preEnv = copy(env)` before walking `tryBlock`.
 2. **Track intermediate moves & demotions inside `tryBlock`:** Any variable moved (`move(x)` / `freeze(x)`) or demoted from `unique` to `@EXTERNAL`/`@PARAM` *anywhere* inside `tryBlock` may or may not have happened when an exception fires:
-   * On entry to each `catchBlock`, initialize `env` by **joining `preEnv` with the cumulative move/demotion state of `tryBlock`** (specifically: if `x` was moved at any point in `tryBlock`, `x` is `@MOVED` in `catchBlock` and cannot be used unless reassigned first; if `x` was demoted in `tryBlock`, `x` is demoted in `catchBlock`).
+   * On entry to each `catchBlock`, initialize `env` by **joining `preEnv` with the cumulative move/demotion state of `tryBlock`** (if `x` was moved at any point in `tryBlock`, `x` is `@MOVED` in `catchBlock` and cannot be used unless reassigned first; if `x` was demoted in `tryBlock`, `x` is demoted in `catchBlock`).
    * On entry to `finallyBlock`, join `preEnv`, `tryBlock`'s cumulative state, and every `catchBlock`'s state (with the same conservative `@MOVED` and demotion join).
    * After `try`/`catch`/`finally`, join the exit states of `tryBlock` and all non-`NOTHING` `catchBlock`s, followed by `finallyBlock`.
 3. **Mutating a fresh `unique` local in `try`:** Remains completely legal inside a `pure` function — `tryBlock` mutates the local, and if it throws, `catchBlock`/`finallyBlock` sees the mutated local (still 100% frame-local and hermetic).
 
-### 6.4 Exception-escape provenance (`@BORROWED` soundness)
+### 6.4 Exception-escape provenance (`@BORROWED` soundness, `BIP028-D8`)
 
-**Critical soundness invariant:** Under `BIP016`, parameters are `@BORROWED` by default — a function may not let a `@BORROWED` parameter escape its dynamic extent unless annotated `shared`.
+Under `BIP016`, parameters are `@BORROWED` by default — a function may not let a `@BORROWED` parameter escape its dynamic extent unless annotated `shared`:
 
-Consider:
 ```babble
 def Leak = record (def box: Box) ()
 def bad = fn (b: Box): int -> (   ;; b is @BORROWED by default!
-    throw Leak(b)                 ;; ESCAPES b out of `bad`!
+    throw Leak(b)                 ;; ESCAPES b out of `bad` -> compile error unless `shared b`
+)
+
+def localOk = fn (b: Box): int -> (
+    try (
+        throw Leak(b)             ;; guaranteed caught locally by `catch e: Leak` -> allowed!
+    ) catch e: Leak then (
+        e.box.value               ;; `e` carries `b`'s @PARAM provenance, never escapes `localOk`
+    )
 )
 ```
-If `bad` throws `Leak(b)`, an arbitrary caller further up the call stack can catch `Leak` and store `e.box` in a global field — violating `b`'s `@BORROWED` contract!
 
-**Rule:** `throw expr` **escapes `expr`** (calling `recordEscape(origin, exprType)` in `EffectBodyWalker`, exactly like storing into an external field or global):
-* Deeply immutable / `frozen` values (`int`, `string`, `frozen T`, `record` of primitives, standard Java exceptions carrying only a `string` message) have `Origin.IMMUTABLE` and escape freely with zero annotations!
-* Throwing a value whose provenance contains a `@BORROWED` parameter or `@BORROWED` `this` (e.g., `Leak(b)` where `Box` is mutable) is **rejected at compile time** unless the parameter is marked `shared` (or `unique` and moved in via `move(b)`), OR unless proven caught locally (conservative escape-always is recommended in `BIP028-P2` because it is simple, local, and 100% sound!).
-* Similarly, a caught exception variable `e` in `catch e: T` starts with `Origin.EXTERNAL` (unless `T` is deeply immutable, e.g., `record ParseError(line: int, msg: string)`, which gets `Origin.IMMUTABLE` via `ModalKindTable`!).
+**Intra-procedural local-catch escape analysis (`BIP028-D8`):**
+Mirroring [`EffectBodyWalker.loopBreakOrigins`](../../src/main/java/org/babblelang/analysis/EffectBodyWalker.java#L79), `EffectBodyWalker` maintains an `activeTryStack` of enclosing `TryFrame`s inside the current function (cleared upon entering a nested `fn` literal):
+* Each `TryFrame` records the catch clauses of the active `try` and an accumulated `Reachability.Origin` per catch clause.
+* When walking `throw expr`:
+  1. Walk `activeTryStack` from innermost to outermost.
+  2. If an enclosing `TryFrame` has a `catch` clause whose type statically subsumes `expr`'s type (or is an untyped catch-all for a non-`Error` `expr`), join `expr`'s `Origin` into that `catch` clause's accumulated origin and **do not** treat `expr` as escaping the function.
+  3. If no enclosing `TryFrame` in the current function is guaranteed to catch `expr`'s static type, call `recordEscape(origin, exprType)` — rejecting `@BORROWED` parameters/`this` unless annotated `shared`, moved via `unique`, or deeply immutable/`frozen`.
+* When walking each `catch` clause `e: T`, initialize `e`'s origin to the join of `Origin.EXTERNAL` (when non-local throws can reach the handler — i.e., if `tryBlock` can throw anything besides locally-tracked `throw`s — or `Origin.IMMUTABLE` when `T` is deeply immutable via `ModalKindTable`) with all locally-caught `throw` origins routed to that clause! Thus if a `catch` block later tries to return, store, or rethrow `e` outside an enclosing handler, normal `EffectBodyWalker` provenance catches the escape right there.
 
 ---
 
@@ -506,6 +486,7 @@ record Try(
         List<HirExpr> finallyBody,    // empty list if no finally clause
         List<HirVar> finallyDeclaredVars,
         boolean finallyOpensNamespace,
+        boolean finallyNothrow,       // omits addSuppressed wrapper on abnormal exit when true (BIP028-D6)
         ExprMeta meta
 ) implements HirExpr {}
 ```
@@ -556,21 +537,12 @@ Key bytecode details:
 * **Babble catches** (`catch e: ParseError`, `catch e: AppError`, or mixed `ParseError | java.io.IOException`):
   * Emit `visitTryCatchBlock` for `"org/babblelang/runtime/ThrownException"` (and any Java `Throwable` members).
   * In the `ThrownException` handler, call `ThrownException.value()`, test against each matching clause in source order using direct `INSTANCEOF` (for statically known compiled Babble classes and JVM interfaces, `RM003`/`BIP020`) or `Types.isInstance` (for intersections/dynamic types), bind `e`, and execute the clause; if none match, rethrow the original `ThrownException` (preserving its stack trace!).
-  * **Order preservation:** When a Java `catch` (e.g., `catch e: java.lang.RuntimeException`) precedes a Babble `catch` (e.g., `catch e: ParseError`), `ThrownException` must NOT be accidentally swallowed by `java.lang.RuntimeException`!
-    * **Clean fix:** Make `ThrownException` extend `java.lang.Throwable` directly (not `RuntimeException` — JVM bytecode allows catching/throwing any `Throwable` without checked-exception restrictions, and `Throwables.sneakyThrow` handles Java callers!), OR filter `if (ex instanceof ThrownException) goto nextHandler` in `RuntimeException`/`Exception` handlers!
-    * **Wait — making `ThrownException extends Throwable` (or `RuntimeException`?):** Let's check `BabbleCompiledScript.eval` and `Java` callers!
-      - If `ThrownException extends RuntimeException`: a Babble `catch e: java.lang.Exception` would match `ThrownException` unless `ThrownException` is excluded, AND `catch e: java.lang.RuntimeException` followed by `catch e: ParseError` would either swallow `ParseError` or require a guard!
-      - If `ThrownException extends Throwable` directly (package-scoped or `public final class ThrownException extends Throwable`):
-        1. `java.lang.Exception` and `java.lang.RuntimeException` NEVER accidentally match a Babble `ParseError`!
-        2. `catch e: java.lang.Throwable` DOES match `ThrownException` if desired (or only Java `Throwable`s — a crisp choice under `BIP028-Q2`!).
-        3. Uncaught `ThrownException` is caught by `CompiledBabbleScript.eval` (`catch (Throwable t)`), `BabbleCompiledScript.eval` (widened to `catch (Throwable t)`), and `Launcher.run` (`catch (Throwable t)`).
-        4. What if a Java caller invokes a Babble function implementing `java.lang.Runnable` that throws `ParseError`? If `ThrownException extends RuntimeException`, Java's `catch (RuntimeException e)` catches it naturally without sneaky checked-throw surprises.
-      - This is an important JVM interop detail — we document both options cleanly in **`BIP028-Q2`** (with a guard on `Exception`/`RuntimeException` if `ThrownException extends RuntimeException`, vs `extends Throwable`).
-* **ASM `visitTryCatchBlock` ordering:** All inner `try` blocks inside `tryBody` MUST register their `visitTryCatchBlock` entries before the enclosing `try` registers its own entries, because the JVM searches the `exception_table` linearly from first to last. Emitting child `try` blocks during `tryBody` emission and registering the enclosing `try`'s `visitTryCatchBlock` entries right after (or via a scoped list) guarantees correct innermost-first ordering automatically!
+  * **Order preservation (`BIP028-D2`):** Because `ThrownException extends RuntimeException` (so Java callers catch it cleanly), any Babble `catch` clause whose JVM type is a supertype of `ThrownException` (`java/lang/RuntimeException` or `java/lang/Exception`, excluding explicit `java/lang/Throwable` and untyped catch-all) emits a 3-instruction filter (`DUP; INSTANCEOF org/babblelang/runtime/ThrownException; IFNE nextHandler`) at the start of its handler, keeping Java and Babble catch clauses type-honest and order-independent with zero happy-path cost.
+* **ASM `visitTryCatchBlock` ordering:** All inner `try` blocks inside `tryBody` MUST register their `visitTryCatchBlock` entries before the enclosing `try` registers its own entries, because the JVM searches the `exception_table` linearly from first to last. Emitting child `try` blocks during `tryBody` emission and registering the enclosing `try`'s `visitTryCatchBlock` entries right after (or via a scoped list) guarantees correct innermost-first ordering automatically.
 
-#### 7.2.3 `finally` emission, range splitting & code-size guard (`BIP028-Q9`)
+#### 7.2.3 Pure inline `finally` emission, range splitting & `addSuppressed` (`BIP028-D6`, `BIP028-D9`)
 
-Because JVM class files ≥ Java 6 prohibit `JSR`/`RET` (Babble targets Java 21 = class version 65 with `COMPUTE_FRAMES`), `finally` is lowered via **path duplication** (identical to `javac`, `kotlinc`, and `scalac`):
+Because JVM class files ≥ Java 6 prohibit `JSR`/`RET` (Babble targets Java 21 = class version 65 with `COMPUTE_FRAMES`), `finally` is lowered via **pure inline path duplication** (matching `javac`, `BIP028-D9`; helper-method outlining can be added later as a purely internal compiler optimization if ever needed):
 
 1. **`MethodEmitContext.activeFinallies` stack:**
    ```java
@@ -582,11 +554,10 @@ Because JVM class files ≥ Java 6 prohibit `JSR`/`RET` (Babble targets Java 21 
      - **Range splitting:** emit a `splitEnd` label closing the active `try` range before the inline `finally` copy, emit `finallyBody` (with `ctx.activeFinallies` popped to that level so inner `finally` doesn't recursively cover itself!), and emit a `splitStart` label resuming the `try` range afterwards!
      - Finally, load `retTmp` and emit `returnInsn(methodReturnKind)`.
    * `emitBreak(b)` / `emitContinue()`: evaluate `b.value()` (if any) into `loop.resultSlot()`; emit all `ActiveFinally` entries whose `loopDepthAtEntry >= currentLoopDepth` (innermost to outermost, with range splitting); then `GOTO breakLabel`/`continueLabel`.
-3. **Normal exit & abnormal `catch-all` exit:**
+3. **Normal exit & abnormal `catch-all` exit with automatic `addSuppressed` (`BIP028-D6`):**
    * Normal exit of `tryBody` and each `catchBody` emits one `finallyBody` copy and jumps to `done`.
-   * Abnormal exit registers `visitTryCatchBlock(segStart, segEnd, finallyExLabel, null)` across every split segment `[segStart, segEnd)` of `tryBody` and every `catchBody`, stores the caught `Throwable` in `exLocal`, emits `finallyBody`, reloads `exLocal`, and emits `ATHROW`.
-4. **Nested-`finally` exponential-blowup guard (`BIP028-Q9`):**
-   Duplicating a `finally` block $k$ times across nested `try`-`finally` levels can grow bytecode as $O(2^d)$ for nesting depth $d$. If a `finallyBody` exceeds a modest threshold (e.g., `> 32` HIR nodes and `activeFinallies.size() >= 2` or `>= 3` exit sites) and contains no non-local jumps (already guaranteed by Option 6A!), `HirEmitter` can outline `finallyBody` into a private synthetic helper method `fin$N(...)` taking the referenced locals/cells as parameters (exactly as `kotlinc` does for large `finally` blocks) — keeping JVM method size well below the 64 KB limit!
+   * Abnormal exit registers `visitTryCatchBlock(segStart, segEnd, finallyExLabel, null)` across every split segment `[segStart, segEnd)` of `tryBody` and every `catchBody`, stores the caught `primary` `Throwable` in `exLocal`, runs `finallyBody`, reloads `exLocal`, and emits `ATHROW`.
+   * **Suppression guard:** If `finallyBody` is **not** statically `nothrow` (recorded as `finallyNothrow` on `HirExpr.Try`), the abnormal-exit `finallyBody` copy is wrapped in an inner `visitTryCatchBlock(finStart, finEnd, suppressLabel, "java/lang/Throwable")` that calls `Throwables.addSuppressed(exLocal, secondary)` (`if (primary != secondary) primary.addSuppressed(secondary);`) and falls through to `ALOAD exLocal ; ATHROW`! When `finallyNothrow == true`, this inner handler is omitted completely (zero overhead).
 
 ### 7.3 Interpreter parity (`Interpreter.java`)
 
@@ -594,39 +565,55 @@ Because JVM class files ≥ Java 6 prohibit `JSR`/`RET` (Babble targets Java 21 
 
 *Why `ControlFlowSignal` rather than a return-value sentinel:* Unlike `BIP024`'s `TailCall` (which is restricted to tail position), `return`, `break`, and `continue` are expressions that can appear in any subexpression position (`1 + return 42`, `f(a, if done then (break 99) else (b))`). Propagating a return-value sentinel through the tree-walking `BabbleBaseVisitor` would require `if (v instanceof Control) return v;` guards at all 39 `visit(...)` sites in `Interpreter.java` (making future expression additions fragile and adding ~80–100 rarely-taken branches to the `-Pbatest` `Interpreter` JaCoCo gate). A single `ControlFlowSignal` base class keeps `visitTryExpression` to one bypass clause, lets Java's own `finally` unwind automatically, and leaves an eventual shift away from control-flow exceptions to a future flat `HIR` interpreter (if `BIP015` / thread-safe `Interpreter` replaces the ANTLR tree-walker).
 
-[`Interpreter.visitThrowExpression`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) and `visitTryExpression` mirror the compiled semantics directly:
+[`Interpreter.visitThrowExpression`](../../src/main/java/org/babblelang/engine/impl/Interpreter.java) and `visitTryExpression` mirror the compiled semantics directly (including `BIP028-D6` `addSuppressed`):
 * `visitThrowExpression`: evaluates `ctx.expression()`, invokes `Throwables.toThrowable(val)`, and throws via `Throwables.sneakyThrow`.
 * `visitTryExpression`:
   ```java
   ParserRuleContext failingAt = null;
-  Throwable uncaught = null;
+  Throwable primary = null;
   Object result = null;
   try {
-      result = runBlock(ctx.tryBlock);
-  } catch (ControlFlowSignal control) {
-      throw control;   // bypasses all catch clauses; finally still runs!
-  } catch (Throwable t) {
-      failingAt = last;
-      Match match = matchCatch(ctx.catchClause(), t);
-      if (match != null) {
-          failingAt = null;
-          result = runCatchBlock(match.clause(), match.boundValue());
-      } else {
-          uncaught = t;
-          throw Throwables.sneakyThrow(t);
+      try {
+          result = runBlock(ctx.tryBlock);
+      } catch (ControlFlowSignal control) {
+          throw control;   // bypasses all catch clauses; finally still runs!
+      } catch (Throwable t) {
+          failingAt = last;
+          Match match = matchCatch(ctx.catchClause(), t);
+          if (match != null) {
+              failingAt = null;
+              result = runCatchBlock(match.clause(), match.boundValue());
+          } else {
+              primary = t;
+              throw Throwables.sneakyThrow(t);
+          }
       }
+  } catch (ControlFlowSignal control) {
+      throw control;
+  } catch (Throwable t) {
+      // Catch exception thrown by a catchBlock as well
+      if (primary == null) {
+          failingAt = last;
+          primary = t;
+      }
+      throw Throwables.sneakyThrow(t);
   } finally {
       if (ctx.finallyBlock != null) {
-          runBlock(ctx.finallyBlock);
-          if (uncaught != null && failingAt != null) {
-              // Restore the original throwing line if finally completed normally
+          if (primary != null) {
+              try {
+                  runBlock(ctx.finallyBlock);
+              } catch (Throwable secondary) {
+                  Throwables.addSuppressed(primary, secondary);
+              }
               last = failingAt;
+          } else {
+              runBlock(ctx.finallyBlock);
           }
       }
   }
   return result;
   ```
-* **Line-number fidelity:** Saving and restoring `last = failingAt` when `finally` completes normally on an uncaught exception guarantees that `BabbleCompiledScript.eval` reports the exact line inside `try` (or `catch`) that threw — matching compiled mode's stack-trace line (`CompiledBabbleScript.lineOf`) 100%! If `finally` itself throws, `last` stays at the throwing line inside `finally`, again matching compiled mode.
+* **Line-number fidelity:** Restoring `last = failingAt` when a `primary` exception was already in flight guarantees that `BabbleCompiledScript.eval` reports the exact line inside `try` (or `catch`) that threw `primary` — matching compiled mode's stack-trace line (`CompiledBabbleScript.lineOf`) 100%! When `try`/`catch` completed normally and `finally` throws, `last` stays at the throwing line inside `finally`, again matching compiled mode.
 
 ### 7.4 Nanopass optimizer (`BIP014` / `BIP027`) soundness
 
@@ -637,50 +624,31 @@ Every pass in `org.babblelang.opt` updates cleanly via exhaustive sealed-switch 
 * **`HirEGraphSimplifyPass` (`BIP027-I2`):** Rewrites inside `tryBody`, each `catch.body`, `finallyBody`, and `Throw.value` independently; never merges or moves expressions across a `Try` boundary.
 * **`HirDcePass`:**
   * Truncates dead statements after an unconditional `HirExpr.Throw` in a block (matching `Return`/`Break`/`Continue`).
-  * **Dead-catch elimination (at `-O1`):** When `tryBody` is proven `isPureNothrowTerminating`, no exception can ever be thrown from `tryBody` — `-O1` simplifies `try (body) catch ... finally (fin)` directly to `(body)` (if `fin` is empty) or `(def $r = body ; fin ; $r)`, eliminating the JVM `exception_table` completely!
+  * **Dead-catch elimination (at `-O1`):** When `tryBody` is proven `isPureNothrowTerminating`, no exception can ever be thrown from `tryBody` — `-O1` simplifies `try (body) catch ... finally (fin)` directly to `(body)` (if `fin` is empty) or `(def $r = body ; fin ; $r)`, eliminating the JVM `exception_table` completely.
 * **`HirLicmPass`:** Already gates hoisting strictly on `isPureNothrowTerminating`, so throwing operations inside a `try` are **never** hoisted out of `try` (and `Try`/`Throw` themselves are never hoisted unless completely pure+nothrow+terminating).
 * **`InlinePass`:**
-  * In `BIP028-P3`, `isInlineCandidate` conservatively skips functions whose body contains `HirExpr.Try` (matching `SelfTailCall` in `BIP024`) while still allowing calls *inside* a `try` block to be inlined (preserving `ExprMeta.line` per `BIP014-D5`, and keeping inlined code inside the `try` range so exceptions thrown by the inlined body are caught identically!).
-  * Functions containing `HirExpr.Throw` (without `Try`) CAN still be inlined safely because `Throw` has no handler range and preserves `ExprMeta.line`!
+  * In `BIP028-P3`, `isInlineCandidate` conservatively skips functions whose body contains `HirExpr.Try` (matching `SelfTailCall` in `BIP024`) while still allowing calls *inside* a `try` block to be inlined (preserving `ExprMeta.line` per `BIP014-D5`, and keeping inlined code inside the `try` range so exceptions thrown by the inlined body are caught identically).
+  * Functions containing `HirExpr.Throw` (without `Try`) CAN still be inlined safely because `Throw` has no handler range and preserves `ExprMeta.line`.
 * **3-way parity:** `interpret`, `compile -O0`, and `compile -O1` (plus `-O2` when `BIP014-P3` SSA `MIR` lands, where `Try` maps to CFG exception edges / landing pads) must produce identical results, outputs, and error messages on every test case.
 
 ### 7.5 WebAssembly 3.0 alignment (`BIP025`)
 
 `BIP025` targets WebAssembly 3.0's `try_table` + `exnref` + `tag` instructions. `BIP028`'s design aligns with `BIP025` by construction:
 * `HirExpr.Try` and `HirExpr.Throw` are completely target-neutral (no ASM or `java.lang.reflect` types inside `HirExpr`).
-* Custom Babble exceptions (`record ParseError(...)`, Option 2B) do not depend on `java.lang.Throwable`, lowering cleanly to Wasm `tag $babble_exn (param anyref)` + `throw $babble_exn` + `try_table (catch $babble_exn $handler)` + `br_on_cast`!
-* Portable Babble programs that catch their own domain exceptions (or Babble runtime errors via `BabbleException`) work identically on both JVM and WebAssembly.
+* Both custom Babble exceptions (`record ParseError(...)`) and the core `exception` type (`BIP028-D2`) avoid naming `java.*` or `org.babblelang.runtime.*`, lowering cleanly to Wasm `tag $babble_exn (param anyref)` + `throw $babble_exn` + `try_table (catch $babble_exn $handler)` + `br_on_cast`.
 
 ---
 
-## 8. Resource Management (`AutoCloseable` & `using`, `BIP028-Q10`)
+## 8. Resource Management (`AutoCloseable` & `using`, `BIP028-D10`)
 
-One of the top real-world uses of `try`/`finally` on the JVM is deterministic cleanup of `java.lang.AutoCloseable` resources (`BufferedReader`, `InputStream`, `Socket`, `Connection`).
-
-With `BIP028`'s `try`/`catch`/`finally` combined with Babble's existing `BIP021` bounded generics (`of (R: java.lang.AutoCloseable, T)`) and `BIP017` callback-effect forwarding (`fn calling f`), Kotlin-style `.use` is already expressible in **plain Babble** with full effect forwarding and `Throwable.addSuppressed`:
+Because `BIP028-D6` already gives every `try (...) finally (...)` automatic `addSuppressed` semantics when `finally` throws while a primary exception is in flight, Kotlin-style `AutoCloseable` resource cleanup becomes a **3-line library helper** in plain Babble using `BIP021` bounded generics and `BIP017` `fn calling f`:
 
 ```babble
-export def using = fn of (R: java.lang.AutoCloseable, T) calling f (
+export def using = fn io of (R: java.lang.AutoCloseable, T) calling f (
     resource: R,
     f: fn (r: R): T
 ): T -> (
-    def primary: java.lang.Throwable? = null
-    try (
-        f(resource)
-    ) catch e: java.lang.Throwable then (
-        primary = e
-        throw e
-    ) finally (
-        try (
-            resource.close()
-        ) catch closeErr: java.lang.Throwable then (
-            if primary != null then (
-                primary.addSuppressed(closeErr)
-            ) else (
-                throw closeErr
-            )
-        )
-    )
+    try (f(resource)) finally (resource.close())
 )
 
 ;; Caller:
@@ -689,13 +657,7 @@ def text = using(java.nio.file.Files.newBufferedReader(path), fn (r) -> (
 ))
 ```
 
-Notice what works out of the box here:
-* `primary != null` narrows `primary` from `java.lang.Throwable?` to `java.lang.Throwable` (`BIP008`).
-* `calling f` forwards `f`'s `io`/`volatile`/`mut` effects honestly (`BIP017`).
-* Note one subtle `BIP016` detail: `resource.close()` is `io` on `java.lang.AutoCloseable`, so `using` itself is `fn io calling f` (unless an `axiom` or a specialized pure closeable interface is used).
-
-**`BIP028-Q10` asks:** Should `BIP028` stop at `try`/`catch`/`finally`/`throw` (leaving `using` to the future standard library), OR should `BIP028` also add dedicated `try`-with-resources syntax (e.g., `try (def r = open()) then (...)` or `try with r = open() then (...)`)?
-* **Recommendation:** Keep `BIP028` focused on `try`/`catch`/`finally`/`throw` and leave `using` to `std/` (or a small follow-up), because `using` needs zero new syntax, handles `addSuppressed`, and avoids adding a fourth `try` clause form to `Babble.g4`.
+Per **`BIP028-D10`**, `BIP028` stays focused on `try`/`catch`/`finally`/`throw`/`exception`, deferring `using` to the future `std/` library.
 
 ---
 
@@ -703,41 +665,41 @@ Notice what works out of the box here:
 
 `BIP028` splits into five self-contained, independently verifiable phases, each keeping 3-way `mvn package` (`interpret`, `compile -O1`, `compile -O0`) and `-Pbatest` green:
 
-* **`BIP028-P1` — Runtime exception model & Java interop cleanup.**
-  * Add `org.babblelang.runtime.Throwables` (`sneakyThrow`, `unwrapReflection`, `toThrowable`, `unwrapForCatch`) and `org.babblelang.runtime.ThrownException` (staying strictly inside `java.base`, verified by `RuntimeBoundaryTestCase`).
-  * Retire `JavaTypes.wrapInvocationException` and `CallEmitter.emitWrappedJavaInvoke` (unwrapping only `InvocationTargetException` in reflective `JavaMethod`/`JavaClass`/`JavaLinker`); move uncaught exception formatting (`NPE` Helpful-message stripping, `ClassName : msg` space-before-colon) into `ArraySupport.formatThrowable` / script boundaries (`BabbleCompiledScript`, `CompiledBabbleScript`, `Launcher`).
+* **`BIP028-P1` — Runtime exception model & Java interop cleanup (`BIP028-D2`, `BIP028-D3`, `BIP028-D6`).**
+  * Add `org.babblelang.runtime.Throwables` (`sneakyThrow`, `unwrapReflection`, `toThrowable`, `unwrapForCatch`, `addSuppressed`) and `org.babblelang.runtime.ThrownException` (`extends RuntimeException`, staying strictly inside `java.base`, verified by `RuntimeBoundaryTestCase`).
+  * Retire `JavaTypes.wrapInvocationException` and `CallEmitter.emitWrappedJavaInvoke` (unwrapping only `InvocationTargetException` in reflective `JavaMethod`/`JavaClass`/`JavaLinker`); move uncaught exception formatting (`NPE` Helpful-message stripping, `ArrayStoreException` normalization, `ClassName : msg` space-before-colon) into `ArraySupport.formatThrowable` / script boundaries (`BabbleCompiledScript`, `CompiledBabbleScript`, `Launcher`).
   * Audit `ConvertFunction`, `PrintFunction`, and `JavaDefaultCall` so every existing test passes identically in all 3 modes before any new syntax lands.
-* **`BIP028-P2` — Grammar, `Formatter`, REPL & front-end analysis.**
-  * Add `TRY`, `CATCH`, `FINALLY`, `THROW` tokens (exempted in `memberName`), `# tryExpression`, `catchClause`, and `# throwExpression` to `Babble.g4`; verify 0 predicates and pure `PredictionMode.SLL` (`ParserGrammarTestCase`).
+* **`BIP028-P2` — Grammar, `Formatter`, REPL & front-end analysis (`BIP028-D1`, `BIP028-D2`, `BIP028-D4`–`D8`).**
+  * Add `TRY`, `CATCH`, `FINALLY`, `THROW`, and core type `EXCEPTION` tokens (all exempted in `memberName`), `# tryExpression`, `catchClause`, `# coreExceptionRef`, and `# throwExpression` to `Babble.g4`; verify 0 predicates and pure `PredictionMode.SLL` (`ParserGrammarTestCase`).
   * Update `Formatter` (`try (`, `) catch ... then (`, `) finally (`, `throw `) and `Completions` / `BabbleSession.classify`.
-  * Implement static checks across `BlockScopes` (scopes, read-only catch variable, forbidding `return`/`break`/`continue` escaping `finally`), `Resolver` (catch local / capture cell), `TypeChecker` & `Narrowing` (`Type.NOTHING` for `throw`, `join` & numeric widening for `try`, catch-type validity, multi-catch unions, unreachable-catch diagnostics, narrowing & definite-init resets), `TailCalls` (`BIP024` tail-position & `forever` rules), `EffectBodyWalker` / `EffectChecker` (`nothrow` restoration, purity, `@MOVED`/`unique` joins, `throw` escape provenance, `finally` unused-pure checks), `curated.ba` `Throwable` axioms, and `LoweringAnalyzer` (target descriptors & JVM catch class names).
-* **`BIP028-P3` — `Interpreter`, `HIR`, `HirEmitter` & Nanopass optimizer.**
-  * Unify `ReturnException`, `BreakException`, and `ContinueException` under a package-private `ControlFlowSignal` base class, and implement `visitThrowExpression` and `visitTryExpression` in `Interpreter` (bypassing `catch` on `ControlFlowSignal`, restoring `last` across normal `finally` on uncaught exceptions).
-  * Add `HirExpr.Throw`, `HirExpr.Try`, and `HirCatch`; update `HirBuilder` (including empty-operand-stack temp spilling for `Try` inside compound expressions), `HirVerifier`, `HirPrinter`, and `HirRewriter`.
-  * Implement `emitThrow` and `emitTry` in `ControlAndOpEmitter` / `MethodEmitContext` (`activeFinallies`, `try`-range splitting on `return`/`break`/`continue`, native JVM `visitTryCatchBlock` + `ThrownException` dispatch, nested-`finally` outlining guard), verified by `CheckClassAdapter`.
+  * Implement static checks across `BlockScopes` (scopes, read-only catch variable, forbidding `return`/`break`/`continue` escaping `finally`), `Resolver` (catch local / capture cell), `TypeChecker` & `Narrowing` (core `exception` type & constructors, `Type.NOTHING` for `throw`, `join` & numeric widening for `try`, catch-type validity, multi-catch unions, unreachable-catch diagnostics, narrowing & definite-init resets), `TailCalls` (`BIP024` tail-position & `forever` rules), `EffectBodyWalker` / `EffectChecker` (`nothrow` restoration & dead-catch warnings, purity, `@MOVED`/`unique` joins, `activeTryStack` intra-procedural local-catch provenance, `finally` unused-pure checks), `curated.ba` `Throwable.getStackTrace` `volatile` axiom, and `LoweringAnalyzer` (target descriptors, `finallyNothrow`, & JVM catch class names).
+* **`BIP028-P3` — `Interpreter`, `HIR`, `HirEmitter` & Nanopass optimizer (`BIP028-D4`, `BIP028-D6`, `BIP028-D9`).**
+  * Unify `ReturnException`, `BreakException`, and `ContinueException` under a package-private `ControlFlowSignal` base class, and implement `visitThrowExpression`, `visitCoreExceptionRef`, and `visitTryExpression` in `Interpreter` (bypassing `catch` on `ControlFlowSignal`, automatic `addSuppressed` on `finally`, restoring `last` when `primary` was in flight).
+  * Add `HirExpr.Throw`, `HirExpr.Try` (with `finallyNothrow`), and `HirCatch`; update `HirBuilder` (including empty-operand-stack temp spilling for `Try` inside compound expressions), `HirVerifier`, `HirPrinter`, and `HirRewriter`.
+  * Implement `emitThrow` and `emitTry` in `ControlAndOpEmitter` / `MethodEmitContext` (`activeFinallies`, pure inline `finally` duplication with `try`-range splitting on `return`/`break`/`continue`, automatic `addSuppressed` wrapper when `!finallyNothrow`, native JVM `visitTryCatchBlock` + `ThrownException` filter on `Exception`/`RuntimeException`), verified by `CheckClassAdapter`.
   * Update `HirPurity`, `HirEGraphSimplifyPass`, `HirDcePass` (dead code after `Throw` and dead-catch elimination when `tryBody` is pure+nothrow+terminating), `HirLicmPass`, and `InlinePass`.
 * **`BIP028-P4` — Comprehensive testing & coverage.**
   * Add end-to-end `src/test/babble/Exceptions.ba` (auto-run in all 3 modes, type-checked, and format-checked).
-  * Add systematic `.batest` suites under `src/test/batest/` (e.g., `control_flow/try_catch_finally.batest` and `effects/exceptions_effects.batest`): Java exceptions (checked `IOException`, unchecked `NumberFormatException`, `ArrayIndexOutOfBoundsException`, `NullPointerException`), custom Babble `record`/`class`/`interface` exceptions, multi-catch unions + `is` narrowing, expression values & primitive unboxing, `1 + try (...)` stack spilling, nested `try`/`catch`/`finally`, `return`/`break`/`continue` through multiple `finally` blocks, `Interpreter.last` line parity, `BIP024` tail calls inside `try` vs `catch`, `nothrow`/`pure`/`unique`/`@BORROWED` effect diagnostics, unreachable catch errors, and `finally` jump errors.
+  * Add systematic `.batest` suites under `src/test/batest/` (e.g., `control_flow/try_catch_finally.batest` and `effects/exceptions_effects.batest`): Java exceptions (checked `IOException`, unchecked `NumberFormatException`, `ArrayIndexOutOfBoundsException`, `NullPointerException`), core `exception("msg")`, custom Babble `record`/`class`/`interface` exceptions, `ThrownException` isolation from `catch e: java.lang.Exception`, multi-catch unions + `is` narrowing, unnamed/untyped catches excluding `java.lang.Error`, expression values & primitive unboxing, `1 + try (...)` stack spilling, nested `try`/`catch`/`finally`, `return`/`break`/`continue` through multiple `finally` blocks, `addSuppressed` when `finally` throws while unwinding (including self-suppression), `Interpreter.last` line parity, `BIP024` tail calls inside `try` vs `catch`, `nothrow` restoration, dead-catch warnings, local-catch `@BORROWED` provenance vs escaping `throw`, `@MOVED`/`unique` joins, unreachable catch errors, and `finally` jump errors.
   * Add targeted JUnit tests in `TypeCheckerTestCase`, `EffectsTestCase`, `FormatterTestCase`, `ReplTestCase`, `BabbleCompilerTestCase` (verifying `visitTryCatchBlock` and no `emitWrappedJavaInvoke` overhead), `OptimizerTestCase` (dead-catch elimination, LICM barrier, inlining inside `try`), `BabblecTestCase` (AOT jar uncaught & caught exceptions), and confirm `mvn -q verify -Pbatest` meets `>= 75%` branch coverage across all 5 scopes and `ArchitectureBoundaryTestCase` stays green.
 * **`BIP028-P5` — Documentation & examples.**
   * Update [`README.md`](../../README.md) (tour section & *Implemented Features* checklist), [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md), [`docs/design/README.md`](README.md), and promote `BIP028-P1`–`P5` to `BIP028-I1`–`I5` via `src/tools/mark_bip_implemented.py`.
 
 ---
 
-## 10. Open Questions
+## 10. Settled Decisions
 
-Each open question (`BIP028-Q1`–`Q10`) will be settled into a numbered decision (`BIP028-D#`) before implementation starts:
+All ten open questions (`BIP028-Q1`–`Q10`) were settled into decisions **`BIP028-D1`–`D10`**:
 
-| ID | Question | Options | Recommendation |
+| Decision | Resolves | Choice | Summary |
 |---|---|---|---|
-| **`BIP028-Q1`** | What is the exact syntax of `catch` clauses? | **1A:** `catch e: T then (...)` (and unnamed `catch : T then (...)` / `catch then (...)`), mirroring `for`/`if`; **1B:** `catch (e: T) -> (...)`, mirroring `fn`; **1C:** `catch (e: T) (...)` | **1A** (`catch e: T then (...)`, strictly LL(1)/SLL and consistent with `for`/`if`/`while`) |
-| **`BIP028-Q2`** | What values can `throw` raise, how are custom Babble exceptions represented, and how is `BabbleException` named? | **2A:** `java.lang.Throwable` only; **2B:** `java.lang.Throwable` OR Babble nominal instances via `ThrownException` carrier (sub-choice: **2B-i** any Babble class/record/object/interface vs **2B-ii** marker interface; and `ThrownException extends Throwable` vs `RuntimeException`); **2C:** `exception class` extending `RuntimeException` | **2B-i** (open Babble nominal instances via `ThrownException` carrier + `java.lang.Throwable`, plus `BabbleException` exposed in prelude; aligns with `BIP020-D18` and `BIP025` Wasm) |
-| **`BIP028-Q3`** | Should Java exceptions propagate directly (retiring `JavaTypes.wrapInvocationException` & `CallEmitter.emitWrappedJavaInvoke`) or remain wrapped and be unwrapped at `catch`? | **3A:** Direct JVM `Throwable` propagation (`Throwables.sneakyThrow` on reflection paths) + boundary formatting in `ArraySupport.formatThrowable`; **3B:** Keep wrapping and unwrap in `catch` | **3A** (native JVM `exception_table` dispatch, smaller bytecode, clean `RM003` Java-interface bridges, 100% preserved uncaught formatting) |
-| **`BIP028-Q4`** | Should untyped `catch e then (...)` be supported, and should it exclude `java.lang.Error`? | **4A:** Allow untyped `catch e then (...)` matching all non-`Error` exceptions (`Exception` + Babble thrown values), requiring explicit `java.lang.Error` / `java.lang.Throwable` to catch JVM errors; **4B:** Untyped catch matches all `Throwable`; **4C:** Always require an explicit catch type | **4A** (beginner-friendly catch-all that never silently swallows `OutOfMemoryError`/`StackOverflowError`) |
-| **`BIP028-Q5`** | Should `try` without `catch` (`try (...) finally (...)`) and discarded `finally` value match Kotlin/Scala expression rules? | **5A:** Expression-oriented: result is `join(try, catches...)`, `finally` value discarded, `throw` has type `Type.NOTHING`; **5B:** Statement-only `try` returning `null` | **5A** (consistent with Babble's "everything is an expression" design across `if`/`while`/`for`) |
-| **`BIP028-Q6`** | Should `return`, `break`, and `continue` targeting outside a `finally` block be forbidden at compile time? | **6A:** Statically forbidden in `BlockScopes` (C# / Swift / Python PEP 765 rule; inner `fn`/loops inside `finally` still allowed); **6B:** Allowed with warning (Java/Kotlin rule) | **6A** (eliminates silent exception swallowing and simplifies `HirEmitter`) |
-| **`BIP028-Q7`** | How should `try`/`catch` interact with `nothrow` inference and dead `try` blocks? | **7A:** Restore `nothrow` on exhaustive non-`Error` catch-all when all `catch` and `finally` blocks are `nothrow`, plus a warning when `tryBody` is statically `nothrow` (outside `calling` HOFs); **7B:** Full static throw-set inference per function/Java method | **7A** now (100% sound with zero `curated.ba` churn; **7B** remains a clean backwards-compatible future refinement) |
-| **`BIP028-Q8`** | How should `throw` handle `@BORROWED` parameters and `Throwable` stack-trace purity? | **8A:** `throw` conservatively escapes its operand (requiring `shared`, `unique`+`move`, or deeply immutable/`frozen` contents) and `curated.ba` marks `getStackTrace`/`fillInStackTrace` appropriately; **8B:** Local escape analysis allowing `@BORROWED` inside locally-caught `throw` | **8A** (simple, local, 100% sound for `BIP016` ownership; **8B** can relax locally-caught throws later) |
-| **`BIP028-Q9`** | How should `finally` handle deep nesting / code duplication in `HirEmitter`? | **9A:** Inline `finally` duplication on every exit path with `try`-range splitting, plus automatic helper-method outlining above a size/duplication threshold; **9B:** Pure inline duplication only | **9A** (matches `javac`/`kotlinc`, zero call overhead for typical small `finally` blocks, safe against 64 KB JVM method overflow on deep nesting) |
-| **`BIP028-Q10`** | Should `BIP028` add dedicated `try`-with-resources syntax for `AutoCloseable`, or rely on a `BIP017` `using` helper in `std/`? | **10A:** Defer `using` HOF (with `fn calling f` and `addSuppressed`) to `std/`, keeping `BIP028` syntax minimal; **10B:** Add `try (def r = ...) then (...)` syntax in `BIP028` | **10A** (`using` requires zero new syntax and composes cleanly with `BIP017` `fn calling f`) |
+| **`BIP028-D1`** | `BIP028-Q1` | Option 1A | `try (...) catch [e] [: A \| B] then (...) finally (...)` and `throw expr`; five reserved tokens (`try`, `catch`, `finally`, `throw`, `exception`) all exempted in `memberName`, strictly LL(1) / `PredictionMode.SLL`, zero corpus collisions |
+| **`BIP028-D2`** | `BIP028-Q2` | Option 2B-i + `exception` | `throw` accepts non-null `java.lang.Throwable` OR any Babble nominal instance (`class`/`record`/`object`/`interface`), carried by `ThrownException extends RuntimeException` (friendly to Java callers) while Babble `catch Exception`/`RuntimeException` skips `ThrownException` for type-honest order independence; lowercase core keyword `exception` aliases `BabbleException` (type + constructor) |
+| **`BIP028-D3`** | `BIP028-Q3` | Option 3A | Direct JVM `Throwable` propagation (`Throwables.sneakyThrow` on reflection paths), retiring `JavaTypes.wrapInvocationException` and `CallEmitter.emitWrappedJavaInvoke`; existing uncaught error formatting preserved at script boundaries (`ArraySupport.formatThrowable`) |
+| **`BIP028-D4`** | `BIP028-Q4` | Option 4A + `ControlFlowSignal` | Untyped `catch e then (...)` / `catch then (...)` catches all non-`Error` exceptions (Java `Exception`, `exception`, and Babble thrown values, binding `e: any`), excluding `java.lang.Error` (which requires explicit `Error`/`Throwable`); interpreter `ReturnException`/`BreakException`/`ContinueException` unified under package-private `ControlFlowSignal` and never caught |
+| **`BIP028-D5`** | `BIP028-Q5` | Option 5A | Expression-oriented `try` yielding `join(try, catches...)` with unboxed primitive lowering and numeric widening, `finally` checked in discarded statement position, and `throw` typed `Type.NOTHING` |
+| **`BIP028-D6`** | `BIP028-Q6` | Option 6A + `addSuppressed` | Statically forbid `return`/`break`/`continue` escaping `finally` in `BlockScopes`; allow `finally` to throw and automatically attach `secondary` via `Throwables.addSuppressed(primary, secondary)` (with self-suppression guard) whenever a `primary` exception is in flight (omitted when `finally` is statically `nothrow`) |
+| **`BIP028-D7`** | `BIP028-Q7` | Option 7A | Restore `nothrow` on exhaustive catch-all (untyped `catch` or `java.lang.Throwable`) when all `catch` and `finally` blocks are `nothrow`; emit a non-fatal warning when a `try` with `catch` clauses is statically `nothrow` (skipping `fn calling f` HOFs) |
+| **`BIP028-D8`** | `BIP028-Q8` | Option 8B + stack-trace axiom | Intra-procedural `activeTryStack` local-catch provenance in `EffectBodyWalker` (allowing `@BORROWED` values to be thrown if guaranteed caught in the same function, routing origin to `e`; escaping `throw` calls `recordEscape`); `Throwable.getStackTrace` marked `volatile` in `curated.ba` |
+| **`BIP028-D9`** | `BIP028-Q9` | Option 9B | Pure inline `finally` duplication with `try`-range splitting on `return`/`break`/`continue` (matching `javac`), plus operand-stack temp spilling before `HirExpr.Try`; helper outlining deferred as a future transparent optimization |
+| **`BIP028-D10`** | `BIP028-Q10` | Option 10A | Defer the 3-line `AutoCloseable` `using` HOF (`fn io ... calling f -> (try (f(resource)) finally (resource.close()))`) to the future `std/` library |
