@@ -24,7 +24,7 @@ import java.util.Set;
  *
  * <p>Core collection/array factories, Java reflection call solving, and overload-set
  * resolution live in {@link CollectionCallChecker}, {@link JavaCallSolver}, and
- * {@link OverloadCallResolver} (BIP027-P1).
+ * {@link OverloadCallResolver} (BIP027-I1).
  */
 final class CallSolver {
     private final TypeChecker checker;

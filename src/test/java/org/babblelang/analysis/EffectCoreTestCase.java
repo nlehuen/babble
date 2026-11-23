@@ -13,7 +13,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Direct unit tests for the ANTLR-free {@code BIP027-P4} algorithmic cores:
+ * Direct unit tests for the ANTLR-free {@code BIP027-I4} algorithmic cores:
  * {@link EffectFixpointDriver} (Bourdoncle WTO), {@link Reachability} (depth-bounded
  * {@code PathKey} widening &amp; {@code BIP027-D5} prefix overlap), and
  * {@link SymbolicEffectSummary} (single-pass {@code O(k)} HOF instantiation).

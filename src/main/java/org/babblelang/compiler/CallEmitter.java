@@ -25,7 +25,7 @@ import static org.objectweb.asm.Opcodes.*;
  * Bytecode emission for all call forms (core collections, super calls, self tail/recursive
  * calls, direct Babble/this-method calls, JVM interface calls, Java constructor/method calls,
  * safe/dynamic calls, spread adaptation, and overload sets/dispatch), extracted from
- * {@link HirEmitter} (BIP027-P2).
+ * {@link HirEmitter} (BIP027-I2).
  */
 final class CallEmitter {
     private final HirEmitter emitter;

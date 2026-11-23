@@ -20,7 +20,7 @@ import static org.objectweb.asm.Opcodes.*;
 /**
  * Bytecode emission for unary/binary/logical operators, conditions, type checks/casts/SAM
  * adaptations, blocks, conditionals, loops ({@code while}/{@code for}), and jumps
- * ({@code break}/{@code continue}/{@code return}), extracted from {@link HirEmitter} (BIP027-P2).
+ * ({@code break}/{@code continue}/{@code return}), extracted from {@link HirEmitter} (BIP027-I2).
  */
 final class ControlAndOpEmitter {
     private final HirEmitter emitter;

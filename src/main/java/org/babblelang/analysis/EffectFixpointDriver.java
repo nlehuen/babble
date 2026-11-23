@@ -13,7 +13,7 @@ import java.util.function.Predicate;
 
 /**
  * ANTLR-free Bourdoncle Weak Topological Ordering (WTO, {@code [Bou93]}) and recursive
- * fixpoint solver for interprocedural effect inference ({@code BIP027-P4}).
+ * fixpoint solver for interprocedural effect inference ({@code BIP027-I4}).
  *
  * <p>Decomposes a call graph {@code caller -> callees} into a bottom-up hierarchical WTO
  * (callees before callers, inner recursive components stabilized before outer heads) so

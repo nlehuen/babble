@@ -1,6 +1,6 @@
 ;; Prefix-overlap mut exclusivity, widened loop alias chains, nested WTO recursion,
 ;; and single-pass symbolic HOF summaries (including cross-module readParams forwarding).
-;; References : BIP027-P4, BIP027-D5, BIP019 §4, Reachability, SymbolicEffectSummary, EffectFixpointDriver
+;; References : BIP027-I4, BIP027-D5, BIP019 §4, Reachability, SymbolicEffectSummary, EffectFixpointDriver
 
 def Box = class (def v: int) ()
 def Pair = class (def a: Box, def b: Box) ()

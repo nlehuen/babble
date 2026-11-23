@@ -15,7 +15,7 @@ import java.util.Set;
 /**
  * Algebraic signature validation and compositional property verification
  * ({@code idempotent}, {@code commutative}, {@code associative}, {@code monotone},
- * {@code injective}) extracted from {@link EffectChecker} ({@code BIP027-P3};
+ * {@code injective}) extracted from {@link EffectChecker} ({@code BIP027-I3};
  * upgraded onto {@code org.babblelang.ir.egraph} in {@code BIP027-P6}).
  */
 final class AlgebraicVerifier {

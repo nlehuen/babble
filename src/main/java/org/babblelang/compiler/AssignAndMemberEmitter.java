@@ -17,7 +17,7 @@ import static org.objectweb.asm.Opcodes.*;
 /**
  * Bytecode emission for definitions, variable/field assignments, compound assignments,
  * member selection, and array creation/operations, extracted from {@link HirEmitter}
- * (BIP027-P2).
+ * (BIP027-I2).
  */
 final class AssignAndMemberEmitter {
     private final HirEmitter emitter;

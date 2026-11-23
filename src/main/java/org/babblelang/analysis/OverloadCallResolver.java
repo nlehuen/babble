@@ -17,7 +17,7 @@ import java.util.function.BiPredicate;
  * Overload-set call and overloaded operator call resolution, including generic
  * alternative matching and union/nullable/interface-intersection split dispatch
  * ({@code BIP021-D11}, {@code BIP021-D21}, {@code BIP022}), extracted from
- * {@link CallSolver} (BIP027-P1).
+ * {@link CallSolver} (BIP027-I1).
  */
 final class OverloadCallResolver {
     private final TypeChecker checker;

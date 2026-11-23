@@ -26,7 +26,7 @@ import java.util.Set;
 /**
  * Compile-time effect, parameter/receiver mutability, borrow-escape, static {@code mut}
  * exclusivity, flow-sensitive {@code nothrow}, and compositional algebraic checker
- * (BIP007-I1; structurally split in BIP027-P3).
+ * (BIP007-I1; structurally split in BIP027-I3).
  *
  * <p>Delegates syntax/modifier extraction to {@link EffectModifiers}, reflection and 7-tier
  * Java effect resolution to {@link JavaEffectResolver}, algebraic property verification to
@@ -218,7 +218,7 @@ final class EffectChecker {
 
     /** Converged internal summaries for all callables (FunctionLiteralContext and ClassExpressionContext). */
     final Map<ParserRuleContext, CallableSummary> summaries = new IdentityHashMap<>();
-    /** Single-pass symbolic HOF summaries computed alongside {@link #summaries} ({@code BIP027-P4}). */
+    /** Single-pass symbolic HOF summaries computed alongside {@link #summaries} ({@code BIP027-I4}). */
     final Map<ParserRuleContext, SymbolicEffectSummary> symbolicSummaries = new IdentityHashMap<>();
     final Map<BabbleParser.WhileExpressionContext, Boolean> loopNothrow = new IdentityHashMap<>();
     /** Caller-visible summaries (locked to declared contract for annotated callables per BIP007-D2). */
@@ -328,7 +328,7 @@ final class EffectChecker {
             summaries.put(callable, initialSummary(callable));
         }
 
-        // Build call graph among intra-file callables and decompose via Bourdoncle WTO (BIP027-P4).
+        // Build call graph among intra-file callables and decompose via Bourdoncle WTO (BIP027-I4).
         Map<ParserRuleContext, Set<ParserRuleContext>> edges = buildCallGraph(callables);
         List<EffectFixpointDriver.WtoElement<ParserRuleContext>> wto = EffectFixpointDriver.buildWto(callables, edges);
         cyclicCallables.addAll(EffectFixpointDriver.cyclicNodes(wto));
@@ -337,7 +337,7 @@ final class EffectChecker {
                 (callable, prev) -> recomputeSummary(callable, prev, false));
 
         // Finalize PURE (= HERMETIC && no mutThis && no mutParams) & algebraic composition,
-        // and build caller-visible contracts (BIP007-D2) + finalized symbolic HOF summaries (BIP027-P4).
+        // and build caller-visible contracts (BIP007-D2) + finalized symbolic HOF summaries (BIP027-I4).
         for (ParserRuleContext callable : callables) {
             CallableSummary internal = finalizeSummary(callable, summaries.get(callable));
             summaries.put(callable, internal);

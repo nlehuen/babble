@@ -16,7 +16,7 @@ import static org.objectweb.asm.Opcodes.*;
 
 /**
  * Shared interface hierarchy inspection, inherited-default invocation, and {@code $super$N}
- * helper generation for {@link ClassGen} and {@link InterfaceGen} (BIP027-P2).
+ * helper generation for {@link ClassGen} and {@link InterfaceGen} (BIP027-I2).
  */
 final class BridgeHelpers {
     record AncestorMethod(String memberName, String bridgeKey, int overloadIndex, String signatureKey,
