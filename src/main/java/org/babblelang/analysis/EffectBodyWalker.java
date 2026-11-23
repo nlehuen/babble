@@ -82,10 +82,29 @@ final class EffectBodyWalker {
         }
     }
 
+    static final class TryFrame {
+        final List<BabbleParser.CatchClauseContext> catches;
+        final Reachability.Origin[] caughtOrigins;
+        Map<ParserRuleContext, Reachability.Origin> unwindEnv;
+        boolean hadLocalThrow;
+        boolean hadEscapingThrow;
+
+        TryFrame(List<BabbleParser.CatchClauseContext> catches, Map<ParserRuleContext, Reachability.Origin> preEnv) {
+            this.catches = catches;
+            this.caughtOrigins = new Reachability.Origin[catches.size()];
+            this.unwindEnv = new IdentityHashMap<>(preEnv);
+        }
+
+        void recordUnwindEnv(Map<ParserRuleContext, Reachability.Origin> currentEnv, EffectBodyWalker walker) {
+            this.unwindEnv = walker.mergeEnvs(this.unwindEnv, currentEnv);
+        }
+    }
+
     Map<ParserRuleContext, Reachability.Origin> env = new IdentityHashMap<>();
     final Set<String> reportedMessages = new HashSet<>();
     final List<ActiveForLoop> activeForIterables = new ArrayList<>();
     final Deque<Reachability.Origin[]> loopBreakOrigins = new ArrayDeque<>();
+    final Deque<TryFrame> activeTryStack = new ArrayDeque<>();
     final Set<Integer> forwardedParams;
     /**
      * Callbacks of an enclosing function the owner names in its calling clause (BIP017-D5),
@@ -316,6 +335,11 @@ final class EffectBodyWalker {
             } else {
                 last = eval(stmt);
             }
+            if (!activeTryStack.isEmpty()) {
+                for (TryFrame frame : activeTryStack) {
+                    frame.recordUnwindEnv(env, this);
+                }
+            }
         }
         return last;
     }
@@ -331,7 +355,8 @@ final class EffectBodyWalker {
                 || stmt instanceof BabbleParser.ReturnExpressionContext
                 || stmt instanceof BabbleParser.WhileExpressionContext
                 || stmt instanceof BabbleParser.BreakExpressionContext
-                || stmt instanceof BabbleParser.ContinueExpressionContext) {
+                || stmt instanceof BabbleParser.ContinueExpressionContext
+                || stmt instanceof BabbleParser.ThrowExpressionContext) {
             eval(stmt);
             return;
         }
@@ -500,6 +525,9 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.ForExpressionContext forCtx) {
             return evalFor(forCtx);
         }
+        if (ctx instanceof BabbleParser.TryExpressionContext tryCtx) {
+            return evalTry(tryCtx);
+        }
         if (ctx instanceof BabbleParser.BooleanOpContext boolOp) {
             return evalBooleanOp(boolOp);
         }
@@ -535,7 +563,7 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.TypeApplyContext ta) {
             return eval(ta.expression());
         }
-        if (ctx instanceof BabbleParser.CoreCollectionContext) {
+        if (ctx instanceof BabbleParser.CoreCollectionContext || ctx instanceof BabbleParser.CoreExceptionRefContext) {
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
@@ -565,6 +593,9 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.ContinueExpressionContext) {
             stmtHasSideEffect = true;
             return Reachability.Origin.IMMUTABLE;
+        }
+        if (ctx instanceof BabbleParser.ThrowExpressionContext throwCtx) {
+            return evalThrow(throwCtx);
         }
         if (ctx instanceof BabbleParser.SuperExpressionContext) {
             return Reachability.Origin.ofThis(Reachability.THIS_KEY, false);
@@ -1344,6 +1375,161 @@ final class EffectBodyWalker {
             loopBreakOrigins.pop();
         }
         return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
+    }
+
+    Reachability.Origin evalThrow(BabbleParser.ThrowExpressionContext ctx) {
+        stmtHasSideEffect = true;
+        Reachability.Origin orig = eval(ctx.expression());
+        Type exprType = effectiveType(ctx.expression());
+        boolean locallyCaught = false;
+        if (exprType != null && exprType != Type.ERROR && exprType != Type.NOTHING) {
+            for (TryFrame frame : activeTryStack) {
+                for (int i = 0; i < frame.catches.size(); i++) {
+                    BabbleParser.CatchClauseContext cc = frame.catches.get(i);
+                    Type catchType = ec.checker.catchTargetType(cc);
+                    boolean matches;
+                    if (cc.type() == null) {
+                        matches = !TypeChecker.mayBeJavaError(exprType);
+                    } else if (catchType != null && catchType != Type.ERROR) {
+                        matches = ec.checker.isCatchSubtype(exprType, catchType);
+                    } else {
+                        matches = false;
+                    }
+                    if (matches) {
+                        frame.hadLocalThrow = true;
+                        if (orig != Reachability.Origin.IMMUTABLE) {
+                            Reachability.Origin routed = orig;
+                            if (orig.unique && orig.uniqueOwner != null) {
+                                demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
+                                routed = orig.demoteAlias(Reachability.Origin.IMMUTABLE);
+                            }
+                            frame.caughtOrigins[i] = frame.caughtOrigins[i] == null
+                                    ? routed : frame.caughtOrigins[i].join(routed);
+                        }
+                        locallyCaught = true;
+                        break;
+                    }
+                }
+                if (locallyCaught) {
+                    break;
+                }
+                frame.hadEscapingThrow = true;
+            }
+        }
+        if (!locallyCaught) {
+            nothrow = false;
+            if (orig != Reachability.Origin.IMMUTABLE) {
+                if (orig.unique && orig.uniqueOwner != null) {
+                    demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
+                }
+                markStoredOrigin(orig, "throw", ctx);
+            }
+        }
+        return Reachability.Origin.IMMUTABLE;
+    }
+
+    Reachability.Origin evalTry(BabbleParser.TryExpressionContext ctx) {
+        Map<ParserRuleContext, Reachability.Origin> preEnv = new IdentityHashMap<>(env);
+        List<BabbleParser.CatchClauseContext> catches = ctx.catchClause();
+        TryFrame frame = new TryFrame(catches, preEnv);
+
+        boolean outerNothrow = nothrow;
+        nothrow = true;
+        activeTryStack.push(frame);
+        Reachability.Origin tryOrig;
+        try {
+            tryOrig = evalBlock(ctx.tryBlock, false);
+        } finally {
+            activeTryStack.pop();
+        }
+        Map<ParserRuleContext, Reachability.Origin> afterTry = env;
+        frame.recordUnwindEnv(afterTry, this);
+        boolean tryHadNonLocalThrow = !nothrow || frame.hadEscapingThrow;
+        boolean tryNothrow = nothrow && !frame.hadLocalThrow && !frame.hadEscapingThrow;
+
+        if (tryNothrow && !catches.isEmpty() && emitDiagnostics
+                && forwardedParams.isEmpty() && pseudoForwarded.isEmpty()
+                && !hasPriorDiagnostic(ctx)) {
+            BabbleParser.CatchClauseContext firstCatch = catches.get(0);
+            String warnMsg = "try block cannot throw; catch clause is unreachable";
+            String warnKey = firstCatch.getStart().getLine() + ":" + firstCatch.getStart().getCharPositionInLine() + ":WARN:" + warnMsg;
+            if (reportedMessages.add(warnKey)) {
+                ec.checker.effectWarning(warnMsg, firstCatch);
+            }
+        }
+
+        Map<ParserRuleContext, Reachability.Origin> catchEntryEnv = frame.unwindEnv;
+        Map<ParserRuleContext, Reachability.Origin> finallyEntryEnv = mergeEnvs(catchEntryEnv, afterTry);
+        Type tryType = ec.checker.rawTypeOf(ctx.tryBlock);
+        Map<ParserRuleContext, Reachability.Origin> normalExitEnv = tryType != Type.NOTHING ? afterTry : null;
+        Reachability.Origin resultOrig = tryType != Type.NOTHING ? tryOrig : Reachability.Origin.IMMUTABLE;
+
+        boolean hasExhaustiveCatchAll = false;
+        boolean allCatchesNothrow = true;
+
+        for (int i = 0; i < catches.size(); i++) {
+            BabbleParser.CatchClauseContext cc = catches.get(i);
+            Type catchType = ec.checker.catchTargetType(cc);
+            if (cc.type() == null || catchesJavaThrowable(catchType)) {
+                hasExhaustiveCatchAll = true;
+            }
+            env = new IdentityHashMap<>(catchEntryEnv);
+            Type boundType = ec.checker.typeOfDeclarationForEffects(cc);
+            Reachability.Origin eOrig;
+            if (boundType != null && ec.javaResolver.isDeeplyImmutable(boundType)) {
+                eOrig = Reachability.Origin.IMMUTABLE;
+            } else {
+                Reachability.Origin localRouted = frame.caughtOrigins[i];
+                if (tryHadNonLocalThrow || localRouted == null) {
+                    Reachability.Origin ext = Reachability.Origin.ofExternal(cc, false);
+                    eOrig = localRouted == null ? ext : localRouted.join(ext);
+                } else {
+                    eOrig = withLocalAliasKey(localRouted, cc, boundType);
+                }
+            }
+            env.put(cc, eOrig);
+            nothrow = true;
+            Reachability.Origin catchOrig = evalBlock(cc.catchBlock, false);
+            allCatchesNothrow &= nothrow;
+            env.remove(cc);
+            Map<ParserRuleContext, Reachability.Origin> afterCatch = env;
+            finallyEntryEnv = mergeEnvs(finallyEntryEnv, afterCatch);
+            Type catchBlockType = ec.checker.rawTypeOf(cc.catchBlock);
+            if (catchBlockType != Type.NOTHING) {
+                normalExitEnv = normalExitEnv == null ? afterCatch : mergeEnvs(normalExitEnv, afterCatch);
+                resultOrig = resultOrig == Reachability.Origin.IMMUTABLE ? catchOrig : resultOrig.join(catchOrig);
+            }
+        }
+
+        boolean finallyNothrow = true;
+        if (ctx.finallyBlock != null) {
+            env = new IdentityHashMap<>(finallyEntryEnv);
+            nothrow = true;
+            evalBlock(ctx.finallyBlock, false, true);
+            finallyNothrow = nothrow;
+            ec.pass.analysis.effects().setTryFinallyNothrow(ctx, finallyNothrow);
+        } else {
+            env = normalExitEnv != null ? normalExitEnv : preEnv;
+        }
+
+        boolean tryExprNothrow = tryNothrow
+                ? finallyNothrow
+                : (hasExhaustiveCatchAll && allCatchesNothrow && finallyNothrow);
+        nothrow = outerNothrow && tryExprNothrow;
+
+        return resultOrig;
+    }
+
+    private static boolean catchesJavaThrowable(Type catchType) {
+        if (catchType == null || catchType == Type.ERROR) {
+            return false;
+        }
+        for (Type m : TypeChecker.flattenCatchUnion(catchType)) {
+            if (m instanceof Type.JavaInstance ji && ji.type() == Throwable.class) {
+                return true;
+            }
+        }
+        return false;
     }
 
     Reachability.Origin evalBooleanOp(BabbleParser.BooleanOpContext ctx) {

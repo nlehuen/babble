@@ -1005,6 +1005,7 @@ final class AxiomData {
                 case "map" -> "Ljava/util/Map;";
                 case "sortedmap" -> "Ljava/util/SortedMap;";
                 case "entry" -> "Ljava/util/Map$Entry;";
+                case "exception" -> "Lorg/babblelang/runtime/BabbleException;";
                 default -> null;
             };
             if (builtinDesc != null) {
@@ -1243,6 +1244,7 @@ final class AxiomData {
                     case "bool" -> Type.BOOL;
                     case "char" -> Type.CHAR;
                     case "string" -> Type.STRING;
+                    case "exception" -> new Type.JavaInstance(org.babblelang.runtime.BabbleException.class);
                     case "any" -> Type.ANY;
                     case "void" -> Type.NULL;
                     case "array" -> {

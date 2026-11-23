@@ -48,6 +48,8 @@ final class Resolver {
                         ? def.name.getText()
                         : definition.getKey() instanceof BabbleParser.ForExpressionContext forExpr
                         ? forExpr.name.getText()
+                        : definition.getKey() instanceof BabbleParser.CatchClauseContext cc
+                        ? cc.name.getText()
                         : ScopeAnalysis.paramId(definition.getKey()).getText();
                 resolution.bindings.put(definition.getKey(), declaredHere.get(name));
             }

@@ -139,6 +139,14 @@ final class LoweringAnalyzer {
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
             if (entry.getKey() instanceof BabbleParser.ForExpressionContext forExpr && checker.inFile(forExpr)) {
                 publishForLoopTarget(forExpr, declarationTypes, widened);
+            } else if (entry.getKey() instanceof BabbleParser.ThrowExpressionContext throwExpr && checker.inFile(throwExpr)) {
+                Type thrownType = types.get(throwExpr.expression());
+                pass.analysis.lowering().setThrowTarget(throwExpr,
+                        new LoweringTargets.ThrowTarget(isGuaranteedJavaThrowable(thrownType)));
+            } else if (entry.getKey() instanceof BabbleParser.TryExpressionContext tryExpr && checker.inFile(tryExpr)) {
+                for (BabbleParser.CatchClauseContext cc : tryExpr.catchClause()) {
+                    pass.analysis.lowering().setCatchTarget(cc, buildCatchTarget(cc));
+                }
             }
         }
         for (TypeNode typeNode : pass.types) {
@@ -1411,5 +1419,106 @@ final class LoweringAnalyzer {
                 ? PrimitiveKind.NONE
                 : PrimitiveKind.of(rt);
         return new LoweringTargets.FunctionSignature(paramKinds, rk, optionalParamBits, fn.restIndex());
+    }
+
+    private static boolean isGuaranteedJavaThrowable(Type type) {
+        if (type == null || type == Type.ERROR || type == Type.NOTHING) {
+            return false;
+        }
+        if (type instanceof Type.Frozen f) {
+            return isGuaranteedJavaThrowable(f.of());
+        }
+        if (type instanceof Type.TypeVar tv) {
+            return tv.bound() != null && isGuaranteedJavaThrowable(tv.bound());
+        }
+        if (type instanceof Type.JavaInstance ji) {
+            return Throwable.class.isAssignableFrom(ji.type());
+        }
+        if (type instanceof Type.Union u) {
+            if (u.members().isEmpty()) {
+                return false;
+            }
+            for (Type m : u.members()) {
+                if (!isGuaranteedJavaThrowable(m)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        if (type instanceof Type.Intersection inter) {
+            for (Type m : inter.members()) {
+                if (isGuaranteedJavaThrowable(m)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private LoweringTargets.CatchTarget buildCatchTarget(BabbleParser.CatchClauseContext cc) {
+        if (cc.type() == null) {
+            return new LoweringTargets.CatchTarget(
+                    null,
+                    List.of("java/lang/Exception"),
+                    true,
+                    true,
+                    false,
+                    false,
+                    List.of());
+        }
+        Type target = checker.catchTargetType(cc);
+        if (target == null || target == Type.ERROR) {
+            return new LoweringTargets.CatchTarget(null, List.of(), false, false, false, false, List.of());
+        }
+        String desc = descriptor(target);
+        List<String> jvmCatchTypes = new ArrayList<>();
+        List<LoweringTargets.IsTarget> babbleTargets = new ArrayList<>();
+        boolean catchesBabble = false;
+        boolean catchesJavaThrowable = false;
+        boolean skipsThrownException = false;
+        boolean allBabbleStatic = true;
+        for (Type m : TypeChecker.flattenCatchUnion(target)) {
+            if (m instanceof Type.JavaInstance ji) {
+                Class<?> cls = ji.type();
+                if (JavaTypeBridge.isBytecodeAccessible(cls)) {
+                    jvmCatchTypes.add(cls.getName().replace('.', '/'));
+                } else {
+                    jvmCatchTypes.add("java/lang/Throwable");
+                }
+                if (cls == Throwable.class || cls == org.babblelang.runtime.ThrownException.class) {
+                    catchesJavaThrowable = true;
+                } else if (cls.isAssignableFrom(org.babblelang.runtime.ThrownException.class)) {
+                    skipsThrownException = true;
+                }
+            } else if (m instanceof Type.Instance inst) {
+                catchesBabble = true;
+                if (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx)) {
+                    babbleTargets.add(new LoweringTargets.IsTarget(inst.node().id, inst.node().kind));
+                } else {
+                    allBabbleStatic = false;
+                }
+            } else if (m instanceof Type.Intersection inter) {
+                catchesBabble = true;
+                allBabbleStatic = false;
+                for (Type im : inter.members()) {
+                    if (im instanceof Type.JavaInstance ji && Throwable.class.isAssignableFrom(ji.type())
+                            && JavaTypeBridge.isBytecodeAccessible(ji.type())) {
+                        jvmCatchTypes.add(ji.type().getName().replace('.', '/'));
+                    }
+                }
+            }
+        }
+        if (!allBabbleStatic) {
+            babbleTargets.clear();
+        }
+        return new LoweringTargets.CatchTarget(
+                desc,
+                List.copyOf(jvmCatchTypes),
+                catchesBabble,
+                false,
+                catchesJavaThrowable,
+                skipsThrownException,
+                List.copyOf(babbleTargets));
     }
 }

@@ -43,6 +43,8 @@ public final class LoweringMetadata {
     private final Map<ParserRuleContext, LoweringTargets.ArrayOpTarget> arrayOpTargets = new IdentityHashMap<>();
     private final ParseTreeProperty<LoweringTargets.ModuleExportTarget> moduleExportTargets = new ParseTreeProperty<>();
     private final Map<BabbleParser.NonNullAssertionContext, String> nonNullAssertionTargets = new HashMap<>();
+    private final Map<BabbleParser.ThrowExpressionContext, LoweringTargets.ThrowTarget> throwTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.CatchClauseContext, LoweringTargets.CatchTarget> catchTargets = new IdentityHashMap<>();
 
     LoweringMetadata() {
     }
@@ -301,5 +303,21 @@ public final class LoweringMetadata {
     /** The non-null target type name for {@code e!}, or {@code null} if {@code e} is statically non-null. */
     public String nonNullAssertionTarget(BabbleParser.NonNullAssertionContext ctx) {
         return nonNullAssertionTargets.get(ctx);
+    }
+
+    void setThrowTarget(BabbleParser.ThrowExpressionContext ctx, LoweringTargets.ThrowTarget target) {
+        throwTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.ThrowTarget throwTarget(BabbleParser.ThrowExpressionContext ctx) {
+        return throwTargets.get(ctx);
+    }
+
+    void setCatchTarget(BabbleParser.CatchClauseContext ctx, LoweringTargets.CatchTarget target) {
+        catchTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.CatchTarget catchTarget(BabbleParser.CatchClauseContext ctx) {
+        return catchTargets.get(ctx);
     }
 }

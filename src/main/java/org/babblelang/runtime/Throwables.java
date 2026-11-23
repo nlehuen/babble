@@ -85,7 +85,7 @@ public final class Throwables {
         }
         if (t instanceof ThrownException te) {
             if (catchesJavaThrowable) {
-                return true;
+                return Types.matches(t, typeDescriptor);
             }
             return Types.matches(te.value(), typeDescriptor);
         }

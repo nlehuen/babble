@@ -110,6 +110,7 @@ public final class Values {
             case "map" -> value instanceof java.util.Map;
             case "sortedmap" -> value instanceof java.util.SortedMap;
             case "entry" -> value instanceof java.util.Map.Entry;
+            case "exception" -> value instanceof BabbleException;
             default -> throw new BabbleException("Not a type : " + type);
         };
     }

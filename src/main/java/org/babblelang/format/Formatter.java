@@ -185,11 +185,13 @@ public final class Formatter {
                         && call.expression() instanceof BabbleParser.TypeApplyContext;
                 callParentheses[index] = (parent instanceof BabbleParser.CallParametersContext && !isTypeApplyCall)
                         || parent instanceof BabbleParser.SuperExpressionContext;
-                // What a block of an "if", a function, a class... encloses is indented from
+                // What a block of an "if", a function, a class, a try/catch/finally... encloses is indented from
                 // the line where that expression starts, wherever its parenthesis is.
                 anchors[index] = parent instanceof BabbleParser.BlockContext block
                         && !(block.getParent() instanceof BabbleParser.BlockExpressionContext)
-                        ? block.getParent().getStart().getTokenIndex()
+                        ? (block.getParent() instanceof BabbleParser.CatchClauseContext cc
+                                ? cc.getParent().getStart().getTokenIndex()
+                                : block.getParent().getStart().getTokenIndex())
                         : parent instanceof BabbleParser.AxiomTypeContext axType
                         ? axType.getParent().getStart().getTokenIndex()
                         : (parent instanceof BabbleParser.OverloadExpressionContext
@@ -229,9 +231,10 @@ public final class Formatter {
                 || parent instanceof BabbleParser.OverloadTypeContext) {
             return IN_LIST;
         }
-        // In these, a newline can only come before a block, "else" or "static".
+        // In these, a newline can only come before a block, "else", "static", "catch" or "finally".
         if (parent instanceof BabbleParser.IfExprContext
                 || parent instanceof BabbleParser.WhileExpressionContext || parent instanceof BabbleParser.ForExpressionContext
+                || parent instanceof BabbleParser.TryExpressionContext || parent instanceof BabbleParser.CatchClauseContext
                 || parent instanceof BabbleParser.ClassExpressionContext
                 || parent instanceof BabbleParser.InterfaceExpressionContext || parent instanceof BabbleParser.ObjectExpressionContext
                 || parent instanceof BabbleParser.FunctionLiteralContext
@@ -409,7 +412,8 @@ public final class Formatter {
         }
         int type = token.getType();
         if (before.getType() == OPEN || type == CLOSE || type == BabbleLexer.COMMA || type == BabbleLexer.SEMICOLON
-                || type == BabbleLexer.COLON || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
+                || (type == BabbleLexer.COLON && before.getType() != BabbleLexer.CATCH)
+                || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
                 || type == BabbleLexer.SAFE_DOT || before.getType() == BabbleLexer.SAFE_DOT
                 || type == BabbleLexer.QUESTION || type == BabbleLexer.BANG
                 || restEllipsis[token.getTokenIndex()] || spreadEllipsis[before.getTokenIndex()]

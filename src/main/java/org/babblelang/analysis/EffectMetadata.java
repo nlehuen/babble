@@ -14,6 +14,7 @@ public final class EffectMetadata {
     private final Map<ParserRuleContext, Type> callableTypes = new HashMap<>();
     private final Map<BabbleParser.CallContext, EffectSet> callEffects = new HashMap<>();
     private final Map<BabbleParser.ForExpressionContext, EffectSet> forEffects = new HashMap<>();
+    private final Map<BabbleParser.TryExpressionContext, Boolean> tryFinallyNothrow = new java.util.IdentityHashMap<>();
 
     EffectMetadata() {
     }
@@ -53,5 +54,14 @@ public final class EffectMetadata {
     /** The resolved effect summary of a {@code for} loop (e.g. curated finite-collection {@code @TERMINATING}). */
     public EffectSet forEffects(BabbleParser.ForExpressionContext loop) {
         return forEffects.getOrDefault(loop, EffectSet.EMPTY);
+    }
+
+    void setTryFinallyNothrow(BabbleParser.TryExpressionContext ctx, boolean nothrow) {
+        tryFinallyNothrow.put(ctx, nothrow);
+    }
+
+    /** Whether a {@code try}'s {@code finally} block is statically proven {@code nothrow} ({@code BIP028-D6}). */
+    public boolean isTryFinallyNothrow(BabbleParser.TryExpressionContext ctx) {
+        return Boolean.TRUE.equals(tryFinallyNothrow.get(ctx));
     }
 }

@@ -14,12 +14,12 @@ coreCollectionKeyword: LIST | SET | SORTEDSET | MAP | SORTEDMAP | ENTRY | ARRAY;
 
 coreScalarKeyword: BYTE | SHORT | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL_KW | CHAR_KW | STRING_KW;
 
-coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | ANY | VOID;
+coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | EXCEPTION | ANY | VOID;
 
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW;
 
 effectPrefix: effectWord+ callingClause?
             | callingClause;
@@ -50,6 +50,10 @@ expression:
           | TYPE NL* aliased=type                             # typeAliasExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
           | FOR name=ID (':' type)? IN NL* iterable=expression THEN NL* forBlock=block # forExpression
+          | TRY NL* tryBlock=block
+            ( (NL* catchClause)+ (NL* FINALLY NL* finallyBlock=block)?
+            | NL* FINALLY NL* finallyBlock=block
+            )                                                 # tryExpression
           | (CLASS | RECORD) classParameters (IMPLEMENTS typeList)? NL* classBlock=block
                 (NL* STATIC NL* staticBlock=block)?           # classExpression
           | INTERFACE (EXTENDS typeList)? NL* interfaceBlock=block
@@ -65,6 +69,7 @@ expression:
           | expression '!'                                    # nonNullAssertion
           | coreCollectionKeyword                             # coreCollection
           | coreScalarKeyword                                 # coreScalarRef
+          | EXCEPTION                                         # coreExceptionRef
           | expression OF typeArguments                       # typeApply
           | expression callParameters                         # call
           | block                                             # blockExpression
@@ -101,7 +106,10 @@ expression:
           | FOREVER expression                                # foreverExpression
           | BREAK expression?                                 # breakExpression
           | CONTINUE                                          # continueExpression
+          | THROW expression                                  # throwExpression
           ;
+
+catchClause: CATCH (NL* name=ID)? (':' type)? THEN NL* catchBlock=block;
 
 ifExpr: IF test=expression THEN NL* thenBlock=block
         (NL* ELSE NL* (elseIf=ifExpr | elseBlock=block))?;
@@ -245,6 +253,10 @@ RETURN: 'return';
 FOREVER: 'forever';
 BREAK: 'break';
 CONTINUE: 'continue';
+TRY: 'try';
+CATCH: 'catch';
+FINALLY: 'finally';
+THROW: 'throw';
 WHILE: 'while';
 FOR: 'for';
 IN: 'in';
@@ -302,6 +314,7 @@ MAP: 'map';
 SORTEDMAP: 'sortedmap';
 ENTRY: 'entry';
 ARRAY: 'array';
+EXCEPTION: 'exception';
 ANY: 'any';
 VOID: 'void';
 ID: [_a-zA-Z] [_a-zA-Z0-9]*;

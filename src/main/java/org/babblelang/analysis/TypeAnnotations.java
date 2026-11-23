@@ -613,6 +613,7 @@ final class TypeAnnotations {
                 case "bool" -> Type.BOOL;
                 case "char" -> Type.CHAR;
                 case "string" -> Type.STRING;
+                case "exception" -> new Type.JavaInstance(org.babblelang.runtime.BabbleException.class);
                 case "any" -> Type.ANY;
                 case "void" -> Type.NULL;
                 default -> null;
