@@ -267,6 +267,22 @@ final class Reachability {
                     mergedElem, mergedElemThis, mergedElemExt, keys, pk);
         }
 
+        Origin widen(Origin other) {
+            Origin joined = this.join(other);
+            if (joined == MOVED || joined == IMMUTABLE) {
+                return joined;
+            }
+            PathKey widenedPath = this.pathKey != null && other.pathKey != null
+                    ? this.pathKey.widen(other.pathKey) : null;
+            if (Objects.equals(widenedPath, joined.pathKey)) {
+                return joined;
+            }
+            return new Origin((BitSet) joined.params.clone(), joined.aliasesThis, joined.external,
+                    joined.unique, joined.localFresh, joined.moved, joined.uniqueOwner,
+                    (BitSet) joined.elementParams.clone(), joined.elementThis, joined.elementExternal,
+                    joined.directKeys, widenedPath);
+        }
+
         private Origin withoutExactSingleKey() {
             return new Origin((BitSet) params.clone(), aliasesThis, external, unique, localFresh, moved, uniqueOwner,
                     (BitSet) elementParams.clone(), elementThis, elementExternal, directKeys, pathKey);
@@ -301,12 +317,56 @@ final class Reachability {
         }
     }
 
-    record PathKey(Object root, List<String> segments) {
+    /** Depth bound {@code k = 3} for access-path widening ({@code BIP027-P4}, §3.1). */
+    static final int MAX_PATH_DEPTH = 3;
+
+    record PathKey(Object root, List<String> segments, boolean truncated) {
+        PathKey(Object root, List<String> segments) {
+            this(root, segments, false);
+        }
+
         PathKey append(String field) {
+            if (truncated || segments.size() >= MAX_PATH_DEPTH) {
+                return new PathKey(root, segments, true);
+            }
             List<String> next = new ArrayList<>(segments.size() + 1);
             next.addAll(segments);
             next.add(field);
-            return new PathKey(root, List.copyOf(next));
+            return new PathKey(root, List.copyOf(next), false);
+        }
+
+        /** Widens two access paths to their longest common prefix (bounded height <= MAX_PATH_DEPTH). */
+        PathKey widen(PathKey other) {
+            if (other == null || !Objects.equals(root, other.root)) {
+                return null;
+            }
+            int limit = Math.min(segments.size(), other.segments.size());
+            int i = 0;
+            while (i < limit && segments.get(i).equals(other.segments.get(i))) {
+                i++;
+            }
+            if (i == segments.size() && i == other.segments.size() && truncated == other.truncated) {
+                return this;
+            }
+            return new PathKey(root, List.copyOf(segments.subList(0, i)), true);
+        }
+
+        /**
+         * Prefix-aware path overlap ({@code BIP027-D5}): {@code pair} overlaps {@code pair.a}
+         * and {@code pair.a.x} overlaps {@code pair.a}, whereas disjoint sibling fields
+         * ({@code pair.a} vs {@code pair.b}) do not overlap.
+         */
+        boolean overlaps(PathKey other) {
+            if (other == null || !Objects.equals(root, other.root)) {
+                return false;
+            }
+            int minLen = Math.min(segments.size(), other.segments.size());
+            for (int i = 0; i < minLen; i++) {
+                if (!segments.get(i).equals(other.segments.get(i))) {
+                    return false;
+                }
+            }
+            return true;
         }
     }
 
@@ -321,6 +381,12 @@ final class Reachability {
                 }
             }
         }
-        return a.pathKey != null && a.pathKey.equals(b.pathKey);
+        if (a.pathKey != null && b.pathKey != null && a.pathKey.overlaps(b.pathKey)) {
+            return true;
+        }
+        if (a.pathKey != null && b.directKeys.contains(a.pathKey.root())) {
+            return true;
+        }
+        return b.pathKey != null && a.directKeys.contains(b.pathKey.root());
     }
 }

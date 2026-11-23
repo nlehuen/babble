@@ -22,83 +22,16 @@ final class TypedModuleSummary {
 
     /**
      * AST-free higher-order effect specialization template for an exported or
-     * session-committed callable.
+     * session-committed callable, backed by {@link SymbolicEffectSummary} ({@code BIP027-P4}).
      */
-    record CallableEffectTemplate(
-            EffectChecker.CallableSummary base,
-            boolean hasExplicitContract,
-            EffectSet residualEffects,
-            boolean[] residualMutParams,
-            boolean[] residualBorrowParams,
-            boolean[] forwardedCallbackParams,
-            EffectSet[] defaultCallbackEffects,
-            long[][] paramMutFromCallbackArg) {
+    record CallableEffectTemplate(SymbolicEffectSummary summary) {
+        EffectChecker.CallableSummary base() {
+            return summary.base;
+        }
 
-        EffectChecker.CallableSummary specialize(Type.Function[] boundCallbacks) {
-            if (hasExplicitContract || forwardedCallbackParams.length == 0) {
-                return base;
-            }
-            boolean anyProvided = false;
-            for (int i = 0; i < forwardedCallbackParams.length && i < boundCallbacks.length; i++) {
-                if (forwardedCallbackParams[i] && boundCallbacks[i] != null) {
-                    anyProvided = true;
-                    break;
-                }
-            }
-            if (!anyProvided) {
-                return base;
-            }
-            EnumSet<Effect> effs = EffectSet.copySet(residualEffects.effects());
-            boolean terminating = residualEffects.terminating();
-            boolean[] mutParams = residualMutParams.clone();
-            boolean[] borrowParams = residualBorrowParams.clone();
-            for (int i = 0; i < forwardedCallbackParams.length; i++) {
-                if (!forwardedCallbackParams[i]) {
-                    continue;
-                }
-                Type.Function argFn = i < boundCallbacks.length ? boundCallbacks[i] : null;
-                EffectSet cbEffects = argFn != null
-                        ? argFn.effects()
-                        : (i < defaultCallbackEffects.length ? defaultCallbackEffects[i] : null);
-                if (cbEffects != null) {
-                    effs.retainAll(cbEffects.effects());
-                    terminating &= cbEffects.terminating();
-                }
-                if (argFn != null && paramMutFromCallbackArg != null && i < paramMutFromCallbackArg.length) {
-                    long[] argMasks = paramMutFromCallbackArg[i];
-                    List<Type.Parameter> cbParams = argFn.parameters();
-                    for (int m = 0; m < cbParams.size() && m < argMasks.length; m++) {
-                        if (cbParams.get(m).mut()) {
-                            long mask = argMasks[m];
-                            for (int j = 0; j < mutParams.length; j++) {
-                                if ((mask & (1L << j)) != 0) {
-                                    mutParams[j] = true;
-                                    if (j < borrowParams.length) {
-                                        borrowParams[j] = false;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            boolean anyMut = residualEffects.mutThis();
-            for (boolean m : mutParams) {
-                anyMut |= m;
-            }
-            if (anyMut) {
-                effs.remove(Effect.PURE);
-            }
-            boolean isIO = !effs.contains(Effect.HERMETIC);
-            boolean isVol = !isIO && !effs.contains(Effect.DETERMINISTIC);
-            EffectSet combined = new EffectSet(effs, EnumSet.noneOf(Effect.class),
-                    residualEffects.mutThis(), residualEffects.borrowThis(), residualEffects.explicitSharedThis(),
-                    residualEffects.uniqueResult(), residualEffects.explicitUniqueResult(),
-                    terminating, isIO, isVol, false);
-            return new EffectChecker.CallableSummary(combined, mutParams, borrowParams, base.uniqueParams(),
-                    base.frameReadOwners(), base.frameWriteOwners(), base.deepMutThis(),
-                    base.returnParams(), base.returnThis(), base.returnExternal(), base.returnKnown(),
-                    base.ctorStoredParams(), base.readParams(), base.readsThis());
+        EffectChecker.CallableSummary specialize(Type.Function[] boundCallbacks,
+                                                 EffectChecker.CallableSummary[] boundSummaries) {
+            return summary.instantiate(boundCallbacks, boundSummaries);
         }
     }
 

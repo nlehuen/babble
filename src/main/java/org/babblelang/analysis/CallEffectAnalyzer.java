@@ -575,12 +575,6 @@ final class CallEffectAnalyzer {
     }
 
     private Type resolveCalleeType(BabbleParser.ExpressionContext calleeExpr) {
-        if (w.specializedParams != null && calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object r = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
-            if (r instanceof ParserRuleContext decl && w.specializedParams.containsKey(decl)) {
-                return w.specializedParams.get(decl);
-            }
-        }
         return ec.checker.rawTypeOf(calleeExpr);
     }
 
@@ -900,7 +894,7 @@ final class CallEffectAnalyzer {
                                              BabbleParser.ExpressionContext[] argExprs,
                                              Reachability.Origin[] argOrigins,
                                              Type resType) {
-        EffectChecker.CallableSummary summary = resolveBabbleCallSummary(fn, calleeExpr, receiverExpr, args, argExprs);
+        EffectChecker.CallableSummary summary = resolveBabbleCallSummary(fn, calleeExpr, receiverExpr, args, argExprs, argOrigins);
         w.applyCallableSummaryEffects(summary);
         boolean isMethodCall = receiverExpr != null || calleeExpr instanceof BabbleParser.SuperExpressionContext
                 || (calleeExpr instanceof BabbleParser.SelectorContext s && s.expression() instanceof BabbleParser.SuperExpressionContext);
@@ -1083,7 +1077,8 @@ final class CallEffectAnalyzer {
                                                      BabbleParser.ExpressionContext calleeExpr,
                                                      BabbleParser.ExpressionContext receiverExpr,
                                                      List<BabbleParser.CallParameterContext> args,
-                                                     BabbleParser.ExpressionContext[] argExprs) {
+                                                     BabbleParser.ExpressionContext[] argExprs,
+                                                     Reachability.Origin[] argOrigins) {
         // Forwarded callback parameter inside a `fn calling f` body: pure-modulo-forwarding (BIP017-D1).
         if (isForwardedParamExpr(calleeExpr)) {
             w.stmtHasSideEffect = true;
@@ -1100,6 +1095,34 @@ final class CallEffectAnalyzer {
                     EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
                     false, true, fn.effects().uniqueResult(), true);
             return new EffectChecker.CallableSummary(pureModForward, mp, bp, up);
+        }
+
+        // Single-pass symbolic callback parameter invocation (BIP027-P4): record C_called & Flow[i][m],
+        // keeping residual effects clean of the callback's pessimistic default type.
+        int cbParamIdx = w.resolveParamCallbackIndex(calleeExpr);
+        if (cbParamIdx >= 0) {
+            w.stmtHasSideEffect = true;
+            w.calledCallbacks.set(cbParamIdx);
+            for (int i = 0; i < args.size(); i++) {
+                int slotIdx = ec.checker.parameterIndexForArg(fn.parameters(), args, args.get(i));
+                if (slotIdx >= 0) {
+                    w.recordCallbackArgFlow(cbParamIdx, slotIdx, argOrigins[i]);
+                }
+            }
+            int n = fn.parameters().size();
+            boolean[] mp = new boolean[n];
+            boolean[] bp = EffectChecker.allTrue(n);
+            boolean[] up = new boolean[n];
+            for (int i = 0; i < n; i++) {
+                up[i] = fn.parameters().get(i).unique();
+                if (up[i]) {
+                    bp[i] = false;
+                }
+            }
+            EffectSet pureResidual = EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                    false, true, fn.effects().uniqueResult(), true);
+            return new EffectChecker.CallableSummary(pureResidual, mp, bp, up);
         }
 
         // Built-ins (assert, same, classof, int, double):
@@ -1123,13 +1146,11 @@ final class CallEffectAnalyzer {
             targetLit = null;
         } else if (targetLit != null) {
             EffectChecker.ParsedPrefix targetPrefix = ec.modifiers.parseFunctionPrefix(targetLit, false);
-            // BIP017-D4: retire BIP016-D6 implicit intra-file `fn io` HOF specialization;
-            // `fn calling f` uses uniform call-site forwarding across concrete, cross-module, and interface HOFs.
             if (!targetPrefix.axiom() && !targetPrefix.explicitVolatile() && !targetPrefix.io()
                     && fn.forwardedEffectParams().isEmpty()) {
-                EffectChecker.CallableSummary specialized = trySpecializeCall(ec, targetLit, fn.parameters(), args, argExprs, ec);
-                if (specialized != null) {
-                    return specialized;
+                SymbolicEffectSummary sym = ec.symbolicSummaries.get(targetLit);
+                if (sym != null && sym.isParametric()) {
+                    return instantiateSymbolicCall(sym, fn.parameters(), args, argExprs, argOrigins);
                 }
             }
             EffectChecker.CallableSummary base = ec.summaries.get(targetLit);
@@ -1143,8 +1164,10 @@ final class CallEffectAnalyzer {
         } else if (!(receiverExpr != null && w.effectiveType(receiverExpr) instanceof Type.Instance inst && inst.node().isInterface())) {
             TypedModuleSummary.CallableEffectTemplate template = ec.checker.remoteCallableTemplate(fn);
             if (template != null) {
-                Type.Function[] boundCallbacks = collectBoundCallbacks(fn.parameters(), args, argExprs);
-                return template.specialize(boundCallbacks);
+                if (template.summary().isParametric()) {
+                    return instantiateSymbolicCall(template.summary(), fn.parameters(), args, argExprs, argOrigins);
+                }
+                return template.base();
             }
         }
 
@@ -1166,13 +1189,47 @@ final class CallEffectAnalyzer {
                 EffectChecker.EMPTY_SUMMARY_BITS, false, false, false, EffectChecker.EMPTY_SUMMARY_BITS, rp, true);
     }
 
-    private Type.Function[] collectBoundCallbacks(List<Type.Parameter> calleeParams,
-                                                  List<BabbleParser.CallParameterContext> args,
-                                                  BabbleParser.ExpressionContext[] argExprs) {
-        Type.Function[] result = new Type.Function[calleeParams.size()];
+    private EffectChecker.CallableSummary instantiateSymbolicCall(SymbolicEffectSummary sym,
+                                                                  List<Type.Parameter> calleeParams,
+                                                                  List<BabbleParser.CallParameterContext> args,
+                                                                  BabbleParser.ExpressionContext[] argExprs,
+                                                                  Reachability.Origin[] argOrigins) {
+        int n = calleeParams.size();
+        Type.Function[] boundCallbacks = new Type.Function[n];
+        EffectChecker.CallableSummary[] boundSummaries = new EffectChecker.CallableSummary[n];
+        Reachability.Origin[] originByParam = new Reachability.Origin[n];
         for (int i = 0; i < args.size(); i++) {
             int pIdx = ec.checker.parameterIndexForArg(calleeParams, args, args.get(i));
-            if (pIdx < 0 || pIdx >= result.length) {
+            if (pIdx >= 0 && pIdx < n) {
+                originByParam[pIdx] = argOrigins[i];
+            }
+        }
+        EffectSet purePlaceholder = EffectSet.ofInferred(
+                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
+        for (int i = 0; i < args.size(); i++) {
+            int pIdx = ec.checker.parameterIndexForArg(calleeParams, args, args.get(i));
+            if (pIdx < 0 || pIdx >= n || !sym.calledCallbacks.get(pIdx)) {
+                continue;
+            }
+            int ownerCbIdx = w.resolveParamCallbackIndex(argExprs[i]);
+            if (ownerCbIdx >= 0) {
+                // Transitive HOF forwarding: compose callee's symbolic callback flow into our own symbolic summary.
+                w.calledCallbacks.set(ownerCbIdx);
+                if (pIdx < sym.paramFlow.length && sym.paramFlow[pIdx] != null) {
+                    long[] masks = sym.paramFlow[pIdx];
+                    for (int m = 0; m < masks.length; m++) {
+                        long mask = masks[m];
+                        for (int j = 0; j < n && j < 64; j++) {
+                            if ((mask & (1L << j)) != 0 && originByParam[j] != null) {
+                                w.recordCallbackArgFlow(ownerCbIdx, m, originByParam[j]);
+                            }
+                        }
+                    }
+                }
+                Type argType = ec.checker.rawTypeOf(argExprs[i]);
+                if (argType instanceof Type.Function argFn) {
+                    boundCallbacks[pIdx] = argFn.withEffects(purePlaceholder, EffectChecker.allBorrowParams(argFn.parameters()));
+                }
                 continue;
             }
             Type argType = ec.checker.rawTypeOf(argExprs[i]);
@@ -1182,12 +1239,13 @@ final class CallEffectAnalyzer {
                     EffectChecker.CallableSummary argSum = ec.summaries.get(argLit);
                     if (argSum != null) {
                         argFn = enrichFunctionType(argFn, argSum);
+                        boundSummaries[pIdx] = argSum;
                     }
                 }
-                result[pIdx] = argFn;
+                boundCallbacks[pIdx] = argFn;
             }
         }
-        return result;
+        return sym.instantiate(boundCallbacks, boundSummaries);
     }
 
     private BabbleParser.FunctionLiteralContext resolveConcreteBabbleTarget(Type.Function fn,
@@ -1445,77 +1503,6 @@ final class CallEffectAnalyzer {
     }
 
 
-    static EffectChecker.CallableSummary trySpecializeCall(EffectChecker ec,
-                                              BabbleParser.FunctionLiteralContext targetLit,
-                                              List<Type.Parameter> calleeParams,
-                                              List<BabbleParser.CallParameterContext> args,
-                                              BabbleParser.ExpressionContext[] argExprs,
-                                              EffectChecker callerEC) {
-        if (ec.activeSpecializations.size() >= EffectChecker.MAX_SPECIALIZATION_DEPTH) {
-            return null;
-        }
-        List<BabbleParser.FnParamContext> paramDecls = targetLit.fnParameters().fnParam();
-        Map<ParserRuleContext, Type.Function> boundCallbacks = new IdentityHashMap<>();
-        List<Object> keyItems = new ArrayList<>(paramDecls.size());
-        boolean anyCallback = false;
-        for (int i = 0; i < args.size(); i++) {
-            int pIdx = ec.checker.parameterIndexForArg(calleeParams, args, args.get(i));
-            if (pIdx < 0 || pIdx >= paramDecls.size()) {
-                continue;
-            }
-            Type argType = callerEC.checker.rawTypeOf(argExprs[i]);
-            if (argType instanceof Type.Function argFn) {
-                BabbleParser.FunctionLiteralContext argLit = callerEC.checker.literalOf(argFn);
-                if (argLit != null) {
-                    EffectChecker.CallableSummary argSum = callerEC.summaries.get(argLit);
-                    if (argSum != null) {
-                        argFn = enrichFunctionType(argFn, argSum);
-                    }
-                }
-                boundCallbacks.put(paramDecls.get(pIdx), argFn);
-                keyItems.add(argLit != null ? argLit : argFn);
-                anyCallback = true;
-            } else {
-                keyItems.add(null);
-            }
-        }
-        if (!anyCallback) {
-            return null;
-        }
-        EffectChecker.SpecKey key = new EffectChecker.SpecKey(targetLit, keyItems);
-        if (ec.activeSpecializations.contains(key)) {
-            return null;
-        }
-        EffectChecker.CallableSummary cached = ec.specializationCache.get(key);
-        if (cached != null) {
-            return cached;
-        }
-        ec.activeSpecializations.push(key);
-        try {
-            EffectChecker.CallableSummary base = ec.summaries.getOrDefault(targetLit, ec.initialSummary(targetLit));
-            EffectChecker.ParsedPrefix targetPrefix = ec.modifiers.parseFunctionPrefix(targetLit, false);
-            // Start optimistic for effects when specializing, respecting declared mut/shared slot contracts.
-            int n = paramDecls.size();
-            boolean[] mp = base.mutParams().clone();
-            boolean[] bp = new boolean[n];
-            for (int i = 0; i < n; i++) {
-                EffectChecker.ParamMods pm = ec.modifiers.parseParamMods(paramDecls.get(i), false);
-                bp[i] = !pm.shared() && !pm.unique();
-            }
-            EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
-            boolean borrowThis = !targetPrefix.explicitSharedThis();
-            EffectSet startSet = new EffectSet(opt, EnumSet.noneOf(Effect.class),
-                    base.effects().mutThis(), borrowThis, targetPrefix.explicitSharedThis(),
-                    true, targetPrefix.uniqueReturn(), true, false, false, false);
-            EffectChecker.CallableSummary start = new EffectChecker.CallableSummary(startSet, mp, bp, base.uniqueParams());
-            EffectChecker.CallableSummary specialized = ec.finalizeSummary(targetLit, ec.recomputeSummary(targetLit, start, boundCallbacks, false));
-            ec.specializationCache.put(key, specialized);
-            return specialized;
-        } finally {
-            ec.activeSpecializations.pop();
-        }
-    }
-
     private static Type.Function enrichFunctionType(Type.Function argFn, EffectChecker.CallableSummary argSum) {
         List<Type.Parameter> updatedParams = new ArrayList<>(argFn.parameters().size());
         for (int k = 0; k < argFn.parameters().size(); k++) {
@@ -1525,93 +1512,5 @@ final class CallEffectAnalyzer {
             updatedParams.add(p.withModifiers(m, b));
         }
         return argFn.withEffects(argSum.effects(), updatedParams);
-    }
-
-    static TypedModuleSummary.CallableEffectTemplate buildCallableTemplate(EffectChecker ec, BabbleParser.FunctionLiteralContext lit, Type.Function fn) {
-        EffectChecker.CallableSummary base = ec.visibleSummaries.getOrDefault(lit, ec.summaries.get(lit));
-        if (base == null || fn == null) {
-            return null;
-        }
-        EffectChecker.ParsedPrefix prefix = ec.modifiers.parseFunctionPrefix(lit, false);
-        List<BabbleParser.FnParamContext> paramDecls = lit.fnParameters().fnParam();
-        int n = paramDecls.size();
-        boolean lockedNoSpec = prefix.axiom() || prefix.explicitVolatile();
-        if (lockedNoSpec || n == 0) {
-            return new TypedModuleSummary.CallableEffectTemplate(
-                    base, true, base.effects(), base.mutParams(), base.borrowParams(),
-                    new boolean[0], new EffectSet[0], new long[0][]);
-        }
-        boolean anyFnParam = false;
-        for (Type.Parameter p : fn.parameters()) {
-            if (p.type() instanceof Type.Function) {
-                anyFnParam = true;
-                break;
-            }
-        }
-        if (!anyFnParam) {
-            return new TypedModuleSummary.CallableEffectTemplate(
-                    base, prefix.io(), base.effects(), base.mutParams(), base.borrowParams(),
-                    new boolean[0], new EffectSet[0], new long[0][]);
-        }
-
-        EnumSet<Effect> opt = EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW);
-        EffectSet pureEff = EffectSet.ofInferred(EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true);
-        boolean[] startBorrow = new boolean[n];
-        for (int i = 0; i < n; i++) {
-            EffectChecker.ParamMods pm = ec.modifiers.parseParamMods(paramDecls.get(i), false);
-            startBorrow[i] = !pm.shared() && !pm.unique();
-        }
-        boolean startBorrowThis = !prefix.explicitSharedThis();
-        EffectSet startSet = new EffectSet(opt, EnumSet.noneOf(Effect.class),
-                base.effects().mutThis(), startBorrowThis, prefix.explicitSharedThis(),
-                true, prefix.uniqueReturn(), true, false, false, false);
-        EffectChecker.CallableSummary start = new EffectChecker.CallableSummary(startSet, base.mutParams().clone(), startBorrow, base.uniqueParams());
-
-        Map<ParserRuleContext, Type.Function> allPure = new IdentityHashMap<>();
-        EffectSet[] defaultCallbackEffects = new EffectSet[n];
-        for (int i = 0; i < n && i < fn.parameters().size(); i++) {
-            if (fn.parameters().get(i).type() instanceof Type.Function cbFn) {
-                defaultCallbackEffects[i] = cbFn.effects();
-                allPure.put(paramDecls.get(i), cbFn.withEffects(pureEff, EffectChecker.allBorrowParams(cbFn.parameters())));
-            }
-        }
-        EffectChecker.CallableSummary residual = ec.finalizeSummary(lit, ec.recomputeSummary(lit, start, allPure, false));
-
-        boolean[] forwarded = new boolean[n];
-        long[][] paramMutFromCbArg = new long[n][];
-        for (int i = 0; i < n && i < fn.parameters().size(); i++) {
-            if (!(fn.parameters().get(i).type() instanceof Type.Function cbFn)) {
-                continue;
-            }
-            Map<ParserRuleContext, Type.Function> probe = new IdentityHashMap<>(allPure);
-            probe.put(paramDecls.get(i), cbFn.withEffects(EffectSet.EMPTY, cbFn.parameters()));
-            EffectChecker.CallableSummary probed = ec.finalizeSummary(lit, ec.recomputeSummary(lit, start, probe, false));
-            if (!probed.effects().effects().equals(residual.effects().effects())) {
-                forwarded[i] = true;
-            }
-            int cbArity = cbFn.parameters().size();
-            paramMutFromCbArg[i] = new long[cbArity];
-            for (int m = 0; m < cbArity; m++) {
-                List<Type.Parameter> mutCbParams = new ArrayList<>(cbArity);
-                for (int k = 0; k < cbArity; k++) {
-                    Type.Parameter cp = cbFn.parameters().get(k);
-                    mutCbParams.add(cp.withModifiers(k == m, k != m));
-                }
-                Map<ParserRuleContext, Type.Function> mutProbe = new IdentityHashMap<>(allPure);
-                mutProbe.put(paramDecls.get(i), cbFn.withEffects(pureEff, mutCbParams));
-                EffectChecker.CallableSummary mutProbed = ec.finalizeSummary(lit, ec.recomputeSummary(lit, start, mutProbe, false));
-                long mask = 0L;
-                for (int j = 0; j < n && j < 64; j++) {
-                    if (mutProbed.mutParams()[j] && !residual.mutParams()[j]) {
-                        mask |= (1L << j);
-                        forwarded[i] = true;
-                    }
-                }
-                paramMutFromCbArg[i][m] = mask;
-            }
-        }
-        return new TypedModuleSummary.CallableEffectTemplate(
-                base, false, residual.effects(), residual.mutParams(), residual.borrowParams(),
-                forwarded, defaultCallbackEffects, paramMutFromCbArg);
     }
 }

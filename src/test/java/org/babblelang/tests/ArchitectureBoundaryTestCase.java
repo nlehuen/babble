@@ -40,7 +40,9 @@ public class ArchitectureBoundaryTestCase {
             "org/babblelang/analysis/TypeDisplay",
             "org/babblelang/analysis/OverloadSolver",
             "org/babblelang/analysis/Reachability",
-            "org/babblelang/analysis/JavaEffectResolver"
+            "org/babblelang/analysis/JavaEffectResolver",
+            "org/babblelang/analysis/EffectFixpointDriver",
+            "org/babblelang/analysis/SymbolicEffectSummary"
     );
 
     /**
