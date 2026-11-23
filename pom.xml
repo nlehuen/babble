@@ -15,6 +15,9 @@
         <jline.version>4.7.0</jline.version>
         <batest.filter></batest.filter>
         <batest.inspect></batest.inspect>
+        <batest.top>10</batest.top>
+        <batest.sort>score</batest.sort>
+        <batest.minBranchPct>75.0</batest.minBranchPct>
         <batest.includes>**/BatestTestCase.java</batest.includes>
         <maven.test.redirectTestOutputToFile>true</maven.test.redirectTestOutputToFile>
         <!-- Cap test JVM heap and use ParallelGC for higher batch throughput and lower RSS under
@@ -446,6 +449,18 @@
                                         <systemProperty>
                                             <key>batest.inspect</key>
                                             <value>${batest.inspect}</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>batest.top</key>
+                                            <value>${batest.top}</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>batest.sort</key>
+                                            <value>${batest.sort}</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>batest.minBranchPct</key>
+                                            <value>${batest.minBranchPct}</value>
                                         </systemProperty>
                                         <systemProperty>
                                             <key>batest.report</key>

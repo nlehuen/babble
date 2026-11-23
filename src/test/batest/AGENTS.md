@@ -232,14 +232,20 @@ Verify pure `PredictionMode.SLL` parsing across all `.batest` files :
 mvn -q test -Dtest=ParserGrammarTestCase
 ```
 
-Check scoped coverage and inspect uncovered lines/branches of a target class :
+Check scoped coverage and inspect uncovered lines/branches of one or more target classes :
 
 ```bash
 mvn -q verify -Pbatest -Dbatest.filter=types/type_aliases.batest -Dbatest.inspect=TypeChecker
 ```
 
-Run the full 3-JVM 5-scope JaCoCo coverage gate (`>= 75%` branch coverage per scope) :
+Run the full 3-JVM 5-scope JaCoCo coverage gate (`>= 75%` branch coverage per scope, with per-scope impact-ranked top-10 hotspots; override with `-Dbatest.top=N|all` and `-Dbatest.sort=score|branches|lines`) :
 
 ```bash
 mvn -q verify -Pbatest
+```
+
+Re-render the report or inspect multiple classes from existing JaCoCo XMLs without re-running tests :
+
+```bash
+mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=HirEmitter,ClassGen -Dbatest.minBranchPct=0
 ```

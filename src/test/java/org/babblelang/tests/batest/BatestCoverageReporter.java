@@ -6,11 +6,13 @@ import org.w3c.dom.NodeList;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -21,26 +23,63 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * Generates unified dual-mode test, parity, and JaCoCo coverage reports for {@code -Pbatest}
- * (BIP009 §5.2, §5.3). Reads {@code outcomes-interpret.jsonl}, {@code outcomes-compile.jsonl},
- * and the two isolated {@code jacoco.xml} reports, writes {@code summary.json} and
- * {@code uncovered.txt}, prints a compact console summary (plus {@code -Dbatest.inspect=<Class>}
- * details when requested), and fails the build if any case failed or diverged.
+ * Generates unified 3-mode test, parity, and JaCoCo coverage reports for {@code -Pbatest}
+ * (BIP009 §5.2, §5.3). Reads {@code outcomes-*.jsonl} and the isolated {@code jacoco.xml}
+ * reports, writes {@code summary.json} and {@code uncovered.txt}, prints a per-scope ranked
+ * console summary (plus {@code -Dbatest.inspect=<Class[,Class2]>} details when requested),
+ * and fails the build if any case failed, diverged, or missed the per-scope branch gate.
  */
 public final class BatestCoverageReporter {
 
+    static final int DEFAULT_TOP_PER_SCOPE = 10;
+
     public enum Scope {
-        INTERPRETER("Interpreter (impl.*)"),
-        COMPILER("Compiler (-O0)"),
-        OPTIMIZER("Optimizer (-O1)"),
-        FRONT_END("Shared Front-End (analysis)"),
-        SHARED_RUNTIME("Shared Runtime & Natives"),
-        EXCLUDED("Excluded");
+        INTERPRETER("Interpreter (impl.*)", "interpreter"),
+        COMPILER("Compiler (-O0)", "compiler"),
+        OPTIMIZER("Optimizer (-O1)", "optimizer"),
+        FRONT_END("Shared Front-End (analysis)", "frontEnd"),
+        SHARED_RUNTIME("Shared Runtime (combined)", "sharedRuntime"),
+        EXCLUDED("Excluded", "excluded");
 
         final String label;
+        final String jsonKey;
 
-        Scope(String label) {
+        Scope(String label, String jsonKey) {
             this.label = label;
+            this.jsonKey = jsonKey;
+        }
+    }
+
+    static final List<Scope> REPORT_SCOPES = List.of(
+            Scope.INTERPRETER,
+            Scope.COMPILER,
+            Scope.OPTIMIZER,
+            Scope.FRONT_END,
+            Scope.SHARED_RUNTIME
+    );
+
+    public enum SortMode {
+        SCORE("score = (missedBr+1)*(missedLn+1)-1"),
+        BRANCHES("missed branches"),
+        LINES("missed lines");
+
+        final String description;
+
+        SortMode(String description) {
+            this.description = description;
+        }
+
+        static SortMode parse(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return SCORE;
+            }
+            return switch (raw.trim().toLowerCase(Locale.ROOT)) {
+                case "score", "impact" -> SCORE;
+                case "branches", "branch" -> BRANCHES;
+                case "lines", "line" -> LINES;
+                default -> throw new IllegalArgumentException(
+                        "Unknown batest.sort mode : " + raw + " (expected score, branches, or lines)");
+            };
         }
     }
 
@@ -106,6 +145,63 @@ public final class BatestCoverageReporter {
         }
     }
 
+    static long impactScore(Counter branches, Counter lines) {
+        return (long) (branches.missed() + 1) * (lines.missed() + 1) - 1L;
+    }
+
+    static int branchesNeeded(Counter branches, double minBranchPct) {
+        if (minBranchPct <= 0.0 || branches.total() == 0 || branches.pct() >= minBranchPct) {
+            return 0;
+        }
+        int target = (int) Math.ceil((minBranchPct * branches.total()) / 100.0);
+        while (target < branches.total() && (target * 100.0) / branches.total() < minBranchPct) {
+            target++;
+        }
+        while (target > 0 && ((target - 1) * 100.0) / branches.total() >= minBranchPct) {
+            target--;
+        }
+        return Math.max(0, target - branches.covered());
+    }
+
+    static Comparator<FileCoverage> fileComparator(SortMode sortMode) {
+        return switch (sortMode) {
+            case SCORE -> Comparator
+                    .comparingLong((FileCoverage fc) -> impactScore(fc.branches, fc.lines)).reversed()
+                    .thenComparing(Comparator.comparingInt((FileCoverage fc) -> fc.branches.missed()).reversed())
+                    .thenComparing(Comparator.comparingInt((FileCoverage fc) -> fc.lines.missed()).reversed())
+                    .thenComparing(fc -> fc.qualifiedClass);
+            case BRANCHES -> Comparator
+                    .comparingInt((FileCoverage fc) -> fc.branches.missed()).reversed()
+                    .thenComparing(Comparator.comparingInt((FileCoverage fc) -> fc.lines.missed()).reversed())
+                    .thenComparing(fc -> fc.qualifiedClass);
+            case LINES -> Comparator
+                    .comparingInt((FileCoverage fc) -> fc.lines.missed()).reversed()
+                    .thenComparing(Comparator.comparingInt((FileCoverage fc) -> fc.branches.missed()).reversed())
+                    .thenComparing(fc -> fc.qualifiedClass);
+        };
+    }
+
+    static Comparator<MethodCoverage> methodComparator(SortMode sortMode) {
+        return switch (sortMode) {
+            case SCORE -> Comparator
+                    .comparingLong((MethodCoverage m) -> impactScore(m.branches(), m.lines())).reversed()
+                    .thenComparing(Comparator.comparingInt((MethodCoverage m) -> m.branches().missed()).reversed())
+                    .thenComparing(Comparator.comparingInt((MethodCoverage m) -> m.lines().missed()).reversed())
+                    .thenComparingInt(MethodCoverage::line)
+                    .thenComparing(MethodCoverage::name);
+            case BRANCHES -> Comparator
+                    .comparingInt((MethodCoverage m) -> m.branches().missed()).reversed()
+                    .thenComparing(Comparator.comparingInt((MethodCoverage m) -> m.lines().missed()).reversed())
+                    .thenComparingInt(MethodCoverage::line)
+                    .thenComparing(MethodCoverage::name);
+            case LINES -> Comparator
+                    .comparingInt((MethodCoverage m) -> m.lines().missed()).reversed()
+                    .thenComparing(Comparator.comparingInt((MethodCoverage m) -> m.branches().missed()).reversed())
+                    .thenComparingInt(MethodCoverage::line)
+                    .thenComparing(MethodCoverage::name);
+        };
+    }
+
     record LineInfo(int line, int mi, int ci, int mb, int cb) {
         boolean isMissedLine() {
             return ci == 0 && mi > 0;
@@ -116,7 +212,10 @@ public final class BatestCoverageReporter {
         }
     }
 
-    record MethodCoverage(String name, int line, Counter lines, Counter branches) {
+    record MethodCoverage(String name, String desc, int line, Counter lines, Counter branches) {
+        boolean hasUncovered() {
+            return lines.missed() > 0 || branches.missed() > 0;
+        }
     }
 
     static final class FileCoverage {
@@ -140,6 +239,17 @@ public final class BatestCoverageReporter {
             String prefix = "org.babblelang.";
             return qualifiedClass.startsWith(prefix) ? qualifiedClass.substring(prefix.length()) : qualifiedClass;
         }
+
+        boolean hasUncovered() {
+            return lines.missed() > 0 || branches.missed() > 0;
+        }
+
+        List<MethodCoverage> uncoveredMethods(SortMode sortMode) {
+            return methods.stream()
+                    .filter(MethodCoverage::hasUncovered)
+                    .sorted(methodComparator(sortMode))
+                    .toList();
+        }
     }
 
     record FailureEntry(CaseKey key, String label, String expected, RecordedOutcome interpret, RecordedOutcome compile,
@@ -159,27 +269,55 @@ public final class BatestCoverageReporter {
         String filter = System.getProperty("batest.filter", "").trim();
         String inspect = System.getProperty("batest.inspect", "").trim();
         double minBranchPct = Double.parseDouble(System.getProperty("batest.minBranchPct", "75.0").trim());
+        int topPerScope = parseTop(System.getProperty("batest.top", String.valueOf(DEFAULT_TOP_PER_SCOPE)));
+        SortMode sortMode = SortMode.parse(System.getProperty("batest.sort", "score"));
 
-        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, xmlOpt, sourceRoot, filter, inspect, minBranchPct);
+        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, xmlOpt, sourceRoot,
+                filter, inspect, minBranchPct, topPerScope, sortMode, System.out);
+    }
+
+    static int parseTop(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DEFAULT_TOP_PER_SCOPE;
+        }
+        String trimmed = raw.trim();
+        if ("all".equalsIgnoreCase(trimmed)) {
+            return 0;
+        }
+        int parsed = Integer.parseInt(trimmed);
+        if (parsed < 0) {
+            throw new IllegalArgumentException("Invalid batest.top value : " + raw + " (expected >= 0 or 'all')");
+        }
+        return parsed;
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path sourceRoot,
                     String filter, String inspect) throws Exception {
-        run(reportDir, xmlInterpret, xmlCompile, null, null, sourceRoot, filter, inspect, 0.0);
+        run(reportDir, xmlInterpret, xmlCompile, null, null, sourceRoot, filter, inspect, 0.0,
+                DEFAULT_TOP_PER_SCOPE, SortMode.SCORE, System.out);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path sourceRoot,
                     String filter, String inspect, double minBranchPct) throws Exception {
-        run(reportDir, xmlInterpret, xmlCompile, null, null, sourceRoot, filter, inspect, minBranchPct);
+        run(reportDir, xmlInterpret, xmlCompile, null, null, sourceRoot, filter, inspect, minBranchPct,
+                DEFAULT_TOP_PER_SCOPE, SortMode.SCORE, System.out);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path xmlCompileO0, Path sourceRoot,
                     String filter, String inspect, double minBranchPct) throws Exception {
-        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, null, sourceRoot, filter, inspect, minBranchPct);
+        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, null, sourceRoot, filter, inspect, minBranchPct,
+                DEFAULT_TOP_PER_SCOPE, SortMode.SCORE, System.out);
     }
 
     static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path xmlCompileO0, Path xmlOpt, Path sourceRoot,
                     String filter, String inspect, double minBranchPct) throws Exception {
+        run(reportDir, xmlInterpret, xmlCompile, xmlCompileO0, xmlOpt, sourceRoot, filter, inspect, minBranchPct,
+                DEFAULT_TOP_PER_SCOPE, SortMode.SCORE, System.out);
+    }
+
+    static void run(Path reportDir, Path xmlInterpret, Path xmlCompile, Path xmlCompileO0, Path xmlOpt, Path sourceRoot,
+                    String filter, String inspect, double minBranchPct,
+                    int topPerScope, SortMode sortMode, PrintStream out) throws Exception {
         Files.createDirectories(reportDir);
 
         Map<CaseKey, RecordedOutcome> interpretOutcomes = readOutcomes(reportDir.resolve("outcomes-interpret.jsonl"));
@@ -387,15 +525,42 @@ public final class BatestCoverageReporter {
         }
         canonicalClasses.addAll(sharedCombinedMap.values());
 
-        List<FileCoverage> hotspots = canonicalClasses.stream()
-                .filter(fc -> fc.branches.missed() > 0)
-                .sorted(Comparator
-                        .comparingDouble((FileCoverage fc) -> fc.branches.pct())
-                        .thenComparing(Comparator.comparingInt((FileCoverage fc) -> fc.branches.missed()).reversed())
-                        .thenComparing(fc -> fc.qualifiedClass))
-                .toList();
+        EnumMap<Scope, Counter> scopeLines = new EnumMap<>(Scope.class);
+        EnumMap<Scope, Counter> scopeBranches = new EnumMap<>(Scope.class);
+        scopeLines.put(Scope.INTERPRETER, scopeInterpLines[0]);
+        scopeBranches.put(Scope.INTERPRETER, scopeInterpBranches[0]);
+        scopeLines.put(Scope.COMPILER, scopeCompileLines[0]);
+        scopeBranches.put(Scope.COMPILER, scopeCompileBranches[0]);
+        scopeLines.put(Scope.OPTIMIZER, scopeOptLines[0]);
+        scopeBranches.put(Scope.OPTIMIZER, scopeOptBranches[0]);
+        scopeLines.put(Scope.FRONT_END, scopeFrontLines[0]);
+        scopeBranches.put(Scope.FRONT_END, scopeFrontBranches[0]);
+        scopeLines.put(Scope.SHARED_RUNTIME, sharedUnionLines[0]);
+        scopeBranches.put(Scope.SHARED_RUNTIME, sharedUnionBranches[0]);
 
-        writeUncoveredTxt(reportDir.resolve("uncovered.txt"), canonicalClasses, sourceRoot);
+        EnumMap<Scope, Integer> scopeClassCounts = new EnumMap<>(Scope.class);
+        EnumMap<Scope, List<FileCoverage>> hotspotsByScope = new EnumMap<>(Scope.class);
+        Comparator<FileCoverage> cmp = fileComparator(sortMode);
+        for (Scope scope : REPORT_SCOPES) {
+            scopeClassCounts.put(scope, 0);
+            hotspotsByScope.put(scope, new ArrayList<>());
+        }
+        for (FileCoverage fc : canonicalClasses) {
+            if (hotspotsByScope.containsKey(fc.scope)) {
+                scopeClassCounts.merge(fc.scope, 1, Integer::sum);
+                if (fc.hasUncovered()) {
+                    hotspotsByScope.get(fc.scope).add(fc);
+                }
+            }
+        }
+        for (Scope scope : REPORT_SCOPES) {
+            hotspotsByScope.get(scope).sort(cmp);
+        }
+
+        boolean enforceGate = filter.isEmpty() && minBranchPct > 0.0;
+
+        writeUncoveredTxt(reportDir.resolve("uncovered.txt"), scopeLines, scopeBranches,
+                hotspotsByScope, sortMode, enforceGate, minBranchPct, sourceRoot);
         writeSummaryJson(reportDir.resolve("summary.json"), filter, filesSeen.size(), sortedKeys.size(),
                 hasCompileO0Outcomes, interpPassed, compilePassed, compileO0Passed, parityMatched, failures,
                 scopeInterpLines[0], scopeInterpBranches[0],
@@ -406,19 +571,16 @@ public final class BatestCoverageReporter {
                 hasCompileO0Cov, sharedCompileO0Lines[0], sharedCompileO0Branches[0],
                 sharedCompileLines[0], sharedCompileBranches[0],
                 sharedUnionLines[0], sharedUnionBranches[0],
-                canonicalClasses);
+                canonicalClasses, hotspotsByScope, sortMode);
 
-        printConsoleSummary(filter, filesSeen.size(), sortedKeys.size(),
+        printConsoleSummary(out, filter, filesSeen.size(), sortedKeys.size(),
                 hasCompileO0Outcomes, interpPassed, compilePassed, compileO0Passed, parityMatched, failures,
-                scopeInterpLines[0], scopeInterpBranches[0],
-                scopeCompileLines[0], scopeCompileBranches[0],
-                scopeOptLines[0], scopeOptBranches[0],
-                scopeFrontLines[0], scopeFrontBranches[0],
+                scopeLines, scopeBranches,
                 sharedInterpLines[0], sharedInterpBranches[0],
                 hasCompileO0Cov, sharedCompileO0Lines[0], sharedCompileO0Branches[0],
                 sharedCompileLines[0], sharedCompileBranches[0],
-                sharedUnionLines[0], sharedUnionBranches[0],
-                hotspots, reportDir, inspect, canonicalClasses, sourceRoot);
+                scopeClassCounts, hotspotsByScope, topPerScope, sortMode,
+                enforceGate, minBranchPct, reportDir, inspect, canonicalClasses, sourceRoot);
 
         if (sortedKeys.isEmpty()) {
             throw new IllegalStateException("No .batest cases were recorded in " + reportDir);
@@ -426,13 +588,11 @@ public final class BatestCoverageReporter {
         if (!failures.isEmpty()) {
             throw new AssertionError(failures.size() + " .batest case failure(s)");
         }
-        if (filter.isEmpty() && minBranchPct > 0.0) {
+        if (enforceGate) {
             List<String> below = new ArrayList<>();
-            checkBranchThreshold(below, "Interpreter (impl.*)", scopeInterpBranches[0], minBranchPct);
-            checkBranchThreshold(below, "Compiler (-O0)", scopeCompileBranches[0], minBranchPct);
-            checkBranchThreshold(below, "Optimizer (-O1)", scopeOptBranches[0], minBranchPct);
-            checkBranchThreshold(below, "Shared Front-End (analysis)", scopeFrontBranches[0], minBranchPct);
-            checkBranchThreshold(below, "Shared Runtime (combined)", sharedUnionBranches[0], minBranchPct);
+            for (Scope scope : REPORT_SCOPES) {
+                checkBranchThreshold(below, scope.label, scopeBranches.get(scope), minBranchPct);
+            }
             if (!below.isEmpty()) {
                 throw new AssertionError(String.format(Locale.ROOT,
                         "Branch coverage below %.1f%% threshold: %s", minBranchPct, String.join(", ", below)));
@@ -496,14 +656,14 @@ public final class BatestCoverageReporter {
         union.lines = new Counter(lineMissed, lineCovered);
         union.branches = new Counter(branchMissed, branchCovered);
 
-        // Merge method branch coverage optimistically (max covered per method name+line)
+        // Merge method coverage optimistically across all modes (including 100%-covered methods)
         Map<String, MethodCoverage> mergedMethods = new LinkedHashMap<>();
         for (FileCoverage fc : modes) {
             if (fc == null) {
                 continue;
             }
             for (MethodCoverage m : fc.methods) {
-                String k = m.name() + "@" + m.line();
+                String k = m.name() + "@" + m.line() + "#" + m.desc();
                 MethodCoverage prev = mergedMethods.get(k);
                 if (prev == null) {
                     mergedMethods.put(k, m);
@@ -512,7 +672,7 @@ public final class BatestCoverageReporter {
                     int covL = Math.max(m.lines().covered(), prev.lines().covered());
                     int totB = Math.max(m.branches().total(), prev.branches().total());
                     int covB = Math.max(m.branches().covered(), prev.branches().covered());
-                    mergedMethods.put(k, new MethodCoverage(m.name(), m.line(),
+                    mergedMethods.put(k, new MethodCoverage(m.name(), m.desc(), m.line(),
                             new Counter(Math.max(0, totL - covL), covL),
                             new Counter(Math.max(0, totB - covB), covB)));
                 }
@@ -634,6 +794,7 @@ public final class BatestCoverageReporter {
                         continue;
                     }
                     String mName = mEl.getAttribute("name");
+                    String mDesc = mEl.getAttribute("desc");
                     int mLine = parseIntAttr(mEl, "line");
                     Counter mLines = new Counter(0, 0);
                     Counter mBranches = new Counter(0, 0);
@@ -650,9 +811,9 @@ public final class BatestCoverageReporter {
                             }
                         }
                     }
-                    if (mLines.missed() > 0 || mBranches.missed() > 0) {
+                    if (mLines.total() > 0 || mBranches.total() > 0) {
                         String displayMethod = clsSimple.contains("$") ? clsSimple + "." + mName : mName;
-                        fc.methods.add(new MethodCoverage(displayMethod, mLine, mLines, mBranches));
+                        fc.methods.add(new MethodCoverage(displayMethod, mDesc == null ? "" : mDesc, mLine, mLines, mBranches));
                     }
                 }
             }
@@ -666,99 +827,188 @@ public final class BatestCoverageReporter {
     }
 
     private static void printConsoleSummary(
-            String filter, int fileCount, int caseCount,
+            PrintStream out, String filter, int fileCount, int caseCount,
             boolean hasCompileO0Outcomes, int interpPassed, int compilePassed, int compileO0Passed,
             int parityMatched, List<FailureEntry> failures,
-            Counter interpL, Counter interpB,
-            Counter compL, Counter compB,
-            Counter optL, Counter optB,
-            Counter frontL, Counter frontB,
+            EnumMap<Scope, Counter> scopeLines, EnumMap<Scope, Counter> scopeBranches,
             Counter shInterpL, Counter shInterpB,
             boolean hasCompileO0Cov, Counter shCompO0L, Counter shCompO0B,
             Counter shCompL, Counter shCompB,
-            Counter shUnionL, Counter shUnionB,
-            List<FileCoverage> hotspots, Path reportDir, String inspect,
+            EnumMap<Scope, Integer> scopeClassCounts,
+            EnumMap<Scope, List<FileCoverage>> hotspotsByScope,
+            int topPerScope, SortMode sortMode,
+            boolean enforceGate, double minBranchPct,
+            Path reportDir, String inspect,
             List<FileCoverage> canonicalClasses, Path sourceRoot) throws IOException {
         if (!filter.isEmpty()) {
-            System.out.println("[FILTERED: " + filter + "]");
+            out.println("[FILTERED: " + filter + "]");
         }
-        System.out.println("=== BATEST RESULTS =============================================================");
-        System.out.printf(Locale.ROOT, "Files : %-5d Cases : %d%n", fileCount, caseCount);
-        System.out.printf(Locale.ROOT, "Interpret : %d / %d passed (%5.1f%%)%n",
+        out.println("=== BATEST RESULTS =============================================================");
+        out.printf(Locale.ROOT, "Files : %-5d Cases : %d%n", fileCount, caseCount);
+        out.printf(Locale.ROOT, "Interpret : %d / %d passed (%5.1f%%)%n",
                 interpPassed, caseCount, pct(interpPassed, caseCount));
-        System.out.printf(Locale.ROOT, "Compile   : %d / %d passed (%5.1f%%)%n",
+        out.printf(Locale.ROOT, "Compile   : %d / %d passed (%5.1f%%)%n",
                 compilePassed, caseCount, pct(compilePassed, caseCount));
         if (hasCompileO0Outcomes) {
-            System.out.printf(Locale.ROOT, "Compile -O0 : %d / %d passed (%5.1f%%)%n",
+            out.printf(Locale.ROOT, "Compile -O0 : %d / %d passed (%5.1f%%)%n",
                     compileO0Passed, caseCount, pct(compileO0Passed, caseCount));
         }
         int divergences = caseCount - parityMatched;
-        System.out.printf(Locale.ROOT, "Parity    : %d / %d matched (%d %s)%n",
+        out.printf(Locale.ROOT, "Parity    : %d / %d matched (%d %s)%n",
                 parityMatched, caseCount, divergences, divergences == 1 ? "divergence" : "divergences");
 
         if (!failures.isEmpty()) {
-            System.out.println();
-            System.out.println("FAILURES (" + failures.size() + ") :");
+            out.println();
+            out.println("FAILURES (" + failures.size() + ") :");
             int shown = 0;
             for (FailureEntry f : failures) {
                 if (shown >= 15) {
-                    System.out.println("  ... and " + (failures.size() - shown) + " more failures");
+                    out.println("  ... and " + (failures.size() - shown) + " more failures");
                     break;
                 }
                 shown++;
-                System.out.printf("  [%s] %s:%d (case #%d)%n", f.label(), f.key().file(), f.key().line(), f.key().index());
-                System.out.println("    expected  : " + singleLine(f.expected()));
+                out.printf("  [%s] %s:%d (case #%d)%n", f.label(), f.key().file(), f.key().line(), f.key().index());
+                out.println("    expected  : " + singleLine(f.expected()));
                 if (f.interpret() != null) {
-                    System.out.println("    interpret : " + singleLine(f.interpret().text()) + " [" + f.interpret().kind() + "]");
+                    out.println("    interpret : " + singleLine(f.interpret().text()) + " [" + f.interpret().kind() + "]");
                 }
                 if (f.compile() != null) {
-                    System.out.println("    compile   : " + singleLine(f.compile().text()) + " [" + f.compile().kind() + "]");
+                    out.println("    compile   : " + singleLine(f.compile().text()) + " [" + f.compile().kind() + "]");
                 }
                 if (f.compileO0() != null) {
-                    System.out.println("    compile-O0: " + singleLine(f.compileO0().text()) + " [" + f.compileO0().kind() + "]");
+                    out.println("    compile-O0: " + singleLine(f.compileO0().text()) + " [" + f.compileO0().kind() + "]");
                 }
             }
         }
 
-        System.out.println();
-        System.out.println("=== COVERAGE SUMMARY (.batest suite) ===========================================");
-        System.out.println("Scope                        Lines                Branches");
-        System.out.println("---------------------------  -------------------  -------------------");
-        printScopeRow("Interpreter (impl.*)", interpL, interpB);
-        printScopeRow("Compiler (-O0)", compL, compB);
-        printScopeRow("Optimizer (-O1)", optL, optB);
-        printScopeRow("Shared Front-End (analysis)", frontL, frontB);
-        printScopeRow("Shared Runtime (interpret)", shInterpL, shInterpB);
+        out.println();
+        out.println("=== COVERAGE SUMMARY (.batest suite) ===========================================");
+        if (enforceGate) {
+            out.printf(Locale.ROOT, "Scope                        Lines                 Branches              Gate (%.1f%%)%n", minBranchPct);
+            out.println("---------------------------  --------------------  --------------------  ----------------");
+        } else {
+            out.println("Scope                        Lines                 Branches");
+            out.println("---------------------------  --------------------  --------------------");
+        }
+        printScopeRow(out, Scope.INTERPRETER.label, scopeLines.get(Scope.INTERPRETER), scopeBranches.get(Scope.INTERPRETER), enforceGate, minBranchPct);
+        printScopeRow(out, Scope.COMPILER.label, scopeLines.get(Scope.COMPILER), scopeBranches.get(Scope.COMPILER), enforceGate, minBranchPct);
+        printScopeRow(out, Scope.OPTIMIZER.label, scopeLines.get(Scope.OPTIMIZER), scopeBranches.get(Scope.OPTIMIZER), enforceGate, minBranchPct);
+        printScopeRow(out, Scope.FRONT_END.label, scopeLines.get(Scope.FRONT_END), scopeBranches.get(Scope.FRONT_END), enforceGate, minBranchPct);
+        printScopeRow(out, "Shared Runtime (interpret)", shInterpL, shInterpB, false, 0.0);
         if (hasCompileO0Cov) {
-            printScopeRow("Shared Runtime (compile-O0)", shCompO0L, shCompO0B);
+            printScopeRow(out, "Shared Runtime (compile-O0)", shCompO0L, shCompO0B, false, 0.0);
         }
-        printScopeRow("Shared Runtime (compile-O1)", shCompL, shCompB);
-        printScopeRow("Shared Runtime (combined)", shUnionL, shUnionB);
+        printScopeRow(out, "Shared Runtime (compile-O1)", shCompL, shCompB, false, 0.0);
+        printScopeRow(out, Scope.SHARED_RUNTIME.label, scopeLines.get(Scope.SHARED_RUNTIME), scopeBranches.get(Scope.SHARED_RUNTIME), enforceGate, minBranchPct);
 
-        System.out.println();
-        System.out.println("=== LOWEST BRANCH COVERAGE HOTSPOTS (top 10) ===================================");
-        int top = Math.min(10, hotspots.size());
-        for (int i = 0; i < top; i++) {
-            FileCoverage fc = hotspots.get(i);
-            String ranges = formatLineRanges(fc, 3);
-            System.out.printf(Locale.ROOT, "  %2d. %-28s %5.1f%% branches (%3d missed) -> %s%n",
-                    i + 1, fc.shortName(), fc.branches.pct(), fc.branches.missed(), ranges);
+        out.println();
+        String topLabel = topPerScope > 0 ? "top " + topPerScope + "/scope" : "all/scope";
+        out.printf(Locale.ROOT, "=== UNCOVERED HOTSPOTS BY SCOPE (%s, ranked by %s) ===%n",
+                topLabel, sortMode.description);
+
+        for (Scope scope : REPORT_SCOPES) {
+            int totalClasses = scopeClassCounts.getOrDefault(scope, 0);
+            List<FileCoverage> list = hotspotsByScope.get(scope);
+            if (totalClasses == 0 && list.isEmpty()) {
+                continue;
+            }
+            Counter scL = scopeLines.get(scope);
+            Counter scB = scopeBranches.get(scope);
+            int needed = enforceGate ? branchesNeeded(scB, minBranchPct) : 0;
+            String needTag = needed > 0 ? String.format(Locale.ROOT, " [NEED +%d br]", needed) : "";
+            out.println();
+            out.printf(Locale.ROOT, "-- %s : %d missed br%s, %d missed ln (%d uncovered %s) --%n",
+                    scope.label, scB.missed(), needTag, scL.missed(),
+                    list.size(), list.size() == 1 ? "file" : "files");
+            if (list.isEmpty()) {
+                out.println("  (100% covered - no missed lines or branches)");
+                continue;
+            }
+            int limit = topPerScope > 0 ? Math.min(topPerScope, list.size()) : list.size();
+            int nameWidth = 28;
+            for (int i = 0; i < limit; i++) {
+                nameWidth = Math.max(nameWidth, list.get(i).shortName().length());
+            }
+            nameWidth = Math.min(nameWidth, 42);
+            String rowFmt = "  %2d. %-" + nameWidth + "s %4d br (%s) | %4d ln (%s) -> %s%n";
+            for (int i = 0; i < limit; i++) {
+                FileCoverage fc = list.get(i);
+                String targets = formatTopTargets(fc, sortMode, 3);
+                out.printf(Locale.ROOT, rowFmt,
+                        i + 1, fc.shortName(),
+                        fc.branches.missed(), formatPct(fc.branches),
+                        fc.lines.missed(), formatPct(fc.lines),
+                        targets);
+            }
+            if (list.size() > limit) {
+                int remBr = 0;
+                int remLn = 0;
+                for (int i = limit; i < list.size(); i++) {
+                    remBr += list.get(i).branches.missed();
+                    remLn += list.get(i).lines.missed();
+                }
+                int remFiles = list.size() - limit;
+                out.printf(Locale.ROOT, "  ... and %d more uncovered %s (%d missed br, %d missed ln)%n",
+                        remFiles, remFiles == 1 ? "file" : "files", remBr, remLn);
+            }
         }
-        System.out.println("Full uncovered line/branch map : " + reportDir.resolve("uncovered.txt"));
-        System.out.println("Inspect a single class         : mvn -q verify -Pbatest -Dbatest.inspect=<Class>");
+
+        out.println();
+        out.println("Full uncovered line/branch map : " + reportDir.resolve("uncovered.txt"));
+        out.println("Inspect class(es) (no re-run)  : mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=<Class[,Class2]> -Dbatest.minBranchPct=0");
 
         if (!inspect.isEmpty()) {
-            printInspect(inspect, canonicalClasses, sourceRoot);
+            printInspect(out, inspect, canonicalClasses, sortMode, sourceRoot);
         }
     }
 
-    private static void printScopeRow(String name, Counter lines, Counter branches) {
-        System.out.printf(Locale.ROOT, "%-27s  %s  %s%n",
-                name, formatCounter(lines), formatCounter(branches));
+    private static void printScopeRow(PrintStream out, String name, Counter lines, Counter branches,
+                                      boolean showGate, double minBranchPct) {
+        if (showGate) {
+            int needed = branchesNeeded(branches, minBranchPct);
+            String gate = needed > 0 ? String.format(Locale.ROOT, "NEED +%d br", needed) : "PASS";
+            out.printf(Locale.ROOT, "%-27s  %s  %s  %s%n",
+                    name, formatCounter(lines), formatCounter(branches), gate);
+        } else {
+            out.printf(Locale.ROOT, "%-27s  %s  %s%n",
+                    name, formatCounter(lines), formatCounter(branches));
+        }
     }
 
     private static String formatCounter(Counter c) {
-        return String.format(Locale.ROOT, "%5.1f%% (%4d/%-4d)", c.pct(), c.covered(), c.total());
+        return String.format(Locale.ROOT, "%5.1f%% (%5d/%-5d)", c.pct(), c.covered(), c.total());
+    }
+
+    private static String formatPct(Counter c) {
+        return c.total() == 0 ? "   n/a" : String.format(Locale.ROOT, "%5.1f%%", c.pct());
+    }
+
+    private static String formatTopTargets(FileCoverage fc, SortMode sortMode, int limit) {
+        List<MethodCoverage> uncovered = fc.uncoveredMethods(sortMode);
+        if (uncovered.isEmpty()) {
+            return formatLineRanges(fc, limit);
+        }
+        int shown = Math.min(limit, uncovered.size());
+        List<String> parts = new ArrayList<>(shown);
+        for (int i = 0; i < shown; i++) {
+            MethodCoverage m = uncovered.get(i);
+            int mb = m.branches().missed();
+            int ml = m.lines().missed();
+            String spec;
+            if (mb > 0 && ml > 0) {
+                spec = mb + "br/" + ml + "ln";
+            } else if (mb > 0) {
+                spec = mb + "br";
+            } else {
+                spec = ml + "ln";
+            }
+            parts.add(m.name() + ":L" + m.line() + "(" + spec + ")");
+        }
+        String joined = String.join(", ", parts);
+        if (uncovered.size() > shown) {
+            return joined + ", ... (+" + (uncovered.size() - shown) + ")";
+        }
+        return joined;
     }
 
     private static String formatLineRanges(FileCoverage fc, int limit) {
@@ -796,69 +1046,115 @@ public final class BatestCoverageReporter {
         return out;
     }
 
-    private static void writeUncoveredTxt(Path outPath, List<FileCoverage> classes, Path sourceRoot) throws IOException {
+    private static void writeUncoveredTxt(Path outPath,
+                                          EnumMap<Scope, Counter> scopeLines,
+                                          EnumMap<Scope, Counter> scopeBranches,
+                                          EnumMap<Scope, List<FileCoverage>> hotspotsByScope,
+                                          SortMode sortMode,
+                                          boolean enforceGate, double minBranchPct,
+                                          Path sourceRoot) throws IOException {
         StringBuilder sb = new StringBuilder();
-        for (FileCoverage fc : classes) {
-            if (fc.lines.missed() == 0 && fc.branches.missed() == 0) {
+        sb.append("# Uncovered lines and branches grouped by scope, ranked by ")
+                .append(sortMode.description).append("\n\n");
+        for (Scope scope : REPORT_SCOPES) {
+            List<FileCoverage> list = hotspotsByScope.get(scope);
+            if (list.isEmpty()) {
                 continue;
             }
-            sb.append("=== ").append(fc.qualifiedClass)
-                    .append(" [").append(fc.scope.name()).append("] ")
-                    .append("lines=").append(String.format(Locale.ROOT, "%.1f%% (%d/%d)", fc.lines.pct(), fc.lines.covered(), fc.lines.total()))
-                    .append(", branches=").append(String.format(Locale.ROOT, "%.1f%% (%d/%d)", fc.branches.pct(), fc.branches.covered(), fc.branches.total()))
-                    .append(" ===\n");
-            if (!fc.methods.isEmpty()) {
-                sb.append("  Uncovered methods:\n");
-                for (MethodCoverage m : fc.methods) {
-                    sb.append(String.format(Locale.ROOT, "    %-35s L%-5d missedLines=%-3d missedBranches=%d%n",
-                            m.name(), m.line(), m.lines().missed(), m.branches().missed()));
+            Counter scL = scopeLines.get(scope);
+            Counter scB = scopeBranches.get(scope);
+            int needed = enforceGate ? branchesNeeded(scB, minBranchPct) : 0;
+            String needTag = needed > 0 ? String.format(Locale.ROOT, ", NEED +%d br for %.1f%%", needed, minBranchPct) : "";
+            sb.append("################################################################################\n");
+            sb.append(String.format(Locale.ROOT,
+                    "# SCOPE: %s — branches %.1f%% (%d/%d, %d missed%s), lines %.1f%% (%d/%d, %d missed)%n",
+                    scope.label,
+                    scB.pct(), scB.covered(), scB.total(), scB.missed(), needTag,
+                    scL.pct(), scL.covered(), scL.total(), scL.missed()));
+            sb.append("################################################################################\n\n");
+
+            int rank = 0;
+            for (FileCoverage fc : list) {
+                rank++;
+                long score = impactScore(fc.branches, fc.lines);
+                sb.append("=== #").append(rank).append(' ').append(fc.qualifiedClass)
+                        .append(" [").append(fc.scope.name()).append("] ")
+                        .append("missedBr=").append(fc.branches.missed())
+                        .append(String.format(Locale.ROOT, " (%s, %d/%d)", formatPct(fc.branches).trim(), fc.branches.covered(), fc.branches.total()))
+                        .append(", missedLn=").append(fc.lines.missed())
+                        .append(String.format(Locale.ROOT, " (%s, %d/%d)", formatPct(fc.lines).trim(), fc.lines.covered(), fc.lines.total()))
+                        .append(", score=").append(score)
+                        .append(" ===\n");
+                List<MethodCoverage> uncoveredMethods = fc.uncoveredMethods(sortMode);
+                if (!uncoveredMethods.isEmpty()) {
+                    sb.append("  Uncovered methods (ranked):\n");
+                    for (MethodCoverage m : uncoveredMethods) {
+                        sb.append(String.format(Locale.ROOT, "    %-35s L%-5d missedBranches=%-3d missedLines=%-3d score=%d%n",
+                                m.name(), m.line(), m.branches().missed(), m.lines().missed(),
+                                impactScore(m.branches(), m.lines())));
+                    }
                 }
-            }
-            List<String> srcLines = loadSourceLines(sourceRoot, fc);
-            sb.append("  Missed/partial lines:\n");
-            for (LineInfo li : fc.lineMap.values()) {
-                if (li.isMissedLine() || li.isPartialBranch()) {
-                    String tag = li.isMissedLine() ? "MISS  " : String.format("BR %d/%d", li.cb(), li.cb() + li.mb());
-                    String text = (srcLines != null && li.line() >= 1 && li.line() <= srcLines.size())
-                            ? srcLines.get(li.line() - 1) : "";
-                    sb.append(String.format("    L%-5d [%s] %s%n", li.line(), tag, text));
+                List<String> srcLines = loadSourceLines(sourceRoot, fc);
+                sb.append("  Missed/partial lines:\n");
+                for (LineInfo li : fc.lineMap.values()) {
+                    if (li.isMissedLine() || li.isPartialBranch()) {
+                        String tag = li.isMissedLine() ? "MISS  " : String.format("BR %d/%d", li.cb(), li.cb() + li.mb());
+                        String text = (srcLines != null && li.line() >= 1 && li.line() <= srcLines.size())
+                                ? srcLines.get(li.line() - 1) : "";
+                        sb.append(String.format("    L%-5d [%s] %s%n", li.line(), tag, text));
+                    }
                 }
+                sb.append('\n');
             }
-            sb.append('\n');
         }
         Files.writeString(outPath, sb.toString(), StandardCharsets.UTF_8);
     }
 
-    private static void printInspect(String query, List<FileCoverage> classes, Path sourceRoot) throws IOException {
-        System.out.println();
-        System.out.println("=== INSPECT: " + query + " ================================================");
-        List<FileCoverage> matches = classes.stream()
-                .filter(fc -> fc.qualifiedClass.equals(query)
-                        || fc.shortName().equals(query)
-                        || fc.qualifiedClass.endsWith("." + query))
-                .toList();
-        if (matches.isEmpty()) {
-            System.out.println("No tracked class matched '" + query + "'.");
-            return;
-        }
-        for (FileCoverage fc : matches) {
-            System.out.printf(Locale.ROOT, "%s (%s) : lines %.1f%% (%d/%d), branches %.1f%% (%d/%d)%n",
-                    fc.qualifiedClass, fc.scope.name(),
-                    fc.lines.pct(), fc.lines.covered(), fc.lines.total(),
-                    fc.branches.pct(), fc.branches.covered(), fc.branches.total());
-            List<String> srcLines = loadSourceLines(sourceRoot, fc);
-            int printed = 0;
-            for (LineInfo li : fc.lineMap.values()) {
-                if (li.isMissedLine() || li.isPartialBranch()) {
-                    String tag = li.isMissedLine() ? "MISS  " : String.format("BR %d/%d", li.cb(), li.cb() + li.mb());
-                    String text = (srcLines != null && li.line() >= 1 && li.line() <= srcLines.size())
-                            ? srcLines.get(li.line() - 1) : "";
-                    System.out.printf("  L%-5d [%s] %s%n", li.line(), tag, text);
-                    printed++;
-                }
+    private static void printInspect(PrintStream out, String rawQuery, List<FileCoverage> classes,
+                                     SortMode sortMode, Path sourceRoot) throws IOException {
+        for (String token : rawQuery.split(",")) {
+            String query = token.trim();
+            if (query.isEmpty()) {
+                continue;
             }
-            if (printed == 0) {
-                System.out.println("  100% covered (no missed lines or branches).");
+            out.println();
+            out.println("=== INSPECT: " + query + " ================================================");
+            List<FileCoverage> matches = classes.stream()
+                    .filter(fc -> fc.qualifiedClass.equals(query)
+                            || fc.shortName().equals(query)
+                            || fc.qualifiedClass.endsWith("." + query))
+                    .toList();
+            if (matches.isEmpty()) {
+                out.println("No tracked class matched '" + query + "'.");
+                continue;
+            }
+            for (FileCoverage fc : matches) {
+                out.printf(Locale.ROOT, "%s (%s) : branches %s (%d/%d, %d missed), lines %s (%d/%d, %d missed)%n",
+                        fc.qualifiedClass, fc.scope.name(),
+                        formatPct(fc.branches).trim(), fc.branches.covered(), fc.branches.total(), fc.branches.missed(),
+                        formatPct(fc.lines).trim(), fc.lines.covered(), fc.lines.total(), fc.lines.missed());
+                List<MethodCoverage> uncoveredMethods = fc.uncoveredMethods(sortMode);
+                if (!uncoveredMethods.isEmpty()) {
+                    out.println("  Uncovered methods (ranked):");
+                    for (MethodCoverage m : uncoveredMethods) {
+                        out.printf(Locale.ROOT, "    %-35s L%-5d missedBranches=%-3d missedLines=%d%n",
+                                m.name(), m.line(), m.branches().missed(), m.lines().missed());
+                    }
+                }
+                List<String> srcLines = loadSourceLines(sourceRoot, fc);
+                int printed = 0;
+                for (LineInfo li : fc.lineMap.values()) {
+                    if (li.isMissedLine() || li.isPartialBranch()) {
+                        String tag = li.isMissedLine() ? "MISS  " : String.format("BR %d/%d", li.cb(), li.cb() + li.mb());
+                        String text = (srcLines != null && li.line() >= 1 && li.line() <= srcLines.size())
+                                ? srcLines.get(li.line() - 1) : "";
+                        out.printf("  L%-5d [%s] %s%n", li.line(), tag, text);
+                        printed++;
+                    }
+                }
+                if (printed == 0) {
+                    out.println("  100% covered (no missed lines or branches).");
+                }
             }
         }
     }
@@ -882,10 +1178,13 @@ public final class BatestCoverageReporter {
             boolean hasCompileO0Cov, Counter shCompO0L, Counter shCompO0B,
             Counter shCompL, Counter shCompB,
             Counter shUnionL, Counter shUnionB,
-            List<FileCoverage> canonicalClasses) throws IOException {
+            List<FileCoverage> canonicalClasses,
+            EnumMap<Scope, List<FileCoverage>> hotspotsByScope,
+            SortMode sortMode) throws IOException {
         StringBuilder sb = new StringBuilder();
         sb.append("{\n");
         sb.append("  \"filter\": ").append(jsonString(filter)).append(",\n");
+        sb.append("  \"sort\": ").append(jsonString(sortMode.name().toLowerCase(Locale.ROOT))).append(",\n");
         sb.append("  \"files\": ").append(files).append(",\n");
         sb.append("  \"cases\": ").append(cases).append(",\n");
         sb.append("  \"interpretPassed\": ").append(interpPassed).append(",\n");
@@ -928,6 +1227,34 @@ public final class BatestCoverageReporter {
             sb.append("\n  ");
         }
         sb.append("],\n");
+        sb.append("  \"hotspotsByScope\": {\n");
+        for (int s = 0; s < REPORT_SCOPES.size(); s++) {
+            Scope scope = REPORT_SCOPES.get(s);
+            List<FileCoverage> list = hotspotsByScope.get(scope);
+            sb.append("    ").append(jsonString(scope.jsonKey)).append(": [");
+            for (int i = 0; i < list.size(); i++) {
+                FileCoverage fc = list.get(i);
+                if (i > 0) {
+                    sb.append(',');
+                }
+                sb.append("\n      {\"class\": ").append(jsonString(fc.qualifiedClass))
+                        .append(", \"branchesMissed\": ").append(fc.branches.missed())
+                        .append(", \"branchesTotal\": ").append(fc.branches.total())
+                        .append(", \"linesMissed\": ").append(fc.lines.missed())
+                        .append(", \"linesTotal\": ").append(fc.lines.total())
+                        .append(", \"score\": ").append(impactScore(fc.branches, fc.lines))
+                        .append('}');
+            }
+            if (!list.isEmpty()) {
+                sb.append("\n    ");
+            }
+            sb.append(']');
+            if (s + 1 < REPORT_SCOPES.size()) {
+                sb.append(',');
+            }
+            sb.append('\n');
+        }
+        sb.append("  },\n");
         sb.append("  \"classes\": [");
         for (int i = 0; i < canonicalClasses.size(); i++) {
             FileCoverage fc = canonicalClasses.get(i);
@@ -938,8 +1265,11 @@ public final class BatestCoverageReporter {
                     .append(", \"scope\": ").append(jsonString(fc.scope.name()))
                     .append(", \"linesCovered\": ").append(fc.lines.covered())
                     .append(", \"linesTotal\": ").append(fc.lines.total())
+                    .append(", \"linesMissed\": ").append(fc.lines.missed())
                     .append(", \"branchesCovered\": ").append(fc.branches.covered())
                     .append(", \"branchesTotal\": ").append(fc.branches.total())
+                    .append(", \"branchesMissed\": ").append(fc.branches.missed())
+                    .append(", \"score\": ").append(impactScore(fc.branches, fc.lines))
                     .append('}');
         }
         if (!canonicalClasses.isEmpty()) {
@@ -951,9 +1281,10 @@ public final class BatestCoverageReporter {
 
     private static String scopeJson(Counter lines, Counter branches) {
         return String.format(Locale.ROOT,
-                "{\"linesCovered\": %d, \"linesTotal\": %d, \"linePct\": %.2f, \"branchesCovered\": %d, \"branchesTotal\": %d, \"branchPct\": %.2f}",
+                "{\"linesCovered\": %d, \"linesTotal\": %d, \"linePct\": %.2f, \"branchesCovered\": %d, \"branchesTotal\": %d, \"branchPct\": %.2f, \"linesMissed\": %d, \"branchesMissed\": %d}",
                 lines.covered(), lines.total(), lines.pct(),
-                branches.covered(), branches.total(), branches.pct());
+                branches.covered(), branches.total(), branches.pct(),
+                lines.missed(), branches.missed());
     }
 
     private static String jsonString(String s) {

@@ -365,42 +365,44 @@ Merging `jacoco-interpret.exec`, `jacoco-compile-O0.exec`, and `jacoco-compile.e
 
 ### 5.3 Console & Machine-Readable Output Format
 
-`mvn -q verify -Pbatest` prints a compact (~45-line) summary tailored to fit cleanly in an agent's context window without flooding tokens, while writing full per-line details to `target/batest-report/uncovered.txt` and `target/batest-report/summary.json` (and clearly tagging the header `[FILTERED: <selector>]` whenever `-Dbatest.filter` is active so subset coverage is never mistaken for full-suite coverage):
+`mvn -q verify -Pbatest` prints a structured summary with per-scope gate deficits (`PASS` / `NEED +N br`) and **per-scope uncovered hotspot rankings** (default top `10` per scope → 40+ candidates spanning all five buckets, ranked by absolute impact score `(missedBr + 1) * (missedLn + 1) - 1`, configurable via `-Dbatest.top=N|all` and `-Dbatest.sort=score|branches|lines`), while writing full scope-grouped, ranked per-line details to `target/batest-report/uncovered.txt` and `target/batest-report/summary.json` (and tagging the header `[FILTERED: <selector>]` whenever `-Dbatest.filter` is active so subset coverage is never mistaken for full-suite coverage):
 
 ```text
 === BATEST RESULTS =============================================================
-Files : 18    Cases : 340
-Interpret : 340 / 340 passed (100.0%)
-Compile   : 339 / 340 passed ( 99.7%)
-Parity    : 339 / 340 matched (1 divergence)
-
-FAILURES (1) :
-  [COMPILE MISMATCH] operators/compound.batest:42 (case #4)
-    expected  : Not an assignable scope : f()
-    interpret : Not an assignable scope : f() [USER_ERROR]
-    compile   : No such member : x [USER_ERROR]
+Files : 57    Cases : 733
+Interpret : 733 / 733 passed (100.0%)
+Compile   : 733 / 733 passed (100.0%)
+Compile -O0 : 733 / 733 passed (100.0%)
+Parity    : 733 / 733 matched (0 divergences)
 
 === COVERAGE SUMMARY (.batest suite) ===========================================
-Scope                      Lines            Branches
--------------------------  ---------------  ---------------
-Interpreter (impl.*)        94.2% (418/444)  89.6% (190/212)
-Compiler (codegen+indy)     86.4% (2410/2789) 81.1% (1120/1381)
-Shared Front-End (analysis) 88.9% (3812/4288) 83.4% (1940/2326)
-Shared Runtime (interpret)  84.1% ( 912/1084) 79.0% ( 411/520)
-Shared Runtime (compile)    78.5% ( 851/1084) 72.3% ( 376/520)
-Shared Runtime (combined)   91.0% ( 986/1084) 86.5% ( 450/520)
+Scope                        Lines                 Branches              Gate (75.0%)
+---------------------------  --------------------  --------------------  ----------------
+Interpreter (impl.*)          95.1% (  693/729  )   91.4% (  328/359  )  PASS
+Compiler (-O0)                84.2% ( 6423/7629 )   72.1% ( 2979/4132 )  NEED +120 br
+Optimizer (-O1)               78.5% ( 1461/1861 )   69.0% ( 1438/2084 )  NEED +125 br
+Shared Front-End (analysis)   82.0% (15075/18385)   76.4% (14242/18642)  PASS
+Shared Runtime (interpret)    74.0% ( 2501/3380 )   68.0% ( 1935/2846 )
+Shared Runtime (compile-O0)   76.0% ( 2568/3380 )   70.0% ( 1992/2846 )
+Shared Runtime (compile-O1)   75.8% ( 2562/3380 )   69.8% ( 1986/2846 )
+Shared Runtime (combined)     83.5% ( 2822/3380 )   78.2% ( 2225/2846 )  PASS
 
-=== LOWEST BRANCH COVERAGE HOTSPOTS (top 10) ===================================
-  1. runtime.Bootstrap          64.2% branches (38 missed) -> L188-204, L312-340, L441-468
-  2. runtime.JavaLinker         68.0% branches (24 missed) -> L94-118, L162-185
-  3. compiler.CodeGenerator     82.3% branches (214 missed)-> L842-879, L1490-1532, L3680-3725
-  4. engine.impl.Interpreter    89.6% branches (22 missed) -> L318-329, L588-604
-  ...
+=== UNCOVERED HOTSPOTS BY SCOPE (top 10/scope, ranked by score = (missedBr+1)*(missedLn+1)-1) ===
+
+-- Interpreter (impl.*) : 31 missed br, 36 missed ln (2 uncovered files) --
+   1. engine.impl.Interpreter          29 br ( 91.5%) |   34 ln ( 95.0%) -> visitCall:L891(12br/15ln), ...
+   2. engine.impl.Function              2 br ( 85.7%) |    2 ln ( 96.2%) -> activate:L43(2br/2ln)
+
+-- Compiler (-O0) : 1153 missed br [NEED +120 br], 1206 missed ln (28 uncovered files) --
+   1. compiler.CallEmitter            214 br ( 68.4%) |  198 ln ( 84.1%) -> emitCoreCollectionCall:L54(94br/132ln), ...
+   ...
+  ... and 18 more uncovered files (240 missed br, 295 missed ln)
+
 Full uncovered line/branch map : target/batest-report/uncovered.txt
-Inspect a single class         : mvn -q verify -Pbatest -Dbatest.inspect=Bootstrap
+Inspect class(es) (no re-run)  : mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=<Class[,Class2]> -Dbatest.minBranchPct=0
 ```
 
-Passing `-Dbatest.inspect=<SimpleOrQualifiedClassName>` (or reading `target/batest-report/uncovered.txt`) prints each uncovered method, missed line range, and partially covered branch line alongside the exact source lines from `src/main/java`, so the agent can immediately see *what condition* was missed without manually cross-referencing XML line numbers.
+Passing `-Dbatest.inspect=<Class[,Class2]>` (either on `verify -Pbatest` or directly via `exec:java@batest-report` without re-running tests) or reading `target/batest-report/uncovered.txt` prints ranked uncovered methods and every missed/partial branch line alongside the exact source lines from `src/main/java`, so several `.batest` files across multiple scopes can be planned and written in a single iteration.
 
 ---
 
