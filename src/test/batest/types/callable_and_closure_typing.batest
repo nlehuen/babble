@@ -327,3 +327,51 @@ def C = class () () static (
 )
 }}}}}
 Member used before definition : b
+
+{{{{{
+;; Polymorphic-to-polymorphic and polymorphic-to-monomorphic function subtyping
+def IA = interface (def x : int)
+def IB = interface extends IA ()
+def Impl = record (x : int) implements IB ()
+def polyA : fn of (T : IA) (T) : T = fn of (T : IA) (v : T) : T -> ( v )
+def polyB : fn of (U : IB) (U) : U = polyA
+def mono : fn (Impl) : Impl = polyA
+assert(polyB(Impl(3)).x == 3 and mono(Impl(4)).x == 4)
+}}}}}
+
+{{{{{
+;; Non-polymorphic function cannot satisfy polymorphic function type
+def mono = fn (x : int) : int -> ( x )
+def bad : fn of T (T) : T = mono
+}}}}}
+Type error : expected fn of T (p0 : T) : T, got fn (x : int) : int
+
+{{{{{
+;; Polymorphic function type parameter arity mismatch
+def f1 = fn of T (x : T) : T -> ( x )
+def bad : fn of (A, B) (A) : A = f1
+}}}}}
+Type error : expected fn of (A, B) (p0 : A) : A, got fn of T (x : T) : T
+
+{{{{{
+;; Polymorphic-to-monomorphic bound failure and primitive array substitution rejection
+def fArr = fn of T (xs : array of T) : int -> ( xs.size() )
+def bad : fn (array of int) : int = fArr
+}}}}}
+Type error : expected (p0 : array of int) : int, got fn of T (xs : array of T) : int
+
+{{{{{
+;; Rest-parameter function subtyping with trailing keyword-only optionals
+def varFn = fn (a : int, xs : int..., k : int = 0) : int -> ( a + k )
+def sub1 : fn (a : int, b : int, xs : int..., k : int = ...) : int = varFn
+def sub2 : fn (a : int, xs : int...) : int = varFn
+assert(sub1(1, 2, 3, k: 4) == 5 and sub2(2, 3) == 2)
+}}}}}
+
+{{{{{
+;; Rest-parameter subtyping rejects non-variadic source or missing keyword-only param
+def fixed = fn (a : int, b : int) : int -> ( a + b )
+def bad : fn (a : int, xs : int...) : int = fixed
+}}}}}
+Type error : expected (a : int, xs : int...) : int, got (a : int, b : int) : int
+

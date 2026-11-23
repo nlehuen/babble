@@ -409,3 +409,29 @@ def run = fn (a: int, b: int, flag: bool, xs: list of int): double -> (
 assert(run(10, 2, true, list(1, 2, 3)) == 57.0)
 }}}}}
 
+{{{{{
+;; HirPurity.isDeterministic : loop-invariant non-static String.length, If, FunctionRef, CoreCollectionRef
+def useRef = fn nothrow (f: fn nothrow (int): int, c: any): int -> (return f(1) ; 0)
+def run = fn (s: string, flag: bool, n: int): int -> (
+  def i = 0 ; def acc = 0
+  while i < n then (
+    acc += s.length() + (if flag then (1) else (2)) + useRef(fn nothrow (x: int): int -> (x + 1), list)
+    i += 1
+  )
+  acc
+)
+assert(run("abc", true, 3) == 18)
+}}}}}
+
+{{{{{
+;; HirEGraphSimplifyPass : byte/short constant widening and char/bool comparisons
+def run = fn (p: byte): bool -> (
+  def s: short = if true then (byte(3)) else (p)
+  def c1 = 'a' < 'b' and 'a' <= 'a' and 'b' > 'a' and 'b' >= 'b' and 'a' != 'b'
+  def b1 = (true == true) and (true != false) and not (false == true)
+  s == short(3) and c1 and b1
+)
+assert(run(byte(1)))
+}}}}}
+
+

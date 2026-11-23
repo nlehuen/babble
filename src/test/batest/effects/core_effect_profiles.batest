@@ -153,3 +153,40 @@ Function badGet declared nothrow violates nothrow guarantee
 def badCap = fn nothrow () : list of int -> ( list of int (capacity: 4) )
 }}}}}
 Function badCap declared nothrow violates nothrow guarantee
+
+{{{{{
+;; Mutable entry with fresh unique vs borrowed element
+def Box = class (def v : int) ()
+def mkEntry = fn (shared b : Box) : entry of (string, Box) -> (
+    def e1 = entry("a", Box(1))
+    def e2 = entry("b", b)
+    discard(e1)
+    e2
+)
+assert(mkEntry(Box(7)).getValue().v == 7)
+}}}}}
+
+{{{{{
+;; array(from:) across list of Box and frozen array of Box
+def Box = class (def v : int) ()
+def copyArr = fn (xs : list of Box, fa : frozen array of Box) : int -> (
+    def a1 = (array of Box)(from: xs)
+    def a2 = (array of Box)(from: fa)
+    a1.size() + a2.size()
+)
+def b = Box(7)
+assert(copyArr(list(b), freeze((array of Box).of(Box(7)))) == 2)
+}}}}}
+
+{{{{{
+;; list(from:) with frozen and mutable sources, plus sortedset(comparator:)
+def Box = class (def v : int) ()
+def run = fn (xs : list of Box, fxs : frozen list of int) : int -> (
+    def c1 = (list of Box)(from: xs)
+    def c2 = (list of int)(from: fxs)
+    def s = (sortedset of int)(comparator: fn (a : int, b : int) : int -> ( a - b ), from: fxs)
+    c1.size() + c2.size() + s.size()
+)
+assert(run(list(Box(1)), freeze(list(3, 1, 2))) == 7)
+}}}}}
+

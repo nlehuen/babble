@@ -348,3 +348,82 @@ def f = fn (xs : list of int) : int -> (
 assert(f(list(1, 2, 3)) == 3)
 }}}}}
 
+{{{{{
+;; SCP : SAME edges (`n - 0`, `int(n / 1)`), `a >= b` guard, local `class`, and default param
+def fSame = fn (n : int, m : int = 0) : int -> (
+    def L = class (def k : int) ()
+    if n <= 0 then ( m + L(1).k )
+    else if m >= 1 and n >= m then ( fSame(n - m, m - 0) )
+    else ( fSame(int(n / 1) - 1, m) )
+)
+assert(fSame(4, 2) == 3 and fSame(3) == 1)
+}}}}}
+
+{{{{{
+;; SCP : inner closure referencing `recurse` and spread call stay non-terminating
+def fClos = fn (n : int) : int -> (
+    def h = fn (k : int) : int -> ( if k <= 0 then ( 0 ) else ( fClos(k - 1) ) )
+    if n <= 0 then ( 0 ) else ( h(n - 1) )
+)
+def fSpread = fn (a : int, xs : int...) : int -> (
+    if a <= 0 then ( 0 ) else ( fSpread(a - 1, ...xs) )
+)
+def ok = fn (n : int) : int -> ( fClos(n) ; fSpread(n, 0) ; n )
+assert(ok(2) == 2)
+}}}}}
+
+{{{{{
+;; Algebraic : local compound assign, mut-param read+write (`b.v = b.v + d`), float/double literals
+def sumSq = fn commutative (a : int, b : int) : int -> (
+    def s = a
+    s += b
+    s * s
+)
+def addBox = fn commutative (mut b : Box, d : int) -> ( b.v = b.v + d )
+def monoF = fn monotone (x : float) : float -> ( x * 2.0f + 1.0f )
+def b = Box(1)
+addBox(b, 4)
+assert(sumSq(2, 3) == 25 and b.v == 5 and monoF(2.0f) == 5.0f)
+}}}}}
+
+{{{{{
+;; Algebraic : ForwardMutCall (`mut commutative` delegating to another mut method)
+def addOne = fn commutative (mut b : Box, d : int) -> ( b.v += d )
+def fwdAdd = fn commutative (mut b : Box, d : int) -> ( addOne(b, d) )
+def b = Box(2)
+fwdAdd(b, 5)
+assert(b.v == 7)
+}}}}}
+
+{{{{{
+;; Algebraic : `else if` monotone and boolean commutative/associative laws
+def pickShift = fn monotone (x : double) : double -> (
+    if 0 == 1 then ( x + 1.0 ) else if 1 == 1 then ( x + 2.0 ) else ( x + 3.0 )
+)
+def both = fn commutative associative (a : bool, b : bool) : bool -> ( a and b )
+assert(pickShift(5.0) == 7.0 and both(true, true) and not both(true, false))
+}}}}}
+
+{{{{{
+;; SCP : flipped constant comparisons (`0 >= n`, `1 <= n`, `0 == n` with `0 <= n`), nested both-return `if`
+def fFlip = fn (n : int) : int -> (
+    if 0 >= n then ( return 0 )
+    if 1 <= n and 0 != n then ( 1 + fFlip(n - 1) ) else ( 0 )
+)
+def fBothExit = fn (n : int) : int -> (
+    if n <= 0 then ( if n == 0 then ( return 0 ) else ( return 0 ) )
+    1 + fBothExit(n - 1)
+)
+assert(fFlip(3) == 3 and fBothExit(3) == 3)
+}}}}}
+
+{{{{{
+;; Algebraic : `byte` lossless widening, `char` / `string` concatenation injective
+def b2d = fn monotone injective (b : byte) : double -> ( double(b) )
+def tagStr = fn injective (s : string) : string -> ( "k:" + s )
+def tagInt = fn injective (n : int) : string -> ( "n=" + n )
+assert(b2d(byte(3)) == 3.0 and tagStr("a") == "k:a" and tagInt(5) == "n=5")
+}}}}}
+
+
+
