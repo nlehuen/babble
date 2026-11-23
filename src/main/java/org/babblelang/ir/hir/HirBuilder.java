@@ -866,7 +866,7 @@ public final class HirBuilder {
                     body,
                     scopes.lowering().numericWideningRank(f.forBlock),
                     scopes.lowering().forElemSamTarget(f),
-                    metaOf(f)
+                    metaOf(f, scopes.effects().forEffects(f))
             );
         }
         if (ctx instanceof BabbleParser.BreakExpressionContext b) {
