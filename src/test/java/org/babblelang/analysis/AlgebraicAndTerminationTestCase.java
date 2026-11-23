@@ -10,7 +10,7 @@ import java.util.List;
 
 /**
  * Direct unit tests for the ANTLR-free {@link AlgebraicVerifier} and
- * {@link SizeChangeTermination} cores ({@code BIP027-P6}).
+ * {@link SizeChangeTermination} cores ({@code BIP027-I6}).
  */
 public class AlgebraicAndTerminationTestCase {
 

@@ -20,7 +20,7 @@ import java.util.Set;
 
 /**
  * Thin ANTLR AST extraction adapters feeding the ANTLR-free {@link AlgebraicVerifier}
- * (and {@code SizeChangeTermination}) cores ({@code BIP027-P6}).
+ * (and {@code SizeChangeTermination}) cores ({@code BIP027-I6}).
  */
 final class EffectAstExtractors {
     private static final int MAX_TERM_NODES = 64;
@@ -714,7 +714,7 @@ final class EffectAstExtractors {
         return null;
     }
 
-    // ---------------------------------------------------------------- polynomial SCP extraction (BIP027-P6)
+    // ---------------------------------------------------------------- polynomial SCP extraction (BIP027-I6)
 
     /**
      * Attempts to certify termination of a cyclic WTO component via Ben-Amram &amp; Lee's

@@ -721,7 +721,7 @@ public class OwnershipTestCase {
         BabbleParser.FileContext file = analyzed.file();
         Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "straight")).terminating());
         Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "loopy")).terminating());
-        // BIP027-P6 : polynomial SCP certifies guarded integer & acyclic record recursion and curated finite for-loops!
+        // BIP027-I6 : polynomial SCP certifies guarded integer & acyclic record recursion and curated finite for-loops!
         Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "rec")).terminating());
         Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "fib")).terminating());
         Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "gcdSub")).terminating());

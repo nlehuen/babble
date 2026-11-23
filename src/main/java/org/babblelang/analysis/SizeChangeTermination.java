@@ -12,7 +12,7 @@ import java.util.Set;
 
 /**
  * ANTLR-free polynomial-time Size-Change Termination ({@code SCP}) analyzer after
- * Lee–Jones–Ben-Amram ({@code [LJB01]}) and Ben-Amram–Lee ({@code [BAL07]}) ({@code BIP027-P6}).
+ * Lee–Jones–Ben-Amram ({@code [LJB01]}) and Ben-Amram–Lee ({@code [BAL07]}) ({@code BIP027-I6}).
  *
  * <p>Certifies termination of a strongly connected call component when every recursive call cycle
  * can be iteratively eliminated via sound well-founded rankings over non-negative integer or

@@ -226,7 +226,7 @@ final class EffectChecker {
     final Map<ParserRuleContext, CallableSummary> visibleSummaries = new IdentityHashMap<>();
     /** Callables belonging to a cyclic WTO component (self-recursive or mutually recursive). */
     final Set<ParserRuleContext> cyclicCallables = Collections.newSetFromMap(new IdentityHashMap<>());
-    /** Cyclic callables certified terminating by polynomial SCP ({@code BIP027-P6}). */
+    /** Cyclic callables certified terminating by polynomial SCP ({@code BIP027-I6}). */
     final Set<ParserRuleContext> scpTerminatingCallables = Collections.newSetFromMap(new IdentityHashMap<>());
 
     EffectChecker(BlockScopes pass, TypedProgram checker) {
