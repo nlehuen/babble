@@ -3,9 +3,8 @@ package org.babblelang.opt;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirPrinter;
 import org.babblelang.ir.hir.HirVerifier;
-import org.babblelang.opt.hir.AlgebraicSimplifyPass;
-import org.babblelang.opt.hir.ConstFoldPass;
 import org.babblelang.opt.hir.HirDcePass;
+import org.babblelang.opt.hir.HirEGraphSimplifyPass;
 import org.babblelang.opt.hir.HirLicmPass;
 import org.babblelang.opt.hir.InlinePass;
 
@@ -25,8 +24,7 @@ public final class PassManager {
     public static final int MAX_ITERATIONS = 3;
 
     private static final List<HirPass> O1_PASSES = List.of(
-            new ConstFoldPass(),
-            new AlgebraicSimplifyPass(),
+            new HirEGraphSimplifyPass(),
             new InlinePass(),
             new HirDcePass(),
             new HirLicmPass()
