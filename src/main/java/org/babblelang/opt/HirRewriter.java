@@ -297,19 +297,52 @@ public final class HirRewriter {
         return copy != null ? copy : params;
     }
 
-    /** Applies a statement-list rewriter across every body in {@code module}. */
+    /** Unwraps single-expression transparent blocks (no scope, no locals, no inner widening). */
+    public static HirExpr unwrapTransparent(HirExpr expr) {
+        while (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
+            expr = b.statements().get(0);
+        }
+        return expr;
+    }
+
+    /** Rewriter callback invoked for each statement list in a {@link HirModule}. */
+    @FunctionalInterface
+    public interface BodyRewriter {
+        /**
+         * @param ownerMethodId HIR owner id ({@code 0} for top-level, {@code fn.id()} for functions,
+         *                      {@code cls.id()} / {@code iface.id()} for types)
+         * @param currentFnId   {@code fn.id()} inside a function body, {@code -1} elsewhere
+         * @param statements    statement list to rewrite
+         */
+        List<HirExpr> rewrite(int ownerMethodId, int currentFnId, List<HirExpr> statements);
+    }
+
+    /** Applies a statement-list rewriter across every body and parameter default in {@code module}. */
     public static HirModule rewriteModuleBodies(HirModule module, UnaryOperator<List<HirExpr>> stmtListRewriter) {
-        List<HirExpr> newTop = stmtListRewriter.apply(module.topLevelStatements());
+        return rewriteModule(module, (ownerId, fnId, stmts) -> stmtListRewriter.apply(stmts),
+                ex -> {
+                    List<HirExpr> r = stmtListRewriter.apply(List.of(ex));
+                    return r.size() == 1 ? r.get(0) : ex;
+                }, module::nextVarId);
+    }
+
+    /**
+     * General copy-on-write module rewriter used across HIR optimization passes (BIP027-P2),
+     * avoiding duplicated traversal of top-level statements, functions, classes, interfaces,
+     * and static blocks.
+     */
+    public static HirModule rewriteModule(HirModule module, BodyRewriter bodyRewriter,
+                                          UnaryOperator<HirExpr> paramDefaultRewriter,
+                                          java.util.function.IntSupplier nextVarIdSupplier) {
+        List<HirExpr> newTop = bodyRewriter.rewrite(0, -1, module.topLevelStatements());
         boolean changed = newTop != module.topLevelStatements();
 
         Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
-            List<HirParam> np = rewriteParams(fn.params(), ex -> {
-                List<HirExpr> r = stmtListRewriter.apply(List.of(ex));
-                return r.size() == 1 ? r.get(0) : ex;
-            });
-            List<HirExpr> nb = stmtListRewriter.apply(fn.body());
+            List<HirParam> np = paramDefaultRewriter != null
+                    ? rewriteParams(fn.params(), paramDefaultRewriter) : fn.params();
+            List<HirExpr> nb = bodyRewriter.rewrite(fn.id(), fn.id(), fn.body());
             if (np != fn.params() || nb != fn.body()) {
                 changed = true;
                 fn = fn.withParamsAndBody(np, nb);
@@ -320,14 +353,12 @@ public final class HirRewriter {
         Map<Integer, HirClass> newClasses = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirClass> e : module.classes().entrySet()) {
             HirClass cls = e.getValue();
-            List<HirParam> np = rewriteParams(cls.params(), ex -> {
-                List<HirExpr> r = stmtListRewriter.apply(List.of(ex));
-                return r.size() == 1 ? r.get(0) : ex;
-            });
-            List<HirExpr> nb = stmtListRewriter.apply(cls.body());
+            List<HirParam> np = paramDefaultRewriter != null
+                    ? rewriteParams(cls.params(), paramDefaultRewriter) : cls.params();
+            List<HirExpr> nb = bodyRewriter.rewrite(cls.id(), -1, cls.body());
             HirStaticBlock ns = cls.staticBlock();
             if (ns != null) {
-                List<HirExpr> nsb = stmtListRewriter.apply(ns.body());
+                List<HirExpr> nsb = bodyRewriter.rewrite(cls.id(), -1, ns.body());
                 if (nsb != ns.body()) {
                     ns = ns.withBody(nsb);
                 }
@@ -342,10 +373,10 @@ public final class HirRewriter {
         Map<Integer, HirInterface> newIfaces = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirInterface> e : module.interfaces().entrySet()) {
             HirInterface iface = e.getValue();
-            List<HirExpr> nb = stmtListRewriter.apply(iface.body());
+            List<HirExpr> nb = bodyRewriter.rewrite(iface.id(), -1, iface.body());
             HirStaticBlock ns = iface.staticBlock();
             if (ns != null) {
-                List<HirExpr> nsb = stmtListRewriter.apply(ns.body());
+                List<HirExpr> nsb = bodyRewriter.rewrite(iface.id(), -1, ns.body());
                 if (nsb != ns.body()) {
                     ns = ns.withBody(nsb);
                 }
@@ -360,6 +391,6 @@ public final class HirRewriter {
         if (!changed) {
             return module;
         }
-        return module.withUpdates(newTop, newFns, newClasses, newIfaces, module.nextVarId(), module.nextOwnerId());
+        return module.withUpdates(newTop, newFns, newClasses, newIfaces, nextVarIdSupplier.getAsInt(), module.nextOwnerId());
     }
 }

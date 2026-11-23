@@ -43,8 +43,8 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
 /**
- * Soundness, golden-IR, and 3-way parity tests for the {@code BIP014} HIR Nanopass optimizer
- * ({@code ConstFoldPass}, {@code AlgebraicSimplifyPass}, {@code InlinePass}, {@code HirDcePass},
+ * Soundness, golden-IR, and 3-way parity tests for the {@code BIP014} / {@code BIP027-P2} HIR
+ * optimizer ({@code HirEGraphSimplifyPass}, {@code InlinePass}, {@code HirDcePass},
  * {@code HirLicmPass}, and {@code babblec} AOT cross-module inlining).
  */
 public class OptimizerTestCase {
@@ -93,7 +93,7 @@ public class OptimizerTestCase {
         return o1;
     }
 
-    // ------------------------------------------------------------------ O1 : ConstFoldPass
+    // ------------------------------------------------------------------ O1 : Constant Folding (HirEGraphSimplifyPass)
 
     @Test
     public void testConstFoldArithmeticStringsBranchesAndWhitelistedJdk() throws Exception {
@@ -128,7 +128,7 @@ public class OptimizerTestCase {
         Assertions.assertEquals(2, o1.getLineNumber());
     }
 
-    // ------------------------------------------------------------------ O2 & O3 : AlgebraicSimplifyPass
+    // ------------------------------------------------------------------ O2 & O3 : E-Graph Algebraic Simplify (HirEGraphSimplifyPass)
 
     @Test
     public void testAlgebraicIdentitiesReassociationAndIdempotentCollapse() throws Exception {

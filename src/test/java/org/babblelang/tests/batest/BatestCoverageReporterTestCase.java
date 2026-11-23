@@ -32,7 +32,9 @@ public class BatestCoverageReporterTestCase {
         Assertions.assertEquals(BatestCoverageReporter.Scope.OPTIMIZER,
                 BatestCoverageReporter.scopeOf("org.babblelang.opt.PassManager"));
         Assertions.assertEquals(BatestCoverageReporter.Scope.OPTIMIZER,
-                BatestCoverageReporter.scopeOf("org.babblelang.opt.hir.ConstFoldPass"));
+                BatestCoverageReporter.scopeOf("org.babblelang.opt.hir.HirEGraphSimplifyPass"));
+        Assertions.assertEquals(BatestCoverageReporter.Scope.OPTIMIZER,
+                BatestCoverageReporter.scopeOf("org.babblelang.ir.egraph.EGraph"));
 
         Assertions.assertEquals(BatestCoverageReporter.Scope.FRONT_END,
                 BatestCoverageReporter.scopeOf("org.babblelang.analysis.TypeChecker"));

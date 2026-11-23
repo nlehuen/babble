@@ -534,7 +534,8 @@ public final class BatestCoverageReporter {
         if (qualifiedClass.startsWith("org.babblelang.engine.impl.")) {
             return Scope.INTERPRETER;
         }
-        if (qualifiedClass.startsWith("org.babblelang.opt.")) {
+        if (qualifiedClass.startsWith("org.babblelang.opt.")
+                || qualifiedClass.startsWith("org.babblelang.ir.egraph.")) {
             return Scope.OPTIMIZER;
         }
         if (qualifiedClass.startsWith("org.babblelang.compiler.")

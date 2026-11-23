@@ -5,13 +5,10 @@ import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirCallArg;
-import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
-import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
-import org.babblelang.ir.hir.HirStaticBlock;
 import org.babblelang.ir.hir.HirVar;
 import org.babblelang.opt.HirPass;
 import org.babblelang.opt.HirRewriter;
@@ -62,76 +59,14 @@ public final class InlinePass implements HirPass {
             return Result.unchanged(module);
         }
 
-        boolean changed = false;
-
-        int[] topBudget = {MAX_INLINES_PER_OWNER};
-        List<HirExpr> newTop = inlineList(module.topLevelStatements(), 0, -1, inlineable, crossModule, definitelyInitializedTopFns,
-                nextVarId, topBudget, rewrites);
-        if (newTop != module.topLevelStatements()) {
-            changed = true;
-        }
-
-        Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
-        for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
-            HirFunction fn = e.getValue();
-            int[] budget = {MAX_INLINES_PER_OWNER};
-            List<HirExpr> nb = inlineList(fn.body(), fn.id(), fn.id(), inlineable, crossModule, definitelyInitializedTopFns,
-                    nextVarId, budget, rewrites);
-            if (nb != fn.body()) {
-                changed = true;
-                fn = fn.withBody(nb);
-            }
-            newFns.put(e.getKey(), fn);
-        }
-
-        Map<Integer, HirClass> newClasses = new LinkedHashMap<>();
-        for (Map.Entry<Integer, HirClass> e : module.classes().entrySet()) {
-            HirClass cls = e.getValue();
-            int[] budget = {MAX_INLINES_PER_OWNER};
-            List<HirExpr> nb = inlineList(cls.body(), cls.id(), -1, inlineable, crossModule, definitelyInitializedTopFns,
-                    nextVarId, budget, rewrites);
-            HirStaticBlock ns = cls.staticBlock();
-            if (ns != null) {
-                int[] sbBudget = {MAX_INLINES_PER_OWNER};
-                List<HirExpr> nsb = inlineList(ns.body(), cls.id(), -1, inlineable, crossModule, definitelyInitializedTopFns,
-                        nextVarId, sbBudget, rewrites);
-                if (nsb != ns.body()) {
-                    ns = ns.withBody(nsb);
-                }
-            }
-            if (nb != cls.body() || ns != cls.staticBlock()) {
-                changed = true;
-                cls = cls.withBodyAndStatic(cls.params(), nb, ns);
-            }
-            newClasses.put(e.getKey(), cls);
-        }
-
-        Map<Integer, HirInterface> newIfaces = new LinkedHashMap<>();
-        for (Map.Entry<Integer, HirInterface> e : module.interfaces().entrySet()) {
-            HirInterface iface = e.getValue();
-            int[] budget = {MAX_INLINES_PER_OWNER};
-            List<HirExpr> nb = inlineList(iface.body(), iface.id(), -1, inlineable, crossModule, definitelyInitializedTopFns,
-                    nextVarId, budget, rewrites);
-            HirStaticBlock ns = iface.staticBlock();
-            if (ns != null) {
-                int[] sbBudget = {MAX_INLINES_PER_OWNER};
-                List<HirExpr> nsb = inlineList(ns.body(), iface.id(), -1, inlineable, crossModule, definitelyInitializedTopFns,
-                        nextVarId, sbBudget, rewrites);
-                if (nsb != ns.body()) {
-                    ns = ns.withBody(nsb);
-                }
-            }
-            if (nb != iface.body() || ns != iface.staticBlock()) {
-                changed = true;
-                iface = iface.withBodyAndStatic(nb, ns);
-            }
-            newIfaces.put(e.getKey(), iface);
-        }
-
-        if (!changed) {
+        HirModule rewritten = HirRewriter.rewriteModule(module,
+                (ownerId, fnId, stmts) -> inlineList(stmts, ownerId, fnId, inlineable, crossModule,
+                        definitelyInitializedTopFns, nextVarId, new int[]{MAX_INLINES_PER_OWNER}, rewrites),
+                null, () -> nextVarId[0]);
+        if (rewritten == module) {
             return Result.unchanged(module);
         }
-        return new Result(module.withUpdates(newTop, newFns, newClasses, newIfaces, nextVarId[0], module.nextOwnerId()), rewrites[0]);
+        return new Result(rewritten, rewrites[0]);
     }
 
     /**
@@ -146,7 +81,7 @@ public final class InlinePass implements HirPass {
         Map<String, HirFunction> result = new LinkedHashMap<>();
         for (HirExpr stmt : module.topLevelStatements()) {
             if (stmt instanceof HirExpr.Def d && d.var() == null && exports.contains(d.name())) {
-                HirExpr val = ConstFoldPass.unwrapTransparent(d.value());
+                HirExpr val = HirRewriter.unwrapTransparent(d.value());
                 if (val instanceof HirExpr.FunctionRef ref) {
                     HirFunction fn = module.function(ref.functionId());
                     if (isCrossModuleInlineCandidate(fn, module)) {
@@ -449,7 +384,7 @@ public final class InlinePass implements HirPass {
         Set<Integer> substParamIds = new HashSet<>();
         for (int i = 0; i < calleeFn.params().size(); i++) {
             HirParam p = calleeFn.params().get(i);
-            HirExpr arg = ConstFoldPass.unwrapTransparent(args.get(i));
+            HirExpr arg = HirRewriter.unwrapTransparent(args.get(i));
             boolean noOpParamWiden = p.wideningRank() < 0 || isNoOpWidening(p.kind(), p.wideningRank());
             if (p.var() != null && !assignedInCallee.contains(p.var().id())
                     && noOpParamWiden && arg.meta().wideningRank() < 0
@@ -632,7 +567,7 @@ public final class InlinePass implements HirPass {
     }
 
     private static boolean isDefinitelyDefinedPureCallee(HirExpr callee, Set<String> defInitTopFns) {
-        HirExpr u = ConstFoldPass.unwrapTransparent(callee);
+        HirExpr u = HirRewriter.unwrapTransparent(callee);
         if (u instanceof HirExpr.FunctionRef) {
             return true;
         }
