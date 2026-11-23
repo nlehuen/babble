@@ -17,6 +17,7 @@ public sealed interface HirExpr permits
         HirExpr.Const,
         HirExpr.IntParseFallback,
         HirExpr.CoreCollectionRef,
+        HirExpr.CoreExceptionRef,
         HirExpr.VarRead,
         HirExpr.NameRead,
         HirExpr.ThisRef,
@@ -45,9 +46,11 @@ public sealed interface HirExpr permits
         HirExpr.If,
         HirExpr.While,
         HirExpr.For,
+        HirExpr.Try,
         HirExpr.Break,
         HirExpr.Continue,
         HirExpr.Return,
+        HirExpr.Throw,
         HirExpr.CoreCollectionCall,
         HirExpr.SuperCall,
         HirExpr.SelfRecurseCall,
@@ -125,6 +128,10 @@ public sealed interface HirExpr permits
 
     /** Bare core collection constructor reference ({@code list}, {@code set}, {@code map}, etc.). */
     record CoreCollectionRef(String collectionKind, ExprMeta meta) implements HirExpr {
+    }
+
+    /** Core {@code exception} class reference ({@code BabbleException}) as a value ({@code BIP028-D2}). */
+    record CoreExceptionRef(ExprMeta meta) implements HirExpr {
     }
 
     // ---------------------------------------------------------------- variables & names
@@ -406,6 +413,49 @@ public sealed interface HirExpr permits
         }
     }
 
+    record HirCatch(
+            HirVar var,
+            LoweringTargets.CatchTarget target,
+            List<HirExpr> body,
+            List<HirVar> declaredVars,
+            boolean opensNamespaceScope,
+            String[] declaredNames,
+            int wideningRank,
+            int line
+    ) {
+        public HirCatch {
+            body = List.copyOf(body);
+            declaredVars = List.copyOf(declaredVars);
+            declaredNames = declaredNames != null ? declaredNames.clone() : new String[0];
+        }
+    }
+
+    record Try(
+            List<HirExpr> tryBody,
+            List<HirVar> tryDeclaredVars,
+            boolean tryOpensNamespaceScope,
+            String[] tryDeclaredNames,
+            int tryWideningRank,
+            List<HirCatch> catches,
+            List<HirExpr> finallyBody,
+            List<HirVar> finallyDeclaredVars,
+            boolean finallyOpensNamespaceScope,
+            String[] finallyDeclaredNames,
+            boolean finallyNothrow,
+            boolean hasFinally,
+            ExprMeta meta
+    ) implements HirExpr {
+        public Try {
+            tryBody = List.copyOf(tryBody);
+            tryDeclaredVars = List.copyOf(tryDeclaredVars);
+            tryDeclaredNames = tryDeclaredNames != null ? tryDeclaredNames.clone() : new String[0];
+            catches = List.copyOf(catches);
+            finallyBody = List.copyOf(finallyBody);
+            finallyDeclaredVars = List.copyOf(finallyDeclaredVars);
+            finallyDeclaredNames = finallyDeclaredNames != null ? finallyDeclaredNames.clone() : new String[0];
+        }
+    }
+
     record Break(HirExpr value, ExprMeta meta) implements HirExpr {
     }
 
@@ -413,6 +463,9 @@ public sealed interface HirExpr permits
     }
 
     record Return(HirExpr value, ExprMeta meta) implements HirExpr {
+    }
+
+    record Throw(HirExpr value, boolean isJavaThrowable, ExprMeta meta) implements HirExpr {
     }
 
     // ---------------------------------------------------------------- calls

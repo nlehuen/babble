@@ -818,6 +818,9 @@ public final class HirBuilder {
         if (ctx instanceof BabbleParser.CoreCollectionContext col) {
             return new HirExpr.CoreCollectionRef(col.coreCollectionKeyword().getText(), metaOf(col));
         }
+        if (ctx instanceof BabbleParser.CoreExceptionRefContext exc) {
+            return new HirExpr.CoreExceptionRef(metaOf(exc));
+        }
         if (ctx instanceof BabbleParser.TypeApplyContext ta) {
             return new HirExpr.TypeApply(lowerExpr(ta.expression()), metaOf(ta));
         }
@@ -869,6 +872,9 @@ public final class HirBuilder {
                     metaOf(f, scopes.effects().forEffects(f))
             );
         }
+        if (ctx instanceof BabbleParser.TryExpressionContext t) {
+            return lowerTryExpr(t);
+        }
         if (ctx instanceof BabbleParser.BreakExpressionContext b) {
             return new HirExpr.Break(b.expression() != null ? lowerExpr(b.expression()) : null, metaOf(b));
         }
@@ -877,6 +883,10 @@ public final class HirBuilder {
         }
         if (ctx instanceof BabbleParser.ReturnExpressionContext r) {
             return new HirExpr.Return(wrapJavaSam(lowerExpr(r.expression()), r), metaOf(r));
+        }
+        if (ctx instanceof BabbleParser.ThrowExpressionContext th) {
+            LoweringTargets.ThrowTarget target = scopes.lowering().throwTarget(th);
+            return new HirExpr.Throw(lowerExpr(th.expression()), target != null && target.isJavaThrowable(), metaOf(th));
         }
         if (ctx instanceof BabbleParser.ForeverExpressionContext f) {
             // An acknowledgement for the analysis only (BIP024) : the expression itself.
@@ -967,6 +977,82 @@ public final class HirBuilder {
                     scopes.lowering().numericWideningRank(block), metaOf(outer));
         }
         return wrapJavaSam(new HirExpr.Block(stmts, opensNs, declNames, declVars, -1, metaOf(block)), block);
+    }
+
+    private HirExpr lowerTryExpr(BabbleParser.TryExpressionContext t) {
+        List<HirExpr> tryBody = new ArrayList<>(t.tryBlock.expression().size());
+        for (BabbleParser.ExpressionContext e : t.tryBlock.expression()) {
+            tryBody.add(lowerExpr(e));
+        }
+        if (!tryBody.isEmpty()) {
+            int last = tryBody.size() - 1;
+            tryBody.set(last, wrapJavaSam(tryBody.get(last), t.tryBlock));
+        }
+        List<HirVar> tryDeclVars = hirVars(resolution.declared(t.tryBlock));
+        boolean tryOpensNs = tryDeclVars.isEmpty() && scopes.opensScope(t.tryBlock);
+        String[] tryDeclNames = tryOpensNs ? scopes.declared(t.tryBlock) : new String[0];
+        int tryWiden = scopes.lowering().numericWideningRank(t.tryBlock);
+
+        List<HirExpr.HirCatch> catches = new ArrayList<>(t.catchClause().size());
+        for (BabbleParser.CatchClauseContext cc : t.catchClause()) {
+            List<HirExpr> catchBody = new ArrayList<>(cc.catchBlock.expression().size());
+            for (BabbleParser.ExpressionContext e : cc.catchBlock.expression()) {
+                catchBody.add(lowerExpr(e));
+            }
+            if (!catchBody.isEmpty()) {
+                int last = catchBody.size() - 1;
+                catchBody.set(last, wrapJavaSam(catchBody.get(last), cc.catchBlock));
+            }
+            List<HirVar> catchDeclVars = hirVars(resolution.declared(cc.catchBlock));
+            boolean catchOpensNs = catchDeclVars.isEmpty() && scopes.opensScope(cc.catchBlock);
+            String[] catchDeclNames = catchOpensNs ? scopes.declared(cc.catchBlock) : new String[0];
+            HirVar catchVar = cc.name != null ? hirVar(resolution.variable(cc)) : null;
+            LoweringTargets.CatchTarget target = scopes.lowering().catchTarget(cc);
+            int catchWiden = scopes.lowering().numericWideningRank(cc.catchBlock);
+            catches.add(new HirExpr.HirCatch(
+                    catchVar,
+                    target,
+                    catchBody,
+                    catchDeclVars,
+                    catchOpensNs,
+                    catchDeclNames,
+                    catchWiden,
+                    cc.getStart().getLine()
+            ));
+        }
+
+        boolean hasFinally = t.finallyBlock != null;
+        List<HirExpr> finallyBody = List.of();
+        List<HirVar> finallyDeclVars = List.of();
+        boolean finallyOpensNs = false;
+        String[] finallyDeclNames = new String[0];
+        boolean finallyNothrow = true;
+        if (hasFinally) {
+            finallyBody = new ArrayList<>(t.finallyBlock.expression().size());
+            for (BabbleParser.ExpressionContext e : t.finallyBlock.expression()) {
+                finallyBody.add(lowerExpr(e));
+            }
+            finallyDeclVars = hirVars(resolution.declared(t.finallyBlock));
+            finallyOpensNs = finallyDeclVars.isEmpty() && scopes.opensScope(t.finallyBlock);
+            finallyDeclNames = finallyOpensNs ? scopes.declared(t.finallyBlock) : new String[0];
+            finallyNothrow = scopes.effects().isTryFinallyNothrow(t);
+        }
+
+        return new HirExpr.Try(
+                tryBody,
+                tryDeclVars,
+                tryOpensNs,
+                tryDeclNames,
+                tryWiden,
+                catches,
+                finallyBody,
+                finallyDeclVars,
+                finallyOpensNs,
+                finallyDeclNames,
+                finallyNothrow,
+                hasFinally,
+                metaOf(t)
+        );
     }
 
     private HirExpr lowerIfExpr(BabbleParser.IfExprContext ctx, BabbleParser.IfExpressionContext outer) {
@@ -1570,6 +1656,9 @@ public final class HirBuilder {
                 && resolution.declared(b.block()).isEmpty()
                 && !scopes.opensScope(b.block())) {
             expr = b.block().expression(0);
+        }
+        if (expr instanceof BabbleParser.CoreExceptionRefContext) {
+            return true;
         }
         if (expr instanceof BabbleParser.SelectorContext sel) {
             if (sel.safe != null) {

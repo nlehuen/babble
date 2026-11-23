@@ -35,6 +35,7 @@ public final class HirRewriter {
             case HirExpr.Const c -> c;
             case HirExpr.IntParseFallback f -> f;
             case HirExpr.CoreCollectionRef r -> r;
+            case HirExpr.CoreExceptionRef r -> r;
             case HirExpr.VarRead v -> v;
             case HirExpr.NameRead n -> n;
             case HirExpr.ThisRef t -> t;
@@ -165,6 +166,27 @@ public final class HirRewriter {
                         : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
                                 f.bodyWideningRank(), f.elemSamTarget(), f.meta());
             }
+            case HirExpr.Try t -> {
+                List<HirExpr> ntb = rewriteList(t.tryBody(), transform);
+                List<HirExpr.HirCatch> ncs = null;
+                for (int idx = 0; idx < t.catches().size(); idx++) {
+                    HirExpr.HirCatch cc = t.catches().get(idx);
+                    List<HirExpr> ncb = rewriteList(cc.body(), transform);
+                    if (ncb != cc.body()) {
+                        if (ncs == null) {
+                            ncs = new ArrayList<>(t.catches());
+                        }
+                        ncs.set(idx, new HirExpr.HirCatch(cc.var(), cc.target(), ncb, cc.declaredVars(),
+                                cc.opensNamespaceScope(), cc.declaredNames(), cc.wideningRank(), cc.line()));
+                    }
+                }
+                List<HirExpr> nfb = rewriteList(t.finallyBody(), transform);
+                yield (ntb == t.tryBody() && ncs == null && nfb == t.finallyBody()) ? t
+                        : new HirExpr.Try(ntb, t.tryDeclaredVars(), t.tryOpensNamespaceScope(), t.tryDeclaredNames(),
+                                t.tryWideningRank(), ncs != null ? ncs : t.catches(), nfb,
+                                t.finallyDeclaredVars(), t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(),
+                                t.finallyNothrow(), t.hasFinally(), t.meta());
+            }
             case HirExpr.Break b -> {
                 HirExpr nv = b.value() != null ? transform.apply(b.value()) : null;
                 yield nv == b.value() ? b : new HirExpr.Break(nv, b.meta());
@@ -172,6 +194,10 @@ public final class HirRewriter {
             case HirExpr.Return r -> {
                 HirExpr nv = transform.apply(r.value());
                 yield nv == r.value() ? r : new HirExpr.Return(nv, r.meta());
+            }
+            case HirExpr.Throw th -> {
+                HirExpr nv = transform.apply(th.value());
+                yield nv == th.value() ? th : new HirExpr.Throw(nv, th.isJavaThrowable(), th.meta());
             }
             case HirExpr.CoreCollectionCall c -> {
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);

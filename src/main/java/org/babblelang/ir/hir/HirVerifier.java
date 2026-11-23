@@ -72,6 +72,8 @@ public final class HirVerifier {
                     throw new IllegalStateException("HirVerifier : null CoreCollectionRef kind");
                 }
             }
+            case HirExpr.CoreExceptionRef r -> {
+            }
             case HirExpr.VarRead v -> {
                 if (v.var() == null) {
                     throw new IllegalStateException("HirVerifier : null VarRead var");
@@ -160,6 +162,16 @@ public final class HirVerifier {
                 verifyExpr(module, f.iterable(), inFunction, loopDepth);
                 verifyStatements(module, f.body(), inFunction, loopDepth + 1);
             }
+            case HirExpr.Try t -> {
+                if (t.catches().isEmpty() && !t.hasFinally()) {
+                    throw new IllegalStateException("HirVerifier : try without catch or finally at line " + meta.line());
+                }
+                verifyStatements(module, t.tryBody(), inFunction, loopDepth);
+                for (HirExpr.HirCatch cc : t.catches()) {
+                    verifyStatements(module, cc.body(), inFunction, loopDepth);
+                }
+                verifyStatements(module, t.finallyBody(), inFunction, loopDepth);
+            }
             case HirExpr.Break b -> {
                 if (loopDepth <= 0) {
                     throw new IllegalStateException("HirVerifier : break outside loop at line " + meta.line());
@@ -178,6 +190,12 @@ public final class HirVerifier {
                     throw new IllegalStateException("HirVerifier : return outside function at line " + meta.line());
                 }
                 verifyExpr(module, r.value(), inFunction, loopDepth);
+            }
+            case HirExpr.Throw th -> {
+                if (th.value() == null) {
+                    throw new IllegalStateException("HirVerifier : null Throw value at line " + meta.line());
+                }
+                verifyExpr(module, th.value(), inFunction, loopDepth);
             }
             case HirExpr.CoreCollectionCall c -> verifyCallArgs(module, c.args(), inFunction, loopDepth);
             case HirExpr.SuperCall c -> verifyCallArgs(module, c.args(), inFunction, loopDepth);

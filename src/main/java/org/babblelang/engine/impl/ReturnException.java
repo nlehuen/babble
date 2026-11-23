@@ -8,11 +8,10 @@ package org.babblelang.engine.impl;
  * not an error, and must not be caught by anything that handles language-level failures.
  * The stack trace is not filled in, as this is a jump rather than an exception.
  */
-class ReturnException extends RuntimeException {
+class ReturnException extends ControlFlowSignal {
     private final transient Object value;
 
     ReturnException(Object value) {
-        super(null, null, false, false);
         this.value = value;
     }
 

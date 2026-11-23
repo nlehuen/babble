@@ -312,20 +312,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         };
     }
 
-    private static final class BreakException extends RuntimeException {
+    private static final class BreakException extends ControlFlowSignal {
         final Object value;
 
         BreakException(Object value) {
-            super(null, null, false, false);
             this.value = value;
         }
     }
 
-    private static final class ContinueException extends RuntimeException {
+    private static final class ContinueException extends ControlFlowSignal {
         static final ContinueException INSTANCE = new ContinueException();
 
         private ContinueException() {
-            super(null, null, false, false);
         }
     }
 
@@ -356,6 +354,88 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitContinueExpression(BabbleParser.ContinueExpressionContext ctx) {
         last = ctx;
         throw ContinueException.INSTANCE;
+    }
+
+    @Override
+    public Object visitThrowExpression(BabbleParser.ThrowExpressionContext ctx) {
+        last = ctx;
+        Object value = visit(ctx.expression());
+        last = ctx;
+        throw org.babblelang.runtime.Throwables.sneakyThrow(org.babblelang.runtime.Throwables.toThrowable(value));
+    }
+
+    @Override
+    public Object visitTryExpression(BabbleParser.TryExpressionContext ctx) {
+        last = ctx;
+        ParserRuleContext failingAt = null;
+        Throwable primary = null;
+        Object result = null;
+        try {
+            try {
+                result = widen(ctx.tryBlock, visitBlock(ctx.tryBlock));
+            } catch (ControlFlowSignal control) {
+                throw control;
+            } catch (Throwable t) {
+                failingAt = last;
+                boolean matched = false;
+                for (BabbleParser.CatchClauseContext cc : ctx.catchClause()) {
+                    LoweringTargets.CatchTarget target = scopes.lowering().catchTarget(cc);
+                    boolean nonErrorAny = target != null ? target.catchesNonErrorAny() : (cc.type() == null);
+                    boolean catchesJavaThrowable = target != null && target.catchesJavaThrowable();
+                    String desc = target != null ? target.typeDescriptor() : null;
+                    if (org.babblelang.runtime.Throwables.matchesCatch(t, desc, nonErrorAny, catchesJavaThrowable)) {
+                        failingAt = null;
+                        Object bound = catchesJavaThrowable ? Values.fromJava(t)
+                                : org.babblelang.runtime.Throwables.unwrapForCatch(t);
+                        result = widen(cc.catchBlock, runCatchBlock(cc, bound));
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    primary = t;
+                    throw org.babblelang.runtime.Throwables.sneakyThrow(t);
+                }
+            }
+        } catch (ControlFlowSignal control) {
+            throw control;
+        } catch (Throwable t) {
+            if (primary == null) {
+                failingAt = last;
+                primary = t;
+            }
+            throw org.babblelang.runtime.Throwables.sneakyThrow(t);
+        } finally {
+            if (ctx.finallyBlock != null) {
+                if (primary != null) {
+                    try {
+                        visitBlock(ctx.finallyBlock);
+                    } catch (Throwable secondary) {
+                        org.babblelang.runtime.Throwables.addSuppressed(primary, secondary);
+                    }
+                    last = failingAt;
+                } else {
+                    visitBlock(ctx.finallyBlock);
+                }
+            }
+        }
+        return result;
+    }
+
+    private Object runCatchBlock(BabbleParser.CatchClauseContext cc, Object bound) {
+        Namespace before = namespace;
+        String[] declared = scopes.declared(cc.catchBlock);
+        if (cc.name != null || declared.length > 0) {
+            namespace = namespace.child(declared);
+            if (cc.name != null) {
+                namespace.define(cc.name.getText(), false).set(bound);
+            }
+        }
+        try {
+            return visitStatements(cc.catchBlock.expression());
+        } finally {
+            namespace = before;
+        }
     }
 
     /**
@@ -826,6 +906,12 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitCoreCollection(BabbleParser.CoreCollectionContext ctx) {
         last = ctx;
         return org.babblelang.runtime.CoreCollections.constructor(ctx.coreCollectionKeyword().getText());
+    }
+
+    @Override
+    public Object visitCoreExceptionRef(BabbleParser.CoreExceptionRefContext ctx) {
+        last = ctx;
+        return org.babblelang.engine.impl.natives.java.JavaClass.of(BabbleException.class);
     }
 
     @Override

@@ -176,6 +176,45 @@ public final class HirDcePass implements HirPass {
                     : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
                             f.bodyWideningRank(), f.elemSamTarget(), f.meta());
         }
+        if (expr instanceof HirExpr.Try t) {
+            List<HirExpr> ntb = dceStatements(t.tryBody(), usedVars, module, rewrites);
+            List<HirVar> ntdv = pruneUnusedDeclaredVars(t.tryDeclaredVars(), ntb);
+            List<HirExpr> nfb = dceStatements(t.finallyBody(), usedVars, module, rewrites);
+            List<HirVar> nfdv = pruneUnusedDeclaredVars(t.finallyDeclaredVars(), nfb);
+            // Dead-catch elimination (BIP028 §7.4): when tryBody is pure+nothrow+terminating,
+            // no exception can ever be thrown from tryBody.
+            if (!t.tryOpensNamespaceScope() && HirPurity.isPureStatements(ntb, ntdv, module)) {
+                if (!t.hasFinally() || nfb.isEmpty()) {
+                    rewrites[0]++;
+                    return new HirExpr.Block(ntb, false, new String[0], ntdv, t.tryWideningRank(), t.meta());
+                }
+                if (!t.catches().isEmpty()) {
+                    rewrites[0]++;
+                    return new HirExpr.Try(ntb, ntdv, false, new String[0], t.tryWideningRank(),
+                            List.of(), nfb, nfdv, t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(),
+                            t.finallyNothrow(), true, t.meta());
+                }
+            }
+            List<HirExpr.HirCatch> ncs = null;
+            for (int i = 0; i < t.catches().size(); i++) {
+                HirExpr.HirCatch cc = t.catches().get(i);
+                List<HirExpr> ncb = dceStatements(cc.body(), usedVars, module, rewrites);
+                List<HirVar> ncdv = pruneUnusedDeclaredVars(cc.declaredVars(), ncb);
+                if (ncb != cc.body() || ncdv != cc.declaredVars()) {
+                    if (ncs == null) {
+                        ncs = new ArrayList<>(t.catches());
+                    }
+                    ncs.set(i, new HirExpr.HirCatch(cc.var(), cc.target(), ncb, ncdv,
+                            cc.opensNamespaceScope(), cc.declaredNames(), cc.wideningRank(), cc.line()));
+                }
+            }
+            return (ntb == t.tryBody() && ntdv == t.tryDeclaredVars()
+                    && ncs == null && nfb == t.finallyBody() && nfdv == t.finallyDeclaredVars()) ? t
+                    : new HirExpr.Try(ntb, ntdv, t.tryOpensNamespaceScope(), t.tryDeclaredNames(),
+                            t.tryWideningRank(), ncs != null ? ncs : t.catches(), nfb, nfdv,
+                            t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(),
+                            t.finallyNothrow(), t.hasFinally(), t.meta());
+        }
         HirExpr cur = HirRewriter.rewriteChildren(expr, child -> dceExpr(child, usedVars, module, rewrites));
 
         // Eliminate discard(pureExpr) when discard is unshadowed at top-level
@@ -202,7 +241,8 @@ public final class HirDcePass implements HirPass {
     }
 
     private static boolean isUnconditionalJump(HirExpr expr) {
-        return expr instanceof HirExpr.Return || expr instanceof HirExpr.Break || expr instanceof HirExpr.Continue;
+        return expr instanceof HirExpr.Return || expr instanceof HirExpr.Break
+                || expr instanceof HirExpr.Continue || expr instanceof HirExpr.Throw;
     }
 
     private static List<HirVar> pruneUnusedDeclaredVars(List<HirVar> declared, List<HirExpr> stmts) {

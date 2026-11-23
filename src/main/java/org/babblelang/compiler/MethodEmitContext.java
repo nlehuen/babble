@@ -24,6 +24,41 @@ final class MethodEmitContext {
     record TailLoop(Label head, int[] paramSlots, int maskSlot) {
     }
 
+    static final class ActiveFinally {
+        final org.babblelang.ir.hir.HirExpr.Try tryNode;
+        final int loopDepthAtEntry;
+        final boolean hasFinally;
+        final List<Label> rangeStarts = new ArrayList<>();
+        final List<Label> rangeEnds = new ArrayList<>();
+        Label currentStart;
+
+        ActiveFinally(org.babblelang.ir.hir.HirExpr.Try tryNode, int loopDepthAtEntry, Label start, boolean hasFinally) {
+            this.tryNode = tryNode;
+            this.loopDepthAtEntry = loopDepthAtEntry;
+            this.currentStart = start;
+            this.hasFinally = hasFinally;
+        }
+
+        void splitBefore(MethodVisitor mv) {
+            if (currentStart != null) {
+                Label end = new Label();
+                mv.visitLabel(end);
+                rangeStarts.add(currentStart);
+                rangeEnds.add(end);
+                currentStart = null;
+            }
+        }
+
+        void resumeAfter(MethodVisitor mv) {
+            currentStart = new Label();
+            mv.visitLabel(currentStart);
+        }
+
+        void close(MethodVisitor mv) {
+            splitBefore(mv);
+        }
+    }
+
     MethodVisitor mv;
     int methodOwnerId;
     int rtLocal;
@@ -48,6 +83,7 @@ final class MethodEmitContext {
     int frameNs = -1;
     int parameterBase = -1;
     final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
+    final Deque<ActiveFinally> activeFinallies = new ArrayDeque<>();
 
     void reset(MethodVisitor mv, int ownerId, int firstFreeLocal, int rt, int ns, List<HirVar> captured) {
         this.mv = mv;
@@ -73,6 +109,7 @@ final class MethodEmitContext {
         this.tailLoop = null;
         this.typedThisLocal = -1;
         this.loopTargets.clear();
+        this.activeFinallies.clear();
     }
 
     void finish() {

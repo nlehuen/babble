@@ -6,6 +6,7 @@ import org.babblelang.ir.hir.HirVerifier;
 import org.babblelang.opt.hir.HirDcePass;
 import org.babblelang.opt.hir.HirEGraphSimplifyPass;
 import org.babblelang.opt.hir.HirLicmPass;
+import org.babblelang.opt.hir.HirTryNormalize;
 import org.babblelang.opt.hir.InlinePass;
 
 import java.util.List;
@@ -14,9 +15,10 @@ import java.util.function.BiConsumer;
 /**
  * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-I2, §6.5).
  *
- * <p>At {@code -O0}, returns the input module unchanged. At {@code -O1} (and {@code -O2} until
- * Tier 2 SSA MIR lands), iterates the HIR Nanopass pipeline up to {@value #MAX_ITERATIONS} rounds,
- * stopping early as soon as a full round performs zero rewrites. Whenever {@code verify} is true
+ * <p>At {@code -O0}, runs only mandatory pre-emission normalization ({@link HirTryNormalize}).
+ * At {@code -O1} (and {@code -O2} until Tier 2 SSA MIR lands), iterates the HIR Nanopass
+ * pipeline up to {@value #MAX_ITERATIONS} rounds, stopping early as soon as a full round
+ * performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is true
  * ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every modifying
  * pass.
  */
@@ -54,11 +56,8 @@ public final class PassManager {
         if (irDumper != null) {
             irDumper.accept("hir-before", HirPrinter.print(module));
         }
-        if (passes.isEmpty()) {
-            return module;
-        }
         HirModule current = module;
-        for (int iter = 0; iter < MAX_ITERATIONS; iter++) {
+        for (int iter = 0; iter < MAX_ITERATIONS && !passes.isEmpty(); iter++) {
             int roundRewrites = 0;
             for (HirPass pass : passes) {
                 HirPass.Result res = pass.run(current, context);
@@ -74,7 +73,14 @@ public final class PassManager {
                 break;
             }
         }
-        if (irDumper != null) {
+        HirModule normalized = HirTryNormalize.normalize(current);
+        if (normalized != current) {
+            current = normalized;
+            if (context.verify()) {
+                HirVerifier.verify(current);
+            }
+        }
+        if (irDumper != null && !passes.isEmpty()) {
             irDumper.accept("hir-after", HirPrinter.print(current));
         }
         return current;

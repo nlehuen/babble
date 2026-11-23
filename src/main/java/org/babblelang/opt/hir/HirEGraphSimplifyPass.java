@@ -112,6 +112,27 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
             return rebuilt;
         }
+        if (expr instanceof HirExpr.Try t) {
+            List<HirExpr> ntb = simplifyStatements(t.tryBody(), new HashMap<>(env), assigned, module, rewrites);
+            List<HirExpr.HirCatch> ncs = null;
+            for (int idx = 0; idx < t.catches().size(); idx++) {
+                HirExpr.HirCatch cc = t.catches().get(idx);
+                List<HirExpr> ncb = simplifyStatements(cc.body(), new HashMap<>(env), assigned, module, rewrites);
+                if (ncb != cc.body()) {
+                    if (ncs == null) {
+                        ncs = new ArrayList<>(t.catches());
+                    }
+                    ncs.set(idx, new HirExpr.HirCatch(cc.var(), cc.target(), ncb, cc.declaredVars(),
+                            cc.opensNamespaceScope(), cc.declaredNames(), cc.wideningRank(), cc.line()));
+                }
+            }
+            List<HirExpr> nfb = simplifyStatements(t.finallyBody(), new HashMap<>(env), assigned, module, rewrites);
+            return (ntb == t.tryBody() && ncs == null && nfb == t.finallyBody()) ? t
+                    : new HirExpr.Try(ntb, t.tryDeclaredVars(), t.tryOpensNamespaceScope(), t.tryDeclaredNames(),
+                            t.tryWideningRank(), ncs != null ? ncs : t.catches(), nfb,
+                            t.finallyDeclaredVars(), t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(),
+                            t.finallyNothrow(), t.hasFinally(), t.meta());
+        }
         if (expr instanceof HirExpr.While w) {
             HirExpr nc = simplifyExpr(w.cond(), env, assigned, module, rewrites);
             if (nc instanceof HirExpr.Const c && !Truth.test(c.value())) {

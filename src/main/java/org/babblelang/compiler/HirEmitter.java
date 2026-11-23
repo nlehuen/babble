@@ -231,6 +231,7 @@ final class HirEmitter {
             case HirExpr.Const c -> 1;
             case HirExpr.IntParseFallback f -> 1;
             case HirExpr.CoreCollectionRef r -> 1;
+            case HirExpr.CoreExceptionRef r -> 1;
             case HirExpr.VarRead v -> 1;
             case HirExpr.NameRead n -> 1;
             case HirExpr.ThisRef t -> 1;
@@ -262,10 +263,21 @@ final class HirEmitter {
             case HirExpr.TypeApply t -> 1 + countNodes(t.inner());
             case HirExpr.Break b -> 1 + countNodes(b.value());
             case HirExpr.Return r -> 1 + countNodes(r.value());
+            case HirExpr.Throw th -> 1 + countNodes(th.value());
             case HirExpr.Block b -> 1 + countList(b.statements());
             case HirExpr.If i -> 1 + countNodes(i.cond()) + countNodes(i.thenBranch()) + countNodes(i.elseBranch());
             case HirExpr.While w -> 1 + countNodes(w.cond()) + countNodes(w.body());
             case HirExpr.For f -> 2 + countNodes(f.iterable()) + countList(f.body());
+            case HirExpr.Try t -> {
+                int sum = 3 + countList(t.tryBody());
+                for (HirExpr.HirCatch cc : t.catches()) {
+                    sum += 2 + countList(cc.body());
+                }
+                if (t.hasFinally()) {
+                    sum += (2 + t.catches().size()) * Math.max(1, countList(t.finallyBody()));
+                }
+                yield sum;
+            }
             case HirExpr.CoreCollectionCall c -> 1 + countCallArgs(c.args());
             case HirExpr.SuperCall c -> 1 + countCallArgs(c.args());
             case HirExpr.SelfRecurseCall c -> 1 + countList(c.args());
@@ -1007,6 +1019,7 @@ final class HirEmitter {
             case HirExpr.Const c -> emitConst(c);
             case HirExpr.IntParseFallback f -> emitIntParseFallback(f);
             case HirExpr.CoreCollectionRef r -> emitCoreCollectionRef(r);
+            case HirExpr.CoreExceptionRef r -> emitCoreExceptionRef(r);
             case HirExpr.VarRead v -> loadVariable(v.var(), v.meta().line());
             case HirExpr.NameRead n -> loadVarOrName(null, n.name(), n.meta().line());
             case HirExpr.ThisRef t -> loadVarOrName(t.var(), "this", t.meta().line());
@@ -1035,9 +1048,11 @@ final class HirEmitter {
             case HirExpr.If i -> controlOps.emitIf(i);
             case HirExpr.While w -> controlOps.emitWhile(w);
             case HirExpr.For f -> controlOps.emitFor(f);
+            case HirExpr.Try t -> controlOps.emitTry(t);
             case HirExpr.Break b -> controlOps.emitBreak(b);
             case HirExpr.Continue c -> controlOps.emitContinue();
             case HirExpr.Return r -> controlOps.emitReturn(r);
+            case HirExpr.Throw th -> controlOps.emitThrow(th);
             case HirExpr.CoreCollectionCall c -> calls.emitCoreCollectionCall(c);
             case HirExpr.SuperCall c -> calls.emitSuperCall(c);
             case HirExpr.SelfRecurseCall c -> calls.emitSelfRecurseCall(c);
@@ -1174,6 +1189,14 @@ final class HirEmitter {
         ctx.mv.visitLdcInsn(r.collectionKind());
         ctx.mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "CoreCollections", "constructor",
                 "(Ljava/lang/String;)L" + RUNTIME + "Callable;", false);
+        ctx.stackKind = PrimitiveKind.NONE;
+    }
+
+    private void emitCoreExceptionRef(HirExpr.CoreExceptionRef r) {
+        ctx.line(r.meta().line());
+        ctx.mv.visitLdcInsn(Type.getType(org.babblelang.runtime.BabbleException.class));
+        ctx.mv.visitMethodInsn(INVOKESTATIC, "org/babblelang/engine/impl/natives/java/JavaClass", "of",
+                "(Ljava/lang/Class;)Lorg/babblelang/engine/impl/natives/java/JavaClass;", false);
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
