@@ -34,8 +34,14 @@ public final class MirPassManager {
     }
 
     private static List<MirPass> defaultO2Passes() {
-        // Populated with SCCP, GVN/CSE, LICM, AliasRLE, MirDce, and PredicateReorder in Slice 3.
-        return List.of();
+        return List.of(
+                new SccpPass(),
+                new GvnCsePass(),
+                new AliasRlePass(),
+                new LicmPass(),
+                new MirDcePass(),
+                new PredicateReorderPass()
+        );
     }
 
     public MirModule optimize(MirModule module, PassContext context, IrObserver observer, String moduleKey) {

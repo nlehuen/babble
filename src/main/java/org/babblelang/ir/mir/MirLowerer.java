@@ -2139,7 +2139,7 @@ public final class MirLowerer {
             List<MirVal> args = lowerCallExprList(c.args(), target != null ? paramKinds(target) : null, c.binding());
             if (cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
             PrimitiveKind retKind = (target != null && target.hasSpec()) ? target.returnKind() : PrimitiveKind.NONE;
-            MirEffect fx = callEffect(c.meta(), target != null ? target.effects() : EffectSet.EMPTY);
+            MirEffect fx = callEffect(c.meta(), target);
             boolean comm = c.meta().isCommutative() || (target != null && target.effects().has(Effect.COMMUTATIVE));
             boolean idem = c.meta().isIdempotent() || (target != null && target.effects().has(Effect.IDEMPOTENT));
             MirVal res = newVal(retKind, null);
@@ -2155,7 +2155,7 @@ public final class MirLowerer {
             List<MirVal> args = lowerCallExprList(c.args(), target != null ? paramKinds(target) : null, c.binding());
             if (cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
             PrimitiveKind retKind = (target != null && target.hasSpec()) ? target.returnKind() : PrimitiveKind.NONE;
-            MirEffect fx = callEffect(c.meta(), target != null ? target.effects() : EffectSet.EMPTY);
+            MirEffect fx = callEffect(c.meta(), target);
             boolean comm = c.meta().isCommutative() || (target != null && target.effects().has(Effect.COMMUTATIVE));
             boolean idem = c.meta().isIdempotent() || (target != null && target.effects().has(Effect.IDEMPOTENT));
             MirVal res = newVal(retKind, null);
@@ -2183,7 +2183,7 @@ public final class MirLowerer {
             } else if (c.meta().kind().isPrimitive()) {
                 retKind = c.meta().kind();
             }
-            MirEffect fx = callEffect(c.meta(), target != null ? target.effects() : EffectSet.EMPTY);
+            MirEffect fx = callEffect(c.meta(), target);
             boolean comm = c.meta().isCommutative() || (target != null && target.effects().has(Effect.COMMUTATIVE));
             boolean idem = c.meta().isIdempotent() || (target != null && target.effects().has(Effect.IDEMPOTENT));
             MirVal res = newVal(retKind, null);
@@ -2370,7 +2370,12 @@ public final class MirLowerer {
             return switch (expr) {
                 case HirExpr.CoreCollectionRef ignored -> MirEffect.PURE_NOTHROW;
                 case HirExpr.CoreExceptionRef ignored -> MirEffect.PURE_NOTHROW;
-                case HirExpr.FunctionRef ignored -> MirEffect.PURE_NOTHROW;
+                case HirExpr.FunctionRef fr -> {
+                    HirFunction target = module.function(fr.functionId());
+                    yield (target != null && !target.capturedVars().isEmpty())
+                            ? MirEffect.READ_SHARED
+                            : MirEffect.PURE_NOTHROW;
+                }
                 case HirExpr.MakeOverloadSet ignored -> MirEffect.PURE_NOTHROW;
                 case HirExpr.OverloadSelect s -> s.exactSet() ? MirEffect.PURE_NOTHROW : MirEffect.PURE_MAY_THROW;
                 case HirExpr.ArrayOp ignored -> MirEffect.READ_SHARED_THROW;
@@ -2440,19 +2445,31 @@ public final class MirLowerer {
 
         // ------------------------------------------------------------------ effect & type helpers
 
+        private MirEffect callEffect(ExprMeta meta, HirFunction target) {
+            if (target != null) {
+                if (!target.capturedVars().isEmpty()) {
+                    return MirEffect.IMPURE_THROW;
+                }
+                for (HirParam p : target.params()) {
+                    if (p.isMut()) {
+                        return MirEffect.IMPURE_THROW;
+                    }
+                }
+            }
+            return callEffect(meta, target != null ? target.effects() : EffectSet.EMPTY);
+        }
+
         private MirEffect callEffect(ExprMeta meta, EffectSet calleeEffects) {
             EffectSet fx = meta.effects();
-            boolean pure = fx.isPure() || calleeEffects.isPure();
+            if (fx.isIO() || calleeEffects.isIO() || fx.mutThis() || calleeEffects.mutThis()) {
+                return MirEffect.IMPURE_THROW;
+            }
+            boolean pure = fx.isPure() && (calleeEffects == EffectSet.EMPTY || calleeEffects.isPure());
             boolean nothrow = fx.isNothrow() || calleeEffects.isNothrow();
             boolean terminating = fx.terminating() || calleeEffects.terminating();
-            boolean deterministic = fx.isDeterministic() || calleeEffects.isDeterministic();
+            boolean deterministic = fx.isDeterministic() && (calleeEffects == EffectSet.EMPTY || calleeEffects.isDeterministic());
             if (pure && meta.checkedType() == null) {
                 return new MirEffect(MirEffect.Kind.PURE, MirEffect.AliasClass.NONE, nothrow, terminating, deterministic);
-            }
-            if ((fx.has(Effect.HERMETIC) || calleeEffects.has(Effect.HERMETIC))
-                    && !fx.has(Effect.MUT) && !calleeEffects.has(Effect.MUT)
-                    && !fx.has(Effect.IO) && !calleeEffects.has(Effect.IO)) {
-                return MirEffect.read(MirEffect.AliasClass.SHARED, nothrow && meta.checkedType() == null, terminating, deterministic);
             }
             return MirEffect.IMPURE_THROW;
         }
