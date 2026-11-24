@@ -49,6 +49,9 @@ public final class BatestParser {
     }
 
     public static BatestFile parseString(String content, String sourceName) {
+        if (sourceName != null && sourceName.endsWith(".batest.md")) {
+            return BatestV2Parser.parseString(content, sourceName);
+        }
         String normalized = content.replace("\r\n", "\n").replace('\r', '\n');
         String[] lines = normalized.split("\n", -1);
 

@@ -5,19 +5,21 @@ import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Parses and matches {@code -Dbatest.filter=<selector>} expressions (BIP009 §5.1).
- * Supports substring matches ({@code generics}), globs ({@code objects/*.batest}),
- * case suffixes ({@code types/narrowing.batest#4}), line suffixes
- * ({@code types/narrowing.batest:42}), and comma-separated combinations.
+ * Parses and matches {@code -Dbatest.filter=<selector>} expressions ({@code BIP009} §5.1, {@code BIP029} §3.3).
+ * Supports substring matches ({@code generics}), globs ({@code objects/*.batest.md}),
+ * case-index suffixes ({@code types/narrowing.batest.md#4}), line suffixes
+ * ({@code types/narrowing.batest.md:42}), case-name suffixes ({@code algebraic_simplify@idempotent}),
+ * and comma-separated combinations.
  */
 public final class BatestFilter {
-    private static final Pattern CASE_OR_LINE_SUFFIX = Pattern.compile("^(.*?)(?:(#)(\\d+)|(:)(\\d+))$");
+    private static final Pattern CASE_OR_LINE_SUFFIX = Pattern.compile("^(.*?)(?:(#)(\\d+)|(:)(\\d+)|(@)(.+))$");
 
-    private record Selector(String filePart, PathMatcher globMatcher, Integer caseIndex, Integer lineNumber) {
+    private record Selector(String filePart, PathMatcher globMatcher, Integer caseIndex, Integer lineNumber, String caseNameLower) {
         boolean matchesFile(String relativePath) {
             if (filePart.isEmpty()) {
                 return true;
@@ -36,6 +38,9 @@ public final class BatestFilter {
                 return false;
             }
             if (lineNumber != null && testCase.line() != lineNumber) {
+                return false;
+            }
+            if (caseNameLower != null && !testCase.name().toLowerCase(Locale.ROOT).contains(caseNameLower)) {
                 return false;
             }
             return true;
@@ -61,19 +66,22 @@ public final class BatestFilter {
             String filePart = trimmed;
             Integer caseIndex = null;
             Integer lineNumber = null;
+            String caseNameLower = null;
             Matcher m = CASE_OR_LINE_SUFFIX.matcher(trimmed);
             if (m.matches()) {
                 filePart = m.group(1);
                 if (m.group(2) != null) {
                     caseIndex = Integer.parseInt(m.group(3));
-                } else {
+                } else if (m.group(4) != null) {
                     lineNumber = Integer.parseInt(m.group(5));
+                } else if (m.group(6) != null) {
+                    caseNameLower = m.group(7).trim().toLowerCase(Locale.ROOT);
                 }
             }
             PathMatcher glob = isGlob(filePart)
                     ? FileSystems.getDefault().getPathMatcher("glob:" + filePart)
                     : null;
-            list.add(new Selector(filePart, glob, caseIndex, lineNumber));
+            list.add(new Selector(filePart, glob, caseIndex, lineNumber, caseNameLower));
         }
         return new BatestFilter(list);
     }
