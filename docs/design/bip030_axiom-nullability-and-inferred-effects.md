@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 030 |
 | **Date** | 2026-11-23 |
-| **Status** | Decided (`BIP030-Q1`–`Q6` → `BIP030-D1`–`D7` decided ; `BIP030-P1`–`P3` planned) |
+| **Status** | Implemented (`BIP030-Q1`–`Q6` → `BIP030-D1`–`D7` decided ; `BIP030-I1`–`I3` implemented) |
 | **Depends on** | structured axioms and `BytecodeEffectAnalyzer` ([bip019_refactoring-axioms.md](bip019_refactoring-axioms.md)), Java nullability alignment ([bip011_core-types.md](bip011_core-types.md)), pure-by-default effects ([bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), `...` elision in function types ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)) |
 | **Scope** | replacing `class nullmarked` with `class notnull`, supporting `T!` everywhere as non-null type syntax (`T! == T` in Babble code) while enforcing explicit `!` or `?` on concrete reference types in Java axioms, reusing `...` in `axiomEffectWord` (`fn ... : T!` and `fn ... (…): T!`) to keep bytecode-inferred effects while declaring return/parameter nullability, allowing return-only `: T!` without repeating `fnTypeParameters`, fixing `isAtLeastAsStrongAs` redundancy reporting, and migrating `src/main/java/org/babblelang/axioms/` ; across `Babble.g4`, `Formatter`, `TypeAnnotations`, `AxiomData`, `BuiltinAxioms`, `JavaNullability`, `JavaEffectResolver`, `BytecodeEffectAnalyzer`, `AxiomDumper`, `curated.ba`, and tests |
 
@@ -109,7 +109,7 @@ Inspecting `src/main/java/org/babblelang/axioms/java/io/curated.ba` exposes four
   * Bare `fn ...` with neither parameters nor `: type` is rejected (`... requires a signature or return type in axiom : <owner>.<member>`).
   * `...` on a Babble-name axiom (`axiom foo: fn ...`) is rejected (`... is only valid on Java axioms : <name>`).
   * A return-only `: type` on a constructor (`def new: fn ... : T!`) is rejected (`Constructor axiom new cannot declare a return type : <owner>`).
-* **`BIP030-D3` (`BIP030-Q3`) — `...` is mutually exclusive with explicit effect words in `BIP030-P1`.**
+* **`BIP030-D3` (`BIP030-Q3`) — `...` is mutually exclusive with explicit effect words in `BIP030-I1`.**
   `...` cannot be combined with `io`, `volatile`, `pure`, `mut`, `shared`, `nothrow`, `view`, `shallow`, `fresh`, `unique`, `foldable`, or algebraic words (`... cannot be combined with effect modifiers in axiom : <owner>.<member>`). Additive refinement onto inferred effects (such as `fn ... foldable`) remains an easy, backwards-compatible future extension (§8).
 * **`BIP030-D4` (`BIP030-Q4`) — Clean rename removing `nullmarked`.**
   `nullmarked` is removed outright rather than deprecated. All 81 occurrences live inside this repository, and `AxiomData` reports `Unknown axiom class modifier : nullmarked` if the old name is written.
@@ -255,17 +255,17 @@ A full audit of `src/main/java/org/babblelang/axioms/` finds **81** `class nullm
 
 *(The 4 prelude entries in `builtins.ba` — `affiche`, `afficherc`, `print`, `println` — have no Java bytecode and genuinely perform I/O, so they stay `fn io`.)*
 
-Before finalizing `BIP030-P2`, every migrated class should be inspected with `-axioms` on JDK 21 (and checked against newer JDKs where available) to catch any JDK-version-dependent bytecode drift.
+Before finalizing `BIP030-I2`, every migrated class should be inspected with `-axioms` on JDK 21 (and checked against newer JDKs where available) to catch any JDK-version-dependent bytecode drift.
 
 ---
 
 ## 7. Implementation phases
 
-* **`BIP030-P1` — Grammar, formatter, `T!`, mechanism, and analyzer integration.**
+* **`BIP030-I1` — Grammar, formatter, `T!`, mechanism, and analyzer integration.**
   Add `nullMod=('?' | '!')?` to `nullableType` and `nonParenNullableType`, `ELLIPSIS` to `axiomEffectWord`, and optional `fnTypeParameters` before `':' uniqueReturn=UNIQUE? type` in `Babble.g4`. Keep a space between `...` and `:` in `Formatter`. Support `T!` (`Type.withoutNull`, rejecting `(null)!`) in `TypeAnnotations` (`BIP030-D7`). Rename `nullmarked` → `notnull` in `AxiomData`, `BuiltinAxioms`, and `AxiomDumper` (`BIP030-D1`, `BIP030-D4`). Enforce explicit `!` or `?` on concrete reference types (and support `T!` on type variables as `NON_NULL`) in `AxiomData.eraseType` (`BIP030-D7`). Add `inferredEffects` (`...`) and return-only `: type` support to `AxiomData.MemberAxiom` with canonical order and validation diagnostics (`BIP030-D2`, `BIP030-D3`, `BIP030-D5`). Wire `...` fall-through into `JavaEffectResolver` (tiers 1 and 6) and `BuiltinAxioms.inheritedContract`, return-only nullness into `BuiltinAxioms.returnNullness` / `JavaNullability`, and bytecode+nullness overlay + fixed `isAtLeastAsStrongAs` + `T!` emission into `BytecodeEffectAnalyzer` and `AxiomDumper` (`BIP030-D6`).
-* **`BIP030-P2` — Migrate `curated.ba` and verify parity.**
+* **`BIP030-I2` — Migrate `curated.ba` and verify parity.**
   Migrate all 81 `class nullmarked` declarations to `class notnull`, annotate all concrete reference types in `curated.ba` with explicit `!` (or `?`), migrate the eligible `fn io` entries in `src/main/java/org/babblelang/axioms/**/curated.ba` (§6), inspect `-axioms` output, and verify all tests, formatting, and `examples/raytracer-argon/scene.ppm` parity.
-* **`BIP030-P3` — Tests and documentation.**
+* **`BIP030-I3` — Tests and documentation.**
   Update `AxiomsTestCase`, `Bip019P1AxiomsMechanismTestCase`, `BytecodeEffectAnalyzerTestCase`, `EffectsTestCase`, `TypeCheckerTestCase`, `ParserGrammarTestCase`, `FormatterTestCase`, and `src/test/batest/effects/structured_axioms.batest` (including `T! == T` in Babble code, `(string?)!` non-null projection, `(null)!` error, enforced `!`/`?` in Java axioms, `T` vs `T!` vs `T?` on type variables, calling `StringWriter.getBuffer()`, `Arrays.toString(...)`, `Collections.emptyList()`, and `Optional.ofNullable(...)` inside `pure` functions, invalid `...` / return-only combinations, and `isAtLeastAsStrongAs` non-null checks). Update `src/main/java/org/babblelang/axioms/README.md`, `docs/design/bip019_refactoring-axioms.md`, `docs/ARCHITECTURE.md`, and `README.md`.
 
 ---

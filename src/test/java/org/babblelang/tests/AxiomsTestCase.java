@@ -180,4 +180,16 @@ public class AxiomsTestCase {
         Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class notnull (\n"), listDump);
         Assertions.assertTrue(listDump.contains("def add: fn mut shared shallow (shared p0: any!): bool"), listDump);
     }
+
+    @Test
+    public void testValidateCuratedPackageCatchesReturnOnlyMismatch() {
+        BuiltinAxioms bad = BuiltinAxioms.fromSource("""
+                axiom java.io.StringWriter: class (
+                    def getBuffer: fn ... : string!
+                )
+                """, "bad.ba");
+        List<String> errors = AxiomDumper.validateCuratedPackage(bad, "java.io");
+        Assertions.assertFalse(errors.isEmpty(), "Expected return-type mismatch error");
+        Assertions.assertTrue(errors.get(0).contains("getBuffer"), errors.toString());
+    }
 }

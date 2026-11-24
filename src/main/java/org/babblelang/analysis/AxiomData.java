@@ -729,9 +729,11 @@ final class AxiomData {
                 || view || shallow || fresh || foldable)) {
             errors.report("io cannot be combined with other effect modifiers in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
         }
+        boolean reportedInferredConflict = false;
         if (inferredEffects && (io || explicitPure || volatileEff || mutReceiver || sharedReceiver || nothrow || uniqueReturn
                 || !algebraic.isEmpty() || view || shallow || fresh || foldable)) {
             errors.report("... cannot be combined with effect modifiers in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
+            reportedInferredConflict = true;
         }
         if (inferredEffects && fnParams == null && retTypeCtx == null) {
             errors.report("... requires a signature or return type in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
@@ -761,6 +763,7 @@ final class AxiomData {
         String returnDescriptor = null;
         JavaNullability.Nullness returnNullness = null;
         boolean anyParamMut = false;
+        boolean anyParamEffectMod = false;
 
         if (hasSignature) {
             List<BabbleParser.FnTypeParamContext> params = fnParams.fnTypeParam();
@@ -790,12 +793,16 @@ final class AxiomData {
                 uniqueParams[i] = pUnique;
                 borrowParams[i] = !pShared && !pUnique;
                 anyParamMut |= pMut;
+                anyParamEffectMod |= (pMut || pShared || pUnique);
                 TypeErasure te = eraseType(p.type(), allTypeVars, classResolver, errors);
                 descs.add(te.descriptor());
                 paramNullness[i] = te.nullness();
                 paramElementNullness[i] = te.elementNullness();
             }
             paramDescriptors = List.copyOf(descs);
+        }
+        if (inferredEffects && anyParamEffectMod && !reportedInferredConflict) {
+            errors.report("... cannot be combined with effect modifiers in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
         }
         if (retTypeCtx != null && !"new".equals(memberName)) {
             TypeErasure ret = eraseType(retTypeCtx, allTypeVars, classResolver, errors);
