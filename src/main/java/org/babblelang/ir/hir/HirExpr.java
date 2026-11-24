@@ -60,6 +60,7 @@ public sealed interface HirExpr permits
         HirExpr.InterfaceCall,
         HirExpr.JavaConstructorCall,
         HirExpr.JavaMethodCall,
+        HirExpr.CoreMethodCall,
         HirExpr.SafeCall,
         HirExpr.DynamicCall,
         HirExpr.MakeOverloadSet,
@@ -263,12 +264,30 @@ public sealed interface HirExpr permits
     record ArrayCreate(
             LoweringTargets.ArrayCreationKind kind,
             PrimitiveKind elemKind,
+            HirArrayElementType elementType,
             String componentInternalName,
             boolean componentIsJavaInterface,
             Class<?> componentClass,
             List<HirExpr> args,
             ExprMeta meta
     ) implements HirExpr {
+        public ArrayCreate {
+            elementType = elementType != null ? elementType : HirArrayElementType.from(elemKind, null, false, 0, componentClass);
+            args = List.copyOf(args);
+        }
+
+        public ArrayCreate(
+                LoweringTargets.ArrayCreationKind kind,
+                PrimitiveKind elemKind,
+                String componentInternalName,
+                boolean componentIsJavaInterface,
+                Class<?> componentClass,
+                List<HirExpr> args,
+                ExprMeta meta
+        ) {
+            this(kind, elemKind, HirArrayElementType.from(elemKind, null, false, 0, componentClass),
+                    componentInternalName, componentIsJavaInterface, componentClass, args, meta);
+        }
     }
 
     record ArrayOp(
@@ -276,11 +295,31 @@ public sealed interface HirExpr permits
             HirExpr receiver,
             String receiverText,
             PrimitiveKind elemKind,
+            HirArrayElementType elementType,
             Class<?> arrayClass,
             Class<?> componentClass,
             List<HirExpr> args,
             ExprMeta meta
     ) implements HirExpr {
+        public ArrayOp {
+            elementType = elementType != null ? elementType : HirArrayElementType.from(elemKind, null, false, 0, componentClass);
+            args = List.copyOf(args);
+        }
+
+        public ArrayOp(
+                LoweringTargets.ArrayOpKind kind,
+                HirExpr receiver,
+                String receiverText,
+                PrimitiveKind elemKind,
+                Class<?> arrayClass,
+                Class<?> componentClass,
+                List<HirExpr> args,
+                ExprMeta meta
+        ) {
+            this(kind, receiver, receiverText, elemKind,
+                    HirArrayElementType.from(elemKind, null, false, 0, componentClass),
+                    arrayClass, componentClass, args, meta);
+        }
     }
 
     record ModuleExportGet(
@@ -635,6 +674,24 @@ public sealed interface HirExpr permits
             ExprMeta meta
     ) implements HirExpr {
         public JavaMethodCall {
+            args = List.copyOf(args);
+        }
+    }
+
+    /**
+     * Target-neutral portable core method call on {@code string}, core collections ({@code list}..{@code entry}),
+     * {@code exception}, or portable {@code Appendable} ({@code BIP025-D3}, {@code BIP025-D6}, {@code BIP025-D12}).
+     */
+    record CoreMethodCall(
+            HirExpr receiver,
+            String receiverText,
+            int selectorLine,
+            String coreKind,
+            String memberName,
+            List<HirExpr> args,
+            ExprMeta meta
+    ) implements HirExpr {
+        public CoreMethodCall {
             args = List.copyOf(args);
         }
     }

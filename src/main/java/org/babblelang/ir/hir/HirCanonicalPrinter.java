@@ -780,6 +780,12 @@ public final class HirCanonicalPrinter {
                 printArgs(sb, c.args(), norm, indent + 1);
                 sb.append(')');
             }
+            case HirExpr.CoreMethodCall c -> {
+                sb.append("(core-call ").append(c.coreKind()).append('.').append(c.memberName()).append(' ');
+                printExpr(sb, c.receiver(), norm, indent + 1);
+                printArgs(sb, c.args(), norm, indent + 1);
+                sb.append(')');
+            }
             case HirExpr.SafeCall c -> {
                 sb.append("(safe-call ");
                 printExpr(sb, c.receiver(), norm, indent + 1);
@@ -1034,6 +1040,10 @@ public final class HirCanonicalPrinter {
                 case HirExpr.JavaConstructorCall c -> scanList(c.args());
                 case HirExpr.JavaMethodCall c -> {
                     if (!c.target().isStatic()) scanExpr(c.receiver());
+                    scanList(c.args());
+                }
+                case HirExpr.CoreMethodCall c -> {
+                    scanExpr(c.receiver());
                     scanList(c.args());
                 }
                 case HirExpr.SafeCall c -> {

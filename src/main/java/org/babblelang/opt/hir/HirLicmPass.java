@@ -170,6 +170,7 @@ public final class HirLicmPass implements HirPass {
             case HirExpr.DirectThisMethodCall c -> true;
             case HirExpr.InterfaceCall c -> true;
             case HirExpr.JavaMethodCall c -> true;
+            case HirExpr.CoreMethodCall c -> true;
             case HirExpr.ThisFieldGet g -> (g.immutableField() && g.definitelyDefined()) || g.receiver().meta().frozen();
             case HirExpr.Binary b -> containsCallOrNestedOp(b.left()) || containsCallOrNestedOp(b.right())
                     || b.left() instanceof HirExpr.Binary || b.right() instanceof HirExpr.Binary
@@ -248,6 +249,13 @@ public final class HirLicmPass implements HirPass {
                 if (!c.target().isStatic() || !c.pureStaticReceiver()) {
                     checkOperandsInvariant(c.receiver(), modified, ok);
                 }
+                for (HirExpr arg : c.args()) {
+                    checkOperandsInvariant(arg, modified, ok);
+                }
+                return;
+            }
+            case HirExpr.CoreMethodCall c -> {
+                checkOperandsInvariant(c.receiver(), modified, ok);
                 for (HirExpr arg : c.args()) {
                     checkOperandsInvariant(arg, modified, ok);
                 }

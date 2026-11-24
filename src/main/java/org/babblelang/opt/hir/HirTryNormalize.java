@@ -218,6 +218,17 @@ public final class HirTryNormalize {
                 }
                 yield c;
             }
+            case HirExpr.CoreMethodCall c -> {
+                int lastTry = lastTryIndex(c.args());
+                if (lastTry >= 0) {
+                    Spill s = new Spill(ownerId, nextVarId);
+                    HirExpr nr = s.hoist(c.receiver());
+                    List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
+                    yield s.wrap(new HirExpr.CoreMethodCall(nr, c.receiverText(), c.selectorLine(),
+                            c.coreKind(), c.memberName(), na, c.meta()), c.meta());
+                }
+                yield c;
+            }
             case HirExpr.DynamicCall c -> {
                 int lastTry = lastTryCallArgIndex(c.args());
                 if (lastTry >= 0) {
@@ -436,6 +447,7 @@ public final class HirTryNormalize {
             case HirExpr.InterfaceCall c -> containsTry(c.receiver()) || anyContainsTry(c.args());
             case HirExpr.JavaConstructorCall c -> (!c.pureStaticCallee() && containsTry(c.callee())) || anyContainsTry(c.args());
             case HirExpr.JavaMethodCall c -> (!c.pureStaticReceiver() && containsTry(c.receiver())) || anyContainsTry(c.args());
+            case HirExpr.CoreMethodCall c -> containsTry(c.receiver()) || anyContainsTry(c.args());
             case HirExpr.SafeCall c -> containsTry(c.receiver()) || anyCallArgContainsTry(c.args());
             case HirExpr.DynamicCall c -> containsTry(c.callee()) || anyCallArgContainsTry(c.args());
             case HirExpr.MakeOverloadSet m -> anyContainsTry(m.operands());

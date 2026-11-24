@@ -11,7 +11,8 @@ import java.util.Locale;
  */
 public enum IrTier {
     HIR("hir"),
-    MIR("mir");
+    MIR("mir"),
+    WAT("wat");
 
     private final String label;
 
@@ -30,7 +31,8 @@ public enum IrTier {
         return switch (raw.toLowerCase(Locale.ROOT)) {
             case "hir" -> HIR;
             case "mir" -> MIR;
-            default -> throw new IllegalArgumentException("Unknown IR tier : " + raw + " (expected hir or mir)");
+            case "wat" -> WAT;
+            default -> throw new IllegalArgumentException("Unknown IR tier : " + raw + " (expected hir, mir, or wat)");
         };
     }
 }

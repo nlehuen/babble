@@ -89,14 +89,14 @@ public final class HirRewriter {
             case HirExpr.ArrayCreate c -> {
                 List<HirExpr> na = rewriteList(c.args(), transform);
                 yield na == c.args() ? c : new HirExpr.ArrayCreate(
-                        c.kind(), c.elemKind(), c.componentInternalName(), c.componentIsJavaInterface(),
+                        c.kind(), c.elemKind(), c.elementType(), c.componentInternalName(), c.componentIsJavaInterface(),
                         c.componentClass(), na, c.meta());
             }
             case HirExpr.ArrayOp op -> {
                 HirExpr nr = transform.apply(op.receiver());
                 List<HirExpr> na = rewriteList(op.args(), transform);
                 yield (nr == op.receiver() && na == op.args()) ? op
-                        : new HirExpr.ArrayOp(op.kind(), nr, op.receiverText(), op.elemKind(),
+                        : new HirExpr.ArrayOp(op.kind(), nr, op.receiverText(), op.elemKind(), op.elementType(),
                                 op.arrayClass(), op.componentClass(), na, op.meta());
             }
             case HirExpr.ModuleExportGet g -> {
@@ -251,6 +251,12 @@ public final class HirRewriter {
                 List<HirExpr> na = rewriteList(c.args(), transform);
                 yield (nr == c.receiver() && na == c.args()) ? c
                         : new HirExpr.JavaMethodCall(nr, c.receiverText(), c.selectorLine(), c.pureStaticReceiver(), c.target(), na, c.meta());
+            }
+            case HirExpr.CoreMethodCall c -> {
+                HirExpr nr = transform.apply(c.receiver());
+                List<HirExpr> na = rewriteList(c.args(), transform);
+                yield (nr == c.receiver() && na == c.args()) ? c
+                        : new HirExpr.CoreMethodCall(nr, c.receiverText(), c.selectorLine(), c.coreKind(), c.memberName(), na, c.meta());
             }
             case HirExpr.SafeCall c -> {
                 HirExpr nr = transform.apply(c.receiver());

@@ -488,6 +488,179 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return new ProgramModule(id, module.script().exports(), (CompiledBabbleScript) module.script());
     }
 
+    /**
+     * A target-neutral HIR module of a program compiled ahead of time ({@code BIP025-P0}).
+     *
+     * @param id                module identifier
+     * @param exports           ordered export names
+     * @param hir               optimized {@link org.babblelang.ir.hir.HirModule}
+     * @param staticImportKeys  mapping from each literal {@code import("...")} string in this module to its resolved {@link ModuleId#key()}
+     */
+    public record HirProgramModule(
+            ModuleId id,
+            String[] exports,
+            org.babblelang.ir.hir.HirModule hir,
+            Map<String, String> staticImportKeys
+    ) {
+        public HirProgramModule {
+            exports = exports != null ? exports.clone() : new String[0];
+            staticImportKeys = staticImportKeys != null ? Map.copyOf(staticImportKeys) : Map.of();
+        }
+    }
+
+    /**
+     * Compiles a single inline Babble script (and any modules statically imported from
+     * {@link #getModuleSource()}) directly to optimized target-neutral {@link HirProgramModule}s
+     * without generating JVM bytecode ({@code BIP025-P0}).
+     */
+    public List<HirProgramModule> compileSourceToHir(String code, String sourceName,
+                                                     org.babblelang.analysis.CompilationTarget target) throws ScriptException {
+        Map<String, String> modules = new LinkedHashMap<>();
+        String entryName = (sourceName != null && !sourceName.isBlank()) ? sourceName : "main.ba";
+        modules.put(entryName, code);
+        ModuleSource existing = getModuleSource();
+        ModuleSource composite = new ModuleSource() {
+            @Override
+            public ModuleId identify(String name) {
+                if (entryName.equals(name)) {
+                    return new ModuleId("mem:" + entryName, entryName);
+                }
+                return existing.identify(name);
+            }
+
+            @Override
+            public ModuleId resolve(String importName, ModuleId importer) throws IOException {
+                if (importer != null && ("mem:" + entryName).equals(importer.key())) {
+                    return existing.resolve(importName, null);
+                }
+                return existing.resolve(importName, importer);
+            }
+
+            @Override
+            public ModuleText read(ModuleId id) throws IOException {
+                if (("mem:" + entryName).equals(id.key())) {
+                    return new ModuleText(code, "0");
+                }
+                return existing.read(id);
+            }
+
+            @Override
+            public String version(ModuleId id) throws IOException {
+                if (("mem:" + entryName).equals(id.key())) {
+                    return "0";
+                }
+                return existing.version(id);
+            }
+        };
+        return compileProgramToHir(composite, entryName, target);
+    }
+
+    /**
+     * Compiles a Babble program and all of its statically imported modules directly to optimized
+     * {@link HirProgramModule}s for a given {@link org.babblelang.analysis.CompilationTarget}
+     * without emitting JVM class files ({@code BIP025-P0}).
+     */
+    public List<HirProgramModule> compileProgramToHir(ModuleSource source, String mainName,
+                                                      org.babblelang.analysis.CompilationTarget target) throws ScriptException {
+        ModuleId main = source.identify(mainName);
+        if (main == null) {
+            throw new ScriptException("Cannot compile " + mainName + " : not a module of " + source);
+        }
+        Map<String, HirProgramModule> built = new LinkedHashMap<>();
+        Map<String, ModuleInterface> interfaces = new LinkedHashMap<>();
+        Map<String, ModuleInterface> inProg = new HashMap<>();
+        Map<String, String> knownIfaces = new LinkedHashMap<>();
+        Map<String, String> knownClasses = new LinkedHashMap<>();
+        ScriptContext ctx = getContext();
+
+        class HirProgramBuilder {
+            ModuleInterface buildModule(String reqName, ModuleId id) throws ScriptException {
+                if (interfaces.containsKey(id.key())) {
+                    return interfaces.get(id.key());
+                }
+                if (inProg.containsKey(id.key())) {
+                    return inProg.get(id.key());
+                }
+                ModuleText text;
+                try {
+                    text = source.read(id);
+                } catch (IOException e) {
+                    throw new BabbleException("Cannot import " + reqName + " : " + e.getMessage());
+                }
+                String srcName = id.displayName();
+                BabbleParser.FileContext file;
+                try {
+                    file = parse(CharStreams.fromString(text.text(), srcName));
+                } catch (ParseFailure e) {
+                    throw e.toScriptException(srcName);
+                }
+                Map<String, String> staticImports = new LinkedHashMap<>();
+                ModuleLoader loader = new ModuleLoader() {
+                    @Override
+                    public String moduleKey() {
+                        return id.key();
+                    }
+
+                    @Override
+                    public void started(ModuleInterface module) {
+                        module.setName(srcName);
+                        inProg.put(id.key(), module);
+                    }
+
+                    @Override
+                    public ModuleInterface load(String importName, int line) {
+                        try {
+                            ModuleId dep = resolve(source, importName, id);
+                            staticImports.put(importName, dep.key());
+                            ModuleInterface pending = inProg.get(dep.key());
+                            if (pending != null) {
+                                return pending;
+                            }
+                            return buildModule(importName, dep);
+                        } catch (BabbleException e) {
+                            throw new AnalysisException(e.getMessage(), line);
+                        } catch (ScriptException e) {
+                            throw new AnalysisException(withoutClassName(e), line);
+                        }
+                    }
+                };
+                ScopeAnalysis scopes;
+                try {
+                    scopes = analyze(file, srcName, ctx, null, loader);
+                } finally {
+                    inProg.remove(id.key());
+                }
+                String internalName = BabbleCompiler.className(id.key());
+                org.babblelang.ir.hir.HirModule hir = BabbleCompiler.buildAndOptimizeHir(
+                        BabbleScriptEngine.this, file, scopes, srcName, internalName, id.key(),
+                        knownIfaces, knownClasses, target);
+                knownIfaces.putAll(hir.ownInterfaceJvmNames());
+                knownClasses.putAll(hir.ownClassJvmNames());
+                ModuleInterface mi = scopes.moduleInterface();
+                interfaces.put(id.key(), mi);
+                built.put(id.key(), new HirProgramModule(id, hir.exports(), hir, staticImports));
+                return mi;
+            }
+        }
+
+        try {
+            new HirProgramBuilder().buildModule(mainName, main);
+        } catch (BabbleException e) {
+            throw new ScriptException(e.getMessage());
+        }
+
+        List<HirProgramModule> result = new ArrayList<>();
+        HirProgramModule mainMod = built.get(main.key());
+        if (mainMod != null) {
+            result.add(mainMod);
+        }
+        built.entrySet().stream()
+                .filter(e -> !e.getKey().equals(main.key()))
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(e -> result.add(e.getValue()));
+        return result;
+    }
+
     private static boolean isFresh(CompiledModule module) {
         for (Map.Entry<ModuleId, String> version : module.versions().entrySet()) {
             try {
@@ -780,7 +953,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      *               {@code sourceName}
      */
     private ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session,
-                                  Loader loader) throws ScriptException {
+                                  ModuleLoader loader) throws ScriptException {
         ScopeAnalysis scopes;
         ModuleSource source;
         try {

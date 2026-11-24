@@ -199,7 +199,7 @@ final class BatestV2Parser {
 
     private static String commentTokenFor(String kind) {
         return switch (kind) {
-            case "babble", "hir", "mir" -> ";;";
+            case "babble", "hir", "mir", "wat" -> ";;";
             case "stdout", "stderr", "error" -> "#";
             default -> null;
         };
@@ -304,7 +304,7 @@ final class BatestV2Parser {
                 c.hasError = true;
                 c.expectedError = new BatestFile.TextExpectation(body, regex);
             }
-            case "hir", "mir" -> {
+            case "hir", "mir", "wat" -> {
                 IrTier tier = IrTier.parse(kind);
                 BatestFile.IrExpectation ir = parseIrBlock(tier, tokens, rawBody, sourceName, headerLine, optionsLine, bodyStartLine, closeLine);
                 for (int opt : ir.optLevels()) {
@@ -320,7 +320,7 @@ final class BatestV2Parser {
             }
             default -> throw new IllegalArgumentException(sourceName + ":" + headerLine
                     + ": unknown fenced block kind '" + kind
-                    + "' (expected babble, stdout, stderr, error, hir, or mir)");
+                    + "' (expected babble, stdout, stderr, error, hir, mir, or wat)");
         }
     }
 

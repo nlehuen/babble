@@ -379,6 +379,12 @@ public final class HirPrinter {
                 printArgs(sb, c.args(), depth + 1);
                 sb.append(')');
             }
+            case HirExpr.CoreMethodCall c -> {
+                sb.append("(core-call ").append(c.coreKind()).append('.').append(c.memberName()).append(' ');
+                printExpr(sb, c.receiver(), depth + 1);
+                printArgs(sb, c.args(), depth + 1);
+                sb.append(')');
+            }
             case HirExpr.SafeCall c -> {
                 sb.append("(safe-call ");
                 printExpr(sb, c.receiver(), depth + 1);

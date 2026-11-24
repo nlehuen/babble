@@ -55,7 +55,7 @@ public final class FbipReusePass implements HirPass {
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
             List<HirExpr> body = HirRewriter.rewriteList(fn.body(), s -> rewriteCollections(s, rewrites));
-            if (!fn.namespaceScope()) {
+            if (!fn.namespaceScope() && !context.target().isWasm()) {
                 body = rewriteTailRecordReuse(fn, body, module, initBindings, rewrites);
             }
             if (body != fn.body()) {
