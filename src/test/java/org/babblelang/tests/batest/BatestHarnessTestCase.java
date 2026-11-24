@@ -458,6 +458,32 @@ public class BatestHarnessTestCase {
                 () -> BatestParser.parseString(mod800, "mod800.batest.md"));
         Assertions.assertTrue(modErr.getMessage().contains("virtual module 'm.ba' exceeds 800 code characters"), modErr.getMessage());
         BatestParser.parseString("```babble\n;; babble module=m.ba large=\"fixture module\"\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "mod_large.batest.md");
+
+        // Output and IR blocks (stdout, stderr, error, hir, mir) do NOT count toward the 400-char case input budget
+        String bigOut = "x".repeat(600);
+        String withLargeOutputs = """
+                ## Large outputs ok
+                ```babble
+                println("ok")
+                ```
+                ```stdout
+                %s
+                ```
+                ```stderr
+                %s
+                ```
+                ```hir
+                ;; hir -O1 fn=f
+                %s
+                ```
+                ```mir
+                ;; mir -O2 fn=f stage=before
+                %s
+                ```
+                """.formatted(bigOut, bigOut, bigOut, bigOut);
+        BatestFile outOk = BatestParser.parseString(withLargeOutputs, "large_outputs.batest.md");
+        Assertions.assertEquals(1, outOk.cases().size());
+        Assertions.assertEquals(2, outOk.cases().get(0).irExpectations().size());
     }
 
     @Test
@@ -479,5 +505,11 @@ public class BatestHarnessTestCase {
         Assertions.assertTrue(err.getMessage().contains("oversized.batest.md is too big with 1001 lines"), err.getMessage());
         Assertions.assertTrue(err.getMessage().contains("< 1000 lines"), err.getMessage());
         Assertions.assertTrue(err.getMessage().contains("foo_1.batest.md"), err.getMessage());
+
+        // Lines inside output/IR blocks DO count toward the 1000-line whole-file limit
+        String tooBigWithMir = header + caseBlock + "```mir\n;; mir -O2 fn=f\n" + "v0 = const.int 1\n".repeat(994) + "```\n";
+        IllegalArgumentException mirErr = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString(tooBigWithMir, "oversized_mir.batest.md"));
+        Assertions.assertTrue(mirErr.getMessage().contains("oversized_mir.batest.md is too big with 1002 lines"), mirErr.getMessage());
     }
 }

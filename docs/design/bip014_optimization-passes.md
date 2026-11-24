@@ -4,8 +4,8 @@
 |---|---|
 | **BIP** | 014 |
 | **Date** | 2026-11-19 |
-| **Status** | Partially implemented (`BIP014-D1`–`D10` decided; `BIP014-I0`–`I2` implemented in `RM010` with `-O1` default and 3-way CI parity; `BIP014-P3`, `BIP014-I4`, `BIP014-P5` gated on §9.1 benchmark findings) |
-| **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §19–§20), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), function effects, algebraic properties & ownership (`RM002`/`RM007`, [bip007_effects.md](bip007_effects.md), `BIP007-D10`), mandatory static typing ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` differential harness ([bip009_test-coverage.md](bip009_test-coverage.md)), modular front end & `LoweringAnalyzer` (`RM004`, [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), 8-primitive unboxing & core collections (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), pure-by-default effects & return-through-borrow (`RM008`, [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), and `for` loops, `break`/`continue` & `fn calling f` (`RM009`, [bip013_iterators.md](bip013_iterators.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)) |
+| **Status** | Partially implemented (`BIP014-D1`–`D10` decided; `BIP014-I0`–`I2` implemented in `RM010` with `-O1` default and 3-way CI parity; Half A of `BIP014-P5` — `org.babblelang.ir.egraph` & `HirEGraphSimplifyPass` — landed in `RM012` / `BIP027-I2`; `BIP014-I4` implemented with `record`/class lowering, `ScalarReplacePass`, and `FbipReusePass`; `BIP014-P3` SSA `MIR` under `-O2` and `BIP014-P5` Half B remain planned) |
+| **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §19–§20), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), function effects, algebraic properties & ownership (`RM002`/`RM007`, [bip007_effects.md](bip007_effects.md), `BIP007-D10`), mandatory static typing ([bip008_static-typing.md](bip008_static-typing.md)), `.batest.md` differential & IR golden harness ([bip009_test-coverage.md](bip009_test-coverage.md), [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)), modular front end & `LoweringAnalyzer` (`RM004`, [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), 8-primitive unboxing & core collections (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), pure-by-default effects & return-through-borrow (`RM008`, [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), `for` loops, `break`/`continue` & `fn calling f` (`RM009`, [bip013_iterators.md](bip013_iterators.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), modular compiler & `org.babblelang.ir.egraph` (`RM012`, [bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md)), and exception handling `try`/`catch`/`finally`/`throw` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
 | **Scope** | In-scope optimization catalogue unlocked by `BIP007` annotations, SOTA compiler pass architecture survey, introduction of a typed compiler IR (`org.babblelang.ir`) and pass pipeline (`org.babblelang.opt`), local vs. graph-level optimization boundary, interaction with HotSpot C2 and the `Interpreter` reference oracle, and an incremental migration path from the current parse-tree `CodeGenerator` |
 
 ---
@@ -302,38 +302,26 @@ Not every optimization needs a full graph pass. We draw a clean architectural bo
 
 ### 6.2 Proposed Pipeline
 
-```
-Babble source
-  └─▶ ANTLR4 Parse Tree ──▶ Front-End Analysis (BlockScopes .. LoweringAnalyzer)
-                                │
-                                ├──▶ Interpreter (untouched reference oracle)
-                                │
-                                └──▶ Compiler Pipeline (org.babblelang.compiler / ir / opt)
-                                       │
-                                       ├── 1. HirBuilder (ParseTree + ScopeAnalysis + Resolution ──▶ HirModule)
-                                       │       (self-contained, immutable Java 21 sealed records; zero ParseTree refs!)
-                                       │
-                                       ├── 2. HIR Nanopass Pipeline (org.babblelang.opt.hir)
-                                       │       ├─ ConstFoldPass / AlgebraicSimplifyPass (O1, O2, O3)
-                                       │       ├─ InlinePass (O8: small fns & borrow lambdas)
-                                       │       ├─ ScalarReplacePass (O9: borrow records & captures)
-                                       │       ├─ FbipReusePass (O10: unique + move)
-                                       │       ├─ PipelineRewritePass (O11, O12)
-                                       │       └─ HirDcePass (O4)
-                                       │       [HirVerifier after each pass when babble.verify=true]
-                                       │
-                                       ├── 3. MirLowerer (per-function HIR ──▶ SSA CfgFunction, when -O2)
-                                       │       ├─ SccpPass (O1)
-                                       │       ├─ GvnCsePass (O5 + O3 commutative)
-                                       │       ├─ LicmPass (O6)
-                                       │       ├─ AliasRlePass (O7: unique mut / frozen)
-                                       │       └─ MirDcePass (O4)
-                                       │       [MirVerifier after each pass when babble.verify=true]
-                                       │
-                                       └── 4. Bytecode Emitter (ASM ClassWriter)
-                                               ├─ Class/Interface/ConstantPool scaffolding (reused from CodeGenerator)
-                                               ├─ HirEmitter (used at -O0 / -O1, and for top-level/class init)
-                                               └─ MirEmitter (used at -O2 for SSA-optimized function/method bodies)
+```mermaid
+flowchart TB
+    Src["Babble source"] --> Parse["ANTLR4 Parse Tree\n(SLL → LL)"]
+    Parse --> Analysis["Front-End Analysis\n(BlockScopes → TypeChecks → Resolver → TypeChecker + EffectChecker → LoweringAnalyzer)"]
+    Analysis --> Interp["Interpreter\n(untouched reference oracle)"]
+    Analysis --> HirBuild["1. HirBuilder\n(ANTLR-free HirModule implements IrDumpable)"]
+
+    HirBuild -->|"IrObserver: HIR stage=before"| Obs["org.babblelang.ir.IrObserver\n(CliIrDumper & BatestRunner CapturingIrObserver)"]
+    HirBuild --> HirPM["2. HIR Nanopass Pipeline (-O1+ : PassManager)\nHirEGraphSimplify → Inline → ScalarReplace → FbipReuse → HirDce → HirLicm\n[HirVerifier after each pass when babble.verify=true]"]
+    HirPM -->|"IrObserver: HIR stage=after:Pass"| Obs
+    HirPM --> TryNorm["HirTryNormalize (all -O levels)"]
+    TryNorm -->|"IrObserver: HIR stage=final"| Obs
+
+    TryNorm -->|"-O0 / -O1 (and non-MIR bodies at -O2)"| HirEmit["HirEmitter\n(ASM ClassWriter)"]
+    TryNorm -->|"-O2 (BIP014-P3)"| MirLow["3. MirLowerer\n(per-function HIR → SSA CFG MirModule implements IrDumpable)"]
+    MirLow -->|"IrObserver: MIR stage=before\n(post-MirVerifier)"| Obs
+    MirLow --> MirPM["4. MIR SSA Pipeline (-O2 : MirPassManager)\nSccp → GvnCse → Licm → AliasRle → MirDce → PredicateReorder\n[MirVerifier after each pass when babble.verify=true]"]
+    MirPM -->|"IrObserver: MIR stage=after:Pass"| Obs
+    MirPM -->|"IrObserver: MIR stage=final"| Obs
+    MirPM --> MirEmit["5. MirEmitter\n(ASM ClassWriter + ClassGen/InterfaceGen/ConstantPool)"]
 ```
 
 ### 6.3 Tier 1: High-Level Typed IR (`org.babblelang.ir.hir`)
@@ -368,7 +356,7 @@ Core node families (all sealed):
 
 ### 6.4 Tier 2: Per-Function SSA CFG IR (`org.babblelang.ir.mir`)
 
-For function and method bodies that benefit from dataflow optimizations (loops, repeated calls, `unique mut` / `frozen` field loads), `MirLowerer` converts a single `HirFunction` into a compact **SSA Control-Flow Graph with Block Parameters** (following Swift SIL, MLIR, Cranelift, and V8 Turboshaft):
+For function and method bodies that benefit from dataflow optimizations (loops, repeated calls, `unique mut` / `frozen` field loads, and structured `try`/`catch`/`finally` exception regions per `BIP028`), `MirLowerer` converts each eligible `HirFunction` into a compact **SSA Control-Flow Graph with Block Parameters** (following Swift SIL, MLIR, Cranelift, and V8 Turboshaft):
 
 ```
 bb0(p0: double, p1: double):
@@ -399,24 +387,42 @@ Rather than Sea-of-Nodes' complex effect-chain graphs, `MIR` keeps instructions 
   * `AliasClass.SHARED`: Conservative heap class; invalidated by any plain `mut` or unconstrained call.
 * **Effectful / Barrier (`EffectKind.WRITE(AliasSet)` or `EffectKind.IMPURE`):** Anchored in block order; never reordered across other barriers or exception points.
 * **Guard / Narrowing Anchor (`BIP007-D1`):** Narrowing branches (`!= null`, `is T`) produce a typed SSA value (`v_narrowed = narrow.nonnull v`) consumed by the guarded branch—so **by SSA data dependence alone**, no pass (GVN, LICM, or predicate reordering) can ever hoist a narrowed operation above its guard!
+* **Exception Regions (`BIP028`):** `MirLowerer` lowers `HirExpr.Try` / `HirExpr.Throw` explicitly into protected basic-block ranges with explicit unwind/handler edges (and inline `finally` regions preserving `BIP028-D6`/`D9` suppressed-exception and range-splitting semantics), so SSA dominance, dataflow passes (`SCCP`, `GVN/CSE`, `LICM`, `AliasRle`), and `MirVerifier` reason directly over exceptional control flow instead of falling back to `HirEmitter` on every function containing `try`.
+
+**Observing `HIR → MIR` Lowering & Canonical `MIR` Printing (`BIP029`):**
+`BIP029` ([bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md) §4) already provides the unified, ANTLR-free `org.babblelang.ir` observation pipeline (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`, `CliIrDumper`) and `.batest.md` `mir` block support. `BIP014-P3` integrates directly with it so **both** the `HIR → MIR` lowering step itself and every individual `MIR` optimization pass are first-class observable:
+
+1. **`MirModule implements IrDumpable`:** Pairs lowered `MirFunction`s (keyed by function/method ID) with explicit fallback records for any body intentionally kept on `HirEmitter` (e.g., namespace-scoped top-level `run()` or class static initializers).
+2. **Exact post-lowering `stage=before` snapshot:** Immediately after `MirLowerer` builds `MirModule` (and `MirVerifier` validates it when `babble.verify=true`), `MirPassManager` emits `IrSnapshot(IrTier.MIR, moduleKey, internalName, optLevel, IrSnapshot.STAGE_BEFORE, mirModule)` whenever `observer.wants(IrTier.MIR, optLevel, "before")` returns `true`. Any `.batest.md` case can therefore pair `;; hir -O2 fn=<f>` (the post-`HirTryNormalize` `HIR` input to `MirLowerer`) directly above `;; mir -O2 fn=<f> stage=before` (the exact lowered SSA CFG before any MIR pass runs), followed by `;; mir -O2 fn=<f> stage=after:<Pass>` and final `;; mir -O2 fn=<f>`.
+3. **Explicit non-lowered fallback visibility:** When a targeted function or method is *not* lowered to `MIR` (falling back to `HirEmitter`), `MirCanonicalPrinter` emits an explicit canonical marker — `fn <name> ; [not-lowered: <reason>]` — rather than silently omitting it. Lowering coverage is thus directly inspectable in both `-Dbabble.dumpIr=mir:canonical` and `.batest.md`, so an accidental regression that causes a function to stop lowering to `MIR` fails tests loudly.
+4. **`MirCanonicalPrinter` normalization contract (`BIP029-D5`, `BIP029-D7`):**
+   * Supports all `IrTarget` selectors (`fn=<name>`, `fn=<Type>.<method>`, `class=<name>`, `record=<name>`, `interface=<name>`, `top-level`, `module`), preamble-independent and parallel-safe.
+   * Deterministic Reverse Post-Order (RPO) basic-block numbering (`bb0`, `bb1`, …) from the entry block, with explicit branch arguments (`br bb1(v0, v1)`) and explicit exception-handler edges (`unwind bbK` / `handler bbK(exn: ...)`).
+   * Deterministic SSA value renumbering: parameters print as `p0..pK` (or unambiguous source parameter names), block parameters keep semantic source names (locally disambiguated on shadows), and SSA instruction results renumber `v0, v1, …` sequentially in RPO instruction order (eliminating gaps left by DCE/GVN).
+   * Symbolic call & type targets (`call clamp(v0)`, `jcall Math.cos(p0)`, `Vec3` with `Script$N$` stripped).
+   * Stable, deterministic effect/alias & narrowing annotations (`{pure}`, `{read:frozen}`, `{read:unique#0}`, `{write:shared}`, `{impure}`, `narrow.nonnull`, `narrow.is`).
+5. **`MirPrinter` (raw debug dump):** Companion raw printer backing `IrDumpable.printRaw()` with internal block/value IDs, source lines, and full instruction metadata for `-Dbabble.dumpIr=mir` debugging (mirroring `HirPrinter` vs. `HirCanonicalPrinter`).
 
 **SSA-to-ASM Lowering (`MirEmitter`):**
 * Standard dominator-tree / RPO block ordering, edge-splitting for block-parameter parallel copies (resolved via standard cycle-breaking temp local), and local-slot liveness coloring (reusing JVM local indices for non-overlapping SSA values of the same `PrimitiveKind`, keeping frame sizes small).
 * Because every block boundary carries values in JVM locals (not on the operand stack), **HotSpot's empty-stack loop-head OSR invariant holds automatically by construction**.
 
-### 6.5 Pass Manager, Verification & Debugging
+### 6.5 Pass Manager, Verification & Diagnostics (`BIP029` Integration)
 
-* **`PassManager` (`org.babblelang.opt`):** Sequences small, single-purpose passes (`HirPass` / `MirPass`), supports bounded fixed-point iteration (e.g., `ConstFold` + `Inline` + `DCE` repeating until no change or a max iteration cap of 3), and tracks per-pass rewrite counts.
+* **`PassManager` (`org.babblelang.opt`) & `MirPassManager` (`org.babblelang.opt.mir`):** Sequence small, single-purpose passes (`HirPass` / `MirPass`), support bounded fixed-point iteration (max iteration cap of 3), track per-pass rewrite counts, and emit lazy `IrObserver` snapshots (`before`, `after:<PassName>`, `final`) gated by `observer.wants(tier, optLevel, stage)` so unobserved compilations incur a single null check.
 * **Optimization levels:** Controlled via CLI (`babble -O0/-O1/-O2`, `babblec -O0/-O1/-O2`), engine attribute, or system property `-Dbabble.opt=0|1|2`:
-  * `-O0`: `HIR` direct emission only (zero optimization passes; fastest compile time, easiest debugging).
-  * `-O1` (default once `P2` lands — `BIP014-D1`): Fast `HIR` Nanopass pipeline (`ConstFold`, `AlgebraicSimplify`, `Inline`, `HirDce`, `ScalarReplace`).
-  * `-O2` (opt-in until `P3` stabilizes — `BIP014-D1`, `BIP014-D3`): Full `HIR` + per-function SSA `MIR` pipeline (`SCCP`, `GVN/CSE`, `LICM`, `AliasRle`, `MirDce`, plus `FBIP` and `aegraph` pipeline rewrites).
-* **IR Verifiers (`HirVerifier`, `MirVerifier`):** Whenever `babble.verify=true` (always on in Maven's `compiled-tests`!), the verifier runs **after every single pass**, checking:
+  * `-O0`: `HIR` direct emission (`HirTryNormalize` only; zero optimization passes; fastest compile time, easiest debugging).
+  * `-O1` (default since `BIP014-I2` — `BIP014-D1`): Fast `HIR` Nanopass pipeline (`HirEGraphSimplify`, `Inline`, `ScalarReplace`, `FbipReuse`, `HirDce`, `HirLicm`, followed unconditionally by `HirTryNormalize`).
+  * `-O2` (opt-in until `BIP014-P3` stabilizes — `BIP014-D1`, `BIP014-D3`): Full `-O1` `HIR` pipeline + per-function `MirLowerer` + SSA `MIR` pipeline (`Sccp`, `GvnCse`, `Licm`, `AliasRle`, `MirDce`, `PredicateReorder`, and later `BIP014-P5` `AeGraph` pipeline rewrites) + `MirEmitter`.
+* **IR Verifiers (`HirVerifier`, `MirVerifier`):** Whenever `babble.verify=true` (always on in Maven's compiled test runs!), the verifier runs **after every single pass** and immediately after `MirLowerer`, checking:
   * Type & `PrimitiveKind` consistency on every node/instruction
-  * SSA dominance (every use dominated by its definition) and block-parameter arity/type matching
+  * SSA dominance (every use dominated by its definition), block-parameter arity/type matching, and exception-handler edge well-formedness
   * Effect/narrowing invariants (no narrowed value used outside its dominating guard)
   * Valid line numbers on every throwing/calling instruction
-* **Diagnostics & Dumping:** `-Dbabble.dumpIr=<dir|stderr>` prints human-readable `HIR` and `MIR` before/after each pass (complementing existing `babble.dumpClasses` and `babble.trace`).
+* **Unified Diagnostics & Dumping (`org.babblelang.ir.CliIrDumper`, `BIP029-D6`):** `-Dbabble.dumpIr` shares the exact `IrObserver` pipeline with `.batest.md`, supporting:
+  * `hir` / `hir:canonical` / `hir:after:<Pass>`
+  * `mir` / `mir:canonical` / `mir:after:<Pass>` (with optional `mir:before` / `mir:after:<Pass>:canonical` filters for zero-noise lowering inspection)
+  * `all` / `true` / `<dir>` (emitting `hir-before`, `hir-after`, `mir-before`, `mir-after`, complementing `babble.dumpClasses` and `babble.trace`).
 
 ---
 
@@ -433,12 +439,16 @@ Rather than Sea-of-Nodes' complex effect-chain graphs, `MIR` keeps instructions 
 * Babble plans to support **Babble macros written in Babble**, requiring a compile-time macro expansion/evaluation phase that should itself run fast.
 * Rather than building a throwaway HIR tree-walking interpreter inside `ConstFoldPass`, `BIP014` keeps `HIR` self-contained and immutable (a clean target for future macro expansion) and keeps `-O1` compilation fast so future Babble macros can be **compiled through `BabbleCompiler` itself into optimized `-O1` JVM bytecode** and executed directly on the JVM under `BIP007` `pure deterministic` sandboxing. Once that compiled comptime runtime exists, it can also back general compile-time evaluation (CTFE) of `@TERMINATING pure deterministic` user functions.
 
-### 7.4 Differential & Performance Testing (`BIP009`)
-Every phase of `BIP014` is guarded by four automated gates:
-1. **Three-way differential parity:** Run the entire `.ba` + `.batest` corpus (`67+` files, `869+` cases) across `interpret`, `compile -O0`, and `compile -O1`/`-O2` with `babble.verify=true` (verifying `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter` on every generated class).
-2. **Golden IR unit tests (`OptimizerTestCase`):** Focused unit tests asserting exact before/after `HIR`/`MIR` transformations for each pass (e.g., verifying that `Math.cos(angle)` is actually hoisted out of a `while` loop, that `a != null and a.x > 0` is *not* reordered, and that `float` `a + b + c` is *not* reassociated).
-3. **Runtime boundary gate (`RuntimeBoundaryTestCase`):** Asserts zero `org.babblelang.ir` / `org.babblelang.opt` references in `babble-runtime.jar`.
-4. **End-to-end correctness & benchmarks:** Byte-identical `examples/raytracer-argon/scene.ppm` (and timing comparison on `raytracer-argon`, `raytracer-fable`, and `org.babblelang.bench.Benchmarks`).
+### 7.4 Differential, IR Golden & Performance Testing (`BIP009`, `BIP029`)
+Every phase of `BIP014` is guarded by five automated gates:
+1. **Multi-mode differential parity (`BIP009`, `BIP014-D9`):** Run the entire `.ba` + `.batest.md` corpus across `interpret`, `compile -O0`, `compile -O1`, and (via an opt-in `-O2` Surefire profile in `BIP014-P3`) `compile -O2`, all with `babble.verify=true` (verifying `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter` on every generated class).
+2. **Canonical `.batest.md` `hir` & `mir` golden/check tests (`BIP029`):**
+   * **Lowering observability (`HIR → MIR`):** Pair `;; hir -O2 fn=<f>` with `;; mir -O2 fn=<f> stage=before` in `src/test/batest/compiler/*.batest.md` to verify exact CFG structure, block parameters, `try`/`catch`/`finally` unwind edges, `SelfTailCall` loops, narrowing anchors, effect/alias tags, and non-fallback lowering coverage.
+   * **Per-pass & final `MIR` goldens:** Assert `;; mir -O2 fn=<f> stage=after:<Pass>` and final `;; mir -O2 fn=<f>` (exact canonical goldens or `check` predicates such as `contains`, `!contains`, `count N`, `regex`) for every `BIP014-P3` pass (`Sccp`, `GvnCse`, `Licm`, `AliasRle`, `MirDce`, `PredicateReorder`), using `-Dbatest.updateIr=true` (`BIP029-D9`) for guarded golden updates after intentional printer/pass changes.
+   * **Readability budgets (`BatestParser`):** Character limits (`< 800` for preambles/virtual modules, `< 400` per case) apply strictly to **Babble inputs** (comments excluded) — *not* to `stdout`, `stderr`, `error`, `hir`, or `mir` output blocks — while the hard **1,000-line** file limit includes all lines in the file (split large lowering/pass golden suites into cohesive feature-named `.batest.md` files under `src/test/batest/compiler/`).
+3. **API, AOT & bytecode tests (`OptimizerTestCase`, `MirCanonicalPrinterTestCase`):** Focused JUnit tests verifying `MirCanonicalPrinter` determinism/preamble-independence, `IrObserver`/`CliIrDumper`, `babblec` AOT cross-module optimization, and ASM bytecode properties.
+4. **Coverage & boundary gates (`-Pbatest`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`):** `mvn -q verify -Pbatest` enforces `>= 80%` line and `>= 80%` branch coverage across all 5 scopes; `RuntimeBoundaryTestCase` asserts zero `org.babblelang.ir` / `org.babblelang.opt` references in `babble-runtime.jar`; `ArchitectureBoundaryTestCase` enforces ANTLR isolation and LOC ceilings (`BIP027-D9`).
+5. **End-to-end correctness & benchmarks:** Byte-identical `examples/raytracer-argon/scene.ppm` at `-O0`, `-O1`, and `-O2`, plus timing comparisons on `raytracer-argon`, `raytracer-fable`, and `org.babblelang.bench.Benchmarks`.
 
 ---
 
@@ -447,7 +457,7 @@ Every phase of `BIP014` is guarded by four automated gates:
 Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and delivers standalone value:
 
 ### `BIP014-I0` — `CodeGenerator` Seam Extraction, Opt Flags & Baseline Benchmarks (`BIP014-D7`)
-* Purely structural + plumbing (no throwaway parse-tree constant folding — constant folding and constant `if` pruning are implemented once cleanly on `HIR` in `P2`):
+* Purely structural + plumbing (no throwaway parse-tree constant folding — constant folding and constant `if` pruning are implemented once cleanly on `HIR` in `BIP014-I2`):
   * Extract `ClassGen`, `InterfaceGen`, `ConstantPool`, and `ScriptClassWriter` out of the 6,269-line `CodeGenerator.java` into package-private collaborators inside `org.babblelang.compiler` (zero behavioral change, mirroring `BIP010`'s decomposition of `TypeChecker.java`).
   * Add `-O0`/`-O1`/`-O2` CLI flags (`Main` and `Babblec`), `-Dbabble.opt=0|1|2`, and `-Dbabble.dumpIr` plumbing in `BabbleCompiler`.
   * Add baseline optimizer microbenchmarks in `org.babblelang.bench.Benchmarks`.
@@ -469,16 +479,21 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 * Add a 3rd Surefire execution (`compiled-tests-O0` with `babble.opt=0`) in `pom.xml` (`BIP014-D9`) so the entire 1,710+ test suite runs in `interpret`, `compile -O0`, and `compile -O1` (`HirVerifier` + `CheckClassAdapter`) on every `mvn test`.
 * Benchmark `raytracer-argon`, `raytracer-fable`, and `Benchmarks` at `-O0` vs `-O1` to gate `BIP014-P3` and `BIP014-I4` (`BIP014-D3`, `BIP014-D10`).
 
-### `BIP014-P3` — Per-Function SSA `MIR` & Dataflow Optimizations (Gated per `BIP014-D3`)
+### `BIP014-P3` — Per-Function SSA `MIR`, `BIP029` Lowering Observability & Dataflow Optimizations (Gated per `BIP014-D3`)
 * Gated on `raytracer-argon`, `raytracer-fable`, and `Benchmarks` measurements after `BIP014-I2` (`BIP014-D3`).
-* Create `org.babblelang.ir.mir` (`MirModule implements IrDumpable`, `MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`, `AliasClass`, `MirLowerer`, `MirPrinter`, `MirCanonicalPrinter`, `MirVerifier`, `MirEmitter`), emitting `IrTier.MIR` snapshots (`before`, `after:<PassName>`, `final`) through `BIP029`'s `IrObserver` (`org.babblelang.ir`, [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)) so `-Dbabble.dumpIr=mir` and `mir` (`;; mir -O2 ...`) `.batest.md` goldens work out of the box.
-* Implement SSA dataflow passes under opt-in `-O2`:
+* Create `org.babblelang.ir.mir` (`MirModule implements IrDumpable`, `MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`, `AliasClass`, `MirLowerer` including `BIP028` `try`/`catch`/`finally` exception regions and `BIP024` `SelfTailCall` loops, `MirPrinter`, `MirCanonicalPrinter`, `MirVerifier`, `MirEmitter`).
+* Wire `BIP029` observability end-to-end before implementing passes so `HIR → MIR` lowering is verified in isolation first:
+  * Emit `IrSnapshot(IrTier.MIR, ...)` at `stage=before` (post-`MirLowerer` + `MirVerifier`), `stage=after:<PassName>`, and `stage=final` through `BabbleCompiler`'s `IrObserver` (`org.babblelang.ir`, [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)) so `-Dbabble.dumpIr=mir` and `mir` (`;; mir -O2 ...`) `.batest.md` goldens work out of the box.
+  * Surface non-lowered functions explicitly in `MirCanonicalPrinter` (`fn <name> ; [not-lowered: <reason>]`) and add `MirCanonicalPrinterTestCase` + `.batest.md` `hir -O2` / `mir -O2 stage=before` lowering golden suites under `src/test/batest/compiler/`.
+  * Extend `CliIrDumper` if needed for `-Dbabble.dumpIr=mir:before` and `-Dbabble.dumpIr=mir:after:<Pass>:canonical`.
+* Implement SSA dataflow passes under opt-in `-O2` (with per-pass `.batest.md` `stage=after:<Pass>` and final `mir -O2` golden/check suites):
   * `SccpPass` (Sparse Conditional Constant Propagation `[WZ91]` — `O1` + `O4`)
   * `GvnCsePass` (dominator-based GVN/CSE with `commutative` canonicalization and effect invalidation — `O5`)
   * `LicmPass` (general loop-nest preheader hoisting + guarded hoisting for may-throw invariants — `O6`)
-  * `AliasRlePass` (`frozen` / deep `record` / `unique mut` redundant-load elimination & field load hoisting — `O7`, full `unique mut` active once `BIP007-I2` lands)
+  * `AliasRlePass` (`frozen` / deep `record` / `unique mut` redundant-load elimination & field load hoisting — `O7`)
   * `MirDcePass` (SSA dead instruction & dead block-parameter elimination — `O4`)
   * Narrowing-aware `PredicateReorderPass` (`O11`, enforced structurally by SSA `narrow` dependencies)
+* Add an opt-in `-O2` Maven profile (`-PO2` / Surefire execution with `babble.opt=2`, `babble.verify=true`) so the entire suite (including `mir -O2` `.batest.md` blocks) is continuously differential-tested against `interpret`, `-O0`, and `-O1`, plus byte-identical `examples/raytracer-argon/scene.ppm` at `-O2`.
 
 ### `BIP014-I4` — Ownership & Allocation Optimizations (`BIP007-I2` Unlocked)
 * `ScalarReplacePass` (`O9`): stack-unbox non-escaping `record` allocations and `borrow` parameters across all 8 `RM005` primitives (both after inlining and via flattened `$unboxed` entry points for non-inlined `borrow` callees).
