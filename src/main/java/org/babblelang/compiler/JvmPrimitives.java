@@ -147,6 +147,39 @@ final class JvmPrimitives {
         return sb.toString();
     }
 
+    static String methodSpecDescriptor(LoweringTargets.FunctionSignature sig) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(L").append(COMPILED_METHOD).append(";L").append(SCRIPT_RUNTIME).append(';');
+        for (PrimitiveKind pk : sig.parameterKinds()) {
+            sb.append(jvmDescriptor(pk));
+        }
+        if (sig.hasOptionalMask()) {
+            sb.append('I');
+        }
+        sb.append(')').append(jvmDescriptor(sig.returnKind()));
+        return sb.toString();
+    }
+
+    static String methodDirectDescriptor(LoweringTargets.FunctionSignature sig) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(L").append(COMPILED_METHOD).append(";L").append(SCRIPT_RUNTIME).append(";L").append(BINDER).append(';');
+        for (int i = 0; i < sig.parameterKinds().length; i++) {
+            sb.append("Ljava/lang/Object;");
+        }
+        sb.append(")Ljava/lang/Object;");
+        return sb.toString();
+    }
+
+    static String fastRecordFactoryDescriptor(String jvmClassName, PrimitiveKind[] paramKinds) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(L").append(BABBLE_CLASS).append(";L").append(SCRIPT_RUNTIME).append(';');
+        for (PrimitiveKind pk : paramKinds) {
+            sb.append(jvmDescriptor(pk));
+        }
+        sb.append(")L").append(jvmClassName).append(';');
+        return sb.toString();
+    }
+
     static String cellClass(PrimitiveKind kind) {
         return switch (kind) {
             case BYTE -> BYTE_CELL;

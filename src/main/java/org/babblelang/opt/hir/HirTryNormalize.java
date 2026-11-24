@@ -266,6 +266,28 @@ public final class HirTryNormalize {
                 }
                 yield d;
             }
+            case HirExpr.RecordNew r -> {
+                int lastTry = lastTryIndex(r.args());
+                if (lastTry >= 0 || containsTry(r.classRef())) {
+                    Spill s = new Spill(ownerId, nextVarId);
+                    HirExpr ncr = s.hoist(r.classRef());
+                    List<HirExpr> na = lastTry >= 0 ? s.hoistPrefix(r.args(), lastTry) : r.args();
+                    yield s.wrap(new HirExpr.RecordNew(r.classId(), r.classTypeId(), r.classJvmName(),
+                            ncr, r.paramKinds(), na, r.binding(), r.meta()), r.meta());
+                }
+                yield r;
+            }
+            case HirExpr.RecordReuse r -> {
+                int lastTry = lastTryIndex(r.args());
+                if (lastTry >= 0 || containsTry(r.target())) {
+                    Spill s = new Spill(ownerId, nextVarId);
+                    HirExpr nt = s.hoist(r.target());
+                    List<HirExpr> na = lastTry >= 0 ? s.hoistPrefix(r.args(), lastTry) : r.args();
+                    yield s.wrap(new HirExpr.RecordReuse(nt, r.classId(), r.classTypeId(), r.classJvmName(),
+                            r.paramKinds(), na, r.meta()), r.meta());
+                }
+                yield r;
+            }
             default -> expr;
         };
     }
@@ -419,6 +441,10 @@ public final class HirTryNormalize {
             case HirExpr.MakeOverloadSet m -> anyContainsTry(m.operands());
             case HirExpr.OverloadSelect s -> containsTry(s.set());
             case HirExpr.OverloadDispatch d -> containsTry(d.callee()) || anyContainsTry(d.args());
+            case HirExpr.RecordNew r -> containsTry(r.classRef()) || anyContainsTry(r.args());
+            case HirExpr.RecordReuse r -> containsTry(r.target()) || anyContainsTry(r.args());
+            case HirExpr.Move m -> containsTry(m.operand());
+            case HirExpr.Freeze f -> containsTry(f.operand());
         };
     }
 

@@ -30,6 +30,7 @@ public record HirClass(
         List<HirTypeRef> implementedTypes,
         List<HirExpr> body,
         HirStaticBlock staticBlock,
+        boolean fastRecord,
         int line
 ) {
     public HirClass {
@@ -62,6 +63,7 @@ public record HirClass(
     public HirClass withBodyAndStatic(List<HirParam> newParams, List<HirExpr> newBody, HirStaticBlock newStatic) {
         return new HirClass(id, isObject, shape, jvmName, implementedJvmInterfaces, javaInterfaces,
                 declaredVars, capturedVars, newParams, memberKinds, primDefBits, primDefCount, methodFunctionIds,
-                overloadMethodFunctionIds, implementedTypes, newBody, newStatic, line);
+                overloadMethodFunctionIds, implementedTypes, newBody, newStatic, fastRecord, line);
     }
 }
+

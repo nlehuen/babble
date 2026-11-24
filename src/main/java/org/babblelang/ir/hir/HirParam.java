@@ -15,10 +15,27 @@ public record HirParam(
         int memberIndex,
         HirExpr defaultValue,
         LoweringTargets.JavaSamTarget samTarget,
+        LoweringTargets.ParamOwnership ownership,
         int line
 ) {
     public HirParam {
         kind = kind != null ? kind : PrimitiveKind.NONE;
+        ownership = ownership != null ? ownership : LoweringTargets.ParamOwnership.DEFAULT;
+    }
+
+    public HirParam(
+            String name,
+            HirVar var,
+            PrimitiveKind kind,
+            int wideningRank,
+            String checkedType,
+            int memberIndex,
+            HirExpr defaultValue,
+            LoweringTargets.JavaSamTarget samTarget,
+            int line
+    ) {
+        this(name, var, kind, wideningRank, checkedType, memberIndex, defaultValue, samTarget,
+                LoweringTargets.ParamOwnership.DEFAULT, line);
     }
 
     public HirParam(
@@ -31,10 +48,28 @@ public record HirParam(
             HirExpr defaultValue,
             int line
     ) {
-        this(name, var, kind, wideningRank, checkedType, memberIndex, defaultValue, null, line);
+        this(name, var, kind, wideningRank, checkedType, memberIndex, defaultValue, null,
+                LoweringTargets.ParamOwnership.DEFAULT, line);
+    }
+
+    public boolean isMut() {
+        return ownership.mut();
+    }
+
+    public boolean isBorrow() {
+        return ownership.borrow();
+    }
+
+    public boolean isUnique() {
+        return ownership.unique();
+    }
+
+    public String recordTypeId() {
+        return ownership.recordTypeId();
     }
 
     public HirParam withDefaultValue(HirExpr newDefault) {
-        return new HirParam(name, var, kind, wideningRank, checkedType, memberIndex, newDefault, samTarget, line);
+        return new HirParam(name, var, kind, wideningRank, checkedType, memberIndex, newDefault, samTarget, ownership, line);
     }
 }
+

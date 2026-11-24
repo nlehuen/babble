@@ -76,6 +76,7 @@ final class HirEmitter {
     private final Queue<Runnable> pendingMethods = new ArrayDeque<>();
     private final Set<Integer> scheduledFunctions = new HashSet<>();
     private final Map<Integer, String> compiledMethodFields = new HashMap<>();
+    private final Map<String, String> cachedMethodOverloads = new HashMap<>();
 
     private int classBodyCount = 0;
     private int superHelperCount = 0;
@@ -124,6 +125,7 @@ final class HirEmitter {
         }
         for (ClassGen gen : classGens.values()) {
             gen.emitInterfaceBridges();
+            gen.emitFastRecordConstructor();
         }
         drainPendingMethods();
         constantPool.emitClinit(classWriter);
@@ -292,6 +294,10 @@ final class HirEmitter {
             case HirExpr.MakeOverloadSet m -> 1 + countList(m.operands());
             case HirExpr.OverloadSelect s -> 1 + countNodes(s.set());
             case HirExpr.OverloadDispatch d -> 1 + countNodes(d.callee()) + countList(d.args()) + d.branches().size() * 2;
+            case HirExpr.RecordNew r -> 1 + countNodes(r.classRef()) + countList(r.args());
+            case HirExpr.RecordReuse r -> 1 + countNodes(r.target()) + countList(r.args());
+            case HirExpr.Move m -> 1 + countNodes(m.operand());
+            case HirExpr.Freeze f -> 1 + countNodes(f.operand());
         };
     }
 
@@ -420,7 +426,7 @@ final class HirEmitter {
         m.visitEnd();
     }
 
-    private String compiledMethodField(HirFunction fn, ClassGen gen) {
+    String compiledMethodField(HirFunction fn, ClassGen gen) {
         String existing = compiledMethodFields.get(fn.id());
         if (existing != null) {
             return existing;
@@ -476,18 +482,46 @@ final class HirEmitter {
         return field;
     }
 
+    String cachedMethodOverloadField(HirExpr.MakeOverloadSet mos, ClassGen gen) {
+        StringBuilder key = new StringBuilder(gen.name);
+        List<String> methodFields = new ArrayList<>(mos.operands().size());
+        for (HirExpr op : mos.operands()) {
+            HirExpr.FunctionRef ref = (HirExpr.FunctionRef) op;
+            key.append('#').append(ref.functionId());
+            methodFields.add(compiledMethodField(module.function(ref.functionId()), gen));
+        }
+        String k = key.toString();
+        String existing = cachedMethodOverloads.get(k);
+        if (existing != null) {
+            return existing;
+        }
+        String field = constantPool.add("OVERLOAD", "L" + OVERLOAD_SET + ";", 40 + mos.metas().size() * 24, m -> {
+            ConstantPool.pushInt(m, methodFields.size());
+            m.visitTypeInsn(ANEWARRAY, OBJECT);
+            for (int i = 0; i < methodFields.size(); i++) {
+                m.visitInsn(DUP);
+                ConstantPool.pushInt(m, i);
+                m.visitFieldInsn(GETSTATIC, className, methodFields.get(i), "L" + COMPILED_METHOD + ";");
+                m.visitInsn(AASTORE);
+            }
+            CallEmitter.emitOverloadSetMetaAndCreate(m, mos.metas());
+        });
+        cachedMethodOverloads.put(k, field);
+        return field;
+    }
+
     private void generateMethod(HirFunction fn, ClassGen gen, String paramsField) {
         String method = fn.jvmMethodName();
         if (fn.isSpread()) {
             int count = fn.params().size();
             String direct = methodDirectDescriptor(fn);
-            callAdapter(gen.writer, ACC_SYNTHETIC, method + "$call", METHOD_DESCRIPTOR, paramsField, count, fn.keywordOnlyStart(), fn.restIndex(),
+            callAdapter(gen.writer, ACC_PUBLIC | ACC_SYNTHETIC, method + "$call", METHOD_DESCRIPTOR, paramsField, count, fn.keywordOnlyStart(), fn.restIndex(),
                     m -> m.visitMethodInsn(INVOKEVIRTUAL, gen.name, method, direct, false));
-            beginMethod(gen.writer, fn.id(), ACC_SYNTHETIC, method, direct,
+            beginMethod(gen.writer, fn.id(), ACC_PUBLIC | ACC_SYNTHETIC, method, direct,
                     FIRST_PARAMETER + count + 1, FN_RT, FIRST_PARAMETER + count, fn.capturedVars());
             ctx.parameterBase = FIRST_PARAMETER;
         } else {
-            beginMethod(gen.writer, fn.id(), ACC_SYNTHETIC, method, METHOD_DESCRIPTOR,
+            beginMethod(gen.writer, fn.id(), ACC_PUBLIC | ACC_SYNTHETIC, method, METHOD_DESCRIPTOR,
                     FN_NS + 1, FN_RT, FN_NS, fn.capturedVars());
         }
         ctx.selfLocal = 1;
@@ -510,7 +544,7 @@ final class HirEmitter {
         }
         int maskSlot = fn.hasOptionalMask() ? nextParam++ : -1;
         int nsSlot = nextParam;
-        beginMethod(gen.writer, fn.id(), ACC_SYNTHETIC, method + "$spec",
+        beginMethod(gen.writer, fn.id(), ACC_PUBLIC | ACC_SYNTHETIC, method + "$spec",
                 methodSpecDescriptor(fn), nsSlot + 1, FN_RT, nsSlot, fn.capturedVars());
         ctx.methodReturnKind = fn.returnKind();
         ctx.selfLocal = 1;
@@ -1071,6 +1105,10 @@ final class HirEmitter {
             case HirExpr.ClassExpr c -> emitClassExpr(c);
             case HirExpr.InterfaceExpr i -> emitInterfaceExpr(i);
             case HirExpr.TypeApply t -> emitBoxed(t.inner());
+            case HirExpr.RecordNew r -> calls.emitRecordNew(r);
+            case HirExpr.RecordReuse r -> calls.emitRecordReuse(r);
+            case HirExpr.Move m -> emitAndWiden(m.operand());
+            case HirExpr.Freeze f -> emitAndWiden(f.operand());
         }
     }
 

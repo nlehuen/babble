@@ -68,7 +68,11 @@ public sealed interface HirExpr permits
         HirExpr.FunctionRef,
         HirExpr.ClassExpr,
         HirExpr.InterfaceExpr,
-        HirExpr.TypeApply {
+        HirExpr.TypeApply,
+        HirExpr.RecordNew,
+        HirExpr.RecordReuse,
+        HirExpr.Move,
+        HirExpr.Freeze {
 
     ExprMeta meta();
 
@@ -221,11 +225,23 @@ public sealed interface HirExpr permits
 
     record ThisFieldGet(
             HirExpr receiver,
+            String receiverText,
             int classId,
+            String externalClassJvmName,
             int memberIndex,
             String memberName,
+            PrimitiveKind fieldKind,
+            boolean recordField,
+            boolean definitelyDefined,
             ExprMeta meta
     ) implements HirExpr {
+        public ThisFieldGet {
+            fieldKind = fieldKind != null ? fieldKind : PrimitiveKind.NONE;
+        }
+
+        public ThisFieldGet(HirExpr receiver, int classId, int memberIndex, String memberName, ExprMeta meta) {
+            this(receiver, null, classId, null, memberIndex, memberName, PrimitiveKind.NONE, false, false, meta);
+        }
     }
 
     record JavaFieldGet(
@@ -300,8 +316,12 @@ public sealed interface HirExpr permits
             LogicOp op,
             HirExpr left,
             HirExpr right,
+            boolean rightNarrowed,
             ExprMeta meta
     ) implements HirExpr {
+        public Logic(LogicOp op, HirExpr left, HirExpr right, ExprMeta meta) {
+            this(op, left, right, false, meta);
+        }
     }
 
     // ---------------------------------------------------------------- type operations
@@ -539,9 +559,12 @@ public sealed interface HirExpr permits
             HirExpr receiver,
             String receiverText,
             int classId,
+            String externalClassJvmName,
+            String classTypeId,
             String memberName,
             int overloadAltIndex,
             int targetFunctionId,
+            LoweringTargets.FunctionSignature externalSignature,
             List<HirCallArg> args,
             LoweringTargets.ArgumentBinding binding,
             CallSite callSite,
@@ -551,10 +574,18 @@ public sealed interface HirExpr permits
             args = List.copyOf(args);
         }
 
+        public DirectThisMethodCall(HirExpr receiver, String receiverText, int classId, String memberName,
+                                    int overloadAltIndex, int targetFunctionId, List<HirCallArg> args,
+                                    LoweringTargets.ArgumentBinding binding, CallSite callSite, ExprMeta meta) {
+            this(receiver, receiverText, classId, null, null, memberName, overloadAltIndex, targetFunctionId,
+                    null, args, binding, callSite, meta);
+        }
+
         public DirectThisMethodCall(HirExpr receiver, int classId, String memberName, int targetFunctionId,
                                     List<HirCallArg> args, LoweringTargets.ArgumentBinding binding,
                                     CallSite callSite, ExprMeta meta) {
-            this(receiver, null, classId, memberName, -1, targetFunctionId, args, binding, callSite, meta);
+            this(receiver, null, classId, null, null, memberName, -1, targetFunctionId,
+                    null, args, binding, callSite, meta);
         }
     }
 
@@ -695,4 +726,48 @@ public sealed interface HirExpr permits
 
     record TypeApply(HirExpr inner, ExprMeta meta) implements HirExpr {
     }
+
+    // ---------------------------------------------------------------- record & ownership ops (BIP014-P4)
+
+    /** Direct fast constructor call for a capture-free method-only compiled {@code record} ({@code BIP014-P4}). */
+    record RecordNew(
+            int classId,
+            String classTypeId,
+            String classJvmName,
+            HirExpr classRef,
+            PrimitiveKind[] paramKinds,
+            List<HirExpr> args,
+            LoweringTargets.ArgumentBinding binding,
+            ExprMeta meta
+    ) implements HirExpr {
+        public RecordNew {
+            paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
+            args = List.copyOf(args);
+        }
+    }
+
+    /** Functional-but-in-place ({@code O10}) update of a uniquely owned {@code record} instance ({@code BIP014-P4}). */
+    record RecordReuse(
+            HirExpr target,
+            int classId,
+            String classTypeId,
+            String classJvmName,
+            PrimitiveKind[] paramKinds,
+            List<HirExpr> args,
+            ExprMeta meta
+    ) implements HirExpr {
+        public RecordReuse {
+            paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
+            args = List.copyOf(args);
+        }
+    }
+
+    /** Ownership transfer marker ({@code move(x)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-P4}). */
+    record Move(HirVar var, HirExpr operand, ExprMeta meta) implements HirExpr {
+    }
+
+    /** Deep-immutability marker ({@code freeze(expr)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-P4}). */
+    record Freeze(HirExpr operand, ExprMeta meta) implements HirExpr {
+    }
 }
+

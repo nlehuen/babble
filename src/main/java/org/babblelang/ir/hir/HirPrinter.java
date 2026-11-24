@@ -416,6 +416,28 @@ public final class HirPrinter {
                 printExpr(sb, t.inner(), depth + 1);
                 sb.append(')');
             }
+            case HirExpr.RecordNew r -> {
+                sb.append("(record-new ").append(r.classTypeId());
+                printArgs(sb, r.args(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.RecordReuse r -> {
+                sb.append("(record-reuse ");
+                printExpr(sb, r.target(), depth + 1);
+                sb.append(' ').append(r.classTypeId());
+                printArgs(sb, r.args(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.Move m -> {
+                sb.append("(move ");
+                printExpr(sb, m.operand(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.Freeze f -> {
+                sb.append("(freeze ");
+                printExpr(sb, f.operand(), depth + 1);
+                sb.append(')');
+            }
         }
     }
 

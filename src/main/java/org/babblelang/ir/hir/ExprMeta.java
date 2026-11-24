@@ -17,40 +17,58 @@ public record ExprMeta(
         String checkedType,
         EffectSet effects,
         boolean deeplyImmutable,
-        boolean stringType
+        boolean stringType,
+        boolean frozen,
+        boolean unique
 ) {
     public ExprMeta {
         kind = kind != null ? kind : PrimitiveKind.NONE;
         effects = effects != null ? effects : EffectSet.EMPTY;
     }
 
+    public ExprMeta(
+            int line,
+            PrimitiveKind kind,
+            int wideningRank,
+            String checkedType,
+            EffectSet effects,
+            boolean deeplyImmutable,
+            boolean stringType
+    ) {
+        this(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, false, false);
+    }
+
     public static ExprMeta of(int line, PrimitiveKind kind) {
         boolean imm = kind != null && kind.isPrimitive();
-        return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, imm, false);
+        return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, imm, false, false, false);
     }
 
     public static ExprMeta of(int line, PrimitiveKind kind, boolean deeplyImmutable, boolean stringType) {
-        return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, deeplyImmutable, stringType);
+        return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, deeplyImmutable, stringType, false, false);
     }
 
     public ExprMeta withLine(int newLine) {
-        return new ExprMeta(newLine, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType);
+        return new ExprMeta(newLine, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, unique);
     }
 
     public ExprMeta withKind(PrimitiveKind newKind) {
-        return new ExprMeta(line, newKind, wideningRank, checkedType, effects, deeplyImmutable, stringType);
+        return new ExprMeta(line, newKind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, unique);
     }
 
     public ExprMeta withWideningRank(int newRank) {
-        return new ExprMeta(line, kind, newRank, checkedType, effects, deeplyImmutable, stringType);
+        return new ExprMeta(line, kind, newRank, checkedType, effects, deeplyImmutable, stringType, frozen, unique);
     }
 
     public ExprMeta withCheckedType(String newCheckedType) {
-        return new ExprMeta(line, kind, wideningRank, newCheckedType, effects, deeplyImmutable, stringType);
+        return new ExprMeta(line, kind, wideningRank, newCheckedType, effects, deeplyImmutable, stringType, frozen, unique);
     }
 
     public ExprMeta withEffects(EffectSet newEffects) {
-        return new ExprMeta(line, kind, wideningRank, checkedType, newEffects, deeplyImmutable, stringType);
+        return new ExprMeta(line, kind, wideningRank, checkedType, newEffects, deeplyImmutable, stringType, frozen, unique);
+    }
+
+    public ExprMeta withUnique(boolean newUnique) {
+        return new ExprMeta(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, newUnique);
     }
 
     public boolean isPure() {
@@ -81,3 +99,4 @@ public record ExprMeta(
         return effects.has(Effect.ASSOCIATIVE);
     }
 }
+

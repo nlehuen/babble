@@ -154,13 +154,47 @@ public final class HirPurity {
                 yield fx.isPure() && fx.isNothrow() && fx.terminating() && allArgsPrimitiveOrImmutable(c.args());
             }
             case HirExpr.ThisFieldGet g -> {
-                if (g.classId() < 0 || g.memberIndex() < 0) {
+                if (g.receiverText() == null) {
+                    if (g.classId() < 0 || g.memberIndex() < 0) {
+                        yield false;
+                    }
+                    HirClass cls = module.clazz(g.classId());
+                    yield cls != null && cls.shape().isValue()
+                            && (g.memberIndex() >= cls.primDefBits().length || cls.primDefBits()[g.memberIndex()] < 0)
+                            && isPureNothrowTerminating(g.receiver(), module, visitingFns);
+                }
+                yield g.recordField() && g.definitelyDefined()
+                        && isPureNothrowTerminating(g.receiver(), module, visitingFns)
+                        && (g.receiver() instanceof HirExpr.ThisRef || g.receiver() instanceof HirExpr.RecordNew
+                        || g.receiver() instanceof HirExpr.VarRead);
+            }
+            case HirExpr.Move m -> isPureNothrowTerminating(m.operand(), module, visitingFns);
+            case HirExpr.Freeze f -> isPureNothrowTerminating(f.operand(), module, visitingFns);
+            case HirExpr.RecordNew r -> {
+                boolean classRefOk = isPureNothrowTerminating(r.classRef(), module, visitingFns)
+                        || (r.classRef() instanceof HirExpr.NameRead nr
+                        && isDefinitelyInitializedTopLevelFn(nr.name(), module));
+                yield classRefOk && allPureNothrowTerminating(r.args(), module, visitingFns);
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                if (!isPureNothrowTerminating(c.receiver(), module, visitingFns)) {
                     yield false;
                 }
-                HirClass cls = module.clazz(g.classId());
-                yield cls != null && cls.shape().isValue()
-                        && (g.memberIndex() >= cls.primDefBits().length || cls.primDefBits()[g.memberIndex()] < 0)
-                        && isPureNothrowTerminating(g.receiver(), module, visitingFns);
+                for (HirCallArg a : c.args()) {
+                    if (!isPureNothrowTerminating(a.value(), module, visitingFns)) {
+                        yield false;
+                    }
+                }
+                if (c.receiverText() != null && !(c.receiver() instanceof HirExpr.ThisRef
+                        || c.receiver() instanceof HirExpr.RecordNew || c.receiver() instanceof HirExpr.VarRead)) {
+                    yield false;
+                }
+                if (c.targetFunctionId() >= 0) {
+                    HirFunction fn = module.function(c.targetFunctionId());
+                    yield fn != null && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
+                }
+                EffectSet fx = c.meta().effects();
+                yield fx.isPure() && fx.isNothrow() && fx.terminating();
             }
             default -> false;
         };

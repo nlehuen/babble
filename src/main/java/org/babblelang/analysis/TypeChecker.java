@@ -2772,6 +2772,9 @@ final class TypeChecker {
             TypeEnv.Refinement leftRef = narrowing.extractRefinement(ctx.left);
             Map<ParserRuleContext, Type> rightGuard =
                     ctx.op.getType() == BabbleLexer.AND ? leftRef.whenTrue() : leftRef.whenFalse();
+            if (!rightGuard.isEmpty() && inFile(ctx)) {
+                pass.analysis.lowering().markLogicRightNarrowed(ctx);
+            }
             env = saved.apply(rightGuard);
             try {
                 synth(ctx.right);

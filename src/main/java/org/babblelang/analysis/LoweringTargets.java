@@ -75,6 +75,29 @@ public final class LoweringTargets {
         public boolean isOptional(int index) {
             return index < 32 && (optionalParamBits & (1 << index)) != 0;
         }
+
+        public boolean isSpread() {
+            return parameterKinds.length <= 8;
+        }
+
+        public boolean hasSpec() {
+            if (!isSpread()) {
+                return false;
+            }
+            int opt = optionalCount();
+            if (opt > 32 || (opt > 0 && parameterKinds.length > 32)) {
+                return false;
+            }
+            boolean hasPrimitive = returnKind.isPrimitive();
+            int slots = 3 + (opt > 0 ? 1 : 0);
+            for (PrimitiveKind pk : parameterKinds) {
+                if (pk.isPrimitive()) {
+                    hasPrimitive = true;
+                }
+                slots += pk.slots();
+            }
+            return hasPrimitive && slots <= 250;
+        }
     }
 
     /** How a spread call argument ({@code ...e}) is adapted to its target parameter ({@code BIP021-D7}). */
@@ -358,4 +381,49 @@ public final class LoweringTargets {
             List<IsTarget> babbleTargets
     ) {
     }
+
+    /** Direct compiled Babble class/record field read target ({@code BIP014-P4}). */
+    public record ClassFieldTarget(
+            String classTypeId,
+            String memberName,
+            int memberIndex,
+            PrimitiveKind fieldKind,
+            boolean recordValue,
+            boolean definitelyDefined
+    ) {
+        public ClassFieldTarget {
+            fieldKind = fieldKind != null ? fieldKind : PrimitiveKind.NONE;
+        }
+    }
+
+    /** Direct fast constructor target for a capture-free method-only compiled {@code record} ({@code BIP014-P4}). */
+    public record RecordNewTarget(
+            String classTypeId,
+            PrimitiveKind[] paramKinds
+    ) {
+        public RecordNewTarget {
+            paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
+        }
+    }
+
+    /** Direct compiled Babble class/record method or operator call target ({@code BIP014-P4}). */
+    public record DirectMethodTarget(
+            String classTypeId,
+            String memberName,
+            int overloadAltIndex,
+            FunctionSignature signature,
+            boolean recordValue
+    ) {
+    }
+
+    /** Converged ownership and static record-type metadata of a function parameter ({@code BIP014-P4}). */
+    public record ParamOwnership(
+            boolean mut,
+            boolean borrow,
+            boolean unique,
+            String recordTypeId
+    ) {
+        public static final ParamOwnership DEFAULT = new ParamOwnership(false, true, false, null);
+    }
 }
+

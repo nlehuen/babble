@@ -45,6 +45,15 @@ public final class LoweringMetadata {
     private final Map<BabbleParser.NonNullAssertionContext, String> nonNullAssertionTargets = new HashMap<>();
     private final Map<BabbleParser.ThrowExpressionContext, LoweringTargets.ThrowTarget> throwTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.CatchClauseContext, LoweringTargets.CatchTarget> catchTargets = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.ClassFieldTarget> classFieldTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, LoweringTargets.RecordNewTarget> recordNewTargets = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.DirectMethodTarget> directMethodTargets = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, BabbleParser.FunctionLiteralContext> directMethodFunctions = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.ParamOwnership> paramOwnerships = new IdentityHashMap<>();
+    private final Set<ParserRuleContext> expressionFrozen = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<ParserRuleContext> expressionUnique = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<BabbleParser.BooleanOpContext> logicRightNarrowed = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<BabbleParser.CallContext, String> builtinOwnershipCalls = new IdentityHashMap<>();
 
     LoweringMetadata() {
     }
@@ -320,4 +329,78 @@ public final class LoweringMetadata {
     public LoweringTargets.CatchTarget catchTarget(BabbleParser.CatchClauseContext ctx) {
         return catchTargets.get(ctx);
     }
+
+    void setClassFieldTarget(ParserRuleContext ctx, LoweringTargets.ClassFieldTarget target) {
+        classFieldTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.ClassFieldTarget classFieldTarget(ParserRuleContext ctx) {
+        return classFieldTargets.get(ctx);
+    }
+
+    void setRecordNewTarget(BabbleParser.CallContext ctx, LoweringTargets.RecordNewTarget target) {
+        recordNewTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.RecordNewTarget recordNewTarget(BabbleParser.CallContext ctx) {
+        return recordNewTargets.get(ctx);
+    }
+
+    void setDirectMethodTarget(ParserRuleContext ctx, LoweringTargets.DirectMethodTarget target) {
+        directMethodTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.DirectMethodTarget directMethodTarget(ParserRuleContext ctx) {
+        return directMethodTargets.get(ctx);
+    }
+
+    void setDirectMethodFunction(ParserRuleContext ctx, BabbleParser.FunctionLiteralContext fn) {
+        directMethodFunctions.put(ctx, fn);
+    }
+
+    public BabbleParser.FunctionLiteralContext directMethodFunction(ParserRuleContext ctx) {
+        return directMethodFunctions.get(ctx);
+    }
+
+    void setParamOwnership(ParserRuleContext decl, LoweringTargets.ParamOwnership ownership) {
+        paramOwnerships.put(decl, ownership);
+    }
+
+    public LoweringTargets.ParamOwnership paramOwnership(ParserRuleContext decl) {
+        return paramOwnerships.getOrDefault(decl, LoweringTargets.ParamOwnership.DEFAULT);
+    }
+
+    void markExpressionFrozen(ParserRuleContext ctx) {
+        expressionFrozen.add(ctx);
+    }
+
+    public boolean isExpressionFrozen(ParserRuleContext ctx) {
+        return expressionFrozen.contains(ctx);
+    }
+
+    void markExpressionUnique(ParserRuleContext ctx) {
+        expressionUnique.add(ctx);
+    }
+
+    public boolean isExpressionUnique(ParserRuleContext ctx) {
+        return expressionUnique.contains(ctx);
+    }
+
+    void markLogicRightNarrowed(BabbleParser.BooleanOpContext ctx) {
+        logicRightNarrowed.add(ctx);
+    }
+
+    public boolean isLogicRightNarrowed(BabbleParser.BooleanOpContext ctx) {
+        return logicRightNarrowed.contains(ctx);
+    }
+
+    void setBuiltinOwnershipCall(BabbleParser.CallContext ctx, String kind) {
+        builtinOwnershipCalls.put(ctx, kind);
+    }
+
+    /** {@code "move"} or {@code "freeze"} when {@code ctx} calls the unshadowed built-in, else null. */
+    public String builtinOwnershipCall(BabbleParser.CallContext ctx) {
+        return builtinOwnershipCalls.get(ctx);
+    }
 }
+

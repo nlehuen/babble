@@ -567,6 +567,46 @@ final class AssignAndMemberEmitter {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         int ln = g.meta().line();
+        if (g.receiverText() != null) {
+            ClassGen gen = g.classId() >= 0 ? emitter.classGen(g.classId()) : null;
+            String targetJvm = g.externalClassJvmName() != null ? g.externalClassJvmName() : (gen != null ? gen.name : null);
+            int idx = g.memberIndex();
+            if (targetJvm != null && (g.externalClassJvmName() != null || (gen != null && idx >= 0))) {
+                emitter.emitBoxed(g.receiver());
+                Label ok = new Label();
+                mv.visitInsn(DUP);
+                mv.visitJumpInsn(IFNONNULL, ok);
+                mv.visitInsn(POP);
+                c.line(ln);
+                ConstantPool.pushString(mv, g.receiverText());
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "notAScope", "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;", false);
+                mv.visitInsn(ATHROW);
+                mv.visitLabel(ok);
+                mv.visitTypeInsn(CHECKCAST, targetJvm);
+                PrimitiveKind mk = gen != null ? gen.memberKinds[idx] : g.fieldKind();
+                if (mk.isPrimitive()) {
+                    if (gen != null && !g.definitelyDefined() && gen.primDefBits[idx] >= 0) {
+                        int recv = c.newLocal();
+                        mv.visitVarInsn(ASTORE, recv);
+                        gen.emitCheckDefined(mv, recv, idx, g.memberName(), ln);
+                        mv.visitVarInsn(ALOAD, recv);
+                    }
+                    mv.visitFieldInsn(GETFIELD, targetJvm, g.memberName(), jvmDescriptor(mk));
+                    c.stackKind = mk;
+                    checkSelectorType(g.meta());
+                    return;
+                }
+                mv.visitFieldInsn(GETFIELD, targetJvm, g.memberName(), "Ljava/lang/Object;");
+                if (!g.definitelyDefined()) {
+                    mv.visitLdcInsn(g.memberName());
+                    c.line(ln);
+                    mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                }
+                c.stackKind = PrimitiveKind.NONE;
+                checkSelectorType(g.meta());
+                return;
+            }
+        }
         ClassGen gen = g.classId() >= 0 ? emitter.classGen(g.classId()) : null;
         int idx = g.memberIndex();
         if (gen != null && idx >= 0) {
