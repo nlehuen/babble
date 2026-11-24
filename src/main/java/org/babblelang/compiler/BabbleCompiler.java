@@ -38,6 +38,8 @@ public final class BabbleCompiler {
     public static final String VERIFY = "babble.verify";
     public static final String OPT_LEVEL = "babble.opt";
     public static final String DUMP_IR = "babble.dumpIr";
+    /** Per-engine {@link org.babblelang.ir.IrObserver} binding key for parallel-safe IR capture (BIP029-P1). */
+    public static final String IR_OBSERVER = "babble.irObserver";
     /** Internal engine attribute enabling cross-module small-export inlining in {@code babblec} AOT only (BIP014-D2). */
     static final String AOT_CROSS_MODULE = "babble.aotCrossModule";
     /** Internal engine attribute holding small exported HIR functions compiled so far during a {@code babblec} run. */
@@ -145,37 +147,21 @@ public final class BabbleCompiler {
             org.babblelang.analysis.AxiomDumper.dumpTargets(dumpAxioms, activeAxioms,
                     new java.io.PrintWriter(System.err, true));
         }
-        if (optLevel <= 0) {
-            if (verify) {
-                org.babblelang.ir.hir.HirVerifier.verify(hir);
-            }
-            if (dumpIr != null) {
-                dumpIr(dumpIr, internalName, "hir-before", org.babblelang.ir.hir.HirPrinter.print(hir));
-            }
-            org.babblelang.ir.hir.HirModule normalized = org.babblelang.opt.hir.HirTryNormalize.normalize(hir);
-            if (normalized != hir) {
-                hir = normalized;
-                if (verify) {
-                    org.babblelang.ir.hir.HirVerifier.verify(hir);
-                }
-            }
-        } else {
-            boolean aotCrossModule = engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
-            @SuppressWarnings("unchecked")
-            Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
-                    ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
-                    : null;
-            org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
-                    optLevel, verify, dumpIr, aotCrossModule,
-                    aotInlineCache != null ? aotInlineCache : Map.of());
-            org.babblelang.ir.hir.HirModule unoptimized = hir;
-            hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
-                    () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
-                            unoptimized, passCtx,
-                            dumpIr != null ? (phase, text) -> dumpIr(dumpIr, internalName, phase, text) : null));
-            if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
-                aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
-            }
+        org.babblelang.ir.IrObserver observer = resolveIrObserver(engine, dumpIr, internalName, optLevel);
+        boolean aotCrossModule = optLevel > 0 && engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
+        @SuppressWarnings("unchecked")
+        Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
+                ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
+                : null;
+        org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
+                optLevel, verify, dumpIr, aotCrossModule,
+                aotInlineCache != null ? aotInlineCache : Map.of());
+        org.babblelang.ir.hir.HirModule unoptimized = hir;
+        hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
+                () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
+                        unoptimized, passCtx, observer, moduleKey));
+        if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
+            aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
         }
         HirEmitter emitter = new HirEmitter(hir, parentLoader);
         Map<String, byte[]> classes = emitter.generate();
@@ -254,9 +240,60 @@ public final class BabbleCompiler {
         }
     }
 
+    private static org.babblelang.ir.IrObserver resolveIrObserver(BabbleScriptEngine engine, String dumpIr,
+                                                                  String internalName, int optLevel) {
+        org.babblelang.ir.IrObserver engineObserver = null;
+        if (engine != null && engine.get(IR_OBSERVER) instanceof org.babblelang.ir.IrObserver obs) {
+            engineObserver = obs;
+        }
+        org.babblelang.ir.IrObserver cliObserver = dumpIr != null ? cliDumpObserver(dumpIr, internalName, optLevel) : null;
+        return org.babblelang.ir.IrObserver.combine(engineObserver, cliObserver);
+    }
+
+    private static org.babblelang.ir.IrObserver cliDumpObserver(String spec, String internalName, int optLevel) {
+        String lower = spec.toLowerCase(java.util.Locale.ROOT);
+        boolean canonical = lower.endsWith(":canonical") || "canonical".equals(lower);
+        boolean hirOnly = lower.startsWith("hir");
+        boolean mirOnly = lower.startsWith("mir");
+        String afterPrefix = lower.contains(":after:") ? spec.substring(lower.indexOf(":after:") + 1) : null;
+        return new org.babblelang.ir.IrObserver() {
+            @Override
+            public boolean wants(org.babblelang.ir.IrTier tier, int activeOpt, String stage) {
+                if (hirOnly && tier != org.babblelang.ir.IrTier.HIR) {
+                    return false;
+                }
+                if (mirOnly && tier != org.babblelang.ir.IrTier.MIR) {
+                    return false;
+                }
+                if (afterPrefix != null) {
+                    return afterPrefix.equals(stage);
+                }
+                if (org.babblelang.ir.IrSnapshot.STAGE_BEFORE.equals(stage)) {
+                    return true;
+                }
+                return org.babblelang.ir.IrSnapshot.STAGE_FINAL.equals(stage) && optLevel > 0;
+            }
+
+            @Override
+            public void onSnapshot(org.babblelang.ir.IrSnapshot snapshot) {
+                String tierPrefix = snapshot.tier().label();
+                String phase = org.babblelang.ir.IrSnapshot.STAGE_BEFORE.equals(snapshot.stage())
+                        ? tierPrefix + "-before"
+                        : (org.babblelang.ir.IrSnapshot.STAGE_FINAL.equals(snapshot.stage())
+                        ? tierPrefix + "-after"
+                        : tierPrefix + "-" + snapshot.stage().replace(':', '-'));
+                String text = canonical
+                        ? snapshot.ir().printCanonical(new org.babblelang.ir.IrTarget.Module())
+                        : snapshot.ir().printRaw();
+                dumpIr(spec, internalName, phase, text);
+            }
+        };
+    }
+
     static void dumpIr(String target, String internalName, String phase, String text) {
-        if ("stderr".equalsIgnoreCase(target) || "true".equalsIgnoreCase(target)
-                || "hir".equalsIgnoreCase(target) || "all".equalsIgnoreCase(target)) {
+        String lower = target.toLowerCase(java.util.Locale.ROOT);
+        if ("stderr".equals(lower) || "true".equals(lower) || "all".equals(lower)
+                || "canonical".equals(lower) || lower.startsWith("hir") || lower.startsWith("mir")) {
             System.err.println("=== " + phase + " : " + internalName + " ===");
             System.err.println(text);
             return;
