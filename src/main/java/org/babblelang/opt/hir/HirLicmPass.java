@@ -146,9 +146,16 @@ public final class HirLicmPass implements HirPass {
                 child -> extractInvariants(child, modified, ownerFnId, module, nextVarId, hoistedVars, hoistedDefs));
     }
 
-    /** Only hoist expressions containing a call or nontrivial computation (never bare Const/VarRead). */
+    /** Only hoist expressions containing a call, immutable field load, or nontrivial computation (never bare Const/VarRead). */
     private static boolean isWorthHoisting(HirExpr expr) {
-        if (expr instanceof HirExpr.DirectBabbleCall || expr instanceof HirExpr.JavaMethodCall) {
+        if (expr instanceof HirExpr.DirectBabbleCall
+                || expr instanceof HirExpr.DirectThisMethodCall
+                || expr instanceof HirExpr.InterfaceCall
+                || expr instanceof HirExpr.JavaMethodCall) {
+            return true;
+        }
+        if (expr instanceof HirExpr.ThisFieldGet g
+                && ((g.recordField() && g.definitelyDefined()) || g.receiver().meta().frozen())) {
             return true;
         }
         if (expr instanceof HirExpr.Binary || expr instanceof HirExpr.Unary) {
@@ -160,7 +167,10 @@ public final class HirLicmPass implements HirPass {
     private static boolean containsCallOrNestedOp(HirExpr expr) {
         return switch (expr) {
             case HirExpr.DirectBabbleCall c -> true;
+            case HirExpr.DirectThisMethodCall c -> true;
+            case HirExpr.InterfaceCall c -> true;
             case HirExpr.JavaMethodCall c -> true;
+            case HirExpr.ThisFieldGet g -> (g.recordField() && g.definitelyDefined()) || g.receiver().meta().frozen();
             case HirExpr.Binary b -> containsCallOrNestedOp(b.left()) || containsCallOrNestedOp(b.right())
                     || b.left() instanceof HirExpr.Binary || b.right() instanceof HirExpr.Binary
                     || b.op() == HirExpr.BinaryOp.DIV;
@@ -202,16 +212,31 @@ public final class HirLicmPass implements HirPass {
                 }
             }
             case HirExpr.DirectBabbleCall c -> {
-                // Allow top-level NameRead callee ONLY if callee is a pure top-level function ref (not shadowed/modified),
-                // checked by skipping callee NameRead? No: conservatively require pure VarRead or FunctionRef callee,
-                // OR check callee is NameRead when HirPurity already proved targetFunctionId is pure!
-                // Wait: inside `run`, `heavy` in `heavy(a)` IS a `NameRead("heavy")`!
-                // Because `heavy` is statically bound by `DirectBabbleCall(NameRead("heavy"), targetFnId, [a])`,
-                // `NameRead("heavy")` is only used to load the CompiledFunction constant (never mutated for non-reassigned defs).
-                // Let's check args only for DirectBabbleCall when callee is NameRead/VarRead/FunctionRef!
                 if (!(c.callee() instanceof HirExpr.NameRead || c.callee() instanceof HirExpr.FunctionRef)) {
                     checkOperandsInvariant(c.callee(), modified, ok);
                 }
+                for (HirExpr arg : c.args()) {
+                    checkOperandsInvariant(arg, modified, ok);
+                }
+                return;
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                if (!c.receiver().meta().deeplyImmutable() && !c.receiver().meta().frozen()) {
+                    ok[0] = false;
+                    return;
+                }
+                checkOperandsInvariant(c.receiver(), modified, ok);
+                for (org.babblelang.ir.hir.HirCallArg arg : c.args()) {
+                    checkOperandsInvariant(arg.value(), modified, ok);
+                }
+                return;
+            }
+            case HirExpr.InterfaceCall c -> {
+                if (!c.receiver().meta().deeplyImmutable() && !c.receiver().meta().frozen()) {
+                    ok[0] = false;
+                    return;
+                }
+                checkOperandsInvariant(c.receiver(), modified, ok);
                 for (HirExpr arg : c.args()) {
                     checkOperandsInvariant(arg, modified, ok);
                 }
@@ -245,6 +270,14 @@ public final class HirLicmPass implements HirPass {
             }
             case HirExpr.ThisFieldGet g -> {
                 checkOperandsInvariant(g.receiver(), modified, ok);
+                return;
+            }
+            case HirExpr.Move m -> {
+                checkOperandsInvariant(m.operand(), modified, ok);
+                return;
+            }
+            case HirExpr.Freeze f -> {
+                checkOperandsInvariant(f.operand(), modified, ok);
                 return;
             }
             case HirExpr.Block b -> {

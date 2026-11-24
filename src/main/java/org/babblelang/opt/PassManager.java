@@ -3,11 +3,13 @@ package org.babblelang.opt;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirPrinter;
 import org.babblelang.ir.hir.HirVerifier;
+import org.babblelang.opt.hir.FbipReusePass;
 import org.babblelang.opt.hir.HirDcePass;
 import org.babblelang.opt.hir.HirEGraphSimplifyPass;
 import org.babblelang.opt.hir.HirLicmPass;
 import org.babblelang.opt.hir.HirTryNormalize;
 import org.babblelang.opt.hir.InlinePass;
+import org.babblelang.opt.hir.ScalarReplacePass;
 
 import java.util.List;
 import java.util.function.BiConsumer;
@@ -16,11 +18,11 @@ import java.util.function.BiConsumer;
  * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-I2, §6.5).
  *
  * <p>At {@code -O0}, runs only mandatory pre-emission normalization ({@link HirTryNormalize}).
- * At {@code -O1} (and {@code -O2} until Tier 2 SSA MIR lands), iterates the HIR Nanopass
- * pipeline up to {@value #MAX_ITERATIONS} rounds, stopping early as soon as a full round
- * performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is true
- * ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every modifying
- * pass.
+ * At {@code -O1} (and as Tier 1 front-end before Tier 2 SSA MIR at {@code -O2}), iterates the
+ * HIR Nanopass pipeline up to {@value #MAX_ITERATIONS} rounds, stopping early as soon as a full
+ * round performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is
+ * true ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every
+ * modifying pass.
  */
 public final class PassManager {
     public static final int MAX_ITERATIONS = 3;
@@ -28,6 +30,8 @@ public final class PassManager {
     private static final List<HirPass> O1_PASSES = List.of(
             new HirEGraphSimplifyPass(),
             new InlinePass(),
+            new ScalarReplacePass(),
+            new FbipReusePass(),
             new HirDcePass(),
             new HirLicmPass()
     );

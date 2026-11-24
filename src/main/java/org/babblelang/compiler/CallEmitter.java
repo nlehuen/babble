@@ -123,15 +123,18 @@ final class CallEmitter {
             return;
         } else if (count == 1 && "from".equals(n0)) {
             emitter.emitBoxed(params.get(0).value());
-            if ("map".equals(kind) || "sortedmap".equals(kind)) {
+            if ("map".equals(kind) || "sortedmap".equals(kind) || "map$reuse".equals(kind)) {
                 mv.visitTypeInsn(CHECKCAST, "java/util/Map");
             } else {
                 mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
             }
             switch (kind) {
                 case "list" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "listFrom", "(Ljava/lang/Iterable;)Ljava/util/List;", false);
+                case "list$reuse" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "listReuseOrCopy", "(Ljava/lang/Iterable;)Ljava/util/List;", false);
                 case "set" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "setFrom", "(Ljava/lang/Iterable;)Ljava/util/Set;", false);
+                case "set$reuse" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "setReuseOrCopy", "(Ljava/lang/Iterable;)Ljava/util/Set;", false);
                 case "map" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "mapFrom", "(Ljava/util/Map;)Ljava/util/Map;", false);
+                case "map$reuse" -> mv.visitMethodInsn(INVOKESTATIC, coreCollections, "mapReuseOrCopy", "(Ljava/util/Map;)Ljava/util/Map;", false);
                 case "sortedset" -> {
                     mv.visitInsn(ACONST_NULL);
                     mv.visitVarInsn(ALOAD, mc.rtLocal);

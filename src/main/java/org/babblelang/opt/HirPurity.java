@@ -173,7 +173,7 @@ public final class HirPurity {
             case HirExpr.RecordNew r -> {
                 boolean classRefOk = isPureNothrowTerminating(r.classRef(), module, visitingFns)
                         || (r.classRef() instanceof HirExpr.NameRead nr
-                        && isDefinitelyInitializedTopLevelFn(nr.name(), module));
+                        && isDefinitelyInitializedTopLevelBinding(nr.name(), module));
                 yield classRefOk && allPureNothrowTerminating(r.args(), module, visitingFns);
             }
             case HirExpr.DirectThisMethodCall c -> {
@@ -195,6 +195,17 @@ public final class HirPurity {
                 }
                 EffectSet fx = c.meta().effects();
                 yield fx.isPure() && fx.isNothrow() && fx.terminating();
+            }
+            case HirExpr.InterfaceCall c -> {
+                if (!isPureNothrowTerminating(c.receiver(), module, visitingFns)
+                        || !allPureNothrowTerminating(c.args(), module, visitingFns)) {
+                    yield false;
+                }
+                EffectSet fx = c.meta().effects();
+                yield fx.isPure() && fx.isNothrow() && fx.terminating()
+                        && (c.receiver() instanceof HirExpr.ThisRef
+                        || c.receiver() instanceof HirExpr.RecordNew
+                        || c.receiver() instanceof HirExpr.VarRead);
             }
             default -> false;
         };
@@ -338,6 +349,16 @@ public final class HirPurity {
             if (!fx.isDeterministic()) {
                 return false;
             }
+        } else if (expr instanceof HirExpr.DirectThisMethodCall c) {
+            HirFunction fn = c.targetFunctionId() >= 0 ? module.function(c.targetFunctionId()) : null;
+            EffectSet fx = fn != null ? fn.effects() : c.meta().effects();
+            if (!fx.isDeterministic()) {
+                return false;
+            }
+        } else if (expr instanceof HirExpr.InterfaceCall c) {
+            if (!c.meta().effects().isDeterministic()) {
+                return false;
+            }
         } else if (expr instanceof HirExpr.JavaMethodCall c) {
             if (!isFoldableJava(c.target().method()) && !c.meta().effects().isDeterministic()) {
                 return false;
@@ -423,8 +444,20 @@ public final class HirPurity {
         });
     }
 
+    private static final class TopLevelCache {
+        java.lang.ref.WeakReference<HirModule> moduleRef;
+        Set<String> fns;
+        Set<String> bindings;
+    }
+
+    private static final ThreadLocal<TopLevelCache> TOP_LEVEL_CACHE = ThreadLocal.withInitial(TopLevelCache::new);
+
     public static boolean isDefinitelyInitializedTopLevelFn(String name, HirModule module) {
         return findDefinitelyInitializedTopLevelFns(module).contains(name);
+    }
+
+    public static boolean isDefinitelyInitializedTopLevelBinding(String name, HirModule module) {
+        return findDefinitelyInitializedTopLevelBindings(module).contains(name);
     }
 
     /**
@@ -432,6 +465,22 @@ public final class HirPurity {
      * declaration prefix of the module and are never reassigned anywhere in the module.
      */
     public static Set<String> findDefinitelyInitializedTopLevelFns(HirModule module) {
+        return cachedTopLevel(module).fns;
+    }
+
+    /**
+     * Collects top-level {@code def name = fn|class|record|interface|const} bindings that appear
+     * in the leading pure declaration prefix of the module and are never reassigned.
+     */
+    public static Set<String> findDefinitelyInitializedTopLevelBindings(HirModule module) {
+        return cachedTopLevel(module).bindings;
+    }
+
+    private static TopLevelCache cachedTopLevel(HirModule module) {
+        TopLevelCache cache = TOP_LEVEL_CACHE.get();
+        if (cache.moduleRef != null && cache.moduleRef.get() == module) {
+            return cache;
+        }
         Set<String> reassignedNames = new HashSet<>();
         HirRewriter.rewriteModuleBodies(module, stmts -> {
             for (HirExpr s : stmts) {
@@ -439,23 +488,31 @@ public final class HirPurity {
             }
             return stmts;
         });
-        Set<String> result = new HashSet<>();
+        Set<String> fns = new HashSet<>();
+        Set<String> bindings = new HashSet<>();
         for (HirExpr stmt : module.topLevelStatements()) {
             if (stmt instanceof HirExpr.Def d && d.var() == null && d.target().kind() == LoweringTargets.DefKind.LEXICAL) {
                 HirExpr val = unwrapTransparent(d.value());
                 if (val instanceof HirExpr.FunctionRef) {
                     if (!reassignedNames.contains(d.name())) {
-                        result.add(d.name());
+                        fns.add(d.name());
+                        bindings.add(d.name());
                     }
                     continue;
                 }
                 if (val instanceof HirExpr.Const || val instanceof HirExpr.ClassExpr || val instanceof HirExpr.InterfaceExpr) {
+                    if (!reassignedNames.contains(d.name())) {
+                        bindings.add(d.name());
+                    }
                     continue;
                 }
             }
             break;
         }
-        return result;
+        cache.moduleRef = new java.lang.ref.WeakReference<>(module);
+        cache.fns = java.util.Collections.unmodifiableSet(fns);
+        cache.bindings = java.util.Collections.unmodifiableSet(bindings);
+        return cache;
     }
 
     private static HirExpr unwrapTransparent(HirExpr expr) {

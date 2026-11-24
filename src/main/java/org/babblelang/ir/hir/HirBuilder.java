@@ -411,6 +411,7 @@ public final class HirBuilder {
                         -1,
                         defVal != null ? lowerExpr(defVal) : null,
                         scopes.lowering().javaSamTarget(p),
+                        scopes.lowering().paramOwnership(p),
                         p.getStart().getLine()
                 ));
             }
@@ -589,7 +590,7 @@ public final class HirBuilder {
         }
         int slots = 3;
         for (HirParam p : params) {
-            if (p.samTarget() != null || p.checkedType() != null) {
+            if (p.samTarget() != null) {
                 return false;
             }
             slots += p.kind().slots();
@@ -1259,9 +1260,9 @@ public final class HirBuilder {
             HirExpr arg = lowerExpr(params.get(0).expression());
             if ("move".equals(ownershipCall)) {
                 HirVar movedVar = arg instanceof HirExpr.VarRead vr ? vr.var() : null;
-                return new HirExpr.Move(movedVar, arg, meta);
+                return new HirExpr.Move(movedVar, arg, meta.withUnique(true));
             }
-            return new HirExpr.Freeze(arg, meta);
+            return new HirExpr.Freeze(arg, meta.withFrozen(true));
         }
 
         // 0c. Direct fast compiled record constructor call (BIP014-P4)
@@ -1515,6 +1516,18 @@ public final class HirBuilder {
                         );
                     }
                 }
+            }
+        }
+
+        // 6b. Direct non-this method call recv.m(args) on compiled Babble class/record (BIP014-P4)
+        if (ctx.expression() instanceof BabbleParser.SelectorContext selector
+                && selector.expression() != null
+                && selector.safe == null
+                && scopes.lowering().directMethodTarget(ctx) != null) {
+            HirExpr direct = tryLowerDirectMethod(ctx, selector.expression(), selector.expression().getText(),
+                    lowerCallArgs(params, spreadAdapts), binding, SyntaxText.callSite(ctx, sourceName), meta);
+            if (direct != null) {
+                return direct;
             }
         }
 

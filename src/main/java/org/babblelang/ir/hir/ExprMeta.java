@@ -67,6 +67,10 @@ public record ExprMeta(
         return new ExprMeta(line, kind, wideningRank, checkedType, newEffects, deeplyImmutable, stringType, frozen, unique);
     }
 
+    public ExprMeta withFrozen(boolean newFrozen) {
+        return new ExprMeta(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, newFrozen, unique);
+    }
+
     public ExprMeta withUnique(boolean newUnique) {
         return new ExprMeta(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, newUnique);
     }
