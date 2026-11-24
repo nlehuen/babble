@@ -304,4 +304,42 @@ public class BytecodeEffectAnalyzerTestCase {
             Assertions.assertEquals(firstPass.get(c.getName()), second, "Non-deterministic dump for " + c.getName());
         }
     }
+
+    @Test
+    public void testInferredEffectsOverlayAndRedundancyCheck() throws Exception {
+        // BIP030 : StringWriter.getBuffer has `fn ... : java.lang.StringBuffer!`; bytecode infers
+        // `pure nothrow view`, curated nullness overlays `returnNonNull == true`, and bytecode alone
+        // cannot prove the `buf` field non-null so AxiomDumper prints `;; curated nullness, inferred effects`.
+        org.babblelang.analysis.BuiltinAxioms std = org.babblelang.analysis.BuiltinAxioms.standard();
+        Method getBuffer = java.io.StringWriter.class.getMethod("getBuffer");
+        BytecodeEffectAnalyzer.Result res = BytecodeEffectAnalyzer.analyze(getBuffer, std);
+        Assertions.assertTrue(res.effects().isPure());
+        Assertions.assertTrue(res.effects().isNothrow());
+        Assertions.assertTrue(res.view());
+        Assertions.assertTrue(res.returnNonNull());
+
+        String swDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.io.StringWriter.class, std);
+        Assertions.assertTrue(swDump.contains(";; curated nullness, inferred effects\n    def getBuffer: fn nothrow view (): java.lang.StringBuffer!"), swDump);
+        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(swDump, "StringWriter"));
+
+        // BIP030-D6 : isAtLeastAsStrongAs must check curated nullness even for `io` and `...` axioms.
+        // 1. `fn ... : StatefulBox!` on freshCopy() IS proved non-null by bytecode (`new`) -> `;; curated, inferred the same`.
+        // 2. `fn io (): java.lang.StringBuffer!` on StringWriter.getBuffer() is NOT proved non-null by bytecode -> `;; curated` (not `inferred the same`).
+        org.babblelang.analysis.BuiltinAxioms freshCurated = org.babblelang.analysis.BuiltinAxioms.fromSource("""
+                axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class (
+                    def freshCopy: fn ... : org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox!
+                )
+                """, "fresh.ba");
+        String freshDump = org.babblelang.analysis.AxiomDumper.dumpClass(StatefulBox.class, freshCurated);
+        Assertions.assertTrue(freshDump.contains(";; curated, inferred the same\n    def freshCopy: fn nothrow fresh ():"), freshDump);
+
+        org.babblelang.analysis.BuiltinAxioms ioNonNull = org.babblelang.analysis.BuiltinAxioms.fromSource("""
+                axiom java.io.StringWriter: class (
+                    def getBuffer: fn io (): java.lang.StringBuffer!
+                )
+                """, "io_nonnull.ba");
+        String ioDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.io.StringWriter.class, ioNonNull);
+        Assertions.assertTrue(ioDump.contains(";; curated\n    def getBuffer: fn io (): java.lang.StringBuffer!"), ioDump);
+        Assertions.assertFalse(ioDump.contains(";; curated, inferred the same\n    def getBuffer:"), ioDump);
+    }
 }

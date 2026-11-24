@@ -9,10 +9,11 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
 - **Third-party annotation stubs:** one `.java` stub per annotation, declaring what the annotation means (`@MeansNonNull`, `@MeansNullable`, `@MeansNullMarked`, `@MeansNullUnmarked`).
 - **Canonical order** (enforced by `AxiomsTestCase` and `babblefmt`):
   1. Top-level axioms are sorted by the target class's binary name (`java.util.AbstractMap$SimpleEntry` after `java.util.AbstractMap`), with a class's `class (...)` axiom before standalone member axioms for that class, and member axioms sorted by member name then parameter descriptors.
-  2. Class words come in fixed order: `exact`, `nullmarked`, `immutable`.
+  2. Class words come in fixed order: `exact`, `notnull`, `immutable` (`BIP030` renamed `nullmarked` → `notnull`).
   3. Within `class (...)` and `static (...)`, members are sorted by name (`*` first, then `new`, then alphabetically), then by parameter Java erasures compared as JVM type descriptors.
-  4. Effect words come in canonical order (`io`, `volatile`, `pure`, `mut`, `shared`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, `view`, `shallow`, `fresh`, `foldable`, `unique`).
-  5. Every `.ba` file is formatter-clean; comments sit directly above an axiom or member.
+  4. Effect words come in canonical order (`io`, `...`, `volatile`, `pure`, `mut`, `shared`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, `view`, `shallow`, `fresh`, `foldable`, `unique`), where `...` keeps tier-7 bytecode-inferred effects while declaring return/parameter nullability (`BIP030`).
+  5. Every concrete reference type in a Java axiom signature or return type explicitly states `!` (non-null) or `?` (nullable) (unless in a `| null` union); primitives take neither `!` (nullable boxed uses `?`), and type variables distinguish `T` (parametric), `T!` (non-null), and `T?` (nullable).
+  6. Every `.ba` file is formatter-clean; comments sit directly above an axiom or member.
 
 ## Files
 

@@ -1,4 +1,4 @@
-;; Curated axioms for java.nio (BIP019-I6, BIP030-P2)
+;; Curated axioms for java.nio (BIP019-I6, BIP030-I2)
 
 axiom java.nio.CharBuffer: class (
 ) static (

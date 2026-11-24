@@ -1,4 +1,4 @@
-;; Curated axioms for java.lang.reflect (BIP019-I6, BIP030-P2)
+;; Curated axioms for java.lang.reflect (BIP019-I6, BIP030-I2)
 
 axiom java.lang.reflect.Proxy: class (
 ) static (

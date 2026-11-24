@@ -1,4 +1,4 @@
-;; Curated axioms for java.lang (BIP019-I4, I5, I6, BIP030-P2)
+;; Curated axioms for java.lang (BIP019-I4, I5, I6, BIP030-I2)
 
 axiom java.lang.Boolean: class notnull (
 )

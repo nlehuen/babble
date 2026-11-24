@@ -178,7 +178,14 @@ public class MainTestCase {
         Run pkg = run("", "-axioms", "java.util.function");
         Assertions.assertEquals(0, pkg.status(), pkg.err().toString());
         String pkgOut = String.join("\n", pkg.out());
-        Assertions.assertTrue(pkgOut.contains("axiom java.util.function.Function of (T, R): class"), pkgOut);
+        Assertions.assertTrue(pkgOut.contains("axiom java.util.function.Function of (T, R): class notnull ("), pkgOut);
+        Assertions.assertFalse(pkgOut.contains("nullmarked"), pkgOut);
+
+        Run sw = run("", "-axioms", "java.io.StringWriter");
+        Assertions.assertEquals(0, sw.status(), sw.err().toString());
+        String swOut = String.join("\n", sw.out());
+        Assertions.assertTrue(swOut.contains(";; curated nullness, inferred effects"), swOut);
+        Assertions.assertTrue(swOut.contains("def getBuffer: fn nothrow view (): java.lang.StringBuffer!"), swOut);
 
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms").status());
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms", "no.such.ClassOrPackage").status());

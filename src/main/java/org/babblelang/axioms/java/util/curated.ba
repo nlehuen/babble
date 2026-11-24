@@ -1,4 +1,4 @@
-;; Curated axioms for java.util (BIP019-I4, I6, BIP030-P2)
+;; Curated axioms for java.util (BIP019-I4, I6, BIP030-I2)
 
 axiom java.util.AbstractMap.SimpleEntry of (K, V): class (
 ) static (
