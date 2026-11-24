@@ -521,6 +521,255 @@ public class OptimizerTestCase {
                 "Expected helper inc to be inlined into try body, got: " + wrappedCalls);
     }
 
+    // ------------------------------------------------------------------ BIP014-P4 : Record SROA, $unboxed borrow, FBIP & record LICM
+
+    @Test
+    public void testRecordScalarReplacementZeroAllocationsInLoop() throws Exception {
+        String src = ""
+                + "def Vec3 = record (x : double, y : double, z : double) (\n"
+                + "  def plus = fn (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y, this.z + o.z) )\n"
+                + "  def dot = fn (o : Vec3) : double -> ( this.x * o.x + this.y * o.y + this.z * o.z )\n"
+                + "  def swapXY = fn () : Vec3 -> ( Vec3(this.y, this.x, this.z) )\n"
+                + ")\n"
+                + "def run = fn (n : int) : double -> (\n"
+                + "  def acc = Vec3(0.0, 0.0, 0.0)\n"
+                + "  def step = Vec3(1.0, 2.0, 3.0)\n"
+                + "  def i = 0\n"
+                + "  while i < n then (\n"
+                + "    acc = (acc + step).swapXY()\n"
+                + "    i = i + 1\n"
+                + "  )\n"
+                + "  acc.dot(step)\n"
+                + ")\n"
+                + "run(10)";
+
+        Assertions.assertEquals(135.0, (Double) assertThreeWayEqual(src), 1e-9);
+
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(src);
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+        MethodNode run = cn.methods.stream().filter(m -> m.name.equals("fn$0$run$spec")).findFirst().orElseThrow();
+        List<String> calls = new ArrayList<>();
+        List<String> news = new ArrayList<>();
+        for (var insn = run.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode mi) {
+                calls.add(mi.owner + "." + mi.name);
+            } else if (insn instanceof org.objectweb.asm.tree.TypeInsnNode ti && ti.getOpcode() == org.objectweb.asm.Opcodes.NEW) {
+                news.add(ti.desc);
+            }
+        }
+        Assertions.assertTrue(calls.stream().noneMatch(c -> c.contains("Vec3") || c.contains(".$new") || c.contains(".m$")),
+                "Expected zero Vec3 allocations or method calls in scalar-replaced loop, got: " + calls);
+        Assertions.assertTrue(news.isEmpty(), "Expected zero NEW allocations in scalar-replaced loop, got: " + news);
+    }
+
+    @Test
+    public void testUnboxedBorrowRecordEntryPoint() throws Exception {
+        // Large enough (> 35 HIR nodes) that InlinePass will not inline heavyDot, so ScalarReplacePass
+        // synthesizes heavyDot$unboxed taking 6 primitive doubles directly.
+        String src = ""
+                + "def Vec3 = record (x : double, y : double, z : double) ()\n"
+                + "def heavyDot = fn (a : Vec3, b : Vec3) : double -> (\n"
+                + "  def d1 = a.x * b.x + a.y * b.y + a.z * b.z\n"
+                + "  def d2 = (a.x + 1.0) * (b.x - 0.5) + (a.y + 2.0) * (b.y - 0.25) + (a.z + 3.0) * (b.z - 0.125)\n"
+                + "  def d3 = (a.x - a.y) * (b.x - b.y) + (a.y - a.z) * (b.y - b.z) + (a.z - a.x) * (b.z - b.x)\n"
+                + "  d1 + d2 + d3\n"
+                + ")\n"
+                + "def run = fn (n : int) : double -> (\n"
+                + "  def a = Vec3(1.0, 2.0, 3.0)\n"
+                + "  def b = Vec3(0.5, 1.5, 2.5)\n"
+                + "  def i = 0\n"
+                + "  def s = 0.0\n"
+                + "  while i < n then (\n"
+                + "    s = s + heavyDot(a, b)\n"
+                + "    i = i + 1\n"
+                + "  )\n"
+                + "  s\n"
+                + ")\n"
+                + "run(5)";
+
+        Object expected = assertThreeWayEqual(src);
+        Assertions.assertInstanceOf(Double.class, expected);
+
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(src);
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+        MethodNode unboxed = cn.methods.stream()
+                .filter(m -> m.name.endsWith("$unboxed$spec"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Expected $unboxed$spec method, got: "
+                        + cn.methods.stream().map(m -> m.name + m.desc).toList()));
+        Assertions.assertTrue(unboxed.desc.endsWith("DDDDDD)D"), "Expected 6 unboxed doubles, got: " + unboxed.desc);
+
+        MethodNode run = cn.methods.stream().filter(m -> m.name.equals("fn$1$run$spec")).findFirst().orElseThrow();
+        List<String> runCalls = new ArrayList<>();
+        for (var insn = run.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode mi) {
+                runCalls.add(mi.owner + "." + mi.name);
+            }
+        }
+        Assertions.assertTrue(runCalls.stream().anyMatch(c -> c.endsWith("$unboxed$spec")),
+                "Expected run to call $unboxed$spec, got: " + runCalls);
+        Assertions.assertTrue(runCalls.stream().noneMatch(c -> c.endsWith(".$new")),
+                "Expected zero Vec3.$new allocations in run, got: " + runCalls);
+    }
+
+    @Test
+    public void testFbipCollectionAndMutableRecordReuse() throws Exception {
+        String src = ""
+                + "def Holder = record (items : list of int, count : int) ()\n"
+                + "def Vec2 = record (x : int, y : int) ()\n"
+                + "def reuseList = fn (unique xs : list of int) : list of int -> (\n"
+                + "  def ys = list(from: move(xs))\n"
+                + "  ys.add(99)\n"
+                + "  ys\n"
+                + ")\n"
+                + "def reuseSet = fn (unique s : set of int) : set of int -> (\n"
+                + "  def t = set(from: move(s))\n"
+                + "  t.add(7)\n"
+                + "  t\n"
+                + ")\n"
+                + "def reuseMap = fn (unique m : map of (string, int)) : map of (string, int) -> (\n"
+                + "  def n = map(from: move(m))\n"
+                + "  n.put(\"b\", 2)\n"
+                + "  n\n"
+                + ")\n"
+                + "def bumpHolder = fn (unique h : Holder) : Holder -> (\n"
+                + "  Holder(h.items, h.count + 1)\n"
+                + ")\n"
+                + "def bumpVec = fn (unique v : Vec2) : Vec2 -> (\n"
+                + "  Vec2(v.x + 1, v.y)\n"
+                + ")\n"
+                + "def driver = fn () : string -> (\n"
+                + "  def a = list(1, 2)\n"
+                + "  def a2 = reuseList(move(a))\n"
+                + "  def s0 = set(3)\n"
+                + "  def s2 = reuseSet(move(s0))\n"
+                + "  def m0 = map(entry(\"a\", 1))\n"
+                + "  def m2 = reuseMap(move(m0))\n"
+                + "  def h0 = Holder(list(10), 1)\n"
+                + "  def h1 = bumpHolder(move(h0))\n"
+                + "  def v0 = Vec2(5, 6)\n"
+                + "  def v1 = bumpVec(v0)\n"
+                + "  \"\" + a2.size() + \":\" + s2.size() + \":\" + m2.size() + \":\" + h1.count + \":\" + v0.x + \":\" + v1.x\n"
+                + ")\n"
+                + "driver()";
+
+        Assertions.assertEquals("3:2:2:2:5:6", assertThreeWayEqual(src));
+
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(src);
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+
+        List<String> listCalls = methodCalls(cn, "fn$0$reuseList");
+        Assertions.assertTrue(listCalls.contains("org/babblelang/runtime/CoreCollections.listReuseOrCopy"),
+                "Expected listReuseOrCopy in reuseList, got: " + listCalls);
+        List<String> setCalls = methodCalls(cn, "fn$1$reuseSet");
+        Assertions.assertTrue(setCalls.contains("org/babblelang/runtime/CoreCollections.setReuseOrCopy"),
+                "Expected setReuseOrCopy in reuseSet, got: " + setCalls);
+        List<String> mapCalls = methodCalls(cn, "fn$2$reuseMap");
+        Assertions.assertTrue(mapCalls.contains("org/babblelang/runtime/CoreCollections.mapReuseOrCopy"),
+                "Expected mapReuseOrCopy in reuseMap, got: " + mapCalls);
+        List<String> holderCalls = methodCalls(cn, "fn$3$bumpHolder");
+        Assertions.assertTrue(holderCalls.stream().noneMatch(c -> c.endsWith(".$new")),
+                "Expected in-place RecordReuse (no $new) in bumpHolder, got: " + holderCalls);
+    }
+
+    @Test
+    public void testBorrowLambdaDevirtualizationAndCrossModuleRecordInlining(@TempDir Path dir) throws Exception {
+        // 1. Higher-order borrow lambda devirtualization + inlining
+        String hofSrc = ""
+                + "def applyTwice = fn (x : int, f : fn (int) : int) : int -> ( f(f(x)) )\n"
+                + "def run = fn (x : int) : int -> ( applyTwice(x, fn (v : int) : int -> ( v + 3 )) )\n"
+                + "run(10)";
+        Assertions.assertEquals(16, assertThreeWayEqual(hofSrc));
+        String hofIr = HirPrinter.print(optimizeHir(hofSrc, 1));
+        int runStart = hofIr.indexOf("[fn$1$run]");
+        Assertions.assertTrue(runStart >= 0, hofIr);
+        String runIr = hofIr.substring(runStart);
+        Assertions.assertFalse(runIr.contains("(call "), "Expected borrow lambda to be devirtualized & inlined:\n" + runIr);
+
+        // 2. babblec AOT cross-module record method inlining + scalar replacement
+        Files.writeString(dir.resolve("vec.ba"), ""
+                + "export def Vec3 = record (x : double, y : double, z : double) (\n"
+                + "  def plus = fn (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y, this.z + o.z) )\n"
+                + "  def dot = fn (o : Vec3) : double -> ( this.x * o.x + this.y * o.y + this.z * o.z )\n"
+                + ")\n");
+        Files.writeString(dir.resolve("main.ba"), ""
+                + "def v = import(\"vec.ba\")\n"
+                + "def calc = fn (n : int) : double -> (\n"
+                + "  def a = v.Vec3(1.0, 2.0, 3.0)\n"
+                + "  def b = v.Vec3(0.5, -0.25, 0.125)\n"
+                + "  def i = 0\n"
+                + "  def s = 0.0\n"
+                + "  while i < n then (\n"
+                + "    def c = a + b\n"
+                + "    s = s + c.dot(a)\n"
+                + "    i = i + 1\n"
+                + "  )\n"
+                + "  s\n"
+                + ")\n"
+                + "println(calc(4))\n");
+        Path jar = dir.resolve("app.jar");
+        Babblec.compile(dir.resolve("main.ba"), dir, jar, new javax.script.SimpleScriptContext(), 1);
+        Assertions.assertEquals("57.5", runJar(jar));
+        List<String> calls = findCallsInMethod(jar, "fn$0$calc$spec");
+        Assertions.assertTrue(calls.stream().noneMatch(c -> c.endsWith(".$new") || c.contains(".m$plus") || c.contains(".m$dot")),
+                "Expected cross-module Vec3 methods to inline & scalar-replace in AOT jar, got: " + calls);
+    }
+
+    @Test
+    public void testRecordLicmAndPureInterfaceDce() throws Exception {
+        String src = ""
+                + "def Metric = interface ( def score = fn nothrow () : int -> ( 0 ) )\n"
+                + "def Box = record (v : int) implements Metric (\n"
+                + "  def score = fn nothrow () : int -> ( this.v * 2 )\n"
+                + ")\n"
+                + "def useIface = fn (m : frozen Metric, b : Box, n : int) : int -> (\n"
+                + "  def unused = m.score()\n"
+                + "  def i = 0\n"
+                + "  def s = 0\n"
+                + "  while i < n then (\n"
+                + "    s = s + m.score() + b.v + i\n"
+                + "    i = i + 1\n"
+                + "  )\n"
+                + "  s\n"
+                + ")\n"
+                + "useIface(Box(5), Box(3), 4)";
+        Assertions.assertEquals(58, assertThreeWayEqual(src));
+
+        String ir = HirPrinter.print(optimizeHir(src, 1));
+        int useStart = ir.indexOf("[fn$1$useIface]");
+        Assertions.assertTrue(useStart >= 0, ir);
+        String useIr = ir.substring(useStart);
+        // Dead pure nothrow @TERMINATING interface call `unused` is removed, and the loop's
+        // invariant `b.v` record field read is hoisted out of the while loop.
+        Assertions.assertFalse(useIr.contains("unused"), "Dead pure interface call should be eliminated:\n" + useIr);
+        Assertions.assertTrue(useIr.contains("$licm"), "Loop-invariant record field load should be hoisted:\n" + useIr);
+    }
+
+    private static List<String> methodCalls(ClassNode cn, String methodName) {
+        MethodNode mn = cn.methods.stream().filter(m -> m.name.equals(methodName)).findFirst()
+                .orElseThrow(() -> new AssertionError("Missing method " + methodName + " in "
+                        + cn.methods.stream().map(m -> m.name).toList()));
+        List<String> calls = new ArrayList<>();
+        for (var insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode mi) {
+                calls.add(mi.owner + "." + mi.name);
+            }
+        }
+        return calls;
+    }
+
     // ------------------------------------------------------------------ Helpers
 
     private static String runJar(Path jar) throws Exception {

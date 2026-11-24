@@ -188,6 +188,45 @@ public final class CoreCollections {
         return new LinkedHashMap<>(from);
     }
 
+    /**
+     * Functional-but-in-place ({@code O10}) helper for {@code list(from: move(xs))} when {@code xs}
+     * is statically unique: reuses {@code xs} directly if it is an exact {@link ArrayList},
+     * otherwise falls back to {@link #listFrom(Iterable)}.
+     */
+    @SuppressWarnings("unchecked")
+    public static List<Object> listReuseOrCopy(Iterable<?> from) {
+        if (from != null && from.getClass() == ArrayList.class) {
+            return (List<Object>) from;
+        }
+        return listFrom(from);
+    }
+
+    /**
+     * Functional-but-in-place ({@code O10}) helper for {@code set(from: move(s))} when {@code s}
+     * is statically unique: reuses {@code s} directly if it is an exact {@link LinkedHashSet},
+     * otherwise falls back to {@link #setFrom(Iterable)}.
+     */
+    @SuppressWarnings("unchecked")
+    public static Set<Object> setReuseOrCopy(Iterable<?> from) {
+        if (from != null && from.getClass() == LinkedHashSet.class) {
+            return (Set<Object>) from;
+        }
+        return setFrom(from);
+    }
+
+    /**
+     * Functional-but-in-place ({@code O10}) helper for {@code map(from: move(m))} when {@code m}
+     * is statically unique: reuses {@code m} directly if it is an exact {@link LinkedHashMap},
+     * otherwise falls back to {@link #mapFrom(Map)}.
+     */
+    @SuppressWarnings("unchecked")
+    public static Map<Object, Object> mapReuseOrCopy(Map<?, ?> from) {
+        if (from != null && from.getClass() == LinkedHashMap.class) {
+            return (Map<Object, Object>) from;
+        }
+        return mapFrom(from);
+    }
+
     public static SortedMap<Object, Object> sortedMapEmpty() {
         return new TreeMap<>();
     }

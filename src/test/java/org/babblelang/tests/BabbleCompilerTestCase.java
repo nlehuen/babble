@@ -823,9 +823,35 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals(2222, script.eval(new SimpleBindings()));
 
         List<String> clsOps = methodInstructions(script.getClassBytes(), "fn$0$callClass$spec");
-        Assertions.assertTrue(clsOps.stream().anyMatch(o -> o.endsWith(".m$f$0$spec")), clsOps.toString());
-        Assertions.assertTrue(clsOps.stream().anyMatch(o -> o.endsWith(".m$f$1$spec")), clsOps.toString());
+        Assertions.assertTrue(
+                clsOps.stream().anyMatch(o -> o.endsWith(".m$f$0$spec") || o.endsWith("$C.k:I")),
+                clsOps.toString());
+        Assertions.assertTrue(
+                clsOps.stream().anyMatch(o -> o.endsWith(".m$f$1$spec") || o.endsWith("$C.k:I")),
+                clsOps.toString());
         Assertions.assertTrue(clsOps.stream().noneMatch(o -> o.startsWith("INDY:")), clsOps.toString());
+
+        // At -O0 (without O8 method inlining), both overload alternatives dispatch directly to m$f$0$spec and m$f$1$spec.
+        ScriptEngine o0Engine = compilingEngine();
+        o0Engine.put(org.babblelang.compiler.BabbleCompiler.OPT_LEVEL, 0);
+        CompiledBabbleScript o0Script = (CompiledBabbleScript) ((BabbleScriptEngine) o0Engine).compile(
+                "def I = interface (\n"
+                        + "  def f : overload (fn (x : int) : int, fn (s : string) : int)\n"
+                        + ")\n"
+                        + "def C = class (def k : int) implements I (\n"
+                        + "  def f = overload (\n"
+                        + "    fn (x : int) : int -> ( this.k + x ),\n"
+                        + "    fn (s : string) : int -> ( this.k + s.length() )\n"
+                        + "  )\n"
+                        + ")\n"
+                        + "def callClass = fn (c : C) : int -> ( c.f(10) + c.f(\"hi\") )\n"
+                        + "def callIface = fn (i : I) : int -> ( i.f(10) + i.f(\"hi\") )\n"
+                        + "def c = C(5)\n"
+                        + "callClass(c) * 100 + callIface(c)");
+        List<String> o0ClsOps = methodInstructions(o0Script.getClassBytes(), "fn$0$callClass$spec");
+        Assertions.assertTrue(o0ClsOps.stream().anyMatch(o -> o.endsWith(".m$f$0$spec")), o0ClsOps.toString());
+        Assertions.assertTrue(o0ClsOps.stream().anyMatch(o -> o.endsWith(".m$f$1$spec")), o0ClsOps.toString());
+        Assertions.assertTrue(o0ClsOps.stream().noneMatch(o -> o.startsWith("INDY:")), o0ClsOps.toString());
 
         List<String> ifaceOps = methodInstructions(script.getClassBytes(), "fn$1$callIface$spec");
         Assertions.assertTrue(ifaceOps.stream().anyMatch(o -> o.endsWith(".bm$f$0")), ifaceOps.toString());

@@ -464,6 +464,18 @@ public final class InlinePass implements HirPass {
                     return;
                 }
             }
+            case HirExpr.VarRead v -> {
+                if (v.var().cell()) {
+                    ok[0] = false;
+                    return;
+                }
+            }
+            case HirExpr.VarAssign a -> {
+                if (a.var().cell()) {
+                    ok[0] = false;
+                    return;
+                }
+            }
             case HirExpr.FunctionRef f -> {
                 ok[0] = false;
                 return;
@@ -680,12 +692,11 @@ public final class InlinePass implements HirPass {
             boolean noOpParamWiden = p.wideningRank() < 0 || isNoOpWidening(p.kind(), p.wideningRank());
             if (p.var() != null && !assignedInCallee.contains(p.var().id())
                     && noOpParamWiden && arg.meta().wideningRank() < 0
-                    && arg.meta().checkedType() == null
                     && arg.meta().kind() == p.kind()) {
-                if (arg instanceof HirExpr.Const) {
+                if (arg.meta().checkedType() == null && arg instanceof HirExpr.Const) {
                     substExprs.put(p.var().id(), arg);
                     substParamIds.add(p.var().id());
-                } else if (arg instanceof HirExpr.VarRead vr && !vr.var().cell()
+                } else if (arg.meta().checkedType() == null && arg instanceof HirExpr.VarRead vr && !vr.var().cell()
                         && (!vr.var().mayBeUndefined() || vr.var().definitelyDefined())
                         && !assignedInCallArgs.contains(vr.var().id())) {
                     substExprs.put(p.var().id(), vr);

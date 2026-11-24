@@ -72,6 +72,9 @@ final class LoweringAnalyzer {
                 if (entry.getValue() == Type.STRING) {
                     pass.analysis.lowering().markExpressionString(entry.getKey());
                 }
+                if (entry.getValue() instanceof Type.Frozen) {
+                    pass.analysis.lowering().markExpressionFrozen(entry.getKey());
+                }
             }
             if (entry.getKey() instanceof BabbleParser.IsExpressionContext isCtx && checker.inFile(isCtx)) {
                 Type isTarget = checker.isTargetType(isCtx);
@@ -195,8 +198,9 @@ final class LoweringAnalyzer {
                                 || checker.inFile(inst.node().ctx))) {
                             recTypeId = inst.node().id;
                         }
+                        boolean borrow = tp.borrow() || (!tp.explicitShared() && !tp.unique());
                         pass.analysis.lowering().setParamOwnership(paramDecls.get(i),
-                                new LoweringTargets.ParamOwnership(tp.mut(), tp.borrow(), tp.unique(), recTypeId));
+                                new LoweringTargets.ParamOwnership(tp.mut(), borrow, tp.unique(), recTypeId));
                     }
                 }
             }
@@ -328,8 +332,7 @@ final class LoweringAnalyzer {
                     boolean paramsOk = true;
                     for (int i = 0; i < paramCtxs.size(); i++) {
                         BabbleParser.ClassParamContext pc = paramCtxs.get(i);
-                        if (pass.analysis.lowering().javaSamTarget(pc) != null
-                                || pass.analysis.lowering().checkedType(pc) != null) {
+                        if (pass.analysis.lowering().javaSamTarget(pc) != null) {
                             paramsOk = false;
                             break;
                         }
