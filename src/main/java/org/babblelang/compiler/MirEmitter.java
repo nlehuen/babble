@@ -182,6 +182,7 @@ final class MirEmitter {
         Map<Integer, Integer> defPos = new HashMap<>();
         Map<Integer, Integer> lastUsePos = new HashMap<>();
         Map<Integer, PrimitiveKind> valKind = new HashMap<>();
+        Map<Integer, Integer> paramOwnerBlock = new HashMap<>();
 
         int pos = 0;
         for (MirBlock b : rpo) {
@@ -195,6 +196,7 @@ final class MirEmitter {
                 bDefs.add(bp.id());
                 defPos.put(bp.id(), start);
                 valKind.put(bp.id(), bp.kind());
+                paramOwnerBlock.put(bp.id(), b.id());
             }
             for (MirInst inst : b.insts()) {
                 int ipos = pos++;
@@ -270,6 +272,17 @@ final class MirEmitter {
             }
             int s = e.getValue();
             int end = Math.max(s, lastUsePos.getOrDefault(vid, s));
+            Integer ownerBlk = paramOwnerBlock.get(vid);
+            if (ownerBlk != null) {
+                // Parallel copy writes block parameters at the end of every predecessor block.
+                for (int predId : cfg.predecessors(ownerBlk)) {
+                    Integer pe = bEnd.get(predId);
+                    if (pe != null) {
+                        s = Math.min(s, pe);
+                        end = Math.max(end, pe);
+                    }
+                }
+            }
             for (MirBlock b : rpo) {
                 int bid = b.id();
                 if (liveIn.get(bid).contains(vid)) {
@@ -277,6 +290,7 @@ final class MirEmitter {
                     end = Math.max(end, bEnd.get(bid));
                 }
                 if (liveOut.get(bid).contains(vid)) {
+                    s = Math.min(s, bStart.get(bid));
                     end = Math.max(end, bEnd.get(bid));
                 }
             }
