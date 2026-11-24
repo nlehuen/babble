@@ -2,7 +2,8 @@
 
 References : `BIP008` (typing), `BIP022` (intersections), `BIP026` (overloads), `analysis.TypeAlgebra`, `analysis.Type`.
 
-```babble preamble
+```babble
+;; babble preamble
 def IA = interface (def x : fn () : int)
 def IB = interface extends IA ()
 def IC = interface (def y : fn () : int)

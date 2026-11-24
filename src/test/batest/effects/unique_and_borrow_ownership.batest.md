@@ -2,7 +2,8 @@
 
 References : `BIP007` (effects & ownership), `BIP027` (`CallEffectAnalyzer`, `EffectBodyWalker`, `Reachability`).
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v: int) (
     def inc = fn mut (): int -> ( this.v += 1 ; this.v )
     def self = fn (): Box -> ( this )
@@ -233,7 +234,8 @@ axiom java.lang.StringBuilder.capacity: fn io (): int
 def f = fn io (sb: frozen java.lang.StringBuilder): int -> ( sb.capacity() )
 ```
 
-```error regex
+```error
+# error regex
 Cannot call .*method capacity on frozen value
 ```
 

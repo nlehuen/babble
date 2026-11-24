@@ -3,7 +3,8 @@
 References : BIP002 (interfaces & super), BIP001 (JavaDefaultCall)
 Targets : Faces, JavaDefaultCall, Supers, Values.arity
 
-```babble preamble
+```babble
+;; babble preamble
 def EvenPred = class () implements java.util.function.IntPredicate (
     def test = fn (x : int) : bool -> ( int(x / 2) * 2 == x )
     def testInverted = fn io shared (x : int) : bool -> ( super(java.util.function.IntPredicate).negate().test(x) )

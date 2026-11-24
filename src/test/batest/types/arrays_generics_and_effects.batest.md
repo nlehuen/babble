@@ -2,7 +2,8 @@
 
 References : BIP020 (arrays & reifiable generics), BIP016 (effects/unique/frozen), BIP019 (java.base axioms), BIP022 (intersections), BIP023 (type aliases)
 
-```babble module=arr_mod.ba
+```babble
+;; babble module=arr_mod.ba
 export def Ints = type array of int
 export def Grid of T = type array of (array of T)
 export def ModBag of T = class (def xs: array of T) ()
@@ -13,7 +14,8 @@ export def sumInts = fn (xs: Ints): int -> (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def arrMod = import("arr_mod.ba")
 def tests = import("org.babblelang.tests")
 ```

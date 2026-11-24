@@ -2,7 +2,8 @@
 
 References : BIP002 (classes, static blocks), BIP001 (unboxed fields, $defined bitmask)
 
-```babble preamble
+```babble
+;; babble preamble
 def Counter = class (def label : string, seed : int = 0) (
     private def count = seed
     def step = fn mut (delta : int = 1) : int -> (

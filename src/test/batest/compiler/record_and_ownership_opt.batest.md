@@ -4,7 +4,8 @@ inlining (O8), scalar replacement & $unboxed borrow entry points (O9), FBIP coll
 mutable-record reuse (O10), and record/frozen LICM + pure interface DCE.
 References : BIP014-I4, BIP007-I2, ScalarReplacePass, FbipReusePass, InlinePass, CoreCollections
 
-```babble module=vec_mod.ba
+```babble
+;; babble module=vec_mod.ba
 export def ExtVec = record (x: double, y: double) (
     def plus = fn (o: ExtVec): ExtVec -> ( ExtVec(this.x + o.x, this.y + o.y) )
     def neg = fn (): ExtVec -> ( ExtVec(-this.x, -this.y) )
@@ -12,7 +13,8 @@ export def ExtVec = record (x: double, y: double) (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Vec3 = record (x: double, y: double, z: double) (
     def plus = fn (o: Vec3): Vec3 -> ( Vec3(this.x + o.x, this.y + o.y, this.z + o.z) )
     def dot = fn (o: Vec3): double -> ( this.x * o.x + this.y * o.y + this.z * o.z )
@@ -38,13 +40,15 @@ def run = fn (n: int): double -> (
 assert(run(10) == 135.0)
 ```
 
-```hir -O0 fn=run check
+```hir
+;; hir -O0 fn=run check
 contains (record-new Vec3
 contains .swap
 contains .dot
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains record-new
 !contains .swap
 !contains .dot
@@ -61,11 +65,13 @@ assert(f(2, 4) == 342.0)
 assert(Vec3(1.0, 2.0, 3.0).y == 2.0)
 ```
 
-```hir -O0 fn=f check
+```hir
+;; hir -O0 fn=f check
 contains (record-new Vec3
 ```
 
-```hir -O1 fn=f check
+```hir
+;; hir -O1 fn=f check
 !contains record-new
 ```
 
@@ -194,17 +200,20 @@ def run = fn (): bool -> (
 assert(run())
 ```
 
-```hir -O0 fn=bumpH check
+```hir
+;; hir -O0 fn=bumpH check
 count 2 (record-new Holder
 !contains record-reuse
 ```
 
-```hir -O1 fn=bumpH check
+```hir
+;; hir -O1 fn=bumpH check
 count 2 (record-reuse var(h) Holder
 !contains record-new
 ```
 
-```hir -O1 fn=bumpV check
+```hir
+;; hir -O1 fn=bumpV check
 contains (record-new Vec3
 !contains record-reuse
 ```
@@ -217,12 +226,14 @@ def run = fn (x: int): int -> ( applyTwice(x, fn (v: int): int -> ( v * 2 + 1 ))
 assert(run(3) == 15)
 ```
 
-```hir -O0 fn=run check
+```hir
+;; hir -O0 fn=run check
 contains (call-fn applyTwice
 contains (fn-ref
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains (call-fn applyTwice
 !contains (fn-ref
 ```
@@ -256,12 +267,14 @@ def run = fn (m: frozen Metric, b: Box, n: int): int -> (
 assert(run(Box(5), Box(3), 4) == 58)
 ```
 
-```hir -O0 fn=run check
+```hir
+;; hir -O0 fn=run check
 contains (def unused
 !contains $licm
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains (def unused
 contains (def $licm0
 ```

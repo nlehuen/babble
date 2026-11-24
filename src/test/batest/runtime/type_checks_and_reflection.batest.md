@@ -5,7 +5,8 @@ JavaTypes.checkParameter & wrapInvocationException, Values.is/hash/isBabbleCalla
 and JavaClass/JavaObject equals/hashCode.
 References : BIP002, BIP008, BIP009, Types, Values, ClassofFunction, JavaTypes
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v: any): any -> ( v )
 ```
 

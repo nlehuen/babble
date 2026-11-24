@@ -2,7 +2,8 @@
 
 References : `BIP006` (modules), `BIP007` (effects & calling), `BIP026` (overloads), `analysis.TypeChecks`, `analysis.ModuleInterface`, `analysis.TypedModuleSummary`, `analysis.LoweringAnalyzer`, `analysis.BlockScopes`, `analysis.HierarchyMetadata`, `analysis.ImportedSummaries`, `analysis.StaticRefs`, `analysis.TypedProgram`.
 
-```babble module=base_iface.ba
+```babble
+;; babble module=base_iface.ba
 export def Shape = interface (
     def area: fn (): double
     def kind = fn (): string -> ( "shape" )
@@ -19,7 +20,8 @@ export def Vec = class (def x: int) (
 export def addOne = fn (x: int): int -> ( x + 1 )
 ```
 
-```babble module=reexport.ba
+```babble
+;; babble module=reexport.ba
 def base = import("base_iface.ba")
 def secretMod = import("base_iface.ba")
 def HiddenI = interface ( def f: fn (): int )
@@ -36,24 +38,28 @@ export def twoLocals = fn (): int -> (
 )
 ```
 
-```babble module=diamond_r.ba
+```babble
+;; babble module=diamond_r.ba
 def base = import("base_iface.ba")
 export def rightShape = interface extends base.Shape (
     def label = fn (): string -> ( "r:" + this.kind() )
 )
 ```
 
-```babble module=cyc_iface_a.ba
+```babble
+;; babble module=cyc_iface_a.ba
 def b = import("cyc_iface_b.ba")
 export def Shape = interface ( def area: fn (): double )
 ```
 
-```babble module=cyc_iface_b.ba
+```babble
+;; babble module=cyc_iface_b.ba
 def a = import("cyc_iface_a.ba")
 export def Square = class () implements a.Shape ( def area = fn (): double -> ( 1.0 ) )
 ```
 
-```babble module=hof_calling.ba
+```babble
+;; babble module=hof_calling.ba
 export def apply = fn calling(f) (x: int, f: fn io (int): int): int -> ( f(x) )
 ```
 

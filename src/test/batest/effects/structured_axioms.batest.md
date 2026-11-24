@@ -3,7 +3,8 @@
 References : BIP019, BIP030 (structured axioms, exact/notnull/immutable, descendant contracts,
 Babble-name axioms, array-parameter overloads, curated foldable/idempotent, `fn ... : T!`, explicit `T!`)
 
-```babble module=axmod.ba
+```babble
+;; babble module=axmod.ba
 export axiom java.lang.StringBuilder: class (
     def append: fn mut nothrow (s: string!): java.lang.StringBuilder!
 ) static (

@@ -2,7 +2,8 @@
 
 References : BIP014-I2, org.babblelang.opt.hir.ConstFoldPass
 
-```babble preamble
+```babble
+;; babble preamble
 def idFn of T = fn (x: T): T -> (x)
 def recCount = fn (n: int): int -> (if n <= 0 then (0) else (recurse(n - 1) + 1))
 def widenSinkD = fn (v: double): double -> (v + 0.5)
@@ -231,27 +232,32 @@ def root = fn (): double -> ( java.lang.Math.sqrt(9.0) )
 assert(arith() == 106 and trimmed() == "babble" and root() == 3.0)
 ```
 
-```hir -O0 fn=arith
+```hir
+;; hir -O0 fn=arith
 fn arith () -> int {nothrow unique}
   (def k 10:int)
   (+:int (*:int var(k) var(k)) (*:int 2:int 3:int))
 ```
 
-```hir -O1 fn=arith
+```hir
+;; hir -O1 fn=arith
 fn arith () -> int {nothrow unique}
   106:int
 ```
 
-```hir -O0 fn=root check
+```hir
+;; hir -O0 fn=root check
 contains (jcall Math.sqrt 9.0:double)
 ```
 
-```hir -O1 fn=root
+```hir
+;; hir -O1 fn=root
 fn root () -> double {nothrow unique}
   3.0:double
 ```
 
-```hir -O1 fn=trimmed
+```hir
+;; hir -O1 fn=trimmed
 fn trimmed () -> obj {nothrow unique}
   "babble"
 ```
@@ -264,16 +270,19 @@ def deadLoop = fn (): int -> ( def x = 7 ; while false then (x = 99) ; x )
 assert(branch() == 42 and deadLoop() == 7)
 ```
 
-```hir -O0 fn=branch check
+```hir
+;; hir -O0 fn=branch check
 contains (if
 ```
 
-```hir -O1 fn=branch
+```hir
+;; hir -O1 fn=branch
 fn branch () -> int {nothrow}
   42:int
 ```
 
-```hir -O1 fn=deadLoop check
+```hir
+;; hir -O1 fn=deadLoop check
 !contains (while
 contains 7:int
 ```
@@ -318,7 +327,8 @@ def widenIf = fn (p: int, x: double): double -> (
 assert(widenIf(2, 0.5) == 8.5)
 ```
 
-```hir -O1 fn=widenIf check
+```hir
+;; hir -O1 fn=widenIf check
 contains (def a (+:double (+:int var(p) 1:int) var(x)))
 count 2 (if true:bool
 ```

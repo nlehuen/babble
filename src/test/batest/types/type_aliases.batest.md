@@ -2,7 +2,8 @@
 
 References : BIP023 (D1-D7 transparent type aliases, `type` memberName)
 
-```babble module=shapes.ba
+```babble
+;; babble module=shapes.ba
 export def Shape = interface ( def area: fn (): double )
 export def Named = interface ( def name: fn (): string )
 export def ShapeWithName = type Shape & Named
@@ -13,7 +14,8 @@ export def Tile = class () implements Shape, Named (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Shape = interface ( def area: fn (): double )
 def Named = interface ( def name: fn (): string )
 def Label = interface ( def text: fn (): string )

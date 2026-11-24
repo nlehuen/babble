@@ -3,7 +3,8 @@
 References : BIP008 (generics), BIP012 (`of` type application and class body newlines)
 Note : type inference, widening hints, Java bounds, and polymorphic values are in types/generics_and_inference.batest
 
-```babble preamble
+```babble
+;; babble preamble
 def id of T = fn (x: T): T -> ( x )
 
 def Box of T = class (def value: T) (

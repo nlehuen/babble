@@ -2,7 +2,8 @@
 
 References : BIP008, BIP020, BIP021-D8 (Java varargs Phase 3), Overloads, JavaLinker
 
-```babble preamble
+```babble
+;; babble preamble
 def Demo = import("org.babblelang.tests").JavaClassDemo
 ```
 

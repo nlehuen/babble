@@ -2,7 +2,8 @@
 
 References : `BIP001` (lowering), `BIP008` (classes & interfaces), `BIP026` (overloads), `analysis.LoweringAnalyzer`, `analysis.TypeChecks`, `analysis.ScopeAnalysis`, `analysis.BlockScopes`, `analysis.LoweringTargets`, `analysis.Resolver`, `analysis.PrimitiveKind`.
 
-```babble preamble
+```babble
+;; babble preamble
 def BaseI = interface (
     def tag: fn (): string
     def greet = fn (): string -> ( "hi" )

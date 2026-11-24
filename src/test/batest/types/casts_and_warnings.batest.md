@@ -2,7 +2,8 @@
 
 References : BIP008 (as casts, nullable casts)
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v : any) : any -> ( v )
 def dynNull = fn (v : any?) : any? -> ( v )
 def C = class (def x : int) ()

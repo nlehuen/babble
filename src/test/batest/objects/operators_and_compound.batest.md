@@ -2,7 +2,8 @@
 
 References : BIP002 (operator methods)
 
-```babble preamble
+```babble
+;; babble preamble
 def Vec = record (x : double, y : double) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x, this.y + o.y) )
     def minus = fn (o : Vec) : Vec -> ( Vec(this.x - o.x, this.y - o.y) )

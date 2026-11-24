@@ -2,7 +2,8 @@
 
 References : BIP001, BIP014 ; targets CodeGenerator, HirBuilder, HirEmitter
 
-```babble preamble
+```babble
+;; babble preamble
 def dynNum = fn (v : int | double) : int | double -> ( v )
 ```
 

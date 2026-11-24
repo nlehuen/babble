@@ -12,24 +12,27 @@ A `.batest.md` file succeeds only when a reviewer can read the preamble once, gl
 
 ## Size budgets
 
-A single `.batest.md` file may contain tens of cases and grow to ~1,000 lines overall. What matters is the working-memory budget for verifying *one* case (`preamble + case`), **enforced automatically by [`BatestParser`](../java/org/babblelang/tests/batest/BatestParser.java)** :
+All three readability budgets are **enforced automatically by [`BatestParser`](../java/org/babblelang/tests/batest/BatestParser.java)** :
 
-- **`babble preamble`** (and each **`babble module=<path>`**) : strictly **< 800 characters** of Babble code (comments excluded).
-- **Each test case** (combined `babble` / `babble session` code inside a `##` section) : strictly **< 400 characters** of Babble code (comments excluded).
+- **Whole file** : at most **1,000 lines** (`BatestParser.MAX_FILE_LINES`, hard limit — no override). When a file exceeds 1,000 lines, split it into logically grouped chunks `< 1,000` lines each and give every chunk a descriptive feature name (not `foo_1.batest.md`, `foo_2.batest.md`, etc.).
+- **Preamble** (`;; babble preamble`) and each **virtual module** (`;; babble module=<path>`) : strictly **< 800 characters** of Babble code (comments excluded).
+- **Each test case** (combined `babble` / `;; babble session` code inside a `##` section) : strictly **< 400 characters** of Babble code (comments excluded).
 
-**Markdown prose outside fences, non-Babble blocks (`stdout`, `stderr`, `error`, `hir`, `mir`), and Babble comments (`;; ...` and `;;( ... ;;)`) do not count toward either limit**, so useful context is never squeezed out by the code budget.
+**Markdown prose outside fences, non-Babble blocks (`stdout`, `stderr`, `error`, `hir`, `mir`), and Babble comments (`;; ...` and `;;( ... ;;)`) do not count toward the character budgets** (though all lines in the file count toward the 1,000-line file limit).
 
 When you hit a limit :
-- **Case >= 400 code chars** : split it into smaller `##` cases (one property, branch, or error per case), or extract shared setup/assertions into `babble preamble`.
+- **File > 1,000 lines** : split the file into cohesive, descriptively named feature files (each `< 1,000` lines).
+- **Case >= 400 code chars** : split it into smaller `##` cases (one property, branch, or error per case), or extract shared setup/assertions into `;; babble preamble`.
 - **Preamble >= 800 code chars** : drop unused declarations, simplify shared types, or split the file into two focused `.batest.md` files.
-- **Virtual modules** (`babble module=<path>`) : keep each virtual module compact and focused on the single cross-module interaction under test.
+- **Virtual modules** (`;; babble module=<path>`) : keep each virtual module compact and focused on the single cross-module interaction under test.
 
-### Overriding the limit (`large="<reason>"`)
+### Overriding the character budget (`large="<reason>"`)
 
-When a preamble, virtual module, or case *genuinely* cannot fit under budget (for example, `functions/high_arity.batest.md` testing > 200 parameters or `objects/lowering_and_compound.batest.md` testing > 20,000-char string chunking and method splitting), attach `large="<reason>"` to the opening `babble` fence:
+When a preamble, virtual module, or case *genuinely* cannot fit under its character budget (for example, `functions/high_arity.batest.md` testing > 200 parameters or `objects/lowering_and_compound.batest.md` testing > 20,000-char string chunking and method splitting), put `large="<reason>"` in the first-line `;; babble` directive:
 
 ````markdown
-```babble large="intentional high-arity stress test"
+```babble
+;; babble large="intentional high-arity stress test"
 ...
 ```
 ````
@@ -50,22 +53,22 @@ Each `.batest.md` file should test **one coherent aspect of the language** and l
 | `types/` | Inference, widening, unions, nullables, narrowing, `?.`, generics, arrays, intersections, aliases, casts |
 | `effects/` | Purity, `io`/`volatile`/`mut`/`borrow`/`unique`/`frozen`, `calling` HOF forwarding, axioms |
 | `modules/` | `export`/`import`, virtual modules, cycles, cross-module types and effects |
-| `sessions/` | Multi-input `BabbleSession` (`babble session`), shadowing, cross-input caches |
+| `sessions/` | Multi-input `BabbleSession` (`;; babble session`), shadowing, cross-input caches |
 | `java/` | Java packages, classes, overloads, fields, arrays, functional interfaces, exceptions, nullability |
 | `compiler/` | JVM interface lowering, Java bridges, HIR optimizer passes & IR goldens, bytecode edge cases |
 | `caches/` | Polymorphic and megamorphic `invokedynamic` inline caches |
 | `runtime/` | Shared runtime helpers and boundary edge cases |
 
-Name new files after the language feature (`types/type_aliases.batest.md`, `control/for_loops.batest.md`), not after implementation phases (`*_p1.batest.md`) or grab-bag buckets (`*_edges.batest.md`).
+Name new files after the language feature (`types/type_aliases.batest.md`, `control/for_loops.batest.md`), not after implementation phases (`*_p1.batest.md`), grab-bag buckets (`*_edges.batest.md`), or numbered chunks (`*_1.batest.md`, `*_2.batest.md`).
 
 ## Anatomy of a proper `.batest.md` file
 
 1. **File header (before the first `##` heading)** :
    - Open with `# <Title>` and concise prose referencing relevant `BIP###` sections or target Java classes/methods.
-   - Optionally define shared virtual modules (`babble module=<path>`) and at most one `babble preamble` block (< 800 code chars).
+   - Optionally define shared virtual modules (`;; babble module=<path>`) and at most one preamble (`;; babble preamble`, < 800 code chars).
 2. **Test cases (`## <Unique Case Name>`)** :
    - Every `##` heading outside a code fence starts a named case (duplicate names in the same file are rejected).
-   - Provide a `babble` block (or sequential `babble session` blocks), optional case-scoped `babble module=<path>` overrides, optional behavioral outcome blocks (`stdout`, `stderr`, `error`), and optional IR blocks (`hir`, `mir`).
+   - Provide a `babble` block (or sequential `;; babble session` blocks), optional case-scoped `;; babble module=<path>` overrides, optional behavioral outcome blocks (`stdout`, `stderr`, `error`), and optional IR blocks (`hir`, `mir`).
    - For happy-path cases, **verify behavior with `assert(...)` and omit `stdout`, `stderr`, and `error`** — omitting them asserts empty stdout, empty stderr, and `Kind.OK` success!
 
 ### Example
@@ -75,7 +78,8 @@ Name new files after the language feature (`types/type_aliases.batest.md`, `cont
 
 References : `BIP008` (generics), `BIP012` (`of` type application).
 
-```babble preamble
+```babble
+;; babble preamble
 def Box of T = record (value: T) (
     def transform of U = fn (f: fn (T): U): Box of U -> ( Box(f(this.value)) )
 )
@@ -132,21 +136,24 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
 
 ## Format and harness mechanics (quick reference)
 
-- **Fenced blocks** ([`BatestV2Parser`](../java/org/babblelang/tests/batest/BatestV2Parser.java)) :
-  - Open with 3+ backticks (```` ```<kind> [attrs...] ````) and close with at least the same number of backticks. Use 4+ backticks if a block body contains ```` ``` ````.
-  - `babble preamble [large="..."]` (file header only, at most one).
-  - `babble module=<path> [large="..."]` (file header or case-scoped; overrides file-level module of the same path).
-  - `babble [large="..."]` (single compilation unit) or multiple `babble session [large="..."]` blocks (sequential `BabbleSession` inputs).
-  - `stdout [regex]` — expected normalized stdout (default `""`).
-  - `stderr [regex]` — expected normalized non-fatal stderr such as `Warning : ...` (default `""`).
-  - `error [regex]` — expected fatal compile-time or runtime error (`Kind.USER_ERROR`; omitting `error` asserts `Kind.OK`).
+- **Fenced blocks and first-line option directives** ([`BatestV2Parser`](../java/org/babblelang/tests/batest/BatestV2Parser.java)) :
+  - Open with 3+ backticks and **only the block kind** (```` ```<kind> ````) and close with at least the same number of backticks. Use 4+ backticks if a block body contains ```` ``` ````.
+  - Because Markdown renderers (GitHub, Antigravity) hide text after the language name on the opening fence line, **block options are placed on the first line inside the block** as `<comment> <kind> <options>` (options on the opening fence line are rejected) :
+    - `;; <kind> <options>` for Babble-family blocks (`babble`, `hir`, `mir`).
+    - `# <kind> <options>` for output/error blocks (`stdout`, `stderr`, `error`).
+  - `babble` with `;; babble preamble [large="..."]` (file header only, at most one).
+  - `babble` with `;; babble module=<path> [large="..."]` (file header or case-scoped; overrides file-level module of the same path).
+  - `babble` (with optional `;; babble large="..."`) for a single compilation unit, or multiple `babble` blocks starting with `;; babble session [large="..."]` for sequential `BabbleSession` inputs.
+  - `stdout` (optional `# stdout regex`) — expected normalized stdout (default `""`).
+  - `stderr` (optional `# stderr regex`) — expected normalized non-fatal stderr such as `Warning : ...` (default `""`).
+  - `error` (optional `# error regex`) — expected fatal compile-time or runtime error (`Kind.USER_ERROR`; omitting `error` asserts `Kind.OK`).
   - The `regex` flag compiles the block body with `Pattern.MULTILINE | Pattern.DOTALL` and matches the whole channel (`matcher(actual).matches()`), so `.*` spans multiple lines automatically. Use `regex` only for text that varies with JDK version, never to loosen a Babble message.
 - **IR golden & check blocks (`BIP029`)** :
-  - Syntax : ```` ```<hir|mir> <opt-levels> <target> [stage=<before|final|after:PassName>] [in=<module.ba>] [regex|check] ````
+  - Open with ```` ```hir ```` or ```` ```mir ```` and put the directive on line 1 : `;; <hir|mir> <opt-levels> <target> [stage=<before|final|after:PassName>] [in=<module.ba>] [regex|check]`.
   - `<opt-levels>` : `-O0`, `-O1`, `-O0,-O1`, or future `-O2`. Blocks whose opt-levels do not match the active run are skipped.
   - `<target>` : `fn=<name>`, `fn=<Type>.<method>`, `class=<name>`, `record=<name>`, `interface=<name>`, `top-level`, or `module`.
   - Default mode compares exact canonical IR (`HirCanonicalPrinter`, preamble-independent and locally renumbered). `check` mode evaluates line predicates : `contains <s>`, `!contains <s>`, `count <N> <s>`, `regex <pat>`.
-  - Update stale exact-golden IR blocks safely after intentional optimizer/printer changes with `-Dbatest.updateIr=true` (rewrites only exact IR blocks on behaviorally-passing verified cases and fails loudly afterward so CI can never pass with blessing enabled).
+  - Update stale exact-golden IR blocks safely after intentional optimizer/printer changes with `-Dbatest.updateIr=true` (rewrites only exact IR block bodies below their `;; hir`/`;; mir` directive on behaviorally-passing verified cases and fails loudly afterward so CI can never pass with blessing enabled).
 - **Error normalization and `Kind`** ([`BatestRunner`](../java/org/babblelang/tests/batest/BatestRunner.java)) :
   - Wrapper prefixes (`BabbleException:`, `ScriptException:`), trailing `in <src> at line number N`, embedded line coordinates, dynamic type IDs (`expected T#, got T#`), OS-locale `FileNotFoundException` reasons (`(<OS error>)`), JDK 22+ reflective receiver wording, and `InvocationTargetException` wrappers are normalized; `StackOverflowError` becomes `Stack overflow`.
   - `INTERNAL_CRASH` (`VerifyError`, uncaught internal NPE/ISE) fails unconditionally.
@@ -159,7 +166,7 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
 
 - [ ] **4th-level manual check** : verify by reasoning that every case's expected pass, `stdout`, `stderr`, `error`, and IR golden follows from Babble's specification.
 - [ ] **Flag `;; QUESTIONABLE` behavior** : annotate doubtful passing behavior with `;; QUESTIONABLE : <reason>` and report it explicitly.
-- [ ] **Size budgets** : preamble & virtual modules < 800 code chars; cases < 400 code chars; every `large="..."` override is justified.
+- [ ] **Size budgets** : file <= 1,000 lines; preamble & virtual modules < 800 code chars; cases < 400 code chars; every `large="..."` override is justified.
 - [ ] **Silent `assert(...)`** : happy-path cases omit `stdout`/`stderr`/`error` unless directly testing output or warnings.
 - [ ] **Negative-case precision** : every `error` case fails for the intended reason and cannot pass by printing text to `stdout`.
 - [ ] **Determinism & SLL hygiene** : passes `ParserGrammarTestCase` pure SLL and has no unimplemented `RM###` references.

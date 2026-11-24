@@ -2,7 +2,8 @@
 
 References : `BIP008` (typing & collections), `BIP012` (`of` syntax), `analysis.CollectionCallChecker`.
 
-```babble preamble
+```babble
+;; babble preamble
 def Tag = class (def n: int) ()
 ```
 

@@ -2,7 +2,8 @@
 
 References : BIP002, RM003-P3 (Java interface bridges & super default dispatch)
 
-```babble preamble
+```babble
+;; babble preamble
 def CS = type java.lang.CharSequence
 def C = type java.util.function.Consumer of any?
 def Buf = class () implements java.lang.Appendable, java.lang.CharSequence (

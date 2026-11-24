@@ -2,23 +2,27 @@
 
 References : `BIP008` (typing), `BIP012` (`of` syntax), `BIP022` (intersections), `analysis.TypeAnnotations`, `analysis.TypeChecker` (`resolveIsTarget`, `isArrayTypeErasedAtRuntime`), `analysis.Type`, `analysis.TypeDisplay`.
 
-```babble module=arr_mod.ba
+```babble
+;; babble module=arr_mod.ba
 export def ArrAlias of T = type array of T
 export def BoxArr of T = class (items : array of T) ()
 export def notAType = 42
 ```
 
-```babble module=cyc_a.ba
+```babble
+;; babble module=cyc_a.ba
 def b = import("cyc_b.ba")
 export def A = class (x : b.B) ()
 ```
 
-```babble module=cyc_b.ba
+```babble
+;; babble module=cyc_b.ba
 def a = import("cyc_a.ba")
 export def B = class (x : a.A) ()
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def IA = interface (def x : fn () : int)
 def IB = interface (def y : fn () : int)

@@ -15,12 +15,12 @@ public class BatestHarnessTestCase {
 
     @Test
     public void testParserBasicAndWhitespace() {
-        String content = "\r\n# Sample\r\n\r\n```babble preamble\r\n  def x = 1\r\n```\r\n\r\n## First\r\n\r\n```babble\r\n  print(x)\r\n```\r\n\r\n```stdout\r\n  1  \r\n```\r\n\r\n## Second\r\n\r\n````babble\r\nprintln(\"a\")\r\nprintln(\"b\")\r\n````\r\n\r\n```stdout\r\na\r\nb\r\n```\r\n";
+        String content = "\r\n# Sample\r\n\r\n```babble\r\n;; babble preamble\r\n  def x = 1\r\n```\r\n\r\n## First\r\n\r\n```babble\r\n  print(x)\r\n```\r\n\r\n```stdout\r\n  1  \r\n```\r\n\r\n## Second\r\n\r\n````babble\r\nprintln(\"a\")\r\nprintln(\"b\")\r\n````\r\n\r\n```stdout\r\na\r\nb\r\n```\r\n";
         BatestFile file = BatestParser.parseString(content, "sample.batest.md");
         Assertions.assertEquals("def x = 1", file.preamble());
         Assertions.assertTrue(file.modules().isEmpty());
         Assertions.assertEquals(2, file.cases().size());
-        Assertions.assertEquals(8, file.cases().get(0).line());
+        Assertions.assertEquals(9, file.cases().get(0).line());
         Assertions.assertEquals("print(x)", file.cases().get(0).code());
         Assertions.assertEquals("1", file.cases().get(0).expectedStdout().text());
         Assertions.assertEquals("a\nb", file.cases().get(1).expectedStdout().text());
@@ -43,23 +43,27 @@ public class BatestHarnessTestCase {
         String content = """
                 # Modules and sessions
 
-                ```babble module=lib/math.ba
+                ```babble
+                ;; babble module=lib/math.ba
                 export def sq = fn (n : int) : int -> ( n * n )
                 ```
 
-                ```babble preamble
+                ```babble
+                ;; babble preamble
                 def math = import("lib/math.ba")
                 ```
 
                 ## Session with conflict markers
 
-                ```babble session
+                ```babble
+                ;; babble session
                 ;; Strings containing git conflict markers work inside .batest.md code blocks
                 def s = "<<<<<<< ======= >>>>>>>"
                 println(math.sq(5))
                 ```
 
-                ```babble session
+                ```babble
+                ;; babble session
                 println(s)
                 ```
 
@@ -81,7 +85,7 @@ public class BatestHarnessTestCase {
     @Test
     public void testParserStructuralErrors() {
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("```babble preamble\ndef x = 1\n```\n", "empty.batest.md"));
+                () -> BatestParser.parseString("```babble\n;; babble preamble\ndef x = 1\n```\n", "empty.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
                 () -> BatestParser.parseString("## A\n```babble\nprint(1)\n", "unclosed.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
@@ -89,7 +93,7 @@ public class BatestHarnessTestCase {
         Assertions.assertThrows(IllegalArgumentException.class,
                 () -> BatestParser.parseString("## A\n```babble\n1\n```\n```babble\n2\n```\n", "two_plain_babble.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("```babble module=a.ba\nexport def x = 1\n```\n```babble module=a.ba\nexport def y = 2\n```\n## A\n```babble\n1\n```\n", "dup_mod.batest.md"));
+                () -> BatestParser.parseString("```babble\n;; babble module=a.ba\nexport def x = 1\n```\n```babble\n;; babble module=a.ba\nexport def y = 2\n```\n## A\n```babble\n1\n```\n", "dup_mod.batest.md"));
     }
 
     @Test
@@ -104,7 +108,8 @@ public class BatestHarnessTestCase {
                 println("done")
                 ```
 
-                ```stdout regex
+                ```stdout
+                # stdout regex
                 JDK \\d+\\ndone
                 ```
 
@@ -115,7 +120,8 @@ public class BatestHarnessTestCase {
                 a.get(5)
                 ```
 
-                ```error regex
+                ```error
+                # error regex
                 java\\.lang\\.ArrayIndexOutOfBoundsException: .*\\b5\\b.*
                 ```
                 """;
@@ -132,7 +138,7 @@ public class BatestHarnessTestCase {
             }
         }
         IllegalArgumentException invalid = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("## Bad\n```babble\nprint(1)\n```\n```stdout regex\n(1\n```\n", "bad_regex.batest.md"));
+                () -> BatestParser.parseString("## Bad\n```babble\nprint(1)\n```\n```stdout\n# stdout regex\n(1\n```\n", "bad_regex.batest.md"));
         Assertions.assertTrue(invalid.getMessage().startsWith("bad_regex.batest.md:5: invalid regular expression"),
                 invalid.getMessage());
     }
@@ -294,11 +300,13 @@ public class BatestHarnessTestCase {
         String batest = """
                 # Warnings, pre-error stdout, modules, and sessions
 
-                ```babble module=helper.ba
+                ```babble
+                ;; babble module=helper.ba
                 export def twice = fn (n : int) : int -> ( n * 2 )
                 ```
 
-                ```babble preamble
+                ```babble
+                ;; babble preamble
                 def h = import("helper.ba")
                 ```
 
@@ -345,21 +353,25 @@ public class BatestHarnessTestCase {
 
                 ## Session shadowing and closure capture
 
-                ```babble session
+                ```babble
+                ;; babble session
                 def x = 1
                 def get = fn () : int -> ( x )
                 ```
 
-                ```babble session
+                ```babble
+                ;; babble session
                 x = 5
                 ```
 
-                ```babble session
+                ```babble
+                ;; babble session
                 def x = 100
                 println(get(), ":", x)
                 ```
 
-                ```babble session
+                ```babble
+                ;; babble session
                 x = x + 1
                 println(get(), ":", x)
                 ```
@@ -421,30 +433,51 @@ public class BatestHarnessTestCase {
         Assertions.assertTrue(caseErr.getMessage().contains("exceeds 400 code characters"), caseErr.getMessage());
 
         // large="<reason>" overrides the case limit
-        BatestParser.parseString("## Big\n```babble large=\"intentional stress test\"\n" + code400 + "\n```\n", "large_case.batest.md");
+        BatestParser.parseString("## Big\n```babble\n;; babble large=\"intentional stress test\"\n" + code400 + "\n```\n", "large_case.batest.md");
 
         // bare large or empty large="" fails immediately
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("## Big\n```babble large\n" + code400 + "\n```\n", "no_reason1.batest.md"));
+                () -> BatestParser.parseString("## Big\n```babble\n;; babble large\n" + code400 + "\n```\n", "no_reason1.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("## Big\n```babble large=\"\"\n" + code400 + "\n```\n", "no_reason2.batest.md"));
+                () -> BatestParser.parseString("## Big\n```babble\n;; babble large=\"\"\n" + code400 + "\n```\n", "no_reason2.batest.md"));
 
         // Preamble: 799 passes, 800 fails, large="<reason>" overrides
         String pre799 = "def p = \"" + "b".repeat(789) + "\"";
         String pre800 = "def p = \"" + "b".repeat(790) + "\"";
         Assertions.assertEquals(799, BatestParser.codeLength(pre799));
         Assertions.assertEquals(800, BatestParser.codeLength(pre800));
-        BatestParser.parseString("```babble preamble\n" + pre799 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "pre799.batest.md");
+        BatestParser.parseString("```babble\n;; babble preamble\n" + pre799 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "pre799.batest.md");
         IllegalArgumentException preErr = Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("```babble preamble\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "pre800.batest.md"));
+                () -> BatestParser.parseString("```babble\n;; babble preamble\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "pre800.batest.md"));
         Assertions.assertTrue(preErr.getMessage().contains("preamble exceeds 800 code characters"), preErr.getMessage());
-        BatestParser.parseString("```babble preamble large=\"shared fixture\"\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "pre_large.batest.md");
+        BatestParser.parseString("```babble\n;; babble preamble large=\"shared fixture\"\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "pre_large.batest.md");
 
         // Virtual module: 800 fails, large="<reason>" overrides
-        String mod800 = "```babble module=m.ba\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n";
+        String mod800 = "```babble\n;; babble module=m.ba\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n";
         IllegalArgumentException modErr = Assertions.assertThrows(IllegalArgumentException.class,
                 () -> BatestParser.parseString(mod800, "mod800.batest.md"));
         Assertions.assertTrue(modErr.getMessage().contains("virtual module 'm.ba' exceeds 800 code characters"), modErr.getMessage());
-        BatestParser.parseString("```babble module=m.ba large=\"fixture module\"\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "mod_large.batest.md");
+        BatestParser.parseString("```babble\n;; babble module=m.ba large=\"fixture module\"\n" + pre800 + "\n```\n## Ok\n```babble\nassert(true)\n```\n", "mod_large.batest.md");
+    }
+
+    @Test
+    public void testParserFileLineLimit() {
+        String header = "# Limit check\n";
+        String caseBlock = "## Case\n```babble\nassert(true)\n```\n";
+        // 1 (header) + 4 (caseBlock) + 995 (blank/prose lines) = 1000 lines (passes with trailing newline)
+        String exact1000 = header + "\n".repeat(995) + caseBlock;
+        BatestFile ok = BatestParser.parseString(exact1000, "ok_1000.batest.md");
+        Assertions.assertEquals(1, ok.cases().size());
+        // 1000 lines without trailing newline also passes
+        BatestFile okNoTrail = BatestParser.parseString(exact1000.substring(0, exact1000.length() - 1), "ok_1000_no_nl.batest.md");
+        Assertions.assertEquals(1, okNoTrail.cases().size());
+
+        // 1001 lines exceeds MAX_FILE_LINES and fails with clear splitting guidance
+        String tooBig1001 = header + "\n".repeat(996) + caseBlock;
+        IllegalArgumentException err = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString(tooBig1001, "oversized.batest.md"));
+        Assertions.assertTrue(err.getMessage().contains("oversized.batest.md is too big with 1001 lines"), err.getMessage());
+        Assertions.assertTrue(err.getMessage().contains("< 1000 lines"), err.getMessage());
+        Assertions.assertTrue(err.getMessage().contains("foo_1.batest.md"), err.getMessage());
     }
 }

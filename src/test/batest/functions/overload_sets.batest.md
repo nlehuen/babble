@@ -4,7 +4,8 @@ union/nullable/intersection splits, set types, target selection, generics, lambd
 effects, modules, and sessions.
 References : BIP021-I5 (BIP021-D9..D16, D21), OverloadSolver, OverloadSet, CallSolver
 
-```babble module=ov_shapes.ba
+```babble
+;; babble module=ov_shapes.ba
 export def Circle = record (r: double) ()
 export def area = overload (
     fn (c: Circle): double -> ( 3.0 * c.r * c.r ),
@@ -12,7 +13,8 @@ export def area = overload (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Shape = interface ( def area: fn (): double )
 def Named = interface ( def name: fn (): string )
 def Circle = record (r: double) implements Shape ( def area = fn (): double -> ( 3.0 * this.r * this.r ) )
@@ -419,17 +421,20 @@ assert(area(shapes.Circle(2.0)) == 12.0 and area(5) == 5.0 and area(Square(4.0))
 
 ## Case 44
 
-```babble session
+```babble
+;; babble session
 def f = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string): string -> ( "s:" + s ) )
 assert(f(1) == "i:1" and f("a") == "s:a")
 ```
 
-```babble session
+```babble
+;; babble session
 def f2 = overload ( f, fn (b: bool): string -> ( "b:" + b ) )
 assert(f2(2) == "i:2" and f2(true) == "b:true")
 ```
 
-```babble session
+```babble
+;; babble session
 def f = overload ( f2, fn (d: double): string -> ( "d:" + d ) )
 assert(f(1.5) == "d:1.5" and f(false) == "b:false")
 ```

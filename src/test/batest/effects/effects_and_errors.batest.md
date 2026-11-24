@@ -2,13 +2,15 @@
 
 References : BIP007, BIP016, BIP017, BIP019, EffectChecker
 
-```babble module=eff_mod.ba
+```babble
+;; babble module=eff_mod.ba
 export axiom java.lang.Math.abs: fn pure nothrow
 export axiom java.util.List.add: fn mut
 export def abs2 = java.lang.Math.abs
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v : int) (
     def mutThis = fn mut () -> ( this.v += 1 )
 )

@@ -4,7 +4,8 @@ References : BIP001, CodeGenerator Object[] array-adapter fallback
 
 ## Case 1
 
-```babble large=">200-parameter function definition exercises Object[] array-adapter fallback"
+```babble
+;; babble large=">200-parameter function definition exercises Object[] array-adapter fallback"
 def big = fn (
     p001 : int = 1, p002 : int = 1, p003 : int = 1, p004 : int = 1, p005 : int = 1,
     p006 : int = 1, p007 : int = 1, p008 : int = 1, p009 : int = 1, p010 : int = 1,
@@ -54,7 +55,8 @@ assert(big(p205: 40, p001: 10) == 51)
 
 ## Case 2
 
-```babble large=">200-argument positional call exercises Object[] array-adapter fallback"
+```babble
+;; babble large=">200-argument positional call exercises Object[] array-adapter fallback"
 def sum205 = fn (
     a001 : int = 0, a002 : int = 0, a003 : int = 0, a004 : int = 0, a005 : int = 0,
     a006 : int = 0, a007 : int = 0, a008 : int = 0, a009 : int = 0, a010 : int = 0,

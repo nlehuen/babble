@@ -2,7 +2,8 @@
 
 References : BIP001, BIP002, BIP021 ; targets CodeGenerator, InterfaceGen, HirBuilder, HirEmitter
 
-```babble preamble
+```babble
+;; babble preamble
 def Vec = class (def n : int) (
     def neg = fn () : Vec -> ( Vec(-this.n) )
     def plus = fn (o : any) : Vec -> ( Vec(this.n + (o as int)) )

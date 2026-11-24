@@ -2,23 +2,27 @@
 
 References : BIP005 (modules & imports)
 
-```babble module=mut_b.ba
+```babble
+;; babble module=mut_b.ba
 def a = import("mut_a.ba")
 export def name = "b"
 ```
 
-```babble module=mut_a.ba
+```babble
+;; babble module=mut_a.ba
 def b = import("mut_b.ba")
 export def name = "a"
 export def tag = fn () : string -> ( b.name + ":" + name )
 ```
 
-```babble module=cycle_b.ba
+```babble
+;; babble module=cycle_b.ba
 def a = import("cycle_a.ba")
 export def y = "b" + a.x
 ```
 
-```babble module=cycle_a.ba
+```babble
+;; babble module=cycle_a.ba
 def b = import("cycle_b.ba")
 export def x = "a"
 ```

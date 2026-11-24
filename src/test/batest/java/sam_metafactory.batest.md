@@ -2,7 +2,8 @@
 
 References : BIP002 §13, RM003 (proxy-free Java SAM adapters), Faces
 
-```babble preamble
+```babble
+;; babble preamble
 def Demo = import("org.babblelang.tests").JavaClassDemo
 ```
 

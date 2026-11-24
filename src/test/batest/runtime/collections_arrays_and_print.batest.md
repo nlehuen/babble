@@ -2,7 +2,8 @@
 
 References : `BIP001` (runtime collections & arrays), `BIP008` (strict typing & casts), `ArraySupport`, `CoreCollections`, `PrintFunction`.
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v: any?): any? -> ( v )
 def coerce of T = fn io (shared x: any?): T -> (
     def l: java.util.List of T = java.util.ArrayList()

@@ -3,7 +3,8 @@
 References : BIP008 (generic inference, widening, unions), BIP021 (D20 polymorphic function values)
 Note : core generic declarations, standalone `of`, covariance, and cast errors are in types/generics.batest
 
-```babble preamble
+```babble
+;; babble preamble
 def id of T = fn (x: T): T -> ( x )
 def Box of T = class (def v: T) ()
 ```

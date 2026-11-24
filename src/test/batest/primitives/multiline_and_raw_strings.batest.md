@@ -2,7 +2,8 @@
 
 References : BIP026-D1..D3, BIP026-I1, StringLiterals, BabbleScriptEngine
 
-```babble preamble
+```babble
+;; babble preamble
 def r = 7
 def Box = record (r: int) (
     def sum = fn (x: int): int -> (this.r + x)
@@ -133,14 +134,16 @@ Lexical error : token recognition error at: '"'
 
 ## Multiline literals across session inputs
 
-```babble session
+```babble
+;; babble session
 def header = """
     SELECT *
     FROM t
     """
 ```
 
-```babble session
+```babble
+;; babble session
 def body = r"""
     WHERE x = "ok"
     """

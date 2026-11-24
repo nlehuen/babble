@@ -3,7 +3,8 @@
 References : BIP011 (core scalar types), BIP002 (operator methods)
 Runtime arithmetic inputs go through a mutable-state helper so -O1 cannot constant-fold them away.
 
-```babble preamble
+```babble
+;; babble preamble
 def _i = 0
 def rt = fn io (x : int) : int -> ( _i = x ; _i )
 

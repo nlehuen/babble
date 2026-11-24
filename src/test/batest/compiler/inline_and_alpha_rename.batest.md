@@ -2,7 +2,8 @@
 
 References : `BIP014-I2`, `BIP027-I4`, `org.babblelang.opt.hir.InlinePass`.
 
-```babble preamble
+```babble
+;; babble preamble
 def Pair = record (x: int, y: int) (
     def add = fn (a: int, b: int): int -> (this.x + a + b)
     def mix = fn (o: Pair): int -> (this.x + o.y)
@@ -32,7 +33,8 @@ def run = fn io (n: int): int -> (applyOp(n, fn (v: int): int -> (v * 2)))
 assert(run(6) == 12)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 contains (call-fn applyOp
 ```
 
@@ -64,7 +66,8 @@ def run = fn (n: int): int -> (
 assert(run(9) == 16)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains .setGet
 !contains .mix
 ```
@@ -81,11 +84,13 @@ def f = fn (x: int): int -> (
 assert(f(1) == 68)
 ```
 
-```hir -O0 fn=f check
+```hir
+;; hir -O0 fn=f check
 count 34 (call-fn inc
 ```
 
-```hir -O1 fn=f check
+```hir
+;; hir -O1 fn=f check
 !contains (call-fn inc
 ```
 
@@ -99,7 +104,8 @@ def run = fn (x: int, y: int): int -> (
 assert(run(2, 3) == 15)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 contains .add
 ```
 
@@ -139,7 +145,8 @@ def run = fn (p: int, fl: bool): double -> (
 assert(run(3, true) == 12.5 and run(3, false) == 18.5)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains (call-fn widen
 !contains (call-fn choose
 !contains (call-fn sum2

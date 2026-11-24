@@ -2,7 +2,8 @@
 
 References : BIP011 (core scalar types), BIP008 (strict typing & any), Values
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v : any) : any -> ( v )
 def dynOpt = fn (v : any?) : any? -> ( v )
 def coerce of T = fn io (shared x: any?): T -> (

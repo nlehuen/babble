@@ -2,7 +2,8 @@
 
 References : BIP005 (modules & exports), BIP016/BIP017 (cross-module effects), BIP019 (exported axioms)
 
-```babble module=math.ba
+```babble
+;; babble module=math.ba
 def loads = 0
 def bump = fn io () : int -> ( loads += 1 ; loads )
 def secret = 99
@@ -16,12 +17,14 @@ export def hits = fn volatile () : int -> ( loads )
 bump()
 ```
 
-```babble module=sub/deep.ba
+```babble
+;; babble module=sub/deep.ba
 def w = import("../wrap.ba")
 export def calc = fn (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
 ```
 
-```babble module=hof.ba
+```babble
+;; babble module=hof.ba
 export def Box = class (def x : int) ()
 export def apply = fn io (n : int, f : fn io (v : int) : int) : int -> ( f(n) )
 export def applyOpt = fn io (n : int, f : fn io (v : int) : int = fn (v : int) : int -> ( v + 1 )) : int -> ( f(n) )
@@ -29,13 +32,15 @@ export def mutateWith = fn (mut b : Box, f : fn (mut m : Box) : int) : int -> ( 
 export def pureWrap = fn (n : int, f : fn (v : int) : int) : int -> ( f(n) )
 ```
 
-```babble module=wrap.ba
+```babble
+;; babble module=wrap.ba
 def m = import("math.ba")
 export def sumAndMul = fn (a : int, b : int) : int -> ( m.add(a, b) + m.mul(a, b) )
 export axiom java.lang.Math.max: fn pure nothrow
 ```
 
-```babble module=math2.ba
+```babble
+;; babble module=math2.ba
 export def pi = 4.0
 export def add = fn (a : int, b : int) : int -> ( a + b + 1 )
 ```

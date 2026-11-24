@@ -2,7 +2,8 @@
 
 References : BIP028 §6 (D6-D8), EffectBodyWalker.evalTry/evalThrow, curated.ba
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def value: int) ()
 def Leak = record (box: Box) ()
 def Err = record (msg: string) ()

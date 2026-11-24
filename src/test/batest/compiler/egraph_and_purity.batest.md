@@ -2,7 +2,8 @@
 
 References : `BIP027-D1`, `BIP027-I6`, `org.babblelang.ir.egraph.{EGraph,ENode,AlgebraicRules}`, `org.babblelang.opt.HirPurity`.
 
-```babble module=ext_rec.ba
+```babble
+;; babble module=ext_rec.ba
 export def ExtRec = record (v: int) (
     def getPure = fn nothrow (): int -> (return this.v ; this.v)
     def getThrow = fn (): int -> (if this.v < 0 then (throw exception("neg")) ; return this.v ; this.v)
@@ -10,7 +11,8 @@ export def ExtRec = record (v: int) (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
 def bigInt = fn nothrow (x: int): int -> (return x ; x)

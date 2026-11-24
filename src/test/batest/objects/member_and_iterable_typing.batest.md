@@ -2,7 +2,8 @@
 
 References : `BIP008` (typing & object model), `BIP022` (intersections), `analysis.MemberTypes`.
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def HasVal = interface ( def x: int )
 def SubHasVal = interface extends HasVal ()

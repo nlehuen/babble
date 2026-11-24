@@ -2,7 +2,8 @@
 
 References : BIP008 (casts, narrowing, callable types), BIP016 (effects), BIP020 (array members)
 
-```babble preamble
+```babble
+;; babble preamble
 def I1 = interface ( def a : fn () : int )
 def I2 = interface ( def b : fn () : string )
 def C = class (def x : int) implements I1 (

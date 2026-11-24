@@ -3,7 +3,8 @@
 References : BIP002 (object model & interfaces), BIP008 (unions / casts), Values, Operators,
 JavaLinker, Overloads, BabbleInterface, BabbleInstance, BabbleType, BoundMethod, Supers
 
-```babble preamble
+```babble
+;; babble preamble
 def ju = import("java.util")
 def dyn = fn (v : any?) : any? -> ( v )
 def VBox = record (x : any?) ()

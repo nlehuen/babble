@@ -2,7 +2,8 @@
 
 References : `BIP007` (effects & purity), `BIP027` (`CallEffectAnalyzer`, `EffectBodyWalker`, `EffectSet`, `Purity`).
 
-```babble module=eff_exports.ba
+```babble
+;; babble module=eff_exports.ba
 export def x = 1
 export def mutCounter = 0
 mutCounter = 1
@@ -11,7 +12,8 @@ export def IoCons = class () implements java.util.function.Consumer of any (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v: int) (
     def inc = fn mut (): int -> ( this.v += 1 ; this.v )
 )
@@ -189,7 +191,8 @@ def sink: (fn (int): int)? = null
 def bad = fn io calling f (f: fn (int): int) -> ( sink = f )
 ```
 
-```error regex
+```error
+# error regex
 .*calling.*escapes.*|Borrowed parameter f escapes.*
 ```
 
@@ -545,19 +548,23 @@ def ntUniq = fn (): Box -> ( Box(1) )
 assert(pureThrow("3") == 3 and volFn() == 10 and ntUniq().v == 1)
 ```
 
-```hir -O1 fn=pureThrow check
+```hir
+;; hir -O1 fn=pureThrow check
 contains fn pureThrow
 ```
 
-```hir -O1 fn=volFn check
+```hir
+;; hir -O1 fn=volFn check
 contains fn volFn
 ```
 
-```hir -O1 fn=ioFn check
+```hir
+;; hir -O1 fn=ioFn check
 contains fn ioFn
 ```
 
-```hir -O1 fn=ntUniq check
+```hir
+;; hir -O1 fn=ntUniq check
 contains fn ntUniq
 ```
 
@@ -573,15 +580,18 @@ def b = Box(0)
 assert(mutThrowUniq(b, "4").v == 4 and mutThrowInt(b, "5") == 5 and SharedCls(2).leak().v == 2)
 ```
 
-```hir -O1 fn=mutThrowUniq check
+```hir
+;; hir -O1 fn=mutThrowUniq check
 contains fn mutThrowUniq
 ```
 
-```hir -O1 fn=mutThrowInt check
+```hir
+;; hir -O1 fn=mutThrowInt check
 contains fn mutThrowInt
 ```
 
-```hir -O1 fn=SharedCls.leak check
+```hir
+;; hir -O1 fn=SharedCls.leak check
 contains fn SharedCls.leak
 ```
 

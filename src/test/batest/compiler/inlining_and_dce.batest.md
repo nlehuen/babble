@@ -2,11 +2,13 @@
 
 References : BIP014-I2, org.babblelang.opt.hir.InlinePass, org.babblelang.opt.hir.HirDcePass
 
-```babble module=dce_mod.ba
+```babble
+;; babble module=dce_mod.ba
 export def val = 10
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def addMul = fn (a: int, b: int): int -> (
     def s = a + b
     def d = a - b
@@ -217,12 +219,14 @@ def caller = fn (x: int): int -> (
 assert(caller(5) == 21)
 ```
 
-```hir -O0 fn=caller check
+```hir
+;; hir -O0 fn=caller check
 count 3 (call-fn addMul
 contains (def dead
 ```
 
-```hir -O1 fn=caller check
+```hir
+;; hir -O1 fn=caller check
 !contains (call-fn addMul
 !contains (def dead
 !contains 99:int
@@ -241,12 +245,14 @@ assert(safeAdd(41) == 42)
 Warning : try block cannot throw; catch clause is unreachable
 ```
 
-```hir -O0 fn=safeAdd check
+```hir
+;; hir -O0 fn=safeAdd check
 contains (try
 contains (catch
 ```
 
-```hir -O1 fn=safeAdd
+```hir
+;; hir -O1 fn=safeAdd
 fn safeAdd (x:int) -> int {nothrow unique}
   (+:int var(x) 1:int)
 ```
@@ -265,7 +271,8 @@ assert(keepFinally(41) == 42 and log.toString() == "F")
 Warning : try block cannot throw; catch clause is unreachable
 ```
 
-```hir -O1 fn=keepFinally check
+```hir
+;; hir -O1 fn=keepFinally check
 contains (try
 !contains (catch
 contains (finally

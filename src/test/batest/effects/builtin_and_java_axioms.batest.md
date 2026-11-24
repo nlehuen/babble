@@ -2,13 +2,15 @@
 
 References : `BIP007` (effects & Java axioms), `BIP027` (`JavaEffectResolver`, `AxiomData`, `BuiltinAxioms`, `EffectModifiers`, `ModalKindTable`).
 
-```babble module=mod_tostring.ba
+```babble
+;; babble module=mod_tostring.ba
 export def ExtTag = class (def label: string) (
     def toString = fn nothrow (): string -> ( this.label )
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
 def APC = tests.EffectsTestCase.AnnotatedPureClass
@@ -51,7 +53,8 @@ assert(keepShared(MH(7)).value == 7)
 def badBorrow = fn (h: MHT): MHT -> ( HF.echoShared(h) )
 ```
 
-```error regex
+```error
+# error regex
 Borrowed parameter h escapes via .* : mark parameter as shared h
 ```
 

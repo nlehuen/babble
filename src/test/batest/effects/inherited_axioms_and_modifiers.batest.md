@@ -2,7 +2,8 @@
 
 References : `BIP007` (effects & modifiers), `BIP027` (`EffectChecker`, `EffectModifiers`, `AxiomData`, `JavaEffectResolver`).
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
 def MH = tests.EffectsTestCase.MutableHolder
@@ -287,7 +288,8 @@ Type error : expected nothrow (p0 : string) : java.lang.StringBuilder, got java.
 def f: fn (h: MHT): MHT = HF.echoShared
 ```
 
-```error regex
+```error
+# error regex
 Type error : expected \(h : .*MutableHolder\) : .*MutableHolder, got .*echoShared
 ```
 
@@ -297,7 +299,8 @@ Type error : expected \(h : .*MutableHolder\) : .*MutableHolder, got .*echoShare
 def f: fn (h: MHT, s: MHT): null = HF.mutateParam
 ```
 
-```error regex
+```error
+# error regex
 Type error : expected \(h : .*MutableHolder, s : .*MutableHolder\) : null, got .*mutateParam
 ```
 

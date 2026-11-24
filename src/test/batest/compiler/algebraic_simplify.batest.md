@@ -2,7 +2,8 @@
 
 References : BIP014-I2, org.babblelang.opt.hir.AlgebraicSimplifyPass
 
-```babble preamble
+```babble
+;; babble preamble
 def clamp = fn axiom pure nothrow idempotent (x: int): int -> (if x < 0 then (0) else (x))
 
 ;; Non-trailing return prevents InlinePass from inlining bigClamp in round 1 while staying pure/nothrow
@@ -171,17 +172,20 @@ def reassoc = fn (x: int): int -> ( (x + 1) + 2 )
 assert(simplify(7) == 7 and reassoc(5) == 8)
 ```
 
-```hir -O0 fn=simplify
+```hir
+;; hir -O0 fn=simplify
 fn simplify (x:int) -> int {nothrow idempotent unique}
   (+:int (*:int (block (+:int var(x) 0:int)) 1:int) (block (-:int var(x) var(x))))
 ```
 
-```hir -O1 fn=simplify
+```hir
+;; hir -O1 fn=simplify
 fn simplify (x:int) -> int {nothrow idempotent unique}
   var(x)
 ```
 
-```hir -O1 fn=reassoc
+```hir
+;; hir -O1 fn=reassoc
 fn reassoc (x:int) -> int {nothrow injective unique}
   (+:int var(x) 3:int)
 ```
@@ -196,24 +200,29 @@ def clean = fn (s: string): string -> ( s.trim().trim() )
 assert(norm(-5) == 5 and norm(3) == 3 and clean("  ok  ") == "ok")
 ```
 
-```hir -O0 fn=norm check
+```hir
+;; hir -O0 fn=norm check
 count 2 (call-fn bigClamp
 count 2 (jcall Math.abs
 ```
 
-```hir -O1 fn=norm stage=after:HirEGraphSimplify check
+```hir
+;; hir -O1 fn=norm stage=after:HirEGraphSimplify check
 count 1 (jcall Math.abs
 ```
 
-```hir -O1 fn=norm check
+```hir
+;; hir -O1 fn=norm check
 count 1 (jcall Math.abs
 ```
 
-```hir -O0 fn=clean check
+```hir
+;; hir -O0 fn=clean check
 count 2 (jcall String.trim
 ```
 
-```hir -O1 fn=clean check
+```hir
+;; hir -O1 fn=clean check
 count 1 (jcall String.trim
 ```
 
@@ -224,7 +233,8 @@ def add3 = fn (x: double): double -> ( x + 1.0 + 2.0 )
 assert(add3(1.0) == 4.0 and java.lang.Double.isNaN(add3(java.lang.Double.NaN)))
 ```
 
-```hir -O0,-O1 fn=add3
+```hir
+;; hir -O0,-O1 fn=add3
 fn add3 (x:double) -> double {nothrow monotone unique}
   (+:double (+:double var(x) 1.0:double) 2.0:double)
 ```
@@ -238,7 +248,8 @@ def negNarrow = fn (b: byte, s: short): int -> ( ((-b) + 0) + ((-s) + 0) )
 assert(dblNegI(7) == 7 and dblNegL(-9L) == -9L and negNarrow(byte(3), short(4)) == -7)
 ```
 
-```hir -O1 fn=dblNegI
+```hir
+;; hir -O1 fn=dblNegI
 fn dblNegI (x:int) -> int {nothrow idempotent injective unique}
   var(x)
 ```
@@ -252,17 +263,20 @@ def trimCat = fn (s: string): string -> ( ((s + "a") + "b").trim() )
 assert(eqSimp(true, true) and neqSimp(true, false) and trimCat("  x") == "xab")
 ```
 
-```hir -O1 fn=eqSimp check
+```hir
+;; hir -O1 fn=eqSimp check
 !contains (not
 contains (==:bool var(a) var(b))
 ```
 
-```hir -O1 fn=neqSimp check
+```hir
+;; hir -O1 fn=neqSimp check
 !contains (not
 contains (<>:bool var(a) var(b))
 ```
 
-```hir -O1 fn=trimCat check
+```hir
+;; hir -O1 fn=trimCat check
 contains (jcall String.trim
 contains "ab"
 ```

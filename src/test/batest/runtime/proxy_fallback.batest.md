@@ -2,7 +2,8 @@
 
 References : BIP002 (Java interface bridges & SAM adapters), JavaTypes, Faces, JavaDefaultCall
 
-```babble preamble
+```babble
+;; babble preamble
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def ju = import("java.util")
 def juf = import("java.util.function")

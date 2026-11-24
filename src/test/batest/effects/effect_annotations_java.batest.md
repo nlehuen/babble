@@ -2,7 +2,8 @@
 
 References : BIP007, BIP016, BIP019, EffectChecker
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
 def APC = tests.EffectsTestCase.AnnotatedPureClass
