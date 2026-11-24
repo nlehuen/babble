@@ -31,6 +31,21 @@ checkBool(true)
 checkBool(false)
 ```
 
+```hir
+;; hir -O0 fn=checkBool check
+contains (not (block (not var(b))))
+contains (==:bool var(b) true:bool)
+contains (<>:bool false:bool var(b))
+```
+
+```hir
+;; hir -O1 fn=checkBool check
+!contains true:bool
+!contains false:bool
+contains (==:bool var(b) var(b))
+contains (==:bool (not var(b)) (not var(b)))
+```
+
 ## Case 2
 
 ```babble
@@ -42,6 +57,20 @@ def checkInt = fn (x: int, eAdd0: int, eAddC: int, eMul: int) -> (
 )
 checkInt(-5, -10, -2, -55)
 checkInt(3, 6, 14, 33)
+```
+
+```hir
+;; hir -O0 fn=checkInt check
+contains (+:int var(x) 0:int)
+contains (-:int var(x) var(x))
+contains (*:int var(x) 0:int)
+```
+
+```hir
+;; hir -O1 fn=checkInt check
+contains (+:int (+:int var(x) var(x)) 8:int)
+contains (+:int var(x) (neg var(x)))
+contains (*:int var(x) 6:int)
 ```
 
 ## Case 3
@@ -57,6 +86,20 @@ checkLong(4L, 8L, 16L, 44L)
 checkLong(-2L, -4L, 4L, -22L)
 ```
 
+```hir
+;; hir -O0 fn=checkLong check
+contains (+:long var(lx) 0:long)
+contains (-:long var(lx) var(lx))
+contains (*:long var(lx) 0:long)
+```
+
+```hir
+;; hir -O1 fn=checkLong check
+contains (+:long (+:long var(lx) var(lx)) 8:long)
+contains (+:long var(lx) (neg var(lx)))
+contains (*:long var(lx) 6:long)
+```
+
 ## String reassociation and IEEE-754 preservation (NaN * 0.0 != 0.0, no float/double reassociation)
 
 ```babble
@@ -68,6 +111,19 @@ def checkStrIeee = fn (s: string, d: double, expStr: string, expNan: bool) -> (
 )
 checkStrIeee("  ok ", java.lang.Double.NaN, "  ok ab", true)
 checkStrIeee("hi", -0.0, "hiab", false)
+```
+
+```hir
+;; hir -O0 fn=checkStrIeee check
+contains (+:obj (block (+:obj var(s) "a")) "b")
+contains (*:double var(d) 0.0:double)
+```
+
+```hir
+;; hir -O1 fn=checkStrIeee check
+contains (+:obj var(s) "ab")
+contains (*:double var(d) 0.0:double)
+contains (+:double (+:double var(d) 1.0:double) 2.0:double)
 ```
 
 ## Idempotent Babble (inlined and non-inlined) and Math.abs calls
@@ -82,6 +138,19 @@ checkIntIdem(-5, 0, 5)
 checkIntIdem(3, 3, 3)
 ```
 
+```hir
+;; hir -O0 fn=checkIntIdem check
+contains (call-fn clamp (call-fn clamp var(x)))
+contains (jcall Math.abs (jcall Math.abs var(x)))
+```
+
+```hir
+;; hir -O1 fn=checkIntIdem check
+!contains (call-fn clamp
+!contains (call-fn bigClamp
+count 1 (jcall Math.abs var(x))
+```
+
 ## Idempotent Math.floor preserving NaN and IEEE-754 -0.0 (checked by raw bits since +0.0 == -0.0)
 
 ```babble
@@ -92,6 +161,17 @@ def checkFloor = fn (d: double) -> (
 )
 checkFloor(java.lang.Double.NaN)
 checkFloor(-0.0)
+```
+
+```hir
+;; hir -O0 fn=checkFloor check
+count 2 (jcall Math.floor
+```
+
+```hir
+;; hir -O1 fn=checkFloor check
+count 1 (jcall Math.floor
+contains (def fl (jcall Math.floor var(d)))
 ```
 
 ## Idempotent String.trim and Character.toLowerCase calls
@@ -106,11 +186,35 @@ checkStrIdem("  ok ", 'B', "ok", 'b')
 checkStrIdem("hi", 'Z', "hi", 'z')
 ```
 
+```hir
+;; hir -O0 fn=checkStrIdem check
+count 2 (jcall String.trim
+```
+
+```hir
+;; hir -O1 fn=checkStrIdem check
+count 1 (jcall String.trim
+contains (jcall String.trim var(s))
+```
+
 ## Impure operands must not be dropped by * 0 or reordered
 
 ```babble
 def r = (bump() * 0) + (0 * bump()) + (1 + bump()) + (2 * bump())
 assert(r == 12 and tick == 4)
+```
+
+```hir
+;; hir -O0 top-level check
+count 4 (call-fn bump)
+contains (block (*:int (call-fn bump) 0:int))
+```
+
+```hir
+;; hir -O1 top-level check
+count 4 (call-fn bump)
+contains (*:int (call-fn bump) 0:int)
+contains (*:int 0:int (call-fn bump))
 ```
 
 ## Non-constant inner RHS does not reassociate; non-matching idempotent calls stay intact
@@ -121,6 +225,19 @@ def checkNonReassoc = fn (x: int, y: int, s: string, t: string) -> (
     assert(clamp(bigClamp(x)) == 2)
 )
 checkNonReassoc(2, 3, "a", "b")
+```
+
+```hir
+;; hir -O0 fn=checkNonReassoc check
+contains (+:int (block (+:int var(x) var(y))) 2:int)
+contains (call-fn clamp (call-fn bigClamp var(x)))
+```
+
+```hir
+;; hir -O1 fn=checkNonReassoc check
+contains (+:int (+:int var(x#1) var(y)) 2:int)
+contains (*:int (*:int var(x#1) var(y)) 3:int)
+contains (+:obj (+:obj var(s) var(t)) "!")
 ```
 
 ## Widened idempotent Java call (wideningRank >= 0) and non-prefix Babble idempotent call stay intact
@@ -135,6 +252,18 @@ def checkGuard = fn (x: int) -> (
 checkGuard(-5)
 ```
 
+```hir
+;; hir -O0 fn=checkGuard check
+count 2 (jcall Math.abs
+count 2 (call-fn lateClamp
+```
+
+```hir
+;; hir -O1 fn=checkGuard check
+count 1 (jcall Math.abs
+count 2 name(lateClamp)
+```
+
 ## Non-dropping idempotent collapse on impure arguments (`f(f(impure())) -> f(impure())`)
 
 ```babble
@@ -145,11 +274,38 @@ def s = bumpStr().trim().trim()
 assert(a == 0 and b == 8 and s == "ok" and tick == 3)
 ```
 
+```hir
+;; hir -O0 top-level check
+count 2 (call-fn bigClamp
+count 2 (jcall Math.abs
+count 2 (jcall String.trim
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (call-fn bigClamp
+count 1 (jcall Math.abs
+count 1 (jcall String.trim
+```
+
 ## Non-dropping arithmetic identities with impure operands (`e + 0`, `0 + e`, `e - 0`, `e * 1`, `1 * e`)
 
 ```babble
 def r = (bump() + 0) + (0 + bump()) + (bump() - 0) + (bump() * 1) + (1 * bump())
 assert(r == 15 and tick == 5)
+```
+
+```hir
+;; hir -O0 top-level check
+count 5 (call-fn bump)
+contains (+:int (call-fn bump) 0:int)
+contains (*:int 1:int (call-fn bump))
+```
+
+```hir
+;; hir -O1 top-level check
+count 5 (call-fn bump)
+contains (def r (+:int (+:int (+:int (+:int (call-fn bump) (call-fn bump)) (call-fn bump)) (call-fn bump)) (call-fn bump)))
 ```
 
 ## Idempotent collapse on complex deterministic expressions (HirPurity.isDeterministic)
@@ -162,6 +318,18 @@ def checkDet = fn (arr: array of int, s: string, flag: bool): int -> (
     a + b
 )
 assert(checkDet((array of int).of(1, 2), "abc", true) == 7)
+```
+
+```hir
+;; hir -O0 fn=checkDet check
+count 2 (call-fn bigClamp
+count 2 (jcall Math.abs
+```
+
+```hir
+;; hir -O1 fn=checkDet check
+!contains (call-fn bigClamp
+count 1 (jcall Math.abs
 ```
 
 ## Canonical HIR golden : algebraic identities and integer reassociation (-O0 vs -O1)
@@ -249,9 +417,27 @@ assert(dblNegI(7) == 7 and dblNegL(-9L) == -9L and negNarrow(byte(3), short(4)) 
 ```
 
 ```hir
+;; hir -O0 fn=dblNegI
+fn dblNegI (x:int) -> int {nothrow idempotent injective unique}
+  (neg (block (neg var(x))))
+```
+
+```hir
 ;; hir -O1 fn=dblNegI
 fn dblNegI (x:int) -> int {nothrow idempotent injective unique}
   var(x)
+```
+
+```hir
+;; hir -O0 fn=negNarrow
+fn negNarrow (b:byte, s:short) -> int {nothrow unique}
+  (+:int (block (+:int (block (neg var(b))) 0:int)) (block (+:int (block (neg var(s))) 0:int)))
+```
+
+```hir
+;; hir -O1 fn=negNarrow
+fn negNarrow (b:byte, s:short) -> int {nothrow unique}
+  (+:int (neg var(b)) (neg var(s)))
 ```
 
 ## E-graph rebuild of boolean EQ/NEQ and non-static String.trim receiver
@@ -264,15 +450,33 @@ assert(eqSimp(true, true) and neqSimp(true, false) and trimCat("  x") == "xab")
 ```
 
 ```hir
+;; hir -O0 fn=eqSimp check
+count 2 (not
+```
+
+```hir
 ;; hir -O1 fn=eqSimp check
 !contains (not
 contains (==:bool var(a) var(b))
 ```
 
 ```hir
+;; hir -O0 fn=neqSimp check
+count 2 (not
+```
+
+```hir
 ;; hir -O1 fn=neqSimp check
 !contains (not
 contains (<>:bool var(a) var(b))
+```
+
+```hir
+;; hir -O0 fn=trimCat check
+contains (jcall String.trim
+contains "a"
+contains "b"
+!contains "ab"
 ```
 
 ```hir
@@ -294,6 +498,20 @@ def lv = (bumpL() + 0L) + (0L + bumpL()) + (bumpL() - 0L) + (0L - bumpL()) + (bu
 assert(b1 and b2 and b3 and lv == 8L and tick == 9)
 ```
 
+```hir
+;; hir -O0 top-level check
+contains (def b1 (not (block (not (call-fn bumpBool)))))
+contains (+:long (call-fn bumpL) 0:long)
+count 6 (call-fn bumpL)
+```
+
+```hir
+;; hir -O1 top-level check
+contains (def b1 (call-fn bumpBool))
+!contains (+:long (call-fn bumpL) 0:long)
+count 6 (call-fn bumpL)
+```
+
 ## Idempotent Java eligibility guards : axiom String.toUpperCase and String.toLowerCase with arg
 
 ```babble
@@ -303,6 +521,12 @@ def f = fn (s: string): bool -> (
     s.toUpperCase().toUpperCase() == "AB" and s.toLowerCase(java.util.Locale.ROOT) == "ab"
 )
 assert(f("Ab"))
+```
+
+```hir
+;; hir -O0,-O1 fn=f
+fn f (s:obj) -> bool {pure unique}
+  (and (==:bool (jcall String.toUpperCase (jcall String.toUpperCase var(s))) "AB") (==:bool (jcall String.toLowerCase var(s) (get-jfield Locale.ROOT)) "ab"))
 ```
 
 ## Mismatched nested static and instance idempotent Java calls on impure args
@@ -315,6 +539,12 @@ def f = fn io (): bool -> (
     java.lang.Math.abs(java.lang.Math.floor(bumpD())) == 3.0 and bumpS().toUpperCase().trim() == "AB"
 )
 assert(f() and tick == 2)
+```
+
+```hir
+;; hir -O0,-O1 fn=f
+fn f () -> bool {io}
+  (and (==:bool (jcall Math.abs (jcall Math.floor (call-fn bumpD))) 3.0:double) (==:bool (jcall String.trim (jcall String.toUpperCase (call-fn bumpS))) "AB"))
 ```
 
 ## Widened E-graph roots and children inside idempotent Babble calls
@@ -330,4 +560,15 @@ def f = fn (x: int, y: int): double -> (
 assert(f(2, 3) == 15.0)
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (call-fn bigClamp var(x))
+count 3 (call-fn bigClampD
+```
 
+```hir
+;; hir -O1 fn=f check
+!contains (call-fn bigClamp
+!contains (call-fn bigClampD
+contains (+:double (neg var(x)) 1.0:double)
+```

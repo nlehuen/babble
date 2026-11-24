@@ -50,6 +50,12 @@ assert(ss.size() == 3 and ss.first() == 1 and ss.last() == 3)
 assert(sm.size() == 2 and sm.firstKey() == "a" and sm.get("b") == 2)
 ```
 
+```hir
+;; hir -O0,-O1 top-level check
+contains (def ss (core-new sortedset from=(core-new list 3:int 1:int 2:int)))
+contains (def sm (core-new sortedmap from=(core-new map (core-new entry "b" 2:int) (core-new entry "a" 1:int))))
+```
+
 ## Core sortedset and sortedmap from-plus-comparator in both argument orders
 
 ```babble
@@ -60,6 +66,14 @@ def ss2 = sortedset(comparator: revInt, from: xs)
 def sm1 = sortedmap(from: m, comparator: revStr)
 def sm2 = sortedmap(comparator: revStr, from: m)
 assert(ss1.first() == 3 and ss2.first() == 3 and sm1.firstKey() == "c" and sm2.firstKey() == "c")
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (def ss1 (core-new sortedset from=name(xs) comparator=(java-sam Comparator name(revInt))))
+contains (def ss2 (core-new sortedset comparator=(java-sam Comparator name(revInt)) from=name(xs)))
+contains (def sm1 (core-new sortedmap from=name(m) comparator=(java-sam Comparator name(revStr))))
+contains (def sm2 (core-new sortedmap comparator=(java-sam Comparator name(revStr)) from=name(m)))
 ```
 
 ## Cross-module direct overloaded operator, optional spec method, and >8-param fallback
@@ -74,6 +88,14 @@ assert(v.tag("v") == "v:10")
 assert(v.sum9(1, 2, 3, 4, 5, 6, 7, 8, 9) == 55)
 ```
 
+```hir
+;; hir -O0,-O1 top-level check
+contains (def v (record-new ext_ops$ba$C0$Vec 10:int))
+contains (call-method name(v).inc 2:int)
+contains (call-method name(v).tag "v")
+contains (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int)
+```
+
 ## Cross-module definite and non-definite field reads plus transitive interface hierarchy
 
 ```babble
@@ -82,6 +104,22 @@ def hm = import("hier_mid.ba")
 def lb = eo.LateBox()
 def Impl = class () implements hm.A2 ()
 assert(eo.Vec(7).x == 7 and lb.init == 1 and lb.late == 42 and Impl().a2() == 3)
+```
+
+```hir
+;; hir -O0 top-level check
+contains (get-this-field x)
+contains (select name(lb).init)
+contains (select name(lb).late)
+contains (call (select (call name(Impl)).a2))
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (get-this-field x)
+contains (select name(lb).init)
+contains (select name(lb).late)
+contains (call (select (call name(Impl)).a2))
 ```
 
 ## Dynamic function-typed call with >8 arguments (positional and named)
@@ -96,6 +134,12 @@ def call9 = fn (g: fn (a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, i
 assert(call9(sum9) == 91)
 ```
 
+```hir
+;; hir -O0,-O1 fn=call9
+fn call9 (g:obj) -> int {pure unique}
+  (+:int (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int i=10:int))
+```
+
 ## Overload direct >8-param alternative and anonymous inline overload call
 
 ```babble
@@ -105,6 +149,20 @@ def big = overload (
 )
 assert(big(1, 2, 3, 4, 5, 6, 7, 8, 9) == 10 and big("abc") == 3)
 assert((overload ( fn (x : int) : int -> ( x + 1 ), fn (s : string) : int -> ( s.length() ) ))(5) == 6)
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int)
+contains (call-fn big#2 "abc")
+contains (call-fn <anon#0> 5:int)
+```
+
+```hir
+;; hir -O1 top-level check
+contains (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int)
+!contains (call-fn big#2
+!contains (call-fn <anon#0>
 ```
 
 ## Union-split overload dispatch with optional primitive and reference defaults
@@ -118,6 +176,12 @@ def run = fn (u : int | string) : int | string -> ( f(u) )
 assert(run(5) == 15 and run("hi") == "hi!")
 ```
 
+```hir
+;; hir -O0,-O1 fn=run
+fn run (u:obj) -> obj {nothrow unique}
+  (overload-dispatch name(f) var(u))
+```
+
 ## Union-split overload dispatch with rest parameters on reference and primitive branches
 
 ```babble
@@ -127,6 +191,12 @@ def g = overload (
 )
 def runG = fn (u : int | string) : int | string -> ( g(u) )
 assert(runG(3) == 3 and runG("a") == "a")
+```
+
+```hir
+;; hir -O0,-O1 fn=runG
+fn runG (u:obj) -> obj {nothrow unique}
+  (overload-dispatch name(g) var(u))
 ```
 
 ## Union-split overloaded class method exercising rest and trailing optional params
@@ -142,6 +212,12 @@ def run = fn (bx : Box, u : int | string) : int | string -> ( bx.m(u) )
 assert(run(Box(), 4) == 7 and run(Box(), "hi") == "hi")
 ```
 
+```hir
+;; hir -O0,-O1 fn=run
+fn run (bx:obj, u:obj) -> obj {nothrow unique}
+  (overload-dispatch (select var(bx).m) var(u))
+```
+
 ## Union-split overloaded class method with middle omitted optional param
 
 ```babble
@@ -153,6 +229,12 @@ def Box = class () (
 )
 def run = fn (bx : Box, u : int | string) : int | string -> ( bx.m(u, b: 10) )
 assert(run(Box(), 4) == 15 and run(Box(), "hi") == "hi:11")
+```
+
+```hir
+;; hir -O0,-O1 fn=run
+fn run (bx:obj, u:obj) -> obj {nothrow unique}
+  (overload-dispatch (select var(bx).m) var(u) 10:int)
 ```
 
 ## Overloaded interface method with named arg, omitted optional arg, and safe call
@@ -169,6 +251,16 @@ def iv: IOv = C() ; def opt: C? = C()
 assert(iv.calc(x: 5) == 15 and iv.calc(5) == 15 and opt?.calc(x: 2) == 12)
 ```
 
+```hir
+;; hir -O0,-O1 interface=IOv
+interface IOv
+  (def calc (overload (fn-ref calc#1) (fn-ref calc#2)))
+  fn calc (x:int, step:int=10:int) -> int {pure}
+    (+:int var(x) var(step))
+  fn calc (s:obj) -> int {pure}
+    (jcall String.length var(s))
+```
+
 ## Overloaded interface operator method
 
 ```babble
@@ -178,6 +270,16 @@ def IOv = interface (
 def C = class () implements IOv ()
 def iv: IOv = C()
 assert((iv + 4) == 5 and (iv + "hi") == 2)
+```
+
+```hir
+;; hir -O0,-O1 interface=IOv
+interface IOv
+  (def plus (overload (fn-ref plus#1) (fn-ref plus#2)))
+  fn plus (n:int) -> int {pure}
+    (+:int var(n) 1:int)
+  fn plus (s:obj) -> int {pure}
+    (jcall String.length var(s))
 ```
 
 ## Non-accessible Java SAM spread into Iterable (asIterableByName)
@@ -190,6 +292,16 @@ def fns = list(fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x * 2 ))
 assert(takeIt(...fns) == 13)
 ```
 
+```hir
+;; hir -O0,-O1 fn=takeIt
+fn takeIt (xs:obj) -> int {io}
+  (def n 0:int)
+  (for x in var(xs)
+    (block
+      (set n += (call (select (select name(tests).JavaClassDemo).invokeHiddenSam) var(x) 4:int))))
+  var(n)
+```
+
 ## Non-accessible Java SAM spread into List (asListByName)
 
 ```babble
@@ -198,6 +310,12 @@ def takeL = fn io (shared xs: list of tests.JavaClassDemo.HiddenIntSam): int -> 
 )
 def fns = list(fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x * 2 ))
 assert(takeL(...fns) == 6)
+```
+
+```hir
+;; hir -O0,-O1 fn=takeL
+fn takeL (xs:obj) -> int {io}
+  (call (select (select name(tests).JavaClassDemo).invokeHiddenSam) (jcall List.get var(xs) 0:int) 5:int)
 ```
 
 ## Non-accessible Java SAM spread into Object-erased array
@@ -210,6 +328,12 @@ def fns = list(fn (x: int): int -> ( x + 3 ))
 assert(takeArr(...fns) == 9)
 ```
 
+```hir
+;; hir -O0,-O1 fn=takeArr
+fn takeArr (xs:obj) -> int {io}
+  (call (select (select name(tests).JavaClassDemo).invokeHiddenSerializable) (array-op GET var(xs) 0:int) 6:int)
+```
+
 ## Non-accessible Java SAM spread into hidden-marker list
 
 ```babble
@@ -218,4 +342,10 @@ def takeMk = fn (xs: list of (tests.JavaClassDemo.SameSigRunnable & tests.JavaCl
 )
 def runs = list(fn () -> ())
 assert(takeMk(...runs) == 1)
+```
+
+```hir
+;; hir -O0,-O1 fn=takeMk
+fn takeMk (xs:obj) -> int {nothrow unique}
+  (jcall List.size var(xs))
 ```

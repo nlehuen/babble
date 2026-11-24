@@ -30,6 +30,31 @@ def fNegD = fn (x: double): double -> ( x + (-(2.5)) )
 assert(not fNotT(true) and fNotF(false) and fNotN(false) and fNegF(2.5f) == 1.0f and fNegD(3.5) == 1.0)
 ```
 
+```hir
+;; hir -O0 fn=fNotN
+fn fNotN (b:bool) -> bool {nothrow idempotent unique}
+  (def o null)
+  (or var(b) (block (not var(o))))
+```
+
+```hir
+;; hir -O1 fn=fNotN
+fn fNotN (b:bool) -> bool {nothrow idempotent unique}
+  (or var(b) true:bool)
+```
+
+```hir
+;; hir -O0 fn=fNegF
+fn fNegF (x:float) -> float {nothrow monotone unique}
+  (+:float var(x) (block (neg (block 1.5:float))))
+```
+
+```hir
+;; hir -O1 fn=fNegF
+fn fNegF (x:float) -> float {nothrow monotone unique}
+  (+:float var(x) -1.5:float)
+```
+
 ## EGraph.foldBinary : boolean logic, non-string STR_ADD, and long subtraction
 
 ```babble
@@ -41,12 +66,48 @@ def fLSub = fn (x: long): long -> (x + (10L - 3L))
 assert(not fAnd(true) and fOr(false) and fLogN(true) and fStrN("x") == "xa1" and fLSub(1L) == 8L)
 ```
 
+```hir
+;; hir -O0 fn=fLSub
+fn fLSub (x:long) -> long {nothrow injective unique}
+  (+:long var(x) (block (-:long 10:long 3:long)))
+```
+
+```hir
+;; hir -O1 fn=fLSub
+fn fLSub (x:long) -> long {nothrow injective unique}
+  (+:long var(x) 7:long)
+```
+
+```hir
+;; hir -O0 fn=fAnd
+fn fAnd (b:bool) -> bool {nothrow idempotent unique}
+  (and var(b) (block (and true:bool false:bool)))
+```
+
+```hir
+;; hir -O1 fn=fAnd
+fn fAnd (b:bool) -> bool {nothrow idempotent unique}
+  (and var(b) false:bool)
+```
+
 ## EGraph.foldBinary : float and double arithmetic folding
 
 ```babble
 def fFlt = fn (x: float): float -> ( x + (1.5f + 2.5f) + (5.5f - 2.5f) + (2.0f * 3.0f) + (6.0f / 2.0f) )
 def fDbl = fn (x: double): double -> ( x + (5.5 - 2.5) + (2.0 * 3.0) + (6.0 / 2.0) )
 assert(fFlt(0.0f) == 16.0f and fDbl(0.0) == 12.0)
+```
+
+```hir
+;; hir -O0 fn=fFlt
+fn fFlt (x:float) -> float {nothrow monotone unique}
+  (+:float (+:float (+:float (+:float var(x) (block (+:float 1.5:float 2.5:float))) (block (-:float 5.5:float 2.5:float))) (block (*:float 2.0:float 3.0:float))) (block (/:float 6.0:float 2.0:float)))
+```
+
+```hir
+;; hir -O1 fn=fFlt
+fn fFlt (x:float) -> float {nothrow monotone unique}
+  (+:float (+:float (+:float (+:float var(x) 4.0:float) 3.0:float) 6.0:float) 3.0:float)
 ```
 
 ## EGraph.foldComparison : bool, char, and string constant comparisons
@@ -58,12 +119,38 @@ def fStr = fn (b: bool): bool -> ( b and not ("a" == "b") )
 assert(fBool(true) and fChar(true) and fStr(true))
 ```
 
+```hir
+;; hir -O0 fn=fChar check
+contains (<:bool 'a' 'b')
+contains (<>:bool 'a' 'b')
+```
+
+```hir
+;; hir -O1 fn=fChar
+fn fChar (b:bool) -> bool {nothrow idempotent unique}
+  (and (and (and (and (and (and var(b) true:bool) true:bool) true:bool) true:bool) true:bool) true:bool)
+```
+
 ## EGraph.foldComparison and numericOrder : byte, short, int, long, float, and double comparisons
 
 ```babble
 def fByteShort = fn (b: bool): bool -> ( def x: byte = 1 ; def y: short = 2 ; b and (x < y) and (y > x) )
 def fWide = fn (b: bool): bool -> ( b and (1 < 2L) and (2L > 1) and (1L <= 2L) and (1.5f < 2.5f) and (2.5 > 1.5) and (2.5 >= 1L) )
 assert(fByteShort(true) and fWide(true))
+```
+
+```hir
+;; hir -O0 fn=fByteShort
+fn fByteShort (b:bool) -> bool {nothrow idempotent unique}
+  (def x 1:byte)
+  (def y 2:short)
+  (and (and var(b) (block (<:bool var(x) var(y)))) (block (>:bool var(y) var(x))))
+```
+
+```hir
+;; hir -O1 fn=fByteShort
+fn fByteShort (b:bool) -> bool {nothrow idempotent unique}
+  (and (and var(b) true:bool) true:bool)
 ```
 
 ## ENode : repeated float literal equality, non-integral asIntegralLong, and non-bool asBool
@@ -74,6 +161,18 @@ def fCharMin = fn (c: char): char -> ( if c < 'a' then ('a') else (c) )
 def fByteMin = fn (b: byte): byte -> ( if b < byte(0) then (byte(0)) else (b) )
 def fIntCond = fn (a: int, b: int): int -> ( if 1 then (a) else (b) )
 assert(fFltDup(1.0f) == 4.0f and fCharMin('A') == 'a' and fByteMin(byte(-1)) == byte(0) and fIntCond(3, 4) == 3)
+```
+
+```hir
+;; hir -O0 fn=fIntCond
+fn fIntCond (a:int, b:int) -> int {nothrow associative monotone}
+  (if 1:int (block var(a)) (block var(b)))
+```
+
+```hir
+;; hir -O1 fn=fIntCond
+fn fIntCond (a:int, b:int) -> int {nothrow associative monotone}
+  var(a)
 ```
 
 ## AlgebraicRules.booleanLogicAndEqRules : boolean identities and annihilators
@@ -87,12 +186,48 @@ def bOrId = fn (b: bool): bool -> ( false or (b or false) )
 assert(bIdL(true) and bIdR(true) and not bAnnL(true) and bAnnR(false) and bOrId(true))
 ```
 
+```hir
+;; hir -O0 fn=bIdL
+fn bIdL (b:bool) -> bool {nothrow idempotent unique}
+  (and true:bool var(b))
+```
+
+```hir
+;; hir -O1 fn=bIdL
+fn bIdL (b:bool) -> bool {nothrow idempotent unique}
+  var(b)
+```
+
+```hir
+;; hir -O0 fn=bAnnL
+fn bAnnL (b:bool) -> bool {nothrow idempotent unique}
+  (and false:bool var(b))
+```
+
+```hir
+;; hir -O1 fn=bAnnL
+fn bAnnL (b:bool) -> bool {nothrow idempotent unique}
+  false:bool
+```
+
 ## AlgebraicRules.booleanLogicAndEqRules : De Morgan laws on and/or
 
 ```babble
 def dmAnd = fn (a: bool, b: bool): bool -> ( not (a and b) )
 def dmOr = fn (a: bool, b: bool): bool -> ( not (a or b) )
 assert(dmAnd(true, false) and not dmAnd(true, true) and dmOr(false, false) and not dmOr(true, false))
+```
+
+```hir
+;; hir -O0 fn=dmAnd
+fn dmAnd (a:bool, b:bool) -> bool {nothrow commutative unique}
+  (not (block (and var(a) var(b))))
+```
+
+```hir
+;; hir -O1 fn=dmAnd
+fn dmAnd (a:bool, b:bool) -> bool {nothrow commutative unique}
+  (not (and var(a) var(b)))
 ```
 
 ## AlgebraicRules.negateExactComparison : ordering ops on exact-ordered integers
@@ -105,6 +240,18 @@ def nGte = fn (a: int, b: int): bool -> ( not (a >= b) )
 assert(nLt(3, 2) and nLte(3, 2) and nGt(1, 2) and nGte(1, 2))
 ```
 
+```hir
+;; hir -O0 fn=nLt
+fn nLt (a:int, b:int) -> bool {nothrow unique}
+  (not (block (<:bool var(a) var(b))))
+```
+
+```hir
+;; hir -O1 fn=nLt
+fn nLt (a:int, b:int) -> bool {nothrow unique}
+  (not (<:bool var(a) var(b)))
+```
+
 ## AlgebraicRules.negateExactComparison : equality ops and byte/short/char vs double
 
 ```babble
@@ -113,6 +260,18 @@ def nNeq = fn (a: int, b: int): bool -> ( not (a != b) )
 def nByte = fn (a: byte, b: byte): bool -> ( not (a < b) )
 def nShort = fn (a: short, b: short): bool -> ( not (a <= b) )
 assert(nEq(1, 2) and nNeq(2, 2) and nByte(byte(2), byte(1)) and nShort(short(2), short(1)))
+```
+
+```hir
+;; hir -O0 fn=nEq
+fn nEq (a:int, b:int) -> bool {nothrow commutative unique}
+  (not (block (==:bool var(a) var(b))))
+```
+
+```hir
+;; hir -O1 fn=nEq
+fn nEq (a:int, b:int) -> bool {nothrow commutative unique}
+  (not (==:bool var(a) var(b)))
 ```
 
 ## AlgebraicRules.isExactOrderedClass : char vs double and mixed int-double comparisons
@@ -124,6 +283,18 @@ def nMix = fn (a: int, b: int): bool -> ( not (a < 1.5) and not (b < 1.5) )
 assert(nChar('a', 'b') and nDbl(2.0, 1.0) and nMix(2, 3))
 ```
 
+```hir
+;; hir -O0 fn=nMix
+fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
+  (and (not (block (<:bool var(a) 1.5:double))) (not (block (<:bool var(b) 1.5:double))))
+```
+
+```hir
+;; hir -O1 fn=nMix
+fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
+  (and (not (<:bool var(a) 1.5:double)) (not (<:bool var(b) 1.5:double)))
+```
+
 ## AlgebraicRules.iteAndOrderRules : equal branches, positive-guard abs, and non-neg guard
 
 ```babble
@@ -133,12 +304,38 @@ def notAbs = fn (x: int): int -> ( if x >= 0 then (x) else (0) )
 assert(sameBr(2, 3) == 5 and absPos(-4) == 4 and notAbs(-4) == 0)
 ```
 
+```hir
+;; hir -O0 fn=sameBr
+fn sameBr (a:int, b:int) -> int {nothrow commutative associative}
+  (if (<:bool var(a) var(b)) (block (+:int var(a) var(b))) (block (+:int var(b) var(a))))
+```
+
+```hir
+;; hir -O1 fn=sameBr
+fn sameBr (a:int, b:int) -> int {nothrow commutative associative}
+  (if (<:bool var(a) var(b)) (+:int var(a) var(b)) (+:int var(b) var(a)))
+```
+
 ## AlgebraicRules.iteAndOrderRules : nested same-cond ITE and two-sided lattice clamp
 
 ```babble
 def nestT = fn (x: int): int -> ( if x < 0 then (if x < 0 then (0) else (1)) else (x) )
 def band = fn (x: int): int -> ( def lo = if x < 0 then (0) else (x) ; if lo > 10 then (10) else (lo) )
 assert(nestT(-2) == 0 and nestT(3) == 3 and band(15) == 10 and band(-2) == 0)
+```
+
+```hir
+;; hir -O0 fn=band
+fn band (x:int) -> int {nothrow idempotent monotone}
+  (def lo (if (<:bool var(x) 0:int) (block 0:int) (block var(x))))
+  (if (>:bool var(lo) 10:int) (block 10:int) (block var(lo)))
+```
+
+```hir
+;; hir -O1 fn=band
+fn band (x:int) -> int {nothrow idempotent monotone}
+  (def lo (if (<:bool var(x) 0:int) 0:int var(x)))
+  (if (>:bool var(lo) 10:int) 10:int var(lo))
 ```
 
 ## AlgebraicRules.callAlgebraicRules : same-arg commutative, mismatched associative, and unary idempotent
@@ -152,6 +349,20 @@ def u2 = fn (a: int, b: int): int -> ( cAdd(cAlt(a, b), a) )
 assert(u1(3) == 6 and u2(2, 3) == 7)
 ```
 
+```hir
+;; hir -O0 fn=u1
+fn u1 (x:int) -> int {nothrow unique}
+  (call-fn idC (call-fn cAdd var(x) var(x)))
+```
+
+```hir
+;; hir -O1 fn=u1
+fn u1 (x:int) -> int {nothrow unique}
+  (block
+    (def x#2 (+:int var(x#1) var(x#1)))
+    (if (<:bool var(x#2) 0:int) 0:int var(x#2)))
+```
+
 ## AlgebraicRules.floatingCommutativityRules : negated double product and double float negation
 
 ```babble
@@ -159,6 +370,18 @@ def fMul = fn (a: double, b: double): double -> ( (-a) * (-b) )
 def fNeg = fn (x: float): float -> ( -(-x) )
 def dNeg = fn (x: double): double -> ( -(-x) )
 assert(fMul(2.0, 3.0) == 6.0 and fNeg(1.5f) == 1.5f and dNeg(2.5) == 2.5)
+```
+
+```hir
+;; hir -O0 fn=fMul
+fn fMul (a:double, b:double) -> double {nothrow commutative unique}
+  (*:double (block (neg var(a))) (block (neg var(b))))
+```
+
+```hir
+;; hir -O1 fn=fMul
+fn fMul (a:double, b:double) -> double {nothrow commutative unique}
+  (*:double (neg var(a)) (neg var(b)))
 ```
 
 ## HirPurity.isTryPureNothrowTerminating : pure/impure catch and finally before DCE strips catches
@@ -180,6 +403,21 @@ Warning : try block cannot throw; catch clause is unreachable
 Warning : try block cannot throw; catch clause is unreachable
 ```
 
+```hir
+;; hir -O0 fn=run check
+count 4 (try
+count 3 (catch
+count 2 (finally
+```
+
+```hir
+;; hir -O1 fn=run check
+count 2 (try
+!contains (catch
+count 2 (finally
+contains (def a (+:int var(x) 1:int))
+```
+
 ## HirPurity : top-level namespace-scoped block, try, catch, and finally
 
 ```babble
@@ -192,6 +430,21 @@ assert(r1 == 1 and r2 == 1 and r3 == 1)
 
 ```stderr
 Warning : try block cannot throw; catch clause is unreachable
+```
+
+```hir
+;; hir -O0 top-level check
+contains (def tb 1:int)
+count 3 (try
+contains (catch
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (def tb
+count 2 (try
+!contains (catch
+contains (def r3 1:int)
 ```
 
 ## HirPurity.isDeterministic : volatile nothrow record and interface methods in while
@@ -208,6 +461,20 @@ def run = fn volatile (n: int, vr: VR, vi: VI): int -> (
 assert(run(2, VR(1), VR(1)) >= 8)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (call-method var(vr).vt)
+contains (call-iface var(vi).vt)
+!contains $licm
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (def $licm0 (get-this-field k))
+contains (call-iface var(vi).vt)
+contains (jcall System.lineSeparator)
+```
+
 ## HirPurity.isDeterministic : volatile nothrow fn, Java call, and nested volatile child in while
 
 ```babble
@@ -219,6 +486,19 @@ def run = fn volatile (n: int): int -> (
     ) ; a
 )
 assert(run(2) >= 8)
+```
+
+```hir
+;; hir -O0 fn=run check
+count 3 (call-fn volLen)
+contains (call-fn bigInt
+!contains $licm
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains $licm
+count 4 (jcall System.lineSeparator)
 ```
 
 ## HirPurity : volatile and impure For loops inside blocks
@@ -235,6 +515,21 @@ def run = fn io (n: int, xs: frozen array of int): int -> (
 assert(run(2, freeze(array.of(1, 2))) == 4 and tick == 4)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (call-fn bigInt
+contains (call-fn volLen)
+contains (call-fn bump)
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (call-fn bigInt
+!contains (call-fn volLen)
+contains (call-fn bump)
+!contains $licm
+```
+
 ## HirPurity.allArgsPrimitiveOrImmutable : String.equals on immutable String vs mutable Point
 
 ```babble
@@ -248,6 +543,20 @@ def run = fn io (n: int): int -> (
 assert(run(2) == 2)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (def u1 (jcall String.equals "ab" "cd"))
+contains (def u2 (jcall String.equals "ab" var(pt)))
+!contains $licm
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (def u1
+contains (def u2 (jcall String.equals "ab" var(pt)))
+contains (def $licm0 (jcall String.equals "ab" "ab"))
+```
+
 ## HirPurity : CoreExceptionRef, boxed Integer arithmetic, and char-vs-nullable equality
 
 ```babble
@@ -257,6 +566,24 @@ def run = fn (ji: java.lang.Integer, chOpt: char?): int -> (
     1
 )
 assert(run(java.lang.Integer.valueOf(2), 'a') == 1)
+```
+
+```hir
+;; hir -O0 fn=run
+fn run (ji:int, chOpt:obj) -> int {nothrow unique}
+  (def uE core-exception)
+  (def uC (block (==:bool 'a' var(chOpt))))
+  (def uU (neg var(ji)))
+  (def uB1 (+:int var(ji) 1:int))
+  (def uB2 (+:int 1:int var(ji)))
+  1:int
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (ji:int, chOpt:obj) -> int {nothrow unique}
+  (def uC (==:bool 'a' var(chOpt)))
+  1:int
 ```
 
 ## HirPurity : OverloadSelect and non-pure-static JavaMethodCall receivers
@@ -272,6 +599,26 @@ def run = fn io (): int -> (
 assert(run() == 1 and tick == 1)
 ```
 
+```hir
+;; hir -O0 fn=run
+fn run () -> int {io}
+  (def ov (overload (fn-ref ov#1) (fn-ref ov#2)))
+  (def uOv (overload-select #0 var(ov)))
+  (def m (select (select name(java).lang).Math))
+  (def uM1 (jcall Math.abs -5:int))
+  (def uM2 (jcall Math.abs -5:int))
+  1:int
+```
+
+```hir
+;; hir -O1 fn=run
+fn run () -> int {io}
+  (def ov (overload (fn-ref ov#1) (fn-ref ov#2)))
+  (def m (select (select name(java).lang).Math))
+  (def uM2 (jcall Math.abs -5:int))
+  1:int
+```
+
 ## HirPurity : cross-module DirectThisMethodCall pure, throwing, and volatile paths
 
 ```babble
@@ -283,6 +630,22 @@ def run = fn volatile (er: ext.ExtRec): int -> (
     a
 )
 assert(run(ext.ExtRec(4)) >= 18)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (def u1 (call-method var(er).getPure))
+contains (def u2 (call-method var(er).getThrow))
+contains (def u3 (call-method var(er).getVol))
+!contains $licm
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (def u1
+contains (def u2 (call-method var(er).getThrow))
+!contains (def u3
+contains (def $licm0 (call-method var(er).getPure))
 ```
 
 ## HirPurity : InterfaceCall on ThisRef, RecordNew, call result, and impure method
@@ -299,6 +662,23 @@ def run = fn io (vi: I): int -> (def u1 = R(1).b() ; def u2 = getI().a() ; def u
 assert(run(R(2)) == 1 and tick == 1)
 ```
 
+```hir
+;; hir -O0 fn=run
+fn run (vi:obj) -> int {io}
+  (def u1 (call (select (record-new R 1:int).b)))
+  (def u2 (call-iface (call-fn getI).a))
+  (def u3 (call-iface var(vi).imp))
+  1:int
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (vi:obj) -> int {io}
+  (def u1 (call (select (record-new R 1:int).b)))
+  (def u3 (call-iface var(vi).imp))
+  1:int
+```
+
 ## HirPurity : body-field ThisFieldGet, call-result record receiver, and local RecordNew
 
 ```babble
@@ -309,6 +689,19 @@ def run = fn (): int -> (
     def u1 = getR().x ; def u2 = getR().m() ; 1
 )
 assert(run() == 1)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (def u0 (record-new LR 1:int))
+contains (def u2 (call-method (call-fn getR).m))
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains record-new
+contains (def $sr_u0_0 1:int)
+!contains .m
 ```
 
 ## HirPurity : uninitialized Def, captured cell local, capturing closure, Move, and late RecordNew
@@ -324,4 +717,19 @@ def run = fn io (k: int): int -> (
     def r = list(2) ; def u4 = move(r) ; u2
 )
 assert(run(3) == 4)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (def u0 (record-new LateR 1:int))
+contains (def u1 (call-fn fUninit var(k)))
+contains (def u4 (move var(r)))
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains record-new
+contains (def $sr_u0_0 1:int)
+!contains (call-fn fUninit
+!contains (def u4
 ```

@@ -605,3 +605,26 @@ def C = class () () static (
 ```error
 Member used before definition : late
 ```
+
+## Non-literal function-reference interface default is rejected
+
+```babble
+def addOne = fn (x: int): int -> ( x + 1 )
+def INonLit = interface ( def f: fn (x: int): int = addOne )
+```
+
+```error
+An interface default must be a function literal : f
+```
+
+## Re-abstracted interface default without sibling provider still requires implementation
+
+```babble
+def Root = interface (def val: fn (): int = fn (): int -> (42))
+def ReAbstracted = interface extends Root (def val: fn (): int)
+def Bad = class () implements ReAbstracted ()
+```
+
+```error
+Bad does not implement ReAbstracted.val
+```

@@ -32,6 +32,27 @@ def c = Calc(4)
 assert(topRes == 21 and c.bodyVal == 15 and c.compute(3) == 20 and Calc.TAG == 32 and fib(7) == 13)
 ```
 
+```hir
+;; hir -O0 class=Calc
+class Calc (n:int)
+  (def bodyVal (call-fn addMul (get-this-field n) 1:int))
+  static:
+    (def TAG (call-fn addMul 6:int 2:int))
+```
+
+```hir
+;; hir -O1 class=Calc
+class Calc (n:int)
+  (def bodyVal
+    (block
+      (def a (get-this-field n))
+      (def s (+:int var(a) 1:int))
+      (def d (-:int var(a) 1:int))
+      (*:int var(s) var(d))))
+  static:
+    (def TAG 32:int)
+```
+
 ## HirDcePass : dead pure bindings, discard(...), and unreachable code after return
 
 ```babble
@@ -45,6 +66,23 @@ def run = fn io (): int -> (
     step("Z")
 )
 assert(run() == 8 and log.toString() == "A")
+```
+
+```hir
+;; hir -O0 fn=run
+fn run () -> int {io}
+  (def deadPure (call-fn addMul 9:int 4:int))
+  (call name(discard) (+:int var(deadPure) (call-fn fib 4:int)))
+  (call-fn step "A")
+  (return (call-fn pick 3:int))
+  (call-fn step "Z")
+```
+
+```hir
+;; hir -O1 fn=run
+fn run () -> int {io}
+  (call-fn step "A")
+  (return 8:int)
 ```
 
 ## HirDcePass : unreachable code after continue and break in a for loop
@@ -64,6 +102,20 @@ def run = fn io (xs: list of int): int -> (
 assert(run(list(-1, 2, 5, 20, 99)) == 7 and log.toString() == "")
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (call-fn step "C")
+contains (call-fn step "B")
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (call-fn step "C")
+!contains (call-fn step "B")
+contains (continue)
+contains (break)
+```
+
 ## InlinePass error line-number preservation (inlined cast failure vs interpreter)
 
 ```babble
@@ -74,6 +126,18 @@ caller(null)
 
 ```error
 Type error : expected int, got null
+```
+
+```hir
+;; hir -O0 fn=caller
+fn caller (v:obj) -> int {pure unique}
+  (call-fn toInt var(v))
+```
+
+```hir
+;; hir -O1 fn=caller
+fn caller (v:obj) -> int {pure unique}
+  (as var(v) int|int|)
 ```
 
 ## InlinePass alpha-renaming across if/else inner defs, for loops, and small while loops
@@ -89,6 +153,18 @@ def smallWhile = fn (x: int): int -> (def i = x ; while i < 3 then (i += 1) ; i)
 assert(inlBlocks(3, list(1, 2)) == 9 and inlBlocks(0, list(4)) == 5 and smallWhile(2) == 3)
 ```
 
+```hir
+;; hir -O0 top-level check
+count 2 (call-fn inlBlocks
+contains (call-fn smallWhile 2:int)
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (call-fn inlBlocks
+!contains (call-fn smallWhile
+```
+
 ## HirDcePass top-level user discard shadowing + InlinePass parameter widening and RecurseRef scan
 
 ```babble
@@ -100,12 +176,45 @@ def p = 3
 assert(discard(7) == 14 and callShadow(4) == 5 and widenInside(5) == 5.5 and widenInside(p) == 3.5 and passRec(3) == 3)
 ```
 
+```hir
+;; hir -O0,-O1 fn=callShadow
+fn callShadow (n:int) -> int {io}
+  (call-fn discard var(n))
+  (+:int var(n) 1:int)
+```
+
+```hir
+;; hir -O0 fn=passRec
+fn passRec (n:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int)
+    (block 0:int)
+    (block
+      (def r recurse)
+      (+:int (call var(r) (-:int var(n) 1:int)) 1:int)))
+```
+
+```hir
+;; hir -O1 fn=passRec
+fn passRec (n:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int)
+    0:int
+    (block
+      (def r recurse)
+      (+:int (call var(r) (-:int var(n) 1:int)) 1:int)))
+```
+
 ## InlinePass.scanCalleeBody guards : local interface and block cell capture
 
 ```babble
 def smallIface = fn (x: any): int -> (def LI = interface () ; if x is LI then (0) else (1))
 def smallBlkCell = fn (x: int): int -> ((def c = x + 1 ; def f = fn (): int -> (c) ; f()))
 assert(smallIface(1) == 1 and smallBlkCell(4) == 5)
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (call-fn smallIface 1:int)
+contains (call-fn smallBlkCell 4:int)
 ```
 
 ## InlinePass.scanCalleeBody guard : for-loop cell capture
@@ -119,6 +228,11 @@ def smallForCell = fn (xs: list of int): int -> (
 assert(smallForCell(list(9, 10)) == 9)
 ```
 
+```hir
+;; hir -O0,-O1 top-level check
+contains (call-fn smallForCell (core-new list 9:int 10:int))
+```
+
 ## InlinePass : reassigned parameter in callee (freshParam allocation) and self-recursion by name
 
 ```babble
@@ -126,6 +240,24 @@ def incMut = fn (mut x: int): int -> (x = x + 1 ; x * 2)
 def selfByName = fn (n: int): int -> (if n <= 0 then (0) else (selfByName(n - 1) + 1))
 def run = fn io (v: int): int -> (incMut(v) + incMut(4) + selfByName(v))
 assert(run(3) == 21)
+```
+
+```hir
+;; hir -O0 fn=run
+fn run (v:int) -> int {io}
+  (+:int (+:int (call-fn incMut var(v)) (call-fn incMut 4:int)) (call-fn selfByName var(v)))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (v:int) -> int {io}
+  (+:int (+:int (block
+        (def x#1 var(v))
+        (set x#1 (+:int var(x#1) 1:int))
+        (*:int var(x#1) 2:int)) (block
+        (def x#2 4:int)
+        (set x#2 (+:int var(x#2) 1:int))
+        (*:int var(x#2) 2:int))) (call-fn selfByName var(v)))
 ```
 
 ## InlinePass : isNoOpWidening across ranks 1/3/4/5 and alphaRename widened Const substitution
@@ -142,6 +274,22 @@ def run = fn (b: byte, i: int, f: float): bool -> (
 assert(run(byte(2), 4, 1.5f))
 ```
 
+```hir
+;; hir -O0 fn=run check
+count 2 (call-fn wS
+count 2 (call-fn wL
+count 2 (call-fn wF
+count 2 (call-fn wD
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (call-fn wS
+!contains (call-fn wL
+!contains (call-fn wF
+!contains (call-fn wD
+```
+
 ## HirDcePass & HirPurity : dead CoreCollectionRef, FunctionRef, TypeApply, As, and recursive-by-name bindings
 
 ```babble
@@ -153,6 +301,26 @@ def run = fn (x: int): int -> (
   x + 1
 )
 assert(run(4) == 5)
+```
+
+```hir
+;; hir -O0 fn=run
+fn run (x:int) -> int {pure unique}
+  (def d1 core-col(list))
+  (def d2 (fn-ref d2))
+  (def d3 (type-apply name(idG)))
+  (def d4 (as var(x) double|double|))
+  (def d5 (call-fn sRec 2:int))
+  (+:int var(x) 1:int)
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (x:int) -> int {pure unique}
+  (def d2 (fn-ref d2))
+  (def d3 (type-apply name(idG)))
+  (def d4 (as var(x) double|double|))
+  (+:int var(x) 1:int)
 ```
 
 ## InlinePass : widened single-stmt inline call and trailing-return callee
@@ -167,6 +335,20 @@ def run = fn (p: int): double -> (
 assert(run(3) == 6.0)
 ```
 
+```hir
+;; hir -O0 fn=run
+fn run (p:int) -> double {nothrow monotone unique}
+  (def d (call-fn idI var(p)))
+  (+:double var(d) (call name(double) (call-fn idR var(p))))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (p:int) -> double {nothrow monotone unique}
+  (def d var(p))
+  (+:double var(d) (call name(double) var(p)))
+```
+
 ## HirDcePass & HirPurity : dead pure-local Block with nested Block + finite-collection for loop
 
 ```babble
@@ -177,6 +359,18 @@ def run = fn (xs: list of int, p: int): int -> (
   xs.size()
 )
 assert(run(list(1, 2, 3), 4) == 3)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (def deadSum (call-fn sumL var(xs)))
+contains (def deadBlk
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (xs:obj, p:int) -> int {nothrow unique}
+  (jcall List.size var(xs))
 ```
 
 ## HirPurity : dead mutable-arg call and throwing/non-terminating for loop stay preserved
@@ -192,6 +386,19 @@ def run = fn (mut b: Box, xs: list of int): int -> (
 assert(run(Box(0), list(1, 2)) == 1)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (def d1 (call-fn touch var(b)))
+contains (def d2
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (set-field var(b).v 1:int)
+contains (def d2
+contains (call name(assert) (>:bool var(x) 0:int))
+```
+
 ## HirLicmPass & HirPurity.isDeterministic : loop-invariant ArrayOp.SIZE, As, TypeApply, Logic, and If
 
 ```babble
@@ -205,6 +412,18 @@ def run = fn (arr: array of int, flag: bool, n: int): double -> (
   acc
 )
 assert(run((array of int).of(10, 20), true, 3) == 12.0)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (block (if (and var(flag) true:bool)
+contains (block (as 1:int double|double|))
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (if (and var(flag) true:bool) (call (type-apply name(idT)) 1.0:double) 0.0:double)
+contains (as 1:int double|double|)
 ```
 
 ## Canonical HIR golden : small-function inlining and dead-code elimination (-O0 vs -O1)
@@ -272,6 +491,13 @@ Warning : try block cannot throw; catch clause is unreachable
 ```
 
 ```hir
+;; hir -O0 fn=keepFinally check
+contains (try
+contains (catch
+contains (finally
+```
+
+```hir
 ;; hir -O1 fn=keepFinally check
 contains (try
 !contains (catch
@@ -289,6 +515,19 @@ assert(topTry == 42)
 Warning : try block cannot throw; catch clause is unreachable
 ```
 
+```hir
+;; hir -O0 top-level check
+contains (try
+contains (catch
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (try
+!contains (catch
+contains (def topTry 42:int)
+```
+
 ## HirDcePass : two catches with DCE and finally-only DCE
 
 ```babble
@@ -302,6 +541,21 @@ def twoCatches = fn io (s: string): int -> (
 assert(twoCatches("bad") == -1 and log.toString() == "X")
 ```
 
+```hir
+;; hir -O0 fn=twoCatches check
+contains (def d1 (+:int 1:int 2:int))
+contains (def d2 (+:int 3:int 4:int))
+contains (def df (+:int 5:int 6:int))
+```
+
+```hir
+;; hir -O1 fn=twoCatches check
+!contains (def d1
+!contains (def d2
+!contains (def df
+contains (jcall StringBuilder.append name(log) "X")
+```
+
 ## HirDcePass : unused uninitialized def and fn/class param defaults with dead code
 
 ```babble
@@ -311,6 +565,18 @@ def fnDef = fn (a: int = (def d = 1 ; 1 + 2), b: int = (def e = 2 ; 3 + 4)): int
 )
 def ClsDef = class (def x: int = (def d = 1 ; 2 + 3)) ()
 assert(fnDef() == 10 and ClsDef().x == 5)
+```
+
+```hir
+;; hir -O0 fn=fnDef check
+contains (def d 1:int)
+contains (def unused)
+```
+
+```hir
+;; hir -O1 fn=fnDef
+fn fnDef (a:int=3:int, b:int=7:int) -> int {nothrow unique}
+  (+:int var(a) var(b))
 ```
 
 ## HirDcePass : unreachable code after throw is eliminated
@@ -324,11 +590,35 @@ def afterThrow = fn io (b: bool): int -> (
 assert(afterThrow(false) == 1 and (try (afterThrow(true)) catch : exception then (9)) == 9 and log.toString() == "")
 ```
 
+```hir
+;; hir -O0 fn=afterThrow
+fn afterThrow (b:bool) -> int {io}
+  (if var(b)
+    (block
+      (throw (jnew BabbleException "boom"))
+      (jcall StringBuilder.append name(log) "DEAD")))
+  1:int
+```
+
+```hir
+;; hir -O1 fn=afterThrow
+fn afterThrow (b:bool) -> int {io}
+  (if var(b) (throw (jnew BabbleException "boom")))
+  1:int
+```
+
 ## HirDcePass : named discard argument stays preserved
 
 ```babble
 def runNamed = fn (x: int): int -> (discard(value: x + 1) ; x)
 assert(runNamed(5) == 5)
+```
+
+```hir
+;; hir -O0,-O1 fn=runNamed
+fn runNamed (x:int) -> int {nothrow unique}
+  (call name(discard) value=(+:int var(x) 1:int))
+  var(x)
 ```
 
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (1-arg)
@@ -340,6 +630,12 @@ def run = fn io (x: int): int -> (discard(x))
 assert(run(4) == 12)
 ```
 
+```hir
+;; hir -O0,-O1 fn=run
+fn run (x:int) -> int {io}
+  (call name(discard) var(x))
+```
+
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (2-arg)
 
 ```babble
@@ -347,6 +643,12 @@ def discard = fn (a: int, b: int): int -> (a + b)
 discard = fn (a: int, b: int): int -> (a + b + 1)
 def run = fn io (x: int): int -> (discard(x, 3))
 assert(run(4) == 8)
+```
+
+```hir
+;; hir -O0,-O1 fn=run
+fn run (x:int) -> int {io}
+  (call name(discard) var(x) 3:int)
 ```
 
 ## HirDcePass.collectAllVarRefs : local defs alongside ThisRef, SuperCall, and RecurseRef
@@ -363,6 +665,27 @@ def recVal = fn (n: int): int -> (
 assert(Sub(4).calc(5) == 11 and recVal(3) == 3)
 ```
 
+```hir
+;; hir -O0 fn=recVal
+fn recVal (n:int) -> int {nothrow}
+  (def step 1:int)
+  (if (<=:bool var(n) 0:int)
+    (block 0:int)
+    (block
+      (def r recurse)
+      (+:int (call var(r) (-:int var(n) var(step))) var(step))))
+```
+
+```hir
+;; hir -O1 fn=recVal
+fn recVal (n:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int)
+    0:int
+    (block
+      (def r recurse)
+      (+:int (call var(r) (-:int var(n) 1:int)) 1:int)))
+```
+
 ## HirRewriter : ModuleExportGet, SpreadAdapt, and TypeApply child rewrites
 
 ```babble
@@ -373,6 +696,17 @@ def run = fn io (arr: array of int): int -> (
     (discard(1) ; mod).val + sumV(...(discard(1) ; arr)) + ((discard(1) ; idG) of int)(3)
 )
 assert(run((array of int).of(1, 2)) == 16)
+```
+
+```hir
+;; hir -O0 fn=run check
+count 3 (call name(discard) 1:int)
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (arr:obj) -> int {io}
+  (+:int (+:int (export name(mod).val) (call-fn sumV var(arr))) (call (type-apply name(idG)) 3:int))
 ```
 
 ## HirRewriter : For iterable and SelfRecurseCall argument rewrites
@@ -386,6 +720,29 @@ def run = fn (xs: list of int): int -> (
 assert(run(list(4, 5)) == 11)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (for e in (call-fn idL var(xs))
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (for e in var(xs)
+!contains (call-fn idL
+```
+
+```hir
+;; hir -O0 fn=recN
+fn recN (n:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int) (block 0:int) (block (+:int 1:int (self-recurse recN (-:int var(n) (block (+:int 1:int 0:int)))))))
+```
+
+```hir
+;; hir -O1 fn=recN
+fn recN (n:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int) 0:int (+:int 1:int (self-recurse recN (-:int var(n) 1:int))))
+```
+
 ## HirRewriter : SafeCall and MakeOverloadSet child rewrites
 
 ```babble
@@ -396,6 +753,20 @@ def run = fn (s: string?, n: int): int -> (
     (if l1 != null then (l1) else (0)) + (if l2 != null then (l2) else (0)) + ov(n)
 )
 assert(run("abcd", 3) == 11 and run(null, 3) == 4)
+```
+
+```hir
+;; hir -O0 fn=run check
+count 2 (call name(discard) 1:int)
+contains (+:int 0:int 1:int)
+contains (call-fn <anon#0> var(n))
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (call name(discard)
+contains (safe-call (safe-call var(s)?.substring 1:int)?.length)
+!contains (call-fn <anon#0>
 ```
 
 ## HirRewriter : RecordNew classRef and Move operand rewrites
@@ -411,4 +782,23 @@ def run = fn (n: int): int -> (
 assert(run(3) == 8)
 ```
 
+```hir
+;; hir -O0 fn=run
+fn run (n:int) -> int {pure unique}
+  (def p (record-new Pair var(n) 2:int))
+  (def xs (core-new list var(n)))
+  (def m1 (move var(xs)))
+  (+:int (+:int (get-this-field a) (get-this-field b)) (jcall List.get var(m1) 0:int))
+```
 
+```hir
+;; hir -O1 fn=run
+fn run (n:int) -> int {pure unique}
+  (block
+    name(Pair)
+    (def $sr_p_0 var(n))
+    (def $sr_p_1 2:int))
+  (def xs (core-new list var(n)))
+  (def m1 (move var(xs)))
+  (+:int (+:int var($sr_p_0) var($sr_p_1)) (jcall List.get var(m1) 0:int))
+```

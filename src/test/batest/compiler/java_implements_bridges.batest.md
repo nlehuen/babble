@@ -34,6 +34,18 @@ def sup: java.util.function.IntSupplier = c
 assert(sup.getAsInt() == 15)
 ```
 
+```hir
+;; hir -O0,-O1 class=Counter
+class Counter (n:int)
+  (def run (fn-ref Counter.run))
+  (def getAsInt (fn-ref Counter.getAsInt))
+  fn Counter.run () -> obj {nothrow mut unique}
+    (set-this-field n += 10:int)
+    null
+  fn Counter.getAsInt () -> int {nothrow unique}
+    (get-this-field n)
+```
+
 ## Case 2
 
 ```babble
@@ -49,6 +61,14 @@ u.add(W(10))
 assert(u.contains(W(10)))
 ```
 
+```hir
+;; hir -O0,-O1 record=W
+record W (g:int)
+  (def compareTo (fn-ref W.compareTo))
+  fn W.compareTo (o:obj) -> int {nothrow unique}
+    (-:int (get-this-field g) (get-this-field g))
+```
+
 ## Case 3
 
 ```babble
@@ -56,6 +76,17 @@ def mulObj = object implements java.util.function.DoubleBinaryOperator (
     def applyAsDouble = fn (a: double, b: double): double -> (a * b + 0.5)
 )
 assert(mulObj.applyAsDouble(2.0, 3.0) == 6.5)
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call-method name(mulObj).applyAsDouble 2.0:double 3.0:double)
+```
+
+```hir
+;; hir -O1 top-level check
+!contains .applyAsDouble
+contains 6.5:double
 ```
 
 ## Case 4
@@ -72,6 +103,15 @@ java.util.Collections.sort(xs)
 assert(xs.get(0).r == 1 and (xs.get(0) is java.lang.Comparable) and (xs.get(0) is R))
 ```
 
+```hir
+;; hir -O0,-O1 interface=R
+interface R
+  (def rk)
+  (def compareTo (fn-ref compareTo))
+  fn compareTo (o:obj) -> int {pure}
+    (-:int (call-iface this.rk) (call-iface var(o).rk))
+```
+
 ## Overloaded Appendable/CharSequence methods served by optional params on Buf
 
 ```babble
@@ -82,6 +122,13 @@ def cs: java.lang.CharSequence = b
 assert(cs.length() == 7)
 assert(java.lang.String.valueOf(cs.subSequence(0, 4)) == "ok-7")
 assert(java.lang.String.valueOf(cs) == "ok-7bcd")
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (call-method name(b).append "abcdef" 1:int 4:int)
+contains (jcall CharSequence.length name(cs))
+contains (jcall CharSequence.subSequence name(cs) 0:int 4:int)
 ```
 
 ## Case 6
@@ -103,6 +150,16 @@ R(1).forEachRemaining(mkC())
 <123>
 ```
 
+```hir
+;; hir -O0,-O1 interface=W
+interface W
+  (def forEachRemaining (fn-ref forEachRemaining))
+  fn forEachRemaining (a:obj) -> obj {io shared}
+    (call name(print) "<")
+    (super.forEachRemaining var(a))
+    (call name(print) ">")
+```
+
 ## Case 7
 
 ```babble
@@ -110,6 +167,14 @@ def AddOp = class (delta: int) implements java.util.function.IntUnaryOperator (
     def applyAsInt = fn (x: int): int -> (x + delta)
 )
 assert(AddOp(2).andThen(AddOp(10)).applyAsInt(5) == 17)
+```
+
+```hir
+;; hir -O0,-O1 class=AddOp
+class AddOp (delta:int)
+  (def applyAsInt (fn-ref AddOp.applyAsInt))
+  fn AddOp.applyAsInt (x:int) -> int {nothrow injective unique}
+    (+:int var(x) var(delta))
 ```
 
 ## Primitive return widening : int -> long via IntToLongFunction
@@ -122,6 +187,15 @@ def Widener = class (scale: int) implements java.util.function.IntToLongFunction
 assert(java.util.stream.IntStream.range(1, 4).mapToLong(Widener(5)).sum() == 60L)
 ```
 
+```hir
+;; hir -O0,-O1 class=Widener
+class Widener (scale:int)
+  (def factor 2:int)
+  (def applyAsLong (fn-ref Widener.applyAsLong))
+  fn Widener.applyAsLong (x:int) -> int {nothrow unique}
+    (*:int (*:int var(x) var(scale)) (get-this-field factor))
+```
+
 ## Field with same name as Java default method stays accessible as a Babble field
 
 ```babble
@@ -131,6 +205,18 @@ def SingleIter = class () implements java.util.Iterator of int (
     def next = fn (): int -> (0)
 )
 assert(SingleIter().remove == 123)
+```
+
+```hir
+;; hir -O0,-O1 class=SingleIter
+class SingleIter
+  (def remove 123:int)
+  (def hasNext (fn-ref SingleIter.hasNext))
+  (def next (fn-ref SingleIter.next))
+  fn SingleIter.hasNext () -> bool {nothrow unique}
+    false:bool
+  fn SingleIter.next () -> int {nothrow unique}
+    0:int
 ```
 
 ## Field with same name as Java default method does not shadow the Java default method when invoked via the Ja...
@@ -149,6 +235,23 @@ asJava.remove()
 java.lang.UnsupportedOperationException : remove
 ```
 
+```hir
+;; hir -O0,-O1 class=SingleIter
+class SingleIter
+  (def remove 123:int)
+  (def hasNext (fn-ref SingleIter.hasNext))
+  (def next (fn-ref SingleIter.next))
+  fn SingleIter.hasNext () -> bool {nothrow unique}
+    false:bool
+  fn SingleIter.next () -> int {nothrow unique}
+    0:int
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (jcall Iterator.remove name(asJava))
+```
+
 ## Case 11
 
 ```babble
@@ -162,6 +265,14 @@ assert(java.util.stream.LongStream.of(10).map(LongInc(5)).sum() == 15L)
 assert(IsPos().test(1.5) and not IsPos().test(-0.5))
 ```
 
+```hir
+;; hir -O0,-O1 class=LongInc
+class LongInc (d:int)
+  (def applyAsLong (fn-ref LongInc.applyAsLong))
+  fn LongInc.applyAsLong (x:obj) -> int {pure unique}
+    (+:int (call name(int) (as var(x) long|long|)) var(d))
+```
+
 ## Case 12
 
 ```babble
@@ -172,4 +283,12 @@ def b = Buf()
 b.append("xyz")
 assert(Flag(true).getAsBoolean())
 assert(java.nio.CharBuffer.wrap(b).charAt(1) == 'y')
+```
+
+```hir
+;; hir -O0,-O1 class=Flag
+class Flag (v:bool)
+  (def getAsBoolean (fn-ref Flag.getAsBoolean))
+  fn Flag.getAsBoolean () -> bool {nothrow unique}
+    (get-this-field v)
 ```
