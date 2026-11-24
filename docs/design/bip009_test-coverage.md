@@ -337,8 +337,8 @@ The harness consists of two components in `src/test/java/org/babblelang/tests/ba
      * `report-interpret` → `target/site/jacoco-interpret/jacoco.xml` (excludes `parser/**`, `compiler/**`, `ir/**`, `opt/**`)
      * `report-compile-O0` → `target/site/jacoco-compile-O0/jacoco.xml` (excludes `parser/**`, `engine/impl/*`, `opt/**`)
      * `report-compile` → `target/site/jacoco-compile/jacoco.xml` (excludes `parser/**`, `engine/impl/*`)
-     * `report-opt` (from `jacoco-compile.exec`) → `target/site/jacoco-opt/jacoco.xml` (includes `org/babblelang/opt/**` only)
-   * **Non-aborting collection, strict exit code**: Surefire sets `<testFailureIgnore>true</testFailureIgnore>` inside `-Pbatest` so a failure in one mode never skips later executions or JaCoCo XML generation. Then `BatestCoverageReporter` runs in `verify`, prints the complete pass-rate, 3-way parity, and 5-scope coverage report, writes machine-readable summaries to `target/batest-report/`, and **exits with status `1` if any `.batest` case failed in any mode, diverged across modes, or if any of the five coverage scopes falls below the `75%` branch coverage gate** on an unfiltered run (`-Dbatest.minBranchPct=75.0` by default; `0` when all pass and meet the threshold).
+     * `report-opt` (from `jacoco-compile.exec`) → `target/site/jacoco-opt/jacoco.xml` (includes `org/babblelang/opt/**` and `org/babblelang/ir/egraph/**`)
+   * **Non-aborting collection, strict exit code**: Surefire sets `<testFailureIgnore>true</testFailureIgnore>` inside `-Pbatest` so a failure in one mode never skips later executions or JaCoCo XML generation. Then `BatestCoverageReporter` runs in `verify`, prints the complete pass-rate, 3-way parity, and 5-scope coverage report, writes machine-readable summaries to `target/batest-report/`, and **exits with status `1` if any `.batest` case failed in any mode, diverged across modes, or if any of the five coverage scopes falls below the `80%` line or `80%` branch coverage gate** on an unfiltered run (`-Dbatest.minLinePct=80.0` and `-Dbatest.minBranchPct=80.0` by default; `0` when all pass and meet both thresholds).
 
 ### 5.2 Coverage Scopes & Denominator Hygiene (`BIP009-D8`)
 
@@ -349,8 +349,8 @@ Merging `jacoco-interpret.exec`, `jacoco-compile-O0.exec`, and `jacoco-compile.e
 | Report Scope | Included Classes | JaCoCo Source | Why Separated |
 |---|---|---|---|
 | **1. Interpreter** | `org.babblelang.engine.impl.*` (`Interpreter`, `Function`, `BabbleCompiledScript`, `ReturnException`) | `jacoco-interpret.xml` | Measures direct coverage of every grammar visitor and interpreted closure/method path |
-| **2. Compiler (`-O0`)** | `org.babblelang.compiler.*`, `org.babblelang.ir.*` (excluding `HirPrinter`), + compiler-only runtime (`Bootstrap`, `CompiledFunction`, `CompiledMethod`, `Frames`, `Cell`, `ByteCell`..`CharCell`) | `jacoco-compile-O0.xml` | Measures unoptimized HIR lowering (`HirBuilder`), bytecode emission (`HirEmitter`/`ClassGen`/`InterfaceGen`), and `invokedynamic` / typed cells without `-O1` folding masking gaps |
-| **3. Optimizer (`-O1`)** | `org.babblelang.opt.**` (`PassManager`, `PassContext`, `HirPass`, `HirPurity`, `HirRewriter`, `ConstFoldPass`, `AlgebraicSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`) | `jacoco-opt/jacoco.xml` *(from `jacoco-compile.exec`)* | Measures HIR Nanopass optimization and purity analysis strictly during `-O1` compilation (`BabbleCompiler` bypasses `opt.*` at `-O0`) |
+| **2. Compiler (`-O0`)** | `org.babblelang.compiler.*`, `org.babblelang.ir.*` (excluding `ir.egraph.*` and `HirPrinter`), + compiler-only runtime (`Bootstrap`, `CompiledFunction`, `CompiledMethod`, `Frames`, `Cell`, `ByteCell`..`CharCell`) | `jacoco-compile-O0.xml` | Measures unoptimized HIR lowering (`HirBuilder`), bytecode emission (`HirEmitter`/`ClassGen`/`InterfaceGen`), and `invokedynamic` / typed cells without `-O1` folding masking gaps |
+| **3. Optimizer (`-O1`)** | `org.babblelang.opt.**` and `org.babblelang.ir.egraph.*` (`PassManager`, `PassContext`, `HirPass`, `HirPurity`, `HirRewriter`, `HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`, `ScalarReplacePass`, `FbipReusePass`, `EGraph`, `ENode`, `AlgebraicRules`) | `jacoco-opt/jacoco.xml` *(from `jacoco-compile.exec`)* | Measures HIR Nanopass optimization, E-graph simplification, and purity analysis strictly during `-O1` compilation (`BabbleCompiler` bypasses `opt.*` at `-O0`) |
 | **4. Shared Front-End** | `org.babblelang.analysis.*` (excluding opt-in `AxiomChecker`/`BytecodeEffectAnalyzer`) + `org.babblelang.effects.*` + `org.babblelang.engine.*` (excluding `FileModuleSource`, `ClassPathModuleSource`) | `jacoco-compile.xml` *(identical to `interpret`, plus `Resolver`)* | Measures `BlockScopes`, `TypeChecks`, `Resolver`, `TypeChecker`, `EffectChecker`, `AnalysisSession`, `BabbleSession`, and `MapModuleSource` |
 | **5. Shared Runtime & Natives** | `org.babblelang.runtime.*` (shared classes) + `org.babblelang.engine.impl.natives.**` | **Side-by-side**: `interpret` vs `compile-O0` vs `compile-O1` vs `combined` union | Exposes runtime helpers reached by the interpreter vs `-O0` vs `-O1`, gated on the combined union |
 
@@ -365,7 +365,7 @@ Merging `jacoco-interpret.exec`, `jacoco-compile-O0.exec`, and `jacoco-compile.e
 
 ### 5.3 Console & Machine-Readable Output Format
 
-`mvn -q verify -Pbatest` prints a structured summary with per-scope gate deficits (`PASS` / `NEED +N br`) and **per-scope uncovered hotspot rankings** (default top `10` per scope → 40+ candidates spanning all five buckets, ranked by absolute impact score `(missedBr + 1) * (missedLn + 1) - 1`, configurable via `-Dbatest.top=N|all` and `-Dbatest.sort=score|branches|lines`), while writing full scope-grouped, ranked per-line details to `target/batest-report/uncovered.txt` and `target/batest-report/summary.json` (and tagging the header `[FILTERED: <selector>]` whenever `-Dbatest.filter` is active so subset coverage is never mistaken for full-suite coverage):
+`mvn -q verify -Pbatest` prints a structured summary with per-scope gate deficits (`PASS` / `NEED +N ln` / `NEED +M br`) and **per-scope uncovered hotspot rankings** (default top `10` per scope → 40+ candidates spanning all five buckets, ranked by absolute impact score `(missedBr + 1) * (missedLn + 1) - 1`, configurable via `-Dbatest.top=N|all` and `-Dbatest.sort=score|branches|lines`), while writing full scope-grouped, ranked per-line details to `target/batest-report/uncovered.txt` and `target/batest-report/summary.json` (and tagging the header `[FILTERED: <selector>]` whenever `-Dbatest.filter` is active so subset coverage is never mistaken for full-suite coverage):
 
 ```text
 === BATEST RESULTS =============================================================
@@ -376,16 +376,16 @@ Compile -O0 : 733 / 733 passed (100.0%)
 Parity    : 733 / 733 matched (0 divergences)
 
 === COVERAGE SUMMARY (.batest suite) ===========================================
-Scope                        Lines                 Branches              Gate (75.0%)
----------------------------  --------------------  --------------------  ----------------
+Scope                        Lines                 Branches              Gate (80.0% ln/br)
+---------------------------  --------------------  --------------------  ------------------------
 Interpreter (impl.*)          95.1% (  693/729  )   91.4% (  328/359  )  PASS
-Compiler (-O0)                84.2% ( 6423/7629 )   72.1% ( 2979/4132 )  NEED +120 br
-Optimizer (-O1)               78.5% ( 1461/1861 )   69.0% ( 1438/2084 )  NEED +125 br
-Shared Front-End (analysis)   82.0% (15075/18385)   76.4% (14242/18642)  PASS
+Compiler (-O0)                84.2% ( 6423/7629 )   72.1% ( 2979/4132 )  NEED +327 br
+Optimizer (-O1)               78.5% ( 1461/1861 )   69.0% ( 1438/2084 )  NEED +28 ln, +230 br
+Shared Front-End (analysis)   82.0% (15075/18385)   76.4% (14242/18642)  NEED +672 br
 Shared Runtime (interpret)    74.0% ( 2501/3380 )   68.0% ( 1935/2846 )
 Shared Runtime (compile-O0)   76.0% ( 2568/3380 )   70.0% ( 1992/2846 )
 Shared Runtime (compile-O1)   75.8% ( 2562/3380 )   69.8% ( 1986/2846 )
-Shared Runtime (combined)     83.5% ( 2822/3380 )   78.2% ( 2225/2846 )  PASS
+Shared Runtime (combined)     83.5% ( 2822/3380 )   78.2% ( 2225/2846 )  NEED +52 br
 
 === UNCOVERED HOTSPOTS BY SCOPE (top 10/scope, ranked by score = (missedBr+1)*(missedLn+1)-1) ===
 
@@ -393,13 +393,13 @@ Shared Runtime (combined)     83.5% ( 2822/3380 )   78.2% ( 2225/2846 )  PASS
    1. engine.impl.Interpreter          29 br ( 91.5%) |   34 ln ( 95.0%) -> visitCall:L891(12br/15ln), ...
    2. engine.impl.Function              2 br ( 85.7%) |    2 ln ( 96.2%) -> activate:L43(2br/2ln)
 
--- Compiler (-O0) : 1153 missed br [NEED +120 br], 1206 missed ln (28 uncovered files) --
+-- Compiler (-O0) : 1153 missed br [NEED +327 br], 1206 missed ln (28 uncovered files) --
    1. compiler.CallEmitter            214 br ( 68.4%) |  198 ln ( 84.1%) -> emitCoreCollectionCall:L54(94br/132ln), ...
    ...
   ... and 18 more uncovered files (240 missed br, 295 missed ln)
 
 Full uncovered line/branch map : target/batest-report/uncovered.txt
-Inspect class(es) (no re-run)  : mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=<Class[,Class2]> -Dbatest.minBranchPct=0
+Inspect class(es) (no re-run)  : mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=<Class[,Class2]> -Dbatest.minLinePct=0 -Dbatest.minBranchPct=0
 ```
 
 Passing `-Dbatest.inspect=<Class[,Class2]>` (either on `verify -Pbatest` or directly via `exec:java@batest-report` without re-running tests) or reading `target/batest-report/uncovered.txt` prints ranked uncovered methods and every missed/partial branch line alongside the exact source lines from `src/main/java`, so several `.batest` files across multiple scopes can be planned and written in a single iteration.

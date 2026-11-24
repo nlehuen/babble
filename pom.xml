@@ -17,7 +17,8 @@
         <batest.inspect></batest.inspect>
         <batest.top>10</batest.top>
         <batest.sort>score</batest.sort>
-        <batest.minBranchPct>75.0</batest.minBranchPct>
+        <batest.minLinePct>80.0</batest.minLinePct>
+        <batest.minBranchPct>80.0</batest.minBranchPct>
         <batest.includes>**/BatestTestCase.java</batest.includes>
         <maven.test.redirectTestOutputToFile>true</maven.test.redirectTestOutputToFile>
         <!-- Cap test JVM heap and use ParallelGC for higher batch throughput and lower RSS under
@@ -343,6 +344,7 @@
                                     <outputDirectory>${project.build.directory}/site/jacoco-opt</outputDirectory>
                                     <includes>
                                         <include>org/babblelang/opt/**</include>
+                                        <include>org/babblelang/ir/egraph/**</include>
                                     </includes>
                                 </configuration>
                             </execution>
@@ -457,6 +459,10 @@
                                         <systemProperty>
                                             <key>batest.sort</key>
                                             <value>${batest.sort}</value>
+                                        </systemProperty>
+                                        <systemProperty>
+                                            <key>batest.minLinePct</key>
+                                            <value>${batest.minLinePct}</value>
                                         </systemProperty>
                                         <systemProperty>
                                             <key>batest.minBranchPct</key>

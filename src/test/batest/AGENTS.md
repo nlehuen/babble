@@ -192,7 +192,7 @@ Verify pure `PredictionMode.SLL` parsing across all `.batest.md` files :
 mvn -q test -Dtest=ParserGrammarTestCase
 ```
 
-Run the full 3-JVM 5-scope JaCoCo coverage gate (`>= 75%` branch coverage per scope) :
+Run the full 3-JVM 5-scope JaCoCo coverage gate (`>= 80%` line and `>= 80%` branch coverage per scope) :
 
 ```bash
 mvn -q verify -Pbatest
@@ -201,5 +201,5 @@ mvn -q verify -Pbatest
 Re-render the report or inspect classes from existing JaCoCo XMLs without re-running tests :
 
 ```bash
-mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=HirEmitter,ClassGen -Dbatest.minBranchPct=0
+mvn -q exec:java@batest-report -Pbatest -Dbatest.inspect=HirEmitter,ClassGen -Dbatest.minLinePct=0 -Dbatest.minBranchPct=0
 ```
