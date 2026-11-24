@@ -34,6 +34,11 @@ public record HirInterface(
         body = List.copyOf(body);
     }
 
+    /** Stable target-neutral Babble type identifier ({@code BIP025-D3}). */
+    public String typeId() {
+        return shape != null ? shape.id() : null;
+    }
+
     public HirInterface withBodyAndStatic(List<HirExpr> newBody, HirStaticBlock newStatic) {
         return new HirInterface(id, shape, jvmName, extendedJvmInterfaces, defaultFunctionIds,
                 defaultOverloadFunctionIds, extendedTypes, newBody, newStatic, line);

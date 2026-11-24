@@ -33,6 +33,7 @@ public class ArchitectureBoundaryTestCase {
     static final int MAX_REFACTORED_LOC = 2_000;
 
     private static final Set<String> ANTLR_FREE_ANALYSIS_CORES = Set.of(
+            "org/babblelang/analysis/CompilationTarget",
             "org/babblelang/analysis/PrimitiveKind",
             "org/babblelang/analysis/LoweringTargets",
             "org/babblelang/analysis/TypeAlgebra",
@@ -102,6 +103,7 @@ public class ArchitectureBoundaryTestCase {
         classes.addAll(compiledClassesUnder(root, "org/babblelang/ir"));
         classes.addAll(compiledClassesUnder(root, "org/babblelang/opt"));
         classes.addAll(compiledClassesUnder(root, "org/babblelang/compiler"));
+        classes.addAll(compiledClassesUnder(root, "org/babblelang/wasm"));
         Assertions.assertFalse(classes.isEmpty());
 
         List<String> violations = new ArrayList<>();
@@ -124,6 +126,7 @@ public class ArchitectureBoundaryTestCase {
         classes.addAll(compiledClassesUnder(root, "org/babblelang/ir"));
         classes.addAll(compiledClassesUnder(root, "org/babblelang/opt"));
         classes.addAll(compiledClassesUnder(root, "org/babblelang/compiler"));
+        classes.addAll(compiledClassesUnder(root, "org/babblelang/wasm"));
         for (String cls : compiledClassesUnder(root, "org/babblelang/analysis")) {
             if (ANTLR_FREE_ANALYSIS_CORES.contains(topLevelClass(cls))) {
                 classes.add(cls);
@@ -156,6 +159,7 @@ public class ArchitectureBoundaryTestCase {
         classes.addAll(compiledClassesUnder(root, "org/babblelang/ir"));
         classes.addAll(compiledClassesUnder(root, "org/babblelang/opt"));
         classes.addAll(compiledClassesUnder(root, "org/babblelang/compiler"));
+        classes.addAll(compiledClassesUnder(root, "org/babblelang/wasm"));
         Assertions.assertFalse(classes.isEmpty());
 
         List<String> violations = new ArrayList<>();

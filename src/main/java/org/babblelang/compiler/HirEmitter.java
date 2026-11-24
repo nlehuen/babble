@@ -339,6 +339,7 @@ final class HirEmitter {
             case HirExpr.InterfaceCall c -> 1 + countNodes(c.receiver()) + countList(c.args());
             case HirExpr.JavaConstructorCall c -> 1 + countNodes(c.callee()) + countList(c.args());
             case HirExpr.JavaMethodCall c -> 1 + countNodes(c.receiver()) + countList(c.args());
+            case HirExpr.CoreMethodCall c -> 1 + countNodes(c.receiver()) + countList(c.args());
             case HirExpr.SafeCall c -> 1 + countNodes(c.receiver()) + countCallArgs(c.args());
             case HirExpr.DynamicCall c -> 1 + countNodes(c.callee()) + countCallArgs(c.args());
             case HirExpr.MakeOverloadSet m -> 1 + countList(m.operands());
@@ -1300,6 +1301,7 @@ final class HirEmitter {
             case HirExpr.InterfaceCall c -> calls.emitInterfaceCall(c);
             case HirExpr.JavaConstructorCall c -> calls.emitJavaConstructorCall(c);
             case HirExpr.JavaMethodCall c -> calls.emitJavaMethodCall(c);
+            case HirExpr.CoreMethodCall c -> throw new IllegalStateException("CoreMethodCall is only emitted for non-JVM targets : " + c.coreKind() + "." + c.memberName());
             case HirExpr.SafeCall c -> calls.emitSafeCall(c);
             case HirExpr.DynamicCall c -> calls.emitDynamicCall(c);
             case HirExpr.MakeOverloadSet m -> calls.emitMakeOverloadSet(m);

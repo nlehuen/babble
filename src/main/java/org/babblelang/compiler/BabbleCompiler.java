@@ -134,42 +134,17 @@ public final class BabbleCompiler {
             }
         }
         ClassLoader parentLoader = delegates.isEmpty() ? runtimeLoader : new CompositeClassLoader(runtimeLoader, delegates);
-        org.babblelang.ir.hir.HirModule hir = org.babblelang.ir.hir.HirBuilder.build(
-                internalName, sourceName, file, scopes, knownInterfaceJvmNames, knownClassJvmNames);
-        int optLevel = resolveOptLevel(engine);
-        boolean verify = Boolean.getBoolean(VERIFY);
-        String dumpIr = resolveDumpIr(engine);
-        org.babblelang.analysis.BuiltinAxioms activeAxioms = engine != null
-                ? engine.builtinAxioms()
-                : org.babblelang.analysis.BuiltinAxioms.standard();
-        String dumpAxioms = System.getProperty("babble.dumpAxioms");
-        if (dumpAxioms != null && !dumpAxioms.isBlank()) {
-            org.babblelang.analysis.AxiomDumper.dumpTargets(dumpAxioms, activeAxioms,
-                    new java.io.PrintWriter(System.err, true));
-        }
-        org.babblelang.ir.IrObserver observer = resolveIrObserver(engine, dumpIr, internalName, optLevel);
-        boolean aotCrossModule = optLevel > 0 && engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
-        @SuppressWarnings("unchecked")
-        Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
-                ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
-                : null;
-        org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
-                optLevel, verify, dumpIr, aotCrossModule,
-                aotInlineCache != null ? aotInlineCache : Map.of());
-        org.babblelang.ir.hir.HirModule unoptimized = hir;
-        hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
-                () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
-                        unoptimized, passCtx, observer, moduleKey));
-        if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
-            aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
-        }
+        HirPipelineResult hirRes = buildAndOptimizeHirInternal(
+                engine, file, scopes, sourceName, internalName, moduleKey,
+                knownInterfaceJvmNames, knownClassJvmNames, org.babblelang.analysis.CompilationTarget.JVM);
+        org.babblelang.ir.hir.HirModule hir = hirRes.hir();
         org.babblelang.ir.mir.MirModule mir = null;
-        if (optLevel >= 2) {
+        if (hirRes.passCtx().optLevel() >= 2) {
             org.babblelang.ir.hir.HirModule optimizedHir = hir;
-            mir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms, () -> {
+            mir = org.babblelang.analysis.BuiltinAxioms.withCurrent(hirRes.activeAxioms(), () -> {
                 org.babblelang.ir.mir.MirModule lowered = org.babblelang.ir.mir.MirLowerer.lower(optimizedHir);
-                return org.babblelang.opt.mir.MirPassManager.defaultFor(optLevel).optimize(
-                        lowered, passCtx, observer, moduleKey);
+                return org.babblelang.opt.mir.MirPassManager.defaultFor(hirRes.passCtx().optLevel()).optimize(
+                        lowered, hirRes.passCtx(), hirRes.observer(), moduleKey);
             });
         }
         HirEmitter emitter = new HirEmitter(hir, mir, parentLoader);
@@ -209,6 +184,76 @@ public final class BabbleCompiler {
         }
         return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, hir.startLine(), hir.exports(),
                 hir.ownInterfaceJvmNames(), hir.ownClassJvmNames());
+    }
+
+    private record HirPipelineResult(
+            org.babblelang.ir.hir.HirModule hir,
+            org.babblelang.opt.PassContext passCtx,
+            org.babblelang.ir.IrObserver observer,
+            org.babblelang.analysis.BuiltinAxioms activeAxioms
+    ) {
+    }
+
+    /**
+     * Lowers an analyzed parse tree to {@link org.babblelang.ir.hir.HirModule} and runs the
+     * target-aware Nanopass optimizer ({@code BIP025-P0}, {@code BIP025-D3}, {@code BIP025-D11}).
+     */
+    public static org.babblelang.ir.hir.HirModule buildAndOptimizeHir(
+            BabbleScriptEngine engine,
+            BabbleParser.FileContext file,
+            ScopeAnalysis scopes,
+            String sourceName,
+            String internalName,
+            String moduleKey,
+            Map<String, String> knownInterfaceJvmNames,
+            Map<String, String> knownClassJvmNames,
+            org.babblelang.analysis.CompilationTarget target
+    ) {
+        return buildAndOptimizeHirInternal(engine, file, scopes, sourceName, internalName, moduleKey,
+                knownInterfaceJvmNames, knownClassJvmNames, target).hir();
+    }
+
+    private static HirPipelineResult buildAndOptimizeHirInternal(
+            BabbleScriptEngine engine,
+            BabbleParser.FileContext file,
+            ScopeAnalysis scopes,
+            String sourceName,
+            String internalName,
+            String moduleKey,
+            Map<String, String> knownInterfaceJvmNames,
+            Map<String, String> knownClassJvmNames,
+            org.babblelang.analysis.CompilationTarget target
+    ) {
+        org.babblelang.ir.hir.HirModule hir = org.babblelang.ir.hir.HirBuilder.build(
+                internalName, sourceName, file, scopes, knownInterfaceJvmNames, knownClassJvmNames);
+        int optLevel = resolveOptLevel(engine);
+        boolean verify = Boolean.getBoolean(VERIFY);
+        String dumpIr = resolveDumpIr(engine);
+        org.babblelang.analysis.BuiltinAxioms activeAxioms = engine != null
+                ? engine.builtinAxioms()
+                : org.babblelang.analysis.BuiltinAxioms.standard();
+        String dumpAxioms = System.getProperty("babble.dumpAxioms");
+        if (dumpAxioms != null && !dumpAxioms.isBlank()) {
+            org.babblelang.analysis.AxiomDumper.dumpTargets(dumpAxioms, activeAxioms,
+                    new java.io.PrintWriter(System.err, true));
+        }
+        org.babblelang.ir.IrObserver observer = resolveIrObserver(engine, dumpIr, internalName, optLevel);
+        boolean aotCrossModule = optLevel > 0 && engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
+        @SuppressWarnings("unchecked")
+        Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
+                ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
+                : null;
+        org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
+                optLevel, verify, dumpIr, aotCrossModule,
+                aotInlineCache != null ? aotInlineCache : Map.of(), target);
+        org.babblelang.ir.hir.HirModule unoptimized = hir;
+        hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
+                () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
+                        unoptimized, passCtx, observer, moduleKey));
+        if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
+            aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
+        }
+        return new HirPipelineResult(hir, passCtx, observer, activeAxioms);
     }
 
     /**

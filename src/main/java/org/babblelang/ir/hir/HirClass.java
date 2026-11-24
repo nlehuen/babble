@@ -51,6 +51,11 @@ public record HirClass(
         body = List.copyOf(body);
     }
 
+    /** Stable target-neutral Babble type identifier ({@code BIP025-D3}). */
+    public String typeId() {
+        return shape != null ? shape.id() : null;
+    }
+
     /** Whether this class/object emits a dedicated plain JVM class. */
     public boolean hasCompiledClass() {
         return jvmName != null;

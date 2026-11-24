@@ -1358,9 +1358,15 @@ public final class HirBuilder {
                 compInternalName = Type.getInternalName(comp);
                 compIsJavaIface = comp.isInterface();
             }
+            boolean babbleIsIface = arrCreate.babbleTypeId() != null
+                    && allInterfaceJvmNames.containsKey(arrCreate.babbleTypeId());
+            HirArrayElementType elemType = HirArrayElementType.from(
+                    arrCreate.elemKind(), arrCreate.babbleTypeId(), babbleIsIface,
+                    arrCreate.nestedDims(), arrCreate.componentClass());
             return new HirExpr.ArrayCreate(
                     arrCreate.kind(),
                     arrCreate.elemKind(),
+                    elemType,
                     compInternalName,
                     compIsJavaIface,
                     arrCreate.componentClass(),
@@ -1376,6 +1382,7 @@ public final class HirBuilder {
                     lowerExpr(selector.expression()),
                     selector.expression().getText(),
                     arrOp.elemKind(),
+                    HirArrayElementType.from(arrOp.elemKind(), null, false, 0, arrOp.componentClass()),
                     arrOp.arrayClass(),
                     arrOp.componentClass(),
                     lowerPositionalArgs(params, spreadAdapts),

@@ -199,6 +199,14 @@ public final class HirPurity {
                 EffectSet fx = c.meta().effects();
                 yield fx.isPure() && fx.isNothrow() && fx.terminating();
             }
+            case HirExpr.CoreMethodCall c -> {
+                if (!isPureNothrowTerminating(c.receiver(), module, visitingFns)
+                        || !allPureNothrowTerminating(c.args(), module, visitingFns)) {
+                    yield false;
+                }
+                EffectSet fx = c.meta().effects();
+                yield fx.isPure() && fx.isNothrow() && fx.terminating();
+            }
             case HirExpr.InterfaceCall c -> {
                 if (!isPureNothrowTerminating(c.receiver(), module, visitingFns)
                         || !allPureNothrowTerminating(c.args(), module, visitingFns)) {

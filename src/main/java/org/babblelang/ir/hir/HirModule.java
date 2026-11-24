@@ -48,6 +48,11 @@ public record HirModule(
         ownClassJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(ownClassJvmNames));
     }
 
+    /** Target-neutral module identifier ({@code BIP025-D3}). */
+    public String moduleId() {
+        return className;
+    }
+
     public HirFunction function(int id) {
         return functions.get(id);
     }

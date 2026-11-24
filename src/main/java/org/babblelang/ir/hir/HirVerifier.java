@@ -246,6 +246,10 @@ public final class HirVerifier {
                 verifyExpr(module, c.receiver(), inFunction, loopDepth);
                 verifyStatements(module, c.args(), inFunction, loopDepth);
             }
+            case HirExpr.CoreMethodCall c -> {
+                verifyExpr(module, c.receiver(), inFunction, loopDepth);
+                verifyStatements(module, c.args(), inFunction, loopDepth);
+            }
             case HirExpr.SafeCall c -> {
                 verifyExpr(module, c.receiver(), inFunction, loopDepth);
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);

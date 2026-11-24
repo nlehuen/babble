@@ -142,8 +142,12 @@ public final class IrAssertionChecker {
                     + minDumpSizeForUsingPartialChecks);
         }
         List<IrMismatch> mismatches = new ArrayList<>();
+        boolean hasWatSnapshots = capturedSnapshots.stream().anyMatch(s -> s.tier() == org.babblelang.ir.IrTier.WAT);
         for (BatestFile.IrExpectation exp : expectations) {
             if (!exp.appliesTo(activeOptLevel)) {
+                continue;
+            }
+            if (exp.tier() == org.babblelang.ir.IrTier.WAT && !hasWatSnapshots) {
                 continue;
             }
             for (String st : exp.stages()) {
