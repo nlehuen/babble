@@ -223,3 +223,34 @@ badBool(true)
 ```error
 Name used before definition : x
 ```
+
+## SelectCache requireMemberDefined passes on warmed union primitive field
+
+```babble
+def UB = class (def late: int = 7) ()
+def UA = class (early: bool) (
+    def peek = fn (u: UA | UB): int -> ( u.late )
+    def v = if early then ( this.peek(this) ) else ( 0 )
+    def late: int = 5
+)
+def a = UA(false)
+assert(a.peek(a) == 5 and a.peek(a) == 5)
+```
+
+## SelectCache requireMemberDefined throws on warmed union primitive field during construction
+
+```babble
+def UB = class (def late: int = 7) ()
+def UA = class (early: bool) (
+    def peek = fn (u: UA | UB): int -> ( u.late )
+    def v = if early then ( this.peek(this) ) else ( 0 )
+    def late: int = 5
+)
+def warm = UA(false)
+assert(warm.peek(warm) == 5)
+UA(true)
+```
+
+```error
+Member used before definition : late
+```
