@@ -521,7 +521,7 @@ public class OptimizerTestCase {
                 "Expected helper inc to be inlined into try body, got: " + wrappedCalls);
     }
 
-    // ------------------------------------------------------------------ BIP014-P4 : Record SROA, $unboxed borrow, FBIP & record LICM
+    // ------------------------------------------------------------------ BIP014-I4 : Record SROA, $unboxed borrow, FBIP & record LICM
 
     @Test
     public void testRecordScalarReplacementZeroAllocationsInLoop() throws Exception {

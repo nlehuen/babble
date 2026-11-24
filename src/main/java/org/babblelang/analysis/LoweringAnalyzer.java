@@ -278,7 +278,7 @@ final class LoweringAnalyzer {
                 OverloadSolver.paramDescriptors(alt));
     }
 
-    /** Populates {@link TypeNode} lowering facts preserved across {@code detachAst()} for direct dispatch ({@code BIP014-P4}). */
+    /** Populates {@link TypeNode} lowering facts preserved across {@code detachAst()} for direct dispatch ({@code BIP014-I4}). */
     private void publishClassLoweringFacts() {
         Resolution resolution = pass.analysis.resolution();
         for (TypeNode node : pass.types) {

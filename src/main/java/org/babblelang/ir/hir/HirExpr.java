@@ -727,9 +727,9 @@ public sealed interface HirExpr permits
     record TypeApply(HirExpr inner, ExprMeta meta) implements HirExpr {
     }
 
-    // ---------------------------------------------------------------- record & ownership ops (BIP014-P4)
+    // ---------------------------------------------------------------- record & ownership ops (BIP014-I4)
 
-    /** Direct fast constructor call for a capture-free method-only compiled {@code record} ({@code BIP014-P4}). */
+    /** Direct fast constructor call for a capture-free method-only compiled {@code record} ({@code BIP014-I4}). */
     record RecordNew(
             int classId,
             String classTypeId,
@@ -760,7 +760,7 @@ public sealed interface HirExpr permits
         }
     }
 
-    /** Functional-but-in-place ({@code O10}) update of a uniquely owned {@code record} instance ({@code BIP014-P4}). */
+    /** Functional-but-in-place ({@code O10}) update of a uniquely owned {@code record} instance ({@code BIP014-I4}). */
     record RecordReuse(
             HirExpr target,
             int classId,
@@ -776,11 +776,11 @@ public sealed interface HirExpr permits
         }
     }
 
-    /** Ownership transfer marker ({@code move(x)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-P4}). */
+    /** Ownership transfer marker ({@code move(x)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-I4}). */
     record Move(HirVar var, HirExpr operand, ExprMeta meta) implements HirExpr {
     }
 
-    /** Deep-immutability marker ({@code freeze(expr)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-P4}). */
+    /** Deep-immutability marker ({@code freeze(expr)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-I4}). */
     record Freeze(HirExpr operand, ExprMeta meta) implements HirExpr {
     }
 }

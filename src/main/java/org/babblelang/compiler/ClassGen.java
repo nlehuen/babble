@@ -156,7 +156,7 @@ final class ClassGen {
 
     /**
      * Emits {@code public static <Name> $new(BabbleClass, ScriptRuntime, <typed params...>)}
-     * for capture-free method-only {@code record}s ({@code BIP014-P4}), bypassing
+     * for capture-free method-only {@code record}s ({@code BIP014-I4}), bypassing
      * {@code Object[]} boxing, {@code Binder}, and {@code Bootstrap.call}.
      */
     void emitFastRecordConstructor() {

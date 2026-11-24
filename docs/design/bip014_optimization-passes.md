@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 014 |
 | **Date** | 2026-11-19 |
-| **Status** | Partially implemented (`BIP014-D1`–`D10` decided; `BIP014-I0`–`I2` implemented in `RM010` with `-O1` default and 3-way CI parity; `BIP014-P3`–`P5` gated on §9.1 benchmark findings) |
+| **Status** | Partially implemented (`BIP014-D1`–`D10` decided; `BIP014-I0`–`I2` implemented in `RM010` with `-O1` default and 3-way CI parity; `BIP014-P3`, `BIP014-I4`, `BIP014-P5` gated on §9.1 benchmark findings) |
 | **Depends on** | Bytecode compiler, `RM001` primitive lowering & `RM003` JVM/Java interface bridges ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md) §19–§20), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), function effects, algebraic properties & ownership (`RM002`/`RM007`, [bip007_effects.md](bip007_effects.md), `BIP007-D10`), mandatory static typing ([bip008_static-typing.md](bip008_static-typing.md)), `.batest` differential harness ([bip009_test-coverage.md](bip009_test-coverage.md)), modular front end & `LoweringAnalyzer` (`RM004`, [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), 8-primitive unboxing & core collections (`RM005`, [bip011_core-types.md](bip011_core-types.md)), predicate-free grammar (`RM006`, [bip012_grammar-improvements.md](bip012_grammar-improvements.md)), pure-by-default effects & return-through-borrow (`RM008`, [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), and `for` loops, `break`/`continue` & `fn calling f` (`RM009`, [bip013_iterators.md](bip013_iterators.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)) |
 | **Scope** | In-scope optimization catalogue unlocked by `BIP007` annotations, SOTA compiler pass architecture survey, introduction of a typed compiler IR (`org.babblelang.ir`) and pass pipeline (`org.babblelang.opt`), local vs. graph-level optimization boundary, interaction with HotSpot C2 and the `Interpreter` reference oracle, and an incremental migration path from the current parse-tree `CodeGenerator` |
 
@@ -22,7 +22,7 @@ Drawing on state-of-the-art compiler engineering—specifically the **Nanopass F
 2. A **progressive two-tier typed IR** (`org.babblelang.ir`) and **small-pass pipeline** (`org.babblelang.opt`) written with Java 21 `sealed interface`s and `record`s:
    * **Tier 1 — High-Level Typed IR (`HIR`):** A structured, self-contained expression/statement tree detached from ANTLR4 `ParserRuleContext`, carrying resolved types, `PrimitiveKind`s, `EffectSet`s, ownership tags, and line numbers. Hosts Nanopass-style passes (constant folding, algebraic simplification, inlining, `borrow` scalar replacement, FBIP reuse, predicate/pipeline rewrites, structured DCE).
    * **Tier 2 — Per-Function SSA CFG IR (`MIR`):** Basic blocks with block parameters (not Sea-of-Nodes), explicit effect barriers keyed on `BIP007` contracts, and a clean SSA-to-ASM backend. Hosts dataflow passes (SCCP, GVN/CSE, LICM, `unique mut`/`frozen` redundant-load elimination, SSA DCE).
-3. An **incremental, six-phase rollout (`BIP014-I0`–`I2`, `BIP014-P3`–`P5`)** that delivers measurable wins immediately, detaches `CodeGenerator` from ANTLR4 with zero behavioral change first, and verifies every optimization against the untouched `Interpreter` via `DifferentialTestCase`, `.batest` (`BIP009`), ASM `CheckClassAdapter`, and byte-identical `examples/raytracer-argon/scene.ppm`.
+3. An **incremental, six-phase rollout (`BIP014-I0`–`I2`, `BIP014-P3`, `BIP014-I4`, `BIP014-P5`)** that delivers measurable wins immediately, detaches `CodeGenerator` from ANTLR4 with zero behavioral change first, and verifies every optimization against the untouched `Interpreter` via `DifferentialTestCase`, `.batest` (`BIP009`), ASM `CheckClassAdapter`, and byte-identical `examples/raytracer-argon/scene.ppm`.
 
 ---
 
@@ -467,10 +467,10 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
   * `HirDcePass` (unreachable branches & dead pure expressions — `O4`)
   * Structured `HirLicmPass` (hoisting simple `pure deterministic nothrow` loop invariants out of `while` / `BIP013` `for` loops — `O6` subset)
 * Add a 3rd Surefire execution (`compiled-tests-O0` with `babble.opt=0`) in `pom.xml` (`BIP014-D9`) so the entire 1,710+ test suite runs in `interpret`, `compile -O0`, and `compile -O1` (`HirVerifier` + `CheckClassAdapter`) on every `mvn test`.
-* Benchmark `raytracer-argon`, `raytracer-fable`, and `Benchmarks` at `-O0` vs `-O1` to gate `P3` and `P4` (`BIP014-D3`, `BIP014-D10`).
+* Benchmark `raytracer-argon`, `raytracer-fable`, and `Benchmarks` at `-O0` vs `-O1` to gate `BIP014-P3` and `BIP014-I4` (`BIP014-D3`, `BIP014-D10`).
 
 ### `BIP014-P3` — Per-Function SSA `MIR` & Dataflow Optimizations (Gated per `BIP014-D3`)
-* Gated on `raytracer-argon`, `raytracer-fable`, and `Benchmarks` measurements after `P2` (`BIP014-D3`).
+* Gated on `raytracer-argon`, `raytracer-fable`, and `Benchmarks` measurements after `BIP014-I2` (`BIP014-D3`).
 * Create `org.babblelang.ir.mir` (`MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`, `AliasClass`, `MirLowerer`, `MirPrinter`, `MirVerifier`, `MirEmitter`).
 * Implement SSA dataflow passes under opt-in `-O2`:
   * `SccpPass` (Sparse Conditional Constant Propagation `[WZ91]` — `O1` + `O4`)
@@ -480,7 +480,7 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
   * `MirDcePass` (SSA dead instruction & dead block-parameter elimination — `O4`)
   * Narrowing-aware `PredicateReorderPass` (`O11`, enforced structurally by SSA `narrow` dependencies)
 
-### `BIP014-P4` — Ownership & Allocation Optimizations (`BIP007-I2` Unlocked)
+### `BIP014-I4` — Ownership & Allocation Optimizations (`BIP007-I2` Unlocked)
 * `ScalarReplacePass` (`O9`): stack-unbox non-escaping `record` allocations and `borrow` parameters across all 8 `RM005` primitives (both after inlining and via flattened `$unboxed` entry points for non-inlined `borrow` callees).
 * `FbipReusePass` (`O10`): specialize `unique` + `move(...)` collection/buffer operations to in-place reuse (`[RXdML21]`, `[LLS23]`).
 * Complete `@TERMINATING`-gated dead-call elimination (`O4`) and full `unique mut` RLE (`O7`).
@@ -499,10 +499,10 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 * **`BIP014-D4` (resolves `BIP014-Q4`) — Constant folding & future Babble macro/comptime alignment:** In `BIP014-I2`, `ConstFoldPass` folds built-in operators and whitelisted `pure deterministic` JDK methods, while `InlinePass` + `ConstFoldPass` fixed-point folds small user Babble functions—avoiding a separate throwaway HIR interpreter. Future Babble macros written in Babble will be compiled through `BabbleCompiler` itself into optimized `-O1` JVM bytecode and executed under `BIP007` `pure deterministic` sandboxing, and that same compiled comptime evaluator can later back general compile-time evaluation of `@TERMINATING pure deterministic` user functions (§7.3).
 * **`BIP014-D5` (resolves `BIP014-Q5`) — Stack-trace line fidelity under inlining and LICM:** Preserve each expression's original `ExprMeta.line` on inlined and hoisted nodes, maintaining exact innermost error-line parity with `Interpreter` while accepting that inlined frames are elided from JVM stack traces.
 * **`BIP014-D6` (resolves `BIP014-Q6`) — Bounded `aegraph` engine in `BIP014-P5`:** Commit to a bounded acyclic e-graph (`aegraph`) engine (`[Fal22]`, `[Fal26]`, `[WNW+21]`) in `BIP014-P5` as the canonical SSA algebraic and pipeline rewrite pass for `BIP007` Axis 3 axioms (`associative`, `commutative`, `idempotent`, `monotone`, `injective`), while keeping lightweight hand-written Nanopass rewriters for `BIP014-I2`. Per [BIP027](bip027_tackling-complexity-in-the-compiler.md) (`BIP027-D1`, `BIP027-D4`), the zero-dependency pure-expression `org.babblelang.ir.egraph` core and shared algebraic/IEEE-754 rule table are anticipated in `BIP027-I2` (merging `ConstFoldPass` and `AlgebraicSimplifyPass` into `HirEGraphSimplifyPass` on HIR pure subtrees and reused by `EffectChecker` in `BIP027-I6`), so `BIP014-P5` focuses on SSA `aegraph` CFG elaboration and `PipelineRewritePass` (`O12`).
-* **`BIP014-D7` (resolves `BIP014-Q7`) — Purely structural & plumbing `BIP014-I0`:** Extract `ClassGen`, `InterfaceGen`, `ConstantPool`, and `ScriptClassWriter` out of `CodeGenerator.java` upfront in `BIP014-I0` with zero behavioral change, alongside `-O0`/`-O1`/`-O2` CLI/`BabbleCompiler` flags, `-Dbabble.dumpIr`, and baseline `Benchmarks` — skipping throwaway parse-tree constant folding in `P0` so constant folding and constant `if` pruning are written once cleanly on `HIR` in `P2`.
+* **`BIP014-D7` (resolves `BIP014-Q7`) — Purely structural & plumbing `BIP014-I0`:** Extract `ClassGen`, `InterfaceGen`, `ConstantPool`, and `ScriptClassWriter` out of `CodeGenerator.java` upfront in `BIP014-I0` with zero behavioral change, alongside `-O0`/`-O1`/`-O2` CLI/`BabbleCompiler` flags, `-Dbabble.dumpIr`, and baseline `Benchmarks` — skipping throwaway parse-tree constant folding in `P0` so constant folding and constant `if` pruning are written once cleanly on `HIR` in `BIP014-I2`.
 * **`BIP014-D8` (resolves `BIP014-Q8`) — Full-module `HirModule` detachment in `BIP014-I1`:** Lower the entire module (classes, records, interfaces, objects, and all function/method/top-level bodies — including `RM009`'s `HirFor`/`HirBreak`/`HirContinue` and `BIP016`/`BIP017` Layer 1 traits) into an ANTLR-free `HirModule`, so `HirEmitter`, `ClassGen`, and `InterfaceGen` carry zero `ParserRuleContext` dependencies.
 * **`BIP014-D9` (resolves `BIP014-Q9`) — Three-way full-suite CI parity (`compiled-tests-O0`):** Once `-O1` becomes the default in `BIP014-I2`, add a 3rd Surefire execution (`compiled-tests-O0` with `babble.opt=0`) in `pom.xml` so the entire test suite runs in `interpret`, `compile -O0`, and `compile -O1` (`HirVerifier` + `CheckClassAdapter`) on every `mvn test`.
-* **`BIP014-D10` (resolves `BIP014-Q10`) — Sequential phased delivery:** Deliver `BIP014-I0` → `BIP014-I1` → `BIP014-I2` (+ benchmarks) as sequential, independently verified PRs, then evaluate and scope `P3` (SSA `MIR`) and `P4` (`ScalarReplace`/`FBIP`) on `P2`'s concrete benchmark numbers.
+* **`BIP014-D10` (resolves `BIP014-Q10`) — Sequential phased delivery:** Deliver `BIP014-I0` → `BIP014-I1` → `BIP014-I2` (+ benchmarks) as sequential, independently verified PRs, then evaluate and scope `BIP014-P3` (SSA `MIR`) and `BIP014-I4` (`ScalarReplace`/`FBIP`) on `BIP014-I2`'s concrete benchmark numbers.
 
 ### 9.1 Implementation Notes & Benchmark Results (`BIP014-I0`–`I2` in `RM010`)
 
@@ -510,7 +510,7 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 
 * **`BIP014-I0` (structural decomposition & opt plumbing):** Extracted `ScriptClassWriter`, `ConstantPool`, `InterfaceGen`, and `ClassGen` out of `CodeGenerator.java`; added `-O0`/`-O1`/`-O2` CLI flags (`Main`, `Babblec`), `babble.opt` and `babble.dumpIr` properties in `BabbleCompiler`, and optimizer microbenchmarks in `org.babblelang.bench.Benchmarks`.
 * **`BIP014-I1` (full-module ANTLR-free `HIR`):** Introduced `org.babblelang.ir.hir` (`HirModule`, `HirFunction`, `HirClass`, `HirInterface`, `HirStaticBlock`, `HirParam`, `HirVar`, `HirCallArg`, `HirTypeRef`, `ExprMeta`, 44-variant sealed `HirExpr`, `HirBuilder`, `HirVerifier`, `HirPrinter`) and `HirEmitter`, detaching `HirEmitter`, `ClassGen`, and `InterfaceGen` completely from ANTLR4 `ParserRuleContext` and deleting the legacy 6,269-line `CodeGenerator.java`.
-* **`BIP014-I2` (`HIR` Nanopass pipeline & 3-way CI parity):** Implemented `org.babblelang.opt` (`HirPass`, `PassContext`, `HirPurity`, `HirRewriter`, `PassManager` with bounded 3-iteration fixed point and mandatory post-pass `HirVerifier` under `babble.verify=true`) and five HIR passes under `-O1` (now default per `BIP014-D1`):
+* **`BIP014-I2` (`HIR` Nanopass pipeline & 3-way CI parity):** Implemented `org.babblelang.opt` (`PassManager`, `HirPass`, `PassContext`, `HirPurity`, `HirRewriter` with bounded 3-iteration fixed point and mandatory post-pass `HirVerifier` under `babble.verify=true`) and five HIR passes under `-O1` (now default per `BIP014-D1`):
   * `ConstFoldPass` (`O1`): 8-primitive arithmetic & widening, `string` concatenation, single-assignment local constant propagation, constant `if` / `while (false)` pruning, and whitelisted `pure deterministic` JDK methods (`Math.*`, `String.length`/`isEmpty`/`trim`).
   * `AlgebraicSimplifyPass` (`O2`/`O3`): strict integer/boolean identities and integer/string constant reassociation (preserving IEEE-754 `float`/`double` semantics with zero unsafe rewrites), plus `idempotent` collapse for `fn idempotent` and whitelisted JDK methods (`Math.abs`, `String.trim`).
   * `InlinePass` (`O8`): small ($\le 25$ nodes), capture-free, non-recursive, non-`io` function inlining with direct substitution of read-only `Const`/`VarRead` arguments and original `ExprMeta.line` fidelity (`BIP014-D5`); strictly intra-module in `BabbleScriptEngine`, and cross-module for pure `nothrow` small exports in `babblec` AOT jars only (`BIP014-D2`, preserving exact source-file names on runtime errors).
@@ -539,7 +539,45 @@ End-to-end AOT (`babblec`) ray-tracer runs (steady-state CPU):
 * `examples/raytracer-argon/raytracer.ba` (14 modules): byte-identical `scene.ppm` at both `-O0` and `-O1` (`42.6 s` `-O0` vs. `43.6 s` `-O1` on steady CPU; single cold-burst run `13.3 s`).
 * `examples/raytracer-fable/raytracer.ba` (11 modules, 16 threads): `34.9 s` (`-O0`) vs. `37.5 s` (`-O1`).
 
-**Gate conclusion (`BIP014-D3` / `D10`):** `BIP014-I2` delivers immediate, verified speedups where `BIP007`/`BIP016` purity enables inlining (`3.83×`) and loop-invariant hoisting (`2.09×`) while establishing the ANTLR-free `HIR` and 3-way CI test foundation. Crucially, `opt : record Vec3 dot loop` (`6.09 ms` vs. `0.48 ms` for a scalar `while` loop — a **12.5× gap**) and both ray tracers stay flat under `P2` because their hot inner loops are dominated by short-lived `record` allocations (`Vec3`, `Ray`) and `DirectThisMethodCall` / operator-method calls (`+`, `*`, `dot`), not top-level `fn` calls. That concrete profile strongly favors prioritizing **record method inlining & `ScalarReplacePass` (`O9`, `BIP014-P4`)** directly on `HIR` (alongside or ahead of general SSA `MIR` `BIP014-P3`) for the next optimization milestone.
+**Gate conclusion (`BIP014-D3` / `D10`):** `BIP014-I2` delivers immediate, verified speedups where `BIP007`/`BIP016` purity enables inlining (`3.83×`) and loop-invariant hoisting (`2.09×`) while establishing the ANTLR-free `HIR` and 3-way CI test foundation. Crucially, `opt : record Vec3 dot loop` (`6.09 ms` vs. `0.48 ms` for a scalar `while` loop — a **12.5× gap**) and both ray tracers stay flat under `BIP014-I2` because their hot inner loops are dominated by short-lived `record` allocations (`Vec3`, `Ray`) and `DirectThisMethodCall` / operator-method calls (`+`, `*`, `dot`), not top-level `fn` calls. That concrete profile strongly favors prioritizing **record method inlining & `ScalarReplacePass` (`O9`, `BIP014-I4`)** directly on `HIR` (alongside or ahead of general SSA `MIR` `BIP014-P3`) for the next optimization milestone.
+
+### 9.2 Implementation Notes & Benchmark Results (`BIP014-I4`)
+
+Acting on §9.1's gate conclusion, `BIP014-I4` landed directly on `HIR` ahead of `BIP014-P3` (which remains planned for a follow-up PR):
+
+* **Direct `record` construction & non-`this` / cross-module compiled class lowering (`-O0` & `-O1`):**
+  * Published `ClassFieldTarget`, `RecordNewTarget`, `DirectMethodTarget`, and `ParamOwnership` in `LoweringTargets` / `LoweringAnalyzer` (including cross-module compiled JVM names/member indices via `TypeNode` / `TypedModuleSummary`), and extended `HirExpr` with `RecordNew`, `RecordReuse`, `Move`, `Freeze`, plus non-`this` / cross-module support on `ThisFieldGet` and `DirectThisMethodCall` (with `HirTryNormalize` stack-empty spilling for `RecordNew`/`RecordReuse`).
+  * `ClassGen.emitFastRecordConstructor` emits a direct static `$new(BabbleClass, ScriptRuntime, <prim...>)` factory on every capture-free, body-statement-free `fastRecord` (`NEW`/`DUP`/`INVOKESPECIAL` bypassing `invokedynamic`, `Object[]` varargs, and `Arguments.Binder`), and `CallEmitter`/`AssignAndMemberEmitter` emit direct `GETFIELD` and `INVOKEVIRTUAL m$<name>[$<alt>][$spec]` across both local and imported compiled classes/records (including operator methods `+`, `-`, `*`, `/`, unary `-`).
+* **`O8` `InlinePass` extensions:** Added intra-module `record`/class method inlining (including operator methods and overloaded methods, preserving left-to-right receiver/argument evaluation order and guarding constructor-init `this` leaks), `babblec`-only AOT cross-module `fastRecord` method inlining (`BIP014-D2`), and `borrow`-lambda parameter devirtualization (substituting capture-free `FunctionRef` arguments directly into `DirectBabbleCall` sites so helper + lambda collapse together).
+* **`O9` `ScalarReplacePass`:** Three cooperating HIR sub-passes wired into `-O1`:
+  1. **Projection beta-reduction:** Reduces `ThisFieldGet(RecordNew(...), p)` (including through non-namespace inlined `Block`s, `Move`, and `Freeze`) directly to the field expression while preserving exact left-to-right side effects.
+  2. **Flattened `$unboxed` entry points:** Synthesizes companion `fn$unboxed` `HirFunction`s for non-inlined, capture-free, non-recursive functions taking `borrow` `record` parameters accessed solely by field projection, and rewrites qualifying `DirectBabbleCall` sites to pass the unboxed fields directly.
+  3. **Non-escaping local `record` SROA:** Replaces non-escaping local `record` variables (including loop-carried reassignments and field swaps) with per-field primitive/reference locals across all 8 `RM005` primitives.
+* **`O10` `FbipReusePass` & `CoreCollections`:**
+  * Specializes `list(from: move(xs))`, `set(from: move(xs))`, and `map(from: move(xs))` to `list$reuse`/`set$reuse`/`map$reuse` backed by pure-`java.base` `CoreCollections.listReuseOrCopy` / `setReuseOrCopy` / `mapReuseOrCopy` (exact runtime class checks on `ArrayList` / `LinkedHashSet` / `LinkedHashMap`).
+  * Rewrites non-escaping tail `RecordNew` on non-deeply-immutable (`!deeplyImmutable && !frozen`) `unique` `record` parameters into in-place `RecordReuse` field writes (`PUTFIELD` + return parameter).
+* **Purity, DCE & LICM completions:** Extended `HirPurity` (with a `ThreadLocal<WeakReference<HirModule>>` identity cache eliminating $O(N^2)$ top-level scans) to recognize pure `nothrow @TERMINATING` `InterfaceCall`s and extended `HirLicmPass` to hoist loop-invariant `ThisFieldGet`, `DirectThisMethodCall`, and `InterfaceCall` on `deeplyImmutable` or `frozen` receivers.
+
+#### Measured `-O0` vs. `-O1` Benchmarks (`BIP014-I4`)
+
+Measured on JDK 21 (`org.babblelang.bench.Benchmarks`, median of 5 warm runs after 3 warmup iterations):
+
+| Benchmark | `interpret` (ms) | `-O0` (ms) | `-O1` (ms) | `-O1` vs. `-O0` |
+|---|---:|---:|---:|---:|
+| `fib(25)` : calls and arithmetic | 326.64 | 2.57 | 2.55 | 1.01× |
+| `while` loop : locals and `while` | 342.47 | 0.80 | 0.91 | 0.88× |
+| `tail-recursive sum` : self tail calls (`BIP024`) | 444.37 | 0.12 | 0.12 | 0.97× |
+| `Counter.ba` closure : captured variables | 329.85 | 6.97 | 6.85 | 1.02× |
+| `Stack.ba` push/pop : objects and methods | 181.65 | 3.18 | 3.31 | 0.96× |
+| `ArrayList` add/get : Java interop | 70.84 | 2.83 | 2.95 | 0.96× |
+| `opt` : const fold + dead branch + algebraic | 736.90 | 0.74 | 0.73 | 1.01× |
+| `opt` : small helper inlining | 964.49 | 3.83 | **0.74** | **5.17×** |
+| `opt` : loop-invariant pure call (LICM) | 1707.63 | 8.93 | **3.90** | **2.29×** |
+| `opt` : `record Vec3` dot loop | 1888.94 | **1.65** | **0.52** | **3.21×** *(3,632× vs. `interpret`)* |
+
+* **Gap closed:** `opt : record Vec3 dot loop` drops to **`1.65 ms` at `-O0`** (fast `$new` + direct field/method dispatch) and **`0.52 ms` at `-O1`** (zero `Vec3` allocations and zero `Vec3` method calls verified in `OptimizerTestCase` bytecode inspection — faster than the scalar `while` loop baseline of `0.80 ms`!).
+* **End-to-end AOT (`babblec`) verification:** `examples/raytracer-argon/raytracer.ba` (15 modules) renders byte-identical `scene.ppm` (`1,021,340` bytes) at both `-O0` (`15.95 s`) and `-O1` (`16.39 s`).
+* **Coverage & parity:** `src/test/batest/compiler/record_and_ownership_opt.batest` (37 cases) and `OptimizerTestCase` verify all `BIP014-I4` passes across `interpret`, `-O1`, and `-O0`, with `mvn -q verify -Pbatest` passing all 5 JaCoCo coverage scopes (`>= 75.0%` branches; `2,060 / 2,060` cases matching with 0 divergences). `BIP014-P3` (SSA `MIR` under `-O2`) remains planned for the next PR.
 
 ---
 
@@ -587,9 +625,9 @@ End-to-end AOT (`babblec`) ray-tracer runs (steady-state CPU):
 
 - **`[RXdML21]`** Alex Reinking, Ningning Xie, Leonardo de Moura, and Daan Leijen. *"[Perceus: Garbage Free Reference Counting with Reuse](https://doi.org/10.1145/3453483.3454032)."* In **Proceedings of the 42nd ACM SIGPLAN International Conference on Programming Language Design and Implementation (PLDI '21)**, pp. 96–111, June 2021. DOI: [`10.1145/3453483.3454032`](https://doi.org/10.1145/3453483.3454032) ([PDF](https://xnning.github.io/papers/perceus.pdf)).
   - **Summary:** `[RXdML21]` formalizes precise reference counting and reuse analysis in Koka, showing how *functional-but-in-place* (FBIP) transformations turn purely functional updates on uniquely owned values into zero-allocation in-place mutations.
-  - **Contribution to `BIP014`:** `[RXdML21]` provides the conceptual foundation for `O10` (`FbipReusePass`, §3.2, `BIP014-P4`), which exploits `BIP007-I2`'s static `unique` + `move(...)` ownership to perform in-place reuse on the JVM without runtime reference counting.
+  - **Contribution to `BIP014`:** `[RXdML21]` provides the conceptual foundation for `O10` (`FbipReusePass`, §3.2, `BIP014-I4`), which exploits `BIP007-I2`'s static `unique` + `move(...)` ownership to perform in-place reuse on the JVM without runtime reference counting.
 
 - **`[LLS23]`** Anton Lorenzen, Daan Leijen, and Wouter Swierstra. *"[FP²: Fully in-Place Functional Programming](https://doi.org/10.1145/3607840)."* **Proceedings of the ACM on Programming Languages (PACMPL)**, 7(ICFP), Article 198, pp. 275–304, August 2023. DOI: [`10.1145/3607840`](https://doi.org/10.1145/3607840) ([PDF](https://webspace.science.uu.nl/~swier004/publications/2023-icfp.pdf)).
   - **Summary:** `[LLS23]` defines a linear fully in-place (FIP/FBIP) calculus distinguishing uniquely owned and borrowed parameters alongside unboxed tuples, proving that functions in the FIP fragment execute with zero heap allocation and no dynamic reference counting.
-  - **Contribution to `BIP014`:** `[LLS23]` directly connects `BIP007-I2`'s static `unique` vs. `borrow` parameter distinction to allocation-free in-place reuse (`O10`) and stack unboxing (`O9`) in `BIP014-P4`.
+  - **Contribution to `BIP014`:** `[LLS23]` directly connects `BIP007-I2`'s static `unique` vs. `borrow` parameter distinction to allocation-free in-place reuse (`O10`) and stack unboxing (`O9`) in `BIP014-I4`.
 

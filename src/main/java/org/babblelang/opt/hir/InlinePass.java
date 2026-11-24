@@ -25,7 +25,7 @@ import java.util.Set;
 
 /**
  * {@code O8} — Small-Function, {@code record}/Class Method, and {@code borrow}-Lambda Inlining
- * ({@code BIP014-I2}, {@code BIP014-P4}, {@code BIP014-D2}, {@code BIP014-D5}).
+ * ({@code BIP014-I2}, {@code BIP014-I4}, {@code BIP014-D2}, {@code BIP014-D5}).
  *
  * <p>Inlines:
  * <ul>
@@ -85,7 +85,7 @@ public final class InlinePass implements HirPass {
     /**
      * Collects self-contained small exported functions and {@code fastRecord} methods
      * ({@code <= 25} HIR nodes) from {@code module} for {@code babblec} AOT cross-module inlining
-     * ({@code BIP014-D2}, {@code BIP014-P4}).
+     * ({@code BIP014-D2}, {@code BIP014-I4}).
      */
     public static Map<String, HirFunction> collectCrossModuleExports(HirModule module) {
         Set<String> exports = Set.of(module.exports());
@@ -288,7 +288,7 @@ public final class InlinePass implements HirPass {
     }
 
     /**
-     * Checks whether a compiled {@code record}/class method is a safe inline candidate ({@code BIP014-P4}).
+     * Checks whether a compiled {@code record}/class method is a safe inline candidate ({@code BIP014-I4}).
      */
     public static boolean isMethodInlineCandidate(HirFunction fn, HirModule module) {
         return isMethodInlineCandidate(fn, module, MAX_INLINE_NODES);
