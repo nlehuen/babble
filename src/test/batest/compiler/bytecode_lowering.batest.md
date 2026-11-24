@@ -278,3 +278,111 @@ java.io.FileReader("nonexistent_batest_file_xyz.txt")
 ```error
 java.io.FileNotFoundException : nonexistent_batest_file_xyz.txt (<OS error>)
 ```
+
+## isPureStaticJavaChain : multi-expr block, declaring block, javax root, forward capture, and non-pure static field assign
+
+```babble
+def SH = import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.SampleHelpers
+def fwd = fn (): int -> ( def g = fn (): int -> ( M.abs(-5) ); def M = java.lang.Math; g() )
+(discard(1); SH).mutableCounter = 0
+assert((discard(1); java.lang.Math).abs(-3) == 3 and (def m = java.lang.Math).abs(-4) == 4)
+assert(javax.xml.XMLConstants.NULL_NS_URI == "" and fwd() == 5 and SH.mutableCounter == 0)
+```
+
+## Empty for, try, and catch blocks plus local move expression
+
+```babble
+def Box = class (def v : int) ()
+for x in list(1, 2) then ()
+def t: any? = try () catch e then ()
+def run = fn (): int -> ( def a = Box(4) ; def b = move(a) ; b.v )
+assert(t == null and run() == 4)
+```
+
+```stderr
+Warning : try block cannot throw; catch clause is unreachable
+```
+
+## resolveBabbleJvmName for Babble interface array, function-local class array, and union array
+
+```babble
+def I = interface ( def k : fn () : int )
+def ia = (array of I?)(2)
+def ua = (array of (int | string)).of(1, "a")
+def mkLocal = fn () : int -> (
+    def L = class (def v : int) ()
+    def la = (array of L).of(L(3), L(4))
+    la.get(0).v + la.get(1).v
+)
+assert(ia.size() == 2 and ua.get(1) == "a" and mkLocal() == 7)
+```
+
+## Nested else-if widening and typed rest without reorder plus reordered named args
+
+```babble
+def pick = fn (a : bool, b : bool) : double -> ( if a then ( 1 ) else if b then ( 2 ) else ( 3.5 ) )
+def sumR = fn (a : int, xs : int...) : int -> ( def s = a ; for x in xs then ( s += x ) ; s )
+def sub = fn (a : int, b : int) : int -> ( a - b )
+assert(pick(false, true) == 2.0 and pick(false, false) == 3.5 and sumR(1, 2, 3) == 6 and sub(b: 2, a: 10) == 8)
+```
+
+## Contextual long and float literals widened to double
+
+```babble
+def toD = fn (a : double, b : double) : double -> ( a + b )
+def d1 : double = 10L
+def d2 : double = 1.5f
+assert(d1 == 10.0 and d2 == 1.5 and toD(2L, 0.5f) == 2.5)
+```
+
+## Non-spread 9-parameter class method lowers via METHOD_DESCRIPTOR
+
+```babble
+def Big = class () (
+    def sum9 = fn (a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int): int -> (
+        a + b + c + d + e + f + g + h + i
+    )
+)
+assert(Big().sum9(1, 2, 3, 4, 5, 6, 7, 8, 9) == 45)
+```
+
+## Non-spread 9-parameter function with rest parameter uses Arguments.binder with restIndex
+
+```babble
+def sumRest = fn (a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, xs: int...): int -> (
+    def t = a + b + c + d + e + f + g + h
+    for x in xs then ( t += x )
+    t
+)
+assert(sumRest(1, 2, 3, 4, 5, 6, 7, 8, 9, 10) == 55)
+```
+
+## Specialized function with widened boxed optional parameter default
+
+```babble
+def f = fn (x: int, d: double? = 1): double -> (
+    double(x) + (if d is double then ( d ) else ( 0.0 ))
+)
+assert(f(2) == 3.0 and f(2, 4.5) == 6.5 and f(2, null) == 2.0)
+```
+
+## Variadic function and bound method adapted to Java SAM exercise maxArity restIndex branch
+
+```babble
+def C = class () ( def m = fn (x: int, xs: int...): int -> ( x + 10 ) )
+def op1: java.util.function.IntUnaryOperator = fn (x: int, xs: int...): int -> ( x + 1 )
+def op2: java.util.function.IntUnaryOperator = C().m
+assert(op1.applyAsInt(5) == 6 and op2.applyAsInt(5) == 15)
+```
+
+## CompiledBabbleScript.lineOf falls back when thrown exception has empty stack trace
+
+```babble
+def e = java.lang.ArrayIndexOutOfBoundsException("no-frames")
+e.setStackTrace((array of java.lang.StackTraceElement).of())
+throw e
+```
+
+```error
+java.lang.ArrayIndexOutOfBoundsException: no-frames
+```

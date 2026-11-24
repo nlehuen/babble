@@ -298,3 +298,121 @@ run()
 ```error
 Name used before definition : x
 ```
+
+## Generic Babble interface bridge unboxing for byte and short
+
+```babble
+def Box of T = interface ( def id: fn (x: T): T )
+def BB = class () implements Box of byte ( def id = fn (x: byte): byte -> ( x ) )
+def SB = class () implements Box of short ( def id = fn (x: short): short -> ( x ) )
+def b: Box of byte = BB() ; def s: Box of short = SB()
+assert(b.id(byte(2)) == byte(2) and s.id(short(3)) == short(3))
+```
+
+## Generic Babble interface bridge unboxing for long and float
+
+```babble
+def Box of T = interface ( def id: fn (x: T): T )
+def LB = class () implements Box of long ( def id = fn (x: long): long -> ( x ) )
+def FB = class () implements Box of float ( def id = fn (x: float): float -> ( x ) )
+def l: Box of long = LB() ; def f: Box of float = FB()
+assert(l.id(4L) == 4L and f.id(1.5f) == 1.5f)
+```
+
+## Generic Babble interface bridge unboxing for bool and char
+
+```babble
+def Box of T = interface ( def id: fn (x: T): T )
+def ZB = class () implements Box of bool ( def id = fn (x: bool): bool -> ( x ) )
+def CB = class () implements Box of char ( def id = fn (x: char): char -> ( x ) )
+def z: Box of bool = ZB() ; def c: Box of char = CB()
+assert(z.id(true) and c.id('K') == 'K')
+```
+
+## Babble interface bridge primitive adaptation across int, double, and boxed unions
+
+```babble
+def W = interface ( def a: fn (x: int): any ; def b: fn (x: int): double? )
+def C = class () implements W (
+    def a = fn (x: int | double): int -> ( if x is int then ( x ) else ( int(x) ) )
+    def b = fn (x: int | double): double -> ( if x is int then ( double(x) ) else ( x ) )
+)
+def w: W = C()
+assert(w.a(2) == 2 and w.b(3) == 3.0)
+```
+
+## Optional union bridge null-guard adaptation into primitive double and default float
+
+```babble
+def OptU = interface ( def f: fn (x: int | double = ...): double )
+def C = class () implements OptU (
+    def f = fn (x: double = 10.0, fl: float = 1.5f): double -> ( x + double(fl) )
+)
+def u: OptU = C()
+assert(u.f() == 11.5 and u.f(3) == 4.5)
+```
+
+## Optional union bridge null-guard adaptation and non-optional boxed widening into nullable double
+
+```babble
+def OptN = interface ( def g: fn (x: int | double = ...): bool ; def h: fn (x: int): bool )
+def C = class () implements OptN (
+    def g = fn (x: double? = 10.0): bool -> ( x != null and x == 10.0 )
+    def h = fn (x: double?): bool -> ( x != null and x == 5.0 )
+)
+def u: OptN = C()
+assert(u.g() and u.g(10) and u.h(5))
+```
+
+## Java bridge primitive and reference arguments widened into nullable numeric Babble params
+
+```babble
+def PInt = class () implements java.util.function.IntPredicate ( def test = fn (x: long?): bool -> ( x == 7L ) )
+def PRef = class () implements java.util.function.Predicate of int ( def test = fn (x: long?): bool -> ( x == 7L ) )
+def a: java.util.function.IntPredicate = PInt() ; def b: java.util.function.Predicate of int = PRef()
+assert(a.test(7) and not a.test(2) and b.test(7))
+```
+
+## Array for-loops over byte, bool, short, long, and float arrays
+
+```babble
+def s = 0
+for b in (array of byte).of(byte(1), byte(2)) then ( s += int(b) )
+for z in (array of bool).of(true, false, true) then ( if z then ( s += 10 ) )
+for sh in (array of short).of(short(3), short(4)) then ( s += int(sh) )
+for l in (array of long).of(5L, 6L) then ( s += int(l) )
+for f in (array of float).of(1.0f, 2.0f) then ( s += int(f) )
+assert(s == 44)
+```
+
+## Capturing bool, byte, short, and char for-loop variables in closures
+
+```babble
+def s = 0
+for z in (array of bool).of(true) then ( def g = fn (): int -> ( if z then (1) else (0) ); s += g() )
+for b in (array of byte).of(byte(2)) then ( def g = fn (): int -> ( int(b) ); s += g() )
+for h in (array of short).of(short(3)) then ( def g = fn (): int -> ( int(h) ); s += g() )
+for c in (array of char).of('A') then ( def g = fn (): int -> ( int(c) ); s += g() )
+assert(s == 71)
+```
+
+## Capturing long, float, and double for-loop variables in closures
+
+```babble
+def fs = (list of (fn (): int))()
+for l in (array of long).of(4L) then ( fs.add(fn (): int -> ( int(l) )) )
+for f in (array of float).of(5.0f) then ( fs.add(fn (): int -> ( int(f) )) )
+for d in (array of double).of(6.0) then ( fs.add(fn (): int -> ( int(d) )) )
+assert(fs.get(0)() + fs.get(1)() + fs.get(2)() == 15)
+```
+
+## Primitive array(from:) for byte, short, float, bool, and char
+
+```babble
+def ab = (array of byte)(from: list.of(byte(1), byte(2)))
+def as_ = (array of short)(from: list.of(short(3), short(4)))
+def af = (array of float)(from: list.of(1.5f, 2.5f))
+def az = (array of bool)(from: list.of(true, false))
+def ac = (array of char)(from: list.of('x', 'y'))
+assert(ab.get(1) == byte(2) and as_.get(0) == short(3) and af.get(1) == 2.5f and az.get(0) and ac.get(1) == 'y')
+```
