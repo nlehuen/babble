@@ -219,14 +219,28 @@ public class BatestV2HarnessTestCase {
         for (BatestFile.BatestCase c : file.cases()) {
             var r0 = BatestRunner.runWithIr(file, c, Mode.COMPILE, 0);
             Assertions.assertNull(BatestRunner.evaluateBehavioral(c, r0.outcome()));
-            List<IrAssertionChecker.IrMismatch> m0 = IrAssertionChecker.checkAll(c.irExpectations(), r0.capturedIr(), 0);
+            List<IrAssertionChecker.IrMismatch> m0 = IrAssertionChecker.checkAll(c.irExpectations(), r0.capturedIr(), 0, 0);
             Assertions.assertEquals(List.of(), m0, c.name() + " -O0");
 
             var r1 = BatestRunner.runWithIr(file, c, Mode.COMPILE, 1);
             Assertions.assertNull(BatestRunner.evaluateBehavioral(c, r1.outcome()));
-            List<IrAssertionChecker.IrMismatch> m1 = IrAssertionChecker.checkAll(c.irExpectations(), r1.capturedIr(), 1);
+            List<IrAssertionChecker.IrMismatch> m1 = IrAssertionChecker.checkAll(c.irExpectations(), r1.capturedIr(), 1, 0);
             Assertions.assertEquals(List.of(), m1, c.name() + " -O1");
         }
+
+        // Default minDumpSizeForUsingPartialChecks=30 rejects partial 'check' on short (<30-line) HIR dumps.
+        BatestFile.BatestCase foldCase = file.cases().get(0);
+        var foldRun = BatestRunner.runWithIr(file, foldCase, Mode.COMPILE, 1);
+        List<IrAssertionChecker.IrMismatch> rejected = IrAssertionChecker.checkAll(
+                foldCase.irExpectations(), foldRun.capturedIr(), 1, IrAssertionChecker.DEFAULT_MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS);
+        Assertions.assertEquals(1, rejected.size(), "Short 2-line dump must reject partial check at threshold 30");
+        Assertions.assertTrue(rejected.get(0).message().contains("minDumpSizeForUsingPartialChecks=30"),
+                rejected.get(0).message());
+        // Setting threshold <= actual line count (2) allows the partial check.
+        Assertions.assertEquals(List.of(), IrAssertionChecker.checkAll(
+                foldCase.irExpectations(), foldRun.capturedIr(), 1, 2));
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> IrAssertionChecker.checkAll(foldCase.irExpectations(), foldRun.capturedIr(), 1, -1));
     }
 
     @Test
@@ -332,5 +346,38 @@ public class BatestV2HarnessTestCase {
         Assertions.assertTrue(reportText.contains("[IR GOLDEN MISMATCH]"), reportText);
         Assertions.assertTrue(reportText.contains("(Fold)"), reportText);
         Assertions.assertTrue(ae.getMessage().contains("1 .batest case failure"), ae.getMessage());
+    }
+
+    @Test
+    public void testEveryCompilerBatestCaseHasHirO0AndO1Expectations() throws Exception {
+        Path compilerDir = BatestTestCase.BATEST_ROOT.resolve("compiler");
+        Assertions.assertTrue(Files.isDirectory(compilerDir), "Missing " + compilerDir);
+        List<String> violations = new java.util.ArrayList<>();
+        int checkedCases = 0;
+        try (var walk = Files.walk(compilerDir)) {
+            List<Path> files = walk.filter(Files::isRegularFile)
+                    .filter(BatestTestCase::isBatestFile)
+                    .sorted()
+                    .toList();
+            for (Path p : files) {
+                String rel = BatestTestCase.BATEST_ROOT.relativize(p).toString().replace('\\', '/');
+                BatestFile file = BatestParser.parse(p, rel);
+                for (BatestFile.BatestCase c : file.cases()) {
+                    checkedCases++;
+                    boolean hasO0 = c.irExpectations().stream()
+                            .anyMatch(e -> e.tier() == org.babblelang.ir.IrTier.HIR && e.appliesTo(0));
+                    boolean hasO1 = c.irExpectations().stream()
+                            .anyMatch(e -> e.tier() == org.babblelang.ir.IrTier.HIR && e.appliesTo(1));
+                    if (!hasO0 || !hasO1) {
+                        violations.add(rel + ":" + c.line() + " (" + c.displayName() + ")"
+                                + " missing hir" + (!hasO0 ? " -O0" : "") + (!hasO1 ? " -O1" : ""));
+                    }
+                }
+            }
+        }
+        Assertions.assertTrue(checkedCases > 0, "Expected compiler batest cases under " + compilerDir);
+        Assertions.assertEquals(List.of(), violations,
+                "Every compiler batest case must have at least one hir -O0 and one hir -O1 assertion:\n"
+                        + String.join("\n", violations));
     }
 }

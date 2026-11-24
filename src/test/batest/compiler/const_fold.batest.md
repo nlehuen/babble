@@ -22,9 +22,11 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (def b1 true:bool)
-contains (<:bool 'a' 'b')
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (def b1 true:bool)
+  (def b2 false:bool)
+  (and (and (and (and (and (and (and (and (and (and (and (and (and (block (or (block (==:bool var(b1) var(b2))) (block (<>:bool var(b1) var(b2))))) (block (==:bool var(b1) var(b1)))) (not (block (<>:bool var(b1) var(b1))))) (block (<:bool 'a' 'b'))) (block (<=:bool 'a' 'a'))) (block (>:bool 'b' 'a'))) (block (>=:bool 'b' 'b'))) (block (==:bool 'a' 'a'))) (block (<>:bool 'a' 'b'))) (not (block (and false:bool var(b1))))) (block (and true:bool var(b1)))) (block (or true:bool var(b2)))) (block (or false:bool var(b1)))) (block (not false:bool)))
 ```
 
 ```hir
@@ -45,9 +47,9 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (<:bool -5:int 2:int)
-contains (<:bool -5:long 2:long)
+;; hir -O0 fn=f
+fn f () -> bool {pure unique}
+  (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (block (<:bool -5:int 2:int)) (block (<=:bool 2:int 2:int))) (not (block (<=:bool 3:int 2:int)))) (block (>:bool 3:int 2:int))) (block (>=:bool 3:int 3:int))) (block (==:bool 4:int 4:int))) (block (<>:bool 4:int 5:int))) (not (block (<>:bool 4:int 4:int)))) (block (<:bool -5:long 2:long))) (block (<=:bool 2:long 2:long))) (block (>:bool 3:long 2:long))) (block (>=:bool 3:long 3:long))) (block (==:bool 4:long 4:long))) (block (<>:bool 4:long 5:long))) (block (<:bool (call name(byte) 1:int) (call name(byte) 2:int)))) (block (<:bool (call name(short) 1:int) (call name(short) 2:int))))
 ```
 
 ```hir
@@ -67,9 +69,9 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (<:bool -1.5:float 2.0:float)
-contains (<:bool -2.5:double 1.5:double)
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (and (and (and (and (and (and (and (and (and (and (and (block (<:bool -1.5:float 2.0:float)) (block (<=:bool 2.0:float 2.0:float))) (block (>:bool 3.0:float 2.0:float))) (block (>=:bool 3.0:float 3.0:float))) (block (==:bool 4.0:float 4.0:float))) (block (<>:bool 4.0:float 5.0:float))) (block (<:bool -2.5:double 1.5:double))) (block (<=:bool 1.5:double 1.5:double))) (block (>:bool 3.5:double 1.5:double))) (block (>=:bool 3.5:double 3.5:double))) (block (==:bool 4.5:double 4.5:double))) (block (<>:bool 4.5:double 5.5:double)))
 ```
 
 ```hir
@@ -92,9 +94,9 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (+:int 10:int 2:int)
-contains (/:double 10:int 2:int)
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (and (and (and (and (and (and (and (block (==:bool (*:int (block (-:int (+:int 10:int 2:int) 4:int)) 3:int) 24:int)) (block (==:bool (*:long (block (-:long (+:long 10:long 2:long) 4:long)) 3:long) 24:long))) (block (==:bool (/:double 10:int 2:int) 5:int))) (block (==:bool (/:double 10:long 2:long) 5:long))) (block (==:bool (/:float (*:float (block (-:float (+:float 1.5:float 2.5:float) 1.0:float)) 2.0:float) 3.0:float) 2.0:float))) (block (==:bool (/:double (*:double (block (-:double (+:double 1.5:double 2.5:double) 1.0:double)) 2.0:double) 3.0:double) 2.0:double))) (block (==:bool (neg (block (+:float 1.5:float 2.5:float))) -4.0:float))) (block (==:bool (neg (block (+:long 1:long 2:long))) -3:long)))
 ```
 
 ```hir
@@ -157,18 +159,24 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (def il 5:long)
-contains (def kStr "hi")
-contains (def kNull null)
+;; hir -O0 fn=f
+fn f () -> bool {pure unique}
+  (def bs (call name(byte) 3:int))
+  (def sl (call name(short) 4:int))
+  (def il 5:long)
+  (def ifl 6:int)
+  (def id 7:int)
+  (def kStr "hi")
+  (def kNull null)
+  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) (==:bool var(il) 5:long)) (==:bool var(ifl) 6.0:float)) (==:bool var(id) 7.0:double)) (==:bool var(kStr) "hi")) (==:bool var(kNull) null))
 ```
 
 ```hir
-;; hir -O1 fn=f check
-!contains (def il
-!contains (def kStr
-!contains (def kNull
-contains (==:bool "hi" "hi")
+;; hir -O1 fn=f
+fn f () -> bool {pure unique}
+  (def bs (call name(byte) 3:int))
+  (def sl (call name(short) 4:int))
+  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) true:bool) true:bool) true:bool) (==:bool "hi" "hi")) (==:bool null null))
 ```
 
 ## Constant if-pruning and convertConstToKind widening
@@ -187,17 +195,25 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (def e (if false:bool
-contains (def l (if true:bool
-contains (def fl (if false:bool
+;; hir -O0 fn=f
+fn f () -> bool {pure unique}
+  (def e (if false:bool (block 1:int)))
+  (def s (if true:bool (block (call name(byte) 7:int)) (block (call name(short) 8:int))))
+  (def i (if true:bool (block (call name(short) 7:int)) (block 8:int)))
+  (def l (if true:bool (block 9:long) (block 10:long)))
+  (def fl (if false:bool (block 1.0:float) (block (call name(float) 4:int))))
+  (def d (if true:bool (block 5:int) (block 6.5:double)))
+  (and (and (and (and (and (==:bool var(e) null) (==:bool var(s) (call name(short) 7:int))) (==:bool var(i) 7:int)) (==:bool var(l) 9:long)) (==:bool var(fl) 4.0:float)) (==:bool var(d) 5.0:double))
 ```
 
 ```hir
-;; hir -O1 fn=f check
-!contains (def e
-!contains (def l
-contains (def fl (call name(float) 4:int))
+;; hir -O1 fn=f
+fn f () -> bool {pure unique}
+  (def s (if true:bool (block (call name(byte) 7:int)) (call name(short) 8:int)))
+  (def i (if true:bool (block (call name(short) 7:int)) 8:int))
+  (def fl (call name(float) 4:int))
+  (def d (if true:bool (block 5:int) 6.5:double))
+  (and (and (and (and (and (==:bool null null) (==:bool var(s) (call name(short) 7:int))) (==:bool var(i) 7:int)) true:bool) (==:bool var(fl) 4.0:float)) (==:bool var(d) 5.0:double))
 ```
 
 ## Constant if-pruning with folded arithmetic branches and multi-statement blocks
@@ -215,16 +231,29 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (+:int 5:int 1:int)
-contains (def x 2:int)
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (def wL (if true:bool (block (+:int 5:int 1:int)) (block 2:long)))
+  (def wF (if true:bool (block (+:int 3:int 1:int)) (block 2:int)))
+  (def wD (if true:bool (block (+:int 4:int 2:int)) (block 1:int)))
+  (def a
+    (if true:bool
+      (block
+        (def x 2:int)
+        (+:int var(x) 3:int))
+      (block 1:int)))
+  (def b (if false:bool (block 1.0:double) (block 4:int)))
+  (and (and (and (and (==:bool var(wL) 6:long) (==:bool var(wF) 4.0:float)) (==:bool var(wD) 6.0:double)) (==:bool var(a) 5:int)) (==:bool var(b) 4.0:double))
 ```
 
 ```hir
-;; hir -O1 fn=f check
-contains (def wL (if true:bool (block 6:int) 2:long))
-!contains (def a
-!contains (def x
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  (def wL (if true:bool (block 6:int) 2:long))
+  (def wF (if true:bool (block 4:int) (block 2:int)))
+  (def wD (if true:bool (block 6:int) (block 1:int)))
+  (def b (if false:bool 1.0:double (block 4:int)))
+  (and (and (and (and (==:bool var(wL) 6:long) (==:bool var(wF) 4.0:float)) (==:bool var(wD) 6.0:double)) true:bool) (==:bool var(b) 4.0:double))
 ```
 
 ## Constant if-pruning with literal/folded branches and target widening
@@ -241,16 +270,22 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (+:int 4:int 2:int)
-contains (def wStr (if true:bool
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (def wL (if true:bool (block (+:int 4:int 2:int)) (block 1:long)))
+  (def wF (if true:bool (block (+:int 3:int 2:int)) (block 1.5:float)))
+  (def wD (if true:bool (block (+:int 7:int 1:int)) (block 2.5:double)))
+  (def wStr (if true:bool (block "ok") (block "no")))
+  (and (and (and (==:bool var(wL) 6:long) (==:bool var(wF) 5.0:float)) (==:bool var(wD) 8.0:double)) (==:bool var(wStr) "ok"))
 ```
 
 ```hir
-;; hir -O1 fn=f check
-contains (def wL (if true:bool (block 6:int) 1:long))
-!contains (def wStr
-contains (==:bool "ok" "ok")
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  (def wL (if true:bool (block 6:int) 1:long))
+  (def wF (if true:bool (block 5:int) 1.5:float))
+  (def wD (if true:bool (block 8:int) 2.5:double))
+  (and (and (and (==:bool var(wL) 6:long) (==:bool var(wF) 5.0:float)) (==:bool var(wD) 8.0:double)) (==:bool "ok" "ok"))
 ```
 
 ## Constant if-pruning with non-constant widened branches and non-constant if
@@ -266,15 +301,24 @@ assert(checkIf(2))
 ```
 
 ```hir
-;; hir -O0 fn=checkIf check
-contains (call-fn widenSinkD
-contains (def nc (if (>:bool var(p) 0:int) (block 1:int) (block 2:int)))
+;; hir -O0 fn=checkIf
+fn checkIf (p:int) -> bool {nothrow unique}
+  (def wBl (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int))))
+  (def wArg (call-fn widenSinkD (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int)))))
+  (def nc (if (>:bool var(p) 0:int) (block 1:int) (block 2:int)))
+  (and (and (==:bool var(wBl) 3.0:double) (==:bool var(wArg) 3.5:double)) (==:bool var(nc) 1:int))
 ```
 
 ```hir
-;; hir -O1 fn=checkIf check
-!contains (call-fn widenSinkD
-contains (def nc (if (>:bool var(p) 0:int) 1:int 2:int))
+;; hir -O1 fn=checkIf
+fn checkIf (p:int) -> bool {nothrow unique}
+  (def wBl (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int))))
+  (def wArg
+    (block
+      (def v (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int))))
+      (+:double var(v) 0.5:double)))
+  (def nc (if (>:bool var(p) 0:int) 1:int 2:int))
+  (and (and (==:bool var(wBl) 3.0:double) (==:bool var(wArg) 3.5:double)) (==:bool var(nc) 1:int))
 ```
 
 ## Whitelisted foldable String and Math calls, plus non-folding Math.floorDiv
@@ -290,17 +334,15 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (jcall String.trim "  babble  ")
-contains (jcall Math.sqrt 9.0:double)
-contains (jcall Math.floorDiv 10:int 3:int)
+;; hir -O0 fn=f
+fn f () -> bool {pure unique}
+  (and (and (and (and (and (and (and (==:bool (jcall String.trim "  babble  ") "babble") (==:bool (jcall String.length "abcd") 4:int)) (jcall String.isEmpty "")) (block (==:bool (+:obj "hello" " world") "hello world"))) (==:bool (jcall Math.sqrt 9.0:double) 3.0:double)) (==:bool (jcall Math.round 2.5:double) 3:long)) (==:bool (jcall Math.toDegrees 0.0:double) 0.0:double)) (==:bool (jcall Math.floorDiv 10:int 3:int) 3:int))
 ```
 
 ```hir
-;; hir -O1 fn=f check
-!contains String.trim
-!contains Math.sqrt
-contains (jcall Math.floorDiv 10:int 3:int)
+;; hir -O1 fn=f
+fn f () -> bool {pure unique}
+  (and (and (and (and (and (and (and (==:bool "babble" "babble") true:bool) true:bool) (==:bool "hello world" "hello world")) true:bool) true:bool) true:bool) (==:bool (jcall Math.floorDiv 10:int 3:int) 3:int))
 ```
 
 ## Whitelisted foldable Math.abs/min/max across int, long, float, and double
@@ -316,10 +358,9 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-count 4 (jcall Math.abs
-count 2 (jcall Math.min
-count 2 (jcall Math.max
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (and (and (and (and (and (and (==:bool (jcall Math.abs -7:int) 7:int) (==:bool (jcall Math.abs -9:long) 9:long)) (==:bool (jcall Math.abs -2.5:float) 2.5:float)) (==:bool (jcall Math.abs -3.5:double) 3.5:double)) (==:bool (jcall Math.min 3:int (jcall Math.max 1:int 2:int)) 2:int)) (==:bool (jcall Math.min 4:long 9:long) 4:long)) (==:bool (jcall Math.max 1.5:float 2.5:float) 2.5:float))
 ```
 
 ```hir
@@ -374,9 +415,14 @@ assert(f())
 ```
 
 ```hir
-;; hir -O0 fn=f check
-contains (while false:bool
-contains (+:int 1:int 2:int)
+;; hir -O0 fn=f
+fn f () -> bool {nothrow unique}
+  (def x 0:int)
+  (while false:bool
+    (block (set x += 1:int)))
+  (def negOk (and (==:bool (neg (block (+:int 1:int 2:int))) -3:int) (==:bool (neg (block (+:double 1.5:double 2.5:double))) -4.0:double)))
+  (def cmpOk (and (and (and (and (block (<:bool 1:int 2:long)) (block (<:bool 1:long 2.5:double))) (not (block (<:bool 3:int 2:int)))) (not (block (==:bool 3:int 4:int)))) (not (block (>=:bool 2:int 3:int)))))
+  (and (and (==:bool var(x) 0:int) var(negOk)) var(cmpOk))
 ```
 
 ```hir
@@ -528,8 +574,9 @@ fn arith () -> int {nothrow unique}
 ```
 
 ```hir
-;; hir -O0 fn=root check
-contains (jcall Math.sqrt 9.0:double)
+;; hir -O0 fn=root
+fn root () -> double {nothrow unique}
+  (jcall Math.sqrt 9.0:double)
 ```
 
 ```hir
@@ -553,8 +600,9 @@ assert(branch() == 42 and deadLoop() == 7)
 ```
 
 ```hir
-;; hir -O0 fn=branch check
-contains (if
+;; hir -O0 fn=branch
+fn branch () -> int {nothrow}
+  (if (<:bool 2:int 3:int) (block 42:int) (block 99:int))
 ```
 
 ```hir
@@ -564,9 +612,9 @@ fn branch () -> int {nothrow}
 ```
 
 ```hir
-;; hir -O1 fn=deadLoop check
-!contains (while
-contains 7:int
+;; hir -O1 fn=deadLoop
+fn deadLoop () -> int {nothrow unique}
+  7:int
 ```
 
 ## Constant folding inside try, multiple catch clauses, and finally
@@ -585,19 +633,31 @@ assert(run(0) == 3 and run(1) == 7 and run(2) == 30)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (+:int 10:int 20:int)
-contains (+:int 1:int 2:int)
-contains (+:int 3:int 4:int)
-contains (+:int 5:int 6:int)
+;; hir -O0 fn=run
+fn run (k:int) -> int {pure}
+  (try
+    (block
+      (if (==:bool var(k) 0:int) (block (throw (jnew ArithmeticException "a"))) (if (==:bool var(k) 1:int) (block (throw (jnew IllegalStateException "b"))) (block (+:int 10:int 20:int)))))
+    (catch e#1:java|java.lang.ArithmeticException|java.lang.ArithmeticException
+      (+:int 1:int 2:int))
+    (catch e#2:java|java.lang.IllegalStateException|java.lang.IllegalStateException
+      (+:int 3:int 4:int))
+    (finally
+      (call name(discard) (+:int 5:int 6:int))))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (+:int
-contains 30:int
-contains 3:int
-contains 7:int
+;; hir -O1 fn=run
+fn run (k:int) -> int {pure}
+  (try
+    (block
+      (if (==:bool var(k) 0:int) (throw (jnew ArithmeticException "a")) (if (==:bool var(k) 1:int) (throw (jnew IllegalStateException "b")) 30:int)))
+    (catch e#1:java|java.lang.ArithmeticException|java.lang.ArithmeticException
+      3:int)
+    (catch e#2:java|java.lang.IllegalStateException|java.lang.IllegalStateException
+      7:int)
+    (finally
+      null))
 ```
 
 ## Constant folding in catch-only and finally-only try variants plus for iterable
@@ -614,17 +674,48 @@ assert(run(0, list(1, 2), list(9)) == 8 and run(4, list(1, 2), list(9)) == 11)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (+:int 2:int 3:int)
-contains (def z (+:int 4:int 5:int))
-contains (if true:bool
+;; hir -O0 fn=run
+fn run (k:int, xs:obj, ys:obj) -> int {pure unique}
+  (def a
+    (try
+      (block
+        (if (==:bool var(k) 0:int) (block (throw (jnew BabbleException "e"))) (block var(k))))
+      (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+        (+:int 2:int 3:int))))
+  (def b
+    (try
+      (block
+        var(k))
+      (finally
+        (def z (+:int 4:int 5:int))
+        (call name(discard) var(z)))))
+  (def s 0:int)
+  (for e in (block (if true:bool (block var(xs)) (block var(ys))))
+    (block
+      (set s += var(e))))
+  (+:int (+:int var(a) var(b)) var(s))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains 5:int
-!contains (def z
-contains (for e in var(xs)
+;; hir -O1 fn=run
+fn run (k:int, xs:obj, ys:obj) -> int {pure unique}
+  (def a
+    (try
+      (block
+        (if (==:bool var(k) 0:int) (throw (jnew BabbleException "e")) var(k)))
+      (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+        5:int)))
+  (def b
+    (try
+      (block
+        var(k))
+      (finally
+        null)))
+  (def s 0:int)
+  (for e in var(xs)
+    (block
+      (set s += var(e))))
+  (+:int (+:int var(a) var(b)) var(s))
 ```
 
 ## Constant if-pruning with widened non-constant Block and mixed-width branches
@@ -640,15 +731,21 @@ assert(widenIf(2, 0.5) == 8.5)
 ```
 
 ```hir
-;; hir -O0 fn=widenIf check
-contains (def a (+:double (block (if true:bool
-count 3 (if true:bool
+;; hir -O0 fn=widenIf
+fn widenIf (p:int, x:double) -> double {nothrow unique}
+  (def a (+:double (block (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int)))) var(x)))
+  (def b (if true:bool (block var(p)) (block 1.5:double)))
+  (def c (if true:bool (block (+:int var(p) 1:int)) (block 1.5:double)))
+  (+:double (+:double var(a) var(b)) var(c))
 ```
 
 ```hir
-;; hir -O1 fn=widenIf check
-contains (def a (+:double (+:int var(p) 1:int) var(x)))
-count 2 (if true:bool
+;; hir -O1 fn=widenIf
+fn widenIf (p:int, x:double) -> double {nothrow unique}
+  (def a (+:double (+:int var(p) 1:int) var(x)))
+  (def b (if true:bool (block var(p)) 1.5:double))
+  (def c (if true:bool (block (+:int var(p) 1:int)) 1.5:double))
+  (+:double (+:double var(a) var(b)) var(c))
 ```
 
 ## String concatenation exceeding MAX_FOLDED_STRING_LENGTH stays unfolded
@@ -665,16 +762,23 @@ assert(bigConcat() == 4128)
 ```
 
 ```hir
-;; hir -O0 fn=bigConcat check
-contains (def s2 (+:obj var(s1) var(s1)))
-contains (def s8 (+:obj var(s7) var(s7)))
-contains (def s9 (+:obj var(s8) var(s1)))
+;; hir -O0 fn=bigConcat
+fn bigConcat () -> int {nothrow unique}
+  (def s1 "01234567890123456789012345678901")
+  (def s2 (+:obj var(s1) var(s1)))
+  (def s3 (+:obj var(s2) var(s2)))
+  (def s4 (+:obj var(s3) var(s3)))
+  (def s5 (+:obj var(s4) var(s4)))
+  (def s6 (+:obj var(s5) var(s5)))
+  (def s7 (+:obj var(s6) var(s6)))
+  (def s8 (+:obj var(s7) var(s7)))
+  (def s9 (+:obj var(s8) var(s1)))
+  (jcall String.length var(s9))
 ```
 
 ```hir
-;; hir -O1 fn=bigConcat check
-!contains (def s2
-!contains (def s8
-contains (def s9 (+:obj "
-contains (jcall String.length var(s9))
+;; hir -O1 fn=bigConcat
+fn bigConcat () -> int {nothrow unique}
+  (def s9 (+:obj "0123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901012345678901234567890123456789010123456789012345678901234567890101234567890123456789012345678901" "01234567890123456789012345678901"))
+  (jcall String.length var(s9))
 ```

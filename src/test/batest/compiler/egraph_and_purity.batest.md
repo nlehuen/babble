@@ -120,9 +120,9 @@ assert(fBool(true) and fChar(true) and fStr(true))
 ```
 
 ```hir
-;; hir -O0 fn=fChar check
-contains (<:bool 'a' 'b')
-contains (<>:bool 'a' 'b')
+;; hir -O0 fn=fChar
+fn fChar (b:bool) -> bool {nothrow idempotent unique}
+  (and (and (and (and (and (and var(b) (block (<:bool 'a' 'b'))) (block (<=:bool 'a' 'a'))) (block (>:bool 'b' 'a'))) (block (>=:bool 'b' 'b'))) (block (==:bool 'a' 'a'))) (block (<>:bool 'a' 'b')))
 ```
 
 ```hir
@@ -404,18 +404,56 @@ Warning : try block cannot throw; catch clause is unreachable
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 4 (try
-count 3 (catch
-count 2 (finally
+;; hir -O0 fn=run
+fn run (x:int) -> int {io}
+  (def a (+:int (block
+        (try
+          (block
+            (+:int var(x) 1:int))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            (+:int var(x) 2:int)))) 0:int))
+  (def b (+:int (block
+        (try
+          (block
+            (+:int var(x) 1:int))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            (call-fn bump)))) 0:int))
+  (def c (+:int (block
+        (try
+          (block
+            (+:int var(x) 1:int))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            (+:int var(x) 2:int))
+          (finally
+            (def z (+:int var(x) 3:int))
+            (call name(discard) var(z))))) 0:int))
+  (def d (+:int (block
+        (try
+          (block
+            (+:int var(x) 1:int))
+          (finally
+            (call name(discard) (call-fn bump))))) 0:int))
+  (+:int (+:int (+:int var(a) var(b)) var(c)) var(d))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 2 (try
-!contains (catch
-count 2 (finally
-contains (def a (+:int var(x) 1:int))
+;; hir -O1 fn=run
+fn run (x:int) -> int {io}
+  (def a (+:int var(x) 1:int))
+  (def b (+:int var(x) 1:int))
+  (def c
+    (try
+      (block
+        (+:int var(x) 1:int))
+      (finally
+        null)))
+  (def d
+    (try
+      (block
+        (+:int var(x) 1:int))
+      (finally
+        (call name(discard) (call-fn bump)))))
+  (+:int (+:int (+:int var(a) var(b)) var(c)) var(d))
 ```
 
 ## HirPurity : top-level namespace-scoped block, try, catch, and finally
@@ -440,11 +478,30 @@ contains (catch
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (def tb
-count 2 (try
-!contains (catch
-contains (def r3 1:int)
+;; hir -O1 top-level
+top-level:
+  (def tick 0:int)
+  (def bump (fn-ref bump))
+  (def bigInt (fn-ref bigInt))
+  (def volLen (fn-ref volLen))
+  (block
+    (def $try0
+      (try
+        (block
+          1:int)
+        (finally
+          null)))
+    (def r1 var($try0)))
+  (block
+    (def $try1
+      (try
+        (block
+          1:int)
+        (finally
+          null)))
+    (def r2 var($try1)))
+  (def r3 1:int)
+  (call name(assert) (and (and (==:bool name(r1) 1:int) (==:bool name(r2) 1:int)) (==:bool name(r3) 1:int)))
 ```
 
 ## HirPurity.isDeterministic : volatile nothrow record and interface methods in while
@@ -462,17 +519,34 @@ assert(run(2, VR(1), VR(1)) >= 8)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (call-method var(vr).vt)
-contains (call-iface var(vi).vt)
-!contains $licm
+;; hir -O0 fn=run
+fn run (n:int, vr:obj, vi:obj) -> int {volatile nothrow unique}
+  (def a 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set a += (+:int (call-method var(vr).vt) (call-iface var(vi).vt)))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (def $licm0 (get-this-field k))
-contains (call-iface var(vi).vt)
-contains (jcall System.lineSeparator)
+;; hir -O1 fn=run
+fn run (n:int, vr:obj, vi:obj) -> int {volatile nothrow unique}
+  (def a 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (get-this-field k))
+    (while (<:bool var(i) var(n#1))
+      (block
+        (set a += (+:int (block
+              (def n#2
+                (block
+                  (def n#3 (jcall String.length (jcall System.lineSeparator)))
+                  var(n#3)))
+              (+:int var($licm0) var(n#2))) (call-iface var(vi).vt)))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirPurity.isDeterministic : volatile nothrow fn, Java call, and nested volatile child in while
@@ -489,16 +563,35 @@ assert(run(2) >= 8)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 3 (call-fn volLen)
-contains (call-fn bigInt
-!contains $licm
+;; hir -O0 fn=run
+fn run (n:int) -> int {volatile nothrow unique}
+  (def a 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set a += (+:int (+:int (call-fn volLen) (jcall String.length (jcall System.lineSeparator))) (call-fn bigInt (+:int (call-fn volLen) (call-fn volLen)))))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains $licm
-count 4 (jcall System.lineSeparator)
+;; hir -O1 fn=run
+fn run (n:int) -> int {volatile nothrow unique}
+  (def a 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) var(n#1))
+    (block
+      (set a += (+:int (+:int (block
+              (def n#2 (jcall String.length (jcall System.lineSeparator)))
+              var(n#2)) (jcall String.length (jcall System.lineSeparator))) (block
+            (def x (+:int (block
+                  (def n#3 (jcall String.length (jcall System.lineSeparator)))
+                  var(n#3)) (block
+                  (def n#4 (jcall String.length (jcall System.lineSeparator)))
+                  var(n#4))))
+            var(x))))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ## HirPurity : volatile and impure For loops inside blocks
@@ -516,18 +609,53 @@ assert(run(2, freeze(array.of(1, 2))) == 4 and tick == 4)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (call-fn bigInt
-contains (call-fn volLen)
-contains (call-fn bump)
+;; hir -O0 fn=run
+fn run (n:int, xs:obj) -> int {io}
+  (def a 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set a += (call-fn bigInt (block
+            (for e#1 in var(xs)
+              (block
+                (call name(discard) (call-fn volLen))))
+            1:int)))
+      (def u
+        (block
+          (for e#2 in var(xs)
+            (block
+              (call name(discard) (call-fn bump))))
+          1:int))
+      (set a += var(u))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (call-fn bigInt
-!contains (call-fn volLen)
-contains (call-fn bump)
-!contains $licm
+;; hir -O1 fn=run
+fn run (n:int, xs:obj) -> int {io}
+  (def a 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set a +=
+        (block
+          (def x
+            (block
+              (for e#1 in var(xs)
+                (block
+                  null))
+              1:int))
+          var(x)))
+      (def u
+        (block
+          (for e#2 in var(xs)
+            (block
+              (call name(discard) (call-fn bump))))
+          1:int))
+      (set a += var(u))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ## HirPurity.allArgsPrimitiveOrImmutable : String.equals on immutable String vs mutable Point
@@ -544,17 +672,34 @@ assert(run(2) == 2)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def u1 (jcall String.equals "ab" "cd"))
-contains (def u2 (jcall String.equals "ab" var(pt)))
-!contains $licm
+;; hir -O0 fn=run
+fn run (n:int) -> int {io}
+  (def pt (jnew Point 1:int 2:int))
+  (def a 0:int)
+  (def i 0:int)
+  (def u1 (jcall String.equals "ab" "cd"))
+  (def u2 (jcall String.equals "ab" var(pt)))
+  (while (<:bool var(i) var(n))
+    (block
+      (set a += (block (if (and (jcall String.equals "ab" "ab") (not (jcall String.equals "ab" var(pt)))) (block 1:int) (block 0:int))))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (def u1
-contains (def u2 (jcall String.equals "ab" var(pt)))
-contains (def $licm0 (jcall String.equals "ab" "ab"))
+;; hir -O1 fn=run
+fn run (n:int) -> int {io}
+  (def pt (jnew Point 1:int 2:int))
+  (def a 0:int)
+  (def i 0:int)
+  (def u2 (jcall String.equals "ab" var(pt)))
+  (block
+    (def $licm0 (jcall String.equals "ab" "ab"))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += (if (and var($licm0) (not (jcall String.equals "ab" var(pt)))) 1:int 0:int))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirPurity : CoreExceptionRef, boxed Integer arithmetic, and char-vs-nullable equality
@@ -633,19 +778,33 @@ assert(run(ext.ExtRec(4)) >= 18)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def u1 (call-method var(er).getPure))
-contains (def u2 (call-method var(er).getThrow))
-contains (def u3 (call-method var(er).getVol))
-!contains $licm
+;; hir -O0 fn=run
+fn run (er:obj) -> int {volatile unique}
+  (def u1 (call-method var(er).getPure))
+  (def u2 (call-method var(er).getThrow))
+  (def u3 (call-method var(er).getVol))
+  (def a 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) 2:int)
+    (block
+      (set a += (+:int (call-method var(er).getPure) (call-method var(er).getVol)))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (def u1
-contains (def u2 (call-method var(er).getThrow))
-!contains (def u3
-contains (def $licm0 (call-method var(er).getPure))
+;; hir -O1 fn=run
+fn run (er:obj) -> int {volatile unique}
+  (def u2 (call-method var(er).getThrow))
+  (def a 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (call-method var(er).getPure))
+    (while (<:bool var(i) 2:int)
+      (block
+        (set a += (+:int var($licm0) (call-method var(er).getVol)))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirPurity : InterfaceCall on ThisRef, RecordNew, call result, and impure method
@@ -692,16 +851,27 @@ assert(run() == 1)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def u0 (record-new LR 1:int))
-contains (def u2 (call-method (call-fn getR).m))
+;; hir -O0 fn=run
+fn run () -> int {nothrow unique}
+  (def LR (class-ref LR))
+  (def u0 (record-new LR 1:int))
+  (def u1 (get-this-field x))
+  (def u2 (call-method (call-fn getR).m))
+  1:int
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains record-new
-contains (def $sr_u0_0 1:int)
-!contains .m
+;; hir -O1 fn=run
+fn run () -> int {nothrow unique}
+  (def LR (class-ref LR))
+  (block (def $sr_u0_0 1:int))
+  (def u1 (get-this-field x))
+  (def u2
+    (block
+      (def $this (call name(R) 3:int))
+      (def u (get-this-field y))
+      (get-this-field x)))
+  1:int
 ```
 
 ## HirPurity : uninitialized Def, captured cell local, capturing closure, Move, and late RecordNew
@@ -720,16 +890,43 @@ assert(run(3) == 4)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def u0 (record-new LateR 1:int))
-contains (def u1 (call-fn fUninit var(k)))
-contains (def u4 (move var(r)))
+;; hir -O0 fn=run
+fn run (k:int) -> int {io}
+  (def outer var(k))
+  (def cl (fn-ref cl))
+  (def u0 (record-new LateR 1:int))
+  (def u1 (call-fn fUninit var(k)))
+  (def u2 (call-fn cl))
+  (def u3
+    (block
+      (def cap 1:int)
+      (def c2 (fn-ref c2))
+      (call-fn c2)))
+  (def r (core-new list 2:int))
+  (def u4 (move var(r)))
+  var(u2)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains record-new
-contains (def $sr_u0_0 1:int)
-!contains (call-fn fUninit
-!contains (def u4
+;; hir -O1 fn=run
+fn run (k:int) -> int {io}
+  (def outer var(k))
+  (def cl (fn-ref cl))
+  (block
+    name(LateR)
+    (def $sr_u0_0 1:int))
+  (def u1
+    (block
+      name(fUninit)
+      (def u)
+      (set u (+:int var(k) 1:int))
+      (nonnull var(u))))
+  (def u2 (call-fn cl))
+  (def u3
+    (block
+      (def cap 1:int)
+      (def c2 (fn-ref c2))
+      (call-fn c2)))
+  (def r (core-new list 2:int))
+  var(u2)
 ```

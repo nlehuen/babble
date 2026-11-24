@@ -91,15 +91,27 @@ assert(run(9) == 16)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (call-method var(b).setGet var(n))
-contains .mix
+;; hir -O0 fn=run
+fn run (n:int) -> int {nothrow unique}
+  (def b (call name(MutBox) 1:int))
+  (def a (call-method var(b).setGet var(n)))
+  (+:int var(a) (call-method (record-new Pair 2:int 3:int).mix (record-new Pair 4:int 5:int)))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains .setGet
-!contains .mix
+;; hir -O1 fn=run
+fn run (n:int) -> int {nothrow unique}
+  (def b (call name(MutBox) 1:int))
+  (def a
+    (block
+      (set-this-field x var(n))
+      (get-this-field x)))
+  (+:int var(a) (block
+      (block
+        (def $sr_$this_0 2:int)
+        (def $sr_$this_1 3:int))
+      (block (def $sr_o_1 5:int))
+      (+:int var($sr_$this_0) var($sr_o_1))))
 ```
 
 ## InlinePass.inlineExpr : per-owner inline budget exhaustion (>32 calls)
@@ -115,13 +127,21 @@ assert(f(1) == 68)
 ```
 
 ```hir
-;; hir -O0 fn=f check
-count 34 (call-fn inc
+;; hir -O0 fn=f
+fn f (x:int) -> int {nothrow unique}
+  (def a (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (call-fn inc var(x)) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))))
+  (def b (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (call-fn inc var(x)) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))))
+  (def c (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (call-fn inc var(x)) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))) (call-fn inc var(x))))
+  (+:int (+:int var(a) var(b)) var(c))
 ```
 
 ```hir
-;; hir -O1 fn=f check
-!contains (call-fn inc
+;; hir -O1 fn=f
+fn f (x:int) -> int {nothrow unique}
+  (def a (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int var(x) var(x)) 3:int) var(x)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)))
+  (def b (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int var(x) var(x)) 3:int) var(x)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)))
+  (def c (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int var(x) var(x)) 3:int) var(x)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)) (+:int var(x) 1:int)))
+  (+:int (+:int var(a) var(b)) var(c))
 ```
 
 ## InlinePass.inlineExpr : identity-order named args on record method skip inlining
@@ -183,18 +203,38 @@ assert(run(4, true) == 56 and run(4, false) == 57)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 2 (call-fn combine
-contains (call-method var(p).add 1:int var(y))
-contains (def g
+;; hir -O0 fn=run
+fn run (n:int, fl:bool) -> int {nothrow unique}
+  (def p (record-new Pair var(n) 0:int))
+  (def cap (fn-ref cap))
+  (def x var(n))
+  (def r1 (call-fn combine var(x) (block
+        (set x (+:int var(x) 1:int))
+        var(x))))
+  (def g (if false:bool (block (call-fn combine var(y) 1:int)) (block 0:int)))
+  (def y (if var(fl) (block 2:int) (block 3:int)))
+  (+:int (+:int (+:int var(r1) var(g)) (call-method var(p).add 1:int var(y))) (call-fn cap))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (call-fn combine
-!contains .add
-!contains (def g
-contains (def $this var(p))
+;; hir -O1 fn=run
+fn run (n:int, fl:bool) -> int {nothrow unique}
+  (def p (record-new Pair var(n) 0:int))
+  (def cap (fn-ref cap))
+  (def x var(n))
+  (def r1
+    (block
+      (def a var(x))
+      (def b#1
+        (block
+          (set x (+:int var(x) 1:int))
+          var(x)))
+      (+:int (*:int var(a) 10:int) var(b#1))))
+  (def y (if var(fl) 2:int 3:int))
+  (+:int (+:int var(r1) (block
+        (def $this var(p))
+        (def b#2 var(y))
+        (+:int (+:int (get-this-field x) 1:int) var(b#2)))) (call-fn cap))
 ```
 
 ## InlinePass.alphaRename : VarRead widening substitution, uninitialized Def, and for-body local def
@@ -209,17 +249,25 @@ assert(run(3, true) == 12.5 and run(3, false) == 18.5)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (call-fn widen
-contains (call-fn choose
-contains (call-fn sum2
+;; hir -O0 fn=run
+fn run (p:int, fl:bool) -> double {pure unique}
+  (+:double (call-fn widen var(p)) (call name(double) (+:int (call-fn choose var(fl) var(p) 9:int) (call-fn sum2 (core-new list 1:int 2:int)))))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (call-fn widen
-!contains (call-fn choose
-!contains (call-fn sum2
+;; hir -O1 fn=run
+fn run (p:int, fl:bool) -> double {pure unique}
+  (+:double (+:double var(p) 0.5:double) (call name(double) (+:int (block
+          (def y)
+          (if var(fl) (set y var(p)) (set y 9:int))
+          (nonnull var(y))) (block
+          (def xs (core-new list 1:int 2:int))
+          (def s 0:int)
+          (for e in var(xs)
+            (block
+              (def d (*:int var(e) 2:int))
+              (set s += var(d))))
+          var(s)))))
 ```
 
 ## InlinePass.alphaRename : Move with unique parameter substitution
@@ -314,15 +362,31 @@ assert(Good(Pair(3, 0)).get() + Good(Pair(3, 0)).tag() + Leak2(3).get() == 14)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-method (call name(Good)
-contains (call-method (call name(Leak2) 3:int).get)
+;; hir -O0 top-level
+top-level:
+  (def Pair (class-ref Pair))
+  (def inc (fn-ref inc))
+  (def widen (fn-ref widen))
+  (def idG (fn-ref idG))
+  (def Tag (iface-ref Tag))
+  (def Good (class-ref Good))
+  (def Leak2 (class-ref Leak2))
+  (call name(assert) (==:bool (+:int (+:int (call-method (call name(Good) (record-new Pair 3:int 0:int)).get) (call (select (call name(Good) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (call-method (call name(Good) (record-new Pair 3:int 0:int)).get)
-contains (call-method (call name(Leak2) 3:int).get)
+;; hir -O1 top-level
+top-level:
+  (def Pair (class-ref Pair))
+  (def inc (fn-ref inc))
+  (def widen (fn-ref widen))
+  (def idG (fn-ref idG))
+  (def Tag (iface-ref Tag))
+  (def Good (class-ref Good))
+  (def Leak2 (class-ref Leak2))
+  (call name(assert) (==:bool (+:int (+:int (block
+            (def $this (call name(Good) (record-new Pair 3:int 0:int)))
+            (get-this-field y)) (call (select (call name(Good) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int))
 ```
 
 ## InlinePass.isDefinitelyDefinedPureCallee : local definitely-defined vs forward-referenced function

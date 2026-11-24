@@ -663,17 +663,47 @@ assert(s == 44)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (for b in (array-new OF (call name(byte) 1:int) (call name(byte) 2:int))
-contains (if var(z) (block (set-name s += 10:int)))
-contains (for f in (array-new OF 1.0:float 2.0:float)
+;; hir -O0 top-level
+top-level:
+  (def s 0:int)
+  (for b in (array-new OF (call name(byte) 1:int) (call name(byte) 2:int))
+    (block
+      (set-name s += (call name(int) var(b)))))
+  (for z in (array-new OF true:bool false:bool true:bool)
+    (block
+      (if var(z) (block (set-name s += 10:int)))))
+  (for sh in (array-new OF (call name(short) 3:int) (call name(short) 4:int))
+    (block
+      (set-name s += (call name(int) var(sh)))))
+  (for l in (array-new OF 5:long 6:long)
+    (block
+      (set-name s += (call name(int) var(l)))))
+  (for f in (array-new OF 1.0:float 2.0:float)
+    (block
+      (set-name s += (call name(int) var(f)))))
+  (call name(assert) (==:bool name(s) 44:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (for b in (array-new OF (call name(byte) 1:int) (call name(byte) 2:int))
-contains (if var(z) (set-name s += 10:int))
-contains (for f in (array-new OF 1.0:float 2.0:float)
+;; hir -O1 top-level
+top-level:
+  (def s 0:int)
+  (for b in (array-new OF (call name(byte) 1:int) (call name(byte) 2:int))
+    (block
+      (set-name s += (call name(int) var(b)))))
+  (for z in (array-new OF true:bool false:bool true:bool)
+    (block
+      (if var(z) (set-name s += 10:int))))
+  (for sh in (array-new OF (call name(short) 3:int) (call name(short) 4:int))
+    (block
+      (set-name s += (call name(int) var(sh)))))
+  (for l in (array-new OF 5:long 6:long)
+    (block
+      (set-name s += (call name(int) var(l)))))
+  (for f in (array-new OF 1.0:float 2.0:float)
+    (block
+      (set-name s += (call name(int) var(f)))))
+  (call name(assert) (==:bool name(s) 44:int))
 ```
 
 ## Capturing bool, byte, short, and char for-loop variables in closures
@@ -688,11 +718,26 @@ assert(s == 71)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (for z in (array-new OF true:bool)
-contains (for b in (array-new OF (call name(byte) 2:int))
-contains (for h in (array-new OF (call name(short) 3:int))
-contains (for c in (array-new OF 'A')
+;; hir -O0,-O1 top-level
+top-level:
+  (def s 0:int)
+  (for z in (array-new OF true:bool)
+    (block
+      (def g#1 (fn-ref g#1))
+      (set-name s += (call-fn g#1))))
+  (for b in (array-new OF (call name(byte) 2:int))
+    (block
+      (def g#2 (fn-ref g#2))
+      (set-name s += (call-fn g#2))))
+  (for h in (array-new OF (call name(short) 3:int))
+    (block
+      (def g#3 (fn-ref g#3))
+      (set-name s += (call-fn g#3))))
+  (for c in (array-new OF 'A')
+    (block
+      (def g#4 (fn-ref g#4))
+      (set-name s += (call-fn g#4))))
+  (call name(assert) (==:bool name(s) 71:int))
 ```
 
 ## Capturing long, float, and double for-loop variables in closures
@@ -706,17 +751,35 @@ assert(fs.get(0)() + fs.get(1)() + fs.get(2)() == 15)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (def fs (call (block (type-apply core-col(list)))))
-contains (for l in (array-new OF 4:long)
-contains (for d in (array-new OF 6.0:double)
+;; hir -O0 top-level
+top-level:
+  (def fs (call (block (type-apply core-col(list)))))
+  (for l in (array-new OF 4:long)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#0>))))
+  (for f in (array-new OF 5.0:float)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#1>))))
+  (for d in (array-new OF 6.0:double)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#2>))))
+  (call name(assert) (==:bool (+:int (+:int (call (jcall List.get name(fs) 0:int)) (call (jcall List.get name(fs) 1:int))) (call (jcall List.get name(fs) 2:int))) 15:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (def fs (call (type-apply core-col(list))))
-contains (for l in (array-new OF 4:long)
-contains (for d in (array-new OF 6.0:double)
+;; hir -O1 top-level
+top-level:
+  (def fs (call (type-apply core-col(list))))
+  (for l in (array-new OF 4:long)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#0>))))
+  (for f in (array-new OF 5.0:float)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#1>))))
+  (for d in (array-new OF 6.0:double)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#2>))))
+  (call name(assert) (==:bool (+:int (+:int (call (jcall List.get name(fs) 0:int)) (call (jcall List.get name(fs) 1:int))) (call (jcall List.get name(fs) 2:int))) 15:int))
 ```
 
 ## Primitive array(from:) for byte, short, float, bool, and char
@@ -731,10 +794,12 @@ assert(ab.get(1) == byte(2) and as_.get(0) == short(3) and af.get(1) == 2.5f and
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (def ab (array-new FROM
-contains (def as_ (array-new FROM
-contains (def af (array-new FROM
-contains (def az (array-new FROM
-contains (def ac (array-new FROM
+;; hir -O0,-O1 top-level
+top-level:
+  (def ab (array-new FROM (call (select core-col(list).of) (call name(byte) 1:int) (call name(byte) 2:int))))
+  (def as_ (array-new FROM (call (select core-col(list).of) (call name(short) 3:int) (call name(short) 4:int))))
+  (def af (array-new FROM (call (select core-col(list).of) 1.5:float 2.5:float)))
+  (def az (array-new FROM (call (select core-col(list).of) true:bool false:bool)))
+  (def ac (array-new FROM (call (select core-col(list).of) 'x' 'y')))
+  (call name(assert) (and (and (and (and (==:bool (array-op GET name(ab) 1:int) (call name(byte) 2:int)) (==:bool (array-op GET name(as_) 0:int) (call name(short) 3:int))) (==:bool (array-op GET name(af) 1:int) 2.5:float)) (array-op GET name(az) 0:int)) (==:bool (array-op GET name(ac) 1:int) 'y')))
 ```

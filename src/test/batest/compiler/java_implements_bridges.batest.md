@@ -79,14 +79,27 @@ assert(mulObj.applyAsDouble(2.0, 3.0) == 6.5)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-method name(mulObj).applyAsDouble 2.0:double 3.0:double)
+;; hir -O0 top-level
+top-level:
+  (def CS null)
+  (def C null)
+  (def Buf (class-ref Buf))
+  (def mkC (fn-ref mkC))
+  (def mulObj (class-ref object))
+  (call name(assert) (==:bool (call-method name(mulObj).applyAsDouble 2.0:double 3.0:double) 6.5:double))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains .applyAsDouble
-contains 6.5:double
+;; hir -O1 top-level
+top-level:
+  (def CS null)
+  (def C null)
+  (def Buf (class-ref Buf))
+  (def mkC (fn-ref mkC))
+  (def mulObj (class-ref object))
+  (call name(assert) (==:bool (block
+        (def $this name(mulObj))
+        6.5:double) 6.5:double))
 ```
 
 ## Case 4
@@ -125,10 +138,19 @@ assert(java.lang.String.valueOf(cs) == "ok-7bcd")
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (call-method name(b).append "abcdef" 1:int 4:int)
-contains (jcall CharSequence.length name(cs))
-contains (jcall CharSequence.subSequence name(cs) 0:int 4:int)
+;; hir -O0,-O1 top-level
+top-level:
+  (def CS null)
+  (def C null)
+  (def Buf (class-ref Buf))
+  (def mkC (fn-ref mkC))
+  (def b (call name(Buf)))
+  (jcall Formatter.format (jnew Formatter name(b)) "%s-%d" (jcall List.toArray (jcall List.of "ok" 7:int)))
+  (call-method name(b).append "abcdef" 1:int 4:int)
+  (def cs name(b))
+  (call name(assert) (==:bool (jcall CharSequence.length name(cs)) 7:int))
+  (call name(assert) (==:bool (jcall String.valueOf (jcall CharSequence.subSequence name(cs) 0:int 4:int)) "ok-7"))
+  (call name(assert) (==:bool (jcall String.valueOf name(cs)) "ok-7bcd"))
 ```
 
 ## Case 6
@@ -248,8 +270,15 @@ class SingleIter
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (jcall Iterator.remove name(asJava))
+;; hir -O0,-O1 top-level
+top-level:
+  (def CS null)
+  (def C null)
+  (def Buf (class-ref Buf))
+  (def mkC (fn-ref mkC))
+  (def SingleIter (class-ref SingleIter))
+  (def asJava (call name(SingleIter)))
+  (jcall Iterator.remove name(asJava))
 ```
 
 ## Case 11

@@ -20,10 +20,11 @@ assert(10 - 3 == 7 and 4 * 5 == 20 and -(3) + 10 == 7 and -(2.5) == -2.5)
 ```
 
 ```hir
-;; hir -O0 fn=fold check
-contains (+:int var(x) 0:int)
-contains (*:int var(x) 0:int)
-contains (*:int (block (+:int 1:int 2:int)) (block (+:int 3:int 4:int)))
+;; hir -O0 fn=fold
+fn fold (x:int) -> bool {pure unique}
+  (call name(assert) (and (and (==:bool (+:int var(x) 0:int) 5:int) (==:bool (+:int 0:int var(x)) 5:int)) (==:bool (-:int var(x) 0:int) 5:int)))
+  (call name(assert) (and (and (and (==:bool (*:int var(x) 0:int) 0:int) (==:bool (*:int 0:int var(x)) 0:int)) (==:bool (*:int var(x) 1:int) 5:int)) (==:bool (*:int 1:int var(x)) 5:int)))
+  (call name(assert) (and (==:bool (*:int (block (+:int 1:int 2:int)) (block (+:int 3:int 4:int))) 21:int) (==:bool (neg (block (-:int 10:int 3:int))) -7:int)))
 ```
 
 ```hir
@@ -47,15 +48,29 @@ assert(dmin == -2147483648)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (-:int -2147483647:int 1:int)
-contains (def dm (+:double 1:int 2.0:double))
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def x 4:int)
+  (def z (+:int (+:int (+:int (+:int (block (-:int 0:int name(x))) (block (+:int (*:int 10:int 2:int) 1:int))) (neg (block -3:int))) (neg (block (-:int -2147483647:int 1:int)))) (neg (block (-:int 0:int name(x))))))
+  (def dm (+:double 1:int 2.0:double))
+  (def dmin -2147483648:int)
+  (call name(assert) (==:bool name(z) -2147483624:int))
+  (call name(assert) (==:bool name(dm) 3.0:double))
+  (call name(assert) (==:bool name(dmin) -2147483648:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains -2147483648:int
-contains (def dm 3.0:double)
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def x 4:int)
+  (def z (+:int (+:int (+:int (+:int (neg name(x)) 21:int) 3:int) -2147483648:int) (neg (neg name(x)))))
+  (def dm 3.0:double)
+  (def dmin -2147483648:int)
+  (call name(assert) (==:bool name(z) -2147483624:int))
+  (call name(assert) (==:bool name(dm) 3.0:double))
+  (call name(assert) (==:bool name(dmin) -2147483648:int))
 ```
 
 ## Boolean equality, not/or/and conditions, mixed comparisons, and parenthesized condition
@@ -69,15 +84,31 @@ assert((1 == 1.0) and (2 != 3.0) and (b1 == true) and (b1 != false) and ((1 < 2)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (block (==:bool 1:int 1.0:double))
-contains (block (block (<:bool 1:int 2:int)))
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def b1 true:bool)
+  (def b2 false:bool)
+  (def x 8:int)
+  (def y 9:int)
+  (call name(assert) (and (==:bool (block (==:bool name(b1) name(b2))) false:bool) (==:bool (block (<>:bool name(b1) name(b2))) true:bool)))
+  (call name(assert) (if (not (block (<:bool name(x) 5:int))) (block true:bool) (block false:bool)))
+  (call name(assert) (if (or (block (<:bool name(x) 5:int)) (block (<:bool name(y) 5:int))) (block false:bool) (block true:bool)))
+  (call name(assert) (and (and (and (and (block (==:bool 1:int 1.0:double)) (block (<>:bool 2:int 3.0:double))) (block (==:bool name(b1) true:bool))) (block (<>:bool name(b1) false:bool))) (block (block (<:bool 1:int 2:int)))))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (if (not (<:bool name(x) 5:int)) true:bool false:bool)
-!contains (==:bool 1:int 1.0:double)
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def b1 true:bool)
+  (def b2 false:bool)
+  (def x 8:int)
+  (def y 9:int)
+  (call name(assert) (and (==:bool (==:bool name(b1) name(b2)) false:bool) (==:bool (<>:bool name(b1) name(b2)) true:bool)))
+  (call name(assert) (if (not (<:bool name(x) 5:int)) true:bool false:bool))
+  (call name(assert) (if (or (<:bool name(x) 5:int) (<:bool name(y) 5:int)) false:bool true:bool))
+  (call name(assert) (and (and (==:bool name(b1) true:bool) (<>:bool name(b1) false:bool)) true:bool))
 ```
 
 ## Numeric truthiness in if conditions (int and double)
@@ -95,15 +126,25 @@ assert(check(1.5, 0.0, 2, 0) == "1010")
 ```
 
 ```hir
-;; hir -O0 fn=check check
-contains (if var(d1) (block "1") (block "0"))
-contains (if var(i0) (block "1") (block "0"))
+;; hir -O0 fn=check
+fn check (d1:double, d0:double, i1:int, i0:int) -> obj {nothrow unique}
+  (def out "")
+  (set out += (if var(d1) (block "1") (block "0")))
+  (set out += (if var(d0) (block "1") (block "0")))
+  (set out += (if var(i1) (block "1") (block "0")))
+  (set out += (if var(i0) (block "1") (block "0")))
+  var(out)
 ```
 
 ```hir
-;; hir -O1 fn=check check
-contains (if var(d1) "1" "0")
-contains (if var(i0) "1" "0")
+;; hir -O1 fn=check
+fn check (d1:double, d0:double, i1:int, i0:int) -> obj {nothrow unique}
+  (def out "")
+  (set out += (if var(d1) "1" "0"))
+  (set out += (if var(d0) "1" "0"))
+  (set out += (if var(i1) "1" "0"))
+  (set out += (if var(i0) "1" "0"))
+  var(out)
 ```
 
 ## Double comparisons in control flow
@@ -123,15 +164,29 @@ assert(checkD(2.5) == 6)
 ```
 
 ```hir
-;; hir -O0 fn=checkD check
-contains (if (<:bool var(d) 3.0:double) (block (set hits += 1:int)))
-contains (if (>:bool var(d) 2.0:double) (block (set hits += 1:int)))
+;; hir -O0 fn=checkD
+fn checkD (d:double) -> int {nothrow unique}
+  (def hits 0:int)
+  (if (<:bool var(d) 3.0:double) (block (set hits += 1:int)))
+  (if (<=:bool var(d) 2.5:double) (block (set hits += 1:int)))
+  (if (==:bool var(d) 2.5:double) (block (set hits += 1:int)))
+  (if (<>:bool var(d) 1.0:double) (block (set hits += 1:int)))
+  (if (>=:bool var(d) 2.5:double) (block (set hits += 1:int)))
+  (if (>:bool var(d) 2.0:double) (block (set hits += 1:int)))
+  var(hits)
 ```
 
 ```hir
-;; hir -O1 fn=checkD check
-contains (if (<:bool var(d) 3.0:double) (set hits += 1:int))
-contains (if (>:bool var(d) 2.0:double) (set hits += 1:int))
+;; hir -O1 fn=checkD
+fn checkD (d:double) -> int {nothrow unique}
+  (def hits 0:int)
+  (if (<:bool var(d) 3.0:double) (set hits += 1:int))
+  (if (<=:bool var(d) 2.5:double) (set hits += 1:int))
+  (if (==:bool var(d) 2.5:double) (set hits += 1:int))
+  (if (<>:bool var(d) 1.0:double) (set hits += 1:int))
+  (if (>=:bool var(d) 2.5:double) (set hits += 1:int))
+  (if (>:bool var(d) 2.0:double) (set hits += 1:int))
+  var(hits)
 ```
 
 ## Int condition lowering (==, !=, and, or) across true and false branches
@@ -149,15 +204,25 @@ assert(checkI(2, 2) == "1010" and checkI(2, 3) == "0110")
 ```
 
 ```hir
-;; hir -O0 fn=checkI check
-contains (if (==:bool var(a) var(b)) (block "1") (block "0"))
-contains (if (or (<:bool var(a) 0:int) (<:bool var(b) 0:int)) (block "1") (block "0"))
+;; hir -O0 fn=checkI
+fn checkI (a:int, b:int) -> obj {nothrow commutative unique}
+  (def o "")
+  (set o += (if (==:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (<>:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (and (>:bool var(a) 0:int) (>:bool var(b) 0:int)) (block "1") (block "0")))
+  (set o += (if (or (<:bool var(a) 0:int) (<:bool var(b) 0:int)) (block "1") (block "0")))
+  var(o)
 ```
 
 ```hir
-;; hir -O1 fn=checkI check
-contains (if (==:bool var(a) var(b)) "1" "0")
-contains (if (or (<:bool var(a) 0:int) (<:bool var(b) 0:int)) "1" "0")
+;; hir -O1 fn=checkI
+fn checkI (a:int, b:int) -> obj {nothrow commutative unique}
+  (def o "")
+  (set o += (if (==:bool var(a) var(b)) "1" "0"))
+  (set o += (if (<>:bool var(a) var(b)) "1" "0"))
+  (set o += (if (and (>:bool var(a) 0:int) (>:bool var(b) 0:int)) "1" "0"))
+  (set o += (if (or (<:bool var(a) 0:int) (<:bool var(b) 0:int)) "1" "0"))
+  var(o)
 ```
 
 ## Double condition lowering (==, !=, <, <=, >, >=) across true and false branches
@@ -177,15 +242,29 @@ assert(chk(1.0, 2.0) == "011100" and chk(2.0, 1.0) == "010011")
 ```
 
 ```hir
-;; hir -O0 fn=chk check
-contains (if (==:bool var(a) var(b)) (block "1") (block "0"))
-contains (if (>=:bool var(a) var(b)) (block "1") (block "0"))
+;; hir -O0 fn=chk
+fn chk (a:double, b:double) -> obj {nothrow unique}
+  (def o "")
+  (set o += (if (==:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (<>:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (<:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (<=:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (>:bool var(a) var(b)) (block "1") (block "0")))
+  (set o += (if (>=:bool var(a) var(b)) (block "1") (block "0")))
+  var(o)
 ```
 
 ```hir
-;; hir -O1 fn=chk check
-contains (if (==:bool var(a) var(b)) "1" "0")
-contains (if (>=:bool var(a) var(b)) "1" "0")
+;; hir -O1 fn=chk
+fn chk (a:double, b:double) -> obj {nothrow unique}
+  (def o "")
+  (set o += (if (==:bool var(a) var(b)) "1" "0"))
+  (set o += (if (<>:bool var(a) var(b)) "1" "0"))
+  (set o += (if (<:bool var(a) var(b)) "1" "0"))
+  (set o += (if (<=:bool var(a) var(b)) "1" "0"))
+  (set o += (if (>:bool var(a) var(b)) "1" "0"))
+  (set o += (if (>=:bool var(a) var(b)) "1" "0"))
+  var(o)
 ```
 
 ## Unary negation on int, double, and int | double union
@@ -250,15 +329,33 @@ assert(d1 == 5.0 and d2 == 8.0 and d3 == 7.0 and d4 == 9.0 and d5 == 8.0 and d6 
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (def d1 (block (set-name x 5:int)))
-contains (def d3 (block (set-field name(b).v 7:int)))
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def x 1:int)
+  (def b (call (block (class-ref class))))
+  (def d1 (block (set-name x 5:int)))
+  (def d2 (block (set-name x += 3:int)))
+  (def d3 (block (set-field name(b).v 7:int)))
+  (def d4 (block (set-field name(b).v 2:int)))
+  (def d5 (block (set-field name(b).v 1:int)))
+  (def d6 (block (set-field name(b).v 2:int)))
+  (call name(assert) (and (and (and (and (and (==:bool name(d1) 5.0:double) (==:bool name(d2) 8.0:double)) (==:bool name(d3) 7.0:double)) (==:bool name(d4) 9.0:double)) (==:bool name(d5) 8.0:double)) (==:bool name(d6) 16.0:double)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (def d1 (set-name x 5:int))
-contains (def d3 (set-field name(b).v 7:int))
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def x 1:int)
+  (def b (call (class-ref class)))
+  (def d1 (set-name x 5:int))
+  (def d2 (set-name x += 3:int))
+  (def d3 (set-field name(b).v 7:int))
+  (def d4 (set-field name(b).v 2:int))
+  (def d5 (set-field name(b).v 1:int))
+  (def d6 (set-field name(b).v 2:int))
+  (call name(assert) (and (and (and (and (and (==:bool name(d1) 5.0:double) (==:bool name(d2) 8.0:double)) (==:bool name(d3) 7.0:double)) (==:bool name(d4) 9.0:double)) (==:bool name(d5) 8.0:double)) (==:bool name(d6) 16.0:double)))
 ```
 
 ## Widening assignments on Java int field
@@ -271,15 +368,23 @@ assert(d7 == 4.0 and d8 == 6.0)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (def d7 (block (set-jfield ttype name(st) 4:int)))
-contains (def d8 (block (set-jfield ttype name(st) 2:int)))
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def st (jnew StreamTokenizer (jnew StringReader "a")))
+  (def d7 (block (set-jfield ttype name(st) 4:int)))
+  (def d8 (block (set-jfield ttype name(st) 2:int)))
+  (call name(assert) (and (==:bool name(d7) 4.0:double) (==:bool name(d8) 6.0:double)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (def d7 (set-jfield ttype name(st) 4:int))
-contains (def d8 (set-jfield ttype name(st) 2:int))
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def st (jnew StreamTokenizer (jnew StringReader "a")))
+  (def d7 (set-jfield ttype name(st) 4:int))
+  (def d8 (set-jfield ttype name(st) 2:int))
+  (call name(assert) (and (==:bool name(d7) 4.0:double) (==:bool name(d8) 6.0:double)))
 ```
 
 ## Boxed/fallback compound assignments on union local and instance fields
@@ -298,17 +403,34 @@ C(9, 6.0).run()
 ```
 
 ```hir
-;; hir -O0 fn=C.run check
-contains (set loc /= 2:int)
-contains (set loc += (call-fn dynNum 2:int))
-contains (set-this-field d += (call-fn dynNum 2:int))
+;; hir -O0 fn=C.run
+fn C.run () -> bool {mut unique}
+  (def loc 9:int)
+  (set loc /= 2:int)
+  (set loc += (call-fn dynNum 2:int))
+  (set-this-field n *= 2:int)
+  (set-this-field n -= 1:int)
+  (set-this-field d /= 2:int)
+  (set-this-field d += (call-fn dynNum 2:int))
+  (call name(assert) (and (and (==:bool var(loc) 6.5:double) (==:bool (get-this-field n) 17:int)) (==:bool (get-this-field d) 5.0:double)))
 ```
 
 ```hir
-;; hir -O1 fn=C.run check
-contains (set loc /= 2:int)
-!contains (call-fn dynNum
-contains (set-this-field n *= 2:int)
+;; hir -O1 fn=C.run
+fn C.run () -> bool {mut unique}
+  (def loc 9:int)
+  (set loc /= 2:int)
+  (set loc +=
+    (block
+      (def v#1 2:int)
+      var(v#1)))
+  (set-this-field n *= 2:int)
+  (set-this-field n -= 1:int)
+  (set-this-field d /= 2:int)
+  (set-this-field d += (block
+      (def v#2 2:int)
+      var(v#2)))
+  (call name(assert) (and (and (==:bool var(loc) 6.5:double) (==:bool (get-this-field n) 17:int)) (==:bool (get-this-field d) 5.0:double)))
 ```
 
 ## Boxed/fallback compound assignment on static union field
@@ -346,17 +468,27 @@ fn mkSt () -> obj {io}
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (jcall Long.sum 3:long 4:long)
-contains (jcall Float.sum 3:int 4:int)
-contains (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt))
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def mkSt (fn-ref mkSt))
+  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) 7:int))
+  (call name(assert) (==:bool (jcall Float.sum 3:int 4:int) 7.0:double))
+  (call name(assert) (==:bool (jcall Math.abs -5:int) 5:int))
+  (call name(assert) (==:bool (jcall Math.abs -9:int) 9:int))
+  (call name(assert) (==:bool (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt)) -1:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (jcall Long.sum 3:long 4:long)
-contains (jcall Float.sum 3.0:float 4.0:float)
-contains (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt))
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def mkSt (fn-ref mkSt))
+  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) 7:int))
+  (call name(assert) (==:bool (jcall Float.sum 3.0:float 4.0:float) 7.0:double))
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) (==:bool (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt)) -1:int))
 ```
 
 ## Java int and float instance field assign and compound assign
@@ -373,15 +505,43 @@ assert(pf.x == 3.0 and pf.y == 4.0 and pt.x == 12 and pt.y == 12 and rect.width 
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (set-jfield x name(pf) (jcall Float.valueOf 3:int))
-contains (set-jfield width name(rect) 10:int)
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def pf (jnew Float))
+  (set-jfield x name(pf) (jcall Float.valueOf 3:int))
+  (set-jfield y name(pf) (jcall Float.valueOf 4:int))
+  (def pt (jnew Point 1:int 2:int))
+  (set-jfield x name(pt) 5:int)
+  (set-jfield x name(pt) 3:int)
+  (set-jfield x name(pt) 2:int)
+  (set-jfield x name(pt) 4:int)
+  (set-jfield y name(pt) 2:int)
+  (set-jfield y name(pt) 3:int)
+  (def rect (jnew Rectangle))
+  (set-jfield width name(rect) 10:int)
+  (set-jfield width name(rect) 5:int)
+  (call name(assert) (and (and (and (and (==:bool (get-jfield Float.x name(pf)) 3.0:double) (==:bool (get-jfield Float.y name(pf)) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (set-jfield x name(pf) (jcall Float.valueOf 3.0:float))
-contains (set-jfield width name(rect) 10:int)
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def pf (jnew Float))
+  (set-jfield x name(pf) (jcall Float.valueOf 3.0:float))
+  (set-jfield y name(pf) (jcall Float.valueOf 4.0:float))
+  (def pt (jnew Point 1:int 2:int))
+  (set-jfield x name(pt) 5:int)
+  (set-jfield x name(pt) 3:int)
+  (set-jfield x name(pt) 2:int)
+  (set-jfield x name(pt) 4:int)
+  (set-jfield y name(pt) 2:int)
+  (set-jfield y name(pt) 3:int)
+  (def rect (jnew Rectangle))
+  (set-jfield width name(rect) 10:int)
+  (set-jfield width name(rect) 5:int)
+  (call name(assert) (and (and (and (and (==:bool (get-jfield Float.x name(pf)) 3.0:double) (==:bool (get-jfield Float.y name(pf)) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
 ```
 
 ## Java double instance field assign and compound assign (int, double, and union RHS)
@@ -394,16 +554,41 @@ assert(st.nval == 3.0 and st.ttype == 24)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (set-jfield nval name(st) (call-fn dynNum 2:int))
-contains (set-jfield ttype name(st) 10:int)
+;; hir -O0 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def st (jnew StreamTokenizer (jnew StringReader "x")))
+  (set-jfield nval name(st) 3:int)
+  (set-jfield nval name(st) 2:int)
+  (set-jfield nval name(st) 1.5:double)
+  (set-jfield nval name(st) 2.0:double)
+  (set-jfield nval name(st) 7:int)
+  (set-jfield nval name(st) (call-fn dynNum 2:int))
+  (set-jfield ttype name(st) 10:int)
+  (set-jfield ttype name(st) 5:int)
+  (set-jfield ttype name(st) 3:int)
+  (set-jfield ttype name(st) 2:int)
+  (call name(assert) (and (==:bool (get-jfield StreamTokenizer.nval name(st)) 3.0:double) (==:bool (get-jfield StreamTokenizer.ttype name(st)) 24:int)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (call-fn dynNum
-contains (set-jfield nval name(st) 3:int)
-contains (set-jfield ttype name(st) 10:int)
+;; hir -O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def st (jnew StreamTokenizer (jnew StringReader "x")))
+  (set-jfield nval name(st) 3:int)
+  (set-jfield nval name(st) 2:int)
+  (set-jfield nval name(st) 1.5:double)
+  (set-jfield nval name(st) 2.0:double)
+  (set-jfield nval name(st) 7:int)
+  (set-jfield nval name(st) (block
+      (def v 2:int)
+      var(v)))
+  (set-jfield ttype name(st) 10:int)
+  (set-jfield ttype name(st) 5:int)
+  (set-jfield ttype name(st) 3:int)
+  (set-jfield ttype name(st) 2:int)
+  (call name(assert) (and (==:bool (get-jfield StreamTokenizer.nval name(st)) 3.0:double) (==:bool (get-jfield StreamTokenizer.ttype name(st)) 24:int)))
 ```
 
 ## Java Point2D.Double and Rectangle2D.Double compound ops
@@ -419,10 +604,22 @@ assert(pd.x == 12.0 and pd.y == 5.0)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (set-jfield x name(r) 2.0:double)
-contains (set-jfield height name(r) 2.0:double)
-contains (set-jfield y name(pd) 5:int)
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def r (jnew Double 1.0:double 2.0:double 3.0:double 4.0:double))
+  (set-jfield x name(r) 2.0:double)
+  (set-jfield y name(r) 0.5:double)
+  (set-jfield width name(r) 2.0:double)
+  (set-jfield height name(r) 2.0:double)
+  (def pd (jnew Double 10.0:double 20.0:double))
+  (set-jfield x name(pd) 2.0:double)
+  (set-jfield x name(pd) 4.0:double)
+  (set-jfield x name(pd) 3.0:double)
+  (set-jfield x name(pd) 2.0:double)
+  (set-jfield y name(pd) 5:int)
+  (call name(assert) (and (and (and (==:bool (get-jfield Double.x name(r)) 3.0:double) (==:bool (get-jfield Double.y name(r)) 1.5:double)) (==:bool (get-jfield Double.width name(r)) 6.0:double)) (==:bool (get-jfield Double.height name(r)) 2.0:double)))
+  (call name(assert) (and (==:bool (get-jfield Double.x name(pd)) 12.0:double) (==:bool (get-jfield Double.y name(pd)) 5.0:double)))
 ```
 
 ## Java String and typed Object field assign and compound assign
@@ -437,10 +634,17 @@ assert(demo.nonNullLabel == "ab" and gbc.insets!.top == 1 and gbc.weightx == 3.0
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (set-jfield nonNullLabel name(demo) "a")
-contains (set-jfield insets name(gbc) (jnew Insets 1:int 2:int 3:int 4:int))
-contains (set-jfield weightx name(gbc) 2.0:double)
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def demo (jnew JavaClassDemo))
+  (set-jfield nonNullLabel name(demo) "a")
+  (set-jfield nonNullLabel name(demo) "b")
+  (def gbc (jnew GridBagConstraints))
+  (set-jfield insets name(gbc) (jnew Insets 1:int 2:int 3:int 4:int))
+  (set-jfield weightx name(gbc) 2.0:double)
+  (set-jfield weightx name(gbc) 1:int)
+  (call name(assert) (and (and (==:bool (get-jfield JavaClassDemo.nonNullLabel name(demo)) "ab") (==:bool (get-jfield Insets.top (nonnull (get-jfield GridBagConstraints.insets name(gbc)))) 1:int)) (==:bool (get-jfield GridBagConstraints.weightx name(gbc)) 3.0:double)))
 ```
 
 ## Java untyped Object field assign (String and boxed int)
@@ -454,9 +658,14 @@ assert(s == "ok" and ev.arg == 42)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (set-jfield arg name(ev) "ok")
-contains (set-jfield arg name(ev) 42:int)
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def ev (jnew Event null 0:int null))
+  (set-jfield arg name(ev) "ok")
+  (def s (get-jfield Event.arg name(ev)))
+  (set-jfield arg name(ev) 42:int)
+  (call name(assert) (and (==:bool name(s) "ok") (==:bool (get-jfield Event.arg name(ev)) 42:int)))
 ```
 
 ## Static Java field assign and compound assign
@@ -474,10 +683,18 @@ assert(after == 24)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (def saved (get-jfield HostFixtures.mutableStatic name(HF)))
-contains (set-jfield mutableStatic name(HF) 10:int)
-contains (set-jfield mutableStatic name(HF) name(saved))
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def HF (select (select (call name(import) "org.babblelang.tests").EffectsTestCase).HostFixtures))
+  (def saved (get-jfield HostFixtures.mutableStatic name(HF)))
+  (set-jfield mutableStatic name(HF) 10:int)
+  (set-jfield mutableStatic name(HF) 5:int)
+  (set-jfield mutableStatic name(HF) 3:int)
+  (set-jfield mutableStatic name(HF) 2:int)
+  (def after (get-jfield HostFixtures.mutableStatic name(HF)))
+  (set-jfield mutableStatic name(HF) name(saved))
+  (call name(assert) (==:bool name(after) 24:int))
 ```
 
 ## emitJavaMethodCall exception catch handler
@@ -491,8 +708,10 @@ java.lang.NumberFormatException : For input string: "bad_num"
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (jcall Integer.parseInt "bad_num")
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (jcall Integer.parseInt "bad_num")
 ```
 
 ## emitJavaConstructorCall exception catch handler
@@ -506,8 +725,10 @@ java.io.FileNotFoundException : nonexistent_batest_file_xyz.txt (<OS error>)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (jnew FileReader "nonexistent_batest_file_xyz.txt")
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (jnew FileReader "nonexistent_batest_file_xyz.txt")
 ```
 
 ## isPureStaticJavaChain : multi-expr block, declaring block, javax root, forward capture, and non-pure static field assign
@@ -705,7 +926,10 @@ java.lang.ArrayIndexOutOfBoundsException: no-frames
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (jcall Throwable.setStackTrace name(e) (array-new OF))
-contains (throw name(e))
+;; hir -O0,-O1 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def e (jnew ArrayIndexOutOfBoundsException "no-frames"))
+  (jcall Throwable.setStackTrace name(e) (array-new OF))
+  (throw name(e))
 ```

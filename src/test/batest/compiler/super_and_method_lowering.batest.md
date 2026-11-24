@@ -288,9 +288,12 @@ assert(s1?.length() == 3 and s2?.length() == null)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (safe-call name(s1)?.length)
-contains (safe-call name(s2)?.length)
+;; hir -O0,-O1 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def s1 (jnew StringBuilder "abc"))
+  (def s2 null)
+  (call name(assert) (and (==:bool (safe-call name(s1)?.length) 3:int) (==:bool (safe-call name(s2)?.length) null)))
 ```
 
 ## emitReturnToJava double->void POP2 on Runnable and Object->double on DoubleSupplier
@@ -377,15 +380,25 @@ assert((v * 4).n == 40 and (v / 2).n == 5 and c.n == 8)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (set-name c += 3:int)
-contains (neg (block (+:int 1:int 1:int)))
+;; hir -O0 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def v (call name(Vec) 10:int))
+  (def c (call name(Vec) 5:int))
+  (set-name c += 3:int)
+  (call name(assert) (and (and (and (==:bool (get-this-field n) -10:int) (==:bool (neg (block (+:int 1:int 1:int))) -2:int)) (==:bool (get-this-field n) 12:int)) (==:bool (get-this-field n) 7:int)))
+  (call name(assert) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (set-name c += 3:int)
-!contains (+:int 1:int 1:int)
+;; hir -O1 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def v (call name(Vec) 10:int))
+  (def c (call name(Vec) 5:int))
+  (set-name c += 3:int)
+  (call name(assert) (and (and (and (==:bool (get-this-field n) -10:int) true:bool) (==:bool (get-this-field n) 12:int)) (==:bool (get-this-field n) 7:int)))
+  (call name(assert) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int)))
 ```
 
 ## super call to interface default with optional primitive param (class method, sub-interface, nested lambda)
@@ -533,14 +546,21 @@ assert(obj.go() == 7)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-method name(obj).go)
+;; hir -O0 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def obj (class-ref object))
+  (call name(assert) (==:bool (call-method name(obj).go) 7:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains .go
-contains (def $this name(obj))
+;; hir -O1 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def obj (class-ref object))
+  (call name(assert) (==:bool (block
+        (def $this name(obj))
+        7:int) 7:int))
 ```
 
 ## Record fast-class disqualifiers : >8 fields, captured outer cell, and Java SAM param

@@ -35,6 +35,7 @@ public final class HirCanonicalPrinter {
     private static final Pattern SYNTH_TEMP = Pattern.compile("^(\\$[a-zA-Z][a-zA-Z_]*[a-zA-Z])(\\d+)$");
     private static final Pattern SCRIPT_PREFIX = Pattern.compile("(?:babble/)?Script\\$\\d+\\$");
     private static final Pattern SCRIPT_SELF = Pattern.compile("(?:babble/)?Script\\$\\d+");
+    private static final Pattern BABBLE_TYPE_ID = Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
 
     private HirCanonicalPrinter() {
     }
@@ -1182,6 +1183,7 @@ public final class HirCanonicalPrinter {
             }
             String cleaned = SCRIPT_PREFIX.matcher(raw).replaceAll("");
             cleaned = SCRIPT_SELF.matcher(cleaned).replaceAll("<script>");
+            cleaned = BABBLE_TYPE_ID.matcher(cleaned).replaceAll("$1");
             return cleaned;
         }
     }

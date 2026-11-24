@@ -162,14 +162,21 @@ Warning : Redundant cast : any?
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (block (as name(x) any))
+;; hir -O0 top-level
+top-level:
+  (def TopErrA (class-ref TopErrA))
+  (def TopErrB (class-ref TopErrB))
+  (def x 7:int)
+  (call name(assert) (==:bool (block (as name(x) any)) 7:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (==:bool (as name(x) any) 7:int)
-!contains (block (as name(x) any))
+;; hir -O1 top-level
+top-level:
+  (def TopErrA (class-ref TopErrA))
+  (def TopErrB (class-ref TopErrB))
+  (def x 7:int)
+  (call name(assert) (==:bool (as name(x) any) 7:int))
 ```
 
 ## Empty finally block and early return inside try-catch without finally
@@ -227,20 +234,32 @@ assert(run(1) == 11 and run(2) == 22 and run(3) == 33)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (catch a:babble|TopErrA|
-contains (catch b:babble|TopErrB|
-contains (catch _:java|java.io.IOException|java.io.IOException
-contains (def r 33:int)
+;; hir -O0 fn=run
+fn run (k:int) -> int {pure}
+  (try
+    (block
+      (if (==:bool var(k) 1:int) (block (throw (call name(TopErrA) 11:int))) (if (==:bool var(k) 2:int) (block (throw (call name(TopErrB) 22:int))) (block (throw (jnew IOException "x"))))))
+    (catch a:babble|TopErrA
+      (get-this-field code))
+    (catch b:babble|TopErrB
+      (get-this-field code))
+    (catch _:java|java.io.IOException|java.io.IOException
+      (def r 33:int)
+      var(r)))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (catch a:babble|TopErrA|
-contains (catch b:babble|TopErrB|
-contains (catch _:java|java.io.IOException|java.io.IOException
-!contains (def r 33:int)
-contains 33:int
+;; hir -O1 fn=run
+fn run (k:int) -> int {pure}
+  (try
+    (block
+      (if (==:bool var(k) 1:int) (throw (call name(TopErrA) 11:int)) (if (==:bool var(k) 2:int) (throw (call name(TopErrB) 22:int)) (throw (jnew IOException "x")))))
+    (catch a:babble|TopErrA
+      (get-this-field code))
+    (catch b:babble|TopErrB
+      (get-this-field code))
+    (catch _:java|java.io.IOException|java.io.IOException
+      33:int))
 ```
 
 ## Function-local Babble exception catch falls back to Types.matches descriptor check
@@ -258,17 +277,31 @@ assert(run(true) == "a" and run(false) == "b")
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (block (throw (call var(LocalA) "a")))
-contains (catch e#1:babble|LocalA|
-contains (catch e#2:babble|LocalB|
+;; hir -O0 fn=run
+fn run (flag:bool) -> obj {pure}
+  (def LocalA (class-ref LocalA))
+  (def LocalB (class-ref LocalB))
+  (try
+    (block
+      (if var(flag) (block (throw (call var(LocalA) "a"))) (block (throw (call var(LocalB) "b")))))
+    (catch e#1:babble|LocalA
+      (get-this-field msg))
+    (catch e#2:babble|LocalB
+      (get-this-field msg)))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (if var(flag) (throw (call var(LocalA) "a")) (throw (call var(LocalB) "b")))
-contains (catch e#1:babble|LocalA|
-contains (catch e#2:babble|LocalB|
+;; hir -O1 fn=run
+fn run (flag:bool) -> obj {pure}
+  (def LocalA (class-ref LocalA))
+  (def LocalB (class-ref LocalB))
+  (try
+    (block
+      (if var(flag) (throw (call var(LocalA) "a")) (throw (call var(LocalB) "b"))))
+    (catch e#1:babble|LocalA
+      (get-this-field msg))
+    (catch e#2:babble|LocalB
+      (get-this-field msg)))
 ```
 
 ## Java boolean, long-from-int, and float-from-int instance field assignments
@@ -285,10 +318,18 @@ assert(dpi.required and ev.when == 42L and pf.x == 42.0f)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (set-jfield required name(dpi) true:bool)
-contains (set-jfield when name(ev) name(n))
-contains (set-jfield x name(pf) name(n))
+;; hir -O0,-O1 top-level
+top-level:
+  (def TopErrA (class-ref TopErrA))
+  (def TopErrB (class-ref TopErrB))
+  (def dpi (jnew DriverPropertyInfo "k" "v"))
+  (set-jfield required name(dpi) true:bool)
+  (def n 42:int)
+  (def ev (jnew Event null 0:int null))
+  (set-jfield when name(ev) name(n))
+  (def pf (jnew Float))
+  (set-jfield x name(pf) name(n))
+  (call name(assert) (and (and (get-jfield DriverPropertyInfo.required name(dpi)) (==:bool (get-jfield Event.when name(ev)) 42:long)) (==:bool (get-jfield Float.x name(pf)) 42.0:float)))
 ```
 
 ## Static Java field non-pure receiver and fallback compound assign with byte RHS
@@ -309,9 +350,16 @@ fn getS () -> obj {io}
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (set-jfield mutableCounter (call-fn getS) (call name(byte) 0:int))
-contains (set-name loc += (call name(byte) 5:int))
+;; hir -O0,-O1 top-level
+top-level:
+  (def TopErrA (class-ref TopErrA))
+  (def TopErrB (class-ref TopErrB))
+  (def getS (fn-ref getS))
+  (def before (get-jfield SampleHelpers.mutableCounter (call-fn getS)))
+  (set-jfield mutableCounter (call-fn getS) (call name(byte) 0:int))
+  (def loc 10:int)
+  (set-name loc += (call name(byte) 5:int))
+  (call name(assert) (and (==:bool (get-jfield SampleHelpers.mutableCounter (call-fn getS)) name(before)) (==:bool name(loc) 15:int)))
 ```
 
 ## External module primitive record field get, array.toString(), and Java interface array set
@@ -327,8 +375,15 @@ assert(ops.get(0).applyAsInt(5) == 10)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (record-new ext_rec$ba$C0$Pt 3:int 4:int)
-contains (array-op TO_STRING (array-new OF 1:int 2:int 3:int))
-contains (array-op SET name(ops) 0:int (java-sam IntUnaryOperator
+;; hir -O0,-O1 top-level
+top-level:
+  (def TopErrA (class-ref TopErrA))
+  (def TopErrB (class-ref TopErrB))
+  (def m (call name(import) "ext_rec.ba"))
+  (def p (record-new ext_rec$ba$C0$Pt 3:int 4:int))
+  (call name(assert) (and (==:bool (get-this-field x) 3:int) (==:bool (get-this-field y) 4:int)))
+  (call name(assert) (==:bool (array-op TO_STRING (array-new OF 1:int 2:int 3:int)) "[1, 2, 3]"))
+  (def ops (array-new OF (java-sam IntUnaryOperator (fn-ref <anon#0>))))
+  (array-op SET name(ops) 0:int (java-sam IntUnaryOperator (fn-ref <anon#1>)))
+  (call name(assert) (==:bool (jcall IntUnaryOperator.applyAsInt (array-op GET name(ops) 0:int) 5:int) 10:int))
 ```

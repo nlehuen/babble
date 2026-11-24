@@ -51,9 +51,15 @@ assert(sm.size() == 2 and sm.firstKey() == "a" and sm.get("b") == 2)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (def ss (core-new sortedset from=(core-new list 3:int 1:int 2:int)))
-contains (def sm (core-new sortedmap from=(core-new map (core-new entry "b" 2:int) (core-new entry "a" 1:int))))
+;; hir -O0,-O1 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def ss (core-new sortedset from=(core-new list 3:int 1:int 2:int)))
+  (def sm (core-new sortedmap from=(core-new map (core-new entry "b" 2:int) (core-new entry "a" 1:int))))
+  (call name(assert) (and (and (==:bool (jcall Set.size name(ss)) 3:int) (==:bool (jcall SortedSet.first name(ss)) 1:int)) (==:bool (jcall SortedSet.last name(ss)) 3:int)))
+  (call name(assert) (and (and (==:bool (jcall Map.size name(sm)) 2:int) (==:bool (jcall SortedMap.firstKey name(sm)) "a")) (==:bool (jcall Map.get name(sm) "b") 2:int)))
 ```
 
 ## Core sortedset and sortedmap from-plus-comparator in both argument orders
@@ -69,11 +75,18 @@ assert(ss1.first() == 3 and ss2.first() == 3 and sm1.firstKey() == "c" and sm2.f
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (def ss1 (core-new sortedset from=name(xs) comparator=(java-sam Comparator name(revInt))))
-contains (def ss2 (core-new sortedset comparator=(java-sam Comparator name(revInt)) from=name(xs)))
-contains (def sm1 (core-new sortedmap from=name(m) comparator=(java-sam Comparator name(revStr))))
-contains (def sm2 (core-new sortedmap comparator=(java-sam Comparator name(revStr)) from=name(m)))
+;; hir -O0,-O1 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def xs (core-new list 1:int 3:int 2:int))
+  (def m (core-new map (core-new entry "a" 1:int) (core-new entry "c" 3:int) (core-new entry "b" 2:int)))
+  (def ss1 (core-new sortedset from=name(xs) comparator=(java-sam Comparator name(revInt))))
+  (def ss2 (core-new sortedset comparator=(java-sam Comparator name(revInt)) from=name(xs)))
+  (def sm1 (core-new sortedmap from=name(m) comparator=(java-sam Comparator name(revStr))))
+  (def sm2 (core-new sortedmap comparator=(java-sam Comparator name(revStr)) from=name(m)))
+  (call name(assert) (and (and (and (==:bool (jcall SortedSet.first name(ss1)) 3:int) (==:bool (jcall SortedSet.first name(ss2)) 3:int)) (==:bool (jcall SortedMap.firstKey name(sm1)) "c")) (==:bool (jcall SortedMap.firstKey name(sm2)) "c")))
 ```
 
 ## Cross-module direct overloaded operator, optional spec method, and >8-param fallback
@@ -89,11 +102,18 @@ assert(v.sum9(1, 2, 3, 4, 5, 6, 7, 8, 9) == 55)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (def v (record-new ext_ops$ba$C0$Vec 10:int))
-contains (call-method name(v).inc 2:int)
-contains (call-method name(v).tag "v")
-contains (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int)
+;; hir -O0,-O1 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def m (call name(import) "ext_ops.ba"))
+  (def v (record-new ext_ops$ba$C0$Vec 10:int))
+  (call name(assert) (==:bool (get-this-field x) 15:int))
+  (call name(assert) (==:bool (get-this-field x) 13:int))
+  (call name(assert) (and (==:bool (call-method name(v).inc 2:int) 17:int) (==:bool (call-method name(v).inc 2:int 1:int) 13:int)))
+  (call name(assert) (==:bool (call-method name(v).tag "v") "v:10"))
+  (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int))
 ```
 
 ## Cross-module definite and non-definite field reads plus transitive interface hierarchy
@@ -107,19 +127,29 @@ assert(eo.Vec(7).x == 7 and lb.init == 1 and lb.late == 42 and Impl().a2() == 3)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (get-this-field x)
-contains (select name(lb).init)
-contains (select name(lb).late)
-contains (call (select (call name(Impl)).a2))
+;; hir -O0 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def eo (call name(import) "ext_ops.ba"))
+  (def hm (call name(import) "hier_mid.ba"))
+  (def lb (call (export name(eo).LateBox)))
+  (def Impl (class-ref Impl))
+  (call name(assert) (and (and (and (==:bool (get-this-field x) 7:int) (==:bool (select name(lb).init) 1:int)) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (get-this-field x)
-contains (select name(lb).init)
-contains (select name(lb).late)
-contains (call (select (call name(Impl)).a2))
+;; hir -O1 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def eo (call name(import) "ext_ops.ba"))
+  (def hm (call name(import) "hier_mid.ba"))
+  (def lb (call (export name(eo).LateBox)))
+  (def Impl (class-ref Impl))
+  (call name(assert) (and (and (==:bool (select name(lb).init) 1:int) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
 ## Dynamic function-typed call with >8 arguments (positional and named)
@@ -152,17 +182,29 @@ assert((overload ( fn (x : int) : int -> ( x + 1 ), fn (s : string) : int -> ( s
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int)
-contains (call-fn big#2 "abc")
-contains (call-fn <anon#0> 5:int)
+;; hir -O0 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def big (overload (fn-ref big#1) (fn-ref big#2)))
+  (call name(assert) (and (==:bool (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) (==:bool (call-fn big#2 "abc") 3:int)))
+  (call name(assert) (==:bool (call-fn <anon#0> 5:int) 6:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int)
-!contains (call-fn big#2
-!contains (call-fn <anon#0>
+;; hir -O1 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def big (overload (fn-ref big#1) (fn-ref big#2)))
+  (call name(assert) (and (==:bool (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) (==:bool (block
+          (overload-select #1 name(big))
+          3:int) 3:int)))
+  (call name(assert) (==:bool (block
+        (overload-select #0 (overload (fn-ref <anon#0>) (fn-ref <anon#1>)))
+        6:int) 6:int))
 ```
 
 ## Union-split overload dispatch with optional primitive and reference defaults
