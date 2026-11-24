@@ -41,8 +41,13 @@ public class BatestTestCase {
 
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         String mode = engine.getMode().name().toLowerCase(Locale.ROOT);
-        if ("compile".equals(mode) && "0".equals(System.getProperty("babble.opt"))) {
-            mode = "compile-O0";
+        if ("compile".equals(mode)) {
+            String opt = System.getProperty("babble.opt");
+            if ("0".equals(opt)) {
+                mode = "compile-O0";
+            } else if ("2".equals(opt)) {
+                mode = "compile-O2";
+            }
         }
         Path recordFile = prepareRecordFile(recordDir, mode);
 

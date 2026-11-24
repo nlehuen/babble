@@ -24,6 +24,10 @@ final class MethodEmitContext {
     record TailLoop(Label head, int[] paramSlots, int maskSlot) {
     }
 
+    /** Pre-evaluated SSA operand slot injected by {@link MirEmitter} when delegating ABI emission to {@link HirEmitter}. */
+    record MirOperand(int slot, PrimitiveKind kind) {
+    }
+
     static final class ActiveFinally {
         final org.babblelang.ir.hir.HirExpr.Try tryNode;
         final int loopDepthAtEntry;
@@ -84,6 +88,7 @@ final class MethodEmitContext {
     int parameterBase = -1;
     final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
     final Deque<ActiveFinally> activeFinallies = new ArrayDeque<>();
+    Map<org.babblelang.ir.hir.HirExpr, MirOperand> mirOverrides;
 
     void reset(MethodVisitor mv, int ownerId, int firstFreeLocal, int rt, int ns, List<HirVar> captured) {
         this.mv = mv;
@@ -110,6 +115,7 @@ final class MethodEmitContext {
         this.typedThisLocal = -1;
         this.loopTargets.clear();
         this.activeFinallies.clear();
+        this.mirOverrides = null;
     }
 
     void finish() {

@@ -916,8 +916,8 @@ final class ControlAndOpEmitter {
         }
     }
 
-    private void emitZeroArgBabbleCall(int receiverLocal, String memberName,
-                                       LoweringTargets.FunctionSignature sig, int lineNumber) {
+    void emitZeroArgBabbleCall(int receiverLocal, String memberName,
+                               LoweringTargets.FunctionSignature sig, int lineNumber) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         String site = emitter.constantPool.callSiteField(new CallSite(emitter.sourceName, lineNumber, memberName, new String[0]));
@@ -1315,7 +1315,7 @@ final class ControlAndOpEmitter {
         c.stackKind = targetKind;
     }
 
-    private List<String> resolveBabbleCatchJvms(List<LoweringTargets.IsTarget> targets) {
+    List<String> resolveBabbleCatchJvms(List<LoweringTargets.IsTarget> targets) {
         if (targets == null || targets.isEmpty()) {
             return List.of();
         }
