@@ -103,17 +103,33 @@ assert(run(list(-1, 2, 5, 20, 99)) == 7 and log.toString() == "")
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (call-fn step "C")
-contains (call-fn step "B")
+;; hir -O0 fn=run
+fn run (xs:obj) -> int {io}
+  (def total 0:int)
+  (for x in var(xs)
+    (block
+      (if (<:bool var(x) 0:int)
+        (block
+          (continue)
+          (call-fn step "C")))
+      (if (>:bool var(x) 10:int)
+        (block
+          (break)
+          (call-fn step "B")))
+      (set total += var(x))))
+  var(total)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (call-fn step "C")
-!contains (call-fn step "B")
-contains (continue)
-contains (break)
+;; hir -O1 fn=run
+fn run (xs:obj) -> int {io}
+  (def total 0:int)
+  (for x in var(xs)
+    (block
+      (if (<:bool var(x) 0:int) (block (continue)))
+      (if (>:bool var(x) 10:int) (block (break)))
+      (set total += var(x))))
+  var(total)
 ```
 
 ## InlinePass error line-number preservation (inlined cast failure vs interpreter)
@@ -154,15 +170,43 @@ assert(inlBlocks(3, list(1, 2)) == 9 and inlBlocks(0, list(4)) == 5 and smallWhi
 ```
 
 ```hir
-;; hir -O0 top-level check
-count 2 (call-fn inlBlocks
-contains (call-fn smallWhile 2:int)
+;; hir -O0 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def inlBlocks (fn-ref inlBlocks))
+  (def smallWhile (fn-ref smallWhile))
+  (call name(assert) (and (and (==:bool (call-fn inlBlocks 3:int (core-new list 1:int 2:int)) 9:int) (==:bool (call-fn inlBlocks 0:int (core-new list 4:int)) 5:int)) (==:bool (call-fn smallWhile 2:int) 3:int)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (call-fn inlBlocks
-!contains (call-fn smallWhile
+;; hir -O1 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def inlBlocks (fn-ref inlBlocks))
+  (def smallWhile (fn-ref smallWhile))
+  (call name(assert) (and (and (==:bool (block
+            (def xs#1 (core-new list 1:int 2:int))
+            (def res#1 0:int)
+            (set res#1 += 6:int)
+            (for e#1 in var(xs#1)
+              (block
+                (set res#1 += var(e#1))))
+            var(res#1)) 9:int) (==:bool (block
+            (def xs#2 (core-new list 4:int))
+            (def res#2 0:int)
+            (set res#2 1:int)
+            (for e#2 in var(xs#2)
+              (block
+                (set res#2 += var(e#2))))
+            var(res#2)) 5:int)) (==:bool (block
+          (def i 2:int)
+          (while (<:bool var(i) 3:int)
+            (set i += 1:int))
+          var(i)) 3:int)))
 ```
 
 ## HirDcePass top-level user discard shadowing + InlinePass parameter widening and RecurseRef scan
@@ -212,9 +256,14 @@ assert(smallIface(1) == 1 and smallBlkCell(4) == 5)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (call-fn smallIface 1:int)
-contains (call-fn smallBlkCell 4:int)
+;; hir -O0,-O1 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def smallIface (fn-ref smallIface))
+  (def smallBlkCell (fn-ref smallBlkCell))
+  (call name(assert) (and (==:bool (call-fn smallIface 1:int) 1:int) (==:bool (call-fn smallBlkCell 4:int) 5:int)))
 ```
 
 ## InlinePass.scanCalleeBody guard : for-loop cell capture
@@ -229,8 +278,13 @@ assert(smallForCell(list(9, 10)) == 9)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (call-fn smallForCell (core-new list 9:int 10:int))
+;; hir -O0,-O1 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def smallForCell (fn-ref smallForCell))
+  (call name(assert) (==:bool (call-fn smallForCell (core-new list 9:int 10:int)) 9:int))
 ```
 
 ## InlinePass : reassigned parameter in callee (freshParam allocation) and self-recursion by name
@@ -275,19 +329,17 @@ assert(run(byte(2), 4, 1.5f))
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 2 (call-fn wS
-count 2 (call-fn wL
-count 2 (call-fn wF
-count 2 (call-fn wD
+;; hir -O0 fn=run
+fn run (b:byte, i:int, f:float) -> bool {pure unique}
+  (and (and (and (and (and (and (and (==:bool (call-fn wS var(b)) (call name(short) 2:int)) (==:bool (call-fn wS (call name(byte) 3:int)) (call name(short) 3:int))) (==:bool (call-fn wL var(i)) 5:long)) (==:bool (call-fn wL 5:int) 6:long)) (==:bool (call-fn wF var(i)) 5.5:float)) (==:bool (call-fn wF 2:int) 3.5:float)) (==:bool (call-fn wD var(f)) 2.0:double)) (==:bool (call-fn wD 2.5:float) 3.0:double))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (call-fn wS
-!contains (call-fn wL
-!contains (call-fn wF
-!contains (call-fn wD
+;; hir -O1 fn=run
+fn run (b:byte, i:int, f:float) -> bool {pure unique}
+  (and (and (and (and (and (and (and (==:bool (block var(b)) (call name(short) 2:int)) (==:bool (block
+                    (def x (call name(byte) 3:int))
+                    var(x)) (call name(short) 3:int))) (==:bool (+:long var(i) 1:long) 5:long)) true:bool) (==:bool (+:float var(i) 1.5:float) 5.5:float)) true:bool) (==:bool (+:double var(f) 0.5:double) 2.0:double)) true:bool)
 ```
 
 ## HirDcePass & HirPurity : dead CoreCollectionRef, FunctionRef, TypeApply, As, and recursive-by-name bindings
@@ -362,9 +414,16 @@ assert(run(list(1, 2, 3), 4) == 3)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def deadSum (call-fn sumL var(xs)))
-contains (def deadBlk
+;; hir -O0 fn=run
+fn run (xs:obj, p:int) -> int {nothrow unique}
+  (def deadSum (call-fn sumL var(xs)))
+  (def deadBlk
+    (block
+      (def a (+:int var(p) 1:int))
+      (block
+        (def b (+:int var(a) 2:int))
+        var(b))))
+  (jcall List.size var(xs))
 ```
 
 ```hir
@@ -387,16 +446,30 @@ assert(run(Box(0), list(1, 2)) == 1)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def d1 (call-fn touch var(b)))
-contains (def d2
+;; hir -O0 fn=run
+fn run (b:obj, xs:obj) -> int {unique}
+  (def d1 (call-fn touch var(b)))
+  (def d2
+    (for x in var(xs)
+      (block
+        (call name(assert) (>:bool var(x) 0:int))
+        var(x))))
+  (get-this-field v)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (set-field var(b).v 1:int)
-contains (def d2
-contains (call name(assert) (>:bool var(x) 0:int))
+;; hir -O1 fn=run
+fn run (b:obj, xs:obj) -> int {unique}
+  (def d1
+    (block
+      (set-field var(b).v 1:int)
+      (get-this-field v)))
+  (def d2
+    (for x in var(xs)
+      (block
+        (call name(assert) (>:bool var(x) 0:int))
+        var(x))))
+  (get-this-field v)
 ```
 
 ## HirLicmPass & HirPurity.isDeterministic : loop-invariant ArrayOp.SIZE, As, TypeApply, Logic, and If
@@ -415,15 +488,29 @@ assert(run((array of int).of(10, 20), true, 3) == 12.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (block (if (and var(flag) true:bool)
-contains (block (as 1:int double|double|))
+;; hir -O0 fn=run
+fn run (arr:obj, flag:bool, n:int) -> double {pure unique}
+  (def i 0:int)
+  (def acc 0.0:double)
+  (while (<:bool var(i) var(n))
+    (block
+      (def k (+:double (+:double (call name(double) (array-op SIZE var(arr))) (block (if (and var(flag) true:bool) (block (call (type-apply name(idT)) 1.0:double)) (block 0.0:double)))) (block (as 1:int double|double|))))
+      (set acc += var(k))
+      (set i += 1:int)))
+  var(acc)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (if (and var(flag) true:bool) (call (type-apply name(idT)) 1.0:double) 0.0:double)
-contains (as 1:int double|double|)
+;; hir -O1 fn=run
+fn run (arr:obj, flag:bool, n:int) -> double {pure unique}
+  (def i 0:int)
+  (def acc 0.0:double)
+  (while (<:bool var(i) var(n))
+    (block
+      (def k (+:double (+:double (call name(double) (array-op SIZE var(arr))) (if (and var(flag) true:bool) (call (type-apply name(idT)) 1.0:double) 0.0:double)) (as 1:int double|double|)))
+      (set acc += var(k))
+      (set i += 1:int)))
+  var(acc)
 ```
 
 ## Canonical HIR golden : small-function inlining and dead-code elimination (-O0 vs -O1)
@@ -439,16 +526,21 @@ assert(caller(5) == 21)
 ```
 
 ```hir
-;; hir -O0 fn=caller check
-count 3 (call-fn addMul
-contains (def dead
+;; hir -O0 fn=caller
+fn caller (x:int) -> int {nothrow unique}
+  (def dead (call-fn addMul var(x) 1:int))
+  (call name(discard) var(dead))
+  (return (call-fn addMul var(x) 2:int))
+  (call-fn addMul var(x) 99:int)
 ```
 
 ```hir
-;; hir -O1 fn=caller check
-!contains (call-fn addMul
-!contains (def dead
-!contains 99:int
+;; hir -O1 fn=caller
+fn caller (x:int) -> int {nothrow unique}
+  (return (block
+      (def s (+:int var(x) 2:int))
+      (def d (-:int var(x) 2:int))
+      (*:int var(s) var(d))))
 ```
 
 ## Canonical HIR golden : dead-catch elimination on pure nothrow try body
@@ -465,9 +557,13 @@ Warning : try block cannot throw; catch clause is unreachable
 ```
 
 ```hir
-;; hir -O0 fn=safeAdd check
-contains (try
-contains (catch
+;; hir -O0 fn=safeAdd
+fn safeAdd (x:int) -> int {nothrow unique}
+  (try
+    (block
+      (+:int var(x) 1:int))
+    (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+      0:int))
 ```
 
 ```hir
@@ -491,17 +587,25 @@ Warning : try block cannot throw; catch clause is unreachable
 ```
 
 ```hir
-;; hir -O0 fn=keepFinally check
-contains (try
-contains (catch
-contains (finally
+;; hir -O0 fn=keepFinally
+fn keepFinally (x:int) -> int {io}
+  (try
+    (block
+      (+:int var(x) 1:int))
+    (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+      0:int)
+    (finally
+      (jcall StringBuilder.append name(log) "F")))
 ```
 
 ```hir
-;; hir -O1 fn=keepFinally check
-contains (try
-!contains (catch
-contains (finally
+;; hir -O1 fn=keepFinally
+fn keepFinally (x:int) -> int {io}
+  (try
+    (block
+      (+:int var(x) 1:int))
+    (finally
+      (jcall StringBuilder.append name(log) "F")))
 ```
 
 ## HirDcePass : top-level namespace try with dead catch
@@ -516,16 +620,31 @@ Warning : try block cannot throw; catch clause is unreachable
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (try
-contains (catch
+;; hir -O0 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (block
+    (def $try0
+      (try
+        (block
+          (def t 20:int)
+          (+:int var(t) 22:int))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          0:int)))
+    (def topTry var($try0)))
+  (call name(assert) (==:bool name(topTry) 42:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (try
-!contains (catch
-contains (def topTry 42:int)
+;; hir -O1 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def topTry 42:int)
+  (call name(assert) (==:bool name(topTry) 42:int))
 ```
 
 ## HirDcePass : two catches with DCE and finally-only DCE
@@ -542,18 +661,34 @@ assert(twoCatches("bad") == -1 and log.toString() == "X")
 ```
 
 ```hir
-;; hir -O0 fn=twoCatches check
-contains (def d1 (+:int 1:int 2:int))
-contains (def d2 (+:int 3:int 4:int))
-contains (def df (+:int 5:int 6:int))
+;; hir -O0 fn=twoCatches
+fn twoCatches (s:obj) -> int {io}
+  (try
+    (block
+      (jcall Integer.parseInt var(s)))
+    (catch _:java|java.lang.NumberFormatException|java.lang.NumberFormatException
+      (def d1 (+:int 1:int 2:int))
+      -1:int)
+    (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+      (def d2 (+:int 3:int 4:int))
+      -2:int)
+    (finally
+      (def df (+:int 5:int 6:int))
+      (jcall StringBuilder.append name(log) "X")))
 ```
 
 ```hir
-;; hir -O1 fn=twoCatches check
-!contains (def d1
-!contains (def d2
-!contains (def df
-contains (jcall StringBuilder.append name(log) "X")
+;; hir -O1 fn=twoCatches
+fn twoCatches (s:obj) -> int {io}
+  (try
+    (block
+      (jcall Integer.parseInt var(s)))
+    (catch _:java|java.lang.NumberFormatException|java.lang.NumberFormatException
+      -1:int)
+    (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+      -2:int)
+    (finally
+      (jcall StringBuilder.append name(log) "X")))
 ```
 
 ## HirDcePass : unused uninitialized def and fn/class param defaults with dead code
@@ -568,9 +703,14 @@ assert(fnDef() == 10 and ClsDef().x == 5)
 ```
 
 ```hir
-;; hir -O0 fn=fnDef check
-contains (def d 1:int)
-contains (def unused)
+;; hir -O0 fn=fnDef
+fn fnDef (a:int=(block
+    (def d 1:int)
+    (+:int 1:int 2:int)), b:int=(block
+    (def e 2:int)
+    (+:int 3:int 4:int))) -> int {nothrow unique}
+  (def unused)
+  (+:int var(a) var(b))
 ```
 
 ```hir
@@ -699,8 +839,15 @@ assert(run((array of int).of(1, 2)) == 16)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 3 (call name(discard) 1:int)
+;; hir -O0 fn=run
+fn run (arr:obj) -> int {io}
+  (+:int (+:int (export (block
+          (call name(discard) 1:int)
+          name(mod)).val) (call-fn sumV (block
+          (call name(discard) 1:int)
+          var(arr)))) (call (block (type-apply (block
+            (call name(discard) 1:int)
+            name(idG)))) 3:int))
 ```
 
 ```hir
@@ -721,14 +868,23 @@ assert(run(list(4, 5)) == 11)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (for e in (call-fn idL var(xs))
+;; hir -O0 fn=run
+fn run (xs:obj) -> int {nothrow unique}
+  (def b 0:int)
+  (for e in (call-fn idL var(xs))
+    (block
+      (set b += var(e))))
+  (+:int var(b) (call-fn recN 2:int))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (for e in var(xs)
-!contains (call-fn idL
+;; hir -O1 fn=run
+fn run (xs:obj) -> int {nothrow unique}
+  (def b 0:int)
+  (for e in var(xs)
+    (block
+      (set b += var(e))))
+  (+:int var(b) (call-fn recN 2:int))
 ```
 
 ```hir
@@ -756,17 +912,25 @@ assert(run("abcd", 3) == 11 and run(null, 3) == 4)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 2 (call name(discard) 1:int)
-contains (+:int 0:int 1:int)
-contains (call-fn <anon#0> var(n))
+;; hir -O0 fn=run
+fn run (s:obj, n:int) -> int {pure unique}
+  (def l1 (safe-call (block
+        (call name(discard) 1:int)
+        var(s))?.length))
+  (def l2 (safe-call (safe-call var(s)?.substring (+:int 0:int 1:int))?.length))
+  (def ov (overload (block
+        (call name(discard) 1:int)
+        (fn-ref <anon#0>)) (fn-ref ov)))
+  (+:int (+:int (block (if (<>:bool var(l1) null) (block var(l1)) (block 0:int))) (block (if (<>:bool var(l2) null) (block var(l2)) (block 0:int)))) (call-fn <anon#0> var(n)))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains (call name(discard)
-contains (safe-call (safe-call var(s)?.substring 1:int)?.length)
-!contains (call-fn <anon#0>
+;; hir -O1 fn=run
+fn run (s:obj, n:int) -> int {pure unique}
+  (def l1 (safe-call var(s)?.length))
+  (def l2 (safe-call (safe-call var(s)?.substring 1:int)?.length))
+  (def ov (overload (fn-ref <anon#0>) (fn-ref ov)))
+  (+:int (+:int (if (<>:bool var(l1) null) var(l1) 0:int) (if (<>:bool var(l2) null) var(l2) 0:int)) (+:int var(n) 1:int))
 ```
 
 ## HirRewriter : RecordNew classRef and Move operand rewrites

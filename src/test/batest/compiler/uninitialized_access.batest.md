@@ -51,16 +51,30 @@ assert(ok.readFn(ok) == 9)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-fn readB name(ok))
-contains (call-method name(ok).readFn name(ok))
+;; hir -O0 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (def ok (call name(B) false:bool))
+  (call name(assert) (==:bool (call-fn readB name(ok)) 9:int))
+  (call name(assert) (==:bool (call-method name(ok).readFn name(ok)) 9:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (call-fn readB
-!contains .readFn
-count 2 (get-this-field x)
+;; hir -O1 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (def ok (call name(B) false:bool))
+  (call name(assert) (==:bool (block
+        (def b#1 name(ok))
+        (get-this-field x)) 9:int))
+  (call name(assert) (==:bool (block
+        (def $this name(ok))
+        (def b#2 name(ok))
+        (get-this-field x)) 9:int))
 ```
 
 ## Warm SelectCache on B.x before triggering requireMemberDefined during construction
@@ -76,16 +90,28 @@ Member used before definition : x
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-method name(ok).readFn name(ok))
-contains (call name(B) true:bool)
+;; hir -O0 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (def ok (call name(B) false:bool))
+  (call name(assert) (==:bool (call-method name(ok).readFn name(ok)) 9:int))
+  (call name(B) true:bool)
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains .readFn
-contains (get-this-field x)
-contains (call name(B) true:bool)
+;; hir -O1 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (def ok (call name(B) false:bool))
+  (call name(assert) (==:bool (block
+        (def $this name(ok))
+        (def b name(ok))
+        (get-this-field x)) 9:int))
+  (call name(B) true:bool)
 ```
 
 ## SelectCache requireMemberDefined on union primitive field on 2nd call (fast path)
@@ -305,14 +331,23 @@ assert(safeRead(false) == 7)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-fn safeRead false:bool)
+;; hir -O0 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (call name(assert) (==:bool (call-fn safeRead false:bool) 7:int))
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (call-fn safeRead
-contains (def x 7:int)
+;; hir -O1 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (call name(assert) (==:bool (block
+        (def x 7:int)
+        var(x)) 7:int))
 ```
 
 ## Uncaptured int local read before definition
@@ -326,15 +361,24 @@ Name used before definition : x
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-fn safeRead true:bool)
+;; hir -O0 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (call-fn safeRead true:bool)
 ```
 
 ```hir
-;; hir -O1 top-level check
-!contains (call-fn safeRead
-contains (def a var(x))
-contains (def x 7:int)
+;; hir -O1 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (block
+    (def a var(x))
+    (def x 7:int)
+    (+:int var(a) var(x)))
 ```
 
 ## Uncaptured double local read before definition

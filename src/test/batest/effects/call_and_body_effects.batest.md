@@ -549,23 +549,28 @@ assert(pureThrow("3") == 3 and volFn() == 10 and ntUniq().v == 1)
 ```
 
 ```hir
-;; hir -O1 fn=pureThrow check
-contains fn pureThrow
+;; hir -O1 fn=pureThrow
+fn pureThrow (s:obj) -> int {pure unique}
+  (call name(int) var(s))
 ```
 
 ```hir
-;; hir -O1 fn=volFn check
-contains fn volFn
+;; hir -O1 fn=volFn
+fn volFn () -> int {volatile nothrow unique}
+  (get-this-field v)
 ```
 
 ```hir
-;; hir -O1 fn=ioFn check
-contains fn ioFn
+;; hir -O1 fn=ioFn
+fn ioFn () -> int {io}
+  (call name(println) "x")
+  1:int
 ```
 
 ```hir
-;; hir -O1 fn=ntUniq check
-contains fn ntUniq
+;; hir -O1 fn=ntUniq
+fn ntUniq () -> obj {nothrow unique}
+  (call name(Box) 1:int)
 ```
 
 ## EffectSet.toString formats mut-param throwing unique, mut-param throwing int, and shared method in HIR
@@ -581,18 +586,23 @@ assert(mutThrowUniq(b, "4").v == 4 and mutThrowInt(b, "5") == 5 and SharedCls(2)
 ```
 
 ```hir
-;; hir -O1 fn=mutThrowUniq check
-contains fn mutThrowUniq
+;; hir -O1 fn=mutThrowUniq
+fn mutThrowUniq (b:obj, s:obj) -> obj {unique}
+  (set-field var(b).v (call name(int) var(s)))
+  (call name(Box) (get-this-field v))
 ```
 
 ```hir
-;; hir -O1 fn=mutThrowInt check
-contains fn mutThrowInt
+;; hir -O1 fn=mutThrowInt
+fn mutThrowInt (b:obj, s:obj) -> int {unique}
+  (set-field var(b).v (call name(int) var(s)))
+  (get-this-field v)
 ```
 
 ```hir
-;; hir -O1 fn=SharedCls.leak check
-contains fn SharedCls.leak
+;; hir -O1 fn=SharedCls.leak
+fn SharedCls.leak () -> obj {io shared}
+  this
 ```
 
 ## Purity CONTEXTUALLY_SIDE_EFFECT_FREE via volatile mut-parameter helper

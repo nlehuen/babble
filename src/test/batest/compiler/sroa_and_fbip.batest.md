@@ -71,15 +71,36 @@ assert(run() == 19.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (record-new Vec3 4.0:double 5.0:double 6.0:double)
-contains (get-this-field y)
+;; hir -O0 fn=run
+fn run () -> double {io}
+  (def log (jnew StringBuilder))
+  (def a (get-this-field y))
+  (def v (record-new Vec3 4.0:double 5.0:double 6.0:double))
+  (def R (class-ref R))
+  (def c (get-this-field x))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(log)) "CS"))
+  (+:double (+:double var(a) (get-this-field x)) (call name(double) (+:int (get-this-field k) var(c))))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains record-new
-contains (def $sr_v_0 4.0:double)
+;; hir -O1 fn=run
+fn run () -> double {io}
+  (def log (jnew StringBuilder))
+  (def a
+    (block
+      (block
+        (jcall StringBuilder.append var(log) "C")
+        name(Vec3))
+      2.0:double))
+  (block
+    (block
+      (jcall StringBuilder.append var(log) "S")
+      name(Vec3))
+    (def $sr_v_0 4.0:double)
+    (def $sr_v_2 6.0:double))
+  (def R (class-ref R))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(log)) "CS"))
+  (+:double (+:double var(a) var($sr_v_0)) (call name(double) 13:int))
 ```
 
 ## Projection beta-reduction on cross-module record via local and impure module receivers
@@ -98,16 +119,29 @@ assert(run() == 7.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (def a (get-this-field x))
-contains (def b (get-this-field y))
+;; hir -O0 fn=run
+fn run () -> double {io}
+  (def log (jnew StringBuilder))
+  (def lm name(m))
+  (def a (get-this-field x))
+  (def b (get-this-field y))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(log)) "M"))
+  (+:double var(a) var(b))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains get-this-field
-contains (+:double 2.0:double var(b))
-contains 5.0:double
+;; hir -O1 fn=run
+fn run () -> double {io}
+  (def log (jnew StringBuilder))
+  (def lm name(m))
+  (def b
+    (block
+      (export (block
+          (jcall StringBuilder.append var(log) "M")
+          name(m)).ExtVec)
+      5.0:double))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(log)) "M"))
+  (+:double 2.0:double var(b))
 ```
 
 ## Zero-parameter fast record skips SROA layout and projection reduction
@@ -126,15 +160,22 @@ assert(run() == 1)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 3 (record-new Empty)
-contains (call-method (record-new Empty).getFn)
+;; hir -O0 fn=run
+fn run () -> int {pure}
+  (def e (record-new Empty))
+  (def f (call-method (record-new Empty).getFn))
+  (if (==:bool var(e) (record-new Empty)) (block (call var(f))) (block 0:int))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 3 (record-new Empty)
-!contains .getFn
+;; hir -O1 fn=run
+fn run () -> int {pure}
+  (def e (record-new Empty))
+  (def f
+    (block
+      (def $this (record-new Empty))
+      (get-this-field one)))
+  (if (==:bool var(e) (record-new Empty)) (call var(f)) 0:int)
 ```
 
 ## Inlined method-value projection on fast record disqualifies SROA and borrow unboxing
@@ -156,15 +197,19 @@ assert(run() == 18)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-contains (call-fn useB var(v) (record-new Box 2:int))
-count 3 (record-new Box
+;; hir -O0 fn=run
+fn run () -> int {pure unique}
+  (def v (record-new Box 5:int))
+  (+:int (+:int (call (call-method var(v).getFn)) (call (call-method (record-new Box 3:int).getFn))) (call-fn useB var(v) (record-new Box 2:int)))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (call-fn useB$unboxed var(v) 2:int)
-count 2 (record-new Box
+;; hir -O1 fn=run
+fn run () -> int {pure unique}
+  (def v (record-new Box 5:int))
+  (+:int (+:int (call (get-this-field inc)) (call (block
+          (def $this (record-new Box 3:int))
+          (get-this-field inc)))) (call-fn useB$unboxed var(v) 2:int))
 ```
 
 ## Unboxed borrow call rewrite inside a function alongside non-unboxed and non-qualifying calls
@@ -181,15 +226,21 @@ assert(run(Vec3(1.0, 2.0, 3.0), Vec3(1.0, 0.0, 0.0)) == 4.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-!contains $unboxed
-count 4 (call-fn heavy
+;; hir -O0 fn=run
+fn run (a:obj, b:obj) -> double {io}
+  (def lg (jnew StringBuilder))
+  (def r (+:double (+:double (+:double (call-fn id (call-fn heavy var(a) var(b))) (call-fn heavy var(b) var(a))) (call-fn heavy (record-new Vec3 3.0:double 1.0:double 2.0:double) var(b))) (call-fn heavy (record-new Vec3 1.0:double 2.0:double 3.0:double) var(b))))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(lg)) "U"))
+  var(r)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains $unboxed
-contains (call-fn heavy
+;; hir -O1 fn=run
+fn run (a:obj, b:obj) -> double {io}
+  (def lg (jnew StringBuilder))
+  (def r (+:double (+:double (+:double (call-fn id (call-fn heavy$unboxed (get-this-field x) (get-this-field y) (get-this-field z) (get-this-field x) (get-this-field y) (get-this-field z))) (call-fn heavy var(b) var(a))) (call-fn heavy (record-new Vec3 3.0:double 1.0:double 2.0:double) var(b))) (call-fn heavy (record-new Vec3 1.0:double 2.0:double 3.0:double) var(b))))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(lg)) "U"))
+  var(r)
 ```
 
 ## Unboxed borrow call bailouts for captured cell and conditionally initialized record locals
@@ -207,15 +258,25 @@ assert(run(true) == 4.0 and run(false) == 2.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-!contains $unboxed
-count 3 (call-fn heavy
+;; hir -O0 fn=run
+fn run (fl:bool) -> double {nothrow}
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Vec3 1.0:double 0.0:double 0.0:double))
+  (def cap (fn-ref cap))
+  (def r (+:double (+:double (call-fn heavy var(a) var(b)) (call-fn cap)) (block (if false:bool (block (call-fn heavy var(c) var(b))) (block 0.0:double)))))
+  (def c (record-new Vec3 2.0:double 0.0:double 0.0:double))
+  (if var(fl) (block (+:double var(r) (call-fn heavy var(c) var(b)))) (block var(r)))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-!contains $unboxed
-count 2 (call-fn heavy
+;; hir -O1 fn=run
+fn run (fl:bool) -> double {nothrow}
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Vec3 1.0:double 0.0:double 0.0:double))
+  (def cap (fn-ref cap))
+  (def r (+:double (+:double (call-fn heavy var(a) var(b)) (call-fn cap)) 0.0:double))
+  (def c (record-new Vec3 2.0:double 0.0:double 0.0:double))
+  (if var(fl) (+:double var(r) (call-fn heavy var(c) var(b))) var(r))
 ```
 
 ## Unboxed borrow param disqualifiers : captured cell param and reassigned param
@@ -281,17 +342,37 @@ assert(r == 3.0 and wide(v, v, v) == 6.0)
 ```
 
 ```hir
-;; hir -O0 top-level check
-!contains $unboxed
-contains (call-fn apply
-contains (call-fn wide name(v) name(v) name(v))
+;; hir -O0 top-level
+top-level:
+  (def Vec3 (class-ref Vec3))
+  (def Pair (class-ref Pair))
+  (def Holder (class-ref Holder))
+  (def mkVec (fn-ref mkVec))
+  (def heavy (fn-ref heavy))
+  (def apply (fn-ref apply))
+  (def wide (fn-ref wide))
+  (def v (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def r (call-fn apply (fn-ref <anon#0>) name(v) name(v)))
+  (call name(assert) (and (==:bool name(r) 3.0:double) (==:bool (call-fn wide name(v) name(v) name(v)) 6.0:double)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (call-fn <anon#0> (get-this-field x) (get-this-field y) (get-this-field z) (get-this-field x) (get-this-field y) (get-this-field z))
-contains (call-fn wide name(v) name(v) name(v))
-!contains wide$unboxed
+;; hir -O1 top-level
+top-level:
+  (def Vec3 (class-ref Vec3))
+  (def Pair (class-ref Pair))
+  (def Holder (class-ref Holder))
+  (def mkVec (fn-ref mkVec))
+  (def heavy (fn-ref heavy))
+  (def apply (fn-ref apply))
+  (def wide (fn-ref wide))
+  (def v (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def r
+    (block
+      (def a name(v))
+      (def b name(v))
+      (call-fn <anon#0> (get-this-field x) (get-this-field y) (get-this-field z) (get-this-field x) (get-this-field y) (get-this-field z))))
+  (call name(assert) (and (==:bool name(r) 3.0:double) (==:bool (call-fn wide name(v) name(v) name(v)) 6.0:double)))
 ```
 
 ## Unboxed body rewriting with uninitialized local, move, anonymous catch, and non-flattened param
@@ -310,16 +391,39 @@ assert(work(Vec3(1.0, 2.0, 3.0), Vec3(4.0, 5.0, 6.0)) == 9.0)
 ```
 
 ```hir
-;; hir -O0 fn=work check
-contains (record-new Holder
-contains (move var(h))
+;; hir -O0 fn=work
+fn work (a:obj, b:obj) -> double {nothrow unique}
+  (if (<:bool (get-this-field x) -999.0:double) (block (return 0.0:double)))
+  (def tmp)
+  (def xs (core-new list var(a)))
+  (def h (record-new Holder (core-new list 1:int) 2:int))
+  (def h2 (move var(h)))
+  (set tmp (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int (get-this-field count) (jcall List.size var(xs))))))
+  (try
+    (block
+      (if (<:bool (nonnull var(tmp)) 0.0:double) (block (call name(assert) false:bool)))
+      (nonnull var(tmp)))
+    (catch _
+      0.0:double))
 ```
 
 ```hir
-;; hir -O1 fn=work check
-!contains record-new
-contains (def $sr_h_1 2:int)
-contains (def $sr_h2_1 var($sr_h_1))
+;; hir -O1 fn=work
+fn work (a:obj, b:obj) -> double {nothrow unique}
+  (if (<:bool (get-this-field x) -999.0:double) (return 0.0:double))
+  (def tmp)
+  (def xs (core-new list var(a)))
+  (block
+    (def $sr_h_0 (core-new list 1:int))
+    (def $sr_h_1 2:int))
+  (block (def $sr_h2_1 var($sr_h_1)))
+  (set tmp (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int var($sr_h2_1) (jcall List.size var(xs))))))
+  (try
+    (block
+      (if (<:bool (nonnull var(tmp)) 0.0:double) (call name(assert) false:bool))
+      (nonnull var(tmp)))
+    (catch _
+      0.0:double))
 ```
 
 ## SROA candidate discovery bailouts : mismatched union assign, uninitialized def, empty block
@@ -337,16 +441,29 @@ assert(run(true) == 7 and run(false) == 3)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 2 (record-new Vec3
-contains (record-new Pair
+;; hir -O0 fn=run
+fn run (fl:bool) -> int {pure unique}
+  (def u (block))
+  (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (block (set p (record-new Pair 4:int 5:int))))
+  (def q)
+  (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
+  (def tmp)
+  (set tmp 1:int)
+  (+:int (+:int (+:int (block (if (is var(p) Pair) (block (get-this-field a)) (block 0:int))) (call name(int) (get-this-field x))) (nonnull var(tmp))) (block (if (==:bool var(u) null) (block 0:int) (block 1:int))))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 2 (record-new Vec3
-contains (record-new Pair
-!contains $sr_
+;; hir -O1 fn=run
+fn run (fl:bool) -> int {pure unique}
+  (def u (block))
+  (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (set p (record-new Pair 4:int 5:int)))
+  (def q)
+  (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
+  (def tmp)
+  (set tmp 1:int)
+  (+:int (+:int (+:int (if (is var(p) Pair) (get-this-field a) 0:int) (call name(int) (get-this-field x))) (nonnull var(tmp))) (if (==:bool var(u) null) 0:int 1:int))
 ```
 
 ## SROA verification bailouts : typed def/assign, value-used assign, and statement if/else
@@ -363,16 +480,34 @@ assert(valA().x == 4.0 and run(true) == 3.0 and run(false) == 6.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 5 (record-new Vec3
-!contains $sr_s_
+;; hir -O0 fn=run
+fn run (fl:bool) -> double {nothrow unique}
+  (def t (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (set t (record-new Vec3 2.0:double 3.0:double 4.0:double))
+  (def s (record-new Vec3 0.0:double 0.0:double 0.0:double))
+  (if var(fl) (block (set s (record-new Vec3 1.0:double 2.0:double 3.0:double))) (block (set s (record-new Vec3 4.0:double 5.0:double 6.0:double))))
+  (+:double (get-this-field x) (get-this-field x))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 2 (record-new Vec3
-contains (def $sr_s_0 0.0:double)
-contains var($sr_s_0)
+;; hir -O1 fn=run
+fn run (fl:bool) -> double {nothrow unique}
+  (def t (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (set t (record-new Vec3 2.0:double 3.0:double 4.0:double))
+  (block
+    (def $sr_s_0 0.0:double)
+    (def $sr_s_1 0.0:double)
+    (def $sr_s_2 0.0:double))
+  (if var(fl)
+    (block
+      (set $sr_s_0 1.0:double)
+      (set $sr_s_1 2.0:double)
+      (set $sr_s_2 3.0:double))
+    (block
+      (set $sr_s_0 4.0:double)
+      (set $sr_s_1 5.0:double)
+      (set $sr_s_2 6.0:double)))
+  (+:double (get-this-field x) var($sr_s_0))
 ```
 
 ## SROA destructured RHS bailouts : mixed if/else with non-inlined call and assign to call
@@ -389,16 +524,23 @@ assert(run(true) == 12.0 and run(false) == 7.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 3 (record-new Vec3
-count 3 (call-fn mkVec
+;; hir -O0 fn=run
+fn run (fl:bool) -> double {nothrow unique}
+  (def a (if var(fl) (block (record-new Vec3 1.0:double 2.0:double 3.0:double)) (block (call-fn mkVec 4.0:double))))
+  (def b (if var(fl) (block (call-fn mkVec 5.0:double)) (block (record-new Vec3 2.0:double 3.0:double 4.0:double))))
+  (def c (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (block (set c (call-fn mkVec 6.0:double))))
+  (+:double (+:double (get-this-field x) (get-this-field x)) (get-this-field x))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 3 (record-new Vec3
-count 3 (call-fn mkVec
-!contains $sr_
+;; hir -O1 fn=run
+fn run (fl:bool) -> double {nothrow unique}
+  (def a (if var(fl) (record-new Vec3 1.0:double 2.0:double 3.0:double) (call-fn mkVec 4.0:double)))
+  (def b (if var(fl) (call-fn mkVec 5.0:double) (record-new Vec3 2.0:double 3.0:double 4.0:double)))
+  (def c (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (set c (call-fn mkVec 6.0:double)))
+  (+:double (+:double (get-this-field x) (get-this-field x)) (get-this-field x))
 ```
 
 ## SROA destructured RHS bailouts : as-cast, non-candidate copy, and mismatched candidate copy
@@ -415,16 +557,29 @@ assert(run(Vec3(3.0, 0.0, 0.0), Vec3(5.0, 0.0, 0.0), false) == 8.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 3 (record-new Vec3
-contains (as var(x) babble|Vec3|
+;; hir -O0 fn=run
+fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
+  (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (set p (block (as var(x) babble|Vec3)))
+  (def q (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (block (set q var(pv))))
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Pair 4:int 5:int))
+  (def m (if var(fl) (block var(a)) (block var(b))))
+  (+:double (+:double (get-this-field x) (get-this-field x)) (block (if (is var(m) Pair) (block (call name(double) (get-this-field a))) (block (get-this-field x)))))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 3 (record-new Vec3
-contains (as var(x) babble|Vec3|
-!contains $sr_
+;; hir -O1 fn=run
+fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
+  (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (set p (as var(x) babble|Vec3))
+  (def q (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (set q var(pv)))
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Pair 4:int 5:int))
+  (def m (if var(fl) var(a) var(b)))
+  (+:double (+:double (get-this-field x) (get-this-field x)) (if (is var(m) Pair) (call name(double) (get-this-field a)) (get-this-field x)))
 ```
 
 ## SROA destructured RHS bailouts : mismatched RecordNew, empty block, and one-armed if
@@ -440,16 +595,21 @@ assert(run(false) == 6.0 and run(true) == 3.0)
 ```
 
 ```hir
-;; hir -O0 fn=run check
-count 4 (record-new Vec3
-contains (record-new Pair
+;; hir -O0 fn=run
+fn run (f:bool) -> double {nothrow unique}
+  (def u (if var(f) (block (record-new Vec3 1.0:double 2.0:double 3.0:double)) (block (record-new Pair 4:int 5:int))))
+  (def e (if var(f) (block (record-new Vec3 1.0:double 2.0:double 3.0:double)) (block)))
+  (def o (if var(f) (block (record-new Vec3 1.0:double 2.0:double 3.0:double)) (block (if (not var(f)) (block (record-new Vec3 2.0:double 0.0:double 0.0:double))))))
+  (+:double (+:double (block (if (is var(u) Pair) (block 4.0:double) (block 1.0:double))) (block (if (<>:bool var(e) null) (block (get-this-field x)) (block 0.0:double)))) (block (if (<>:bool var(o) null) (block (get-this-field x)) (block 0.0:double))))
 ```
 
 ```hir
-;; hir -O1 fn=run check
-count 4 (record-new Vec3
-contains (record-new Pair
-!contains $sr_
+;; hir -O1 fn=run
+fn run (f:bool) -> double {nothrow unique}
+  (def u (if var(f) (record-new Vec3 1.0:double 2.0:double 3.0:double) (record-new Pair 4:int 5:int)))
+  (def e (if var(f) (record-new Vec3 1.0:double 2.0:double 3.0:double) (block)))
+  (def o (if var(f) (record-new Vec3 1.0:double 2.0:double 3.0:double) (if (not var(f)) (record-new Vec3 2.0:double 0.0:double 0.0:double))))
+  (+:double (+:double (if (is var(u) Pair) 4.0:double 1.0:double) (if (<>:bool var(e) null) (get-this-field x) 0.0:double)) (if (<>:bool var(o) null) (get-this-field x) 0.0:double))
 ```
 
 ## FBIP record reuse with two unique same-type params, non-unique reads/assigns, and plain class
@@ -466,15 +626,19 @@ assert(res.count == 10 and Plain(7).k == 7)
 ```
 
 ```hir
-;; hir -O0 fn=merge check
-contains (record-new Holder
-!contains record-reuse
+;; hir -O0 fn=merge
+fn merge (a:obj, b:obj, v:obj) -> obj {pure}
+  (def c (+:int (+:int (get-this-field count) (get-this-field count)) (call name(int) (get-this-field x))))
+  (set c (+:int var(c) 1:int))
+  (record-new Holder (get-this-field items) var(c))
 ```
 
 ```hir
-;; hir -O1 fn=merge check
-contains (record-reuse var(a) Holder
-!contains record-new
+;; hir -O1 fn=merge
+fn merge (a:obj, b:obj, v:obj) -> obj {pure}
+  (def c (+:int (+:int (get-this-field count) (get-this-field count)) (call name(int) (get-this-field x))))
+  (set c (+:int var(c) 1:int))
+  (record-reuse var(a) Holder (get-this-field items) var(c))
 ```
 
 ## FBIP record reuse tail shapes : one-armed if and empty block else
@@ -523,15 +687,15 @@ assert(onlyElse(Holder(list(1), 1), false)!.count == 3 and onlyElse(Holder(list(
 ```
 
 ```hir
-;; hir -O0 fn=onlyElse check
-contains (record-new Holder
-!contains record-reuse
+;; hir -O0 fn=onlyElse
+fn onlyElse (h:obj, fl:bool) -> obj {nothrow}
+  (if var(fl) (block null) (block (record-new Holder (get-this-field items) (+:int (get-this-field count) 2:int))))
 ```
 
 ```hir
-;; hir -O1 fn=onlyElse check
-contains (record-reuse var(h) Holder
-!contains record-new
+;; hir -O1 fn=onlyElse
+fn onlyElse (h:obj, fl:bool) -> obj {nothrow}
+  (if var(fl) null (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 2:int)))
 ```
 
 ## FBIP record reuse disqualifiers : captured unique param and cross-module mutable record
@@ -572,14 +736,17 @@ assert(pureLocal(Holder(list(1), 1)).count == 2 and nonInitRef(Holder(list(1), 1
 ```
 
 ```hir
-;; hir -O0 fn=pureLocal check
-contains (record-new Holder
-!contains record-reuse
+;; hir -O0 fn=pureLocal
+fn pureLocal (h:obj) -> obj {nothrow}
+  (def H name(Holder))
+  (record-new Holder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
 ```hir
-;; hir -O1 fn=pureLocal check
-contains (record-reuse var(h) Holder
+;; hir -O1 fn=pureLocal
+fn pureLocal (h:obj) -> obj {nothrow}
+  (def H name(Holder))
+  (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
 ```hir

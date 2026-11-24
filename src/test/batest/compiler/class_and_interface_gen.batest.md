@@ -58,9 +58,20 @@ assert(c.add(3) == 18 and c.add(3, 2) == 10)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (call-method name(c).add 3:int)
-contains (call-method name(c).add 3:int 2:int)
+;; hir -O0,-O1 top-level
+top-level:
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def c (call (export name(extCalc).ExtCalc) 5:int))
+  (call name(assert) (and (==:bool (call-method name(c).add 3:int) 18:int) (==:bool (call-method name(c).add 3:int 2:int) 10:int)))
 ```
 
 ## Record with all 8 primitives plus reference and body-declared derived primitive field
@@ -245,11 +256,23 @@ assert(t.JavaClassDemo.invokeAcceptString(c, "ok") == "ok!")
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (jcall JavaClassDemo.invokeAcceptInt name(c) 4:int)
-contains (jcall JavaClassDemo.invokeAcceptDouble name(c) 1.5:double)
-contains (jcall JavaClassDemo.invokeAcceptBool name(c) true:bool)
-contains (jcall JavaClassDemo.invokeAcceptString name(c) "ok")
+;; hir -O0,-O1 top-level
+top-level:
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def c (call (export name(jCb).Cb)))
+  (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptInt name(c) 4:int) 5:int))
+  (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptDouble name(c) 1.5:double) 3.0:double))
+  (call name(assert) (not (jcall JavaClassDemo.invokeAcceptBool name(c) true:bool)))
+  (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptString name(c) "ok") "ok!"))
 ```
 
 ## Java interface bridge : ref-only spread with extra optional param
@@ -350,15 +373,37 @@ assert(a.getAnnotatedOwnerType() == null and (a.getAnnotations()!).size() == 0)
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (jcall AnnotatedArrayType.getAnnotatedOwnerType name(a))
-contains (block (nonnull (jcall AnnotatedType.getAnnotations name(a))))
+;; hir -O0 top-level
+top-level:
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def a (call (export name(jFix).MyAAT)))
+  (call name(assert) (and (==:bool (jcall AnnotatedArrayType.getAnnotatedOwnerType name(a)) null) (==:bool (array-op SIZE (block (nonnull (jcall AnnotatedType.getAnnotations name(a))))) 0:int)))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (jcall AnnotatedArrayType.getAnnotatedOwnerType name(a))
-contains (array-op SIZE (nonnull (jcall AnnotatedType.getAnnotations name(a))))
+;; hir -O1 top-level
+top-level:
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def a (call (export name(jFix).MyAAT)))
+  (call name(assert) (and (==:bool (jcall AnnotatedArrayType.getAnnotatedOwnerType name(a)) null) (==:bool (array-op SIZE (nonnull (jcall AnnotatedType.getAnnotations name(a)))) 0:int)))
 ```
 
 ## Java default methods with non-matching Babble overload set on Iterator

@@ -96,12 +96,51 @@ public final class IrAssertionChecker {
                 + ": unknown 'check' predicate '" + line + "' (expected contains, !contains, count <N>, or regex)");
     }
 
+    public static final String MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS_PROPERTY = "batest.minDumpSizeForUsingPartialChecks";
+    public static final int DEFAULT_MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS = 30;
+
+    /**
+     * Returns the configured minimum line count required before a partial {@code check} IR block is allowed
+     * ({@code 0} disables the threshold; defaults to {@value #DEFAULT_MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS}).
+     */
+    public static int minDumpSizeForUsingPartialChecks() {
+        String raw = System.getProperty(MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS_PROPERTY);
+        if (raw == null || raw.isBlank()) {
+            return DEFAULT_MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS;
+        }
+        int value;
+        try {
+            value = Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Invalid " + MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS_PROPERTY + " : '" + raw + "'");
+        }
+        if (value < 0) {
+            throw new IllegalArgumentException(MIN_DUMP_SIZE_FOR_PARTIAL_CHECKS_PROPERTY + " must be >= 0 : " + value);
+        }
+        return value;
+    }
+
     /**
      * Checks all IR expectations applicable to {@code activeOptLevel}. Returns an empty list on success.
      */
     public static List<IrMismatch> checkAll(List<BatestFile.IrExpectation> expectations,
                                             List<IrSnapshot> capturedSnapshots,
                                             int activeOptLevel) {
+        return checkAll(expectations, capturedSnapshots, activeOptLevel, minDumpSizeForUsingPartialChecks());
+    }
+
+    /**
+     * Checks all IR expectations applicable to {@code activeOptLevel} with an explicit
+     * {@code minDumpSizeForUsingPartialChecks} threshold ({@code 0} disables the threshold).
+     */
+    public static List<IrMismatch> checkAll(List<BatestFile.IrExpectation> expectations,
+                                            List<IrSnapshot> capturedSnapshots,
+                                            int activeOptLevel,
+                                            int minDumpSizeForUsingPartialChecks) {
+        if (minDumpSizeForUsingPartialChecks < 0) {
+            throw new IllegalArgumentException("minDumpSizeForUsingPartialChecks must be >= 0 : "
+                    + minDumpSizeForUsingPartialChecks);
+        }
         List<IrMismatch> mismatches = new ArrayList<>();
         for (BatestFile.IrExpectation exp : expectations) {
             if (!exp.appliesTo(activeOptLevel)) {
@@ -121,7 +160,7 @@ public final class IrAssertionChecker {
                         "Target resolution failed for [" + exp.describe() + "] : " + e.getMessage()));
                 continue;
             }
-            String err = matchOne(exp, actual);
+            String err = matchOne(exp, actual, minDumpSizeForUsingPartialChecks);
             if (err != null) {
                 mismatches.add(new IrMismatch(exp, actual, err));
             }
@@ -142,7 +181,7 @@ public final class IrAssertionChecker {
         return found;
     }
 
-    private static String matchOne(BatestFile.IrExpectation exp, String actual) {
+    private static String matchOne(BatestFile.IrExpectation exp, String actual, int minDumpSizeForUsingPartialChecks) {
         return switch (exp.matchMode()) {
             case EXACT -> {
                 String expected = exp.expected().stripTrailing();
@@ -161,6 +200,15 @@ public final class IrAssertionChecker {
                         + exp.expected() + "\n--- actual ---\n" + actual;
             }
             case CHECK -> {
+                if (minDumpSizeForUsingPartialChecks > 0) {
+                    int dumpLines = actual.isEmpty() ? 0 : actual.split("\n", -1).length;
+                    if (dumpLines < minDumpSizeForUsingPartialChecks) {
+                        yield "Partial 'check' IR assertion rejected for [" + exp.describe() + "] : dump has "
+                                + dumpLines + " lines (< minDumpSizeForUsingPartialChecks="
+                                + minDumpSizeForUsingPartialChecks
+                                + "); use an exact golden instead\n--- actual ---\n" + actual;
+                    }
+                }
                 List<String> failed = new ArrayList<>();
                 String[] lines = exp.expected().split("\n", -1);
                 for (int i = 0; i < lines.length; i++) {

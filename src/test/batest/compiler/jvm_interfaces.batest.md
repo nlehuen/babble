@@ -233,8 +233,44 @@ class Sink
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (call-iface name(sink).accept name(boxedIntExpr))
+;; hir -O0 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def TakeDouble (iface-ref TakeDouble))
+  (def Sink (class-ref Sink))
+  (def sink (call name(Sink)))
+  (def cond true:bool)
+  (def boxedIntExpr
+    (if name(cond)
+      (block
+        (def a 3:int)
+        var(a))
+      (block 4:int)))
+  (call name(assert) (==:bool (call-iface name(sink).accept name(boxedIntExpr)) 6.0:double))
+```
+
+```hir
+;; hir -O1 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def TakeDouble (iface-ref TakeDouble))
+  (def Sink (class-ref Sink))
+  (def sink (call name(Sink)))
+  (def cond true:bool)
+  (def boxedIntExpr (if name(cond) 3:int 4:int))
+  (call name(assert) (==:bool (call-iface name(sink).accept name(boxedIntExpr)) 6.0:double))
 ```
 
 ## Interface override adding optional defaulted parameters and dispatch through base signature
@@ -321,18 +357,37 @@ assert(t.label() == "tag:ok" and (t is sh.Tagged))
 ```
 
 ```hir
-;; hir -O0 top-level check
-contains (call-iface name(s1).area)
-contains (call-iface name(s1).scale 2.0:double)
-contains (block (is name(s1) shapes$ba$C0$Circle))
+;; hir -O0 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def sh (call name(import) "shapes.ba"))
+  (def s1 (record-new shapes$ba$C0$Circle 2.0:double))
+  (def t (call (export name(sh).Tagged) "ok"))
+  (call name(assert) (and (and (==:bool (call-iface name(s1).area) 12.0:double) (==:bool (call-iface name(s1).scale 2.0:double) 24.0:double)) (block (is name(s1) shapes$ba$C0$Circle))))
+  (call name(assert) (and (==:bool (call-iface name(t).label) "tag:ok") (block (is name(t) shapes$ba$C1$Tagged))))
 ```
 
 ```hir
-;; hir -O1 top-level check
-contains (call-iface name(s1).area)
-contains (call-iface name(s1).scale 2.0:double)
-contains (is name(s1) shapes$ba$C0$Circle)
-!contains (block (is
+;; hir -O1 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def sh (call name(import) "shapes.ba"))
+  (def s1 (record-new shapes$ba$C0$Circle 2.0:double))
+  (def t (call (export name(sh).Tagged) "ok"))
+  (call name(assert) (and (and (==:bool (call-iface name(s1).area) 12.0:double) (==:bool (call-iface name(s1).scale 2.0:double) 24.0:double)) (is name(s1) shapes$ba$C0$Circle)))
+  (call name(assert) (and (==:bool (call-iface name(t).label) "tag:ok") (is name(t) shapes$ba$C1$Tagged)))
 ```
 
 ## Case 14
@@ -367,9 +422,33 @@ assert(not check and (Later() is Later))
 ```
 
 ```hir
-;; hir -O0,-O1 top-level check
-contains (def check (is 1:int Later))
-contains (def Later (class-ref Later))
+;; hir -O0 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def check (is 1:int Later))
+  (def Later (class-ref Later))
+  (call name(assert) (and (not name(check)) (block (is (call name(Later)) Later))))
+```
+
+```hir
+;; hir -O1 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def check (is 1:int Later))
+  (def Later (class-ref Later))
+  (call name(assert) (and (not name(check)) (is (call name(Later)) Later)))
 ```
 
 ## Inherited default method with widened/adapted signature in sub-interface (emitInheritedDefaultInvoke)

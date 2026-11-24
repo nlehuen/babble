@@ -235,4 +235,27 @@ public class HirCanonicalPrinterTestCase {
         Assertions.assertTrue(ir.printCanonical(IrTarget.parse("top-level")).startsWith("top-level:"));
         Assertions.assertTrue(ir.printCanonical(IrTarget.parse("module")).startsWith("module <main>"));
     }
+
+    @Test
+    public void testBabbleTypeDescriptorsStripGlobalTypeIds() throws Exception {
+        String src = ""
+                + "def ErrA = class (def code: int) ()\n"
+                + "def run = fn (x: any): int -> (\n"
+                + "    try (\n"
+                + "        if x is ErrA then ( (x as ErrA).code ) else ( throw ErrA(7) )\n"
+                + "    ) catch e: ErrA then ( e.code )\n"
+                + ")\n"
+                + "assert(run(ErrA(3)) == 3 and run(0) == 7)\n";
+
+        String first = compileAndCapture(src, 1, IrSnapshot.STAGE_FINAL)
+                .get(IrSnapshot.STAGE_FINAL).ir().printCanonical(IrTarget.parse("fn=run"));
+        String second = compileAndCapture(src, 1, IrSnapshot.STAGE_FINAL)
+                .get(IrSnapshot.STAGE_FINAL).ir().printCanonical(IrTarget.parse("fn=run"));
+
+        Assertions.assertEquals(first, second, "Canonical HIR must be deterministic across compilations");
+        Assertions.assertFalse(first.matches("(?s).*\\|T\\d+.*"),
+                "JVM-global |T<N> type IDs must not leak into canonical HIR:\n" + first);
+        Assertions.assertTrue(first.contains("babble|ErrA"),
+                "Expected normalized babble|ErrA descriptor:\n" + first);
+    }
 }
