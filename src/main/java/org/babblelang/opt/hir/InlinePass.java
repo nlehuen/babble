@@ -145,7 +145,7 @@ public final class InlinePass implements HirPass {
         }
         boolean[] ok = {true};
         for (HirExpr stmt : fn.body()) {
-            scanCrossModuleMethodSelfContained(stmt, cls.id(), ok);
+            scanCrossModuleSelfContained(stmt, cls.id(), ok);
             if (!ok[0]) {
                 return null;
             }
@@ -153,89 +153,6 @@ public final class InlinePass implements HirPass {
         // Rewrite same-module classId references to external JVM names so the snapshot is self-contained.
         List<HirExpr> detachedBody = HirRewriter.rewriteList(fn.body(), e -> detachMethodExprForCrossModule(e, cls));
         return fn.withBody(detachedBody);
-    }
-
-    private static void scanCrossModuleMethodSelfContained(HirExpr expr, int ownerClsId, boolean[] ok) {
-        if (expr == null || !ok[0]) return;
-        switch (expr) {
-            case HirExpr.NameRead n -> {
-                if (!"java".equals(n.name()) && !"javax".equals(n.name())) {
-                    ok[0] = false;
-                    return;
-                }
-            }
-            case HirExpr.NameAssign a -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.DirectBabbleCall c -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.DirectThisMethodCall c -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.ThisFieldGet g -> {
-                if (g.externalClassJvmName() == null && g.classId() != ownerClsId) {
-                    ok[0] = false;
-                    return;
-                }
-            }
-            case HirExpr.ThisFieldAssign a -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.SuperCall c -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.RecordNew r -> {
-                if (r.classId() != ownerClsId) {
-                    ok[0] = false;
-                    return;
-                }
-                // Do not scan r.classRef() since it will be replaced with ThisRef + classRefIsInstance=true.
-                for (HirExpr a : r.args()) {
-                    scanCrossModuleMethodSelfContained(a, ownerClsId, ok);
-                }
-                return;
-            }
-            case HirExpr.RecordReuse r -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.ArrayCreate c -> {
-                if (c.componentClass() == null && !c.elemKind().isPrimitive()) {
-                    ok[0] = false;
-                    return;
-                }
-            }
-            case HirExpr.JavaSamAdapt j -> {
-                if (!isSamTargetCrossModuleAccessible(j.target())) {
-                    ok[0] = false;
-                    return;
-                }
-            }
-            case HirExpr.As a -> {
-                if (a.samTarget() != null && !isSamTargetCrossModuleAccessible(a.samTarget())) {
-                    ok[0] = false;
-                    return;
-                }
-            }
-            case HirExpr.For f -> {
-                if (f.elemSamTarget() != null && !isSamTargetCrossModuleAccessible(f.elemSamTarget())) {
-                    ok[0] = false;
-                    return;
-                }
-            }
-            default -> {
-            }
-        }
-        HirRewriter.rewriteChildren(expr, child -> {
-            scanCrossModuleMethodSelfContained(child, ownerClsId, ok);
-            return child;
-        });
     }
 
     private static HirExpr detachMethodExprForCrossModule(HirExpr expr, HirClass cls) {
@@ -265,13 +182,13 @@ public final class InlinePass implements HirPass {
         }
         boolean[] ok = {true};
         for (HirExpr stmt : fn.body()) {
-            scanCrossModuleSelfContained(stmt, ok);
+            scanCrossModuleSelfContained(stmt, -1, ok);
             if (!ok[0]) return false;
         }
         return true;
     }
 
-    private static void scanCrossModuleSelfContained(HirExpr expr, boolean[] ok) {
+    private static void scanCrossModuleSelfContained(HirExpr expr, int allowedClassId, boolean[] ok) {
         if (expr == null || !ok[0]) return;
         switch (expr) {
             case HirExpr.NameRead n -> {
@@ -280,41 +197,35 @@ public final class InlinePass implements HirPass {
                     return;
                 }
             }
-            case HirExpr.NameAssign a -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.DirectBabbleCall c -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.DirectThisMethodCall c -> {
-                ok[0] = false;
-                return;
-            }
+            case HirExpr.NameAssign a -> { ok[0] = false; return; }
+            case HirExpr.DirectBabbleCall c -> { ok[0] = false; return; }
+            case HirExpr.DirectThisMethodCall c -> { ok[0] = false; return; }
+            case HirExpr.ThisFieldAssign a -> { ok[0] = false; return; }
+            case HirExpr.SuperCall c -> { ok[0] = false; return; }
+            case HirExpr.RecordReuse r -> { ok[0] = false; return; }
             case HirExpr.ThisFieldGet g -> {
-                if (g.externalClassJvmName() == null) {
+                if (g.externalClassJvmName() == null && (allowedClassId < 0 || g.classId() != allowedClassId)) {
                     ok[0] = false;
                     return;
                 }
-            }
-            case HirExpr.ThisFieldAssign a -> {
-                ok[0] = false;
-                return;
-            }
-            case HirExpr.SuperCall c -> {
-                ok[0] = false;
-                return;
             }
             case HirExpr.RecordNew r -> {
-                if (r.classId() >= 0) {
-                    ok[0] = false;
+                if (allowedClassId < 0) {
+                    if (r.classId() >= 0) {
+                        ok[0] = false;
+                        return;
+                    }
+                } else {
+                    if (r.classId() != allowedClassId) {
+                        ok[0] = false;
+                        return;
+                    }
+                    // Do not scan r.classRef() since it will be replaced with ThisRef + classRefIsInstance=true.
+                    for (HirExpr a : r.args()) {
+                        scanCrossModuleSelfContained(a, allowedClassId, ok);
+                    }
                     return;
                 }
-            }
-            case HirExpr.RecordReuse r -> {
-                ok[0] = false;
-                return;
             }
             case HirExpr.ArrayCreate c -> {
                 if (c.componentClass() == null && !c.elemKind().isPrimitive()) {
@@ -344,7 +255,7 @@ public final class InlinePass implements HirPass {
             }
         }
         HirRewriter.rewriteChildren(expr, child -> {
-            scanCrossModuleSelfContained(child, ok);
+            scanCrossModuleSelfContained(child, allowedClassId, ok);
             return child;
         });
     }
@@ -775,14 +686,7 @@ public final class InlinePass implements HirPass {
     }
 
     private static boolean isNoOpWidening(PrimitiveKind kind, int rank) {
-        return switch (rank) {
-            case 1 -> kind == PrimitiveKind.SHORT;
-            case 2 -> kind == PrimitiveKind.INT;
-            case 3 -> kind == PrimitiveKind.LONG;
-            case 4 -> kind == PrimitiveKind.FLOAT;
-            case 5 -> kind == PrimitiveKind.DOUBLE;
-            default -> false;
-        };
+        return rank >= 1 && kind.numericRank() == rank;
     }
 
     private static void collectAssignedVars(HirExpr expr, Set<Integer> out) {
