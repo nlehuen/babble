@@ -725,4 +725,71 @@ public class FormatterTestCase {
         Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"\n    \\q\n    \"\"\""));
         Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = r\"open"));
     }
+
+    @Test
+    public void testTryCatchFinallyAndThrowFormatting() throws Exception {
+        assertFormats("""
+                def v = try (
+                    throw exception("boom")
+                ) catch e: java.io.IOException | exception then (
+                    e.getMessage()
+                ) catch : java.lang.RuntimeException then (
+                    "rt"
+                ) catch e then (
+                    throw e
+                ) catch then (
+                    "fallback"
+                ) finally (
+                    cleanup()
+                )
+                """, """
+                def v=try
+                (
+                throw   exception("boom")
+                )
+                catch   e :java.io.IOException|exception   then
+                (
+                e.getMessage()
+                )
+                catch:java.lang.RuntimeException then(
+                "rt"
+                )
+                catch e then(
+                throw e
+                )
+                catch then(
+                "fallback"
+                )
+                finally
+                (
+                cleanup()
+                )
+                """);
+        // Comments between clauses are preserved without breaking line joins.
+        assertFormats("""
+                try (
+                    work()
+                )
+                ;; handle failure
+                catch e: exception then (
+                    recover(e)
+                )
+                ;; always clean up
+                finally (
+                    close()
+                )
+                """, """
+                try (
+                work()
+                )
+                ;; handle failure
+                catch e:exception then (
+                recover(e)
+                )
+                ;; always clean up
+                finally (
+                close()
+                )
+                """);
+    }
 }

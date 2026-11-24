@@ -3466,7 +3466,9 @@ final class TypeChecker {
     private boolean validateCatchNullableAst(BabbleParser.NullableTypeContext nt, ScopeNode scope) {
         if (nt instanceof BabbleParser.ParenTypeContext pt) {
             if (pt.frozen != null) {
-                warn("Cannot catch 'frozen' type : " + pt.getText(), pt);
+                Type inner = annotator.annotation(pt.type(), scope);
+                String label = inner != Type.ERROR ? Type.frozen(inner).toString() : "frozen (" + pt.type().getText() + ")";
+                warn("Cannot catch 'frozen' type : " + label, pt);
                 return false;
             }
             return validateCatchTypeAst(pt.type(), scope);
@@ -3478,7 +3480,9 @@ final class TypeChecker {
                 return false;
             }
             if (simple.frozen != null) {
-                warn("Cannot catch 'frozen' type : " + simple.getText(), simple);
+                Type resolved = annotator.nonParenAnnotation(simple, scope, false);
+                String label = resolved != Type.ERROR ? resolved.toString() : "frozen " + simple.typeName().getText();
+                warn("Cannot catch 'frozen' type : " + label, simple);
                 return false;
             }
             if (simple.OF() != null && !"array".equals(simple.typeName().getText())

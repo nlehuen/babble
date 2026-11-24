@@ -469,6 +469,58 @@ public class OptimizerTestCase {
                 "Expected resolved overload alternative to be inlined into calc$spec, got calls: " + calls);
     }
 
+    @Test
+    public void testBip028TryCatchOptimizerPasses() throws Exception {
+        // 1. -O1 eliminates dead catch on a pure nothrow try body (zero exception_table entries)
+        String deadCatch = "def f = fn (x : int) : int -> ( try ( x + 1 ) catch then ( 99 ) )\n"
+                + "f(41)";
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        CompiledScript cs = engine.compile(deadCatch);
+        Assertions.assertEquals(42, cs.eval(new SimpleBindings()));
+        ClassNode cn = new ClassNode();
+        new ClassReader(((org.babblelang.compiler.CompiledBabbleScript) cs).getClassBytes()).accept(cn, 0);
+        MethodNode fMethod = cn.methods.stream().filter(m -> m.name.equals("fn$0$f$spec")).findFirst().orElseThrow();
+        Assertions.assertTrue(fMethod.tryCatchBlocks.isEmpty(),
+                "Expected -O1 HirDcePass to eliminate dead catch on pure nothrow try, got " + fMethod.tryCatchBlocks);
+
+        // 2. Dead code after throw is eliminated and LICM does not hoist a throwing expression out of try
+        String licmAndThrow = "def g = fn (n : int) : int -> (\n"
+                + "  def acc = 0\n"
+                + "  def i = 0\n"
+                + "  while i < n then (\n"
+                + "    acc += try (\n"
+                + "      if i == 0 then ( throw exception(\"skip\") ; 999 ) else ( 10 )\n"
+                + "    ) catch : exception then ( 1 )\n"
+                + "    i += 1\n"
+                + "  )\n"
+                + "  acc\n"
+                + ")\n"
+                + "g(3)";
+        CompiledScript cs2 = engine.compile(licmAndThrow);
+        Assertions.assertEquals(21, cs2.eval(new SimpleBindings()));
+
+        // 3. Helper inside try IS inlined; function containing try is NOT inlined into caller
+        String inlineTry = "def inc = fn (x : int) : int -> ( x + 1 )\n"
+                + "def wrapped = fn (x : int) : int -> ( try ( inc(x) ) catch then ( 0 ) )\n"
+                + "def caller = fn (x : int) : int -> ( wrapped(x) )\n"
+                + "caller(5)";
+        CompiledScript cs3 = engine.compile(inlineTry);
+        Assertions.assertEquals(6, cs3.eval(new SimpleBindings()));
+        ClassNode cn3 = new ClassNode();
+        new ClassReader(((org.babblelang.compiler.CompiledBabbleScript) cs3).getClassBytes()).accept(cn3, 0);
+        MethodNode wrapped = cn3.methods.stream().filter(m -> m.name.equals("fn$1$wrapped$spec")).findFirst().orElseThrow();
+        List<String> wrappedCalls = new ArrayList<>();
+        for (var insn = wrapped.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode mi) {
+                wrappedCalls.add(mi.owner + "." + mi.name);
+            }
+        }
+        Assertions.assertTrue(wrappedCalls.stream().noneMatch(c -> c.contains("inc$spec")),
+                "Expected helper inc to be inlined into try body, got: " + wrappedCalls);
+    }
+
     // ------------------------------------------------------------------ Helpers
 
     private static String runJar(Path jar) throws Exception {

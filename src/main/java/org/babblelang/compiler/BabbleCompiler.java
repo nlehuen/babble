@@ -152,6 +152,13 @@ public final class BabbleCompiler {
             if (dumpIr != null) {
                 dumpIr(dumpIr, internalName, "hir-before", org.babblelang.ir.hir.HirPrinter.print(hir));
             }
+            org.babblelang.ir.hir.HirModule normalized = org.babblelang.opt.hir.HirTryNormalize.normalize(hir);
+            if (normalized != hir) {
+                hir = normalized;
+                if (verify) {
+                    org.babblelang.ir.hir.HirVerifier.verify(hir);
+                }
+            }
         } else {
             boolean aotCrossModule = engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
             @SuppressWarnings("unchecked")

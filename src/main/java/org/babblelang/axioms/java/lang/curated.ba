@@ -215,6 +215,7 @@ axiom java.lang.Thread: class (
 axiom java.lang.Throwable: class (
     def fillInStackTrace: fn mut nothrow (): java.lang.Throwable
     def getStackTrace: fn volatile nothrow (): array of java.lang.StackTraceElement
+    def getSuppressed: fn nothrow (): array of java.lang.Throwable
 ) static (
     def new: fn nothrow fresh ()
     def new: fn nothrow (shared message: string?)

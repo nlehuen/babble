@@ -950,4 +950,45 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(covOps.stream().anyMatch(o -> o.endsWith(".bm$m")), covOps.toString());
         Assertions.assertTrue(covOps.stream().noneMatch(o -> o.startsWith("INDY:")), covOps.toString());
     }
+
+    @Test
+    public void testBip028ExceptionTableAndDirectPropagation() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def ParseErr = record (line : int) ()\n"
+                        + "def parseJava = fn io (s : string) : int -> (\n"
+                        + "  try ( java.lang.Integer.parseInt(s) )\n"
+                        + "  catch : java.lang.NumberFormatException then ( -1 )\n"
+                        + ")\n"
+                        + "def parseBabble = fn (x : int) : int -> (\n"
+                        + "  try ( if x < 0 then ( throw ParseErr(x) ) else ( x ) )\n"
+                        + "  catch e : ParseErr then ( -e.line )\n"
+                        + ")\n"
+                        + "def plainJava = fn io (s : string) : int -> ( java.lang.Integer.parseInt(s) )\n"
+                        + "assert(parseJava(\"bad\") == -1 and parseJava(\"7\") == 7)\n"
+                        + "assert(parseBabble(-4) == 4 and parseBabble(3) == 3)\n"
+                        + "plainJava(\"9\")");
+        assertVerifies(script);
+        Assertions.assertEquals(9, script.eval(new SimpleBindings()));
+
+        org.objectweb.asm.tree.ClassNode cn = new org.objectweb.asm.tree.ClassNode();
+        new org.objectweb.asm.ClassReader(script.getClassBytes()).accept(cn, 0);
+
+        // parseJava has a direct JVM exception_table entry for java/lang/NumberFormatException and no ThrownException handler
+        org.objectweb.asm.tree.MethodNode parseJava = cn.methods.stream()
+                .filter(m -> m.name.equals("fn$0$parseJava$spec")).findFirst().orElseThrow();
+        List<String> javaCatchTypes = parseJava.tryCatchBlocks.stream().map(t -> t.type).toList();
+        Assertions.assertTrue(javaCatchTypes.contains("java/lang/NumberFormatException"), javaCatchTypes.toString());
+        Assertions.assertFalse(javaCatchTypes.contains("org/babblelang/runtime/ThrownException"), javaCatchTypes.toString());
+
+        // parseBabble dispatches via ThrownException
+        org.objectweb.asm.tree.MethodNode parseBabble = cn.methods.stream()
+                .filter(m -> m.name.equals("fn$1$parseBabble$spec")).findFirst().orElseThrow();
+        List<String> babbleCatchTypes = parseBabble.tryCatchBlocks.stream().map(t -> t.type).toList();
+        Assertions.assertTrue(babbleCatchTypes.contains("org/babblelang/runtime/ThrownException"), babbleCatchTypes.toString());
+
+        // plainJava has zero synthetic try/catch wrapper around direct Java invocation (BIP028-D3)
+        org.objectweb.asm.tree.MethodNode plainJava = cn.methods.stream()
+                .filter(m -> m.name.equals("fn$2$plainJava$spec")).findFirst().orElseThrow();
+        Assertions.assertTrue(plainJava.tryCatchBlocks.isEmpty(), plainJava.tryCatchBlocks.toString());
+    }
 }
