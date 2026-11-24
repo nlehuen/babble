@@ -675,7 +675,7 @@ public sealed interface MirInst permits
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(receiver, "receiver");
             args = List.copyOf(args);
-            argNames = List.copyOf(argNames);
+            argNames = java.util.Collections.unmodifiableList(new ArrayList<>(argNames));
             Objects.requireNonNull(effect, "effect");
         }
 

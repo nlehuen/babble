@@ -221,6 +221,31 @@ public final class Values {
         return result;
     }
 
+    /** Adapts an array, {@link java.util.Iterator}, or {@link Iterable} to a {@link java.util.Iterator} for dynamic {@code for} loops. */
+    public static java.util.Iterator<?> asIterator(Object value) {
+        Object raw = unwrap(value);
+        if (raw.getClass().isArray()) {
+            int len = java.lang.reflect.Array.getLength(raw);
+            return new java.util.Iterator<Object>() {
+                private int index = 0;
+
+                @Override
+                public boolean hasNext() {
+                    return index < len;
+                }
+
+                @Override
+                public Object next() {
+                    return java.lang.reflect.Array.get(raw, index++);
+                }
+            };
+        }
+        if (raw instanceof java.util.Iterator<?> it) {
+            return it;
+        }
+        return ((Iterable<?>) raw).iterator();
+    }
+
     /** The arity of a Babble callable, as {min, max}, or null when it is not known. */
     static int[] arity(Callable callable) {
         if (callable instanceof BabbleFunction function && function.minArity() >= 0) {

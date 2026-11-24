@@ -163,7 +163,16 @@ public final class BabbleCompiler {
         if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
             aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
         }
-        HirEmitter emitter = new HirEmitter(hir, parentLoader);
+        org.babblelang.ir.mir.MirModule mir = null;
+        if (optLevel >= 2) {
+            org.babblelang.ir.hir.HirModule optimizedHir = hir;
+            mir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms, () -> {
+                org.babblelang.ir.mir.MirModule lowered = org.babblelang.ir.mir.MirLowerer.lower(optimizedHir);
+                return org.babblelang.opt.mir.MirPassManager.defaultFor(optLevel).optimize(
+                        lowered, passCtx, observer, moduleKey);
+            });
+        }
+        HirEmitter emitter = new HirEmitter(hir, mir, parentLoader);
         Map<String, byte[]> classes = emitter.generate();
 
         String dump = System.getProperty(DUMP_CLASSES);

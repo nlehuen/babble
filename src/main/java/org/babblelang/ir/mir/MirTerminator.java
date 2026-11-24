@@ -167,7 +167,7 @@ public sealed interface MirTerminator permits
     ) implements MirTerminator {
         public TailCall {
             args = List.copyOf(args);
-            argNames = List.copyOf(argNames);
+            argNames = java.util.Collections.unmodifiableList(new ArrayList<>(argNames));
         }
 
         @Override

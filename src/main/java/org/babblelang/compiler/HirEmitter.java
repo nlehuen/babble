@@ -70,6 +70,7 @@ final class HirEmitter {
     final CallEmitter calls;
 
     private final ClassWriter classWriter;
+    private final org.babblelang.ir.mir.MirModule mirModule;
     private final Map<Integer, InterfaceGen> interfaceGens = new LinkedHashMap<>();
     private final Map<String, InterfaceGen> interfaceGensByTypeId = new LinkedHashMap<>();
     private final Map<Integer, ClassGen> classGens = new LinkedHashMap<>();
@@ -82,7 +83,12 @@ final class HirEmitter {
     private int superHelperCount = 0;
 
     HirEmitter(HirModule module, ClassLoader runtimeLoader) {
+        this(module, null, runtimeLoader);
+    }
+
+    HirEmitter(HirModule module, org.babblelang.ir.mir.MirModule mirModule, ClassLoader runtimeLoader) {
         this.module = module;
+        this.mirModule = mirModule;
         this.className = module.className();
         this.sourceName = module.sourceName();
         this.runtimeLoader = runtimeLoader;
@@ -601,6 +607,12 @@ final class HirEmitter {
         ctx.beginTailLoop(null, -1);
         initFrameLocals(fn, selfType);
         bindParameters(paramsField, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
+        org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
+        if (mirFn != null) {
+            new MirEmitter(this, mirFn, fn, PrimitiveKind.NONE).emit();
+            ctx.finish();
+            return;
+        }
         statements(fn.body());
         widenStackRank(fn.bodyWideningRank());
         convertStack(ctx.stackKind, PrimitiveKind.NONE);
@@ -652,6 +664,12 @@ final class HirEmitter {
                 boxOn(mv, pk);
                 mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;)V", false);
             }
+        }
+        org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
+        if (mirFn != null) {
+            new MirEmitter(this, mirFn, fn, ctx.methodReturnKind).emit();
+            ctx.finish();
+            return;
         }
         statements(fn.body());
         widenStackRank(fn.bodyWideningRank());
@@ -1048,6 +1066,14 @@ final class HirEmitter {
     }
 
     void emitExpr(HirExpr expr) {
+        if (ctx.mirOverrides != null) {
+            MethodEmitContext.MirOperand op = ctx.mirOverrides.get(expr);
+            if (op != null) {
+                loadKindOn(ctx.mv, op.kind(), op.slot());
+                ctx.stackKind = op.kind();
+                return;
+            }
+        }
         ctx.stackKind = PrimitiveKind.NONE;
         switch (expr) {
             case HirExpr.Const c -> emitConst(c);
@@ -1113,6 +1139,14 @@ final class HirEmitter {
     }
 
     void emitAndWiden(HirExpr expr) {
+        if (ctx.mirOverrides != null) {
+            MethodEmitContext.MirOperand op = ctx.mirOverrides.get(expr);
+            if (op != null) {
+                loadKindOn(ctx.mv, op.kind(), op.slot());
+                ctx.stackKind = op.kind();
+                return;
+            }
+        }
         emitExpr(expr);
         widenStackRank(expr.meta().wideningRank());
     }
