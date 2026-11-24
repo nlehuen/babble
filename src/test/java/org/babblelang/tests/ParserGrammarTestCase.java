@@ -195,13 +195,127 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                 """);
     }
 
+    @Test
+    public void testBip030NullabilityAndInferredEffectsSllGrammar() throws Exception {
+        parsePureSll("""
+                def s: string! = "hi"
+                def a: (array of int)! = (array of int)(2)
+                def b: (string?)! = "ok"
+                def u: string! | null = "ok"
+                def v: string! | int! = 1
+                def arr: array of string! = (array of string)(1)
+                def m: java.util.Map of (string!, int!)! = java.util.HashMap()
+                def f: fn (a: int!): string! = fn (a: int!): string! -> ("ok")
+                def varargs: fn (xs: string!...): void = fn (xs: string!...): void -> (null)
+                def fr: frozen (Box?)! = box
+                def J = interface extends I! ()
+                def Impl = class () implements I! (
+                    def m = fn (): int -> (super(I!).m())
+                )
+                def c1 = x as string!
+                def c2 = (x as string?)!
+                def c3 = x as (string?)!
+                def c4 = x as string?!
+                def c5 = x as string!!
+                def c6 = x is string!
+                def c7 = g of string!(1)
+                def c8 = a != b
+                axiom java.io.StringWriter: class notnull (
+                    def getBuffer: fn ... : java.lang.StringBuffer!
+                    def append: fn ... (a: string!): java.io.StringWriter!
+                    def empty: fn ... (): string!
+                    def sigOnly: fn (): string!
+                    def retOnly: fn : string!
+                    def nothrowRet: fn nothrow : string!
+                    def genericRet: fn of T ... : T!
+                    def uniqueRet: fn : unique string!
+                ) static (
+                    def new: fn pure unique (): java.io.StringWriter!
+                )
+                """);
+
+        // AST shape: `x as string!` binds `!` to `SimpleType`, not outer `NonNullAssertion`.
+        BabbleParser.FileContext asBang = parsePureSll("x as string!");
+        BabbleParser.AsExpressionContext asBangExpr = Assertions.assertInstanceOf(
+                BabbleParser.AsExpressionContext.class, asBang.expression(0));
+        BabbleParser.NonParenTypeContext asBangRight = Assertions.assertInstanceOf(
+                BabbleParser.NonParenTypeContext.class, asBangExpr.right.nullableType(0));
+        BabbleParser.SimpleTypeContext asBangSimple = Assertions.assertInstanceOf(
+                BabbleParser.SimpleTypeContext.class, asBangRight.nonParenNullableType());
+        Assertions.assertNotNull(asBangSimple.nullMod);
+        Assertions.assertEquals(BabbleLexer.BANG, asBangSimple.nullMod.getType());
+
+        // AST shape: `(x as string?)!` wraps `BlockExpression(AsExpression(..., ?))` in `NonNullAssertion`.
+        BabbleParser.FileContext parenAsBang = parsePureSll("(x as string?)!");
+        BabbleParser.NonNullAssertionContext parenAssert = Assertions.assertInstanceOf(
+                BabbleParser.NonNullAssertionContext.class, parenAsBang.expression(0));
+        BabbleParser.BlockExpressionContext innerBlock = Assertions.assertInstanceOf(
+                BabbleParser.BlockExpressionContext.class, parenAssert.expression());
+        BabbleParser.AsExpressionContext innerAs = Assertions.assertInstanceOf(
+                BabbleParser.AsExpressionContext.class, innerBlock.block().expression(0));
+        BabbleParser.SimpleTypeContext innerSimple = Assertions.assertInstanceOf(
+                BabbleParser.SimpleTypeContext.class,
+                ((BabbleParser.NonParenTypeContext) innerAs.right.nullableType(0)).nonParenNullableType());
+        Assertions.assertEquals(BabbleLexer.QUESTION, innerSimple.nullMod.getType());
+
+        // AST shape: `x as string?!` lexes `?` + `!`; `?` attaches to type, `!` is outer `NonNullAssertion`.
+        BabbleParser.FileContext asQBang = parsePureSll("x as string?!");
+        BabbleParser.NonNullAssertionContext qBangAssert = Assertions.assertInstanceOf(
+                BabbleParser.NonNullAssertionContext.class, asQBang.expression(0));
+        BabbleParser.AsExpressionContext qBangAs = Assertions.assertInstanceOf(
+                BabbleParser.AsExpressionContext.class, qBangAssert.expression());
+        BabbleParser.SimpleTypeContext qBangSimple = Assertions.assertInstanceOf(
+                BabbleParser.SimpleTypeContext.class,
+                ((BabbleParser.NonParenTypeContext) qBangAs.right.nullableType(0)).nonParenNullableType());
+        Assertions.assertEquals(BabbleLexer.QUESTION, qBangSimple.nullMod.getType());
+
+        // AST shape: `x is string!` binds `!` to `SimpleType`.
+        BabbleParser.FileContext isBang = parsePureSll("x is string!");
+        BabbleParser.IsExpressionContext isBangExpr = Assertions.assertInstanceOf(
+                BabbleParser.IsExpressionContext.class, isBang.expression(0));
+        BabbleParser.SimpleTypeContext isBangSimple = Assertions.assertInstanceOf(
+                BabbleParser.SimpleTypeContext.class,
+                ((BabbleParser.NonParenTypeContext) isBangExpr.right.nullableType(0)).nonParenNullableType());
+        Assertions.assertEquals(BabbleLexer.BANG, isBangSimple.nullMod.getType());
+
+        // AST shape: `fn ... : T!` has `ELLIPSIS` effect word, null `fnTypeParameters`, non-null return `type`.
+        BabbleParser.FileContext inferredAxiom = parsePureSll(
+                "axiom java.io.StringWriter.getBuffer: fn ... : java.lang.StringBuffer!");
+        BabbleParser.AxiomExpressionContext axiomExpr = Assertions.assertInstanceOf(
+                BabbleParser.AxiomExpressionContext.class, inferredAxiom.expression(0));
+        BabbleParser.AxiomTypeContext axiomType = axiomExpr.axiomType();
+        Assertions.assertNull(axiomType.fnTypeParameters());
+        Assertions.assertNotNull(axiomType.type());
+        Assertions.assertNotNull(axiomType.axiomEffectPrefix().axiomEffectWord(0).ELLIPSIS());
+
+        // AST shape: bare return-only `fn : string!` has null prefix, null params, non-null return type.
+        BabbleParser.FileContext retOnlyAxiom = parsePureSll("axiom java.lang.Foo.bar: fn : string!");
+        BabbleParser.AxiomExpressionContext retOnlyExpr = Assertions.assertInstanceOf(
+                BabbleParser.AxiomExpressionContext.class, retOnlyAxiom.expression(0));
+        Assertions.assertNull(retOnlyExpr.axiomType().axiomEffectPrefix());
+        Assertions.assertNull(retOnlyExpr.axiomType().fnTypeParameters());
+        Assertions.assertNotNull(retOnlyExpr.axiomType().type());
+
+        // Bare `null!` and stacked nullability modifiers in type position are syntax errors.
+        Assertions.assertThrows(ParseCancellationException.class, () -> parsePureSll("def f = fn (x: null!): int -> (1)"));
+        Assertions.assertThrows(ParseCancellationException.class, () -> parsePureSll("def f = fn (x: string?!): int -> (1)"));
+        Assertions.assertThrows(ParseCancellationException.class, () -> parsePureSll("def f = fn (x: string!!): int -> (1)"));
+        Assertions.assertThrows(ParseCancellationException.class, () -> parsePureSll("def f = fn (): null! -> (null)"));
+
+        // Runtime `is` and `as` with `T!`.
+        Assertions.assertEquals(true, interpret("def x : any = \"hi\" ; x is string! == true"));
+        Assertions.assertEquals(false, interpret("def x : any? = null ; x is string! == true"));
+        Assertions.assertEquals("hi", interpret("def x : any = \"hi\" ; x as string!"));
+        Assertions.assertEquals("hi", interpret("def x : any? = \"hi\" ; (x as string?)!"));
+    }
+
     private void assertTypeCheckFails(String source, String expectedMessage) {
         javax.script.ScriptException ex = Assertions.assertThrows(javax.script.ScriptException.class, () -> interpret(source));
         Assertions.assertTrue(ex.getMessage().contains(expectedMessage),
                 "Expected message containing <" + expectedMessage + "> but got <" + ex.getMessage() + ">");
     }
 
-    private static void parsePureSll(String source) {
+    private static BabbleParser.FileContext parsePureSll(String source) {
         BabbleLexer lexer = new BabbleLexer(CharStreams.fromString(source));
         lexer.removeErrorListeners();
         CommonTokenStream tokens = new CommonTokenStream(lexer);
@@ -209,6 +323,6 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         parser.removeErrorListeners();
         parser.setErrorHandler(new BailErrorStrategy());
         parser.getInterpreter().setPredictionMode(PredictionMode.SLL);
-        parser.file();
+        return parser.file();
     }
 }

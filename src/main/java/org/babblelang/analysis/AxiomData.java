@@ -1,6 +1,7 @@
 package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.babblelang.effects.Effect;
@@ -869,9 +870,14 @@ final class AxiomData {
     // ================================================================ Type Erasure & Nullness
 
     record TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar,
-                       JavaNullability.Nullness elementNullness) {
+                       JavaNullability.Nullness elementNullness, boolean isNull) {
         TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar) {
-            this(descriptor, nullness, isTypeVar, null);
+            this(descriptor, nullness, isTypeVar, null, false);
+        }
+
+        TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar,
+                    JavaNullability.Nullness elementNullness) {
+            this(descriptor, nullness, isTypeVar, elementNullness, false);
         }
     }
 
@@ -914,19 +920,21 @@ final class AxiomData {
             }
         }
         if (nonNullMembers.isEmpty()) {
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false);
+            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false, null, true);
         }
         if (nonNullMembers.size() == 1) {
             TypeErasure only = nonNullMembers.get(0);
             if (hasNull) {
-                return new TypeErasure(boxDescriptor(only.descriptor()), JavaNullability.Nullness.NULLABLE, false, only.elementNullness());
+                return new TypeErasure(boxDescriptor(only.descriptor()), JavaNullability.Nullness.NULLABLE, false,
+                        only.elementNullness(), only.isNull());
             }
             return only;
         }
         // Multi-member union erases to Object.
+        boolean allNull = nonNullMembers.stream().allMatch(TypeErasure::isNull);
         boolean anyNullable = hasNull || nonNullMembers.stream().anyMatch(m -> m.nullness() == JavaNullability.Nullness.NULLABLE);
         return new TypeErasure("Ljava/lang/Object;",
-                anyNullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
+                anyNullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false, null, allNull);
     }
 
     private static TypeErasure eraseNullable(BabbleParser.NullableTypeContext ctx,
@@ -935,8 +943,16 @@ final class AxiomData {
                                              ErrorSink errors) {
         if (ctx instanceof BabbleParser.ParenTypeContext paren) {
             TypeErasure inner = eraseType(paren.type(), typeVars, classResolver, errors);
-            if (paren.question != null) {
-                return new TypeErasure(boxDescriptor(inner.descriptor()), JavaNullability.Nullness.NULLABLE, false, inner.elementNullness());
+            if (paren.nullMod != null) {
+                if (paren.nullMod.getType() == BabbleLexer.QUESTION) {
+                    return new TypeErasure(boxDescriptor(inner.descriptor()), JavaNullability.Nullness.NULLABLE, false,
+                            inner.elementNullness(), inner.isNull());
+                }
+                if (inner.isNull()) {
+                    errors.report("Cannot make null non-nullable : null", paren);
+                    return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
+                }
+                return new TypeErasure(inner.descriptor(), JavaNullability.Nullness.NON_NULL, false, inner.elementNullness());
             }
             return inner;
         }
@@ -967,19 +983,22 @@ final class AxiomData {
                                              ClassResolver classResolver,
                                              ErrorSink errors) {
         if (primary instanceof BabbleParser.NullTypeContext) {
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false);
+            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false, null, true);
         }
         if (primary instanceof BabbleParser.FunctionTypeContext) {
             return new TypeErasure("Lorg/babblelang/runtime/Callable;", JavaNullability.Nullness.NON_NULL, false);
         }
         BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
-        boolean nullable = simple.question != null;
+        boolean nullable = simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.QUESTION;
+        boolean nonNull = simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.BANG;
         List<String> path = ScopeAnalysis.simpleTypePath(simple);
         if (path.size() == 1) {
             String single = path.get(0);
             if (typeVars.containsKey(single)) {
-                return new TypeErasure(typeVars.get(single),
-                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.PARAMETRIC, !nullable);
+                JavaNullability.Nullness tvNullness = nullable
+                        ? JavaNullability.Nullness.NULLABLE
+                        : nonNull ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.PARAMETRIC;
+                return new TypeErasure(typeVars.get(single), tvNullness, tvNullness == JavaNullability.Nullness.PARAMETRIC);
             }
             if ("array".equals(single)) {
                 TypeErasure elem = eraseArrayElement(simple, typeVars, classResolver, errors);
@@ -1219,10 +1238,28 @@ final class AxiomData {
         }
         BabbleParser.ParenTypeContext paren = (BabbleParser.ParenTypeContext) ctx;
         Type base = resolveStandaloneType(paren.type(), errors);
+        if (base == Type.ERROR) {
+            return Type.ERROR;
+        }
         if (paren.frozen != null) {
             base = Type.frozen(base);
         }
-        return paren.question != null ? Type.nullable(base) : base;
+        return applyStandaloneNullMod(base, paren.nullMod, paren, errors);
+    }
+
+    private static Type applyStandaloneNullMod(Type base, Token nullMod, ParserRuleContext at, ErrorSink errors) {
+        if (base == Type.ERROR || nullMod == null) {
+            return base;
+        }
+        if (nullMod.getType() == BabbleLexer.QUESTION) {
+            return Type.nullable(base);
+        }
+        Type nonNull = Type.withoutNull(base);
+        if (nonNull == Type.NOTHING && base != Type.NOTHING) {
+            errors.report("Cannot make null non-nullable : null", at);
+            return Type.ERROR;
+        }
+        return nonNull;
     }
 
     private static Type resolveStandaloneNonParen(BabbleParser.NonParenNullableTypeContext ctx, ErrorSink errors) {
@@ -1281,7 +1318,7 @@ final class AxiomData {
             if (simple.frozen != null) {
                 base = Type.frozen(base);
             }
-            return simple.question != null ? Type.nullable(base) : base;
+            return applyStandaloneNullMod(base, simple.nullMod, simple, errors);
         }
         errors.report("Unsupported type in builtins axiom : " + ctx.getText(), ctx);
         return Type.ERROR;

@@ -430,12 +430,12 @@ public final class ScopeAnalysis {
             BabbleParser.NullableTypeContext nullable = type.nullableType(0);
             if (nullable instanceof BabbleParser.NonParenTypeContext nonParen) {
                 if (nonParen.nonParenNullableType() instanceof BabbleParser.SimpleTypeContext simple) {
-                    return simple.question != null ? null : simple;
+                    return simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.QUESTION ? null : simple;
                 }
                 return null;
             }
             if (nullable instanceof BabbleParser.ParenTypeContext paren) {
-                if (paren.question != null) {
+                if (paren.nullMod != null && paren.nullMod.getType() == BabbleLexer.QUESTION) {
                     return null;
                 }
                 type = paren.type();

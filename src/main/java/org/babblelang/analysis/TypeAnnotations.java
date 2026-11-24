@@ -1,6 +1,7 @@
 package org.babblelang.analysis;
 
 import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.babblelang.parser.BabbleLexer;
@@ -329,7 +330,22 @@ final class TypeAnnotations {
         if (paren.frozen != null) {
             base = Type.frozen(base);
         }
-        return paren.question != null ? Type.nullable(base) : base;
+        return applyNullMod(base, paren.nullMod, paren);
+    }
+
+    private Type applyNullMod(Type base, Token nullMod, ParserRuleContext at) {
+        if (base == Type.ERROR || nullMod == null) {
+            return base;
+        }
+        if (nullMod.getType() == BabbleLexer.QUESTION) {
+            return Type.nullable(base);
+        }
+        Type nonNull = Type.withoutNull(base);
+        if (nonNull == Type.NOTHING && base != Type.NOTHING) {
+            checker.warn("Cannot make null non-nullable : null", at);
+            return Type.ERROR;
+        }
+        return nonNull;
     }
 
     Type nonParenAnnotation(BabbleParser.NonParenNullableTypeContext primary, ScopeNode scope, boolean allowRaw) {
@@ -384,13 +400,10 @@ final class TypeAnnotations {
         if (result == Type.ERROR) {
             return Type.ERROR;
         }
-        if (simple.question != null) {
-            result = Type.nullable(result);
-        }
         if (simple.frozen != null) {
             result = Type.frozen(result);
         }
-        return result;
+        return applyNullMod(result, simple.nullMod, simple);
     }
 
     /**

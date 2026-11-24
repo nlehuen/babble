@@ -30,12 +30,12 @@ effectWord: AXIOM | effectModifier;
 
 axiomTarget: (ID | coreScalarKeyword) ('.' memberName)*;
 
-axiomEffectWord: effectModifier | UNIQUE | ID;
+axiomEffectWord: effectModifier | UNIQUE | ELLIPSIS | ID;
 
 axiomEffectPrefix: axiomEffectWord+ callingClause?
                  | callingClause;
 
-axiomType: FN (OF typeParameters)? axiomEffectPrefix? (fnTypeParameters (':' uniqueReturn=UNIQUE? type)?)?
+axiomType: FN (OF typeParameters)? axiomEffectPrefix? fnTypeParameters? (':' uniqueReturn=UNIQUE? type)?
          | CLASS classWords+=ID* NL* '(' axiomMembers ')' (NL* STATIC NL* '(' axiomMembers ')')?;
 
 axiomMembers: sep? (axiomMember (sep axiomMember)* sep?)?;
@@ -156,12 +156,12 @@ typeList: type (NL* ',' NL* type)*;
 type: nullableType (('|' | '&') NL* nullableType)*;
 
 nullableType: nonParenNullableType                                                    # nonParenType
-            | frozen=FROZEN? '(' NL* type NL* ')' question='?'?                       # parenType
+            | frozen=FROZEN? '(' NL* type NL* ')' nullMod=('?' | '!')?                # parenType
             ;
 
-nonParenNullableType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' question='?'?
+nonParenNullableType: frozen=FROZEN? typeName ( OF ( '(' NL* type (NL* ',' NL* type)* NL* ')' nullMod=('?' | '!')?
                                                    | nonParenNullableType )
-                                              | question='?'? )                       # simpleType
+                                              | nullMod=('?' | '!')? )                # simpleType
                     | FN (OF typeParameters)? effectPrefix? fnTypeParameters (':' uniqueReturn=UNIQUE? type)? # functionType
                     | OVERLOAD '(' NL* type (NL* ',' NL* type)* NL* ')'               # overloadType
                     | NULL                                                            # nullType
