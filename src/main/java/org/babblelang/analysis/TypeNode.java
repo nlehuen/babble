@@ -100,7 +100,7 @@ final class TypeNode {
     /** The declared types of members and statics, by name, as Types descriptors. */
     final Map<String, String> memberTypes = new LinkedHashMap<>();
     final Map<String, String> staticTypes = new LinkedHashMap<>();
-    /** Converged lowering facts preserved across {@code detachAst()} for cross-module direct dispatch ({@code BIP014-P4}). */
+    /** Converged lowering facts preserved across {@code detachAst()} for cross-module direct dispatch ({@code BIP014-I4}). */
     boolean fastRecord;
     PrimitiveKind[] fastRecordParamKinds;
     final Map<String, PrimitiveKind> memberKinds = new LinkedHashMap<>();

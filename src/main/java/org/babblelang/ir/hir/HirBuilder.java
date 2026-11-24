@@ -1254,7 +1254,7 @@ public final class HirBuilder {
             return new HirExpr.SelfTailCall(functionIds.get(currentFunction), lowerCallArgs(params, null), binding, meta);
         }
 
-        // 0b. Unshadowed built-in move(x) / freeze(expr) ownership markers (BIP014-P4)
+        // 0b. Unshadowed built-in move(x) / freeze(expr) ownership markers (BIP014-I4)
         String ownershipCall = scopes.lowering().builtinOwnershipCall(ctx);
         if (ownershipCall != null && params.size() == 1) {
             HirExpr arg = lowerExpr(params.get(0).expression());
@@ -1265,7 +1265,7 @@ public final class HirBuilder {
             return new HirExpr.Freeze(arg, meta.withFrozen(true));
         }
 
-        // 0c. Direct fast compiled record constructor call (BIP014-P4)
+        // 0c. Direct fast compiled record constructor call (BIP014-I4)
         LoweringTargets.RecordNewTarget recordNew = scopes.lowering().recordNewTarget(ctx);
         if (recordNew != null && binding != null) {
             Integer localClsId = localClassIdsByShapeId.get(recordNew.classTypeId());
@@ -1519,7 +1519,7 @@ public final class HirBuilder {
             }
         }
 
-        // 6b. Direct non-this method call recv.m(args) on compiled Babble class/record (BIP014-P4)
+        // 6b. Direct non-this method call recv.m(args) on compiled Babble class/record (BIP014-I4)
         if (ctx.expression() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() != null
                 && selector.safe == null

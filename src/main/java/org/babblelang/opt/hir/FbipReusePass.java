@@ -20,7 +20,7 @@ import java.util.Set;
 
 /**
  * {@code O10} — Functional-but-in-place (FBIP) reuse optimization backed by {@code BIP007-I2}
- * static uniqueness analysis ({@code BIP014-P4}).
+ * static uniqueness analysis ({@code BIP014-I4}).
  *
  * <p>Rewrites two safe allocation-avoiding patterns:
  * <ol>

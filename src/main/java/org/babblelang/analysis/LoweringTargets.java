@@ -382,7 +382,7 @@ public final class LoweringTargets {
     ) {
     }
 
-    /** Direct compiled Babble class/record field read target ({@code BIP014-P4}). */
+    /** Direct compiled Babble class/record field read target ({@code BIP014-I4}). */
     public record ClassFieldTarget(
             String classTypeId,
             String memberName,
@@ -396,7 +396,7 @@ public final class LoweringTargets {
         }
     }
 
-    /** Direct fast constructor target for a capture-free method-only compiled {@code record} ({@code BIP014-P4}). */
+    /** Direct fast constructor target for a capture-free method-only compiled {@code record} ({@code BIP014-I4}). */
     public record RecordNewTarget(
             String classTypeId,
             PrimitiveKind[] paramKinds
@@ -406,7 +406,7 @@ public final class LoweringTargets {
         }
     }
 
-    /** Direct compiled Babble class/record method or operator call target ({@code BIP014-P4}). */
+    /** Direct compiled Babble class/record method or operator call target ({@code BIP014-I4}). */
     public record DirectMethodTarget(
             String classTypeId,
             String memberName,
@@ -416,7 +416,7 @@ public final class LoweringTargets {
     ) {
     }
 
-    /** Converged ownership and static record-type metadata of a function parameter ({@code BIP014-P4}). */
+    /** Converged ownership and static record-type metadata of a function parameter ({@code BIP014-I4}). */
     public record ParamOwnership(
             boolean mut,
             boolean borrow,

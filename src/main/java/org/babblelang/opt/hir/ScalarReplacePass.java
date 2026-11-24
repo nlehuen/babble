@@ -28,7 +28,7 @@ import java.util.Set;
 /**
  * {@code O9} — Scalar replacement of aggregates (SROA) for non-escaping {@code record} values
  * and flattened {@code $unboxed} entry points for non-inlined {@code borrow} {@code record}
- * parameters ({@code BIP014-P4}).
+ * parameters ({@code BIP014-I4}).
  *
  * <p>Consists of three cooperating sub-passes over {@link HirModule}:
  * <ol>
