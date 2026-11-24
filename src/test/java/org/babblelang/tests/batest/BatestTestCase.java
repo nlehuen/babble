@@ -2,6 +2,7 @@ package org.babblelang.tests.batest;
 
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.DynamicContainer;
 import org.junit.jupiter.api.DynamicNode;
@@ -23,11 +24,14 @@ import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
- * Discovers and executes all {@code src/test/batest/**&#47;*.batest} files in JUnit 5 (BIP009 §5.1).
- * Automatically runs in both {@code interpret} and {@code compile} Surefire executions.
+ * Discovers and executes all {@code src/test/batest/**&#47;*.batest} (v1, {@code BIP009}) and
+ * {@code src/test/batest/**&#47;*.batest.md} (v2, {@code BIP029}) specification files in JUnit 5.
+ * Automatically runs in {@code interpret}, {@code compile -O1}, and {@code compile -O0} Surefire executions.
  */
 public class BatestTestCase {
     public static final Path BATEST_ROOT = Path.of("src/test/batest");
+
+    private static final BatestIrUpdater IR_UPDATER = new BatestIrUpdater();
 
     @TestFactory
     public Stream<DynamicNode> batestSuite() throws IOException {
@@ -52,7 +56,7 @@ public class BatestTestCase {
         List<Path> files;
         try (Stream<Path> walk = Files.walk(BATEST_ROOT)) {
             files = walk.filter(Files::isRegularFile)
-                    .filter(p -> p.getFileName().toString().endsWith(".batest"))
+                    .filter(BatestTestCase::isBatestFile)
                     .sorted(Comparator.comparing(p -> BATEST_ROOT.relativize(p).toString().replace('\\', '/')))
                     .toList();
         }
@@ -72,9 +76,8 @@ public class BatestTestCase {
                     continue;
                 }
                 matchedCases++;
-                String testName = "case #" + testCase.index() + " (line " + testCase.line() + ")";
-                caseTests.add(DynamicTest.dynamicTest(testName, path.toUri(),
-                        () -> executeCase(batestFile, testCase, recordFile)));
+                caseTests.add(DynamicTest.dynamicTest(testCase.displayName(), path.toUri(),
+                        () -> executeCase(path, batestFile, testCase, recordFile)));
             }
             if (!caseTests.isEmpty()) {
                 containers.add(DynamicContainer.dynamicContainer(rel, path.toUri(), caseTests.stream()));
@@ -82,9 +85,22 @@ public class BatestTestCase {
         }
 
         if (filter.isActive() && matchedCases == 0) {
-            Assertions.fail("-Dbatest.filter matched zero .batest cases: " + filterRaw);
+            Assertions.fail("-Dbatest.filter matched zero .batest / .batest.md cases: " + filterRaw);
         }
         return containers.stream();
+    }
+
+    @AfterAll
+    static void flushIrUpdatesIfEnabled() throws IOException {
+        if (BatestIrUpdater.isEnabled() && IR_UPDATER.hasUpdates()) {
+            String summary = IR_UPDATER.flushAll();
+            Assertions.fail(summary);
+        }
+    }
+
+    static boolean isBatestFile(Path p) {
+        String name = p.getFileName().toString();
+        return name.endsWith(".batest") || name.endsWith(".batest.md");
     }
 
     private static Path prepareRecordFile(String recordDir, String mode) throws IOException {
@@ -99,37 +115,71 @@ public class BatestTestCase {
         return file;
     }
 
-    private static void executeCase(BatestFile file, BatestFile.BatestCase testCase, Path recordFile) {
-        BatestRunner.CaseOutcome outcome = BatestRunner.run(file, testCase);
-        boolean passed = outcome.kind() != BatestRunner.Kind.INTERNAL_CRASH
-                && testCase.matches(outcome.text());
+    private static void executeCase(Path filePath, BatestFile file, BatestFile.BatestCase testCase, Path recordFile) {
+        BatestRunner.RunResult runResult = BatestRunner.runWithIr(file, testCase);
+        BatestRunner.CaseOutcome outcome = runResult.outcome();
+        String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
+        boolean behavioralPassed = outcome.kind() != BatestRunner.Kind.INTERNAL_CRASH && behavioralError == null;
+
+        String irError = null;
+        if (behavioralPassed && runResult.compiledMode() && !testCase.irExpectations().isEmpty()) {
+            List<IrAssertionChecker.IrMismatch> mismatches = IrAssertionChecker.checkAll(
+                    testCase.irExpectations(), runResult.capturedIr(), runResult.activeOptLevel());
+            if (!mismatches.isEmpty()) {
+                List<String> unblessedMessages = new ArrayList<>();
+                boolean updateMode = BatestIrUpdater.isEnabled();
+                for (IrAssertionChecker.IrMismatch m : mismatches) {
+                    if (updateMode
+                            && m.expectation().matchMode() == BatestFile.IrMatchMode.EXACT
+                            && m.actualCanonical() != null) {
+                        IR_UPDATER.record(filePath, m.expectation(), m.actualCanonical());
+                    } else {
+                        unblessedMessages.add(m.message());
+                    }
+                }
+                if (!unblessedMessages.isEmpty()) {
+                    irError = String.join("\n", unblessedMessages);
+                }
+            }
+        }
+
+        boolean passed = behavioralPassed && irError == null;
         if (recordFile != null) {
-            appendRecord(recordFile, file, testCase, outcome, passed);
+            appendRecord(recordFile, file, testCase, outcome, passed, irError);
         }
         if (outcome.kind() == BatestRunner.Kind.INTERNAL_CRASH) {
             Assertions.fail("INTERNAL_CRASH in " + file.relativePath() + ":" + testCase.line()
-                    + " (case #" + testCase.index() + ")\n" + stackTrace(outcome.crash()), outcome.crash());
+                    + " (" + testCase.displayName() + ")\n" + stackTrace(outcome.crash()), outcome.crash());
         }
-        if (!passed) {
-            throw new AssertionFailedError(file.relativePath() + ":" + testCase.line() + " (case #" + testCase.index()
-                    + ", kind=" + outcome.kind() + ") ==> expected: <" + testCase.expected()
-                    + "> but was: <" + outcome.text() + ">", testCase.expected(), outcome.text());
+        if (!behavioralPassed) {
+            throw new AssertionFailedError(file.relativePath() + ":" + testCase.line() + " (" + testCase.displayName()
+                    + ", kind=" + outcome.kind() + ") ==> " + behavioralError, testCase.expected(), outcome.text());
+        }
+        if (irError != null) {
+            Assertions.fail(file.relativePath() + ":" + testCase.line() + " (" + testCase.displayName()
+                    + ")\n" + irError);
         }
     }
 
     private static synchronized void appendRecord(Path recordFile, BatestFile file, BatestFile.BatestCase testCase,
-                                                  BatestRunner.CaseOutcome outcome, boolean passed) {
+                                                  BatestRunner.CaseOutcome outcome, boolean passed, String irError) {
         StringBuilder json = new StringBuilder();
         json.append('{');
         json.append("\"file\":\"").append(escapeJson(file.relativePath())).append("\",");
         json.append("\"index\":").append(testCase.index()).append(',');
         json.append("\"line\":").append(testCase.line()).append(',');
+        if (!testCase.name().isEmpty()) {
+            json.append("\"name\":\"").append(escapeJson(testCase.name())).append("\",");
+        }
         json.append("\"expected\":\"").append(escapeJson(testCase.expected())).append("\",");
         json.append("\"kind\":\"").append(outcome.kind().name()).append("\",");
         json.append("\"text\":\"").append(escapeJson(outcome.text())).append("\",");
         json.append("\"passed\":").append(passed);
         if (outcome.crash() != null) {
             json.append(",\"crash\":\"").append(escapeJson(stackTrace(outcome.crash()))).append('"');
+        }
+        if (irError != null) {
+            json.append(",\"irError\":\"").append(escapeJson(irError)).append('"');
         }
         json.append("}\n");
         try {

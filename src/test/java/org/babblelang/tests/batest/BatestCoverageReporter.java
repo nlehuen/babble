@@ -127,7 +127,11 @@ public final class BatestCoverageReporter {
         }
     }
 
-    public record RecordedOutcome(CaseKey key, String expected, String kind, String text, boolean passed, String crash) {
+    public record RecordedOutcome(CaseKey key, String name, String expected, String kind, String text,
+                                  boolean passed, String crash, String irError) {
+        public RecordedOutcome(CaseKey key, String expected, String kind, String text, boolean passed, String crash) {
+            this(key, "", expected, kind, text, passed, crash, null);
+        }
     }
 
     record Counter(int missed, int covered) {
@@ -376,12 +380,16 @@ public final class BatestCoverageReporter {
                     && parity;
             if (!allPass) {
                 String label;
+                boolean hasIrErr = (comp != null && comp.irError() != null && !comp.irError().isEmpty())
+                        || (compO0 != null && compO0.irError() != null && !compO0.irError().isEmpty());
                 if (interpCrash || compCrash || compO0Crash) {
                     label = "INTERNAL CRASH";
                 } else if (interp == null || comp == null || (hasCompileO0Outcomes && compO0 == null)) {
                     label = "MISSING EXECUTION";
                 } else if (!parity) {
                     label = "PARITY MISMATCH";
+                } else if (hasIrErr && interp.passed()) {
+                    label = "IR GOLDEN MISMATCH";
                 } else if (!comp.passed() && interp.passed() && (!hasCompileO0Outcomes || compO0.passed())) {
                     label = "COMPILE MISMATCH";
                 } else if (hasCompileO0Outcomes && !compO0.passed() && interp.passed() && comp.passed()) {
@@ -867,16 +875,26 @@ public final class BatestCoverageReporter {
                     break;
                 }
                 shown++;
-                out.printf("  [%s] %s:%d (case #%d)%n", f.label(), f.key().file(), f.key().line(), f.key().index());
+                String caseName = f.interpret() != null && !f.interpret().name().isEmpty() ? f.interpret().name()
+                        : (f.compile() != null && !f.compile().name().isEmpty() ? f.compile().name()
+                        : (f.compileO0() != null ? f.compileO0().name() : ""));
+                String caseLabel = caseName.isEmpty() ? "case #" + f.key().index() : caseName;
+                out.printf("  [%s] %s:%d (%s)%n", f.label(), f.key().file(), f.key().line(), caseLabel);
                 out.println("    expected  : " + singleLine(f.expected()));
                 if (f.interpret() != null) {
                     out.println("    interpret : " + singleLine(f.interpret().text()) + " [" + f.interpret().kind() + "]");
                 }
                 if (f.compile() != null) {
                     out.println("    compile   : " + singleLine(f.compile().text()) + " [" + f.compile().kind() + "]");
+                    if (f.compile().irError() != null && !f.compile().irError().isEmpty()) {
+                        out.println("    compile-ir: " + singleLine(f.compile().irError()));
+                    }
                 }
                 if (f.compileO0() != null) {
                     out.println("    compile-O0: " + singleLine(f.compileO0().text()) + " [" + f.compileO0().kind() + "]");
+                    if (f.compileO0().irError() != null && !f.compileO0().irError().isEmpty()) {
+                        out.println("    compile-O0-ir: " + singleLine(f.compileO0().irError()));
+                    }
                 }
             }
         }
@@ -1315,11 +1333,13 @@ public final class BatestCoverageReporter {
                     Integer.parseInt(fields.get("line")));
             map.put(key, new RecordedOutcome(
                     key,
+                    fields.getOrDefault("name", ""),
                     fields.getOrDefault("expected", ""),
                     fields.getOrDefault("kind", ""),
                     fields.getOrDefault("text", ""),
                     Boolean.parseBoolean(fields.getOrDefault("passed", "false")),
-                    fields.get("crash")));
+                    fields.get("crash"),
+                    fields.get("irError")));
         }
         return map;
     }
