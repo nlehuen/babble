@@ -200,3 +200,50 @@ def run = fn (arr: array of int, flag: bool, n: int): double -> (
 )
 assert(run((array of int).of(10, 20), true, 3) == 12.0)
 ```
+
+## Canonical HIR golden : small-function inlining and dead-code elimination (-O0 vs -O1)
+
+```babble
+def caller = fn (x: int): int -> (
+    def dead = addMul(x, 1)
+    discard(dead)
+    return addMul(x, 2)
+    addMul(x, 99)
+)
+assert(caller(5) == 21)
+```
+
+```hir -O0 fn=caller check
+count 3 (call-fn addMul
+contains (def dead
+```
+
+```hir -O1 fn=caller check
+!contains (call-fn addMul
+!contains (def dead
+!contains 99:int
+```
+
+## Canonical HIR golden : dead-catch elimination on pure nothrow try body
+
+```babble
+def safeAdd = fn (x: int): int -> (
+    try (x + 1) catch : exception then (0)
+)
+assert(safeAdd(41) == 42)
+```
+
+```stderr
+Warning : try block cannot throw; catch clause is unreachable
+```
+
+```hir -O0 fn=safeAdd check
+contains (try
+contains (catch
+```
+
+```hir -O1 fn=safeAdd
+fn safeAdd (x:int) -> int {nothrow unique}
+  (+:int var(x) 1:int)
+```
+

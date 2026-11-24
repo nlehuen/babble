@@ -221,3 +221,60 @@ def check = fn (x: double, s: string): bool -> (
 )
 assert(check(4.0, " a "))
 ```
+
+## Canonical HIR golden : arithmetic, string, and whitelisted JDK folding (-O0 vs -O1)
+
+```babble
+def arith = fn (): int -> ( def k = 10 ; k * k + 2 * 3 )
+def trimmed = fn (): string -> ( ("  bab" + "ble  ").trim() )
+def root = fn (): double -> ( java.lang.Math.sqrt(9.0) )
+assert(arith() == 106 and trimmed() == "babble" and root() == 3.0)
+```
+
+```hir -O0 fn=arith
+fn arith () -> int {nothrow unique}
+  (def k 10:int)
+  (+:int (*:int var(k) var(k)) (*:int 2:int 3:int))
+```
+
+```hir -O1 fn=arith
+fn arith () -> int {nothrow unique}
+  106:int
+```
+
+```hir -O0 fn=root check
+contains (jcall Math.sqrt 9.0:double)
+```
+
+```hir -O1 fn=root
+fn root () -> double {nothrow unique}
+  3.0:double
+```
+
+```hir -O1 fn=trimmed
+fn trimmed () -> obj {nothrow unique}
+  "babble"
+```
+
+## Canonical HIR golden : constant if and dead while-false pruning
+
+```babble
+def branch = fn (): int -> ( if 2 < 3 then (42) else (99) )
+def deadLoop = fn (): int -> ( def x = 7 ; while false then (x = 99) ; x )
+assert(branch() == 42 and deadLoop() == 7)
+```
+
+```hir -O0 fn=branch check
+contains (if
+```
+
+```hir -O1 fn=branch
+fn branch () -> int {nothrow}
+  42:int
+```
+
+```hir -O1 fn=deadLoop check
+!contains (while
+contains 7:int
+```
+

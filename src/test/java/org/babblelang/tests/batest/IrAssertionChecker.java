@@ -10,7 +10,7 @@ import java.util.regex.PatternSyntaxException;
 
 /**
  * Evaluates {@link BatestFile.IrExpectation} blocks against captured {@link IrSnapshot}s
- * ({@code BIP029-D4}, {@code BIP029-D8}, {@code BIP029-P2}).
+ * ({@code BIP029-D4}, {@code BIP029-D8}, {@code BIP029-I2}).
  */
 public final class IrAssertionChecker {
 

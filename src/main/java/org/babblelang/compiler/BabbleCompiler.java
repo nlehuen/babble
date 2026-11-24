@@ -38,7 +38,7 @@ public final class BabbleCompiler {
     public static final String VERIFY = "babble.verify";
     public static final String OPT_LEVEL = "babble.opt";
     public static final String DUMP_IR = "babble.dumpIr";
-    /** Per-engine {@link org.babblelang.ir.IrObserver} binding key for parallel-safe IR capture (BIP029-P1). */
+    /** Per-engine {@link org.babblelang.ir.IrObserver} binding key for parallel-safe IR capture (BIP029-I1). */
     public static final String IR_OBSERVER = "babble.irObserver";
     /** Internal engine attribute enabling cross-module small-export inlining in {@code babblec} AOT only (BIP014-D2). */
     static final String AOT_CROSS_MODULE = "babble.aotCrossModule";

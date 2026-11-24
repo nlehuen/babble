@@ -162,3 +162,70 @@ def checkDet = fn (arr: array of int, s: string, flag: bool): int -> (
 )
 assert(checkDet((array of int).of(1, 2), "abc", true) == 7)
 ```
+
+## Canonical HIR golden : algebraic identities and integer reassociation (-O0 vs -O1)
+
+```babble
+def simplify = fn (x: int): int -> ( (x + 0) * 1 + (x - x) )
+def reassoc = fn (x: int): int -> ( (x + 1) + 2 )
+assert(simplify(7) == 7 and reassoc(5) == 8)
+```
+
+```hir -O0 fn=simplify
+fn simplify (x:int) -> int {nothrow idempotent unique}
+  (+:int (*:int (block (+:int var(x) 0:int)) 1:int) (block (-:int var(x) var(x))))
+```
+
+```hir -O1 fn=simplify
+fn simplify (x:int) -> int {nothrow idempotent unique}
+  var(x)
+```
+
+```hir -O1 fn=reassoc
+fn reassoc (x:int) -> int {nothrow injective unique}
+  (+:int var(x) 3:int)
+```
+
+## Canonical HIR golden : idempotent collapse and stage=after:HirEGraphSimplify
+
+```babble
+def norm = fn (x: int): int -> (
+    bigClamp(bigClamp(java.lang.Math.abs(java.lang.Math.abs(x))))
+)
+def clean = fn (s: string): string -> ( s.trim().trim() )
+assert(norm(-5) == 5 and norm(3) == 3 and clean("  ok  ") == "ok")
+```
+
+```hir -O0 fn=norm check
+count 2 (call-fn bigClamp
+count 2 (jcall Math.abs
+```
+
+```hir -O1 fn=norm stage=after:HirEGraphSimplify check
+count 1 (jcall Math.abs
+```
+
+```hir -O1 fn=norm check
+count 1 (jcall Math.abs
+```
+
+```hir -O0 fn=clean check
+count 2 (jcall String.trim
+```
+
+```hir -O1 fn=clean check
+count 1 (jcall String.trim
+```
+
+## Canonical HIR golden : strict IEEE-754 double preservation (-O0,-O1)
+
+```babble
+def add3 = fn (x: double): double -> ( x + 1.0 + 2.0 )
+assert(add3(1.0) == 4.0 and java.lang.Double.isNaN(add3(java.lang.Double.NaN)))
+```
+
+```hir -O0,-O1 fn=add3
+fn add3 (x:double) -> double {nothrow monotone unique}
+  (+:double (+:double var(x) 1.0:double) 2.0:double)
+```
+

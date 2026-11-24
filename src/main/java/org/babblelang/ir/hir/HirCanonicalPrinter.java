@@ -15,7 +15,7 @@ import java.util.regex.Pattern;
 
 /**
  * Canonical, preamble-independent, human-readable printer for {@link HirModule}
- * ({@code BIP029-P1}, {@code BIP029-D5}, {@code BIP029-D7}).
+ * ({@code BIP029-I1}, {@code BIP029-D5}, {@code BIP029-D7}).
  *
  * <p>Unlike {@link HirPrinter#print(HirModule)}, which prints raw module-global IDs and JVM-mangled
  * names on single lines for low-level debugging, {@code HirCanonicalPrinter}:

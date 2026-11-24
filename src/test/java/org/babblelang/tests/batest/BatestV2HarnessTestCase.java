@@ -15,7 +15,7 @@ import java.util.List;
 /**
  * Unit tests for the {@code .batest.md} v2 format, explicit {@code stdout}/{@code stderr}/{@code error}
  * isolation, {@code DOTALL} {@code regex}, HIR exact/{@code regex}/{@code check} assertions,
- * {@code BatestFilter} {@code @name} selectors, and {@link BatestIrUpdater} ({@code BIP029-P2}).
+ * {@code BatestFilter} {@code @name} selectors, and {@link BatestIrUpdater} ({@code BIP029-I2}).
  */
 public class BatestV2HarnessTestCase {
 

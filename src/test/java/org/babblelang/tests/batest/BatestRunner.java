@@ -24,7 +24,7 @@ import java.util.regex.Pattern;
 
 /**
  * Executes a single {@link BatestFile.BatestCase} on a fresh Babble runtime and produces
- * a leak-free normalized {@link CaseOutcome} ({@code BIP009} §4, {@code BIP029-P2}).
+ * a leak-free normalized {@link CaseOutcome} ({@code BIP009} §4, {@code BIP029-I2}).
  */
 public final class BatestRunner {
     private static final String BABBLE_EXCEPTION_PREFIX = BabbleException.class.getName() + ": ";

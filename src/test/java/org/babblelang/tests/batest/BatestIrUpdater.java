@@ -13,7 +13,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * Thread-safe, guarded IR-only golden updater for {@code -Dbatest.updateIr=true}
- * ({@code BIP029-D9}, {@code BIP029-P2}).
+ * ({@code BIP029-D9}, {@code BIP029-I2}).
  *
  * <p>Rewrites <em>only</em> exact-golden {@code hir}/{@code mir} block bodies (never {@code babble},
  * {@code stdout}, {@code stderr}, {@code error}, {@code regex}, or {@code check} blocks), and only

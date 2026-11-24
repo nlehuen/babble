@@ -3,7 +3,7 @@ package org.babblelang.ir;
 import java.util.Locale;
 
 /**
- * Compiler intermediate representation tier ({@code BIP029-P1}).
+ * Compiler intermediate representation tier ({@code BIP029-I1}).
  *
  * <p>Shared by {@code HIR} ({@code BIP014-I1}–{@code I2}, {@code BIP014-I4}) and upcoming Tier 2
  * SSA {@code MIR} ({@code BIP014-P3}) so CLI dumping ({@code -Dbabble.dumpIr}) and

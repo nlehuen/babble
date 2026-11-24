@@ -19,7 +19,7 @@ import java.util.Map;
 
 /**
  * Unit tests for the unified {@code org.babblelang.ir} observation pipeline and
- * {@code HirCanonicalPrinter} ({@code BIP029-P1}, {@code BIP029-D5}–{@code D7}).
+ * {@code HirCanonicalPrinter} ({@code BIP029-I1}, {@code BIP029-D5}–{@code D7}).
  */
 public class HirCanonicalPrinterTestCase {
 

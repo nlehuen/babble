@@ -18,7 +18,7 @@ import java.util.regex.PatternSyntaxException;
 
 /**
  * Constrained Markdown-fenced parser for {@code .batest.md} (v2) specification files
- * ({@code BIP029-D1}–{@code D8}, {@code BIP029-P2}).
+ * ({@code BIP029-D1}–{@code D8}, {@code BIP029-I2}).
  *
  * <p>Recognizes only two constructs outside fenced blocks: {@code ## <Case Name>} headings
  * and fenced blocks ({@code ```<kind> [attrs...]}). Everything else outside fences is free

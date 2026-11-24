@@ -1,7 +1,7 @@
 package org.babblelang.ir;
 
 /**
- * Lazy, thread-safe observer receiving compiler IR snapshots ({@code BIP029-P1}, {@code BIP029-D6}).
+ * Lazy, thread-safe observer receiving compiler IR snapshots ({@code BIP029-I1}, {@code BIP029-D6}).
  *
  * <p>Attached per-engine via {@code BabbleCompiler.IR_OBSERVER} for parallel-safe {@code .batest.md}
  * assertions and also used by CLI {@code -Dbabble.dumpIr}. Calls to {@link #wants} allow pass drivers
