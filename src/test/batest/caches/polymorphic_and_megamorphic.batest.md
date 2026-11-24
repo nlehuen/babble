@@ -238,3 +238,105 @@ def rev2 = c.reversed()
 assert(rev1.compare(1, 5) > 0)
 assert(rev2.compare(5, 1) > 0 == false)
 ```
+
+## TypedCallCache defaultValue for omitted reference, bool, byte, and short optional params
+
+```babble
+def c1 = fn (f: fn (int): int, x: int): int -> ( f(x) )
+def fR = fn (x: int, s: string = "hi"): int -> ( x + s.length() )
+def fZ = fn (x: int, b: bool = true): int -> ( if b then ( x + 1 ) else ( x ) )
+def fB = fn (x: int, b: byte = byte(2)): int -> ( x + int(b) )
+def fS = fn (x: int, s: short = short(3)): int -> ( x + int(s) )
+assert(c1(fR, 1) + c1(fZ, 1) + c1(fB, 1) + c1(fS, 1) == 12)
+```
+
+## TypedCallCache defaultValue for omitted char, long, float, and double optional params
+
+```babble
+def c2 = fn (f: fn (int): int, x: int): int -> ( f(x) )
+def fC = fn (x: int, c: char = 'A'): int -> ( x + int(c) )
+def fL = fn (x: int, l: long = 5L): int -> ( x + int(l) )
+def fF = fn (x: int, f: float = 2.0f): int -> ( x + int(f) )
+def fD = fn (x: int, d: double = 4.0): int -> ( x + int(d) )
+assert(c2(fC, 0) + c2(fL, 1) + c2(fF, 1) + c2(fD, 1) == 79)
+```
+
+## TypedCallCache missingBits adaptSpec contravariant param and direct-handle fallback
+
+```babble
+def invoke = fn (f: fn (a: int = ..., b: int = ...): int): int -> ( f(b: 10) )
+def gContravar = fn (a: int | string = 5, b: int = 0): int -> ( (a as int) + b )
+def gFallback = fn (a: int = 7, b: int | string = 0): int -> ( a + (b as int) )
+def gSame = fn (a: int = 2, b: int = 0): int -> ( a + b )
+assert(invoke(gContravar) == 15 and invoke(gFallback) == 17 and invoke(gSame) == 12)
+```
+
+## TypedCallCache bound CompiledMethod and bound interface default with rest and adaptSpec miss
+
+```babble
+def I = interface (
+    def dRest = fn (x: int, xs: int...): int -> ( x )
+    def dWide = fn (x: int | string): int -> ( x as int )
+)
+def C = class () implements I (
+    def mRest = fn (x: int, xs: int...): int -> ( x )
+)
+def run = fn (f: fn (int): int): int -> ( f(4) )
+def c = C()
+assert(run(c.mRest) == 4 and run(c.dRest) == 4 and run(c.dWide) == 4)
+```
+
+## Boxed CallCache callTest on 9-param and rest-param unbound functions
+
+```babble
+def callBox = fn (f: fn (any): any, x: any): int -> ( f(x) as int )
+def f9 = fn (a: any, b: int = 1, c: int = 1, d: int = 1, e: int = 1, f: int = 1, g: int = 1, h: int = 1, i: int = 1): any -> ( (a as int) + i )
+def fRest = fn (x: any, xs: int...): any -> ( x )
+assert(callBox(f9, 4) == 5 and callBox(fRest, 5) == 5)
+```
+
+## Boxed CallCache callTest on 9-param and rest-param bound interface defaults
+
+```babble
+def I = interface (
+    def d9 = fn (a: any, b: int = 1, c: int = 1, d: int = 1, e: int = 1, f: int = 1, g: int = 1, h: int = 1, i: int = 2): any -> ( (a as int) + i )
+    def dR = fn (x: any, xs: int...): any -> ( x )
+)
+def c = (class () implements I ())()
+def go = fn (f: fn (any): any): int -> ( f(3) as int )
+assert(go(c.d9) == 5 and go(c.dR) == 3)
+```
+
+## Boxed CallCache callTest on 9-param and rest-param bound class methods
+
+```babble
+def C = class () (
+    def m9 = fn (a: any, b: int = 1, c: int = 1, d: int = 1, e: int = 1, f: int = 1, g: int = 1, h: int = 1, i: int = 3): any -> ( (a as int) + i )
+    def mR = fn (x: any, xs: int...): any -> ( x )
+)
+def c = C()
+def go = fn (f: fn (any): any): int -> ( f(3) as int )
+assert(go(c.m9) == 6 and go(c.mR) == 3)
+```
+
+## Polymorphic boxed CallCache guards mixing bound default, bound method, and unbound function
+
+```babble
+def I = interface ( def d = fn (x: any): any -> ( (x as int) + 10 ) )
+def C = class () implements I ( def m = fn (x: any): any -> ( (x as int) + 20 ) )
+def c = C()
+def f = fn (x: any): any -> ( (x as int) + 30 )
+def call = fn (g: fn (any): any, v: any): int -> ( g(v) as int )
+assert(call(c.d, 1) + call(c.m, 1) + call(f, 1) + call(c.d, 2) + call(c.m, 2) + call(f, 2) == 129)
+```
+
+## SelectCache non-final static JavaClass field, isClass null miss, and isSame mismatch
+
+```babble
+def sCls = import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.SampleHelpers
+assert(sCls.mutableCounter is int)
+def P1 = class (def x: int) ()
+def readX = fn (o: P1?): int? -> ( o?.x )
+assert(readX(P1(5)) == 5 and readX(null) == null)
+assert(java.lang.Integer.MAX_VALUE == 2147483647 and java.lang.Short.MAX_VALUE == 32767)
+```

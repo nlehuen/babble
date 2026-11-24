@@ -208,3 +208,121 @@ def v = Vec(10) ; def c = Vec(5) ; c += 3
 assert((-v).n == -10 and -(1 + 1) == -2 and (v + 2).n == 12 and (v - 3).n == 7)
 assert((v * 4).n == 40 and (v / 2).n == 5 and c.n == 8)
 ```
+
+## super call to interface default with optional primitive param (class method, sub-interface, nested lambda)
+
+```babble
+def IOpt = interface ( def add = fn (a: int, b: int = 10): int -> ( a + b ) )
+def ISub = interface extends IOpt ( def add = fn (a: int, b: int = 20): int -> ( super.add(a) + b ) )
+def C = class () implements ISub (
+    def dir = fn (x: int): int -> ( super.add(x) )
+    def lam = fn (x: int): int -> ( (fn (): int -> ( super.add(x) ))() )
+)
+assert(C().dir(5) == 35 and C().lam(2) == 32)
+```
+
+## super call to overloaded interface default with union-typed positional and named arguments
+
+```babble
+def IOv = interface (
+    def calc = overload ( fn (x: int): int -> ( x + 10 ), fn (x: string): int -> ( x.length() ) )
+)
+def C = class () implements IOv (
+    def pos = fn (u: int | string): int -> ( super.calc(u) )
+    def nam = fn (u: int | string): int -> ( super.calc(x: u) )
+)
+assert(C().pos(5) == 15 and C().pos("abcd") == 4 and C().nam(3) == 13 and C().nam("xy") == 2)
+```
+
+## Non-tail recurse in reference-only function and class method
+
+```babble
+def rep = fn (s: string): string -> ( if s.length() >= 4 then ( s ) else ( "a" + recurse(s + "b") ) )
+def Joiner = class (def p: string) (
+    def build = fn (s: string): string -> ( if s.length() >= 3 then ( s ) else ( this.p + recurse(s + "x") ) )
+)
+assert(rep("x") == "aaaxbbb" and Joiner("!").build("a") == "!!axx")
+```
+
+## Non-tail recurse with >8 primitive parameters
+
+```babble
+def r9 = fn (n:int, a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int): int -> (
+    if n <= 0 then ( 0 ) else ( 1 + recurse(n - 1, a, b, c, d, e, f, g, h) )
+)
+assert(r9(3, 0, 0, 0, 0, 0, 0, 0, 0) == 3)
+```
+
+## Direct this.method call with >8 default params (0 args, positional, and reordered named args)
+
+```babble
+def Big = class () (
+    def s9 = fn (a:int=1, b:int=1, c:int=1, d:int=1, e:int=1, f:int=1, g:int=1, h:int=1, i:int=1) : int -> (
+        a + b + c + d + e + f + g + h + i
+    )
+    def run = fn () : int -> ( this.s9() + this.s9(2, 2, 2, 2, 2, 2, 2, 2, 2) + this.s9(i: 10) )
+)
+assert(Big().run() == 45)
+```
+
+## this.field callable, inherited interface default via this, and overloaded this operator
+
+```babble
+def IG = interface ( def greet = fn (): int -> ( 4 ) )
+def C = class (def n: int, def cb: fn (int): int) implements IG (
+    def plus = overload ( fn (k: int): int -> ( this.n + k ), fn (s: string): int -> ( s.length() ) )
+    def run = fn (): int -> ( this.cb(3) + this.greet() + (this + 2) )
+)
+assert(C(5, fn (x: int): int -> ( x * 2 )).run() == 17)
+```
+
+## Object literal this.method dispatch
+
+```babble
+def obj = object ( def m = fn (): int -> ( 7 ) ; def go = fn (): int -> ( this.m() ) )
+assert(obj.go() == 7)
+```
+
+## Record fast-class disqualifiers : >8 fields, captured outer cell, and Java SAM param
+
+```babble
+def R9 = record (a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, i:int) ()
+def k = 3 ; def CellRec = record (x: int) ( def get = fn (): int -> ( this.x + k ) )
+def SamRec = record (r: java.lang.Runnable) ()
+def hits = 0 ; def sr = SamRec(fn io () -> ( hits += 1 )) ; sr.r.run()
+assert(R9(1, 2, 3, 4, 5, 6, 7, 8, 9).i == 9 and CellRec(4).get() == 7 and hits == 1)
+```
+
+## Record fast-class disqualifiers : body assert, body field, and nested overload
+
+```babble
+def ChkR = record (x: int) ( assert(this.x >= 0) )
+def FldR = record (x: int) ( def dbl: int = this.x * 2 )
+def OvR = record (x: int) (
+    def f = overload ( fn (n: int): int -> ( this.x + n ), overload ( fn (b: bool): int -> ( 1 ), fn (s: string): int -> ( s.length() ) ) )
+)
+assert(ChkR(5).x == 5 and FldR(3).dbl == 6 and OvR(4).f(2) == 6 and OvR(4).f("hi") == 2)
+```
+
+## Class constructor non-method and non-FunctionRef overload sets (isAllMethodRefsOf)
+
+```babble
+def extI = fn (x: int): int -> ( x + 1 )
+def extS = fn (s: string): int -> ( s.length() )
+def C = class () (
+    def r1 : int = ( def loc = overload ( extI, extS ) ; loc(3) + loc("abc") )
+    def r2 : int = ( def loc = overload ( fn (x : int) : int -> ( x * 2 ), fn (s : string) : int -> ( s.length() ) ) ; loc(5) + loc("hi") )
+)
+def c = C()
+assert(c.r1 == 7 and c.r2 == 12)
+```
+
+## Diamond Java interfaces (Closeable + AutoCloseable) and non-top-level block class expressions
+
+```babble
+def Res = class () implements java.io.Closeable, java.lang.AutoCloseable ( def close = fn () -> () )
+def r = Res() ; r.close()
+def C1 = ( def tag = 1 ; class (def v : int) ( def get = fn () : int -> ( this.v + tag ) ) )
+def r2 = ( def C2 = class (def v : int) () ; C2(9).v )
+assert(C1(4).get() == 5 and r2 == 9)
+```
