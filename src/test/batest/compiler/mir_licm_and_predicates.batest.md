@@ -470,3 +470,277 @@ fn keepGuard(v0: any, v1: int) -> int:
   bb5(v13: int):
     ret v13
 ```
+
+## PredicateReorder moves cheap scalar test ahead of expensive pure call in short-circuit or
+
+```babble
+def slowOr = fn nothrow (x: double): bool -> (
+    java.lang.Math.sin(x) + java.lang.Math.cos(x) > 1.5
+)
+def reorderOr = fn (x: double, limit: int): int -> (
+    if slowOr(x) or (limit > 0) then (1) else (0)
+)
+assert(reorderOr(0.5, 1) == 1 and reorderOr(0.5, -1) == 0)
+```
+
+```hir
+;; hir -O0 fn=reorderOr
+fn reorderOr (x:double, limit:int) -> int {nothrow}
+  (if (or (call-fn slowOr var(x)) (block (>:bool var(limit) 0:int))) (block 1:int) (block 0:int))
+```
+
+```hir
+;; hir -O1 fn=reorderOr
+fn reorderOr (x:double, limit:int) -> int {nothrow}
+  (if (or (>:bool (+:double (jcall Math.sin var(x)) (jcall Math.cos var(x))) 1.5:double) (>:bool var(limit) 0:int)) 1:int 0:int)
+```
+
+```mir
+;; mir -O2 fn=reorderOr stage=before
+fn reorderOr(v0: double, v1: int) -> int:
+  bb0:
+    v2: double = call_java Math.sin(v0) {pure}
+    v3: double = call_java Math.cos(v0) {pure}
+    v4: double = add v2, v3 {pure}
+    v5: double = const 1.5
+    v6: bool = gt v4, v5 {pure}
+    v7: bool = const true
+    br_if v6, bb2(v7), bb1
+  bb1:
+    v8: int = const 0
+    v9: bool = gt v1, v8 {pure}
+    br bb2(v9)
+  bb2(v10: bool):
+    br_if v10, bb4, bb3
+  bb3:
+    v11: int = const 0
+    br bb5(v11)
+  bb4:
+    v12: int = const 1
+    br bb5(v12)
+  bb5(v13: int):
+    ret v13
+```
+
+```mir
+;; mir -O2 fn=reorderOr stage=after:PredicateReorderPass
+fn reorderOr(v0: double, v1: int) -> int:
+  bb0:
+    v2: bool = const true
+    v3: int = const 0
+    v4: bool = gt v1, v3 {pure}
+    br_if v4, bb2(v2), bb1
+  bb1:
+    v5: double = call_java Math.sin(v0) {pure}
+    v6: double = call_java Math.cos(v0) {pure}
+    v7: double = add v5, v6 {pure}
+    v8: double = const 1.5
+    v9: bool = gt v7, v8 {pure}
+    br bb2(v9)
+  bb2(v10: bool):
+    br_if v10, bb4, bb3
+  bb3:
+    br bb5(v3)
+  bb4:
+    v11: int = const 1
+    br bb5(v11)
+  bb5(v12: int):
+    ret v12
+```
+
+```mir
+;; mir -O2 fn=reorderOr
+fn reorderOr(v0: double, v1: int) -> int:
+  bb0:
+    v2: bool = const true
+    v3: int = const 0
+    v4: bool = gt v1, v3 {pure}
+    br_if v4, bb2(v2), bb1
+  bb1:
+    v5: double = call_java Math.sin(v0) {pure}
+    v6: double = call_java Math.cos(v0) {pure}
+    v7: double = add v5, v6 {pure}
+    v8: double = const 1.5
+    v9: bool = gt v7, v8 {pure}
+    br bb2(v9)
+  bb2(v10: bool):
+    br_if v10, bb4, bb3
+  bb3:
+    br bb5(v3)
+  bb4:
+    v11: int = const 1
+    br bb5(v11)
+  bb5(v12: int):
+    ret v12
+```
+
+## PredicateReorder ranks record load and array read heavier than scalar compare
+
+```babble
+def Pt = record (x: int) ()
+def rankCost = fn (p: Pt, lim: int): int -> (
+    if (p.x > 0) and (lim > 0) then (1) else (0)
+)
+assert(rankCost(Pt(2), 3) == 1 and rankCost(Pt(2), -1) == 0)
+```
+
+```hir
+;; hir -O0 fn=rankCost
+fn rankCost (p:obj, lim:int) -> int {nothrow}
+  (if (and (block (>:bool (get-this-field x) 0:int)) (block (>:bool var(lim) 0:int))) (block 1:int) (block 0:int))
+```
+
+```hir
+;; hir -O1 fn=rankCost
+fn rankCost (p:obj, lim:int) -> int {nothrow}
+  (if (and (>:bool (get-this-field x) 0:int) (>:bool var(lim) 0:int)) 1:int 0:int)
+```
+
+```mir
+;; mir -O2 fn=rankCost stage=before
+fn rankCost(v0: any, v1: int) -> int:
+  bb0:
+    v2: int = load_field v0.x {read:frozen}
+    v3: int = const 0
+    v4: bool = gt v2, v3 {pure}
+    v5: bool = const false
+    br_if v4, bb1, bb2(v5)
+  bb1:
+    v6: int = const 0
+    v7: bool = gt v1, v6 {pure}
+    br bb2(v7)
+  bb2(v8: bool):
+    br_if v8, bb4, bb3
+  bb3:
+    v9: int = const 0
+    br bb5(v9)
+  bb4:
+    v10: int = const 1
+    br bb5(v10)
+  bb5(v11: int):
+    ret v11
+```
+
+```mir
+;; mir -O2 fn=rankCost
+fn rankCost(v0: any, v1: int) -> int:
+  bb0:
+    v2: int = load_field v0.x {read:frozen}
+    v3: int = const 0
+    v4: bool = gt v2, v3 {pure}
+    v5: bool = const false
+    br_if v4, bb1, bb2(v5)
+  bb1:
+    v6: bool = gt v1, v3 {pure}
+    br bb2(v6)
+  bb2(v7: bool):
+    br_if v7, bb4, bb3
+  bb3:
+    br bb5(v3)
+  bb4:
+    v8: int = const 1
+    br bb5(v8)
+  bb5(v9: int):
+    ret v9
+```
+
+## LICM inserts a preheader on a BrIf entry edge to a guarded while loop
+
+```babble
+def guardedCond = fn (flag: bool, a: int, b: int): int -> (
+    def i = 0
+    def acc = 0
+    if flag then (
+        while i < a * b + 1 then (
+            acc += i
+            i += 1
+        )
+    )
+    acc
+)
+assert(guardedCond(true, 2, 2) == 10 and guardedCond(false, 2, 2) == 0)
+```
+
+```hir
+;; hir -O0 fn=guardedCond
+fn guardedCond (flag:bool, a:int, b:int) -> int {nothrow unique}
+  (def i 0:int)
+  (def acc 0:int)
+  (if var(flag)
+    (block
+      (while (<:bool var(i) (+:int (*:int var(a) var(b)) 1:int))
+        (block
+          (set acc += var(i))
+          (set i += 1:int)))))
+  var(acc)
+```
+
+```hir
+;; hir -O1 fn=guardedCond
+fn guardedCond (flag:bool, a:int, b:int) -> int {nothrow unique}
+  (def i 0:int)
+  (def acc 0:int)
+  (if var(flag)
+    (while (<:bool var(i) (+:int (*:int var(a) var(b)) 1:int))
+      (block
+        (set acc += var(i))
+        (set i += 1:int))))
+  var(acc)
+```
+
+```mir
+;; mir -O2 fn=guardedCond stage=before
+fn guardedCond(v0: bool, v1: int, v2: int) -> int:
+  bb0:
+    v3: int = const 0
+    v4: int = const 0
+    br_if v0, bb2, bb1
+  bb1:
+    v5: any = const null
+    br bb5(v5, v4)
+  bb2:
+    v6: any = const null
+    br bb3(v6, v3, v4)
+  bb3(v7: any, v8: int, v9: int):
+    v10: int = mul v1, v2 {pure}
+    v11: int = const 1
+    v12: int = add v10, v11 {pure}
+    v13: bool = lt v8, v12 {pure}
+    br_if v13, bb6, bb4
+  bb4:
+    br bb5(v7, v9)
+  bb5(v14: any, v15: int):
+    ret v15
+  bb6:
+    v16: int = add v9, v8 {pure}
+    v17: int = const 1
+    v18: int = add v8, v17 {pure}
+    v19: any = convert.any v18
+    br bb3(v19, v18, v16)
+```
+
+```mir
+;; mir -O2 fn=guardedCond
+fn guardedCond(v0: bool, v1: int, v2: int) -> int:
+  bb0:
+    v3: int = const 0
+    br_if v0, bb2, bb1
+  bb1:
+    br bb5(v3)
+  bb2:
+    v4: int = mul v1, v2 {pure}
+    v5: int = const 1
+    v6: int = add v4, v5 {pure}
+    br bb3(v3, v3)
+  bb3(v7: int, v8: int):
+    v9: bool = lt v7, v6 {pure}
+    br_if v9, bb6, bb4
+  bb4:
+    br bb5(v8)
+  bb5(v10: int):
+    ret v10
+  bb6:
+    v11: int = add v8, v7 {pure}
+    v12: int = add v7, v5 {pure}
+    br bb3(v12, v11)
+```
