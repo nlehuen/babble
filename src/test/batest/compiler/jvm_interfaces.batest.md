@@ -76,6 +76,25 @@ class Impl (bias:double)
     (if var(neg) (neg var(v)) var(v))
 ```
 
+```mir
+;; mir -O2 class=Impl stage=before,final
+class Impl:
+  fn Impl.calc(v0: int, v1: double, v2: bool) -> double:
+    bb0:
+      v3: double = convert.double v0
+      v4: double = add v3, v1 {pure}
+      v5: double = slot_read bias {read:shared,throws}
+      v6: double = add v4, v5 {pure}
+      br_if v2, bb2, bb1
+    bb1:
+      br bb3(v6)
+    bb2:
+      v7: double = neg v6 {pure}
+      br bb3(v7)
+    bb3(v8: double):
+      ret v8
+```
+
 ## Multi-evaluation closure-capturing interface factory : each BabbleInterface keeps its own captured cell
 
 ```babble
@@ -103,6 +122,18 @@ class C (m:int)
     (*:int (super.add var(x)) var(m))
 ```
 
+```mir
+;; mir -O2 class=C stage=before,final
+class C:
+  fn C.run(v0: int) -> int:
+    bb0:
+      v1: any = opaque.SuperCall(v0) {impure}
+      v2: int = convert.int v1
+      v3: int = slot_read m {read:shared,throws}
+      v4: int = mul v2, v3 {pure}
+      ret v4
+```
+
 ## Diamond inheritance (JVMS 5.4.3.3 bridge conflict prevention)
 
 ```babble
@@ -123,6 +154,16 @@ interface Base
     (+:int var(x) 1:int)
 ```
 
+```mir
+;; mir -O2 interface=Base stage=before,final
+interface Base:
+  fn id(v0: int) -> int:
+    bb0:
+      v1: int = const 1
+      v2: int = add v0, v1 {pure}
+      ret v2
+```
+
 ## Sibling abstract + default resolution
 
 ```babble
@@ -141,6 +182,16 @@ interface DefB
   (def f (fn-ref f))
   fn f (x:int) -> int {pure}
     (*:int var(x) 3:int)
+```
+
+```mir
+;; mir -O2 interface=DefB stage=before,final
+interface DefB:
+  fn f(v0: int) -> int:
+    bb0:
+      v1: int = const 3
+      v2: int = mul v0, v1 {pure}
+      ret v2
 ```
 
 ## Re-abstracted default method hidden along one branch and supplied along a sibling branch
@@ -169,6 +220,12 @@ interface ReAbstracted
   (def val)
 ```
 
+```mir
+;; mir -O2 interface=ReAbstracted stage=before,final
+interface ReAbstracted:
+  (no default methods)
+```
+
 ## Case 7
 
 ```babble
@@ -191,6 +248,20 @@ class IBox (v:int)
     (+:int var(x) var(v))
 ```
 
+```mir
+;; mir -O2 class=IBox stage=before,final
+class IBox:
+  fn IBox.get() -> int:
+    bb0:
+      v0: int = slot_read v {read:shared,throws}
+      ret v0
+  fn IBox.xf(v0: int) -> int:
+    bb0:
+      v1: int = slot_read v {read:shared,throws}
+      v2: int = add v0, v1 {pure}
+      ret v2
+```
+
 ## Case 8
 
 ```babble
@@ -211,6 +282,20 @@ class DBox (v:double)
     var(v)
   fn DBox.xf (x:double) -> double {nothrow monotone unique}
     (+:double var(x) var(v))
+```
+
+```mir
+;; mir -O2 class=DBox stage=before,final
+class DBox:
+  fn DBox.get() -> double:
+    bb0:
+      v0: double = slot_read v {read:shared,throws}
+      ret v0
+  fn DBox.xf(v0: double) -> double:
+    bb0:
+      v1: double = slot_read v {read:shared,throws}
+      v2: double = add v0, v1 {pure}
+      ret v2
 ```
 
 ## If-expression of ints widened to double and passed to a primitive-double interface receiver
@@ -273,6 +358,11 @@ top-level:
   (call name(assert) (==:bool (call-iface name(sink).accept name(boxedIntExpr)) 6.0:double))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Interface override adding optional defaulted parameters and dispatch through base signature
 
 ```babble
@@ -291,6 +381,15 @@ class C
   (def apply (fn-ref C.apply))
   fn C.apply (x:int, s:int=25:int) -> int {nothrow commutative associative unique}
     (+:int var(x) var(s))
+```
+
+```mir
+;; mir -O2 class=C stage=before,final
+class C:
+  fn C.apply(v0: int, v1: int) -> int:
+    bb0:
+      v2: int = add v0, v1 {pure}
+      ret v2
 ```
 
 ## Field-holding-function implementation and super default call
@@ -315,6 +414,18 @@ class NsImpl (d:int)
   (def run (fn-ref NsImpl.run))
   fn NsImpl.run (x:int) -> int {nothrow unique}
     (+:int (super.base var(x)) var(d))
+```
+
+```mir
+;; mir -O2 class=NsImpl stage=before,final
+class NsImpl:
+  fn NsImpl.run(v0: int) -> int:
+    bb0:
+      v1: any = opaque.SuperCall(v0) {impure}
+      v2: int = convert.int v1
+      v3: int = slot_read d {read:shared,throws}
+      v4: int = add v2, v3 {pure}
+      ret v4
 ```
 
 ## Nested lambdas calling super.m() and super(Parent).m() in interface defaults and class methods
@@ -344,6 +455,17 @@ class CC (b:int)
   (def sc (fn-ref CC.sc))
   fn CC.sc (x:int) -> int {pure unique}
     (call-fn <anon#0> 1:int)
+```
+
+```mir
+;; mir -O2 class=CC stage=before,final
+class CC:
+  fn CC.sc() -> int:
+    bb0:
+      v0: any = opaque.FunctionRef() {read:shared}
+      v1: int = const 1
+      v2: int = call <anon>(v1) {impure}
+      ret v2
 ```
 
 ## Case 13
@@ -390,6 +512,11 @@ top-level:
   (call name(assert) (and (==:bool (call-iface name(t).label) "tag:ok") (is name(t) shapes$ba$C1$Tagged)))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Case 14
 
 ```babble
@@ -411,6 +538,24 @@ class Rect (w:double, h:double)
     (*:double var(w) var(h))
   fn Rect.scale (f:double) -> double {pure unique}
     (+:double (super.scale var(f)) 1.0:double)
+```
+
+```mir
+;; mir -O2 class=Rect stage=before,final
+class Rect:
+  fn Rect.area() -> double:
+    bb0:
+      v0: double = slot_read w {read:shared,throws}
+      v1: double = slot_read h {read:shared,throws}
+      v2: double = mul v0, v1 {pure}
+      ret v2
+  fn Rect.scale(v0: double) -> double:
+    bb0:
+      v1: any = opaque.SuperCall(v0) {impure}
+      v2: double = convert.double v1
+      v3: double = const 1.0
+      v4: double = add v2, v3 {pure}
+      ret v4
 ```
 
 ## Forward reference on `is` target resolves as a static type (BIP012-D8)
@@ -451,6 +596,11 @@ top-level:
   (call name(assert) (and (not name(check)) (is (call name(Later)) Later)))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Inherited default method with widened/adapted signature in sub-interface (emitInheritedDefaultInvoke)
 
 ```babble
@@ -474,4 +624,10 @@ interface Base
 ;; hir -O0,-O1 interface=Other
 interface Other
   (def calc)
+```
+
+```mir
+;; mir -O2 interface=Other stage=before,final
+interface Other:
+  (no default methods)
 ```

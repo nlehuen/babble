@@ -1,4 +1,4 @@
-# Method, super, this, recurse, interface default/bridge, and operator-method bytecode lowering
+# Method Dispatch, Recurse, and Record Fast-Class Lowering
 
 References : BIP001, BIP002, BIP021 ; targets CodeGenerator, InterfaceGen, HirBuilder, HirEmitter
 
@@ -12,6 +12,7 @@ def Vec = class (def n : int) (
     def div = fn (o : any) : Vec -> ( Vec(int(this.n / (o as int))) )
 )
 ```
+
 
 ## this.method direct spec, spread with missing optional arg, and named arg
 
@@ -38,6 +39,55 @@ fn C.run () -> bool {pure unique}
   (call name(assert) (and (==:bool (call-method this.optM 2:int) 12:int) (==:bool (call-method this.optM a=3:int) 13:int)))
 ```
 
+```mir
+;; mir -O2 fn=C.run stage=before
+fn C.run() -> bool:
+  bb0:
+    v0: any = opaque.NameRead() {impure}
+    v1: any = slot_read this {pure}
+    v2: int = const 2
+    v3: int = call_method v1.optM(v2) {pure}
+    v4: int = const 12
+    v5: bool = eq v3, v4 {pure}
+    v6: bool = const false
+    br_if v5, bb1, bb2(v6)
+  bb1:
+    v7: any = slot_read this {pure}
+    v8: int = const 3
+    v9: int = call_method v7.optM(v8) {pure}
+    v10: int = const 13
+    v11: bool = eq v9, v10 {pure}
+    br bb2(v11)
+  bb2(v12: bool):
+    v13: any = opaque.DynamicCall(v0, v12) {impure}
+    v14: bool = convert.bool v13
+    ret v14
+```
+
+```mir
+;; mir -O2 fn=C.run
+fn C.run() -> bool:
+  bb0:
+    v0: any = opaque.NameRead() {impure}
+    v1: any = slot_read this {pure}
+    v2: int = const 2
+    v3: int = call_method v1.optM(v2) {pure}
+    v4: int = const 12
+    v5: bool = eq v3, v4 {pure}
+    v6: bool = const false
+    br_if v5, bb1, bb2(v6)
+  bb1:
+    v7: int = const 3
+    v8: int = call_method v1.optM(v7) {pure}
+    v9: int = const 13
+    v10: bool = eq v8, v9 {pure}
+    br bb2(v10)
+  bb2(v11: bool):
+    v12: any = opaque.DynamicCall(v0, v11) {impure}
+    v13: bool = convert.bool v12
+    ret v13
+```
+
 ## this.field assign, compound assign, and spread-to-double field assign
 
 ```babble
@@ -60,6 +110,103 @@ fn C.run () -> bool {mut unique}
   (set-this-field n += 5:int)
   (set-this-field d (call-method this.optM 1:int))
   (call name(assert) (and (and (==:bool (get-this-field d) 11.0:double) (==:bool (get-this-field label) "abc!")) (==:bool (get-this-field n) 15:int)))
+```
+
+```mir
+;; mir -O2 fn=C.run stage=before
+fn C.run() -> bool:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: any = const "abc"
+    store_field v0.label, v1 {write:shared,throws}
+    v2: any = slot_read this {pure}
+    v3: any = load_field v2.label {read:shared,throws}
+    v4: any = const "!"
+    v5: any = add v3, v4 {impure}
+    store_field v2.label, v5 {write:shared,throws}
+    v6: any = slot_read this {pure}
+    v7: int = load_field v6.n {read:shared,throws}
+    v8: int = const 5
+    v9: int = add v7, v8 {pure}
+    store_field v6.n, v9 {write:shared,throws}
+    v10: any = slot_read this {pure}
+    v11: any = slot_read this {pure}
+    v12: int = const 1
+    v13: int = call_method v11.optM(v12) {pure}
+    v14: double = convert.double v13
+    store_field v10.d, v14 {write:shared,throws}
+    v15: any = opaque.NameRead() {impure}
+    v16: any = slot_read this {pure}
+    v17: double = load_field v16.d {read:shared,throws}
+    v18: double = const 11.0
+    v19: bool = eq v17, v18 {pure}
+    v20: bool = const false
+    br_if v19, bb1, bb2(v20)
+  bb1:
+    v21: any = slot_read this {pure}
+    v22: any = load_field v21.label {read:shared,throws}
+    v23: any = const "abc!"
+    v24: any = eq v22, v23 {pure}
+    v25: bool = not v24 {pure}
+    v26: bool = not v25 {pure}
+    br bb2(v26)
+  bb2(v27: bool):
+    v28: bool = const false
+    br_if v27, bb3, bb4(v28)
+  bb3:
+    v29: any = slot_read this {pure}
+    v30: int = load_field v29.n {read:shared,throws}
+    v31: int = const 15
+    v32: bool = eq v30, v31 {pure}
+    br bb4(v32)
+  bb4(v33: bool):
+    v34: any = opaque.DynamicCall(v15, v33) {impure}
+    v35: bool = convert.bool v34
+    ret v35
+```
+
+```mir
+;; mir -O2 fn=C.run
+fn C.run() -> bool:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: any = const "abc"
+    store_field v0.label, v1 {write:shared,throws}
+    v2: any = const "!"
+    v3: any = add v1, v2 {impure}
+    store_field v0.label, v3 {write:shared,throws}
+    v4: int = load_field v0.n {read:shared,throws}
+    v5: int = const 5
+    v6: int = add v4, v5 {pure}
+    store_field v0.n, v6 {write:shared,throws}
+    v7: int = const 1
+    v8: int = call_method v0.optM(v7) {pure}
+    v9: double = convert.double v8
+    store_field v0.d, v9 {write:shared,throws}
+    v10: any = opaque.NameRead() {impure}
+    v11: double = load_field v0.d {read:shared,throws}
+    v12: double = const 11.0
+    v13: bool = eq v11, v12 {pure}
+    v14: bool = const false
+    br_if v13, bb1, bb2(v14)
+  bb1:
+    v15: any = load_field v0.label {read:shared,throws}
+    v16: any = const "abc!"
+    v17: any = eq v15, v16 {pure}
+    v18: bool = not v17 {pure}
+    v19: bool = not v18 {pure}
+    br bb2(v19)
+  bb2(v20: bool):
+    br_if v20, bb3, bb4(v14)
+  bb3:
+    v21: int = load_field v0.n {read:shared,throws}
+    v22: int = const 15
+    v23: bool = eq v21, v22 {pure}
+    br bb4(v23)
+  bb4(v24: bool):
+    v25: any = opaque.DynamicCall(v10, v24) {impure}
+    v26: bool = convert.bool v25
+    ret v26
 ```
 
 ## recurse with omitted optional arg inside class method and top-level function, plus enclosing captured cell
@@ -86,6 +233,45 @@ fn sumDown (n:int, step:int=2:int) -> int {nothrow}
   (if (<=:bool var(n) 0:int) 0:int (+:int var(step) (self-recurse sumDown (-:int var(n) 1:int))))
 ```
 
+```mir
+;; mir -O2 fn=sumDown stage=before
+fn sumDown(v0: int, v1: int) -> int:
+  bb0:
+    v2: int = const 0
+    v3: bool = lte v0, v2 {pure}
+    br_if v3, bb2, bb1
+  bb1:
+    v4: int = const 1
+    v5: int = sub v0, v4 {pure}
+    v6: int = call_self sumDown(v5) {pure}
+    v7: int = add v1, v6 {pure}
+    br bb3(v7)
+  bb2:
+    v8: int = const 0
+    br bb3(v8)
+  bb3(v9: int):
+    ret v9
+```
+
+```mir
+;; mir -O2 fn=sumDown
+fn sumDown(v0: int, v1: int) -> int:
+  bb0:
+    v2: int = const 0
+    v3: bool = lte v0, v2 {pure}
+    br_if v3, bb2, bb1
+  bb1:
+    v4: int = const 1
+    v5: int = sub v0, v4 {pure}
+    v6: int = call_self sumDown(v5) {pure}
+    v7: int = add v1, v6 {pure}
+    br bb3(v7)
+  bb2:
+    br bb3(v2)
+  bb3(v8: int):
+    ret v8
+```
+
 ## Captured outer and class-constructor double cells inside enclosing function (DoubleCell.of)
 
 ```babble
@@ -109,6 +295,24 @@ fn C.bump () -> double {io mut}
   (+:double var(outer) var(p))
 ```
 
+```mir
+;; mir -O2 fn=C.bump stage=before,final
+fn C.bump() -> double:
+  bb0:
+    v0: double = slot_read outer {read:shared}
+    v1: double = const 1.0
+    v2: double = add v0, v1 {pure}
+    slot_write outer, v2 {write:shared}
+    v3: double = slot_read p {read:shared,throws}
+    v4: double = const 0.5
+    v5: double = add v3, v4 {pure}
+    slot_write p, v5 {write:shared,throws}
+    v6: double = slot_read outer {read:shared}
+    v7: double = slot_read p {read:shared,throws}
+    v8: double = add v6, v7 {pure}
+    ret v8
+```
+
 ## Static block this assign, compound assign, and this reference
 
 ```babble
@@ -128,6 +332,42 @@ fn bump () -> int {io}
   (set-this-field x 2:int)
   (set-this-field x += 3:int)
   (get-this-field x)
+```
+
+```mir
+;; mir -O2 fn=bump stage=before
+fn bump() -> int:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: int = const 2
+    v2: any = convert.any v1
+    store_field v0.x, v2 {write:shared,throws}
+    v3: any = slot_read this {pure}
+    v4: any = load_field v3.x {read:shared,throws}
+    v5: int = const 3
+    v6: any = convert.any v5
+    v7: any = add v4, v6 {impure}
+    store_field v3.x, v7 {write:shared,throws}
+    v8: any = slot_read this {pure}
+    v9: any = load_field v8.x {read:shared,throws}
+    v10: int = convert.int v9
+    ret v10
+```
+
+```mir
+;; mir -O2 fn=bump
+fn bump() -> int:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: any = const 2
+    store_field v0.x, v1 {write:shared,throws}
+    v2: any = load_field v0.x {read:shared,throws}
+    v3: any = const 3
+    v4: any = add v2, v3 {impure}
+    store_field v0.x, v4 {write:shared,throws}
+    v5: any = load_field v0.x {read:shared,throws}
+    v6: int = convert.int v5
+    ret v6
 ```
 
 ## Paren-wrapped class expression with method recurse and interface default
@@ -150,225 +390,13 @@ interface IWithConst
     3:int
 ```
 
-## 2-level interface inheritance super(G2) and ancestor is/as checks
-
-```babble
-def G0 = interface ( def deep = fn () : string -> ( "g0" ) )
-def G1 = interface extends G0 ()
-def G2 = interface extends G1 ()
-def GG = class () implements G2 ( def deep = fn () : string -> ( super(G2).deep() + ":gg" ) )
-def dyn = fn (v : any) : any -> ( v )
-def gVal : G0 = dyn(GG()) as G0
-assert(gVal.deep() == "g0:gg" and (GG() is G0) and (GG() is G1))
-```
-
-```hir
-;; hir -O0,-O1 class=GG
-class GG
-  (def deep (fn-ref GG.deep))
-  fn GG.deep () -> obj {nothrow unique}
-    (+:obj (super.deep) ":gg")
-```
-
-## Sub-interface extending Java IntPredicate with default method and is check
-
-```babble
-def SubP = interface extends java.util.function.IntPredicate (
-    def test = fn (x : int) : bool -> ( x > 0 )
-)
-def sp = (class () implements SubP ())()
-assert(sp is java.util.function.IntPredicate and sp.test(3))
-```
-
-```hir
-;; hir -O0,-O1 interface=SubP
-interface SubP
-  (def test (fn-ref test))
-  fn test (x:int) -> bool {pure}
-    (>:bool var(x) 0:int)
-```
-
-## InterfaceGen default method calling own default with int->double widening
-
-```babble
-def CalcIface = interface (
-    def base = fn () : int -> ( 10 )
-    def plusBase = fn (k : int) : double -> ( def mul = 2 ; this.base() * mul + k )
-)
-def ci : CalcIface = (class () implements CalcIface ())()
-assert(ci.plusBase(5) == 25.0)
-```
-
-```hir
-;; hir -O0 fn=plusBase
-fn plusBase (k:int) -> double {pure}
-  (def mul 2:int)
-  (+:int (*:int (call-iface this.base) var(mul)) var(k))
-```
-
-```hir
-;; hir -O1 fn=plusBase
-fn plusBase (k:int) -> double {pure}
-  (+:int (*:int (call-iface this.base) 2:int) var(k))
-```
-
-## InterfaceGen signature adaptation bridge inherited through intermediate interface
-
-```babble
-def IBase = interface ( def calc = fn (x : int) : any -> ( x * 0 ) )
-def IMid = interface extends IBase ( def calc = fn (x : any) : int -> ( 5 ) )
-def ILeaf = interface extends IMid ()
-def C1 = class () implements ILeaf ()
-def c1 : IBase = C1()
-assert(c1.calc(4) == 5)
-assert(C1().calc(4) == 5)
-```
-
-```hir
-;; hir -O0 interface=IBase
-interface IBase
-  (def calc (fn-ref calc))
-  fn calc (x:int) -> obj {pure}
-    (*:int var(x) 0:int)
-```
-
-```hir
-;; hir -O1 interface=IBase
-interface IBase
-  (def calc (fn-ref calc))
-  fn calc (x:int) -> obj {pure}
-    0:int
-```
-
-## super call inside Babble interface default method, inside nested lambda in class, and with positional assig...
-
-```babble
-def I1 = interface ( def calc = fn (x : int) : int -> ( x + 10 ) )
-def I2 = interface extends I1 ( def calc = fn (x : int) : int -> ( super.calc(x) + 2 ) )
-def C2 = class () implements I2 (
-    def run = fn (x : int) : int -> (
-        def inner = fn () : int -> ( super.calc(x) + 1 )
-        inner() + super.calc(x = x + 1)
-    )
-)
-assert(C2().run(5) == 36)
-```
-
-```hir
-;; hir -O0,-O1 fn=C2.run
-fn C2.run (x:int) -> int {nothrow unique}
-  (def inner (fn-ref inner))
-  (+:int (call-fn inner) (super.calc (set x (+:int var(x) 1:int))))
-```
-
-## Safe-navigation call on nullable Babble receiver with super default call through intermediate interface
-
-```babble
-def I1 = interface ( def greet = fn (x : int) : int -> ( x + 10 ) )
-def I2 = interface extends I1 ()
-def C = class (def v : int) implements I2 ( def greet = fn (x : int) : int -> ( super.greet(x) + this.v ) )
-def opt : C? = C(5) ; def nil : C? = null
-assert(opt?.greet(2) == 17 and nil?.greet(2) == null)
-```
-
-```hir
-;; hir -O0,-O1 class=C
-class C (v:int)
-  (def greet (fn-ref C.greet))
-  fn C.greet (x:int) -> int {nothrow unique}
-    (+:int (super.greet var(x)) (get-this-field v))
-```
-
-## Safe-navigation call on nullable Java receiver
-
-```babble
-def s1 : java.lang.StringBuilder? = java.lang.StringBuilder("abc")
-def s2 : java.lang.StringBuilder? = null
-assert(s1?.length() == 3 and s2?.length() == null)
-```
-
-```hir
-;; hir -O0,-O1 top-level
-top-level:
-  (def Vec (class-ref Vec))
-  (def s1 (jnew StringBuilder "abc"))
-  (def s2 null)
-  (call name(assert) (and (==:bool (safe-call name(s1)?.length) 3:int) (==:bool (safe-call name(s2)?.length) null)))
-```
-
-## emitReturnToJava double->void POP2 on Runnable and Object->double on DoubleSupplier
-
-```babble
-def dyn = fn (v : any) : any -> ( v )
-def DS = class () implements java.util.function.DoubleSupplier (
-    def getAsDouble = fn () : any -> ( dyn(3.5) )
-)
-def f2 : java.util.function.DoubleSupplier = DS()
-def r : java.lang.Runnable = fn () -> ( 1.5 + 2.5 )
-r.run()
-assert(f2.getAsDouble() == 3.5)
-```
-
-```hir
-;; hir -O0 fn=r
-fn r () -> double {nothrow unique}
-  (+:double 1.5:double 2.5:double)
-```
-
-```hir
-;; hir -O1 fn=r
-fn r () -> double {nothrow unique}
-  4.0:double
-```
-
-```hir
-;; hir -O0 fn=DS.getAsDouble
-fn DS.getAsDouble () -> obj {nothrow unique}
-  (call-fn dyn 3.5:double)
-```
-
-```hir
-;; hir -O1 fn=DS.getAsDouble
-fn DS.getAsDouble () -> obj {nothrow unique}
-  (block
-    (def v 3.5:double)
-    var(v))
-```
-
-## Java primitive bridge args : DoublePredicate and IntPredicate
-
-```babble
-def DP = class () implements java.util.function.DoublePredicate ( def test = fn (d : double) : bool -> ( d > 0.0 ) )
-def IP = class () implements java.util.function.IntPredicate ( def test = fn (i : int) : bool -> ( i > 0 ) )
-def dp : java.util.function.DoublePredicate = DP()
-def ip : java.util.function.IntPredicate = IP()
-assert(dp.test(1.5) and ip.test(3))
-```
-
-```hir
-;; hir -O0,-O1 class=DP
-class DP
-  (def test (fn-ref DP.test))
-  fn DP.test (d:double) -> bool {nothrow unique}
-    (>:bool var(d) 0.0:double)
-```
-
-## Java primitive bridge args : IntToDoubleFunction
-
-```babble
-def I2D = class () implements java.util.function.IntToDoubleFunction (
-    def applyAsDouble = fn (i : int) : double -> ( i + 0.5 )
-)
-def i2d : java.util.function.IntToDoubleFunction = I2D()
-assert(i2d.applyAsDouble(2) == 2.5)
-```
-
-```hir
-;; hir -O0,-O1 class=I2D
-class I2D
-  (def applyAsDouble (fn-ref I2D.applyAsDouble))
-  fn I2D.applyAsDouble (i:int) -> double {nothrow monotone unique}
-    (+:double var(i) 0.5:double)
+```mir
+;; mir -O2 interface=IWithConst stage=before,final
+interface IWithConst:
+  fn get() -> int:
+    bb0:
+      v0: int = const 3
+      ret v0
 ```
 
 ## BabbleInstance operator methods (neg, plus, minus, times, div, compound +=) and folded unary minus
@@ -401,51 +429,9 @@ top-level:
   (call name(assert) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int)))
 ```
 
-## super call to interface default with optional primitive param (class method, sub-interface, nested lambda)
-
-```babble
-def IOpt = interface ( def add = fn (a: int, b: int = 10): int -> ( a + b ) )
-def ISub = interface extends IOpt ( def add = fn (a: int, b: int = 20): int -> ( super.add(a) + b ) )
-def C = class () implements ISub (
-    def dir = fn (x: int): int -> ( super.add(x) )
-    def lam = fn (x: int): int -> ( (fn (): int -> ( super.add(x) ))() )
-)
-assert(C().dir(5) == 35 and C().lam(2) == 32)
-```
-
-```hir
-;; hir -O0,-O1 class=C
-class C
-  (def dir (fn-ref C.dir))
-  (def lam (fn-ref C.lam))
-  fn C.dir (x:int) -> int {nothrow unique}
-    (super.add var(x))
-  fn C.lam (x:int) -> int {nothrow unique}
-    (call-fn <anon#0>)
-```
-
-## super call to overloaded interface default with union-typed positional and named arguments
-
-```babble
-def IOv = interface (
-    def calc = overload ( fn (x: int): int -> ( x + 10 ), fn (x: string): int -> ( x.length() ) )
-)
-def C = class () implements IOv (
-    def pos = fn (u: int | string): int -> ( super.calc(u) )
-    def nam = fn (u: int | string): int -> ( super.calc(x: u) )
-)
-assert(C().pos(5) == 15 and C().pos("abcd") == 4 and C().nam(3) == 13 and C().nam("xy") == 2)
-```
-
-```hir
-;; hir -O0,-O1 class=C
-class C
-  (def pos (fn-ref C.pos))
-  (def nam (fn-ref C.nam))
-  fn C.pos (u:obj) -> int {nothrow unique}
-    (super.calc var(u))
-  fn C.nam (u:obj) -> int {nothrow unique}
-    (super.calc x=var(u))
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
 ```
 
 ## Non-tail recurse in reference-only function and class method
@@ -470,6 +456,27 @@ fn rep (s:obj) -> obj {nothrow}
   (if (>=:bool (jcall String.length var(s)) 4:int) var(s) (+:obj "a" (self-recurse rep (+:obj var(s) "b"))))
 ```
 
+```mir
+;; mir -O2 fn=rep stage=before,final
+fn rep(v0: any) -> any:
+  bb0:
+    v1: int = call_java v0.length() {pure,throws}
+    v2: int = const 4
+    v3: bool = gte v1, v2 {pure}
+    br_if v3, bb2, bb1
+  bb1:
+    v4: any = const "a"
+    v5: any = const "b"
+    v6: any = strcat v0, v5 {pure}
+    v7: any = call_self rep(v6) {pure!}
+    v8: any = strcat v4, v7 {pure}
+    br bb3(v8)
+  bb2:
+    br bb3(v0)
+  bb3(v9: any):
+    ret v9
+```
+
 ## Non-tail recurse with >8 primitive parameters
 
 ```babble
@@ -489,6 +496,50 @@ fn r9 (n:int, a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int) -> int {no
 ;; hir -O1 fn=r9
 fn r9 (n:int, a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int) -> int {nothrow}
   (if (<=:bool var(n) 0:int) 0:int (+:int 1:int (call recurse (-:int var(n) 1:int) var(a) var(b) var(c) var(d) var(e) var(f) var(g) var(h))))
+```
+
+```mir
+;; mir -O2 fn=r9 stage=before
+fn r9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: int) -> int:
+  bb0:
+    v9: int = const 0
+    v10: bool = lte v0, v9 {pure}
+    br_if v10, bb2, bb1
+  bb1:
+    v11: int = const 1
+    v12: any = slot_read $recurse {pure}
+    v13: int = const 1
+    v14: int = sub v0, v13 {pure}
+    v15: any = opaque.DynamicCall(v12, v14, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
+    v16: int = convert.int v15
+    v17: int = add v11, v16 {pure}
+    br bb3(v17)
+  bb2:
+    v18: int = const 0
+    br bb3(v18)
+  bb3(v19: int):
+    ret v19
+```
+
+```mir
+;; mir -O2 fn=r9
+fn r9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: int) -> int:
+  bb0:
+    v9: int = const 0
+    v10: bool = lte v0, v9 {pure}
+    br_if v10, bb2, bb1
+  bb1:
+    v11: int = const 1
+    v12: any = slot_read $recurse {pure}
+    v13: int = sub v0, v11 {pure}
+    v14: any = opaque.DynamicCall(v12, v13, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
+    v15: int = convert.int v14
+    v16: int = add v11, v15 {pure}
+    br bb3(v16)
+  bb2:
+    br bb3(v9)
+  bb3(v17: int):
+    ret v17
 ```
 
 ## Direct this.method call with >8 default params (0 args, positional, and reordered named args)
@@ -515,6 +566,35 @@ fn Big.run () -> int {nothrow unique}
   (+:int (+:int (call-method this.s9) 18:int) (call-method this.s9 i=10:int))
 ```
 
+```mir
+;; mir -O2 fn=Big.run stage=before
+fn Big.run() -> int:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: int = call_method v0.s9() {pure}
+    v2: int = const 18
+    v3: int = add v1, v2 {pure}
+    v4: any = slot_read this {pure}
+    v5: int = const 10
+    v6: int = call_method v4.s9(v5) {pure}
+    v7: int = add v3, v6 {pure}
+    ret v7
+```
+
+```mir
+;; mir -O2 fn=Big.run
+fn Big.run() -> int:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: int = call_method v0.s9() {pure}
+    v2: int = const 18
+    v3: int = add v1, v2 {pure}
+    v4: int = const 10
+    v5: int = call_method v0.s9(v4) {pure}
+    v6: int = add v3, v5 {pure}
+    ret v6
+```
+
 ## this.field callable, inherited interface default via this, and overloaded this operator
 
 ```babble
@@ -536,6 +616,48 @@ fn C.run () -> int {pure unique}
 ;; hir -O1 fn=C.run
 fn C.run () -> int {pure unique}
   (+:int (+:int (call (get-this-field cb) 3:int) (call (get-this-field greet))) (+:int (get-this-field n) 2:int))
+```
+
+```mir
+;; mir -O2 fn=C.run stage=before
+fn C.run() -> int:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: any = load_field v0.cb {read:shared,throws}
+    v2: int = const 3
+    v3: any = opaque.DynamicCall(v1, v2) {impure}
+    v4: int = convert.int v3
+    v5: any = slot_read this {pure}
+    v6: any = load_field v5.greet {read:shared,throws}
+    v7: any = opaque.DynamicCall(v6) {impure}
+    v8: int = convert.int v7
+    v9: int = add v4, v8 {pure}
+    v10: any = slot_read this {pure}
+    v11: int = load_field v10.n {read:shared,throws}
+    v12: int = const 2
+    v13: int = add v11, v12 {pure}
+    v14: int = add v9, v13 {pure}
+    ret v14
+```
+
+```mir
+;; mir -O2 fn=C.run
+fn C.run() -> int:
+  bb0:
+    v0: any = slot_read this {pure}
+    v1: any = load_field v0.cb {read:shared,throws}
+    v2: int = const 3
+    v3: any = opaque.DynamicCall(v1, v2) {impure}
+    v4: int = convert.int v3
+    v5: any = load_field v0.greet {read:shared,throws}
+    v6: any = opaque.DynamicCall(v5) {impure}
+    v7: int = convert.int v6
+    v8: int = add v4, v7 {pure}
+    v9: int = load_field v0.n {read:shared,throws}
+    v10: int = const 2
+    v11: int = add v9, v10 {pure}
+    v12: int = add v8, v11 {pure}
+    ret v12
 ```
 
 ## Object literal this.method dispatch
@@ -563,6 +685,11 @@ top-level:
         7:int) 7:int))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Record fast-class disqualifiers : >8 fields, captured outer cell, and Java SAM param
 
 ```babble
@@ -584,6 +711,19 @@ record CellRec (x:int)
   (def get (fn-ref CellRec.get))
   fn CellRec.get () -> int {nothrow unique}
     (+:int (get-this-field x) name(k))
+```
+
+```mir
+;; mir -O2 record=CellRec stage=before,final
+record CellRec:
+  fn CellRec.get() -> int:
+    bb0:
+      v0: any = slot_read this {pure}
+      v1: int = load_field v0.x {read:frozen}
+      v2: any = opaque.NameRead() {impure}
+      v3: int = convert.int v2
+      v4: int = add v1, v3 {pure}
+      ret v4
 ```
 
 ## Record fast-class disqualifiers : body assert, body field, and nested overload
@@ -613,6 +753,25 @@ record OvR (x:int)
     1:int
   fn OvR.f (s:obj) -> int {nothrow unique}
     (jcall String.length var(s))
+```
+
+```mir
+;; mir -O2 record=OvR stage=before,final
+record OvR:
+  fn OvR.f(v0: int) -> int:
+    bb0:
+      v1: any = slot_read this {pure}
+      v2: int = load_field v1.x {read:frozen}
+      v3: int = add v2, v0 {pure}
+      ret v3
+  fn OvR.f(v0: bool) -> int:
+    bb0:
+      v1: int = const 1
+      ret v1
+  fn OvR.f(v0: any) -> int:
+    bb0:
+      v1: int = call_java v0.length() {pure,throws}
+      ret v1
 ```
 
 ## Class constructor non-method and non-FunctionRef overload sets (isAllMethodRefsOf)
@@ -654,19 +813,8 @@ class C
       12:int))
 ```
 
-## Diamond Java interfaces (Closeable + AutoCloseable) and non-top-level block class expressions
-
-```babble
-def Res = class () implements java.io.Closeable, java.lang.AutoCloseable ( def close = fn () -> () )
-def r = Res() ; r.close()
-def C1 = ( def tag = 1 ; class (def v : int) ( def get = fn () : int -> ( this.v + tag ) ) )
-def r2 = ( def C2 = class (def v : int) () ; C2(9).v )
-assert(C1(4).get() == 5 and r2 == 9)
-```
-
-```hir
-;; hir -O0,-O1 class=Res
-class Res
-  (def close (fn-ref Res.close))
-  fn Res.close () -> obj {nothrow unique}
+```mir
+;; mir -O2 class=C stage=before,final
+class C:
+  (no methods)
 ```

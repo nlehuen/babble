@@ -77,6 +77,11 @@ top-level:
         (get-this-field x)) 9:int))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Warm SelectCache on B.x before triggering requireMemberDefined during construction
 
 ```babble
@@ -350,6 +355,11 @@ top-level:
         var(x)) 7:int))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Uncaptured int local read before definition
 
 ```babble
@@ -474,6 +484,16 @@ class UA (early:bool)
   (def late 5:int)
   fn UA.peek (u:obj) -> int {nothrow unique}
     (select var(u).late)
+```
+
+```mir
+;; mir -O2 class=UA stage=before,final
+class UA:
+  fn UA.peek(v0: any) -> int:
+    bb0:
+      v1: any = opaque.DynamicSelect(v0) {impure}
+      v2: int = convert.int v1
+      ret v2
 ```
 
 ## SelectCache requireMemberDefined throws on warmed union primitive field during construction

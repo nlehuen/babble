@@ -62,6 +62,11 @@ top-level:
   (call name(assert) (and (and (==:bool (jcall Map.size name(sm)) 2:int) (==:bool (jcall SortedMap.firstKey name(sm)) "a")) (==:bool (jcall Map.get name(sm) "b") 2:int)))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Core sortedset and sortedmap from-plus-comparator in both argument orders
 
 ```babble
@@ -89,6 +94,11 @@ top-level:
   (call name(assert) (and (and (and (==:bool (jcall SortedSet.first name(ss1)) 3:int) (==:bool (jcall SortedSet.first name(ss2)) 3:int)) (==:bool (jcall SortedMap.firstKey name(sm1)) "c")) (==:bool (jcall SortedMap.firstKey name(sm2)) "c")))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Cross-module direct overloaded operator, optional spec method, and >8-param fallback
 
 ```babble
@@ -114,6 +124,11 @@ top-level:
   (call name(assert) (and (==:bool (call-method name(v).inc 2:int) 17:int) (==:bool (call-method name(v).inc 2:int 1:int) 13:int)))
   (call name(assert) (==:bool (call-method name(v).tag "v") "v:10"))
   (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int))
+```
+
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
 ```
 
 ## Cross-module definite and non-definite field reads plus transitive interface hierarchy
@@ -152,6 +167,11 @@ top-level:
   (call name(assert) (and (and (==:bool (select name(lb).init) 1:int) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Dynamic function-typed call with >8 arguments (positional and named)
 
 ```babble
@@ -168,6 +188,58 @@ assert(call9(sum9) == 91)
 ;; hir -O0,-O1 fn=call9
 fn call9 (g:obj) -> int {pure unique}
   (+:int (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int i=10:int))
+```
+
+```mir
+;; mir -O2 fn=call9 stage=before
+fn call9(v0: any) -> int:
+  bb0:
+    v1: int = const 1
+    v2: int = const 2
+    v3: int = const 3
+    v4: int = const 4
+    v5: int = const 5
+    v6: int = const 6
+    v7: int = const 7
+    v8: int = const 8
+    v9: int = const 9
+    v10: any = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
+    v11: int = convert.int v10
+    v12: int = const 1
+    v13: int = const 2
+    v14: int = const 3
+    v15: int = const 4
+    v16: int = const 5
+    v17: int = const 6
+    v18: int = const 7
+    v19: int = const 8
+    v20: int = const 10
+    v21: any = opaque.DynamicCall(v0, v12, v13, v14, v15, v16, v17, v18, v19, v20) {impure}
+    v22: int = convert.int v21
+    v23: int = add v11, v22 {pure}
+    ret v23
+```
+
+```mir
+;; mir -O2 fn=call9
+fn call9(v0: any) -> int:
+  bb0:
+    v1: int = const 1
+    v2: int = const 2
+    v3: int = const 3
+    v4: int = const 4
+    v5: int = const 5
+    v6: int = const 6
+    v7: int = const 7
+    v8: int = const 8
+    v9: int = const 9
+    v10: any = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
+    v11: int = convert.int v10
+    v12: int = const 10
+    v13: any = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v12) {impure}
+    v14: int = convert.int v13
+    v15: int = add v11, v14 {pure}
+    ret v15
 ```
 
 ## Overload direct >8-param alternative and anonymous inline overload call
@@ -207,6 +279,11 @@ top-level:
         6:int) 6:int))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Union-split overload dispatch with optional primitive and reference defaults
 
 ```babble
@@ -224,6 +301,15 @@ fn run (u:obj) -> obj {nothrow unique}
   (overload-dispatch name(f) var(u))
 ```
 
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: any) -> any:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.OverloadDispatch(v1, v0) {impure}
+    ret v2
+```
+
 ## Union-split overload dispatch with rest parameters on reference and primitive branches
 
 ```babble
@@ -239,6 +325,15 @@ assert(runG(3) == 3 and runG("a") == "a")
 ;; hir -O0,-O1 fn=runG
 fn runG (u:obj) -> obj {nothrow unique}
   (overload-dispatch name(g) var(u))
+```
+
+```mir
+;; mir -O2 fn=runG stage=before,final
+fn runG(v0: any) -> any:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.OverloadDispatch(v1, v0) {impure}
+    ret v2
 ```
 
 ## Union-split overloaded class method exercising rest and trailing optional params
@@ -260,6 +355,15 @@ fn run (bx:obj, u:obj) -> obj {nothrow unique}
   (overload-dispatch (select var(bx).m) var(u))
 ```
 
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: any, v1: any) -> any:
+  bb0:
+    v2: any = opaque.DynamicSelect(v0) {impure}
+    v3: any = opaque.OverloadDispatch(v2, v1) {impure}
+    ret v3
+```
+
 ## Union-split overloaded class method with middle omitted optional param
 
 ```babble
@@ -277,6 +381,16 @@ assert(run(Box(), 4) == 15 and run(Box(), "hi") == "hi:11")
 ;; hir -O0,-O1 fn=run
 fn run (bx:obj, u:obj) -> obj {nothrow unique}
   (overload-dispatch (select var(bx).m) var(u) 10:int)
+```
+
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: any, v1: any) -> any:
+  bb0:
+    v2: any = opaque.DynamicSelect(v0) {impure}
+    v3: int = const 10
+    v4: any = opaque.OverloadDispatch(v2, v1, v3) {impure}
+    ret v4
 ```
 
 ## Overloaded interface method with named arg, omitted optional arg, and safe call
@@ -303,6 +417,19 @@ interface IOv
     (jcall String.length var(s))
 ```
 
+```mir
+;; mir -O2 interface=IOv stage=before,final
+interface IOv:
+  fn calc(v0: int, v1: int) -> int:
+    bb0:
+      v2: int = add v0, v1 {pure}
+      ret v2
+  fn calc(v0: any) -> int:
+    bb0:
+      v1: int = call_java v0.length() {pure,throws}
+      ret v1
+```
+
 ## Overloaded interface operator method
 
 ```babble
@@ -322,6 +449,20 @@ interface IOv
     (+:int var(n) 1:int)
   fn plus (s:obj) -> int {pure}
     (jcall String.length var(s))
+```
+
+```mir
+;; mir -O2 interface=IOv stage=before,final
+interface IOv:
+  fn plus(v0: int) -> int:
+    bb0:
+      v1: int = const 1
+      v2: int = add v0, v1 {pure}
+      ret v2
+  fn plus(v0: any) -> int:
+    bb0:
+      v1: int = call_java v0.length() {pure,throws}
+      ret v1
 ```
 
 ## Non-accessible Java SAM spread into Iterable (asIterableByName)
@@ -344,6 +485,58 @@ fn takeIt (xs:obj) -> int {io}
   var(n)
 ```
 
+```mir
+;; mir -O2 fn=takeIt stage=before
+fn takeIt(v0: any) -> int:
+  bb0:
+    v1: int = const 0
+    v2: any = for_init.java_iterable v0
+    v3: any = const null
+    br bb1(v3, v1)
+  bb1(v4: any, v5: int):
+    v6: bool = for_has_next v2
+    br_if v6, bb3, bb2
+  bb2:
+    ret v5
+  bb3:
+    v7: any = for_next v2
+    v8: any = checkcast v7 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
+    v9: any = opaque.NameRead() {impure}
+    v10: any = opaque.DynamicSelect(v9) {impure}
+    v11: any = opaque.DynamicSelect(v10) {impure}
+    v12: int = const 4
+    v13: any = opaque.DynamicCall(v11, v8, v12) {impure}
+    v14: int = convert.int v13
+    v15: int = add v5, v14 {pure}
+    v16: any = convert.any v15
+    br bb1(v16, v15)
+```
+
+```mir
+;; mir -O2 fn=takeIt
+fn takeIt(v0: any) -> int:
+  bb0:
+    v1: int = const 0
+    v2: any = for_init.java_iterable v0
+    br bb1(v1)
+  bb1(v3: int):
+    v4: bool = for_has_next v2
+    br_if v4, bb3, bb2
+  bb2:
+    ret v3
+  bb3:
+    v5: any = for_next v2
+    v6: any = checkcast v5 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
+    v7: any = opaque.NameRead() {impure}
+    v8: any = opaque.DynamicSelect(v7) {impure}
+    v9: any = opaque.DynamicSelect(v8) {impure}
+    v10: int = const 4
+    v11: any = opaque.DynamicCall(v9, v6, v10) {impure}
+    v12: int = convert.int v11
+    v13: int = add v3, v12 {pure}
+    br bb1(v13)
+```
+
 ## Non-accessible Java SAM spread into List (asListByName)
 
 ```babble
@@ -358,6 +551,22 @@ assert(takeL(...fns) == 6)
 ;; hir -O0,-O1 fn=takeL
 fn takeL (xs:obj) -> int {io}
   (call (select (select name(tests).JavaClassDemo).invokeHiddenSam) (jcall List.get var(xs) 0:int) 5:int)
+```
+
+```mir
+;; mir -O2 fn=takeL stage=before,final
+fn takeL(v0: any) -> int:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.DynamicSelect(v1) {impure}
+    v3: any = opaque.DynamicSelect(v2) {impure}
+    v4: int = const 0
+    v5: any = call_java v0.get(v4) {impure}
+    v6: any = checkcast v5 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
+    v7: int = const 5
+    v8: any = opaque.DynamicCall(v3, v6, v7) {impure}
+    v9: int = convert.int v8
+    ret v9
 ```
 
 ## Non-accessible Java SAM spread into Object-erased array
@@ -376,6 +585,21 @@ fn takeArr (xs:obj) -> int {io}
   (call (select (select name(tests).JavaClassDemo).invokeHiddenSerializable) (array-op GET var(xs) 0:int) 6:int)
 ```
 
+```mir
+;; mir -O2 fn=takeArr stage=before,final
+fn takeArr(v0: any) -> int:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.DynamicSelect(v1) {impure}
+    v3: any = opaque.DynamicSelect(v2) {impure}
+    v4: int = const 0
+    v5: any = array_get v0[v4] {read:shared,throws}
+    v6: int = const 6
+    v7: any = opaque.DynamicCall(v3, v5, v6) {impure}
+    v8: int = convert.int v7
+    ret v8
+```
+
 ## Non-accessible Java SAM spread into hidden-marker list
 
 ```babble
@@ -390,4 +614,12 @@ assert(takeMk(...runs) == 1)
 ;; hir -O0,-O1 fn=takeMk
 fn takeMk (xs:obj) -> int {nothrow unique}
   (jcall List.size var(xs))
+```
+
+```mir
+;; mir -O2 fn=takeMk stage=before,final
+fn takeMk(v0: any) -> int:
+  bb0:
+    v1: int = call_java v0.size() {pure,throws}
+    ret v1
 ```

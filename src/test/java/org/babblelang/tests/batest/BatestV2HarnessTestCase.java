@@ -349,7 +349,7 @@ public class BatestV2HarnessTestCase {
     }
 
     @Test
-    public void testEveryCompilerBatestCaseHasHirO0AndO1Expectations() throws Exception {
+    public void testEveryCompilerBatestCaseHasHirO0O1AndMirO2BeforeAfterExpectations() throws Exception {
         Path compilerDir = BatestTestCase.BATEST_ROOT.resolve("compiler");
         Assertions.assertTrue(Files.isDirectory(compilerDir), "Missing " + compilerDir);
         List<String> violations = new java.util.ArrayList<>();
@@ -363,21 +363,83 @@ public class BatestV2HarnessTestCase {
                 String rel = BatestTestCase.BATEST_ROOT.relativize(p).toString().replace('\\', '/');
                 BatestFile file = BatestParser.parse(p, rel);
                 for (BatestFile.BatestCase c : file.cases()) {
+                    if (c.expectedError() != null || c.session()) {
+                        continue;
+                    }
                     checkedCases++;
                     boolean hasO0 = c.irExpectations().stream()
                             .anyMatch(e -> e.tier() == org.babblelang.ir.IrTier.HIR && e.appliesTo(0));
                     boolean hasO1 = c.irExpectations().stream()
                             .anyMatch(e -> e.tier() == org.babblelang.ir.IrTier.HIR && e.appliesTo(1));
-                    if (!hasO0 || !hasO1) {
-                        violations.add(rel + ":" + c.line() + " (" + c.displayName() + ")"
-                                + " missing hir" + (!hasO0 ? " -O0" : "") + (!hasO1 ? " -O1" : ""));
+                    boolean hasMirBefore = c.irExpectations().stream()
+                            .anyMatch(e -> e.tier() == org.babblelang.ir.IrTier.MIR && e.appliesTo(2) && e.matchesStage("before"));
+                    boolean hasMirFinal = c.irExpectations().stream()
+                            .anyMatch(e -> e.tier() == org.babblelang.ir.IrTier.MIR && e.appliesTo(2) && e.matchesStage("final"));
+                    if (!hasO0 || !hasO1 || !hasMirBefore || !hasMirFinal) {
+                        violations.add(rel + ":" + c.line() + " (" + c.displayName() + ") missing"
+                                + (!hasO0 ? " hir -O0" : "")
+                                + (!hasO1 ? " hir -O1" : "")
+                                + (!hasMirBefore ? " mir -O2 stage=before" : "")
+                                + (!hasMirFinal ? " mir -O2 stage=final" : ""));
                     }
                 }
             }
         }
         Assertions.assertTrue(checkedCases > 0, "Expected compiler batest cases under " + compilerDir);
         Assertions.assertEquals(List.of(), violations,
-                "Every compiler batest case must have at least one hir -O0 and one hir -O1 assertion:\n"
+                "Every non-error compiler batest case must assert hir -O0, hir -O1, mir -O2 stage=before, and mir -O2 stage=final:\n"
                         + String.join("\n", violations));
+    }
+
+    @Test
+    public void testCompilerSuiteParserEnforcementAndMultiStage() {
+        String missingMir = """
+                # Demo
+
+                ## Missing MIR
+                ```babble
+                def f = fn (x: int): int -> (x + 1)
+                assert(f(1) == 2)
+                ```
+                ```hir
+                ;; hir -O0,-O1 fn=f
+                fn f (x:int) -> int
+                  (+:int var(x) 1:int)
+                ```
+                """;
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestV2Parser.parseString(missingMir, "compiler/demo.batest.md"));
+        Assertions.assertTrue(ex.getMessage().contains("mir -O2 stage=before"), ex.getMessage());
+        Assertions.assertTrue(ex.getMessage().contains("mir -O2 stage=final"), ex.getMessage());
+
+        String validCombined = """
+                # Demo
+
+                ## Combined stage
+                ```babble
+                def f = fn (x: int): int -> (x + 1)
+                assert(f(1) == 2)
+                ```
+                ```hir
+                ;; hir -O0,-O1 fn=f
+                fn f (x:int) -> int
+                  (+:int var(x) 1:int)
+                ```
+                ```mir
+                ;; mir -O2 fn=f stage=before,final
+                fn f(v0: int) -> int:
+                  bb0:
+                    v1: int = const 1
+                    v2: int = add v0, v1 {pure}
+                    ret v2
+                ```
+                """;
+        BatestFile parsed = BatestV2Parser.parseString(validCombined, "compiler/demo.batest.md");
+        BatestFile.IrExpectation mir = parsed.cases().get(0).irExpectations().get(1);
+        Assertions.assertEquals(org.babblelang.ir.IrTier.MIR, mir.tier());
+        Assertions.assertTrue(mir.appliesTo(2));
+        Assertions.assertTrue(mir.matchesStage("before"));
+        Assertions.assertTrue(mir.matchesStage("final"));
+        Assertions.assertFalse(mir.matchesStage("after:SccpPass"));
     }
 }

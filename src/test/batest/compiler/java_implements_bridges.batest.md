@@ -46,6 +46,25 @@ class Counter (n:int)
     (get-this-field n)
 ```
 
+```mir
+;; mir -O2 class=Counter stage=before,final
+class Counter:
+  fn Counter.run() -> any:
+    bb0:
+      v0: any = slot_read this {pure}
+      v1: int = load_field v0.n {read:shared,throws}
+      v2: int = const 10
+      v3: int = add v1, v2 {pure}
+      store_field v0.n, v3 {write:shared,throws}
+      v4: any = const null
+      ret v4
+  fn Counter.getAsInt() -> int:
+    bb0:
+      v0: any = slot_read this {pure}
+      v1: int = load_field v0.n {read:shared,throws}
+      ret v1
+```
+
 ## Case 2
 
 ```babble
@@ -67,6 +86,18 @@ record W (g:int)
   (def compareTo (fn-ref W.compareTo))
   fn W.compareTo (o:obj) -> int {nothrow unique}
     (-:int (get-this-field g) (get-this-field g))
+```
+
+```mir
+;; mir -O2 record=W stage=before,final
+record W:
+  fn W.compareTo(v0: any) -> int:
+    bb0:
+      v1: any = slot_read this {pure}
+      v2: int = load_field v1.g {read:frozen}
+      v3: int = load_field v0.g {read:frozen}
+      v4: int = sub v2, v3 {pure}
+      ret v4
 ```
 
 ## Case 3
@@ -102,6 +133,11 @@ top-level:
         6.5:double) 6.5:double))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## Case 4
 
 ```babble
@@ -123,6 +159,18 @@ interface R
   (def compareTo (fn-ref compareTo))
   fn compareTo (o:obj) -> int {pure}
     (-:int (call-iface this.rk) (call-iface var(o).rk))
+```
+
+```mir
+;; mir -O2 interface=R stage=before,final
+interface R:
+  fn compareTo(v0: any) -> int:
+    bb0:
+      v1: any = slot_read this {pure}
+      v2: int = call_iface v1.rk() {pure,throws}
+      v3: int = call_iface v0.rk() {pure,throws}
+      v4: int = sub v2, v3 {pure}
+      ret v4
 ```
 
 ## Overloaded Appendable/CharSequence methods served by optional params on Buf
@@ -151,6 +199,11 @@ top-level:
   (call name(assert) (==:bool (jcall CharSequence.length name(cs)) 7:int))
   (call name(assert) (==:bool (jcall String.valueOf (jcall CharSequence.subSequence name(cs) 0:int 4:int)) "ok-7"))
   (call name(assert) (==:bool (jcall String.valueOf name(cs)) "ok-7bcd"))
+```
+
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
 ```
 
 ## Case 6
@@ -182,6 +235,21 @@ interface W
     (call name(print) ">")
 ```
 
+```mir
+;; mir -O2 interface=W stage=before,final
+interface W:
+  fn forEachRemaining(v0: any) -> any:
+    bb0:
+      v1: any = opaque.NameRead() {impure}
+      v2: any = const "<"
+      v3: any = opaque.DynamicCall(v1, v2) {impure}
+      v4: any = opaque.SuperCall(v0) {impure}
+      v5: any = opaque.NameRead() {impure}
+      v6: any = const ">"
+      v7: any = opaque.DynamicCall(v5, v6) {impure}
+      ret v7
+```
+
 ## Case 7
 
 ```babble
@@ -197,6 +265,16 @@ class AddOp (delta:int)
   (def applyAsInt (fn-ref AddOp.applyAsInt))
   fn AddOp.applyAsInt (x:int) -> int {nothrow injective unique}
     (+:int var(x) var(delta))
+```
+
+```mir
+;; mir -O2 class=AddOp stage=before,final
+class AddOp:
+  fn AddOp.applyAsInt(v0: int) -> int:
+    bb0:
+      v1: int = slot_read delta {read:shared,throws}
+      v2: int = add v0, v1 {pure}
+      ret v2
 ```
 
 ## Primitive return widening : int -> long via IntToLongFunction
@@ -216,6 +294,19 @@ class Widener (scale:int)
   (def applyAsLong (fn-ref Widener.applyAsLong))
   fn Widener.applyAsLong (x:int) -> int {nothrow unique}
     (*:int (*:int var(x) var(scale)) (get-this-field factor))
+```
+
+```mir
+;; mir -O2 class=Widener stage=before,final
+class Widener:
+  fn Widener.applyAsLong(v0: int) -> int:
+    bb0:
+      v1: int = slot_read scale {read:shared,throws}
+      v2: int = mul v0, v1 {pure}
+      v3: any = slot_read this {pure}
+      v4: int = load_field v3.factor {read:shared,throws}
+      v5: int = mul v2, v4 {pure}
+      ret v5
 ```
 
 ## Field with same name as Java default method stays accessible as a Babble field
@@ -239,6 +330,19 @@ class SingleIter
     false:bool
   fn SingleIter.next () -> int {nothrow unique}
     0:int
+```
+
+```mir
+;; mir -O2 class=SingleIter stage=before,final
+class SingleIter:
+  fn SingleIter.hasNext() -> bool:
+    bb0:
+      v0: bool = const false
+      ret v0
+  fn SingleIter.next() -> int:
+    bb0:
+      v0: int = const 0
+      ret v0
 ```
 
 ## Field with same name as Java default method does not shadow the Java default method when invoked via the Ja...
@@ -302,6 +406,20 @@ class LongInc (d:int)
     (+:int (call name(int) (as var(x) long|long|)) var(d))
 ```
 
+```mir
+;; mir -O2 class=LongInc stage=before,final
+class LongInc:
+  fn LongInc.applyAsLong(v0: any) -> int:
+    bb0:
+      v1: any = opaque.NameRead() {impure}
+      v2: any = checkcast v0 <long|long|>
+      v3: any = opaque.DynamicCall(v1, v2) {impure}
+      v4: int = convert.int v3
+      v5: int = slot_read d {read:shared,throws}
+      v6: int = add v4, v5 {pure}
+      ret v6
+```
+
 ## Case 12
 
 ```babble
@@ -320,4 +438,14 @@ class Flag (v:bool)
   (def getAsBoolean (fn-ref Flag.getAsBoolean))
   fn Flag.getAsBoolean () -> bool {nothrow unique}
     (get-this-field v)
+```
+
+```mir
+;; mir -O2 class=Flag stage=before,final
+class Flag:
+  fn Flag.getAsBoolean() -> bool:
+    bb0:
+      v0: any = slot_read this {pure}
+      v1: bool = load_field v0.v {read:shared,throws}
+      ret v1
 ```

@@ -38,6 +38,23 @@ fn joinLR (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
 ```
 
+```mir
+;; mir -O2 fn=joinLR stage=before,final
+fn joinLR(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
+```
+
 ## Babble interface merges : supertype, ambiguous 2-root diamond, and unrelated
 
 ```babble
@@ -57,6 +74,23 @@ fn joinAmbig (f:bool) -> obj {pure unique}
 ;; hir -O1 fn=joinAmbig
 fn joinAmbig (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
+```
+
+```mir
+;; mir -O2 fn=joinAmbig stage=before,final
+fn joinAmbig(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Fast record merges : Babble-Babble and Babble-Java class hierarchies
@@ -80,6 +114,25 @@ fn joinRec (f:bool) -> obj {nothrow}
   (if var(f) (record-new R1 1:int) (record-new R2 2:int))
 ```
 
+```mir
+;; mir -O2 fn=joinRec stage=before,final
+fn joinRec(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = opaque.NameRead() {impure}
+    v2: int = const 2
+    v3: any = record_new R2(v2) {pure}
+    br bb3(v3)
+  bb2:
+    v4: any = opaque.NameRead() {impure}
+    v5: int = const 1
+    v6: any = record_new R1(v5) {pure}
+    br bb3(v6)
+  bb3(v7: any):
+    ret v7
+```
+
 ## Mixed Babble record and implemented Babble interface in both orders
 
 ```babble
@@ -98,6 +151,23 @@ fn implA (f:bool) -> obj {pure unique}
 ;; hir -O1 fn=implA
 fn implA (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
+```
+
+```mir
+;; mir -O2 fn=implA stage=before,final
+fn implA(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Mixed Babble record and unrelated Babble interface in both orders
@@ -120,6 +190,23 @@ fn unrA (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
 ```
 
+```mir
+;; mir -O2 fn=unrA stage=before,final
+fn unrA(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
+```
+
 ## Babble Closeable record and interface merged with Java AutoCloseable
 
 ```babble
@@ -140,6 +227,23 @@ fn acRec (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
 ```
 
+```mir
+;; mir -O2 fn=acRec stage=before,final
+fn acRec(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
+```
+
 ## Babble Closeable record merged with unrelated Java Runnable
 
 ```babble
@@ -158,6 +262,23 @@ fn runA (f:bool) -> obj {pure unique}
 ;; hir -O1 fn=runA
 fn runA (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
+```
+
+```mir
+;; mir -O2 fn=runA stage=before,final
+fn runA(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Babble interface extending Java interface merged with sibling and unrelated Java interfaces
@@ -184,6 +305,23 @@ fn mixCh (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
 ```
 
+```mir
+;; mir -O2 fn=mixCh stage=before,final
+fn mixCh(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
+```
+
 ## Java interface diamond merges : ReadableByteChannel and WritableByteChannel
 
 ```babble
@@ -203,6 +341,23 @@ fn rw (f:bool) -> obj {pure unique}
 ;; hir -O1 fn=rw
 fn rw (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
+```
+
+```mir
+;; mir -O2 fn=rw stage=before,final
+fn rw(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Java interface diamond merges : ByteChannel vs InterruptibleChannel and unrelated Closeable vs Flushable
@@ -227,6 +382,23 @@ fn bi (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
 ```
 
+```mir
+;; mir -O2 fn=bi stage=before,final
+fn bi(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
+```
+
 ## Mixed Java class and unrelated Java interface merges in both orders
 
 ```babble
@@ -245,6 +417,23 @@ fn ci (f:bool) -> obj {pure unique}
 ;; hir -O1 fn=ci
 fn ci (f:bool) -> obj {pure unique}
   (if var(f) (array-new SIZE 0:int) (array-new SIZE 0:int))
+```
+
+```mir
+;; mir -O2 fn=ci stage=before,final
+fn ci(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 0
+    v2: any = opaque.ArrayCreate(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: int = const 0
+    v4: any = opaque.ArrayCreate(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Babble diamond Leaf merged with AltBase and loop back-edge record merge
@@ -281,4 +470,68 @@ fn loopJoin (n:int) -> obj {nothrow}
       (set cur (if (==:bool var(i) 0:int) (record-new R1 var(i)) (record-new R2 var(i))))
       (set i += 1:int)))
   var(cur)
+```
+
+```mir
+;; mir -O2 fn=loopJoin stage=before
+fn loopJoin(v0: int) -> any:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: int = const 0
+    v3: any = record_new R1(v2) {pure}
+    v4: int = const 0
+    v5: any = const null
+    br bb1(v5, v4, v3)
+  bb1(v6: any, v7: int, v8: any):
+    v9: bool = lt v7, v0 {pure}
+    br_if v9, bb3, bb2
+  bb2:
+    ret v8
+  bb3:
+    v10: int = const 0
+    v11: bool = eq v7, v10 {pure}
+    br_if v11, bb5, bb4
+  bb4:
+    v12: any = opaque.NameRead() {impure}
+    v13: any = record_new R2(v7) {pure}
+    br bb6(v13)
+  bb5:
+    v14: any = opaque.NameRead() {impure}
+    v15: any = record_new R1(v7) {pure}
+    br bb6(v15)
+  bb6(v16: any):
+    v17: int = const 1
+    v18: int = add v7, v17 {pure}
+    v19: any = convert.any v18
+    br bb1(v19, v18, v16)
+```
+
+```mir
+;; mir -O2 fn=loopJoin
+fn loopJoin(v0: int) -> any:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: int = const 0
+    v3: any = record_new R1(v2) {pure}
+    br bb1(v2, v3)
+  bb1(v4: int, v5: any):
+    v6: bool = lt v4, v0 {pure}
+    br_if v6, bb3, bb2
+  bb2:
+    ret v5
+  bb3:
+    v7: bool = eq v4, v2 {pure}
+    br_if v7, bb5, bb4
+  bb4:
+    v8: any = opaque.NameRead() {impure}
+    v9: any = record_new R2(v4) {pure}
+    br bb6(v9)
+  bb5:
+    v10: any = opaque.NameRead() {impure}
+    v11: any = record_new R1(v4) {pure}
+    br bb6(v11)
+  bb6(v12: any):
+    v13: int = const 1
+    v14: int = add v4, v13 {pure}
+    br bb1(v14, v12)
 ```

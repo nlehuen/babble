@@ -571,6 +571,66 @@ public class OptimizerTestCase {
                 "Expected cross-module Vec3 methods to inline & scalar-replace in AOT jar, got: " + calls);
     }
 
+    @Test
+    public void testO2SsaMirPipelineAndBytecode() throws Exception {
+        String code = ""
+                + "def f = fn (flag : bool, x : double) : double -> (\n"
+                + "  def k = if flag then (4) else (4)\n"
+                + "  def a = java.lang.Math.abs(x)\n"
+                + "  def b = java.lang.Math.abs(a)\n"
+                + "  b + (k * 10 + 2)\n"
+                + ")\n"
+                + "f(true, -3.5)\n";
+        List<String> mirStages = new ArrayList<>();
+        org.babblelang.ir.IrObserver obs = new org.babblelang.ir.IrObserver() {
+            @Override
+            public void onSnapshot(org.babblelang.ir.IrSnapshot snap) {
+                if (snap.tier() == org.babblelang.ir.IrTier.MIR) {
+                    mirStages.add(snap.stage());
+                }
+            }
+
+            @Override
+            public boolean wants(org.babblelang.ir.IrTier tier, int optLevel, String stage) {
+                return tier == org.babblelang.ir.IrTier.MIR;
+            }
+        };
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 2);
+        engine.put(BabbleCompiler.IR_OBSERVER, obs);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
+        Assertions.assertTrue(mirStages.contains("before"), "Expected MIR before snapshot: " + mirStages);
+        Assertions.assertTrue(mirStages.contains("after:SccpPass"), "Expected MIR after:SccpPass snapshot: " + mirStages);
+        Assertions.assertTrue(mirStages.contains("final"), "Expected MIR final snapshot: " + mirStages);
+        Object res = cs.eval();
+        Assertions.assertEquals(45.5, ((Number) res).doubleValue(), 1e-9);
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+        List<String> calls = methodCalls(cn, "fn$0$f$spec");
+        long absCalls = calls.stream().filter(c -> c.equals("java/lang/Math.abs")).count();
+        Assertions.assertEquals(1, absCalls, "Expected -O2 GvnCsePass to collapse Math.abs(Math.abs(x)) to 1 call, got: " + calls);
+    }
+
+    @Test
+    public void testO2BabblecAotJar(@TempDir Path dir) throws Exception {
+        Files.writeString(dir.resolve("main.ba"), ""
+                + "def Lim = record (k : int) ()\n"
+                + "def sumTo = fn (lim : Lim, a : int, b : int) : int -> (\n"
+                + "  def i = 0\n"
+                + "  def acc = 0\n"
+                + "  while i < a * b + lim.k then (\n"
+                + "    acc += i\n"
+                + "    i += 1\n"
+                + "  )\n"
+                + "  acc\n"
+                + ")\n"
+                + "println(sumTo(Lim(1), 2, 2))\n");
+        Path jar = dir.resolve("app-o2.jar");
+        Babblec.compile(dir.resolve("main.ba"), dir, jar, new javax.script.SimpleScriptContext(), 2);
+        Assertions.assertEquals("10", runJar(jar));
+    }
+
     private static List<String> methodCalls(ClassNode cn, String methodName) {
         MethodNode mn = cn.methods.stream().filter(m -> m.name.equals(methodName)).findFirst()
                 .orElseThrow(() -> new AssertionError("Missing method " + methodName + " in "

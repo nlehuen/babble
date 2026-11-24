@@ -37,6 +37,23 @@ fn pickRoot (flag:bool) -> obj {nothrow unique}
   (if var(flag) (call name(C1)) (call name(C2)))
 ```
 
+```mir
+;; mir -O2 fn=pickRoot stage=before,final
+fn pickRoot(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.DynamicCall(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: any = opaque.NameRead() {impure}
+    v4: any = opaque.DynamicCall(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
+```
+
 ## Annotated Root join : interface-interface and inherited-default class-class
 
 ```babble
@@ -57,6 +74,23 @@ fn joinD (flag:bool) -> obj {nothrow unique}
 ;; hir -O1 fn=joinD
 fn joinD (flag:bool) -> obj {nothrow unique}
   (if var(flag) (call name(D1)) (call name(D2)))
+```
+
+```mir
+;; mir -O2 fn=joinD stage=before,final
+fn joinD(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.DynamicCall(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: any = opaque.NameRead() {impure}
+    v4: any = opaque.DynamicCall(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Unannotated if/else interface join
@@ -84,6 +118,21 @@ fn joinIface (flag:bool, a:obj, b:obj) -> obj {nothrow unique}
   (call (select var(r).tag))
 ```
 
+```mir
+;; mir -O2 fn=joinIface stage=before,final
+fn joinIface(v0: bool, v1: any, v2: any) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    br bb3(v2)
+  bb2:
+    br bb3(v1)
+  bb3(v3: any):
+    v4: any = opaque.DynamicSelect(v3) {impure}
+    v5: any = opaque.DynamicCall(v4) {impure}
+    ret v5
+```
+
 ## Java class hierarchy join : StringBuilder/StringBuffer -> any
 
 ```babble
@@ -104,6 +153,23 @@ fn pickBuf (flag:bool) -> obj {io}
 ;; hir -O1 fn=pickBuf
 fn pickBuf (flag:bool) -> obj {io}
   (if var(flag) (jnew StringBuilder "a") (jnew StringBuffer "bc"))
+```
+
+```mir
+;; mir -O2 fn=pickBuf stage=before,final
+fn pickBuf(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = const "bc"
+    v2: any = new_java StringBuffer(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: any = const "a"
+    v4: any = new_java StringBuilder(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Java class hierarchy join : unannotated StringBuilder/StringBuffer -> AbstractStringBuilder
@@ -129,6 +195,26 @@ fn joinBuf (flag:bool) -> int {io}
 fn joinBuf (flag:bool) -> int {io}
   (def xs (if var(flag) (jnew StringBuilder "a") (jnew StringBuffer "bc")))
   (call (select var(xs).length))
+```
+
+```mir
+;; mir -O2 fn=joinBuf stage=before,final
+fn joinBuf(v0: bool) -> int:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = const "bc"
+    v2: any = new_java StringBuffer(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: any = const "a"
+    v4: any = new_java StringBuilder(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    v6: any = opaque.DynamicSelect(v5) {impure}
+    v7: any = opaque.DynamicCall(v6) {impure}
+    v8: int = convert.int v7
+    ret v8
 ```
 
 ## Java class hierarchy join : ArrayList/LinkedList -> AbstractList
@@ -159,6 +245,21 @@ fn pickList (flag:bool) -> obj {pure unique}
   (if var(flag) var(a) var(b))
 ```
 
+```mir
+;; mir -O2 fn=pickList stage=before,final
+fn pickList(v0: bool) -> any:
+  bb0:
+    v1: any = new_java ArrayList() {pure,throws}
+    v2: any = new_java LinkedList() {pure,throws}
+    br_if v0, bb2, bb1
+  bb1:
+    br bb3(v2)
+  bb2:
+    br bb3(v1)
+  bb3(v3: any):
+    ret v3
+```
+
 ## Java interface join : List/Set -> Collection
 
 ```babble
@@ -179,6 +280,25 @@ fn joinCol (c:bool) -> obj {io}
 ;; hir -O1 fn=joinCol
 fn joinCol (c:bool) -> obj {io}
   (if var(c) (jcall Collections.singletonList "a") (jcall Collections.singleton "b"))
+```
+
+```mir
+;; mir -O2 fn=joinCol stage=before,final
+fn joinCol(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = const "b"
+    v2: any = call_java Collections.singleton(v1) {impure}
+    v3: any = checkcast v2 <java|java.util.Set|java.util.Set>
+    br bb3(v3)
+  bb2:
+    v4: any = const "a"
+    v5: any = call_java Collections.singletonList(v4) {impure}
+    v6: any = checkcast v5 <java|java.util.List|java.util.List>
+    br bb3(v6)
+  bb3(v7: any):
+    ret v7
 ```
 
 ## Java interface join : List/Set -> any
@@ -203,6 +323,25 @@ fn pickColl (c:bool) -> obj {io}
   (if var(c) (jcall List.of 1:int) (jcall Set.of 2:int))
 ```
 
+```mir
+;; mir -O2 fn=pickColl stage=before,final
+fn pickColl(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: int = const 2
+    v2: any = call_java Set.of(v1) {impure}
+    v3: any = checkcast v2 <java|java.util.Set|java.util.Set>
+    br bb3(v3)
+  bb2:
+    v4: int = const 1
+    v5: any = call_java List.of(v4) {impure}
+    v6: any = checkcast v5 <java|java.util.List|java.util.List>
+    br bb3(v6)
+  bb3(v7: any):
+    ret v7
+```
+
 ## Unrelated Babble classes and object/string merges -> Object
 
 ```babble
@@ -222,6 +361,23 @@ fn pickCls (flag:bool) -> obj {nothrow unique}
 ;; hir -O1 fn=pickCls
 fn pickCls (flag:bool) -> obj {nothrow unique}
   (if var(flag) (call name(A)) (call name(B)))
+```
+
+```mir
+;; mir -O2 fn=pickCls stage=before,final
+fn pickCls(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = opaque.DynamicCall(v1) {impure}
+    br bb3(v2)
+  bb2:
+    v3: any = opaque.NameRead() {impure}
+    v4: any = opaque.DynamicCall(v3) {impure}
+    br bb3(v4)
+  bb3(v5: any):
+    ret v5
 ```
 
 ## Two distinct lambda closures merged as fn () : int
@@ -244,4 +400,19 @@ fn pickFn (flag:bool) -> obj {nothrow}
 ;; hir -O1 fn=pickFn
 fn pickFn (flag:bool) -> obj {nothrow}
   (if var(flag) (fn-ref <anon#0>) (fn-ref <anon#1>))
+```
+
+```mir
+;; mir -O2 fn=pickFn stage=before,final
+fn pickFn(v0: bool) -> any:
+  bb0:
+    br_if v0, bb2, bb1
+  bb1:
+    v1: any = opaque.FunctionRef() {pure}
+    br bb3(v1)
+  bb2:
+    v2: any = opaque.FunctionRef() {pure}
+    br bb3(v2)
+  bb3(v3: any):
+    ret v3
 ```

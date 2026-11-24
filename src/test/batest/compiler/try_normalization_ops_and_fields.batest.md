@@ -1,4 +1,4 @@
-# HIR try-expression normalization : binary, assignment, array, collection, and Babble call spilling
+# Try-Expression Stack-Empty Normalization : Operators and Field Writes
 
 References : `BIP001-I2`, `BIP014-I2`, `org.babblelang.opt.hir.HirTryNormalize`.
 
@@ -21,6 +21,7 @@ def SubCalc = class () implements Calc (
     )
 )
 ```
+
 
 ## Binary LHS try vs RHS try spilling
 
@@ -84,6 +85,26 @@ fn rhsTry (s:obj) -> int {io}
     (+:int var($try0) var($try1)))
 ```
 
+```mir
+;; mir -O2 fn=rhsTry stage=before,final
+fn rhsTry(v0: any) -> int:
+  bb0:
+    v1: int = const 10
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v2: any = opaque.NameRead() {impure}
+    v3: int = call parse(v0) {impure}
+    br bb4(v3)
+  bb2(v4: any) [handler]:
+    br bb3
+  bb3:
+    v5: int = const 2
+    br bb4(v5)
+  bb4(v6: int):
+    v7: int = add v1, v6 {pure}
+    ret v7
+```
+
 ## Logic short-circuit containsTry on left and right operands
 
 ```babble
@@ -129,6 +150,97 @@ fn logicTry (f:bool, s:obj) -> bool {io}
   (and var(a) var(b))
 ```
 
+```mir
+;; mir -O2 fn=logicTry stage=before
+fn logicTry(v0: bool, v1: any) -> bool:
+  bb0:
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v2: any = opaque.NameRead() {impure}
+    v3: int = call parse(v1) {impure}
+    v4: int = const 0
+    v5: bool = gt v3, v4 {pure}
+    br bb4(v5)
+  bb2(v6: any) [handler]:
+    br bb3
+  bb3:
+    v7: bool = const false
+    br bb4(v7)
+  bb4(v8: bool):
+    v9: bool = const false
+    br_if v8, bb5, bb6(v9)
+  bb5:
+    br bb6(v0)
+  bb6(v10: bool):
+    v11: bool = const false
+    br_if v0, bb7, bb12(v11)
+  bb7:
+    br bb8
+  bb8 [unwind: BabbleException -> bb9]:
+    v12: any = opaque.NameRead() {impure}
+    v13: int = call parse(v1) {impure}
+    v14: int = const 0
+    v15: bool = gt v13, v14 {pure}
+    br bb11(v15)
+  bb9(v16: any) [handler]:
+    br bb10
+  bb10:
+    v17: bool = const false
+    br bb11(v17)
+  bb11(v18: bool):
+    br bb12(v18)
+  bb12(v19: bool):
+    v20: bool = const false
+    br_if v10, bb13, bb14(v20)
+  bb13:
+    br bb14(v19)
+  bb14(v21: bool):
+    ret v21
+```
+
+```mir
+;; mir -O2 fn=logicTry
+fn logicTry(v0: bool, v1: any) -> bool:
+  bb0:
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v2: any = opaque.NameRead() {impure}
+    v3: int = call parse(v1) {impure}
+    v4: int = const 0
+    v5: bool = gt v3, v4 {pure}
+    br bb4(v5)
+  bb2(v6: any) [handler]:
+    br bb3
+  bb3:
+    v7: bool = const false
+    br bb4(v7)
+  bb4(v8: bool):
+    v9: bool = const false
+    br_if v8, bb5, bb6(v9)
+  bb5:
+    br bb6(v0)
+  bb6(v10: bool):
+    br_if v0, bb7, bb11(v9)
+  bb7 [unwind: BabbleException -> bb8]:
+    v11: any = opaque.NameRead() {impure}
+    v12: int = call parse(v1) {impure}
+    v13: int = const 0
+    v14: bool = gt v12, v13 {pure}
+    br bb10(v14)
+  bb8(v15: any) [handler]:
+    br bb9
+  bb9:
+    br bb10(v9)
+  bb10(v16: bool):
+    br bb11(v16)
+  bb11(v17: bool):
+    br_if v10, bb12, bb13(v9)
+  bb12:
+    br bb13(v17)
+  bb13(v18: bool):
+    ret v18
+```
+
 ## Compound NameAssign and ThisFieldAssign with try RHS
 
 ```babble
@@ -151,6 +263,27 @@ fn bumpTop (s:obj) -> int {io}
       (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
         5:int)))
   name(top)
+```
+
+```mir
+;; mir -O2 fn=bumpTop stage=before,final
+fn bumpTop(v0: any) -> int:
+  bb0:
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v1: any = opaque.NameRead() {impure}
+    v2: int = call parse(v0) {impure}
+    br bb4(v2)
+  bb2(v3: any) [handler]:
+    br bb3
+  bb3:
+    v4: int = const 5
+    br bb4(v4)
+  bb4(v5: int):
+    v6: any = opaque.NameAssign(v5) {impure}
+    v7: any = opaque.NameRead() {impure}
+    v8: int = convert.int v7
+    ret v8
 ```
 
 ## JavaFieldAssign : instance simple, compound, and receiver try
@@ -219,6 +352,57 @@ fn run (s:obj, f:bool) -> int {io}
   (+:int (get-jfield Point.x var(pt)) (get-jfield Point.y var(pt)))
 ```
 
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: any, v1: bool) -> int:
+  bb0:
+    v2: int = const 1
+    v3: int = const 2
+    v4: any = new_java Point(v2, v3) {pure}
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v5: any = opaque.NameRead() {impure}
+    v6: int = call parse(v0) {impure}
+    br bb4(v6)
+  bb2(v7: any) [handler]:
+    br bb3
+  bb3:
+    v8: int = const 7
+    br bb4(v8)
+  bb4(v9: int):
+    store_jfield v4.x, v9 {write:shared,throws}
+    v10: int = load_jfield v4.y {read:shared,throws}
+    br bb5
+  bb5 [unwind: BabbleException -> bb6]:
+    v11: any = opaque.NameRead() {impure}
+    v12: int = call parse(v0) {impure}
+    br bb8(v12)
+  bb6(v13: any) [handler]:
+    br bb7
+  bb7:
+    v14: int = const 3
+    br bb8(v14)
+  bb8(v15: int):
+    v16: int = add v10, v15 {pure}
+    store_jfield v4.y, v16 {write:shared,throws}
+    br bb9
+  bb9 [unwind: BabbleException -> bb10]:
+    v17: any = opaque.NameRead() {impure}
+    v18: any = opaque.DynamicCall(v17, v1, v4) {impure}
+    br bb12(v18)
+  bb10(v19: any) [handler]:
+    br bb11
+  bb11:
+    br bb12(v4)
+  bb12(v20: any):
+    v21: int = const 9
+    store_jfield v20.x, v21 {write:shared,throws}
+    v22: int = load_jfield v4.x {read:shared,throws}
+    v23: int = load_jfield v4.y {read:shared,throws}
+    v24: int = add v22, v23 {pure}
+    ret v24
+```
+
 ## JavaFieldAssign : static pure receiver chain with try RHS
 
 ```babble
@@ -241,6 +425,29 @@ fn run (s:obj) -> int {io}
         (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
           4:int)))
     (set-jfield counter var(Demo) var($try0)))
+```
+
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: any) -> int:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: any = const "org.babblelang.tests"
+    v3: any = opaque.DynamicCall(v1, v2) {impure}
+    v4: any = opaque.DynamicSelect(v3) {impure}
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v5: any = opaque.NameRead() {impure}
+    v6: int = call parse(v0) {impure}
+    br bb4(v6)
+  bb2(v7: any) [handler]:
+    br bb3
+  bb3:
+    v8: int = const 4
+    br bb4(v8)
+  bb4(v9: int):
+    store_jfield JavaClassDemo.counter, v9 {write:shared,throws}
+    ret v9
 ```
 
 ## DynamicFieldAssign with compound operator and receiver try
@@ -290,285 +497,39 @@ fn run (s:obj, f:bool) -> int {io}
   (get-this-field v)
 ```
 
-## ArrayCreate and ArrayOp with try in args, trailing arg, and try in receiver
-
-```babble
-def run = fn io (s: string, f: bool): int -> (
-    def a = (array of int).of(1, try (parse(s)) catch : exception then (2), 9)
-    a.set(0, try (parse(s)) catch : exception then (4))
-    def v = (try (fail(f, a)) catch : exception then (a)).get(0)
-    v + a.get(1) + a.get(2)
-)
-assert(run("3", false) == 15 and run("x", true) == 15)
-```
-
-```hir
-;; hir -O0 fn=run
-fn run (s:obj, f:bool) -> int {io}
-  (def a
-    (block
-      (def $try0 1:int)
-      (def $try1
-        (try
-          (block
-            (call-fn parse var(s)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            2:int)))
-      (array-new OF var($try0) var($try1) 9:int)))
-  (block
-    (def $try2 var(a))
-    (def $try3 0:int)
-    (def $try4
-      (try
-        (block
-          (call-fn parse var(s)))
-        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-          4:int)))
-    (array-op SET var($try2) var($try3) var($try4)))
-  (def v (array-op GET (block
-        (try
-          (block
-            (call name(fail) var(f) var(a)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            var(a)))) 0:int))
-  (+:int (+:int var(v) (array-op GET var(a) 1:int)) (array-op GET var(a) 2:int))
-```
-
-```hir
-;; hir -O1 fn=run
-fn run (s:obj, f:bool) -> int {io}
-  (def a
-    (block
-      (def $try0 1:int)
-      (def $try1
-        (try
-          (block
-            (call-fn parse var(s)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            2:int)))
-      (array-new OF var($try0) var($try1) 9:int)))
-  (block
-    (def $try2 var(a))
-    (def $try3 0:int)
-    (def $try4
-      (try
-        (block
-          (call-fn parse var(s)))
-        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-          4:int)))
-    (array-op SET var($try2) var($try3) var($try4)))
-  (def v (array-op GET (try
-        (block
-          (call name(fail) var(f) var(a)))
-        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-          var(a))) 0:int))
-  (+:int (+:int var(v) (array-op GET var(a) 1:int)) (array-op GET var(a) 2:int))
-```
-
-## CoreCollectionCall with try arg and trailing arg after try
-
-```babble
-def run = fn io (s: string): int -> (
-    def xs = list(1, try (parse(s)) catch : exception then (5), 10)
-    xs.get(0) + xs.get(1) + xs.get(2)
-)
-assert(run("4") == 15 and run("bad") == 16)
-```
-
-```hir
-;; hir -O0,-O1 fn=run
-fn run (s:obj) -> int {io}
-  (def xs
-    (block
-      (def $try0 1:int)
-      (def $try1
-        (try
-          (block
-            (call-fn parse var(s)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            5:int)))
-      (core-new list var($try0) var($try1) 10:int)))
-  (+:int (+:int (jcall List.get var(xs) 0:int) (jcall List.get var(xs) 1:int)) (jcall List.get var(xs) 2:int))
-```
-
-## SuperCall and InterfaceCall with try in args and receiver
-
-```babble
-def run = fn io (s: string, f: bool): int -> (
-    def c: Calc = SubCalc()
-    def a = c.calc(1, try (parse(s)) catch : exception then (2))
-    def b = (try (fail(f, c)) catch : exception then (c)).calc(3, 4)
-    a + b
-)
-assert(run("5", false) == 15 and run("bad", true) == 12)
-```
-
-```hir
-;; hir -O0 fn=run
-fn run (s:obj, f:bool) -> int {io}
-  (def c (call name(SubCalc)))
-  (def a
-    (block
-      (def $try0 var(c))
-      (def $try1 1:int)
-      (def $try2
-        (try
-          (block
-            (call-fn parse var(s)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            2:int)))
-      (call-iface var($try0).calc var($try1) var($try2))))
-  (def b (call-iface (block
-        (try
-          (block
-            (call name(fail) var(f) var(c)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            var(c)))).calc 3:int 4:int))
-  (+:int var(a) var(b))
-```
-
-```hir
-;; hir -O1 fn=run
-fn run (s:obj, f:bool) -> int {io}
-  (def c (call name(SubCalc)))
-  (def a
-    (block
-      (def $try0 var(c))
-      (def $try1 1:int)
-      (def $try2
-        (try
-          (block
-            (call-fn parse var(s)))
-          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-            2:int)))
-      (call-iface var($try0).calc var($try1) var($try2))))
-  (def b (call-iface (try
-        (block
-          (call name(fail) var(f) var(c)))
-        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-          var(c))).calc 3:int 4:int))
-  (+:int var(a) var(b))
-```
-
-## SelfRecurseCall (non-tail) and SelfTailCall with try arguments
-
-```babble
-def nonT = fn io (n: int, s: string): int -> (
-  if n <= 0 then (0)
-  else (1 + recurse(n - 1, try (fail(s == "x", s)) catch : exception then ("1")))
-)
-def tailR = fn io (n: int, a: int, s: string): int -> (
-  if n <= 0 then (a)
-  else (tailR(n - 1, a + try (parse(s)) catch : exception then (2), s))
-)
-assert(nonT(3, "x") == 3 and tailR(3, 0, "4") == 12 and tailR(3, 0, "b") == 6)
-```
-
-```hir
-;; hir -O0 fn=nonT
-fn nonT (n:int, s:obj) -> int {io}
-  (if (<=:bool var(n) 0:int)
-    (block 0:int)
-    (block
-      (block
-        (def $try0 1:int)
-        (def $try1
-          (block
-            (def $try2 (-:int var(n) 1:int))
-            (def $try3
-              (try
-                (block
-                  (call name(fail) (==:bool var(s) "x") var(s)))
-                (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-                  "1")))
-            (self-recurse nonT var($try2) var($try3))))
-        (+:int var($try0) var($try1)))))
-```
-
-```hir
-;; hir -O1 fn=nonT
-fn nonT (n:int, s:obj) -> int {io}
-  (if (<=:bool var(n) 0:int)
-    0:int
-    (block
-      (def $try0 1:int)
-      (def $try1
-        (block
-          (def $try2 (-:int var(n) 1:int))
-          (def $try3
-            (try
-              (block
-                (call name(fail) (==:bool var(s) "x") var(s)))
-              (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-                "1")))
-          (self-recurse nonT var($try2) var($try3))))
-      (+:int var($try0) var($try1))))
-```
-
-```hir
-;; hir -O0 fn=tailR
-fn tailR (n:int, a:int, s:obj) -> int {io}
-  (if (<=:bool var(n) 0:int)
-    (block var(a))
-    (block
-      (block
-        (def $try0 (-:int var(n) 1:int))
-        (def $try1
-          (block
-            (def $try2 var(a))
-            (def $try3
-              (try
-                (block
-                  (call-fn parse var(s)))
-                (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-                  2:int)))
-            (+:int var($try2) var($try3))))
-        (tail-call tailR var($try0) var($try1) var(s)))))
-```
-
-```hir
-;; hir -O1 fn=tailR
-fn tailR (n:int, a:int, s:obj) -> int {io}
-  (if (<=:bool var(n) 0:int)
-    var(a)
-    (block
-      (def $try0 (-:int var(n) 1:int))
-      (def $try1
-        (block
-          (def $try2 var(a))
-          (def $try3
-            (try
-              (block
-                (call-fn parse var(s)))
-              (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-                2:int)))
-          (+:int var($try2) var($try3))))
-      (tail-call tailR var($try0) var($try1) var(s))))
-```
-
-## DirectBabbleCall and DirectThisMethodCall with try in args and receiver
-
-```babble
-def run = fn io (s: string, f: bool): int -> (
-    def b = Box(10)
-    def r1 = addIO(1, try (parse(s)) catch : exception then (2))
-    def r2 = b.addIO(1, try (parse(s)) catch : exception then (3))
-    def r3 = (try (fail(f, b)) catch : exception then (b)).addIO(2, 3)
-    r1 + r2 + r3
-)
-assert(run("5", false) == 37 and run("bad", true) == 32)
-```
-
-```hir
-;; hir -O0 fn=run check
-contains (call-fn addIO var($try1) var($try2))
-contains (call-method var($try3).addIO var($try4) var($try5))
-contains (def r3 (call-method (block
-```
-
-```hir
-;; hir -O1 fn=run check
-contains (call-fn addIO var($try1) var($try2))
-contains (call-method var($try3).addIO var($try4) var($try5))
-contains (def r3 (call-method (try
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: any, v1: bool) -> int:
+  bb0:
+    v2: any = opaque.NameRead() {impure}
+    v3: int = const 10
+    v4: any = opaque.DynamicCall(v2, v3) {impure}
+    br bb1
+  bb1 [unwind: BabbleException -> bb2]:
+    v5: any = opaque.NameRead() {impure}
+    v6: int = call parse(v0) {impure}
+    br bb4(v6)
+  bb2(v7: any) [handler]:
+    br bb3
+  bb3:
+    v8: int = const 2
+    br bb4(v8)
+  bb4(v9: int):
+    v10: any = opaque.DynamicFieldAssign(v4, v9) {impure}
+    br bb5
+  bb5 [unwind: BabbleException -> bb6]:
+    v11: any = opaque.NameRead() {impure}
+    v12: any = opaque.DynamicCall(v11, v1, v4) {impure}
+    br bb8(v12)
+  bb6(v13: any) [handler]:
+    br bb7
+  bb7:
+    br bb8(v4)
+  bb8(v14: any):
+    v15: int = load_field v4.v {read:shared,throws}
+    v16: int = const 1
+    v17: int = add v15, v16 {pure}
+    v18: any = opaque.DynamicFieldAssign(v14, v17) {write:shared,throws}
+    v19: int = load_field v4.v {read:shared,throws}
+    ret v19
 ```
