@@ -61,10 +61,10 @@ final class JavaEffectResolver {
 
     EffectChecker.JavaCallProfile resolveJavaMethodProfile(Class<?> owner, String methodName, Method exactMethod) {
         AxiomData.AxiomTable axioms = localAxioms.get();
-        // Tier 1: File / module / session axioms (BIP019).
+        // Tier 1: File / module / session axioms (BIP019, BIP030).
         if (!axioms.isEmpty()) {
             AxiomData.MemberAxiom localAx = AxiomData.lookupMethod(owner, methodName, exactMethod, axioms::directMembers);
-            if (localAx != null) {
+            if (localAx != null && !localAx.inferredEffects()) {
                 return localAx.toProfile(exactMethod);
             }
         }
@@ -95,13 +95,15 @@ final class JavaEffectResolver {
         if (declOwner != owner && hasClassEffectAnnotation(declOwner)) {
             return profileFromAnnotations(exactMethod, declOwner, true);
         }
-        // Tier 6: Curated axioms (BIP019).
+        // Tier 6: Curated axioms (BIP019, BIP030).
         AxiomData.MemberAxiom curatedAx = hostEffects.builtinAxioms().methodAxiom(owner, methodName, exactMethod);
         if (curatedAx != null) {
             if (exactMethod != null && Boolean.getBoolean("babble.axioms.report")) {
                 reportRedundantCuratedAxiom(exactMethod, curatedAx);
             }
-            return curatedAx.toProfile(exactMethod);
+            if (!curatedAx.inferredEffects()) {
+                return curatedAx.toProfile(exactMethod);
+            }
         }
         // Tier 7: ASM bytecode static analysis (on by default, BIP019 §5).
         if (exactMethod != null && hostEffects.bytecodeEffectAnalysis()) {
@@ -117,10 +119,10 @@ final class JavaEffectResolver {
 
     EffectChecker.JavaCallProfile resolveJavaConstructorProfile(Class<?> owner, Constructor<?> exactCtor) {
         AxiomData.AxiomTable axioms = localAxioms.get();
-        // Tier 1: File / module / session constructor axioms (BIP019).
+        // Tier 1: File / module / session constructor axioms (BIP019, BIP030).
         if (!axioms.isEmpty()) {
             AxiomData.MemberAxiom localAx = AxiomData.lookupConstructor(owner, exactCtor, axioms::directMembers);
-            if (localAx != null) {
+            if (localAx != null && !localAx.inferredEffects()) {
                 return localAx.toProfile(exactCtor);
             }
         }
@@ -147,13 +149,15 @@ final class JavaEffectResolver {
         if (hasClassEffectAnnotation(owner)) {
             return profileFromAnnotations(exactCtor, owner, true);
         }
-        // Tier 6: Curated axioms (BIP019).
+        // Tier 6: Curated axioms (BIP019, BIP030).
         AxiomData.MemberAxiom curatedAx = hostEffects.builtinAxioms().constructorAxiom(owner, exactCtor);
         if (curatedAx != null) {
             if (exactCtor != null && Boolean.getBoolean("babble.axioms.report")) {
                 reportRedundantCuratedAxiom(exactCtor, curatedAx);
             }
-            return curatedAx.toProfile(exactCtor);
+            if (!curatedAx.inferredEffects()) {
+                return curatedAx.toProfile(exactCtor);
+            }
         }
         int paramCount = exactCtor != null ? exactCtor.getParameterCount() : 0;
         // Tier 7: ASM bytecode static analysis of constructors (on by default, BIP019 §5).

@@ -1,4 +1,4 @@
-;; Curated axioms for java.util.regex (BIP019-I6)
+;; Curated axioms for java.util.regex (BIP019-I6, BIP030-P2)
 
-axiom java.util.regex.Pattern: class nullmarked (
+axiom java.util.regex.Pattern: class notnull (
 )

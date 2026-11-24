@@ -112,7 +112,7 @@ public final class AxiomDumper {
         }
         sb.append(": class");
         if (effective.nullMarked(cls)) {
-            sb.append(" nullmarked");
+            sb.append(" notnull");
         }
         if (effective.isDeeplyImmutable(cls)) {
             sb.append(" immutable");
@@ -189,7 +189,30 @@ public final class AxiomDumper {
         JavaNullability.Nullness[] paramNulls;
         JavaNullability.Nullness retNull;
 
-        if (curated != null) {
+        if (curated != null && curated.inferredEffects()) {
+            boolean same = BytecodeEffectAnalyzer.isAtLeastAsStrongAs(inferred, curated, exec);
+            if (same) {
+                comment = ";; curated, inferred the same";
+            } else if (inferred.reasons().isEmpty()) {
+                comment = ";; curated nullness, inferred effects";
+            } else {
+                comment = ";; curated nullness, inferred effects (" + String.join(", ", inferred.reasons()) + ")";
+            }
+            EffectChecker.JavaCallProfile prof = inferred.toProfile(exec);
+            eff = prof.effects();
+            mutRecv = prof.mutReceiver();
+            borrowRecv = prof.borrowReceiver();
+            mutParams = prof.mutParams();
+            borrowParams = prof.borrowParams();
+            view = prof.view();
+            shallow = prof.shallow();
+            fresh = prof.fresh();
+            foldable = false;
+            paramNulls = curated.hasSignature() ? curated.paramNullness() : null;
+            retNull = curated.returnNullness() != null
+                    ? curated.returnNullness()
+                    : (inferred.returnNonNull() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.NULLABLE);
+        } else if (curated != null) {
             boolean same = BytecodeEffectAnalyzer.isAtLeastAsStrongAs(inferred, curated, exec);
             comment = same ? ";; curated, inferred the same" : ";; curated";
             EffectChecker.JavaCallProfile prof = curated.toProfile(exec);
@@ -203,7 +226,9 @@ public final class AxiomDumper {
             fresh = prof.fresh();
             foldable = curated.foldable();
             paramNulls = curated.hasSignature() ? curated.paramNullness() : null;
-            retNull = curated.hasSignature() ? curated.returnNullness() : null;
+            retNull = curated.returnNullness() != null
+                    ? curated.returnNullness()
+                    : (inferred.returnNonNull() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.NULLABLE);
         } else {
             if (inferred.reasons().isEmpty()) {
                 comment = ";; inferred";
@@ -295,7 +320,7 @@ public final class AxiomDumper {
         boolean nullable = nullness == JavaNullability.Nullness.NULLABLE || nullness == JavaNullability.Nullness.UNSPECIFIED || nullness == null;
         if (cls.isArray()) {
             String inner = "array of " + formatJavaType(cls.getComponentType(), JavaNullability.Nullness.NULLABLE);
-            return nullable ? "(" + inner + ")?" : inner;
+            return nullable ? "(" + inner + ")?" : "(" + inner + ")!";
         }
         String base;
         if (cls == String.class) {
@@ -314,7 +339,7 @@ public final class AxiomDumper {
         if (nullable) {
             return base.contains(" of ") ? "(" + base + ")?" : base + "?";
         }
-        return base;
+        return base.contains(" of ") ? "(" + base + ")!" : base + "!";
     }
 
     private static List<String> paramDescriptors(Executable exec) {
@@ -600,24 +625,34 @@ public final class AxiomDumper {
                                 + cls.getName() + ".new" + (m.hasSignature() ? m.paramDescriptors() : ""));
                     }
                 } else {
-                    boolean matched = false;
+                    List<Method> matchedMethods = new ArrayList<>();
                     for (Method jm : cls.getMethods()) {
                         if (m.matches(jm)) {
-                            matched = true;
-                            break;
+                            matchedMethods.add(jm);
                         }
                     }
-                    if (!matched && cls.isInterface()) {
+                    if (matchedMethods.isEmpty() && cls.isInterface()) {
                         for (Method om : Object.class.getMethods()) {
                             if (m.matches(om)) {
-                                matched = true;
-                                break;
+                                matchedMethods.add(om);
                             }
                         }
                     }
-                    if (!matched) {
+                    if (matchedMethods.isEmpty()) {
                         errors.add("Curated method axiom matches no public method : "
                                 + cls.getName() + "." + m.name() + (m.hasSignature() ? m.paramDescriptors() : ""));
+                    } else if (!m.hasSignature() && m.returnDescriptor() != null) {
+                        for (Method jm : matchedMethods) {
+                            if (jm.isBridge() || jm.isSynthetic()) {
+                                continue;
+                            }
+                            String actualRet = Type.getDescriptor(jm.getReturnType());
+                            if (!m.returnDescriptor().equals(actualRet)) {
+                                errors.add("Curated return-only axiom return type mismatch on "
+                                        + cls.getName() + "." + m.name() + Type.getMethodDescriptor(jm)
+                                        + " : expected " + m.returnDescriptor() + ", actual " + actualRet);
+                            }
+                        }
                     }
                 }
             }

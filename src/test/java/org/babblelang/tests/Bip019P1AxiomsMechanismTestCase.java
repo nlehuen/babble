@@ -38,17 +38,17 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
                     def abs: fn nothrow idempotent foldable (a: double): double
                     def sqrt: fn nothrow foldable (a: double): double
                 )
-                axiom java.lang.String: class exact nullmarked immutable (
+                axiom java.lang.String: class exact notnull immutable (
                     def *: fn pure
-                    def trim: fn nothrow idempotent foldable (): string
+                    def trim: fn nothrow idempotent foldable (): string!
                 ) static (
-                    def valueOf: fn (data: array of char): string
+                    def valueOf: fn (data: (array of char)!): string!
                 )
-                axiom java.util.Collection of E: class nullmarked (
+                axiom java.util.Collection of E: class notnull (
                     def add: fn mut shared shallow (shared e: E): bool
-                    def iterator: fn nothrow view (): java.util.Iterator of E
+                    def iterator: fn nothrow view (): (java.util.Iterator of E)!
                     def size: fn nothrow (): int
-                    def toArray: fn of T (a: array of T): array of T
+                    def toArray: fn of T (a: (array of T)!): (array of T)!
                 )
                 """;
         BuiltinAxioms custom = BuiltinAxioms.fromSource(axiomsSrc, "test/curated.ba");
@@ -86,7 +86,7 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
     @Test
     public void testExactClassAxiomDoesNotApplyToSubclasses() throws Exception {
         String axiomsSrc = """
-                axiom java.util.AbstractList of E: class exact nullmarked immutable (
+                axiom java.util.AbstractList of E: class exact notnull immutable (
                     def size: fn nothrow (): int
                 )
                 """;
@@ -152,12 +152,12 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
         String script = """
                 axiom java.util.Arrays: class (
                 ) static (
-                    def copyOf: fn nothrow fresh (original: array of int, newLength: int): array of int
-                    def fill: fn (mut a: array of int, val: int): void
+                    def copyOf: fn nothrow fresh (original: (array of int)!, newLength: int): (array of int)!
+                    def fill: fn (mut a: (array of int)!, val: int): void
                 )
                 axiom java.lang.Integer: class (
                 ) static (
-                    def valueOf: fn nothrow (i: int): java.lang.Integer
+                    def valueOf: fn nothrow (i: int): java.lang.Integer!
                 )
                 def f = fn (): int -> (
                     def a = (array of int).of(1, 2, 3)
@@ -189,11 +189,11 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
     public void testFormatterRoundTripForAxioms() throws Exception {
         String source = """
                 ;; Class axiom with instance and static blocks
-                axiom java.util.Collection of E: class nullmarked (
+                axiom java.util.Collection of E: class notnull (
                     def add: fn mut shared shallow (shared e: E): bool
-                    def iterator: fn nothrow view (): java.util.Iterator of E
+                    def iterator: fn nothrow view (): (java.util.Iterator of E)!
                     def size: fn nothrow (): int
-                    def toArray: fn of T (a: array of T): array of T
+                    def toArray: fn of T (a: (array of T)!): (array of T)!
                 ) static (
                     def new: fn shared
                 )

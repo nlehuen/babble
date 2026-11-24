@@ -177,7 +177,7 @@ public class AxiomsTestCase {
 
         String listDump = AxiomDumper.dumpClass(java.util.ArrayList.class, BuiltinAxioms.standard());
         Assertions.assertEquals(List.of(), AxiomDumper.checkCanonicalOrder(listDump, "ArrayList"));
-        Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class nullmarked (\n"), listDump);
-        Assertions.assertTrue(listDump.contains("def add: fn mut shared shallow (shared p0: any): bool"), listDump);
+        Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class notnull (\n"), listDump);
+        Assertions.assertTrue(listDump.contains("def add: fn mut shared shallow (shared p0: any!): bool"), listDump);
     }
 }

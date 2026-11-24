@@ -74,7 +74,7 @@ final class JavaNullability {
         AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
         if (local != null && !local.isEmpty()) {
             AxiomData.MemberAxiom ax = AxiomData.lookupMethod(method.getDeclaringClass(), method.getName(), method, local::directMembers);
-            if (ax != null && ax.hasSignature() && ax.returnNullness() != null) {
+            if (ax != null && ax.returnNullness() != null) {
                 return ax.returnNullness();
             }
         }

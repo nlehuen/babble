@@ -1713,7 +1713,7 @@ public class TypeCheckerTestCase {
                 def w = "a" is (null)!
                 def y = ("a" as any?) as (null)!
                 def z = ("a" as any?) as void!
-                axiom java.lang.String.valueOf : fn (arg : (null)!) : string
+                axiom java.lang.String.valueOf : fn (arg : (null)!) : string!
                 """,
                 "1:10 Cannot make null non-nullable : null",
                 "2:10 Cannot make null non-nullable : null",

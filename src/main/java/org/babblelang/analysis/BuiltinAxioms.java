@@ -150,13 +150,13 @@ public final class BuiltinAxioms {
         return AxiomData.lookupInheritedContract(javaSupertypes, methodName, arity, this::directMembers);
     }
 
-    /** Curated return nullness for a Java method, or {@code null} if no curated signature specifies it. */
+    /** Curated return nullness for a Java method, or {@code null} if no curated signature or return type specifies it. */
     JavaNullability.Nullness returnNullness(Method method) {
         if (isEmpty() || method == null) {
             return null;
         }
         AxiomData.MemberAxiom ax = methodAxiom(method.getDeclaringClass(), method.getName(), method);
-        if (ax != null && ax.hasSignature() && ax.returnNullness() != null) {
+        if (ax != null && ax.returnNullness() != null) {
             return ax.returnNullness();
         }
         return null;
@@ -194,12 +194,12 @@ public final class BuiltinAxioms {
         return null;
     }
 
-    /** Whether a Java executable's declaring class is {@code nullmarked} by a curated axiom. */
+    /** Whether a Java executable's declaring class is {@code notnull} by a curated axiom. */
     public boolean nullMarked(Executable exec) {
         return exec != null && nullMarked(exec.getDeclaringClass());
     }
 
-    /** Whether a Java class is {@code nullmarked} by a curated axiom. */
+    /** Whether a Java class is {@code notnull} by a curated axiom. */
     public boolean nullMarked(Class<?> cls) {
         if (isEmpty() || cls == null) {
             return false;

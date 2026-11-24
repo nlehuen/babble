@@ -1,8 +1,8 @@
-;; Curated axioms for java.lang.reflect (BIP019-I6)
+;; Curated axioms for java.lang.reflect (BIP019-I6, BIP030-P2)
 
 axiom java.lang.reflect.Proxy: class (
 ) static (
-    def getInvocationHandler: fn io (proxy: any): java.lang.reflect.InvocationHandler
-    def getProxyClass: fn io (loader: java.lang.ClassLoader?, interfaces: array of (java.lang.Class of any?)): java.lang.Class of any?
-    def newProxyInstance: fn io (loader: java.lang.ClassLoader?, interfaces: array of (java.lang.Class of any?), h: java.lang.reflect.InvocationHandler): any
+    def getInvocationHandler: fn ... (proxy: any!): java.lang.reflect.InvocationHandler!
+    def getProxyClass: fn ... (loader: java.lang.ClassLoader?, interfaces: array of ((java.lang.Class of any?)!)!): (java.lang.Class of any?)!
+    def newProxyInstance: fn ... (loader: java.lang.ClassLoader?, interfaces: array of ((java.lang.Class of any?)!)!, h: java.lang.reflect.InvocationHandler!): any!
 )
