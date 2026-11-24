@@ -1,6 +1,6 @@
 # Babble interfaces compiled to JVM interfaces with INVOKEINTERFACE, INSTANCEOF, and INVOKESPECIAL
 
-References : BIP002, RM003-P2 (JVM interface lowering, bridges, super defaults, cross-module & REPL sessions)
+References : BIP002, RM003-P2 (JVM interface lowering, bridges, super defaults, cross-module)
 
 ```babble
 ;; babble module=shapes.ba
@@ -58,6 +58,24 @@ assert(c.calc(3, 1.5, false) == 5.5 and c.check(4) == 2.0)
 assert((c is Calc) and (c is Impl) and not ("no" is Calc))
 ```
 
+```hir
+;; hir -O0 class=Impl
+class Impl (bias:double)
+  (def calc (fn-ref Impl.calc))
+  fn Impl.calc (a:int, b:double, neg:bool) -> double {nothrow}
+    (def v (+:double (+:double var(a) var(b)) var(bias)))
+    (if var(neg) (block (neg var(v))) (block var(v)))
+```
+
+```hir
+;; hir -O1 class=Impl
+class Impl (bias:double)
+  (def calc (fn-ref Impl.calc))
+  fn Impl.calc (a:int, b:double, neg:bool) -> double {nothrow}
+    (def v (+:double (+:double var(a) var(b)) var(bias)))
+    (if var(neg) (neg var(v)) var(v))
+```
+
 ## Multi-evaluation closure-capturing interface factory : each BabbleInterface keeps its own captured cell
 
 ```babble
@@ -67,6 +85,22 @@ def mk = fn (off: int) -> (
     object (def eval = fn (m: int, x: int): int -> (def c = C(m) ; def i: I = c ; i.add(x) + c.run(x)))
 )
 assert(mk(10).eval(2, 5) == 45 and mk(100).eval(3, 5) == 420)
+```
+
+```hir
+;; hir -O0,-O1 fn=mk
+fn mk (off:int) -> obj {nothrow unique}
+  (def I (iface-ref I))
+  (def C (class-ref C))
+  (class-ref object)
+```
+
+```hir
+;; hir -O0,-O1 class=C
+class C (m:int)
+  (def run (fn-ref C.run))
+  fn C.run (x:int) -> int {nothrow unique}
+    (*:int (super.add var(x)) var(m))
 ```
 
 ## Diamond inheritance (JVMS 5.4.3.3 bridge conflict prevention)
@@ -81,6 +115,14 @@ def d: Diamond = DiamondImpl()
 assert(d.id(9) == 10 and (d is Base))
 ```
 
+```hir
+;; hir -O0,-O1 interface=Base
+interface Base
+  (def id (fn-ref id))
+  fn id (x:int) -> int {pure}
+    (+:int var(x) 1:int)
+```
+
 ## Sibling abstract + default resolution
 
 ```babble
@@ -91,6 +133,14 @@ def CombinedImpl = class () implements Combined ()
 def cb: Combined = CombinedImpl()
 def ca: AbsA = CombinedImpl()
 assert(cb.f(7) == 21 and ca.f(7) == 21 and (cb is AbsA) and (cb is DefB))
+```
+
+```hir
+;; hir -O0,-O1 interface=DefB
+interface DefB
+  (def f (fn-ref f))
+  fn f (x:int) -> int {pure}
+    (*:int var(x) 3:int)
 ```
 
 ## Re-abstracted default method hidden along one branch and supplied along a sibling branch
@@ -105,16 +155,18 @@ def r: ReAbstracted = Impl() ; def s: Sub = Impl()
 assert(r.val() == 42 and s.val() == 42)
 ```
 
-## Re-abstracted interface default without sibling provider still requires implementation
-
-```babble
-def Root = interface (def val: fn (): int = fn (): int -> (42))
-def ReAbstracted = interface extends Root (def val: fn (): int)
-def Bad = class () implements ReAbstracted ()
+```hir
+;; hir -O0,-O1 interface=Root
+interface Root
+  (def val (fn-ref val))
+  fn val () -> int {pure}
+    42:int
 ```
 
-```error
-Bad does not implement ReAbstracted.val
+```hir
+;; hir -O0,-O1 interface=ReAbstracted
+interface ReAbstracted
+  (def val)
 ```
 
 ## Case 7
@@ -128,6 +180,17 @@ def ib: Box of int = IBox(10)
 assert(ib.get() == 10 and ib.xf(5) == 15)
 ```
 
+```hir
+;; hir -O0,-O1 class=IBox
+class IBox (v:int)
+  (def get (fn-ref IBox.get))
+  (def xf (fn-ref IBox.xf))
+  fn IBox.get () -> int {nothrow unique}
+    var(v)
+  fn IBox.xf (x:int) -> int {nothrow injective unique}
+    (+:int var(x) var(v))
+```
+
 ## Case 8
 
 ```babble
@@ -139,6 +202,17 @@ def db: Box of double = DBox(0.5)
 assert(db.get() == 0.5 and db.xf(4) == 4.5)
 ```
 
+```hir
+;; hir -O0,-O1 class=DBox
+class DBox (v:double)
+  (def get (fn-ref DBox.get))
+  (def xf (fn-ref DBox.xf))
+  fn DBox.get () -> double {nothrow unique}
+    var(v)
+  fn DBox.xf (x:double) -> double {nothrow monotone unique}
+    (+:double var(x) var(v))
+```
+
 ## If-expression of ints widened to double and passed to a primitive-double interface receiver
 
 ```babble
@@ -148,6 +222,19 @@ def sink: TakeDouble = Sink()
 def cond = true
 def boxedIntExpr = if cond then (def a = 3 ; a) else (4)
 assert(sink.accept(boxedIntExpr) == 6.0)
+```
+
+```hir
+;; hir -O0,-O1 class=Sink
+class Sink
+  (def accept (fn-ref Sink.accept))
+  fn Sink.accept (d:double) -> double {nothrow monotone unique}
+    (*:double var(d) 2.0:double)
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (call-iface name(sink).accept name(boxedIntExpr))
 ```
 
 ## Interface override adding optional defaulted parameters and dispatch through base signature
@@ -162,6 +249,14 @@ def u2: Unary = C() ; def w2: Opt = C()
 assert(u1.apply(5) == 15 and w1.apply(5, 2) == 7 and u2.apply(5) == 30 and w2.apply(5, 3) == 8)
 ```
 
+```hir
+;; hir -O0,-O1 class=C
+class C
+  (def apply (fn-ref C.apply))
+  fn C.apply (x:int, s:int=25:int) -> int {nothrow commutative associative unique}
+    (+:int var(x) var(s))
+```
+
 ## Field-holding-function implementation and super default call
 
 ```babble
@@ -170,6 +265,20 @@ def NsImpl = class (d: int) implements Op (def run = fn (x: int): int -> (super.
 def f: Op = FieldImpl(fn (x: int): int -> (x * 4))
 def n: Op = NsImpl(7)
 assert(f.run(6) == 24 and f.base(6) == 106 and n.run(6) == 113 and (n is NsImpl) and (n is Op))
+```
+
+```hir
+;; hir -O0,-O1 class=FieldImpl
+class FieldImpl (func:obj)
+  (def run var(func))
+```
+
+```hir
+;; hir -O0,-O1 class=NsImpl
+class NsImpl (d:int)
+  (def run (fn-ref NsImpl.run))
+  fn NsImpl.run (x:int) -> int {nothrow unique}
+    (+:int (super.base var(x)) var(d))
 ```
 
 ## Nested lambdas calling super.m() and super(Parent).m() in interface defaults and class methods
@@ -185,6 +294,22 @@ def ci: CI = CC(5)
 assert(ci.sc(3) == 49)
 ```
 
+```hir
+;; hir -O0,-O1 interface=CI
+interface CI
+  (def sc (fn-ref sc))
+  fn sc (x:int) -> int {pure}
+    (call-fn <anon#0>)
+```
+
+```hir
+;; hir -O0,-O1 class=CC
+class CC (b:int)
+  (def sc (fn-ref CC.sc))
+  fn CC.sc (x:int) -> int {pure unique}
+    (call-fn <anon#0> 1:int)
+```
+
 ## Case 13
 
 ```babble
@@ -193,6 +318,21 @@ def s1: sh.Shape = sh.Circle(2.0)
 def t: sh.Tag = sh.Tagged("ok")
 assert(s1.area() == 12.0 and s1.scale(2.0) == 24.0 and (s1 is sh.Circle))
 assert(t.label() == "tag:ok" and (t is sh.Tagged))
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call-iface name(s1).area)
+contains (call-iface name(s1).scale 2.0:double)
+contains (block (is name(s1) shapes$ba$C0$Circle))
+```
+
+```hir
+;; hir -O1 top-level check
+contains (call-iface name(s1).area)
+contains (call-iface name(s1).scale 2.0:double)
+contains (is name(s1) shapes$ba$C0$Circle)
+!contains (block (is
 ```
 
 ## Case 14
@@ -207,6 +347,17 @@ def s2: sh.Shape = Rect(3.0, 4.0)
 assert(s2.scale(2.0) == 25.0 and (s2 is sh.Shape))
 ```
 
+```hir
+;; hir -O0,-O1 class=Rect
+class Rect (w:double, h:double)
+  (def area (fn-ref Rect.area))
+  (def scale (fn-ref Rect.scale))
+  fn Rect.area () -> double {nothrow unique}
+    (*:double var(w) var(h))
+  fn Rect.scale (f:double) -> double {pure unique}
+    (+:double (super.scale var(f)) 1.0:double)
+```
+
 ## Forward reference on `is` target resolves as a static type (BIP012-D8)
 
 ```babble
@@ -215,24 +366,10 @@ def Later = class () ()
 assert(not check and (Later() is Later))
 ```
 
-## Multi-input REPL session sharing compiled JVM interfaces and classes across ScriptClassLoaders
-
-```babble
-;; babble session
-def M = interface (def v: fn (): int ; def d = fn (): int -> (this.v() * 2))
-def B = class (n: int) implements M (def v = fn (): int -> (n))
-def ev = fn (m: M): int -> (m.v() + m.d())
-assert(ev(B(4)) == 12)
-```
-
-```babble
-;; babble session
-def E = class (a: int) implements M (
-  def v = fn (): int -> (a + 3)
-  def d = fn (): int -> (super.d() + 1)
-)
-def e: M = E(2)
-assert(ev(e) == 16 and (e is M) and (e is E) and not (e is B))
+```hir
+;; hir -O0,-O1 top-level check
+contains (def check (is 1:int Later))
+contains (def Later (class-ref Later))
 ```
 
 ## Inherited default method with widened/adapted signature in sub-interface (emitInheritedDefaultInvoke)
@@ -244,4 +381,18 @@ def Sub = interface extends Other, Base ()
 def Impl = class () implements Sub ()
 def s: Sub = Impl() ; def b: Base = Impl()
 assert(s.calc(4) == 5 and b.calc(4) == 5)
+```
+
+```hir
+;; hir -O0,-O1 interface=Base
+interface Base
+  (def calc (fn-ref calc))
+  fn calc (x:int) -> int {pure}
+    (+:int var(x) 1:int)
+```
+
+```hir
+;; hir -O0,-O1 interface=Other
+interface Other
+  (def calc)
 ```

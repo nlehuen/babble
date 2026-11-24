@@ -32,12 +32,35 @@ Box()
 Member used before definition : late
 ```
 
+```hir
+;; hir -O0,-O1 class=Box
+class Box
+  (def peek (fn-ref Box.peek))
+  (def a (call-method this.peek))
+  (def late 5:int)
+  fn Box.peek () -> int {nothrow unique}
+    (get-this-field late)
+```
+
 ## Case 2
 
 ```babble
 def ok = B(false)
 assert(readB(ok) == 9)
 assert(ok.readFn(ok) == 9)
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call-fn readB name(ok))
+contains (call-method name(ok).readFn name(ok))
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (call-fn readB
+!contains .readFn
+count 2 (get-this-field x)
 ```
 
 ## Warm SelectCache on B.x before triggering requireMemberDefined during construction
@@ -50,6 +73,19 @@ B(true)
 
 ```error
 Member used before definition : x
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call-method name(ok).readFn name(ok))
+contains (call name(B) true:bool)
+```
+
+```hir
+;; hir -O1 top-level check
+!contains .readFn
+contains (get-this-field x)
+contains (call name(B) true:bool)
 ```
 
 ## SelectCache requireMemberDefined on union primitive field on 2nd call (fast path)
@@ -69,6 +105,28 @@ UA()
 Member used before definition : late
 ```
 
+```hir
+;; hir -O0 class=UA
+class UA (a:int=1:int)
+  (def peek (fn-ref UA.peek))
+  (def ok (call-method this.peek (call name(UB))))
+  (def v (call-method this.peek (if (==:bool (get-this-field a) 1:int) (block this) (block (call name(UB))))))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
+```
+
+```hir
+;; hir -O1 class=UA
+class UA (a:int=1:int)
+  (def peek (fn-ref UA.peek))
+  (def ok (call-method this.peek (call name(UB))))
+  (def v (call-method this.peek (if (==:bool (get-this-field a) 1:int) this (call name(UB)))))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
+```
+
 ## Reading captured BoolCell before definition
 
 ```babble
@@ -83,6 +141,15 @@ f()
 
 ```error
 Name used before definition : b
+```
+
+```hir
+;; hir -O0,-O1 fn=f
+fn f () -> obj {nothrow unique}
+  (def r (fn-ref r))
+  (def g (call-fn r))
+  (def b true:bool)
+  (fn-ref <anon#0>)
 ```
 
 ## Assigning captured BoolCell before definition
@@ -101,6 +168,15 @@ f()
 Name used before definition : b
 ```
 
+```hir
+;; hir -O0,-O1 fn=f
+fn f () -> bool {nothrow unique}
+  (def w (fn-ref w))
+  (call-fn w)
+  (def b true:bool)
+  var(b)
+```
+
 ## Reading captured DoubleCell before definition
 
 ```babble
@@ -115,6 +191,15 @@ f()
 
 ```error
 Name used before definition : d
+```
+
+```hir
+;; hir -O0,-O1 fn=f
+fn f () -> obj {nothrow unique}
+  (def r (fn-ref r))
+  (def g (call-fn r))
+  (def d 1.5:double)
+  (fn-ref <anon#0>)
 ```
 
 ## Assigning captured DoubleCell before definition
@@ -133,6 +218,15 @@ f()
 Name used before definition : d
 ```
 
+```hir
+;; hir -O0,-O1 fn=f
+fn f () -> double {nothrow unique}
+  (def w (fn-ref w))
+  (call-fn w)
+  (def d 1.5:double)
+  var(d)
+```
+
 ## Assigning captured IntCell before definition
 
 ```babble
@@ -147,6 +241,15 @@ f()
 
 ```error
 Name used before definition : i
+```
+
+```hir
+;; hir -O0,-O1 fn=f
+fn f () -> int {nothrow unique}
+  (def w (fn-ref w))
+  (call-fn w)
+  (def i 1:int)
+  var(i)
 ```
 
 ## Reading uncaptured reference local before definition
@@ -164,6 +267,14 @@ readRef()
 Name used before definition : s
 ```
 
+```hir
+;; hir -O0,-O1 fn=readRef
+fn readRef () -> obj {nothrow unique}
+  (def x var(s))
+  (def s "hi")
+  var(x)
+```
+
 ## Assigning uncaptured reference local before definition
 
 ```babble
@@ -179,10 +290,29 @@ assignRef()
 Name used before definition : s
 ```
 
+```hir
+;; hir -O0,-O1 fn=assignRef
+fn assignRef () -> obj {nothrow unique}
+  (set s "ok")
+  (def s "hi")
+  var(s)
+```
+
 ## Case 12
 
 ```babble
 assert(safeRead(false) == 7)
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call-fn safeRead false:bool)
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (call-fn safeRead
+contains (def x 7:int)
 ```
 
 ## Uncaptured int local read before definition
@@ -193,6 +323,18 @@ safeRead(true)
 
 ```error
 Name used before definition : x
+```
+
+```hir
+;; hir -O0 top-level check
+contains (call-fn safeRead true:bool)
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (call-fn safeRead
+contains (def a var(x))
+contains (def x 7:int)
 ```
 
 ## Uncaptured double local read before definition
@@ -210,6 +352,22 @@ badDouble(true)
 Name used before definition : x
 ```
 
+```hir
+;; hir -O0 fn=badDouble
+fn badDouble (flag:bool) -> double {nothrow unique}
+  (def a (if var(flag) (block var(x)) (block 0.0:double)))
+  (def x 2.5:double)
+  (+:double var(a) var(x))
+```
+
+```hir
+;; hir -O1 fn=badDouble
+fn badDouble (flag:bool) -> double {nothrow unique}
+  (def a (if var(flag) var(x) 0.0:double))
+  (def x 2.5:double)
+  (+:double var(a) var(x))
+```
+
 ## Uncaptured bool local read before definition
 
 ```babble
@@ -225,6 +383,22 @@ badBool(true)
 Name used before definition : x
 ```
 
+```hir
+;; hir -O0 fn=badBool
+fn badBool (flag:bool) -> bool {nothrow idempotent unique}
+  (def a (if var(flag) (block var(x)) (block false:bool)))
+  (def x true:bool)
+  (or var(a) var(x))
+```
+
+```hir
+;; hir -O1 fn=badBool
+fn badBool (flag:bool) -> bool {nothrow idempotent unique}
+  (def a (if var(flag) var(x) false:bool))
+  (def x true:bool)
+  (or var(a) var(x))
+```
+
 ## SelectCache requireMemberDefined passes on warmed union primitive field
 
 ```babble
@@ -236,6 +410,26 @@ def UA = class (early: bool) (
 )
 def a = UA(false)
 assert(a.peek(a) == 5 and a.peek(a) == 5)
+```
+
+```hir
+;; hir -O0 class=UA
+class UA (early:bool)
+  (def peek (fn-ref UA.peek))
+  (def v (if var(early) (block (call-method this.peek this)) (block 0:int)))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
+```
+
+```hir
+;; hir -O1 class=UA
+class UA (early:bool)
+  (def peek (fn-ref UA.peek))
+  (def v (if var(early) (call-method this.peek this) 0:int))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
 ```
 
 ## SelectCache requireMemberDefined throws on warmed union primitive field during construction
@@ -254,4 +448,24 @@ UA(true)
 
 ```error
 Member used before definition : late
+```
+
+```hir
+;; hir -O0 class=UA
+class UA (early:bool)
+  (def peek (fn-ref UA.peek))
+  (def v (if var(early) (block (call-method this.peek this)) (block 0:int)))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
+```
+
+```hir
+;; hir -O1 class=UA
+class UA (early:bool)
+  (def peek (fn-ref UA.peek))
+  (def v (if var(early) (call-method this.peek this) 0:int))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
 ```

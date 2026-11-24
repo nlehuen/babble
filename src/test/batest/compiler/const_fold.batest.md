@@ -21,6 +21,18 @@ def f = fn (): bool -> (
 assert(f())
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (def b1 true:bool)
+contains (<:bool 'a' 'b')
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
+```
+
 ## Case 2
 
 ```babble
@@ -32,6 +44,18 @@ def f = fn (): bool -> (
 assert(f())
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (<:bool -5:int 2:int)
+contains (<:bool -5:long 2:long)
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {pure unique}
+  (and (<:bool (call name(byte) 1:int) (call name(byte) 2:int)) (<:bool (call name(short) 1:int) (call name(short) 2:int)))
+```
+
 ## Case 3
 
 ```babble
@@ -40,6 +64,18 @@ def f = fn (): bool -> (
     (-2.5 < 1.5) and (1.5 <= 1.5) and (3.5 > 1.5) and (3.5 >= 3.5) and (4.5 == 4.5) and (4.5 != 5.5)
 )
 assert(f())
+```
+
+```hir
+;; hir -O0 fn=f check
+contains (<:bool -1.5:float 2.0:float)
+contains (<:bool -2.5:double 1.5:double)
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Case 4
@@ -55,6 +91,18 @@ def f = fn (): bool -> (
 assert(f())
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (+:int 10:int 2:int)
+contains (/:double 10:int 2:int)
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
+```
+
 ## Local constant propagation across primitive widening chains
 
 ```babble
@@ -68,6 +116,28 @@ def f = fn (): bool -> (
     lConst == 3L and dConst == 2.5
 )
 assert(f())
+```
+
+```hir
+;; hir -O0 fn=f
+fn f () -> bool {pure unique}
+  (def bConst (call name(byte) 3:int))
+  (def sConst var(bConst))
+  (def iConst var(sConst))
+  (def lConst var(iConst))
+  (def fConst 2.5:float)
+  (def dConst var(fConst))
+  (and (==:bool var(lConst) 3:long) (==:bool var(dConst) 2.5:double))
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {pure unique}
+  (def bConst (call name(byte) 3:int))
+  (def sConst var(bConst))
+  (def iConst var(sConst))
+  (def lConst var(iConst))
+  (and (==:bool var(lConst) 3:long) true:bool)
 ```
 
 ## Direct literal widening conversions, string, and null constants
@@ -86,6 +156,21 @@ def f = fn (): bool -> (
 assert(f())
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (def il 5:long)
+contains (def kStr "hi")
+contains (def kNull null)
+```
+
+```hir
+;; hir -O1 fn=f check
+!contains (def il
+!contains (def kStr
+!contains (def kNull
+contains (==:bool "hi" "hi")
+```
+
 ## Constant if-pruning and convertConstToKind widening
 
 ```babble
@@ -99,6 +184,20 @@ def f = fn (): bool -> (
   e == null and s == short(7) and i == 7 and l == 9L and fl == 4.0f and d == 5.0
 )
 assert(f())
+```
+
+```hir
+;; hir -O0 fn=f check
+contains (def e (if false:bool
+contains (def l (if true:bool
+contains (def fl (if false:bool
+```
+
+```hir
+;; hir -O1 fn=f check
+!contains (def e
+!contains (def l
+contains (def fl (call name(float) 4:int))
 ```
 
 ## Constant if-pruning with folded arithmetic branches and multi-statement blocks
@@ -115,6 +214,19 @@ def f = fn (): bool -> (
 assert(f())
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (+:int 5:int 1:int)
+contains (def x 2:int)
+```
+
+```hir
+;; hir -O1 fn=f check
+contains (def wL (if true:bool (block 6:int) 2:long))
+!contains (def a
+!contains (def x
+```
+
 ## Constant if-pruning with literal/folded branches and target widening
 
 ```babble
@@ -126,6 +238,19 @@ def f = fn (): bool -> (
     wL == 6L and wF == 5.0f and wD == 8.0 and wStr == "ok"
 )
 assert(f())
+```
+
+```hir
+;; hir -O0 fn=f check
+contains (+:int 4:int 2:int)
+contains (def wStr (if true:bool
+```
+
+```hir
+;; hir -O1 fn=f check
+contains (def wL (if true:bool (block 6:int) 1:long))
+!contains (def wStr
+contains (==:bool "ok" "ok")
 ```
 
 ## Constant if-pruning with non-constant widened branches and non-constant if
@@ -140,6 +265,18 @@ def checkIf = fn (p: int): bool -> (
 assert(checkIf(2))
 ```
 
+```hir
+;; hir -O0 fn=checkIf check
+contains (call-fn widenSinkD
+contains (def nc (if (>:bool var(p) 0:int) (block 1:int) (block 2:int)))
+```
+
+```hir
+;; hir -O1 fn=checkIf check
+!contains (call-fn widenSinkD
+contains (def nc (if (>:bool var(p) 0:int) 1:int 2:int))
+```
+
 ## Whitelisted foldable String and Math calls, plus non-folding Math.floorDiv
 
 ```babble
@@ -152,6 +289,20 @@ def f = fn (): bool -> (
 assert(f())
 ```
 
+```hir
+;; hir -O0 fn=f check
+contains (jcall String.trim "  babble  ")
+contains (jcall Math.sqrt 9.0:double)
+contains (jcall Math.floorDiv 10:int 3:int)
+```
+
+```hir
+;; hir -O1 fn=f check
+!contains String.trim
+!contains Math.sqrt
+contains (jcall Math.floorDiv 10:int 3:int)
+```
+
 ## Whitelisted foldable Math.abs/min/max across int, long, float, and double
 
 ```babble
@@ -162,6 +313,19 @@ def f = fn (): bool -> (
     java.lang.Math.min(4L, 9L) == 4L and java.lang.Math.max(1.5f, 2.5f) == 2.5f
 )
 assert(f())
+```
+
+```hir
+;; hir -O0 fn=f check
+count 4 (jcall Math.abs
+count 2 (jcall Math.min
+count 2 (jcall Math.max
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Non-bool RHS in logic, TypeApply, and SelfRecurseCall under ConstFoldPass
@@ -178,6 +342,24 @@ assert((idFn of string)("yo") == "yo")
 assert(recCount(4) == 4)
 ```
 
+```hir
+;; hir -O0 fn=checkMisc
+fn checkMisc (opt:obj) -> bool {pure unique}
+  (def l1 (and true:bool var(opt)))
+  (def l2 (or false:bool var(opt)))
+  (def nn (not (block (not var(opt)))))
+  (and (and (block (==:bool var(l1) true:bool)) (block (==:bool var(l2) true:bool))) var(nn))
+```
+
+```hir
+;; hir -O1 fn=checkMisc
+fn checkMisc (opt:obj) -> bool {pure unique}
+  (def l1 (and true:bool var(opt)))
+  (def l2 (or false:bool var(opt)))
+  (def nn (not (not var(opt))))
+  (and (and (==:bool var(l1) true:bool) (==:bool var(l2) true:bool)) var(nn))
+```
+
 ## While-false pruning, INT/DOUBLE unary negate, mixed-width & false comparisons
 
 ```babble
@@ -189,6 +371,18 @@ def f = fn (): bool -> (
     x == 0 and negOk and cmpOk
 )
 assert(f())
+```
+
+```hir
+;; hir -O0 fn=f check
+contains (while false:bool
+contains (+:int 1:int 2:int)
+```
+
+```hir
+;; hir -O1 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Constant folding inside class body/static and interface default/static
@@ -203,6 +397,38 @@ def CFold = class (def x: int) implements IFold (
 assert(CFold(1).v == 10 and CFold(1).m() == 14 and IFold.K == 15 and CFold.S == 42)
 ```
 
+```hir
+;; hir -O0 class=CFold
+class CFold (x:int)
+  (def v (+:int (*:int (block (+:int 1:int 2:int)) 3:int) (get-this-field x)))
+  static:
+    (def S (*:int 6:int 7:int))
+```
+
+```hir
+;; hir -O1 class=CFold
+class CFold (x:int)
+  (def v (+:int 9:int (get-this-field x)))
+  static:
+    (def S 42:int)
+```
+
+```hir
+;; hir -O0 interface=IFold
+interface IFold
+  (def m (fn-ref m))
+  fn m () -> int {pure}
+    (+:int 2:int (*:int 3:int 4:int))
+```
+
+```hir
+;; hir -O1 interface=IFold
+interface IFold
+  (def m (fn-ref m))
+  fn m () -> int {pure}
+    14:int
+```
+
 ## HirRewriter & ConstFoldPass : folded default parameter, break value, super arg, and recurse arg
 
 ```babble
@@ -213,6 +439,48 @@ def brkVal = fn (): int? -> (while true then (break 2 + 3))
 assert(withDef() == 3 and brkVal() == 5 and Sub().callSup() == 4)
 ```
 
+```hir
+;; hir -O0 fn=withDef
+fn withDef (x:int=(+:int 1:int 2:int)) -> int {nothrow idempotent monotone injective unique}
+  var(x)
+```
+
+```hir
+;; hir -O1 fn=withDef
+fn withDef (x:int=3:int) -> int {nothrow idempotent monotone injective unique}
+  var(x)
+```
+
+```hir
+;; hir -O0 fn=brkVal
+fn brkVal () -> obj {nothrow}
+  (while true:bool
+    (block (break (+:int 2:int 3:int))))
+```
+
+```hir
+;; hir -O1 fn=brkVal
+fn brkVal () -> obj {nothrow}
+  (while true:bool
+    (break 5:int))
+```
+
+```hir
+;; hir -O0 class=Sub
+class Sub
+  (def callSup (fn-ref Sub.callSup))
+  fn Sub.callSup () -> int {nothrow unique}
+    (super.g (+:int 1:int 2:int))
+```
+
+```hir
+;; hir -O1 class=Sub
+class Sub
+  (def callSup (fn-ref Sub.callSup))
+  fn Sub.callSup () -> int {nothrow unique}
+    (super.g 3:int)
+```
+
 ## ConstFoldPass : non-constant Math/String args do not fold; widened constant if-pruning
 
 ```babble
@@ -221,6 +489,20 @@ def check = fn (x: double, s: string): bool -> (
   java.lang.Math.sqrt(x) == 2.0 and s.trim() == "a" and d == 9.0
 )
 assert(check(4.0, " a "))
+```
+
+```hir
+;; hir -O0 fn=check
+fn check (x:double, s:obj) -> bool {nothrow unique}
+  (def d (+:double (block (if true:bool (block 5:int) (block 6:int))) var(x)))
+  (and (and (==:bool (jcall Math.sqrt var(x)) 2.0:double) (==:bool (jcall String.trim var(s)) "a")) (==:bool var(d) 9.0:double))
+```
+
+```hir
+;; hir -O1 fn=check
+fn check (x:double, s:obj) -> bool {nothrow unique}
+  (def d (+:double 5:int var(x)))
+  (and (and (==:bool (jcall Math.sqrt var(x)) 2.0:double) (==:bool (jcall String.trim var(s)) "a")) (==:bool var(d) 9.0:double))
 ```
 
 ## Canonical HIR golden : arithmetic, string, and whitelisted JDK folding (-O0 vs -O1)
@@ -302,6 +584,22 @@ def run = fn (k: int): int -> (
 assert(run(0) == 3 and run(1) == 7 and run(2) == 30)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (+:int 10:int 20:int)
+contains (+:int 1:int 2:int)
+contains (+:int 3:int 4:int)
+contains (+:int 5:int 6:int)
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (+:int
+contains 30:int
+contains 3:int
+contains 7:int
+```
+
 ## Constant folding in catch-only and finally-only try variants plus for iterable
 
 ```babble
@@ -315,6 +613,20 @@ def run = fn (k: int, xs: list of int, ys: list of int): int -> (
 assert(run(0, list(1, 2), list(9)) == 8 and run(4, list(1, 2), list(9)) == 11)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (+:int 2:int 3:int)
+contains (def z (+:int 4:int 5:int))
+contains (if true:bool
+```
+
+```hir
+;; hir -O1 fn=run check
+contains 5:int
+!contains (def z
+contains (for e in var(xs)
+```
+
 ## Constant if-pruning with widened non-constant Block and mixed-width branches
 
 ```babble
@@ -325,6 +637,12 @@ def widenIf = fn (p: int, x: double): double -> (
     a + b + c
 )
 assert(widenIf(2, 0.5) == 8.5)
+```
+
+```hir
+;; hir -O0 fn=widenIf check
+contains (def a (+:double (block (if true:bool
+count 3 (if true:bool
 ```
 
 ```hir
@@ -346,4 +664,17 @@ def bigConcat = fn (): int -> (
 assert(bigConcat() == 4128)
 ```
 
+```hir
+;; hir -O0 fn=bigConcat check
+contains (def s2 (+:obj var(s1) var(s1)))
+contains (def s8 (+:obj var(s7) var(s7)))
+contains (def s9 (+:obj var(s8) var(s1)))
+```
 
+```hir
+;; hir -O1 fn=bigConcat check
+!contains (def s2
+!contains (def s8
+contains (def s9 (+:obj "
+contains (jcall String.length var(s9))
+```

@@ -114,3 +114,23 @@ assert(base + 2 == 42)
 ;; babble session
 assert(base == 40)
 ```
+
+## Multi-input REPL session sharing compiled JVM interfaces and classes across ScriptClassLoaders
+
+```babble
+;; babble session
+def M = interface (def v: fn (): int ; def d = fn (): int -> (this.v() * 2))
+def B = class (n: int) implements M (def v = fn (): int -> (n))
+def ev = fn (m: M): int -> (m.v() + m.d())
+assert(ev(B(4)) == 12)
+```
+
+```babble
+;; babble session
+def E = class (a: int) implements M (
+  def v = fn (): int -> (a + 3)
+  def d = fn (): int -> (super.d() + 1)
+)
+def e: M = E(2)
+assert(ev(e) == 16 and (e is M) and (e is E) and not (e is B))
+```

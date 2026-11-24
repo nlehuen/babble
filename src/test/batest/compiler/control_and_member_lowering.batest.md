@@ -25,6 +25,30 @@ def check = fn (x: int): int -> (
 assert(check(3) == 3 and check(0) == 6)
 ```
 
+```hir
+;; hir -O0 fn=check
+fn check (x:int) -> int {nothrow unique}
+  (def a (if (block
+        (def t#1 var(x))
+        (>:bool var(t#1) 0:int)) (block 1:int) (block 0:int)))
+  (def b (if (block (def t#2 true:bool)) (block 2:int) (block 0:int)))
+  (def c (if (block
+        (call name(discard) 1:int)
+        (==:bool var(x) 0:int)) (block 4:int) (block 0:int)))
+  (+:int (+:int var(a) var(b)) var(c))
+```
+
+```hir
+;; hir -O1 fn=check
+fn check (x:int) -> int {nothrow unique}
+  (def a (if (block
+        (def t#1 var(x))
+        (>:bool var(t#1) 0:int)) 1:int 0:int))
+  (def b (if (block (def t#2 true:bool)) 2:int 0:int))
+  (def c (if (==:bool var(x) 0:int) 4:int 0:int))
+  (+:int (+:int var(a) var(b)) var(c))
+```
+
 ## Unary minus, arithmetic binary, and dynamic string comparison directly in conditions
 
 ```babble
@@ -36,6 +60,26 @@ def check = fn (x: int, y: int, s1: string, s2: string): int -> (
     r
 )
 assert(check(2, -2, "a", "a") == 5 and check(0, 1, "a", "b") == 2)
+```
+
+```hir
+;; hir -O0 fn=check
+fn check (x:int, y:int, s1:obj, s2:obj) -> int {nothrow unique}
+  (def r 0:int)
+  (if (neg var(x)) (block (set r += 1:int)))
+  (if (+:int var(x) var(y)) (block (set r += 2:int)))
+  (if (==:bool var(s1) var(s2)) (block (set r += 4:int)))
+  var(r)
+```
+
+```hir
+;; hir -O1 fn=check
+fn check (x:int, y:int, s1:obj, s2:obj) -> int {nothrow unique}
+  (def r 0:int)
+  (if (neg var(x)) (set r += 1:int))
+  (if (+:int var(x) var(y)) (set r += 2:int))
+  (if (==:bool var(s1) var(s2)) (set r += 4:int))
+  var(r)
 ```
 
 ## Negated long, float, and double truthiness exercises branchIfTrue in emitCondition
@@ -54,6 +98,32 @@ def check = fn (l0: long, l1: long, f0: float, f1: float, d0: double, d1: double
 assert(check(0L, 5L, 0.0f, 1.5f, 0.0, 2.5) == 21)
 ```
 
+```hir
+;; hir -O0 fn=check
+fn check (l0:long, l1:long, f0:float, f1:float, d0:double, d1:double) -> int {nothrow unique}
+  (def r 0:int)
+  (if (not var(l0)) (block (set r += 1:int)))
+  (if (not var(l1)) (block (set r += 2:int)))
+  (if (not var(f0)) (block (set r += 4:int)))
+  (if (not var(f1)) (block (set r += 8:int)))
+  (if (not var(d0)) (block (set r += 16:int)))
+  (if (not var(d1)) (block (set r += 32:int)))
+  var(r)
+```
+
+```hir
+;; hir -O1 fn=check
+fn check (l0:long, l1:long, f0:float, f1:float, d0:double, d1:double) -> int {nothrow unique}
+  (def r 0:int)
+  (if (not var(l0)) (set r += 1:int))
+  (if (not var(l1)) (set r += 2:int))
+  (if (not var(f0)) (set r += 4:int))
+  (if (not var(f1)) (set r += 8:int))
+  (if (not var(d0)) (set r += 16:int))
+  (if (not var(d1)) (set r += 32:int))
+  var(r)
+```
+
 ## Char compared with any exercises canLowerComparison non-char right operand
 
 ```babble
@@ -61,11 +131,23 @@ def eq = fn (c: char, a: any): bool -> ( c == a )
 assert(eq('a', 'a') and not eq('a', "a"))
 ```
 
+```hir
+;; hir -O0,-O1 fn=eq
+fn eq (c:char, a:obj) -> bool {pure unique}
+  (==:bool var(c) var(a))
+```
+
 ## Runtime is any? lowers with null descriptor to constant true
 
 ```babble
 def check = fn (x: int?): bool -> ( x is any? )
 assert(check(1) and check(null))
+```
+
+```hir
+;; hir -O0,-O1 fn=check
+fn check (x:obj) -> bool {nothrow unique}
+  (is var(x) any)
 ```
 
 ## Redundant cast to any? lowers with null targetDescriptor and no SAM target
@@ -77,6 +159,17 @@ assert((x as any?) == 7)
 
 ```stderr
 Warning : Redundant cast : any?
+```
+
+```hir
+;; hir -O0 top-level check
+contains (block (as name(x) any))
+```
+
+```hir
+;; hir -O1 top-level check
+contains (==:bool (as name(x) any) 7:int)
+!contains (block (as name(x) any))
 ```
 
 ## Empty finally block and early return inside try-catch without finally
@@ -96,6 +189,28 @@ assert(f(true) == 10 and f(false) == 20 and g == 42)
 Warning : try block cannot throw; catch clause is unreachable
 ```
 
+```hir
+;; hir -O0 fn=f
+fn f (flag:bool) -> int {nothrow unique}
+  (try
+    (block
+      (if var(flag) (block (return 10:int)))
+      20:int)
+    (catch _:java|java.lang.RuntimeException|java.lang.RuntimeException
+      30:int))
+```
+
+```hir
+;; hir -O1 fn=f
+fn f (flag:bool) -> int {nothrow unique}
+  (try
+    (block
+      (if var(flag) (return 10:int))
+      20:int)
+    (catch _:java|java.lang.RuntimeException|java.lang.RuntimeException
+      30:int))
+```
+
 ## Multiple consecutive top-level Babble catch clauses and nameless catch with local def
 
 ```babble
@@ -109,6 +224,23 @@ def run = fn (k: int): int -> (
       catch : java.io.IOException then ( def r = 33; r )
 )
 assert(run(1) == 11 and run(2) == 22 and run(3) == 33)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (catch a:babble|TopErrA|
+contains (catch b:babble|TopErrB|
+contains (catch _:java|java.io.IOException|java.io.IOException
+contains (def r 33:int)
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (catch a:babble|TopErrA|
+contains (catch b:babble|TopErrB|
+contains (catch _:java|java.io.IOException|java.io.IOException
+!contains (def r 33:int)
+contains 33:int
 ```
 
 ## Function-local Babble exception catch falls back to Types.matches descriptor check
@@ -125,6 +257,20 @@ def run = fn (flag: bool): string -> (
 assert(run(true) == "a" and run(false) == "b")
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (block (throw (call var(LocalA) "a")))
+contains (catch e#1:babble|LocalA|
+contains (catch e#2:babble|LocalB|
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (if var(flag) (throw (call var(LocalA) "a")) (throw (call var(LocalB) "b")))
+contains (catch e#1:babble|LocalA|
+contains (catch e#2:babble|LocalB|
+```
+
 ## Java boolean, long-from-int, and float-from-int instance field assignments
 
 ```babble
@@ -138,6 +284,13 @@ pf.x = n
 assert(dpi.required and ev.when == 42L and pf.x == 42.0f)
 ```
 
+```hir
+;; hir -O0,-O1 top-level check
+contains (set-jfield required name(dpi) true:bool)
+contains (set-jfield when name(ev) name(n))
+contains (set-jfield x name(pf) name(n))
+```
+
 ## Static Java field non-pure receiver and fallback compound assign with byte RHS
 
 ```babble
@@ -147,6 +300,18 @@ getS().mutableCounter += byte(0)
 def loc: int = 10
 loc += byte(5)
 assert(getS().mutableCounter == before and loc == 15)
+```
+
+```hir
+;; hir -O0,-O1 fn=getS
+fn getS () -> obj {io}
+  (select (select (call name(import) "org.babblelang.tests").BytecodeEffectAnalyzerTestCase).SampleHelpers)
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (set-jfield mutableCounter (call-fn getS) (call name(byte) 0:int))
+contains (set-name loc += (call name(byte) 5:int))
 ```
 
 ## External module primitive record field get, array.toString(), and Java interface array set
@@ -159,4 +324,11 @@ assert((array of int).of(1, 2, 3).toString() == "[1, 2, 3]")
 def ops = (array of java.util.function.IntUnaryOperator).of(fn (x: int): int -> ( x + 1 ))
 ops.set(0, fn (x: int): int -> ( x * 2 ))
 assert(ops.get(0).applyAsInt(5) == 10)
+```
+
+```hir
+;; hir -O0,-O1 top-level check
+contains (record-new ext_rec$ba$C0$Pt 3:int 4:int)
+contains (array-op TO_STRING (array-new OF 1:int 2:int 3:int))
+contains (array-op SET name(ops) 0:int (java-sam IntUnaryOperator
 ```

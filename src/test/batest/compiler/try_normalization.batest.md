@@ -35,8 +35,21 @@ assert(lhsTry("4") == 5 and lhsTry("x") == 11 and rhsTry("3") == 13 and rhsTry("
 ```
 
 ```hir
+;; hir -O0,-O1 fn=lhsTry check
+!contains $try
+contains (+:int
+```
+
+```hir
+;; hir -O0 fn=rhsTry check
+contains (def $try0 10:int)
+contains (def $try1
+```
+
+```hir
 ;; hir -O1 fn=rhsTry check
-contains (def $try0
+contains (def $try0 10:int)
+contains (+:int var($try0) var($try1))
 ```
 
 ## Logic short-circuit containsTry on left and right operands
@@ -48,6 +61,20 @@ def logicTry = fn io (f: bool, s: string): bool -> (
     a and b
 )
 assert(logicTry(true, "1") and not logicTry(true, "x") and not logicTry(false, "x"))
+```
+
+```hir
+;; hir -O0 fn=logicTry check
+!contains $try
+contains (def a (and (block
+contains (def b (and var(f) (block
+```
+
+```hir
+;; hir -O1 fn=logicTry check
+!contains $try
+contains (def a (and (try
+contains (def b (and var(f) (try
 ```
 
 ## Compound NameAssign and ThisFieldAssign with try RHS
@@ -63,6 +90,17 @@ assert(bumpTop("3") == 13 and bumpTop("x") == 18)
 assert(b.bumpCompound("4") == 14 and b.bumpCompound("x") == 19)
 ```
 
+```hir
+;; hir -O0,-O1 fn=bumpTop
+fn bumpTop (s:obj) -> int {io}
+  (set-name top += (try
+      (block
+        (call-fn parse var(s)))
+      (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+        5:int)))
+  name(top)
+```
+
 ## JavaFieldAssign : instance simple, compound, and receiver try
 
 ```babble
@@ -76,6 +114,20 @@ def run = fn io (s: string, f: bool): int -> (
 assert(run("5", false) == 16 and run("bad", true) == 14)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (def $try0 var(pt))
+contains (set-jfield x var($try0) var($try1))
+contains (set-jfield x (block
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (def $try0 var(pt))
+contains (set-jfield x var($try0) var($try1))
+contains (set-jfield x (try
+```
+
 ## JavaFieldAssign : static pure receiver chain with try RHS
 
 ```babble
@@ -84,6 +136,20 @@ def run = fn io (s: string): int -> (
     Demo.counter = try (parse(s)) catch : exception then (4)
 )
 assert(run("5") == 5 and run("bad") == 4)
+```
+
+```hir
+;; hir -O0,-O1 fn=run
+fn run (s:obj) -> int {io}
+  (def Demo (select (call name(import) "org.babblelang.tests").JavaClassDemo))
+  (block
+    (def $try0
+      (try
+        (block
+          (call-fn parse var(s)))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          4:int)))
+    (set-jfield counter var(Demo) var($try0)))
 ```
 
 ## DynamicFieldAssign with compound operator and receiver try
@@ -96,6 +162,20 @@ def run = fn io (s: string, f: bool): int -> (
     b.v
 )
 assert(run("5", false) == 16 and run("x", true) == 13)
+```
+
+```hir
+;; hir -O0 fn=run check
+!contains $try
+contains (set-field var(b).v (try
+contains (set-field (block
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains $try
+contains (set-field var(b).v (try
+contains (set-field (try
 ```
 
 ## ArrayCreate and ArrayOp with try in args, trailing arg, and try in receiver
@@ -111,8 +191,19 @@ assert(run("3", false) == 15 and run("x", true) == 15)
 ```
 
 ```hir
+;; hir -O0 fn=run check
+contains (def $try0 1:int)
+contains (array-new OF var($try0) var($try1) 9:int)
+contains (array-op SET var($try2) var($try3) var($try4))
+contains (def v (array-op GET (block
+```
+
+```hir
 ;; hir -O1 fn=run check
-contains (def $try0
+contains (def $try0 1:int)
+contains (array-new OF var($try0) var($try1) 9:int)
+contains (array-op SET var($try2) var($try3) var($try4))
+contains (def v (array-op GET (try
 ```
 
 ## CoreCollectionCall with try arg and trailing arg after try
@@ -125,6 +216,12 @@ def run = fn io (s: string): int -> (
 assert(run("4") == 15 and run("bad") == 16)
 ```
 
+```hir
+;; hir -O0,-O1 fn=run check
+contains (def $try0 1:int)
+contains (core-new list var($try0) var($try1) 10:int)
+```
+
 ## SuperCall and InterfaceCall with try in args and receiver
 
 ```babble
@@ -135,6 +232,20 @@ def run = fn io (s: string, f: bool): int -> (
     a + b
 )
 assert(run("5", false) == 15 and run("bad", true) == 12)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (def $try0 var(c))
+contains (call-iface var($try0).calc var($try1) var($try2))
+contains (def b (call-iface (block
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (def $try0 var(c))
+contains (call-iface var($try0).calc var($try1) var($try2))
+contains (def b (call-iface (try
 ```
 
 ## SelfRecurseCall (non-tail) and SelfTailCall with try arguments
@@ -151,6 +262,18 @@ def tailR = fn io (n: int, a: int, s: string): int -> (
 assert(nonT(3, "x") == 3 and tailR(3, 0, "4") == 12 and tailR(3, 0, "b") == 6)
 ```
 
+```hir
+;; hir -O0,-O1 fn=nonT check
+contains (def $try0 1:int)
+contains (self-recurse nonT var($try2) var($try3))
+```
+
+```hir
+;; hir -O0,-O1 fn=tailR check
+contains (def $try0 (-:int var(n) 1:int))
+contains (tail-call tailR var($try0) var($try1) var(s))
+```
+
 ## DirectBabbleCall and DirectThisMethodCall with try in args and receiver
 
 ```babble
@@ -164,6 +287,20 @@ def run = fn io (s: string, f: bool): int -> (
 assert(run("5", false) == 37 and run("bad", true) == 32)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (call-fn addIO var($try1) var($try2))
+contains (call-method var($try3).addIO var($try4) var($try5))
+contains (def r3 (call-method (block
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (call-fn addIO var($try1) var($try2))
+contains (call-method var($try3).addIO var($try4) var($try5))
+contains (def r3 (call-method (try
+```
+
 ## JavaConstructorCall : pure static callee and dynamic callee with try arg
 
 ```babble
@@ -175,6 +312,20 @@ def run = fn io (s: string, f: bool): int -> (
 assert(run("8", false) == 16 and run("bad", true) == 6)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (jnew Point var($try0) var($try1))
+contains (def $try2 (block (if var(f)
+contains (jnew Point var($try3) var($try4))
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (jnew Point var($try0) var($try1))
+contains (def $try2 (if var(f)
+contains (jnew Point var($try3) var($try4))
+```
+
 ## JavaConstructorCall : dynamic callee containing try (lastTry < 0)
 
 ```babble
@@ -183,6 +334,13 @@ def run = fn io (f: bool): int -> (
     p.x + p.y
 )
 assert(run(false) == 11 and run(true) == 11)
+```
+
+```hir
+;; hir -O0,-O1 fn=run
+fn run (f:bool) -> int {io}
+  (def p (jnew Point 5:int 6:int))
+  (+:int (get-jfield Point.x var(p)) (get-jfield Point.y var(p)))
 ```
 
 ## JavaMethodCall : static method, instance method with try arg, and receiver try
@@ -198,6 +356,20 @@ def run = fn io (s: string, f: bool): string -> (
 assert(run("5", false) == "5:5" and run("bad", true) == "9:2")
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (jcall Math.max var($try0) var($try1))
+contains (jcall StringBuilder.append var($try2) var($try3))
+contains (jcall StringBuilder.append (block
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (jcall Math.max var($try0) var($try1))
+contains (jcall StringBuilder.append var($try2) var($try3))
+contains (jcall StringBuilder.append (try
+```
+
 ## DynamicCall and SafeCall with try in callee or receiver only
 
 ```babble
@@ -209,6 +381,20 @@ def run = fn io (f: bool): int -> (
     a + (if b != null then (b) else (0))
 )
 assert(run(false) == 8 and run(true) == 5)
+```
+
+```hir
+;; hir -O0 fn=run check
+!contains $try
+contains (def a (call (block
+contains (def b (safe-call (block
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains $try
+contains (def a (call (try
+contains (def b (safe-call (try
 ```
 
 ## MakeOverloadSet and OverloadDispatch with try in operands, args, and callee
@@ -225,6 +411,20 @@ def run = fn io (f: bool, u: int | string): int -> (
 assert(run(false, 4) == 10 and run(true, "xyz") == 5)
 ```
 
+```hir
+;; hir -O0 fn=run check
+contains (overload var($try0) var($try1))
+contains (overload-dispatch var($try2) var($try3))
+contains (def b (overload-dispatch (block
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (overload var($try0) var($try1))
+contains (overload-dispatch var($try2) var($try3))
+contains (def b (overload-dispatch (try
+```
+
 ## Effective widening ranks 1..2 (byte->short, short->int) during try spilling
 
 ```babble
@@ -237,6 +437,14 @@ def run = fn io (b: byte, sh: short, s: string): int -> (
 assert(run(byte(2), short(3), "5") == 15 and run(byte(2), short(3), "x") == 7)
 ```
 
+```hir
+;; hir -O0,-O1 fn=run check
+contains (def $try1 var(b))
+contains (call-fn addSh var($try1) var($try2))
+contains (def $try3 var(sh))
+contains (+:int var($try3) var($try4))
+```
+
 ## Effective widening rank 3 (int->long) during try spilling
 
 ```babble
@@ -244,6 +452,12 @@ def run = fn io (n: int, s: string): long -> (
   n + (try (long(parse(s))) catch : exception then (1L))
 )
 assert(run(4, "5") == 9L and run(4, "x") == 5L)
+```
+
+```hir
+;; hir -O0,-O1 fn=run check
+contains (def $try0 var(n))
+contains (+:long var($try0) var($try1))
 ```
 
 ## Effective widening ranks 4..5 (int->float, int->double) during try spilling
@@ -257,6 +471,12 @@ def run = fn io (n: int, s: string): double -> (
 assert(run(4, "5") == 18.0 and run(4, "x") == 10.0)
 ```
 
+```hir
+;; hir -O0,-O1 fn=run check
+contains (+:float var($try0) var($try1))
+contains (+:double var($try2) var($try3))
+```
+
 ## Control-flow containsTry : If (cond, then, else)
 
 ```babble
@@ -268,6 +488,18 @@ def run = fn io (s: string, f: bool): int -> (
 assert(run("2", false) == 4 and run("bad", true) == 5)
 ```
 
+```hir
+;; hir -O0 fn=run check
+!contains $try
+contains (def i1 (if (block
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains $try
+contains (def i1 (if (try
+```
+
 ## Control-flow containsTry : While (cond, body)
 
 ```babble
@@ -277,6 +509,18 @@ def run = fn io (s: string): int -> (
     w + wb
 )
 assert(run("2") == 4 and run("bad") == 1)
+```
+
+```hir
+;; hir -O0 fn=run check
+!contains $try
+contains (while (block
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains $try
+contains (while (try
 ```
 
 ## Control-flow containsTry : For (iterable, body) and RecordNew classRef
@@ -292,4 +536,18 @@ def run = fn io (s: string, f: bool): int -> (
     fs + p.a + p.b
 )
 assert(run("2", false) == 10 and run("bad", true) == 6)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (def $try0 var(e))
+contains (def $try2
+contains (record-new Pair 1:int 2:int)
+```
+
+```hir
+;; hir -O1 fn=run check
+contains (def $try0 var(e))
+!contains record-new
+contains (def $sr_p_0 1:int)
 ```

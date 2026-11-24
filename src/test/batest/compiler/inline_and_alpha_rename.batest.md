@@ -25,6 +25,13 @@ def make = fn (k: int): int -> (
 assert(make(10) == 17)
 ```
 
+```hir
+;; hir -O0,-O1 fn=make
+fn make (k:int) -> int {nothrow unique}
+  (def Local (class-ref Local))
+  (call-method (call var(Local) 3:int).addK 4:int)
+```
+
 ## InlinePass.checkParamsAndBody : Java SAM parameter disqualifies inlining
 
 ```babble
@@ -34,8 +41,9 @@ assert(run(6) == 12)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains (call-fn applyOp
+;; hir -O0,-O1 fn=run
+fn run (n:int) -> int {io}
+  (call-fn applyOp var(n) (java-sam IntUnaryOperator (fn-ref <anon#0>)))
 ```
 
 ## InlinePass.scanCalleeBody : self-recursive method call and for-body cell capture
@@ -52,6 +60,22 @@ def forBodyCell = fn (xs: list of int): int -> (
 assert(Counter(1).sum(3) == 7 and forBodyCell(list(5, 6)) == 10 and inc(1) == 2)
 ```
 
+```hir
+;; hir -O0 record=Counter
+record Counter (n:int)
+  (def sum (fn-ref Counter.sum))
+  fn Counter.sum (k:int) -> int {nothrow}
+    (if (<=:bool var(k) 0:int) (block (get-this-field n)) (block (+:int var(k) (call-method this.sum (-:int var(k) 1:int)))))
+```
+
+```hir
+;; hir -O1 record=Counter
+record Counter (n:int)
+  (def sum (fn-ref Counter.sum))
+  fn Counter.sum (k:int) -> int {nothrow}
+    (if (<=:bool var(k) 0:int) (get-this-field n) (+:int var(k) (call-method this.sum (-:int var(k) 1:int))))
+```
+
 ## InlinePass.scanCalleeBody and alphaRename : mutable class method ThisFieldAssign inlined
 
 ```babble
@@ -64,6 +88,12 @@ def run = fn (n: int): int -> (
     a + Pair(2, 3).mix(Pair(4, 5))
 )
 assert(run(9) == 16)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (call-method var(b).setGet var(n))
+contains .mix
 ```
 
 ```hir
@@ -105,8 +135,10 @@ assert(run(2, 3) == 15)
 ```
 
 ```hir
-;; hir -O1 fn=run check
-contains .add
+;; hir -O0,-O1 fn=run
+fn run (x:int, y:int) -> int {nothrow unique}
+  (def p (record-new Pair 10:int 0:int))
+  (call-method var(p).add a=var(x) b=var(y))
 ```
 
 ## InlinePass.canInlineReturnKind and performInline : generic return kind mismatch and boxed any result
@@ -118,6 +150,22 @@ def run = fn (p: int): int -> (
     g + (boxed as int)
 )
 assert(run(5) == 11)
+```
+
+```hir
+;; hir -O0 fn=run
+fn run (p:int) -> int {pure unique}
+  (def g (call (type-apply name(idG)) var(p)))
+  (def boxed (call-fn inc var(p)))
+  (+:int var(g) (block (as var(boxed) int|int|)))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (p:int) -> int {pure unique}
+  (def g (call (type-apply name(idG)) var(p)))
+  (def boxed (+:int var(p) 1:int))
+  (+:int var(g) (as var(boxed) int|int|))
 ```
 
 ## InlinePass.performInline : cell receiver spill, arg mutated in later arg, and conditional local
@@ -134,6 +182,21 @@ def run = fn (n: int, fl: bool): int -> (
 assert(run(4, true) == 56 and run(4, false) == 57)
 ```
 
+```hir
+;; hir -O0 fn=run check
+count 2 (call-fn combine
+contains (call-method var(p).add 1:int var(y))
+contains (def g
+```
+
+```hir
+;; hir -O1 fn=run check
+!contains (call-fn combine
+!contains .add
+!contains (def g
+contains (def $this var(p))
+```
+
 ## InlinePass.alphaRename : VarRead widening substitution, uninitialized Def, and for-body local def
 
 ```babble
@@ -143,6 +206,13 @@ def run = fn (p: int, fl: bool): double -> (
     widen(p) + double(choose(fl, p, 9) + sum2(list(1, 2)))
 )
 assert(run(3, true) == 12.5 and run(3, false) == 18.5)
+```
+
+```hir
+;; hir -O0 fn=run check
+contains (call-fn widen
+contains (call-fn choose
+contains (call-fn sum2
 ```
 
 ```hir
@@ -165,6 +235,25 @@ def run = fn (n: int): int -> (
 assert(run(4) == 9)
 ```
 
+```hir
+;; hir -O0 fn=run
+fn run (n:int) -> int {pure unique}
+  (def xs (call-fn mvUniq (core-new list var(n) (+:int var(n) 1:int))))
+  (def nl (call-fn mvOpt null))
+  (+:int (+:int (jcall List.get var(xs) 0:int) (jcall List.get var(xs) 1:int)) (block (if (==:bool var(nl) null) (block 0:int) (block 1:int))))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (n:int) -> int {pure unique}
+  (def xs#1
+    (block
+      (def xs#2 (core-new list var(n) (+:int var(n) 1:int)))
+      (move var(xs#2))))
+  (def nl (move null))
+  (+:int (+:int (jcall List.get var(xs#1) 0:int) (jcall List.get var(xs#1) 1:int)) (if (==:bool var(nl) null) 0:int 1:int))
+```
+
 ## InlinePass.alphaRename : borrow-lambda devirtualization guards for named arguments
 
 ```babble
@@ -177,6 +266,18 @@ def run = fn (x: int): int -> (
 assert(run(4) == 85)
 ```
 
+```hir
+;; hir -O0 fn=run
+fn run (x:int) -> int {nothrow unique}
+  (+:int (call-fn apReord var(x) (fn-ref <anon#0>)) (call-fn apIdNam var(x) (fn-ref <anon#1>)))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (x:int) -> int {nothrow unique}
+  (+:int (call (fn-ref <anon#0>) b=2:int a=var(x)) (call (fn-ref <anon#1>) a=var(x) b=3:int))
+```
+
 ## InlinePass.alphaRename : borrow-lambda devirtualization guards for arity mismatch and non-literal callee
 
 ```babble
@@ -185,6 +286,18 @@ def run = fn (x: int, dyn: fn (int): int): int -> (
     apOpt(x, fn (a: int, b: int = 1): int -> (a + b)) + apOpt(x, dyn)
 )
 assert(run(4, fn (z: int): int -> (z * 2)) == 13)
+```
+
+```hir
+;; hir -O0 fn=run
+fn run (x:int, dyn:obj) -> int {pure unique}
+  (+:int (call-fn apOpt var(x) (fn-ref <anon#0>)) (call-fn apOpt var(x) var(dyn)))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (x:int, dyn:obj) -> int {pure unique}
+  (+:int (call (fn-ref <anon#0>) var(x)) (call var(dyn) var(x)))
 ```
 
 ## InlinePass.isMethodDefinitelyDefinedForInline and scanThisLeak : statements, default method, and sibling leak
@@ -200,6 +313,18 @@ def Leak2 = class (def x: int) (
 assert(Good(Pair(3, 0)).get() + Good(Pair(3, 0)).tag() + Leak2(3).get() == 14)
 ```
 
+```hir
+;; hir -O0 top-level check
+contains (call-method (call name(Good)
+contains (call-method (call name(Leak2) 3:int).get)
+```
+
+```hir
+;; hir -O1 top-level check
+!contains (call-method (call name(Good) (record-new Pair 3:int 0:int)).get)
+contains (call-method (call name(Leak2) 3:int).get)
+```
+
 ## InlinePass.isDefinitelyDefinedPureCallee : local definitely-defined vs forward-referenced function
 
 ```babble
@@ -210,4 +335,21 @@ def run = fn (n: int, fl: bool): int -> (
     loc(n) + g + cond(n)
 )
 assert(run(3, true) == 9 and run(3, false) == 10)
+```
+
+```hir
+;; hir -O0 fn=run
+fn run (n:int, fl:bool) -> int {nothrow unique}
+  (def loc (fn-ref loc))
+  (def g (if false:bool (block (call-fn cond var(n))) (block 0:int)))
+  (def cond (fn-ref cond))
+  (+:int (+:int (call-fn loc var(n)) var(g)) (call-fn cond var(n)))
+```
+
+```hir
+;; hir -O1 fn=run
+fn run (n:int, fl:bool) -> int {nothrow unique}
+  (def loc (fn-ref loc))
+  (def cond (fn-ref cond))
+  (+:int (+:int var(n) 1:int) (call-fn cond var(n)))
 ```
