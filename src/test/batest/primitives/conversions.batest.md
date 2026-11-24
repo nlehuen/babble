@@ -5,6 +5,13 @@ References : BIP011 (core scalar types), BIP008 (strict typing & any), Values
 ```babble preamble
 def dyn = fn (v : any) : any -> ( v )
 def dynOpt = fn (v : any?) : any? -> ( v )
+def coerce of T = fn io (shared x: any?): T -> (
+    def l: java.util.List of T = java.util.ArrayList()
+    def m = java.lang.Class.forName("java.util.List").getMethod("add", java.lang.Class.forName("java.lang.Object"))!
+    m.invoke(l, x)
+    l.get(0)
+)
+def call1 = fn io (shared f: any, v: any): any? -> ( coerce of (fn (x: any): any?)(f)(v) )
 ```
 
 ## Case 1
@@ -230,4 +237,184 @@ int(3000000000L)
 
 ```error
 Out of the int range : 3000000000L = 3000000000
+```
+
+## Dynamic int conversion rejects zero arguments
+
+```babble
+coerce of (fn (): any?)(int)()
+```
+
+```error
+int() takes 1 argument, 0 given
+```
+
+## Byte conversion rejects negative int below range
+
+```babble
+call1(byte, -200)
+```
+
+```error
+Out of the byte range : v = -200
+```
+
+## Byte conversion rejects negative double below range
+
+```babble
+call1(byte, -200.0)
+```
+
+```error
+Out of the byte range : v = -200.0
+```
+
+## Byte conversion rejects boolean
+
+```babble
+call1(byte, true)
+```
+
+```error
+Not a number : v
+```
+
+## Short conversion rejects high char above range
+
+```babble
+call1(short, char(40000))
+```
+
+```error
+Out of the short range : v = 鱀
+```
+
+## Short conversion rejects negative int below range
+
+```babble
+call1(short, -40000)
+```
+
+```error
+Out of the short range : v = -40000
+```
+
+## Short conversion rejects NaN double
+
+```babble
+call1(short, 0.0 / 0.0)
+```
+
+```error
+Out of the short range : v = NaN
+```
+
+## Short conversion rejects negative double below range
+
+```babble
+call1(short, -40000.0)
+```
+
+```error
+Out of the short range : v = -40000.0
+```
+
+## Short conversion rejects boolean
+
+```babble
+call1(short, true)
+```
+
+```error
+Not a number : v
+```
+
+## Int conversion rejects negative long below range
+
+```babble
+call1(int, -3000000000L)
+```
+
+```error
+Out of the int range : v = -3000000000
+```
+
+## Long conversion rejects NaN double
+
+```babble
+call1(long, 0.0 / 0.0)
+```
+
+```error
+Out of the long range : v = NaN
+```
+
+## Long conversion rejects large positive finite double
+
+```babble
+call1(long, 1.0E20)
+```
+
+```error
+Out of the long range : v = 1.0E20
+```
+
+## Long conversion rejects large negative finite double
+
+```babble
+call1(long, -1.0E20)
+```
+
+```error
+Out of the long range : v = -1.0E20
+```
+
+## Long conversion rejects boolean
+
+```babble
+call1(long, true)
+```
+
+```error
+Not a number : v
+```
+
+## Float conversion rejects boolean
+
+```babble
+call1(float, true)
+```
+
+```error
+Not a number : v
+```
+
+## Bool conversion rejects int
+
+```babble
+call1(bool, 42)
+```
+
+```error
+Not a boolean : v
+```
+
+## Char conversion rejects int above range
+
+```babble
+call1(char, 70000)
+```
+
+```error
+Out of the char range : v = 70000
+```
+
+## Char conversion rejects boolean
+
+```babble
+call1(char, true)
+```
+
+```error
+Not a char : v
 ```
