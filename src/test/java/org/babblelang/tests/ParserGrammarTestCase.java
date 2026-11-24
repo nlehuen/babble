@@ -66,7 +66,7 @@ public class ParserGrammarTestCase extends BabbleTestBase {
 
         Path batestRoot = Path.of("src/test/batest");
         try (Stream<Path> stream = Files.walk(batestRoot)) {
-            for (Path file : stream.filter(p -> p.toString().endsWith(".batest")).sorted().toList()) {
+            for (Path file : stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
                 BatestFile parsed = org.babblelang.tests.batest.BatestParser.parse(file, batestRoot.relativize(file).toString());
                 String preamble = parsed.preamble() != null && !parsed.preamble().isBlank()
                         ? parsed.preamble() + "\n" : "";
@@ -79,8 +79,18 @@ public class ParserGrammarTestCase extends BabbleTestBase {
                     }
                 }
                 for (BatestFile.BatestCase testCase : parsed.cases()) {
-                    if (testCase.expected().startsWith("Syntax error") || testCase.expected().startsWith("Lexical error")) {
+                    if (testCase.expectedError() != null
+                            && (testCase.expectedError().text().startsWith("Syntax error")
+                            || testCase.expectedError().text().startsWith("Lexical error"))) {
                         continue;
+                    }
+                    for (var mod : testCase.caseModules().entrySet()) {
+                        checked++;
+                        try {
+                            parsePureSll(mod.getValue());
+                        } catch (ParseCancellationException e) {
+                            failures.add(file + ":" + testCase.line() + " module " + mod.getKey() + " failed pure SLL parse: " + e.getMessage());
+                        }
                     }
                     for (int i = 0; i < testCase.inputs().size(); i++) {
                         String input = (i == 0 ? preamble : "") + testCase.inputs().get(i);

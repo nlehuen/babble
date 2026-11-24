@@ -1,0 +1,236 @@
+# Intersection types of interfaces : normal form, subtyping, members, narrowing, runtime checks, and errors
+
+References : BIP022 (P1, D1-D8)
+
+```babble preamble
+def Shape = interface ( def area: fn (): double )
+def Named = interface ( def name: fn (): string )
+def Label = interface ( def text: fn (): string )
+def Tile = class () implements Shape, Named (
+    def area = fn (): double -> ( 1.5 )
+    def name = fn (): string -> ( "tile" )
+)
+def Disk = class () implements Shape ( def area = fn (): double -> ( 3.0 ) )
+def Note = class () implements Label, Named (
+    def text = fn (): string -> ( "note" )
+    def name = fn (): string -> ( "n" )
+)
+def Sign = class () implements Shape, Label (
+    def area = fn (): double -> ( 2.0 )
+    def text = fn (): string -> ( "sign" )
+)
+```
+
+## Case 1
+
+```babble
+def t: Shape & Named = Tile()
+def s: Shape = t
+def n: Named = t
+assert(s.area() == 1.5)
+assert(n.name() == "tile")
+assert(t.name() == "tile")
+assert(t.area() == 1.5)
+```
+
+## Error : Type error : expected Shape & Named, got Disk
+
+```babble
+def t: Shape & Named = Disk()
+```
+
+```error
+Type error : expected Shape & Named, got Disk
+```
+
+## `is` retains known interface type : Shape narrowed by `is Named` becomes Shape & Named
+
+```babble
+def s: Shape = Tile()
+def out = if s is Named then ( s.name() + ":" + s.area() ) else ( "" )
+assert(out == "tile:1.5")
+```
+
+## Narrowing a union distributes over its members
+
+```babble
+def pick = fn (): Shape | Label -> ( Note() )
+def x = pick()
+def out = if x is Named then ( x.name() ) else ( "" )
+assert(out == "n")
+```
+
+## Case 5
+
+```babble
+def describe = fn (y: Named | Label): string -> ( if y is Named then ( y.name() ) else ( y.text() ) )
+def measure = fn (s: Shape): double -> ( s.area() )
+def run = fn (x: Shape & (Named | Label)): string -> ( describe(x) + ":" + measure(x) + ":" + x.area() )
+assert(run(Tile()) == "tile:1.5:1.5")
+assert(run(Sign()) == "sign:2.0:2.0")
+```
+
+## `is` narrows Shape & (Named | Label) to Shape & Named in the `then` branch and Shape & Label in `else`
+
+```babble
+def named = fn (z: Shape & Named): string -> ( z.name() + "/" + z.area() )
+def labelled = fn (z: Shape & Label): string -> ( z.text() + "/" + z.area() )
+def run = fn (x: Shape & (Named | Label)): string -> ( if x is Named then ( named(x) ) else ( labelled(x) ) )
+assert(run(Tile()) == "tile/1.5")
+assert(run(Sign()) == "sign/2.0")
+```
+
+## Error : Type error : expected Named, got Shape & (Named | Label)
+
+```babble
+def name = fn (n: Named): string -> ( n.name() )
+def run = fn (x: Shape & (Named | Label)): string -> ( name(x) )
+```
+
+```error
+Type error : expected Named, got Shape & (Named | Label)
+```
+
+## Case 8
+
+```babble
+def a: any = Tile()
+assert(Tile() is Shape & Named)
+assert(not (Disk() is Shape & Named))
+assert((a as Shape & Named).name() == "tile")
+```
+
+## Error : Type error : expected Shape & Named, got Disk (2)
+
+```babble
+def a: any = Disk()
+print((a as Shape & Named).name())
+```
+
+```error
+Type error : expected Shape & Named, got Disk
+```
+
+## Error : Only interfaces intersect : Disk & Named
+
+```babble
+def d: Disk & Named = Disk()
+```
+
+```error
+Only interfaces intersect : Disk & Named
+```
+
+## Error : Only interfaces intersect : Named & int
+
+```babble
+def d: Named & int = 1
+```
+
+```error
+Only interfaces intersect : Named & int
+```
+
+## Error : Nullable inside an intersection : Named? (write (Shape & Named)?)
+
+```babble
+def d: Shape & Named? = null
+```
+
+```error
+Nullable inside an intersection : Named? (write (Shape & Named)?)
+```
+
+## Case 13
+
+```babble
+def m: (Shape & Named)? = null
+assert(m == null)
+m = Tile()
+assert(m?.name() == "tile")
+```
+
+## Case 14
+
+```babble
+def A = interface ( def name: fn (): string ; def a: fn (): int )
+def B = interface ( def name: fn (): string ; def b: fn (): int )
+def AB = class () implements A, B (
+    def name = fn (): string -> ( "ab" )
+    def a = fn (): int -> ( 1 )
+    def b = fn (): int -> ( 2 )
+)
+def f = fn (x: A & B): string -> ( x.name() + ":" + x.a() + ":" + x.b() )
+assert(f(AB()) == "ab:1:2")
+```
+
+## Error : Conflicting member m in A & B
+
+```babble
+def A = interface ( def m: fn (): int )
+def B = interface ( def m: fn (): string )
+def f = fn (x: A & B): string -> ( "" + x.m() )
+```
+
+```error
+Conflicting member m in A & B
+```
+
+## Error : No such member : title
+
+```babble
+def f = fn (x: Shape & Named): string -> ( x.title() )
+```
+
+```error
+No such member : title
+```
+
+## Normal form : order is ignored, implied super-interfaces and any / Object drop out
+
+```babble
+def Base = interface ( def id: fn (): int )
+def Tagged = interface extends Base ( def tag: fn (): string )
+def o = object implements Tagged, Named (
+    def id = fn () -> ( 7 ) ; def tag = fn () -> ( "t" ) ; def name = fn () -> ( "o" )
+)
+def a: Tagged & Base & any = o
+def b: Named & Tagged = o
+def c: Tagged & Named & java.lang.Object = b
+assert(a.id() == 7 and b.tag() == "t" and c.name() == "o")
+```
+
+## Case 18
+
+```babble
+def s: java.lang.CharSequence & java.lang.Comparable of string = "abc"
+assert(s.length() == 3)
+assert(s.compareTo("abb") > 0)
+```
+
+## Second-operand Java method dispatch on primitive-backed intersection
+
+```babble
+def c: java.io.Serializable & java.lang.Comparable of int = 5
+assert(c.compareTo(3) > 0)
+```
+
+## Covariant Babble intersection member picks the most specific subtype regardless of operand order
+
+```babble
+def A = interface ( def m: fn (): any? )
+def B = interface ( def m: fn (): int )
+def C = class () implements A, B ( def m = fn (): int -> ( 41 ) )
+def f1 = fn (x: A & B): int -> ( x.m() + 1 )
+def f2 = fn (x: B & A): int -> ( x.m() + 1 )
+assert(f1(C()) == 42 and f2(C()) == 42)
+```
+
+## Generic container and bounded type parameter with intersection
+
+```babble
+def xs: list of (Shape & Named) = (list of (Shape & Named)).of(Tile())
+assert(xs.get(0).name() == "tile" and xs.get(0).area() == 1.5)
+def show of (T: Shape & Named) = fn (x: T): string -> ( x.name() + ":" + x.area() )
+assert(show(Tile()) == "tile:1.5")
+```

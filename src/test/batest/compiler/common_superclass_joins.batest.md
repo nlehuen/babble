@@ -1,0 +1,118 @@
+# Bytecode frame-merge common superclass and common superinterface joins
+
+References : BIP001, BIP002 ; targets ScriptClassWriter.getCommonSuperClass / commonSuperInterface / ancestorInterfaces / isAssignable
+
+```babble preamble
+def Root = interface ( def tag : fn () : string )
+def I1 = interface extends Root ( def tag = fn () : string -> ( "i1" ) )
+def I2 = interface extends Root ( def tag = fn () : string -> ( "i2" ) )
+def C1 = class () implements I1 ( def tag = fn () : string -> ( "c1" ) )
+def C2 = class () implements I2 ( def tag = fn () : string -> ( "c2" ) )
+def D1 = class () implements I1 ()
+def D2 = class () implements I2 ()
+def A = class () ()
+def B = class () ()
+```
+
+## Annotated Root joins : class-class and interface-class
+
+```babble
+def pickRoot = fn (flag : bool) : Root -> ( if flag then ( C1() ) else ( C2() ) )
+def pickMixed = fn (flag : bool, a : I1, b : C2) : Root -> ( if flag then ( a ) else ( b ) )
+assert(pickRoot(true).tag() == "c1")
+assert(pickRoot(false).tag() == "c2")
+assert(pickMixed(true, C1(), C2()).tag() == "c1")
+```
+
+## Annotated Root join : interface-interface and inherited-default class-class
+
+```babble
+def pickIfaces = fn (flag : bool, a : I1, b : I2) : Root -> ( if flag then ( a ) else ( b ) )
+def joinD = fn (flag : bool) : Root -> ( if flag then ( D1() ) else ( D2() ) )
+assert(pickIfaces(false, C1(), C2()).tag() == "c2")
+assert(joinD(true).tag() == "i1")
+assert(joinD(false).tag() == "i2")
+```
+
+## Unannotated if/else interface join
+
+```babble
+def joinIface = fn (flag : bool, a : I1, b : I2) -> (
+    def r = if flag then ( a ) else ( b )
+    r.tag()
+)
+assert(joinIface(true, C1(), C2()) == "c1")
+assert(joinIface(false, C1(), C2()) == "c2")
+```
+
+## Java class hierarchy join : StringBuilder/StringBuffer -> any
+
+```babble
+def pickBuf = fn io (flag : bool) : any -> (
+    if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("bc") )
+)
+assert(java.util.Objects.toString(pickBuf(true)) == "a")
+assert(java.util.Objects.toString(pickBuf(false)) == "bc")
+```
+
+## Java class hierarchy join : unannotated StringBuilder/StringBuffer -> AbstractStringBuilder
+
+```babble
+def joinBuf = fn io (flag : bool) : int -> (
+    def xs = if flag then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuffer("bc") )
+    xs.length()
+)
+assert(joinBuf(true) == 1)
+assert(joinBuf(false) == 2)
+```
+
+## Java class hierarchy join : ArrayList/LinkedList -> AbstractList
+
+```babble
+def pickList = fn (flag : bool) : any -> (
+    def a : java.util.ArrayList of int = java.util.ArrayList()
+    def b : java.util.LinkedList of int = java.util.LinkedList()
+    if flag then ( a ) else ( b )
+)
+assert(classof(pickList(true)) != null)
+assert(classof(pickList(false)) != null)
+```
+
+## Java interface join : List/Set -> Collection
+
+```babble
+def joinCol = fn io (c : bool) : java.util.Collection of string -> (
+    if c then ( java.util.Collections.singletonList("a") ) else ( java.util.Collections.singleton("b") )
+)
+assert(joinCol(true).size() == 1)
+assert(joinCol(false).size() == 1)
+```
+
+## Java interface join : List/Set -> any
+
+```babble
+def pickColl = fn io (c : bool) : any -> (
+    if c then ( java.util.List.of(1) ) else ( java.util.Set.of(2) )
+)
+assert(string(pickColl(true)) == "[1]")
+assert(string(pickColl(false)) == "[2]")
+```
+
+## Unrelated Babble classes and object/string merges -> Object
+
+```babble
+def pickCls = fn (flag : bool) : any -> ( if flag then ( A() ) else ( B() ) )
+def mixed = fn (flag : bool) : any -> ( if flag then ( object ( def k = 1 ) ) else ( "s" ) )
+assert(classof(pickCls(true)) == A)
+assert(mixed(false) == "s")
+```
+
+## Two distinct lambda closures merged as fn () : int
+
+```babble
+def pickFn = fn (flag : bool) : fn () : int -> (
+    if flag then ( fn () : int -> ( 1 ) ) else ( fn () : int -> ( 2 ) )
+)
+assert(pickFn(true)() == 1)
+assert(pickFn(false)() == 2)
+```

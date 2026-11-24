@@ -1,0 +1,240 @@
+# Polymorphic (2-4 shapes) and megamorphic (5+ shapes, > MAX_DEPTH) invokedynamic inline caches
+
+References : BIP001, BIP002, BIP009 ; targets Bootstrap (SelectCache, CallCache, TypedCallCache), JavaLinker
+
+```babble preamble
+def Sh = interface ( def v: fn (): int )
+def S1 = class (x: int) implements Sh ( def v = fn (): int -> (x + 1) )
+def S2 = class (x: int) implements Sh ( def v = fn (): int -> (x + 2) )
+def S3 = class (x: int) implements Sh ( def v = fn (): int -> (x + 3) )
+def S4 = class (x: int) implements Sh ( def v = fn (): int -> (x + 4) )
+def S5 = class (x: int) implements Sh ( def v = fn (): int -> (x + 5) )
+def S6 = object implements Sh ( def x = 10 ; def v = fn (): int -> (this.x + 6) )
+def F = type fn (int): int
+
+;; Test rig : invokes 4 polymorphic callables across `n` passes at a single call site
+def run4 = fn (a: F, b: F, c: F, d: F, n: int): int -> (
+    def t = 0 ; def p = 0
+    while p < n then (
+        def i = 0
+        while i < 4 then (t += (if i == 0 then (a) else if i == 1 then (b) else if i == 2 then (c) else (d))(i) ; i += 1)
+        p += 1
+    )
+    t
+)
+```
+
+## Megamorphic SelectCache & CallSite across 5 Babble classes + 1 singleton object
+
+```babble
+def pick = fn volatile (i : int) : Sh -> (
+    def k = i - int(i / 6) * 6
+    if k == 0 then ( S1(i) ) else if k == 1 then ( S2(i) ) else if k == 2 then ( S3(i) )
+    else if k == 3 then ( S4(i) ) else if k == 4 then ( S5(i) ) else ( S6 )
+)
+def invoke = fn (s : Sh) : int -> ( s.v() )
+def total = 0 ; def i = 0
+while i < 18 then ( total += invoke(pick(i)) ; i += 1 )
+assert(total == 213)
+```
+
+## Megamorphic TypedCallCache across 6 distinct closures
+
+```babble
+def fs = list.of(
+    fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x + 2 ),
+    fn (x: int): int -> ( x + 3 ), fn (x: int): int -> ( x + 4 ),
+    fn (x: int): int -> ( x + 5 ), fn (x: int): int -> ( x * 2 )
+)
+def sum = 0 ; def i = 0
+while i < 12 then (
+    def f = fs.get(i - int(i / 6) * 6)
+    sum += f(i)
+    i += 1
+)
+assert(sum == 112)
+```
+
+## Megamorphic CallCache across 6 optional-arg closures
+
+```babble
+def gs = (list of (fn (int): int)).of(
+    fn (x: int, y: int = 0): int -> ( x + y + 1 ), fn (x: int, y: int = 0): int -> ( x + y + 2 ),
+    fn (x: int, y: int = 0): int -> ( x + y + 3 ), fn (x: int, y: int = 0): int -> ( x + y + 4 ),
+    fn (x: int, y: int = 0): int -> ( x + y + 5 ), fn (x: int, y: int = 0): int -> ( x + y + 6 )
+)
+def s = 0
+for g in gs then ( s += g(0) )
+assert(s == 21)
+```
+
+## Megamorphic Java method dispatch on 5 distinct Collection receiver classes
+
+```babble
+def items = (list of (java.util.Collection of int)).of(
+    java.util.ArrayList(), java.util.LinkedList(), java.util.Vector(),
+    java.util.Stack(), java.util.ArrayDeque()
+)
+def sizes = 0 ; def j = 0
+while j < 10 then (
+    sizes += items.get(j - int(j / 5) * 5).size()
+    j += 1
+)
+assert(sizes == 0)
+```
+
+## BoundMethod(CompiledFunction) spec in loop : external fn in field (isBoundFunctionSpec, boundFunction, isSame)
+
+```babble
+def extSpec = fn (x: int): int -> ( x + 10 )
+def Holder = class () ( def ms = extSpec )
+def h = Holder()
+def bmSpec: fn (int): int = h.ms
+def s = 0 ; def i = 0
+while i < 3 then ( s += bmSpec(i) ; i += 1 )
+assert(s == 33)
+```
+
+## BoundMethod(CompiledFunction) spread in loop : external fn in field (isBoundFunction, boundFunction, isSame)
+
+```babble
+def extSpread = fn (x: int, y: int = 5): int -> ( x + y )
+def Holder = class () ( def md = extSpread )
+def h = Holder()
+def bmDirect = h.md
+def s = 0 ; def i = 0
+while i < 3 then ( s += bmDirect(i) ; i += 1 )
+assert(s == 18)
+```
+
+## Static field on Java instance in loop (SelectCache isSame)
+
+```babble
+def total = 0 ; def i = 0
+while i < 3 then (
+    total += java.io.StreamTokenizer(java.io.StringReader("x")).TT_EOF
+    i += 1
+)
+assert(total == -3)
+```
+
+## TypedCallCache 0-arg constructor, 0-arg BoundJavaMethod, and union primitive field SelectCache
+
+```babble
+def Z = class () ()
+def makeZ : fn (): Z = Z
+assert(classof(makeZ()) == Z)
+def sbLen : fn io (): int = java.lang.StringBuilder("abc").length
+assert(sbLen() == 3)
+def UA = class (def v: int) ()
+def UB = class (def v: int) ()
+def pickU = fn (f: bool): UA | UB -> ( if f then ( UA(3) ) else ( UB(7) ) )
+assert(pickU(true).v == 3 and pickU(false).v == 7)
+```
+
+## Interface default methods called via bound function refs in loops (spec & spread)
+
+```babble
+def IDef = interface (
+    def dmSpec = fn (x: int): int -> ( x + 10 )
+    def dmSpread = fn (x: int, y: int = 5): int -> ( x + y )
+)
+def ci = (class () implements IDef ())()
+def fSpec : fn (int): int = ci.dmSpec
+def fSpread : fn (int): int = ci.dmSpread
+def s1 = 0 ; def s2 = 0 ; def i = 0
+while i < 3 then ( s1 += fSpec(i) ; s2 += fSpread(i) ; i += 1 )
+assert(s1 == 33 and s2 == 18)
+```
+
+## Interface default method with any? optional param called via bound ref in loop
+
+```babble
+def IDef = interface (
+    def dmAny = fn (x: any?, y: any? = 5): any? -> ( (x as int) + (y as int) )
+)
+def ci = (class () implements IDef ())()
+def fAny = ci.dmAny
+def s = 0 ; def i = 0
+while i < 3 then ( s += fAny(i) as int ; i += 1 )
+assert(s == 18)
+```
+
+## Bound interface default method with contravariant union param called through narrower primitive function type
+
+```babble
+def IfaceDef = interface (
+    def defm = fn (x: int | string): any -> ( x )
+)
+def CDef = class () implements IfaceDef ()
+def callAny: fn (x: int): any = CDef().defm
+assert(callAny(42) == 42)
+```
+
+## Polymorphic TypedCallCache mixing CompiledFunction, CompiledMethod, and BoundMethod(CompiledFunction)
+
+```babble
+def I = interface ( def a = fn (x: int): int -> ( x + 100 ) )
+def c = (class () implements I ( def m = fn (x: int): int -> ( x + 10 ) ))()
+assert(run4(fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x + 2 ), c.m, c.a, 1) == 119)
+```
+
+## Polymorphic boxed CallCache mixing CompiledFunction, CompiledMethod, and interface default
+
+```babble
+def I = interface ( def a = fn (x: int, s: string): string -> ( s + ":" + x ) )
+def c = (class () implements I ( def m = fn (x: int, s: string): string -> ( s + "=" + (x + 10) ) ))()
+def fs = list.of(fn (x: int, s: string): string -> ( s + "!" ), c.m, c.a, c.a)
+def o = "" ; def i = 0
+while i < 4 then ( o += fs.get(i)(i, "k") + ";" ; i += 1 )
+assert(o == "k!;k=11;k:2;k:3;")
+```
+
+## Polymorphic CallCache predicate guards across 2 passes : 2 bound defaults, bound method, function
+
+```babble
+def I1 = interface ( def d = fn (x: int, y: int = 10): int -> ( x + y + 100 ) )
+def I2 = interface ( def d = fn (x: int, y: int = 20): int -> ( x + y + 200 ) )
+def c1 = (class () implements I1 ( def m = fn (x: int, y: int = 1): int -> ( x + y + 10 ) ))()
+def c2 = (class () implements I2 ())()
+assert(run4(c1.d, c2.d, c1.m, fn (x: int, y: int = 3): int -> ( x + y ), 2) == 700)
+```
+
+## Polymorphic CallCache predicate guards across 2 passes : 2 bound methods, 2 functions
+
+```babble
+def c1 = (class () ( def m = fn (x: int, y: int = 1): int -> ( x + y + 10 ) ))()
+def c2 = (class () ( def m = fn (x: int, y: int = 2): int -> ( x + y + 20 ) ))()
+assert(run4(c1.m, c2.m, fn (x: int, y: int = 3): int -> ( x + y ), fn (x: int, y: int = 4): int -> ( x + y ), 2) == 92)
+```
+
+## Polymorphic TypedCallCache spec guards across 2 passes : 2 bound defaults, bound method, function
+
+```babble
+def I1 = interface ( def d = fn (x: int): int -> ( x + 100 ) )
+def I2 = interface ( def d = fn (x: int): int -> ( x + 200 ) )
+def c1 = (class () implements I1 ( def m = fn (x: int): int -> ( x + 10 ) ))()
+def c2 = (class () implements I2 ())()
+assert(run4(c1.d, c2.d, c1.m, fn (x: int): int -> ( x + 1 ), 2) == 634)
+```
+
+## Polymorphic TypedCallCache spec guards across 2 passes : 2 bound methods, 2 functions
+
+```babble
+def c1 = (class () ( def m = fn (x: int): int -> ( x + 10 ) ))()
+def c2 = (class () ( def m = fn (x: int): int -> ( x + 20 ) ))()
+assert(run4(c1.m, c2.m, fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x + 2 ), 2) == 78)
+```
+
+## SelectCache javaDefaultMethods miss on BabbleInstance implementing Java interface
+
+```babble
+def Cmp = class () implements java.util.Comparator of int (
+    def compare = fn (a : int, b : int) : int -> ( a - b )
+)
+def c = Cmp()
+def rev1 = c.reversed()
+def rev2 = c.reversed()
+assert(rev1.compare(1, 5) > 0)
+assert(rev2.compare(5, 1) > 0 == false)
+```

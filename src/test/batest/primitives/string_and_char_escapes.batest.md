@@ -1,0 +1,60 @@
+# String/char literal escapes and core-type keyword handling in member names vs bindings
+
+References : BIP011 (core types and char/string literals), BIP012 (memberName keyword exemption)
+
+## Core-type keywords (such as set) remain valid as member names after '.'
+
+```babble
+def xs : java.util.ArrayList of int = java.util.ArrayList()
+xs.add(1)
+xs.set(0, 7)
+assert(xs.get(0) == 7)
+```
+
+## Error : Syntax error : unexpected 'list'
+
+```babble
+def list = 1
+```
+
+```error
+Syntax error : unexpected 'list'
+```
+
+## Extended string escapes : \t, \uXXXX, \', \", \\
+
+```babble
+def s = "A\tB\u0043\'\"\\"
+assert(s.length() == 7)
+assert(s.charAt(0) == 'A')
+assert(int(s.charAt(1)) == 9)
+assert(s.charAt(2) == 'B')
+assert(s.charAt(3) == 'C')
+assert(int(s.charAt(4)) == 39)
+assert(int(s.charAt(5)) == 34)
+assert(int(s.charAt(6)) == 92)
+```
+
+## Case 4
+
+```babble
+def a = 'A'
+def u = '\u0042'
+def q = '\''
+assert(a == 'A')
+assert(u == 'B')
+assert(int(q) == 39)
+```
+
+## Control-character escapes in string and char literals : \b, \n, \f, \r, \0
+
+```babble
+def s = "\b\n\f\r\0"
+assert(s.length() == 5)
+assert(int(s.charAt(0)) == 8)
+assert(int(s.charAt(1)) == 10)
+assert(int(s.charAt(2)) == 12)
+assert(int(s.charAt(3)) == 13)
+assert(int(s.charAt(4)) == 0)
+assert(int('\b') == 8 and int('\n') == 10 and int('\f') == 12 and int('\r') == 13 and int('\0') == 0)
+```

@@ -163,13 +163,7 @@ public final class BatestRunner {
         if (outcome.kind() == Kind.INTERNAL_CRASH) {
             return "INTERNAL_CRASH";
         }
-        if (testCase.format() == BatestFile.Format.V1) {
-            if (testCase.matches(outcome.text())) {
-                return null;
-            }
-            return "expected: <" + testCase.expected() + "> but was: <" + outcome.text() + ">";
-        }
-        // V2: independent stdout, stderr, and error/Kind checks (BIP029-D3, BIP029-D4).
+        // Independent stdout, stderr, and error/Kind checks (BIP029-D3, BIP029-D4).
         List<String> failures = new ArrayList<>();
         if (testCase.expectedError() == null) {
             if (outcome.kind() != Kind.OK) {

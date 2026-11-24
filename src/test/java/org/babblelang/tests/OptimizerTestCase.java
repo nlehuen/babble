@@ -62,7 +62,7 @@ public class OptimizerTestCase {
         HirModule hir = HirBuilder.build("org/babblelang/generated/OptTest", "<test>", file, scopes, Map.of(), Map.of());
         HirVerifier.verify(hir);
         PassContext ctx = new PassContext(optLevel, true, null, false, Map.of());
-        HirModule out = PassManager.defaultFor(optLevel).optimize(hir, ctx, null);
+        HirModule out = PassManager.defaultFor(optLevel).optimize(hir, ctx);
         HirVerifier.verify(out);
         return out;
     }
