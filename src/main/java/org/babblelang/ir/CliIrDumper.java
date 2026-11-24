@@ -21,9 +21,16 @@ public final class CliIrDumper {
         }
         String lower = spec.toLowerCase(Locale.ROOT);
         boolean canonical = lower.endsWith(":canonical") || "canonical".equals(lower);
-        boolean hirOnly = lower.startsWith("hir");
-        boolean mirOnly = lower.startsWith("mir");
-        String afterPrefix = lower.contains(":after:") ? spec.substring(lower.indexOf(":after:") + 1) : null;
+        String baseSpec = canonical && lower.endsWith(":canonical")
+                ? spec.substring(0, spec.length() - ":canonical".length())
+                : spec;
+        String baseLower = baseSpec.toLowerCase(Locale.ROOT);
+        boolean hirOnly = baseLower.startsWith("hir");
+        boolean mirOnly = baseLower.startsWith("mir");
+        boolean beforeOnly = baseLower.endsWith(":before");
+        String afterPrefix = baseLower.contains(":after:")
+                ? baseSpec.substring(baseLower.indexOf(":after:") + 1)
+                : null;
         return new IrObserver() {
             @Override
             public boolean wants(IrTier tier, int activeOpt, String stage) {
@@ -35,6 +42,9 @@ public final class CliIrDumper {
                 }
                 if (afterPrefix != null) {
                     return afterPrefix.equals(stage);
+                }
+                if (beforeOnly) {
+                    return IrSnapshot.STAGE_BEFORE.equals(stage);
                 }
                 if (IrSnapshot.STAGE_BEFORE.equals(stage)) {
                     return true;
