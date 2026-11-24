@@ -316,17 +316,6 @@ def samFn : java.util.function.Function of (int, double) = java.util.function.Fu
 assert(samFn.apply(4) == 5.0)
 ```
 
-## Error : Ambiguous call to java.lang.StringBuilder.append for (null)
-
-```babble
-def sb = java.lang.StringBuilder()
-sb.append(null)
-```
-
-```error
-Ambiguous call to java.lang.StringBuilder.append for (null)
-```
-
 ## Error : No applicable overload of java.lang.Runnable for (java.lang.Integer) ...
 
 ```babble

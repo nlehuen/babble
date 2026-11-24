@@ -250,17 +250,6 @@ b + 2
 b.plus is not callable
 ```
 
-## Operator plus missing second required parameter reports missing parameter
-
-```babble
-def Bad = class () ( def plus = fn (a: int, b: int): int -> ( a + b ) )
-Bad() + 1
-```
-
-```error
-Missing parameter : b
-```
-
 ## Generic operator plus promotes SAM bound
 
 ```babble

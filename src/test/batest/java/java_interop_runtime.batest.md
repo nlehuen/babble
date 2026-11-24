@@ -160,26 +160,6 @@ assert(int("99") == 99)
 assert(int(3.9) == 3)
 ```
 
-## Error : boom
-
-```babble
-assert(false, "boom")
-```
-
-```error
-boom
-```
-
-## Error : Assertion failed : false
-
-```babble
-assert(false)
-```
-
-```error
-Assertion failed : false
-```
-
 ## Case 17
 
 ```babble

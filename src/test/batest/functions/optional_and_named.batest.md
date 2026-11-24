@@ -242,16 +242,6 @@ assert(invoke(f1) == "11:3")
 assert(invoke(f2) == "121:103")
 ```
 
-## assert with omitted optional message passes Arguments.MISSING
-
-```babble
-assert(false)
-```
-
-```error
-Assertion failed : false
-```
-
 ## assert with explicit null message
 
 ```babble
@@ -274,3 +264,68 @@ assert(b2.a == 2 and b2.b == 20 and b2.c == "hi")
 assert(string(Pt(3)) == "Pt(x: 3, y: 5)")
 assert(string(Pt(3, y: 9)) == "Pt(x: 3, y: 9)")
 ```
+
+## Dependent default parameter evaluation with positional and named calls
+
+```babble
+def fmt = fn (a : int, b : int = 10, c : int = a + b) : string -> (
+    "" + a + ":" + b + ":" + c
+)
+assert(fmt(1) == "1:10:11")
+assert(fmt(1, 2) == "1:2:3")
+assert(fmt(1, 2, 3) == "1:2:3")
+assert(fmt(c: 99, a: 2) == "2:10:99")
+assert(fmt(5, c: 20) == "5:10:20")
+```
+
+## Function with defaulted parameters passed through a higher-order function parameter
+
+```babble
+def invoke = fn (func : fn (x : int, y : int, z : int) : string) : string -> (
+    func(10, 20, 30)
+)
+def fmt = fn (a : int = 1, b : int = 2, c : int = 3) : string -> ( "" + a + "-" + b + "-" + c )
+assert(invoke(fmt) == "10-20-30")
+```
+
+## Unknown named argument reports no such parameter
+
+```babble
+def f = fn (a : int, b : int = 1) : int -> ( a + b )
+print(f(1, z: 2))
+```
+
+```error
+No such parameter : z
+```
+
+## Omitting required parameter when using named argument reports missing parameter
+
+```babble
+def f = fn (a : int, b : int, c : int = 5) : int -> ( a + b + c )
+print(f(a: 1))
+```
+
+```error
+Missing parameter : b
+```
+
+## Function with defaulted trailing parameter satisfies shorter function type
+
+```babble
+def f = fn (a : int, b : int = a * 2) : int -> ( a + b )
+def indirect : fn (a : int) : int = f
+assert(indirect(4) == 12)
+```
+
+## Two-required-parameter function rejected for one-parameter function type
+
+```babble
+def f = fn (a : int, b : int) : int -> ( a + b )
+def indirect : fn (a : int) : int = f
+```
+
+```error
+Type error : expected (a : int) : int, got (a : int, b : int) : int
+```
+

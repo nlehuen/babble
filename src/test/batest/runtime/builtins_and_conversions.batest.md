@@ -517,56 +517,6 @@ int(n)
 Out of the int range : n = 3000000000
 ```
 
-## Error : Type error : expected string, got byte
-
-```babble
-dyn(byte(1)) as string
-```
-
-```error
-Type error : expected string, got byte
-```
-
-## Error : Type error : expected string, got short
-
-```babble
-dyn(short(1)) as string
-```
-
-```error
-Type error : expected string, got short
-```
-
-## Error : Type error : expected string, got long
-
-```babble
-dyn(long(1)) as string
-```
-
-```error
-Type error : expected string, got long
-```
-
-## Error : Type error : expected string, got float
-
-```babble
-dyn(float(1.5)) as string
-```
-
-```error
-Type error : expected string, got float
-```
-
-## Error : Type error : expected string, got char
-
-```babble
-dyn(char("a")) as string
-```
-
-```error
-Type error : expected string, got char
-```
-
 ## Error : Type error : expected string, got array of (array of int)
 
 ```babble

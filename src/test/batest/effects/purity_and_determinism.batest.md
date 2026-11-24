@@ -1,7 +1,7 @@
-# EffectChecker and EffectSet coverage : purity, determinism, nothrow, toString profiles,
+# Purity, determinism, nothrow, toString profiles, algebraic markers, and mut exclusivity
 
 SAM callback propagation, mut exclusivity, algebraic property inference/validation,
-EffectSet.intersect/satisfies, static blocks in constrained functions, and legacy axiom syntax.
+EffectSet.intersect/satisfies, static blocks in constrained functions, and BIP019 axioms.
 References : BIP007, BIP016, BIP019, EffectChecker, EffectSet
 
 ```babble module=ce_mod_a.ba
@@ -13,6 +13,10 @@ export def ModCustom = class (def x: int) (
 ```babble preamble
 def Reg = class (def v: int) ()
 def Box = class (def v: int) ()
+def MutBox = class (def value : int) (
+    def addTo = fn mut (k : int) : int -> ( this.value += k ; this.value )
+    def read = fn () : int -> ( this.value )
+)
 ```
 
 ## Error : Function badHerm violates pure guarantee (performs I/O or external mu...
@@ -452,20 +456,7 @@ def fDet = fn () -> (
 static block inside deterministic function violates deterministic guarantee
 ```
 
-## Error : axiom declaration is not allowed inside a verified constrained function
-
-```babble
-def f = fn (): int -> (
-    axiom java.lang.Math.abs: fn pure
-    1
-)
-```
-
-```error
-axiom declaration is not allowed inside a verified constrained function
-```
-
-## Case 38
+## Top-level io axiom allows calling Java method outside pure functions
 
 ```babble
 axiom java.lang.System.nanoTime: fn io
@@ -474,3 +465,83 @@ def t = java.lang.System.nanoTime()
 assert(f() == 1)
 assert(t == t)
 ```
+
+## Verified algebraic markers on pure functions (monotone, commutative, associative, injective, idempotent)
+
+```babble
+def inc = fn nothrow monotone (x : double) : double -> ( x + 1.0 )
+def add = fn nothrow commutative associative (a : int, b : int) : int -> ( a + b )
+def oddScale = fn nothrow injective (x : int) : int -> ( x * 3 )
+def keep = fn idempotent (x : int) : int -> ( x )
+def herm = fn (x : int) : int -> ( x * 2 )
+assert(inc(1.5) == 2.5)
+assert(add(oddScale(1), 2) + keep(3) == 8)
+assert(herm(5) == 10)
+```
+
+## Wrapping 32-bit int addition cannot satisfy monotone guarantee
+
+```babble
+def badMono = fn monotone (x : int) : int -> ( x + 1 )
+```
+
+```error
+Function badMono declared monotone violates monotone guarantee
+```
+
+## Explicit mut parameter permits calling mut method while read-only parameter permits pure method
+
+```babble
+def bumpBox = fn (mut b : MutBox, delta : int) : int -> ( b.addTo(delta) )
+def inspectBox = fn (b : MutBox) : int -> ( b.read() )
+def box = MutBox(10)
+assert(bumpBox(box, 5) == 15)
+assert(inspectBox(box) == 15)
+```
+
+## Explicit pure and mut Java method axioms enable calling Java methods from pure functions
+
+```babble
+axiom java.lang.Math.abs: fn pure nothrow
+axiom java.util.List.add: fn mut
+axiom java.util.List.size: fn pure
+def compute = fn (x : int) : int -> ( java.lang.Math.abs(x) )
+def l : java.util.List of int = java.util.ArrayList()
+l.add(-7)
+assert(compute(-7) == 7)
+assert(l.size() == 1)
+```
+
+## Calling mut method on non-mut parameter is rejected
+
+```babble
+def bad = fn (b : MutBox) -> ( b.addTo(1) )
+```
+
+```error
+Cannot mutate parameter b (mut method b.addTo) : mark parameter as mut b
+```
+
+## Passing the same receiver to two mut parameters violates exclusivity
+
+```babble
+def swapAdd = fn (mut a : MutBox, mut b : MutBox) -> ( a.addTo(b.value) )
+def x = MutBox(3)
+swapAdd(x, x)
+```
+
+```error
+Exclusivity error : mut target x aliases argument x
+```
+
+## Compound-assigning an outer variable inside a pure function is rejected
+
+```babble
+def g = 0
+def badPure = fn () : int -> ( g += 1 ; g )
+```
+
+```error
+Function badPure violates pure guarantee (performs I/O or external mutation) : mark function as io
+```
+

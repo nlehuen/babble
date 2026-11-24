@@ -197,11 +197,10 @@ assert(ran == 1 and java.util.function.IntUnaryOperator(ov).applyAsInt(3) == 5)
 
 ```babble
 def ca = (array of java.lang.CharSequence?)(1)
-coerce of (fn io (i: int, v: any?): null)(ca.set)(0, fn () -> ( () ))
-```
-
-```error regex
-java\.lang\.ArrayStoreException: .*
+def caught = false
+try ( coerce of (fn io (i: int, v: any?): null)(ca.set)(0, fn () -> ( () )) )
+catch (e: java.lang.ArrayStoreException) then ( caught = true )
+assert(caught)
 ```
 
 ## Values fromJava preserves non-FaceHandler JDK Proxy
