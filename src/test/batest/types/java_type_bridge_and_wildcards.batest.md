@@ -330,10 +330,10 @@ def sf: int? = Demo.STATIC_FINAL_NULL_INT
 assert(sf == null)
 ```
 
-## Local nullmarked axiom treats Java instance field as non-null
+## Local notnull axiom treats Java instance field as non-null
 
 ```babble
-axiom org.babblelang.tests.JavaClassDemo: class nullmarked ()
+axiom org.babblelang.tests.JavaClassDemo: class notnull ()
 def d = Demo()
 d.instanceBoxedInt = 7
 def v: int = d.instanceBoxedInt
@@ -344,10 +344,10 @@ assert(v == 7)
 
 ```babble
 axiom org.babblelang.tests.JavaClassDemo: class () static (
-    def vaPick: fn io (xs: any...): string
+    def vaPick: fn io (xs: any!...): string!
 )
 axiom org.babblelang.tests.JavaClassDemo.VarArgsCtor: class () static (
-    def new: fn io (prefix: string, values: int...)
+    def new: fn io (prefix: string!, values: int...)
 )
 def s = Demo.vaPick("a", "b")
 def c = Demo.VarArgsCtor("p", 1, 2)
