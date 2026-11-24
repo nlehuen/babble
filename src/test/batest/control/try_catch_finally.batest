@@ -1,0 +1,555 @@
+;; Exception handling : try, catch, finally, throw, and core exception type
+;; References : BIP028 (D1-D6, D9), ControlAndOpEmitter.emitTry, HirTryNormalize, Interpreter
+
+def AppError = interface (
+    def code: fn (): int
+)
+def ParseError = record (line: int, msg: string) implements AppError (
+    def code = fn (): int -> (400)
+)
+def NotFound = record (id: string) implements AppError (
+    def code = fn (): int -> (404)
+)
+
+def parse = fn io (s: string): int -> (
+    java.lang.Integer.parseInt(s)
+)
+
+def throwIO = fn (msg: string): int -> (
+    throw java.io.IOException(msg)
+)
+
+{{{{{
+def a = try (parse("42")) catch : java.lang.NumberFormatException then (-1)
+def b = try (parse("bad")) catch : java.lang.NumberFormatException then (-1)
+assert(a == 42)
+assert(b == -1)
+}}}}}
+
+{{{{{
+;; Checked Java exception propagates directly without checked-exception ceremony
+def msg = try (
+    throwIO("disk full")
+    "ok"
+) catch e: java.io.IOException then (
+    e.getMessage()
+)
+assert(msg == "disk full")
+}}}}}
+
+{{{{{
+;; JVM array and null exceptions caught by their real Java types
+def a = (array of int).of(1, 2)
+def oob = try (a.get(5)) catch : java.lang.ArrayIndexOutOfBoundsException then (-1)
+assert(oob == -1)
+def s: string? = null
+def npe = try (s!.length()) catch e: exception then (e.getMessage())
+assert(npe == "Type error : expected string, got null")
+}}}}}
+
+{{{{{
+;; Core exception type : construction, catching, is check, and first-class reference
+def E = exception
+def ex = E("boom")
+assert(ex is exception)
+assert(ex is java.lang.RuntimeException)
+def caught = try (
+    throw exception("bad port", java.io.IOException("root"))
+) catch e: exception then (
+    "" + e.getMessage() + "|" + e.getCause()!.getMessage()
+)
+assert(caught == "bad port|root")
+}}}}}
+
+{{{{{
+;; assert(false, ...) throws core exception
+def msg = try (
+    assert(false, "broken")
+    "ok"
+) catch e: exception then (
+    e.getMessage()
+)
+assert(msg == "broken")
+}}}}}
+
+{{{{{
+;; Checked cast failure throws core exception
+def x: any = "hello"
+def caught = try (
+    x as int
+    false
+) catch : exception then (
+    true
+)
+assert(caught)
+}}}}}
+
+{{{{{
+;; PrintFunction rethrows IOException directly (BIP028-D3)
+def w = java.io.Writer.nullWriter()
+w.close()
+assert(try (println("hi", to: w); false) catch : java.io.IOException then (true))
+}}}}}
+
+
+{{{{{
+;; Custom Babble record and interface catching
+def r1 = try (throw ParseError(3, "bad")) catch e: ParseError then (e.line * 10 + e.code())
+def r2 = try (throw NotFound("u1")) catch e: AppError then (e.code())
+assert(r1 == 430)
+assert(r2 == 404)
+}}}}}
+
+{{{{{
+;; ThrownException isolation : catch java.lang.Exception skips Babble nominal values (BIP028-D2)
+def r = try (
+    throw ParseError(7, "x")
+) catch : java.lang.Exception then (
+    1
+) catch e: ParseError then (
+    e.line
+)
+assert(r == 7)
+}}}}}
+
+{{{{{
+;; catch java.lang.RuntimeException also skips Babble values in any order
+def r = try (
+    throw ParseError(9, "x")
+) catch : java.lang.RuntimeException then (
+    1
+) catch e: ParseError then (
+    e.line
+)
+assert(r == 9)
+}}}}}
+
+{{{{{
+;; Unmatched Babble value escapes past Java Exception catch while running finally
+def ran = false
+def outer = try (
+    try (
+        throw ParseError(5, "esc")
+    ) catch : java.lang.Exception then (
+        0
+    ) finally (
+        ran = true
+    )
+) catch e: ParseError then (
+    e.line
+)
+assert(ran)
+assert(outer == 5)
+}}}}}
+
+{{{{{
+;; Explicit java.lang.Throwable catches ThrownException as a Throwable (not unwrapped)
+def msg = try (
+    throw ParseError(2, "hi")
+) catch e: java.lang.Throwable then (
+    e.getMessage()
+)
+assert(msg == "ParseError(line: 2, msg: hi)")
+}}}}}
+
+{{{{{
+;; Uncaught Babble thrown value formats cleanly at script boundary
+throw ParseError(4, "nope")
+}}}}}
+ParseError(line: 4, msg: nope)
+
+
+{{{{{
+;; Multi-catch union with is narrowing
+def f = fn (w: int): string -> (
+  try (
+    if w == 0 then (throw ParseError(1, "p"))
+    else if w == 1 then (throw NotFound("k"))
+    else (throwIO("x"))
+    ""
+  ) catch e: ParseError | NotFound | java.io.IOException then (
+    if e is ParseError then ("P" + e.line)
+    else if e is NotFound then ("N" + e.id)
+    else ("I" + e.getMessage())
+  )
+)
+assert(f(0) + f(1) + f(2) == "P1NkIx")
+}}}}}
+
+{{{{{
+;; Untyped catch catches Java Exception, core exception, and Babble values, and allows rethrow
+def f = fn io (k: int): int -> (
+  try (
+    try (
+      if k == 0 then (parse("x"))
+      else if k == 1 then (throw exception("e"))
+      else (throw NotFound("z"))
+    ) catch e then (throw e)
+  ) catch : java.lang.NumberFormatException then (10)
+  catch : exception then (20)
+  catch e: NotFound then (e.code())
+)
+assert(f(0) == 10 and f(1) == 20 and f(2) == 404)
+}}}}}
+
+{{{{{
+;; Untyped catch excludes java.lang.Error (BIP028-D4)
+def r = try (
+    try (
+        throw java.lang.AssertionError("fatal")
+    ) catch then (
+        1
+    )
+) catch e: java.lang.Error then (
+    2
+)
+assert(r == 2)
+}}}}}
+
+{{{{{
+;; Explicit Error catch after untyped catch is reachable and matches Error
+def r = try (
+    throw java.lang.AssertionError("boom")
+) catch then (
+    1
+) catch : java.lang.Error then (
+    2
+)
+assert(r == 2)
+}}}}}
+
+
+{{{{{
+;; Primitive unboxing and numeric widening across try and catch branches
+def d: double = try (parse("3")) catch : java.lang.NumberFormatException then (1.5)
+def d2: double = try (parse("x")) catch : java.lang.NumberFormatException then (1.5)
+assert(d == 3.0 and d2 == 1.5)
+}}}}}
+
+{{{{{
+;; HirTryNormalize : try inside binary RHS, call args, and constructor args
+def add = fn (a: int, b: int, c: int): int -> (a + b + c)
+def x = 10 + try (parse("x")) catch then (5)
+def y = add(1, try (parse("2")) catch then (0), try (parse("x")) catch then (3))
+def p = ParseError(1, try (throwIO("x"); "a") catch : java.io.IOException then ("b"))
+assert(x == 15 and y == 6 and p.msg == "b")
+}}}}}
+
+{{{{{
+;; HirTryNormalize : try inside field assignment, compound assignment, and safe call
+def Box = class (def v: int) ()
+def b = Box(10)
+b.v = try (parse("bad")) catch : java.lang.NumberFormatException then (20)
+b.v += try (parse("5")) catch : java.lang.NumberFormatException then (0)
+def s: string? = null
+def z = s?.substring(try (throwIO("never")) catch : java.io.IOException then (0))
+assert(b.v == 25 and z == null)
+}}}}}
+
+{{{{{
+;; Closure capturing catch parameter promotes e to Cell
+def makeReader = fn io (s: string): fn volatile (): string -> (
+    try (
+        parse(s)
+        fn (): string -> ("ok")
+    ) catch e: java.lang.NumberFormatException then (
+        fn volatile (): string -> ("err:" + e.getClass().getSimpleName())
+    )
+)
+assert(makeReader("5")() == "ok")
+assert(makeReader("x")() == "err:NumberFormatException")
+}}}}}
+
+
+{{{{{
+;; finally runs on normal exit and discards its value
+def log = list of string()
+def v = try (
+    log.add("try")
+    99
+) finally (
+    log.add("finally")
+)
+assert(v == 99 and log == list("try", "finally"))
+}}}}}
+
+{{{{{
+;; return evaluates its expression BEFORE finally runs (BIP028-D6)
+def f = fn (): int -> (
+    def x = 10
+    try (
+        return x
+    ) finally (
+        x = 99
+    )
+)
+assert(f() == 10)
+}}}}}
+
+{{{{{
+;; Nested finally blocks run innermost to outermost on return
+def log = list of string()
+def f = fn io (): int -> (
+    try (
+        try (
+            log.add("body")
+            return 7
+        ) finally (
+            log.add("inner")
+        )
+    ) finally (
+        log.add("outer")
+    )
+)
+assert(f() == 7 and log == list("body", "inner", "outer"))
+}}}}}
+
+{{{{{
+;; If inner finally throws during return, outer finally STILL runs (range splitting)
+def log = list of string()
+def f = fn io (): int -> (
+    try (
+        try (
+            return 7
+        ) finally (
+            log.add("inner")
+            throw exception("inner-fail")
+        )
+    ) finally (
+        log.add("outer")
+    )
+)
+def msg = try (f(); "none") catch e: exception then (e.getMessage())
+assert(msg == "inner-fail" and log == list("inner", "outer"))
+}}}}}
+
+{{{{{
+;; break and continue unwind inner finally blocks without running outer finally
+def log = list of string()
+def res = try (
+    def i = 0
+    while i < 3 then (
+        i += 1
+        try (
+            if i == 1 then (continue)
+            if i == 2 then (break 42)
+        ) finally (
+            log.add("fin" + i)
+        )
+    )
+) finally (
+    log.add("outer")
+)
+assert(res == 42 and log == list("fin1", "fin2", "outer"))
+}}}}}
+
+{{{{{
+;; Automatic addSuppressed when finally throws while primary exception is in flight (BIP028-D6)
+def info = try (
+    try (
+        throw java.io.IOException("primary")
+    ) finally (
+        throw java.lang.IllegalStateException("secondary")
+    )
+) catch e: java.io.IOException then (
+    def sup = e.getSuppressed()
+    "" + e.getMessage() + "|" + sup.size() + "|" + sup.get(0)!.getMessage()
+)
+assert(info == "primary|1|secondary")
+}}}}}
+
+{{{{{
+;; Self-suppression guard : rethrowing the exact same Throwable in finally does not crash
+def err = java.io.IOException("same")
+def count = try (
+    try (
+        throw err
+    ) finally (
+        throw err
+    )
+) catch e: java.io.IOException then (
+    e.getSuppressed().size()
+)
+assert(count == 0)
+}}}}}
+
+{{{{{
+;; Finally throwing on normal exit propagates normally (no primary in flight)
+def msg = try (
+    try (
+        42
+    ) finally (
+        throw exception("cleanup-fail")
+    )
+    "ok"
+) catch e: exception then (
+    e.getMessage()
+)
+assert(msg == "cleanup-fail")
+}}}}}
+
+{{{{{
+;; Nested fn or inner loop inside finally may return / break locally
+def f = fn (): int -> (
+    def s = 0
+    try (
+        1
+    ) finally (
+        def h = fn (): int -> (return 5)
+        s += h()
+        def k = 0
+        while k < 10 then (
+            k += 1
+            if k == 3 then (break)
+        )
+        s += k
+    )
+    s
+)
+assert(f() == 8)
+}}}}}
+
+{{{{{
+;; BIP024 : tail call in catch without finally runs in O(1) stack
+def loop = fn (n: int): int -> (
+    if n <= 0 then (0)
+    else (
+        try (
+            throw NotFound("step")
+        ) catch : NotFound then (
+            recurse(n - 1)
+        )
+    )
+)
+assert(loop(5000) == 0)
+}}}}}
+
+{{{{{
+;; Catch clause throwing while finally also throws attaches secondary to catch's primary
+def info = try (
+    try (
+        throw ParseError(1, "p")
+    ) catch : ParseError then (
+        throw java.io.IOException("from-catch")
+    ) finally (
+        throw java.lang.IllegalStateException("from-fin")
+    )
+) catch e: java.io.IOException then (
+    "" + e.getMessage() + "|" + e.getSuppressed().get(0)!.getMessage()
+)
+assert(info == "from-catch|from-fin")
+}}}}}
+
+
+{{{{{
+def f = fn (): int -> (
+    try (1) finally (return 2)
+)
+}}}}}
+Cannot return from a finally block
+
+{{{{{
+while true then (
+    try (1) finally (break)
+)
+}}}}}
+Cannot break out of a finally block
+
+{{{{{
+while true then (
+    try (1) finally (continue)
+)
+}}}}}
+Cannot continue out of a finally block
+
+{{{{{
+try (parse("x")) catch e: java.lang.NumberFormatException then (
+    e = java.lang.NumberFormatException("y")
+)
+}}}}}
+Cannot assign to catch parameter : e
+
+{{{{{
+throw 42
+}}}}}
+Type error : cannot throw int
+
+{{{{{
+throw "boom"
+}}}}}
+Type error : cannot throw string
+
+{{{{{
+def x: ParseError? = null
+throw x
+}}}}}
+Type error : cannot throw ParseError?
+
+{{{{{
+def x: any = 42
+throw x
+}}}}}
+Type error : cannot throw any
+
+{{{{{
+try (parse("x")) catch e: java.lang.StringBuilder then (0)
+}}}}}
+Type error : java.lang.StringBuilder is not a Throwable
+
+{{{{{
+try (parse("x")) catch e: int then (0)
+}}}}}
+Cannot catch non-exception type : int
+
+{{{{{
+try (parse("x")) catch e: java.lang.Exception? then (0)
+}}}}}
+Cannot catch nullable type : java.lang.Exception?
+
+{{{{{
+try (parse("x")) catch e: frozen ParseError then (0)
+}}}}}
+Cannot catch 'frozen' type : frozen ParseError
+
+{{{{{
+def Box of T = record (v: T) ()
+try (parse("x")) catch e: Box of int then (0)
+}}}}}
+Cannot catch erased type arguments : use Box
+
+{{{{{
+def f of T = fn io (x: T): int -> (
+    try (parse("x")) catch e: T then (0)
+)
+}}}}}
+Cannot catch type parameter : T
+
+{{{{{
+try (parse("x")) catch e: java.lang.Exception | java.io.IOException then (0)
+}}}}}
+Redundant catch type : java.io.IOException is already a subtype of java.lang.Exception
+
+{{{{{
+try (parse("x")) catch : java.lang.Exception then (1) catch : java.lang.NumberFormatException then (2)
+}}}}}
+Unreachable catch clause : java.lang.NumberFormatException is already caught by java.lang.Exception
+
+{{{{{
+try (parse("x")) catch : AppError then (1) catch : ParseError then (2)
+}}}}}
+Unreachable catch clause : ParseError is already caught by AppError
+
+{{{{{
+try (parse("x")) catch then (1) catch : ParseError then (2)
+}}}}}
+Unreachable catch clause : ParseError is already caught by earlier catch
+
+{{{{{
+try (parse("x")) catch : java.lang.Throwable then (1) catch then (2)
+}}}}}
+Unreachable catch clause : catch-all is already caught by java.lang.Throwable
+
+{{{{{
+def x: int = try (parse("1")) catch then ("bad")
+}}}}}
+Type error : expected int, got string

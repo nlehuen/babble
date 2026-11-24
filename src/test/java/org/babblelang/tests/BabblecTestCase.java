@@ -258,4 +258,34 @@ public class BabblecTestCase {
         Assertions.assertEquals(0, run.status(), run.err());
         Assertions.assertTrue(run.out().endsWith("c" + System.lineSeparator()), run.out());
     }
+
+    @Test
+    public void exceptionHandlingWorksInAotJar() throws Exception {
+        Files.writeString(directory.resolve("main.ba"), """
+                def AppErr = record (code: int, msg: string) ()
+                def v = try (
+                    java.lang.Integer.parseInt("bad")
+                ) catch : java.lang.NumberFormatException then (
+                    try (
+                        throw AppErr(404, "missing")
+                    ) catch e: AppErr then (
+                        e.code
+                    ) finally (
+                        println("cleaned")
+                    )
+                )
+                println(v)
+                if args.size() > 0 then (
+                    throw AppErr(500, "uncaught")
+                )
+                """);
+        compile("main.ba", "exc.jar");
+        Run ok = run("exc.jar");
+        Assertions.assertEquals(0, ok.status(), ok.err());
+        Assertions.assertEquals("cleaned" + System.lineSeparator() + "404" + System.lineSeparator(), ok.out());
+
+        Run fail = run("exc.jar", "boom");
+        Assertions.assertEquals(1, fail.status());
+        Assertions.assertTrue(fail.err().contains("AppErr(code: 500, msg: uncaught)"), fail.err());
+    }
 }

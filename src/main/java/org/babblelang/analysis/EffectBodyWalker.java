@@ -83,13 +83,15 @@ final class EffectBodyWalker {
     }
 
     static final class TryFrame {
+        final int level;
         final List<BabbleParser.CatchClauseContext> catches;
         final Reachability.Origin[] caughtOrigins;
         Map<ParserRuleContext, Reachability.Origin> unwindEnv;
         boolean hadLocalThrow;
         boolean hadEscapingThrow;
 
-        TryFrame(List<BabbleParser.CatchClauseContext> catches, Map<ParserRuleContext, Reachability.Origin> preEnv) {
+        TryFrame(int level, List<BabbleParser.CatchClauseContext> catches, Map<ParserRuleContext, Reachability.Origin> preEnv) {
+            this.level = level;
             this.catches = catches;
             this.caughtOrigins = new Reachability.Origin[catches.size()];
             this.unwindEnv = new IdentityHashMap<>(preEnv);
@@ -105,6 +107,7 @@ final class EffectBodyWalker {
     final List<ActiveForLoop> activeForIterables = new ArrayList<>();
     final Deque<Reachability.Origin[]> loopBreakOrigins = new ArrayDeque<>();
     final Deque<TryFrame> activeTryStack = new ArrayDeque<>();
+    int deepestThrowEscapeLevel = Integer.MAX_VALUE;
     final Set<Integer> forwardedParams;
     /**
      * Callbacks of an enclosing function the owner names in its calling clause (BIP017-D5),
@@ -1397,11 +1400,12 @@ final class EffectBodyWalker {
                     }
                     if (matches) {
                         frame.hadLocalThrow = true;
+                        deepestThrowEscapeLevel = Math.min(deepestThrowEscapeLevel, frame.level);
                         if (orig != Reachability.Origin.IMMUTABLE) {
-                            Reachability.Origin routed = orig;
+                            Reachability.Origin routed = orig.flattenElements();
                             if (orig.unique && orig.uniqueOwner != null) {
                                 demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
-                                routed = orig.demoteAlias(Reachability.Origin.IMMUTABLE);
+                                routed = routed.demoteAlias(Reachability.Origin.IMMUTABLE);
                             }
                             frame.caughtOrigins[i] = frame.caughtOrigins[i] == null
                                     ? routed : frame.caughtOrigins[i].join(routed);
@@ -1418,6 +1422,7 @@ final class EffectBodyWalker {
         }
         if (!locallyCaught) {
             nothrow = false;
+            deepestThrowEscapeLevel = -1;
             if (orig != Reachability.Origin.IMMUTABLE) {
                 if (orig.unique && orig.uniqueOwner != null) {
                     demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
@@ -1431,10 +1436,17 @@ final class EffectBodyWalker {
     Reachability.Origin evalTry(BabbleParser.TryExpressionContext ctx) {
         Map<ParserRuleContext, Reachability.Origin> preEnv = new IdentityHashMap<>(env);
         List<BabbleParser.CatchClauseContext> catches = ctx.catchClause();
-        TryFrame frame = new TryFrame(catches, preEnv);
+        int outerFloor = activeTryStack.size();
+        TryFrame frame = new TryFrame(outerFloor, catches, preEnv);
 
         boolean outerNothrow = nothrow;
+        boolean outerHermetic = hermetic;
+        boolean outerDeterministic = deterministic;
+        int outerEscape = deepestThrowEscapeLevel;
         nothrow = true;
+        hermetic = true;
+        deterministic = true;
+        deepestThrowEscapeLevel = Integer.MAX_VALUE;
         activeTryStack.push(frame);
         Reachability.Origin tryOrig;
         try {
@@ -1442,10 +1454,15 @@ final class EffectBodyWalker {
         } finally {
             activeTryStack.pop();
         }
+        int tryEscape = deepestThrowEscapeLevel;
+        boolean tryHermetic = hermetic;
+        boolean tryDeterministic = deterministic;
+        hermetic = outerHermetic && tryHermetic;
+        deterministic = outerDeterministic && tryDeterministic;
         Map<ParserRuleContext, Reachability.Origin> afterTry = env;
         frame.recordUnwindEnv(afterTry, this);
         boolean tryHadNonLocalThrow = !nothrow || frame.hadEscapingThrow;
-        boolean tryNothrow = nothrow && !frame.hadLocalThrow && !frame.hadEscapingThrow;
+        boolean tryNothrow = nothrow && !frame.hadLocalThrow && !frame.hadEscapingThrow && tryEscape >= outerFloor;
 
         if (tryNothrow && !catches.isEmpty() && emitDiagnostics
                 && forwardedParams.isEmpty() && pseudoForwarded.isEmpty()
@@ -1466,6 +1483,7 @@ final class EffectBodyWalker {
 
         boolean hasExhaustiveCatchAll = false;
         boolean allCatchesNothrow = true;
+        int propagatedEscape = (tryEscape < outerFloor) ? tryEscape : Integer.MAX_VALUE;
 
         for (int i = 0; i < catches.size(); i++) {
             BabbleParser.CatchClauseContext cc = catches.get(i);
@@ -1481,16 +1499,24 @@ final class EffectBodyWalker {
             } else {
                 Reachability.Origin localRouted = frame.caughtOrigins[i];
                 if (tryHadNonLocalThrow || localRouted == null) {
-                    Reachability.Origin ext = Reachability.Origin.ofExternal(cc, false);
-                    eOrig = localRouted == null ? ext : localRouted.join(ext);
+                    Reachability.Origin nonLocal = (!tryHermetic || !tryDeterministic)
+                            ? Reachability.Origin.ofExternal(cc, false)
+                            : new Reachability.Origin(Reachability.Origin.EMPTY_BITS, false, false,
+                                    Set.of(cc), new Reachability.PathKey(cc, List.of()));
+                    eOrig = localRouted == null ? nonLocal : withLocalAliasKey(localRouted.join(nonLocal), cc, boundType);
                 } else {
                     eOrig = withLocalAliasKey(localRouted, cc, boundType);
                 }
             }
             env.put(cc, eOrig);
             nothrow = true;
+            deepestThrowEscapeLevel = Integer.MAX_VALUE;
             Reachability.Origin catchOrig = evalBlock(cc.catchBlock, false);
-            allCatchesNothrow &= nothrow;
+            int catchEscape = deepestThrowEscapeLevel;
+            allCatchesNothrow &= nothrow && catchEscape >= outerFloor;
+            if (catchEscape < outerFloor) {
+                propagatedEscape = Math.min(propagatedEscape, catchEscape);
+            }
             env.remove(cc);
             Map<ParserRuleContext, Reachability.Origin> afterCatch = env;
             finallyEntryEnv = mergeEnvs(finallyEntryEnv, afterCatch);
@@ -1505,8 +1531,13 @@ final class EffectBodyWalker {
         if (ctx.finallyBlock != null) {
             env = new IdentityHashMap<>(finallyEntryEnv);
             nothrow = true;
+            deepestThrowEscapeLevel = Integer.MAX_VALUE;
             evalBlock(ctx.finallyBlock, false, true);
-            finallyNothrow = nothrow;
+            int finEscape = deepestThrowEscapeLevel;
+            finallyNothrow = nothrow && finEscape >= outerFloor;
+            if (finEscape < outerFloor) {
+                propagatedEscape = Math.min(propagatedEscape, finEscape);
+            }
             ec.pass.analysis.effects().setTryFinallyNothrow(ctx, finallyNothrow);
         } else {
             env = normalExitEnv != null ? normalExitEnv : preEnv;
@@ -1516,6 +1547,7 @@ final class EffectBodyWalker {
                 ? finallyNothrow
                 : (hasExhaustiveCatchAll && allCatchesNothrow && finallyNothrow);
         nothrow = outerNothrow && tryExprNothrow;
+        deepestThrowEscapeLevel = Math.min(outerEscape, propagatedEscape);
 
         return resultOrig;
     }

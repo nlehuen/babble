@@ -171,6 +171,20 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         parsePureSll("def on = 1\non + 1");
     }
 
+    @Test
+    public void testBip028ExceptionHandlingSllGrammar() {
+        parsePureSll("""
+                def r1 = try (1) catch e: exception then (2) finally (3)
+                def r2 = try (1) catch : java.io.IOException | exception then (2)
+                def r3 = try (1) catch e then (throw e)
+                def r4 = try (1) catch then (0)
+                def r5 = try (1) finally (2)
+                def r6 = a.try + a.catch + a.finally + a.throw + a.exception
+                def r7 = f(try: 1, catch: 2, finally: 3, throw: 4, exception: 5)
+                def E: any = exception
+                """);
+    }
+
     private void assertTypeCheckFails(String source, String expectedMessage) {
         javax.script.ScriptException ex = Assertions.assertThrows(javax.script.ScriptException.class, () -> interpret(source));
         Assertions.assertTrue(ex.getMessage().contains(expectedMessage),

@@ -469,4 +469,26 @@ public class ReplTestCase {
         Assertions.assertTrue(lines.stream().anyMatch(l -> l.equals("overload (fn (n : int) : string, fn (s : string) : string)")),
                 lines.toString());
     }
+
+    @Test
+    public void testTryCatchFinallyReplClassifyCompletionsAndEval() throws Exception {
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("try (\n    1\n)"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("try (1) catch e: exception then"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("try (1) catch then (0)"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("try (1) finally (0)"));
+
+        BabbleSession session = session();
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "tr", 2).candidates().contains("try"));
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "ca", 2).candidates().contains("catch"));
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "fi", 2).candidates().contains("finally"));
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "th", 2).candidates().contains("throw"));
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "ex", 2).candidates().contains("exception"));
+
+        List<String> lines = transcript(
+                "def Err = record (msg: string) ()",
+                "try (throw Err(\"hi\")) catch e: Err then (e.msg)",
+                ":type exception(\"x\")");
+        Assertions.assertEquals("\"hi\"", lines.get(1), lines.toString());
+        Assertions.assertEquals("exception", lines.get(2), lines.toString());
+    }
 }
