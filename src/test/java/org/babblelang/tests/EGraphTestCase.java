@@ -206,4 +206,86 @@ public class EGraphTestCase {
             Assertions.assertFalse(gd.areEquivalent(dMinAB, dMinBA));
         }
     }
+
+    @Test
+    public void testReflexiveEqualityAndSoundnessGuards() {
+        EGraph g = new EGraph();
+        int t = g.add(ENode.constVal(true, PrimitiveKind.BOOL));
+        int f = g.add(ENode.constVal(false, PrimitiveKind.BOOL));
+
+        // Reflexive exact primitives: bool, byte, short, int, long, char
+        int b = g.add(ENode.opaque("b", PrimitiveKind.BOOL));
+        int by = g.add(ENode.opaque("by", PrimitiveKind.BYTE));
+        int sh = g.add(ENode.opaque("sh", PrimitiveKind.SHORT));
+        int i = g.add(ENode.opaque("i", PrimitiveKind.INT));
+        int l = g.add(ENode.opaque("l", PrimitiveKind.LONG));
+        int ch = g.add(ENode.opaque("ch", PrimitiveKind.CHAR));
+        int one = g.add(ENode.constVal(1, PrimitiveKind.INT));
+
+        int bEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, b, b));
+        int bNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, b, b));
+        int byEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, by, by));
+        int shNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, sh, sh));
+        int iEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, i, i));
+        int iNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, i, i));
+        int lEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, l, l));
+        int chNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, ch, ch));
+
+        // Algebraically equivalent integral expressions: (i + 1) == (1 + i) -> true
+        int iPlus1 = g.add(ENode.binary(ENode.Op.ADD, PrimitiveKind.INT, i, one));
+        int onePlusI = g.add(ENode.binary(ENode.Op.ADD, PrimitiveKind.INT, one, i));
+        int commEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, iPlus1, onePlusI));
+        int commNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, iPlus1, onePlusI));
+
+        // Guaranteed strings: marked opaque string & STR_ADD reassociation
+        int s = g.add(ENode.opaque("s", PrimitiveKind.NONE));
+        g.markReflexiveEq(s);
+        int sEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, s, s));
+        int sNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, s, s));
+        int sa = g.add(ENode.constVal("a", PrimitiveKind.NONE));
+        int sb = g.add(ENode.constVal("b", PrimitiveKind.NONE));
+        int sab = g.add(ENode.constVal("ab", PrimitiveKind.NONE));
+        int sAddAB1 = g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE,
+                g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE, s, sa)), sb));
+        int sAddAB2 = g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE, s, sab));
+        int strAssocEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, sAddAB1, sAddAB2));
+
+        // Babble == / != uses Float.compare / Double.compare total order (NaN == NaN is true)
+        int fl = g.add(ENode.opaque("fl", PrimitiveKind.FLOAT));
+        int db = g.add(ENode.opaque("db", PrimitiveKind.DOUBLE));
+        int flEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, fl, fl));
+        int flNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, fl, fl));
+        int dbEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, db, db));
+        int dbNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, db, db));
+
+        // Soundness guard: unmarked any/Object must NOT rewrite
+        int any = g.add(ENode.opaque("any", PrimitiveKind.NONE));
+        int anyEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, any, any));
+        int anyNeq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, any, any));
+        int anyEqTrue = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, any, t));
+
+        g.saturate(AlgebraicRules.optimizerRules(), 6, 256);
+
+        Assertions.assertTrue(g.areEquivalent(bEq, t));
+        Assertions.assertTrue(g.areEquivalent(bNeq, f));
+        Assertions.assertTrue(g.areEquivalent(byEq, t));
+        Assertions.assertTrue(g.areEquivalent(shNeq, f));
+        Assertions.assertTrue(g.areEquivalent(iEq, t));
+        Assertions.assertTrue(g.areEquivalent(iNeq, f));
+        Assertions.assertTrue(g.areEquivalent(lEq, t));
+        Assertions.assertTrue(g.areEquivalent(chNeq, f));
+        Assertions.assertTrue(g.areEquivalent(commEq, t));
+        Assertions.assertTrue(g.areEquivalent(commNeq, f));
+        Assertions.assertTrue(g.areEquivalent(sEq, t));
+        Assertions.assertTrue(g.areEquivalent(sNeq, f));
+        Assertions.assertTrue(g.areEquivalent(strAssocEq, t));
+        Assertions.assertTrue(g.areEquivalent(flEq, t));
+        Assertions.assertTrue(g.areEquivalent(flNeq, f));
+        Assertions.assertTrue(g.areEquivalent(dbEq, t));
+        Assertions.assertTrue(g.areEquivalent(dbNeq, f));
+
+        Assertions.assertFalse(g.areEquivalent(anyEq, t), "any may hold an object with non-reflexive or throwing equals");
+        Assertions.assertFalse(g.areEquivalent(anyNeq, f), "any may hold an object with non-reflexive or throwing equals");
+        Assertions.assertFalse(g.areEquivalent(anyEqTrue, any), "any == true must not collapse to any");
+    }
 }

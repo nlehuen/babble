@@ -44,11 +44,11 @@ fn checkBool (b:bool) -> bool {pure unique}
 ```hir
 ;; hir -O1 fn=checkBool
 fn checkBool (b:bool) -> bool {pure unique}
-  (call name(assert) (==:bool var(b) var(b)))
-  (call name(assert) (and (==:bool var(b) var(b)) (==:bool (not var(b)) (not var(b)))))
-  (call name(assert) (and (==:bool (not var(b)) (not var(b))) (==:bool var(b) var(b))))
-  (call name(assert) (and (==:bool var(b) var(b)) (==:bool (not var(b)) (not var(b)))))
-  (call name(assert) (and (==:bool (not var(b)) (not var(b))) (==:bool var(b) var(b))))
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
 ```
 
 ## Case 2
@@ -697,3 +697,48 @@ fn f (x:int, y:int) -> double {nothrow unique}
       (def r#4 (if (<:bool var(v#3) 0.0:double) 0.0:double var(v#3)))
       var(r#4)))
 ```
+
+## Reflexive equality (a == a -> true, a != a -> false) on primitives (including NaN) and strings
+
+```babble
+def reflEq = fn (b: bool, x: int, d: double, f: float, s: string): bool -> (
+    (b == b) and not (b != b) and ((x + 1) == (1 + x)) and not (x != x) and
+    (d == d) and not (d != d) and (f == f) and not (f != f) and
+    (s == s) and not (((s + "a") + "b") != (s + "ab"))
+)
+assert(reflEq(false, 7, java.lang.Double.NaN, java.lang.Float.NaN, "hi"))
+```
+
+```hir
+;; hir -O0 fn=reflEq
+fn reflEq (b:bool, x:int, d:double, f:float, s:obj) -> bool {nothrow unique}
+  (and (and (and (and (and (and (and (and (and (block (==:bool var(b) var(b))) (not (block (<>:bool var(b) var(b))))) (block (==:bool (block (+:int var(x) 1:int)) (block (+:int 1:int var(x)))))) (not (block (<>:bool var(x) var(x))))) (block (==:bool var(d) var(d)))) (not (block (<>:bool var(d) var(d))))) (block (==:bool var(f) var(f)))) (not (block (<>:bool var(f) var(f))))) (block (==:bool var(s) var(s)))) (not (block (<>:bool (block (+:obj (block (+:obj var(s) "a")) "b")) (block (+:obj var(s) "ab"))))))
+```
+
+```hir
+;; hir -O1 fn=reflEq
+fn reflEq (b:bool, x:int, d:double, f:float, s:obj) -> bool {nothrow unique}
+  true:bool
+```
+
+## Reflexive equality must not rewrite arbitrary any or impure operands
+
+```babble
+def checkNoRefl = fn io (a: any): bool -> (
+    (a == a) and not (a != a) and not (bump() == bump()) and (bump() != bump())
+)
+assert(checkNoRefl(java.lang.Object()) and tick == 4)
+```
+
+```hir
+;; hir -O0 fn=checkNoRefl
+fn checkNoRefl (a:obj) -> bool {io}
+  (and (and (and (block (==:bool var(a) var(a))) (not (block (<>:bool var(a) var(a))))) (not (block (==:bool (call-fn bump) (call-fn bump))))) (block (<>:bool (call-fn bump) (call-fn bump))))
+```
+
+```hir
+;; hir -O1 fn=checkNoRefl
+fn checkNoRefl (a:obj) -> bool {io}
+  (and (and (and (==:bool var(a) var(a)) (not (<>:bool var(a) var(a)))) (not (==:bool (call-fn bump) (call-fn bump)))) (<>:bool (call-fn bump) (call-fn bump)))
+```
+

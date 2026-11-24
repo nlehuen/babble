@@ -317,7 +317,7 @@ final class AlgebraicVerifier {
     }
 
     private static int lower(Term term, int[] paramIds, EGraph g) {
-        return switch (term) {
+        int id = switch (term) {
             case Param p -> paramIds[p.index()];
             case Const c -> g.add(ENode.constVal(c.value(), c.kind()));
             case Opaque o -> g.add(ENode.opaque(o.id(), o.kind()));
@@ -349,6 +349,14 @@ final class AlgebraicVerifier {
                 yield g.add(ENode.call(c.symbol(), PrimitiveKind.NONE, kids));
             }
         };
+        Type t = term.type();
+        if (t instanceof Type.Frozen f) {
+            t = f.of();
+        }
+        if (t == Type.STRING) {
+            g.markReflexiveEq(id);
+        }
+        return id;
     }
 
     // ---------------------------------------------------------------- partial-derivative sign & bijectivity domain
