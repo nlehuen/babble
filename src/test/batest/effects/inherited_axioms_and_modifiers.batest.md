@@ -146,7 +146,7 @@ assert(true)
 ## Inherited partial mut parameter axiom rejects mutating unannotated parameter
 
 ```babble
-axiom java.util.function.BiConsumer.accept: fn (mut a: any, b: any): void
+axiom java.util.function.BiConsumer.accept: fn (mut a: any!, b: any!): void
 def C = class () implements java.util.function.BiConsumer of (Box, Box) (
     def accept = fn (mut a: Box, mut b: Box) -> ( a.v += 1 ; b.v += 1 )
 )
@@ -447,7 +447,7 @@ Parameter in calling clause must be a function : x
 ## For-loop over Babble-to-Java Iterable with mut iterator requires mut parameter
 
 ```babble
-axiom java.lang.Iterable.iterator: fn mut (): java.util.Iterator of any
+axiom java.lang.Iterable.iterator: fn mut (): (java.util.Iterator of any!)!
 def I = class () implements java.util.Iterator of int ( def hasNext = fn (): bool -> ( false ) ; def next = fn mut (): int -> ( 0 ) )
 def S = class () implements java.lang.Iterable of int ( def iterator = fn mut (): java.util.Iterator of int -> ( I() ) )
 def f = fn (s: S) -> ( for x in s then ( discard(x) ) )

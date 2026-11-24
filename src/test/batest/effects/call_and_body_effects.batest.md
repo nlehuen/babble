@@ -60,7 +60,7 @@ assert(ioLoops(list(9), b) == 3 and gList2.size() == 3)
 ## For-loop over Java Iterable with mut iterator axiom requires mut parameter
 
 ```babble
-axiom java.util.LinkedList.iterator: fn mut (): java.util.Iterator of any
+axiom java.util.LinkedList.iterator: fn mut (): (java.util.Iterator of any!)!
 def bad = fn (xs: java.util.LinkedList of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
 ```
 
@@ -71,7 +71,7 @@ Cannot mutate parameter xs (iterator) : mark parameter as mut xs
 ## For-loop over Java Iterable with view volatile iterator axiom
 
 ```babble
-axiom java.util.LinkedList.iterator: fn view volatile (): java.util.Iterator of any
+axiom java.util.LinkedList.iterator: fn view volatile (): (java.util.Iterator of any!)!
 def f = fn volatile (xs: java.util.LinkedList of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
 def ll = java.util.LinkedList of int () ; ll.add(3) ; ll.add(4)
 assert(f(ll) == 7)
@@ -283,7 +283,7 @@ assert(wide('A') == 195.0 and importe("hi") == 2)
 ## Sortedset with volatile comparator requires volatile caller
 
 ```babble
-axiom java.util.Comparator.compare: fn volatile (o1: any, o2: any): int
+axiom java.util.Comparator.compare: fn volatile (o1: any!, o2: any!): int
 def makeVol = fn volatile (): sortedset of int -> (
     (sortedset of int)(comparator: fn volatile (a: int, b: int): int -> ( (a + gBox.v) - (b + gBox.v) ), from: list(2, 1))
 )
@@ -293,7 +293,7 @@ assert(makeVol().size() == 2)
 ## Array from non-hermetic Java iterator marks construction non-terminating
 
 ```babble
-axiom java.util.LinkedList.iterator: fn io (): java.util.Iterator of any
+axiom java.util.LinkedList.iterator: fn io (): (java.util.Iterator of any!)!
 def f = fn io (xs: java.util.LinkedList of int): int -> ( (array of int)(from: xs).size() )
 def ll = java.util.LinkedList of int () ; ll.add(1)
 assert(f(ll) == 1)

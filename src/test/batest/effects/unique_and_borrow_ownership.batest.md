@@ -240,7 +240,7 @@ Cannot call .*method capacity on frozen value
 ## Calling pure Java method on frozen receiver is allowed
 
 ```babble
-axiom java.lang.StringBuilder.new: fn pure fresh (s: string): java.lang.StringBuilder
+axiom java.lang.StringBuilder.new: fn pure fresh (s: string!)
 axiom java.lang.StringBuilder.capacity: fn shared pure (): int
 def f = fn (sb: frozen java.lang.StringBuilder): int -> ( sb.capacity() )
 def mk = fn (): frozen java.lang.StringBuilder -> ( def sb = java.lang.StringBuilder("ab") ; freeze(sb) )
@@ -250,7 +250,7 @@ assert(f(mk()) >= 2)
 ## Passing frozen list to mut Java parameter is rejected
 
 ```babble
-axiom java.util.Collections.reverse: fn (mut l: java.util.List of any): null
+axiom java.util.Collections.reverse: fn (mut l: (java.util.List of any!)!): null
 def f = fn io (xs: frozen list of int) -> ( java.util.Collections.reverse(xs) )
 ```
 
@@ -261,7 +261,7 @@ Cannot pass frozen value to mut parameter
 ## Passing frozen value to unique Java parameter is rejected
 
 ```babble
-axiom java.util.Collections.reverse: fn (unique l: java.util.List of any): null
+axiom java.util.Collections.reverse: fn (unique l: (java.util.List of any!)!): null
 def f = fn io (xs: frozen list of int) -> ( java.util.Collections.reverse(xs) )
 ```
 

@@ -78,7 +78,7 @@ assert(useFixtures() == 9)
 ## Java SAM axiom with mut parameter enables mutating Consumer lambda
 
 ```babble
-axiom java.util.function.Consumer.accept: fn (mut x: any): void
+axiom java.util.function.Consumer.accept: fn (mut x: any!): void
 def c: java.util.function.Consumer of Box = fn (mut b: Box) -> ( b.v += 1 )
 def b = Box(1)
 c.accept(b)
@@ -88,7 +88,7 @@ assert(b.v == 2)
 ## Java SAM axiom with unique parameter enables consuming Consumer lambda
 
 ```babble
-axiom java.util.function.Consumer.accept: fn (unique x: any): void
+axiom java.util.function.Consumer.accept: fn (unique x: any!): void
 def c: java.util.function.Consumer of Box = fn (unique b: Box) -> ( discard(freeze(move(b))) )
 c.accept(Box(3))
 assert(true)
@@ -97,7 +97,7 @@ assert(true)
 ## Java SAM axioms with shared and pure parameters plus unconstrained Runnable
 
 ```babble
-axiom java.util.function.Consumer.accept: fn (shared x: any): void
+axiom java.util.function.Consumer.accept: fn (shared x: any!): void
 def c1: java.util.function.Consumer of Box = fn (shared b: Box) -> ( discard(b) )
 def r: java.lang.Runnable = fn () -> ( discard(1) )
 c1.accept(Box(1)) ; r.run()
@@ -107,7 +107,7 @@ assert(true)
 ## Java SAM axiom with pure borrow parameter checks borrowed Consumer lambda
 
 ```babble
-axiom java.util.function.Consumer.accept: fn pure (x: any): void
+axiom java.util.function.Consumer.accept: fn pure (x: any!): void
 def c: java.util.function.Consumer of Box = fn (b: Box) -> ( assert(b.v >= 0) )
 c.accept(Box(2))
 ```
@@ -173,7 +173,7 @@ assert(pb.command().size() == 2)
 ## Varargs Java constructor nullness with local constructor axiom
 
 ```babble
-axiom java.lang.ProcessBuilder.new: fn (command: array of string)
+axiom java.lang.ProcessBuilder.new: fn (command: (array of string!)!)
 def pb = java.lang.ProcessBuilder("a", "b")
 assert(pb.command().size() == 2)
 ```
@@ -276,11 +276,11 @@ assert(f() == 0)
 ```babble
 axiom java.lang.System.nanoTime: fn mut
 axiom java.lang.System.currentTimeMillis: fn volatile mut
-axiom java.lang.String.valueOf: fn mut fresh (i: int): string
+axiom java.lang.String.valueOf: fn mut fresh (i: int): string!
 axiom java.lang.StringBuilder: class () static (
     def *: fn io
     def new: fn pure
-    def new: fn pure nothrow (s: string)
+    def new: fn pure nothrow (s: string!)
 )
 def sb = java.lang.StringBuilder("ok")
 assert(sb.toString() == "ok" and java.lang.String.valueOf(3) == "3")
@@ -289,10 +289,10 @@ assert(sb.toString() == "ok" and java.lang.String.valueOf(3) == "3")
 ## Axiom type erasure for entry, exception, and nullable or non-nullable unions
 
 ```babble
-axiom java.util.Objects.nonNull: fn pure (e: entry of (string, int)): bool
-axiom java.lang.Throwable.initCause: fn mut (e: exception): java.lang.Throwable
-axiom java.lang.String.valueOf: fn pure (o: int | string?): string
-axiom java.lang.String.copyValueOf: fn pure (o: int | string): string
+axiom java.util.Objects.nonNull: fn pure (e: (entry of (string!, int))!): bool
+axiom java.lang.Throwable.initCause: fn mut (e: exception!): java.lang.Throwable!
+axiom java.lang.String.valueOf: fn pure (o: int | string?): string!
+axiom java.lang.String.copyValueOf: fn pure (o: int | string!): string!
 assert(java.util.Objects.nonNull(entry("a", 1)))
 ```
 
@@ -301,7 +301,7 @@ assert(java.util.Objects.nonNull(entry("a", 1)))
 ```babble
 axiom java.lang.Enum of E: class ( def compareTo: fn pure (o: E): int )
 axiom java.lang.String of X: class ()
-axiom java.util.List.add: fn mut (unique e: any): bool
+axiom java.util.List.add: fn mut (unique e: any!): bool
 assert(true)
 ```
 
