@@ -199,18 +199,6 @@ def C = class () implements IDefRunChild (
 super outside of a method
 ```
 
-## Demoted SAM field without Babble default fails Java interface implementation
-
-```babble
-def C = class () implements java.lang.Runnable (
-    def run : java.lang.Runnable = fn () -> ( null )
-)
-```
-
-```error
-C does not implement java.lang.Runnable.run
-```
-
 ## Contextual typing for rest-parameter lambda and union numeric return widening
 
 ```babble

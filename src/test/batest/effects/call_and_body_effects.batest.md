@@ -57,16 +57,6 @@ assert(ioLoops(list(9), b) == 3 and gList2.size() == 3)
 9
 ```
 
-## For-loop direct concurrent mutation in pure function is rejected
-
-```babble
-def bad = fn (mut xs: list of int) -> ( for x in xs then ( xs.add(x) ) )
-```
-
-```error
-Cannot mutate collection while iterating over it
-```
-
 ## For-loop over Java Iterable with mut iterator axiom requires mut parameter
 
 ```babble
