@@ -622,7 +622,7 @@ top-level:
   (def bumpL (fn-ref bumpL))
   (def b1 (call-fn bumpBool))
   (def b2 (not (not (call-fn bumpOpt))))
-  (def b3 (not (==:bool (neg (call-fn bump)) 0:int)))
+  (def b3 (<>:bool (neg (call-fn bump)) 0:int))
   (def lv (+:long (+:long (+:long (+:long (+:long (call-fn bumpL) (call-fn bumpL)) (call-fn bumpL)) (neg (call-fn bumpL))) (call-fn bumpL)) (call-fn bumpL)))
   (call name(assert) (and (and (and (and name(b1) name(b2)) name(b3)) (==:bool name(lv) 8:long)) (==:bool name(tick) 9:int)))
 ```
@@ -739,6 +739,30 @@ fn checkNoRefl (a:obj) -> bool {io}
 ```hir
 ;; hir -O1 fn=checkNoRefl
 fn checkNoRefl (a:obj) -> bool {io}
-  (and (and (and (==:bool var(a) var(a)) (not (<>:bool var(a) var(a)))) (not (==:bool (call-fn bump) (call-fn bump)))) (<>:bool (call-fn bump) (call-fn bump)))
+  (and (and (and (==:bool var(a) var(a)) (==:bool var(a) var(a))) (<>:bool (call-fn bump) (call-fn bump))) (<>:bool (call-fn bump) (call-fn bump)))
+```
+
+## Negated comparison rewrites (not (a == b) -> a != b, etc.) and E-graph equivalence
+
+```babble
+def checkNegCmp = fn (x: int, y: int, s: string, t: string): bool -> (
+    (not (x == y)) == (x != y) and (not (x != y)) == (x == y) and
+    (not (x < y)) == (x >= y) and (not (x <= y)) == (x > y) and
+    (not (x > y)) == (x <= y) and (not (x >= y)) == (x < y) and
+    (not (s == t)) == (s != t) and (not (s != t)) == (s == t)
+)
+assert(checkNegCmp(2, 5, "a", "b") and checkNegCmp(3, 3, "a", "a"))
+```
+
+```hir
+;; hir -O0 fn=checkNegCmp
+fn checkNegCmp (x:int, y:int, s:obj, t:obj) -> bool {nothrow unique}
+  (and (and (and (and (and (and (and (==:bool (block (not (block (==:bool var(x) var(y))))) (block (<>:bool var(x) var(y)))) (==:bool (block (not (block (<>:bool var(x) var(y))))) (block (==:bool var(x) var(y))))) (==:bool (block (not (block (<:bool var(x) var(y))))) (block (>=:bool var(x) var(y))))) (==:bool (block (not (block (<=:bool var(x) var(y))))) (block (>:bool var(x) var(y))))) (==:bool (block (not (block (>:bool var(x) var(y))))) (block (<=:bool var(x) var(y))))) (==:bool (block (not (block (>=:bool var(x) var(y))))) (block (<:bool var(x) var(y))))) (==:bool (block (not (block (==:bool var(s) var(t))))) (block (<>:bool var(s) var(t))))) (==:bool (block (not (block (<>:bool var(s) var(t))))) (block (==:bool var(s) var(t)))))
+```
+
+```hir
+;; hir -O1 fn=checkNegCmp
+fn checkNegCmp (x:int, y:int, s:obj, t:obj) -> bool {nothrow unique}
+  true:bool
 ```
 

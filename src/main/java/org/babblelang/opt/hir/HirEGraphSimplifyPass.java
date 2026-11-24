@@ -264,8 +264,8 @@ public final class HirEGraphSimplifyPass implements HirPass {
             this.module = module;
         }
 
-        private static boolean isLowerableEq(HirExpr.Binary b) {
-            if (b.op() != HirExpr.BinaryOp.EQ && b.op() != HirExpr.BinaryOp.NEQ) {
+        private static boolean isLowerableComparison(HirExpr.Binary b) {
+            if (!b.op().isComparison()) {
                 return false;
             }
             if (b.left().meta().wideningRank() >= 0 || b.right().meta().wideningRank() >= 0) {
@@ -273,10 +273,25 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
             PrimitiveKind lk = b.left().meta().kind();
             PrimitiveKind rrk = b.right().meta().kind();
-            if (lk.isPrimitive() && lk == rrk) {
-                return true;
+            if (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ) {
+                if (lk.isPrimitive() && lk == rrk) {
+                    return true;
+                }
+                return b.left().meta().stringType() && b.right().meta().stringType();
             }
-            return b.left().meta().stringType() && b.right().meta().stringType();
+            return lk == rrk && (HirPurity.isNumericKind(lk) || lk == PrimitiveKind.CHAR);
+        }
+
+        private static ENode.Op toComparisonOp(HirExpr.BinaryOp op) {
+            return switch (op) {
+                case EQ -> ENode.Op.EQ;
+                case NEQ -> ENode.Op.NEQ;
+                case LT -> ENode.Op.LT;
+                case LTE -> ENode.Op.LTE;
+                case GT -> ENode.Op.GT;
+                case GTE -> ENode.Op.GTE;
+                default -> throw new IllegalStateException();
+            };
         }
 
         int lower(HirExpr raw) {
@@ -320,9 +335,8 @@ public final class HirEGraphSimplifyPass implements HirPass {
                         return graph.add(ENode.binary(op, rk, lower(b.left()), lower(b.right())));
                     }
                 }
-                if (isLowerableEq(b)) {
-                    ENode.Op op = b.op() == HirExpr.BinaryOp.EQ ? ENode.Op.EQ : ENode.Op.NEQ;
-                    return graph.add(ENode.binary(op, PrimitiveKind.BOOL, lower(b.left()), lower(b.right())));
+                if (isLowerableComparison(b)) {
+                    return graph.add(ENode.binary(toComparisonOp(b.op()), PrimitiveKind.BOOL, lower(b.left()), lower(b.right())));
                 }
                 if (b.op() == HirExpr.BinaryOp.ADD && b.left().meta().stringType() && b.right().meta().stringType()
                         && b.left().meta().wideningRank() < 0 && b.right().meta().wideningRank() < 0) {
@@ -375,7 +389,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 PrimitiveKind rk = b.meta().kind();
                 if ((HirPurity.isIntegralKind(rk) && b.left().meta().kind() == rk && b.right().meta().kind() == rk
                         && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL))
-                        || isLowerableEq(b)
+                        || isLowerableComparison(b)
                         || (b.op() == HirExpr.BinaryOp.ADD && b.left().meta().stringType() && b.right().meta().stringType())) {
                     return 4 + treeCost(b.left()) + treeCost(b.right());
                 }
@@ -408,7 +422,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                     HirExpr op = rebuild(tree.children().get(0), rootMeta);
                     yield new HirExpr.Unary(HirExpr.UnaryOp.NEGATE, op, "", rootMeta.withKind(n.kind()).withWideningRank(-1));
                 }
-                case ADD, SUB, MUL, EQ, NEQ -> {
+                case ADD, SUB, MUL, EQ, NEQ, LT, LTE, GT, GTE -> {
                     HirExpr l = rebuild(tree.children().get(0), rootMeta);
                     HirExpr r = rebuild(tree.children().get(1), rootMeta);
                     HirExpr.BinaryOp bop = switch (n.op()) {
@@ -417,6 +431,10 @@ public final class HirEGraphSimplifyPass implements HirPass {
                         case MUL -> HirExpr.BinaryOp.MUL;
                         case EQ -> HirExpr.BinaryOp.EQ;
                         case NEQ -> HirExpr.BinaryOp.NEQ;
+                        case LT -> HirExpr.BinaryOp.LT;
+                        case LTE -> HirExpr.BinaryOp.LTE;
+                        case GT -> HirExpr.BinaryOp.GT;
+                        case GTE -> HirExpr.BinaryOp.GTE;
                         default -> throw new IllegalStateException();
                     };
                     yield new HirExpr.Binary(bop, l, r, "", "", rootMeta.withKind(n.kind()).withWideningRank(-1));
@@ -504,13 +522,28 @@ public final class HirEGraphSimplifyPass implements HirPass {
 
     /** Single-node order-preserving identities safe even when an operand may throw or have effects. */
     private static HirExpr tryNonDroppingIdentity(HirExpr cur, HirModule module) {
-        if (cur instanceof HirExpr.Unary u && u.op() == HirExpr.UnaryOp.NOT && u.meta().wideningRank() < 0) {
+        if (cur instanceof HirExpr.Unary u && u.op() == HirExpr.UnaryOp.NOT
+                && u.meta().wideningRank() < 0 && u.meta().checkedType() == null) {
             HirExpr inner = HirRewriter.unwrapTransparent(u.operand());
             if (inner instanceof HirExpr.Unary innerNot && innerNot.op() == HirExpr.UnaryOp.NOT) {
                 HirExpr b = HirRewriter.unwrapTransparent(innerNot.operand());
                 if (b.meta().kind() == PrimitiveKind.BOOL && b.meta().wideningRank() < 0) {
                     return b;
                 }
+            }
+            if (inner instanceof HirExpr.Binary b && b.op().isComparison()
+                    && b.meta().wideningRank() < 0 && b.meta().checkedType() == null) {
+                HirExpr.BinaryOp neg = switch (b.op()) {
+                    case EQ -> HirExpr.BinaryOp.NEQ;
+                    case NEQ -> HirExpr.BinaryOp.EQ;
+                    case LT -> HirExpr.BinaryOp.GTE;
+                    case LTE -> HirExpr.BinaryOp.GT;
+                    case GT -> HirExpr.BinaryOp.LTE;
+                    case GTE -> HirExpr.BinaryOp.LT;
+                    default -> throw new IllegalStateException();
+                };
+                return new HirExpr.Binary(neg, b.left(), b.right(), b.leftText(), b.rightText(),
+                        b.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
             }
         }
         if (cur instanceof HirExpr.Binary b && b.meta().checkedType() == null && b.meta().wideningRank() < 0) {

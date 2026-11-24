@@ -164,6 +164,9 @@ public final class AlgebraicRules {
             for (ENode inner : g.nodesIn(n.child(0))) {
                 if (inner.op() == ENode.Op.NOT && inner.kind() == PrimitiveKind.BOOL) {
                     out.union(id, inner.child(0));
+                } else if (isComparisonOp(inner.op())) {
+                    out.addAndUnion(id, ENode.binary(negateComparison(inner.op()), PrimitiveKind.BOOL,
+                            inner.child(0), inner.child(1)));
                 }
             }
             return;
@@ -396,10 +399,6 @@ public final class AlgebraicRules {
                     int na = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, inner.child(0)));
                     int nb = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, inner.child(1)));
                     out.addAndUnion(id, ENode.binary(dual, PrimitiveKind.BOOL, na, nb));
-                } else if (isComparisonOp(inner.op())
-                        && isExactOrderedClass(g, inner.child(0)) && isExactOrderedClass(g, inner.child(1))) {
-                    ENode.Op neg = negateExactComparison(inner.op());
-                    out.addAndUnion(id, ENode.binary(neg, PrimitiveKind.BOOL, inner.child(0), inner.child(1)));
                 }
             }
         }
@@ -423,7 +422,7 @@ public final class AlgebraicRules {
                 || op == ENode.Op.EQ || op == ENode.Op.NEQ;
     }
 
-    private static ENode.Op negateExactComparison(ENode.Op op) {
+    private static ENode.Op negateComparison(ENode.Op op) {
         return switch (op) {
             case LT -> ENode.Op.GTE;
             case LTE -> ENode.Op.GT;
@@ -433,15 +432,6 @@ public final class AlgebraicRules {
             case NEQ -> ENode.Op.EQ;
             default -> throw new IllegalStateException();
         };
-    }
-
-    private static boolean isExactOrderedClass(EGraph g, int classId) {
-        for (ENode node : g.nodesIn(classId)) {
-            if (node.isExactOrdered()) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static boolean classHasNegOf(EGraph g, int classId, int targetClassId, PrimitiveKind kind) {
