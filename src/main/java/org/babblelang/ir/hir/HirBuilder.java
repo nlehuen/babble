@@ -45,6 +45,7 @@ public final class HirBuilder {
     private final Map<String, String> ownInterfaceJvmNames = new LinkedHashMap<>();
     private final Map<String, String> ownClassJvmNames = new LinkedHashMap<>();
     private final Map<String, String> localClassJvmNamesById = new LinkedHashMap<>();
+    private final Map<String, Integer> localClassIdsByShapeId = new LinkedHashMap<>();
 
     private final Map<BabbleParser.InterfaceExpressionContext, Integer> interfaceIds = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Integer> classIds = new IdentityHashMap<>();
@@ -242,6 +243,7 @@ public final class HirBuilder {
             compiledClassJvmNames.put(clsCtx, name);
             if (shape != null) {
                 localClassJvmNamesById.put(shape.id(), name);
+                localClassIdsByShapeId.put(shape.id(), classIds.get(clsCtx));
             }
         }
 
@@ -545,6 +547,10 @@ public final class HirBuilder {
                 body.add(lowerExpr(e));
             }
 
+            List<HirVar> declared = hirVars(resolution.declared(ctx));
+            List<HirVar> captured = hirVars(resolution.captured(ctx));
+            boolean fastRecord = isFastRecordClass(shape, declared, captured, params, body);
+
             return new HirClass(
                     id,
                     isObject,
@@ -552,8 +558,8 @@ public final class HirBuilder {
                     jvmName,
                     implementedJvm,
                     javaIfaces,
-                    hirVars(resolution.declared(ctx)),
-                    hirVars(resolution.captured(ctx)),
+                    declared,
+                    captured,
                     params,
                     memberKinds,
                     primDefBits,
@@ -563,11 +569,54 @@ public final class HirBuilder {
                     lowerTypeList(typeList),
                     body,
                     lowerStaticBlock(staticBlk),
+                    fastRecord,
                     ctx.getStart().getLine()
             );
         } finally {
             currentFunction = savedFn;
         }
+    }
+
+    private static boolean isFastRecordClass(ClassShape shape, List<HirVar> declared, List<HirVar> captured,
+                                             List<HirParam> params, List<HirExpr> body) {
+        if (shape == null || !shape.isValue() || !captured.isEmpty() || params.size() > 8) {
+            return false;
+        }
+        for (HirVar v : declared) {
+            if (v.cell()) {
+                return false;
+            }
+        }
+        int slots = 3;
+        for (HirParam p : params) {
+            if (p.samTarget() != null || p.checkedType() != null) {
+                return false;
+            }
+            slots += p.kind().slots();
+        }
+        if (slots > 200) {
+            return false;
+        }
+        for (HirExpr stmt : body) {
+            if (!(stmt instanceof HirExpr.Def d)
+                    || d.target().kind() != LoweringTargets.DefKind.MEMBER
+                    || !shape.isMethod(d.target().index())) {
+                return false;
+            }
+            if (d.value() instanceof HirExpr.FunctionRef) {
+                continue;
+            }
+            if (d.value() instanceof HirExpr.MakeOverloadSet mos && !mos.operands().isEmpty()) {
+                for (HirExpr op : mos.operands()) {
+                    if (!(op instanceof HirExpr.FunctionRef)) {
+                        return false;
+                    }
+                }
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 
     private HirInterface lowerInterface(BabbleParser.InterfaceExpressionContext ctx) {
@@ -672,6 +721,8 @@ public final class HirBuilder {
         PrimitiveKind kind = scopes.lowering().expressionKind(ctx);
         boolean imm = kind.isPrimitive() || scopes.lowering().isExpressionDeeplyImmutable(ctx);
         boolean str = scopes.lowering().isExpressionString(ctx);
+        boolean frozen = scopes.lowering().isExpressionFrozen(ctx);
+        boolean unique = scopes.lowering().isExpressionUnique(ctx);
         return new ExprMeta(
                 ctx.getStart().getLine(),
                 kind,
@@ -679,7 +730,9 @@ public final class HirBuilder {
                 scopes.lowering().checkedType(ctx),
                 effects,
                 imm,
-                str
+                str,
+                frozen,
+                unique
         );
     }
 
@@ -767,6 +820,13 @@ public final class HirBuilder {
             if (ovDispatch != null) {
                 return lowerOperatorOverload(neg, neg.operand, neg.operand.getText(), Operators.NEGATE, null, null, ovDispatch);
             }
+            if (scopes.lowering().directMethodTarget(neg) != null) {
+                HirExpr directOp = tryLowerDirectMethod(neg, neg.operand, neg.operand.getText(), List.of(), null,
+                        SyntaxText.operatorSite(neg, neg.operand.getText(), Operators.NEGATE, null, sourceName), metaOf(neg));
+                if (directOp != null) {
+                    return directOp;
+                }
+            }
             return new HirExpr.Unary(HirExpr.UnaryOp.NEGATE, lowerExpr(neg.operand), neg.operand.getText(), metaOf(neg));
         }
         if (ctx instanceof BabbleParser.BooleanNotContext not) {
@@ -779,6 +839,17 @@ public final class HirBuilder {
             if (ovDispatch != null) {
                 return lowerOperatorOverload(bin, bin.left, bin.left.getText(), Operators.method(bin.op.getText()),
                         bin.right, bin.right.getText(), ovDispatch);
+            }
+            if (scopes.lowering().directMethodTarget(bin) != null) {
+                String opMethod = Operators.method(bin.op.getText());
+                if (opMethod != null) {
+                    HirExpr directOp = tryLowerDirectMethod(bin, bin.left, bin.left.getText(),
+                            List.of(new HirCallArg(null, lowerExpr(bin.right))), null,
+                            SyntaxText.operatorSite(bin, bin.left.getText(), opMethod, bin.right.getText(), sourceName), metaOf(bin));
+                    if (directOp != null) {
+                        return directOp;
+                    }
+                }
             }
             HirExpr.BinaryOp op = switch (bin.op.getType()) {
                 case BabbleLexer.PLUS -> HirExpr.BinaryOp.ADD;
@@ -799,6 +870,7 @@ public final class HirBuilder {
         if (ctx instanceof BabbleParser.BooleanOpContext boolOp) {
             HirExpr.LogicOp op = boolOp.op.getType() == BabbleLexer.OR ? HirExpr.LogicOp.OR : HirExpr.LogicOp.AND;
             return new HirExpr.Logic(op, lowerExpr(boolOp.left), lowerExpr(boolOp.right),
+                    scopes.lowering().isLogicRightNarrowed(boolOp),
                     new ExprMeta(boolOp.getStart().getLine(), PrimitiveKind.BOOL,
                             scopes.lowering().numericWideningRank(boolOp), scopes.lowering().checkedType(boolOp), EffectSet.EMPTY, true, false));
         }
@@ -1110,6 +1182,21 @@ public final class HirBuilder {
             int fieldIdx = compiledFieldIndex(thisExpr, name);
             return new HirExpr.ThisFieldGet(lowerExpr(receiver), clsId, fieldIdx, name, metaOf(ctx));
         }
+        LoweringTargets.ClassFieldTarget classField = scopes.lowering().classFieldTarget(ctx);
+        if (classField != null) {
+            Integer localClsId = localClassIdsByShapeId.get(classField.classTypeId());
+            if (localClsId != null) {
+                return new HirExpr.ThisFieldGet(lowerExpr(receiver), receiver.getText(), localClsId, null,
+                        classField.memberIndex(), classField.memberName(), classField.fieldKind(),
+                        classField.recordValue(), classField.definitelyDefined(), metaOf(ctx));
+            }
+            String extJvm = allClassJvmNames.get(classField.classTypeId());
+            if (extJvm != null && classField.definitelyDefined()) {
+                return new HirExpr.ThisFieldGet(lowerExpr(receiver), receiver.getText(), -1, extJvm,
+                        classField.memberIndex(), classField.memberName(), classField.fieldKind(),
+                        classField.recordValue(), true, metaOf(ctx));
+            }
+        }
         return new HirExpr.DynamicSelect(lowerExpr(receiver), receiver.getText(), name, false, metaOf(ctx));
     }
 
@@ -1164,6 +1251,38 @@ public final class HirBuilder {
             }
             // The analysis never marks a call with spread arguments (BIP024-D4).
             return new HirExpr.SelfTailCall(functionIds.get(currentFunction), lowerCallArgs(params, null), binding, meta);
+        }
+
+        // 0b. Unshadowed built-in move(x) / freeze(expr) ownership markers (BIP014-P4)
+        String ownershipCall = scopes.lowering().builtinOwnershipCall(ctx);
+        if (ownershipCall != null && params.size() == 1) {
+            HirExpr arg = lowerExpr(params.get(0).expression());
+            if ("move".equals(ownershipCall)) {
+                HirVar movedVar = arg instanceof HirExpr.VarRead vr ? vr.var() : null;
+                return new HirExpr.Move(movedVar, arg, meta);
+            }
+            return new HirExpr.Freeze(arg, meta);
+        }
+
+        // 0c. Direct fast compiled record constructor call (BIP014-P4)
+        LoweringTargets.RecordNewTarget recordNew = scopes.lowering().recordNewTarget(ctx);
+        if (recordNew != null && binding != null) {
+            Integer localClsId = localClassIdsByShapeId.get(recordNew.classTypeId());
+            String jvmName = localClsId != null
+                    ? localClassJvmNamesById.get(recordNew.classTypeId())
+                    : allClassJvmNames.get(recordNew.classTypeId());
+            if (jvmName != null) {
+                return new HirExpr.RecordNew(
+                        localClsId != null ? localClsId : -1,
+                        recordNew.classTypeId(),
+                        jvmName,
+                        lowerExpr(ctx.expression()),
+                        recordNew.paramKinds(),
+                        lowerPositionalArgs(params, spreadAdapts),
+                        binding,
+                        meta.withUnique(true)
+                );
+            }
         }
 
         // 1. Safe call recv?.m(args)
@@ -1526,6 +1645,12 @@ public final class HirBuilder {
                         meta
                 );
             }
+            if (scopes.lowering().directMethodTarget(ctx) != null) {
+                HirExpr directOp = tryLowerDirectMethod(ctx, recvExpr, recvText, callArgs, null, site, meta);
+                if (directOp != null) {
+                    return directOp;
+                }
+            }
             HirExpr memberSelect = new HirExpr.DynamicSelect(
                     lowerExpr(recvExpr), recvText, method, false,
                     ExprMeta.of(ln, PrimitiveKind.NONE));
@@ -1546,6 +1671,54 @@ public final class HirBuilder {
                 ExprMeta.of(ln, PrimitiveKind.NONE));
         List<HirExpr> posArgs = argExpr != null ? List.of(lowerExpr(argExpr)) : List.of();
         return new HirExpr.OverloadDispatch(memberSelect, recvText + "." + method, site, posArgs, hirBranches, meta);
+    }
+
+    private HirExpr tryLowerDirectMethod(ParserRuleContext site, BabbleParser.ExpressionContext recvExpr,
+                                         String recvText, List<HirCallArg> callArgs,
+                                         LoweringTargets.ArgumentBinding binding, CallSite callSite, ExprMeta meta) {
+        LoweringTargets.DirectMethodTarget target = scopes.lowering().directMethodTarget(site);
+        if (target == null) {
+            return null;
+        }
+        String rt = recvExpr instanceof BabbleParser.ThisExpressionContext ? null : recvText;
+        BabbleParser.FunctionLiteralContext directFn = scopes.lowering().directMethodFunction(site);
+        Integer localClsId = localClassIdsByShapeId.get(target.classTypeId());
+        if (localClsId != null && directFn != null && functionIds.containsKey(directFn)) {
+            return new HirExpr.DirectThisMethodCall(
+                    lowerExpr(recvExpr),
+                    rt,
+                    localClsId,
+                    null,
+                    target.classTypeId(),
+                    target.memberName(),
+                    target.overloadAltIndex(),
+                    functionIds.get(directFn),
+                    null,
+                    callArgs,
+                    binding,
+                    callSite,
+                    meta
+            );
+        }
+        String extJvm = allClassJvmNames.get(target.classTypeId());
+        if (extJvm != null && target.signature() != null && target.signature().isSpread()) {
+            return new HirExpr.DirectThisMethodCall(
+                    lowerExpr(recvExpr),
+                    rt,
+                    -1,
+                    extJvm,
+                    target.classTypeId(),
+                    target.memberName(),
+                    target.overloadAltIndex(),
+                    -1,
+                    target.signature(),
+                    callArgs,
+                    binding,
+                    callSite,
+                    meta
+            );
+        }
+        return null;
     }
 
     // ---------------------------------------------------------------- helpers

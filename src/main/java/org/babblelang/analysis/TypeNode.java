@@ -100,6 +100,13 @@ final class TypeNode {
     /** The declared types of members and statics, by name, as Types descriptors. */
     final Map<String, String> memberTypes = new LinkedHashMap<>();
     final Map<String, String> staticTypes = new LinkedHashMap<>();
+    /** Converged lowering facts preserved across {@code detachAst()} for cross-module direct dispatch ({@code BIP014-P4}). */
+    boolean fastRecord;
+    PrimitiveKind[] fastRecordParamKinds;
+    final Map<String, PrimitiveKind> memberKinds = new LinkedHashMap<>();
+    final java.util.Set<String> definiteFields = new java.util.LinkedHashSet<>();
+    final Map<String, LoweringTargets.FunctionSignature> methodSignatures = new LinkedHashMap<>();
+    final Map<String, LoweringTargets.FunctionSignature> overloadMethodSignatures = new LinkedHashMap<>();
     boolean resolving;
 
     TypeNode(ParserRuleContext ctx, String id, ClassShape.Kind kind, String name, ScopeNode scope, List<BabbleParser.TypeContext> parentTypes) {

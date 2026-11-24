@@ -101,7 +101,7 @@ final class ClassGen {
         writer.visitField(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC, "$babble$class", "L" + BABBLE_CLASS + ";", null, null).visitEnd();
         writer.visitField(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC, "$babble$rt", "L" + SCRIPT_RUNTIME + ";", null, null).visitEnd();
         for (int i = 0; i < shape.memberCount(); i++) {
-            writer.visitField(0, shape.member(i), jvmDescriptor(memberKinds[i]), null, null).visitEnd();
+            writer.visitField(ACC_PUBLIC, shape.member(i), jvmDescriptor(memberKinds[i]), null, null).visitEnd();
         }
         for (HirVar variable : hiddenCells) {
             writer.visitField(0, variable.hiddenFieldName(), "Ljava/lang/Object;", null, null).visitEnd();
@@ -152,6 +152,65 @@ final class ClassGen {
             emitRecordHashCode();
         }
         emitToStringMethod();
+    }
+
+    /**
+     * Emits {@code public static <Name> $new(BabbleClass, ScriptRuntime, <typed params...>)}
+     * for capture-free method-only {@code record}s ({@code BIP014-P4}), bypassing
+     * {@code Object[]} boxing, {@code Binder}, and {@code Bootstrap.call}.
+     */
+    void emitFastRecordConstructor() {
+        if (!cls.fastRecord()) {
+            return;
+        }
+        List<HirParam> params = cls.params();
+        PrimitiveKind[] pKinds = new PrimitiveKind[params.size()];
+        for (int i = 0; i < params.size(); i++) {
+            pKinds[i] = params.get(i).kind();
+        }
+        String desc = fastRecordFactoryDescriptor(name, pKinds);
+        MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC, "$new", desc, null, null);
+        m.visitCode();
+        m.visitTypeInsn(NEW, name);
+        m.visitInsn(DUP);
+        m.visitVarInsn(ALOAD, 0);
+        m.visitVarInsn(ALOAD, 1);
+        m.visitMethodInsn(INVOKESPECIAL, name, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", false);
+        int slot = 2;
+        for (int i = 0; i < params.size(); i++) {
+            HirParam p = params.get(i);
+            int memberIdx = p.memberIndex();
+            PrimitiveKind mk = memberKinds[memberIdx];
+            m.visitInsn(DUP);
+            loadKindOn(m, p.kind(), slot);
+            if (p.kind() != mk) {
+                if (p.kind().isPrimitive() && !mk.isPrimitive()) {
+                    boxOn(m, p.kind());
+                } else if (!p.kind().isPrimitive() && mk.isPrimitive()) {
+                    unboxOn(m, mk);
+                }
+            }
+            m.visitFieldInsn(PUTFIELD, name, shape.member(memberIdx), jvmDescriptor(mk));
+            slot += p.kind().slots();
+        }
+        for (org.babblelang.ir.hir.HirExpr stmt : cls.body()) {
+            if (stmt instanceof org.babblelang.ir.hir.HirExpr.Def d) {
+                if (d.value() instanceof org.babblelang.ir.hir.HirExpr.FunctionRef ref) {
+                    String methodField = emitter.compiledMethodField(emitter.module.function(ref.functionId()), this);
+                    m.visitInsn(DUP);
+                    m.visitFieldInsn(GETSTATIC, emitter.className, methodField, "L" + COMPILED_METHOD + ";");
+                    m.visitFieldInsn(PUTFIELD, name, d.name(), "Ljava/lang/Object;");
+                } else if (d.value() instanceof org.babblelang.ir.hir.HirExpr.MakeOverloadSet mos) {
+                    String ovField = emitter.cachedMethodOverloadField(mos, this);
+                    m.visitInsn(DUP);
+                    m.visitFieldInsn(GETSTATIC, emitter.className, ovField, "L" + OVERLOAD_SET + ";");
+                    m.visitFieldInsn(PUTFIELD, name, d.name(), "Ljava/lang/Object;");
+                }
+            }
+        }
+        m.visitInsn(ARETURN);
+        m.visitMaxs(0, 0);
+        m.visitEnd();
     }
 
     void emitInterfaceBridges() {

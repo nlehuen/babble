@@ -446,13 +446,19 @@ final class CallEmitter {
     void emitDirectThisMethodCall(HirExpr.DirectThisMethodCall c) {
         MethodEmitContext mc = ctx();
         MethodVisitor mv = mc.mv;
-        ClassGen gen = emitter.classGen(c.classId());
-        HirFunction fn = emitter.module.function(c.targetFunctionId());
-        emitter.ensureFunctionScheduled(fn);
         int ln = c.meta().line();
         List<HirCallArg> args = c.args();
         LoweringTargets.ArgumentBinding binding = c.binding();
         String[] names = binding != null ? null : callArgNames(args);
+
+        if (c.externalClassJvmName() != null) {
+            emitExternalDirectMethodCall(c, ln, args, binding, names);
+            return;
+        }
+
+        ClassGen gen = emitter.classGen(c.classId());
+        HirFunction fn = emitter.module.function(c.targetFunctionId());
+        emitter.ensureFunctionScheduled(fn);
         if (c.receiverText() != null) {
             emitter.emitBoxed(c.receiver());
             Label ok = new Label();
@@ -518,6 +524,109 @@ final class CallEmitter {
         mv.visitMethodInsn(INVOKEVIRTUAL, gen.name, jvmMethod + (fn.isSpread() ? "$call" : ""), METHOD_DESCRIPTOR, false);
         mc.stackKind = PrimitiveKind.NONE;
         finishCallCheck(c.meta());
+    }
+
+    private void emitExternalDirectMethodCall(HirExpr.DirectThisMethodCall c, int ln, List<HirCallArg> args,
+                                              LoweringTargets.ArgumentBinding binding, String[] names) {
+        MethodEmitContext mc = ctx();
+        MethodVisitor mv = mc.mv;
+        String ownerJvm = c.externalClassJvmName();
+        LoweringTargets.FunctionSignature sig = c.externalSignature();
+        String jvmMethod = c.overloadAltIndex() >= 0
+                ? "m$" + c.memberName() + "$" + c.overloadAltIndex()
+                : "m$" + c.memberName();
+        emitter.emitBoxed(c.receiver());
+        Label ok = new Label();
+        mv.visitInsn(DUP);
+        mv.visitJumpInsn(IFNONNULL, ok);
+        mv.visitInsn(POP);
+        mc.line(ln);
+        ConstantPool.pushString(mv, c.receiverText() != null ? c.receiverText() : "this");
+        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "notAScope", "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;", false);
+        mv.visitInsn(ATHROW);
+        mv.visitLabel(ok);
+        mv.visitTypeInsn(CHECKCAST, ownerJvm);
+        mv.visitInsn(DUP);
+        mv.visitFieldInsn(GETFIELD, ownerJvm, c.memberName(), "Ljava/lang/Object;");
+        mv.visitLdcInsn(c.memberName());
+        mc.line(ln);
+        mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        if (c.overloadAltIndex() >= 0) {
+            ConstantPool.pushInt(mv, c.overloadAltIndex());
+            mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "memberOf", "(Ljava/lang/Object;I)L" + CALLABLE + ";", false);
+        }
+        mv.visitTypeInsn(CHECKCAST, COMPILED_METHOD);
+        mv.visitVarInsn(ALOAD, mc.rtLocal);
+        int count = sig.parameterKinds().length;
+        if (sig.hasSpec() && (binding != null ? binding.paramCount() == count : (names == null && args.size() == count))) {
+            emitBoundTypedArgs(callArgExprs(args), binding, sig.parameterKinds());
+            if (sig.hasOptionalMask()) {
+                ConstantPool.pushInt(mv, binding != null ? binding.specMaskFor(sig.optionalParamBits(), count) : 0);
+            }
+            mc.line(ln);
+            mv.visitMethodInsn(INVOKEVIRTUAL, ownerJvm, jvmMethod + "$spec", methodSpecDescriptor(sig), false);
+            mc.stackKind = sig.returnKind();
+            finishCallCheck(c.meta());
+            return;
+        }
+        mv.visitInsn(ACONST_NULL);
+        emitBoundBoxedArgs(callArgExprs(args), binding, count);
+        mc.line(ln);
+        mv.visitMethodInsn(INVOKEVIRTUAL, ownerJvm, jvmMethod, methodDirectDescriptor(sig), false);
+        mc.stackKind = PrimitiveKind.NONE;
+        finishCallCheck(c.meta());
+    }
+
+    void emitRecordNew(HirExpr.RecordNew r) {
+        MethodEmitContext mc = ctx();
+        MethodVisitor mv = mc.mv;
+        int ln = r.meta().line();
+        emitter.emitBoxed(r.classRef());
+        mv.visitTypeInsn(CHECKCAST, BABBLE_CLASS);
+        mv.visitVarInsn(ALOAD, mc.rtLocal);
+        emitBoundTypedArgs(r.args(), r.binding(), r.paramKinds());
+        mc.line(ln);
+        mv.visitMethodInsn(INVOKESTATIC, r.classJvmName(), "$new",
+                fastRecordFactoryDescriptor(r.classJvmName(), r.paramKinds()), false);
+        mc.stackKind = PrimitiveKind.NONE;
+        finishCallCheck(r.meta());
+    }
+
+    void emitRecordReuse(HirExpr.RecordReuse r) {
+        MethodEmitContext mc = ctx();
+        MethodVisitor mv = mc.mv;
+        org.babblelang.ir.hir.HirClass cls = r.classId() >= 0 ? emitter.module.clazz(r.classId()) : null;
+        if (cls == null) {
+            throw new IllegalStateException("RecordReuse requires local HirClass #" + r.classId());
+        }
+        int targetLocal = mc.newLocal();
+        emitter.emitBoxed(r.target());
+        mv.visitTypeInsn(CHECKCAST, r.classJvmName());
+        mv.visitVarInsn(ASTORE, targetLocal);
+        PrimitiveKind[] kinds = r.paramKinds();
+        int[] argLocals = new int[r.args().size()];
+        for (int i = 0; i < r.args().size(); i++) {
+            emitter.emitAs(r.args().get(i), kinds[i]);
+            argLocals[i] = mc.newLocal(kinds[i]);
+            storeKindOn(mv, kinds[i], argLocals[i]);
+        }
+        for (int i = 0; i < r.args().size(); i++) {
+            int memberIdx = cls.params().get(i).memberIndex();
+            PrimitiveKind mk = cls.memberKinds()[memberIdx];
+            mv.visitVarInsn(ALOAD, targetLocal);
+            loadKindOn(mv, kinds[i], argLocals[i]);
+            if (kinds[i] != mk) {
+                if (kinds[i].isPrimitive() && !mk.isPrimitive()) {
+                    boxOn(mv, kinds[i]);
+                } else if (!kinds[i].isPrimitive() && mk.isPrimitive()) {
+                    unboxOn(mv, mk);
+                }
+            }
+            mv.visitFieldInsn(PUTFIELD, r.classJvmName(), cls.shape().member(memberIdx), jvmDescriptor(mk));
+        }
+        mv.visitVarInsn(ALOAD, targetLocal);
+        mc.stackKind = PrimitiveKind.NONE;
+        finishCallCheck(r.meta());
     }
 
     void emitInterfaceCall(HirExpr.InterfaceCall c) {
@@ -1117,7 +1226,12 @@ final class CallEmitter {
         MethodEmitContext mc = ctx();
         MethodVisitor mv = mc.mv;
         List<HirExpr> ops = m.operands();
-        List<LoweringTargets.OverloadAltMetaInfo> metas = m.metas();
+        if (mc.constructorClass != null && isAllMethodRefsOf(ops, mc.constructorClass.cls.id())) {
+            String field = emitter.cachedMethodOverloadField(m, mc.constructorClass);
+            mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + OVERLOAD_SET + ";");
+            mc.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         // 1. Object[] operands
         ConstantPool.pushInt(mv, ops.size());
         mv.visitTypeInsn(ANEWARRAY, OBJECT);
@@ -1127,6 +1241,28 @@ final class CallEmitter {
             emitter.emitBoxed(ops.get(i));
             mv.visitInsn(AASTORE);
         }
+        mc.line(m.meta().line());
+        emitOverloadSetMetaAndCreate(mv, m.metas());
+        mc.stackKind = PrimitiveKind.NONE;
+    }
+
+    private boolean isAllMethodRefsOf(List<HirExpr> ops, int classId) {
+        if (ops.isEmpty()) {
+            return false;
+        }
+        for (HirExpr op : ops) {
+            if (!(op instanceof HirExpr.FunctionRef ref)) {
+                return false;
+            }
+            HirFunction fn = emitter.module.function(ref.functionId());
+            if (fn == null || fn.ownerClassId() != classId) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static void emitOverloadSetMetaAndCreate(MethodVisitor mv, List<LoweringTargets.OverloadAltMetaInfo> metas) {
         // 2. String[] sigKeys
         ConstantPool.pushInt(mv, metas.size());
         mv.visitTypeInsn(ANEWARRAY, STRING);
@@ -1189,11 +1325,9 @@ final class CallEmitter {
             }
             mv.visitInsn(AASTORE);
         }
-        mc.line(m.meta().line());
         mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "create",
                 "([Ljava/lang/Object;[Ljava/lang/String;[Ljava/lang/String;[I[I[I[[Ljava/lang/String;)L" + OVERLOAD_SET + ";",
                 false);
-        mc.stackKind = PrimitiveKind.NONE;
     }
 
     void emitOverloadSelect(HirExpr.OverloadSelect s) {

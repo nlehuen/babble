@@ -5,6 +5,7 @@ import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.JavaTypes;
+import org.babblelang.runtime.Operators;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
@@ -180,6 +181,24 @@ final class LoweringAnalyzer {
         for (BabbleParser.FunctionLiteralContext fn : checker.functions()) {
             if (types.get(fn) instanceof Type.Function tf) {
                 pass.analysis.lowering().setFunctionReturnKind(fn, PrimitiveKind.of(tf.result()));
+                if (checker.inFile(fn) && fn.fnParameters() != null) {
+                    List<BabbleParser.FnParamContext> paramDecls = fn.fnParameters().fnParam();
+                    List<Type.Parameter> tParams = tf.parameters();
+                    int n = Math.min(paramDecls.size(), tParams.size());
+                    for (int i = 0; i < n; i++) {
+                        Type.Parameter tp = tParams.get(i);
+                        String recTypeId = null;
+                        Type unwrapped = TypeAlgebra.unwrapFrozen(tp.type());
+                        if (unwrapped instanceof Type.Instance inst
+                                && inst.node().kind == ClassShape.Kind.VALUE_CLASS
+                                && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx)
+                                || checker.inFile(inst.node().ctx))) {
+                            recTypeId = inst.node().id;
+                        }
+                        pass.analysis.lowering().setParamOwnership(paramDecls.get(i),
+                                new LoweringTargets.ParamOwnership(tp.mut(), tp.borrow(), tp.unique(), recTypeId));
+                    }
+                }
             }
         }
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
@@ -213,6 +232,7 @@ final class LoweringAnalyzer {
             }
         }
         publishDefinitelyDefined(pass, checker);
+        publishClassLoweringFacts();
         deriveTargets(file);
         publishTypeHierarchies(pass, checker);
         if (pass.analysis.moduleInterface() != null) {
@@ -254,9 +274,112 @@ final class LoweringAnalyzer {
                 OverloadSolver.paramDescriptors(alt));
     }
 
+    /** Populates {@link TypeNode} lowering facts preserved across {@code detachAst()} for direct dispatch ({@code BIP014-P4}). */
+    private void publishClassLoweringFacts() {
+        Resolution resolution = pass.analysis.resolution();
+        for (TypeNode node : pass.types) {
+            if (node.isInterface() || node.ctx == null || !checker.inFile(node.ctx)) {
+                continue;
+            }
+            for (TypeNode.Member member : node.members.values()) {
+                if (!member.isMethod()) {
+                    PrimitiveKind fk = member.declaration != null
+                            ? pass.analysis.lowering().declarationKind(member.declaration)
+                            : PrimitiveKind.NONE;
+                    node.memberKinds.put(member.name, fk);
+                    if (node.parameterMembers.contains(member.index)) {
+                        node.definiteFields.add(member.name);
+                    }
+                } else if (!member.isOverload && member.function != null
+                        && types.get(member.function) instanceof Type.Function tf
+                        && tf.typeParameters().isEmpty()) {
+                    LoweringTargets.FunctionSignature sig = uninstantiatedSignature(tf);
+                    if (sig != null) {
+                        node.methodSignatures.put(member.name, sig);
+                    }
+                } else if (member.isOverload && member.overloadFunctions != null && !member.overloadFunctions.isEmpty()) {
+                    for (int ai = 0; ai < member.overloadFunctions.size(); ai++) {
+                        BabbleParser.FunctionLiteralContext altFn = member.overloadFunctions.get(ai);
+                        if (altFn != null && types.get(altFn) instanceof Type.Function tf && tf.typeParameters().isEmpty()) {
+                            LoweringTargets.FunctionSignature sig = uninstantiatedSignature(tf);
+                            if (sig != null) {
+                                node.overloadMethodSignatures.put(member.name + "$" + ai, sig);
+                            }
+                        }
+                    }
+                }
+            }
+            if (node.kind == ClassShape.Kind.VALUE_CLASS
+                    && node.ctx instanceof BabbleParser.ClassExpressionContext clsCtx
+                    && resolution != null
+                    && resolution.captured(clsCtx).isEmpty()
+                    && clsCtx.classParameters() != null) {
+                List<BabbleParser.ClassParamContext> paramCtxs = clsCtx.classParameters().classParam();
+                boolean noHiddenCells = true;
+                for (Resolution.Variable v : resolution.declared(clsCtx)) {
+                    if (v.isCell()) {
+                        noHiddenCells = false;
+                        break;
+                    }
+                }
+                if (noHiddenCells && paramCtxs.size() <= 8 && paramCtxs.size() == node.parameters.size()) {
+                    PrimitiveKind[] paramKinds = new PrimitiveKind[paramCtxs.size()];
+                    int slots = 3; // this, BabbleClass, ScriptRuntime
+                    boolean paramsOk = true;
+                    for (int i = 0; i < paramCtxs.size(); i++) {
+                        BabbleParser.ClassParamContext pc = paramCtxs.get(i);
+                        if (pass.analysis.lowering().javaSamTarget(pc) != null
+                                || pass.analysis.lowering().checkedType(pc) != null) {
+                            paramsOk = false;
+                            break;
+                        }
+                        PrimitiveKind pk = pass.analysis.lowering().declarationKind(pc);
+                        paramKinds[i] = pk;
+                        slots += pk.slots();
+                    }
+                    boolean bodyOk = paramsOk && slots <= 200;
+                    if (bodyOk && clsCtx.classBlock != null) {
+                        for (BabbleParser.ExpressionContext expr : clsCtx.classBlock.expression()) {
+                            if (!(expr instanceof BabbleParser.DefExpressionContext def)) {
+                                bodyOk = false;
+                                break;
+                            }
+                            LoweringTargets.DefTarget dt = pass.analysis.lowering().defTarget(def);
+                            TypeNode.Member m = node.members.get(def.name.getText());
+                            if (dt.kind() != LoweringTargets.DefKind.MEMBER || m == null || !m.isMethod()
+                                    || !isPureMethodDefValue(def.value)) {
+                                bodyOk = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (bodyOk) {
+                        node.fastRecord = true;
+                        node.fastRecordParamKinds = paramKinds;
+                    }
+                }
+            }
+        }
+    }
+
+    private static boolean isPureMethodDefValue(BabbleParser.ExpressionContext expr) {
+        if (expr instanceof BabbleParser.FunctionLiteralContext) {
+            return true;
+        }
+        if (expr instanceof BabbleParser.OverloadExpressionContext ov) {
+            for (BabbleParser.ExpressionContext op : ov.expression()) {
+                if (!(op instanceof BabbleParser.FunctionLiteralContext)) {
+                    return false;
+                }
+            }
+            return !ov.expression().isEmpty();
+        }
+        return false;
+    }
+
     // ---------------------------------------------------------------- static dispatch targets (RM001, RM003)
 
-    /** Derives the static target of every selection, Java field write, and call from the converged types. */
+    /** Derives the static target of every selection, Java field write, operator method, and call from the converged types. */
     private void deriveTargets(ParseTree tree) {
         if (tree instanceof BabbleParser.SelectorContext selector) {
             deriveSelection(selector);
@@ -268,6 +391,12 @@ final class LoweringAnalyzer {
             }
         } else if (tree instanceof BabbleParser.CallContext call && checker.inFile(call)) {
             deriveCall(call);
+        } else if (tree instanceof BabbleParser.BinaryOpContext bin && checker.inFile(bin)
+                && pass.analysis.calls().overloadDispatch(bin) == null) {
+            deriveOperatorMethodCall(bin, bin.left, Operators.method(bin.op.getText()), 1);
+        } else if (tree instanceof BabbleParser.NegateContext neg && checker.inFile(neg)
+                && pass.analysis.calls().overloadDispatch(neg) == null) {
+            deriveOperatorMethodCall(neg, neg.operand, "neg", 0);
         }
         if (tree instanceof BabbleParser.AssignExpressionContext assign) {
             BabbleParser.ExpressionContext receiver = ScopeAnalysis.assignReceiver(assign);
@@ -284,7 +413,32 @@ final class LoweringAnalyzer {
         }
     }
 
-    /** {@code receiver.name} : an indexed module export or a Java field. */
+    private void deriveOperatorMethodCall(ParserRuleContext site, BabbleParser.ExpressionContext recvExpr,
+                                          String method, int expectedArity) {
+        if (method == null || recvExpr == null) {
+            return;
+        }
+        Type left = TypeAlgebra.unwrapFrozen(types.get(recvExpr));
+        if (!(left instanceof Type.Instance inst) || inst.node().isInterface()) {
+            return;
+        }
+        TypeNode.Member member = inst.node().members.get(method);
+        if (member == null || !member.isMethod() || member.isOverload) {
+            return;
+        }
+        LoweringTargets.FunctionSignature sig = inst.node().methodSignatures.get(method);
+        if (sig == null || sig.parameterKinds().length != expectedArity
+                || sig.hasOptionalMask() || sig.restIndex() >= 0) {
+            return;
+        }
+        pass.analysis.lowering().setDirectMethodTarget(site, new LoweringTargets.DirectMethodTarget(
+                inst.node().id, method, -1, sig, inst.node().kind == ClassShape.Kind.VALUE_CLASS));
+        if (member.function != null && checker.inFile(member.function)) {
+            pass.analysis.lowering().setDirectMethodFunction(site, member.function);
+        }
+    }
+
+    /** {@code receiver.name} : an indexed module export, a compiled Babble class/record field, or a Java field. */
     private void deriveSelection(BabbleParser.SelectorContext selector) {
         if (selector.expression() == null || selector.safe != null || !(types.get(selector.expression()) instanceof Type receiver)) {
             return;
@@ -299,6 +453,20 @@ final class LoweringAnalyzer {
             LoweringTargets.JavaFieldTarget target = fieldReadTarget(receiver, name, checker.algebra());
             if (target != null) {
                 pass.analysis.lowering().setJavaFieldTarget(selector, target);
+                return;
+            }
+            if (!(selector.expression() instanceof BabbleParser.ThisExpressionContext)) {
+                Type unwrapped = TypeAlgebra.unwrapFrozen(receiver);
+                if (unwrapped instanceof Type.Instance inst && !inst.node().isInterface()) {
+                    TypeNode.Member member = inst.node().members.get(name);
+                    if (member != null && !member.isMethod()) {
+                        PrimitiveKind fk = inst.node().memberKinds.getOrDefault(name, PrimitiveKind.NONE);
+                        boolean recordVal = inst.node().kind == ClassShape.Kind.VALUE_CLASS;
+                        boolean defDefined = inst.node().definiteFields.contains(name);
+                        pass.analysis.lowering().setClassFieldTarget(selector, new LoweringTargets.ClassFieldTarget(
+                                inst.node().id, name, member.index, fk, recordVal, defDefined));
+                    }
+                }
             }
         }
     }
@@ -334,6 +502,16 @@ final class LoweringAnalyzer {
     private void deriveCall(BabbleParser.CallContext call) {
         List<BabbleParser.CallParameterContext> arguments = call.callParameters().callParameter();
         boolean safe = call.expression() instanceof BabbleParser.SelectorContext sel && sel.safe != null;
+        if (!safe && arguments.size() == 1 && ScopeAnalysis.callParamName(arguments.get(0)) == null
+                && call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() == null
+                && pass.analysis.lowering().checkedType(call) == null) {
+            String nm = ScopeAnalysis.selectorName(sel);
+            if (("move".equals(nm) || "freeze".equals(nm))
+                    && TypeChecker.resolveName(sel, nm, checker.occurrenceScopeOf(sel)) == null) {
+                pass.analysis.lowering().setBuiltinOwnershipCall(call, nm);
+                return;
+            }
+        }
         if (!safe && deriveArrayCreation(arguments, call)) {
             return;
         }
@@ -366,14 +544,49 @@ final class LoweringAnalyzer {
         if (binding != null) {
             pass.analysis.calls().setArgumentBinding(call, binding);
         }
+        if (!safe && callee instanceof Type.ClassValue cv && cv.node().fastRecord
+                && binding != null && !binding.hasOmitted() && !binding.hasRest() && !binding.hasSpreads()
+                && binding.paramCount() == cv.node().fastRecordParamKinds.length) {
+            pass.analysis.lowering().setRecordNewTarget(call,
+                    new LoweringTargets.RecordNewTarget(cv.node().id, cv.node().fastRecordParamKinds));
+            return;
+        }
         if (safe || !(callee instanceof Type.Function function)) {
             return;
         }
         if (function.typeParameters().isEmpty()) {
             deriveBabbleCall(function, arguments, binding, call);
+            deriveDirectClassMethodCall(binding, call);
             deriveInterfaceCall(arguments, binding, call);
         } else if (types.get(call) != Type.ERROR) {
             deriveInterfaceCall(arguments, binding, call);
+        }
+    }
+
+    private void deriveDirectClassMethodCall(LoweringTargets.ArgumentBinding binding, BabbleParser.CallContext call) {
+        if (binding == null || !(call.expression() instanceof BabbleParser.SelectorContext sel)
+                || sel.safe != null || sel.expression() == null
+                || sel.expression() instanceof BabbleParser.SuperExpressionContext
+                || sel.expression() instanceof BabbleParser.ThisExpressionContext) {
+            return;
+        }
+        Type recv = TypeAlgebra.unwrapFrozen(types.get(sel.expression()));
+        if (!(recv instanceof Type.Instance inst) || inst.node().isInterface()) {
+            return;
+        }
+        String memberName = ScopeAnalysis.selectorName(sel);
+        TypeNode.Member member = inst.node().members.get(memberName);
+        if (member == null || !member.isMethod() || member.isOverload) {
+            return;
+        }
+        LoweringTargets.FunctionSignature sig = inst.node().methodSignatures.get(memberName);
+        if (sig == null || binding.paramCount() != sig.parameterKinds().length) {
+            return;
+        }
+        pass.analysis.lowering().setDirectMethodTarget(call, new LoweringTargets.DirectMethodTarget(
+                inst.node().id, memberName, -1, sig, inst.node().kind == ClassShape.Kind.VALUE_CLASS));
+        if (member.function != null && checker.inFile(member.function)) {
+            pass.analysis.lowering().setDirectMethodFunction(call, member.function);
         }
     }
 
@@ -472,6 +685,17 @@ final class LoweringAnalyzer {
                     sig,
                     null);
             pass.analysis.calls().setOverloadDispatch(site, new CallMetadata.OverloadDispatchTarget(target, null, callResultKind));
+            if (directTarget == null && site instanceof BabbleParser.BinaryOpContext bin) {
+                String method = Operators.method(bin.op.getText());
+                Type left = TypeAlgebra.unwrapFrozen(types.get(bin.left));
+                if (method != null && left instanceof Type.Instance inst && !inst.node().isInterface()) {
+                    LoweringTargets.FunctionSignature ovSig = inst.node().overloadMethodSignatures.get(method + "$" + resolved.altIndex());
+                    if (ovSig != null && ovSig.parameterKinds().length == 1 && !ovSig.hasOptionalMask() && ovSig.restIndex() < 0) {
+                        pass.analysis.lowering().setDirectMethodTarget(site, new LoweringTargets.DirectMethodTarget(
+                                inst.node().id, method, resolved.altIndex(), ovSig, inst.node().kind == ClassShape.Kind.VALUE_CLASS));
+                    }
+                }
+            }
             return;
         }
         List<CallMetadata.OverloadSplitBranch> branches = new ArrayList<>(resolved.splitBranches().size());

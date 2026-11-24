@@ -221,11 +221,15 @@ public final class HirVerifier {
                 verifyStatements(module, c.args(), inFunction, loopDepth);
             }
             case HirExpr.DirectThisMethodCall c -> {
-                if (module.clazz(c.classId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown DirectThisMethodCall classId " + c.classId());
-                }
-                if (module.function(c.targetFunctionId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown DirectThisMethodCall targetFunctionId " + c.targetFunctionId());
+                if (c.externalClassJvmName() == null) {
+                    if (module.clazz(c.classId()) == null) {
+                        throw new IllegalStateException("HirVerifier : unknown DirectThisMethodCall classId " + c.classId());
+                    }
+                    if (module.function(c.targetFunctionId()) == null) {
+                        throw new IllegalStateException("HirVerifier : unknown DirectThisMethodCall targetFunctionId " + c.targetFunctionId());
+                    }
+                } else if (c.externalSignature() == null) {
+                    throw new IllegalStateException("HirVerifier : external DirectThisMethodCall missing signature for " + c.memberName());
                 }
                 verifyExpr(module, c.receiver(), inFunction, loopDepth);
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);
@@ -277,6 +281,25 @@ public final class HirVerifier {
                 }
             }
             case HirExpr.TypeApply t -> verifyExpr(module, t.inner(), inFunction, loopDepth);
+            case HirExpr.RecordNew r -> {
+                if (r.classId() >= 0 && module.clazz(r.classId()) == null) {
+                    throw new IllegalStateException("HirVerifier : unknown RecordNew classId " + r.classId());
+                }
+                if (r.classJvmName() == null) {
+                    throw new IllegalStateException("HirVerifier : null RecordNew classJvmName");
+                }
+                verifyExpr(module, r.classRef(), inFunction, loopDepth);
+                verifyStatements(module, r.args(), inFunction, loopDepth);
+            }
+            case HirExpr.RecordReuse r -> {
+                if (r.classId() >= 0 && module.clazz(r.classId()) == null) {
+                    throw new IllegalStateException("HirVerifier : unknown RecordReuse classId " + r.classId());
+                }
+                verifyExpr(module, r.target(), inFunction, loopDepth);
+                verifyStatements(module, r.args(), inFunction, loopDepth);
+            }
+            case HirExpr.Move m -> verifyExpr(module, m.operand(), inFunction, loopDepth);
+            case HirExpr.Freeze f -> verifyExpr(module, f.operand(), inFunction, loopDepth);
         }
     }
 

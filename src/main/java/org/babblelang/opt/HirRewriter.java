@@ -8,6 +8,7 @@ import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 import org.babblelang.ir.hir.HirStaticBlock;
+import org.babblelang.ir.hir.HirVar;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -226,8 +227,9 @@ public final class HirRewriter {
                 HirExpr nr = transform.apply(c.receiver());
                 List<HirCallArg> na = rewriteCallArgs(c.args(), transform);
                 yield (nr == c.receiver() && na == c.args()) ? c
-                        : new HirExpr.DirectThisMethodCall(nr, c.receiverText(), c.classId(), c.memberName(), c.overloadAltIndex(),
-                        c.targetFunctionId(), na, c.binding(), c.callSite(), c.meta());
+                        : new HirExpr.DirectThisMethodCall(nr, c.receiverText(), c.classId(), c.externalClassJvmName(),
+                                c.classTypeId(), c.memberName(), c.overloadAltIndex(), c.targetFunctionId(),
+                                c.externalSignature(), na, c.binding(), c.callSite(), c.meta());
             }
             case HirExpr.InterfaceCall c -> {
                 HirExpr nr = transform.apply(c.receiver());
@@ -272,6 +274,27 @@ public final class HirRewriter {
                 List<HirExpr> na = rewriteList(d.args(), transform);
                 yield (nc == d.callee() && na == d.args()) ? d
                         : new HirExpr.OverloadDispatch(nc, d.calleeText(), d.callSite(), na, d.branches(), d.meta());
+            }
+            case HirExpr.RecordNew r -> {
+                HirExpr ncr = transform.apply(r.classRef());
+                List<HirExpr> na = rewriteList(r.args(), transform);
+                yield (ncr == r.classRef() && na == r.args()) ? r
+                        : new HirExpr.RecordNew(r.classId(), r.classTypeId(), r.classJvmName(), ncr, r.paramKinds(), na, r.binding(), r.meta());
+            }
+            case HirExpr.RecordReuse r -> {
+                HirExpr nt = transform.apply(r.target());
+                List<HirExpr> na = rewriteList(r.args(), transform);
+                yield (nt == r.target() && na == r.args()) ? r
+                        : new HirExpr.RecordReuse(nt, r.classId(), r.classTypeId(), r.classJvmName(), r.paramKinds(), na, r.meta());
+            }
+            case HirExpr.Move m -> {
+                HirExpr no = transform.apply(m.operand());
+                HirVar nv = no instanceof HirExpr.VarRead vr ? vr.var() : m.var();
+                yield (no == m.operand() && nv == m.var()) ? m : new HirExpr.Move(nv, no, m.meta());
+            }
+            case HirExpr.Freeze f -> {
+                HirExpr no = transform.apply(f.operand());
+                yield no == f.operand() ? f : new HirExpr.Freeze(no, f.meta());
             }
         };
     }
