@@ -249,7 +249,7 @@ fn nLt (a:int, b:int) -> bool {nothrow unique}
 ```hir
 ;; hir -O1 fn=nLt
 fn nLt (a:int, b:int) -> bool {nothrow unique}
-  (not (<:bool var(a) var(b)))
+  (>=:bool var(a) var(b))
 ```
 
 ## AlgebraicRules.negateExactComparison : equality ops and byte/short/char vs double
@@ -271,7 +271,7 @@ fn nEq (a:int, b:int) -> bool {nothrow commutative unique}
 ```hir
 ;; hir -O1 fn=nEq
 fn nEq (a:int, b:int) -> bool {nothrow commutative unique}
-  (not (==:bool var(a) var(b)))
+  (<>:bool var(a) var(b))
 ```
 
 ## AlgebraicRules.isExactOrderedClass : char vs double and mixed int-double comparisons
@@ -292,7 +292,7 @@ fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
 ```hir
 ;; hir -O1 fn=nMix
 fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
-  (and (not (<:bool var(a) 1.5:double)) (not (<:bool var(b) 1.5:double)))
+  (and (>=:bool var(a) 1.5:double) (>=:bool var(b) 1.5:double))
 ```
 
 ## AlgebraicRules.iteAndOrderRules : equal branches, positive-guard abs, and non-neg guard

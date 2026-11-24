@@ -288,4 +288,42 @@ public class EGraphTestCase {
         Assertions.assertFalse(g.areEquivalent(anyNeq, f), "any may hold an object with non-reflexive or throwing equals");
         Assertions.assertFalse(g.areEquivalent(anyEqTrue, any), "any == true must not collapse to any");
     }
+
+    @Test
+    public void testNegatedComparisons() {
+        EGraph g = new EGraph();
+        int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+        int b = g.add(ENode.opaque("b", PrimitiveKind.INT));
+        int d1 = g.add(ENode.opaque("d1", PrimitiveKind.DOUBLE));
+        int d2 = g.add(ENode.opaque("d2", PrimitiveKind.DOUBLE));
+
+        int eq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, a, b));
+        int neq = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, a, b));
+        int lt = g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, b));
+        int lte = g.add(ENode.binary(ENode.Op.LTE, PrimitiveKind.BOOL, a, b));
+        int gt = g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, a, b));
+        int gte = g.add(ENode.binary(ENode.Op.GTE, PrimitiveKind.BOOL, a, b));
+        int dLt = g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, d1, d2));
+        int dGte = g.add(ENode.binary(ENode.Op.GTE, PrimitiveKind.BOOL, d1, d2));
+
+        int notEq = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, eq));
+        int notNeq = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, neq));
+        int notLt = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, lt));
+        int notLte = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, lte));
+        int notGt = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, gt));
+        int notGte = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, gte));
+        int notDLt = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, dLt));
+
+        g.saturate(AlgebraicRules.optimizerRules(), 6, 128);
+
+        Assertions.assertTrue(g.areEquivalent(notEq, neq));
+        Assertions.assertTrue(g.areEquivalent(notNeq, eq));
+        Assertions.assertTrue(g.areEquivalent(notLt, gte));
+        Assertions.assertTrue(g.areEquivalent(notLte, gt));
+        Assertions.assertTrue(g.areEquivalent(notGt, lte));
+        Assertions.assertTrue(g.areEquivalent(notGte, lt));
+        Assertions.assertTrue(g.areEquivalent(notDLt, dGte));
+        Assertions.assertEquals(ENode.Op.NEQ, g.extract(notEq, EGraph::defaultCost).node().op());
+        Assertions.assertEquals(ENode.Op.GTE, g.extract(notLt, EGraph::defaultCost).node().op());
+    }
 }
