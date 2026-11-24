@@ -246,64 +246,7 @@ public final class BabbleCompiler {
         if (engine != null && engine.get(IR_OBSERVER) instanceof org.babblelang.ir.IrObserver obs) {
             engineObserver = obs;
         }
-        org.babblelang.ir.IrObserver cliObserver = dumpIr != null ? cliDumpObserver(dumpIr, internalName, optLevel) : null;
+        org.babblelang.ir.IrObserver cliObserver = org.babblelang.ir.CliIrDumper.forSpec(dumpIr, internalName, optLevel);
         return org.babblelang.ir.IrObserver.combine(engineObserver, cliObserver);
-    }
-
-    private static org.babblelang.ir.IrObserver cliDumpObserver(String spec, String internalName, int optLevel) {
-        String lower = spec.toLowerCase(java.util.Locale.ROOT);
-        boolean canonical = lower.endsWith(":canonical") || "canonical".equals(lower);
-        boolean hirOnly = lower.startsWith("hir");
-        boolean mirOnly = lower.startsWith("mir");
-        String afterPrefix = lower.contains(":after:") ? spec.substring(lower.indexOf(":after:") + 1) : null;
-        return new org.babblelang.ir.IrObserver() {
-            @Override
-            public boolean wants(org.babblelang.ir.IrTier tier, int activeOpt, String stage) {
-                if (hirOnly && tier != org.babblelang.ir.IrTier.HIR) {
-                    return false;
-                }
-                if (mirOnly && tier != org.babblelang.ir.IrTier.MIR) {
-                    return false;
-                }
-                if (afterPrefix != null) {
-                    return afterPrefix.equals(stage);
-                }
-                if (org.babblelang.ir.IrSnapshot.STAGE_BEFORE.equals(stage)) {
-                    return true;
-                }
-                return org.babblelang.ir.IrSnapshot.STAGE_FINAL.equals(stage) && optLevel > 0;
-            }
-
-            @Override
-            public void onSnapshot(org.babblelang.ir.IrSnapshot snapshot) {
-                String tierPrefix = snapshot.tier().label();
-                String phase = org.babblelang.ir.IrSnapshot.STAGE_BEFORE.equals(snapshot.stage())
-                        ? tierPrefix + "-before"
-                        : (org.babblelang.ir.IrSnapshot.STAGE_FINAL.equals(snapshot.stage())
-                        ? tierPrefix + "-after"
-                        : tierPrefix + "-" + snapshot.stage().replace(':', '-'));
-                String text = canonical
-                        ? snapshot.ir().printCanonical(new org.babblelang.ir.IrTarget.Module())
-                        : snapshot.ir().printRaw();
-                dumpIr(spec, internalName, phase, text);
-            }
-        };
-    }
-
-    static void dumpIr(String target, String internalName, String phase, String text) {
-        String lower = target.toLowerCase(java.util.Locale.ROOT);
-        if ("stderr".equals(lower) || "true".equals(lower) || "all".equals(lower)
-                || "canonical".equals(lower) || lower.startsWith("hir") || lower.startsWith("mir")) {
-            System.err.println("=== " + phase + " : " + internalName + " ===");
-            System.err.println(text);
-            return;
-        }
-        Path path = Path.of(target).resolve(internalName + "." + phase + ".txt");
-        try {
-            Files.createDirectories(path.getParent());
-            Files.writeString(path, text);
-        } catch (IOException e) {
-            throw new BabbleException("Cannot dump IR to " + path, e);
-        }
     }
 }

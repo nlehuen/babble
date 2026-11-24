@@ -99,8 +99,7 @@ public class BatestTestCase {
     }
 
     static boolean isBatestFile(Path p) {
-        String name = p.getFileName().toString();
-        return name.endsWith(".batest") || name.endsWith(".batest.md");
+        return p.getFileName().toString().endsWith(".batest.md");
     }
 
     private static Path prepareRecordFile(String recordDir, String mode) throws IOException {

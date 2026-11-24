@@ -1,0 +1,87 @@
+# Significant newlines, semicolons, continuations, and unary minus precedence
+
+References : BIP012 (predicate-free LL(1)/LL(2) grammar, significant newlines), Babble.g4
+
+## Case 1
+
+```babble
+def a = 1 +
+  2 *
+  3
+def b =
+  10
+def s = "x" +
+  "y"
+assert(a == 7)
+assert(b == 10)
+assert(s == "xy")
+```
+
+## Error : Syntax error : unexpected '+'
+
+```babble
+"x"
+  + "y"
+```
+
+```error
+Syntax error : unexpected '+'
+```
+
+## Case 3
+
+```babble
+def C = class (def x : int) ( def inc = fn () : C -> ( C(this.x + 1) ) )
+def v = C(1)
+  .inc()
+  .inc()
+  .x
+def n : C? = null
+def nv = n
+  ?.inc()
+  ?.x
+assert(v == 3)
+assert(nv == null)
+```
+
+## Newline before unary minus separates two expressions; inline unary minus binds tighter than * and +
+
+```babble
+def a = 5
+def b = 3
+def r = (
+  discard(a)
+  -b
+)
+assert(r == -3)
+assert(-a * b == -15)
+assert(-a + b == -2)
+```
+
+## Semicolons and empty block with any? annotation evaluate to null
+
+```babble
+def e : any? = ()
+def x = 1 ; def y = 2 ; ; def z = x + y
+assert(e == null)
+assert(z == 3)
+```
+
+## Unannotated empty block cannot infer a concrete type
+
+```babble
+def e = ()
+```
+
+```error
+Missing type : e
+```
+
+## Call juxtaposition is suppressed across newlines: f\n(10) assigns f then evaluates (10)
+
+```babble
+def f = fn (x : int) : int -> ( x + 1 )
+def r = f
+(10)
+assert(r(10) == 11)
+```

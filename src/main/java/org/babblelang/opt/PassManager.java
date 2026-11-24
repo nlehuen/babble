@@ -4,7 +4,6 @@ import org.babblelang.ir.IrObserver;
 import org.babblelang.ir.IrSnapshot;
 import org.babblelang.ir.IrTier;
 import org.babblelang.ir.hir.HirModule;
-import org.babblelang.ir.hir.HirPrinter;
 import org.babblelang.ir.hir.HirVerifier;
 import org.babblelang.opt.hir.FbipReusePass;
 import org.babblelang.opt.hir.HirDcePass;
@@ -15,7 +14,6 @@ import org.babblelang.opt.hir.InlinePass;
 import org.babblelang.opt.hir.ScalarReplacePass;
 
 import java.util.List;
-import java.util.function.BiConsumer;
 
 /**
  * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-I2, §6.5).
@@ -53,27 +51,7 @@ public final class PassManager {
     }
 
     public HirModule optimize(HirModule module, PassContext context) {
-        return optimize(module, context, (IrObserver) null, null);
-    }
-
-    public HirModule optimize(HirModule module, PassContext context, BiConsumer<String, String> irDumper) {
-        if (irDumper == null) {
-            return optimize(module, context, (IrObserver) null, null);
-        }
-        IrObserver adapter = new IrObserver() {
-            @Override
-            public boolean wants(IrTier tier, int optLevel, String stage) {
-                return tier == IrTier.HIR && (IrSnapshot.STAGE_BEFORE.equals(stage)
-                        || (IrSnapshot.STAGE_FINAL.equals(stage) && !passes.isEmpty()));
-            }
-
-            @Override
-            public void onSnapshot(IrSnapshot snapshot) {
-                String phase = IrSnapshot.STAGE_BEFORE.equals(snapshot.stage()) ? "hir-before" : "hir-after";
-                irDumper.accept(phase, snapshot.ir().printRaw());
-            }
-        };
-        return optimize(module, context, adapter, null);
+        return optimize(module, context, null, null);
     }
 
     public HirModule optimize(HirModule module, PassContext context, IrObserver observer, String moduleKey) {
