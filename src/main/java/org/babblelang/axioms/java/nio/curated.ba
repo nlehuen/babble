@@ -1,9 +1,9 @@
-;; Curated axioms for java.nio (BIP019-I6)
+;; Curated axioms for java.nio (BIP019-I6, BIP030-P2)
 
 axiom java.nio.CharBuffer: class (
 ) static (
-    def wrap: fn io (csq: java.lang.CharSequence): java.nio.CharBuffer
-    def wrap: fn io (csq: java.lang.CharSequence, start: int, end: int): java.nio.CharBuffer
-    def wrap: fn io (cbuf: array of char): java.nio.CharBuffer
-    def wrap: fn io (cbuf: array of char, offset: int, length: int): java.nio.CharBuffer
+    def wrap: fn ... (csq: java.lang.CharSequence!): java.nio.CharBuffer!
+    def wrap: fn ... (csq: java.lang.CharSequence!, start: int, end: int): java.nio.CharBuffer!
+    def wrap: fn ... (cbuf: (array of char)!): java.nio.CharBuffer!
+    def wrap: fn ... (cbuf: (array of char)!, offset: int, length: int): java.nio.CharBuffer!
 )

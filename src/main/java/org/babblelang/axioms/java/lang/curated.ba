@@ -1,24 +1,24 @@
-;; Curated axioms for java.lang (BIP019-I4, I5, I6)
+;; Curated axioms for java.lang (BIP019-I4, I5, I6, BIP030-P2)
 
-axiom java.lang.Boolean: class nullmarked (
+axiom java.lang.Boolean: class notnull (
 )
 
-axiom java.lang.Byte: class nullmarked (
+axiom java.lang.Byte: class notnull (
 )
 
-axiom java.lang.CharSequence: class nullmarked (
+axiom java.lang.CharSequence: class notnull (
 )
 
-axiom java.lang.Character: class nullmarked (
+axiom java.lang.Character: class notnull (
 )
 
 axiom java.lang.Class of T: class (
     def getCanonicalName: fn nothrow (): string?
-    def getName: fn nothrow (): string
-    def getSimpleName: fn nothrow (): string
+    def getName: fn nothrow (): string!
+    def getSimpleName: fn nothrow (): string!
 ) static (
-    def forName: fn io (className: string): java.lang.Class of any?
-    def forName: fn io (name: string, initialize: bool, loader: java.lang.ClassLoader?): java.lang.Class of any?
+    def forName: fn ... (className: string!): (java.lang.Class of any?)!
+    def forName: fn ... (name: string!, initialize: bool, loader: java.lang.ClassLoader?): (java.lang.Class of any?)!
 )
 
 ;; QUESTIONABLE : assumes every Comparable.compareTo implementation is pure
@@ -26,7 +26,7 @@ axiom java.lang.Comparable of T: class (
     def compareTo: fn (o: T): int
 )
 
-axiom java.lang.Double: class nullmarked (
+axiom java.lang.Double: class notnull (
 ) static (
     def doubleToRawLongBits: fn nothrow (value: double): long
     def longBitsToDouble: fn nothrow (bits: long): double
@@ -42,29 +42,29 @@ axiom java.lang.Error: class (
     def new: fn nothrow (shared message: string?, shared cause: java.lang.Throwable?)
 )
 
-axiom java.lang.Float: class nullmarked (
+axiom java.lang.Float: class notnull (
 ) static (
     def floatToRawIntBits: fn nothrow (value: float): int
     def intBitsToFloat: fn nothrow (bits: int): float
 )
 
-axiom java.lang.Integer: class nullmarked (
+axiom java.lang.Integer: class notnull (
 ) static (
-    def getInteger: fn io (nm: string): int?
-    def getInteger: fn io (nm: string, val: int): int
-    def getInteger: fn io (nm: string, val: int?): int
+    def getInteger: fn ... (nm: string!): int?
+    def getInteger: fn ... (nm: string!, val: int): java.lang.Integer!
+    def getInteger: fn ... (nm: string!, val: int?): java.lang.Integer!
 )
 
 ;; QUESTIONABLE : assumes every Iterable.iterator implementation is pure shared nothrow view
-axiom java.lang.Iterable of T: class nullmarked (
-    def iterator: fn shared nothrow view (): java.util.Iterator of T
+axiom java.lang.Iterable of T: class notnull (
+    def iterator: fn shared nothrow view (): (java.util.Iterator of T)!
 )
 
-axiom java.lang.Long: class nullmarked (
+axiom java.lang.Long: class notnull (
 ) static (
-    def getLong: fn io (nm: string): long?
-    def getLong: fn io (nm: string, val: long): long
-    def getLong: fn io (nm: string, val: long?): long
+    def getLong: fn ... (nm: string!): long?
+    def getLong: fn ... (nm: string!, val: long): java.lang.Long!
+    def getLong: fn ... (nm: string!, val: long?): java.lang.Long!
 )
 
 axiom java.lang.Math: class (
@@ -109,23 +109,23 @@ axiom java.lang.Math: class (
 
 ;; QUESTIONABLE : assumes Object's own hashCode and toString are pure volatile
 axiom java.lang.Object: class exact (
-    def getClass: fn nothrow (): java.lang.Class of any?
+    def getClass: fn nothrow (): (java.lang.Class of any?)!
     def hashCode: fn volatile (): int
-    def toString: fn volatile (): string
+    def toString: fn volatile (): string!
 )
 
 ;; QUESTIONABLE : assumes every Object.equals implementation is pure
 axiom java.lang.Object.equals: fn (obj: any?): bool
 
-axiom java.lang.ProcessBuilder: class nullmarked (
+axiom java.lang.ProcessBuilder: class notnull (
 )
 
 axiom java.lang.Runtime: class (
 ) static (
-    def getRuntime: fn io (): java.lang.Runtime
+    def getRuntime: fn ... : java.lang.Runtime!
 )
 
-axiom java.lang.Short: class nullmarked (
+axiom java.lang.Short: class notnull (
 )
 
 axiom java.lang.StrictMath: class (
@@ -152,7 +152,7 @@ axiom java.lang.StrictMath: class (
     def tanh: fn nothrow
 )
 
-axiom java.lang.String: class nullmarked (
+axiom java.lang.String: class notnull (
     def *: fn pure
     def compareTo: fn nothrow
     def compareToIgnoreCase: fn nothrow
@@ -162,7 +162,7 @@ axiom java.lang.String: class nullmarked (
     def endsWith: fn nothrow
     def equals: fn nothrow (anObject: any?): bool
     def equalsIgnoreCase: fn nothrow (anotherString: string?): bool
-    def formatted: fn (args: array of any?): string
+    def formatted: fn (args: (array of any?)!): string!
     def hashCode: fn nothrow
     def indexOf: fn nothrow
     def isBlank: fn nothrow
@@ -177,35 +177,35 @@ axiom java.lang.String: class nullmarked (
     def toLowerCase: fn nothrow
     def toString: fn nothrow
     def toUpperCase: fn nothrow
-    def trim: fn nothrow idempotent foldable (): string
+    def trim: fn nothrow idempotent foldable (): string!
 ) static (
     def *: fn pure
     def new: fn pure
-    def format: fn (format: string, args: array of any?): string
-    def format: fn (l: java.util.Locale?, format: string, args: array of any?): string
-    def valueOf: fn (obj: any?): string
+    def format: fn (format: string!, args: (array of any?)!): string!
+    def format: fn (l: java.util.Locale?, format: string!, args: (array of any?)!): string!
+    def valueOf: fn (obj: any?): string!
 )
 
-axiom java.lang.StringBuffer: class nullmarked (
+axiom java.lang.StringBuffer: class notnull (
 )
 
-axiom java.lang.StringBuilder: class nullmarked (
+axiom java.lang.StringBuilder: class notnull (
 )
 
 axiom java.lang.System: class (
 ) static (
-    def getProperty: fn io (key: string): string?
-    def getProperty: fn io (key: string, defVal: string): string
-    def getenv: fn io (): java.util.Map of (string, string)
-    def getenv: fn io (name: string): string?
-    def lineSeparator: fn volatile nothrow (): string
+    def getProperty: fn io (key: string!): string?
+    def getProperty: fn io (key: string!, defVal: string!): string!
+    def getenv: fn io (): java.util.Map of (string!, string!)!
+    def getenv: fn io (name: string!): string?
+    def lineSeparator: fn volatile nothrow (): string!
 )
 
 axiom java.lang.Thread: class (
-    def getName: fn io (): string
-    def getStackTrace: fn io (): array of java.lang.StackTraceElement
+    def getName: fn ... : string!
+    def getStackTrace: fn ... : (array of java.lang.StackTraceElement!)!
 ) static (
-    def currentThread: fn io (): java.lang.Thread
+    def currentThread: fn ... : java.lang.Thread!
 )
 
 ;; JFR : since JDK 22 the constructors read the mutable static jfrTracing and, when Flight Recorder traces
@@ -213,9 +213,9 @@ axiom java.lang.Thread: class (
 ;; A program cannot observe that, so these keep the effects inferred without it (as on JDK 21); new(cause) stays
 ;; inferred, since it calls cause.toString().
 axiom java.lang.Throwable: class (
-    def fillInStackTrace: fn mut nothrow (): java.lang.Throwable
-    def getStackTrace: fn volatile nothrow (): array of java.lang.StackTraceElement
-    def getSuppressed: fn nothrow (): array of java.lang.Throwable
+    def fillInStackTrace: fn mut nothrow (): java.lang.Throwable!
+    def getStackTrace: fn volatile nothrow (): (array of java.lang.StackTraceElement!)!
+    def getSuppressed: fn nothrow (): (array of java.lang.Throwable!)!
 ) static (
     def new: fn nothrow fresh ()
     def new: fn nothrow (shared message: string?)

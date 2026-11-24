@@ -48,7 +48,7 @@ assert(found.size() >= 0)
 ;; so reflective `Method.invoke(ip, ["bad"])` reaches parameter validation rather than declaring-class check.
 def ip : java.util.function.IntPredicate = fn (x : int) -> ( x > 0 )
 def cls = java.lang.Class.forName("java.util.function.IntPredicate")
-def im = java.util.Arrays.stream(cls.getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
+def im = java.util.Arrays.stream(cls.getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get()
 def badArgs : java.util.List of any = java.util.List.of of any ("bad")
 im.invoke(ip, badArgs.toArray())
 ```
@@ -62,7 +62,7 @@ java.lang.IllegalArgumentException : argument type mismatch
 ```babble
 def rawFn = fn (x : int) -> ( x > 0 )
 def cls = java.lang.Class.forName("java.util.function.IntPredicate")
-def im = java.util.Arrays.stream(cls.getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get() as java.lang.reflect.Method
+def im = java.util.Arrays.stream(cls.getDeclaredMethods()).filter(fn (m) -> ( m.getName() == "test" )).findFirst().get()
 def badArgs : java.util.List of any = java.util.List.of of any ("bad")
 im.invoke(rawFn, badArgs.toArray())
 ```

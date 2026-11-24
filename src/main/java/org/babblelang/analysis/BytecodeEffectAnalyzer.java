@@ -251,8 +251,26 @@ public final class BytecodeEffectAnalyzer {
         if (inferred == null || curated == null) {
             return false;
         }
+        // Check curated nullness for every curated axiom (including io and ... inferred effects, BIP030-D6).
+        if (curated.returnNullness() == JavaNullability.Nullness.NON_NULL
+                && exec instanceof Method m && !m.getReturnType().isPrimitive() && !inferred.returnNonNull()) {
+            return false;
+        }
+        if (curated.returnNullness() == JavaNullability.Nullness.PARAMETRIC
+                && exec instanceof Method m && m.getGenericReturnType() instanceof java.lang.reflect.TypeVariable<?>) {
+            return false;
+        }
+        if (curated.hasSignature() && exec != null) {
+            Class<?>[] pts = exec.getParameterTypes();
+            JavaNullability.Nullness[] pNulls = curated.paramNullness();
+            for (int i = 0; i < Math.min(pts.length, pNulls.length); i++) {
+                if (!pts[i].isPrimitive() && pNulls[i] != null && pNulls[i] != JavaNullability.Nullness.UNSPECIFIED) {
+                    return false;
+                }
+            }
+        }
         EffectSet req = curated.effects();
-        if (req.isIO()) {
+        if (curated.inferredEffects() || req.isIO()) {
             return true;
         }
         // Foldable and algebraic properties cannot be inferred from bytecode alone.
@@ -288,10 +306,6 @@ public final class BytecodeEffectAnalyzer {
             boolean iBorrow = i < inferred.borrowParams().length && inferred.borrowParams()[i];
             if (!cMut && iMut) return false;
             if (cBorrow && !iBorrow) return false;
-        }
-        if (curated.hasSignature() && curated.returnNullness() == JavaNullability.Nullness.NON_NULL
-                && exec instanceof Method m && !m.getReturnType().isPrimitive() && !inferred.returnNonNull()) {
-            return false;
         }
         return true;
     }
@@ -591,12 +605,13 @@ public final class BytecodeEffectAnalyzer {
             Type[] argTypes = Type.getArgumentTypes(key.descriptor());
             int pCount = argTypes.length;
             Type retType = Type.getReturnType(key.descriptor());
+            boolean overlayNonNull = !skipSelfCurated && !isCtor && !isPrimitive(retType) && curatedReturnNonNull(key, true);
 
             if ((mn.access & Opcodes.ACC_NATIVE) != 0) {
-                return Result.unconstrained(pCount, isStatic || isCtor, List.of("native method"));
+                return unconstrainedWithNonNull(pCount, isStatic || isCtor, overlayNonNull, List.of("native method"));
             }
             if ((mn.access & Opcodes.ACC_ABSTRACT) != 0 || mn.instructions == null || mn.instructions.size() == 0) {
-                return Result.unconstrained(pCount, isStatic || isCtor, List.of("abstract method"));
+                return unconstrainedWithNonNull(pCount, isStatic || isCtor, overlayNonNull, List.of("abstract method"));
             }
 
             if (!skipSelfCurated) {
@@ -921,7 +936,7 @@ public final class BytecodeEffectAnalyzer {
                 }
             }
 
-            boolean nonNullRet = isCtor || (hasObjectReturn && returnNonNull);
+            boolean nonNullRet = isCtor || (hasObjectReturn && returnNonNull) || overlayNonNull;
             if (!hermetic) {
                 boolean[] allReads = new boolean[pCount];
                 Arrays.fill(allReads, true);
@@ -957,6 +972,16 @@ public final class BytecodeEffectAnalyzer {
                     readsReceiver, readParams, nonNullRet, isFresh, isView, isShallow, List.copyOf(reasons));
         }
 
+        private Result unconstrainedWithNonNull(int pCount, boolean isStaticOrCtor, boolean nonNullRet, List<String> reasons) {
+            if (!nonNullRet) {
+                return Result.unconstrained(pCount, isStaticOrCtor, reasons);
+            }
+            boolean[] rp = new boolean[pCount];
+            Arrays.fill(rp, true);
+            return new Result(EffectSet.EMPTY, false, false, new boolean[pCount], new boolean[pCount],
+                    !isStaticOrCtor, rp, true, false, false, false, List.copyOf(reasons));
+        }
+
         Result resolveCalleeResult(int opcode, MethodInsnNode mi, MethodKey calleeKey, Set<String> reasons) {
             if (mi.owner.startsWith("[") && "clone".equals(mi.name) && "()Ljava/lang/Object;".equals(mi.desc)) {
                 EffectSet es = EffectSet.ofInferred(
@@ -979,20 +1004,20 @@ public final class BytecodeEffectAnalyzer {
         }
 
         Result lookupCuratedOrSeeded(MethodKey key) {
-            // 1. Curated axioms (BIP019 §5.1–§5.2)
+            // 1. Curated axioms (BIP019 §5.1–§5.2; BIP030 skips ... inferred-effect axioms here)
             if (axioms != null && !axioms.isEmpty()) {
                 Class<?> cls = loadClass(key.ownerInternalName(), loader);
                 if (cls != null) {
                     if ("<init>".equals(key.name())) {
                         Constructor<?> ctor = findReflectedConstructor(cls, key.descriptor());
                         AxiomData.MemberAxiom ax = axioms.constructorAxiom(cls, ctor);
-                        if (ax != null) {
+                        if (ax != null && !ax.inferredEffects()) {
                             return resultFromAxiom(ax, ctor, "curated " + ax.ownerClass().getSimpleName() + ".new");
                         }
                     } else {
                         Method m = findReflectedMethod(cls, key.name(), key.descriptor());
                         AxiomData.MemberAxiom ax = axioms.methodAxiom(cls, key.name(), m);
-                        if (ax != null) {
+                        if (ax != null && !ax.inferredEffects()) {
                             return resultFromAxiom(ax, m, "curated " + ax.ownerClass().getSimpleName() + "." + ax.name());
                         }
                     }
@@ -1001,10 +1026,24 @@ public final class BytecodeEffectAnalyzer {
             return null;
         }
 
+        boolean curatedReturnNonNull(MethodKey key, boolean allowExact) {
+            if (axioms == null || axioms.isEmpty() || "<init>".equals(key.name())) {
+                return false;
+            }
+            Class<?> cls = loadClass(key.ownerInternalName(), loader);
+            if (cls == null) {
+                return false;
+            }
+            Method m = findReflectedMethod(cls, key.name(), key.descriptor());
+            AxiomData.MemberAxiom ax = axioms.methodAxiom(cls, key.name(), m);
+            return ax != null && (allowExact || !ax.exact())
+                    && ax.returnNullness() == JavaNullability.Nullness.NON_NULL;
+        }
+
         private Result resultFromAxiom(AxiomData.MemberAxiom ax, Executable exec, String reason) {
             EffectChecker.JavaCallProfile prof = ax.toProfile(exec);
             boolean retNonNull = exec instanceof Constructor<?>
-                    || (ax.hasSignature() && ax.returnNullness() == JavaNullability.Nullness.NON_NULL);
+                    || ax.returnNullness() == JavaNullability.Nullness.NON_NULL;
             return new Result(prof.effects(), prof.mutReceiver(), prof.borrowReceiver(),
                     prof.mutParams(), prof.borrowParams(),
                     prof.readsReceiver(), prof.readParams(),
@@ -1253,7 +1292,9 @@ public final class BytecodeEffectAnalyzer {
             MethodKey calleeKey = new MethodKey(mi.owner, mi.name, mi.desc);
             Result res = session.resolveCalleeResult(op, mi, calleeKey, null);
             if (res == null) {
-                return ProvValue.EXTERNAL_NULLABLE;
+                return session.curatedReturnNonNull(calleeKey, false)
+                        ? ProvValue.EXTERNAL_NONNULL
+                        : ProvValue.EXTERNAL_NULLABLE;
             }
             boolean mayBeNull = !res.returnNonNull();
             if (res.fresh() || res.effects().uniqueResult()) {

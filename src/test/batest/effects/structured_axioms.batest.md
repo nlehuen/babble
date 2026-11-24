@@ -1,11 +1,11 @@
 # Structured Java and Babble-name axioms, descendant contracts, and curated folding/nullability
 
-References : BIP019 (structured axioms, exact/nullmarked/immutable, descendant contracts,
-Babble-name axioms, array-parameter overloads, curated foldable/idempotent)
+References : BIP019, BIP030 (structured axioms, exact/notnull/immutable, descendant contracts,
+Babble-name axioms, array-parameter overloads, curated foldable/idempotent, `fn ... : T!`, explicit `T!`)
 
 ```babble module=axmod.ba
 export axiom java.lang.StringBuilder: class (
-    def append: fn mut nothrow (s: string): java.lang.StringBuilder
+    def append: fn mut nothrow (s: string!): java.lang.StringBuilder!
 ) static (
     def new: fn pure fresh ()
 )
@@ -29,11 +29,11 @@ assert(sb.toString() == "ok")
 ## Case 2
 
 ```babble
-axiom java.lang.String: class exact nullmarked immutable (
+axiom java.lang.String: class exact notnull immutable (
     def length: fn pure nothrow (): int
     def isEmpty: fn pure nothrow (): bool
 ) static (
-    def valueOf: fn pure nothrow (data: array of char): string
+    def valueOf: fn pure nothrow (data: (array of char)!): string!
 )
 def cs = (array of char).of(char(97), char(98))
 def s = java.lang.String.valueOf(cs)
@@ -63,9 +63,9 @@ axiom java.util.Map.Entry of (K, V): class immutable (
 
 ```babble
 axiom java.util.Collections: class () static (
-    def unmodifiableList: fn of T view (l: list of T): list of T
-    def unmodifiableSet: fn of T view (s: set of T): set of T
-    def unmodifiableSortedSet: fn of T view (s: sortedset of T): sortedset of T
+    def unmodifiableList: fn of T view (l: (list of T)!): (list of T)!
+    def unmodifiableSet: fn of T view (s: (set of T)!): (set of T)!
+    def unmodifiableSortedSet: fn of T view (s: (sortedset of T)!): (sortedset of T)!
 )
 axiom java.lang.Comparable of T: class (
     def compareTo: fn pure (o: T): int
@@ -76,14 +76,14 @@ axiom java.lang.Comparable of T: class (
 
 ```babble
 axiom java.util.Collections: class () static (
-    def unmodifiableMap: fn of (K, V) view (m: map of (K, V)): map of (K, V)
-    def unmodifiableSortedMap: fn of (K, V) view (m: sortedmap of (K, V)): sortedmap of (K, V)
+    def unmodifiableMap: fn of (K, V) view (m: map of (K, V)!): map of (K, V)!
+    def unmodifiableSortedMap: fn of (K, V) view (m: sortedmap of (K, V)!): sortedmap of (K, V)!
 )
 axiom java.lang.Runnable: class (
     def run: fn io (): void
 )
 axiom java.lang.Iterable of T: class (
-    def forEach: fn (action: fn (T): void): void
+    def forEach: fn (action: (fn (T): void)!): void
 )
 ```
 
@@ -103,9 +103,9 @@ assert(java.util.Objects.nonNull("x"))
 
 ```babble
 axiom java.util.Arrays: class () static (
-    def toString: fn pure nothrow (a: array of int): string
-    def deepToString: fn pure nothrow (a: array of (array of string)): string
-    def copyOf: fn of T (original: array of T, newLength: int): array of T
+    def toString: fn pure nothrow (a: (array of int)!): string!
+    def deepToString: fn pure nothrow (a: array of ((array of string!)!)!): string!
+    def copyOf: fn of T (original: (array of T)!, newLength: int): (array of T)!
 )
 def xs = (array of int).of(1, 2)
 def ys = java.util.Arrays.copyOf(xs, 2)
@@ -115,36 +115,36 @@ assert(java.util.Arrays.toString(ys) == "[1, 2]")
 ## Case 8
 
 ```babble
-axiom java.lang.String.valueOf: fn pure nothrow (b: byte?): string
-axiom java.lang.String.valueOf: fn pure nothrow (s: short?): string
-axiom java.lang.String.valueOf: fn pure nothrow (i: int?): string
-axiom java.lang.String.valueOf: fn pure nothrow (l: long?): string
+axiom java.lang.String.valueOf: fn pure nothrow (b: byte?): string!
+axiom java.lang.String.valueOf: fn pure nothrow (s: short?): string!
+axiom java.lang.String.valueOf: fn pure nothrow (i: int?): string!
+axiom java.lang.String.valueOf: fn pure nothrow (l: long?): string!
 ```
 
 ## Case 9
 
 ```babble
-axiom java.lang.String.valueOf: fn pure nothrow (f: float?): string
-axiom java.lang.String.valueOf: fn pure nothrow (d: double?): string
-axiom java.lang.String.valueOf: fn pure nothrow (z: bool?): string
-axiom java.lang.String.valueOf: fn pure nothrow (c: char?): string
+axiom java.lang.String.valueOf: fn pure nothrow (f: float?): string!
+axiom java.lang.String.valueOf: fn pure nothrow (d: double?): string!
+axiom java.lang.String.valueOf: fn pure nothrow (z: bool?): string!
+axiom java.lang.String.valueOf: fn pure nothrow (c: char?): string!
 ```
 
 ## Case 10
 
 ```babble
-axiom java.lang.String.valueOf: fn pure nothrow (b: byte): string
-axiom java.lang.String.valueOf: fn pure nothrow (s: short): string
-axiom java.lang.String.valueOf: fn pure nothrow (l: long): string
-axiom java.lang.String.valueOf: fn pure nothrow (f: float): string
+axiom java.lang.String.valueOf: fn pure nothrow (b: byte): string!
+axiom java.lang.String.valueOf: fn pure nothrow (s: short): string!
+axiom java.lang.String.valueOf: fn pure nothrow (l: long): string!
+axiom java.lang.String.valueOf: fn pure nothrow (f: float): string!
 ```
 
 ## Case 11
 
 ```babble
-axiom java.lang.String.valueOf: fn pure nothrow (d: double): string
-axiom java.lang.String.valueOf: fn pure nothrow (z: bool): string
-axiom java.lang.String.valueOf: fn pure nothrow (c: char): string
+axiom java.lang.String.valueOf: fn pure nothrow (d: double): string!
+axiom java.lang.String.valueOf: fn pure nothrow (z: bool): string!
+axiom java.lang.String.valueOf: fn pure nothrow (c: char): string!
 ```
 
 ## Case 12
@@ -177,8 +177,8 @@ assert(int(java.lang.Math.floor(3.9)) == 3)
 
 ```babble
 axiom java.util.ArrayList of E: class (
-    def clone: fn shallow (): any
-    def subList: fn view (from: int, to: int): list of E
+    def clone: fn shallow (): any!
+    def subList: fn view (from: int, to: int): (list of E)!
 ) static (
     def new: fn pure fresh ()
 )
@@ -217,14 +217,14 @@ axiom java.lang.String: class exact exact ()
 Duplicate axiom class modifier : exact
 ```
 
-## Error : Duplicate axiom class modifier : nullmarked
+## Error : Duplicate axiom class modifier : notnull
 
 ```babble
-axiom java.lang.String: class nullmarked nullmarked ()
+axiom java.lang.String: class notnull notnull ()
 ```
 
 ```error
-Duplicate axiom class modifier : nullmarked
+Duplicate axiom class modifier : notnull
 ```
 
 ## Error : Duplicate axiom class modifier : immutable
@@ -356,7 +356,7 @@ Duplicate axiom for member : java.lang.Math.abs
 ## Error : Missing type arguments : array
 
 ```babble
-axiom java.util.Arrays.toString: fn pure (a: array): string
+axiom java.util.Arrays.toString: fn pure (a: array!): string!
 ```
 
 ```error
@@ -366,7 +366,7 @@ Missing type arguments : array
 ## Error : Wrong number of type arguments : expected 1, got 2
 
 ```babble
-axiom java.util.Arrays.toString: fn pure (a: array of (int, string)): string
+axiom java.util.Arrays.toString: fn pure (a: array of (int, string!)!): string!
 ```
 
 ```error
@@ -376,7 +376,7 @@ Wrong number of type arguments : expected 1, got 2
 ## Error : Unknown type : NoSuchType
 
 ```babble
-axiom java.util.Arrays.toString: fn pure (a: NoSuchType): string
+axiom java.util.Arrays.toString: fn pure (a: NoSuchType!): string!
 ```
 
 ```error
@@ -551,10 +551,10 @@ assert(f3 == "hi")
 
 ```babble
 axiom java.util.Objects: class () static (
-    def toString: fn pure nothrow (o: (byte)?): string
-    def toString: fn pure nothrow (o: (short)?): string
-    def toString: fn pure nothrow (o: (int)?): string
-    def toString: fn pure nothrow (o: (long)?): string
+    def toString: fn pure nothrow (o: (byte)?): string!
+    def toString: fn pure nothrow (o: (short)?): string!
+    def toString: fn pure nothrow (o: (int)?): string!
+    def toString: fn pure nothrow (o: (long)?): string!
 )
 ```
 
@@ -562,10 +562,10 @@ axiom java.util.Objects: class () static (
 
 ```babble
 axiom java.util.Objects: class () static (
-    def toString: fn pure nothrow (o: (float)?): string
-    def toString: fn pure nothrow (o: (double)?): string
-    def toString: fn pure nothrow (o: (bool)?): string
-    def toString: fn pure nothrow (o: (char)?): string
+    def toString: fn pure nothrow (o: (float)?): string!
+    def toString: fn pure nothrow (o: (double)?): string!
+    def toString: fn pure nothrow (o: (bool)?): string!
+    def toString: fn pure nothrow (o: (char)?): string!
 )
 ```
 
@@ -573,8 +573,8 @@ axiom java.util.Objects: class () static (
 
 ```babble
 axiom java.util.Objects: class () static (
-    def hashCode: fn pure nothrow (o: java.lang.CharSequence & java.io.Serializable): int
-    def equals: fn pure nothrow (a: null, b: string | int): bool
+    def hashCode: fn pure nothrow (o: java.lang.CharSequence! & java.io.Serializable!): int
+    def equals: fn pure nothrow (a: null, b: string! | int): bool
 )
 assert(not java.util.Objects.equals(null, "x"))
 assert(java.util.Objects.hashCode("hi") != 0)
@@ -599,7 +599,7 @@ assert(lenPure("hello") == 5)
 ## Static method with mut modifier applies mut to first parameter
 
 ```babble
-axiom java.util.Collections.reverse: fn mut (l: list of any?): void
+axiom java.util.Collections.reverse: fn mut (l: (list of any?)!): void
 def rev = fn (mut xs: list of int): int -> (
     java.util.Collections.reverse(xs)
     xs.get(0)
@@ -705,11 +705,11 @@ assert(rev2(l) == 20)
 ## Case 59
 
 ```babble
-axiom java.lang.StringBuilder: class nullmarked (
-    def toString: fn pure nothrow (): string
+axiom java.lang.StringBuilder: class notnull (
+    def toString: fn pure nothrow (): string!
 ) static (
     def new: fn pure fresh ()
-    def new: fn pure fresh (str: string)
+    def new: fn pure fresh (str: string!)
 )
 def make = fn (): string -> (
     def a = java.lang.StringBuilder()
@@ -722,7 +722,7 @@ assert(make() == "hi")
 ## Case 60
 
 ```babble
-axiom java.awt.Point: class nullmarked ()
+axiom java.awt.Point: class notnull ()
 def px = fn (p: java.awt.Point): int -> (p.x)
 assert(px(java.awt.Point(4, 9)) == 4)
 ```
@@ -736,7 +736,7 @@ axiom java.lang.Object: class (
 axiom java.lang.String: class (
     def indexOf: fn pure
     def indexOf: fn pure nothrow (ch: int): int
-    def toString: fn pure nothrow (): string
+    def toString: fn pure nothrow (): string!
 )
 def probe = fn nothrow (s: string): string -> (
     def i = s.indexOf(97)
@@ -751,7 +751,7 @@ assert(probe("cat") == "cat1")
 axiom java.lang.String: class (
     def valueOf: fn volatile
 ) static (
-    def valueOf: fn pure nothrow (i: int): string
+    def valueOf: fn pure nothrow (i: int): string!
 )
 def fmtInt = fn nothrow (x: int): string -> (java.lang.String.valueOf(x))
 assert(fmtInt(42) == "42")
@@ -763,7 +763,7 @@ assert(fmtInt(42) == "42")
 axiom java.lang.Enum of E: class ()
 axiom java.lang.String of X: class ()
 axiom java.lang.StringBuilder: class (
-    def toString: fn pure nothrow (): unique string
+    def toString: fn pure nothrow (): unique string!
 ) static (
     def new: fn pure unique ()
 )
@@ -778,11 +778,11 @@ axiom java.lang.StringBuilder: class (
 ## Case 64
 
 ```babble
-axiom java.util.Collections.reverse: fn (mut l: list of any?): void
+axiom java.util.Collections.reverse: fn (mut l: (list of any?)!): void
 axiom java.util.List.add: fn mut (unique e: any?): bool
 axiom java.util.Arrays: class () static (
-    def toString: fn pure (a: (array of null)?): string
-    def equals: fn pure (a: (array of int), b: (array of int)?): bool
+    def toString: fn pure (a: (array of null)?): string!
+    def equals: fn pure (a: (array of int)!, b: (array of int)?): bool
 )
 def a = (array of int).of(1, 2)
 assert(java.util.Arrays.equals(a, a))
