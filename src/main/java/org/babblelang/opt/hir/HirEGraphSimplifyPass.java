@@ -264,6 +264,21 @@ public final class HirEGraphSimplifyPass implements HirPass {
             this.module = module;
         }
 
+        private static boolean isLowerableEq(HirExpr.Binary b) {
+            if (b.op() != HirExpr.BinaryOp.EQ && b.op() != HirExpr.BinaryOp.NEQ) {
+                return false;
+            }
+            if (b.left().meta().wideningRank() >= 0 || b.right().meta().wideningRank() >= 0) {
+                return false;
+            }
+            PrimitiveKind lk = b.left().meta().kind();
+            PrimitiveKind rrk = b.right().meta().kind();
+            if (lk.isPrimitive() && lk == rrk) {
+                return true;
+            }
+            return b.left().meta().stringType() && b.right().meta().stringType();
+        }
+
         int lower(HirExpr raw) {
             HirExpr expr = HirRewriter.unwrapTransparent(raw);
             if (expr instanceof HirExpr.Const c && c.meta().wideningRank() < 0 && c.meta().checkedType() == null) {
@@ -273,7 +288,11 @@ public final class HirEGraphSimplifyPass implements HirPass {
                     && HirPurity.isPureNothrowTerminating(v, module)) {
                 String key = "v#" + v.var().id();
                 leaves.putIfAbsent(key, v);
-                return graph.add(ENode.opaque(key, v.meta().kind()));
+                int id = graph.add(ENode.opaque(key, v.meta().kind()));
+                if (v.meta().stringType()) {
+                    graph.markReflexiveEq(id);
+                }
+                return id;
             }
             if (expr instanceof HirExpr.Unary u && u.meta().wideningRank() < 0 && u.meta().checkedType() == null) {
                 if (u.op() == HirExpr.UnaryOp.NOT && u.operand().meta().kind() == PrimitiveKind.BOOL
@@ -301,9 +320,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                         return graph.add(ENode.binary(op, rk, lower(b.left()), lower(b.right())));
                     }
                 }
-                if (lk == PrimitiveKind.BOOL && rrk == PrimitiveKind.BOOL
-                        && b.left().meta().wideningRank() < 0 && b.right().meta().wideningRank() < 0
-                        && (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ)) {
+                if (isLowerableEq(b)) {
                     ENode.Op op = b.op() == HirExpr.BinaryOp.EQ ? ENode.Op.EQ : ENode.Op.NEQ;
                     return graph.add(ENode.binary(op, PrimitiveKind.BOOL, lower(b.left()), lower(b.right())));
                 }
@@ -316,7 +333,11 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 String sym = "babble#" + c.targetFunctionId();
                 callTemplates.putIfAbsent(sym, c);
                 graph.registerCallProps(sym, new EGraph.CallProps(true, false, false, false));
-                return graph.add(ENode.call(sym, c.meta().kind(), lower(c.args().get(0))));
+                int id = graph.add(ENode.call(sym, c.meta().kind(), lower(c.args().get(0))));
+                if (c.meta().stringType()) {
+                    graph.markReflexiveEq(id);
+                }
+                return id;
             }
             if (expr instanceof HirExpr.JavaMethodCall c && isIdempotentJavaEligible(c, module)) {
                 Method m = c.target().method();
@@ -325,11 +346,19 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 callTemplates.putIfAbsent(sym, c);
                 graph.registerCallProps(sym, new EGraph.CallProps(true, false, false, false));
                 int child = c.target().isStatic() ? lower(c.args().get(0)) : lower(c.receiver());
-                return graph.add(ENode.call(sym, c.meta().kind(), child));
+                int id = graph.add(ENode.call(sym, c.meta().kind(), child));
+                if (c.meta().stringType()) {
+                    graph.markReflexiveEq(id);
+                }
+                return id;
             }
             String key = "p#" + (nextOpaque++);
             leaves.put(key, raw);
-            return graph.add(ENode.opaque(key, raw.meta().kind()));
+            int id = graph.add(ENode.opaque(key, raw.meta().kind()));
+            if (raw.meta().stringType()) {
+                graph.markReflexiveEq(id);
+            }
+            return id;
         }
 
         int treeCost(HirExpr raw) {
@@ -346,8 +375,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 PrimitiveKind rk = b.meta().kind();
                 if ((HirPurity.isIntegralKind(rk) && b.left().meta().kind() == rk && b.right().meta().kind() == rk
                         && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL))
-                        || (b.left().meta().kind() == PrimitiveKind.BOOL && b.right().meta().kind() == PrimitiveKind.BOOL
-                        && (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ))
+                        || isLowerableEq(b)
                         || (b.op() == HirExpr.BinaryOp.ADD && b.left().meta().stringType() && b.right().meta().stringType())) {
                     return 4 + treeCost(b.left()) + treeCost(b.right());
                 }

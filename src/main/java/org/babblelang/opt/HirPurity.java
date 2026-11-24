@@ -101,7 +101,9 @@ public final class HirPurity {
                     yield false;
                 }
                 if (b.op().isComparison()) {
-                    yield canLowerComparison(b);
+                    yield canLowerComparison(b)
+                            || ((b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ)
+                            && b.left().meta().stringType() && b.right().meta().stringType());
                 }
                 if (b.meta().kind().isPrimitive()
                         && isNumericKind(b.left().meta().kind()) && isNumericKind(b.right().meta().kind())) {

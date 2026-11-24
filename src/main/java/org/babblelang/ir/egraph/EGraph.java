@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -53,6 +54,7 @@ public final class EGraph {
     private final List<List<ParentEdge>> parents = new ArrayList<>();
     private final Map<ENode, Integer> hashcons = new HashMap<>();
     private final Map<Integer, ENode> constOf = new HashMap<>();
+    private final Set<Integer> reflexiveEqClasses = new HashSet<>();
     private final Map<String, CallProps> callProps = new HashMap<>();
     private final Deque<Integer> worklist = new ArrayDeque<>();
     private int totalNodes = 0;
@@ -96,6 +98,16 @@ public final class EGraph {
         return constOf.get(find(classId));
     }
 
+    /** Marks an e-class as having guaranteed reflexive equality (e.g. {@code string} opaque leaves). */
+    public void markReflexiveEq(int classId) {
+        reflexiveEqClasses.add(find(classId));
+    }
+
+    /** True when {@code a == a -> true} and {@code a != a -> false} are sound for {@code classId}. */
+    public boolean isReflexiveEq(int classId) {
+        return reflexiveEqClasses.contains(find(classId));
+    }
+
     public Collection<ENode> nodesIn(int classId) {
         return new ArrayList<>(classes.get(find(classId)));
     }
@@ -135,6 +147,9 @@ public final class EGraph {
         for (int i = 0; i < node.arity(); i++) {
             parents.get(node.child(i)).add(new ParentEdge(node, id));
         }
+        if (node.isReflexiveEq()) {
+            reflexiveEqClasses.add(id);
+        }
         if (node.isConst()) {
             constOf.put(id, node);
         } else {
@@ -167,6 +182,9 @@ public final class EGraph {
         ENode c2 = constOf.remove(r2);
         if (c2 != null && !constOf.containsKey(r1)) {
             constOf.put(r1, c2);
+        }
+        if (reflexiveEqClasses.remove(r2)) {
+            reflexiveEqClasses.add(r1);
         }
         worklist.add(r1);
         return r1;
@@ -319,6 +337,15 @@ public final class EGraph {
             }
             if (op == ENode.Op.NEQ) {
                 return ENode.constVal(b0.booleanValue() != b1.booleanValue(), PrimitiveKind.BOOL);
+            }
+            return null;
+        }
+        if (c0.literal() instanceof String s0 && c1.literal() instanceof String s1) {
+            if (op == ENode.Op.EQ) {
+                return ENode.constVal(s0.equals(s1), PrimitiveKind.BOOL);
+            }
+            if (op == ENode.Op.NEQ) {
+                return ENode.constVal(!s0.equals(s1), PrimitiveKind.BOOL);
             }
             return null;
         }

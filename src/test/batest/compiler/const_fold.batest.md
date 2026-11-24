@@ -176,7 +176,7 @@ fn f () -> bool {pure unique}
 fn f () -> bool {pure unique}
   (def bs (call name(byte) 3:int))
   (def sl (call name(short) 4:int))
-  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) true:bool) true:bool) true:bool) (==:bool "hi" "hi")) (==:bool null null))
+  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) true:bool) true:bool) true:bool) true:bool) (==:bool null null))
 ```
 
 ## Constant if-pruning and convertConstToKind widening
@@ -285,7 +285,7 @@ fn f () -> bool {nothrow unique}
   (def wL (if true:bool (block 6:int) 1:long))
   (def wF (if true:bool (block 5:int) 1.5:float))
   (def wD (if true:bool (block 8:int) 2.5:double))
-  (and (and (and (==:bool var(wL) 6:long) (==:bool var(wF) 5.0:float)) (==:bool var(wD) 8.0:double)) (==:bool "ok" "ok"))
+  (and (and (and (==:bool var(wL) 6:long) (==:bool var(wF) 5.0:float)) (==:bool var(wD) 8.0:double)) true:bool)
 ```
 
 ## Constant if-pruning with non-constant widened branches and non-constant if
@@ -342,7 +342,7 @@ fn f () -> bool {pure unique}
 ```hir
 ;; hir -O1 fn=f
 fn f () -> bool {pure unique}
-  (and (and (and (and (and (and (and (==:bool "babble" "babble") true:bool) true:bool) (==:bool "hello world" "hello world")) true:bool) true:bool) true:bool) (==:bool (jcall Math.floorDiv 10:int 3:int) 3:int))
+  (==:bool (jcall Math.floorDiv 10:int 3:int) 3:int)
 ```
 
 ## Whitelisted foldable Math.abs/min/max across int, long, float, and double

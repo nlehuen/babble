@@ -157,6 +157,20 @@ public final class ENode {
                 || kind == PrimitiveKind.CHAR;
     }
 
+    /**
+     * True when {@code ==} / {@code !=} on this node's type is guaranteed reflexive: all 8 Babble
+     * primitive kinds (Babble's {@code ==}/{@code !=} uses {@code Float.compare}/{@code Double.compare}
+     * total order, so {@code NaN == NaN} is {@code true} and {@code NaN != NaN} is {@code false})
+     * and guaranteed {@code string} nodes ({@link Op#STR_ADD} or {@code String} constants).
+     * Excludes arbitrary {@code any}/{@code Object} references whose {@code equals} may throw or
+     * violate reflexivity.
+     */
+    public boolean isReflexiveEq() {
+        return kind.isPrimitive()
+                || op == Op.STR_ADD
+                || (op == Op.CONST && literal instanceof String);
+    }
+
     public boolean isFloating() {
         return kind == PrimitiveKind.FLOAT || kind == PrimitiveKind.DOUBLE;
     }

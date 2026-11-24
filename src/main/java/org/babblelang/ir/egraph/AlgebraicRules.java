@@ -8,9 +8,12 @@ import java.util.List;
 /**
  * Shared declarative algebraic rewrite rules for {@link EGraph} ({@code BIP027-D1}).
  *
- * <p>Strictly enforces IEEE-754 floating-point semantics: never applies {@code x * 0.0 -> 0.0},
- * {@code x + 0.0 -> x}, {@code x - x -> 0.0}, {@code x == x -> true}, or floating-point
- * reassociation.
+ * <p>Strictly enforces IEEE-754 floating-point arithmetic semantics: never applies
+ * {@code x * 0.0 -> 0.0}, {@code x + 0.0 -> x}, {@code x - x -> 0.0}, or floating-point
+ * reassociation. Reflexive equality ({@code a == a -> true}, {@code a != a -> false}) applies to
+ * all 8 Babble primitives (including {@code float}/{@code double}, since Babble {@code ==}/{@code !=}
+ * uses {@code Float.compare}/{@code Double.compare}) and guaranteed {@code string} expressions,
+ * never arbitrary {@code any}/{@code Object} references.
  */
 public final class AlgebraicRules {
     private AlgebraicRules() {
@@ -168,27 +171,42 @@ public final class AlgebraicRules {
         if ((n.op() == ENode.Op.EQ || n.op() == ENode.Op.NEQ) && n.kind() == PrimitiveKind.BOOL) {
             int a = n.child(0);
             int b = n.child(1);
-            ENode cb = g.constantOf(b);
-            Boolean bv = cb != null ? cb.asBool() : null;
-            if (bv != null) {
-                boolean wantSame = (n.op() == ENode.Op.EQ) == bv;
-                if (wantSame) {
-                    out.union(id, a);
-                } else {
-                    out.addAndUnion(id, ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, a));
-                }
+            if (g.find(a) == g.find(b) && g.isReflexiveEq(a)) {
+                out.addAndUnion(id, ENode.constVal(n.op() == ENode.Op.EQ, PrimitiveKind.BOOL));
+                return;
             }
-            ENode ca = g.constantOf(a);
-            Boolean av = ca != null ? ca.asBool() : null;
-            if (av != null) {
-                boolean wantSame = (n.op() == ENode.Op.EQ) == av;
-                if (wantSame) {
-                    out.union(id, b);
-                } else {
-                    out.addAndUnion(id, ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, b));
+            if (isBoolClass(g, a) && isBoolClass(g, b)) {
+                ENode cb = g.constantOf(b);
+                Boolean bv = cb != null ? cb.asBool() : null;
+                if (bv != null) {
+                    boolean wantSame = (n.op() == ENode.Op.EQ) == bv;
+                    if (wantSame) {
+                        out.union(id, a);
+                    } else {
+                        out.addAndUnion(id, ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, a));
+                    }
+                }
+                ENode ca = g.constantOf(a);
+                Boolean av = ca != null ? ca.asBool() : null;
+                if (av != null) {
+                    boolean wantSame = (n.op() == ENode.Op.EQ) == av;
+                    if (wantSame) {
+                        out.union(id, b);
+                    } else {
+                        out.addAndUnion(id, ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, b));
+                    }
                 }
             }
         }
+    }
+
+    private static boolean isBoolClass(EGraph g, int classId) {
+        for (ENode node : g.nodesIn(classId)) {
+            if (node.kind() == PrimitiveKind.BOOL) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void stringAssocRules(EGraph g, int id, ENode n, EGraph.MatchRecorder out) {
