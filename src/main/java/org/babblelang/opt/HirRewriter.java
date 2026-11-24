@@ -279,7 +279,8 @@ public final class HirRewriter {
                 HirExpr ncr = transform.apply(r.classRef());
                 List<HirExpr> na = rewriteList(r.args(), transform);
                 yield (ncr == r.classRef() && na == r.args()) ? r
-                        : new HirExpr.RecordNew(r.classId(), r.classTypeId(), r.classJvmName(), ncr, r.paramKinds(), na, r.binding(), r.meta());
+                        : new HirExpr.RecordNew(r.classId(), r.classTypeId(), r.classJvmName(), ncr,
+                                r.classRefIsInstance(), r.paramKinds(), na, r.binding(), r.meta());
             }
             case HirExpr.RecordReuse r -> {
                 HirExpr nt = transform.apply(r.target());

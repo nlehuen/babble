@@ -273,7 +273,7 @@ public final class HirTryNormalize {
                     HirExpr ncr = s.hoist(r.classRef());
                     List<HirExpr> na = lastTry >= 0 ? s.hoistPrefix(r.args(), lastTry) : r.args();
                     yield s.wrap(new HirExpr.RecordNew(r.classId(), r.classTypeId(), r.classJvmName(),
-                            ncr, r.paramKinds(), na, r.binding(), r.meta()), r.meta());
+                            ncr, r.classRefIsInstance(), r.paramKinds(), na, r.binding(), r.meta()), r.meta());
                 }
                 yield r;
             }

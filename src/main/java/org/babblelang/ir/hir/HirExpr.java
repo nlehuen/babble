@@ -735,6 +735,7 @@ public sealed interface HirExpr permits
             String classTypeId,
             String classJvmName,
             HirExpr classRef,
+            boolean classRefIsInstance,
             PrimitiveKind[] paramKinds,
             List<HirExpr> args,
             LoweringTargets.ArgumentBinding binding,
@@ -743,6 +744,19 @@ public sealed interface HirExpr permits
         public RecordNew {
             paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
             args = List.copyOf(args);
+        }
+
+        public RecordNew(
+                int classId,
+                String classTypeId,
+                String classJvmName,
+                HirExpr classRef,
+                PrimitiveKind[] paramKinds,
+                List<HirExpr> args,
+                LoweringTargets.ArgumentBinding binding,
+                ExprMeta meta
+        ) {
+            this(classId, classTypeId, classJvmName, classRef, false, paramKinds, args, binding, meta);
         }
     }
 

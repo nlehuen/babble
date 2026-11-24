@@ -582,7 +582,12 @@ final class CallEmitter {
         MethodVisitor mv = mc.mv;
         int ln = r.meta().line();
         emitter.emitBoxed(r.classRef());
-        mv.visitTypeInsn(CHECKCAST, BABBLE_CLASS);
+        if (r.classRefIsInstance()) {
+            mv.visitTypeInsn(CHECKCAST, r.classJvmName());
+            mv.visitFieldInsn(GETFIELD, r.classJvmName(), "$babble$class", "L" + BABBLE_CLASS + ";");
+        } else {
+            mv.visitTypeInsn(CHECKCAST, BABBLE_CLASS);
+        }
         mv.visitVarInsn(ALOAD, mc.rtLocal);
         emitBoundTypedArgs(r.args(), r.binding(), r.paramKinds());
         mc.line(ln);
