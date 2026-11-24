@@ -2,7 +2,8 @@
 
 References : BIP021 (D2/D3/D4/D22/D23, §2.2)
 
-```babble module=m1.ba
+```babble
+;; babble module=m1.ba
 export def OptIface = interface (
     def calc : fn (a : int, b : int = ..., ..., scale : int = ...) : int
 )
@@ -188,11 +189,13 @@ assert(m.helper(5, b: 7) == 12)
 
 ## REPL session persistence of optional and keyword-only signatures
 
-```babble session
+```babble
+;; babble session
 def f = fn (a : int, b : int = 10, ..., c : int = 100) : int -> ( a + b + c )
 ```
 
-```babble session
+```babble
+;; babble session
 assert(f(1) == 111)
 assert(f(1, 2) == 103)
 assert(f(1, c: 200) == 211)

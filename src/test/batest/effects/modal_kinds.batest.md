@@ -4,7 +4,8 @@ checker and the effect checker. A record crosses what its fields' types cross ; 
 record, or a Java class the axioms call immutable (Map.Entry), what its type arguments cross.
 References : BIP027-I5 (ModalKindTable, docs/design/bip027_tackling-complexity-in-the-compiler.md §3.3), BIP016, BIP019
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v : int) ()
 def Pair of (A, B) = record (a : A, b : B) ()
 def Node = record (v : int, next : Node?) ()

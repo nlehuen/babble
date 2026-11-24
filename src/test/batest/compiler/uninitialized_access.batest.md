@@ -2,7 +2,8 @@
 
 References : BIP001, BIP002 ; targets Frames.defined / checkDefined / checkAssignable, IntCell / DoubleCell / BoolCell, Bootstrap.requireMemberDefined, SelectCache
 
-```babble preamble
+```babble
+;; babble preamble
 def B = class (readNow : bool) (
     def readFn = fn (b : B) : int -> ( b.x )
     def x : int = if readNow then ( this.readFn(this) ) else ( 9 )

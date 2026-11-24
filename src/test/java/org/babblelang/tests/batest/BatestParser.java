@@ -9,12 +9,14 @@ import java.nio.file.Path;
  * Entry point and shared code-budget utilities for {@code .batest.md} (v2) specification files
  * ({@code BIP029-D1}–{@code D10}, retiring legacy v1 {@code .batest}).
  *
- * <p>Enforces readability code-character budgets (excluding Babble comments and outside-fence
- * Markdown prose): preambles and virtual modules must be strictly under
- * {@link #MAX_PREAMBLE_CODE_CHARS} code characters and each test case must be strictly under
- * {@link #MAX_CASE_CODE_CHARS} code characters, unless overridden by {@code large="<reason>"}.
+ * <p>Enforces readability budgets: each file must not exceed {@link #MAX_FILE_LINES} lines,
+ * preambles and virtual modules must be strictly under {@link #MAX_PREAMBLE_CODE_CHARS} code
+ * characters, and each test case must be strictly under {@link #MAX_CASE_CODE_CHARS} code
+ * characters (excluding Babble comments and outside-fence Markdown prose), unless overridden by
+ * {@code ;; babble ... large="<reason>"}.
  */
 public final class BatestParser {
+    public static final int MAX_FILE_LINES = 1000;
     public static final int MAX_PREAMBLE_CODE_CHARS = 800;
     public static final int MAX_CASE_CODE_CHARS = 400;
 

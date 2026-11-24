@@ -3,7 +3,8 @@
 References : BIP011 (core scalar types), Operators.compareNumbers
 Runtime arithmetic inputs go through mutable-state helpers so -O1 cannot constant-fold them away.
 
-```babble preamble
+```babble
+;; babble preamble
 def _d = 0.0
 def _i = 0
 def rtD = fn io (x : double) : double -> ( _d = x ; _d )

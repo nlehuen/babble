@@ -3,7 +3,8 @@
 References : BIP002 (Java interfaces), BIP008 (static typing), BIP011 (core types)
 Targets : Faces, JavaTypes (checkParameters, convertResult), Values (toJava, fromJava)
 
-```babble preamble
+```babble
+;; babble preamble
 def Task = class (id : int) implements java.lang.Runnable (
     def run = fn () -> ( )
 )

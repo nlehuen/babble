@@ -2,7 +2,8 @@
 
 References : `BIP026` (overload sets), `analysis.OverloadSolver`, `analysis.OverloadCallResolver`.
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def Demo = tests.JavaClassDemo
 def I1 = interface ( def a: fn (): int )

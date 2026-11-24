@@ -2,7 +2,8 @@
 
 References : `BIP008` (Java interop & generics), `BIP022` (intersections & SAMs), `analysis.JavaTypeBridge`, `analysis.JavaCallSolver`, `analysis.JavaNullability`.
 
-```babble preamble
+```babble
+;; babble preamble
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def BaseI = interface ( def ping: fn (): int )
 def LeftI = interface extends BaseI ( def defM = fn (): int -> ( 1 ) )

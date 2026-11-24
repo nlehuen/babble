@@ -2,7 +2,8 @@
 
 References : BIP001, BIP002 ; targets ScriptClassWriter.getCommonSuperClass / commonSuperInterface / ancestorInterfaces / isAssignable
 
-```babble preamble
+```babble
+;; babble preamble
 def Root = interface ( def tag : fn () : string )
 def I1 = interface extends Root ( def tag = fn () : string -> ( "i1" ) )
 def I2 = interface extends Root ( def tag = fn () : string -> ( "i2" ) )

@@ -2,7 +2,8 @@
 
 References : BIP007 (BIP007-I2, BIP007-D7), BIP016 (BIP016-D10)
 
-```babble preamble
+```babble
+;; babble preamble
 def MyRecord = record (a: int) ()
 def Box = class (def n: int) ()
 def id of T = fn (x: T): T -> ( x )

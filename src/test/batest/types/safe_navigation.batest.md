@@ -2,7 +2,8 @@
 
 References : BIP008 (nullable types and safe navigation)
 
-```babble preamble
+```babble
+;; babble preamble
 def Node = class (def value: int, def next: Node? = null) (
     def add = fn (k: int): Node -> ( Node(this.value + k, this.next) )
     def read = fn (): int -> ( this.value )

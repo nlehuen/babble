@@ -4,13 +4,15 @@ SAM callback propagation, mut exclusivity, algebraic property inference/validati
 EffectSet.intersect/satisfies, static blocks in constrained functions, and BIP019 axioms.
 References : BIP007, BIP016, BIP019, EffectChecker, EffectSet
 
-```babble module=ce_mod_a.ba
+```babble
+;; babble module=ce_mod_a.ba
 export def ModCustom = class (def x: int) (
     def toString = fn (): string -> ( "M:" + this.x )
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Reg = class (def v: int) ()
 def Box = class (def v: int) ()
 def MutBox = class (def value : int) (

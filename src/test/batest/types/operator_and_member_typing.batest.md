@@ -4,7 +4,8 @@ and operator methods on classes/unions/Java `Number`, compound assignment, safe 
 and member/static assignment checks.
 References : BIP002 (operator methods), BIP008 (static typing), BIP011 (core types), TypeChecker
 
-```babble preamble
+```babble
+;; babble preamble
 def Vec = class (def x : int) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x) )
     def minus = fn (o : Vec) : Vec -> ( Vec(this.x - o.x) )

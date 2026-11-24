@@ -2,7 +2,8 @@
 
 References : BIP001 (calls), BIP008 (P7 call-site inference), BIP021 (optional params), TypedCallCache
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v : any) : any -> ( v )
 def callIntOpt = fn (func : fn (x : int) : int?, v : int) : int? -> ( func(v) )
 ```

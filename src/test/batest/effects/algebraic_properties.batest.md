@@ -2,7 +2,8 @@
 
 References : BIP007, BIP016, BIP017, EffectChecker
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v : int) ()
 def Val = record (x : int) (
     def get = fn () : int -> ( this.x )

@@ -4,7 +4,8 @@ References : BIP002 (interfaces, super), BIP008 (inference), BIP016 (effects/mut
 Target classes : TypeChecker (nonFunctionCallableAssignable, intersectCompatibleFunctions, isInferrableCallable,
 checkMissingTypes), TypeChecks (interface conformance, super defaults)
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v : int) ()
 def I1 = interface ( def m : fn () : int )
 ```

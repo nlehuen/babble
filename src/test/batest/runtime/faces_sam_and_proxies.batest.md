@@ -2,7 +2,8 @@
 
 References : `BIP001` (JVM interfaces & SAM metafactory), `BIP008` (strict typing & overloads), `Faces`, `OverloadSet`, `JavaTypes`.
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def Demo = tests.JavaClassDemo
 def dyn = fn (v: any): any -> ( v )

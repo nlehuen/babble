@@ -4,7 +4,8 @@ References : BIP008 (generics), BIP011 (core types & variance), BIP021 (generic 
 Target classes : TypeChecker (satisfiesJavaBound, accessibleType, unify, unifyReturnSingle,
 canWidenTypeVarToDouble, genericBabbleCall)
 
-```babble preamble
+```babble
+;; babble preamble
 def Box of T = class (def v : T) ()
 def wrap of T = fn (x : T) : Box of T -> ( Box(x) )
 def unwrap of T = fn (b : Box of T) : T -> ( b.v )

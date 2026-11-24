@@ -2,11 +2,13 @@
 
 References : BIP001, BIP011, BIP020, BIP028 ; targets `ControlAndOpEmitter`, `AssignAndMemberEmitter`, `HirExpr$Block`
 
-```babble module=ext_rec.ba
+```babble
+;; babble module=ext_rec.ba
 export def Pt = record (x: int, y: int) ()
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def TopErrA = class (def code: int) ()
 def TopErrB = class (def code: int) ()
 ```

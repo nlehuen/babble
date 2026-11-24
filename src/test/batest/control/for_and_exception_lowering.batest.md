@@ -2,7 +2,8 @@
 
 References : `BIP001` (lowering), `BIP008` (iterators & exceptions), `analysis.LoweringAnalyzer` (`deriveZeroArgInterfaceTarget`, `findDeclaringInterfaceMember`, `publishForLoopTarget`, `isGuaranteedJavaThrowable`, `buildCatchTarget`).
 
-```babble preamble
+```babble
+;; babble preamble
 def HasNextI = interface (
     def hasNext: fn (): bool
 )

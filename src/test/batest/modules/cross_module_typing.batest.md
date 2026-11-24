@@ -4,12 +4,14 @@
 import cycles, and duplicate nominal class IDs across modules.
 References : BIP005, BIP008, TypeChecker, TypeChecks
 
-```babble module=ec_mod.ba
+```babble
+;; babble module=ec_mod.ba
 export def exportedNum = 42
 export def exportedPair = java.util.AbstractMap.SimpleEntry("k", 7)
 ```
 
-```babble module=mod_tc_infer.ba
+```babble
+;; babble module=mod_tc_infer.ba
 export def inc = fn (x: int) -> ( x + 1 )
 export def Box of T = class (def v: T) ()
 export def id of T = fn (x: T): T -> ( x )
@@ -17,17 +19,20 @@ export def optDef = fn (x = 7) -> ( x )
 export def lang = import("java.lang")
 ```
 
-```babble module=cyc_a.ba
+```babble
+;; babble module=cyc_a.ba
 def b = import("cyc_b.ba")
 export def x = b.y + 1
 ```
 
-```babble module=cyc_b.ba
+```babble
+;; babble module=cyc_b.ba
 def a = import("cyc_a.ba")
 export def y = a.x + 1
 ```
 
-```babble module=ce_mod_a.ba
+```babble
+;; babble module=ce_mod_a.ba
 export def Dup = class (def k: int) ()
 export def ExportCls = class (def n: int) (
     private def priv = fn (a: int) -> ( a + this.n )
@@ -36,26 +41,30 @@ export def ExportCls = class (def n: int) (
 export def x = 10
 ```
 
-```babble module=ce_mod_b.ba
+```babble
+;; babble module=ce_mod_b.ba
 export def Dup = class (def k: int) ()
 export def y = 20
 ```
 
-```babble module=fe_mod_b.ba
+```babble
+;; babble module=fe_mod_b.ba
 export def IB = interface (
     def id: fn (): int
 )
 export def DupB = class (def v: int) ()
 ```
 
-```babble module=fe_mod_a.ba
+```babble
+;; babble module=fe_mod_a.ba
 export def sub = import("fe_mod_b.ba")
 export def IA = interface (
     def get: fn (): int
 )
 ```
 
-```babble module=tc_exp.ba
+```babble
+;; babble module=tc_exp.ba
 export def IExp = interface (
     def ping: fn (): int
     def defm = fn (): int -> ( 9 )
@@ -66,7 +75,8 @@ export def INested = interface (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v: any?): any? -> ( v )
 ```
 

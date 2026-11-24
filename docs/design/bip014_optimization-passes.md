@@ -471,7 +471,7 @@ Each phase leaves `mvn -B package` and `mvn -q verify -Pbatest` 100% green and d
 
 ### `BIP014-P3` — Per-Function SSA `MIR` & Dataflow Optimizations (Gated per `BIP014-D3`)
 * Gated on `raytracer-argon`, `raytracer-fable`, and `Benchmarks` measurements after `BIP014-I2` (`BIP014-D3`).
-* Create `org.babblelang.ir.mir` (`MirModule implements IrDumpable`, `MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`, `AliasClass`, `MirLowerer`, `MirPrinter`, `MirCanonicalPrinter`, `MirVerifier`, `MirEmitter`), emitting `IrTier.MIR` snapshots (`before`, `after:<PassName>`, `final`) through `BIP029`'s `IrObserver` (`org.babblelang.ir`, [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)) so `-Dbabble.dumpIr=mir` and ```` ```mir -O2 ... ```` `.batest.md` goldens work out of the box.
+* Create `org.babblelang.ir.mir` (`MirModule implements IrDumpable`, `MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`, `AliasClass`, `MirLowerer`, `MirPrinter`, `MirCanonicalPrinter`, `MirVerifier`, `MirEmitter`), emitting `IrTier.MIR` snapshots (`before`, `after:<PassName>`, `final`) through `BIP029`'s `IrObserver` (`org.babblelang.ir`, [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)) so `-Dbabble.dumpIr=mir` and `mir` (`;; mir -O2 ...`) `.batest.md` goldens work out of the box.
 * Implement SSA dataflow passes under opt-in `-O2`:
   * `SccpPass` (Sparse Conditional Constant Propagation `[WZ91]` — `O1` + `O4`)
   * `GvnCsePass` (dominator-based GVN/CSE with `commutative` canonicalization and effect invalidation — `O5`)

@@ -21,8 +21,11 @@ import java.util.regex.PatternSyntaxException;
  * ({@code BIP029-D1}–{@code D8}, {@code BIP029-I2}).
  *
  * <p>Recognizes only two constructs outside fenced blocks: {@code ## <Case Name>} headings
- * and fenced blocks ({@code ```<kind> [attrs...]}). Everything else outside fences is free
- * Markdown documentation and excluded from Babble code-character budgets.
+ * and fenced blocks ({@code ```<kind>}). Block options are provided on the first line inside
+ * the block using a language comment prefix ({@code ;; <kind> <options>} for {@code babble},
+ * {@code hir}, and {@code mir}; {@code # <kind> <options>} for {@code stdout}, {@code stderr},
+ * and {@code error}). Everything else outside fences is free Markdown documentation and
+ * excluded from Babble code-character budgets.
  */
 final class BatestV2Parser {
     private static final Pattern CASE_HEADING = Pattern.compile("^##(?:\\s+(.*))?$");
@@ -36,10 +39,20 @@ final class BatestV2Parser {
     static BatestFile parseString(String content, String sourceName) {
         String normalized = content.replace("\r\n", "\n").replace('\r', '\n');
         String[] lines = normalized.split("\n", -1);
+        int lineCount = lines.length;
+        if (lineCount > 0 && normalized.endsWith("\n") && lines[lineCount - 1].isEmpty()) {
+            lineCount--;
+        }
+        if (lineCount > BatestParser.MAX_FILE_LINES) {
+            throw new IllegalArgumentException(
+                    "The file " + sourceName + " is too big with " + lineCount
+                            + " lines : maximum is " + BatestParser.MAX_FILE_LINES
+                            + " lines. Please split it into chunks that are < " + BatestParser.MAX_FILE_LINES
+                            + " lines. Please ensure test cases are logically grouped into chunks and name each chunk in a descriptive fashion (not foo_1.batest.md, foo_2.batest.md, etc.).");
+        }
 
         String preamble = null;
         int preambleLine = -1;
-        boolean preambleLarge = false;
         Map<String, String> fileModules = new LinkedHashMap<>();
 
         List<BatestFile.BatestCase> cases = new ArrayList<>();
@@ -71,15 +84,58 @@ final class BatestV2Parser {
                     throw new IllegalArgumentException(sourceName + ":" + lineNum
                             + ": unclosed fenced block '" + kind + "'");
                 }
-                String rawBody = String.join("\n", bodyLines);
-                List<String> tokens = tokenizeInfo(rest, sourceName, lineNum);
+
+                String commentTok = commentTokenFor(kind);
+                if (commentTok == null) {
+                    if (activeCase == null) {
+                        throw new IllegalArgumentException(sourceName + ":" + lineNum
+                                + ": only 'babble' blocks with ';; babble preamble' or ';; babble module=<path>' are allowed before the first '##' case heading (got '" + kind + "')");
+                    }
+                    throw new IllegalArgumentException(sourceName + ":" + lineNum
+                            + ": unknown fenced block kind '" + kind
+                            + "' (expected babble, stdout, stderr, error, hir, or mir)");
+                }
+                if (!rest.isEmpty()) {
+                    throw new IllegalArgumentException(sourceName + ":" + lineNum
+                            + ": options on the opening fence line ('" + kind + " " + rest
+                            + "') are not allowed : put them on the first line of the block as '"
+                            + commentTok + " " + kind + " " + rest + "'");
+                }
+
+                List<String> tokens = List.of();
+                int optionsLine = lineNum;
+                int effectiveBodyStartLine = bodyStartLine;
+                List<String> effectiveBodyLines = bodyLines;
+                if (!bodyLines.isEmpty()) {
+                    String firstLine = bodyLines.get(0);
+                    String directivePrefix = commentTok + " " + kind + " ";
+                    if (firstLine.startsWith(directivePrefix)) {
+                        String optionText = firstLine.substring(directivePrefix.length()).trim();
+                        optionsLine = bodyStartLine;
+                        tokens = tokenizeInfo(optionText, sourceName, optionsLine);
+                        effectiveBodyLines = bodyLines.subList(1, bodyLines.size());
+                        effectiveBodyStartLine = bodyStartLine + 1;
+                    } else {
+                        String wrongTok = ";;".equals(commentTok) ? "#" : ";;";
+                        String wrongPrefix = wrongTok + " " + kind + " ";
+                        if (firstLine.startsWith(wrongPrefix)
+                                && (";;".equals(commentTok) || "regex".equals(firstLine.substring(wrongPrefix.length()).trim()))) {
+                            throw new IllegalArgumentException(sourceName + ":" + bodyStartLine
+                                    + ": wrong comment token '" + wrongTok + "' for '" + kind
+                                    + "' block options : use '" + commentTok + " " + kind + " "
+                                    + firstLine.substring(wrongPrefix.length()).trim() + "'");
+                        }
+                    }
+                }
+
+                String rawBody = String.join("\n", effectiveBodyLines);
 
                 if (activeCase == null) {
                     if (!"babble".equals(kind)) {
                         throw new IllegalArgumentException(sourceName + ":" + lineNum
-                                + ": only 'babble preamble' or 'babble module=<path>' blocks are allowed before the first '##' case heading (got '" + kind + "')");
+                                + ": only 'babble' blocks with ';; babble preamble' or ';; babble module=<path>' are allowed before the first '##' case heading (got '" + kind + "')");
                     }
-                    BabbleAttrs attrs = parseBabbleAttrs(tokens, sourceName, lineNum, true);
+                    BabbleAttrs attrs = parseBabbleAttrs(tokens, sourceName, optionsLine, true);
                     String code = rawBody.strip();
                     if (attrs.preamble) {
                         if (preamble != null) {
@@ -88,7 +144,6 @@ final class BatestV2Parser {
                         }
                         preamble = code;
                         preambleLine = lineNum;
-                        preambleLarge = attrs.large;
                         checkBudget(sourceName, lineNum, "preamble", code,
                                 BatestParser.MAX_PREAMBLE_CODE_CHARS, attrs.large);
                     } else if (attrs.modulePath != null) {
@@ -101,10 +156,10 @@ final class BatestV2Parser {
                         fileModules.put(attrs.modulePath, code);
                     } else {
                         throw new IllegalArgumentException(sourceName + ":" + lineNum
-                                + ": top-level 'babble' block before first '##' heading must specify 'preamble' or 'module=<path>'");
+                                + ": top-level 'babble' block before first '##' heading must start with ';; babble preamble' or ';; babble module=<path>'");
                     }
                 } else {
-                    handleCaseBlock(activeCase, kind, tokens, rawBody, sourceName, lineNum, bodyStartLine, closeLine);
+                    handleCaseBlock(activeCase, kind, tokens, rawBody, sourceName, lineNum, optionsLine, effectiveBodyStartLine, closeLine);
                 }
                 continue;
             }
@@ -142,6 +197,14 @@ final class BatestV2Parser {
                 preamble != null ? preamble : "", Map.copyOf(fileModules), List.copyOf(cases));
     }
 
+    private static String commentTokenFor(String kind) {
+        return switch (kind) {
+            case "babble", "hir", "mir" -> ";;";
+            case "stdout", "stderr", "error" -> "#";
+            default -> null;
+        };
+    }
+
     private static boolean isClosingFence(String line, int minBackticks) {
         int i = 0;
         while (i < line.length() && i < 3 && line.charAt(i) == ' ') {
@@ -166,10 +229,11 @@ final class BatestV2Parser {
     }
 
     private static void handleCaseBlock(CaseBuilder c, String kind, List<String> tokens, String rawBody,
-                                        String sourceName, int headerLine, int bodyStartLine, int closeLine) {
+                                        String sourceName, int headerLine, int optionsLine,
+                                        int bodyStartLine, int closeLine) {
         switch (kind) {
             case "babble" -> {
-                BabbleAttrs attrs = parseBabbleAttrs(tokens, sourceName, headerLine, false);
+                BabbleAttrs attrs = parseBabbleAttrs(tokens, sourceName, optionsLine, false);
                 String code = rawBody.strip();
                 if (attrs.modulePath != null) {
                     if (c.caseModules.containsKey(attrs.modulePath)) {
@@ -182,7 +246,7 @@ final class BatestV2Parser {
                 } else if (attrs.session) {
                     if (!c.inputs.isEmpty() && !c.session) {
                         throw new IllegalArgumentException(sourceName + ":" + headerLine
-                                + ": cannot mix 'babble' and 'babble session' blocks in the same case");
+                                + ": cannot mix 'babble' and ';; babble session' blocks in the same case");
                     }
                     c.session = true;
                     if (attrs.large) {
@@ -192,11 +256,11 @@ final class BatestV2Parser {
                 } else {
                     if (c.session) {
                         throw new IllegalArgumentException(sourceName + ":" + headerLine
-                                + ": cannot mix 'babble session' and plain 'babble' blocks in the same case");
+                                + ": cannot mix ';; babble session' and plain 'babble' blocks in the same case");
                     }
                     if (!c.inputs.isEmpty()) {
                         throw new IllegalArgumentException(sourceName + ":" + headerLine
-                                + ": multiple 'babble' blocks in one case require the 'session' flag");
+                                + ": multiple 'babble' blocks in one case require ';; babble session'");
                     }
                     if (attrs.large) {
                         c.allowLarge = true;
@@ -208,7 +272,7 @@ final class BatestV2Parser {
                 if (c.hasStdout) {
                     throw new IllegalArgumentException(sourceName + ":" + headerLine + ": duplicate 'stdout' block in case");
                 }
-                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, headerLine);
+                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
                 String body = rawBody.strip();
                 if (regex) {
                     validateRegex(body, sourceName, headerLine, "stdout");
@@ -220,7 +284,7 @@ final class BatestV2Parser {
                 if (c.hasStderr) {
                     throw new IllegalArgumentException(sourceName + ":" + headerLine + ": duplicate 'stderr' block in case");
                 }
-                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, headerLine);
+                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
                 String body = rawBody.strip();
                 if (regex) {
                     validateRegex(body, sourceName, headerLine, "stderr");
@@ -232,7 +296,7 @@ final class BatestV2Parser {
                 if (c.hasError) {
                     throw new IllegalArgumentException(sourceName + ":" + headerLine + ": duplicate 'error' block in case");
                 }
-                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, headerLine);
+                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
                 String body = rawBody.strip();
                 if (regex) {
                     validateRegex(body, sourceName, headerLine, "error");
@@ -242,7 +306,7 @@ final class BatestV2Parser {
             }
             case "hir", "mir" -> {
                 IrTier tier = IrTier.parse(kind);
-                BatestFile.IrExpectation ir = parseIrBlock(tier, tokens, rawBody, sourceName, headerLine, bodyStartLine, closeLine);
+                BatestFile.IrExpectation ir = parseIrBlock(tier, tokens, rawBody, sourceName, headerLine, optionsLine, bodyStartLine, closeLine);
                 for (int opt : ir.optLevels()) {
                     String dedupKey = tier + "|O" + opt + "|" + ir.stage() + "|" + ir.modulePath() + "|" + ir.target().format();
                     if (!c.seenIrKeys.add(dedupKey)) {
@@ -272,7 +336,7 @@ final class BatestV2Parser {
     }
 
     private static BatestFile.IrExpectation parseIrBlock(IrTier tier, List<String> tokens, String rawBody,
-                                                         String sourceName, int headerLine,
+                                                         String sourceName, int headerLine, int optionsLine,
                                                          int bodyStartLine, int closeLine) {
         Set<Integer> optLevels = null;
         IrTarget target = null;
@@ -285,7 +349,7 @@ final class BatestV2Parser {
         for (String tok : tokens) {
             if (OPT_LEVEL_TOKEN.matcher(tok).matches()) {
                 if (optLevels != null) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine
                             + ": duplicate optimization level specifier '" + tok + "'");
                 }
                 optLevels = new LinkedHashSet<>();
@@ -294,55 +358,56 @@ final class BatestV2Parser {
                 }
             } else if ("regex".equals(tok)) {
                 if (sawMatchMode) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine
                             + ": 'regex' and 'check' are mutually exclusive on IR blocks");
                 }
                 sawMatchMode = true;
                 matchMode = BatestFile.IrMatchMode.REGEX;
             } else if ("check".equals(tok)) {
                 if (sawMatchMode) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine
                             + ": 'regex' and 'check' are mutually exclusive on IR blocks");
                 }
                 sawMatchMode = true;
                 matchMode = BatestFile.IrMatchMode.CHECK;
             } else if (tok.startsWith("stage=")) {
                 if (sawStage) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine + ": duplicate 'stage=' attribute");
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": duplicate 'stage=' attribute");
                 }
                 sawStage = true;
                 try {
                     stage = IrSnapshot.validateStage(tok.substring("stage=".length()));
                 } catch (IllegalArgumentException e) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine + ": " + e.getMessage());
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": " + e.getMessage());
                 }
             } else if (tok.startsWith("in=")) {
                 if (modulePath != null) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine + ": duplicate 'in=' attribute");
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": duplicate 'in=' attribute");
                 }
                 String rawPath = tok.substring("in=".length());
                 modulePath = LogicalPaths.normalize(rawPath);
                 if (modulePath == null) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine
                             + ": invalid module path in 'in=" + rawPath + "'");
                 }
             } else if (target == null && isTargetToken(tok)) {
                 try {
                     target = IrTarget.parse(tok);
                 } catch (IllegalArgumentException e) {
-                    throw new IllegalArgumentException(sourceName + ":" + headerLine + ": " + e.getMessage());
+                    throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": " + e.getMessage());
                 }
             } else {
-                throw new IllegalArgumentException(sourceName + ":" + headerLine
-                        + ": unexpected token '" + tok + "' in '" + tier.label() + "' block header");
+                throw new IllegalArgumentException(sourceName + ":" + optionsLine
+                        + ": unexpected token '" + tok + "' in '" + tier.label() + "' block options");
             }
         }
         if (optLevels == null || optLevels.isEmpty()) {
-            throw new IllegalArgumentException(sourceName + ":" + headerLine
-                    + ": '" + tier.label() + "' block requires an optimization level (e.g. -O0, -O1, -O0,-O1, -O2)");
+            throw new IllegalArgumentException(sourceName + ":" + optionsLine
+                    + ": '" + tier.label() + "' block requires an optimization level on its first line (e.g. ';; "
+                    + tier.label() + " -O1 fn=f')");
         }
         if (target == null) {
-            throw new IllegalArgumentException(sourceName + ":" + headerLine
+            throw new IllegalArgumentException(sourceName + ":" + optionsLine
                     + ": '" + tier.label() + "' block requires a target (e.g. fn=f, fn=Type.m, record=Vec, top-level, or module)");
         }
 
@@ -453,7 +518,7 @@ final class BatestV2Parser {
             }
             if (inQuotes) {
                 throw new IllegalArgumentException(sourceName + ":" + lineNum
-                        + ": unclosed quoted attribute in fence header");
+                        + ": unclosed quoted attribute in block options");
             }
             tokens.add(tok.toString());
         }

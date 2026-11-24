@@ -2,7 +2,8 @@
 
 References : `BIP001-I2`, `BIP014-I2`, `org.babblelang.opt.hir.HirTryNormalize`.
 
-```babble preamble
+```babble
+;; babble preamble
 def parse = fn io (s: string): int -> (try (java.lang.Integer.parseInt(s)) catch then (throw exception("bad")))
 def addIO = fn io (a: int, b: int): int -> (a + b)
 def fail of T = fn io (f: bool, v: T): T -> (if f then (throw exception("e")) else (v))
@@ -33,7 +34,8 @@ def rhsTry = fn io (s: string): int -> (
 assert(lhsTry("4") == 5 and lhsTry("x") == 11 and rhsTry("3") == 13 and rhsTry("x") == 12)
 ```
 
-```hir -O1 fn=rhsTry check
+```hir
+;; hir -O1 fn=rhsTry check
 contains (def $try0
 ```
 
@@ -108,7 +110,8 @@ def run = fn io (s: string, f: bool): int -> (
 assert(run("3", false) == 15 and run("x", true) == 15)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 contains (def $try0
 ```
 

@@ -3,7 +3,8 @@
 References : BIP019 (reads-of-mutable-state determinism), BIP007 (unique/frozen/aliasing),
 BIP016 (pure/volatile/io), EffectChecker, EffectSet
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v: int) (
     def get = fn (): int -> (this.v)
     def bump = fn mut (): int -> (this.v += 1 ; this.v)

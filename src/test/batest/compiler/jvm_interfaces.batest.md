@@ -2,7 +2,8 @@
 
 References : BIP002, RM003-P2 (JVM interface lowering, bridges, super defaults, cross-module & REPL sessions)
 
-```babble module=shapes.ba
+```babble
+;; babble module=shapes.ba
 export def Shape = interface (
     def area: fn (): double
     def scale: fn (factor: double): double = fn (factor: double): double -> (this.area() * factor)
@@ -20,7 +21,8 @@ export def Tagged = class (name: string) implements Tag (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Box of T = interface (
     def get: fn (): T
     def xf: fn (x: T): T = fn (x: T): T -> (x)
@@ -215,14 +217,16 @@ assert(not check and (Later() is Later))
 
 ## Multi-input REPL session sharing compiled JVM interfaces and classes across ScriptClassLoaders
 
-```babble session
+```babble
+;; babble session
 def M = interface (def v: fn (): int ; def d = fn (): int -> (this.v() * 2))
 def B = class (n: int) implements M (def v = fn (): int -> (n))
 def ev = fn (m: M): int -> (m.v() + m.d())
 assert(ev(B(4)) == 12)
 ```
 
-```babble session
+```babble
+;; babble session
 def E = class (a: int) implements M (
   def v = fn (): int -> (a + 3)
   def d = fn (): int -> (super.d() + 1)

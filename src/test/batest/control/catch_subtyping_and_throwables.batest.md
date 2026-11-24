@@ -2,7 +2,8 @@
 
 References : `BIP008` (typing), `BIP022` (intersections), `analysis.TypeChecker` (`isCatchSubtype`, `isThrowableType`, `visitTryExpression`, `isValidCatchIntersection`, `validateCatchNullableAst`, `resolveCatchTarget`, `mayBeJavaError`, `isUntypedCatchVar`, `catchSubsumedBy`).
 
-```babble preamble
+```babble
+;; babble preamble
 def IBase = interface (def tag : fn () : int)
 def ISub = interface extends IBase ()
 def IOther = interface (def code : fn () : int)

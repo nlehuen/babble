@@ -2,7 +2,8 @@
 
 References : BIP008 (narrowing, `is`, `as`, reassignment join)
 
-```babble preamble
+```babble
+;; babble preamble
 def Point = class (def x: int) ()
 def Pair = class (def x: int, def y: int) ()
 def I1 = interface ( def a = fn (): int -> ( 1 ) )

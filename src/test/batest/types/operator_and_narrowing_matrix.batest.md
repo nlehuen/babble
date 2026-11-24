@@ -2,7 +2,8 @@
 
 References : `BIP008` (typing & narrowing), `analysis.OperatorTypes`, `analysis.Narrowing`, `analysis.TypeChecker` (`visitNegate`, `visitNonNullAssertion`).
 
-```babble preamble
+```babble
+;; babble preamble
 def Base = interface (def id : fn () : int)
 def Sub = interface extends Base (def sub : fn () : int)
 def Item = record (v : int) implements Sub (

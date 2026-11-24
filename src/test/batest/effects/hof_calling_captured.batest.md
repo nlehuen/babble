@@ -2,11 +2,13 @@
 
 References : BIP017 (BIP017-D5, BIP017-D6), BIP016 (BIP016-D10)
 
-```babble module=combinators.ba
+```babble
+;; babble module=combinators.ba
 export def compose of (A, B, C) = fn (f: fn (A): B, g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def compose of (A, B, C) = fn (f: fn (A): B, g: fn (B): C): fn calling (f, g) (A): C -> (fn calling (f, g) (a: A) -> (g(f(a))))
 
 def inc = fn (x: int): int -> (x + 1)
@@ -173,11 +175,13 @@ Function p violates pure guarantee (performs I/O or external mutation) : mark fu
 
 ## Across session inputs (compose comes from preamble input 0)
 
-```babble session
+```babble
+;; babble session
 def loud: fn io (x: int): int = compose(ioId, fn (y: int): int -> (y * 3))
 ```
 
-```babble session
+```babble
+;; babble session
 assert(loud(2) == 6)
 ```
 

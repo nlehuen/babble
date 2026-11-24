@@ -2,7 +2,8 @@
 
 References : BIP021 (D17..D21, §2.2), BIP022 (intersection bounds)
 
-```babble module=poly_mod.ba
+```babble
+;; babble module=poly_mod.ba
 export def HasName = interface (
     def name : fn () : string
 )
@@ -23,7 +24,8 @@ export def PolyIface = interface (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Plain = class () ()
 def Shape = interface ( def area : fn () : double )
 def Named = interface ( def name : fn () : string )
@@ -299,14 +301,16 @@ Type error : type argument Plain does not satisfy bound java.lang.Comparable(Pla
 
 ## REPL session persistence of bounded generics and polymorphic values
 
-```babble session
+```babble
+;; babble session
 def maxOf = fn of (T : java.lang.Comparable of T) (a : T, b : T) : T -> (
     if a.compareTo(b) > 0 then ( a ) else ( b )
 )
 def id = fn of T (t : T) : T -> ( t )
 ```
 
-```babble session
+```babble
+;; babble session
 assert(maxOf(4, 9) == 9)
 assert(maxOf("x", "a") == "x")
 assert(id(1) == 1)

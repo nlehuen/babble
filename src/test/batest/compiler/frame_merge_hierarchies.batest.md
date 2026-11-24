@@ -2,7 +2,8 @@
 
 References : BIP001, BIP011 ; targets `ScriptClassWriter` (`getCommonSuperClass`, `isAssignable`, `commonSuperInterface`, `ancestorInterfaces`, `directParents`, `superclassOf`)
 
-```babble preamble
+```babble
+;; babble preamble
 def Base = interface ( def tag: fn (): string )
 def AltBase = interface ( def alt: fn (): int )
 def Mid = interface extends Base ()

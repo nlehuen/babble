@@ -2,12 +2,14 @@
 
 References : `BIP014-I4`, `BIP007-I2`, `ScalarReplacePass`, `FbipReusePass`.
 
-```babble module=ext_rec.ba
+```babble
+;; babble module=ext_rec.ba
 export def ExtVec = record (x: double, y: double) ()
 export def ExtHolder = record (items: list of int, count: int) ()
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Vec3 = record (x: double, y: double, z: double) ()
 def Pair = record (a: int, b: int) ()
 def Holder = record (items: list of int, count: int) ()
@@ -35,7 +37,8 @@ def run = fn (n: int, k: int): double -> (
 assert(run(3, 4) == 11.5)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains record-new
 ```
 
@@ -54,7 +57,8 @@ def run = fn io (): double -> (
 assert(run() == 19.0)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 !contains record-new
 ```
 
@@ -119,7 +123,8 @@ def run = fn io (a: Vec3, b: Vec3): double -> (
 assert(run(Vec3(1.0, 2.0, 3.0), Vec3(1.0, 0.0, 0.0)) == 4.0)
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 contains $unboxed
 contains (call-fn heavy
 ```
@@ -261,7 +266,8 @@ def res = merge(Holder(list(1), 2), Holder(list(2), 3), Vec3(4.0, 0.0, 0.0))
 assert(res.count == 10 and Plain(7).k == 7)
 ```
 
-```hir -O1 fn=merge check
+```hir
+;; hir -O1 fn=merge check
 contains (record-reuse var(a) Holder
 !contains record-new
 ```
@@ -287,7 +293,8 @@ def onlyElse = fn (unique h: Holder, fl: bool): Holder? -> (
 assert(onlyElse(Holder(list(1), 1), false)!.count == 3 and onlyElse(Holder(list(1), 1), true) == null)
 ```
 
-```hir -O1 fn=onlyElse check
+```hir
+;; hir -O1 fn=onlyElse check
 contains (record-reuse var(h) Holder
 ```
 
@@ -306,11 +313,13 @@ assert(capH(Holder(list(1), 3)).count == 4)
 assert(toExt(Holder(list(1), 4)).count == 5)
 ```
 
-```hir -O1 fn=capH check
+```hir
+;; hir -O1 fn=capH check
 !contains record-reuse
 ```
 
-```hir -O1 fn=toExt check
+```hir
+;; hir -O1 fn=toExt check
 !contains record-reuse
 ```
 
@@ -323,11 +332,13 @@ def nonInitRef = fn (unique h: Holder): Holder -> ( HRef(h.items, h.count + 2) )
 assert(pureLocal(Holder(list(1), 1)).count == 2 and nonInitRef(Holder(list(1), 1)).count == 3)
 ```
 
-```hir -O1 fn=pureLocal check
+```hir
+;; hir -O1 fn=pureLocal check
 contains (record-reuse var(h) Holder
 ```
 
-```hir -O1 fn=nonInitRef check
+```hir
+;; hir -O1 fn=nonInitRef check
 !contains record-reuse
 ```
 
@@ -341,6 +352,7 @@ def impureRef = fn io (unique h: Holder): Holder -> (
 assert(impureRef(Holder(list(1), 1)).count == 4 and log.toString() == "H")
 ```
 
-```hir -O1 fn=impureRef check
+```hir
+;; hir -O1 fn=impureRef check
 !contains record-reuse
 ```

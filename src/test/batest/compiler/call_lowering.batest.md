@@ -2,7 +2,8 @@
 
 References : BIP001, BIP002, BIP006, BIP011 ; targets `CallEmitter`, `HirBuilder`
 
-```babble module=ext_ops.ba
+```babble
+;; babble module=ext_ops.ba
 export def Vec = record (x : int) (
     def plus = overload (
         fn (n : int) : Vec -> ( Vec(this.x + n) ),
@@ -21,17 +22,20 @@ export def LateBox = class () (
 )
 ```
 
-```babble module=hier_base.ba
+```babble
+;; babble module=hier_base.ba
 export def A0 = interface ( def a0 = fn () : int -> ( 1 ) )
 ```
 
-```babble module=hier_mid.ba
+```babble
+;; babble module=hier_mid.ba
 def b = import("hier_base.ba")
 def A1 = interface extends b.A0 ( def a1 = fn () : int -> ( 2 ) )
 export def A2 = interface extends A1 ( def a2 = fn () : int -> ( this.a0() + this.a1() ) )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def tests = import("org.babblelang.tests")
 def revInt = fn (a : int, b : int) : int -> ( b - a )
 def revStr = fn (a : string, b : string) : int -> ( b.compareTo(a) )

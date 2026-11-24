@@ -2,11 +2,13 @@
 
 References : `BIP027` (`AlgebraicVerifier`, `EffectAstExtractors`, `SizeChangeTermination`).
 
-```babble module=alg_helper.ba
+```babble
+;; babble module=alg_helper.ba
 export def bump = fn (x: int): int -> ( x + 1 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v: int) ()
 def Pair = record (a: int, b: int) ()
 def Tri = record (a: int, b: int, c: int) ()

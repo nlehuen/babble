@@ -2,7 +2,8 @@
 
 References : BIP022 (D4, D6-D8)
 
-```babble preamble
+```babble
+;; babble preamble
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def dyn = fn (x: any): any -> ( x )
 def Shape = interface ( def area: fn (): double )

@@ -2,7 +2,8 @@
 
 References : BIP001, BIP002, BIP009 ; targets Bootstrap (SelectCache, CallCache, TypedCallCache), JavaLinker
 
-```babble preamble
+```babble
+;; babble preamble
 def Sh = interface ( def v: fn (): int )
 def S1 = class (x: int) implements Sh ( def v = fn (): int -> (x + 1) )
 def S2 = class (x: int) implements Sh ( def v = fn (): int -> (x + 2) )

@@ -34,7 +34,8 @@ As Babble's compiler has evolved (`BIP014-I1`–`I2` `HIR`, `BIP014-I4` `ScalarR
 
 References : `BIP014-I2`, `BIP027-I2`, `HirEGraphSimplifyPass`.
 
-```babble preamble
+```babble
+;; babble preamble
 def clamp = fn axiom pure nothrow idempotent (x: int): int -> (
     def r = if x < 0 then (0) else (x)
     return r
@@ -52,12 +53,14 @@ assert(norm(-5) == 5)
 assert(norm(3) == 3)
 ```
 
-```hir -O0 fn=norm
+```hir
+;; hir -O0 fn=norm
 fn norm (x:int) -> int {pure nothrow}
   (call-fn clamp (call-fn clamp (jcall Math.abs (jcall Math.abs var(x)))))
 ```
 
-```hir -O1 fn=norm
+```hir
+;; hir -O1 fn=norm
 fn norm (x:int) -> int {pure nothrow}
   (call-fn clamp (jcall Math.abs var(x)))
 ```
@@ -71,7 +74,8 @@ def add3 = fn (x: double): double -> ( (x + 1.0) + 2.0 )
 assert(add3(1.0) == 4.0)
 ```
 
-```hir -O0,-O1 fn=add3
+```hir
+;; hir -O0,-O1 fn=add3
 fn add3 (x:double) -> double {pure nothrow}
   (+:double (+:double var(x) 1.0:double) 2.0:double)
 ```
@@ -115,7 +119,8 @@ def newton = fn (x: double): double -> (
 assert(java.lang.Math.abs(newton(4.0) - 2.0) < 1.0e-9)
 ```
 
-```mir -O2 fn=newton
+```mir
+;; mir -O2 fn=newton
 fn newton (p0: double) -> double:
   bb0(p0: double):
     v0 = const.double 0.5
@@ -166,26 +171,30 @@ Test files live under `src/test/batest/` with the extension **`.batest.md`** (UT
 
 Level-1 (`# `) and level-3+ (`### `) headings outside fences are documentation prose. Only `## ` outside fences opens a new test case.
 
-### 3.2 Fence & Info-String Grammar
+### 3.2 Fence & First-Line Option Directive Grammar
 
-A fenced block opens with a line matching `` ^(`{3,})\s*(\S+)(?:\s+(.*))?$ `` (at most 3 leading spaces) and closes with the first subsequent line matching `` ^`{N,}\s*$ `` where $N$ is at least the opening backtick count. Unclosed fences fail fast at parse time with file and line number.
+A fenced block opens with a line matching `` ^(`{3,})\s*(\S+)\s*$ `` (at most 3 leading spaces; **only the block kind** on the opening fence line) and closes with the first subsequent line matching `` ^`{N,}\s*$ `` where $N$ is at least the opening backtick count. Unclosed fences and options placed on the opening fence line fail fast at parse time with file and line number.
 
-The info-string starts with a **block kind** followed by space-separated **tokens** (bare flags such as `preamble`, `session`, `regex`, `check`, `-O1`, or `key=value` / `key="quoted value"` pairs):
+Because Markdown renderers (GitHub, Antigravity) hide text after the language name on an opening fence line, **block options are placed on the first line inside the block** as a comment directive: `<comment> <kind> <options>`:
+- `;; <kind> <options>` for Babble-family blocks (`babble`, `hir`, `mir`)
+- `# <kind> <options>` for output/error blocks (`stdout`, `stderr`, `error`)
 
-| Scope | Block info-string | Purpose |
+Options are space-separated **tokens** (bare flags such as `preamble`, `session`, `regex`, `check`, `-O1`, or `key=value` / `key="quoted value"` pairs). Blocks that need no options omit the directive line completely.
+
+| Scope | Block kind + first-line directive | Purpose |
 |---|---|---|
-| **File header** | `babble preamble [large="..."]` | Shared preamble prepended to every case (`< 800` code chars unless `large="..."`). |
-| **File header / Case** | `babble module=<path> [large="..."]` | Virtual module `<path>` (`.ba`). Inside a case, scoped to that case only (overrides a file-level module of the same path). |
-| **Case** | `babble [large="..."]` | Single-compilation-unit Babble test snippet (`< 400` code chars unless `large="..."`). |
-| **Case** | `babble session [large="..."]` | Sequential `BabbleSession` input. Multiple `babble session` blocks in one case execute in order on the same session (replacing v1's `----------`). Cannot mix plain `babble` and `babble session` in the same case. |
-| **Case** | `stdout [regex]` | Expected normalized stdout (`context.getWriter()`). When omitted, asserts **nothing** is printed to stdout (`""`). |
-| **Case** | `stderr [regex]` | Expected normalized non-fatal stderr (`context.getErrorWriter()`, e.g., `Warning : ...`). When omitted, asserts **nothing** is printed to stderr (`""`). |
-| **Case** | `error [regex]` | Expected fatal compile-time or runtime failure (`Kind.USER_ERROR`, normalized exception message). When omitted, asserts the case **succeeded** (`Kind.OK`). |
-| **Case** | `hir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical `HIR` assertion verified at `<opt-levels>` (`-O0`, `-O1`, `-O0,-O1`, `-O2`). |
-| **Case** | `mir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical SSA `MIR` assertion (`BIP014-P3`, verified at `-O2`). |
-| **Case** *(reserved)* | `bytecode <opt-levels> <target> [regex\|check]`<br>`wat <target> [regex\|check]` | Reserved for future bytecode allocation checks (`BIP014-I4` `ScalarReplacePass` / `FbipReusePass`) and `BIP025` WebAssembly text assertions without changing the parser core. |
+| **File header** | `babble` + `;; babble preamble [large="..."]` | Shared preamble prepended to every case (`< 800` code chars unless `large="..."`). |
+| **File header / Case** | `babble` + `;; babble module=<path> [large="..."]` | Virtual module `<path>` (`.ba`). Inside a case, scoped to that case only (overrides a file-level module of the same path). |
+| **Case** | `babble` (optional `;; babble large="..."`) | Single-compilation-unit Babble test snippet (`< 400` code chars unless `large="..."`). |
+| **Case** | `babble` + `;; babble session [large="..."]` | Sequential `BabbleSession` input. Multiple session blocks in one case execute in order on the same session (replacing v1's `----------`). Cannot mix plain `babble` and `;; babble session` in the same case. |
+| **Case** | `stdout` (optional `# stdout regex`) | Expected normalized stdout (`context.getWriter()`). When omitted, asserts **nothing** is printed to stdout (`""`). |
+| **Case** | `stderr` (optional `# stderr regex`) | Expected normalized non-fatal stderr (`context.getErrorWriter()`, e.g., `Warning : ...`). When omitted, asserts **nothing** is printed to stderr (`""`). |
+| **Case** | `error` (optional `# error regex`) | Expected fatal compile-time or runtime failure (`Kind.USER_ERROR`, normalized exception message). When omitted, asserts the case **succeeded** (`Kind.OK`). |
+| **Case** | `hir` + `;; hir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical `HIR` assertion verified at `<opt-levels>` (`-O0`, `-O1`, `-O0,-O1`, `-O2`). |
+| **Case** | `mir` + `;; mir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical SSA `MIR` assertion (`BIP014-P3`, verified at `-O2`). |
+| **Case** *(reserved)* | `bytecode` / `wat` | Reserved for future bytecode allocation checks (`BIP014-I4` `ScalarReplacePass` / `FbipReusePass`) and `BIP025` WebAssembly text assertions without changing the parser core. |
 
-Unknown block kinds, duplicate behavioral blocks (e.g., two `stdout` blocks in one case), duplicate IR targets for the same `(tier, optLevel, stage, module, target)`, or unknown flags/keys fail fast at parse time in `BatestParser` with file and line number.
+Unknown block kinds, options on the opening fence line, wrong comment tokens on directive lines, duplicate behavioral blocks (e.g., two `stdout` blocks in one case), duplicate IR targets for the same `(tier, optLevel, stage, module, target)`, or unknown flags/keys fail fast at parse time in `BatestParser` with file and line number.
 
 ### 3.3 Case Names, Slugs, and Filtering (`BatestFilter`)
 
@@ -218,21 +227,25 @@ When `TypeChecker` fails, [`BabbleScriptEngine.report`](../../src/main/java/org/
 
 **Uniform `regex` matching (`BIP029-D4`):**
 - v1's `~~ ` line prefix is retired.
-- Any `stdout`, `stderr`, `error`, `hir`, or `mir` block carrying the `regex` flag compiles its trimmed body with `Pattern.compile(expected, Pattern.MULTILINE | Pattern.DOTALL)` and checks `matcher(actual).matches()` — so `.*` naturally spans multiple lines by default (and invalid patterns fail at parse time in `BatestParser` naming file and line).
+- Any `stdout`, `stderr`, `error`, `hir`, or `mir` block carrying the `regex` flag (`# stdout regex`, `# stderr regex`, `# error regex`, `;; hir ... regex`, `;; mir ... regex`) compiles its trimmed body with `Pattern.compile(expected, Pattern.MULTILINE | Pattern.DOTALL)` and checks `matcher(actual).matches()` — so `.*` naturally spans multiple lines by default (and invalid patterns fail at parse time in `BatestParser` naming file and line).
 - Blocks *without* `regex` (and without `check`) perform exact normalized string equality (`expected.equals(actual)`).
 
-### 3.5 Code-Character Budgets & `large="..."`
+### 3.5 Readability Budgets & `large="..."`
 
-Readability budgets (`src/test/batest/AGENTS.md`) remain enforced by `BatestParser`:
-- `babble preamble` and each `babble module=<path>`: strictly **< 800 code characters** (Babble comments excluded), unless the fence carries `large="<non-empty reason>"`.
-- Combined `babble` / `babble session` code in a case: strictly **< 400 code characters** (Babble comments excluded), unless any `babble` fence in the case carries `large="<non-empty reason>"`.
-- Prose outside fences and all non-Babble blocks (`stdout`, `stderr`, `error`, `hir`, `mir`) do **not** count toward the Babble code budget.
+Readability budgets (`src/test/batest/AGENTS.md`) are enforced automatically by `BatestParser`:
+- **Whole file (`MAX_FILE_LINES`):** at most **1,000 lines** (hard limit, no override). Exceeding 1,000 lines fails with splitting guidance asking for logically grouped, descriptively named chunks `< 1,000` lines each (not `foo_1.batest.md`, `foo_2.batest.md`, etc.).
+- **Preamble & virtual modules (`MAX_PREAMBLE_CODE_CHARS`):** strictly **< 800 code characters** (Babble comments excluded), unless the first-line directive carries `large="<non-empty reason>"`.
+- **Cases (`MAX_CASE_CODE_CHARS`):** combined `babble` / `;; babble session` code in a case: strictly **< 400 code characters** (Babble comments excluded), unless a `babble` block in the case carries `;; babble ... large="<non-empty reason>"`.
+- Prose outside fences and all non-Babble blocks (`stdout`, `stderr`, `error`, `hir`, `mir`) do **not** count toward the Babble code-character budgets.
 
 ### 3.6 IR Block Syntax (`hir`, `mir`, `stage=`, `check`)
 
-```text
-```<tier> <opt-levels> <target> [stage=<stage>] [in=<module-path>] [regex|check]
+````markdown
+```<tier>
+;; <tier> <opt-levels> <target> [stage=<stage>] [in=<module-path>] [regex|check]
+...
 ```
+````
 
 - **`<tier>`:** `hir` or `mir`.
 - **`<opt-levels>`:** One or more comma-separated levels: `-O0`, `-O1`, `-O2`, `-O0,-O1`, `-O1,-O2`.
@@ -255,7 +268,7 @@ Readability budgets (`src/test/batest/AGENTS.md`) remain enforced by `BatestPars
     - `!contains <substring>` — substring does not appear anywhere
     - `count <N> <substring>` — substring appears exactly `N` times
     - `regex <pattern>` — `Pattern.compile(pattern, Pattern.MULTILINE | Pattern.DOTALL).matcher(actual).find()` matches
-- **Session cases (`babble session`):** IR blocks are disallowed on multi-input session cases in `BIP029-I2` (parse error) to avoid ambiguity over which session input's module is captured.
+- **Session cases (`;; babble session`):** IR blocks are disallowed on multi-input session cases in `BIP029-I2` (parse error) to avoid ambiguity over which session input's module is captured.
 
 Example using `check` mode and `stage=after:<Pass>` for a `BIP014-P3` MIR pass:
 
@@ -272,11 +285,13 @@ def useTwice = fn (x: int): int -> ( heavy(x) + heavy(x) )
 assert(useTwice(4) == 34)
 ```
 
-```mir -O2 fn=useTwice stage=before check
+```mir
+;; mir -O2 fn=useTwice stage=before check
 count 2 call heavy(
 ```
 
-```mir -O2 fn=useTwice stage=after:GvnCse check
+```mir
+;; mir -O2 fn=useTwice stage=after:GvnCse check
 count 1 call heavy(
 ```
 ````
@@ -475,5 +490,5 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 1. **Preamble & order independence:** Adding or reordering definitions in a `babble preamble` or other cases in the same `.batest.md` file never changes any case's canonical `HIR` (or future `MIR`) golden output.
 2. **Real regression detection:** Temporarily disabling any `-O1` pass (`HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`) causes the corresponding `.batest.md` IR golden tests to fail loudly with a readable line diff — even though behavioral execution remains green.
 3. **Explicit outcome soundness:** A case expecting `error` fails if the snippet merely prints that string to stdout and exits normally; a case omitting `stdout` and `stderr` fails if anything is printed to either stream.
-4. **Zero-friction `BIP014-P3` `MIR` readiness:** `org.babblelang.ir` (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) and `.batest.md`'s ```` ```mir -O2 ... ```` parser/matcher/blesser are ready in place so `BIP014-P3` only has to implement `MirCanonicalPrinter` and emit snapshots from `MirPassManager`.
+4. **Zero-friction `BIP014-P3` `MIR` readiness:** `org.babblelang.ir` (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) and `.batest.md`'s `mir` (`;; mir -O2 ...`) parser/matcher/blesser are ready in place so `BIP014-P3` only has to implement `MirCanonicalPrinter` and emit snapshots from `MirPassManager`.
 5. **Boundaries & full CI parity:** `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase` pass (`org.babblelang.runtime` stays IR-free; `org.babblelang.ir` stays ANTLR-free); full `mvn -B package` (all 3 Surefire runs) and `mvn -q verify -Pbatest` (all 5 scopes `>= 75%` branch coverage, `0` divergences) pass cleanly under parallel JUnit execution.

@@ -2,7 +2,8 @@
 
 References : `BIP008` (generics), `BIP012` (`of` type application), `BIP023` (varargs & spread), `analysis.CallSolver`.
 
-```babble preamble
+```babble
+;; babble preamble
 def Demo = import("org.babblelang.tests").JavaClassDemo
 def Base = interface ( def tag: fn (): int )
 def Sub = record (n: int) implements Base ( def tag = fn (): int -> ( this.n ) )

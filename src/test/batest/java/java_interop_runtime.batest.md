@@ -3,7 +3,8 @@
 References : BIP002 (object model), BIP008 (static typing), BIP011 (core types)
 Anti-folding helper : erases static type to `any` so runtime paths execute under -O1
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v : any) : any -> ( v )
 ```
 

@@ -6,7 +6,8 @@ D7 recursion without a base case, D8 loops without an exit, D9 forever),
 analysis.TailCalls, Function.invoke (interpreter), HirEmitter.emitSelfTailCall.
 Deep enough to overflow the stack in every mode without the optimization.
 
-```babble preamble
+```babble
+;; babble preamble
 def deep = 1000000
 ```
 

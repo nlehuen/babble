@@ -2,7 +2,8 @@
 
 References : BIP002 (value classes), BIP012-D6 (`record` keyword)
 
-```babble preamble
+```babble
+;; babble preamble
 def Point = record (x : int, y : double, flag : bool = true) ()
 ```
 

@@ -2,7 +2,8 @@
 
 References : BIP017 (BIP017-D1..D6), BIP016
 
-```babble preamble
+```babble
+;; babble preamble
 def apply = fn calling f (f: fn (x: int): int, v: int): int -> (f(v))
 def pipe2 = fn calling (f, g) (v: int, f: fn (x: int): int, g: fn (x: int): int): int -> (g(f(v)))
 def mapList of (T, R) = fn calling f (shared xs: list of T, f: fn (x: T): R): list of R -> (

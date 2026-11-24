@@ -3,7 +3,8 @@
 primitive rest views, generic rests, subtyping, interfaces, effects, and diagnostics.
 References : BIP021-I4 (BIP021-D7, D8, D19, D21), ArgumentsView, Spreads, CallSolver
 
-```babble preamble
+```babble
+;; babble preamble
 def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
 def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
 def Counter = class (def mut n: int) ( def inc = fn mut () -> ( this.n += 1 ) )

@@ -2,13 +2,15 @@
 
 References : BIP001, BIP011, BIP020 ; targets `ClassGen`, `InterfaceGen`, `BridgeHelpers`, `JvmPrimitives`
 
-```babble module=ext_calc.ba
+```babble
+;; babble module=ext_calc.ba
 export def ExtCalc = class (def base: int) (
     def add = fn (x: int, y: int = 10): int -> ( this.base + x + y )
 )
 ```
 
-```babble module=java_fixtures.ba
+```babble
+;; babble module=java_fixtures.ba
 def AT = type java.lang.reflect.AnnotatedType
 def AAT = type java.lang.reflect.AnnotatedArrayType
 def Ann = type java.lang.annotation.Annotation
@@ -22,7 +24,8 @@ export def MyAAT = class () implements java.lang.reflect.AnnotatedType, java.lan
 )
 ```
 
-```babble module=java_typed_cb.ba
+```babble
+;; babble module=java_typed_cb.ba
 def t = import("org.babblelang.tests")
 export def Cb = class () implements t.JavaClassDemo.TypedCallback (
     def acceptInt = fn (v: int?): int -> ( (v!) + 1 )
@@ -33,7 +36,8 @@ export def Cb = class () implements t.JavaClassDemo.TypedCallback (
 )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def t = import("org.babblelang.tests")
 def extCalc = import("ext_calc.ba")
 def jFix = import("java_fixtures.ba")

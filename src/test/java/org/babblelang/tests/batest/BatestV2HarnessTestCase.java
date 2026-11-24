@@ -26,11 +26,13 @@ public class BatestV2HarnessTestCase {
 
                 Free Markdown documentation outside fences.
 
-                ```babble module=math.ba
+                ```babble
+                ;; babble module=math.ba
                 export def add = fn (a: int, b: int): int -> ( a + b )
                 ```
 
-                ```babble preamble
+                ```babble
+                ;; babble preamble
                 def inc = fn (n: int): int -> ( n + 1 )
                 ```
 
@@ -114,13 +116,15 @@ public class BatestV2HarnessTestCase {
                 println("end")
                 ```
 
-                ```stdout regex
+                ```stdout
+                # stdout regex
                 line1.*42.*end
                 ```
 
                 ## Case-scoped virtual module
 
-                ```babble module=local.ba
+                ```babble
+                ;; babble module=local.ba
                 export def secret = 77
                 ```
 
@@ -131,11 +135,13 @@ public class BatestV2HarnessTestCase {
 
                 ## Multi-input session
 
-                ```babble session
+                ```babble
+                ;; babble session
                 def x = 10
                 ```
 
-                ```babble session
+                ```babble
+                ;; babble session
                 assert(x + 5 == 15)
                 ```
                 """;
@@ -164,17 +170,20 @@ public class BatestV2HarnessTestCase {
                 assert(f(7) == 7)
                 ```
 
-                ```hir -O0 fn=f
+                ```hir
+                ;; hir -O0 fn=f
                 fn f (x:int) -> int {nothrow idempotent unique}
                   (+:int (*:int (block (+:int var(x) 0:int)) 1:int) (block (-:int var(x) var(x))))
                 ```
 
-                ```hir -O1 fn=f
+                ```hir
+                ;; hir -O1 fn=f
                 fn f (x:int) -> int {nothrow idempotent unique}
                   var(x)
                 ```
 
-                ```hir -O1 fn=f stage=before check
+                ```hir
+                ;; hir -O1 fn=f stage=before check
                 contains (+:int var(x) 0:int)
                 count 1 (-:int var(x) var(x))
                 !contains Math.abs
@@ -187,7 +196,8 @@ public class BatestV2HarnessTestCase {
                 assert(add3(1.0) == 4.0)
                 ```
 
-                ```hir -O0,-O1 fn=add3
+                ```hir
+                ;; hir -O0,-O1 fn=add3
                 fn add3 (x:double) -> double {nothrow monotone unique}
                   (+:double (+:double var(x) 1.0:double) 2.0:double)
                 ```
@@ -199,7 +209,8 @@ public class BatestV2HarnessTestCase {
                 assert(add3r(1.0) == 4.0)
                 ```
 
-                ```hir -O1 fn=add3r regex
+                ```hir
+                ;; hir -O1 fn=add3r regex
                 fn add3r .*\\(\\+:double .*1\\.0:double\\) 2\\.0:double\\)
                 ```
                 """;
@@ -231,11 +242,29 @@ public class BatestV2HarnessTestCase {
         Assertions.assertThrows(IllegalArgumentException.class,
                 () -> BatestParser.parseString("## A\n```babble\n1\n```\n```unknown\n```\n", "bad_kind.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("## A\n```babble session\n1\n```\n```hir -O1 fn=f\n```\n", "session_ir.batest.md"));
+                () -> BatestParser.parseString("## A\n```babble\n;; babble session\n1\n```\n```hir\n;; hir -O1 fn=f\n```\n", "session_ir.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```stdout regex\n(bad\n```\n", "bad_regex.batest.md"));
+                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```stdout\n# stdout regex\n(bad\n```\n", "bad_regex.batest.md"));
         Assertions.assertThrows(IllegalArgumentException.class,
-                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```hir -O1 fn=f check\nunknown_op x\n```\n", "bad_check.batest.md"));
+                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```hir\n;; hir -O1 fn=f check\nunknown_op x\n```\n", "bad_check.batest.md"));
+
+        // Fence-line options are rejected in favor of first-line comment directives.
+        IllegalArgumentException fenceOpt = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```hir -O1 fn=f\n```\n", "fence_opt.batest.md"));
+        Assertions.assertTrue(fenceOpt.getMessage().contains(";; hir -O1 fn=f"), fenceOpt.getMessage());
+
+        IllegalArgumentException stdoutFenceOpt = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```stdout regex\na\n```\n", "stdout_opt.batest.md"));
+        Assertions.assertTrue(stdoutFenceOpt.getMessage().contains("# stdout regex"), stdoutFenceOpt.getMessage());
+
+        // Wrong comment token on directive line is rejected clearly.
+        IllegalArgumentException wrongTokHir = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```hir\n# hir -O1 fn=f\n```\n", "wrong_tok_hir.batest.md"));
+        Assertions.assertTrue(wrongTokHir.getMessage().contains("wrong comment token '#'"), wrongTokHir.getMessage());
+
+        IllegalArgumentException wrongTokStdout = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> BatestParser.parseString("## A\n```babble\n1\n```\n```stdout\n;; stdout regex\na\n```\n", "wrong_tok_out.batest.md"));
+        Assertions.assertTrue(wrongTokStdout.getMessage().contains("wrong comment token ';;'"), wrongTokStdout.getMessage());
 
         String md = "## Alpha test\n```babble\nassert(true)\n```\n## Beta guard\n```babble\nassert(true)\n```\n";
         BatestFile file = BatestParser.parseString(md, "types/sample.batest.md");
@@ -254,7 +283,8 @@ public class BatestV2HarnessTestCase {
                 assert(f() == 3)
                 ```
 
-                ```hir -O1 fn=f
+                ```hir
+                ;; hir -O1 fn=f
                 OLD_STALE_IR
                 ```
                 """;
@@ -270,6 +300,10 @@ public class BatestV2HarnessTestCase {
         updater.record(p, mismatches.get(0).expectation(), mismatches.get(0).actualCanonical());
         String summary = updater.flushAll();
         Assertions.assertTrue(summary.contains("Updated 1 IR golden block(s) in 1 file(s)"), summary);
+
+        String updatedText = Files.readString(p, StandardCharsets.UTF_8);
+        Assertions.assertTrue(updatedText.contains("```hir\n;; hir -O1 fn=f\n"),
+                "Updater must preserve the first-line ';; hir ...' directive:\n" + updatedText);
 
         BatestFile reloaded = BatestParser.parse(p, "upd.batest.md");
         List<IrAssertionChecker.IrMismatch> after = IrAssertionChecker.checkAll(

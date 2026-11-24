@@ -3,7 +3,8 @@
 References : BIP014-I2, org.babblelang.opt.hir.HirLicmPass, org.babblelang.opt.HirPurity
 Non-trailing return prevents InlinePass from inlining in round 1 while HirPurity still sees pure/nothrow bodies
 
-```babble preamble
+```babble
+;; babble preamble
 def bigByte = fn nothrow (x: byte): byte -> (return x ; x)
 def bigInt = fn nothrow (x: int): int -> (return x ; x)
 def bigFloat = fn nothrow (x: float): float -> (return x ; x)
@@ -486,7 +487,8 @@ def sumScaled = fn (n: int, angle: double): double -> (
 assert(sumScaled(4, 0.0) == 8.0)
 ```
 
-```hir -O0 fn=sumScaled
+```hir
+;; hir -O0 fn=sumScaled
 fn sumScaled (n:int, angle:double) -> double {nothrow unique}
   (def i 0:int)
   (def acc 0.0:double)
@@ -497,7 +499,8 @@ fn sumScaled (n:int, angle:double) -> double {nothrow unique}
   var(acc)
 ```
 
-```hir -O1 fn=sumScaled
+```hir
+;; hir -O1 fn=sumScaled
 fn sumScaled (n:int, angle:double) -> double {nothrow unique}
   (def i 0:int)
   (def acc 0.0:double)
@@ -595,7 +598,8 @@ assert(run(3, 5) == 3)
 Warning : Redundant cast : any?
 ```
 
-```hir -O1 fn=run check
+```hir
+;; hir -O1 fn=run check
 contains $licm
 ```
 

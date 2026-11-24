@@ -3,23 +3,28 @@
 References : BIP005 (modules), BIP008 (as casts / Types.describe), BIP011 (nullability !),
 PrintFunction, AssertFunction, ClassofFunction, ConvertFunction, LogicalPaths
 
-```babble module=dir/sub/leaf.ba
+```babble
+;; babble module=dir/sub/leaf.ba
 export def val = import("../top.ba").val
 ```
 
-```babble module=dir/top.ba
+```babble
+;; babble module=dir/top.ba
 export def val = 42
 ```
 
-```babble module=mod_box_b.ba
+```babble
+;; babble module=mod_box_b.ba
 export def Dup = class (def x : int) ()
 ```
 
-```babble module=mod_box_a.ba
+```babble
+;; babble module=mod_box_a.ba
 export def Dup = class (def x : int) ()
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v : any?) : any? -> ( v )
 def asAny = fn (v : any) : any -> ( v )
 ```

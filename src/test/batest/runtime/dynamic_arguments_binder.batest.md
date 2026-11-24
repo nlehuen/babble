@@ -2,7 +2,8 @@
 
 References : `BIP021` (named, optional, and rest parameters), `Arguments`.
 
-```babble preamble
+```babble
+;; babble preamble
 def coerce of T = fn io (shared x: any?): T -> (
     def l: java.util.List of T = java.util.ArrayList()
     def m = java.lang.Class.forName("java.util.List").getMethod("add", java.lang.Class.forName("java.lang.Object"))!

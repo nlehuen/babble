@@ -3,7 +3,8 @@
 reassignment joins, and numeric widening notes.
 References : BIP008 (static typing, casts, unions, nullables), TypeChecker
 
-```babble preamble
+```babble
+;; babble preamble
 def dyn = fn (v : any?) : any? -> ( v )
 def I1 = interface ( def a : fn () : int )
 def I2 = interface ( def b : fn () : int )

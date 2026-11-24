@@ -3,7 +3,8 @@
 References : BIP002 (interfaces, classes, records, super), BIP005 (cross-module interfaces)
 Targets : BlockScopes, TypeChecks, BabbleInterface, BabbleInstance, BabbleType, Supers
 
-```babble module=iface_mod.ba
+```babble
+;; babble module=iface_mod.ba
 export def MI = interface (
     def tag : fn () : string
     def sharedTag = fn () : string -> ( "mod:" + this.tag() )

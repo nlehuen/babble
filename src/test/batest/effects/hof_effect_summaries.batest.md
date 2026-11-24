@@ -2,7 +2,8 @@
 
 References : `BIP007` (HOF effects), `BIP027` (`SymbolicEffectSummary`, `CallEffectAnalyzer.instantiateSymbolicCall`, `EffectBodyWalker.recordCallbackArgFlow`).
 
-```babble module=hof_summaries_lib.ba
+```babble
+;; babble module=hof_summaries_lib.ba
 export def Box = class (def v: int) ()
 export def Holder = class () ( def ref: Box? = null )
 export def idBox = fn (b: Box): Box -> ( b )
@@ -12,7 +13,8 @@ export def applyOpt = fn (b: Box, f: fn (Box): Box = idBox, g: fn (Box): int = r
 export def fwdStore = fn (mut h: Holder, shared b: Box, f: fn (mut Holder, shared Box)) -> ( f(h, b) )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v: int) ()
 def Holder = class () ( def ref: any? = null )
 def Cell = class (def v: int) (

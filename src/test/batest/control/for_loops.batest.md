@@ -3,7 +3,8 @@
 References : BIP013 (iterators and for loops), BIP016 (effect checks)
 Shared custom iterable fixture for loop-variable type narrowing cases
 
-```babble preamble
+```babble
+;; babble preamble
 def Item = interface ( def k : fn () : int )
 def Sub = class (def r : double) implements Item ( def k = fn () : int -> ( 1 ) )
 def Other = class () implements Item ( def k = fn () : int -> ( 2 ) )

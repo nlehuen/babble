@@ -2,7 +2,8 @@
 
 References : BIP028 (D1-D6, D9), ControlAndOpEmitter.emitTry, HirTryNormalize, Interpreter
 
-```babble preamble
+```babble
+;; babble preamble
 def AppError = interface (
     def code: fn (): int
 )

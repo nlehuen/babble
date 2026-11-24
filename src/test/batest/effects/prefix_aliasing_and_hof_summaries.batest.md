@@ -3,7 +3,8 @@
 and single-pass symbolic HOF summaries (including cross-module readParams forwarding).
 References : BIP027-I4, BIP027-D5, BIP019 §4, Reachability, SymbolicEffectSummary, EffectFixpointDriver
 
-```babble module=hof_lib.ba
+```babble
+;; babble module=hof_lib.ba
 ;; Virtual module exporting parametric HOFs (direct and nested) to verify single-pass
 ;; SymbolicEffectSummary parity across module boundaries.
 
@@ -13,7 +14,8 @@ export def applyBox2 = fn (f: fn (Box): int, b: Box): int -> ( applyBox(f, b) )
 export def applyMutBox = fn (f: fn (mut Box): int, mut b: Box): int -> ( f(b) )
 ```
 
-```babble preamble
+```babble
+;; babble preamble
 def Box = class (def v: int) ()
 def Pair = class (def a: Box, def b: Box) ()
 def Node = class (def v: int, def next: Node?) ()

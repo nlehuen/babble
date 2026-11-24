@@ -2,7 +2,8 @@
 
 References : BIP022 (P1, D1-D8)
 
-```babble preamble
+```babble
+;; babble preamble
 def Shape = interface ( def area: fn (): double )
 def Named = interface ( def name: fn (): string )
 def Label = interface ( def text: fn (): string )
