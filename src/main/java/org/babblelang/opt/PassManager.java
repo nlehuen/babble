@@ -1,5 +1,8 @@
 package org.babblelang.opt;
 
+import org.babblelang.ir.IrObserver;
+import org.babblelang.ir.IrSnapshot;
+import org.babblelang.ir.IrTier;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirPrinter;
 import org.babblelang.ir.hir.HirVerifier;
@@ -50,16 +53,34 @@ public final class PassManager {
     }
 
     public HirModule optimize(HirModule module, PassContext context) {
-        return optimize(module, context, null);
+        return optimize(module, context, (IrObserver) null, null);
     }
 
     public HirModule optimize(HirModule module, PassContext context, BiConsumer<String, String> irDumper) {
+        if (irDumper == null) {
+            return optimize(module, context, (IrObserver) null, null);
+        }
+        IrObserver adapter = new IrObserver() {
+            @Override
+            public boolean wants(IrTier tier, int optLevel, String stage) {
+                return tier == IrTier.HIR && (IrSnapshot.STAGE_BEFORE.equals(stage)
+                        || (IrSnapshot.STAGE_FINAL.equals(stage) && !passes.isEmpty()));
+            }
+
+            @Override
+            public void onSnapshot(IrSnapshot snapshot) {
+                String phase = IrSnapshot.STAGE_BEFORE.equals(snapshot.stage()) ? "hir-before" : "hir-after";
+                irDumper.accept(phase, snapshot.ir().printRaw());
+            }
+        };
+        return optimize(module, context, adapter, null);
+    }
+
+    public HirModule optimize(HirModule module, PassContext context, IrObserver observer, String moduleKey) {
         if (context.verify()) {
             HirVerifier.verify(module);
         }
-        if (irDumper != null) {
-            irDumper.accept("hir-before", HirPrinter.print(module));
-        }
+        notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.STAGE_BEFORE, module);
         HirModule current = module;
         for (int iter = 0; iter < MAX_ITERATIONS && !passes.isEmpty(); iter++) {
             int roundRewrites = 0;
@@ -72,6 +93,7 @@ public final class PassManager {
                         HirVerifier.verify(current);
                     }
                 }
+                notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.afterPass(pass.name()), current);
             }
             if (roundRewrites == 0) {
                 break;
@@ -84,9 +106,13 @@ public final class PassManager {
                 HirVerifier.verify(current);
             }
         }
-        if (irDumper != null && !passes.isEmpty()) {
-            irDumper.accept("hir-after", HirPrinter.print(current));
-        }
+        notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.STAGE_FINAL, current);
         return current;
+    }
+
+    private static void notifyObserver(IrObserver observer, String moduleKey, int optLevel, String stage, HirModule hir) {
+        if (observer != null && observer.wants(IrTier.HIR, optLevel, stage)) {
+            observer.onSnapshot(new IrSnapshot(IrTier.HIR, moduleKey, hir.className(), optLevel, stage, hir));
+        }
     }
 }

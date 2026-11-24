@@ -1,6 +1,9 @@
 package org.babblelang.ir.hir;
 
 import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.ir.IrDumpable;
+import org.babblelang.ir.IrTarget;
+import org.babblelang.ir.IrTier;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -28,7 +31,7 @@ public record HirModule(
         Map<String, String> ownClassJvmNames,
         int nextVarId,
         int nextOwnerId
-) {
+) implements IrDumpable {
     public HirModule {
         exports = exports != null ? exports.clone() : new String[0];
         topLevelDeclaredNames = topLevelDeclaredNames != null ? topLevelDeclaredNames.clone() : new String[0];
@@ -71,5 +74,20 @@ public record HirModule(
                 newTopLevelStatements, newFunctions, newClasses, newInterfaces, typeHierarchies,
                 allInterfaceJvmNames, allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames,
                 newNextVarId, newNextOwnerId);
+    }
+
+    @Override
+    public IrTier tier() {
+        return IrTier.HIR;
+    }
+
+    @Override
+    public String printRaw() {
+        return HirPrinter.print(this);
+    }
+
+    @Override
+    public String printCanonical(IrTarget target) {
+        return HirCanonicalPrinter.print(this, target);
     }
 }
