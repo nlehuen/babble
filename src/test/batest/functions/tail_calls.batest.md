@@ -147,3 +147,164 @@ def I = interface (
     def m = fn (n: int): int -> (this.m(n + 1))
 )
 ```
+
+## Class method self tail call via this and call to sibling method
+
+```babble
+def C = class () (
+    def other = fn (n: int): int -> ( n + 1 )
+    def down = fn (n: int): int -> (
+        if n == 0 then ( this.other(41) ) else ( this.down(n - 1) )
+    )
+)
+assert(C().down(deep) == 42)
+```
+
+## Closure inside a class method calling this.m is not a self tail call
+
+```babble
+def C = class () (
+    def f = fn (n: int): int -> (
+        def g = fn (): int -> ( if n == 0 then ( 1 ) else ( this.f(n - 1) ) )
+        g()
+    )
+)
+assert(C().f(5) == 1)
+```
+
+## Early return with non-recursive value provides a base case
+
+```babble
+def f = fn (n: int): int -> (
+    if n == 0 then ( return 7 )
+    recurse(n - 1)
+)
+assert(f(deep) == 7)
+```
+
+## Early return that also self-recurses still lacks a base case
+
+```babble
+def f = fn (n: int): int -> (
+    if n == 0 then ( return recurse(1) )
+    recurse(n + 1)
+)
+```
+
+```error
+Recursion without a base case : f. If this is intended, wrap the expression with forever
+```
+
+## Early return wrapped in forever acknowledges endless recursion
+
+```babble
+def f = fn (n: int): int -> (
+    if n == 0 then ( return forever recurse(1) )
+    recurse(n + 1)
+)
+assert(f != null)
+```
+
+## forever inside a parenthesized block and in the then branch acknowledges recursion
+
+```babble
+def a = fn (n: int): int -> ( ( forever recurse(n + 1) ) )
+def b = fn (n: int): int -> ( if n > 0 then ( forever recurse(n + 1) ) else ( recurse(n - 1) ) )
+assert(a != null and b != null)
+```
+
+## Nested function, class, object, and interface returns do not count as base cases
+
+```babble
+def f = fn (n: int): int -> (
+    def h = fn (): int -> ( return 1 )
+    def C = class () ( def m = fn (): int -> ( return 1 ) )
+    def o = object ( def m = fn (): int -> ( return 1 ) )
+    def I = interface ( def m = fn (): int -> ( return 1 ) )
+    recurse(n + 1)
+)
+```
+
+```error
+Recursion without a base case : f. If this is intended, wrap the expression with forever
+```
+
+## Empty block or if without else does not trigger endless recursion error
+
+```babble
+def f = fn (n: int): any? -> ( if n > 0 then ( recurse(n - 1) ) )
+def g = fn (n: int): any? -> ( if n > 0 then ( () ) else ( recurse(n - 1) ) )
+assert(f(3) == null and g(1) == null)
+```
+
+## while true containing a return exits cleanly
+
+```babble
+def f = fn (): int -> (
+    while true then ( return 9 )
+    0
+)
+assert(f() == 9)
+```
+
+## while true with break only inside an inner for loop or return inside nested fn has no exit
+
+```babble
+def f = fn () -> (
+    while true then (
+        def h = fn (): int -> ( return 1 )
+        for x in list(1, 2) then ( break )
+    )
+)
+```
+
+```error
+Loop without an exit : while true. If this is intended, wrap the expression with forever
+```
+
+## forever around multi-expression block does not acknowledge inner while true
+
+```babble
+def i = 0
+forever ( i += 1 ; while true then ( i += 1 ) )
+```
+
+```error
+Loop without an exit : while true. If this is intended, wrap the expression with forever
+```
+
+## Self tail call in catch without finally runs in constant stack space
+
+```babble
+def f = fn (n: int): int -> (
+    if n == 0 then ( 0 )
+    else (
+        try ( throw exception("next") )
+        catch e then ( recurse(n - 1) )
+    )
+)
+assert(f(20000) == 0)
+```
+
+## Self call in catch with finally is not tail-optimized
+
+```babble
+def ticks = 0
+def f = fn io (n: int): int -> (
+    if n == 0 then ( 0 )
+    else (
+        try ( throw exception("next") )
+        catch e then ( recurse(n - 1) )
+        finally ( ticks += 1 )
+    )
+)
+assert(f(5) == 0 and ticks == 5)
+```
+
+## Variadic and spread self-calls bypass static tail-call binding
+
+```babble
+def vr = fn (n: int, xs: int...): int -> ( if n == 0 then ( def c = 0 ; for x in xs then ( c += 1 ) ; c ) else ( recurse(n - 1, 1) ) )
+def sp = fn (n: int, xs: list of int): int -> ( if n == 0 then ( xs.size() ) else ( sp(n - 1, ...list(1, 2, 3)) ) )
+assert(vr(3, 1) == 1 and sp(3, list(1)) == 3)
+```
