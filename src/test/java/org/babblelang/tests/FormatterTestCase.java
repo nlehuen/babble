@@ -792,4 +792,71 @@ public class FormatterTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testBip030NullabilityAndInferredEffectsSyntax() throws Exception {
+        assertFormats("""
+                def s: string! = "hi"
+                def a: (array of int)! = (array of int)(2)
+                def b: (string?)! = "ok"
+                def u: string! | null = "ok"
+                def v: string! | int! = 1
+                def arr: array of string! = (array of string)(1)
+                def m: java.util.Map of (string!, int!)! = java.util.HashMap()
+                def f: fn (a: int!): string! = fn (a: int!): string! -> ("ok")
+                def varargs: fn (xs: string!...): void = fn (xs: string!...): void -> (null)
+                def fr: frozen (Box?)! = x
+                def c1 = x is string!
+                def c2 = x as string!
+                def c3 = (x as string?)!
+                axiom java.io.StringWriter: class (
+                    def getBuffer: fn ... : java.lang.StringBuffer!
+                )
+                axiom java.util.Optional of T: class notnull (
+                    def get: fn ... : T!
+                    def orElse: fn ... (other: T): T
+                ) static (
+                    def of: fn of T ... (value: T!): (java.util.Optional of T)!
+                )
+                axiom java.lang.Foo: class (
+                    def a: fn ... (): T!
+                    def b: fn (): T!
+                    def c: fn (a: int): T!
+                    def d: fn: T!
+                    def e: fn nothrow: T!
+                    def g: fn of T ... : T!
+                )
+                """, """
+                def s : string ! = "hi"
+                def a : ( array of int ) ! = ( array of int ) ( 2 )
+                def b : ( string ? ) ! = "ok"
+                def u : string ! | null = "ok"
+                def v : string ! | int ! = 1
+                def arr : array of string ! = ( array of string ) ( 1 )
+                def m : java . util . Map of ( string ! , int ! ) ! = java . util . HashMap ( )
+                def f : fn ( a : int ! ) : string ! = fn ( a : int ! ) : string ! -> ( "ok" )
+                def varargs : fn ( xs : string ! ... ) : void = fn ( xs : string ! ... ) : void -> ( null )
+                def fr : frozen ( Box ? ) ! = x
+                def c1 = x is string !
+                def c2 = x as string !
+                def c3 = ( x as string ? ) !
+                axiom java.io.StringWriter:class (
+                def getBuffer:fn ...:java.lang.StringBuffer!
+                )
+                axiom java . util . Optional  of  T : class  notnull (
+                def get : fn  ...  :  T !
+                def orElse : fn  ... ( other : T ) : T
+                ) static (
+                def of : fn  of  T  ... ( value : T ! ) : ( java . util . Optional  of  T ) !
+                )
+                axiom java.lang.Foo : class (
+                def a : fn ... ( ) : T !
+                def b : fn ( ) : T !
+                def c : fn ( a : int ) : T !
+                def d : fn : T !
+                def e : fn nothrow : T !
+                def g : fn of T ...:T!
+                )
+                """);
+    }
 }

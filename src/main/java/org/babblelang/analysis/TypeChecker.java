@@ -841,7 +841,8 @@ final class TypeChecker {
             isTargetTypes.put(ctx, Type.ERROR);
             return Type.ERROR;
         }
-        if (singleSimple != null && singleSimple.typeName().coreTypeKeyword() != null && singleSimple.question == null
+        if (singleSimple != null && singleSimple.typeName().coreTypeKeyword() != null
+                && (singleSimple.nullMod == null || singleSimple.nullMod.getType() != BabbleLexer.QUESTION)
                 && singleSimple.OF() == null) {
             pass.analysis.lowering().setIsBuiltin(ctx, singleSimple.typeName().getText());
         }

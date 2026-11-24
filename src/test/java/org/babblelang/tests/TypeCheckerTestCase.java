@@ -1644,6 +1644,122 @@ public class TypeCheckerTestCase {
         Assertions.assertTrue(report.isEmpty(), passed + "/" + all.size() + " clean:\n" + String.join("\n", report));
     }
 
+    @Test
+    public void testBip030UniversalNonNullTypeSyntax() throws Exception {
+        // Positive cases: T! == T, stripping null from nullable/unions/aliases/generics, frozen, implements/extends/super, is/as.
+        assertDiagnostics("""
+                def a : int! = 1
+                def b : double! = 2.5
+                def c : bool! = true
+                def s : string! = "hi"
+                def x : any! = "hi"
+                def s2 : (string?)! = "hi"
+                def s3 : (string | null)! = "hi"
+                def u : (string | int | null)! = 42
+                def a2 : (any?)! = 1
+                def i2 : (int?)! = 3
+                def arr1 : array of string! = array.of("a")
+                def arr2 : (array of int)! = array.of(1)
+                def arr3 : ((array of int)?)! = array.of(1)
+                def m : java.util.Map of (string!, int!)! = java.util.HashMap()
+                def MaybeStr = type string?
+                def ms : MaybeStr! = "ok"
+                def MaybeUnion = type string | int | null
+                def mu : MaybeUnion! = "ok"
+                def G of T = type T?
+                def gs : (G of string)! = "ok"
+                def id1 of T = fn (v : T!) : T -> ( v )
+                def id2 of T = fn (v : (T?)!) : T -> ( v )
+                def r1 : string = id1("a")
+                def r2 : int = id2(7)
+                def C = class (def n : int) ()
+                def fc1 : frozen C! = freeze(C(1))
+                def fc2 : frozen (C?)! = freeze(C(1))
+                def MaybeC = type C?
+                def fc3 : frozen MaybeC! = freeze(C(1))
+                def I = interface ( def m = fn () : int -> ( 1 ) )
+                def J = interface extends I! ()
+                def Impl = class () implements I!, J! ( def m = fn () : int -> ( super(I!).m() ) )
+                def ij : (I?)! & J! = Impl()
+                def opt : string? = "hi"
+                def b1 : bool = opt is string!
+                def b2 : bool = opt is (string?)!
+                def n1 : string = if opt is string! then ( opt ) else ( "" )
+                def c1 : string = opt as string!
+                def c2 : string = opt as (string?)!
+                def c3 : string = (opt as string?)!
+                def fn1 : (fn (n : int!) : string!)! = fn (n : int) : string -> ( "" )
+                axiom java.util.Optional of T : class ( def orElse : fn (other : T!) : T! )
+                """);
+
+        // Negative cases: exact line:col diagnostics, Type.ERROR suppression, TypeDisplay printing `string` (not `string!`), is/as, and Java axiom (null)!.
+        assertDiagnostics("""
+                def e1 : (null)! = null
+                def e2 : void! = null
+                def e3 : (void)! = null
+                def e4 : (null | null)! = null
+                def N = type null
+                def e5 : N! = null
+                def e6 : frozen (null)! = null
+                def e7 : frozen void! = null
+                def e8 : Unknown! = 1
+                def e9 : (Unknown)! = 1
+                def e10 : ((null)!)! = null
+                def bad1 : string! = null
+                def bad2 : (string?)! = null
+                def M = type string?
+                def bad3 : M! = null
+                def v = "a" is void!
+                def w = "a" is (null)!
+                def y = ("a" as any?) as (null)!
+                def z = ("a" as any?) as void!
+                axiom java.lang.String.valueOf : fn (arg : (null)!) : string
+                """,
+                "1:10 Cannot make null non-nullable : null",
+                "2:10 Cannot make null non-nullable : null",
+                "3:10 Cannot make null non-nullable : null",
+                "4:10 Cannot make null non-nullable : null",
+                "6:10 Cannot make null non-nullable : null",
+                "7:10 Cannot make null non-nullable : null",
+                "8:10 Cannot make null non-nullable : null",
+                "9:10 Unknown type : Unknown",
+                "10:11 Unknown type : Unknown",
+                "11:12 Cannot make null non-nullable : null",
+                "12:22 Type error : expected string, got null",
+                "13:25 Type error : expected string, got null",
+                "15:17 Type error : expected string, got null",
+                "16:16 Type error : cannot test 'is void'",
+                "17:16 Cannot make null non-nullable : null",
+                "18:26 Cannot make null non-nullable : null",
+                "19:26 Cannot make null non-nullable : null",
+                "20:44 Cannot make null non-nullable : null");
+
+        // Runtime parity check across interpret and compile modes.
+        String runtimeScript = """
+                def I = interface ( def m = fn () : int -> ( 40 ) )
+                def Impl = class () implements I! (
+                    def m = fn () : int -> ( super(I!).m() + 2 )
+                )
+                def x : any? = "ok"
+                def y : any? = null
+                def a = if x is string! then ( 1 ) else ( 0 )
+                def b = if y is string! then ( 10 ) else ( 0 )
+                def c = if x is (string?)! then ( 2 ) else ( 0 )
+                def s1 : string = x as string!
+                def s2 : string = x as (string?)!
+                def s3 : string = (x as string?)!
+                "" + (Impl().m() + a + b + c) + ":" + s1 + ":" + s2 + ":" + s3
+                """;
+        StringWriter interpErr = new StringWriter();
+        Object interpVal = run(runtimeScript, "interpret", interpErr);
+        StringWriter compErr = new StringWriter();
+        Object compVal = run(runtimeScript, "compile", compErr);
+        Assertions.assertEquals("", interpErr.toString());
+        Assertions.assertEquals("", compErr.toString());
+        Assertions.assertEquals("45:ok:ok:ok", interpVal);
+        Assertions.assertEquals(interpVal, compVal);
+    }
+
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
