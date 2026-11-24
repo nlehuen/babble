@@ -510,3 +510,111 @@ fn sumScaled (n:int, angle:double) -> double {nothrow unique}
   var(acc)
 ```
 
+## HirLicmPass : frozen class field read and unary negation
+
+```babble
+def FC = class (def v: int) ()
+def run = fn (n: int, fc: frozen FC): int -> (
+    def a = 0 ; def i = 0
+    while i < n then (
+        a += fc.v + (-fc.v) + 1
+        i += 1
+    ) ; a
+)
+assert(run(3, freeze(FC(5))) == 3)
+```
+
+## HirLicmPass : captured this (cell ThisRef) and immediately-invoked FunctionRef callee
+
+```babble
+def CR = record (x: int) (
+    def run = fn (n: int): int -> (
+        def cap = fn (): int -> (this.x)
+        def a = 0 ; def i = 0
+        while i < n then (
+            a += this.x + (fn nothrow (k: int): int -> (return k + 1 ; k))(n)
+            i += 1
+        )
+        a + cap()
+    )
+)
+assert(CR(3).run(2) == 15)
+```
+
+## HirLicmPass : DirectThisMethodCall on mutable/frozen class and non-pure-static Math.sin
+
+```babble
+def PC = class (def x: int) (def pm = fn nothrow (k: int): int -> (return k + 2 ; k))
+def run = fn (n: int, mc: PC, fmc: frozen PC): double -> (
+    def mCls = java.lang.Math ; def a = 0.0 ; def i = 0
+    while i < n then (a += double(mc.pm(n) + fmc.pm(n)) + mCls.sin(0.0) ; i += 1) ; a
+)
+assert(run(2, PC(1), freeze(PC(1))) == 16.0)
+```
+
+## HirLicmPass : InterfaceCall on mutable, frozen, and record receivers
+
+```babble
+def PI = interface (def m = fn nothrow (k: int): int -> (return k + 1 ; k))
+def PC = class () implements PI ()
+def PR = record (x: int) implements PI ()
+def run = fn (n: int, vi: PI, fvi: frozen PI, pr: PR): int -> (
+    def a = 0 ; def i = 0
+    while i < n then (a += vi.m(n) + fvi.m(n) + pr.m(n) ; i += 1) ; a
+)
+assert(run(2, PC(), freeze(PC()), PR(1)) == 18)
+```
+
+## HirLicmPass and HirPurity : Move, Freeze, and widened transparent Block inside while
+
+```babble
+def bm = fn nothrow (s: list of int): int -> (return s.size() ; 0)
+def bf = fn nothrow (s: frozen array of int): int -> (return s.size() ; 0)
+def run = fn (n: int, x: int): double -> (
+  def a = 0.0 ; def i = 0
+  while i < n then (
+    def s = list(1) ; def r = array.of(1, 2)
+    a += double(bm(move(s)) + bf(freeze(r))) + bigSink((x + 1)) ; i += 1
+  ) ; a
+)
+assert(run(2, 3) == 14.0)
+```
+
+## HirLicmPass and HirPurity : unchecked As (x as any?) hoisted out of while
+
+```babble
+def bigAny = fn nothrow (v: any?): int -> (if same(v, null) then (return 0) ; 1)
+def run = fn (n: int, x: int): int -> (
+  def a = 0 ; def i = 0
+  while i < n then (a += bigAny(x as any?) ; i += 1) ; a
+)
+assert(run(3, 5) == 3)
+```
+
+```stderr
+Warning : Redundant cast : any?
+```
+
+```hir -O1 fn=run check
+contains $licm
+```
+
+## HirPurity.collectModifiedVars : try with named/unnamed catch and finally defs inside while
+
+```babble
+def run = fn (n: int): int -> (
+  def s = 0 ; def i = 0
+  while i < n then (
+    s += try (
+      if i < 0 then (throw java.lang.ArithmeticException("x"))
+      def t = i + 1 ; t
+    ) catch e: java.lang.ArithmeticException then (def c1 = 1 ; c1)
+      catch : exception then (def c2 = 2 ; c2)
+      finally (def f = 3 ; discard(f))
+    i += 1
+  ) ; s
+)
+assert(run(3) == 6)
+```
+
+

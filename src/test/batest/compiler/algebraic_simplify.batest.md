@@ -229,3 +229,91 @@ fn add3 (x:double) -> double {nothrow monotone unique}
   (+:double (+:double var(x) 1.0:double) 2.0:double)
 ```
 
+## Double integer negation and byte/short unary negation in E-graph
+
+```babble
+def dblNegI = fn (x: int): int -> ( -(-x) )
+def dblNegL = fn (x: long): long -> ( -(-x) )
+def negNarrow = fn (b: byte, s: short): int -> ( ((-b) + 0) + ((-s) + 0) )
+assert(dblNegI(7) == 7 and dblNegL(-9L) == -9L and negNarrow(byte(3), short(4)) == -7)
+```
+
+```hir -O1 fn=dblNegI
+fn dblNegI (x:int) -> int {nothrow idempotent injective unique}
+  var(x)
+```
+
+## E-graph rebuild of boolean EQ/NEQ and non-static String.trim receiver
+
+```babble
+def eqSimp = fn (a: bool, b: bool): bool -> ( (not (not a)) == b )
+def neqSimp = fn (a: bool, b: bool): bool -> ( (not (not a)) != b )
+def trimCat = fn (s: string): string -> ( ((s + "a") + "b").trim() )
+assert(eqSimp(true, true) and neqSimp(true, false) and trimCat("  x") == "xab")
+```
+
+```hir -O1 fn=eqSimp check
+!contains (not
+contains (==:bool var(a) var(b))
+```
+
+```hir -O1 fn=neqSimp check
+!contains (not
+contains (<>:bool var(a) var(b))
+```
+
+```hir -O1 fn=trimCat check
+contains (jcall String.trim
+contains "ab"
+```
+
+## Non-dropping identities on impure bool double negation and long arithmetic
+
+```babble
+def bumpBool = fn io (): bool -> (tick += 1 ; true)
+def bumpOpt = fn io (): int? -> (tick += 1 ; 1)
+def bumpL = fn io (): long -> (tick += 1 ; 2L)
+def b1 = not (not bumpBool())
+def b2 = not (not bumpOpt())
+def b3 = not (-bump() == 0)
+def lv = (bumpL() + 0L) + (0L + bumpL()) + (bumpL() - 0L) + (0L - bumpL()) + (bumpL() * 1L) + (1L * bumpL())
+assert(b1 and b2 and b3 and lv == 8L and tick == 9)
+```
+
+## Idempotent Java eligibility guards : axiom String.toUpperCase and String.toLowerCase with arg
+
+```babble
+axiom java.lang.String.toUpperCase: fn pure nothrow idempotent
+axiom java.lang.String.toLowerCase: fn pure nothrow idempotent
+def f = fn (s: string): bool -> (
+    s.toUpperCase().toUpperCase() == "AB" and s.toLowerCase(java.util.Locale.ROOT) == "ab"
+)
+assert(f("Ab"))
+```
+
+## Mismatched nested static and instance idempotent Java calls on impure args
+
+```babble
+axiom java.lang.String.toUpperCase: fn pure nothrow idempotent
+def bumpD = fn io (): double -> (tick += 1 ; -2.5)
+def bumpS = fn io (): string -> (tick += 1 ; "  ab ")
+def f = fn io (): bool -> (
+    java.lang.Math.abs(java.lang.Math.floor(bumpD())) == 3.0 and bumpS().toUpperCase().trim() == "AB"
+)
+assert(f() and tick == 2)
+```
+
+## Widened E-graph roots and children inside idempotent Babble calls
+
+```babble
+def bigClampD = fn axiom pure nothrow idempotent (v: double): double -> (
+    def r = if v < 0.0 then (0.0) else (v) ; return r ; r
+)
+def f = fn (x: int, y: int): double -> (
+    ((-x) + 1.0) + ((x + y) + 1.0) + (bigClamp(x) + 1.0) +
+    bigClampD(x) + bigClampD(-x) + bigClampD(x + y)
+)
+assert(f(2, 3) == 15.0)
+```
+
+

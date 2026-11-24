@@ -278,3 +278,62 @@ fn branch () -> int {nothrow}
 contains 7:int
 ```
 
+## Constant folding inside try, multiple catch clauses, and finally
+
+```babble
+def run = fn (k: int): int -> (
+  try (
+    if k == 0 then (throw java.lang.ArithmeticException("a"))
+    else if k == 1 then (throw java.lang.IllegalStateException("b"))
+    else (10 + 20)
+  ) catch e: java.lang.ArithmeticException then (1 + 2)
+    catch e: java.lang.IllegalStateException then (3 + 4)
+    finally (discard(5 + 6))
+)
+assert(run(0) == 3 and run(1) == 7 and run(2) == 30)
+```
+
+## Constant folding in catch-only and finally-only try variants plus for iterable
+
+```babble
+def run = fn (k: int, xs: list of int, ys: list of int): int -> (
+    def a = try (if k == 0 then (throw exception("e")) else (k)) catch : exception then (2 + 3)
+    def b = try (k) finally (def z = 4 + 5 ; discard(z))
+    def s = 0
+    for e in (if true then (xs) else (ys)) then (s += e)
+    a + b + s
+)
+assert(run(0, list(1, 2), list(9)) == 8 and run(4, list(1, 2), list(9)) == 11)
+```
+
+## Constant if-pruning with widened non-constant Block and mixed-width branches
+
+```babble
+def widenIf = fn (p: int, x: double): double -> (
+    def a = (if true then (p + 1) else (p + 2)) + x
+    def b = if true then (p) else (1.5)
+    def c = if true then (p + 1) else (1.5)
+    a + b + c
+)
+assert(widenIf(2, 0.5) == 8.5)
+```
+
+```hir -O1 fn=widenIf check
+contains (def a (+:double (+:int var(p) 1:int) var(x)))
+count 2 (if true:bool
+```
+
+## String concatenation exceeding MAX_FOLDED_STRING_LENGTH stays unfolded
+
+```babble
+def bigConcat = fn (): int -> (
+    def s1 = "01234567890123456789012345678901"
+    def s2 = s1 + s1 ; def s3 = s2 + s2 ; def s4 = s3 + s3
+    def s5 = s4 + s4 ; def s6 = s5 + s5 ; def s7 = s6 + s6
+    def s8 = s7 + s7 ; def s9 = s8 + s1
+    s9.length()
+)
+assert(bigConcat() == 4128)
+```
+
+

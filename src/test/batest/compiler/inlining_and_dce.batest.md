@@ -2,6 +2,10 @@
 
 References : BIP014-I2, org.babblelang.opt.hir.InlinePass, org.babblelang.opt.hir.HirDcePass
 
+```babble module=dce_mod.ba
+export def val = 10
+```
+
 ```babble preamble
 def addMul = fn (a: int, b: int): int -> (
     def s = a + b
@@ -246,4 +250,158 @@ contains (catch
 fn safeAdd (x:int) -> int {nothrow unique}
   (+:int var(x) 1:int)
 ```
+
+## HirDcePass : pure try with dead catch and non-empty finally strips catch only
+
+```babble
+def log = java.lang.StringBuilder()
+def keepFinally = fn io (x: int): int -> (
+    try (x + 1) catch : exception then (0) finally (log.append("F"))
+)
+assert(keepFinally(41) == 42 and log.toString() == "F")
+```
+
+```stderr
+Warning : try block cannot throw; catch clause is unreachable
+```
+
+```hir -O1 fn=keepFinally check
+contains (try
+!contains (catch
+contains (finally
+```
+
+## HirDcePass : top-level namespace try with dead catch
+
+```babble
+def topTry = try (def t = 20 ; t + 22) catch : exception then (0)
+assert(topTry == 42)
+```
+
+```stderr
+Warning : try block cannot throw; catch clause is unreachable
+```
+
+## HirDcePass : two catches with DCE and finally-only DCE
+
+```babble
+def log = java.lang.StringBuilder()
+def twoCatches = fn io (s: string): int -> (
+    try (java.lang.Integer.parseInt(s))
+    catch : java.lang.NumberFormatException then (def d1 = 1 + 2 ; -1)
+    catch : exception then (def d2 = 3 + 4 ; -2)
+    finally (def df = 5 + 6 ; log.append("X"))
+)
+assert(twoCatches("bad") == -1 and log.toString() == "X")
+```
+
+## HirDcePass : unused uninitialized def and fn/class param defaults with dead code
+
+```babble
+def fnDef = fn (a: int = (def d = 1 ; 1 + 2), b: int = (def e = 2 ; 3 + 4)): int -> (
+    def unused: int?
+    a + b
+)
+def ClsDef = class (def x: int = (def d = 1 ; 2 + 3)) ()
+assert(fnDef() == 10 and ClsDef().x == 5)
+```
+
+## HirDcePass : unreachable code after throw is eliminated
+
+```babble
+def log = java.lang.StringBuilder()
+def afterThrow = fn io (b: bool): int -> (
+    if b then (throw exception("boom") ; log.append("DEAD"))
+    1
+)
+assert(afterThrow(false) == 1 and (try (afterThrow(true)) catch : exception then (9)) == 9 and log.toString() == "")
+```
+
+## HirDcePass : named discard argument stays preserved
+
+```babble
+def runNamed = fn (x: int): int -> (discard(value: x + 1) ; x)
+assert(runNamed(5) == 5)
+```
+
+## HirDcePass : top-level reassigned discard shadowing via DynamicCall (1-arg)
+
+```babble
+def discard = fn (x: int): int -> (x * 2)
+discard = fn (x: int): int -> (x * 3)
+def run = fn io (x: int): int -> (discard(x))
+assert(run(4) == 12)
+```
+
+## HirDcePass : top-level reassigned discard shadowing via DynamicCall (2-arg)
+
+```babble
+def discard = fn (a: int, b: int): int -> (a + b)
+discard = fn (a: int, b: int): int -> (a + b + 1)
+def run = fn io (x: int): int -> (discard(x, 3))
+assert(run(4) == 8)
+```
+
+## HirDcePass.collectAllVarRefs : local defs alongside ThisRef, SuperCall, and RecurseRef
+
+```babble
+def Base = interface (def calc = fn (x: int): int -> (x + 1))
+def Sub = class (def k: int) implements Base (
+    def calc = fn (x: int): int -> (def tmp = this.k + 1 ; super.calc(x) + tmp)
+)
+def recVal = fn (n: int): int -> (
+    def step = 1
+    if n <= 0 then (0) else (def r = recurse ; r(n - step) + step)
+)
+assert(Sub(4).calc(5) == 11 and recVal(3) == 3)
+```
+
+## HirRewriter : ModuleExportGet, SpreadAdapt, and TypeApply child rewrites
+
+```babble
+def mod = import("dce_mod.ba")
+def idG of T = fn (x: T): T -> (x)
+def sumV = fn io (xs: int...): int -> (def s = 0 ; for e in xs then (s += e) ; s)
+def run = fn io (arr: array of int): int -> (
+    (discard(1) ; mod).val + sumV(...(discard(1) ; arr)) + ((discard(1) ; idG) of int)(3)
+)
+assert(run((array of int).of(1, 2)) == 16)
+```
+
+## HirRewriter : For iterable and SelfRecurseCall argument rewrites
+
+```babble
+def idL = fn (xs: list of int): list of int -> (xs)
+def recN = fn (n: int): int -> (if n <= 0 then (0) else (1 + recurse(n - (1 + 0))))
+def run = fn (xs: list of int): int -> (
+    def b = 0 ; for e in idL(xs) then (b += e) ; b + recN(2)
+)
+assert(run(list(4, 5)) == 11)
+```
+
+## HirRewriter : SafeCall and MakeOverloadSet child rewrites
+
+```babble
+def run = fn (s: string?, n: int): int -> (
+    def l1 = (discard(1) ; s)?.length()
+    def l2 = s?.substring(0 + 1)?.length()
+    def ov = overload((discard(1) ; fn (x: int): int -> (x + 1)), fn (t: string): int -> (t.length()))
+    (if l1 != null then (l1) else (0)) + (if l2 != null then (l2) else (0)) + ov(n)
+)
+assert(run("abcd", 3) == 11 and run(null, 3) == 4)
+```
+
+## HirRewriter : RecordNew classRef and Move operand rewrites
+
+```babble
+def Pair = record (a: int, b: int) ()
+def run = fn (n: int): int -> (
+    def p = (discard(1) ; Pair)(n, 2)
+    def xs = list(n)
+    def m1 = move(xs)
+    p.a + p.b + m1.get(0)
+)
+assert(run(3) == 8)
+```
+
 
