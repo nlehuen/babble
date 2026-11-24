@@ -49,6 +49,75 @@ fn check (x:int) -> int {nothrow unique}
   (+:int (+:int var(a) var(b)) var(c))
 ```
 
+```mir
+;; mir -O2 fn=check stage=before
+fn check(v0: int) -> int:
+  bb0:
+    v1: int = const 0
+    v2: bool = gt v0, v1 {pure}
+    br_if v2, bb2, bb1
+  bb1:
+    v3: int = const 0
+    br bb3(v3)
+  bb2:
+    v4: int = const 1
+    br bb3(v4)
+  bb3(v5: int):
+    v6: bool = const true
+    br_if v6, bb5, bb4
+  bb4:
+    v7: int = const 0
+    br bb6(v7)
+  bb5:
+    v8: int = const 2
+    br bb6(v8)
+  bb6(v9: int):
+    v10: int = const 0
+    v11: bool = eq v0, v10 {pure}
+    br_if v11, bb8, bb7
+  bb7:
+    v12: int = const 0
+    br bb9(v12)
+  bb8:
+    v13: int = const 4
+    br bb9(v13)
+  bb9(v14: int):
+    v15: int = add v5, v9 {pure}
+    v16: int = add v15, v14 {pure}
+    ret v16
+```
+
+```mir
+;; mir -O2 fn=check
+fn check(v0: int) -> int:
+  bb0:
+    v1: int = const 0
+    v2: bool = gt v0, v1 {pure}
+    br_if v2, bb2, bb1
+  bb1:
+    br bb3(v1)
+  bb2:
+    v3: int = const 1
+    br bb3(v3)
+  bb3(v4: int):
+    br bb4
+  bb4:
+    v5: int = const 2
+    br bb5(v5)
+  bb5(v6: int):
+    v7: bool = eq v0, v1 {pure}
+    br_if v7, bb7, bb6
+  bb6:
+    br bb8(v1)
+  bb7:
+    v8: int = const 4
+    br bb8(v8)
+  bb8(v9: int):
+    v10: int = add v4, v6 {pure}
+    v11: int = add v10, v9 {pure}
+    ret v11
+```
+
 ## Unary minus, arithmetic binary, and dynamic string comparison directly in conditions
 
 ```babble
@@ -80,6 +149,81 @@ fn check (x:int, y:int, s1:obj, s2:obj) -> int {nothrow unique}
   (if (+:int var(x) var(y)) (set r += 2:int))
   (if (==:bool var(s1) var(s2)) (set r += 4:int))
   var(r)
+```
+
+```mir
+;; mir -O2 fn=check stage=before
+fn check(v0: int, v1: int, v2: any, v3: any) -> int:
+  bb0:
+    v4: int = const 0
+    v5: int = neg v0 {pure}
+    br_if v5, bb2, bb1
+  bb1:
+    v6: any = const null
+    br bb3(v6, v4)
+  bb2:
+    v7: int = const 1
+    v8: int = add v4, v7 {pure}
+    v9: any = convert.any v8
+    br bb3(v9, v8)
+  bb3(v10: any, v11: int):
+    v12: int = add v0, v1 {pure}
+    br_if v12, bb5, bb4
+  bb4:
+    v13: any = const null
+    br bb6(v13, v11)
+  bb5:
+    v14: int = const 2
+    v15: int = add v11, v14 {pure}
+    v16: any = convert.any v15
+    br bb6(v16, v15)
+  bb6(v17: any, v18: int):
+    v19: any = eq v2, v3 {pure}
+    br_if v19, bb8, bb7
+  bb7:
+    v20: any = const null
+    br bb9(v20, v18)
+  bb8:
+    v21: int = const 4
+    v22: int = add v18, v21 {pure}
+    v23: any = convert.any v22
+    br bb9(v23, v22)
+  bb9(v24: any, v25: int):
+    ret v25
+```
+
+```mir
+;; mir -O2 fn=check
+fn check(v0: int, v1: int, v2: any, v3: any) -> int:
+  bb0:
+    v4: int = const 0
+    v5: int = neg v0 {pure}
+    br_if v5, bb2, bb1
+  bb1:
+    br bb3(v4)
+  bb2:
+    v6: int = const 1
+    br bb3(v6)
+  bb3(v7: int):
+    v8: int = add v0, v1 {pure}
+    br_if v8, bb5, bb4
+  bb4:
+    br bb6(v7)
+  bb5:
+    v9: int = const 2
+    v10: int = add v7, v9 {pure}
+    br bb6(v10)
+  bb6(v11: int):
+    v12: any = eq v2, v3 {pure}
+    br_if v12, bb8, bb7
+  bb7:
+    br bb9(v11)
+  bb8:
+    v13: int = const 4
+    v14: int = add v11, v13 {pure}
+    br bb9(v14)
+  bb9(v15: int):
+    ret v15
 ```
 
 ## Negated long, float, and double truthiness exercises branchIfTrue in emitCondition
@@ -124,6 +268,141 @@ fn check (l0:long, l1:long, f0:float, f1:float, d0:double, d1:double) -> int {no
   var(r)
 ```
 
+```mir
+;; mir -O2 fn=check stage=before
+fn check(v0: long, v1: long, v2: float, v3: float, v4: double, v5: double) -> int:
+  bb0:
+    v6: int = const 0
+    v7: bool = not v0 {pure}
+    br_if v7, bb2, bb1
+  bb1:
+    v8: any = const null
+    br bb3(v8, v6)
+  bb2:
+    v9: int = const 1
+    v10: int = add v6, v9 {pure}
+    v11: any = convert.any v10
+    br bb3(v11, v10)
+  bb3(v12: any, v13: int):
+    v14: bool = not v1 {pure}
+    br_if v14, bb5, bb4
+  bb4:
+    v15: any = const null
+    br bb6(v15, v13)
+  bb5:
+    v16: int = const 2
+    v17: int = add v13, v16 {pure}
+    v18: any = convert.any v17
+    br bb6(v18, v17)
+  bb6(v19: any, v20: int):
+    v21: bool = not v2 {pure}
+    br_if v21, bb8, bb7
+  bb7:
+    v22: any = const null
+    br bb9(v22, v20)
+  bb8:
+    v23: int = const 4
+    v24: int = add v20, v23 {pure}
+    v25: any = convert.any v24
+    br bb9(v25, v24)
+  bb9(v26: any, v27: int):
+    v28: bool = not v3 {pure}
+    br_if v28, bb11, bb10
+  bb10:
+    v29: any = const null
+    br bb12(v29, v27)
+  bb11:
+    v30: int = const 8
+    v31: int = add v27, v30 {pure}
+    v32: any = convert.any v31
+    br bb12(v32, v31)
+  bb12(v33: any, v34: int):
+    v35: bool = not v4 {pure}
+    br_if v35, bb14, bb13
+  bb13:
+    v36: any = const null
+    br bb15(v36, v34)
+  bb14:
+    v37: int = const 16
+    v38: int = add v34, v37 {pure}
+    v39: any = convert.any v38
+    br bb15(v39, v38)
+  bb15(v40: any, v41: int):
+    v42: bool = not v5 {pure}
+    br_if v42, bb17, bb16
+  bb16:
+    v43: any = const null
+    br bb18(v43, v41)
+  bb17:
+    v44: int = const 32
+    v45: int = add v41, v44 {pure}
+    v46: any = convert.any v45
+    br bb18(v46, v45)
+  bb18(v47: any, v48: int):
+    ret v48
+```
+
+```mir
+;; mir -O2 fn=check
+fn check(v0: long, v1: long, v2: float, v3: float, v4: double, v5: double) -> int:
+  bb0:
+    v6: int = const 0
+    v7: bool = not v0 {pure}
+    br_if v7, bb2, bb1
+  bb1:
+    br bb3(v6)
+  bb2:
+    v8: int = const 1
+    br bb3(v8)
+  bb3(v9: int):
+    v10: bool = not v1 {pure}
+    br_if v10, bb5, bb4
+  bb4:
+    br bb6(v9)
+  bb5:
+    v11: int = const 2
+    v12: int = add v9, v11 {pure}
+    br bb6(v12)
+  bb6(v13: int):
+    v14: bool = not v2 {pure}
+    br_if v14, bb8, bb7
+  bb7:
+    br bb9(v13)
+  bb8:
+    v15: int = const 4
+    v16: int = add v13, v15 {pure}
+    br bb9(v16)
+  bb9(v17: int):
+    v18: bool = not v3 {pure}
+    br_if v18, bb11, bb10
+  bb10:
+    br bb12(v17)
+  bb11:
+    v19: int = const 8
+    v20: int = add v17, v19 {pure}
+    br bb12(v20)
+  bb12(v21: int):
+    v22: bool = not v4 {pure}
+    br_if v22, bb14, bb13
+  bb13:
+    br bb15(v21)
+  bb14:
+    v23: int = const 16
+    v24: int = add v21, v23 {pure}
+    br bb15(v24)
+  bb15(v25: int):
+    v26: bool = not v5 {pure}
+    br_if v26, bb17, bb16
+  bb16:
+    br bb18(v25)
+  bb17:
+    v27: int = const 32
+    v28: int = add v25, v27 {pure}
+    br bb18(v28)
+  bb18(v29: int):
+    ret v29
+```
+
 ## Char compared with any exercises canLowerComparison non-char right operand
 
 ```babble
@@ -137,6 +416,16 @@ fn eq (c:char, a:obj) -> bool {pure unique}
   (==:bool var(c) var(a))
 ```
 
+```mir
+;; mir -O2 fn=eq stage=before,final
+fn eq(v0: char, v1: any) -> bool:
+  bb0:
+    v2: any = convert.any v0
+    v3: any = eq v2, v1 {pure,throws}
+    v4: bool = convert.bool v3
+    ret v4
+```
+
 ## Runtime is any? lowers with null descriptor to constant true
 
 ```babble
@@ -148,6 +437,14 @@ assert(check(1) and check(null))
 ;; hir -O0,-O1 fn=check
 fn check (x:obj) -> bool {nothrow unique}
   (is var(x) any)
+```
+
+```mir
+;; mir -O2 fn=check stage=before,final
+fn check(v0: any) -> bool:
+  bb0:
+    v1: bool = is v0 <any>
+    ret v1
 ```
 
 ## Redundant cast to any? lowers with null targetDescriptor and no SAM target
@@ -177,6 +474,11 @@ top-level:
   (def TopErrB (class-ref TopErrB))
   (def x 7:int)
   (call name(assert) (==:bool (as name(x) any) 7:int))
+```
+
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
 ```
 
 ## Empty finally block and early return inside try-catch without finally
@@ -216,6 +518,57 @@ fn f (flag:bool) -> int {nothrow unique}
       20:int)
     (catch _:java|java.lang.RuntimeException|java.lang.RuntimeException
       30:int))
+```
+
+```mir
+;; mir -O2 fn=f stage=before
+fn f(v0: bool) -> int:
+  bb0:
+    br bb1
+  bb1 [unwind: ThrownException -> bb8, RuntimeException -> bb5]:
+    br_if v0, bb4, bb2
+  bb2 [unwind: ThrownException -> bb8, RuntimeException -> bb5]:
+    v1: any = const null
+    br bb3
+  bb3 [unwind: ThrownException -> bb8, RuntimeException -> bb5]:
+    v2: int = const 20
+    br bb7(v2)
+  bb4 [unwind: ThrownException -> bb8, RuntimeException -> bb5]:
+    v3: int = const 10
+    ret v3
+  bb5(v4: any) [handler]:
+    br bb6
+  bb6:
+    v5: int = const 30
+    br bb7(v5)
+  bb7(v6: int):
+    ret v6
+  bb8(v7: any) [handler]:
+    rethrow v7
+```
+
+```mir
+;; mir -O2 fn=f
+fn f(v0: bool) -> int:
+  bb0:
+    br bb1
+  bb1 [unwind: ThrownException -> bb7, RuntimeException -> bb4]:
+    br_if v0, bb3, bb2
+  bb2 [unwind: ThrownException -> bb7, RuntimeException -> bb4]:
+    v1: int = const 20
+    br bb6(v1)
+  bb3 [unwind: ThrownException -> bb7, RuntimeException -> bb4]:
+    v2: int = const 10
+    ret v2
+  bb4(v3: any) [handler]:
+    br bb5
+  bb5:
+    v4: int = const 30
+    br bb6(v4)
+  bb6(v5: int):
+    ret v5
+  bb7(v6: any) [handler]:
+    rethrow v6
 ```
 
 ## Multiple consecutive top-level Babble catch clauses and nameless catch with local def
@@ -262,6 +615,57 @@ fn run (k:int) -> int {pure}
       33:int))
 ```
 
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: int) -> int:
+  bb0:
+    br bb1
+  bb1 [unwind: ThrownException -> bb8, IOException -> bb6]:
+    v1: int = const 1
+    v2: bool = eq v0, v1 {pure}
+    br_if v2, bb5, bb2
+  bb2 [unwind: ThrownException -> bb8, IOException -> bb6]:
+    v3: int = const 2
+    v4: bool = eq v0, v3 {pure}
+    br_if v4, bb4, bb3
+  bb3 [unwind: ThrownException -> bb8, IOException -> bb6]:
+    v5: any = const "x"
+    v6: any = new_java IOException(v5) {pure!}
+    rethrow v6
+  bb4 [unwind: ThrownException -> bb8, IOException -> bb6]:
+    v7: any = opaque.NameRead() {impure}
+    v8: int = const 22
+    v9: any = opaque.DynamicCall(v7, v8) {impure}
+    throw v9
+  bb5 [unwind: ThrownException -> bb8, IOException -> bb6]:
+    v10: any = opaque.NameRead() {impure}
+    v11: int = const 11
+    v12: any = opaque.DynamicCall(v10, v11) {impure}
+    throw v12
+  bb6(v13: any) [handler]:
+    br bb7
+  bb7:
+    v14: int = const 33
+    br bb13(v14)
+  bb8(v15: any) [handler]:
+    v16: any = unwrap_thrown v15
+    v17: bool = catch_match v16 <babble|TopErrA>
+    br_if v17, bb12, bb9
+  bb9:
+    v18: bool = catch_match v16 <babble|TopErrB>
+    br_if v18, bb11, bb10
+  bb10:
+    rethrow v15
+  bb11:
+    v19: int = load_field v16.code {read:shared,throws}
+    br bb13(v19)
+  bb12:
+    v20: int = load_field v16.code {read:shared,throws}
+    br bb13(v20)
+  bb13(v21: int):
+    ret v21
+```
+
 ## Function-local Babble exception catch falls back to Types.matches descriptor check
 
 ```babble
@@ -304,6 +708,42 @@ fn run (flag:bool) -> obj {pure}
       (get-this-field msg)))
 ```
 
+```mir
+;; mir -O2 fn=run stage=before,final
+fn run(v0: bool) -> any:
+  bb0:
+    v1: any = opaque.ClassExpr() {impure}
+    v2: any = opaque.ClassExpr() {impure}
+    br bb1
+  bb1 [unwind: ThrownException -> bb4]:
+    br_if v0, bb3, bb2
+  bb2 [unwind: ThrownException -> bb4]:
+    v3: any = const "b"
+    v4: any = opaque.DynamicCall(v2, v3) {impure}
+    throw v4
+  bb3 [unwind: ThrownException -> bb4]:
+    v5: any = const "a"
+    v6: any = opaque.DynamicCall(v1, v5) {impure}
+    throw v6
+  bb4(v7: any) [handler]:
+    v8: any = unwrap_thrown v7
+    v9: bool = catch_match v8 <babble|LocalA>
+    br_if v9, bb8, bb5
+  bb5:
+    v10: bool = catch_match v8 <babble|LocalB>
+    br_if v10, bb7, bb6
+  bb6:
+    rethrow v7
+  bb7:
+    v11: any = load_field v8.msg {read:shared,throws}
+    br bb9(v11)
+  bb8:
+    v12: any = load_field v8.msg {read:shared,throws}
+    br bb9(v12)
+  bb9(v13: any):
+    ret v13
+```
+
 ## Java boolean, long-from-int, and float-from-int instance field assignments
 
 ```babble
@@ -330,6 +770,11 @@ top-level:
   (def pf (jnew Float))
   (set-jfield x name(pf) name(n))
   (call name(assert) (and (and (get-jfield DriverPropertyInfo.required name(dpi)) (==:bool (get-jfield Event.when name(ev)) 42:long)) (==:bool (get-jfield Float.x name(pf)) 42.0:float)))
+```
+
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
 ```
 
 ## Static Java field non-pure receiver and fallback compound assign with byte RHS
@@ -362,6 +807,11 @@ top-level:
   (call name(assert) (and (==:bool (get-jfield SampleHelpers.mutableCounter (call-fn getS)) name(before)) (==:bool name(loc) 15:int)))
 ```
 
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
+```
+
 ## External module primitive record field get, array.toString(), and Java interface array set
 
 ```babble
@@ -386,4 +836,9 @@ top-level:
   (def ops (array-new OF (java-sam IntUnaryOperator (fn-ref <anon#0>))))
   (array-op SET name(ops) 0:int (java-sam IntUnaryOperator (fn-ref <anon#1>)))
   (call name(assert) (==:bool (jcall IntUnaryOperator.applyAsInt (array-op GET name(ops) 0:int) 5:int) 10:int))
+```
+
+```mir
+;; mir -O2 top-level stage=before,final
+top-level ; [not-lowered: top-level]
 ```

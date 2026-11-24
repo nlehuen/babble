@@ -308,10 +308,12 @@ final class BatestV2Parser {
                 IrTier tier = IrTier.parse(kind);
                 BatestFile.IrExpectation ir = parseIrBlock(tier, tokens, rawBody, sourceName, headerLine, optionsLine, bodyStartLine, closeLine);
                 for (int opt : ir.optLevels()) {
-                    String dedupKey = tier + "|O" + opt + "|" + ir.stage() + "|" + ir.modulePath() + "|" + ir.target().format();
-                    if (!c.seenIrKeys.add(dedupKey)) {
-                        throw new IllegalArgumentException(sourceName + ":" + headerLine
-                                + ": duplicate IR block for " + ir.describe());
+                    for (String st : ir.stages()) {
+                        String dedupKey = tier + "|O" + opt + "|" + st + "|" + ir.modulePath() + "|" + ir.target().format();
+                        if (!c.seenIrKeys.add(dedupKey)) {
+                            throw new IllegalArgumentException(sourceName + ":" + headerLine
+                                    + ": duplicate IR block for " + ir.describe());
+                        }
                     }
                 }
                 c.irExpectations.add(ir);
@@ -375,11 +377,22 @@ final class BatestV2Parser {
                     throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": duplicate 'stage=' attribute");
                 }
                 sawStage = true;
-                try {
-                    stage = IrSnapshot.validateStage(tok.substring("stage=".length()));
-                } catch (IllegalArgumentException e) {
-                    throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": " + e.getMessage());
+                String rawStages = tok.substring("stage=".length());
+                String[] parts = rawStages.split(",", -1);
+                List<String> valid = new ArrayList<>(parts.length);
+                Set<String> seenSt = new LinkedHashSet<>();
+                for (String p : parts) {
+                    try {
+                        String validated = IrSnapshot.validateStage(p);
+                        if (!seenSt.add(validated)) {
+                            throw new IllegalArgumentException("duplicate stage '" + validated + "' in '" + tok + "'");
+                        }
+                        valid.add(validated);
+                    } catch (IllegalArgumentException e) {
+                        throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": " + e.getMessage());
+                    }
                 }
+                stage = String.join(",", valid);
             } else if (tok.startsWith("in=")) {
                 if (modulePath != null) {
                     throw new IllegalArgumentException(sourceName + ":" + optionsLine + ": duplicate 'in=' attribute");
@@ -587,6 +600,31 @@ final class BatestV2Parser {
                 throw new IllegalArgumentException(sourceName + ":" + line + ": case '" + name
                         + "' exceeds " + BatestParser.MAX_CASE_CODE_CHARS + " code characters (" + len
                         + " chars, comments excluded) : split it or add large=\"<reason>\"");
+            }
+            if ((sourceName.startsWith("compiler/") || sourceName.contains("/compiler/"))
+                    && expectedError == null && !session) {
+                boolean hasHirO0 = false;
+                boolean hasHirO1 = false;
+                boolean hasMirO2Before = false;
+                boolean hasMirO2Final = false;
+                for (BatestFile.IrExpectation ir : irExpectations) {
+                    if (ir.tier() == IrTier.HIR) {
+                        if (ir.appliesTo(0)) hasHirO0 = true;
+                        if (ir.appliesTo(1)) hasHirO1 = true;
+                    } else if (ir.tier() == IrTier.MIR && ir.appliesTo(2)) {
+                        if (ir.matchesStage("before")) hasMirO2Before = true;
+                        if (ir.matchesStage("final")) hasMirO2Final = true;
+                    }
+                }
+                if (!hasHirO0 || !hasHirO1 || !hasMirO2Before || !hasMirO2Final) {
+                    List<String> missing = new ArrayList<>();
+                    if (!hasHirO0) missing.add("hir -O0");
+                    if (!hasHirO1) missing.add("hir -O1");
+                    if (!hasMirO2Before) missing.add("mir -O2 stage=before");
+                    if (!hasMirO2Final) missing.add("mir -O2 stage=final");
+                    throw new IllegalArgumentException(sourceName + ":" + line + ": compiler case '" + name
+                            + "' is missing required IR assertion(s) : " + String.join(", ", missing));
+                }
             }
             String combinedSummary = summarizeExpected(expectedStderr, expectedStdout, expectedError);
             return new BatestFile.BatestCase(index, line, name, BatestFile.Format.V2,

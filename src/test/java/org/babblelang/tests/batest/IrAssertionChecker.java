@@ -146,34 +146,37 @@ public final class IrAssertionChecker {
             if (!exp.appliesTo(activeOptLevel)) {
                 continue;
             }
-            IrSnapshot snap = findLatestSnapshot(capturedSnapshots, exp, activeOptLevel);
-            if (snap == null) {
-                mismatches.add(new IrMismatch(exp, null,
-                        "No " + exp.tier().label().toUpperCase() + " snapshot captured for [" + exp.describe() + "]"));
-                continue;
-            }
-            String actual;
-            try {
-                actual = snap.ir().printCanonical(exp.target()).stripTrailing();
-            } catch (IllegalArgumentException e) {
-                mismatches.add(new IrMismatch(exp, null,
-                        "Target resolution failed for [" + exp.describe() + "] : " + e.getMessage()));
-                continue;
-            }
-            String err = matchOne(exp, actual, minDumpSizeForUsingPartialChecks);
-            if (err != null) {
-                mismatches.add(new IrMismatch(exp, actual, err));
+            for (String st : exp.stages()) {
+                IrSnapshot snap = findLatestSnapshot(capturedSnapshots, exp, activeOptLevel, st);
+                if (snap == null) {
+                    mismatches.add(new IrMismatch(exp, null,
+                            "No " + exp.tier().label().toUpperCase() + " snapshot captured for [" + exp.describe() + " (stage=" + st + ")]"));
+                    continue;
+                }
+                String actual;
+                try {
+                    actual = snap.ir().printCanonical(exp.target()).stripTrailing();
+                } catch (IllegalArgumentException e) {
+                    mismatches.add(new IrMismatch(exp, null,
+                            "Target resolution failed for [" + exp.describe() + " (stage=" + st + ")] : " + e.getMessage()));
+                    continue;
+                }
+                String err = matchOne(exp, actual, minDumpSizeForUsingPartialChecks);
+                if (err != null) {
+                    mismatches.add(new IrMismatch(exp, actual, err + " (stage=" + st + ")"));
+                }
             }
         }
         return mismatches;
     }
 
-    private static IrSnapshot findLatestSnapshot(List<IrSnapshot> snapshots, BatestFile.IrExpectation exp, int activeOptLevel) {
+    private static IrSnapshot findLatestSnapshot(List<IrSnapshot> snapshots, BatestFile.IrExpectation exp,
+                                                 int activeOptLevel, String stage) {
         IrSnapshot found = null;
         for (IrSnapshot s : snapshots) {
             if (s.tier() == exp.tier()
                     && s.optLevel() == activeOptLevel
-                    && s.stage().equals(exp.stage())
+                    && s.stage().equals(stage)
                     && Objects.equals(s.moduleKey(), exp.modulePath())) {
                 found = s;
             }

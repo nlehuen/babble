@@ -89,6 +89,25 @@ public record BatestFile(
             expected = expected != null ? expected : "";
         }
 
+        public List<String> stages() {
+            if (!stage.contains(",")) {
+                return List.of(stage);
+            }
+            return List.of(stage.split(","));
+        }
+
+        public boolean matchesStage(String candidate) {
+            if (!stage.contains(",")) {
+                return stage.equals(candidate);
+            }
+            for (String s : stage.split(",")) {
+                if (s.equals(candidate)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public boolean appliesTo(int optLevel) {
             return optLevels.contains(optLevel);
         }

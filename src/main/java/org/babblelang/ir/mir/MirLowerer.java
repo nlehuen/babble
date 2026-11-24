@@ -2348,7 +2348,7 @@ public final class MirLowerer {
                 if (cur.isTerminated()) return operands.get(operands.size() - 1);
             }
             PrimitiveKind outKind = opaqueResultKind(expr);
-            MirEffect fx = opaqueEffect(expr);
+            MirEffect fx = opaqueEffect(expr, operands);
             MirVal res = newVal(outKind, null);
             emit(new MirInst.OpaqueExpr(res, expr, operands, ln, fx));
             return res;
@@ -2366,7 +2366,7 @@ public final class MirLowerer {
             };
         }
 
-        private MirEffect opaqueEffect(HirExpr expr) {
+        private MirEffect opaqueEffect(HirExpr expr, List<MirVal> operands) {
             return switch (expr) {
                 case HirExpr.CoreCollectionRef ignored -> MirEffect.PURE_NOTHROW;
                 case HirExpr.CoreExceptionRef ignored -> MirEffect.PURE_NOTHROW;
@@ -2379,6 +2379,9 @@ public final class MirLowerer {
                 case HirExpr.MakeOverloadSet ignored -> MirEffect.PURE_NOTHROW;
                 case HirExpr.OverloadSelect s -> s.exactSet() ? MirEffect.PURE_NOTHROW : MirEffect.PURE_MAY_THROW;
                 case HirExpr.ArrayOp ignored -> MirEffect.READ_SHARED_THROW;
+                case HirExpr.DynamicFieldAssign a -> (a.operator() == null && !operands.isEmpty())
+                        ? MirEffect.write(aliasOf(operands.get(0), a.receiver().meta()), false)
+                        : MirEffect.IMPURE_THROW;
                 default -> MirEffect.IMPURE_THROW;
             };
         }

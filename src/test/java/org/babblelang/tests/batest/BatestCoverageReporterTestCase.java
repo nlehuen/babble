@@ -940,6 +940,67 @@ public class BatestCoverageReporterTestCase {
         Assertions.assertTrue(bufGate.toString(StandardCharsets.UTF_8).contains("NEED +2 ln, +4 br"));
     }
 
+    @Test
+    public void testMirO2ScopeAndFourWayParity(@TempDir Path tmp) throws Exception {
+        Path reportDir = tmp.resolve("report-mir");
+        writePassingOutcomes(reportDir);
+        Files.writeString(reportDir.resolve("outcomes-compile-O2.jsonl"),
+                "{\"file\":\"a.batest.md\",\"index\":1,\"line\":1,\"name\":\"ok\",\"expected\":\"\",\"kind\":\"OK\",\"text\":\"\",\"passed\":true}\n",
+                StandardCharsets.UTF_8);
+
+        Path xmlI = tmp.resolve("interp.xml");
+        Path xmlC = tmp.resolve("compile.xml");
+        Path xmlC0 = tmp.resolve("compile-O0.xml");
+        Path xmlOpt = tmp.resolve("opt.xml");
+        Path xmlMir = tmp.resolve("mir.xml");
+        Files.writeString(xmlI, xmlWithSingleClass("interp", "org/babblelang/engine/impl", "Interpreter", 0, 5, 0, 4), StandardCharsets.UTF_8);
+        Files.writeString(xmlC, xmlWithSingleClass("compile", "org/babblelang/runtime", "Operators", 0, 5, 0, 4), StandardCharsets.UTF_8);
+        Files.writeString(xmlC0, xmlWithSingleClass("compile-O0", "org/babblelang/compiler", "BabbleCompiler", 0, 5, 0, 4), StandardCharsets.UTF_8);
+        Files.writeString(xmlOpt, xmlWithSingleClass("opt", "org/babblelang/opt", "PassManager", 0, 5, 0, 4), StandardCharsets.UTF_8);
+        Files.writeString(xmlMir, """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <report name="mir">
+                  <package name="org/babblelang/opt/mir">
+                    <class name="org/babblelang/opt/mir/SccpPass" sourcefilename="SccpPass.java"/>
+                    <sourcefile name="SccpPass.java">
+                      <line nr="10" mi="0" ci="2" mb="0" cb="2"/>
+                      <counter type="LINE" missed="1" covered="9"/>
+                      <counter type="BRANCH" missed="1" covered="9"/>
+                    </sourcefile>
+                  </package>
+                  <package name="org/babblelang/compiler">
+                    <class name="org/babblelang/compiler/MirEmitter" sourcefilename="MirEmitter.java"/>
+                    <sourcefile name="MirEmitter.java">
+                      <line nr="20" mi="0" ci="2" mb="0" cb="2"/>
+                      <counter type="LINE" missed="1" covered="9"/>
+                      <counter type="BRANCH" missed="1" covered="9"/>
+                    </sourcefile>
+                  </package>
+                </report>
+                """, StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream buf = new ByteArrayOutputStream();
+        BatestCoverageReporter.run(reportDir, xmlI, xmlC, xmlC0, xmlOpt, xmlMir, tmp.resolve("src"),
+                "", "", 80.0, 80.0, 10, BatestCoverageReporter.SortMode.SCORE,
+                new PrintStream(buf, true, StandardCharsets.UTF_8));
+        String console = buf.toString(StandardCharsets.UTF_8);
+        Assertions.assertTrue(console.contains("SSA MIR (-O2)"), console);
+        Assertions.assertTrue(console.contains("0 divergences"), console);
+        String summary = Files.readString(reportDir.resolve("summary.json"), StandardCharsets.UTF_8);
+        Assertions.assertTrue(summary.contains("\"mir\": {\"linesCovered\": 18, \"linesTotal\": 20"), summary);
+
+        // Divergence in -O2 must be flagged by 4-way parity check.
+        Files.writeString(reportDir.resolve("outcomes-compile-O2.jsonl"),
+                "{\"file\":\"a.batest.md\",\"index\":1,\"line\":1,\"name\":\"ok\",\"expected\":\"\",\"kind\":\"OK\",\"text\":\"diff\",\"passed\":true}\n",
+                StandardCharsets.UTF_8);
+        ByteArrayOutputStream divBuf = new ByteArrayOutputStream();
+        Assertions.assertThrows(AssertionError.class, () -> BatestCoverageReporter.run(
+                reportDir, xmlI, xmlC, xmlC0, xmlOpt, xmlMir, tmp.resolve("src"),
+                "", "", 80.0, 80.0, 10, BatestCoverageReporter.SortMode.SCORE,
+                new PrintStream(divBuf, true, StandardCharsets.UTF_8)));
+        Assertions.assertTrue(divBuf.toString(StandardCharsets.UTF_8).contains("compile-O2"), divBuf.toString(StandardCharsets.UTF_8));
+    }
+
     private static void writePassingOutcomes(Path reportDir) throws Exception {
         Files.createDirectories(reportDir);
         String ok = "{\"file\":\"a.batest.md\",\"index\":1,\"line\":1,\"name\":\"ok\",\"expected\":\"\",\"kind\":\"OK\",\"text\":\"\",\"passed\":true}\n";

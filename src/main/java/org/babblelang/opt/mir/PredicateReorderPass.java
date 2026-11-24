@@ -71,59 +71,80 @@ public final class PredicateReorderPass implements MirPass {
         for (MirBlock b0 : cfg.rpo()) {
             if (replaced.containsKey(b0.id())) continue;
             if (!(b0.terminator() instanceof MirTerminator.BrIf bi0)) continue;
-            if (!bi0.thenArgs().isEmpty()) continue;
 
-            MirBlock b1 = blockMap.get(bi0.thenBlock());
-            if (b1 == null || replaced.containsKey(b1.id()) || b1.id() == b0.id()) continue;
-            if (b1.handlerEntry() || !b1.params().isEmpty() || !b1.handlers().equals(b0.handlers())) continue;
-            if (cfg.predecessors(b1.id()).size() != 1) continue;
-            if (!(b1.terminator() instanceof MirTerminator.BrIf bi1)) continue;
-            if (bi1.elseBlock() != bi0.elseBlock() || !bi1.elseArgs().equals(bi0.elseArgs())) continue;
-            if (b1.insts().isEmpty()) continue;
-
-            // B1 must contain only pure nothrow terminating deterministic instructions and NO Narrow anchors.
-            if (!isPureSafeBlock(b1)) continue;
-
-            // Find the pure-only suffix of B0 computing bi0.cond() (not used anywhere outside that suffix + bi0.cond()).
-            int sliceStart = findPureCondSliceStart(b0, bi0.cond(), useCounts, b1);
-            if (sliceStart < 0) continue;
-
-            List<MirInst> c1Slice = b0.insts().subList(sliceStart, b0.insts().size());
-            List<MirInst> c2Insts = b1.insts();
-            if (blockCost(c2Insts) >= blockCost(c1Slice)) {
-                continue;
-            }
-
-            // Ensure B1's instructions do not reference any value defined in c1Slice.
-            Set<Integer> c1Defs = new HashSet<>();
-            for (MirInst inst : c1Slice) {
-                if (inst.result() != null) c1Defs.add(inst.result().id());
-            }
-            boolean dependsOnC1 = c1Defs.contains(bi1.cond().id());
-            for (MirInst inst : c2Insts) {
-                for (MirVal u : inst.usedValues()) {
-                    if (c1Defs.contains(u.id())) {
-                        dependsOnC1 = true;
-                        break;
+            // Try Shape A: b0: BrIf(c1, b1, [], bFalse, fArgs) ; b1: BrIf(c2, bTrue, tArgs, bFalse, fArgs)
+            if (bi0.thenArgs().isEmpty()) {
+                MirBlock b1 = blockMap.get(bi0.thenBlock());
+                if (canPair(b0, b1, cfg, replaced) && b1.terminator() instanceof MirTerminator.BrIf bi1
+                        && bi1.elseBlock() == bi0.elseBlock() && bi1.elseArgs().equals(bi0.elseArgs())) {
+                    CondSplit split = splitPureCondSlice(b0, bi0.cond(), useCounts);
+                    if (split != null && blockCost(b1.insts()) < blockCost(split.slice)
+                            && !dependsOn(b1.insts(), bi1.cond(), split.slice)) {
+                        List<MirInst> newB0Insts = new ArrayList<>(split.prefix.size() + b1.insts().size());
+                        newB0Insts.addAll(split.prefix);
+                        newB0Insts.addAll(b1.insts());
+                        MirTerminator newB0Term = new MirTerminator.BrIf(
+                                bi1.cond(), b1.id(), List.of(), bi0.elseBlock(), bi0.elseArgs(), bi0.line());
+                        MirTerminator newB1Term = new MirTerminator.BrIf(
+                                bi0.cond(), bi1.thenBlock(), bi1.thenArgs(), bi1.elseBlock(), bi1.elseArgs(), bi1.line());
+                        replaced.put(b0.id(), b0.withInstsAndTerminator(newB0Insts, newB0Term));
+                        replaced.put(b1.id(), b1.withInstsAndTerminator(List.copyOf(split.slice), newB1Term));
+                        rewrites++;
+                        continue;
                     }
                 }
             }
-            if (dependsOnC1) continue;
 
-            // Swap: B0 runs prefix + c2Insts then BrIf(c2, B1, [], BFalse, fArgs);
-            //       B1 runs c1Slice then BrIf(c1, BTrue, tArgs, BFalse, fArgs).
-            List<MirInst> newB0Insts = new ArrayList<>(sliceStart + c2Insts.size());
-            newB0Insts.addAll(b0.insts().subList(0, sliceStart));
-            newB0Insts.addAll(c2Insts);
-            MirTerminator newB0Term = new MirTerminator.BrIf(
-                    bi1.cond(), b1.id(), List.of(), bi0.elseBlock(), bi0.elseArgs(), bi0.line());
+            // Try Shape B (short-circuit `and`):
+            //   b0: BrIf(c1, b1, [], bJoin, [falseConst]) ; b1: Br(bJoin, [c2])
+            if (bi0.thenArgs().isEmpty() && bi0.elseArgs().size() == 1) {
+                MirBlock b1 = blockMap.get(bi0.thenBlock());
+                if (canPair(b0, b1, cfg, replaced) && b1.terminator() instanceof MirTerminator.Br br1
+                        && br1.targetBlock() == bi0.elseBlock() && br1.args().size() == 1
+                        && isConstBool(b0, bi0.elseArgs().get(0), false)) {
+                    MirVal c2 = br1.args().get(0);
+                    CondSplit split = splitPureCondSlice(b0, bi0.cond(), useCounts);
+                    if (split != null && blockCost(b1.insts()) < blockCost(split.slice)
+                            && !dependsOn(b1.insts(), c2, split.slice)) {
+                        List<MirInst> newB0Insts = new ArrayList<>(split.prefix.size() + b1.insts().size());
+                        newB0Insts.addAll(split.prefix);
+                        newB0Insts.addAll(b1.insts());
+                        MirTerminator newB0Term = new MirTerminator.BrIf(
+                                c2, b1.id(), List.of(), bi0.elseBlock(), bi0.elseArgs(), bi0.line());
+                        MirTerminator newB1Term = new MirTerminator.Br(
+                                br1.targetBlock(), List.of(bi0.cond()), br1.line());
+                        replaced.put(b0.id(), b0.withInstsAndTerminator(newB0Insts, newB0Term));
+                        replaced.put(b1.id(), b1.withInstsAndTerminator(List.copyOf(split.slice), newB1Term));
+                        rewrites++;
+                        continue;
+                    }
+                }
+            }
 
-            MirTerminator newB1Term = new MirTerminator.BrIf(
-                    bi0.cond(), bi1.thenBlock(), bi1.thenArgs(), bi1.elseBlock(), bi1.elseArgs(), bi1.line());
-
-            replaced.put(b0.id(), b0.withInstsAndTerminator(newB0Insts, newB0Term));
-            replaced.put(b1.id(), b1.withInstsAndTerminator(List.copyOf(c1Slice), newB1Term));
-            rewrites++;
+            // Try Shape C (short-circuit `or`):
+            //   b0: BrIf(c1, bJoin, [trueConst], b1, []) ; b1: Br(bJoin, [c2])
+            if (bi0.elseArgs().isEmpty() && bi0.thenArgs().size() == 1) {
+                MirBlock b1 = blockMap.get(bi0.elseBlock());
+                if (canPair(b0, b1, cfg, replaced) && b1.terminator() instanceof MirTerminator.Br br1
+                        && br1.targetBlock() == bi0.thenBlock() && br1.args().size() == 1
+                        && isConstBool(b0, bi0.thenArgs().get(0), true)) {
+                    MirVal c2 = br1.args().get(0);
+                    CondSplit split = splitPureCondSlice(b0, bi0.cond(), useCounts);
+                    if (split != null && blockCost(b1.insts()) < blockCost(split.slice)
+                            && !dependsOn(b1.insts(), c2, split.slice)) {
+                        List<MirInst> newB0Insts = new ArrayList<>(split.prefix.size() + b1.insts().size());
+                        newB0Insts.addAll(split.prefix);
+                        newB0Insts.addAll(b1.insts());
+                        MirTerminator newB0Term = new MirTerminator.BrIf(
+                                c2, bi0.thenBlock(), bi0.thenArgs(), b1.id(), List.of(), bi0.line());
+                        MirTerminator newB1Term = new MirTerminator.Br(
+                                br1.targetBlock(), List.of(bi0.cond()), br1.line());
+                        replaced.put(b0.id(), b0.withInstsAndTerminator(newB0Insts, newB0Term));
+                        replaced.put(b1.id(), b1.withInstsAndTerminator(List.copyOf(split.slice), newB1Term));
+                        rewrites++;
+                    }
+                }
+            }
         }
 
         if (rewrites == 0) {
@@ -136,6 +157,37 @@ public final class PredicateReorderPass implements MirPass {
         return new FnResult(fn.withBlocks(out, fn.nextValId(), fn.nextBlockId()), rewrites);
     }
 
+    private static boolean canPair(MirBlock b0, MirBlock b1, MirCfg cfg, Map<Integer, MirBlock> replaced) {
+        if (b1 == null || replaced.containsKey(b1.id()) || b1.id() == b0.id()) return false;
+        if (b1.handlerEntry() || !b1.params().isEmpty() || !b1.handlers().equals(b0.handlers())) return false;
+        if (cfg.predecessors(b1.id()).size() != 1) return false;
+        if (b1.insts().isEmpty()) return false;
+        return isPureSafeBlock(b1);
+    }
+
+    private static boolean isConstBool(MirBlock b0, MirVal val, boolean expected) {
+        for (MirInst inst : b0.insts()) {
+            if (inst instanceof MirInst.Const c && c.result().id() == val.id()) {
+                return Boolean.valueOf(expected).equals(c.value());
+            }
+        }
+        return false;
+    }
+
+    private static boolean dependsOn(List<MirInst> insts, MirVal termVal, List<MirInst> c1Slice) {
+        Set<Integer> c1Defs = new HashSet<>();
+        for (MirInst inst : c1Slice) {
+            if (inst.result() != null) c1Defs.add(inst.result().id());
+        }
+        if (c1Defs.contains(termVal.id())) return true;
+        for (MirInst inst : insts) {
+            for (MirVal u : inst.usedValues()) {
+                if (c1Defs.contains(u.id())) return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean isPureSafeBlock(MirBlock b) {
         for (MirInst inst : b.insts()) {
             if (inst instanceof MirInst.Narrow || inst.result() == null || !inst.effect().isPureFloatable()) {
@@ -145,34 +197,51 @@ public final class PredicateReorderPass implements MirPass {
         return true;
     }
 
-    private static int findPureCondSliceStart(MirBlock b0, MirVal cond, Map<Integer, Integer> useCounts, MirBlock b1) {
+    private record CondSplit(List<MirInst> prefix, List<MirInst> slice) {
+    }
+
+    /**
+     * Partition {@code b0}'s instructions into {@code prefix} (kept in {@code b0}) and {@code slice}
+     * (pure instructions solely feeding {@code cond} that can move to {@code b1}). Any pure instruction
+     * in {@code slice} must only be used inside {@code slice} or by {@code b0}'s terminator {@code cond},
+     * and must not be depended upon by any instruction left in {@code prefix}.
+     */
+    private static CondSplit splitPureCondSlice(MirBlock b0, MirVal cond, Map<Integer, Integer> useCounts) {
         List<MirInst> insts = b0.insts();
-        if (insts.isEmpty()) return -1;
-        // Walk backwards from the end of B0 collecting pure instructions solely feeding cond.
+        if (insts.isEmpty()) return null;
         Set<Integer> needed = new HashSet<>();
         needed.add(cond.id());
         Map<Integer, Integer> internalUses = new HashMap<>();
         internalUses.put(cond.id(), 1);
-        int start = insts.size();
+        boolean[] inSlice = new boolean[insts.size()];
+        int sliceCount = 0;
         for (int i = insts.size() - 1; i >= 0; i--) {
             MirInst inst = insts.get(i);
             MirVal res = inst.result();
             if (res == null || !needed.contains(res.id())) {
-                break;
+                continue;
             }
             if (inst instanceof MirInst.Narrow || !inst.effect().isPureFloatable()) {
-                return -1;
+                return null;
             }
             if (useCounts.getOrDefault(res.id(), 0) != internalUses.getOrDefault(res.id(), 0)) {
-                return -1;
+                return null;
             }
-            start = i;
+            inSlice[i] = true;
+            sliceCount++;
             for (MirVal u : inst.usedValues()) {
                 needed.add(u.id());
                 internalUses.merge(u.id(), 1, Integer::sum);
             }
         }
-        return start < insts.size() ? start : -1;
+        if (sliceCount == 0) return null;
+        List<MirInst> prefix = new ArrayList<>(insts.size() - sliceCount);
+        List<MirInst> slice = new ArrayList<>(sliceCount);
+        for (int i = 0; i < insts.size(); i++) {
+            if (inSlice[i]) slice.add(insts.get(i));
+            else prefix.add(insts.get(i));
+        }
+        return new CondSplit(prefix, slice);
     }
 
     private static int blockCost(List<MirInst> insts) {

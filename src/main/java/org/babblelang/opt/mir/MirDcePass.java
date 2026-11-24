@@ -99,8 +99,13 @@ public final class MirDcePass implements MirPass {
                     }
                 }
             }
-            for (MirVal u : b.terminator().usedValues()) {
-                markLive(u.id(), liveVals, work);
+            MirTerminator t = b.terminator();
+            if (t instanceof MirTerminator.BrIf bi) {
+                markLive(bi.cond().id(), liveVals, work);
+            } else if (!(t instanceof MirTerminator.Br)) {
+                for (MirVal u : t.usedValues()) {
+                    markLive(u.id(), liveVals, work);
+                }
             }
         }
 
@@ -161,11 +166,13 @@ public final class MirDcePass implements MirPass {
             } else if (term instanceof MirTerminator.BrIf bi) {
                 Set<Integer> td = deadParamIndices.getOrDefault(bi.thenBlock(), Set.of());
                 Set<Integer> ed = deadParamIndices.getOrDefault(bi.elseBlock(), Set.of());
-                if (!td.isEmpty() || !ed.isEmpty()) {
-                    term = new MirTerminator.BrIf(bi.cond(),
-                            bi.thenBlock(), td.isEmpty() ? bi.thenArgs() : filterOut(bi.thenArgs(), td),
-                            bi.elseBlock(), ed.isEmpty() ? bi.elseArgs() : filterOut(bi.elseArgs(), ed),
-                            bi.line());
+                List<MirVal> tArgs = td.isEmpty() ? bi.thenArgs() : filterOut(bi.thenArgs(), td);
+                List<MirVal> eArgs = ed.isEmpty() ? bi.elseArgs() : filterOut(bi.elseArgs(), ed);
+                if (bi.thenBlock() == bi.elseBlock() && tArgs.equals(eArgs)) {
+                    term = new MirTerminator.Br(bi.thenBlock(), tArgs, bi.line());
+                    rewrites++;
+                } else if (!td.isEmpty() || !ed.isEmpty()) {
+                    term = new MirTerminator.BrIf(bi.cond(), bi.thenBlock(), tArgs, bi.elseBlock(), eArgs, bi.line());
                 }
             }
             swept.add(new MirBlock(b.id(), newParams, newInsts, term, b.handlers(), b.handlerEntry()));

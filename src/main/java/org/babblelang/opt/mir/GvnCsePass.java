@@ -219,6 +219,8 @@ public final class GvnCsePass implements MirPass {
             case MirInst.CallMethod cm -> cm.effect().isPureFloatable() && cm.targetFunctionId() >= 0
                     ? new CallMethodKey(cm.receiver().id(), cm.targetFunctionId(), cm.result().kind(),
                     canonicalArgs(cm.args(), cm.commutative())) : null;
+            case MirInst.SlotRead sr -> sr.effect().isPureFloatable()
+                    ? new SlotReadKey(sr.var(), sr.result().kind()) : null;
             default -> null;
         };
     }
@@ -271,4 +273,5 @@ public final class GvnCsePass implements MirPass {
     private record CallBabbleKey(int fnId, PrimitiveKind kind, List<Integer> argIds) {}
     private record CallJavaKey(int recvId, Method method, PrimitiveKind kind, List<Integer> argIds) {}
     private record CallMethodKey(int recvId, int fnId, PrimitiveKind kind, List<Integer> argIds) {}
+    private record SlotReadKey(org.babblelang.ir.hir.HirVar var, PrimitiveKind kind) {}
 }

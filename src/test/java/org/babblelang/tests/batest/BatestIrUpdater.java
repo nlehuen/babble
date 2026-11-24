@@ -77,8 +77,12 @@ final class BatestIrUpdater {
             lines.remove(lines.size() - 1);
         }
 
-        // Apply bottom-up so earlier line indices remain valid.
-        List<Replacement> sorted = new ArrayList<>(replacements);
+        // Apply bottom-up so earlier line indices remain valid (deduplicate identical spans from multi-stage blocks).
+        Map<Integer, Replacement> deduped = new java.util.LinkedHashMap<>();
+        for (Replacement r : replacements) {
+            deduped.putIfAbsent(r.bodyStartLine(), r);
+        }
+        List<Replacement> sorted = new ArrayList<>(deduped.values());
         sorted.sort(Comparator.comparingInt(Replacement::bodyStartLine).reversed());
         for (Replacement r : sorted) {
             int startIdx = r.bodyStartLine() - 1;

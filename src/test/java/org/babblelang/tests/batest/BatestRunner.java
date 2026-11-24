@@ -253,7 +253,7 @@ public final class BatestRunner {
                 return false;
             }
             for (BatestFile.IrExpectation exp : expectations) {
-                if (exp.tier() == tier && exp.appliesTo(optLevel) && exp.stage().equals(stage)) {
+                if (exp.tier() == tier && exp.appliesTo(optLevel) && exp.matchesStage(stage)) {
                     return true;
                 }
             }
