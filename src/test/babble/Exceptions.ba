@@ -38,7 +38,7 @@ def parseLine = fn io (line: int, raw: string): int -> (
     )
 )
 
-def log = list of string()
+def log = list of string ()
 def result = try (
     parseLine(4, "abc")
 ) catch e: ParseError then (
@@ -54,9 +54,7 @@ assert(log == list("line 4 : expected integer, got abc", "done"))
 ;; Multi-catch with union narrowing and ThrownException isolation
 def dispatch = fn io (n: int): int -> (
     try (
-        if n == 0 then (throw ParseError(1, "p"))
-        else if n == 1 then (throw NotFound("x"))
-        else (java.lang.Integer.parseInt("bad"))
+        if n == 0 then (throw ParseError(1, "p")) else if n == 1 then (throw NotFound("x")) else (java.lang.Integer.parseInt("bad"))
     ) catch : java.lang.Exception then (
         500
     ) catch e: ParseError | NotFound then (

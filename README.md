@@ -249,6 +249,38 @@ while i < 3 then (
 assert(total == 5)
 ```
 
+### Exception handling
+
+`try`, `catch`, `finally`, and `throw` are expressions. `catch` uses Babble's union types `A | B` for multi-catch, omits the variable name when unused (`catch : T then (...)`), and provides an untyped non-`Error` catch-all (`catch e then (...)` or `catch then (...)`). Any Java `Throwable`, Babble's core `exception` type (`BabbleException`), or any custom Babble class/record/interface value may be thrown and caught; `finally` runs on every exit and attaches secondary exceptions with `addSuppressed`.
+
+```
+def ParseError = record (line: int, message: string) ()
+
+def parsePort = fn io nothrow (text: string): int -> (
+    try (
+        def n = java.lang.Integer.parseInt(text)
+        if n < 1 or n > 65535 then (
+            throw exception("port out of range : " + text)
+        )
+        n
+    ) catch : java.lang.NumberFormatException | exception then (
+        8080
+    ) catch then (
+        8080
+    )
+)
+assert(parsePort("80") == 80 and parsePort("bad") == 8080)
+
+def r = try (
+    throw ParseError(4, "expected int")
+) catch e: ParseError then (
+    "line " + e.line + " : " + e.message
+) finally (
+    ;; cleanup runs on normal exit, exception, return, break, or continue
+)
+assert(r == "line 4 : expected int")
+```
+
 ### Classes
 
 A class is an expression too. Its header is the constructor's parameter list, its body runs
@@ -824,8 +856,9 @@ Language features :
 - [x] no C-style brackets ! Those are nasty to type on most keyboards, especially on Apple keyboards.
 - [x] in fact, there is only one type of brackets in Babble : parentheses `( )`. The grammar is predicate-free LL(1)/LL(2) (`BIP012`, `RM006`) and parses in ANTLR4's fast `PredictionMode.SLL`.
 - [x] no semicolons at end of line : newlines are significant and end the current statement, except after tokens that call for a continuation (operators, `,`, `=`, `->`, `then`, ...). Semicolons are only needed to separate multiple statements on the same line.
-- [x] everything is an expression, including blocks, `if`, `while`, and `for`.
-- [x] block scope : blocks, `if` branches, `while` bodies, and `for` bodies are scopes, and names are hoisted to the start of their scope.
+- [x] everything is an expression, including blocks, `if`, `while`, `for`, `try`/`catch`/`finally`, and `throw`.
+- [x] block scope : blocks, `if` branches, `while` bodies, `for` bodies, and `try`/`catch`/`finally` blocks are scopes, and names are hoisted to the start of their scope.
+- [x] exception handling : expression-oriented `try (...) catch [e] [: A | B] then (...) finally (...)`, `throw` (`Type.NOTHING`), lowercase core `exception` type (`BabbleException`), direct JVM `Throwable` propagation, open nominal Babble exceptions via `ThrownException` isolated from Java `Exception`/`RuntimeException` catches, untyped non-`Error` catch-all, forbidden escaping `return`/`break`/`continue` in `finally` with automatic `addSuppressed`, `nothrow` restoration & dead-catch warnings, intra-procedural local-catch `@BORROWED` provenance, JVM `exception_table` + inline `finally` duplication with `try`-range splitting, and `-O1` dead-catch elimination (see [BIP028](docs/design/bip028_exception-handling.md)).
 - [x] first-class iterators, `for ... in ... then (...)` loops, and uniform `break [expr]` / `continue` across `while` and `for` loops, plus parameterized static factories `(list of int).of(...)` / `list.of(...)` (`RM009`, see [BIP013](docs/design/bip013_iterators.md)).
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] self tail calls (`recurse(...)`, a function's own `def`, `this.m(...)`) run in constant stack space in every mode, and code that never ends must say so with `forever` (`docs/design/bip024_tail-calls.md`).
