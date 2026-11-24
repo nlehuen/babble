@@ -234,14 +234,11 @@ public final class FbipReusePass implements HirPass {
             return r;
         }
         HirClass cls = module.clazz(r.classId());
-        if (cls == null || !cls.fastRecord() || r.args().size() != cls.params().size()) {
-            return r;
-        }
-        if (r.binding() != null && (r.binding().reordered() || r.binding().restParam() >= 0 || r.binding().missingParamBits() != 0)) {
+        if (cls == null || !cls.fastRecord() || r.args().size() != cls.params().size()
+                || (r.binding() != null && !r.binding().isIdentityPositional())) {
             return r;
         }
         boolean classRefPure = (r.classRef() instanceof HirExpr.NameRead nr && initBindings.contains(nr.name()))
-                || r.classRef() instanceof HirExpr.ClassExpr
                 || HirPurity.isPureNothrowTerminating(r.classRef(), module);
         if (!classRefPure) {
             return r;

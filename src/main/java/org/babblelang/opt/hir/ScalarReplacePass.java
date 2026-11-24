@@ -143,33 +143,20 @@ public final class ScalarReplacePass implements HirPass {
         return new RecordLayout(r.classId(), r.classTypeId(), r.classJvmName(), r.paramKinds(), memberIndices, fieldNames);
     }
 
-    /** Maps parameter index {@code p} to source argument index in {@code r.args()}, or {@code -1} if unsupported. */
+    /** Maps parameter index {@code p} to source argument index in {@code r.args()}, or {@code null} if unsupported. */
     private static int[] resolveArgMapping(HirExpr.RecordNew r) {
         int n = r.paramKinds().length;
         LoweringTargets.ArgumentBinding b = r.binding();
-        int[] map = new int[n];
-        if (b == null) {
-            if (r.args().size() != n) {
-                return null;
-            }
-            for (int i = 0; i < n; i++) {
-                map[i] = i;
-            }
-            return map;
-        }
-        if (b.restParam() >= 0 || b.missingParamBits() != 0) {
+        if (b == null || b.restParam() >= 0 || b.missingParamBits() != 0) {
             return null;
         }
         int[] p2a = b.paramToArg();
         if (p2a.length < n) {
             return null;
         }
+        int[] map = new int[n];
         for (int i = 0; i < n; i++) {
-            int a = p2a[i];
-            if (a < 0 || a >= r.args().size()) {
-                return null;
-            }
-            map[i] = a;
+            map[i] = p2a[i];
         }
         return map;
     }
@@ -182,11 +169,7 @@ public final class ScalarReplacePass implements HirPass {
             return true;
         }
         if (classRef instanceof HirExpr.ModuleExportGet meg) {
-            return meg.receiver() instanceof HirExpr.NameRead
-                    || (meg.receiver() instanceof HirExpr.VarRead vr && (!vr.var().mayBeUndefined() || vr.var().definitelyDefined()));
-        }
-        if (isInstance && (classRef instanceof HirExpr.ThisRef || classRef instanceof HirExpr.VarRead)) {
-            return HirPurity.isPureNothrowTerminating(classRef, module);
+            return meg.receiver() instanceof HirExpr.NameRead || HirPurity.isPureNothrowTerminating(meg.receiver(), module);
         }
         return HirPurity.isPureNothrowTerminating(classRef, module);
     }
@@ -197,10 +180,7 @@ public final class ScalarReplacePass implements HirPass {
         }
         boolean typeMatch = (layout.classId() >= 0 && g.classId() == layout.classId())
                 || (g.externalClassJvmName() != null && g.externalClassJvmName().equals(layout.classJvmName()));
-        if (!typeMatch) {
-            return -1;
-        }
-        if (g.receiverText() != null && (!g.recordField() || !g.definitelyDefined())) {
+        if (!typeMatch || (g.receiverText() != null && (!g.recordField() || !g.definitelyDefined()))) {
             return -1;
         }
         return layout.paramIndexForMember(g.memberIndex());
@@ -344,15 +324,14 @@ public final class ScalarReplacePass implements HirPass {
     }
 
     private static HirExpr adaptProjectedArg(HirExpr arg, PrimitiveKind fieldKind, ExprMeta getMeta) {
-        boolean needWiden = getMeta.wideningRank() >= 0;
+        int fieldRank = fieldKind.numericRank();
         boolean kindMatch = arg.meta().kind() == fieldKind
-                || (arg.meta().wideningRank() >= 0 && rankMatchesKind(arg.meta().wideningRank(), fieldKind));
-        if (!needWiden && kindMatch) {
+                || (fieldRank >= 1 && arg.meta().wideningRank() == fieldRank);
+        if (getMeta.wideningRank() < 0 && kindMatch) {
             return arg;
         }
-        // Wrap in a single-expr Block so the arg's own wideningRank runs, then outer getMeta.wideningRank runs.
         int targetRank = getMeta.wideningRank() >= 0 ? getMeta.wideningRank()
-                : (fieldKind.isPrimitive() && arg.meta().kind() != fieldKind ? rankOfKind(fieldKind) : -1);
+                : (arg.meta().kind() != fieldKind && fieldRank >= 1 ? fieldRank : -1);
         ExprMeta wrapMeta = new ExprMeta(getMeta.line(), fieldKind, targetRank, null,
                 arg.meta().effects(), getMeta.deeplyImmutable(), getMeta.stringType(),
                 arg.meta().frozen(), arg.meta().unique());
@@ -568,10 +547,8 @@ public final class ScalarReplacePass implements HirPass {
 
     private static boolean canRewriteCallToUnboxed(HirExpr.DirectBabbleCall c, RecordLayout[] plan,
                                                    HirModule module, Set<String> initBindings) {
-        if (c.meta().checkedType() != null || c.args().size() != plan.length) {
-            return false;
-        }
-        if (c.binding() != null && (c.binding().reordered() || c.binding().restParam() >= 0 || c.binding().missingParamBits() != 0)) {
+        if (c.meta().checkedType() != null || c.args().size() != plan.length
+                || (c.binding() != null && !c.binding().isIdentityPositional())) {
             return false;
         }
         for (int i = 0; i < plan.length; i++) {
@@ -581,16 +558,10 @@ public final class ScalarReplacePass implements HirPass {
             }
             HirExpr arg = unwrapOwnership(c.args().get(i));
             if (arg instanceof HirExpr.RecordNew r) {
-                if (!r.classTypeId().equals(layout.classTypeId())) {
-                    return false;
-                }
-                if (!isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings)) {
-                    return false;
-                }
-                if (r.binding() != null && (r.binding().reordered() || r.binding().restParam() >= 0 || r.binding().missingParamBits() != 0)) {
-                    return false;
-                }
-                if (r.args().size() != layout.fieldCount()) {
+                if (!r.classTypeId().equals(layout.classTypeId())
+                        || !isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings)
+                        || (r.binding() != null && !r.binding().isIdentityPositional())
+                        || r.args().size() != layout.fieldCount()) {
                     return false;
                 }
             } else if (arg instanceof HirExpr.VarRead vr) {
@@ -897,6 +868,16 @@ public final class ScalarReplacePass implements HirPass {
         return fn.withBodyAndDeclaredVars(newBody, newDeclVars);
     }
 
+    private static void addEligibleVars(List<HirVar> vars, Set<Integer> exclude, Map<Integer, HirVar> out) {
+        for (HirVar v : vars) {
+            if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
+                    && (exclude == null || !exclude.contains(v.id()))
+                    && (!v.mayBeUndefined() || v.definitelyDefined())) {
+                out.put(v.id(), v);
+            }
+        }
+    }
+
     private static void collectEligibleLocalVars(HirFunction fn, Map<Integer, HirVar> out) {
         Set<Integer> paramIds = new HashSet<>();
         for (HirParam p : fn.params()) {
@@ -904,13 +885,7 @@ public final class ScalarReplacePass implements HirPass {
                 paramIds.add(p.var().id());
             }
         }
-        for (HirVar v : fn.declaredVars()) {
-            if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
-                    && !paramIds.contains(v.id())
-                    && (!v.mayBeUndefined() || v.definitelyDefined())) {
-                out.put(v.id(), v);
-            }
-        }
+        addEligibleVars(fn.declaredVars(), paramIds, out);
         for (HirExpr s : fn.body()) {
             collectBlockLocalVars(s, out);
         }
@@ -919,40 +894,15 @@ public final class ScalarReplacePass implements HirPass {
     private static void collectBlockLocalVars(HirExpr expr, Map<Integer, HirVar> out) {
         if (expr == null) return;
         if (expr instanceof HirExpr.Block b) {
-            for (HirVar v : b.declaredVars()) {
-                if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
-                        && (!v.mayBeUndefined() || v.definitelyDefined())) {
-                    out.put(v.id(), v);
-                }
-            }
+            addEligibleVars(b.declaredVars(), null, out);
         } else if (expr instanceof HirExpr.For f) {
-            for (HirVar v : f.bodyDeclaredVars()) {
-                if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
-                        && (!v.mayBeUndefined() || v.definitelyDefined())) {
-                    out.put(v.id(), v);
-                }
-            }
+            addEligibleVars(f.bodyDeclaredVars(), null, out);
         } else if (expr instanceof HirExpr.Try t) {
-            for (HirVar v : t.tryDeclaredVars()) {
-                if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
-                        && (!v.mayBeUndefined() || v.definitelyDefined())) {
-                    out.put(v.id(), v);
-                }
-            }
+            addEligibleVars(t.tryDeclaredVars(), null, out);
             for (HirExpr.HirCatch cc : t.catches()) {
-                for (HirVar v : cc.declaredVars()) {
-                    if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
-                            && (!v.mayBeUndefined() || v.definitelyDefined())) {
-                        out.put(v.id(), v);
-                    }
-                }
+                addEligibleVars(cc.declaredVars(), null, out);
             }
-            for (HirVar v : t.finallyDeclaredVars()) {
-                if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
-                        && (!v.mayBeUndefined() || v.definitelyDefined())) {
-                    out.put(v.id(), v);
-                }
-            }
+            addEligibleVars(t.finallyDeclaredVars(), null, out);
         }
         HirRewriter.rewriteChildren(expr, c -> {
             collectBlockLocalVars(c, out);
@@ -980,6 +930,20 @@ public final class ScalarReplacePass implements HirPass {
         }
     }
 
+    private static void recordCandidateLayout(int vid, HirExpr value, Map<String, RecordLayout> localLayouts,
+                                              HirModule module, Map<Integer, RecordLayout> candidates,
+                                              Set<Integer> disqualified) {
+        RecordLayout layout = inferRecordLayout(value, candidates, localLayouts, module);
+        if (layout != null) {
+            RecordLayout existing = candidates.get(vid);
+            if (existing == null) {
+                candidates.put(vid, layout);
+            } else if (!existing.sameType(layout)) {
+                disqualified.add(vid);
+            }
+        }
+    }
+
     private static void scanCandidateAssignments(HirExpr expr, Map<Integer, HirVar> localVars,
                                                  Map<String, RecordLayout> localLayouts, HirModule module,
                                                  Map<Integer, RecordLayout> candidates, Set<Integer> disqualified) {
@@ -989,30 +953,14 @@ public final class ScalarReplacePass implements HirPass {
             if (d.value() == null) {
                 disqualified.add(vid);
             } else {
-                RecordLayout layout = inferRecordLayout(d.value(), candidates, localLayouts, module);
-                if (layout != null) {
-                    RecordLayout existing = candidates.get(vid);
-                    if (existing == null) {
-                        candidates.put(vid, layout);
-                    } else if (!existing.sameType(layout)) {
-                        disqualified.add(vid);
-                    }
-                }
+                recordCandidateLayout(vid, d.value(), localLayouts, module, candidates, disqualified);
             }
         } else if (expr instanceof HirExpr.VarAssign a && localVars.containsKey(a.var().id())) {
             int vid = a.var().id();
             if (a.operator() != null) {
                 disqualified.add(vid);
             } else {
-                RecordLayout layout = inferRecordLayout(a.value(), candidates, localLayouts, module);
-                if (layout != null) {
-                    RecordLayout existing = candidates.get(vid);
-                    if (existing == null) {
-                        candidates.put(vid, layout);
-                    } else if (!existing.sameType(layout)) {
-                        disqualified.add(vid);
-                    }
-                }
+                recordCandidateLayout(vid, a.value(), localLayouts, module, candidates, disqualified);
             }
         }
         HirRewriter.rewriteChildren(expr, c -> {
@@ -1417,27 +1365,5 @@ public final class ScalarReplacePass implements HirPass {
                     target, value, meta);
         }
         return new HirExpr.VarAssign(target, null, value, target.name(), "", meta);
-    }
-
-    private static boolean rankMatchesKind(int rank, PrimitiveKind kind) {
-        return switch (rank) {
-            case 1 -> kind == PrimitiveKind.SHORT;
-            case 2 -> kind == PrimitiveKind.INT;
-            case 3 -> kind == PrimitiveKind.LONG;
-            case 4 -> kind == PrimitiveKind.FLOAT;
-            case 5 -> kind == PrimitiveKind.DOUBLE;
-            default -> false;
-        };
-    }
-
-    private static int rankOfKind(PrimitiveKind kind) {
-        return switch (kind) {
-            case SHORT -> 1;
-            case INT -> 2;
-            case LONG -> 3;
-            case FLOAT -> 4;
-            case DOUBLE -> 5;
-            default -> -1;
-        };
     }
 }

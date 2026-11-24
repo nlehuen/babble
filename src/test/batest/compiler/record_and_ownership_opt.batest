@@ -1,0 +1,444 @@
+;; Record-centric and ownership optimizations : fast record lowering, method & borrow-lambda
+;; inlining (O8), scalar replacement & $unboxed borrow entry points (O9), FBIP collection &
+;; mutable-record reuse (O10), and record/frozen LICM + pure interface DCE.
+;; References : BIP014-I4, BIP007-I2, ScalarReplacePass, FbipReusePass, InlinePass, CoreCollections
+
+========== vec_mod.ba ==========
+export def ExtVec = record (x: double, y: double) (
+    def plus = fn (o: ExtVec): ExtVec -> ( ExtVec(this.x + o.x, this.y + o.y) )
+    def neg = fn (): ExtVec -> ( ExtVec(-this.x, -this.y) )
+    def mag2 = fn (): double -> ( this.x * this.x + this.y * this.y )
+)
+==========
+
+def Vec3 = record (x: double, y: double, z: double) (
+    def plus = fn (o: Vec3): Vec3 -> ( Vec3(this.x + o.x, this.y + o.y, this.z + o.z) )
+    def dot = fn (o: Vec3): double -> ( this.x * o.x + this.y * o.y + this.z * o.z )
+    def swap = fn (): Vec3 -> ( Vec3(this.y, this.x, this.z) )
+)
+def Holder = record (items: list of int, count: int) ()
+def Metric = interface ( def score = fn nothrow (): int -> ( 0 ) )
+
+{{{{{
+;; Loop-carried SROA with swap and method inlining
+def run = fn (n: int): double -> (
+    def acc = Vec3(0.0, 0.0, 0.0)
+    def step = Vec3(1.0, 2.0, 3.0)
+    def i = 0
+    while i < n then (
+        acc = (acc + step).swap()
+        i = i + 1
+    )
+    acc.dot(step)
+)
+assert(run(10) == 135.0)
+}}}}}
+
+{{{{{
+;; Direct projection beta-reduction with named/reordered args and widening
+def f = fn (a: int, b: int): double -> (
+    def v = Vec3(z: 3.0, x: a, y: b)
+    v.x + v.y * 10.0 + v.z * 100.0
+)
+assert(f(2, 4) == 342.0)
+assert(Vec3(1.0, 2.0, 3.0).y == 2.0)
+}}}}}
+
+{{{{{
+;; Projection beta-reduction must preserve left-to-right side effects of dropped siblings
+def log = java.lang.StringBuilder()
+def emit = fn io (tag: string, v: double): double -> ( log.append(tag) ; v )
+def run = fn io (): double -> (
+    Vec3(emit("A", 1.0), emit("B", 2.0), emit("C", 3.0)).y
+)
+assert(run() == 2.0)
+assert(log.toString() == "ABC")
+}}}}}
+
+{{{{{
+;; Conditional if/else record SROA, copy propagation, and self-assignment
+def pick = fn (flag: bool): double -> (
+    def p = if flag then ( Vec3(1.0, 2.0, 3.0) ) else ( Vec3(4.0, 5.0, 6.0) )
+    def q = p
+    q = q
+    if flag then ( p = Vec3(p.z, p.y, p.x) )
+    p.x + q.y + p.z
+)
+assert(pick(true) == 6.0)
+assert(pick(false) == 15.0)
+}}}}}
+
+{{{{{
+;; SROA across all 8 primitive kinds + string
+def Pack = record (b: byte, s: short, i: int, l: long, f: float, d: double, z: bool, c: char, t: string) ()
+def run = fn (k: int): string -> (
+    def p = Pack(byte(k), short(k + 1), k + 2, long(k + 3), float(k), double(k), k > 0, 'A', "ok")
+    "" + p.b + ":" + p.s + ":" + p.i + ":" + p.l + ":" + p.z + ":" + p.c + ":" + p.t
+)
+assert(run(1) == "1:2:3:4:true:A:ok")
+}}}}}
+
+{{{{{
+;; Escaping records must stay boxed for return, equality, identity, and collections
+def make = fn (x: double): Vec3 -> ( Vec3(x, x + 1.0, x + 2.0) )
+def run = fn (): bool -> (
+    def a = make(1.0)
+    def b = Vec3(1.0, 2.0, 3.0)
+    def xs = list(a)
+    a == b and not same(a, b) and xs.get(0) == b
+)
+assert(run())
+}}}}}
+
+{{{{{
+;; Non-inlined (>35 HIR nodes) borrow record triggers $unboxed entry point
+def heavy = fn (a: Vec3, b: Vec3): double -> (
+    def d1 = a.x * b.x + a.y * b.y + a.z * b.z
+    def d2 = (a.x + 1.0) * b.x + (a.y + 2.0) * b.y + (a.z + 3.0) * b.z
+    def d3 = (a.x - a.y) * (b.x - b.y) + (a.y - a.z) * (b.y - b.z)
+    d1 + d2 + d3
+)
+def a = Vec3(1.0, 2.0, 3.0)
+assert(heavy(a, Vec3(0.5, 1.5, 2.5)) == 35.0)
+}}}}}
+
+{{{{{
+;; Borrow param that escapes inside callee must not break $unboxed analysis
+def keepFirst = fn (a: Vec3, b: Vec3): double -> (
+    def xs = list(a)
+    xs.get(0).x + b.y + b.z
+)
+def run = fn (): double -> (
+    def a = Vec3(2.0, 3.0, 4.0)
+    def b = Vec3(5.0, 6.0, 7.0)
+    keepFirst(a, b)
+)
+assert(run() == 15.0)
+}}}}}
+
+{{{{{
+;; FBIP collection reuse for list and set (exact mutable types)
+def addL = fn (unique xs: list of int): list of int -> ( def r = list(from: move(xs)) ; r.add(9) ; r )
+def addS = fn (unique s: set of int): set of int -> ( def r = set(from: move(s)) ; r.add(9) ; r )
+def run = fn (): bool -> ( addL(list(1, 2)).size() == 3 and addS(set(1)).size() == 2 )
+assert(run())
+}}}}}
+
+{{{{{
+;; FBIP collection reuse for map (exact mutable type) and fallback on TreeMap
+def addM = fn (unique m: map of (string, int)): map of (string, int) -> (
+    def r = map(from: move(m))
+    r.put("b", 2)
+    r
+)
+def run = fn (): bool -> (
+    addM(map(entry("a", 1))).size() == 2 and addM(sortedmap(entry("a", 1))).size() == 2
+)
+assert(run())
+}}}}}
+
+{{{{{
+;; FBIP list/set reuse falls back cleanly on non-ArrayList/LinkedHashSet inputs
+def copyL = fn (unique xs: java.lang.Iterable of int): list of int -> ( def r = list(from: move(xs)) ; r.add(4) ; r )
+def copyS = fn (unique s: java.lang.Iterable of int): set of int -> ( def r = set(from: move(s)) ; r.add(4) ; r )
+def run = fn (): bool -> ( copyL(sortedset(1, 2)).size() == 3 and copyS(sortedset(1, 2)).size() == 3 )
+assert(run())
+}}}}}
+
+{{{{{
+;; FBIP mutable record in-place reuse vs aliased deeply immutable record safety
+def bumpH = fn (unique h: Holder, f: bool): Holder -> (
+    if f then ( Holder(h.items, h.count + 1) ) else ( Holder(h.items, h.count + 2) )
+)
+def bumpV = fn (unique v: Vec3): Vec3 -> ( Vec3(v.x + 1.0, v.y, v.z) )
+def run = fn (): bool -> (
+    def h = bumpH(Holder(list(1), 5), true)
+    def v0 = Vec3(1.0, 2.0, 3.0)
+    h.count == 6 and bumpV(v0).x == 2.0 and v0.x == 1.0
+)
+assert(run())
+}}}}}
+
+{{{{{
+;; Borrow-lambda higher-order devirtualization and inlining
+def applyTwice = fn (x: int, f: fn (int): int): int -> ( f(f(x)) )
+def run = fn (x: int): int -> ( applyTwice(x, fn (v: int): int -> ( v * 2 + 1 )) )
+assert(run(3) == 15)
+}}}}}
+
+{{{{{
+;; Cross-module record construction, field access, operator & method direct dispatch
+def m = import("vec_mod.ba")
+def run = fn (n: int): double -> (
+    def a = m.ExtVec(3.0, 4.0)
+    def b = -m.ExtVec(1.0, 2.0)
+    def c = a + b
+    c.x + c.y + c.mag2() + double(n)
+)
+assert(run(1) == 13.0)
+}}}}}
+
+{{{{{
+;; Pure interface DCE and record/frozen field LICM
+def Box = record (v: int) implements Metric (
+    def score = fn nothrow (): int -> ( this.v * 2 )
+)
+def run = fn (m: frozen Metric, b: Box, n: int): int -> (
+    def unused = m.score()
+    def i = 0
+    def s = 0
+    while i < n then ( s = s + m.score() + b.v + i ; i = i + 1 )
+    s
+)
+assert(run(Box(5), Box(3), 4) == 58)
+}}}}}
+
+{{{{{
+;; Overloaded operator methods on a compiled record
+def Num = record (v: int) (
+    def plus = overload (
+        fn (o: Num): Num -> ( Num(this.v + o.v) ),
+        fn (k: int): Num -> ( Num(this.v + k) )
+    )
+)
+def run = fn (x: int): int -> (
+    def a = Num(x)
+    def b = (a + Num(3)) + 4
+    b.v
+)
+assert(run(10) == 17)
+}}}}}
+
+{{{{{
+;; Scalarized record locals inside for and try/catch/finally scopes
+def run = fn (): double -> (
+    def s = 0.0
+    for i in list(1, 2, 3) then ( def v = Vec3(double(i), 1.0, 0.0) ; s = s + v.x + v.y )
+    try (
+        if s < 0.0 then ( assert(false) )
+        def w = Vec3(s, 2.0, 0.0)
+        w.x + w.y
+    ) catch e then ( 0.0 ) finally ( def z = Vec3(1.0, 0.0, 0.0) ; discard(z.x) )
+)
+assert(run() == 11.0)
+}}}}}
+
+{{{{{
+;; Unboxed borrow entry point with local vars, for-loop, try, and non-record scalar param
+def heavyLoop = fn (a: Vec3, s: int): double -> (
+    def acc = 0.0
+    for k in list(1, 2) then (
+        def t = (a.x + double(k)) * double(s) + a.y * a.z
+        acc = acc + t + a.x - a.y + a.z
+    )
+    try ( if s < 0 then ( assert(false) ) ; acc + a.x * a.y * a.z ) catch e then ( 0.0 )
+)
+assert(heavyLoop(Vec3(1.0, 2.0, 3.0), 2) == 32.0)
+}}}}}
+
+{{{{{
+;; Projection beta-reduction through move, freeze, and cross-module record construction
+def m = import("vec_mod.ba")
+def run = fn (): double -> (
+    def a = m.ExtVec(2.0, 5.0).x
+    def b = freeze(Vec3(3.0, 4.0, 5.0)).y
+    def h = Holder(list(1), 7)
+    a + b + double(move(h).count)
+)
+assert(run() == 13.0)
+}}}}}
+
+{{{{{
+;; FBIP record reuse via explicit return and block tail
+def bumpRet = fn (unique h: Holder): Holder -> ( return Holder(h.items, h.count + 1) )
+def bumpBlk = fn (unique h: Holder): Holder -> ( def n = h.count + 2 ; Holder(h.items, n) )
+assert(bumpRet(Holder(list(1), 1)).count == 2 and bumpBlk(Holder(list(1), 1)).count == 3)
+}}}}}
+
+{{{{{
+;; FBIP record reuse disqualifier when unique parameter escapes before tail construction
+def esc = fn (unique h: Holder): Holder -> ( def xs = list(h) ; Holder(xs.get(0).items, h.count + 1) )
+assert(esc(Holder(list(1), 9)).count == 10)
+}}}}}
+
+{{{{{
+;; Non-record compiled class method inlining vs named-arg call & self-recursive borrow fn
+def C = class (def x: int) (
+    def add = fn (a: int, b: int): int -> ( this.x + a + b )
+)
+def rec = fn (v: Vec3, n: int): double -> ( if n == 0 then ( v.x ) else ( recurse(v, n - 1) + v.y ) )
+def run = fn (): double -> (
+    def c = C(10)
+    double(c.add(b: 3, a: 2) + c.add(1, 2)) + rec(Vec3(1.0, 2.0, 0.0), 3)
+)
+assert(run() == 35.0)
+}}}}}
+
+{{{{{
+;; LICM on non-inlined pure record method call
+def B = record (x: double, y: double) (
+    def c = fn (a: double): double -> (
+        def t = this.x + this.y + a
+        (t + a) * (t + 1.0) + (t + 2.0) * (t + 3.0) + (t + 4.0) * (t + 5.0) + t * 2.0
+    )
+)
+def r = fn (): double -> (
+    def b = B(1.0, 2.0) ; def s = 0.0 ; def i = 0
+    while i < 3 then ( s = s + b.c(1.0) ; i = i + 1 )
+    s
+)
+assert(r() == 441.0)
+}}}}}
+
+{{{{{
+;; LICM on frozen mutable class field read
+def X = class (def v: int) ()
+def r = fn (): int -> (
+    def f = freeze(X(5)) ; def s = 0 ; def i = 0
+    while i < 3 then ( s = s + f.v ; i = i + 1 )
+    s
+)
+assert(r() == 15)
+}}}}}
+
+{{{{{
+;; LICM on pure interface call with args : immutable record hoisted, mutable class not hoisted
+def Op = interface ( def f: fn (int): int )
+def IO = record (k: int) implements Op ( def f = fn (n: int): int -> ( this.k + n ) )
+def MO = class (def k: int) implements Op ( def f = fn (n: int): int -> ( this.k + n ) )
+def r = fn (a: Op, b: Op): int -> (
+    def s = 0 ; def i = 0
+    while i < 3 then ( s = s + a.f(2) + b.f(2) ; i = i + 1 )
+    s
+)
+assert(r(IO(10), MO(20)) == 102)
+}}}}}
+
+{{{{{
+;; LICM invariant operand checks with top-level NameRead and freeze/as expressions
+def TOP_K = 7
+def run = fn (x: int): double -> (
+    def s = 0.0 ; def i = 0
+    while i < 3 then (
+        def v = freeze(Vec3(double(x), 1.0, 0.0))
+        s = s + double(TOP_K) + (x as double) + v.x
+        i = i + 1
+    )
+    s
+)
+assert(run(3) == 39.0)
+}}}}}
+
+{{{{{
+;; FBIP reuse disqualifiers : reassigned unique param and reordered named args
+def f1 = fn (unique h: Holder): Holder -> ( h = Holder(h.items, h.count + 1) ; Holder(h.items, h.count) )
+def f2 = fn (unique h: Holder): Holder -> ( return Holder(count: h.count + 1, items: h.items) )
+assert(f1(Holder(list(1), 1)).count == 2 and f2(Holder(list(1), 2)).count == 3)
+}}}}}
+
+{{{{{
+;; FBIP reuse disqualifier : non-reuse branches and mismatched record type
+def O = record (xs: list of int, n: int) ()
+def f1 = fn (unique h: Holder, fl: bool): int -> ( if fl then ( h.count ) else ( 0 ) )
+def f2 = fn (unique h: Holder): O -> ( O(h.items, h.count + 1) )
+assert(f1(Holder(list(1), 5), true) == 5 and f2(Holder(list(1), 4)).n == 5)
+}}}}}
+
+{{{{{
+;; FBIP reuse disqualifier : cross-module unique record parameter
+def m = import("vec_mod.ba")
+def f = fn (unique v: m.ExtVec): m.ExtVec -> ( m.ExtVec(v.x + 1.0, v.y) )
+assert(f(m.ExtVec(2.0, 3.0)).x == 3.0)
+}}}}}
+
+{{{{{
+;; SROA with freeze/move RHS, non-candidate param copy, non-record call, and one-armed if
+def mk = fn (x: double): Vec3 -> ( def s = x + 1.0 ; def t = s * 2.0 + s * 3.0 + s * 4.0 + s * 5.0 ; Vec3(t, x, 0.0) )
+def r = fn (p: Vec3, fl: bool): double -> (
+    def a = freeze(Vec3(1.0, 2.0, 3.0)) ; def h = Holder(list(1), 4) ; def b = move(h)
+    def c = p ; def d = mk(1.0)
+    if fl then ( discard(a.x) )
+    a.y + double(b.count) + c.x + d.x
+)
+assert(r(Vec3(5.0, 0.0, 0.0), true) == 39.0)
+}}}}}
+
+{{{{{
+;; Class method inlining with constructor statements : safe this.field init vs leaking this
+def Safe = class (def x: int) (
+    def y = this.x + 1
+    def get = fn (): int -> ( this.y )
+)
+def Leak = class (def x: int) (
+    def box = list(this)
+    def get = fn (): int -> ( this.x )
+)
+def r = fn (): int -> ( Safe(4).get() + Leak(5).get() )
+assert(r() == 10)
+}}}}}
+
+{{{{{
+;; Inlining with parameter reassignment, widening read, for loop, and move inside callee
+def f = fn (x: int): double -> (
+    def s = 0
+    for k in list(1, 2) then ( s = s + k )
+    x = x + s
+    x + 0.5
+)
+def r = fn (): double -> ( def a = 3 ; f(a) + f(1) )
+assert(r() == 11.0)
+}}}}}
+
+{{{{{
+;; Projection beta-reduction with primitive widening (int -> double) and value-used local record def
+def P = record (a: int, b: double) ()
+def mk = fn (): P -> ( def p = P(3, 4) )
+def r = fn (): double -> (
+    def x: double = P(3, 4).a
+    def y = P(3, 4).b
+    x + y + double(mk().a)
+)
+assert(r() == 10.0)
+}}}}}
+
+{{{{{
+;; Inlining with capturing borrow lambda and receiver var reassigned in call arg
+def Box = class (def v: int) (
+    def add = fn (n: int): int -> ( this.v + n )
+)
+def ap = fn (f: fn (int, int): int): int -> ( f(3, 2) )
+def r = fn (): int -> (
+    def b = Box(10) ; def k = 5
+    b.add(( b = Box(20) ; 1 )) + b.v + ap(fn (a: int, c: int): int -> ( a - c + k ))
+)
+assert(r() == 37)
+}}}}}
+
+{{{{{
+;; Try expression inside RecordNew and RecordReuse arguments (stack-empty normalization)
+def bump = fn (unique h: Holder, fl: bool): Holder -> (
+    Holder(h.items, try ( if fl then ( assert(false) ) ; h.count + 1 ) catch e then ( 9 ))
+)
+def r = fn (fl: bool): double -> (
+    def v = Vec3(1.0, try ( if fl then ( assert(false) ) ; 2.0 ) catch e then ( 8.0 ), 3.0)
+    v.y + double(bump(Holder(list(1), 4), fl).count)
+)
+assert(r(false) == 7.0 and r(true) == 17.0)
+}}}}}
+
+{{{{{
+;; Try expression inside ThisFieldAssign and DirectThisMethodCall
+def Box = class (def v: int) (
+    def put = fn mut (fl: bool): int -> ( this.v = try ( if fl then ( assert(false) ) ; 7 ) catch e then ( 8 ) ; this.v )
+    def add = fn (n: int): int -> ( this.v + n )
+)
+def r = fn (fl: bool): int -> ( def b = Box(1) ; b.put(fl) ; b.add(try ( if fl then ( assert(false) ) ; 2 ) catch e then ( 3 )) )
+assert(r(false) == 9 and r(true) == 11)
+}}}}}
+
+{{{{{
+;; Try expression inside top-level NameAssign
+def top = 0
+def r = fn io (fl: bool): int -> ( top = try ( if fl then ( assert(false) ) ; 10 ) catch e then ( 20 ) ; top )
+assert(r(false) == 10 and r(true) == 20)
+}}}}}
