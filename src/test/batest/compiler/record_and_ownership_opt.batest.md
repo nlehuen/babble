@@ -38,6 +38,18 @@ def run = fn (n: int): double -> (
 assert(run(10) == 135.0)
 ```
 
+```hir -O0 fn=run check
+contains (record-new Vec3
+contains .swap
+contains .dot
+```
+
+```hir -O1 fn=run check
+!contains record-new
+!contains .swap
+!contains .dot
+```
+
 ## Direct projection beta-reduction with named/reordered args and widening
 
 ```babble
@@ -47,6 +59,14 @@ def f = fn (a: int, b: int): double -> (
 )
 assert(f(2, 4) == 342.0)
 assert(Vec3(1.0, 2.0, 3.0).y == 2.0)
+```
+
+```hir -O0 fn=f check
+contains (record-new Vec3
+```
+
+```hir -O1 fn=f check
+!contains record-new
 ```
 
 ## Projection beta-reduction must preserve left-to-right side effects of dropped siblings
@@ -174,12 +194,37 @@ def run = fn (): bool -> (
 assert(run())
 ```
 
+```hir -O0 fn=bumpH check
+count 2 (record-new Holder
+!contains record-reuse
+```
+
+```hir -O1 fn=bumpH check
+count 2 (record-reuse var(h) Holder
+!contains record-new
+```
+
+```hir -O1 fn=bumpV check
+contains (record-new Vec3
+!contains record-reuse
+```
+
 ## Borrow-lambda higher-order devirtualization and inlining
 
 ```babble
 def applyTwice = fn (x: int, f: fn (int): int): int -> ( f(f(x)) )
 def run = fn (x: int): int -> ( applyTwice(x, fn (v: int): int -> ( v * 2 + 1 )) )
 assert(run(3) == 15)
+```
+
+```hir -O0 fn=run check
+contains (call-fn applyTwice
+contains (fn-ref
+```
+
+```hir -O1 fn=run check
+!contains (call-fn applyTwice
+!contains (fn-ref
 ```
 
 ## Cross-module record construction, field access, operator & method direct dispatch
@@ -209,6 +254,16 @@ def run = fn (m: frozen Metric, b: Box, n: int): int -> (
     s
 )
 assert(run(Box(5), Box(3), 4) == 58)
+```
+
+```hir -O0 fn=run check
+contains (def unused
+!contains $licm
+```
+
+```hir -O1 fn=run check
+!contains (def unused
+contains (def $licm0
 ```
 
 ## Overloaded operator methods on a compiled record

@@ -4,7 +4,7 @@ import java.util.Objects;
 
 /**
  * Immutable snapshot of an IR tier captured at a specific optimization level and pipeline stage
- * ({@code BIP029-P1}, {@code BIP029-D6}).
+ * ({@code BIP029-I1}, {@code BIP029-D6}).
  *
  * @param tier         IR tier ({@link IrTier#HIR} or {@link IrTier#MIR})
  * @param moduleKey    logical module key if compiling a module, or {@code null} for main scripts

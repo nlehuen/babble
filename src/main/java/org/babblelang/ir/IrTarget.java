@@ -3,7 +3,7 @@ package org.babblelang.ir;
 import java.util.Objects;
 
 /**
- * Target slice selector for canonical IR dumping ({@code BIP029-P1}, {@code BIP029-D7}).
+ * Target slice selector for canonical IR dumping ({@code BIP029-I1}, {@code BIP029-D7}).
  *
  * <p>Syntax used in {@code .batest.md} headers and CLI tools:
  * <ul>

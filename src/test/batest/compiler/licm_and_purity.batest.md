@@ -470,3 +470,43 @@ def run = fn (p: byte): bool -> (
 )
 assert(run(byte(1)))
 ```
+
+## Canonical HIR golden : loop-invariant Math.cos hoisted to preheader (-O0 vs -O1)
+
+```babble
+def sumScaled = fn (n: int, angle: double): double -> (
+    def i = 0
+    def acc = 0.0
+    while i < n then (
+        acc += java.lang.Math.cos(angle) * 2.0
+        i += 1
+    )
+    acc
+)
+assert(sumScaled(4, 0.0) == 8.0)
+```
+
+```hir -O0 fn=sumScaled
+fn sumScaled (n:int, angle:double) -> double {nothrow unique}
+  (def i 0:int)
+  (def acc 0.0:double)
+  (while (<:bool var(i) var(n))
+    (block
+      (set acc += (*:double (jcall Math.cos var(angle)) 2.0:double))
+      (set i += 1:int)))
+  var(acc)
+```
+
+```hir -O1 fn=sumScaled
+fn sumScaled (n:int, angle:double) -> double {nothrow unique}
+  (def i 0:int)
+  (def acc 0.0:double)
+  (block
+    (def $licm0 (*:double (jcall Math.cos var(angle)) 2.0:double))
+    (while (<:bool var(i) var(n))
+      (block
+        (set acc += var($licm0))
+        (set i += 1:int))))
+  var(acc)
+```
+

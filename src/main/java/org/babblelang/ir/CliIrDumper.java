@@ -9,7 +9,7 @@ import java.util.Locale;
 
 /**
  * CLI {@code -Dbabble.dumpIr} observer backed by the unified {@link IrObserver} pipeline
- * ({@code BIP029-P1}, {@code BIP029-D6}).
+ * ({@code BIP029-I1}, {@code BIP029-D6}).
  */
 public final class CliIrDumper {
     private CliIrDumper() {

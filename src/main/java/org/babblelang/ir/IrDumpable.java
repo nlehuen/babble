@@ -2,7 +2,7 @@ package org.babblelang.ir;
 
 /**
  * Unified printable IR contract implemented by {@code HirModule} and upcoming {@code BIP014-P3}
- * {@code MirModule} ({@code BIP029-P1}).
+ * {@code MirModule} ({@code BIP029-I1}).
  */
 public interface IrDumpable {
     IrTier tier();

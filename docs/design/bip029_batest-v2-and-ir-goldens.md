@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 029 |
 | **Date** | 2026-11-23 |
-| **Status** | Decided (`BIP029-Q1`–`Q10` → `BIP029-D1`–`D10` settled; `BIP029-P1`–`P4` planned) |
+| **Status** | Implemented (`BIP029-Q1`–`Q10` → `BIP029-D1`–`D10` settled; `BIP029-I1`–`I4` implemented) |
 | **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), ANTLR-free `HIR`, `HirPrinter`, `-O0`/`-O1` Nanopass pipeline (`BIP014-I1`–`I2`, `BIP014-I4`, `BIP014-D9`), and planned Tier 2 SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md), `BIP014-P3`, `BIP014-P5`), unified E-graph pass ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md), `BIP027-I2`), `HirTryNormalize` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
 | **Scope** | Redesigned, readable, extensible `.batest.md` v2 specification format (named `##` cases, prose documentation, explicit `stdout`/`stderr`/`error` blocks with uniform `DOTALL` `regex` flag, case-scoped virtual modules, `babble session` inputs, extensible IR/artifact blocks); unified compiler IR dumping & observation architecture (`IrTier`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) spanning `HIR` (`-O0`/`-O1`/`-O2`) and upcoming `BIP014-P3` SSA `MIR` (`-O2`, `before`/`after:<Pass>`/`final`); canonical preamble- and ID-independent printers (`HirCanonicalPrinter` and the `MirCanonicalPrinter` contract); 3-JVM/4-JVM Surefire and `-Pbatest` `BatestCoverageReporter` integration; guarded IR-only update mode (`-Dbatest.updateIr=true`); and lossless migration of all 103 existing `.batest` files (`2,060` cases) to `.batest.md` |
 
@@ -140,7 +140,7 @@ fn newton (p0: double) -> double:
 
 | Format / Tool | Representative | Strengths (`+`) | Weaknesses / Lessons for Babble (`-`) |
 |---|---|---|---|
-| **Constrained Markdown Fenced Specs (`.batest.md`)** *(Selected — `BIP029-D1`, `BIP029-D2`)* | Rustdoc, Zig/Dart spec tests, CommonMark literate tests | `+` Renders natively on GitHub, VS Code, IntelliJ, and LLM UIs with syntax highlighting.<br>`+` One uniform extensible block grammar (```` ```<kind> [attrs...] ````) handles Babble code, modules, sessions, `stdout`, `stderr`, `error`, `hir`, `mir`, future `bytecode`/`wat`.<br>`+` Built-in escaping via fence length (```` ```` ````) — zero delimiter collisions with *any* output or code.<br>`+` Named `##` cases and free prose documentation outside fences. | `-` Adds a closing ```` ``` ```` line per block.<br>`-` Requires a one-shot mechanical migration of the 103 existing v1 `.batest` files (`BIP029-P3`). |
+| **Constrained Markdown Fenced Specs (`.batest.md`)** *(Selected — `BIP029-D1`, `BIP029-D2`)* | Rustdoc, Zig/Dart spec tests, CommonMark literate tests | `+` Renders natively on GitHub, VS Code, IntelliJ, and LLM UIs with syntax highlighting.<br>`+` One uniform extensible block grammar (```` ```<kind> [attrs...] ````) handles Babble code, modules, sessions, `stdout`, `stderr`, `error`, `hir`, `mir`, future `bytecode`/`wat`.<br>`+` Built-in escaping via fence length (```` ```` ````) — zero delimiter collisions with *any* output or code.<br>`+` Named `##` cases and free prose documentation outside fences. | `-` Adds a closing ```` ``` ```` line per block.<br>`-` Requires a one-shot mechanical migration of the 103 existing v1 `.batest` files (`BIP029-I3`). |
 | **Line-Headed Section Format (`===` / `---`)** | Go `txtar`, Tree-sitter corpus, Cranelift `.clif` | `+` Slightly fewer closing delimiter lines. | `-` No built-in escaping if stdout or multiline strings contain `---`/`===`; plain text in GitHub/editors; prose needs `;;` prefixes. |
 | **LLVM `FileCheck` + `update_test_checks.py`** | LLVM `opt` tests | `+` Function-scoped checks + automated bless tool; supports targeted negative checks (`CHECK-NOT`). | `-` Embedding `; CHECK:` inside Babble source pollutes source code; adopted instead as an opt-in `check` block flag (`BIP029-D4`). |
 | **Sidecar Golden Files (`.mir` / `.hir`)** | rustc `tests/mir-opt/` | `+` Separates source and IR dumps. | `-` Fragments one logical test across multiple files, hurting `.batest`'s single-file auditability (`src/test/batest/AGENTS.md`). |
@@ -255,7 +255,7 @@ Readability budgets (`src/test/batest/AGENTS.md`) remain enforced by `BatestPars
     - `!contains <substring>` — substring does not appear anywhere
     - `count <N> <substring>` — substring appears exactly `N` times
     - `regex <pattern>` — `Pattern.compile(pattern, Pattern.MULTILINE | Pattern.DOTALL).matcher(actual).find()` matches
-- **Session cases (`babble session`):** IR blocks are disallowed on multi-input session cases in `BIP029-P2` (parse error) to avoid ambiguity over which session input's module is captured.
+- **Session cases (`babble session`):** IR blocks are disallowed on multi-input session cases in `BIP029-I2` (parse error) to avoid ambiguity over which session input's module is captured.
 
 Example using `check` mode and `stage=after:<Pass>` for a `BIP014-P3` MIR pass:
 
@@ -412,10 +412,10 @@ Safety guardrails (preserving `BIP009` §2.2's prohibition against blind behavio
 
 ### 5.4 Coexistence & Lossless Migration of All 103 Existing `.batest` Files (`BIP029-D10`)
 
-To guarantee zero regressions while introducing `.batest.md`, v1 (`.batest`) and v2 (`.batest.md`) **explicitly coexist during `BIP029-P2` and `BIP029-P3`** (strangler-fig rollout):
+To guarantee zero regressions while introducing `.batest.md`, v1 (`.batest`) and v2 (`.batest.md`) **explicitly coexist during `BIP029-I2` and `BIP029-I3`** (strangler-fig rollout):
 
-1. **Coexistence in `BIP029-P2`:** `BatestTestCase` discovers both `*.batest` (parsed by the existing v1 parser, completely untouched) and `*.batest.md` (parsed by the new v2 parser) into a unified `BatestFile` / `BatestCase` model. All 103 existing `.batest` files (`2,060` cases) continue running unchanged alongside new `.batest.md` tests and `BatestHarnessTestCase` suites, proving the v2 infrastructure breaks nothing before a single legacy test is touched.
-2. **Lossless migration in `BIP029-P3`:** A deterministic migrator converts all 103 v1 `.batest` files (`2,060` cases) to `.batest.md` (verifiable directory-by-directory under coexistence):
+1. **Coexistence in `BIP029-I2`:** `BatestTestCase` discovers both `*.batest` (parsed by the existing v1 parser, completely untouched) and `*.batest.md` (parsed by the new v2 parser) into a unified `BatestFile` / `BatestCase` model. All 103 existing `.batest` files (`2,060` cases) continue running unchanged alongside new `.batest.md` tests and `BatestHarnessTestCase` suites, proving the v2 infrastructure breaks nothing before a single legacy test is touched.
+2. **Lossless migration in `BIP029-I3`:** A deterministic migrator converts all 103 v1 `.batest` files (`2,060` cases) to `.batest.md` (verifiable directory-by-directory under coexistence):
    - **Header & preamble:** Leading file `;;` comments become `# <Title>` + prose; remaining preamble Babble code becomes ` ```babble preamble ` (preserving `large="..."` from `;; LARGE: <reason>`).
    - **Virtual modules:** Each `========== path.ba ==========` block becomes ` ```babble module=path.ba `.
    - **Case headings:** Each case's leading `;;` description comment becomes `## <Case Name>` (disambiguated cleanly if repeated within a file); cases without a leading comment receive a concise descriptive heading.
@@ -438,19 +438,19 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 - **`BIP029-D7` (resolves `BIP029-Q7`) — `class=` / `record=` target includes owned methods:** `class=Foo` / `record=Foo` prints the type header, body/init statements, and directly owned methods in declaration order; `fn=Foo.bar` targets a single method.
 - **`BIP029-D8` (resolves `BIP029-Q8`) — Skip unmatched optimization levels:** IR blocks whose `<opt-levels>` do not include the active run are skipped (so a case may specify only `-O1`, both `-O0` and `-O1`, `-O0,-O1`, or future `-O2` `mir`).
 - **`BIP029-D9` (resolves `BIP029-Q9`) — Guarded `-Dbatest.updateIr=true` fails loudly after writing:** Rewrite only exact-golden `hir`/`mir` blocks on behaviorally-passing verified cases, then fail the test run with a summary of modified files/blocks so CI can never pass silently with auto-blessing enabled.
-- **`BIP029-D10` (resolves `BIP029-Q10`) — Coexistence, full migration to `.batest.md`, v1 retirement, and `OptimizerTestCase` cleanup:** Coexist v1 `.batest` and v2 `.batest.md` parsers in `BIP029-P2` so all 103 existing `.batest` files stay untouched while v2 is proven end-to-end; migrate all 103 `.batest` files (`2,060` cases) to `.batest.md` in `BIP029-P3` and retire the v1 parser once verified; then add compiler HIR goldens and clean up redundant HIR substring checks in [`OptimizerTestCase`](../../src/test/java/org/babblelang/tests/OptimizerTestCase.java) in `BIP029-P4` (keeping API/AOT/bytecode tests in `OptimizerTestCase`).
+- **`BIP029-D10` (resolves `BIP029-Q10`) — Coexistence, full migration to `.batest.md`, v1 retirement, and `OptimizerTestCase` cleanup:** Coexist v1 `.batest` and v2 `.batest.md` parsers in `BIP029-I2` so all 103 existing `.batest` files stay untouched while v2 is proven end-to-end; migrate all 103 `.batest` files (`2,060` cases) to `.batest.md` in `BIP029-I3` and retire the v1 parser once verified; then add compiler HIR goldens and clean up redundant HIR substring checks in [`OptimizerTestCase`](../../src/test/java/org/babblelang/tests/OptimizerTestCase.java) in `BIP029-I4` (keeping API/AOT/bytecode tests in `OptimizerTestCase`).
 
 ---
 
 ## 7. Phased Implementation Plan
 
-### `BIP029-P1` — Unified IR Observation Pipeline (`HIR` + `MIR`-Ready) & `HirCanonicalPrinter`
+### `BIP029-I1` — Unified IR Observation Pipeline (`HIR` + `MIR`-Ready) & `HirCanonicalPrinter`
 - Create `org.babblelang.ir` core abstractions: `IrTier` (`HIR`, `MIR`), `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver` (ANTLR-free, zero `org.babblelang.runtime` references).
 - Implement `org.babblelang.ir.hir.HirCanonicalPrinter` (`HirModule implements IrDumpable`) with target resolution (`fn=`, `fn=Type.m`, `class=`/`record=`/`interface=`, `top-level`, `module`), local variable/temp renumbering, symbolic call/type names, `Script$N$` stripping, and structured 2-space indentation (`BIP029-D5`, `BIP029-D7`).
 - Wire per-engine `BabbleCompiler.IR_OBSERVER` into `BabbleCompiler` and `PassManager` (`before`, `after:<PassName>`, `final`), gated lazily by `observer.wants(...)`, and unify `-Dbabble.dumpIr` onto the same `IrObserver` mechanism (`BIP029-D6`).
 - Add `HirCanonicalPrinterTestCase` verifying preamble-independence, shadowed locals, synthetic temp renumbering, `after:<Pass>` hooks, and `ArchitectureBoundaryTestCase` / `RuntimeBoundaryTestCase` compliance.
 
-### `BIP029-P2` — `.batest.md` v2 Parser & Harness Coexisting with v1 `.batest`
+### `BIP029-I2` — `.batest.md` v2 Parser & Harness Coexisting with v1 `.batest`
 - Add the `.batest.md` v2 parser alongside the existing v1 `.batest` parser (`BatestParser` dispatches by extension `.batest` vs. `.batest.md`, and `BatestTestCase` discovers both `*.batest` and `*.batest.md` files).
 - Support `#`/`##` headings, prose outside fences, fenced blocks (`babble`, `babble preamble`, `babble module=`, `babble session`, `stdout`, `stderr`, `error`, `hir`, `mir`), `regex` (`MULTILINE | DOTALL`), `check` predicates, `large="..."` budget overrides, case-scoped virtual modules, and strict parse-time validation (`BIP029-D1`–`D4`).
 - Extend `BatestFilter` with case-name matching (`file@name`) alongside `#index` and `:line`.
@@ -458,12 +458,12 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 - Update `BatestCoverageReporter` to display case names and report IR mismatches distinctly from behavioral divergences.
 - Implement guarded `-Dbatest.updateIr=true` bless mode (`BIP029-D9`), comprehensive v2 unit tests in `BatestHarnessTestCase`, and initial `.batest.md` smoke/IR-golden files while proving all 103 untouched v1 `.batest` files pass with 100% parity and coverage.
 
-### `BIP029-P3` — Automated Lossless Migration of All 103 `.batest` Files to `.batest.md` & v1 Retirement
+### `BIP029-I3` — Automated Lossless Migration of All 103 `.batest` Files to `.batest.md` & v1 Retirement
 - Run the automated migrator across all 103 v1 `.batest` files (`2,060` cases), classifying `stdout` / `stderr` / `error` directly from the 3-way oracle and promoting leading `;;` descriptions to `## <Case Name>` headings (`BIP029-D10`).
 - Verify 100% pass rate, `0` divergences, and unchanged `>= 75%` 5-scope branch coverage in `mvn -q verify -Pbatest` with all files on `.batest.md`.
 - Once verified, retire the v1 `.batest` parser cleanly and update `src/test/batest/AGENTS.md` to document `.batest.md` authoring guidelines.
 
-### `BIP029-P4` — Compiler HIR Goldens, `OptimizerTestCase` Cleanup & Docs
+### `BIP029-I4` — Compiler HIR Goldens, `OptimizerTestCase` Cleanup & Docs
 - Add `-O0` vs. `-O1` and `-O0,-O1` canonical HIR golden blocks across `src/test/batest/compiler/*.batest.md` (`const_fold`, `algebraic_simplify`, `inlining_and_dce`, `licm_and_purity`, `record_and_ownership_opt`, `try` dead-catch elimination), including `stage=after:<Pass>` and `check` examples.
 - Clean up redundant HIR substring checks in `OptimizerTestCase` while preserving API (`PassManager`, `-Dbabble.dumpIr`), `babblec` `AOT_CROSS_MODULE`, and ASM bytecode tests (`BIP029-D10`).
 - Update `AGENTS.md`, `docs/ARCHITECTURE.md`, and `docs/design/README.md`, and cross-link `BIP014-P3` to implement `MirModule implements IrDumpable` + `MirCanonicalPrinter` against `BIP029`'s `IrObserver` contract.
