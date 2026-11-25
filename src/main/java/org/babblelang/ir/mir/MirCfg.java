@@ -79,6 +79,9 @@ public final class MirCfg {
             }
         }
 
+        // Shared by every user of a cached analysis : read-only from now on.
+        preds.replaceAll((id, list) -> List.copyOf(list));
+
         // Cooper-Harvey-Kennedy iterative dominator algorithm on RPO indices.
         int n = rpo.size();
         this.idomRpo = new int[n];
@@ -117,8 +120,29 @@ public final class MirCfg {
         }
     }
 
+    /** The analyses of the functions of the current {@link #withCache} scope, by identity. */
+    private static final ThreadLocal<Map<MirFunction, MirCfg>> CACHE = new ThreadLocal<>();
+
     public static MirCfg analyze(MirFunction fn) {
-        return new MirCfg(fn);
+        Map<MirFunction, MirCfg> cache = CACHE.get();
+        return cache == null ? new MirCfg(fn) : cache.computeIfAbsent(fn, MirCfg::new);
+    }
+
+    /**
+     * Runs {@code body} with {@link #analyze} keeping the analysis of each function it sees :
+     * functions are immutable, so the passes of a pipeline that leave a function as is share one
+     * analysis of it instead of computing it again each.
+     */
+    public static <T> T withCache(java.util.function.Supplier<T> body) {
+        if (CACHE.get() != null) {
+            return body.get();
+        }
+        CACHE.set(new java.util.IdentityHashMap<>());
+        try {
+            return body.get();
+        } finally {
+            CACHE.remove();
+        }
     }
 
     private static List<Integer> computeSuccessors(MirBlock b) {
