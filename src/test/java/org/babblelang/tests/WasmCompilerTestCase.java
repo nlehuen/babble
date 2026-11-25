@@ -1068,4 +1068,323 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals("\"16x9\"", out.resultJson());
         Assertions.assertEquals("pixels=144,rows=9,bad=0\n", out.stdout());
     }
+
+    // ---------------------------------------------------------------- BIP025 Review Regression Tests
+
+    @Test
+    public void finallyTwoCopyWithLocalCaptureOnUnwind() throws Exception {
+        String code = """
+                def log: list of int = list()
+                def run = fn io (boom: bool): int -> (
+                    try (
+                        if boom then (throw exception("kaboom"))
+                        10
+                    ) finally (
+                        def x = 5
+                        def bump = fn io (): int -> (x += 1; x)
+                        log.add(bump())
+                        log.add(bump())
+                    )
+                )
+                assert(run(false) == 10)
+                def caught = false
+                try (
+                    run(true)
+                ) catch e then (
+                    caught = (string(e).contains("kaboom"))
+                )
+                assert(caught)
+                assert(log == list(6, 7, 6, 7))
+                log.size()
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Finally two-copy capture test failed : " + out.error());
+        Assertions.assertEquals("\"4\"", out.resultJson());
+    }
+
+    @Test
+    public void arrayTypeChecksBoxedNullableAndSetReturnsNull() throws Exception {
+        String code = """
+                def ia = (array of int).of(1, 2, 3)
+                assert(ia is (array of int))
+                assert(not (ia is (array of double)))
+                assert(not (ia is (array of any)))
+                assert(not (ia is java.lang.Iterable))
+                assert(ia.set(1, 99) == null)
+                assert(ia.get(1) == 99)
+
+                def anyArr: any = ia
+                assert((anyArr as (array of int)).get(1) == 99)
+
+                def sa = (array of string).of("a", "b")
+                assert(sa is (array of string))
+                assert(sa is (array of any))
+                assert(sa.set(0, "z") == null)
+                assert(sa.get(0) == "z")
+
+                def nia = (array of int?)(2)
+                nia.set(0, 7)
+                nia.set(1, null)
+                assert(nia is (array of int?))
+                assert(not (nia is (array of int)))
+                assert(nia.get(0) == 7 and nia.get(1) == null)
+
+                def nested = (array of (array of int)).of(ia)
+                assert(nested is (array of (array of int)))
+                assert(nested.get(0).get(1) == 99)
+
+                ;; Covariant RefArray store check rejects wrong runtime element type
+                def badStoreFailed = false
+                try (
+                    def cov: array of any = sa
+                    cov.set(0, 123)
+                ) catch e then (
+                    badStoreFailed = true
+                )
+                assert(badStoreFailed)
+                nia.get(0)
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Array type check & set test failed : " + out.error());
+        Assertions.assertEquals("\"7\"", out.resultJson());
+    }
+
+    @Test
+    public void userReplaceSafeCallNamedArgsAndOptDefaultClosureCapture() throws Exception {
+        String code = """
+                def Box = class (def v: int) (
+                    def replace = fn mut (a: int, b: int): int -> (this.v = a + b; this.v)
+                    def combine = fn (a: int, b: int): int -> (a * 10 + b)
+                )
+                def b: Box? = Box(1)
+                assert(b?.replace(3, 4) == 7)
+                assert(b?.combine(b: 2, a: 5) == 52)
+                def nb: Box? = null
+                assert(nb?.combine(b: 2, a: 5) == null)
+
+                def st: (set of int)? = set(1, 2, 3)
+                assert(st?.size() == 3)
+                def mp: (map of (string, int))? = map(entry("a", 1))
+                assert(mp?.size() == 1 and mp?.isEmpty() == false)
+
+                ;; Optional-default closure shares the parameter capture cell
+                def mk = fn volatile (x: int = 1, reader: fn volatile (): int = fn volatile (): int -> (x)): int -> (
+                    x = x + 10
+                    reader()
+                )
+                assert(mk(5) == 15)
+                assert(mk() == 11)
+
+                ;; Same for class constructor parameter
+                def Holder = class (x: int = 2, def getter: fn volatile (): int = fn volatile (): int -> (x)) (
+                    x = x + 20
+                    def val: int = x
+                )
+                def h = Holder(3)
+                assert(h.val == 23 and h.getter() == 23)
+                h.getter()
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "User replace / safe call / opt-default capture failed : " + out.error());
+        Assertions.assertEquals("\"23\"", out.resultJson());
+    }
+
+    @Test
+    public void dynamicOverloadSetAndOverloadedOperators() throws Exception {
+        String code = """
+                def ov = overload (
+                    fn (x: int): string -> ("int:" + x),
+                    fn (x: string): string -> ("str:" + x),
+                    fn (x: int, y: int): string -> ("pair:" + (x + y))
+                )
+                def callOne = fn (f: fn (x: int): string, v: int): string -> (f(v))
+                assert(callOne(ov, 42) == "int:42")
+                def u1: int | string = 42
+                def u2: int | string = "hi"
+                assert(ov(u1) == "int:42")
+                assert(ov(u2) == "str:hi")
+                assert(ov(3, 4) == "pair:7")
+
+                def Vec = record (x: int) (
+                    def plus = overload (
+                        fn (o: Vec): Vec -> (Vec(this.x + o.x)),
+                        fn (n: int): Vec -> (Vec(this.x + n))
+                    )
+                )
+                def v1 = Vec(10) + Vec(5)
+                def v2 = v1 + 3
+                assert(v2.x == 18)
+                v2.x
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Dynamic overload & operator test failed : " + out.error());
+        Assertions.assertEquals("\"18\"", out.resultJson());
+    }
+
+    @Test
+    public void forwardReferenceRejectedAtRuntime() throws Exception {
+        String code = """
+                def bad = fn (): int -> (later())
+                def caught = false
+                try (
+                    bad()
+                ) catch e then (
+                    caught = true
+                )
+                def later = fn (): int -> (99)
+                assert(caught)
+                assert(later() == 99)
+                later()
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Forward reference test failed : " + out.error());
+        Assertions.assertEquals("\"99\"", out.resultJson());
+    }
+
+    @Test
+    public void stringSplitAndCollectionSafetyInvariants() throws Exception {
+        String code = """
+                ;; String.split parity: empty delimiter, limit == 0, limit > 0, limit < 0
+                assert("ab".split("") == (array of string).of("a", "b"))
+                assert("a,b,,".split(",") == (array of string).of("a", "b"))
+                assert("a,b,,".split(",", -1) == (array of string).of("a", "b", "", ""))
+                assert("a,b,c".split(",", 2) == (array of string).of("a", "b,c"))
+                assert("".split(",") == (array of string).of(""))
+
+                ;; Self-referential collection cycle formatting
+                def cyc: list of any = list()
+                def holder = list(cyc)
+                cyc.add(holder.get(0))
+                assert(string(cyc) == "[(this Collection)]")
+
+                def cm: map of (string, any) = map()
+                def mholder = list(cm)
+                cm.put("self", mholder.get(0))
+                assert(string(cm) == "{self=(this Map)}")
+
+                ;; Array format recovers depth after element toString throws
+                def Boom = class () (
+                    def toString = fn (): string -> (throw exception("boomFmt"))
+                )
+                def badArr = (array of any).of(Boom())
+                def threw = false
+                try (
+                    string(badArr)
+                ) catch e then (
+                    threw = (string(e).contains("boomFmt"))
+                )
+                assert(threw)
+                assert(string((array of int).of(1, 2)) == "[1, 2]")
+
+                ;; list.remove(byte(0)) removes by index
+                def xs = list(10, 20, 30)
+                assert(xs.remove(byte(0)) == 10)
+                assert(xs == list(20, 30))
+
+                ;; keySet.add throws, entry.setValue updates backing map
+                def m = map(entry("k", 1))
+                def ks = m.keySet()
+                def ksThrew = false
+                try (
+                    ks.add("z")
+                ) catch e then (
+                    ksThrew = true
+                )
+                assert(ksThrew)
+                for e in m.entrySet() then (
+                    def prev = e.setValue(42)
+                    assert(prev == 1)
+                )
+                assert(m.get("k") == 42)
+
+                ;; set(from: m.keySet()) must not reuse/corrupt the backing map keySet view
+                def ksCopy = set(from: m.keySet())
+                ksCopy.add("other")
+                assert(m.size() == 1 and ksCopy.size() == 2)
+
+                ;; sortedset natural ordering from list
+                def asc = (sortedset of int)(from: list(3, 1, 2))
+                assert(string(asc) == "[1, 2, 3]")
+
+                ;; subList reuse must not corrupt parent list
+                def base = list(1, 2, 3, 4)
+                def sub = base.subList(1, 3)
+                def copied = list(from: sub)
+                copied.set(0, 99)
+                assert(base == list(1, 2, 3, 4))
+
+                ;; STDOUT.append returns Appendable and writes output
+                STDOUT.append("ok")
+                m.get("k")
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_JS, 1);
+        Assertions.assertTrue(out.ok(), "String split & collection invariants test failed : " + out.error());
+        Assertions.assertEquals("\"42\"", out.resultJson());
+        Assertions.assertEquals("ok", out.stdout());
+    }
+
+    @Test
+    public void unionAsNumericWideningAndBareScientificDouble() throws Exception {
+        String code = """
+                def x: any = 42
+                def u = x as (string | double)
+                assert(u is double and u == 42.0)
+
+                def big = 1.0e20
+                def bigStr = string(big)
+                assert(bigStr.contains("E"))
+                assert(string(1.0e-5).contains("E-"))
+                bigStr
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Union widening & bare scientific double failed : " + out.error());
+        Assertions.assertTrue(out.resultJson().contains("E"), "Expected scientific notation, got : " + out.resultJson());
+    }
+
+    @Test
+    public void jsGlueFormatFloatParseDoubleAndImportMerging(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        String glue = org.babblelang.wasm.WasmJsGlueGen.generate("my \"odd\"\nfile.wasm");
+        Path mjs = dir.resolve("glue_check.mjs");
+        Files.writeString(mjs, glue, StandardCharsets.UTF_8);
+
+        String checkScript = """
+                import { formatJavaFloat, parseJavaDouble, createBabbleImports } from '%s';
+                if (formatJavaFloat(1.401298464324817e-45) !== "1.4E-45") throw new Error("Float.MIN_VALUE mismatch: " + formatJavaFloat(1.401298464324817e-45));
+                if (formatJavaFloat(2.802596928649634e-45) !== "2.8E-45") throw new Error("2*MIN_VALUE mismatch: " + formatJavaFloat(2.802596928649634e-45));
+                const [v1, ok1] = parseJavaDouble("\\u00A01.5");
+                if (ok1 !== 0) throw new Error("NBSP should be rejected, got ok=" + ok1 + " v=" + v1);
+                const [v2, ok2] = parseJavaDouble(" \\t1.5\\n ");
+                if (ok2 !== 1 || v2 !== 1.5) throw new Error("ASCII whitespace should parse, got " + ok2 + "," + v2);
+                const imps = createBabbleImports({ imports: { "babble:env": { extra_hook: () => 7 } } });
+                if (typeof imps["babble:env"].write_stdout !== "function" || imps["babble:env"].extra_hook() !== 7) {
+                  throw new Error("babble:env merge failed");
+                }
+                console.log("GLUE_OK");
+                """.formatted(mjs.toUri().toString());
+        Process p = new ProcessBuilder("node", "--input-type=module", "-e", checkScript)
+                .redirectErrorStream(false).start();
+        String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = p.waitFor();
+        Assertions.assertEquals(0, exit, "JS glue check failed : " + stderr);
+        Assertions.assertEquals("GLUE_OK\n", stdout);
+    }
+
+    @Test
+    public void babblecPortabilityErrorHasSingleErrorPrefix(@TempDir Path dir) throws Exception {
+        Path bad = dir.resolve("bad_port.ba");
+        Files.writeString(bad, "def f = fn io () -> (java.io.File(\"x\"))\nf()\n", StandardCharsets.UTF_8);
+        Path outWasm = dir.resolve("bad_port.wasm");
+        java.io.StringWriter errBuf = new java.io.StringWriter();
+        int status = org.babblelang.Main.run(
+                new String[]{"-compile", "-target", "wasm-js", bad.toString(), "-o", outWasm.toString()},
+                new java.io.BufferedReader(new java.io.StringReader("")),
+                new java.io.PrintWriter(new java.io.StringWriter()),
+                new java.io.PrintWriter(errBuf), false);
+        Assertions.assertEquals(1, status);
+        String err = errBuf.toString();
+        Assertions.assertTrue(err.contains("Error : "), "Expected Error prefix : " + err);
+        Assertions.assertFalse(err.contains("Error : Error : "), "Duplicate Error prefix : " + err);
+    }
 }

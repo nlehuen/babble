@@ -270,4 +270,108 @@ public class WasmWriterTestCase {
         Assertions.assertEquals(1, file.cases().get(0).irExpectations().size());
         Assertions.assertEquals(org.babblelang.ir.IrTier.WAT, file.cases().get(0).irExpectations().get(0).tier());
     }
+
+    @Test
+    public void verifierRejectsPackedLocalsNonConstGlobalsAndBadFieldReads() {
+        // 1. Packed storage type used as function local
+        WasmModule m1 = new WasmModule("bad_local");
+        int ft1 = m1.addFuncType("f", List.of(), List.of());
+        WasmModule.FuncDef fn1 = m1.addFunction("f", ft1);
+        fn1.addLocal("bad", WasmValType.I8, 0);
+        Assertions.assertThrows(IllegalStateException.class, () -> WasmVerifier.verify(m1));
+
+        // 2. Non-constant instruction (call) inside GlobalDef.init()
+        WasmModule m2 = new WasmModule("bad_global_init");
+        int ft2 = m2.addFuncType("f", List.of(), List.of(WasmValType.I32));
+        WasmModule.FuncDef fn2 = m2.addFunction("f", ft2);
+        fn2.code().i32Const(1);
+        m2.addGlobal("g", WasmValType.I32, false, List.of(new WasmInstr.Idx(WasmInstr.IdxOp.CALL, fn2.funcIndex())));
+        Assertions.assertThrows(IllegalStateException.class, () -> WasmVerifier.verify(m2));
+
+        // 3. struct.get on packed i8 field (must use struct.get_s / struct.get_u)
+        WasmModule m3 = new WasmModule("bad_packed_struct");
+        int st3 = m3.addStructType("S", true, -1, List.of(new WasmTypeDef.Field("b", WasmValType.I8, false)));
+        int ft3 = m3.addFuncType("f", List.of(WasmValType.ref(st3)), List.of(WasmValType.I32));
+        WasmModule.FuncDef fn3 = m3.addFunction("f", ft3);
+        fn3.code().localGet(0).structGet(st3, 0);
+        Assertions.assertThrows(IllegalStateException.class, () -> WasmVerifier.verify(m3));
+
+        // 4. array.get_u on unpacked i32 array
+        WasmModule m4 = new WasmModule("bad_unpacked_arr");
+        int at4 = m4.addArrayType("A", WasmValType.I32, true);
+        int ft4 = m4.addFuncType("f", List.of(WasmValType.ref(at4)), List.of(WasmValType.I32));
+        WasmModule.FuncDef fn4 = m4.addFunction("f", ft4);
+        fn4.code().localGet(0).i32Const(0).arrayGetU(at4);
+        Assertions.assertThrows(IllegalStateException.class, () -> WasmVerifier.verify(m4));
+
+        // 5. Out-of-bounds declaredFuncRefs
+        WasmModule m5 = new WasmModule("bad_funcref");
+        m5.declareFuncRef(99);
+        Assertions.assertThrows(IllegalStateException.class, () -> WasmVerifier.verify(m5));
+
+        // 6. WasmModule rejects empty recGroup and addType while reserved slots exist
+        WasmModule m6 = new WasmModule("bad_rec");
+        m6.reserveTypeIndex();
+        Assertions.assertThrows(IllegalArgumentException.class, () -> m6.commitRecGroup(List.of()));
+        Assertions.assertThrows(IllegalStateException.class, () -> m6.addFuncType("f", List.of(), List.of()));
+    }
+
+    @Test
+    public void writerOmitsEmptyNameSectionAndWatPrinterFormatsSpecialFloats() {
+        WasmModule unnamed = new WasmModule();
+        int ft = unnamed.addFuncType(null, List.of(), List.of(WasmValType.F64));
+        WasmModule.FuncDef fn = unnamed.addFunction(null, ft);
+        fn.code().f64Const(Double.NaN).drop().f64Const(Double.POSITIVE_INFINITY).drop().f64Const(Double.NEGATIVE_INFINITY);
+        WasmVerifier.verify(unnamed);
+
+        byte[] withNames = WasmWriter.encode(unnamed, true);
+        byte[] withoutNames = WasmWriter.encode(unnamed, false);
+        Assertions.assertArrayEquals(withoutNames, withNames, "Empty name section must be omitted");
+
+        String wat = WatPrinter.print(unnamed);
+        Assertions.assertTrue(wat.contains("f64.const nan"), wat);
+        Assertions.assertTrue(wat.contains("f64.const inf"), wat);
+        Assertions.assertTrue(wat.contains("f64.const -inf"), wat);
+    }
+
+    @Test
+    public void portabilityCheckerHardenedRules() throws Exception {
+        var engine = (org.babblelang.engine.BabbleScriptEngine)
+                org.babblelang.engine.BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+
+        // STDIN rejected on wasm-js
+        var stdinMods = engine.compileSourceToHir(
+                "def x = STDIN; x", "stdin.ba", org.babblelang.analysis.CompilationTarget.WASM_JS);
+        var stdinDiags = org.babblelang.wasm.WasmPortabilityChecker.check(
+                stdinMods.stream().map(org.babblelang.engine.BabbleScriptEngine.HirProgramModule::hir).toList(),
+                org.babblelang.analysis.CompilationTarget.WASM_JS);
+        Assertions.assertFalse(stdinDiags.isEmpty(), "Expected STDIN to be rejected on wasm-js");
+
+        // Non-portable Java interface rejected
+        var runMods = engine.compileSourceToHir(
+                "def R = class () implements java.lang.Runnable (def run = fn () -> (null)); R()",
+                "run.ba", org.babblelang.analysis.CompilationTarget.WASM_JS);
+        var runDiags = org.babblelang.wasm.WasmPortabilityChecker.check(
+                runMods.stream().map(org.babblelang.engine.BabbleScriptEngine.HirProgramModule::hir).toList(),
+                org.babblelang.analysis.CompilationTarget.WASM_JS);
+        Assertions.assertFalse(runDiags.isEmpty(), "Expected java.lang.Runnable to be rejected on wasm-js");
+
+        // Shadowed print allowed on wasm-bare
+        var shadowMods = engine.compileSourceToHir(
+                "def print = fn (): int -> (42); print()",
+                "shadow.ba", org.babblelang.analysis.CompilationTarget.WASM_BARE);
+        var shadowDiags = org.babblelang.wasm.WasmPortabilityChecker.check(
+                shadowMods.stream().map(org.babblelang.engine.BabbleScriptEngine.HirProgramModule::hir).toList(),
+                org.babblelang.analysis.CompilationTarget.WASM_BARE);
+        Assertions.assertEquals(List.of(), shadowDiags, "Shadowed print should be allowed on wasm-bare : " + shadowDiags);
+
+        // Unsupported Wasm host import ABI type (list) rejected
+        var abiMods = engine.compileSourceToHir(
+                "axiom wasm.host.bad: fn (xs: list of int): int\nwasm.host.bad(list(1))",
+                "abi.ba", org.babblelang.analysis.CompilationTarget.WASM_JS);
+        var abiDiags = org.babblelang.wasm.WasmPortabilityChecker.check(
+                abiMods.stream().map(org.babblelang.engine.BabbleScriptEngine.HirProgramModule::hir).toList(),
+                org.babblelang.analysis.CompilationTarget.WASM_JS);
+        Assertions.assertFalse(abiDiags.isEmpty(), "Expected non-primitive wasm host import parameter to be rejected");
+    }
 }

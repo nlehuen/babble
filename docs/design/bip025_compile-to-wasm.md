@@ -261,18 +261,7 @@ Look how cleanly every `BIP020` invariant falls out:
 #### Core Collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`, `BIP025-D6`)
 Rather than hand-writing thousands of lines of raw Wasm opcodes for dynamic arrays, hash tables, linked hash maps, and red-black trees (`TreeSet`/`TreeMap`), **`BIP025-D6` writes the Wasm core collections and higher-level string ops in Babble itself**:
 
-* An internal prelude under `src/main/resources/org/babblelang/wasm/prelude/`:
-  * `appendable.ba`: 1-method portable `Appendable` interface (`append(s: string)`) plus `STDOUT`/`STDERR` host-backed implementations (`BIP025-D12`).
-  * `entry.ba`: `record` / `class` `Entry of (K, V)` (`getKey()`, `getValue()`, `equals`, `hashCode`, `toString`).
-  * `list.ba`: `ArrayList of T` backed by `array of T?` with capacity doubling, `add`, `get`, `set`, `remove`, `size`, `isEmpty`, `clear`, `contains`, `indexOf`, `iterator()`, `from:`, `capacity:`, `.of(...)`.
-  * `map.ba` & `set.ba`: insertion-ordered `LinkedHashMap of (K, V)` and `LinkedHashSet of T` (matching `BIP011-D1`'s deterministic iteration order).
-  * `sorted.ba`: `TreeMap of (K, V)` and `TreeSet of T` (left-leaning red-black tree with optional `comparator:`).
-  * `string_ops.ba`: pure-Babble implementations of `split`, `replace`, `trim`, `indexOf`, `startsWith`, `endsWith`, `contains` on top of intrinsic `length`/`charAt`/`substring`.
-* **Benefits:**
-  1. Dogfoods Babble itself and exercises the Wasm compiler on real data-structure code.
-  2. Automatically benefits from every `org.babblelang.opt` `HIR` pass (`HirEGraphSimplifyPass`, `InlinePass`, `ScalarReplacePass`, `HirLicmPass`, `HirDcePass`).
-  3. Can be unit-tested on the JVM `Interpreter` against `java.util.*` to verify 100% behavioral equivalence before Wasm emission.
-  4. Dead-code tree shaking in `WasmLinker` only includes the collections a program actually uses (e.g., `raytracer-argon` pulls in `list` and `appendable`, never `TreeMap` or `LinkedHashSet`).
+* **Implementation note (`BIP025-I3`):** In the shipped implementation, portable `list`/`set`/`sortedset`/`map`/`sortedmap`/`entry`, `string` operations, and `Appendable` (`STDOUT`/`STDERR`) are emitted directly as compact WasmGC runtime helpers by `WasmCollectionOpsGen`, `WasmStringOpsGen`, and `WasmCoreEmitter` (matching every `java.util.*` / `java.lang.String` / `Appendable` behavioral contract in `WasmBatestTestCase` without requiring a separate `.ba` resource prelude).
 
 ### 5.5 Functions, Closures, Captures, Optional/Overloaded Arguments (`BIP021`) & Tail Calls (`BIP024`)
 

@@ -343,9 +343,8 @@ public final class WasmPortabilityChecker {
                         if (hc.target().jvmCatchTypes() != null) {
                             for (String jvmType : hc.target().jvmCatchTypes()) {
                                 if (jvmType != null
-                                        && !jvmType.equals("org/babblelang/runtime/BabbleException")
                                         && !jvmType.equals("org/babblelang/runtime/ThrownException")
-                                        && !jvmType.equals("java/lang/Throwable")) {
+                                        && !isPortableJavaTypeName(jvmType.replace('/', '.'), false)) {
                                     out.add(new Diagnostic(hc.line(), jvmType.replace('/', '.')));
                                 }
                             }

@@ -44,7 +44,7 @@ public class WasmBatestTestCase {
     @TestFactory
     public Stream<DynamicNode> wasmBatestSuite() throws IOException {
         BabbleScriptEngine probe = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        if (probe.getMode() != BabbleScriptEngine.Mode.COMPILE || BabbleCompiler.resolveOptLevel(probe) == 0) {
+        if (probe.getMode() != BabbleScriptEngine.Mode.COMPILE || BabbleCompiler.resolveOptLevel(probe) != 1) {
             return Stream.empty();
         }
         if (!NodeWasmRunner.isNodeAvailable()) {
@@ -134,6 +134,11 @@ public class WasmBatestTestCase {
                 CompilationTarget.WASM_JS, true, false, false, false);
         WasmCompiler.CompileResult compiled = WasmCompiler.compile(inputs, opts, "case.wasm");
         if (!compiled.ok()) {
+            boolean expectsWat = testCase.irExpectations().stream().anyMatch(e -> e.tier() == IrTier.WAT);
+            if (expectsWat) {
+                Assertions.fail(file.relativePath() + " :: " + testCase.displayName()
+                        + " declares wat expectations but failed Wasm portability : " + compiled.portabilityErrors());
+            }
             // Non-portable (uses java.*, Java interfaces, dynamic import, etc.) — skip cleanly
             return;
         }
