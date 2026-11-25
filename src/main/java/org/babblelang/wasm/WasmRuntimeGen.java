@@ -369,11 +369,12 @@ public final class WasmRuntimeGen {
         emitPrint(dPrint);
     }
 
-    /** Emits {@code equals}, {@code hashCode}, and {@code format} with direct {@code $ArrayBase} hooks ({@code BIP025-P2}). */
-    public void emitPolymorphicHelpers(int fnArrEq, int fnArrHash, int fnArrFmt) {
-        emitEquals(dEqualsDef, fnArrEq);
-        emitHashCode(dHashCodeDef, fnArrHash);
-        emitFormat(dFormatDef, fnArrFmt);
+    /** Emits {@code equals}, {@code hashCode}, and {@code format} with {@code $ArrayBase} and collection hooks ({@code BIP025-P2}, {@code BIP025-P3}). */
+    public void emitPolymorphicHelpers(int fnArrEq, int fnArrHash, int fnArrFmt,
+                                       int fnColEq, int fnColHash, int fnColFmt) {
+        emitEquals(dEqualsDef, fnArrEq, fnColEq);
+        emitHashCode(dHashCodeDef, fnArrHash, fnColHash);
+        emitFormat(dFormatDef, fnArrFmt, fnColFmt);
     }
 
     // ---------------------------------------------------------------- string literal pool
@@ -1069,7 +1070,7 @@ public final class WasmRuntimeGen {
 
     // ---------------------------------------------------------------- equals / same / hash / compare / format
 
-    private void emitEquals(WasmModule.FuncDef fn, int fnArrEq) {
+    private void emitEquals(WasmModule.FuncDef fn, int fnArrEq, int fnColEq) {
         WasmCodeBuilder c = fn.code();
         int ra = fn.addLocal("ra", WasmValType.I32, 2);
         int rb = fn.addLocal("rb", WasmValType.I32, 2);
@@ -1141,6 +1142,17 @@ public final class WasmRuntimeGen {
                     .end();
         }
 
+        // Core collections ($List, $Set, $Entry, $Map)
+        if (fnColEq >= 0) {
+            c.localGet(0).refTest(ts.listType)
+                    .localGet(0).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(0).refTest(ts.entryType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(0).refTest(ts.mapType).op(WasmInstr.SimpleOp.I32_OR)
+                    .if_()
+                    .localGet(0).localGet(1).call(fnColEq).return_()
+                    .end();
+        }
+
         // Babble $Object custom/record equalsFn
         c.localGet(0).refTest(ts.objectType).if_()
                 .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0)
@@ -1177,7 +1189,7 @@ public final class WasmRuntimeGen {
         c.i32Const(0);
     }
 
-    private void emitHashCode(WasmModule.FuncDef fn, int fnArrHash) {
+    private void emitHashCode(WasmModule.FuncDef fn, int fnArrHash, int fnColHash) {
         WasmCodeBuilder c = fn.code();
         int r = fn.addLocal("r", WasmValType.I32, 1);
         int l = fn.addLocal("l", WasmValType.I64, 1);
@@ -1213,6 +1225,15 @@ public final class WasmRuntimeGen {
         if (fnArrHash >= 0) {
             c.localGet(0).refTest(ts.arrayBaseType).if_()
                     .localGet(0).refCast(ts.arrayBaseType).call(fnArrHash).return_().end();
+        }
+        if (fnColHash >= 0) {
+            c.localGet(0).refTest(ts.listType)
+                    .localGet(0).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(0).refTest(ts.entryType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(0).refTest(ts.mapType).op(WasmInstr.SimpleOp.I32_OR)
+                    .if_()
+                    .localGet(0).call(fnColHash).return_()
+                    .end();
         }
         c.localGet(0).refTest(ts.objectType).if_()
                 .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0)
@@ -1277,7 +1298,7 @@ public final class WasmRuntimeGen {
                 .localGet(4).call(fnThrowMsg).unreachable();
     }
 
-    private void emitFormat(WasmModule.FuncDef fn, int fnArrFmt) {
+    private void emitFormat(WasmModule.FuncDef fn, int fnArrFmt, int fnColFmt) {
         WasmCodeBuilder c = fn.code();
         int toStrFn = fn.addLocal("toStrFn", WasmValType.refNull(ts.toStrFnSigType), 1);
 
@@ -1320,6 +1341,15 @@ public final class WasmRuntimeGen {
         if (fnArrFmt >= 0) {
             c.localGet(0).refTest(ts.arrayBaseType).if_()
                     .localGet(0).refCast(ts.arrayBaseType).call(fnArrFmt).return_().end();
+        }
+        if (fnColFmt >= 0) {
+            c.localGet(0).refTest(ts.listType)
+                    .localGet(0).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(0).refTest(ts.entryType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(0).refTest(ts.mapType).op(WasmInstr.SimpleOp.I32_OR)
+                    .if_()
+                    .localGet(0).call(fnColFmt).return_()
+                    .end();
         }
 
         c.localGet(0).refTest(ts.objectType).if_()
@@ -1374,18 +1404,18 @@ public final class WasmRuntimeGen {
         c.localGet(exn).structGet(ts.babbleExnType, 2).localSet(arr);
         c.localGet(exn).structGet(ts.babbleExnType, 3).localSet(cnt);
         c.localGet(arr).refIsNull().if_()
-                .i32Const(4).arrayNewDefault(ts.anyArrType).localTee(arr)
+                .i32Const(4).arrayNewDefault(ts.anyArrType).localSet(arr)
                 .localGet(exn).localGet(arr).structSet(ts.babbleExnType, 2)
-                .drop() // drop tee'd arr? Wait: localTee left arr on stack, let's do localSet cleanly!
                 .end();
-        // Actually let's rewrite the block cleanly without extra stack value:
-        c.build(); // no-op; let's just reset and emit cleanly below
-        clearAndEmitAddSuppressed(fn);
-    }
-
-    private void clearAndEmitAddSuppressed(WasmModule.FuncDef fn) {
-        // Re-create cleanly? Better: write it cleanly directly without the buggy tee above.
-        // We can't clear WasmCodeBuilder, so let's not call emitAddSuppressed with a bug!
+        c.localGet(cnt).localGet(arr).refAsNonNull().arrayLen().op(WasmInstr.SimpleOp.I32_GE_S).if_()
+                .localGet(cnt).i32Const(2).op(WasmInstr.SimpleOp.I32_MUL).arrayNewDefault(ts.anyArrType).localTee(newArr)
+                .i32Const(0).localGet(arr).refAsNonNull().i32Const(0).localGet(cnt)
+                .arrayCopy(ts.anyArrType, ts.anyArrType)
+                .localGet(exn).localGet(newArr).structSet(ts.babbleExnType, 2)
+                .localGet(newArr).localSet(arr)
+                .end();
+        c.localGet(arr).refAsNonNull().localGet(cnt).localGet(1).arraySet(ts.anyArrType);
+        c.localGet(exn).localGet(cnt).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).structSet(ts.babbleExnType, 3);
     }
 
     private void emitAssert(WasmModule.FuncDef fn) {
@@ -1417,11 +1447,6 @@ public final class WasmRuntimeGen {
 
     private void emitPrint(WasmModule.FuncDef fn) {
         WasmCodeBuilder c = fn.code();
-        if (target == CompilationTarget.WASM_BARE) {
-            emitStringLit(c, "Not supported on target wasm-bare : print");
-            c.localGet(3).call(fnThrowMsg).unreachable();
-            return;
-        }
         int len = fn.addLocal("len", WasmValType.I32, 4);
         int i = fn.addLocal("i", WasmValType.I32, 4);
         int acc = fn.addLocal("acc", WasmValType.refNull(ts.stringType), 4);
@@ -1445,22 +1470,7 @@ public final class WasmRuntimeGen {
         c.call(fnStrConcat).localSet(acc)
                 .end();
 
-        // Check `to` argument (null / MISSING -> STDOUT; $HostStream -> stdout/stderr; custom Appendable in P3)
-        c.localGet(1).refIsNull()
-                .localGet(1).globalGet(gMissing).refEq().op(WasmInstr.SimpleOp.I32_OR)
-                .if_()
-                .localGet(acc).refAsNonNull().call(fnToExternStr).call(impWriteStdout).return_()
-                .end();
-        c.localGet(1).refTest(ts.hostStreamType).if_()
-                .localGet(1).refCast(ts.hostStreamType).structGet(ts.hostStreamType, 0).localSet(targetStream)
-                .localGet(targetStream).if_()
-                .localGet(acc).refAsNonNull().call(fnToExternStr).call(impWriteStderr)
-                .else_()
-                .localGet(acc).refAsNonNull().call(fnToExternStr).call(impWriteStdout)
-                .end()
-                .return_()
-                .end();
-        // Custom $Object with `append` method (BIP025-D12)
+        // Check custom $Object with `append(s: string)` method first (works on BOTH wasm-js and wasm-bare, BIP025-D12!)
         int getMemFn = fn.addLocal("getMemFn", WasmValType.refNull(ts.getMemFnSigType), 4);
         int appendMethod = fn.addLocal("appendMethod", ts.anyRef(), 4);
         c.localGet(1).refTest(ts.objectType).if_()
@@ -1478,6 +1488,28 @@ public final class WasmRuntimeGen {
                 .callRef(ts.genericCallSigType).drop().return_()
                 .end()
                 .end()
+                .end();
+
+        if (target == CompilationTarget.WASM_BARE) {
+            emitStringLit(c, "Not supported on target wasm-bare : print");
+            c.localGet(3).call(fnThrowMsg).unreachable();
+            return;
+        }
+
+        // Host stdout / stderr (null / MISSING -> STDOUT; $HostStream -> stdout/stderr)
+        c.localGet(1).refIsNull()
+                .localGet(1).globalGet(gMissing).refEq().op(WasmInstr.SimpleOp.I32_OR)
+                .if_()
+                .localGet(acc).refAsNonNull().call(fnToExternStr).call(impWriteStdout).return_()
+                .end();
+        c.localGet(1).refTest(ts.hostStreamType).if_()
+                .localGet(1).refCast(ts.hostStreamType).structGet(ts.hostStreamType, 0).localSet(targetStream)
+                .localGet(targetStream).if_()
+                .localGet(acc).refAsNonNull().call(fnToExternStr).call(impWriteStderr)
+                .else_()
+                .localGet(acc).refAsNonNull().call(fnToExternStr).call(impWriteStdout)
+                .end()
+                .return_()
                 .end();
 
         emitStringLit(c, "print to: expects a Writer or PrintStream");

@@ -1,6 +1,7 @@
 package org.babblelang.wasm;
 
 import org.babblelang.analysis.CompilationTarget;
+import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirInterface;
@@ -70,6 +71,9 @@ public final class WasmProgramLinker {
             this.isInterfaceDefault = isInterfaceDefault;
             this.hasOptMaskParam = hasOptMaskParam;
         }
+
+        public WasmObjectSystem.ClassInfo staticOwnerClass;
+        public WasmObjectSystem.IfaceInfo staticOwnerIface;
     }
 
     /** Per-module linked state: top-level globals, ModuleVal, init function, and function table. */
@@ -103,6 +107,8 @@ public final class WasmProgramLinker {
     private final WasmRuntimeGen rt;
     private final WasmRuntimeOpsGen ops;
     private final WasmArrayOpsGen arrOps;
+    private final WasmStringOpsGen strOps;
+    private final WasmCollectionOpsGen colOps;
     private final WasmObjectSystem objects;
     private final List<ModuleLinkInfo> linkedModules = new ArrayList<>();
     private final Map<String, ModuleLinkInfo> modulesByKey = new LinkedHashMap<>();
@@ -117,7 +123,11 @@ public final class WasmProgramLinker {
         this.rt = new WasmRuntimeGen(mod, ts, target);
         this.ops = new WasmRuntimeOpsGen(mod, ts, rt, target);
         this.arrOps = new WasmArrayOpsGen(mod, ts, rt);
-        this.rt.emitPolymorphicHelpers(arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat);
+        this.strOps = new WasmStringOpsGen(mod, ts, rt, arrOps);
+        this.colOps = new WasmCollectionOpsGen(mod, ts, rt);
+        this.rt.emitPolymorphicHelpers(
+                arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat,
+                colOps.fnColEq, colOps.fnColHash, colOps.fnColFmt);
         this.objects = new WasmObjectSystem(this);
         this.ops.emitClassofWithTable(objects.gClassVals);
         this.fnInitSingletonsDef = mod.addFunction("init_fn_singletons", ts.internFuncType(List.of(), List.of()));
@@ -147,6 +157,14 @@ public final class WasmProgramLinker {
 
     public WasmArrayOpsGen arrays() {
         return arrOps;
+    }
+
+    public WasmStringOpsGen strings() {
+        return strOps;
+    }
+
+    public WasmCollectionOpsGen collections() {
+        return colOps;
     }
 
     public WasmObjectSystem objects() {
@@ -212,6 +230,18 @@ public final class WasmProgramLinker {
             for (HirFunction fn : info.input.hir().functions().values()) {
                 declareFunction(info, fn);
             }
+            for (HirClass hc : info.input.hir().classes().values()) {
+                if (hc.staticBlock() != null) {
+                    WasmObjectSystem.ClassInfo ci = objects.classByLocal(info.index, hc.id());
+                    markStaticMethods(info, hc.staticBlock().body(), ci, null);
+                }
+            }
+            for (HirInterface hi : info.input.hir().interfaces().values()) {
+                if (hi.staticBlock() != null) {
+                    WasmObjectSystem.IfaceInfo ii = objects.ifaceByLocal(info.index, hi.id());
+                    markStaticMethods(info, hi.staticBlock().body(), null, ii);
+                }
+            }
         }
 
         // Phase 2: Emit all function/method bodies, constructors, vtable hooks, itables, and module inits
@@ -238,6 +268,30 @@ public final class WasmProgramLinker {
 
         // Phase 4: Finalize passive UTF-16 string literal segment
         rt.finalizeStrings();
+    }
+
+    private static void markStaticMethods(ModuleLinkInfo info, List<HirExpr> stmts,
+                                          WasmObjectSystem.ClassInfo ci, WasmObjectSystem.IfaceInfo ii) {
+        for (HirExpr e : stmts) {
+            if (e instanceof HirExpr.Def d && d.value() != null) {
+                markStaticFnExpr(info, d.value(), ci, ii);
+            }
+        }
+    }
+
+    private static void markStaticFnExpr(ModuleLinkInfo info, HirExpr expr,
+                                         WasmObjectSystem.ClassInfo ci, WasmObjectSystem.IfaceInfo ii) {
+        if (expr instanceof HirExpr.FunctionRef fr) {
+            FuncInfo fi = info.functions.get(fr.functionId());
+            if (fi != null) {
+                fi.staticOwnerClass = ci;
+                fi.staticOwnerIface = ii;
+            }
+        } else if (expr instanceof HirExpr.MakeOverloadSet ov) {
+            for (HirExpr op : ov.operands()) {
+                markStaticFnExpr(info, op, ci, ii);
+            }
+        }
     }
 
     private void declareFunction(ModuleLinkInfo modInfo, HirFunction fn) {

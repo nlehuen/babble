@@ -200,6 +200,7 @@ public sealed interface WasmInstr permits
         F32_DIV(0, 0x95, "f32.div"),
         F32_MIN(0, 0x96, "f32.min"),
         F32_MAX(0, 0x97, "f32.max"),
+        F32_COPYSIGN(0, 0x98, "f32.copysign"),
         // f64 arithmetic
         F64_ABS(0, 0x99, "f64.abs"),
         F64_NEG(0, 0x9A, "f64.neg"),
@@ -214,6 +215,7 @@ public sealed interface WasmInstr permits
         F64_DIV(0, 0xA3, "f64.div"),
         F64_MIN(0, 0xA4, "f64.min"),
         F64_MAX(0, 0xA5, "f64.max"),
+        F64_COPYSIGN(0, 0xA6, "f64.copysign"),
         // Conversions & reinterpretations
         I32_WRAP_I64(0, 0xA7, "i32.wrap_i64"),
         I64_EXTEND_I32_S(0, 0xAC, "i64.extend_i32_s"),

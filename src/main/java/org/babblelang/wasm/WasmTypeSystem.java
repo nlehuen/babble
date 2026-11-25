@@ -83,6 +83,11 @@ public final class WasmTypeSystem {
     public final int boundMethodType;
     public final int moduleValType;
     public final int hostStreamType;
+    public final int listType;
+    public final int setType;
+    public final int entryType;
+    public final int mapType;
+    public final int collectionIterType;
 
     // ---- Exception & multi-value control block helper types ----
     public final int exnTagType;
@@ -164,6 +169,11 @@ public final class WasmTypeSystem {
         this.boundMethodType = module.reserveTypeIndex();
         this.moduleValType = module.reserveTypeIndex();
         this.hostStreamType = module.reserveTypeIndex();
+        this.listType = module.reserveTypeIndex();
+        this.setType = module.reserveTypeIndex();
+        this.entryType = module.reserveTypeIndex();
+        this.mapType = module.reserveTypeIndex();
+        this.collectionIterType = module.reserveTypeIndex();
 
         WasmValType refAnyNull = WasmValType.refNull(anyType);
         WasmValType refAnyArr = WasmValType.ref(anyArrType);
@@ -307,6 +317,31 @@ public final class WasmTypeSystem {
         ))));
         rec.add(new WasmTypeDef.SubType(hostStreamType, "HostStream", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("kind", WasmValType.I32, false)
+        ))));
+        // Portable core collections (BIP025-P3, BIP025-D6)
+        rec.add(new WasmTypeDef.SubType(listType, "List", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("arr", refAnyArr, true),
+                field("size", WasmValType.I32, true)
+        ))));
+        rec.add(new WasmTypeDef.SubType(setType, "Set", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("arr", refAnyArr, true),
+                field("size", WasmValType.I32, true),
+                field("sorted", WasmValType.I32, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(entryType, "Entry", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("key", refAnyNull, false),
+                field("val", refAnyNull, true)
+        ))));
+        rec.add(new WasmTypeDef.SubType(mapType, "Map", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("keys", refAnyArr, true),
+                field("vals", refAnyArr, true),
+                field("size", WasmValType.I32, true),
+                field("sorted", WasmValType.I32, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(collectionIterType, "CollectionIter", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("arr", refAnyArr, false),
+                field("size", WasmValType.I32, false),
+                field("pos", WasmValType.I32, true)
         ))));
 
         module.commitRecGroup(rec);
