@@ -34,7 +34,7 @@ import static org.objectweb.asm.Opcodes.*;
 
 /**
  * Emits JVM bytecode for a single SSA {@link MirFunction} inside {@link HirEmitter}'s active
- * {@link MethodEmitContext} ({@code BIP014-P3} §6.4).
+ * {@link MethodEmitContext} ({@code BIP014-I3} §6.4).
  *
  * <p>Performs backward CFG liveness and JVM-type-segregated local slot coloring, zero-copy
  * aliasing for {@link MirInst.Narrow}/{@link MirInst.Move}/{@link MirInst.Freeze}, cycle-breaking

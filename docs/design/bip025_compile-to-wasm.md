@@ -151,7 +151,7 @@ Under **`BIP025-D12`**:
 Following `babblec` (`BIP006`), compiling a Babble program to WebAssembly is **whole-program AOT**:
 
 1. `BabbleScriptEngine.compileProgram(source, mainPath)` parses, type-checks, effect-checks, and builds `HirModule`s for the main script and every statically imported `.ba` module (`BIP005` M2/M3).
-2. `PassManager.defaultFor(optLevel, target)` runs Babble's `HIR` Nanopass optimizer (`HirEGraphSimplifyPass`, `InlinePass` with cross-module small-export inlining, `ScalarReplacePass` (`O9`), `HirDcePass`, `HirLicmPass`, and `HirTryNormalize`) across all modules, **skipping `FbipReusePass`'s `RecordReuse` on Wasm targets** so `record` fields remain strictly immutable (`BIP025-D11`). `WasmEmitter` consumes this structured `HIR` directly without lowering through `BIP014-P3` CFG `MIR` (`BIP025-D3`).
+2. `PassManager.defaultFor(optLevel, target)` runs Babble's `HIR` Nanopass optimizer (`HirEGraphSimplifyPass`, `InlinePass` with cross-module small-export inlining, `ScalarReplacePass` (`O9`), `HirDcePass`, `HirLicmPass`, and `HirTryNormalize`) across all modules, **skipping `FbipReusePass`'s `RecordReuse` on Wasm targets** so `record` fields remain strictly immutable (`BIP025-D11`). `WasmEmitter` consumes this structured `HIR` directly without lowering through `BIP014-I3` CFG `MIR` (`BIP025-D3`).
 3. `WasmLinker` merges the module graph into a **single closed-world `WasmProgram`**:
    * Assigns globally unique type indices, struct/array layouts, interface bit indices, vtable slots, and function indices across all modules in deterministic order (preserving `BIP006`'s reproducible-build guarantee: same sources → identical `.wasm` bytes!).
    * Each Babble module $M$ gets:
@@ -557,7 +557,7 @@ All ten original open questions (`BIP025-Q1`–`Q10`) plus three post-draft arch
 
 ## 9. Phased Implementation Plan (`BIP025-P0`–`P5`)
 
-Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B package` (`interpret`, `compile -O1`, `compile -O0`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `-format -check`), and adds incremental Wasm test coverage. In the overall roadmap, `BIP025-P0` remains sequenced after `BIP014-P3` (SSA `MIR`) settles the `HIR`/`MIR` boundary so `HIR` target neutralization happens once cleanly.
+Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B package` (`interpret`, `compile -O1`, `compile -O0`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `-format -check`), and adds incremental Wasm test coverage. In the overall roadmap, `BIP025-P0` remains sequenced after `BIP014-I3` (SSA `MIR`) settles the `HIR`/`MIR` boundary so `HIR` target neutralization happens once cleanly.
 
 ### `BIP025-P0` — Target-Neutral `HIR`, Target Profiles, `WasmWriter` & `BIP029` `wat` Plumbing
 * **Deliverables:**

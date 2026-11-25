@@ -4,7 +4,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Immutable basic block in an SSA CFG {@link MirFunction} ({@code BIP014-P3} §6.4).
+ * Immutable basic block in an SSA CFG {@link MirFunction} ({@code BIP014-I3} §6.4).
  *
  * <p>Block parameters ({@link #params()}) replace traditional {@code phi} nodes. Exception-handler
  * entry blocks have {@link #handlerEntry()} {@code == true} and carry the caught {@link Throwable}

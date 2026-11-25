@@ -3,7 +3,7 @@ package org.babblelang.ir.mir;
 import java.util.Objects;
 
 /**
- * Compact effect and alias summary attached to every {@link MirInst} ({@code BIP014-P3} §6.4).
+ * Compact effect and alias summary attached to every {@link MirInst} ({@code BIP014-I3} §6.4).
  *
  * <p>Guides SSA dataflow passes ({@code GvnCse}, {@code Licm}, {@code AliasRle}, {@code MirDce},
  * {@code PredicateReorder}) without Sea-of-Nodes effect chains:

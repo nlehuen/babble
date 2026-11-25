@@ -26,7 +26,7 @@ import java.util.Set;
 
 /**
  * Sparse Conditional Constant Propagation ({@code O1} + {@code O4}, Wegman–Zadeck {@code [WZ91]})
- * over SSA {@link MirModule} ({@code BIP014-P3} §6.4).
+ * over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  *
  * <p>Jointly evaluates SSA values and CFG edge reachability over the 3-level lattice
  * ({@code TOP} &lt; {@code CONST(v)} &lt; {@code BOTTOM}), folding scalar arithmetic/comparisons,

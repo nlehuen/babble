@@ -1,4 +1,4 @@
-# SSA MIR GVN/CSE and Alias-Aware RLE (BIP014-P3)
+# SSA MIR GVN/CSE and Alias-Aware RLE (BIP014-I3)
 
 Tests `GvnCsePass` (dominator-scoped CSE, commutative operand canonicalization,
 idempotent call collapsing, `ArrayLen` CSE, and exception-handler dominance safety) and

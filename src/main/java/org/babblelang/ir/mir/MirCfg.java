@@ -14,7 +14,7 @@ import java.util.Set;
 
 /**
  * CFG, Reverse Post-Order (RPO), dominator-tree (Cooper–Harvey–Kennedy), and natural-loop
- * analysis over {@link MirFunction} ({@code BIP014-P3}).
+ * analysis over {@link MirFunction} ({@code BIP014-I3}).
  *
  * <p>All CFG traversals include both normal terminator edges and exception-handler edges so
  * dominance, liveness, verification, and optimization passes stay sound under {@code BIP028}

@@ -19,7 +19,7 @@ import java.util.Set;
 
 /**
  * Narrowing-safe Pure Predicate Reordering ({@code O11}) over short-circuit {@code BrIf} chains
- * in SSA {@link MirModule} ({@code BIP014-P3} §6.4).
+ * in SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  *
  * <p>Reorders {@code expensivePure(x) && cheapScalar(y)} into {@code cheapScalar(y) && expensivePure(x)}
  * whenever both predicates are pure, nothrow, terminating, and deterministic, and the second block

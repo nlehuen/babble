@@ -9,7 +9,7 @@ import java.util.Map;
 import java.util.Objects;
 
 /**
- * Immutable per-function SSA Control-Flow Graph ({@code BIP014-P3} §6.4).
+ * Immutable per-function SSA Control-Flow Graph ({@code BIP014-I3} §6.4).
  *
  * <p>Each {@link MirFunction} corresponds 1-to-1 to a non-namespace-scoped {@link org.babblelang.ir.hir.HirFunction}
  * (identified by {@link #hirFunctionId()}). Parameters that live as non-cell, non-try-escaped

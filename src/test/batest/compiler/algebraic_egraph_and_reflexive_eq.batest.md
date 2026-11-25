@@ -275,7 +275,7 @@ top-level:
   (def bumpL (fn-ref bumpL))
   (def b1 (call-fn bumpBool))
   (def b2 (not (not (call-fn bumpOpt))))
-  (def b3 (not (==:bool (neg (call-fn bump)) 0:int)))
+  (def b3 (<>:bool (neg (call-fn bump)) 0:int))
   (def lv (+:long (+:long (+:long (+:long (+:long (call-fn bumpL) (call-fn bumpL)) (call-fn bumpL)) (neg (call-fn bumpL))) (call-fn bumpL)) (call-fn bumpL)))
   (call name(assert) (and (and (and (and name(b1) name(b2)) name(b3)) (==:bool name(lv) 8:long)) (==:bool name(tick) 9:int)))
 ```
@@ -577,7 +577,7 @@ fn checkNoRefl (a:obj) -> bool {io}
 ```hir
 ;; hir -O1 fn=checkNoRefl
 fn checkNoRefl (a:obj) -> bool {io}
-  (and (and (and (==:bool var(a) var(a)) (not (<>:bool var(a) var(a)))) (not (==:bool (call-fn bump) (call-fn bump)))) (<>:bool (call-fn bump) (call-fn bump)))
+  (and (and (and (==:bool var(a) var(a)) (==:bool var(a) var(a))) (<>:bool (call-fn bump) (call-fn bump))) (<>:bool (call-fn bump) (call-fn bump)))
 ```
 
 ```mir
@@ -590,19 +590,19 @@ fn checkNoRefl(v0: any) -> bool:
     v4: bool = const false
     br_if v3, bb1, bb2(v4)
   bb1:
-    v5: any = neq v0, v0 {pure,throws}
+    v5: any = eq v0, v0 {pure,throws}
     v6: bool = not v5 {pure}
-    br bb2(v6)
-  bb2(v7: bool):
-    v8: bool = const false
-    br_if v7, bb3, bb4(v8)
+    v7: bool = not v6 {pure}
+    br bb2(v7)
+  bb2(v8: bool):
+    v9: bool = const false
+    br_if v8, bb3, bb4(v9)
   bb3:
-    v9: any = opaque.NameRead() {impure}
-    v10: int = call bump() {impure}
-    v11: any = opaque.NameRead() {impure}
-    v12: int = call bump() {impure}
-    v13: bool = eq v10, v12 {pure}
-    v14: bool = not v13 {pure}
+    v10: any = opaque.NameRead() {impure}
+    v11: int = call bump() {impure}
+    v12: any = opaque.NameRead() {impure}
+    v13: int = call bump() {impure}
+    v14: bool = neq v11, v13 {pure}
     br bb4(v14)
   bb4(v15: bool):
     v16: bool = const false
@@ -628,18 +628,18 @@ fn checkNoRefl(v0: any) -> bool:
     v4: bool = const false
     br_if v3, bb1, bb2(v4)
   bb1:
-    v5: any = neq v0, v0 {pure,throws}
+    v5: any = eq v0, v0 {pure,throws}
     v6: bool = not v5 {pure}
-    br bb2(v6)
-  bb2(v7: bool):
-    br_if v7, bb3, bb4(v4)
+    v7: bool = not v6 {pure}
+    br bb2(v7)
+  bb2(v8: bool):
+    br_if v8, bb3, bb4(v4)
   bb3:
-    v8: any = opaque.NameRead() {impure}
-    v9: int = call bump() {impure}
-    v10: any = opaque.NameRead() {impure}
-    v11: int = call bump() {impure}
-    v12: bool = eq v9, v11 {pure}
-    v13: bool = not v12 {pure}
+    v9: any = opaque.NameRead() {impure}
+    v10: int = call bump() {impure}
+    v11: any = opaque.NameRead() {impure}
+    v12: int = call bump() {impure}
+    v13: bool = neq v10, v12 {pure}
     br bb4(v13)
   bb4(v14: bool):
     br_if v14, bb5, bb6(v4)
@@ -652,4 +652,36 @@ fn checkNoRefl(v0: any) -> bool:
     br bb6(v19)
   bb6(v20: bool):
     ret v20
+```
+
+## Negated comparison rewrites (not (a == b) -> a != b, etc.) and E-graph equivalence
+
+```babble
+def checkNegCmp = fn (x: int, y: int, s: string, t: string): bool -> (
+    (not (x == y)) == (x != y) and (not (x != y)) == (x == y) and
+    (not (x < y)) == (x >= y) and (not (x <= y)) == (x > y) and
+    (not (x > y)) == (x <= y) and (not (x >= y)) == (x < y) and
+    (not (s == t)) == (s != t) and (not (s != t)) == (s == t)
+)
+assert(checkNegCmp(2, 5, "a", "b") and checkNegCmp(3, 3, "a", "a"))
+```
+
+```hir
+;; hir -O0 fn=checkNegCmp
+fn checkNegCmp (x:int, y:int, s:obj, t:obj) -> bool {nothrow unique}
+  (and (and (and (and (and (and (and (==:bool (block (not (block (==:bool var(x) var(y))))) (block (<>:bool var(x) var(y)))) (==:bool (block (not (block (<>:bool var(x) var(y))))) (block (==:bool var(x) var(y))))) (==:bool (block (not (block (<:bool var(x) var(y))))) (block (>=:bool var(x) var(y))))) (==:bool (block (not (block (<=:bool var(x) var(y))))) (block (>:bool var(x) var(y))))) (==:bool (block (not (block (>:bool var(x) var(y))))) (block (<=:bool var(x) var(y))))) (==:bool (block (not (block (>=:bool var(x) var(y))))) (block (<:bool var(x) var(y))))) (==:bool (block (not (block (==:bool var(s) var(t))))) (block (<>:bool var(s) var(t))))) (==:bool (block (not (block (<>:bool var(s) var(t))))) (block (==:bool var(s) var(t)))))
+```
+
+```hir
+;; hir -O1 fn=checkNegCmp
+fn checkNegCmp (x:int, y:int, s:obj, t:obj) -> bool {nothrow unique}
+  true:bool
+```
+
+```mir
+;; mir -O2 fn=checkNegCmp stage=before,final
+fn checkNegCmp(v0: int, v1: int, v2: any, v3: any) -> bool:
+  bb0:
+    v4: bool = const true
+    ret v4
 ```

@@ -22,7 +22,7 @@ import java.util.Map;
 
 /**
  * Dominator-scoped Global Value Numbering and Common Subexpression Elimination ({@code O5} +
- * {@code O3}) over SSA {@link MirModule} ({@code BIP014-P3} §6.4).
+ * {@code O3}) over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  *
  * <p>Eliminates redundant pure computations, commutative binary expressions/calls, idempotent
  * call chains ({@code f(f(x)) -> f(x)}), {@code ArrayLen}, and alias-epoch-protected

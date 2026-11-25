@@ -11,7 +11,7 @@ import java.util.Objects;
 
 /**
  * Module-level SSA {@code MIR} container implementing {@link IrDumpable} for {@code BIP029}
- * observability ({@code BIP014-P3} §6.4).
+ * observability ({@code BIP014-I3} §6.4).
  *
  * <p>Holds lowered {@link MirFunction}s keyed by {@link org.babblelang.ir.hir.HirFunction#id()}
  * alongside explicit {@link #fallbacks()} recording why any function was kept on {@code HirEmitter}

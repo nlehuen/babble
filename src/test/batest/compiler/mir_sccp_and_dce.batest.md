@@ -1,4 +1,4 @@
-# SSA MIR SCCP and Dead Code Elimination (BIP014-P3)
+# SSA MIR SCCP and Dead Code Elimination (BIP014-I3)
 
 Tests `SccpPass` (sparse conditional constant propagation across CFG joins and foldable
 JDK calls) and `MirDcePass` (dead instruction, dead block-parameter, and empty-trampoline

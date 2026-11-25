@@ -183,7 +183,7 @@ top-level:
   (def x 8:int)
   (def y 9:int)
   (call name(assert) (and (==:bool (==:bool name(b1) name(b2)) false:bool) (==:bool (<>:bool name(b1) name(b2)) true:bool)))
-  (call name(assert) (if (not (<:bool name(x) 5:int)) true:bool false:bool))
+  (call name(assert) (if (>=:bool name(x) 5:int) true:bool false:bool))
   (call name(assert) (if (or (<:bool name(x) 5:int) (<:bool name(y) 5:int)) false:bool true:bool))
   (call name(assert) (and (and (==:bool name(b1) true:bool) (<>:bool name(b1) false:bool)) true:bool))
 ```

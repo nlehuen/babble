@@ -9,7 +9,7 @@ import java.util.Objects;
 import java.util.function.UnaryOperator;
 
 /**
- * Sealed basic-block terminators for SSA CFG {@code MIR} ({@code BIP014-P3} §6.4).
+ * Sealed basic-block terminators for SSA CFG {@code MIR} ({@code BIP014-I3} §6.4).
  *
  * <p>Every {@link MirBlock} ends with exactly one terminator. Control transfers to other blocks
  * carry explicit block-parameter arguments ({@link Br}, {@link BrIf}), replacing {@code phi} nodes.

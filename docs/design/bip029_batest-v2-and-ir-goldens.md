@@ -5,8 +5,8 @@
 | **BIP** | 029 |
 | **Date** | 2026-11-23 |
 | **Status** | Implemented (`BIP029-Q1`–`Q10` → `BIP029-D1`–`D10` settled; `BIP029-I1`–`I4` implemented) |
-| **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), ANTLR-free `HIR`, `HirPrinter`, `-O0`/`-O1` Nanopass pipeline (`BIP014-I1`–`I2`, `BIP014-I4`, `BIP014-D9`), and planned Tier 2 SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md), `BIP014-P3`, `BIP014-P5`), unified E-graph pass ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md), `BIP027-I2`), `HirTryNormalize` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
-| **Scope** | Redesigned, readable, extensible `.batest.md` v2 specification format (named `##` cases, prose documentation, explicit `stdout`/`stderr`/`error` blocks with uniform `DOTALL` `regex` flag, case-scoped virtual modules, `babble session` inputs, extensible IR/artifact blocks); unified compiler IR dumping & observation architecture (`IrTier`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) spanning `HIR` (`-O0`/`-O1`/`-O2`) and upcoming `BIP014-P3` SSA `MIR` (`-O2`, `before`/`after:<Pass>`/`final`); canonical preamble- and ID-independent printers (`HirCanonicalPrinter` and the `MirCanonicalPrinter` contract); 3-JVM/4-JVM Surefire and `-Pbatest` `BatestCoverageReporter` integration; guarded IR-only update mode (`-Dbatest.updateIr=true`); and lossless migration of all 103 existing `.batest` files (`2,060` cases) to `.batest.md` |
+| **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), ANTLR-free `HIR`, `HirPrinter`, `-O0`/`-O1` Nanopass pipeline (`BIP014-I1`–`I2`, `BIP014-I4`, `BIP014-D9`), and planned Tier 2 SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md), `BIP014-I3`, `BIP014-P5`), unified E-graph pass ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md), `BIP027-I2`), `HirTryNormalize` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
+| **Scope** | Redesigned, readable, extensible `.batest.md` v2 specification format (named `##` cases, prose documentation, explicit `stdout`/`stderr`/`error` blocks with uniform `DOTALL` `regex` flag, case-scoped virtual modules, `babble session` inputs, extensible IR/artifact blocks); unified compiler IR dumping & observation architecture (`IrTier`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) spanning `HIR` (`-O0`/`-O1`/`-O2`) and upcoming `BIP014-I3` SSA `MIR` (`-O2`, `before`/`after:<Pass>`/`final`); canonical preamble- and ID-independent printers (`HirCanonicalPrinter` and the `MirCanonicalPrinter` contract); 3-JVM/4-JVM Surefire and `-Pbatest` `BatestCoverageReporter` integration; guarded IR-only update mode (`-Dbatest.updateIr=true`); and lossless migration of all 103 existing `.batest` files (`2,060` cases) to `.batest.md` |
 
 ---
 
@@ -16,18 +16,18 @@
 
 `BIP009` established Babble's data-driven `.batest` corpus — now **`103` files / `2,060` cases** verified by a 3-way execution oracle (`interpret`, `compile -O0`, `compile -O1` with `HirVerifier` + ASM `CheckClassAdapter`) and 5-scope JaCoCo reporting (`mvn -q verify -Pbatest`).
 
-As Babble's compiler has evolved (`BIP014-I1`–`I2` `HIR`, `BIP014-I4` `ScalarReplacePass` & `FbipReusePass`, `BIP027-I2` E-graph simplification, `BIP028` `HirTryNormalize`) and prepares for **`BIP014-P3`** (per-function SSA `MIR` under `-O2`), **`BIP014-P5`** (SSA `aegraph`), and **`BIP025`** (WebAssembly backend), six structural limitations of the v1 `.batest` format have become clear:
+As Babble's compiler has evolved (`BIP014-I1`–`I2` `HIR`, `BIP014-I4` `ScalarReplacePass` & `FbipReusePass`, `BIP027-I2` E-graph simplification, `BIP028` `HirTryNormalize`) and prepares for **`BIP014-I3`** (per-function SSA `MIR` under `-O2`), **`BIP014-P5`** (SSA `aegraph`), and **`BIP025`** (WebAssembly backend), six structural limitations of the v1 `.batest` format have become clear:
 
 1. **Cryptic punctuation delimiters don't scale.** v1 relies on ad-hoc ASCII art markers: `========== foo.ba ==========`, `{{{{{`, `----------`, `}}}}}`, and `~~ `. Adding IR golden blocks, per-pass snapshots, MIR dumps, or case metadata by bolting on more punctuation degrades readability and makes specs harder for humans and LLMs to author and audit.
 2. **Unnamed test cases.** Cases have no real names — only fragile `#index` and `:line` coordinates (`case #4 (line 66)`). Reviewers have to read comments inside the code block to understand intent, JUnit trees show anonymous numbers, and `-Dbatest.filter` cannot select a case by name.
 3. **Conflated behavioral outcomes.** Everything after `}}}}}` is a single raw string matched against *either* stdout, warnings, *or* a normalized error message. A buggy test that prints `"Type error : expected int, got string"` satisfies a case meant to assert a compile-time error, and you cannot put explanatory comments after `}}}}}` without turning them into expected stdout.
 4. **No way to assert compiler IR transformations — silent optimization regressions pass 100% of `.batest`.** Today, `.batest` checks only behavioral equivalence (`interpret == -O0 == -O1`). If an optimization in `HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, or `HirLicmPass` silently stops firing, every `.batest` test still passes. Only scattered Java string tests in [`OptimizerTestCase.java`](../../src/test/java/org/babblelang/tests/OptimizerTestCase.java) inspect `HirPrinter.print(...)`, using brittle `contains(...)` / `indexOf(...)` checks.
-5. **Upcoming `BIP014-P3` SSA `MIR` needs first-class dumping & golden testing from day one.** `BIP014-P3` introduces Tier 2 per-function SSA `MIR` (basic blocks with block parameters, `SccpPass`, `GvnCsePass`, general `LicmPass`, `AliasRlePass`, `MirDcePass`, `PredicateReorderPass`, and later `BIP014-P5` `aegraph`). Debugging and testing `HIR → MIR → optimized MIR` demands **one unified IR dumping & canonicalization architecture** supporting both `HIR` and `MIR`, per-optimization-level (`-O0`, `-O1`, `-O2`), and pre-/post-pass snapshots (`before`, `after:<Pass>`, `final`).
+5. **Upcoming `BIP014-I3` SSA `MIR` needs first-class dumping & golden testing from day one.** `BIP014-I3` introduces Tier 2 per-function SSA `MIR` (basic blocks with block parameters, `SccpPass`, `GvnCsePass`, general `LicmPass`, `AliasRlePass`, `MirDcePass`, `PredicateReorderPass`, and later `BIP014-P5` `aegraph`). Debugging and testing `HIR → MIR → optimized MIR` demands **one unified IR dumping & canonicalization architecture** supporting both `HIR` and `MIR`, per-optimization-level (`-O0`, `-O1`, `-O2`), and pre-/post-pass snapshots (`before`, `after:<Pass>`, `final`).
 6. **File-only virtual modules and rigid metadata.** Virtual modules (`========== mod.ba ==========`) can only be declared globally in the file preamble, never scoped to a single case, and directives like `;; LARGE: <reason>` are smuggled inside Babble comments rather than structured block metadata.
 
 ### 1.2 What `BIP029` introduces
 
-`BIP029` replaces v1's punctuation markers with a **clean, constrained Markdown-fenced `.batest.md` specification format** (`BIP029-D1`–`D4`) backed by a **unified multi-tier IR observation and canonical printing pipeline** (`HIR` now, `MIR` in `BIP014-P3`, `BIP029-D5`–`D8`):
+`BIP029` replaces v1's punctuation markers with a **clean, constrained Markdown-fenced `.batest.md` specification format** (`BIP029-D1`–`D4`) backed by a **unified multi-tier IR observation and canonical printing pipeline** (`HIR` now, `MIR` in `BIP014-I3`, `BIP029-D5`–`D8`):
 
 ````markdown
 # Algebraic simplification & constant folding
@@ -101,7 +101,7 @@ Type error : expected int, got string
 ```
 ````
 
-And once `BIP014-P3` lands SSA `MIR` under `-O2`, the **exact same format** naturally expresses `MIR` goldens alongside `HIR` and execution parity:
+And once `BIP014-I3` lands SSA `MIR` under `-O2`, the **exact same format** naturally expresses `MIR` goldens alongside `HIR` and execution parity:
 
 ````markdown
 ## Loop-invariant hoisting and GVN in SSA MIR
@@ -191,7 +191,7 @@ Options are space-separated **tokens** (bare flags such as `preamble`, `session`
 | **Case** | `stderr` (optional `# stderr regex`) | Expected normalized non-fatal stderr (`context.getErrorWriter()`, e.g., `Warning : ...`). When omitted, asserts **nothing** is printed to stderr (`""`). |
 | **Case** | `error` (optional `# error regex`) | Expected fatal compile-time or runtime failure (`Kind.USER_ERROR`, normalized exception message). When omitted, asserts the case **succeeded** (`Kind.OK`). |
 | **Case** | `hir` + `;; hir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical `HIR` assertion verified at `<opt-levels>` (`-O0`, `-O1`, `-O0,-O1`, `-O2`). |
-| **Case** | `mir` + `;; mir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical SSA `MIR` assertion (`BIP014-P3`, verified at `-O2`). |
+| **Case** | `mir` + `;; mir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical SSA `MIR` assertion (`BIP014-I3`, verified at `-O2`). |
 | **Case** *(reserved)* | `bytecode` / `wat` | Reserved for future bytecode allocation checks (`BIP014-I4` `ScalarReplacePass` / `FbipReusePass`) and `BIP025` WebAssembly text assertions without changing the parser core. |
 
 Unknown block kinds, options on the opening fence line, wrong comment tokens on directive lines, duplicate behavioral blocks (e.g., two `stdout` blocks in one case), duplicate IR targets for the same `(tier, optLevel, stage, module, target)`, or unknown flags/keys fail fast at parse time in `BatestParser` with file and line number.
@@ -270,7 +270,7 @@ Readability budgets (`src/test/batest/AGENTS.md`) are enforced automatically by 
     - `regex <pattern>` — `Pattern.compile(pattern, Pattern.MULTILINE | Pattern.DOTALL).matcher(actual).find()` matches
 - **Session cases (`;; babble session`):** IR blocks are disallowed on multi-input session cases in `BIP029-I2` (parse error) to avoid ambiguity over which session input's module is captured.
 
-Example using `check` mode and `stage=after:<Pass>` for a `BIP014-P3` MIR pass:
+Example using `check` mode and `stage=after:<Pass>` for a `BIP014-I3` MIR pass:
 
 ````markdown
 ## GVN/CSE eliminates duplicate pure deterministic call
@@ -300,7 +300,7 @@ count 1 call heavy(
 
 ## 4. Unified Compiler IR Dumping & Observation Architecture (`HIR` + `MIR`)
 
-A core requirement of `BIP029` is ensuring that **both** `HIR` (`BIP014-I1`–`I2`) and upcoming **`MIR`** (`BIP014-P3`) share **one** IR observation, dumping, and canonical-printing architecture.
+A core requirement of `BIP029` is ensuring that **both** `HIR` (`BIP014-I1`–`I2`) and upcoming **`MIR`** (`BIP014-I3`) share **one** IR observation, dumping, and canonical-printing architecture.
 
 ### 4.1 Package & Interface Architecture (`org.babblelang.ir`)
 
@@ -322,7 +322,7 @@ flowchart TB
         HirMod --> HirCan
     end
 
-    subgraph MIR["org.babblelang.ir.mir (BIP014-P3)"]
+    subgraph MIR["org.babblelang.ir.mir (BIP014-I3)"]
         MirMod["MirModule implements IrDumpable"]
         MirCan["MirCanonicalPrinter"]
         MirMod --> MirCan
@@ -331,7 +331,7 @@ flowchart TB
     subgraph Drivers["Compiler & Pass Drivers"]
         Comp["BabbleCompiler\n(per-engine IR_OBSERVER)"]
         HirPM["PassManager (HIR)\n(before, after:Pass, final)"]
-        MirPM["MirPassManager (BIP014-P3)\n(before, after:Pass, final)"]
+        MirPM["MirPassManager (BIP014-I3)\n(before, after:Pass, final)"]
         Comp --> HirPM
         Comp --> MirPM
     end
@@ -356,7 +356,7 @@ Key design properties:
    - When an observer is attached (e.g., a `.batest.md` case only checking `hir -O1 fn=f` at `stage=final`), `wants(...)` returns `false` for `before` and intermediate passes so nothing is printed or retained for unneeded stages.
    - When a case or `-Dbabble.dumpIr` requests `stage=after:GvnCse`, `wants(...)` returns `true` for that exact pass and captures the immutable `IrDumpable` snapshot immediately after `GvnCsePass` completes.
 2. **CLI `-Dbabble.dumpIr` and `.batest.md` share one pipeline:**
-   - Today's `-Dbabble.dumpIr=hir|all|true` in [`BabbleCompiler.java`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java#L148-L179) becomes a `StderrIrObserver` registered via `IrObserver`, naturally gaining `-Dbabble.dumpIr=mir`, `-Dbabble.dumpIr=hir:canonical`, `-Dbabble.dumpIr=mir:after:GvnCse`, etc. when `BIP014-P3` arrives.
+   - Today's `-Dbabble.dumpIr=hir|all|true` in [`BabbleCompiler.java`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java#L148-L179) becomes a `StderrIrObserver` registered via `IrObserver`, naturally gaining `-Dbabble.dumpIr=mir`, `-Dbabble.dumpIr=hir:canonical`, `-Dbabble.dumpIr=mir:after:GvnCse`, etc. when `BIP014-I3` arrives.
 3. **100% parallel JUnit 5 safe:**
    - [`BatestRunner`](../../src/test/java/org/babblelang/tests/batest/BatestRunner.java) registers a fresh per-case `CapturingIrObserver` via `engine.put(BabbleCompiler.IR_OBSERVER, observer)` on its fresh `BabbleScriptEngine`.
    - Zero `System.setProperty`, zero `System.err` redirection, zero `@ResourceLock(Resources.GLOBAL)`.
@@ -376,9 +376,9 @@ Existing [`HirPrinter.print(HirModule)`](../../src/main/java/org/babblelang/ir/h
 | `Script$42$Vec3`, `babble/Script$42$Vec3` in `Is`/`As`/`HirCatch` | `Vec3` | Strips generated script class prefixes. |
 | Single long line for nested `block`/`if`/`while`/`for`/`try` | Deterministic 2-space indented multi-line layout for structured control flow; compact single-line for leaf/arithmetic expressions | Clean line-by-line diffs between `-O0` and `-O1`. |
 
-### 4.3 `MirCanonicalPrinter` Design Contract (for `BIP014-P3`, `BIP029-D5`)
+### 4.3 `MirCanonicalPrinter` Design Contract (for `BIP014-I3`, `BIP029-D5`)
 
-When `BIP014-P3` implements `org.babblelang.ir.mir` (`MirModule`, `MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`), implementing `IrDumpable` via `MirCanonicalPrinter` plugs straight into `BIP029` with zero `.batest.md` harness changes:
+When `BIP014-I3` implements `org.babblelang.ir.mir` (`MirModule`, `MirFunction`, `BasicBlock`, `BlockParam`, `MirInst`), implementing `IrDumpable` via `MirCanonicalPrinter` plugs straight into `BIP029` with zero `.batest.md` harness changes:
 
 1. **Native per-function unit:** `fn=<name>` and `fn=<Type>.<method>` map 1-to-1 to a single `MirFunction`.
 2. **Deterministic RPO basic-block numbering (`bb0`, `bb1`, …):** Emitted in Reverse Post-Order from the entry block, renumbered sequentially `bb0, bb1, …` regardless of internal block allocation IDs or deleted unreachable blocks.
@@ -398,7 +398,7 @@ When `BIP014-P3` implements `org.babblelang.ir.mir` (`MirModule`, `MirFunction`,
 | `default-test` | `interpret` | **Checked** | Skipped | Skipped | Skipped |
 | `compiled-tests-O0` | `compile -O0` | **Checked** | **Checked** | Skipped | Skipped |
 | `compiled-tests` | `compile -O1` | **Checked** | Skipped | **Checked** | Skipped |
-| *(future `BIP014-P3`)* | `compile -O2` | **Checked** | Skipped | Skipped | **Checked** |
+| *(future `BIP014-I3`)* | `compile -O2` | **Checked** | Skipped | Skipped | **Checked** |
 
 If a case expects a compile-time error (`error` block) and *also* specifies an IR block that requires compilation to succeed, the IR assertion fails cleanly (`No HIR snapshot captured for target 'fn=f' (compilation failed)`).
 
@@ -448,7 +448,7 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 - **`BIP029-D2` (resolves `BIP029-Q2`) — `.batest.md` file extension:** Rename test specification files to `.batest.md` so GitHub, VS Code, and IntelliJ render them natively as Markdown with syntax highlighting.
 - **`BIP029-D3` (resolves `BIP029-Q3`) — Explicit `stdout`, `stderr`, and `error` blocks:** Separate expected stdout (`stdout`), expected non-fatal stderr such as `Warning : ...` (`stderr`, excluding duplicated fatal `Error : ...` lines already reported in `error`), and expected fatal compile/runtime failures (`error`). Omitting `stdout` asserts empty stdout; omitting `stderr` asserts empty stderr; omitting `error` asserts `Kind.OK`.
 - **`BIP029-D4` (resolves `BIP029-Q4`) — Uniform `DOTALL` `regex` flag + `check` predicate mode:** Retire v1's `~~ ` line prefix in favor of a uniform `regex` block flag (`Pattern.MULTILINE | Pattern.DOTALL`, full-block `matches()`) on `stdout`, `stderr`, `error`, `hir`, and `mir`. On `hir` and `mir` blocks, also support an opt-in FileCheck-style `check` mode (`contains`, `!contains`, `count N`, `regex <pattern>`), gated by `-Dbatest.minDumpSizeForUsingPartialChecks=<N>` (default `30`, `0` disables) so dumps shorter than 30 lines always use readable exact goldens.
-- **`BIP029-D5` (resolves `BIP029-Q5`) — Canonical IR identifier normalization:** In `HirCanonicalPrinter`, omit `#id` when a user variable name is unique in the target (`var(x)`), append `#1`/`#2` on shadows, locally renumber synthetic temps (`$licm0`, `$inl0`, `$try0`), resolve internal `#id` calls/classes/interfaces to symbolic names, strip `Script$N$` prefixes and JVM-global `|T<N>` type IDs from `babble|<Name>|T<N>` descriptors, and 2-space pretty-print nested control flow. In `BIP014-P3`'s `MirCanonicalPrinter`, use deterministic RPO `bb0..bbN` block numbering, sequential SSA `v0..vN` numbering, and symbolic call/type names.
+- **`BIP029-D5` (resolves `BIP029-Q5`) — Canonical IR identifier normalization:** In `HirCanonicalPrinter`, omit `#id` when a user variable name is unique in the target (`var(x)`), append `#1`/`#2` on shadows, locally renumber synthetic temps (`$licm0`, `$inl0`, `$try0`), resolve internal `#id` calls/classes/interfaces to symbolic names, strip `Script$N$` prefixes and JVM-global `|T<N>` type IDs from `babble|<Name>|T<N>` descriptors, and 2-space pretty-print nested control flow. In `BIP014-I3`'s `MirCanonicalPrinter`, use deterministic RPO `bb0..bbN` block numbering, sequential SSA `v0..vN` numbering, and symbolic call/type names.
 - **`BIP029-D6` (resolves `BIP029-Q6`) — Default `stage=final` + per-pass `before`/`after:<Pass>` hooks:** Default `hir` and `mir` blocks to `stage=final` (post-`PassManager` and post-`HirTryNormalize` for `HIR`; post-`MirPassManager` for `MIR`), with explicit `stage=before` and `stage=after:<PassName>` lazily gated via `IrObserver.wants(...)`, unifying `-Dbabble.dumpIr` onto the same `IrObserver` pipeline.
 - **`BIP029-D7` (resolves `BIP029-Q7`) — `class=` / `record=` target includes owned methods:** `class=Foo` / `record=Foo` prints the type header, body/init statements, and directly owned methods in declaration order; `fn=Foo.bar` targets a single method.
 - **`BIP029-D8` (resolves `BIP029-Q8`) — Skip unmatched optimization levels:** IR blocks whose `<opt-levels>` do not include the active run are skipped (so a case may specify only `-O1`, both `-O0` and `-O1`, `-O0,-O1`, or future `-O2` `mir`).
@@ -481,7 +481,7 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 ### `BIP029-I4` — Compiler HIR Goldens, `OptimizerTestCase` Cleanup & Docs
 - Add `-O0` vs. `-O1` and `-O0,-O1` canonical HIR golden blocks across `src/test/batest/compiler/*.batest.md` (`const_fold`, `algebraic_simplify`, `inlining_and_dce`, `licm_and_purity`, `record_and_ownership_opt`, `try` dead-catch elimination), including `stage=after:<Pass>` and `check` examples.
 - Clean up redundant HIR substring checks in `OptimizerTestCase` while preserving API (`PassManager`, `-Dbabble.dumpIr`), `babblec` `AOT_CROSS_MODULE`, and ASM bytecode tests (`BIP029-D10`).
-- Update `AGENTS.md`, `docs/ARCHITECTURE.md`, and `docs/design/README.md`, and cross-link `BIP014-P3` to implement `MirModule implements IrDumpable` + `MirCanonicalPrinter` against `BIP029`'s `IrObserver` contract.
+- Update `AGENTS.md`, `docs/ARCHITECTURE.md`, and `docs/design/README.md`, and cross-link `BIP014-I3` to implement `MirModule implements IrDumpable` + `MirCanonicalPrinter` against `BIP029`'s `IrObserver` contract.
 
 ---
 
@@ -490,5 +490,5 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 1. **Preamble & order independence:** Adding or reordering definitions in a `babble preamble` or other cases in the same `.batest.md` file never changes any case's canonical `HIR` (or future `MIR`) golden output.
 2. **Real regression detection:** Temporarily disabling any `-O1` pass (`HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`) causes the corresponding `.batest.md` IR golden tests to fail loudly with a readable line diff — even though behavioral execution remains green.
 3. **Explicit outcome soundness:** A case expecting `error` fails if the snippet merely prints that string to stdout and exits normally; a case omitting `stdout` and `stderr` fails if anything is printed to either stream.
-4. **Zero-friction `BIP014-P3` `MIR` readiness:** `org.babblelang.ir` (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) and `.batest.md`'s `mir` (`;; mir -O2 ...`) parser/matcher/blesser are ready in place so `BIP014-P3` only has to implement `MirCanonicalPrinter` and emit snapshots from `MirPassManager`.
+4. **Zero-friction `BIP014-I3` `MIR` readiness:** `org.babblelang.ir` (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) and `.batest.md`'s `mir` (`;; mir -O2 ...`) parser/matcher/blesser are ready in place so `BIP014-I3` only has to implement `MirCanonicalPrinter` and emit snapshots from `MirPassManager`.
 5. **Boundaries & full CI parity:** `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase` pass (`org.babblelang.runtime` stays IR-free; `org.babblelang.ir` stays ANTLR-free); full `mvn -B package` (all 3 Surefire runs) and `mvn -q verify -Pbatest` (all 5 scopes `>= 75%` branch coverage, `0` divergences) pass cleanly under parallel JUnit execution.

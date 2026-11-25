@@ -1,4 +1,4 @@
-# SSA MIR Try/Catch/Finally and Closure Cell Lowering (BIP014-P3)
+# SSA MIR Try/Catch/Finally and Closure Cell Lowering (BIP014-I3)
 
 Tests `try`/`catch`/`finally`/`throw` CFG lowering with pinned locals and `addSuppressed`,
 plus loop-local `Cell` capture preservation across MIR passes.

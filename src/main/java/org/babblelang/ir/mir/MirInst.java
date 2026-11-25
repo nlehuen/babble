@@ -12,7 +12,7 @@ import java.util.Objects;
 import java.util.function.UnaryOperator;
 
 /**
- * Sealed hierarchy of SSA instructions inside a {@link MirBlock} ({@code BIP014-P3} §6.4).
+ * Sealed hierarchy of SSA instructions inside a {@link MirBlock} ({@code BIP014-I3} §6.4).
  *
  * <p>Every instruction is an immutable Java 21 {@code record} carrying an optional SSA result
  * {@link MirVal}, source {@link #line()}, and {@link MirEffect} summary. Passes rewrite operand
