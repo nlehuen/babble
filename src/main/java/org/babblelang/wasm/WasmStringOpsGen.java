@@ -87,8 +87,8 @@ public final class WasmStringOpsGen {
         WasmModule.FuncDef dBlank = mod.addFunction("str_isBlank",
                 ts.internFuncType(List.of(refStr), List.of(WasmValType.I32)), List.of("s"));
         WasmModule.FuncDef dSplit = mod.addFunction("str_split",
-                ts.internFuncType(List.of(refStr, refStr), List.of(WasmValType.ref(ts.refArrayType))),
-                List.of("s", "delim"));
+                ts.internFuncType(List.of(refStr, refStr, WasmValType.I32), List.of(WasmValType.ref(ts.refArrayType))),
+                List.of("s", "delim", "limit"));
         WasmModule.FuncDef dChars = mod.addFunction("str_toCharArray",
                 ts.internFuncType(List.of(refStr), List.of(WasmValType.ref(ts.charArrayType))),
                 List.of("s"));
@@ -280,7 +280,8 @@ public final class WasmStringOpsGen {
         c.localGet(0).structGet(ts.stringType, 0).localTee(sArr).arrayLen().localSet(sLen);
         c.localGet(1).structGet(ts.stringType, 0).localTee(pArr).arrayLen().localSet(pLen);
         c.localGet(2).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
-                .localGet(2).localGet(pLen).op(WasmInstr.SimpleOp.I32_ADD).localGet(sLen).op(WasmInstr.SimpleOp.I32_GT_S)
+                .localGet(pLen).localGet(sLen).op(WasmInstr.SimpleOp.I32_GT_S).op(WasmInstr.SimpleOp.I32_OR)
+                .localGet(2).localGet(sLen).localGet(pLen).op(WasmInstr.SimpleOp.I32_SUB).op(WasmInstr.SimpleOp.I32_GT_S)
                 .op(WasmInstr.SimpleOp.I32_OR).if_().i32Const(0).return_().end();
         c.i32Const(0).localSet(i);
         c.loop()
@@ -457,6 +458,13 @@ public final class WasmStringOpsGen {
         rt.emitStringLit(c, "Negative repeat count");
         c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
         c.localGet(0).structGet(ts.stringType, 0).localTee(arr).arrayLen().localSet(len);
+        // Guard against len * count overflowing signed i32
+        c.localGet(1).i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S)
+                .localGet(len).i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S).op(WasmInstr.SimpleOp.I32_AND).if_()
+                .localGet(len).i32Const(Integer.MAX_VALUE).localGet(1).op(WasmInstr.SimpleOp.I32_DIV_S)
+                .op(WasmInstr.SimpleOp.I32_GT_S).if_();
+        rt.emitStringLit(c, "OutOfMemoryError: Required length exceeds implementation limit");
+        c.localGet(2).call(rt.fnThrowMsg).unreachable().end().end();
         c.localGet(len).localGet(1).op(WasmInstr.SimpleOp.I32_MUL)
                 .arrayNewDefault(ts.charArrType).localSet(out);
         c.i32Const(0).localSet(i);
@@ -488,50 +496,120 @@ public final class WasmStringOpsGen {
     }
 
     private void emitSplit(WasmModule.FuncDef fn) {
-        // Literal delimiter split (also trims trailing empty strings like Java String.split(delim) default)
+        // params: 0=s ($String), 1=delim ($String), 2=limit (i32) -> (ref $RefArray)
+        // Literal delimiter split matching Java String.split(delim, limit):
+        //   limit > 0: at most `limit` parts (last part is unsplit remainder)
+        //   limit == 0: unlimited splits, then trim trailing empty strings if any split occurred
+        //   limit < 0: unlimited splits, keep all trailing empty strings
         WasmCodeBuilder c = fn.code();
-        int sLen = fn.addLocal("sLen", WasmValType.I32, 2);
-        int dLen = fn.addLocal("dLen", WasmValType.I32, 2);
-        int count = fn.addLocal("count", WasmValType.I32, 2);
-        int pos = fn.addLocal("pos", WasmValType.I32, 2);
-        int hit = fn.addLocal("hit", WasmValType.I32, 2);
-        int arr = fn.addLocal("arr", WasmValType.refNull(ts.anyArrType), 2);
-        int idx = fn.addLocal("idx", WasmValType.I32, 2);
+        int sLen = fn.addLocal("sLen", WasmValType.I32, 3);
+        int dLen = fn.addLocal("dLen", WasmValType.I32, 3);
+        int count = fn.addLocal("count", WasmValType.I32, 3);
+        int pos = fn.addLocal("pos", WasmValType.I32, 3);
+        int hit = fn.addLocal("hit", WasmValType.I32, 3);
+        int arr = fn.addLocal("arr", WasmValType.refNull(ts.anyArrType), 3);
+        int trimmed = fn.addLocal("trimmed", WasmValType.refNull(ts.anyArrType), 3);
+        int idx = fn.addLocal("idx", WasmValType.I32, 3);
+        int trimLen = fn.addLocal("trimLen", WasmValType.I32, 3);
 
         c.localGet(0).structGet(ts.stringType, 0).arrayLen().localSet(sLen);
         c.localGet(1).structGet(ts.stringType, 0).arrayLen().localSet(dLen);
 
-        // Pass 1: count parts
+        // Special case: empty delimiter ""
+        c.localGet(dLen).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+        // "".split("", *) -> [""]
+        c.localGet(sLen).op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                .i32Const(1).arrayNewDefault(ts.anyArrType).localTee(arr)
+                .i32Const(0).localGet(0).arraySet(ts.anyArrType)
+                .globalGet(arrays.gTdString).refAsNonNull().localGet(arr).refAsNonNull()
+                .structNew(ts.refArrayType).return_().end();
+        // limit == 1 -> [s]
+        c.localGet(2).i32Const(1).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .i32Const(1).arrayNewDefault(ts.anyArrType).localTee(arr)
+                .i32Const(0).localGet(0).arraySet(ts.anyArrType)
+                .globalGet(arrays.gTdString).refAsNonNull().localGet(arr).refAsNonNull()
+                .structNew(ts.refArrayType).return_().end();
+        // limit == 0 -> sLen single-char strings (no trailing "")
+        // limit < 0  -> sLen + 1 strings (each char + trailing "")
+        // limit > 1  -> min(limit, sLen + 1) strings (first count-1 chars + remainder)
+        c.localGet(2).op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                .localGet(sLen).localSet(count)
+                .else_()
+                .localGet(2).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .localGet(sLen).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(count)
+                .else_()
+                .localGet(2).localGet(sLen).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).op(WasmInstr.SimpleOp.I32_LT_S)
+                .if_(WasmValType.I32).localGet(2).else_().localGet(sLen).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).end()
+                .localSet(count)
+                .end().end();
+        c.localGet(count).arrayNewDefault(ts.anyArrType).localSet(arr);
+        c.i32Const(0).localSet(idx);
+        c.loop()
+                .localGet(idx).localGet(count).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                // If last slot and limit != 0 -> remainder s.substring(idx, sLen)
+                .localGet(idx).localGet(count).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).op(WasmInstr.SimpleOp.I32_EQ)
+                .localGet(2).i32Const(0).op(WasmInstr.SimpleOp.I32_NE).op(WasmInstr.SimpleOp.I32_AND).if_()
+                .localGet(arr).refAsNonNull().localGet(idx)
+                .localGet(0).localGet(idx).localGet(sLen).i32Const(0).call(fnSubstring)
+                .arraySet(ts.anyArrType)
+                .else_()
+                .localGet(arr).refAsNonNull().localGet(idx)
+                .localGet(0).localGet(idx).localGet(idx).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).i32Const(0).call(fnSubstring)
+                .arraySet(ts.anyArrType)
+                .end()
+                .localGet(idx).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(idx)
+                .br(1).end().end();
+        c.globalGet(arrays.gTdString).refAsNonNull().localGet(arr).refAsNonNull()
+                .structNew(ts.refArrayType).return_().end();
+
+        // Non-empty delimiter: Pass 1 - count parts (respecting limit > 0)
         c.i32Const(1).localSet(count);
         c.i32Const(0).localSet(pos);
-        c.localGet(dLen).if_()
-                .block().loop()
+        c.block().loop()
+                .localGet(2).i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S)
+                .localGet(count).localGet(2).op(WasmInstr.SimpleOp.I32_GE_S).op(WasmInstr.SimpleOp.I32_AND)
+                .brIf(1)
                 .localGet(0).localGet(1).localGet(pos).call(fnIndexOfStr).localTee(hit)
-                .i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_().br(2).end()
+                .i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).brIf(1)
                 .localGet(count).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(count)
                 .localGet(hit).localGet(dLen).op(WasmInstr.SimpleOp.I32_ADD).localSet(pos)
-                .br(0).end().end()
-                .end();
+                .br(0).end().end();
 
+        // Pass 2 - populate arr[0..count)
         c.localGet(count).arrayNewDefault(ts.anyArrType).localSet(arr);
-        c.localGet(dLen).op(WasmInstr.SimpleOp.I32_EQZ).if_()
-                .localGet(arr).refAsNonNull().i32Const(0).localGet(0).arraySet(ts.anyArrType)
-                .else_()
-                .i32Const(0).localSet(pos)
-                .i32Const(0).localSet(idx)
-                .block().loop()
-                .localGet(0).localGet(1).localGet(pos).call(fnIndexOfStr).localTee(hit)
-                .i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+        c.i32Const(0).localSet(pos);
+        c.i32Const(0).localSet(idx);
+        c.block().loop()
+                .localGet(idx).localGet(count).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).op(WasmInstr.SimpleOp.I32_GE_S).if_()
                 .localGet(arr).refAsNonNull().localGet(idx)
                 .localGet(0).localGet(pos).localGet(sLen).i32Const(0).call(fnSubstring)
                 .arraySet(ts.anyArrType)
                 .br(2).end()
+                .localGet(0).localGet(1).localGet(pos).call(fnIndexOfStr).localSet(hit)
                 .localGet(arr).refAsNonNull().localGet(idx)
                 .localGet(0).localGet(pos).localGet(hit).i32Const(0).call(fnSubstring)
                 .arraySet(ts.anyArrType)
                 .localGet(idx).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(idx)
                 .localGet(hit).localGet(dLen).op(WasmInstr.SimpleOp.I32_ADD).localSet(pos)
+                .br(0).end().end();
+
+        // If limit == 0 and at least one split occurred (count > 1), trim trailing empty strings
+        c.localGet(2).op(WasmInstr.SimpleOp.I32_EQZ)
+                .localGet(count).i32Const(1).op(WasmInstr.SimpleOp.I32_GT_S).op(WasmInstr.SimpleOp.I32_AND).if_()
+                .localGet(count).localSet(trimLen)
+                .block().loop()
+                .localGet(trimLen).op(WasmInstr.SimpleOp.I32_EQZ).brIf(1)
+                .localGet(arr).refAsNonNull().localGet(trimLen).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB)
+                .arrayGet(ts.anyArrType).refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen()
+                .i32Const(0).op(WasmInstr.SimpleOp.I32_NE).brIf(1)
+                .localGet(trimLen).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).localSet(trimLen)
                 .br(0).end().end()
+                .localGet(trimLen).localGet(count).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .localGet(trimLen).arrayNewDefault(ts.anyArrType).localTee(trimmed)
+                .i32Const(0).localGet(arr).refAsNonNull().i32Const(0).localGet(trimLen)
+                .arrayCopy(ts.anyArrType, ts.anyArrType)
+                .localGet(trimmed).localSet(arr)
+                .end()
                 .end();
 
         c.globalGet(arrays.gTdString).refAsNonNull()

@@ -274,6 +274,7 @@ public final class WasmWriter {
     private static byte[] encodeNameSection(WasmModule module) {
         ByteArrayOutputStream sec = new ByteArrayOutputStream();
         WasmLeb128.writeName(sec, "name");
+        int headerLen = sec.size();
         if (module.moduleName() != null && !module.moduleName().isEmpty()) {
             ByteArrayOutputStream sub = new ByteArrayOutputStream();
             WasmLeb128.writeName(sub, module.moduleName());
@@ -304,15 +305,16 @@ public final class WasmWriter {
         for (WasmModule.FuncDef fn : module.definedFuncs()) {
             List<int[]> idxs = new ArrayList<>();
             List<String> names = new ArrayList<>();
+            int paramCount = ((WasmTypeDef.FuncType) module.flatTypes().get(fn.typeIndex()).body()).params().size();
             List<String> pNames = fn.paramNames();
-            for (int p = 0; p < pNames.size(); p++) {
+            int pLimit = Math.min(pNames.size(), paramCount);
+            for (int p = 0; p < pLimit; p++) {
                 String pn = pNames.get(p);
                 if (pn != null && !pn.isEmpty()) {
                     idxs.add(new int[]{p});
                     names.add(pn);
                 }
             }
-            int paramCount = ((WasmTypeDef.FuncType) module.flatTypes().get(fn.typeIndex()).body()).params().size();
             List<WasmModule.Local> locals = fn.locals();
             for (int l = 0; l < locals.size(); l++) {
                 String ln = locals.get(l).name();
@@ -411,6 +413,9 @@ public final class WasmWriter {
                 }
             }
             writeSubSection(sec, 10, fSub.toByteArray());
+        }
+        if (sec.size() == headerLen) {
+            return new byte[0];
         }
         return sec.toByteArray();
     }

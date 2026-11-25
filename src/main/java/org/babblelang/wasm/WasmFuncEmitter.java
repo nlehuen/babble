@@ -174,6 +174,14 @@ public final class WasmFuncEmitter {
 
             List<HirExpr> stmts = modInfo.input.hir().topLevelStatements();
             int resLocal = ctx.newLocal("$modRes", ts.anyRef());
+            int exnLocal = ctx.newLocal("$modExn", WasmValType.EXNREF);
+            int doneD = ctx.pushBlock("mod_init_done");
+            c.block();
+            int catchD = ctx.pushBlock("mod_init_catch");
+            c.block(WasmValType.EXNREF);
+            int catchRel = ctx.relDepth(catchD);
+            ctx.pushBlock("mod_init_tbl");
+            c.tryTable(List.of(WasmInstr.CatchClause.catchAllRef(catchRel)));
             if (stmts.isEmpty()) {
                 c.refNull(ts.anyType).localSet(resLocal);
             } else {
@@ -185,6 +193,16 @@ public final class WasmFuncEmitter {
                 emitBoxed(stmts.get(stmts.size() - 1));
                 c.localSet(resLocal);
             }
+            ctx.popBlock();
+            c.end(); // end try_table
+            c.br(ctx.relDepth(doneD));
+            ctx.popBlock();
+            c.end(); // end mod_init_catch -> exnref
+            c.localSet(exnLocal);
+            c.i32Const(0).globalSet(modInfo.initStateGlobalIdx);
+            c.localGet(exnLocal).refAsNonNull().throwRef();
+            ctx.popBlock();
+            c.end(); // end mod_init_done
 
             // Populate $ModuleVal.exports array from exported top-level globals
             for (int i = 0; i < exportNames.length; i++) {
@@ -265,71 +283,49 @@ public final class WasmFuncEmitter {
                 }
             }
 
-            // 2. Evaluate optional parameter defaults (via $optMask OR boxed $G_MISSING for >32 optional params)
-            int[] paramValueLocals = new int[hf.params().size()];
-            for (int i = 0; i < hf.params().size(); i++) {
-                paramValueLocals[i] = firstParamIdx + i;
-            }
-            if (fi.hasOptMaskParam) {
-                int optBit = 0;
-                for (int i = 0; i < hf.params().size(); i++) {
-                    HirParam p = hf.params().get(i);
-                    if (p.defaultValue() != null) {
-                        int pLocal = firstParamIdx + i;
-                        c.localGet(optMaskLocal).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_AND).if_();
-                        ctx.pushBlock("opt_def");
-                        bindParamSlotIfUnbound(p, pLocal, false);
-                        emitAndWiden(p.defaultValue());
-                        widenStackRank(p.wideningRank(), hf.line());
-                        convertStack(ctx.stackKind, p.kind(), hf.line());
-                        c.localSet(pLocal);
-                        ctx.popBlock();
-                        c.end();
-                        optBit++;
-                    }
-                    bindParamSlotIfUnbound(p, firstParamIdx + i, false);
-                }
-            } else if (fi.hasBoxedMissingOptParams) {
-                for (int i = 0; i < hf.params().size(); i++) {
-                    HirParam p = hf.params().get(i);
-                    int rawLocal = firstParamIdx + i;
-                    if (p.defaultValue() != null) {
-                        int typedLocal = p.kind().isPrimitive()
-                                ? ctx.newLocal("opt_" + p.name(), ts.valTypeFor(p.kind()))
-                                : rawLocal;
-                        paramValueLocals[i] = typedLocal;
-                        c.localGet(rawLocal).globalGet(rt.gMissing).refEq().if_();
-                        ctx.pushBlock("opt_def_box");
-                        bindParamSlotIfUnbound(p, typedLocal, false);
-                        emitAndWiden(p.defaultValue());
-                        widenStackRank(p.wideningRank(), hf.line());
-                        convertStack(ctx.stackKind, p.kind(), hf.line());
-                        c.localSet(typedLocal);
-                        c.else_();
-                        if (p.kind().isPrimitive()) {
-                            c.localGet(rawLocal).i32Const(hf.line()).call(rt.unboxFuncFor(p.kind())).localSet(typedLocal);
-                        }
-                        ctx.popBlock();
-                        c.end();
-                        bindParamSlotIfUnbound(p, typedLocal, false);
-                    } else {
-                        bindParamSlotIfUnbound(p, rawLocal, false);
-                    }
-                }
-            } else {
-                for (int i = 0; i < hf.params().size(); i++) {
-                    bindParamSlotIfUnbound(hf.params().get(i), firstParamIdx + i, false);
-                }
-            }
-
-            // 3. Wrap any cell-captured parameters into capture cells
+            // 2. Evaluate optional parameter defaults and immediately wrap cell-captured parameters so
+            //    closures created in subsequent parameter defaults share the same capture cell.
+            int optBit = 0;
             for (int i = 0; i < hf.params().size(); i++) {
                 HirParam p = hf.params().get(i);
+                int rawLocal = firstParamIdx + i;
+                int valLocal = rawLocal;
+                if (fi.hasOptMaskParam && p.defaultValue() != null) {
+                    c.localGet(optMaskLocal).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_AND).if_();
+                    ctx.pushBlock("opt_def");
+                    bindParamSlotIfUnbound(p, rawLocal, false);
+                    emitAndWiden(p.defaultValue());
+                    widenStackRank(p.wideningRank(), hf.line());
+                    convertStack(ctx.stackKind, p.kind(), hf.line());
+                    c.localSet(rawLocal);
+                    ctx.popBlock();
+                    c.end();
+                    optBit++;
+                } else if (fi.hasBoxedMissingOptParams && p.defaultValue() != null) {
+                    int typedLocal = p.kind().isPrimitive()
+                            ? ctx.newLocal("opt_" + p.name(), ts.valTypeFor(p.kind()))
+                            : rawLocal;
+                    valLocal = typedLocal;
+                    c.localGet(rawLocal).globalGet(rt.gMissing).refEq().if_();
+                    ctx.pushBlock("opt_def_box");
+                    bindParamSlotIfUnbound(p, typedLocal, false);
+                    emitAndWiden(p.defaultValue());
+                    widenStackRank(p.wideningRank(), hf.line());
+                    convertStack(ctx.stackKind, p.kind(), hf.line());
+                    c.localSet(typedLocal);
+                    c.else_();
+                    if (p.kind().isPrimitive()) {
+                        c.localGet(rawLocal).i32Const(hf.line()).call(rt.unboxFuncFor(p.kind())).localSet(typedLocal);
+                    }
+                    ctx.popBlock();
+                    c.end();
+                }
+                bindParamSlotIfUnbound(p, valLocal, false);
                 HirVar pv = p.var();
                 if (pv != null && pv.cell()) {
                     int cellType = ts.cellTypeFor(pv.primitiveKind());
                     int cellLocal = ctx.newLocal("cell_" + pv.name(), WasmValType.ref(cellType));
-                    c.localGet(paramValueLocals[i]);
+                    c.localGet(valLocal);
                     convertRawValue(p.kind(), pv.primitiveKind(), hf.line());
                     if (pv.primitiveKind().isPrimitive()) {
                         c.i32Const(1);
@@ -1467,10 +1463,12 @@ public final class WasmFuncEmitter {
             case "java" -> {
                 String fqcn = desc.payload();
                 switch (fqcn) {
-                    case "java.lang.String" -> c.localGet(valLocal).refTest(ts.stringType);
+                    case "java.lang.String", "java.lang.CharSequence" -> c.localGet(valLocal).refTest(ts.stringType);
                     case "java.lang.Object" -> c.localGet(valLocal).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ);
                     case "java.util.List" -> c.localGet(valLocal).refTest(ts.listType);
                     case "java.util.Set" -> c.localGet(valLocal).refTest(ts.setType);
+                    case "java.util.Collection" -> c.localGet(valLocal).refTest(ts.listType)
+                            .localGet(valLocal).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR);
                     case "java.util.SortedSet" -> c.localGet(valLocal).refTest(ts.setType).if_(WasmValType.I32)
                             .localGet(valLocal).refCast(ts.setType).structGet(ts.setType, 2)
                             .else_().i32Const(0).end();
@@ -1479,20 +1477,28 @@ public final class WasmFuncEmitter {
                             .localGet(valLocal).refCast(ts.mapType).structGet(ts.mapType, 3)
                             .else_().i32Const(0).end();
                     case "java.util.Map$Entry" -> c.localGet(valLocal).refTest(ts.entryType);
-                    case "org.babblelang.runtime.BabbleException" -> c.localGet(valLocal).refTest(ts.babbleExnType);
+                    case "org.babblelang.runtime.BabbleException", "java.lang.Throwable",
+                            "java.lang.Exception", "java.lang.RuntimeException" ->
+                            c.localGet(valLocal).refTest(ts.babbleExnType);
                     case "java.lang.Iterable" -> {
                         c.localGet(valLocal).refTest(ts.listType)
-                                .localGet(valLocal).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR)
-                                .localGet(valLocal).refTest(ts.arrayBaseType).op(WasmInstr.SimpleOp.I32_OR);
+                                .localGet(valLocal).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR);
                     }
                     case "java.util.Iterator" -> c.localGet(valLocal).refTest(ts.collectionIterType);
                     case "java.lang.Appendable" -> {
-                        c.localGet(valLocal).refTest(ts.hostStreamType)
-                                .localGet(valLocal).refTest(ts.objectType).op(WasmInstr.SimpleOp.I32_OR);
+                        c.localGet(valLocal).refTest(ts.hostStreamType);
+                        for (WasmObjectSystem.ClassInfo ci : objects.allClasses()) {
+                            if (ci.hir.javaInterfaces().contains(Appendable.class)) {
+                                c.localGet(valLocal).refTest(ci.structTypeIdx).op(WasmInstr.SimpleOp.I32_OR);
+                            }
+                        }
+                    }
+                    case "java.io.Writer", "java.io.PrintWriter" -> {
+                        c.localGet(valLocal).refTest(ts.hostStreamType);
                     }
                     default -> {
                         if (fqcn.startsWith("[")) {
-                            c.localGet(valLocal).refTest(ts.arrayBaseType);
+                            arrOps.emitArrayTypeCheck(this, valLocal, fqcn);
                         } else {
                             c.i32Const(0);
                         }
@@ -1514,7 +1520,7 @@ public final class WasmFuncEmitter {
                 if (bid >= 0) {
                     c.localGet(valLocal).i32Const(bid).call(ops.fnIsBuiltin);
                 } else if (desc.kind().startsWith("array")) {
-                    c.localGet(valLocal).refTest(ts.arrayBaseType);
+                    arrOps.emitArrayTypeCheck(this, valLocal, desc.payload());
                 } else {
                     c.i32Const(0);
                 }
@@ -1581,15 +1587,36 @@ public final class WasmFuncEmitter {
         }
         c.end();
 
-        // Numeric widening conversion when target is a numeric type (e.g. int -> double)
-        String numKind = numericTargetKind(desc);
-        if (numKind != null && !"byte".equals(numKind)) {
-            int rank = numericRankOf(numKind);
+        // Numeric widening conversion when target is a numeric type or a union containing numeric member(s)
+        int[] unionNumRanks = numericTargetRanks(desc);
+        if (unionNumRanks.length == 1 && unionNumRanks[0] > 0) {
+            int rank = unionNumRanks[0];
             c.localGet(tmp).refIsNull().if_(ts.anyRef())
                     .refNull(ts.anyType)
                     .else_()
+                    .localGet(tmp).call(rt.fnNumRank).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S).if_(ts.anyRef())
                     .localGet(tmp).i32Const(rank).call(rt.fnWidenNumeric)
-                    .end();
+                    .else_()
+                    .localGet(tmp)
+                    .end().end();
+        } else if (unionNumRanks.length > 1) {
+            // Multiple numeric members sorted ascending: widen to the smallest rank >= actual rank
+            int rLocal = ctx.newLocal("$asURank", WasmValType.I32);
+            c.localGet(tmp).call(rt.fnNumRank).localTee(rLocal).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S).if_(ts.anyRef());
+            for (int ri = 0; ri < unionNumRanks.length; ri++) {
+                int targetR = unionNumRanks[ri];
+                if (ri < unionNumRanks.length - 1) {
+                    c.localGet(rLocal).i32Const(targetR).op(WasmInstr.SimpleOp.I32_LE_S).if_(ts.anyRef())
+                            .localGet(tmp).i32Const(targetR).call(rt.fnWidenNumeric)
+                            .else_();
+                } else {
+                    c.localGet(tmp).i32Const(targetR).call(rt.fnWidenNumeric);
+                }
+            }
+            for (int ri = 0; ri < unionNumRanks.length - 1; ri++) {
+                c.end();
+            }
+            c.else_().localGet(tmp).end();
         } else {
             c.localGet(tmp);
         }
@@ -1599,23 +1626,28 @@ public final class WasmFuncEmitter {
         }
     }
 
-    private static String numericTargetKind(WasmTypeDesc desc) {
+    private static int[] numericTargetRanks(WasmTypeDesc desc) {
         if (isNumericBuiltinKind(desc.kind())) {
-            return desc.kind();
+            return new int[]{numericRankOf(desc.kind())};
         }
         if ("union".equals(desc.kind())) {
-            String found = null;
-            for (WasmTypeDesc m : desc.members()) {
-                if ("null".equals(m.kind())) continue;
-                if (isNumericBuiltinKind(m.kind()) && found == null) {
-                    found = m.kind();
-                } else {
-                    return null;
-                }
+            java.util.TreeSet<Integer> ranks = new java.util.TreeSet<>();
+            collectNumericUnionRanks(desc, ranks);
+            if (!ranks.isEmpty()) {
+                return ranks.stream().mapToInt(Integer::intValue).toArray();
             }
-            return found;
         }
-        return null;
+        return new int[0];
+    }
+
+    private static void collectNumericUnionRanks(WasmTypeDesc desc, java.util.Set<Integer> out) {
+        if (isNumericBuiltinKind(desc.kind())) {
+            out.add(numericRankOf(desc.kind()));
+        } else if ("union".equals(desc.kind())) {
+            for (WasmTypeDesc m : desc.members()) {
+                collectNumericUnionRanks(m, out);
+            }
+        }
     }
 
     private void emitNonNull(HirExpr.NonNull n) {
@@ -1860,6 +1892,7 @@ public final class WasmFuncEmitter {
         c.end(); // end $normal
 
         // Copy 1: finally body on normal & control-transfer paths
+        Map<Integer, VarSlot> savedVarsBeforeFinally = new HashMap<>(ctx.vars);
         emitFinallyBodyScoped(t);
 
         // Dispatch exitKindLocal: 1=return, 2=break, 3=continue, 0=normal
@@ -1913,7 +1946,9 @@ public final class WasmFuncEmitter {
                 .localSet(exnLineLocal)
                 .localSet(exnValLocal);
 
-        // Copy 2: finally body on exception unwind path
+        // Copy 2: finally body on exception unwind path (restore ctx.vars so declared locals/cells allocate cleanly!)
+        ctx.vars.clear();
+        ctx.vars.putAll(savedVarsBeforeFinally);
         if (t.finallyNothrow()) {
             // BIP028-D5: statically nothrow finally elides inner try_table & addSuppressed!
             emitFinallyBodyScoped(t);
@@ -1940,6 +1975,8 @@ public final class WasmFuncEmitter {
             ctx.popBlock();
             c.end(); // end $supp_done
         }
+        ctx.vars.clear();
+        ctx.vars.putAll(savedVarsBeforeFinally);
         c.localGet(exnRefLocal).refAsNonNull().throwRef();
 
         ctx.popBlock();

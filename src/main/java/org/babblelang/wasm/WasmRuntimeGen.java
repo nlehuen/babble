@@ -774,7 +774,25 @@ public final class WasmRuntimeGen {
 
         c.localGet(bits).i64Const(0L).op(WasmInstr.SimpleOp.I64_LT_S).localSet(neg);
         c.localGet(0).op(WasmInstr.SimpleOp.F64_ABS).localSet(absD);
-        // Simple fixed decimal for bare Wasm
+        // Scale out-of-range magnitudes into scientific notation so absD never overflows Long.MAX_VALUE
+        int exp = fn.addLocal("exp", WasmValType.I32, 1);
+        int useSci = fn.addLocal("useSci", WasmValType.I32, 1);
+        c.localGet(absD).f64Const(1.0e7).op(WasmInstr.SimpleOp.F64_GE)
+                .localGet(absD).f64Const(1.0e-3).op(WasmInstr.SimpleOp.F64_LT).op(WasmInstr.SimpleOp.I32_OR)
+                .if_()
+                .i32Const(1).localSet(useSci)
+                .loop()
+                .localGet(absD).f64Const(10.0).op(WasmInstr.SimpleOp.F64_GE).if_()
+                .localGet(absD).f64Const(10.0).op(WasmInstr.SimpleOp.F64_DIV).localSet(absD)
+                .localGet(exp).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(exp)
+                .br(1).end().end()
+                .loop()
+                .localGet(absD).f64Const(1.0).op(WasmInstr.SimpleOp.F64_LT).if_()
+                .localGet(absD).f64Const(10.0).op(WasmInstr.SimpleOp.F64_MUL).localSet(absD)
+                .localGet(exp).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).localSet(exp)
+                .br(1).end().end()
+                .end();
+        // Fixed decimal for [1e-3, 1e7) or scaled mantissa [1.0, 10.0)
         c.localGet(absD).op(WasmInstr.SimpleOp.I64_TRUNC_SAT_F64_S).localSet(whole);
         c.localGet(absD).localGet(whole).op(WasmInstr.SimpleOp.F64_CONVERT_I64_S).op(WasmInstr.SimpleOp.F64_SUB)
                 .f64Const(1_000_000.0).op(WasmInstr.SimpleOp.F64_MUL).op(WasmInstr.SimpleOp.F64_NEAREST)
@@ -817,6 +835,12 @@ public final class WasmRuntimeGen {
                 .end();
         c.localGet(res).refAsNonNull().localGet(frac).call(fnLongToStr).call(fnStrConcat).localSet(res);
         c.end();
+
+        c.localGet(useSci).if_()
+                .localGet(res).refAsNonNull();
+        emitStringLit(c, "E");
+        c.call(fnStrConcat).localGet(exp).call(fnIntToStr).call(fnStrConcat).localSet(res)
+                .end();
 
         c.localGet(neg).if_();
         emitStringLit(c, "-");
@@ -969,10 +993,12 @@ public final class WasmRuntimeGen {
 
     private void emitUnboxFloat(WasmModule.FuncDef fn) {
         WasmCodeBuilder c = fn.code();
+        int r = fn.addLocal("r", WasmValType.I32, 2);
         c.localGet(0).refTest(ts.boxFloatType).if_()
                 .localGet(0).refCast(ts.boxFloatType).structGet(ts.boxFloatType, 0).return_()
                 .end();
-        c.localGet(0).call(fnNumRank).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S).if_()
+        c.localGet(0).call(fnNumRank).localTee(r).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
+                .localGet(r).i32Const(4).op(WasmInstr.SimpleOp.I32_LE_S).op(WasmInstr.SimpleOp.I32_AND).if_()
                 .localGet(0).refAsNonNull().call(fnNumAsDouble).op(WasmInstr.SimpleOp.F32_DEMOTE_F64).return_()
                 .end();
         emitStringLit(c, "Expected float");

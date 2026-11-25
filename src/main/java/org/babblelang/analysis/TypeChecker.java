@@ -992,8 +992,15 @@ final class TypeChecker {
         PrimitiveKind rKind = PrimitiveKind.of(rt);
         boolean rStr = rt == Type.STRING || Type.withoutNull(rt) == Type.STRING;
         boolean rVoid = rt == Type.NULL;
-        pass.analysis.lowering().addWasmImport(
-                new LoweringTargets.WasmImportSpec(mod, name, pKinds, pStrings, rKind, rStr, rVoid));
+        int line = ctx.getStart() != null ? ctx.getStart().getLine() : 0;
+        LoweringTargets.WasmImportSpec spec = new LoweringTargets.WasmImportSpec(
+                mod, name, pKinds, pStrings, rKind, rStr, rVoid, line);
+        LoweringTargets.WasmImportSpec existing = pass.analysis.lowering().wasmImport(mod, name);
+        if (existing != null && !existing.sameSignature(spec)) {
+            warn("Conflicting wasm import signature : wasm." + mod + "." + name, ctx);
+            return;
+        }
+        pass.analysis.lowering().addWasmImport(spec);
     }
 
     /** Resolves {@code wasm} to a synthetic typed module namespace populated from scoped {@code axiom wasm.<mod>.<name>} declarations ({@code BIP025-D9}). */

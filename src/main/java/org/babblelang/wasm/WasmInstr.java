@@ -35,6 +35,11 @@ public sealed interface WasmInstr permits
         }
 
         record TypeIdx(int typeIndex) implements BlockType {
+            public TypeIdx {
+                if (typeIndex < 0) {
+                    throw new IllegalArgumentException("Negative block type index : " + typeIndex);
+                }
+            }
         }
 
         Empty EMPTY = new Empty();
@@ -104,6 +109,10 @@ public sealed interface WasmInstr permits
 
         public static CatchClause catchRefTag(int tagIndex, int labelIndex) {
             return new CatchClause(CatchKind.CATCH_REF, tagIndex, labelIndex);
+        }
+
+        public static CatchClause catchAllRef(int labelIndex) {
+            return new CatchClause(CatchKind.CATCH_ALL_REF, 0, labelIndex);
         }
     }
 

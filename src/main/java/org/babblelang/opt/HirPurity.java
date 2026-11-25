@@ -370,6 +370,10 @@ public final class HirPurity {
             if (!c.meta().effects().isDeterministic()) {
                 return false;
             }
+        } else if (expr instanceof HirExpr.CoreMethodCall c) {
+            if (!c.meta().effects().isDeterministic()) {
+                return false;
+            }
         } else if (expr instanceof HirExpr.JavaMethodCall c) {
             if (!isFoldableJava(c.target().method()) && !c.meta().effects().isDeterministic()) {
                 return false;

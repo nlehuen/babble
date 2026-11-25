@@ -336,7 +336,8 @@ public final class WasmTypeSystem {
         ))));
         rec.add(new WasmTypeDef.SubType(entryType, "Entry", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("key", refAnyNull, false),
-                field("val", refAnyNull, true)
+                field("val", refAnyNull, true),
+                field("parentMap", WasmValType.refNull(mapType), false)
         ))));
         rec.add(new WasmTypeDef.SubType(mapType, "Map", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("keys", refAnyArr, true),

@@ -21,6 +21,23 @@ public final class WasmVerifier {
 
     public static void verify(WasmModule module) {
         int typeCount = module.flatTypes().size();
+        // Verify recGroups covers flatTypes 1:1 in exact index order 0..typeCount-1
+        int expectedTypeIdx = 0;
+        for (WasmTypeDef.RecGroup group : module.recGroups()) {
+            if (group.types().isEmpty()) {
+                throw new IllegalStateException("WasmVerifier : empty rec group");
+            }
+            for (WasmTypeDef.SubType st : group.types()) {
+                if (st == null || st.index() != expectedTypeIdx || expectedTypeIdx >= typeCount || module.typeAt(expectedTypeIdx) != st) {
+                    throw new IllegalStateException("WasmVerifier : rec group type order mismatch at index " + expectedTypeIdx);
+                }
+                expectedTypeIdx++;
+            }
+        }
+        if (expectedTypeIdx != typeCount) {
+            throw new IllegalStateException("WasmVerifier : rec groups cover " + expectedTypeIdx + " types, expected " + typeCount);
+        }
+
         for (int i = 0; i < typeCount; i++) {
             WasmTypeDef.SubType st = module.typeAt(i);
             if (st == null) {
@@ -28,6 +45,22 @@ public final class WasmVerifier {
             }
             if (st.index() != i) {
                 throw new IllegalStateException("WasmVerifier : type index mismatch at " + i);
+            }
+            switch (st.body()) {
+                case WasmTypeDef.FuncType ft -> {
+                    for (WasmValType p : ft.params()) {
+                        verifyValType(typeCount, "type " + i + " param", p);
+                    }
+                    for (WasmValType r : ft.results()) {
+                        verifyValType(typeCount, "type " + i + " result", r);
+                    }
+                }
+                case WasmTypeDef.StructType struct -> {
+                    for (int f = 0; f < struct.fields().size(); f++) {
+                        verifyStorageType(typeCount, "type " + i + " field " + f, struct.fields().get(f).type());
+                    }
+                }
+                case WasmTypeDef.ArrayType arr -> verifyStorageType(typeCount, "type " + i + " array elem", arr.element().type());
             }
             if (st.hasSuper()) {
                 if (st.superTypeIndex() < 0 || st.superTypeIndex() >= i) {
@@ -81,6 +114,11 @@ public final class WasmVerifier {
             }
         }
 
+        // Declared func refs
+        for (int idx : module.declaredFuncRefs()) {
+            requireBounds(idx, module.totalFuncCount(), "declared func ref");
+        }
+
         // Start func
         if (module.startFuncIndex() >= 0) {
             requireBounds(module.startFuncIndex(), module.totalFuncCount(), "start func");
@@ -90,16 +128,56 @@ public final class WasmVerifier {
             }
         }
 
-        // Globals
+        // Globals (value type + constant-expression initializer)
         for (WasmModule.GlobalDef g : module.globals()) {
+            verifyValType(typeCount, "global " + g.name(), g.type());
+            verifyGlobalConstInit(module, g);
             verifyInstructions(module, "global " + g.name(), 0, g.init());
         }
 
         // Defined functions
         for (WasmModule.FuncDef fn : module.definedFuncs()) {
             WasmTypeDef.FuncType ft = requireFuncType(module, fn.typeIndex(), "func " + fn.name());
+            for (int l = 0; l < fn.locals().size(); l++) {
+                verifyValType(typeCount, "func " + fn.name() + " local " + l, fn.locals().get(l).type());
+            }
             int totalLocals = ft.params().size() + fn.locals().size();
             verifyInstructions(module, "func " + fn.name(), totalLocals, fn.code().build());
+        }
+    }
+
+    private static void verifyGlobalConstInit(WasmModule module, WasmModule.GlobalDef g) {
+        String owner = "global " + g.name();
+        for (WasmInstr ins : g.init()) {
+            boolean allowed = switch (ins) {
+                case WasmInstr.I32Const c -> true;
+                case WasmInstr.I64Const c -> true;
+                case WasmInstr.F32Const c -> true;
+                case WasmInstr.F64Const c -> true;
+                case WasmInstr.RefNull r -> true;
+                case WasmInstr.Simple s -> switch (s.op()) {
+                    case REF_I31, I32_ADD, I32_SUB, I32_MUL, I64_ADD, I64_SUB, I64_MUL -> true;
+                    default -> false;
+                };
+                case WasmInstr.Idx i -> switch (i.op()) {
+                    case REF_FUNC, STRUCT_NEW, STRUCT_NEW_DEFAULT, ARRAY_NEW, ARRAY_NEW_DEFAULT -> true;
+                    case GLOBAL_GET -> {
+                        if (i.index() < 0 || i.index() >= g.globalIndex()) {
+                            throw new IllegalStateException("WasmVerifier : " + owner + " global.get must reference an earlier global, got " + i.index());
+                        }
+                        if (module.globals().get(i.index()).mutable()) {
+                            throw new IllegalStateException("WasmVerifier : " + owner + " global.get in const init cannot reference mutable global " + i.index());
+                        }
+                        yield true;
+                    }
+                    default -> false;
+                };
+                case WasmInstr.Idx2 i -> i.op() == WasmInstr.Idx2Op.ARRAY_NEW_FIXED;
+                default -> false;
+            };
+            if (!allowed) {
+                throw new IllegalStateException("WasmVerifier : " + owner + " init contains non-constant instruction : " + ins);
+            }
         }
     }
 
@@ -159,6 +237,13 @@ public final class WasmVerifier {
                                     if (!(body instanceof WasmTypeDef.ArrayType arr)) {
                                         throw new IllegalStateException("WasmVerifier : " + owner + " " + i.op().wat() + " expects array type " + i.index());
                                     }
+                                    boolean packed = arr.element().type() instanceof WasmValType.Packed;
+                                    if (i.op() == WasmInstr.IdxOp.ARRAY_GET && packed) {
+                                        throw new IllegalStateException("WasmVerifier : " + owner + " array.get on packed array type " + i.index() + " must use array.get_s or array.get_u");
+                                    }
+                                    if ((i.op() == WasmInstr.IdxOp.ARRAY_GET_S || i.op() == WasmInstr.IdxOp.ARRAY_GET_U) && !packed) {
+                                        throw new IllegalStateException("WasmVerifier : " + owner + " " + i.op().wat() + " on unpacked array type " + i.index());
+                                    }
                                     if ((i.op() == WasmInstr.IdxOp.ARRAY_SET || i.op() == WasmInstr.IdxOp.ARRAY_FILL) && !arr.element().mutable()) {
                                         throw new IllegalStateException("WasmVerifier : " + owner + " mutates immutable array type " + i.index());
                                     }
@@ -194,7 +279,15 @@ public final class WasmVerifier {
                                 throw new IllegalStateException("WasmVerifier : " + owner + " " + i.op().wat() + " expects struct type " + i.index1());
                             }
                             requireBounds(i.index2(), st.fields().size(), owner + " " + i.op().wat() + " field");
-                            if (i.op() == WasmInstr.Idx2Op.STRUCT_SET && !st.fields().get(i.index2()).mutable()) {
+                            WasmTypeDef.Field fld = st.fields().get(i.index2());
+                            boolean packed = fld.type() instanceof WasmValType.Packed;
+                            if (i.op() == WasmInstr.Idx2Op.STRUCT_GET && packed) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " struct.get on packed field " + i.index2() + " of type " + i.index1() + " must use struct.get_s or struct.get_u");
+                            }
+                            if ((i.op() == WasmInstr.Idx2Op.STRUCT_GET_S || i.op() == WasmInstr.Idx2Op.STRUCT_GET_U) && !packed) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " " + i.op().wat() + " on unpacked field " + i.index2() + " of type " + i.index1());
+                            }
+                            if (i.op() == WasmInstr.Idx2Op.STRUCT_SET && !fld.mutable()) {
                                 throw new IllegalStateException("WasmVerifier : " + owner + " struct.set on immutable field " + i.index2() + " of type " + i.index1());
                             }
                         }
@@ -203,14 +296,32 @@ public final class WasmVerifier {
                             if (!(module.typeAt(i.index1()).body() instanceof WasmTypeDef.ArrayType)) {
                                 throw new IllegalStateException("WasmVerifier : " + owner + " array.new_fixed expects array type " + i.index1());
                             }
+                            if (i.index2() < 0) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " array.new_fixed negative length : " + i.index2());
+                            }
                         }
                         case ARRAY_NEW_DATA -> {
                             requireBounds(i.index1(), typeCount, owner + " array.new_data type");
+                            if (!(module.typeAt(i.index1()).body() instanceof WasmTypeDef.ArrayType arr)) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " array.new_data expects array type " + i.index1());
+                            }
+                            if (!(arr.element().type() instanceof WasmValType.Num || arr.element().type() instanceof WasmValType.Packed)) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " array.new_data requires numeric or packed array element type at " + i.index1());
+                            }
                             requireBounds(i.index2(), dataCount, owner + " array.new_data segment");
                         }
                         case ARRAY_COPY -> {
                             requireBounds(i.index1(), typeCount, owner + " array.copy dst type");
                             requireBounds(i.index2(), typeCount, owner + " array.copy src type");
+                            if (!(module.typeAt(i.index1()).body() instanceof WasmTypeDef.ArrayType dstArr)) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " array.copy expects dst array type " + i.index1());
+                            }
+                            if (!(module.typeAt(i.index2()).body() instanceof WasmTypeDef.ArrayType)) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " array.copy expects src array type " + i.index2());
+                            }
+                            if (!dstArr.element().mutable()) {
+                                throw new IllegalStateException("WasmVerifier : " + owner + " array.copy mutates immutable dst array type " + i.index1());
+                            }
                         }
                     }
                 }
@@ -237,7 +348,7 @@ public final class WasmVerifier {
                 case WasmInstr.I64Const c -> {}
                 case WasmInstr.F32Const c -> {}
                 case WasmInstr.F64Const c -> {}
-                case WasmInstr.SelectTyped s -> {}
+                case WasmInstr.SelectTyped s -> verifyValType(typeCount, owner + " select", s.type());
             }
         }
         if (!blocks.isEmpty()) {
@@ -248,6 +359,21 @@ public final class WasmVerifier {
     private static void verifyBlockType(WasmModule module, String owner, WasmInstr.BlockType bt) {
         if (bt instanceof WasmInstr.BlockType.TypeIdx t) {
             requireFuncType(module, t.typeIndex(), owner + " block type");
+        } else if (bt instanceof WasmInstr.BlockType.Val v) {
+            verifyValType(module.flatTypes().size(), owner + " block result", v.type());
+        }
+    }
+
+    private static void verifyValType(int typeCount, String owner, WasmValType type) {
+        if (type instanceof WasmValType.Packed p) {
+            throw new IllegalStateException("WasmVerifier : " + owner + " cannot use packed storage type " + p.wat() + " as a value type");
+        }
+        verifyStorageType(typeCount, owner, type);
+    }
+
+    private static void verifyStorageType(int typeCount, String owner, WasmValType type) {
+        if (type instanceof WasmValType.Ref r) {
+            verifyHeapType(typeCount, owner, r.heapType());
         }
     }
 
