@@ -143,7 +143,8 @@ public final class HirBuilder {
                 ownInterfaceJvmNames,
                 ownClassJvmNames,
                 nextVarId,
-                nextOwnerId
+                nextOwnerId,
+                scopes.lowering().wasmImports()
         );
     }
 

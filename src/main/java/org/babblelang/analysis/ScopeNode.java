@@ -30,6 +30,8 @@ final class ScopeNode {
     final Map<String, ParserRuleContext> names = new LinkedHashMap<>();
     /** Scoped Babble-name axioms ({@code axiom foo: fn ...}) applying to this scope and enclosed scopes (BIP019 §2.3). */
     final Map<String, BabbleParser.AxiomExpressionContext> babbleAxioms = new LinkedHashMap<>();
+    /** Scoped WebAssembly host import axioms ({@code axiom wasm.<mod>.<name>: fn ...}) ({@code BIP025-D9}). */
+    final Map<String, Map<String, BabbleParser.AxiomExpressionContext>> wasmAxioms = new LinkedHashMap<>();
     /** The names defined here, declared when the scope is entered (hoisting). */
     final List<String> declared = new ArrayList<>();
     /** Parallel finality flags for {@link #declared} ({@code true} for {@code def}, {@code false} for {@code var}). */

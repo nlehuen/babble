@@ -100,10 +100,15 @@ public final class WasmProgramLinker {
         }
     }
 
+    /** Bound Wasm host import declared via {@code axiom wasm.<mod>.<name>: fn ...} ({@code BIP025-D9}). */
+    public record WasmImportBinding(org.babblelang.analysis.LoweringTargets.WasmImportSpec spec, int funcIdx) {
+    }
+
     private final List<ModuleInput> inputs;
     private final CompilationTarget target;
     private final WasmModule mod;
     private final WasmTypeSystem ts;
+    private final Map<String, WasmImportBinding> wasmImports = new LinkedHashMap<>();
     private final WasmRuntimeGen rt;
     private final WasmRuntimeOpsGen ops;
     private final WasmArrayOpsGen arrOps;
@@ -120,6 +125,7 @@ public final class WasmProgramLinker {
         String modName = inputs.isEmpty() ? "babble" : sanitizeName(inputs.get(0).displayName());
         this.mod = new WasmModule(modName);
         this.ts = new WasmTypeSystem(mod, target);
+        declareUserWasmImports();
         this.rt = new WasmRuntimeGen(mod, ts, target);
         this.ops = new WasmRuntimeOpsGen(mod, ts, rt, target);
         this.arrOps = new WasmArrayOpsGen(mod, ts, rt);
@@ -131,6 +137,48 @@ public final class WasmProgramLinker {
         this.objects = new WasmObjectSystem(this);
         this.ops.emitClassofWithTable(objects.gClassVals);
         this.fnInitSingletonsDef = mod.addFunction("init_fn_singletons", ts.internFuncType(List.of(), List.of()));
+    }
+
+    private void declareUserWasmImports() {
+        if (target != CompilationTarget.WASM_JS) {
+            return;
+        }
+        for (ModuleInput in : inputs) {
+            for (var spec : in.hir().wasmImports()) {
+                String key = spec.module() + "." + spec.name();
+                if (wasmImports.containsKey(key)) {
+                    continue;
+                }
+                List<WasmValType> params = new ArrayList<>(spec.paramKinds().length);
+                for (int i = 0; i < spec.paramKinds().length; i++) {
+                    if (spec.paramIsString()[i]) {
+                        params.add(WasmValType.EXTERNREF);
+                    } else if (spec.paramKinds()[i] != org.babblelang.analysis.PrimitiveKind.NONE) {
+                        params.add(ts.valTypeFor(spec.paramKinds()[i]));
+                    } else {
+                        params.add(WasmValType.EXTERNREF);
+                    }
+                }
+                List<WasmValType> results;
+                if (spec.returnIsVoid()) {
+                    results = List.of();
+                } else if (spec.returnIsString()) {
+                    results = List.of(WasmValType.EXTERNREF);
+                } else if (spec.returnKind() != org.babblelang.analysis.PrimitiveKind.NONE) {
+                    results = List.of(ts.valTypeFor(spec.returnKind()));
+                } else {
+                    results = List.of(WasmValType.EXTERNREF);
+                }
+                int sigIdx = ts.internFuncType(params, results);
+                int fidx = mod.addFuncImport(spec.module(), spec.name(), sigIdx,
+                        "wasm_" + sanitizeName(spec.module()) + "_" + sanitizeName(spec.name()));
+                wasmImports.put(key, new WasmImportBinding(spec, fidx));
+            }
+        }
+    }
+
+    public WasmImportBinding wasmImport(String module, String name) {
+        return wasmImports.get(module + "." + name);
     }
 
     public static WasmModule link(List<ModuleInput> inputs, CompilationTarget target) {
@@ -371,6 +419,7 @@ public final class WasmProgramLinker {
         WasmModule.FuncDef startFn = mod.addFunction("_start", tVoid);
         WasmCodeBuilder sc = startFn.code();
         sc.call(rt.fnInitStrings)
+                .call(rt.fnInitArgs)
                 .call(ops.fnInitBuiltins)
                 .call(arrOps.fnInitArrayTypes)
                 .call(objects.fnInitObjects)

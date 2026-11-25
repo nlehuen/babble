@@ -297,6 +297,51 @@ public final class WasmWriter {
             }
             writeSubSection(sec, 1, fnSub.toByteArray());
         }
+        // Subsection 2: local names (indirect name map: funcIdx -> localIdx -> name)
+        List<WasmModule.FuncDef> funcsWithNamedLocals = new ArrayList<>();
+        List<List<int[]>> localIndicesPerFunc = new ArrayList<>();
+        List<List<String>> localNamesPerFunc = new ArrayList<>();
+        for (WasmModule.FuncDef fn : module.definedFuncs()) {
+            List<int[]> idxs = new ArrayList<>();
+            List<String> names = new ArrayList<>();
+            List<String> pNames = fn.paramNames();
+            for (int p = 0; p < pNames.size(); p++) {
+                String pn = pNames.get(p);
+                if (pn != null && !pn.isEmpty()) {
+                    idxs.add(new int[]{p});
+                    names.add(pn);
+                }
+            }
+            int paramCount = ((WasmTypeDef.FuncType) module.flatTypes().get(fn.typeIndex()).body()).params().size();
+            List<WasmModule.Local> locals = fn.locals();
+            for (int l = 0; l < locals.size(); l++) {
+                String ln = locals.get(l).name();
+                if (ln != null && !ln.isEmpty()) {
+                    idxs.add(new int[]{paramCount + l});
+                    names.add(ln);
+                }
+            }
+            if (!idxs.isEmpty()) {
+                funcsWithNamedLocals.add(fn);
+                localIndicesPerFunc.add(idxs);
+                localNamesPerFunc.add(names);
+            }
+        }
+        if (!funcsWithNamedLocals.isEmpty()) {
+            ByteArrayOutputStream lSub = new ByteArrayOutputStream();
+            WasmLeb128.writeU32(lSub, funcsWithNamedLocals.size());
+            for (int i = 0; i < funcsWithNamedLocals.size(); i++) {
+                WasmLeb128.writeU32(lSub, funcsWithNamedLocals.get(i).funcIndex());
+                List<int[]> idxs = localIndicesPerFunc.get(i);
+                List<String> names = localNamesPerFunc.get(i);
+                WasmLeb128.writeU32(lSub, idxs.size());
+                for (int j = 0; j < idxs.size(); j++) {
+                    WasmLeb128.writeU32(lSub, idxs.get(j)[0]);
+                    WasmLeb128.writeName(lSub, names.get(j));
+                }
+            }
+            writeSubSection(sec, 2, lSub.toByteArray());
+        }
         // Subsection 4: type names
         List<WasmTypeDef.SubType> namedTypes = new ArrayList<>();
         for (WasmTypeDef.SubType st : module.flatTypes()) {
@@ -328,6 +373,44 @@ public final class WasmWriter {
                 WasmLeb128.writeName(gSub, g.name());
             }
             writeSubSection(sec, 7, gSub.toByteArray());
+        }
+        // Subsection 10: struct field names (indirect name map: typeIdx -> fieldIdx -> name)
+        List<WasmTypeDef.SubType> structsWithNamedFields = new ArrayList<>();
+        List<List<int[]>> fieldIndicesPerType = new ArrayList<>();
+        List<List<String>> fieldNamesPerType = new ArrayList<>();
+        for (WasmTypeDef.SubType st : module.flatTypes()) {
+            if (st != null && st.body() instanceof WasmTypeDef.StructType struct) {
+                List<int[]> idxs = new ArrayList<>();
+                List<String> names = new ArrayList<>();
+                List<WasmTypeDef.Field> fields = struct.fields();
+                for (int f = 0; f < fields.size(); f++) {
+                    String fn = fields.get(f).name();
+                    if (fn != null && !fn.isEmpty()) {
+                        idxs.add(new int[]{f});
+                        names.add(fn);
+                    }
+                }
+                if (!idxs.isEmpty()) {
+                    structsWithNamedFields.add(st);
+                    fieldIndicesPerType.add(idxs);
+                    fieldNamesPerType.add(names);
+                }
+            }
+        }
+        if (!structsWithNamedFields.isEmpty()) {
+            ByteArrayOutputStream fSub = new ByteArrayOutputStream();
+            WasmLeb128.writeU32(fSub, structsWithNamedFields.size());
+            for (int i = 0; i < structsWithNamedFields.size(); i++) {
+                WasmLeb128.writeU32(fSub, structsWithNamedFields.get(i).index());
+                List<int[]> idxs = fieldIndicesPerType.get(i);
+                List<String> names = fieldNamesPerType.get(i);
+                WasmLeb128.writeU32(fSub, idxs.size());
+                for (int j = 0; j < idxs.size(); j++) {
+                    WasmLeb128.writeU32(fSub, idxs.get(j)[0]);
+                    WasmLeb128.writeName(fSub, names.get(j));
+                }
+            }
+            writeSubSection(sec, 10, fSub.toByteArray());
         }
         return sec.toByteArray();
     }

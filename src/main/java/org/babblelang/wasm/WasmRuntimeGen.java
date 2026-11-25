@@ -29,6 +29,8 @@ public final class WasmRuntimeGen {
     public final int impFormatF32;
     public final int impParseF64;
     public final int impParseF32;
+    public final int impArgsCount;
+    public final int impArgsGet;
 
     // ---- Tag & Core Globals ----
     public final int babbleExnTag;
@@ -40,6 +42,7 @@ public final class WasmRuntimeGen {
     public final int gEmptyArgs;
     public final int gStdout;
     public final int gStderr;
+    public final int gArgs;
     public final int gLastResult;
     public final int gLastError;
 
@@ -51,6 +54,7 @@ public final class WasmRuntimeGen {
     private final ByteArrayOutputStream stringDataBytes = new ByteArrayOutputStream();
     private final WasmModule.FuncDef fnInitStringsDef;
     public final int fnInitStrings;
+    public final int fnInitArgs;
 
     // ---- Core Runtime Function Indices ----
     public final int fnFromExternStr; // -1 on wasm-bare
@@ -137,6 +141,8 @@ public final class WasmRuntimeGen {
             int tFmtF32 = ts.internFuncType("EnvFmtF32", List.of(WasmValType.F32), List.of(WasmValType.EXTERNREF));
             int tParseF64 = ts.internFuncType("EnvParseF64", List.of(WasmValType.EXTERNREF), List.of(WasmValType.F64, WasmValType.I32));
             int tParseF32 = ts.internFuncType("EnvParseF32", List.of(WasmValType.EXTERNREF), List.of(WasmValType.F32, WasmValType.I32));
+            int tArgsCount = ts.internFuncType("EnvArgsCount", List.of(), List.of(WasmValType.I32));
+            int tArgsGet = ts.internFuncType("EnvArgAt", List.of(WasmValType.I32), List.of(WasmValType.EXTERNREF));
 
             this.impJsStrFromArr = mod.addFuncImport("wasm:js-string", "fromCharCodeArray", tFromArr, "js_str_from_arr");
             this.impJsStrIntoArr = mod.addFuncImport("wasm:js-string", "intoCharCodeArray", tIntoArr, "js_str_into_arr");
@@ -147,6 +153,8 @@ public final class WasmRuntimeGen {
             this.impFormatF32 = mod.addFuncImport("babble:env", "format_f32", tFmtF32, "env_format_f32");
             this.impParseF64 = mod.addFuncImport("babble:env", "parse_f64", tParseF64, "env_parse_f64");
             this.impParseF32 = mod.addFuncImport("babble:env", "parse_f32", tParseF32, "env_parse_f32");
+            this.impArgsCount = mod.addFuncImport("babble:env", "args_count", tArgsCount, "env_args_count");
+            this.impArgsGet = mod.addFuncImport("babble:env", "arg_at", tArgsGet, "env_arg_at");
         } else {
             this.impJsStrFromArr = -1;
             this.impJsStrIntoArr = -1;
@@ -157,6 +165,8 @@ public final class WasmRuntimeGen {
             this.impFormatF32 = -1;
             this.impParseF64 = -1;
             this.impParseF32 = -1;
+            this.impArgsCount = -1;
+            this.impArgsGet = -1;
         }
 
         // 2. Tag & core globals
@@ -180,6 +190,8 @@ public final class WasmRuntimeGen {
                 List.of(new WasmInstr.I32Const(0), new WasmInstr.Idx(WasmInstr.IdxOp.STRUCT_NEW, ts.hostStreamType)));
         this.gStderr = mod.addGlobal("G_STDERR", WasmValType.ref(ts.hostStreamType), false,
                 List.of(new WasmInstr.I32Const(1), new WasmInstr.Idx(WasmInstr.IdxOp.STRUCT_NEW, ts.hostStreamType)));
+        this.gArgs = mod.addGlobal("G_ARGS", WasmValType.refNull(ts.listType), true,
+                ts.defaultConstExpr(WasmValType.refNull(ts.listType)));
         this.gLastResult = mod.addGlobal("G_LAST_RESULT", ts.anyRef(), true, ts.defaultConstExpr(ts.anyRef()));
         this.gLastError = mod.addGlobal("G_LAST_ERROR", WasmValType.refNull(ts.stringType), true,
                 ts.defaultConstExpr(WasmValType.refNull(ts.stringType)));
@@ -218,6 +230,10 @@ public final class WasmRuntimeGen {
             this.fnFromExternStr = -1;
             this.fnToExternStr = -1;
         }
+
+        WasmModule.FuncDef initArgsDef = mod.addFunction("init_args", tVoid);
+        this.fnInitArgs = initArgsDef.funcIndex();
+        emitInitArgs(initArgsDef);
 
         WasmModule.FuncDef dStrEq = mod.addFunction("str_eq", ts.internFuncType(List.of(refStr, refStr), List.of(WasmValType.I32)), List.of("a", "b"));
         WasmModule.FuncDef dStrCmp = mod.addFunction("str_cmp", ts.internFuncType(List.of(refStr, refStr), List.of(WasmValType.I32)), List.of("a", "b"));
@@ -375,6 +391,45 @@ public final class WasmRuntimeGen {
         emitEquals(dEqualsDef, fnArrEq, fnColEq);
         emitHashCode(dHashCodeDef, fnArrHash, fnColHash);
         emitFormat(dFormatDef, fnArrFmt, fnColFmt);
+    }
+
+    private void emitInitArgs(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        if (target != CompilationTarget.WASM_JS) {
+            c.i32Const(0).arrayNewDefault(ts.anyArrType)
+                    .i32Const(0)
+                    .structNew(ts.listType)
+                    .globalSet(gArgs);
+            return;
+        }
+        int n = fn.addLocal("n", WasmValType.I32, 0);
+        int i = fn.addLocal("i", WasmValType.I32, 0);
+        int cap = fn.addLocal("cap", WasmValType.I32, 0);
+        int arr = fn.addLocal("arr", WasmValType.refNull(ts.anyArrType), 0);
+        c.call(impArgsCount).localTee(n)
+                .i32Const(4).op(WasmInstr.SimpleOp.I32_GE_S).if_(WasmValType.I32)
+                .localGet(n)
+                .else_()
+                .i32Const(4)
+                .end()
+                .localTee(cap)
+                .arrayNewDefault(ts.anyArrType).localSet(arr)
+                .i32Const(0).localSet(i)
+                .block()
+                .loop()
+                .localGet(i).localGet(n).op(WasmInstr.SimpleOp.I32_GE_S).brIf(1)
+                .localGet(arr).refAsNonNull()
+                .localGet(i)
+                .localGet(i).call(impArgsGet).call(fnFromExternStr)
+                .arraySet(ts.anyArrType)
+                .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
+                .br(0)
+                .end()
+                .end()
+                .localGet(arr).refAsNonNull()
+                .localGet(n)
+                .structNew(ts.listType)
+                .globalSet(gArgs);
     }
 
     // ---------------------------------------------------------------- string literal pool

@@ -541,6 +541,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
         if (AxiomData.isBabbleNameAxiom(ctx)) {
             scope.babbleAxioms.put(AxiomData.babbleName(ctx), ctx);
+        } else if (AxiomData.isWasmImportAxiom(ctx)) {
+            scope.wasmAxioms
+                    .computeIfAbsent(AxiomData.wasmImportModule(ctx), k -> new java.util.LinkedHashMap<>())
+                    .put(AxiomData.wasmImportName(ctx), ctx);
         }
         axiomExpressions.add(new PendingAxiomExpr(ctx, scope));
         return null;

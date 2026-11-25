@@ -1,0 +1,56 @@
+;;(
+    Ray Tracing in One Weekend (Argon) — WebAssembly Browser Canvas Demo (BIP025-P4)
+
+    Compiles to WebAssembly 3.0 (WasmGC) with zero JVM dependencies and streams
+    gamma-corrected RGB pixels directly into an HTML5 <canvas> via typed Wasm
+    host-import axioms (`axiom wasm.canvas.*`, BIP025-D9).
+
+    Compile :
+        java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js \
+            examples/raytracer-argon/wasm_canvas.ba \
+            -o examples/raytracer-argon/wasm_canvas.wasm
+
+    Then serve `examples/raytracer-argon/` over HTTP and open `wasm_canvas.html`.
+;;)
+
+axiom wasm.canvas.setPixel: fn io nothrow (x: int, y: int, r: int, g: int, b: int): null
+axiom wasm.canvas.present: fn io nothrow (row: int): null
+
+def math = import("lib/math.ba")
+def raytracer = import("lib/raytracer.ba")
+
+def argInt = fn (index: int, fallback: int): int -> (
+    if index < args.size() then (int(args.get(index))) else (fallback)
+)
+
+def width: int = argInt(0, 200)
+def samples: int = argInt(1, 8)
+def maxDepth: int = argInt(2, 12)
+def gridRadius: int = argInt(3, 3)
+
+def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: raytracer.Rng(42), gridRadius: gridRadius)
+def world: raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
+def cam: raytracer.Camera = raytracer.Camera(
+    aspectRatio: 16.0 / 9.0,
+    imageWidth: width,
+    samplesPerPixel: samples,
+    maxDepth: maxDepth
+)
+def rng: raytracer.Rng = raytracer.Rng(1337)
+def intensity: raytracer.Interval = raytracer.Interval(0.000, 0.999)
+
+for j in raytracer.Range(0, cam.imageHeight) then (
+    for i in raytracer.Range(0, cam.imageWidth) then (
+        def pixelColor: raytracer.Vec3 = cam.renderPixel(i, j, world, rng)
+        def r: double = raytracer.Color.linearToGamma(pixelColor.x)
+        def g: double = raytracer.Color.linearToGamma(pixelColor.y)
+        def b: double = raytracer.Color.linearToGamma(pixelColor.z)
+        def ir: int = math.toByte(256.0 * intensity.clamp(r))
+        def ig: int = math.toByte(256.0 * intensity.clamp(g))
+        def ib: int = math.toByte(256.0 * intensity.clamp(b))
+        wasm.canvas.setPixel(i, j, ir, ig, ib)
+    )
+    wasm.canvas.present(j)
+)
+
+"" + cam.imageWidth + "x" + cam.imageHeight

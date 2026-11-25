@@ -959,7 +959,8 @@ final class TypeChecker {
     }
 
     private Type.Function parseBabbleAxiom(BabbleParser.AxiomExpressionContext ctx, ScopeNode scope, boolean reportErrors) {
-        if (!AxiomData.isBabbleNameAxiom(ctx)) {
+        boolean isWasm = AxiomData.isWasmImportAxiom(ctx);
+        if (!AxiomData.isBabbleNameAxiom(ctx) && !isWasm) {
             return null;
         }
         if (!reportErrors && babbleAxiomTypes.containsKey(ctx)) {
@@ -969,8 +970,56 @@ final class TypeChecker {
         Type.Function fn = AxiomData.parseBabbleAxiomFunction(ctx, t -> annotator.annotation(t, scope), sink);
         if (fn != null) {
             babbleAxiomTypes.put(ctx, fn);
+            if (isWasm) {
+                recordWasmImportSpec(ctx, fn);
+            }
         }
         return fn;
+    }
+
+    private void recordWasmImportSpec(BabbleParser.AxiomExpressionContext ctx, Type.Function fn) {
+        String mod = AxiomData.wasmImportModule(ctx);
+        String name = AxiomData.wasmImportName(ctx);
+        int n = fn.parameters().size();
+        PrimitiveKind[] pKinds = new PrimitiveKind[n];
+        boolean[] pStrings = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            Type pt = fn.parameters().get(i).type();
+            pKinds[i] = PrimitiveKind.of(pt);
+            pStrings[i] = pt == Type.STRING || Type.withoutNull(pt) == Type.STRING;
+        }
+        Type rt = fn.result();
+        PrimitiveKind rKind = PrimitiveKind.of(rt);
+        boolean rStr = rt == Type.STRING || Type.withoutNull(rt) == Type.STRING;
+        boolean rVoid = rt == Type.NULL;
+        pass.analysis.lowering().addWasmImport(
+                new LoweringTargets.WasmImportSpec(mod, name, pKinds, pStrings, rKind, rStr, rVoid));
+    }
+
+    /** Resolves {@code wasm} to a synthetic typed module namespace populated from scoped {@code axiom wasm.<mod>.<name>} declarations ({@code BIP025-D9}). */
+    Type resolveWasmNamespace(ScopeNode scope) {
+        Map<String, Map<String, Type>> mods = new java.util.LinkedHashMap<>();
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            for (var modEntry : s.wasmAxioms.entrySet()) {
+                Map<String, Type> fnMap = mods.computeIfAbsent(modEntry.getKey(), k -> new java.util.LinkedHashMap<>());
+                for (var fnEntry : modEntry.getValue().entrySet()) {
+                    if (!fnMap.containsKey(fnEntry.getKey())) {
+                        Type.Function fn = parseBabbleAxiom(fnEntry.getValue(), s, false);
+                        if (fn != null) {
+                            fnMap.put(fnEntry.getKey(), fn);
+                        }
+                    }
+                }
+            }
+        }
+        if (mods.isEmpty()) {
+            return null;
+        }
+        Map<String, Type> topMembers = new java.util.LinkedHashMap<>();
+        for (var e : mods.entrySet()) {
+            topMembers.put(e.getKey(), new Type.Module(ModuleInterface.synthetic("wasm." + e.getKey(), e.getValue())));
+        }
+        return new Type.Module(ModuleInterface.synthetic("wasm", topMembers));
     }
 
     /**
@@ -2166,7 +2215,9 @@ final class TypeChecker {
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.TypeAliasExpressionContext c -> visitTypeAlias(c);
                 case BabbleParser.AxiomExpressionContext c -> {
-                    if (AxiomData.isBabbleNameAxiom(c) && checkingEffects) {
+                    if (AxiomData.isWasmImportAxiom(c)) {
+                        parseBabbleAxiom(c, scopeOf(c), checkingEffects);
+                    } else if (AxiomData.isBabbleNameAxiom(c) && checkingEffects) {
                         parseBabbleAxiom(c, scopeOf(c), true);
                     }
                     yield Type.NULL;
@@ -2502,6 +2553,12 @@ final class TypeChecker {
                 Type.Function babbleAx = resolveBabbleAxiom(name, occurrenceScopes.get(ctx));
                 if (babbleAx != null) {
                     return babbleAx;
+                }
+                if ("wasm".equals(name)) {
+                    Type wasmNs = resolveWasmNamespace(occurrenceScopes.get(ctx));
+                    if (wasmNs != null) {
+                        return wasmNs;
+                    }
                 }
                 return operators.implicitType(name);
             }

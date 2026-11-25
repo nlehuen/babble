@@ -23,7 +23,7 @@ import java.util.List;
  */
 public class WasmCompilerTestCase {
 
-    private static WasmCompiler.CompileResult compile(String source, CompilationTarget target, int optLevel) throws Exception {
+    private static WasmCompiler.CompileResult compileRaw(String source, CompilationTarget target, int optLevel, boolean debugNames) throws Exception {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         List<BabbleScriptEngine.HirProgramModule> mods = engine.compileSourceToHir(source, "test.ba", target);
@@ -31,8 +31,12 @@ public class WasmCompilerTestCase {
                 .map(m -> new WasmProgramLinker.ModuleInput(m.id().key(), m.id().displayName(), m.hir(), m.staticImportKeys()))
                 .toList();
         boolean dumpWat = WasmCompiler.Options.defaults(target).dumpWat();
-        WasmCompiler.Options opts = new WasmCompiler.Options(target, true, true, dumpWat, false);
-        WasmCompiler.CompileResult res = WasmCompiler.compile(inputs, opts, "test.wasm");
+        WasmCompiler.Options opts = new WasmCompiler.Options(target, true, debugNames, dumpWat, false);
+        return WasmCompiler.compile(inputs, opts, "test.wasm");
+    }
+
+    private static WasmCompiler.CompileResult compile(String source, CompilationTarget target, int optLevel) throws Exception {
+        WasmCompiler.CompileResult res = compileRaw(source, target, optLevel, true);
         Assertions.assertTrue(res.ok(), "Portability errors : " + res.portabilityErrors());
         return res;
     }
@@ -869,5 +873,199 @@ public class WasmCompilerTestCase {
         // 3. Exact byte-for-byte PPM parity!
         Assertions.assertTrue(wasmStdout.startsWith("P3\n16 9\n255\n"), "Expected PPM header");
         Assertions.assertEquals(jvmOut.toString(), wasmStdout, "Argon mini PPM must match JVM byte-for-byte");
+    }
+
+    // ---------------------------------------------------------------- BIP025-P4 Host Imports, CLI Args, Debug Names & Canvas Demo
+
+    @Test
+    public void wasmHostImportAxiomsWithEffectsAndStrings() throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        String code = """
+                axiom wasm.host.add: fn pure nothrow (a: int, b: int): int
+                axiom wasm.host.greet: fn pure nothrow (who: string): string
+                axiom wasm.host.log: fn io nothrow (msg: string): null
+
+                def pureCalc = fn nothrow (x: int): int -> (
+                    wasm.host.add(x, 10)
+                )
+                def pureGreet = fn nothrow (name: string): string -> (
+                    wasm.host.greet(name)
+                )
+                def sum = pureCalc(32)
+                def msg = pureGreet("Wasm")
+                wasm.host.log(msg + "=" + sum)
+                msg + ":" + sum
+                """;
+        WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_JS, 1);
+        String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
+        Assertions.assertTrue(wat.contains("(import \"host\" \"add\""), "Expected host.add import in WAT");
+        Assertions.assertTrue(wat.contains("(import \"host\" \"greet\""), "Expected host.greet import in WAT");
+        Assertions.assertTrue(wat.contains("(import \"host\" \"log\""), "Expected host.log import in WAT");
+
+        String hostJs = """
+                {
+                  host: {
+                    add: (a, b) => a + b,
+                    greet: (s) => "Hello " + s,
+                    log: (s) => stdoutChunks.push("[LOG]" + s + "\\n"),
+                  }
+                }
+                """;
+        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runJs(compiled.wasmBytes(), compiled.jsGlue(), List.of(), hostJs);
+        Assertions.assertTrue(out.ok(), "Host import execution failed : " + out.error());
+        Assertions.assertEquals("[LOG]Hello Wasm=42\n", out.stdout());
+        Assertions.assertEquals("\"Hello Wasm:42\"", out.resultJson());
+
+        // Effect enforcement : pure (default) function calling io wasm axiom must be rejected by TypeChecker
+        String badEffectCode = """
+                axiom wasm.host.log: fn io nothrow (msg: string): null
+                def badPure = fn (s: string) -> (
+                    wasm.host.log(s)
+                )
+                badPure("oops")
+                """;
+        Assertions.assertThrows(Exception.class, () -> compile(badEffectCode, CompilationTarget.WASM_JS, 1),
+                "Calling io wasm axiom from pure function must fail effect checking");
+
+        // Portability enforcement : wasm-bare must reject axiom wasm.* host imports
+        WasmCompiler.CompileResult bareRes = compileRaw(code, CompilationTarget.WASM_BARE, 1, false);
+        Assertions.assertFalse(bareRes.ok(), "Expected wasm-bare to reject axiom wasm.*");
+        Assertions.assertTrue(bareRes.portabilityErrors().stream().anyMatch(d -> d.detail().contains("wasm.host.add")),
+                "Expected wasm.host.add diagnostic : " + bareRes.portabilityErrors());
+    }
+
+    @Test
+    public void wasmJsCliArgsPassing(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        Path script = dir.resolve("echo_args.ba");
+        Files.writeString(script, """
+                println("count=", args.size())
+                for a in args then (
+                    println("arg=", a)
+                )
+                """, StandardCharsets.UTF_8);
+        Path wasmOut = dir.resolve("echo_args.wasm");
+        Path mjsOut = dir.resolve("echo_args.mjs");
+        java.io.StringWriter errBuf = new java.io.StringWriter();
+        int status = org.babblelang.Main.run(
+                new String[]{"-compile", "-target", "wasm-js", script.toString(), "-o", wasmOut.toString()},
+                new java.io.BufferedReader(new java.io.StringReader("")),
+                new java.io.PrintWriter(new java.io.StringWriter()),
+                new java.io.PrintWriter(errBuf), false);
+        Assertions.assertEquals(0, status, "Compile failed : " + errBuf);
+
+        Process p = new ProcessBuilder("node", mjsOut.toString(), "alpha", "beta", "gamma")
+                .redirectErrorStream(false).start();
+        String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = p.waitFor();
+        Assertions.assertEquals(0, exit, "Node CLI execution failed : " + stderr);
+        Assertions.assertEquals("count=3\narg=alpha\narg=beta\narg=gamma\n", stdout);
+    }
+
+    @Test
+    public void wasmDebugNameSectionContainsLocalsTypesGlobalsAndFields() throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        String code = """
+                def Point = record (px: double, py: double) (
+                    def sum = fn (): double -> (
+                        def res: double = this.px + this.py
+                        res
+                    )
+                )
+                Point(1.5, 2.5).sum()
+                """;
+        WasmCompiler.CompileResult compiled = compileRaw(code, CompilationTarget.WASM_BARE, 1, true);
+        Assertions.assertTrue(compiled.ok(), "Portability errors : " + compiled.portabilityErrors());
+
+        // Locate custom section 0 named "name" and inspect subsections 0, 1, 2, 4, 7, 10
+        byte[] bytes = compiled.wasmBytes();
+        java.util.Set<Integer> nameSubsections = new java.util.HashSet<>();
+        int pos = 8; // skip \0asm + version
+        while (pos < bytes.length) {
+            int secId = bytes[pos++] & 0xFF;
+            int[] lenPair = readU32(bytes, pos);
+            int secLen = lenPair[0];
+            pos = lenPair[1];
+            int secEnd = pos + secLen;
+            if (secId == 0) {
+                int[] nameLenPair = readU32(bytes, pos);
+                int nameLen = nameLenPair[0];
+                int nameStart = nameLenPair[1];
+                String secName = new String(bytes, nameStart, nameLen, StandardCharsets.UTF_8);
+                if ("name".equals(secName)) {
+                    int subPos = nameStart + nameLen;
+                    while (subPos < secEnd) {
+                        int subId = bytes[subPos++] & 0xFF;
+                        int[] subLenPair = readU32(bytes, subPos);
+                        nameSubsections.add(subId);
+                        subPos = subLenPair[1] + subLenPair[0];
+                    }
+                }
+            }
+            pos = secEnd;
+        }
+        Assertions.assertTrue(nameSubsections.containsAll(List.of(0, 1, 2, 4, 7, 10)),
+                "Expected module(0), func(1), local(2), type(4), global(7), field(10) subsections, got : " + nameSubsections);
+
+        // Ensure V8 validates and runs the debug-named binary cleanly
+        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(bytes);
+        Assertions.assertTrue(out.ok(), "Debug-named Wasm failed in V8 : " + out.error());
+        Assertions.assertEquals("\"4.0\"", out.resultJson());
+    }
+
+    private static int[] readU32(byte[] data, int pos) {
+        int result = 0;
+        int shift = 0;
+        while (true) {
+            int b = data[pos++] & 0xFF;
+            result |= (b & 0x7F) << shift;
+            if ((b & 0x80) == 0) {
+                return new int[]{result, pos};
+            }
+            shift += 7;
+        }
+    }
+
+    @Test
+    public void argonCanvasBrowserDemoCompilesAndRendersWithMockCanvas(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        Path canvasScript = Path.of("examples/raytracer-argon/wasm_canvas.ba").toAbsolutePath().normalize();
+        Path wasmOut = dir.resolve("wasm_canvas.wasm");
+        Path mjsOut = dir.resolve("wasm_canvas.mjs");
+        java.io.StringWriter compileErr = new java.io.StringWriter();
+        int status = org.babblelang.Main.run(
+                new String[]{"-compile", "-target", "wasm-js", canvasScript.toString(), "-o", wasmOut.toString()},
+                new java.io.BufferedReader(new java.io.StringReader("")),
+                new java.io.PrintWriter(new java.io.StringWriter()),
+                new java.io.PrintWriter(compileErr), false);
+        Assertions.assertEquals(0, status, "Argon canvas demo compile failed : " + compileErr);
+
+        byte[] wasmBytes = Files.readAllBytes(wasmOut);
+        String mjsSource = Files.readString(mjsOut, StandardCharsets.UTF_8);
+        String mockCanvasJs = """
+                (() => {
+                  let pixels = 0;
+                  let rows = 0;
+                  let badRgb = 0;
+                  return {
+                    canvas: {
+                      setPixel: (x, y, r, g, b) => {
+                        pixels++;
+                        if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) badRgb++;
+                      },
+                      present: (row) => {
+                        rows++;
+                        if (row === 8) stdoutChunks.push(`pixels=${pixels},rows=${rows},bad=${badRgb}\\n`);
+                      },
+                    }
+                  };
+                })()
+                """;
+        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runJs(
+                wasmBytes, mjsSource, List.of("16", "2", "4", "1"), mockCanvasJs);
+        Assertions.assertTrue(out.ok(), "Argon canvas demo execution failed : " + out.error());
+        Assertions.assertEquals("\"16x9\"", out.resultJson());
+        Assertions.assertEquals("pixels=144,rows=9,bad=0\n", out.stdout());
     }
 }
