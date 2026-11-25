@@ -209,7 +209,7 @@ public final class OverloadSet implements Callable {
     /**
      * Returns all candidate signature keys from {@code candidates} that accept {@code signatureKey},
      * ordered from most specific to least specific (exact match first), for closed-world Wasm
-     * {@code OverloadSelect} lowering ({@code BIP025-P5}).
+     * {@code OverloadSelect} lowering ({@code BIP025-I5}).
      */
     public static List<String> matchingKeysBySpecificity(java.util.Collection<AltMeta> candidates, String signatureKey) {
         if (signatureKey == null) {

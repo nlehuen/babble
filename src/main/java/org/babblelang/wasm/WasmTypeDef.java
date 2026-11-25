@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * WebAssembly 3.0 composite type definitions ({@code func}, {@code struct}, {@code array}),
- * {@code sub}/{@code sub final} wrappers, and {@code rec} groups ({@code BIP025-P0}).
+ * {@code sub}/{@code sub final} wrappers, and {@code rec} groups ({@code BIP025-I0}).
  */
 public sealed interface WasmTypeDef permits
         WasmTypeDef.FuncType,

@@ -5,7 +5,7 @@ import java.util.Set;
 
 /**
  * Deterministic human-readable WebAssembly Text ({@code .wat}) printer for {@link WasmModule}
- * ({@code BIP025-P0}, {@code BIP025-D2}, {@code BIP029} {@code wat} blocks).
+ * ({@code BIP025-I0}, {@code BIP025-D2}, {@code BIP029} {@code wat} blocks).
  */
 public final class WatPrinter {
     private WatPrinter() {

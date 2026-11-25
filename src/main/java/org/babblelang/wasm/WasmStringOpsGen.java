@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Generates portable {@code string} operations over WasmGC {@code $String} ({@code (array (mut i16))},
- * {@code BIP025-D4}, {@code BIP025-P3}) with exact UTF-16 Java {@code String} semantics.
+ * {@code BIP025-D4}, {@code BIP025-I3}) with exact UTF-16 Java {@code String} semantics.
  */
 public final class WasmStringOpsGen {
     private final WasmModule mod;

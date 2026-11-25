@@ -11,7 +11,7 @@ import java.util.Map;
 
 /**
  * Generates core WebAssembly 3.0 runtime globals, host imports, string literal pool,
- * and foundational pure-Wasm helper functions ({@code BIP025-P1}, {@code BIP025-D4},
+ * and foundational pure-Wasm helper functions ({@code BIP025-I1}, {@code BIP025-D4},
  * {@code BIP025-D5}, {@code BIP025-D13}).
  */
 public final class WasmRuntimeGen {
@@ -385,7 +385,7 @@ public final class WasmRuntimeGen {
         emitPrint(dPrint);
     }
 
-    /** Emits {@code equals}, {@code hashCode}, and {@code format} with {@code $ArrayBase} and collection hooks ({@code BIP025-P2}, {@code BIP025-P3}). */
+    /** Emits {@code equals}, {@code hashCode}, and {@code format} with {@code $ArrayBase} and collection hooks ({@code BIP025-I2}, {@code BIP025-I3}). */
     public void emitPolymorphicHelpers(int fnArrEq, int fnArrHash, int fnArrFmt,
                                        int fnColEq, int fnColHash, int fnColFmt) {
         emitEquals(dEqualsDef, fnArrEq, fnColEq);

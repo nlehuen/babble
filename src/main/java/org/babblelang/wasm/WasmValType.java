@@ -4,7 +4,7 @@ import java.io.ByteArrayOutputStream;
 import java.util.Objects;
 
 /**
- * WebAssembly 3.0 value types, packed storage types, and heap types ({@code BIP025-P0}, {@code BIP025-D1}).
+ * WebAssembly 3.0 value types, packed storage types, and heap types ({@code BIP025-I0}, {@code BIP025-D1}).
  */
 public sealed interface WasmValType permits
         WasmValType.Num,

@@ -196,7 +196,7 @@ public final class BabbleCompiler {
 
     /**
      * Lowers an analyzed parse tree to {@link org.babblelang.ir.hir.HirModule} and runs the
-     * target-aware Nanopass optimizer ({@code BIP025-P0}, {@code BIP025-D3}, {@code BIP025-D11}).
+     * target-aware Nanopass optimizer ({@code BIP025-I0}, {@code BIP025-D3}, {@code BIP025-D11}).
      */
     public static org.babblelang.ir.hir.HirModule buildAndOptimizeHir(
             BabbleScriptEngine engine,

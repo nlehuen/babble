@@ -8,7 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * Self-contained WebAssembly 3.0 module IR ({@code BIP025-P0}).
+ * Self-contained WebAssembly 3.0 module IR ({@code BIP025-I0}).
  *
  * <p>Manages Wasm index spaces (types, imported + defined functions, tags, globals, passive data
  * segments, exports, and declarative function references) deterministically so repeated compiles

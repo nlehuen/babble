@@ -5,7 +5,7 @@ import java.util.Objects;
 
 /**
  * Compact WebAssembly 3.0 instruction IR shared by {@link WasmWriter}, {@link WatPrinter}, and
- * {@link WasmVerifier} ({@code BIP025-P0}, {@code BIP025-D2}).
+ * {@link WasmVerifier} ({@code BIP025-I0}, {@code BIP025-D2}).
  */
 public sealed interface WasmInstr permits
         WasmInstr.Simple,

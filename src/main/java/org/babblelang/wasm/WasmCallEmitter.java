@@ -12,7 +12,7 @@ import java.util.List;
 /**
  * Emits Babble function calls, {@code BIP024} tail calls ({@code return_call}), {@code BIP021}
  * optional/named/reordered/overloaded argument binding, generic call trampolines, and portable
- * core method calls ({@code BIP025-P1}).
+ * core method calls ({@code BIP025-I1}).
  */
 public final class WasmCallEmitter {
     private final WasmProgramLinker linker;
@@ -197,7 +197,7 @@ public final class WasmCallEmitter {
 
     public void emitDynamicCall(HirExpr.DynamicCall call) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
-        // 0. Static module import("path") / importe("path") (BIP025-P2)
+        // 0. Static module import("path") / importe("path") (BIP025-I2)
         if (call.callee() instanceof HirExpr.NameRead nr
                 && ("import".equals(nr.name()) || "importe".equals(nr.name()))
                 && !isShadowedLocalOrGlobal(nr.name())
@@ -215,7 +215,7 @@ public final class WasmCallEmitter {
                 return;
             }
         }
-        // 0b. Direct Wasm host import call: wasm.<mod>.<name>(...) (BIP025-P4, BIP025-D9)
+        // 0b. Direct Wasm host import call: wasm.<mod>.<name>(...) (BIP025-I4, BIP025-D9)
         if (call.callee() instanceof HirExpr.DynamicSelect fnSel && !fnSel.safe()
                 && fnSel.receiver() instanceof HirExpr.DynamicSelect modSel && !modSel.safe()
                 && modSel.receiver() instanceof HirExpr.NameRead wasmNr && "wasm".equals(wasmNr.name())

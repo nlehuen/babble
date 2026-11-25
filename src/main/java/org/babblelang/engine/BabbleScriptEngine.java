@@ -489,7 +489,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * A target-neutral HIR module of a program compiled ahead of time ({@code BIP025-P0}).
+     * A target-neutral HIR module of a program compiled ahead of time ({@code BIP025-I0}).
      *
      * @param id                module identifier
      * @param exports           ordered export names
@@ -511,7 +511,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     /**
      * Compiles a single inline Babble script (and any modules statically imported from
      * {@link #getModuleSource()}) directly to optimized target-neutral {@link HirProgramModule}s
-     * without generating JVM bytecode ({@code BIP025-P0}).
+     * without generating JVM bytecode ({@code BIP025-I0}).
      */
     public List<HirProgramModule> compileSourceToHir(String code, String sourceName,
                                                      org.babblelang.analysis.CompilationTarget target) throws ScriptException {
@@ -558,7 +558,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     /**
      * Compiles a Babble program and all of its statically imported modules directly to optimized
      * {@link HirProgramModule}s for a given {@link org.babblelang.analysis.CompilationTarget}
-     * without emitting JVM class files ({@code BIP025-P0}).
+     * without emitting JVM class files ({@code BIP025-I0}).
      */
     public List<HirProgramModule> compileProgramToHir(ModuleSource source, String mainName,
                                                       org.babblelang.analysis.CompilationTarget target) throws ScriptException {

@@ -11,7 +11,7 @@ import java.util.List;
  * Generates WebAssembly 3.0 WasmGC runtime helpers and HIR lowering for {@code BIP020}
  * {@code array of T} (all 8 unboxed primitive array wrappers + covariant {@code $RefArray}
  * with {@code $TypeDesc}, deep equality, deep hashCode, and {@code [a, b]} formatting)
- * ({@code BIP025-P2}, {@code BIP025-D3}).
+ * ({@code BIP025-I2}, {@code BIP025-D3}).
  */
 public final class WasmArrayOpsGen {
     private final WasmModule mod;

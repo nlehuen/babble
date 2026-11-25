@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Checks {@link HirModule} programs for WebAssembly target portability ({@code BIP025-P0},
+ * Checks {@link HirModule} programs for WebAssembly target portability ({@code BIP025-I0},
  * {@code BIP025-D3}, {@code BIP025-D6}, {@code BIP025-D8}, {@code BIP025-D12}).
  *
  * <p>Rejects JVM-only constructs ({@code java.*}/{@code javax.*} calls, Java interface

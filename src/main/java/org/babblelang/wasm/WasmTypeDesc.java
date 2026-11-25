@@ -6,7 +6,7 @@ import java.util.List;
 /**
  * Parses Babble runtime type descriptors ({@code kind|display|payload}, matching
  * {@code org.babblelang.runtime.Types}) at Wasm compile time for portability checking
- * ({@link WasmPortabilityChecker}) and exact {@code is}/{@code as} lowering ({@code BIP025-P5}).
+ * ({@link WasmPortabilityChecker}) and exact {@code is}/{@code as} lowering ({@code BIP025-I5}).
  */
 public record WasmTypeDesc(String kind, String display, String payload, List<WasmTypeDesc> members) {
 

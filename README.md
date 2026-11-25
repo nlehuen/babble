@@ -712,18 +712,27 @@ java -jar argon.jar > scene.ppm
 
 `argon.jar` is 300 KB for its 15 modules and the runtime, and renders the same image, byte for
 byte, in about the same minute as through the engine : a jar saves the start-up, not the work.
+Because `raytracer-argon` uses no Java APIs, it also compiles directly to **WebAssembly 3.0** (`WasmGC`)
+and renders the exact same `scene.ppm` byte for byte in Node.js (or live to an HTML `<canvas>` in
+[examples/raytracer-argon-wasm/](examples/raytracer-argon-wasm/README.md)) :
+
+```
+java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer-argon/raytracer.ba -o argon.wasm
+node argon.mjs > scene.ppm
+```
 
 Building and running
 --------------------
 
-Babble needs Java 21 and Maven :
+Babble needs Java 21, Maven, and Node.js 22+ (for the WebAssembly 3.0 test suite) :
 
 ```
 mvn package
 ```
 
 That builds the jar, with its dependencies next to it in `target/lib`, and runs the test suite
-twice : once interpreted, once compiled to bytecode. The jar is Babble's command line :
+in all modes : interpreted, compiled to JVM bytecode (`-O1` and `-O0`), and compiled to WebAssembly 3.0
+(Node.js V8). The jar is Babble's command line :
 
 ```
 java -jar target/babble-1.0-SNAPSHOT.jar                              # the interactive mode
@@ -755,13 +764,21 @@ handy to try out the functions of a file. Options go before the script ; what fo
 script's.
 
 A program can also be compiled ahead of time, with the modules it imports, into a jar that runs
-on a plain JRE, without Babble :
+on a plain JRE, without Babble, or into a WebAssembly 3.0 (`.wasm`) module :
 
 ```
-$ java -jar target/babble-1.0-SNAPSHOT.jar -compile hello.ba        # or -o app.jar, -root dir
+$ java -jar target/babble-1.0-SNAPSHOT.jar -compile hello.ba                           # or -o app.jar, -root dir
 Wrote /home/ada/hello.jar : 1 module
 $ java -jar hello.jar Ada
 Hello, Ada
+
+$ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js hello.ba           # writes hello.wasm + hello.mjs
+Wrote /home/ada/hello.wasm : 1 module
+$ node hello.mjs Ada
+Hello, Ada
+
+$ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-bare pure.ba          # zero-import standalone .wasm
+$ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js -wasm-opt hello.ba # optional Binaryen wasm-opt -O3
 ```
 
 The jar holds the program's classes and a copy of Babble's runtime (about 120 KB), and
@@ -771,7 +788,7 @@ same program twice gives the same bytes, and errors read as they do through the 
 dynamic import only finds the modules the program imports statically. With Babble on the class path,
 `java -cp hello.jar:target/babble-1.0-SNAPSHOT.jar org.babblelang.runtime.Launcher Ada`, the
 others are compiled from their files when they are imported. Imports may not leave the root,
-the script's directory by default (`-Dbabble.root=dir` tells a jar moved away from it). See [BIP006](docs/design/bip006_module-sources-and-aot.md) (§5).
+the script's directory by default (`-Dbabble.root=dir` tells a jar moved away from it). See [BIP006](docs/design/bip006_module-sources-and-aot.md) (§5) and [BIP025](docs/design/bip025_compile-to-wasm.md) for WebAssembly 3.0 compilation, `axiom wasm.<mod>.<name>` host imports, and browser/Node.js embedding.
 
 ### Formatting code
 
@@ -887,7 +904,7 @@ Implementation features :
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker, with line editing, history and completion on a terminal, `:type` and `:load` (see [BIP004](docs/design/bip004_repl.md)).
 - [x] command line : `java -jar babble.jar [-O0|-O1|-O2] script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
-- [x] ahead-of-time compilation : `-compile [-O0|-O1|-O2] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)).
+- [x] ahead-of-time compilation : `-compile [-O0|-O1|-O2] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)), or with `-target wasm-js` / `-target wasm-bare` (plus optional `-wasm-opt`) compiles directly from target-neutral `HIR` to WebAssembly 3.0 (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, `return_call` tail calls, closed-world interface bitsets & itables, strictly immutable `record` structs, portable strings/arrays/collections, and `axiom wasm.<mod>.<name>` host imports) with zero new Maven dependencies, 4-mode `.batest.md` parity + `wat` goldens, and byte-identical `examples/raytracer-argon/scene.ppm` rendering on Node.js V8 and browser `<canvas>` (see [BIP025](docs/design/bip025_compile-to-wasm.md)).
 - [x] syntax errors that say what was unexpected, and where.
 - [x] a code formatter : `java -jar babble.jar -format`.
 

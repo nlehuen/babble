@@ -9,6 +9,10 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Persistent Node.js (V8) worker for fast WebAssembly 3.0 test execution ({@code BIP025-D10}).
@@ -134,10 +138,48 @@ public final class NodeWasmRunner {
             })();
             """;
 
+    private static final int MAX_WORKERS = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
+    private static final ArrayBlockingQueue<Worker> POOL = new ArrayBlockingQueue<>(MAX_WORKERS);
+    private static final AtomicInteger CREATED_WORKERS = new AtomicInteger();
+    private static final Set<Process> LIVE_PROCESSES = ConcurrentHashMap.newKeySet();
+
+    static {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            for (Process p : LIVE_PROCESSES) {
+                if (p.isAlive()) {
+                    p.destroyForcibly();
+                }
+            }
+        }));
+    }
+
     private static volatile Boolean nodeAvailable;
-    private static Process worker;
-    private static BufferedWriter workerIn;
-    private static BufferedReader workerOut;
+
+    private static final class Worker {
+        final Process process;
+        final BufferedWriter in;
+        final BufferedReader out;
+
+        Worker() throws IOException {
+            ProcessBuilder pb = new ProcessBuilder("node", "-e", WORKER_JS);
+            pb.redirectError(ProcessBuilder.Redirect.INHERIT);
+            this.process = pb.start();
+            LIVE_PROCESSES.add(this.process);
+            this.in = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+            this.out = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        }
+
+        boolean isAlive() {
+            return process.isAlive();
+        }
+
+        void destroy() {
+            LIVE_PROCESSES.remove(process);
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        }
+    }
 
     private NodeWasmRunner() {
     }
@@ -211,48 +253,71 @@ public final class NodeWasmRunner {
         return send(json.toString());
     }
 
-    private static synchronized RunOutcome send(String requestJson) {
+    private static Worker borrowWorker() throws IOException {
+        Worker w = POOL.poll();
+        if (w != null) {
+            if (w.isAlive()) {
+                return w;
+            }
+            w.destroy();
+            CREATED_WORKERS.decrementAndGet();
+        }
+        while (true) {
+            int current = CREATED_WORKERS.get();
+            if (current < MAX_WORKERS) {
+                if (CREATED_WORKERS.compareAndSet(current, current + 1)) {
+                    try {
+                        return new Worker();
+                    } catch (IOException | RuntimeException e) {
+                        CREATED_WORKERS.decrementAndGet();
+                        throw e;
+                    }
+                }
+                continue;
+            }
+            try {
+                w = POOL.take();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Interrupted waiting for NodeWasmRunner worker", e);
+            }
+            if (w.isAlive()) {
+                return w;
+            }
+            w.destroy();
+            CREATED_WORKERS.decrementAndGet();
+        }
+    }
+
+    private static RunOutcome send(String requestJson) {
+        Worker w = null;
+        boolean healthy = false;
         try {
-            ensureWorker();
-            workerIn.write(requestJson);
-            workerIn.write('\n');
-            workerIn.flush();
-            String line = workerOut.readLine();
+            w = borrowWorker();
+            w.in.write(requestJson);
+            w.in.write('\n');
+            w.in.flush();
+            String line = w.out.readLine();
             if (line == null) {
-                resetWorker();
                 throw new IllegalStateException("NodeWasmRunner worker terminated unexpectedly");
             }
+            healthy = true;
             return parseResponse(line);
         } catch (IOException e) {
-            resetWorker();
             throw new RuntimeException("NodeWasmRunner I/O error : " + e.getMessage(), e);
-        }
-    }
-
-    private static void ensureWorker() throws IOException {
-        if (worker != null && worker.isAlive()) {
-            return;
-        }
-        ProcessBuilder pb = new ProcessBuilder("node", "-e", WORKER_JS);
-        pb.redirectError(ProcessBuilder.Redirect.INHERIT);
-        worker = pb.start();
-        workerIn = new BufferedWriter(new OutputStreamWriter(worker.getOutputStream(), StandardCharsets.UTF_8));
-        workerOut = new BufferedReader(new InputStreamReader(worker.getInputStream(), StandardCharsets.UTF_8));
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            Process p = worker;
-            if (p != null && p.isAlive()) {
-                p.destroyForcibly();
+        } finally {
+            if (w != null) {
+                if (healthy && w.isAlive()) {
+                    if (!POOL.offer(w)) {
+                        w.destroy();
+                        CREATED_WORKERS.decrementAndGet();
+                    }
+                } else {
+                    w.destroy();
+                    CREATED_WORKERS.decrementAndGet();
+                }
             }
-        }));
-    }
-
-    private static void resetWorker() {
-        if (worker != null && worker.isAlive()) {
-            worker.destroyForcibly();
         }
-        worker = null;
-        workerIn = null;
-        workerOut = null;
     }
 
     private static RunOutcome parseResponse(String json) {

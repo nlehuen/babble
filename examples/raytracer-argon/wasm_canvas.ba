@@ -1,5 +1,5 @@
 ;;(
-    Ray Tracing in One Weekend (Argon) — WebAssembly Browser Canvas Demo (BIP025-P4)
+    Ray Tracing in One Weekend (Argon) — WebAssembly Browser Canvas Demo (BIP025-I4)
 
     Compiles to WebAssembly 3.0 (WasmGC) with zero JVM dependencies and streams
     gamma-corrected RGB pixels directly into an HTML5 <canvas> via typed Wasm

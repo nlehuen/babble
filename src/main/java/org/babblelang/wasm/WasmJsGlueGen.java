@@ -2,7 +2,7 @@ package org.babblelang.wasm;
 
 /**
  * Generates the sibling ES module loader ({@code app.mjs}) for {@code -target wasm-js}
- * ({@code BIP025-P1}, {@code BIP025-P4}, {@code BIP025-D4}, {@code BIP025-D8}).
+ * ({@code BIP025-I1}, {@code BIP025-I4}, {@code BIP025-D4}, {@code BIP025-D8}).
  *
  * <p>Works identically in Node.js (v22+) and modern browsers (Chrome/Edge/Firefox/Safari with
  * WasmGC + {@code wasm:js-string} builtins). Supplies {@code babble:env} imports with exact Java

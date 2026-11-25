@@ -31,7 +31,7 @@ import java.util.stream.Stream;
 
 /**
  * 4th-mode WebAssembly 3.0 parity runner for {@code src/test/batest/**&#47;*.batest.md}
- * ({@code BIP025-P5}, {@code BIP025-D10}).
+ * ({@code BIP025-I5}, {@code BIP025-D10}).
  *
  * <p>Automatically discovers every {@code .batest.md} case, lowers it to target-neutral HIR,
  * filters by {@link org.babblelang.wasm.WasmPortabilityChecker}, compiles portable cases to
@@ -148,14 +148,16 @@ public class WasmBatestTestCase {
                     + " [wasm-js -O" + activeOpt + "]\n" + behavioralError);
         }
 
-        // 4. Verify any `wat` IR blocks declared on this case (BIP025-P5, BIP029)
-        boolean hasWat = testCase.irExpectations().stream().anyMatch(e -> e.tier() == IrTier.WAT);
-        if (hasWat) {
+        // 4. Verify any `wat` IR blocks declared on this case (BIP025-I5, BIP029)
+        List<BatestFile.IrExpectation> watExpectations = testCase.irExpectations().stream()
+                .filter(e -> e.tier() == IrTier.WAT)
+                .toList();
+        if (!watExpectations.isEmpty()) {
             IrSnapshot watSnap = new IrSnapshot(
                     IrTier.WAT, null, "case.wasm", activeOpt, IrSnapshot.STAGE_FINAL,
                     WatPrinter.asDumpable(compiled.module()));
             List<IrAssertionChecker.IrMismatch> mismatches =
-                    IrAssertionChecker.checkAll(testCase.irExpectations(), List.of(watSnap), activeOpt, 0);
+                    IrAssertionChecker.checkAll(watExpectations, List.of(watSnap), activeOpt, 0);
             if (!mismatches.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
                 sb.append(file.relativePath()).append(" :: ").append(testCase.displayName())
