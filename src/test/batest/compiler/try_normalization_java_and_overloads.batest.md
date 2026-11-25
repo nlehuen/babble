@@ -360,40 +360,39 @@ fn run(v0: bool) -> int:
     br bb4(v1)
   bb4(v5: any):
     v6: int = const 4
-    v7: any = opaque.DynamicCall(v5, v6) {impure}
-    v8: int = convert.int v7
+    v7: int = opaque.DynamicCall(v5, v6) {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v9: any = opaque.NameRead() {impure}
-    v10: any = call getOpt(v0) {impure}
-    br bb8(v10)
-  bb6(v11: any) [handler]:
+    v8: any = opaque.NameRead() {impure}
+    v9: any = call getOpt(v0) {impure}
+    br bb8(v9)
+  bb6(v10: any) [handler]:
     br bb7
   bb7:
-    v12: any = const null
-    br bb8(v12)
-  bb8(v13: any):
-    v14: any = const null
-    v15: bool = neq v13, v14 {pure}
-    br_if v15, bb9, bb10(v14)
+    v11: any = const null
+    br bb8(v11)
+  bb8(v12: any):
+    v13: any = const null
+    v14: bool = neq v12, v13 {pure}
+    br_if v14, bb9, bb10(v13)
   bb9:
-    v16: any = narrow.nonnull v13 <non-null>
-    v17: any = opaque.SafeCall(v16) {impure}
-    br bb10(v17)
-  bb10(v18: any):
-    v19: any = const null
-    v20: any = neq v18, v19 {pure,throws}
-    br_if v20, bb12, bb11
+    v15: any = narrow.nonnull v12 <non-null>
+    v16: any = opaque.SafeCall(v15) {impure}
+    br bb10(v16)
+  bb10(v17: any):
+    v18: any = const null
+    v19: any = neq v17, v18 {pure,throws}
+    br_if v19, bb12, bb11
   bb11:
-    v21: int = const 0
-    br bb13(v21)
+    v20: int = const 0
+    br bb13(v20)
   bb12:
-    v22: any = narrow.nonnull v18 <non-null>
-    v23: int = convert.int v22
-    br bb13(v23)
-  bb13(v24: int):
-    v25: int = add v8, v24 {pure}
-    ret v25
+    v21: any = narrow.nonnull v17 <non-null>
+    v22: int = convert.int v21
+    br bb13(v22)
+  bb13(v23: int):
+    v24: int = add v7, v23 {pure}
+    ret v24
 ```
 
 ```mir
@@ -412,39 +411,38 @@ fn run(v0: bool) -> int:
     br bb4(v1)
   bb4(v5: any):
     v6: int = const 4
-    v7: any = opaque.DynamicCall(v5, v6) {impure}
-    v8: int = convert.int v7
+    v7: int = opaque.DynamicCall(v5, v6) {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v9: any = opaque.NameRead() {impure}
-    v10: any = call getOpt(v0) {impure}
-    br bb8(v10)
-  bb6(v11: any) [handler]:
+    v8: any = opaque.NameRead() {impure}
+    v9: any = call getOpt(v0) {impure}
+    br bb8(v9)
+  bb6(v10: any) [handler]:
     br bb7
   bb7:
-    v12: any = const null
-    br bb8(v12)
-  bb8(v13: any):
-    v14: any = const null
-    v15: bool = neq v13, v14 {pure}
-    br_if v15, bb9, bb10(v14)
+    v11: any = const null
+    br bb8(v11)
+  bb8(v12: any):
+    v13: any = const null
+    v14: bool = neq v12, v13 {pure}
+    br_if v14, bb9, bb10(v13)
   bb9:
-    v16: any = narrow.nonnull v13 <non-null>
-    v17: any = opaque.SafeCall(v16) {impure}
-    br bb10(v17)
-  bb10(v18: any):
-    v19: any = neq v18, v14 {pure,throws}
-    br_if v19, bb12, bb11
+    v15: any = narrow.nonnull v12 <non-null>
+    v16: any = opaque.SafeCall(v15) {impure}
+    br bb10(v16)
+  bb10(v17: any):
+    v18: any = neq v17, v13 {pure,throws}
+    br_if v18, bb12, bb11
   bb11:
-    v20: int = const 0
-    br bb13(v20)
+    v19: int = const 0
+    br bb13(v19)
   bb12:
-    v21: any = narrow.nonnull v18 <non-null>
-    v22: int = convert.int v21
-    br bb13(v22)
-  bb13(v23: int):
-    v24: int = add v8, v23 {pure}
-    ret v24
+    v20: any = narrow.nonnull v17 <non-null>
+    v21: int = convert.int v20
+    br bb13(v21)
+  bb13(v22: int):
+    v23: int = add v7, v22 {pure}
+    ret v23
 ```
 
 ## MakeOverloadSet and OverloadDispatch with try in operands, args, and callee
@@ -553,20 +551,18 @@ fn run(v0: bool, v1: any) -> int:
     v13: any = const "ab"
     br bb8(v13)
   bb8(v14: any):
-    v15: any = opaque.OverloadDispatch(v9, v14) {impure}
-    v16: int = convert.int v15
+    v15: int = opaque.OverloadDispatch(v9, v14) {impure}
     br bb9
   bb9 [unwind: BabbleException -> bb10]:
-    v17: any = opaque.NameRead() {impure}
-    v18: any = opaque.DynamicCall(v17, v0, v9) {impure}
-    br bb12(v18)
-  bb10(v19: any) [handler]:
+    v16: any = opaque.NameRead() {impure}
+    v17: any = opaque.DynamicCall(v16, v0, v9) {impure}
+    br bb12(v17)
+  bb10(v18: any) [handler]:
     br bb11
   bb11:
     br bb12(v9)
-  bb12(v20: any):
-    v21: any = opaque.OverloadDispatch(v20, v1) {impure}
-    v22: int = convert.int v21
-    v23: int = add v16, v22 {pure}
-    ret v23
+  bb12(v19: any):
+    v20: int = opaque.OverloadDispatch(v19, v1) {impure}
+    v21: int = add v15, v20 {pure}
+    ret v21
 ```

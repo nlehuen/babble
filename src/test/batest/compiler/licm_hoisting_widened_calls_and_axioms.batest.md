@@ -442,31 +442,29 @@ fn run(v0: int) -> double:
     v6: double = convert.double v0
     v7: double = div v5, v6 {pure}
     v8: any = opaque.NameRead() {impure}
-    v9: any = opaque.DynamicCall(v8, v7) {impure}
-    v10: double = convert.double v9
-    v11: any = const null
-    br bb1(v11, v3, v1, v2)
-  bb1(v12: any, v13: int, v14: double, v15: double):
-    v16: int = const 2
-    v17: bool = lt v13, v16 {pure}
-    br_if v17, bb3, bb2
+    v9: double = opaque.DynamicCall(v8, v7) {impure}
+    v10: any = const null
+    br bb1(v10, v3, v1, v2)
+  bb1(v11: any, v12: int, v13: double, v14: double):
+    v15: int = const 2
+    v16: bool = lt v12, v15 {pure}
+    br_if v16, bb3, bb2
   bb2:
-    ret v14
+    ret v13
   bb3:
-    v18: any = opaque.NameRead() {impure}
-    v19: int = const 2
-    v20: any = opaque.DynamicCall(v18, v19) {impure}
-    v21: double = convert.double v20
-    v22: double = call_java Math.sin(v15) {pure}
-    v23: double = add v21, v22 {pure}
-    v24: double = add v23, v10 {pure}
+    v17: any = opaque.NameRead() {impure}
+    v18: int = const 2
+    v19: double = opaque.DynamicCall(v17, v18) {impure}
+    v20: double = call_java Math.sin(v14) {pure}
+    v21: double = add v19, v20 {pure}
+    v22: double = add v21, v9 {pure}
+    v23: double = add v13, v22 {pure}
+    v24: double = const 0.5
     v25: double = add v14, v24 {pure}
-    v26: double = const 0.5
-    v27: double = add v15, v26 {pure}
-    v28: int = const 1
-    v29: int = add v13, v28 {pure}
-    v30: any = convert.any v29
-    br bb1(v30, v29, v25, v27)
+    v26: int = const 1
+    v27: int = add v12, v26 {pure}
+    v28: any = convert.any v27
+    br bb1(v28, v27, v23, v25)
 ```
 
 ```mir
@@ -480,28 +478,26 @@ fn run(v0: int) -> double:
     v5: double = convert.double v0
     v6: double = div v4, v5 {pure}
     v7: any = opaque.NameRead() {impure}
-    v8: any = opaque.DynamicCall(v7, v6) {impure}
-    v9: double = convert.double v8
+    v8: double = opaque.DynamicCall(v7, v6) {impure}
     br bb1(v3, v1, v2)
-  bb1(v10: int, v11: double, v12: double):
-    v13: int = const 2
-    v14: bool = lt v10, v13 {pure}
-    br_if v14, bb3, bb2
+  bb1(v9: int, v10: double, v11: double):
+    v12: int = const 2
+    v13: bool = lt v9, v12 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    ret v11
+    ret v10
   bb3:
-    v15: any = opaque.NameRead() {impure}
-    v16: any = opaque.DynamicCall(v15, v13) {impure}
-    v17: double = convert.double v16
-    v18: double = call_java Math.sin(v12) {pure}
-    v19: double = add v17, v18 {pure}
-    v20: double = add v19, v9 {pure}
+    v14: any = opaque.NameRead() {impure}
+    v15: double = opaque.DynamicCall(v14, v12) {impure}
+    v16: double = call_java Math.sin(v11) {pure}
+    v17: double = add v15, v16 {pure}
+    v18: double = add v17, v8 {pure}
+    v19: double = add v10, v18 {pure}
+    v20: double = const 0.5
     v21: double = add v11, v20 {pure}
-    v22: double = const 0.5
-    v23: double = add v12, v22 {pure}
-    v24: int = const 1
-    v25: int = add v10, v24 {pure}
-    br bb1(v25, v21, v23)
+    v22: int = const 1
+    v23: int = add v9, v22 {pure}
+    br bb1(v23, v19, v21)
 ```
 
 ## Captured variable mutated by closure blocks LICM on bigInt(cap)

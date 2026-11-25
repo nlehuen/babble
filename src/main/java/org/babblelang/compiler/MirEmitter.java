@@ -62,6 +62,8 @@ final class MirEmitter {
     private final Map<Integer, MirInst> fusedConditions = new HashMap<>();
     /** Values left on the operand stack by their definition for the next instruction, which loads them first. */
     private final Set<Integer> stacked = new HashSet<>();
+    /** Side-effecting instruction results with zero uses : popped on the stack instead of stored in a local. */
+    private final Set<Integer> discarded = new HashSet<>();
     /** Instructions not emitted where they stand : rematerialized constants and fused conditions. */
     private final Set<MirInst> deferred = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private final List<Runnable> edgeTrampolines = new ArrayList<>();
@@ -247,7 +249,8 @@ final class MirEmitter {
                     lastUsePos[root] = Math.max(lastUsePos[root], ipos);
                 }
                 MirVal res = inst.result();
-                if (res != null && !aliasTarget.containsKey(res.id()) && !stacked.contains(res.id())) {
+                if (res != null && !aliasTarget.containsKey(res.id())
+                        && !stacked.contains(res.id()) && !discarded.contains(res.id())) {
                     bDefs.set(res.id());
                     defPos[res.id()] = ipos;
                     valKind[res.id()] = res.kind();
@@ -439,7 +442,8 @@ final class MirEmitter {
                 cond = next;
             }
         }
-        // A value whose only use is the first operand the next emitted instruction loads stays on the stack.
+        // Pop zero-use results directly, and keep a single-use value on the stack when the next
+        // emitted instruction (or block terminator / Br parallel copy) consumes it first.
         for (MirBlock b : rpo) {
             List<MirInst> emitted = new ArrayList<>(b.insts().size());
             for (MirInst inst : b.insts()) {
@@ -451,14 +455,38 @@ final class MirEmitter {
                 MirInst producer = emitted.get(i);
                 MirVal res = producer.result();
                 if (res == null || !leavesResultViaStore(producer) || aliasTarget.containsKey(res.id())
-                        || useCount.getOrDefault(res.id(), 0) != 1 || needsSlot.contains(res.id())) {
+                        || needsSlot.contains(res.id())) {
                     continue;
                 }
-                MirVal first = i + 1 < emitted.size()
-                        ? firstLoadedOperand(emitted.get(i + 1))
-                        : firstLoadedOperand(b.terminator());
-                if (first != null && resolveRoot(first).id() == res.id() && first.kind() == res.kind()) {
-                    stacked.add(res.id());
+                int uses = useCount.getOrDefault(res.id(), 0);
+                if (uses == 0) {
+                    discarded.add(res.id());
+                    continue;
+                }
+                if (uses != 1) {
+                    continue;
+                }
+                if (i + 1 < emitted.size()) {
+                    MirVal first = firstLoadedOperand(emitted.get(i + 1));
+                    if (first != null && resolveRoot(first).id() == res.id() && first.kind() == res.kind()) {
+                        stacked.add(res.id());
+                    }
+                } else {
+                    MirVal first = firstLoadedOperand(b.terminator());
+                    if (first != null && resolveRoot(first).id() == res.id() && first.kind() == res.kind()) {
+                        stacked.add(res.id());
+                    } else if (b.terminator() instanceof MirTerminator.Br br) {
+                        MirBlock target = blockById.get(br.targetBlock());
+                        for (int k = 0; k < br.args().size(); k++) {
+                            MirVal arg = br.args().get(k);
+                            if (resolveRoot(arg).id() == res.id()
+                                    && arg.kind() == res.kind()
+                                    && target.params().get(k).kind() == res.kind()) {
+                                stacked.add(res.id());
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -472,23 +500,36 @@ final class MirEmitter {
     }
 
     /**
-     * The operand an instruction's own emission loads first, with nothing pushed before it, or
-     * null when it delegates to {@code HirEmitter} (which reads its operands from their locals).
+     * The operand an instruction loads first on an empty stack (either natively or as the first
+     * child emitted via {@link MethodEmitContext#mirOverrides}), or null if none is guaranteed.
      */
     private MirVal firstLoadedOperand(MirInst inst) {
         return switch (inst) {
             case MirInst.Copy c -> c.source();
             case MirInst.Widen w -> w.operand();
             case MirInst.Convert c -> c.operand();
-            case MirInst.Unary u -> {
-                if (u.op() == HirExpr.UnaryOp.NOT) {
-                    yield u.operand().kind() == PrimitiveKind.BOOL ? u.operand() : null;
-                }
-                PrimitiveKind rk = u.result().kind();
-                yield rk == PrimitiveKind.INT || rk == PrimitiveKind.LONG || rk == PrimitiveKind.FLOAT
-                        || rk == PrimitiveKind.DOUBLE ? u.operand() : null;
-            }
-            case MirInst.Binary b -> nativeBinary(b) ? b.left() : null;
+            case MirInst.Unary u -> u.operand();
+            case MirInst.Binary b -> b.left();
+            case MirInst.SlotWrite sw -> sw.value();
+            case MirInst.LoadField lf -> lf.receiver();
+            case MirInst.CallMethod cm -> cm.receiver();
+            case MirInst.CallInterface ci -> ci.receiver();
+            case MirInst.RecordNew rn -> rn.classRef();
+            case MirInst.RecordReuse rr -> rr.target();
+            case MirInst.CheckCast cc -> cc.operand();
+            case MirInst.NonNull nn -> nn.operand();
+            case MirInst.IsCheck ic -> ic.operand();
+            case MirInst.CallBabble cb -> !cb.selfRecurse() ? cb.callee() : null;
+            case MirInst.OpaqueExpr op -> !op.operands().isEmpty()
+                    && (op.template() instanceof HirExpr.DynamicCall
+                    || op.template() instanceof HirExpr.ModuleExportGet
+                    || op.template() instanceof HirExpr.DynamicSelect
+                    || op.template() instanceof HirExpr.OverloadSelect
+                    || op.template() instanceof HirExpr.OverloadDispatch
+                    || op.template() instanceof HirExpr.SafeCall
+                    || op.template() instanceof HirExpr.SpreadAdapt
+                    || op.template() instanceof HirExpr.JavaSamAdapt)
+                    ? op.operands().get(0) : null;
             default -> null;
         };
     }
@@ -496,6 +537,9 @@ final class MirEmitter {
     private MirVal firstLoadedOperand(MirTerminator term) {
         if (term instanceof MirTerminator.Ret ret) {
             return ret.value();
+        }
+        if (term instanceof MirTerminator.Throw th) {
+            return th.value();
         }
         if (term instanceof MirTerminator.BrIf bi) {
             MirVal cond = bi.cond();
@@ -509,24 +553,6 @@ final class MirEmitter {
             return cond;
         }
         return null;
-    }
-
-    /** Whether {@link #emitBinary} lowers this binary itself, loading its left operand first. */
-    private static boolean nativeBinary(MirInst.Binary b) {
-        PrimitiveKind lk = b.left().kind();
-        PrimitiveKind rk = b.right().kind();
-        PrimitiveKind out = b.result().kind();
-        if (b.op().isComparison() && out == PrimitiveKind.BOOL && canEmitPrimitiveCmp(b.op(), lk, rk)) {
-            return true;
-        }
-        if (b.op().isArithmetic() && isNumericKind(lk) && isNumericKind(rk)) {
-            if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
-                    && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL)) {
-                return true;
-            }
-            return out == PrimitiveKind.FLOAT || out == PrimitiveKind.DOUBLE;
-        }
-        return false;
     }
 
     /** The operands an instruction reads from their local directly, rather than through {@link #loadVal}. */
@@ -587,11 +613,31 @@ final class MirEmitter {
         } else if (v instanceof Integer i) {
             ConstantPool.pushInt(mv, i);
         } else if (v instanceof Long l) {
-            mv.visitLdcInsn(l);
+            if (l == 0L) {
+                mv.visitInsn(LCONST_0);
+            } else if (l == 1L) {
+                mv.visitInsn(LCONST_1);
+            } else {
+                mv.visitLdcInsn(l);
+            }
         } else if (v instanceof Float f) {
-            mv.visitLdcInsn(f);
+            if (Float.floatToRawIntBits(f) == 0) {
+                mv.visitInsn(FCONST_0);
+            } else if (f == 1.0f) {
+                mv.visitInsn(FCONST_1);
+            } else if (f == 2.0f) {
+                mv.visitInsn(FCONST_2);
+            } else {
+                mv.visitLdcInsn(f);
+            }
         } else if (v instanceof Double d) {
-            mv.visitLdcInsn(d);
+            if (Double.doubleToRawLongBits(d) == 0L) {
+                mv.visitInsn(DCONST_0);
+            } else if (d == 1.0d) {
+                mv.visitInsn(DCONST_1);
+            } else {
+                mv.visitLdcInsn(d);
+            }
         } else if (v instanceof Character ch) {
             ConstantPool.pushInt(mv, ch);
         } else if (v instanceof String str) {
@@ -667,6 +713,14 @@ final class MirEmitter {
     }
 
     private void storeResult(MirVal res) {
+        if (discarded.contains(res.id())) {
+            if (ctx.stackKind == PrimitiveKind.NONE && res.kind().isPrimitive()) {
+                emitter.convertStack(ctx.stackKind, res.kind());
+            }
+            popOn(mv, ctx.stackKind);
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         emitter.convertStack(ctx.stackKind, res.kind());
         if (stacked.contains(res.id())) {
             ctx.stackKind = res.kind();
@@ -1484,7 +1538,8 @@ final class MirEmitter {
 
     private boolean hasNonTrivialCopies(List<MirVal> args, List<MirVal> params) {
         for (int i = 0; i < args.size(); i++) {
-            if (rematerialized.containsKey(resolveRoot(args.get(i)).id())
+            int rootId = resolveRoot(args.get(i)).id();
+            if (stacked.contains(rootId) || rematerialized.containsKey(rootId)
                     || slotOf(args.get(i)) != slotOf(params.get(i))) {
                 return true;
             }
@@ -1508,10 +1563,17 @@ final class MirEmitter {
             }
         }
         List<MoveOp> pending = new ArrayList<>();
-        // Constants read no local : written last, they cannot clobber the source of another move.
+        // Stacked and constant edge args read no local : written after pending local moves,
+        // they cannot clobber the source of any pending move.
+        int stackedMove = -1;
         List<Integer> constantMoves = new ArrayList<>();
         for (int i = 0; i < args.size(); i++) {
-            if (rematerialized.containsKey(resolveRoot(args.get(i)).id())) {
+            int rootId = resolveRoot(args.get(i)).id();
+            if (stacked.contains(rootId)) {
+                stackedMove = i;
+                continue;
+            }
+            if (rematerialized.containsKey(rootId)) {
                 constantMoves.add(i);
                 continue;
             }
@@ -1549,6 +1611,11 @@ final class MirEmitter {
                 cyc.src = tmp;
             }
         }
+        if (stackedMove >= 0) {
+            MirVal param = params.get(stackedMove);
+            storeKindOn(mv, param.kind(), slotOf(param));
+            ctx.stackKind = PrimitiveKind.NONE;
+        }
         for (int i : constantMoves) {
             MirVal param = params.get(i);
             loadVal(args.get(i));
@@ -1565,7 +1632,11 @@ final class MirEmitter {
     }
 
     private MethodEmitContext.MirOperand operandOf(MirVal v) {
-        MirInst.Const c = rematerialized.get(resolveRoot(v).id());
+        int rootId = resolveRoot(v).id();
+        if (stacked.contains(rootId)) {
+            return MethodEmitContext.MirOperand.stacked(v.kind());
+        }
+        MirInst.Const c = rematerialized.get(rootId);
         if (c != null) {
             return MethodEmitContext.MirOperand.constant(c.value(), v.kind());
         }

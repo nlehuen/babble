@@ -293,10 +293,9 @@ fn run(v0: int) -> double:
     v16: double = call_method v12.mag2() {pure}
     v17: double = add v15, v16 {pure}
     v18: any = opaque.NameRead() {impure}
-    v19: any = opaque.DynamicCall(v18, v0) {impure}
-    v20: double = convert.double v19
-    v21: double = add v17, v20 {pure}
-    ret v21
+    v19: double = opaque.DynamicCall(v18, v0) {impure}
+    v20: double = add v17, v19 {pure}
+    ret v20
 ```
 
 ## Overloaded operator methods on a compiled record
@@ -432,45 +431,44 @@ fn heavyLoop(v0: any, v1: int) -> double:
   bb5 [unwind: ThrownException -> bb8, Exception -> bb7]:
     v21: any = opaque.NameRead() {impure}
     v22: bool = const false
-    v23: any = opaque.DynamicCall(v21, v22) {impure}
-    br bb6(v23)
-  bb6(v24: any) [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v25: double = load_field v0.x {read:frozen}
-    v26: double = load_field v0.y {read:frozen}
-    v27: double = mul v25, v26 {pure}
-    v28: double = load_field v0.z {read:frozen}
-    v29: double = mul v27, v28 {pure}
-    v30: double = add v16, v29 {pure}
-    br bb10(v30)
-  bb7(v31: any) [handler]:
-    br bb9(v31)
-  bb8(v32: any) [handler]:
-    v33: any = unwrap_thrown v32
-    br bb9(v33)
-  bb9(v34: any):
-    v35: double = const 0.0
-    br bb10(v35)
-  bb10(v36: double):
-    ret v36
+    v23: bool = opaque.DynamicCall(v21, v22) {impure}
+    v24: any = convert.any v23
+    br bb6(v24)
+  bb6(v25: any) [unwind: ThrownException -> bb8, Exception -> bb7]:
+    v26: double = load_field v0.x {read:frozen}
+    v27: double = load_field v0.y {read:frozen}
+    v28: double = mul v26, v27 {pure}
+    v29: double = load_field v0.z {read:frozen}
+    v30: double = mul v28, v29 {pure}
+    v31: double = add v16, v30 {pure}
+    br bb10(v31)
+  bb7(v32: any) [handler]:
+    br bb9(v32)
+  bb8(v33: any) [handler]:
+    v34: any = unwrap_thrown v33
+    br bb9(v34)
+  bb9(v35: any):
+    v36: double = const 0.0
+    br bb10(v36)
+  bb10(v37: double):
+    ret v37
   bb11:
-    v37: any = for_next v13
-    v38: any = checkcast v37 <int|int|>
-    v39: int = convert.int v38
-    v40: any = opaque.NameRead() {impure}
-    v41: any = opaque.DynamicCall(v40, v39) {impure}
-    v42: double = convert.double v41
+    v38: any = for_next v13
+    v39: any = checkcast v38 <int|int|>
+    v40: int = convert.int v39
+    v41: any = opaque.NameRead() {impure}
+    v42: double = opaque.DynamicCall(v41, v40) {impure}
     v43: double = add v3, v42 {pure}
     v44: any = opaque.NameRead() {impure}
-    v45: any = opaque.DynamicCall(v44, v1) {impure}
-    v46: double = convert.double v45
-    v47: double = mul v43, v46 {pure}
-    v48: double = add v47, v6 {pure}
-    v49: double = add v16, v48 {pure}
-    v50: double = add v49, v7 {pure}
-    v51: double = sub v50, v8 {pure}
-    v52: double = add v51, v9 {pure}
-    v53: any = convert.any v52
-    br bb1(v53, v52)
+    v45: double = opaque.DynamicCall(v44, v1) {impure}
+    v46: double = mul v43, v45 {pure}
+    v47: double = add v46, v6 {pure}
+    v48: double = add v16, v47 {pure}
+    v49: double = add v48, v7 {pure}
+    v50: double = sub v49, v8 {pure}
+    v51: double = add v50, v9 {pure}
+    v52: any = convert.any v51
+    br bb1(v52, v51)
 ```
 
 ```mir
@@ -497,7 +495,7 @@ fn heavyLoop(v0: any, v1: int) -> double:
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
     v15: any = opaque.NameRead() {impure}
     v16: bool = const false
-    v17: any = opaque.DynamicCall(v15, v16) {impure}
+    v17: bool = opaque.DynamicCall(v15, v16) {impure}
     br bb4
   bb4 [unwind: ThrownException -> bb6, Exception -> bb5]:
     v18: double = mul v3, v4 {pure}
@@ -517,19 +515,17 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v25: any = checkcast v24 <int|int|>
     v26: int = convert.int v25
     v27: any = opaque.NameRead() {impure}
-    v28: any = opaque.DynamicCall(v27, v26) {impure}
-    v29: double = convert.double v28
-    v30: double = add v3, v29 {pure}
-    v31: any = opaque.NameRead() {impure}
-    v32: any = opaque.DynamicCall(v31, v1) {impure}
-    v33: double = convert.double v32
-    v34: double = mul v30, v33 {pure}
-    v35: double = add v34, v6 {pure}
-    v36: double = add v11, v35 {pure}
-    v37: double = add v36, v3 {pure}
-    v38: double = sub v37, v4 {pure}
-    v39: double = add v38, v5 {pure}
-    br bb1(v39)
+    v28: double = opaque.DynamicCall(v27, v26) {impure}
+    v29: double = add v3, v28 {pure}
+    v30: any = opaque.NameRead() {impure}
+    v31: double = opaque.DynamicCall(v30, v1) {impure}
+    v32: double = mul v29, v31 {pure}
+    v33: double = add v32, v6 {pure}
+    v34: double = add v11, v33 {pure}
+    v35: double = add v34, v3 {pure}
+    v36: double = sub v35, v4 {pure}
+    v37: double = add v36, v5 {pure}
+    br bb1(v37)
 ```
 
 ## Non-record compiled class method inlining vs named-arg call & self-recursive borrow fn
@@ -577,18 +573,17 @@ fn run() -> double:
     v10: int = const 2
     v11: int = add v9, v10 {pure}
     v12: int = add v6, v11 {pure}
-    v13: any = opaque.DynamicCall(v3, v12) {impure}
-    v14: double = convert.double v13
+    v13: double = opaque.DynamicCall(v3, v12) {impure}
+    v14: any = opaque.NameRead() {impure}
     v15: any = opaque.NameRead() {impure}
-    v16: any = opaque.NameRead() {impure}
-    v17: double = const 1.0
-    v18: double = const 2.0
-    v19: double = const 0.0
-    v20: any = record_new Vec3(v17, v18, v19) {pure}
-    v21: int = const 3
-    v22: double = call rec(v20, v21) {pure!}
-    v23: double = add v14, v22 {pure}
-    ret v23
+    v16: double = const 1.0
+    v17: double = const 2.0
+    v18: double = const 0.0
+    v19: any = record_new Vec3(v16, v17, v18) {pure}
+    v20: int = const 3
+    v21: double = call rec(v19, v20) {pure!}
+    v22: double = add v13, v21 {pure}
+    ret v22
 ```
 
 ```mir
@@ -607,17 +602,16 @@ fn run() -> double:
     v9: int = add v7, v8 {pure}
     v10: int = add v9, v5 {pure}
     v11: int = add v6, v10 {pure}
-    v12: any = opaque.DynamicCall(v3, v11) {impure}
-    v13: double = convert.double v12
+    v12: double = opaque.DynamicCall(v3, v11) {impure}
+    v13: any = opaque.NameRead() {impure}
     v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.NameRead() {impure}
-    v16: double = const 1.0
-    v17: double = const 2.0
-    v18: double = const 0.0
-    v19: any = record_new Vec3(v16, v17, v18) {pure}
-    v20: double = call rec(v19, v4) {pure!}
-    v21: double = add v13, v20 {pure}
-    ret v21
+    v15: double = const 1.0
+    v16: double = const 2.0
+    v17: double = const 0.0
+    v18: any = record_new Vec3(v15, v16, v17) {pure}
+    v19: double = call rec(v18, v4) {pure!}
+    v20: double = add v12, v19 {pure}
+    ret v20
 ```
 
 ## Class method inlining with constructor statements : safe this.field init vs leaking this
@@ -864,8 +858,7 @@ fn r() -> int:
     v12: any = opaque.FunctionRef() {read:shared}
     v13: int = const 3
     v14: int = const 2
-    v15: any = opaque.DynamicCall(v12, v13, v14) {impure}
-    v16: int = convert.int v15
-    v17: int = add v11, v16 {pure}
-    ret v17
+    v15: int = opaque.DynamicCall(v12, v13, v14) {impure}
+    v16: int = add v11, v15 {pure}
+    ret v16
 ```

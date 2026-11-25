@@ -611,20 +611,19 @@ fn f (x:int, d:obj=1:int) -> double {nothrow unique}
 fn f(v0: int, v1: any) -> double:
   bb0:
     v2: any = opaque.NameRead() {impure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
-    v4: double = convert.double v3
-    v5: any = is v1 <double>
-    br_if v5, bb2, bb1
+    v3: double = opaque.DynamicCall(v2, v0) {impure}
+    v4: any = is v1 <double>
+    br_if v4, bb2, bb1
   bb1:
-    v6: double = const 0.0
-    br bb3(v6)
+    v5: double = const 0.0
+    br bb3(v5)
   bb2:
-    v7: any = narrow.is v1 <double>
-    v8: double = convert.double v7
-    br bb3(v8)
-  bb3(v9: double):
-    v10: double = add v4, v9 {pure}
-    ret v10
+    v6: any = narrow.is v1 <double>
+    v7: double = convert.double v6
+    br bb3(v7)
+  bb3(v8: double):
+    v9: double = add v3, v8 {pure}
+    ret v9
 ```
 
 ## Variadic function and bound method adapted to Java SAM exercise maxArity restIndex branch

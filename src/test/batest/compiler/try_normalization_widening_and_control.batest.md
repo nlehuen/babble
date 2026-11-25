@@ -87,34 +87,32 @@ fn run(v0: byte, v1: short, v2: any) -> int:
     v5: any = opaque.NameRead() {impure}
     v6: any = opaque.NameRead() {impure}
     v7: int = call parse(v2) {impure}
-    v8: any = opaque.DynamicCall(v5, v7) {impure}
-    v9: short = convert.short v8
-    br bb4(v9)
-  bb2(v10: any) [handler]:
+    v8: short = opaque.DynamicCall(v5, v7) {impure}
+    br bb4(v8)
+  bb2(v9: any) [handler]:
     br bb3
   bb3:
-    v11: any = opaque.NameRead() {impure}
-    v12: int = const 1
-    v13: any = opaque.DynamicCall(v11, v12) {impure}
-    v14: short = convert.short v13
-    br bb4(v14)
-  bb4(v15: short):
-    v16: int = call addSh(v4, v15) {impure}
+    v10: any = opaque.NameRead() {impure}
+    v11: int = const 1
+    v12: short = opaque.DynamicCall(v10, v11) {impure}
+    br bb4(v12)
+  bb4(v13: short):
+    v14: int = call addSh(v4, v13) {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v17: any = opaque.NameRead() {impure}
-    v18: int = call parse(v2) {impure}
-    br bb8(v18)
-  bb6(v19: any) [handler]:
+    v15: any = opaque.NameRead() {impure}
+    v16: int = call parse(v2) {impure}
+    br bb8(v16)
+  bb6(v17: any) [handler]:
     br bb7
   bb7:
-    v20: int = const 1
-    br bb8(v20)
-  bb8(v21: int):
-    v22: int = convert.int v1
-    v23: int = add v22, v21 {pure}
-    v24: int = add v16, v23 {pure}
-    ret v24
+    v18: int = const 1
+    br bb8(v18)
+  bb8(v19: int):
+    v20: int = convert.int v1
+    v21: int = add v20, v19 {pure}
+    v22: int = add v14, v21 {pure}
+    ret v22
 ```
 
 ## Effective widening rank 3 (int->long) during try spilling
@@ -164,18 +162,17 @@ fn run(v0: int, v1: any) -> long:
     v2: any = opaque.NameRead() {impure}
     v3: any = opaque.NameRead() {impure}
     v4: int = call parse(v1) {impure}
-    v5: any = opaque.DynamicCall(v2, v4) {impure}
-    v6: long = convert.long v5
-    br bb4(v6)
-  bb2(v7: any) [handler]:
+    v5: long = opaque.DynamicCall(v2, v4) {impure}
+    br bb4(v5)
+  bb2(v6: any) [handler]:
     br bb3
   bb3:
-    v8: long = const 1L
-    br bb4(v8)
-  bb4(v9: long):
-    v10: long = convert.long v0
-    v11: long = add v10, v9 {pure}
-    ret v11
+    v7: long = const 1L
+    br bb4(v7)
+  bb4(v8: long):
+    v9: long = convert.long v0
+    v10: long = add v9, v8 {pure}
+    ret v10
 ```
 
 ## Effective widening ranks 4..5 (int->float, int->double) during try spilling
@@ -252,38 +249,35 @@ fn run(v0: int, v1: any) -> double:
     v2: any = opaque.NameRead() {impure}
     v3: any = opaque.NameRead() {impure}
     v4: int = call parse(v1) {impure}
-    v5: any = opaque.DynamicCall(v2, v4) {impure}
-    v6: float = convert.float v5
-    br bb4(v6)
-  bb2(v7: any) [handler]:
+    v5: float = opaque.DynamicCall(v2, v4) {impure}
+    br bb4(v5)
+  bb2(v6: any) [handler]:
     br bb3
   bb3:
-    v8: float = const 1.0f
-    br bb4(v8)
-  bb4(v9: float):
-    v10: float = convert.float v0
-    v11: float = add v10, v9 {pure}
+    v7: float = const 1.0f
+    br bb4(v7)
+  bb4(v8: float):
+    v9: float = convert.float v0
+    v10: float = add v9, v8 {pure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
+    v11: any = opaque.NameRead() {impure}
     v12: any = opaque.NameRead() {impure}
-    v13: any = opaque.NameRead() {impure}
-    v14: int = call parse(v1) {impure}
-    v15: any = opaque.DynamicCall(v12, v14) {impure}
-    v16: double = convert.double v15
-    br bb8(v16)
-  bb6(v17: any) [handler]:
+    v13: int = call parse(v1) {impure}
+    v14: double = opaque.DynamicCall(v11, v13) {impure}
+    br bb8(v14)
+  bb6(v15: any) [handler]:
     br bb7
   bb7:
-    v18: double = const 1.0
-    br bb8(v18)
-  bb8(v19: double):
-    v20: double = convert.double v0
-    v21: double = add v20, v19 {pure}
-    v22: any = opaque.NameRead() {impure}
-    v23: any = opaque.DynamicCall(v22, v11) {impure}
-    v24: double = convert.double v23
-    v25: double = add v24, v21 {pure}
-    ret v25
+    v16: double = const 1.0
+    br bb8(v16)
+  bb8(v17: double):
+    v18: double = convert.double v0
+    v19: double = add v18, v17 {pure}
+    v20: any = opaque.NameRead() {impure}
+    v21: double = opaque.DynamicCall(v20, v10) {impure}
+    v22: double = add v21, v19 {pure}
+    ret v22
 ```
 
 ## Control-flow containsTry : If (cond, then, else)

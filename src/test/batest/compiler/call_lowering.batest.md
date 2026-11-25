@@ -203,21 +203,19 @@ fn call9(v0: any) -> int:
     v7: int = const 7
     v8: int = const 8
     v9: int = const 9
-    v10: any = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
-    v11: int = convert.int v10
-    v12: int = const 1
-    v13: int = const 2
-    v14: int = const 3
-    v15: int = const 4
-    v16: int = const 5
-    v17: int = const 6
-    v18: int = const 7
-    v19: int = const 8
-    v20: int = const 10
-    v21: any = opaque.DynamicCall(v0, v12, v13, v14, v15, v16, v17, v18, v19, v20) {impure}
-    v22: int = convert.int v21
-    v23: int = add v11, v22 {pure}
-    ret v23
+    v10: int = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
+    v11: int = const 1
+    v12: int = const 2
+    v13: int = const 3
+    v14: int = const 4
+    v15: int = const 5
+    v16: int = const 6
+    v17: int = const 7
+    v18: int = const 8
+    v19: int = const 10
+    v20: int = opaque.DynamicCall(v0, v11, v12, v13, v14, v15, v16, v17, v18, v19) {impure}
+    v21: int = add v10, v20 {pure}
+    ret v21
 ```
 
 ```mir
@@ -233,13 +231,11 @@ fn call9(v0: any) -> int:
     v7: int = const 7
     v8: int = const 8
     v9: int = const 9
-    v10: any = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
-    v11: int = convert.int v10
-    v12: int = const 10
-    v13: any = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v12) {impure}
-    v14: int = convert.int v13
-    v15: int = add v11, v14 {pure}
-    ret v15
+    v10: int = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
+    v11: int = const 10
+    v12: int = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v11) {impure}
+    v13: int = add v10, v12 {pure}
+    ret v13
 ```
 
 ## Overload direct >8-param alternative and anonymous inline overload call

@@ -391,27 +391,25 @@ fn cellCap(v0: any) -> int:
     v7: int = const 0
     v8: any = call_java v2.get(v7) {impure}
     v9: any = checkcast v8 <fn|() : int|>
-    v10: any = opaque.DynamicCall(v9) {impure}
-    v11: int = convert.int v10
-    v12: int = const 1
-    v13: any = call_java v2.get(v12) {impure}
-    v14: any = checkcast v13 <fn|() : int|>
-    v15: any = opaque.DynamicCall(v14) {impure}
-    v16: int = convert.int v15
-    v17: int = add v11, v16 {pure}
-    ret v17
+    v10: int = opaque.DynamicCall(v9) {impure}
+    v11: int = const 1
+    v12: any = call_java v2.get(v11) {impure}
+    v13: any = checkcast v12 <fn|() : int|>
+    v14: int = opaque.DynamicCall(v13) {impure}
+    v15: int = add v10, v14 {pure}
+    ret v15
   bb3:
-    v18: any = for_next v3
-    v19: any = checkcast v18 <int|int|>
-    v20: int = convert.int v19
+    v16: any = for_next v3
+    v17: any = checkcast v16 <int|int|>
+    v18: int = convert.int v17
     slot_decl c
-    v21: int = const 1
-    v22: int = add v20, v21 {pure}
-    slot_init c, v22 {write:shared}
-    v23: any = opaque.FunctionRef() {read:shared}
-    v24: bool = call_java v2.add(v23) {impure}
-    v25: any = convert.any v24
-    br bb1(v25)
+    v19: int = const 1
+    v20: int = add v18, v19 {pure}
+    slot_init c, v20 {write:shared}
+    v21: any = opaque.FunctionRef() {read:shared}
+    v22: bool = call_java v2.add(v21) {impure}
+    v23: any = convert.any v22
+    br bb1(v23)
 ```
 
 ```mir
@@ -429,24 +427,22 @@ fn cellCap(v0: any) -> int:
     v5: int = const 0
     v6: any = call_java v2.get(v5) {impure}
     v7: any = checkcast v6 <fn|() : int|>
-    v8: any = opaque.DynamicCall(v7) {impure}
-    v9: int = convert.int v8
-    v10: int = const 1
-    v11: any = call_java v2.get(v10) {impure}
-    v12: any = checkcast v11 <fn|() : int|>
-    v13: any = opaque.DynamicCall(v12) {impure}
-    v14: int = convert.int v13
-    v15: int = add v9, v14 {pure}
-    ret v15
+    v8: int = opaque.DynamicCall(v7) {impure}
+    v9: int = const 1
+    v10: any = call_java v2.get(v9) {impure}
+    v11: any = checkcast v10 <fn|() : int|>
+    v12: int = opaque.DynamicCall(v11) {impure}
+    v13: int = add v8, v12 {pure}
+    ret v13
   bb3:
-    v16: any = for_next v3
-    v17: any = checkcast v16 <int|int|>
-    v18: int = convert.int v17
+    v14: any = for_next v3
+    v15: any = checkcast v14 <int|int|>
+    v16: int = convert.int v15
     slot_decl c
-    v19: int = const 1
-    v20: int = add v18, v19 {pure}
-    slot_init c, v20 {write:shared}
-    v21: any = opaque.FunctionRef() {read:shared}
-    v22: bool = call_java v2.add(v21) {impure}
+    v17: int = const 1
+    v18: int = add v16, v17 {pure}
+    slot_init c, v18 {write:shared}
+    v19: any = opaque.FunctionRef() {read:shared}
+    v20: bool = call_java v2.add(v19) {impure}
     br bb1
 ```

@@ -25,14 +25,19 @@ final class MethodEmitContext {
     }
 
     /** Pre-evaluated SSA operand slot injected by {@link MirEmitter} when delegating ABI emission to {@link HirEmitter}. */
-    record MirOperand(int slot, PrimitiveKind kind, boolean isConstant, Object constant) {
+    record MirOperand(int slot, PrimitiveKind kind, boolean isConstant, Object constant, boolean isStacked) {
         MirOperand(int slot, PrimitiveKind kind) {
-            this(slot, kind, false, null);
+            this(slot, kind, false, null, false);
         }
 
         /** A rematerialized constant : pushed where the operand is read, in no local. */
         static MirOperand constant(Object value, PrimitiveKind kind) {
-            return new MirOperand(-1, kind, true, value);
+            return new MirOperand(-1, kind, true, value, false);
+        }
+
+        /** A single-use value left on the operand stack by the immediately preceding MIR instruction. */
+        static MirOperand stacked(PrimitiveKind kind) {
+            return new MirOperand(-1, kind, false, null, true);
         }
     }
 

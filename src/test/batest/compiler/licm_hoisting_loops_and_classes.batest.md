@@ -217,26 +217,25 @@ fn run(v0: any, v1: any) -> double:
   bb3:
     v19: int = for_next v7, v12
     v20: any = opaque.NameRead() {impure}
-    v21: any = opaque.DynamicCall(v20, v19) {impure}
-    v22: double = convert.double v21
-    v23: double = add v4, v22 {pure}
-    v24: int = const 0
-    v25: bool = lt v19, v24 {pure}
-    br_if v25, bb5, bb4
+    v21: double = opaque.DynamicCall(v20, v19) {impure}
+    v22: double = add v4, v21 {pure}
+    v23: int = const 0
+    v24: bool = lt v19, v23 {pure}
+    br_if v24, bb5, bb4
   bb4:
-    v26: double = const 0.0
-    br bb6(v26)
+    v25: double = const 0.0
+    br bb6(v25)
   bb5:
     br bb6(v6)
-  bb6(v27: double):
-    v28: double = add v23, v27 {pure}
-    v29: double = add v13, v28 {pure}
-    v30: any = convert.any v29
+  bb6(v26: double):
+    v27: double = add v22, v26 {pure}
+    v28: double = add v13, v27 {pure}
+    v29: any = convert.any v28
     br bb7
   bb7:
-    v31: int = const 1
-    v32: int = add v12, v31 {pure}
-    br bb1(v30, v32, v29)
+    v30: int = const 1
+    v31: int = add v12, v30 {pure}
+    br bb1(v29, v31, v28)
 ```
 
 ```mir
@@ -262,23 +261,22 @@ fn run(v0: any, v1: any) -> double:
   bb3:
     v15: int = for_next v7, v10
     v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.DynamicCall(v16, v15) {impure}
-    v18: double = convert.double v17
-    v19: double = add v4, v18 {pure}
-    v20: bool = lt v15, v9 {pure}
-    br_if v20, bb5, bb4
+    v17: double = opaque.DynamicCall(v16, v15) {impure}
+    v18: double = add v4, v17 {pure}
+    v19: bool = lt v15, v9 {pure}
+    br_if v19, bb5, bb4
   bb4:
     br bb6(v2)
   bb5:
     br bb6(v6)
-  bb6(v21: double):
-    v22: double = add v19, v21 {pure}
-    v23: double = add v11, v22 {pure}
+  bb6(v20: double):
+    v21: double = add v18, v20 {pure}
+    v22: double = add v11, v21 {pure}
     br bb7
   bb7:
-    v24: int = const 1
-    v25: int = add v10, v24 {pure}
-    br bb1(v25, v23)
+    v23: int = const 1
+    v24: int = add v10, v23 {pure}
+    br bb1(v24, v22)
 ```
 
 ## Throwing and impure calls must not be hoisted out of loops
@@ -389,41 +387,34 @@ fn Box.run(v0: int, v1: byte) -> double:
     v9: short = convert.short v1
     v10: any = opaque.NameRead() {impure}
     v11: int = const 4
-    v12: any = opaque.DynamicCall(v10, v11) {impure}
-    v13: short = convert.short v12
-    v14: int = convert.int v13
-    v15: any = opaque.NameRead() {impure}
-    v16: any = opaque.DynamicCall(v15, v1) {impure}
-    v17: int = convert.int v16
-    v18: int = add v14, v17 {pure}
-    v19: any = opaque.NameRead() {impure}
-    v20: int = const 5
-    v21: any = opaque.DynamicCall(v19, v20) {impure}
-    v22: int = convert.int v21
-    v23: int = const 1
-    v24: int = add v22, v23 {pure}
-    v25: long = convert.long v24
-    v26: any = opaque.NameRead() {impure}
-    v27: any = opaque.DynamicCall(v26, v9) {impure}
-    v28: double = convert.double v27
-    v29: any = opaque.NameRead() {impure}
-    v30: any = opaque.DynamicCall(v29, v18) {impure}
-    v31: double = convert.double v30
-    v32: double = add v28, v31 {pure}
-    v33: any = opaque.NameRead() {impure}
-    v34: any = opaque.DynamicCall(v33, v25) {impure}
-    v35: double = convert.double v34
-    v36: double = add v32, v35 {pure}
-    v37: any = opaque.NameRead() {impure}
-    v38: float = const 4.0f
-    v39: any = opaque.DynamicCall(v37, v38) {impure}
-    v40: double = convert.double v39
-    v41: double = add v36, v40 {pure}
-    v42: double = add v7, v41 {pure}
-    v43: int = const 1
-    v44: int = add v6, v43 {pure}
-    v45: any = convert.any v44
-    br bb1(v45, v44, v42)
+    v12: short = opaque.DynamicCall(v10, v11) {impure}
+    v13: int = convert.int v12
+    v14: any = opaque.NameRead() {impure}
+    v15: int = opaque.DynamicCall(v14, v1) {impure}
+    v16: int = add v13, v15 {pure}
+    v17: any = opaque.NameRead() {impure}
+    v18: int = const 5
+    v19: int = opaque.DynamicCall(v17, v18) {impure}
+    v20: int = const 1
+    v21: int = add v19, v20 {pure}
+    v22: long = convert.long v21
+    v23: any = opaque.NameRead() {impure}
+    v24: double = opaque.DynamicCall(v23, v9) {impure}
+    v25: any = opaque.NameRead() {impure}
+    v26: double = opaque.DynamicCall(v25, v16) {impure}
+    v27: double = add v24, v26 {pure}
+    v28: any = opaque.NameRead() {impure}
+    v29: double = opaque.DynamicCall(v28, v22) {impure}
+    v30: double = add v27, v29 {pure}
+    v31: any = opaque.NameRead() {impure}
+    v32: float = const 4.0f
+    v33: double = opaque.DynamicCall(v31, v32) {impure}
+    v34: double = add v30, v33 {pure}
+    v35: double = add v7, v34 {pure}
+    v36: int = const 1
+    v37: int = add v6, v36 {pure}
+    v38: any = convert.any v37
+    br bb1(v38, v37, v35)
 ```
 
 ```mir
@@ -442,39 +433,32 @@ fn Box.run(v0: int, v1: byte) -> double:
   bb3:
     v8: any = opaque.NameRead() {impure}
     v9: int = const 4
-    v10: any = opaque.DynamicCall(v8, v9) {impure}
-    v11: short = convert.short v10
-    v12: int = convert.int v11
-    v13: any = opaque.NameRead() {impure}
-    v14: any = opaque.DynamicCall(v13, v1) {impure}
-    v15: int = convert.int v14
-    v16: int = add v12, v15 {pure}
-    v17: any = opaque.NameRead() {impure}
-    v18: int = const 5
-    v19: any = opaque.DynamicCall(v17, v18) {impure}
-    v20: int = convert.int v19
-    v21: int = const 1
-    v22: int = add v20, v21 {pure}
-    v23: long = convert.long v22
-    v24: any = opaque.NameRead() {impure}
-    v25: any = opaque.DynamicCall(v24, v4) {impure}
-    v26: double = convert.double v25
-    v27: any = opaque.NameRead() {impure}
-    v28: any = opaque.DynamicCall(v27, v16) {impure}
-    v29: double = convert.double v28
-    v30: double = add v26, v29 {pure}
-    v31: any = opaque.NameRead() {impure}
-    v32: any = opaque.DynamicCall(v31, v23) {impure}
-    v33: double = convert.double v32
-    v34: double = add v30, v33 {pure}
-    v35: any = opaque.NameRead() {impure}
-    v36: float = const 4.0f
-    v37: any = opaque.DynamicCall(v35, v36) {impure}
-    v38: double = convert.double v37
-    v39: double = add v34, v38 {pure}
-    v40: double = add v6, v39 {pure}
-    v41: int = add v5, v21 {pure}
-    br bb1(v41, v40)
+    v10: short = opaque.DynamicCall(v8, v9) {impure}
+    v11: int = convert.int v10
+    v12: any = opaque.NameRead() {impure}
+    v13: int = opaque.DynamicCall(v12, v1) {impure}
+    v14: int = add v11, v13 {pure}
+    v15: any = opaque.NameRead() {impure}
+    v16: int = const 5
+    v17: int = opaque.DynamicCall(v15, v16) {impure}
+    v18: int = const 1
+    v19: int = add v17, v18 {pure}
+    v20: long = convert.long v19
+    v21: any = opaque.NameRead() {impure}
+    v22: double = opaque.DynamicCall(v21, v4) {impure}
+    v23: any = opaque.NameRead() {impure}
+    v24: double = opaque.DynamicCall(v23, v14) {impure}
+    v25: double = add v22, v24 {pure}
+    v26: any = opaque.NameRead() {impure}
+    v27: double = opaque.DynamicCall(v26, v20) {impure}
+    v28: double = add v25, v27 {pure}
+    v29: any = opaque.NameRead() {impure}
+    v30: float = const 4.0f
+    v31: double = opaque.DynamicCall(v29, v30) {impure}
+    v32: double = add v28, v31 {pure}
+    v33: double = add v6, v32 {pure}
+    v34: int = add v5, v18 {pure}
+    br bb1(v34, v33)
 ```
 
 ## Class-based LICM hoisting : Unary/Binary/DIV, ThisRef, and fnVar

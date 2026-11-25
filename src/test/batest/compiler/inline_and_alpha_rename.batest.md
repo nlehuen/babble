@@ -401,15 +401,14 @@ fn run (p:int) -> int {pure unique}
 fn run(v0: int) -> int:
   bb0:
     v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.DynamicCall(v1, v0) {impure}
-    v3: int = convert.int v2
-    v4: int = const 1
-    v5: int = add v0, v4 {pure}
-    v6: any = convert.any v5
-    v7: any = checkcast v6 <int|int|>
-    v8: int = convert.int v7
-    v9: int = add v3, v8 {pure}
-    ret v9
+    v2: int = opaque.DynamicCall(v1, v0) {impure}
+    v3: int = const 1
+    v4: int = add v0, v3 {pure}
+    v5: any = convert.any v4
+    v6: any = checkcast v5 <int|int|>
+    v7: int = convert.int v6
+    v8: int = add v2, v7 {pure}
+    ret v8
 ```
 
 ## InlinePass.performInline : cell receiver spill, arg mutated in later arg, and conditional local
@@ -596,19 +595,18 @@ fn run(v0: int, v1: bool) -> double:
     br_if v23, bb6, bb5
   bb5:
     v24: int = add v14, v22 {pure}
-    v25: any = opaque.DynamicCall(v5, v24) {impure}
-    v26: double = convert.double v25
-    v27: double = add v4, v26 {pure}
-    ret v27
+    v25: double = opaque.DynamicCall(v5, v24) {impure}
+    v26: double = add v4, v25 {pure}
+    ret v26
   bb6:
-    v28: any = for_next v19
-    v29: any = checkcast v28 <int|int|>
-    v30: int = convert.int v29
-    v31: int = const 2
-    v32: int = mul v30, v31 {pure}
-    v33: int = add v22, v32 {pure}
-    v34: any = convert.any v33
-    br bb4(v34, v33)
+    v27: any = for_next v19
+    v28: any = checkcast v27 <int|int|>
+    v29: int = convert.int v28
+    v30: int = const 2
+    v31: int = mul v29, v30 {pure}
+    v32: int = add v22, v31 {pure}
+    v33: any = convert.any v32
+    br bb4(v33, v32)
 ```
 
 ```mir
@@ -639,17 +637,16 @@ fn run(v0: int, v1: bool) -> double:
     br_if v16, bb6, bb5
   bb5:
     v17: int = add v9, v15 {pure}
-    v18: any = opaque.DynamicCall(v5, v17) {impure}
-    v19: double = convert.double v18
-    v20: double = add v4, v19 {pure}
-    ret v20
+    v18: double = opaque.DynamicCall(v5, v17) {impure}
+    v19: double = add v4, v18 {pure}
+    ret v19
   bb6:
-    v21: any = for_next v14
-    v22: any = checkcast v21 <int|int|>
-    v23: int = convert.int v22
-    v24: int = mul v23, v11 {pure}
-    v25: int = add v15, v24 {pure}
-    br bb4(v25)
+    v20: any = for_next v14
+    v21: any = checkcast v20 <int|int|>
+    v22: int = convert.int v21
+    v23: int = mul v22, v11 {pure}
+    v24: int = add v15, v23 {pure}
+    br bb4(v24)
 ```
 
 ## InlinePass.alphaRename : Move with unique parameter substitution
@@ -776,14 +773,12 @@ fn run(v0: int) -> int:
   bb0:
     v1: any = opaque.FunctionRef() {pure}
     v2: int = const 2
-    v3: any = opaque.DynamicCall(v1, v2, v0) {impure}
-    v4: int = convert.int v3
-    v5: any = opaque.FunctionRef() {pure}
-    v6: int = const 3
-    v7: any = opaque.DynamicCall(v5, v0, v6) {impure}
-    v8: int = convert.int v7
-    v9: int = add v4, v8 {pure}
-    ret v9
+    v3: int = opaque.DynamicCall(v1, v2, v0) {impure}
+    v4: any = opaque.FunctionRef() {pure}
+    v5: int = const 3
+    v6: int = opaque.DynamicCall(v4, v0, v5) {impure}
+    v7: int = add v3, v6 {pure}
+    ret v7
 ```
 
 ## InlinePass.alphaRename : borrow-lambda devirtualization guards for arity mismatch and non-literal callee
@@ -813,12 +808,10 @@ fn run (x:int, dyn:obj) -> int {pure unique}
 fn run(v0: int, v1: any) -> int:
   bb0:
     v2: any = opaque.FunctionRef() {pure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
-    v4: int = convert.int v3
-    v5: any = opaque.DynamicCall(v1, v0) {impure}
-    v6: int = convert.int v5
-    v7: int = add v4, v6 {pure}
-    ret v7
+    v3: int = opaque.DynamicCall(v2, v0) {impure}
+    v4: int = opaque.DynamicCall(v1, v0) {impure}
+    v5: int = add v3, v4 {pure}
+    ret v5
 ```
 
 ## InlinePass.isMethodDefinitelyDefinedForInline and scanThisLeak : statements, default method, and sibling leak

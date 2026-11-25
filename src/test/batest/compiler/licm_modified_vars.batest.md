@@ -460,14 +460,13 @@ fn MC.run(v0: int) -> int:
     v22: int = add v18, v21 {pure}
     v23: any = opaque.NameRead() {impure}
     v24: int = const 4
-    v25: any = opaque.DynamicCall(v23, v24) {impure}
-    v26: int = convert.int v25
-    v27: int = add v22, v26 {pure}
-    v28: int = add v6, v27 {pure}
-    v29: int = const 1
-    v30: int = add v5, v29 {pure}
-    v31: any = convert.any v30
-    br bb1(v31, v30, v28)
+    v25: int = opaque.DynamicCall(v23, v24) {impure}
+    v26: int = add v22, v25 {pure}
+    v27: int = add v6, v26 {pure}
+    v28: int = const 1
+    v29: int = add v5, v28 {pure}
+    v30: any = convert.any v29
+    br bb1(v30, v29, v27)
 ```
 
 ```mir
@@ -497,12 +496,11 @@ fn MC.run(v0: int) -> int:
     v16: int = add v12, v15 {pure}
     v17: any = opaque.NameRead() {impure}
     v18: int = const 4
-    v19: any = opaque.DynamicCall(v17, v18) {impure}
-    v20: int = convert.int v19
-    v21: int = add v16, v20 {pure}
-    v22: int = add v3, v21 {pure}
-    v23: int = add v2, v8 {pure}
-    br bb1(v23, v22)
+    v19: int = opaque.DynamicCall(v17, v18) {impure}
+    v20: int = add v16, v19 {pure}
+    v21: int = add v3, v20 {pure}
+    v22: int = add v2, v8 {pure}
+    br bb1(v22, v21)
 ```
 
 ## HirPurity.collectModifiedVars : nested fn, class, interface, StringBuilder, list, and is check inside while

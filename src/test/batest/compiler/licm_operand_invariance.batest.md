@@ -368,23 +368,21 @@ fn run(v0: byte, v1: any) -> double:
     v16: any = widen#2 v15
     v17: int = convert.int v16
     v18: any = opaque.NameRead() {impure}
-    v19: any = opaque.DynamicCall(v18, v0) {impure}
-    v20: int = convert.int v19
-    v21: int = add v17, v20 {pure}
-    v22: any = checkcast v1 <int|int|>
-    v23: any = widen#2 v22
-    v24: int = convert.int v23
-    v25: int = add v21, v24 {pure}
-    v26: int = const 2
-    v27: int = add v25, v26 {pure}
-    v28: any = opaque.DynamicCall(v14, v27) {impure}
-    v29: double = convert.double v28
-    v30: double = add v13, v29 {pure}
-    v31: double = add v7, v30 {pure}
-    v32: int = const 1
-    v33: int = add v6, v32 {pure}
-    v34: any = convert.any v33
-    br bb1(v34, v33, v31)
+    v19: int = opaque.DynamicCall(v18, v0) {impure}
+    v20: int = add v17, v19 {pure}
+    v21: any = checkcast v1 <int|int|>
+    v22: any = widen#2 v21
+    v23: int = convert.int v22
+    v24: int = add v20, v23 {pure}
+    v25: int = const 2
+    v26: int = add v24, v25 {pure}
+    v27: double = opaque.DynamicCall(v14, v26) {impure}
+    v28: double = add v13, v27 {pure}
+    v29: double = add v7, v28 {pure}
+    v30: int = const 1
+    v31: int = add v6, v30 {pure}
+    v32: any = convert.any v31
+    br bb1(v32, v31, v29)
 ```
 
 ```mir
@@ -410,21 +408,19 @@ fn run(v0: byte, v1: any) -> double:
     v14: any = widen#2 v13
     v15: int = convert.int v14
     v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.DynamicCall(v16, v0) {impure}
-    v18: int = convert.int v17
-    v19: int = add v15, v18 {pure}
-    v20: any = checkcast v1 <int|int|>
-    v21: any = widen#2 v20
-    v22: int = convert.int v21
-    v23: int = add v19, v22 {pure}
-    v24: int = add v23, v7 {pure}
-    v25: any = opaque.DynamicCall(v12, v24) {impure}
-    v26: double = convert.double v25
-    v27: double = add v11, v26 {pure}
-    v28: double = add v6, v27 {pure}
-    v29: int = const 1
-    v30: int = add v5, v29 {pure}
-    br bb1(v30, v28)
+    v17: int = opaque.DynamicCall(v16, v0) {impure}
+    v18: int = add v15, v17 {pure}
+    v19: any = checkcast v1 <int|int|>
+    v20: any = widen#2 v19
+    v21: int = convert.int v20
+    v22: int = add v18, v21 {pure}
+    v23: int = add v22, v7 {pure}
+    v24: double = opaque.DynamicCall(v12, v23) {impure}
+    v25: double = add v11, v24 {pure}
+    v26: double = add v6, v25 {pure}
+    v27: int = const 1
+    v28: int = add v5, v27 {pure}
+    br bb1(v28, v26)
 ```
 
 ## HirLicmPass : local non-capturing fn (DirectBabbleCall with VarRead callee) and non-value class ThisFieldGet
@@ -576,24 +572,23 @@ fn run(v0: any, v1: any) -> int:
     v11: int = convert.int v10
     v12: any = opaque.NameRead() {impure}
     v13: any = checkcast v0 <int|int|>
-    v14: any = opaque.DynamicCall(v12, v13) {impure}
-    v15: int = convert.int v14
-    v16: int = add v11, v15 {pure}
-    v17: int = array_len v1 {read:frozen,throws}
-    v18: int = add v16, v17 {pure}
-    v19: any = opaque.NameRead() {impure}
-    v20: any = opaque.OverloadSelect(v19) {pure}
-    v21: int = const 3
-    v22: int = add v18, v21 {pure}
-    v23: any = opaque.NameRead() {impure}
-    v24: any = opaque.OverloadSelect(v23) {pure}
-    v25: int = const 3
-    v26: int = add v22, v25 {pure}
-    v27: int = add v7, v26 {pure}
-    v28: int = const 1
-    v29: int = add v6, v28 {pure}
-    v30: any = convert.any v29
-    br bb1(v30, v29, v27)
+    v14: int = opaque.DynamicCall(v12, v13) {impure}
+    v15: int = add v11, v14 {pure}
+    v16: int = array_len v1 {read:frozen,throws}
+    v17: int = add v15, v16 {pure}
+    v18: any = opaque.NameRead() {impure}
+    v19: any = opaque.OverloadSelect(v18) {pure}
+    v20: int = const 3
+    v21: int = add v17, v20 {pure}
+    v22: any = opaque.NameRead() {impure}
+    v23: any = opaque.OverloadSelect(v22) {pure}
+    v24: int = const 3
+    v25: int = add v21, v24 {pure}
+    v26: int = add v7, v25 {pure}
+    v27: int = const 1
+    v28: int = add v6, v27 {pure}
+    v29: any = convert.any v28
+    br bb1(v29, v28, v26)
 ```
 
 ```mir
@@ -613,18 +608,17 @@ fn run(v0: any, v1: any) -> int:
     v8: int = convert.int v7
     v9: any = opaque.NameRead() {impure}
     v10: any = checkcast v0 <int|int|>
-    v11: any = opaque.DynamicCall(v9, v10) {impure}
-    v12: int = convert.int v11
-    v13: int = add v8, v12 {pure}
-    v14: int = array_len v1 {read:frozen,throws}
-    v15: int = add v13, v14 {pure}
-    v16: any = opaque.NameRead() {impure}
-    v17: int = const 3
-    v18: int = add v15, v17 {pure}
-    v19: any = opaque.NameRead() {impure}
-    v20: int = add v18, v17 {pure}
-    v21: int = add v4, v20 {pure}
-    v22: int = const 1
-    v23: int = add v3, v22 {pure}
-    br bb1(v23, v21)
+    v11: int = opaque.DynamicCall(v9, v10) {impure}
+    v12: int = add v8, v11 {pure}
+    v13: int = array_len v1 {read:frozen,throws}
+    v14: int = add v12, v13 {pure}
+    v15: any = opaque.NameRead() {impure}
+    v16: int = const 3
+    v17: int = add v14, v16 {pure}
+    v18: any = opaque.NameRead() {impure}
+    v19: int = add v17, v16 {pure}
+    v20: int = add v4, v19 {pure}
+    v21: int = const 1
+    v22: int = add v3, v21 {pure}
+    br bb1(v22, v20)
 ```

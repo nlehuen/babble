@@ -179,6 +179,103 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(40, 1000, -2.5)");
+        scripts.put("mir : typedCall primitive return",
+                "def stepA = fn (x : double) : double -> ( if x > 100.0 then ( x * 0.25 + 1.0 ) else ( x * 0.5 + 1.5 ) )\n"
+                        + "def stepB = fn (x : double) : double -> ( if x > 100.0 then ( x * 0.2 + 2.0 ) else ( x * 0.4 + 2.5 ) )\n"
+                        + "def run = fn (n : int, a : fn (double) : double, b : fn (double) : double) : double -> (\n"
+                        + "    if n <= 0 then ( return 0.0 )\n"
+                        + "    def i = 0\n"
+                        + "    def odd = false\n"
+                        + "    def acc = 1.0\n"
+                        + "    while i < n then (\n"
+                        + "        odd = not odd\n"
+                        + "        def f : fn (double) : double = if odd then ( a ) else ( b )\n"
+                        + "        acc = f(acc) + f(acc + 0.25)\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    acc\n"
+                        + ")\n"
+                        + "run(100000, stepA, stepB) + run(100000, stepB, stepA)");
+        scripts.put("mir : branch-heavy math & AABB slab loop",
+                "def sqrt = fn (x : double) : double -> (\n"
+                        + "    if x <= 0.0 then ( return 0.0 )\n"
+                        + "    def g = if x > 1.0 then ( x * 0.5 ) else ( 1.0 )\n"
+                        + "    while g * g > x * 16.0 then ( g = g * 0.25 )\n"
+                        + "    while g * g * 16.0 < x then ( g = g * 4.0 )\n"
+                        + "    def i = 0\n"
+                        + "    while i < 10 then (\n"
+                        + "        g = 0.5 * (g + x / g)\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    g\n"
+                        + ")\n"
+                        + "def slab = fn (ox : double, dx : double, minX : double, maxX : double, tMin0 : double, tMax0 : double) : bool -> (\n"
+                        + "    def tMin = tMin0\n"
+                        + "    def tMax = tMax0\n"
+                        + "    def inv = 1.0 / dx\n"
+                        + "    def t0 = (minX - ox) * inv\n"
+                        + "    def t1 = (maxX - ox) * inv\n"
+                        + "    if inv < 0.0 then ( def tmp = t0 ; t0 = t1 ; t1 = tmp )\n"
+                        + "    if t0 > tMin then ( tMin = t0 )\n"
+                        + "    if t1 < tMax then ( tMax = t1 )\n"
+                        + "    tMax > tMin\n"
+                        + ")\n"
+                        + "def run = fn (n : int) : double -> (\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0.0\n"
+                        + "    while i < n then (\n"
+                        + "        def x = 1.0 + (i - int(i / 17) * 17) * 0.37\n"
+                        + "        if slab(0.0, x, 0.5, 4.0, 0.001, 100.0) then ( s = s + sqrt(x) )\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "run(3000) + run(3000)");
+        scripts.put("mir : BVH-style interface dispatch",
+                "def Interval = record (min : double, max : double) ()\n"
+                        + "def Box = record (lo : double, hi : double) (\n"
+                        + "    def hit = fn (x : double, rayT : Interval) : bool -> (\n"
+                        + "        x >= this.lo and x <= this.hi and rayT.max > rayT.min\n"
+                        + "    )\n"
+                        + ")\n"
+                        + "def Hit = record (t : double) ()\n"
+                        + "def Hittable = interface ( def hit : fn (x : double, rayT : Interval) : Hit? )\n"
+                        + "def Leaf = class (def pos : double, def dist : double) implements Hittable (\n"
+                        + "    def hit = fn (x : double, rayT : Interval) : Hit? -> (\n"
+                        + "        if x >= this.pos - 1.0 and x <= this.pos + 1.0 and this.dist > rayT.min and this.dist < rayT.max then (\n"
+                        + "            Hit(this.dist)\n"
+                        + "        ) else ( null )\n"
+                        + "    )\n"
+                        + ")\n"
+                        + "def Node = class (def left : Hittable, def right : Hittable, def bbox : Box) implements Hittable (\n"
+                        + "    def hit = fn (x : double, rayT : Interval) : Hit? -> (\n"
+                        + "        if not this.bbox.hit(x, rayT) then ( return null )\n"
+                        + "        def hitLeft : Hit? = this.left.hit(x, rayT)\n"
+                        + "        def rightT : Interval = if hitLeft != null then ( Interval(rayT.min, hitLeft.t) ) else ( rayT )\n"
+                        + "        def hitRight : Hit? = this.right.hit(x, rightT)\n"
+                        + "        if hitRight != null then ( hitRight ) else ( hitLeft )\n"
+                        + "    )\n"
+                        + ")\n"
+                        + "def build = fn (lo : int, hi : int) : Hittable -> (\n"
+                        + "    if lo == hi then ( Leaf(lo * 1.0, 1.0 + (lo - int(lo / 7) * 7) * 0.5) )\n"
+                        + "    else (\n"
+                        + "        def mid = int((lo + hi) / 2)\n"
+                        + "        Node(build(lo, mid), build(mid + 1, hi), Box(lo * 1.0 - 1.0, hi * 1.0 + 1.0))\n"
+                        + "    )\n"
+                        + ")\n"
+                        + "def run = fn (n : int) : double -> (\n"
+                        + "    def root : Hittable = build(0, 31)\n"
+                        + "    def rayT = Interval(0.001, 100.0)\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0.0\n"
+                        + "    while i < n then (\n"
+                        + "        def h = root.hit((i - int(i / 32) * 32) * 1.0, rayT)\n"
+                        + "        if h != null then ( s = s + h.t )\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "run(1500) + run(1500)");
 
         scripts.forEach((name, script) -> benches.put(name, new Bench(script)));
         // Too slow to interpret 70 times : compiled modes only.
@@ -215,6 +312,8 @@ public final class Benchmarks {
         return Double.isNaN(base) || Double.isNaN(opt2) ? "-" : String.format("%.2fx", base / Math.max(opt2, 1e-6));
     }
 
+    private static volatile Object blackhole;
+
     /** The median time of an eval, in milliseconds, after warming up. */
     private static double time(String mode, int optLevel, Bench bench) throws Exception {
         if (bench.compileOnly()) {
@@ -229,12 +328,12 @@ public final class Benchmarks {
         }
         CompiledScript compiled = engine.compile(bench.script());
         for (int i = 0; i < WARMUP; i++) {
-            compiled.eval(new SimpleBindings());
+            blackhole = compiled.eval(new SimpleBindings());
         }
         long[] times = new long[RUNS];
         for (int i = 0; i < RUNS; i++) {
             long start = System.nanoTime();
-            compiled.eval(new SimpleBindings());
+            blackhole = compiled.eval(new SimpleBindings());
             times[i] = System.nanoTime() - start;
         }
         Arrays.sort(times);

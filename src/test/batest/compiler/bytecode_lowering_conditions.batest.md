@@ -58,7 +58,7 @@ fn fold(v0: int) -> bool:
     v10: bool = eq v0, v9 {pure}
     br bb4(v10)
   bb4(v11: bool):
-    v12: any = opaque.DynamicCall(v1, v11) {impure}
+    v12: bool = opaque.DynamicCall(v1, v11) {impure}
     v13: any = opaque.NameRead() {impure}
     v14: int = const 5
     v15: bool = eq v0, v14 {pure}
@@ -69,12 +69,11 @@ fn fold(v0: int) -> bool:
     v18: bool = eq v0, v17 {pure}
     br bb6(v18)
   bb6(v19: bool):
-    v20: any = opaque.DynamicCall(v13, v19) {impure}
+    v20: bool = opaque.DynamicCall(v13, v19) {impure}
     v21: any = opaque.NameRead() {impure}
     v22: bool = const true
-    v23: any = opaque.DynamicCall(v21, v22) {impure}
-    v24: bool = convert.bool v23
-    ret v24
+    v23: bool = opaque.DynamicCall(v21, v22) {impure}
+    ret v23
 ```
 
 ```mir
@@ -93,18 +92,17 @@ fn fold(v0: int) -> bool:
   bb3:
     br bb4(v3)
   bb4(v6: bool):
-    v7: any = opaque.DynamicCall(v1, v6) {impure}
+    v7: bool = opaque.DynamicCall(v1, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     br_if v3, bb5, bb6(v4)
   bb5:
     br bb6(v3)
   bb6(v9: bool):
-    v10: any = opaque.DynamicCall(v8, v9) {impure}
+    v10: bool = opaque.DynamicCall(v8, v9) {impure}
     v11: any = opaque.NameRead() {impure}
     v12: bool = const true
-    v13: any = opaque.DynamicCall(v11, v12) {impure}
-    v14: bool = convert.bool v13
-    ret v14
+    v13: bool = opaque.DynamicCall(v11, v12) {impure}
+    ret v13
 ```
 
 ## evalIntConstant nested unary minus including 32-bit Integer.MIN_VALUE negation wrap, plus mixed widening

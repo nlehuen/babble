@@ -108,24 +108,23 @@ fn run(v0: bool) -> int:
     v28: any = opaque.NameRead() {impure}
     v29: any = nonnull v19
     v30: double = load_field v29.x {read:frozen,throws}
-    v31: any = opaque.DynamicCall(v28, v30) {impure}
-    v32: int = convert.int v31
-    v33: int = add v27, v32 {pure}
-    v34: int = nonnull v22
-    v35: int = add v33, v34 {pure}
-    v36: any = const null
-    v37: any = eq v1, v36 {pure,throws}
-    br_if v37, bb8, bb7
+    v31: int = opaque.DynamicCall(v28, v30) {impure}
+    v32: int = add v27, v31 {pure}
+    v33: int = nonnull v22
+    v34: int = add v32, v33 {pure}
+    v35: any = const null
+    v36: any = eq v1, v35 {pure,throws}
+    br_if v36, bb8, bb7
   bb7:
-    v38: any = narrow.nonnull v1 <non-null>
-    v39: int = const 1
-    br bb9(v39)
+    v37: any = narrow.nonnull v1 <non-null>
+    v38: int = const 1
+    br bb9(v38)
   bb8:
-    v40: int = const 0
-    br bb9(v40)
-  bb9(v41: int):
-    v42: int = add v35, v41 {pure}
-    ret v42
+    v39: int = const 0
+    br bb9(v39)
+  bb9(v40: int):
+    v41: int = add v34, v40 {pure}
+    ret v41
 ```
 
 ```mir
@@ -166,21 +165,20 @@ fn run(v0: bool) -> int:
     v22: any = opaque.NameRead() {impure}
     v23: any = nonnull v14
     v24: double = load_field v23.x {read:frozen,throws}
-    v25: any = opaque.DynamicCall(v22, v24) {impure}
-    v26: int = convert.int v25
-    v27: int = add v21, v26 {pure}
-    v28: int = nonnull v16
-    v29: int = add v27, v28 {pure}
-    v30: any = eq v1, v1 {pure,throws}
-    br_if v30, bb8, bb7
+    v25: int = opaque.DynamicCall(v22, v24) {impure}
+    v26: int = add v21, v25 {pure}
+    v27: int = nonnull v16
+    v28: int = add v26, v27 {pure}
+    v29: any = eq v1, v1 {pure,throws}
+    br_if v29, bb8, bb7
   bb7:
     br bb9(v15)
   bb8:
-    v31: int = const 0
-    br bb9(v31)
-  bb9(v32: int):
-    v33: int = add v29, v32 {pure}
-    ret v33
+    v30: int = const 0
+    br bb9(v30)
+  bb9(v31: int):
+    v32: int = add v28, v31 {pure}
+    ret v32
 ```
 
 ## SROA verification bailouts : typed def/assign, value-used assign, and statement if/else
@@ -515,12 +513,11 @@ fn run(v0: any, v1: any, v2: bool) -> double:
     v32: any = narrow.is v26 <babble|Pair>
     v33: any = opaque.NameRead() {impure}
     v34: int = load_field v32.a {read:frozen}
-    v35: any = opaque.DynamicCall(v33, v34) {impure}
-    v36: double = convert.double v35
-    br bb9(v36)
-  bb9(v37: double):
-    v38: double = add v29, v37 {pure}
-    ret v38
+    v35: double = opaque.DynamicCall(v33, v34) {impure}
+    br bb9(v35)
+  bb9(v36: double):
+    v37: double = add v29, v36 {pure}
+    ret v37
 ```
 
 ```mir
@@ -564,12 +561,11 @@ fn run(v0: any, v1: any, v2: bool) -> double:
     v23: any = narrow.is v17 <babble|Pair>
     v24: any = opaque.NameRead() {impure}
     v25: int = load_field v23.a {read:frozen}
-    v26: any = opaque.DynamicCall(v24, v25) {impure}
-    v27: double = convert.double v26
-    br bb9(v27)
-  bb9(v28: double):
-    v29: double = add v20, v28 {pure}
-    ret v29
+    v26: double = opaque.DynamicCall(v24, v25) {impure}
+    br bb9(v26)
+  bb9(v27: double):
+    v28: double = add v20, v27 {pure}
+    ret v28
 ```
 
 ## SROA destructured RHS bailouts : mismatched RecordNew, empty block, and one-armed if

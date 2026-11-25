@@ -63,14 +63,13 @@ fn merge(v0: any [unique], v1: any [unique], v2: any) -> any:
     v5: int = add v3, v4 {pure}
     v6: any = opaque.NameRead() {impure}
     v7: double = load_field v2.x {read:frozen}
-    v8: any = opaque.DynamicCall(v6, v7) {impure}
-    v9: int = convert.int v8
-    v10: int = add v5, v9 {pure}
-    v11: int = const 1
-    v12: int = add v10, v11 {pure}
-    v13: any = load_field v0.items {read:frozen}
-    v14: any = record_reuse v0 as Holder(v13, v12) {write:unique#0}
-    ret v14
+    v8: int = opaque.DynamicCall(v6, v7) {impure}
+    v9: int = add v5, v8 {pure}
+    v10: int = const 1
+    v11: int = add v9, v10 {pure}
+    v12: any = load_field v0.items {read:frozen}
+    v13: any = record_reuse v0 as Holder(v12, v11) {write:unique#0}
+    ret v13
 ```
 
 ## FBIP record reuse tail shapes : one-armed if and empty block else
