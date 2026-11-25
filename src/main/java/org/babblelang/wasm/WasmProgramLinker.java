@@ -49,13 +49,16 @@ public final class WasmProgramLinker {
         public final boolean hasEnvParam;
         public final boolean hasThisParam;
         public final WasmObjectSystem.ClassInfo ownerClass; // non-null for class/record/object methods
+        public final WasmObjectSystem.IfaceInfo ownerIface; // non-null for interface default methods
         public final boolean isInterfaceDefault;
         public final boolean hasOptMaskParam;
+        public final boolean hasBoxedMissingOptParams;
 
         FuncInfo(int moduleIndex, HirFunction hir, WasmModule.FuncDef directFuncDef,
                  WasmModule.FuncDef genericFuncDef, int closureStructType, int singletonGlobalIdx,
                  List<WasmValType> captureFieldTypes, boolean hasEnvParam, boolean hasThisParam,
-                 WasmObjectSystem.ClassInfo ownerClass, boolean isInterfaceDefault, boolean hasOptMaskParam) {
+                 WasmObjectSystem.ClassInfo ownerClass, WasmObjectSystem.IfaceInfo ownerIface,
+                 boolean isInterfaceDefault, boolean hasOptMaskParam, boolean hasBoxedMissingOptParams) {
             this.moduleIndex = moduleIndex;
             this.hir = hir;
             this.directFuncIdx = directFuncDef.funcIndex();
@@ -68,8 +71,10 @@ public final class WasmProgramLinker {
             this.hasEnvParam = hasEnvParam;
             this.hasThisParam = hasThisParam;
             this.ownerClass = ownerClass;
+            this.ownerIface = ownerIface;
             this.isInterfaceDefault = isInterfaceDefault;
             this.hasOptMaskParam = hasOptMaskParam;
+            this.hasBoxedMissingOptParams = hasBoxedMissingOptParams;
         }
 
         public WasmObjectSystem.ClassInfo staticOwnerClass;
@@ -83,6 +88,7 @@ public final class WasmProgramLinker {
         public final Map<String, Integer> topLevelGlobals = new LinkedHashMap<>();
         public final Map<Integer, FuncInfo> functions = new LinkedHashMap<>();
         public final Set<Integer> interfaceDefaultFuncIds = new HashSet<>();
+        public final Map<Integer, Integer> interfaceDefaultOwnerIfaceId = new LinkedHashMap<>();
         public int initStateGlobalIdx; // 0 = uninit, 1 = initing, 2 = done
         public int modValGlobalIdx;    // (mut (ref null $ModuleVal))
         public int initFuncIdx;
@@ -92,9 +98,17 @@ public final class WasmProgramLinker {
             this.index = index;
             this.input = input;
             for (HirInterface hi : input.hir().interfaces().values()) {
-                interfaceDefaultFuncIds.addAll(hi.defaultFunctionIds().values());
+                for (int id : hi.defaultFunctionIds().values()) {
+                    interfaceDefaultFuncIds.add(id);
+                    interfaceDefaultOwnerIfaceId.put(id, hi.id());
+                }
                 for (List<Integer> ids : hi.defaultOverloadFunctionIds().values()) {
-                    interfaceDefaultFuncIds.addAll(ids);
+                    for (int id : ids) {
+                        if (id >= 0) {
+                            interfaceDefaultFuncIds.add(id);
+                            interfaceDefaultOwnerIfaceId.put(id, hi.id());
+                        }
+                    }
                 }
             }
         }
@@ -128,9 +142,10 @@ public final class WasmProgramLinker {
         declareUserWasmImports();
         this.rt = new WasmRuntimeGen(mod, ts, target);
         this.ops = new WasmRuntimeOpsGen(mod, ts, rt, target);
-        this.arrOps = new WasmArrayOpsGen(mod, ts, rt);
+        this.arrOps = new WasmArrayOpsGen(mod, ts, rt, ops);
         this.strOps = new WasmStringOpsGen(mod, ts, rt, arrOps);
         this.colOps = new WasmCollectionOpsGen(mod, ts, rt);
+        this.ops.setCollections(colOps);
         this.rt.emitPolymorphicHelpers(
                 arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat,
                 colOps.fnColEq, colOps.fnColHash, colOps.fnColFmt);
@@ -346,6 +361,9 @@ public final class WasmProgramLinker {
         WasmObjectSystem.ClassInfo ownerClass = fn.ownerClassId() >= 0
                 ? objects.classByLocal(modInfo.index, fn.ownerClassId()) : null;
         boolean isIfaceDefault = ownerClass == null && modInfo.interfaceDefaultFuncIds.contains(fn.id());
+        Integer ownerIfaceId = isIfaceDefault ? modInfo.interfaceDefaultOwnerIfaceId.get(fn.id()) : null;
+        WasmObjectSystem.IfaceInfo ownerIface = ownerIfaceId != null
+                ? objects.ifaceByLocal(modInfo.index, ownerIfaceId) : null;
         boolean hasThis = ownerClass != null || isIfaceDefault;
 
         List<WasmValType> capTypes = new ArrayList<>();
@@ -361,6 +379,12 @@ public final class WasmProgramLinker {
         }
 
         boolean hasOptMask = fn.hasOptionalMask();
+        int optCount = 0;
+        for (HirParam p : fn.params()) {
+            if (p.defaultValue() != null) optCount++;
+        }
+        boolean hasBoxedMissingOpt = optCount > 0 && !hasOptMask;
+
         List<WasmValType> params = new ArrayList<>();
         List<String> paramNames = new ArrayList<>();
         if (ownerClass != null) {
@@ -374,7 +398,11 @@ public final class WasmProgramLinker {
             paramNames.add("$env");
         }
         for (HirParam p : fn.params()) {
-            params.add(ts.valTypeFor(p.kind()));
+            if (hasBoxedMissingOpt && p.defaultValue() != null) {
+                params.add(ts.anyRef());
+            } else {
+                params.add(ts.valTypeFor(p.kind()));
+            }
             paramNames.add(p.name());
         }
         if (hasOptMask) {
@@ -407,7 +435,7 @@ public final class WasmProgramLinker {
         }
 
         FuncInfo fi = new FuncInfo(modInfo.index, fn, directDef, genericDef, closureType, singletonGlobal,
-                capTypes, hasEnv, hasThis, ownerClass, isIfaceDefault, hasOptMask);
+                capTypes, hasEnv, hasThis, ownerClass, ownerIface, isIfaceDefault, hasOptMask, hasBoxedMissingOpt);
         modInfo.functions.put(fn.id(), fi);
     }
 
@@ -485,6 +513,103 @@ public final class WasmProgramLinker {
                     .globalGet(rt.gLastError).refAsNonNull().call(rt.fnToExternStr)
                     .end();
             mod.addExport("_babble_error_js", WasmModule.ExportKind.FUNC, errJs.funcIndex());
+        }
+    }
+
+    private List<org.babblelang.runtime.OverloadSet.AltMeta> cachedOverloadMetas;
+
+    /** Returns all {@code AltMeta} descriptors appearing in any {@code MakeOverloadSet} across linked modules. */
+    public List<org.babblelang.runtime.OverloadSet.AltMeta> allOverloadAltMetas() {
+        if (cachedOverloadMetas != null) {
+            return cachedOverloadMetas;
+        }
+        List<org.babblelang.runtime.OverloadSet.AltMeta> out = new ArrayList<>();
+        for (ModuleLinkInfo mi : linkedModules) {
+            HirModule hm = mi.input.hir();
+            for (HirExpr e : hm.topLevelStatements()) collectOverloadMetas(e, out);
+            for (HirFunction f : hm.functions().values()) {
+                for (HirParam p : f.params()) collectOverloadMetas(p.defaultValue(), out);
+                for (HirExpr e : f.body()) collectOverloadMetas(e, out);
+            }
+            for (HirClass c : hm.classes().values()) {
+                for (HirParam p : c.params()) collectOverloadMetas(p.defaultValue(), out);
+                for (HirExpr e : c.body()) collectOverloadMetas(e, out);
+                if (c.staticBlock() != null) {
+                    for (HirExpr e : c.staticBlock().body()) collectOverloadMetas(e, out);
+                }
+            }
+            for (HirInterface hi : hm.interfaces().values()) {
+                for (HirExpr e : hi.body()) collectOverloadMetas(e, out);
+                if (hi.staticBlock() != null) {
+                    for (HirExpr e : hi.staticBlock().body()) collectOverloadMetas(e, out);
+                }
+            }
+        }
+        cachedOverloadMetas = List.copyOf(out);
+        return cachedOverloadMetas;
+    }
+
+    private static void collectOverloadMetas(HirExpr e, List<org.babblelang.runtime.OverloadSet.AltMeta> out) {
+        if (e == null) return;
+        if (e instanceof HirExpr.MakeOverloadSet m) {
+            for (var info : m.metas()) {
+                out.add(new org.babblelang.runtime.OverloadSet.AltMeta(
+                        info.signatureKey(), info.display(), info.minArity(), info.maxArity(),
+                        info.restIndex(), info.paramDescriptors()));
+            }
+            for (HirExpr op : m.operands()) collectOverloadMetas(op, out);
+            return;
+        }
+        switch (e) {
+            case HirExpr.Block b -> { for (HirExpr s : b.statements()) collectOverloadMetas(s, out); }
+            case HirExpr.Def d -> collectOverloadMetas(d.value(), out);
+            case HirExpr.VarAssign a -> collectOverloadMetas(a.value(), out);
+            case HirExpr.NameAssign a -> collectOverloadMetas(a.value(), out);
+            case HirExpr.ThisFieldAssign a -> { collectOverloadMetas(a.receiver(), out); collectOverloadMetas(a.value(), out); }
+            case HirExpr.DynamicFieldAssign a -> { collectOverloadMetas(a.receiver(), out); collectOverloadMetas(a.value(), out); }
+            case HirExpr.ThisFieldGet g -> collectOverloadMetas(g.receiver(), out);
+            case HirExpr.ModuleExportGet g -> collectOverloadMetas(g.receiver(), out);
+            case HirExpr.DynamicSelect s -> collectOverloadMetas(s.receiver(), out);
+            case HirExpr.Unary u -> collectOverloadMetas(u.operand(), out);
+            case HirExpr.Binary b -> { collectOverloadMetas(b.left(), out); collectOverloadMetas(b.right(), out); }
+            case HirExpr.Logic l -> { collectOverloadMetas(l.left(), out); collectOverloadMetas(l.right(), out); }
+            case HirExpr.If i -> { collectOverloadMetas(i.cond(), out); collectOverloadMetas(i.thenBranch(), out); collectOverloadMetas(i.elseBranch(), out); }
+            case HirExpr.While w -> { collectOverloadMetas(w.cond(), out); collectOverloadMetas(w.body(), out); }
+            case HirExpr.For f -> { collectOverloadMetas(f.iterable(), out); for (HirExpr s : f.body()) collectOverloadMetas(s, out); }
+            case HirExpr.Return r -> collectOverloadMetas(r.value(), out);
+            case HirExpr.Break b -> collectOverloadMetas(b.value(), out);
+            case HirExpr.Throw t -> collectOverloadMetas(t.value(), out);
+            case HirExpr.Try t -> {
+                for (HirExpr s : t.tryBody()) collectOverloadMetas(s, out);
+                for (HirExpr.HirCatch hc : t.catches()) for (HirExpr s : hc.body()) collectOverloadMetas(s, out);
+                for (HirExpr s : t.finallyBody()) collectOverloadMetas(s, out);
+            }
+            case HirExpr.DynamicCall c -> { collectOverloadMetas(c.callee(), out); for (var a : c.args()) collectOverloadMetas(a.value(), out); }
+            case HirExpr.DirectBabbleCall c -> { collectOverloadMetas(c.callee(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.DirectThisMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (var a : c.args()) collectOverloadMetas(a.value(), out); }
+            case HirExpr.InterfaceCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.SafeCall c -> { collectOverloadMetas(c.receiver(), out); for (var a : c.args()) collectOverloadMetas(a.value(), out); }
+            case HirExpr.SelfRecurseCall c -> { for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.SelfTailCall c -> { for (var a : c.args()) collectOverloadMetas(a.value(), out); }
+            case HirExpr.CoreMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.SuperCall c -> { for (var a : c.args()) collectOverloadMetas(a.value(), out); }
+            case HirExpr.RecordNew r -> { collectOverloadMetas(r.classRef(), out); for (HirExpr a : r.args()) collectOverloadMetas(a, out); }
+            case HirExpr.RecordReuse r -> { collectOverloadMetas(r.target(), out); for (HirExpr a : r.args()) collectOverloadMetas(a, out); }
+            case HirExpr.OverloadSelect s -> collectOverloadMetas(s.set(), out);
+            case HirExpr.OverloadDispatch d -> { collectOverloadMetas(d.callee(), out); for (HirExpr a : d.args()) collectOverloadMetas(a, out); }
+            case HirExpr.CoreCollectionCall c -> { for (var a : c.args()) collectOverloadMetas(a.value(), out); }
+            case HirExpr.ArrayCreate a -> { for (HirExpr x : a.args()) collectOverloadMetas(x, out); }
+            case HirExpr.ArrayOp a -> { collectOverloadMetas(a.receiver(), out); for (HirExpr x : a.args()) collectOverloadMetas(x, out); }
+            case HirExpr.SpreadAdapt s -> collectOverloadMetas(s.value(), out);
+            case HirExpr.TypeApply t -> collectOverloadMetas(t.inner(), out);
+            case HirExpr.Is i -> collectOverloadMetas(i.left(), out);
+            case HirExpr.As a -> collectOverloadMetas(a.left(), out);
+            case HirExpr.NonNull n -> collectOverloadMetas(n.operand(), out);
+            case HirExpr.Move m -> collectOverloadMetas(m.operand(), out);
+            case HirExpr.Freeze f -> collectOverloadMetas(f.operand(), out);
+            case HirExpr.JavaMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.JavaConstructorCall c -> { for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            default -> {}
         }
     }
 

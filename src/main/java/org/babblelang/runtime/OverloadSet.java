@@ -206,6 +206,51 @@ public final class OverloadSet implements Callable {
                 + ") : candidates are " + candidatesSummary());
     }
 
+    /**
+     * Returns all candidate signature keys from {@code candidates} that accept {@code signatureKey},
+     * ordered from most specific to least specific (exact match first), for closed-world Wasm
+     * {@code OverloadSelect} lowering ({@code BIP025-P5}).
+     */
+    public static List<String> matchingKeysBySpecificity(java.util.Collection<AltMeta> candidates, String signatureKey) {
+        if (signatureKey == null) {
+            return List.of();
+        }
+        int hash = signatureKey.lastIndexOf('#');
+        String paramsPart = hash >= 0 ? signatureKey.substring(0, hash) : signatureKey;
+        String[] targetDescs = paramsPart.isEmpty() ? new String[0] : paramsPart.split(";", -1);
+
+        Map<String, AltMeta> unique = new java.util.LinkedHashMap<>();
+        for (AltMeta m : candidates) {
+            if (m != null && m.signatureKey != null) {
+                unique.putIfAbsent(m.signatureKey, m);
+            }
+        }
+        List<AltMeta> matching = new ArrayList<>();
+        boolean hasExact = false;
+        for (AltMeta m : unique.values()) {
+            if (signatureKey.equals(m.signatureKey)) {
+                hasExact = true;
+            } else if (acceptsDescriptors(m, targetDescs)) {
+                matching.add(m);
+            }
+        }
+        List<String> ordered = new ArrayList<>(matching.size() + 1);
+        if (hasExact) {
+            ordered.add(signatureKey);
+        }
+        List<AltMeta> remaining = new ArrayList<>(matching);
+        while (!remaining.isEmpty()) {
+            int bestIdx = 0;
+            for (int i = 1; i < remaining.size(); i++) {
+                if (isMoreSpecificMeta(remaining.get(i), remaining.get(bestIdx), targetDescs.length)) {
+                    bestIdx = i;
+                }
+            }
+            ordered.add(remaining.remove(bestIdx).signatureKey);
+        }
+        return ordered;
+    }
+
     private static boolean acceptsDescriptors(AltMeta m, String[] targetDescs) {
         int n = targetDescs.length;
         if (n < m.minArity || n > m.maxArity) {

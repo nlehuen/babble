@@ -32,6 +32,8 @@ public final class WasmFuncEmitter {
         public final int selfFnLocal;     // -1 if not allocated
         public int thisLocal = -1;        // >= 0 inside class/interface methods & constructors
         public WasmObjectSystem.ClassInfo ownerClass; // non-null inside class methods & constructors
+        public int ifaceCapLocal = -1;    // >= 0 inside capturing interface default methods
+        public int ifaceCapStructType = -1;
         public int staticArrayLocal = -1; // >= 0 inside static blocks
         public final Map<Integer, VarSlot> vars = new HashMap<>();
         public final List<Map<String, Integer>> nsScopes = new ArrayList<>(); // shadowed namespace-scoped locals
@@ -74,7 +76,11 @@ public final class WasmFuncEmitter {
     }
 
     public record VarSlot(int localIdx, PrimitiveKind kind, boolean isCell, int cellTypeIdx,
-                          boolean isCapturedField, int captureFieldIdx) {
+                          boolean isCapturedField, int captureFieldIdx, int defLocal) {
+        public VarSlot(int localIdx, PrimitiveKind kind, boolean isCell, int cellTypeIdx,
+                       boolean isCapturedField, int captureFieldIdx) {
+            this(localIdx, kind, isCell, cellTypeIdx, isCapturedField, captureFieldIdx, -1);
+        }
     }
 
     public record LoopFrame(int breakDepth, int continueDepth, PrimitiveKind resultKind) {
@@ -122,6 +128,10 @@ public final class WasmFuncEmitter {
 
     public WasmMemberEmitter members() {
         return members;
+    }
+
+    public WasmCoreEmitter core() {
+        return core;
     }
 
     public void emitClassConstructorBody(WasmObjectSystem.ClassInfo ci) {
@@ -204,7 +214,7 @@ public final class WasmFuncEmitter {
         try {
             WasmCodeBuilder c = ctx.code;
 
-            // 1. Register captured variables (from $env closure fields OR $this ownerClass capture fields)
+            // 1. Register captured variables (from $env closure, $this ownerClass, or $this.vtable.ifaceCaps)
             if (fi.ownerClass != null) {
                 List<HirVar> clsCaps = fi.ownerClass.hir.capturedVars();
                 for (int i = 0; i < clsCaps.size(); i++) {
@@ -212,6 +222,36 @@ public final class WasmFuncEmitter {
                     int cellType = ts.cellTypeFor(cv.primitiveKind());
                     ctx.vars.put(cv.id(), new VarSlot(-1, cv.primitiveKind(), true, cellType, true,
                             fi.ownerClass.captureBaseFieldIdx + i));
+                }
+                List<HirVar> hidden = fi.ownerClass.hiddenCells;
+                for (int i = 0; i < hidden.size(); i++) {
+                    HirVar hv = hidden.get(i);
+                    int cellType = ts.cellTypeFor(hv.primitiveKind());
+                    ctx.vars.put(hv.id(), new VarSlot(-1, hv.primitiveKind(), true, cellType, true,
+                            fi.ownerClass.hiddenCellBaseFieldIdx + i));
+                }
+            } else if (fi.isInterfaceDefault && fi.ownerIface != null && fi.ownerIface.hasCaptures()) {
+                WasmObjectSystem.IfaceInfo oi = fi.ownerIface;
+                int capLocal = ctx.newLocal("$ifaceCap", WasmValType.refNull(oi.capStructTypeIdx));
+                int arrTmp = ctx.newLocal("$icArr", WasmValType.refNull(ts.anyArrType));
+                c.localGet(thisLocal).refAsNonNull()
+                        .structGet(ts.objectType, 0)
+                        .structGet(ts.vtableType, 13)
+                        .localTee(arrTmp)
+                        .refIsNull().if_(WasmValType.refNull(oi.capStructTypeIdx))
+                        .globalGet(oi.latestCapEnvGlobalIdx)
+                        .else_()
+                        .localGet(arrTmp).refAsNonNull()
+                        .i32Const(oi.capSlotIdx).arrayGet(ts.anyArrType)
+                        .refCast(oi.capStructTypeIdx)
+                        .end()
+                        .localSet(capLocal);
+                ctx.ifaceCapLocal = capLocal;
+                ctx.ifaceCapStructType = oi.capStructTypeIdx;
+                for (int i = 0; i < oi.capturedVars.size(); i++) {
+                    HirVar cv = oi.capturedVars.get(i);
+                    int cellType = ts.cellTypeFor(cv.primitiveKind());
+                    ctx.vars.put(cv.id(), new VarSlot(-1, cv.primitiveKind(), true, cellType, true, i));
                 }
             } else {
                 for (int i = 0; i < hf.capturedVars().size(); i++) {
@@ -221,7 +261,11 @@ public final class WasmFuncEmitter {
                 }
             }
 
-            // 2. Evaluate optional parameter defaults when $optMask bit is set (in param order!)
+            // 2. Evaluate optional parameter defaults (via $optMask OR boxed $G_MISSING for >32 optional params)
+            int[] paramValueLocals = new int[hf.params().size()];
+            for (int i = 0; i < hf.params().size(); i++) {
+                paramValueLocals[i] = firstParamIdx + i;
+            }
             if (fi.hasOptMaskParam) {
                 int optBit = 0;
                 for (int i = 0; i < hf.params().size(); i++) {
@@ -231,13 +275,42 @@ public final class WasmFuncEmitter {
                         c.localGet(optMaskLocal).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_AND).if_();
                         ctx.pushBlock("opt_def");
                         bindParamSlotIfUnbound(p, pLocal, false);
-                        emitAs(p.defaultValue(), p.kind());
+                        emitAndWiden(p.defaultValue());
+                        widenStackRank(p.wideningRank(), hf.line());
+                        convertStack(ctx.stackKind, p.kind(), hf.line());
                         c.localSet(pLocal);
                         ctx.popBlock();
                         c.end();
                         optBit++;
                     }
                     bindParamSlotIfUnbound(p, firstParamIdx + i, false);
+                }
+            } else if (fi.hasBoxedMissingOptParams) {
+                for (int i = 0; i < hf.params().size(); i++) {
+                    HirParam p = hf.params().get(i);
+                    int rawLocal = firstParamIdx + i;
+                    if (p.defaultValue() != null) {
+                        int typedLocal = p.kind().isPrimitive()
+                                ? ctx.newLocal("opt_" + p.name(), ts.valTypeFor(p.kind()))
+                                : rawLocal;
+                        paramValueLocals[i] = typedLocal;
+                        c.localGet(rawLocal).globalGet(rt.gMissing).refEq().if_();
+                        ctx.pushBlock("opt_def_box");
+                        bindParamSlotIfUnbound(p, typedLocal, false);
+                        emitAndWiden(p.defaultValue());
+                        widenStackRank(p.wideningRank(), hf.line());
+                        convertStack(ctx.stackKind, p.kind(), hf.line());
+                        c.localSet(typedLocal);
+                        c.else_();
+                        if (p.kind().isPrimitive()) {
+                            c.localGet(rawLocal).i32Const(hf.line()).call(rt.unboxFuncFor(p.kind())).localSet(typedLocal);
+                        }
+                        ctx.popBlock();
+                        c.end();
+                        bindParamSlotIfUnbound(p, typedLocal, false);
+                    } else {
+                        bindParamSlotIfUnbound(p, rawLocal, false);
+                    }
                 }
             } else {
                 for (int i = 0; i < hf.params().size(); i++) {
@@ -252,8 +325,11 @@ public final class WasmFuncEmitter {
                 if (pv != null && pv.cell()) {
                     int cellType = ts.cellTypeFor(pv.primitiveKind());
                     int cellLocal = ctx.newLocal("cell_" + pv.name(), WasmValType.ref(cellType));
-                    c.localGet(firstParamIdx + i);
+                    c.localGet(paramValueLocals[i]);
                     convertRawValue(p.kind(), pv.primitiveKind(), hf.line());
+                    if (pv.primitiveKind().isPrimitive()) {
+                        c.i32Const(1);
+                    }
                     c.structNew(cellType).localSet(cellLocal);
                     ctx.vars.put(pv.id(), new VarSlot(cellLocal, pv.primitiveKind(), true, cellType, false, -1));
                 }
@@ -310,16 +386,21 @@ public final class WasmFuncEmitter {
                 c.globalGet(rt.gUndefined);
             } else {
                 ts.emitDefaultValue(c, ts.valTypeFor(v.primitiveKind()));
+                c.i32Const(v.mayBeUndefined() ? 0 : 1);
             }
             c.structNew(cellType).localSet(cellLocal);
             ctx.vars.put(v.id(), new VarSlot(cellLocal, v.primitiveKind(), true, cellType, false, -1));
         } else {
             WasmValType vt = ts.valTypeFor(v.primitiveKind());
             int local = ctx.newLocal("v_" + v.name(), vt);
+            int defLocal = -1;
             if (v.primitiveKind() == PrimitiveKind.NONE && v.mayBeUndefined()) {
                 c.globalGet(rt.gUndefined).localSet(local);
+            } else if (v.primitiveKind().isPrimitive() && v.mayBeUndefined()) {
+                defLocal = ctx.newLocal("def_" + v.name(), WasmValType.I32);
+                c.i32Const(0).localSet(defLocal);
             }
-            ctx.vars.put(v.id(), new VarSlot(local, v.primitiveKind(), false, -1, false, -1));
+            ctx.vars.put(v.id(), new VarSlot(local, v.primitiveKind(), false, -1, false, -1, defLocal));
         }
     }
 
@@ -336,7 +417,7 @@ public final class WasmFuncEmitter {
             case HirExpr.VarRead v -> emitVarRead(v.var(), v.meta().line());
             case HirExpr.NameRead n -> emitNameRead(n.name(), n.meta().line());
             case HirExpr.ThisRef t -> emitThisRef(t);
-            case HirExpr.RecurseRef r -> emitRecurseRef();
+            case HirExpr.RecurseRef r -> emitRecurseRef(r.meta().line());
             case HirExpr.Def d -> emitDef(d);
             case HirExpr.VarAssign a -> emitVarAssign(a);
             case HirExpr.NameAssign a -> emitNameAssign(a);
@@ -384,7 +465,7 @@ public final class WasmFuncEmitter {
             case HirExpr.CoreMethodCall c -> core.emitCoreMethodCall(c);
             case HirExpr.JavaMethodCall j -> core.emitPortableJavaMethodCall(j);
             case HirExpr.JavaConstructorCall j -> calls.emitPortableJavaConstructorCall(j);
-            case HirExpr.SpreadAdapt s -> emitBoxed(s.value());
+            case HirExpr.SpreadAdapt s -> emitSpreadAdapt(s);
             default -> {
                 rt.emitStringLit(ctx.code, "Not yet implemented in Wasm backend : " + expr.getClass().getSimpleName());
                 ctx.code.i32Const(expr.meta().line()).call(rt.fnThrowMsg).unreachable();
@@ -578,15 +659,46 @@ public final class WasmFuncEmitter {
         WasmCodeBuilder c = ctx.code;
         if (slot.isCapturedField()) {
             if (ctx.ownerClass != null) {
+                if (slot.kind().isPrimitive() && v.mayBeUndefined()) {
+                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                            .refAsNonNull().structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                    rt.emitStringLit(c, "Name used before definition : " + v.name());
+                    c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+                }
                 c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                        .refAsNonNull().structGet(slot.cellTypeIdx(), 0);
+            } else if (ctx.ifaceCapLocal >= 0) {
+                if (slot.kind().isPrimitive() && v.mayBeUndefined()) {
+                    c.localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx())
+                            .structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                    rt.emitStringLit(c, "Name used before definition : " + v.name());
+                    c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+                }
+                c.localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx())
                         .structGet(slot.cellTypeIdx(), 0);
             } else {
+                if (slot.kind().isPrimitive() && v.mayBeUndefined()) {
+                    c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
+                            .structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                    rt.emitStringLit(c, "Name used before definition : " + v.name());
+                    c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+                }
                 c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
                         .structGet(slot.cellTypeIdx(), 0);
             }
         } else if (slot.isCell()) {
+            if (slot.kind().isPrimitive() && v.mayBeUndefined()) {
+                c.localGet(slot.localIdx()).structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                rt.emitStringLit(c, "Name used before definition : " + v.name());
+                c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+            }
             c.localGet(slot.localIdx()).structGet(slot.cellTypeIdx(), 0);
         } else {
+            if (slot.defLocal() >= 0) {
+                c.localGet(slot.defLocal()).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                rt.emitStringLit(c, "Name used before definition : " + v.name());
+                c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+            }
             c.localGet(slot.localIdx());
         }
         if (slot.kind() == PrimitiveKind.NONE && v.mayBeUndefined()) {
@@ -615,7 +727,7 @@ public final class WasmFuncEmitter {
         WasmCodeBuilder c = ctx.code;
         int tmp = ctx.newLocal("$undefChk", ts.anyRef());
         c.localTee(tmp).globalGet(rt.gUndefined).refEq().if_();
-        rt.emitStringLit(c, "Undefined variable : " + name);
+        rt.emitStringLit(c, "Name used before definition : " + name);
         c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
         c.localGet(tmp);
     }
@@ -662,7 +774,7 @@ public final class WasmFuncEmitter {
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
-        rt.emitStringLit(c, "Undefined variable : " + name);
+        rt.emitStringLit(c, "No such name : " + name);
         c.i32Const(line).call(rt.fnThrowMsg).unreachable();
         ctx.stackKind = PrimitiveKind.NONE;
     }
@@ -676,16 +788,18 @@ public final class WasmFuncEmitter {
         };
     }
 
-    private void emitRecurseRef() {
+    private void emitRecurseRef(int line) {
         WasmCodeBuilder c = ctx.code;
         if (ctx.funcInfo == null) {
-            c.refNull(ts.anyType);
+            rt.emitStringLit(c, "No such name : $recurse");
+            c.i32Const(line).call(rt.fnThrowMsg).unreachable();
         } else if (ctx.funcInfo.hasEnvParam) {
             c.localGet(ctx.envLocal);
         } else if (ctx.funcInfo.singletonGlobalIdx >= 0) {
             c.globalGet(ctx.funcInfo.singletonGlobalIdx).refAsNonNull();
         } else {
-            c.refNull(ts.anyType);
+            rt.emitStringLit(c, "No such name : $recurse");
+            c.i32Const(line).call(rt.fnThrowMsg).unreachable();
         }
         ctx.stackKind = PrimitiveKind.NONE;
     }
@@ -717,7 +831,9 @@ public final class WasmFuncEmitter {
                         return;
                     }
                     if (d.value() != null) {
-                        emitAs(d.value(), fk);
+                        emitAndWiden(d.value());
+                        widenStackRank(d.meta().wideningRank(), d.meta().line());
+                        convertStack(ctx.stackKind, fk, d.meta().line());
                     } else {
                         ts.emitDefaultValue(c, ts.valTypeFor(fk));
                     }
@@ -737,6 +853,7 @@ public final class WasmFuncEmitter {
                 case STATIC -> {
                     if (d.value() != null) {
                         emitBoxed(d.value());
+                        widenStackRank(d.meta().wideningRank(), d.meta().line());
                     } else {
                         c.refNull(ts.anyType);
                     }
@@ -756,7 +873,9 @@ public final class WasmFuncEmitter {
             allocateLocalVar(d.var());
             VarSlot slot = ctx.vars.get(d.var().id());
             if (d.value() != null) {
-                emitAs(d.value(), slot.kind());
+                emitAndWiden(d.value());
+                widenStackRank(d.meta().wideningRank(), d.meta().line());
+                convertStack(ctx.stackKind, slot.kind(), d.meta().line());
             } else {
                 if (slot.kind() == PrimitiveKind.NONE) {
                     c.refNull(ts.anyType);
@@ -764,13 +883,14 @@ public final class WasmFuncEmitter {
                     ts.emitDefaultValue(c, ts.valTypeFor(slot.kind()));
                 }
             }
-            storeVarSlotAndKeep(slot);
+            storeVarSlotAndKeep(slot, true);
             ctx.stackKind = slot.kind();
             return;
         }
         // Namespace-scoped def (top-level global or nested namespace block local)
         if (d.value() != null) {
             emitBoxed(d.value());
+            widenStackRank(d.meta().wideningRank(), d.meta().line());
         } else {
             c.refNull(ts.anyType);
         }
@@ -797,26 +917,105 @@ public final class WasmFuncEmitter {
     }
 
     public void storeVarSlotAndKeep(VarSlot slot) {
+        storeVarSlotAndKeep(slot, false);
+    }
+
+    public void storeVarSlotAndKeep(VarSlot slot, boolean markDefined) {
         WasmCodeBuilder c = ctx.code;
         int tmp = ctx.newLocal("$stTmp", ts.valTypeFor(slot.kind()));
         if (slot.isCapturedField()) {
             if (ctx.ownerClass != null) {
                 c.localSet(tmp)
                         .localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
-                        .localGet(tmp).structSet(slot.cellTypeIdx(), 0)
-                        .localGet(tmp);
+                        .refAsNonNull().localGet(tmp).structSet(slot.cellTypeIdx(), 0);
+                if (markDefined && slot.kind().isPrimitive()) {
+                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                            .refAsNonNull().i32Const(1).structSet(slot.cellTypeIdx(), 1);
+                }
+                c.localGet(tmp);
+            } else if (ctx.ifaceCapLocal >= 0) {
+                c.localSet(tmp)
+                        .localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx())
+                        .localGet(tmp).structSet(slot.cellTypeIdx(), 0);
+                if (markDefined && slot.kind().isPrimitive()) {
+                    c.localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx())
+                            .i32Const(1).structSet(slot.cellTypeIdx(), 1);
+                }
+                c.localGet(tmp);
             } else {
                 c.localSet(tmp)
                         .localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
-                        .localGet(tmp).structSet(slot.cellTypeIdx(), 0)
-                        .localGet(tmp);
+                        .localGet(tmp).structSet(slot.cellTypeIdx(), 0);
+                if (markDefined && slot.kind().isPrimitive()) {
+                    c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
+                            .i32Const(1).structSet(slot.cellTypeIdx(), 1);
+                }
+                c.localGet(tmp);
             }
         } else if (slot.isCell()) {
             c.localSet(tmp)
-                    .localGet(slot.localIdx()).localGet(tmp).structSet(slot.cellTypeIdx(), 0)
-                    .localGet(tmp);
+                    .localGet(slot.localIdx()).localGet(tmp).structSet(slot.cellTypeIdx(), 0);
+            if (markDefined && slot.kind().isPrimitive()) {
+                c.localGet(slot.localIdx()).i32Const(1).structSet(slot.cellTypeIdx(), 1);
+            }
+            c.localGet(tmp);
         } else {
             c.localTee(slot.localIdx());
+            if (markDefined && slot.defLocal() >= 0) {
+                c.i32Const(1).localSet(slot.defLocal());
+            }
+        }
+    }
+
+    private void emitCheckSlotDefinedForAssign(HirVar v, VarSlot slot, int line) {
+        if (!v.mayBeUndefined()) {
+            return;
+        }
+        WasmCodeBuilder c = ctx.code;
+        if (slot.isCapturedField()) {
+            if (ctx.ownerClass != null) {
+                if (slot.kind().isPrimitive()) {
+                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                            .refAsNonNull().structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                } else {
+                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                            .refAsNonNull().structGet(slot.cellTypeIdx(), 0).globalGet(rt.gUndefined).refEq().if_();
+                }
+            } else if (ctx.ifaceCapLocal >= 0) {
+                if (slot.kind().isPrimitive()) {
+                    c.localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx())
+                            .structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                } else {
+                    c.localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx())
+                            .structGet(slot.cellTypeIdx(), 0).globalGet(rt.gUndefined).refEq().if_();
+                }
+            } else {
+                if (slot.kind().isPrimitive()) {
+                    c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
+                            .structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                } else {
+                    c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
+                            .structGet(slot.cellTypeIdx(), 0).globalGet(rt.gUndefined).refEq().if_();
+                }
+            }
+            rt.emitStringLit(c, "Name used before definition : " + v.name());
+            c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+        } else if (slot.isCell()) {
+            if (slot.kind().isPrimitive()) {
+                c.localGet(slot.localIdx()).structGet(slot.cellTypeIdx(), 1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+            } else {
+                c.localGet(slot.localIdx()).structGet(slot.cellTypeIdx(), 0).globalGet(rt.gUndefined).refEq().if_();
+            }
+            rt.emitStringLit(c, "Name used before definition : " + v.name());
+            c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+        } else if (slot.defLocal() >= 0) {
+            c.localGet(slot.defLocal()).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+            rt.emitStringLit(c, "Name used before definition : " + v.name());
+            c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+        } else if (slot.kind() == PrimitiveKind.NONE) {
+            c.localGet(slot.localIdx()).globalGet(rt.gUndefined).refEq().if_();
+            rt.emitStringLit(c, "Name used before definition : " + v.name());
+            c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
         }
     }
 
@@ -828,7 +1027,8 @@ public final class WasmFuncEmitter {
         }
         if (a.operator() == null || "=".equals(a.operator())) {
             emitAs(a.value(), slot.kind());
-            storeVarSlotAndKeep(slot);
+            emitCheckSlotDefinedForAssign(a.var(), slot, a.meta().line());
+            storeVarSlotAndKeep(slot, false);
             ctx.stackKind = slot.kind();
             return;
         }
@@ -836,7 +1036,7 @@ public final class WasmFuncEmitter {
         emitCompoundValue(slot.kind(), () -> emitVarRead(a.var(), a.meta().line()), a.operator(), a.value(),
                 a.targetText(), a.valueText(), a.meta().line());
         convertStack(ctx.stackKind, slot.kind(), a.meta().line());
-        storeVarSlotAndKeep(slot);
+        storeVarSlotAndKeep(slot, false);
         ctx.stackKind = slot.kind();
     }
 
@@ -850,22 +1050,27 @@ public final class WasmFuncEmitter {
             convertStack(ctx.stackKind, PrimitiveKind.NONE, a.meta().line());
         }
         int tmp = ctx.newLocal("$asgnTmp", ts.anyRef());
-        c.localTee(tmp);
+        c.localSet(tmp);
         for (int i = ctx.nsScopes.size() - 1; i >= 0; i--) {
             Integer local = ctx.nsScopes.get(i).get(a.name());
             if (local != null) {
-                c.localSet(local).localGet(tmp);
+                c.localGet(local).globalGet(rt.gUndefined).refEq().if_();
+                rt.emitStringLit(c, "Name used before definition : " + a.name());
+                c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable().end();
+                c.localGet(tmp).localSet(local).localGet(tmp);
                 ctx.stackKind = PrimitiveKind.NONE;
                 return;
             }
         }
         Integer g = ctx.modInfo.topLevelGlobals.get(a.name());
         if (g != null) {
-            c.globalSet(g).localGet(tmp);
+            c.globalGet(g).globalGet(rt.gUndefined).refEq().if_();
+            rt.emitStringLit(c, "Name used before definition : " + a.name());
+            c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable().end();
+            c.localGet(tmp).globalSet(g).localGet(tmp);
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
-        c.drop();
         rt.emitStringLit(c, "Undefined variable : " + a.name());
         c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable();
         ctx.stackKind = PrimitiveKind.NONE;
@@ -1148,6 +1353,11 @@ public final class WasmFuncEmitter {
         emitBoxed(i.left());
         int valLocal = ctx.newLocal("$isVal", ts.anyRef());
         c.localSet(valLocal);
+        if (i.descriptor() != null && !i.descriptor().isEmpty()) {
+            emitDescCheck(c, valLocal, WasmTypeDesc.parse(i.descriptor()), false);
+            ctx.stackKind = PrimitiveKind.BOOL;
+            return;
+        }
         if (objects.emitNominalIsCheck(c, valLocal, i.target(), i.intersectionTargets())) {
             ctx.stackKind = PrimitiveKind.BOOL;
             return;
@@ -1160,77 +1370,221 @@ public final class WasmFuncEmitter {
                 return;
             }
         }
-        if (i.descriptor() != null) {
-            int bid = WasmRuntimeOpsGen.builtinId(i.descriptor());
-            if (bid >= 0) {
-                c.localGet(valLocal).i32Const(bid).call(ops.fnIsBuiltin);
-                ctx.stackKind = PrimitiveKind.BOOL;
-                return;
+        // Null descriptor with no nominal/builtin target means `is any?` (Types.matches returns true)
+        c.i32Const(1);
+        ctx.stackKind = PrimitiveKind.BOOL;
+    }
+
+    /**
+     * Emits an i32 (0/1) type check for {@code valLocal} against a parsed {@link WasmTypeDesc}.
+     * When {@code forAsCast} is true, numeric widening (e.g. {@code int} to {@code double}) is accepted
+     * to match {@code org.babblelang.runtime.Types.Builtin#accepts}.
+     */
+    public void emitDescCheck(WasmCodeBuilder c, int valLocal, WasmTypeDesc desc, boolean forAsCast) {
+        if (desc == null) {
+            c.i32Const(1);
+            return;
+        }
+        switch (desc.kind()) {
+            case "null" -> c.localGet(valLocal).refIsNull();
+            case "any" -> c.localGet(valLocal).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ);
+            case "fn" -> {
+                c.localGet(valLocal).refTest(ts.fnBaseType)
+                        .localGet(valLocal).refTest(ts.classValType).op(WasmInstr.SimpleOp.I32_OR)
+                        .localGet(valLocal).refTest(ts.overloadSetType).op(WasmInstr.SimpleOp.I32_OR);
             }
-            if (i.descriptor().startsWith("array|") || "array".equals(i.descriptor())) {
-                c.localGet(valLocal).refTest(ts.arrayBaseType);
-                ctx.stackKind = PrimitiveKind.BOOL;
-                return;
+            case "babble" -> {
+                if (!objects.emitNominalIsCheckById(c, valLocal, desc.payload())) {
+                    c.i32Const(0);
+                }
+            }
+            case "union" -> {
+                List<WasmTypeDesc> ms = desc.members();
+                if (ms.isEmpty()) {
+                    c.i32Const(0);
+                    return;
+                }
+                for (int k = 0; k < ms.size(); k++) {
+                    emitDescCheck(c, valLocal, ms.get(k), forAsCast);
+                    if (k > 0) c.op(WasmInstr.SimpleOp.I32_OR);
+                }
+            }
+            case "inter" -> {
+                List<WasmTypeDesc> ms = desc.members();
+                if (ms.isEmpty()) {
+                    c.i32Const(1);
+                    return;
+                }
+                List<LoweringTargets.IsTarget> targets = new ArrayList<>();
+                boolean allNominal = true;
+                for (WasmTypeDesc m : ms) {
+                    if ("babble".equals(m.kind())) {
+                        targets.add(new LoweringTargets.IsTarget(m.payload(), org.babblelang.runtime.ClassShape.Kind.INTERFACE, null));
+                    } else {
+                        allNominal = false;
+                        break;
+                    }
+                }
+                if (allNominal && objects.emitNominalIsCheck(c, valLocal, null, targets)) {
+                    return;
+                }
+                for (int k = 0; k < ms.size(); k++) {
+                    emitDescCheck(c, valLocal, ms.get(k), forAsCast);
+                    if (k > 0) c.op(WasmInstr.SimpleOp.I32_AND);
+                }
+            }
+            case "java" -> {
+                String fqcn = desc.payload();
+                switch (fqcn) {
+                    case "java.lang.String" -> c.localGet(valLocal).refTest(ts.stringType);
+                    case "java.lang.Object" -> c.localGet(valLocal).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ);
+                    case "java.util.List" -> c.localGet(valLocal).refTest(ts.listType);
+                    case "java.util.Set" -> c.localGet(valLocal).refTest(ts.setType);
+                    case "java.util.SortedSet" -> c.localGet(valLocal).refTest(ts.setType).if_(WasmValType.I32)
+                            .localGet(valLocal).refCast(ts.setType).structGet(ts.setType, 2)
+                            .else_().i32Const(0).end();
+                    case "java.util.Map" -> c.localGet(valLocal).refTest(ts.mapType);
+                    case "java.util.SortedMap" -> c.localGet(valLocal).refTest(ts.mapType).if_(WasmValType.I32)
+                            .localGet(valLocal).refCast(ts.mapType).structGet(ts.mapType, 3)
+                            .else_().i32Const(0).end();
+                    case "java.util.Map$Entry" -> c.localGet(valLocal).refTest(ts.entryType);
+                    case "org.babblelang.runtime.BabbleException" -> c.localGet(valLocal).refTest(ts.babbleExnType);
+                    case "java.lang.Iterable" -> {
+                        c.localGet(valLocal).refTest(ts.listType)
+                                .localGet(valLocal).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR)
+                                .localGet(valLocal).refTest(ts.arrayBaseType).op(WasmInstr.SimpleOp.I32_OR);
+                    }
+                    case "java.util.Iterator" -> c.localGet(valLocal).refTest(ts.collectionIterType);
+                    case "java.lang.Appendable" -> {
+                        c.localGet(valLocal).refTest(ts.hostStreamType)
+                                .localGet(valLocal).refTest(ts.objectType).op(WasmInstr.SimpleOp.I32_OR);
+                    }
+                    default -> {
+                        if (fqcn.startsWith("[")) {
+                            c.localGet(valLocal).refTest(ts.arrayBaseType);
+                        } else {
+                            c.i32Const(0);
+                        }
+                    }
+                }
+            }
+            default -> {
+                if (forAsCast && isNumericBuiltinKind(desc.kind())) {
+                    int targetRank = numericRankOf(desc.kind());
+                    // Accept any numeric type with rank <= targetRank (matches JavaTypes.isWidening)
+                    int rLocal = ctx.newLocal("$asRank", WasmValType.I32);
+                    c.localGet(valLocal).call(rt.fnNumRank).localTee(rLocal)
+                            .i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
+                            .localGet(rLocal).i32Const(targetRank).op(WasmInstr.SimpleOp.I32_LE_S)
+                            .op(WasmInstr.SimpleOp.I32_AND);
+                    return;
+                }
+                int bid = WasmRuntimeOpsGen.builtinId(desc.kind());
+                if (bid >= 0) {
+                    c.localGet(valLocal).i32Const(bid).call(ops.fnIsBuiltin);
+                } else if (desc.kind().startsWith("array")) {
+                    c.localGet(valLocal).refTest(ts.arrayBaseType);
+                } else {
+                    c.i32Const(0);
+                }
             }
         }
-        c.i32Const(0);
-        ctx.stackKind = PrimitiveKind.BOOL;
+    }
+
+    private static boolean isNumericBuiltinKind(String k) {
+        return switch (k) {
+            case "byte", "short", "int", "long", "float", "double" -> true;
+            default -> false;
+        };
+    }
+
+    private static int numericRankOf(String k) {
+        return switch (k) {
+            case "byte" -> 0;
+            case "short" -> 1;
+            case "int" -> 2;
+            case "long" -> 3;
+            case "float" -> 4;
+            case "double" -> 5;
+            default -> -1;
+        };
     }
 
     private void emitAsExpr(HirExpr.As a) {
         WasmCodeBuilder c = ctx.code;
-        String desc = a.targetDescriptor();
-        boolean nullable = desc != null && (desc.endsWith("?") || desc.startsWith("nullable|"));
-        if (a.target() != null) {
-            emitBoxed(a.left());
-            int tmp = ctx.newLocal("$asTmp", ts.anyRef());
-            c.localSet(tmp);
-            if (nullable) {
-                c.localGet(tmp).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_();
-                ctx.pushBlock("as_nn");
-            }
-            objects.emitNominalIsCheck(c, tmp, a.target(), List.of());
-            c.op(WasmInstr.SimpleOp.I32_EQZ).if_();
-            rt.emitStringLit(c, "Cannot cast to " + (desc != null ? desc : a.target().typeId()));
-            c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable().end();
-            if (nullable) {
-                ctx.popBlock();
-                c.end();
-            }
-            c.localGet(tmp);
-            ctx.stackKind = PrimitiveKind.NONE;
-            if (a.meta().kind().isPrimitive()) {
-                convertStack(PrimitiveKind.NONE, a.meta().kind(), a.meta().line());
-            }
+        String descStr = a.targetDescriptor();
+        WasmTypeDesc desc = descStr != null ? WasmTypeDesc.parse(descStr) : null;
+        if (desc == null && a.target() != null) {
+            desc = new WasmTypeDesc("babble", a.target().typeId(), a.target().typeId(), List.of());
+        }
+        if (desc == null) {
+            emitAs(a.left(), a.meta().kind());
             return;
         }
-        if (desc != null) {
-            String base = desc.endsWith("?") ? desc.substring(0, desc.length() - 1) : desc;
-            int bid = WasmRuntimeOpsGen.builtinId(base);
-            if (bid >= 0) {
-                emitBoxed(a.left());
-                int tmp = ctx.newLocal("$asTmp", ts.anyRef());
-                c.localSet(tmp);
-                if (nullable) {
-                    c.localGet(tmp).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_();
-                    ctx.pushBlock("as_nn");
-                }
-                c.localGet(tmp).i32Const(bid).call(ops.fnIsBuiltin).op(WasmInstr.SimpleOp.I32_EQZ).if_();
-                rt.emitStringLit(c, "Cannot cast to " + desc);
-                c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable().end();
-                if (nullable) {
-                    ctx.popBlock();
-                    c.end();
-                }
-                c.localGet(tmp);
-                ctx.stackKind = PrimitiveKind.NONE;
-                if (a.meta().kind().isPrimitive()) {
-                    convertStack(PrimitiveKind.NONE, a.meta().kind(), a.meta().line());
-                }
-                return;
-            }
+        emitBoxed(a.left());
+        int tmp = ctx.newLocal("$asTmp", ts.anyRef());
+        c.localSet(tmp);
+        emitDescCheck(c, tmp, desc, true);
+        c.op(WasmInstr.SimpleOp.I32_EQZ).if_();
+        if ("babble".equals(desc.kind()) && desc.payload() != null && !desc.payload().isEmpty()) {
+            int gotStr = ctx.newLocal("$asGot", WasmValType.refNull(ts.stringType));
+            c.localGet(tmp).call(ops.fnDescribeType).localTee(gotStr).refAsNonNull();
+            rt.emitStringLit(c, desc.display());
+            c.call(rt.fnStrEq)
+                    .localGet(tmp).refTest(ts.objectType).op(WasmInstr.SimpleOp.I32_AND).if_();
+            rt.emitStringLit(c, "Type error : expected " + desc.display() + ", got ");
+            c.localGet(gotStr).refAsNonNull().call(rt.fnStrConcat);
+            rt.emitStringLit(c, " (expected " + desc.payload() + ", got ");
+            c.call(rt.fnStrConcat)
+                    .localGet(tmp).refCast(ts.objectType).structGet(ts.objectType, 0).structGet(ts.vtableType, 12)
+                    .call(rt.fnStrConcat);
+            rt.emitStringLit(c, ")");
+            c.call(rt.fnStrConcat).i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable().end();
+            rt.emitStringLit(c, "Type error : expected " + desc.display() + ", got ");
+            c.localGet(gotStr).refAsNonNull().call(rt.fnStrConcat)
+                    .i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable();
+        } else {
+            rt.emitStringLit(c, "Type error : expected " + desc.display() + ", got ");
+            c.localGet(tmp).call(ops.fnDescribeType).call(rt.fnStrConcat);
+            c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable();
         }
-        emitAs(a.left(), a.meta().kind());
+        c.end();
+
+        // Numeric widening conversion when target is a numeric type (e.g. int -> double)
+        String numKind = numericTargetKind(desc);
+        if (numKind != null && !"byte".equals(numKind)) {
+            int rank = numericRankOf(numKind);
+            c.localGet(tmp).refIsNull().if_(ts.anyRef())
+                    .refNull(ts.anyType)
+                    .else_()
+                    .localGet(tmp).i32Const(rank).call(rt.fnWidenNumeric)
+                    .end();
+        } else {
+            c.localGet(tmp);
+        }
+        ctx.stackKind = PrimitiveKind.NONE;
+        if (a.meta().kind().isPrimitive()) {
+            convertStack(PrimitiveKind.NONE, a.meta().kind(), a.meta().line());
+        }
+    }
+
+    private static String numericTargetKind(WasmTypeDesc desc) {
+        if (isNumericBuiltinKind(desc.kind())) {
+            return desc.kind();
+        }
+        if ("union".equals(desc.kind())) {
+            String found = null;
+            for (WasmTypeDesc m : desc.members()) {
+                if ("null".equals(m.kind())) continue;
+                if (isNumericBuiltinKind(m.kind()) && found == null) {
+                    found = m.kind();
+                } else {
+                    return null;
+                }
+            }
+            return found;
+        }
+        return null;
     }
 
     private void emitNonNull(HirExpr.NonNull n) {
@@ -1238,7 +1592,7 @@ public final class WasmFuncEmitter {
         emitBoxed(n.operand());
         int tmp = ctx.newLocal("$nnTmp", ts.anyRef());
         c.localTee(tmp).refIsNull().if_();
-        rt.emitStringLit(c, "Expected non-null " + (n.expectedType() != null ? n.expectedType() : "value"));
+        rt.emitStringLit(c, "Type error : expected " + (n.expectedType() != null ? n.expectedType() : "any") + ", got null");
         c.i32Const(n.meta().line()).call(rt.fnThrowMsg).unreachable().end();
         c.localGet(tmp);
         ctx.stackKind = PrimitiveKind.NONE;
@@ -1293,6 +1647,9 @@ public final class WasmFuncEmitter {
     private void emitWhile(HirExpr.While w) {
         WasmCodeBuilder c = ctx.code;
         PrimitiveKind resKind = w.meta().kind();
+        int resLocal = ctx.newLocal("$whileRes", ts.valTypeFor(resKind));
+        ts.emitDefaultValue(c, ts.valTypeFor(resKind));
+        c.localSet(resLocal);
         int breakDepth = ctx.pushBlock("while_brk");
         c.block(ts.valTypeFor(resKind));
         int contDepth = ctx.pushBlock("while_loop");
@@ -1303,7 +1660,8 @@ public final class WasmFuncEmitter {
             emitTruthValue(w.cond());
             c.if_();
             ctx.pushBlock("while_if");
-            emitVoid(w.body());
+            emitAs(w.body(), resKind);
+            c.localSet(resLocal);
             c.br(ctx.relDepth(contDepth));
             ctx.popBlock();
             c.end();
@@ -1312,7 +1670,7 @@ public final class WasmFuncEmitter {
         }
         ctx.popBlock();
         c.end(); // end loop
-        ts.emitDefaultValue(c, ts.valTypeFor(resKind));
+        c.localGet(resLocal);
         ctx.popBlock();
         c.end(); // end block
         ctx.stackKind = resKind;
@@ -1615,6 +1973,10 @@ public final class WasmFuncEmitter {
             c.i32Const(1);
             return;
         }
+        if (target.typeDescriptor() != null && !target.typeDescriptor().isEmpty()) {
+            emitDescCheck(c, exnValLocal, WasmTypeDesc.parse(target.typeDescriptor()), false);
+            return;
+        }
         boolean hasTargets = target.babbleTargets() != null && !target.babbleTargets().isEmpty();
         if (hasTargets) {
             boolean first = true;
@@ -1625,18 +1987,7 @@ public final class WasmFuncEmitter {
                 }
                 first = false;
             }
-            if (target.typeDescriptor() != null && target.typeDescriptor().contains("exception")) {
-                c.localGet(exnValLocal).refTest(ts.babbleExnType)
-                        .op(WasmInstr.SimpleOp.I32_OR);
-            }
             return;
-        }
-        if (target.typeDescriptor() != null) {
-            int bid = WasmRuntimeOpsGen.builtinId(target.typeDescriptor());
-            if (bid >= 0) {
-                c.localGet(exnValLocal).i32Const(bid).call(ops.fnIsBuiltin);
-                return;
-            }
         }
         if (target.catchesBabble()) {
             c.localGet(exnValLocal).refTest(ts.babbleExnType);
@@ -1675,7 +2026,7 @@ public final class WasmFuncEmitter {
             VarSlot slot = ctx.vars.get(hc.var().id());
             ctx.code.localGet(exnValLocal);
             convertRawValue(PrimitiveKind.NONE, slot.kind(), hc.line());
-            storeVarSlotAndKeep(slot);
+            storeVarSlotAndKeep(slot, true);
             ctx.code.drop();
         }
         try {
@@ -1738,7 +2089,9 @@ public final class WasmFuncEmitter {
             }
             if (slot.isCapturedField()) {
                 if (ctx.ownerClass != null) {
-                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx());
+                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx()).refAsNonNull();
+                } else if (ctx.ifaceCapLocal >= 0) {
+                    c.localGet(ctx.ifaceCapLocal).refAsNonNull().structGet(ctx.ifaceCapStructType, slot.captureFieldIdx());
                 } else {
                     c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx());
                 }
@@ -1749,10 +2102,78 @@ public final class WasmFuncEmitter {
                 int cellType = ts.cellTypeFor(cv.primitiveKind());
                 c.localGet(slot.localIdx());
                 convertRawValue(slot.kind(), cv.primitiveKind(), f.meta().line());
+                if (cv.primitiveKind().isPrimitive()) {
+                    c.i32Const(1);
+                }
                 c.structNew(cellType);
             }
         }
         c.structNew(fi.closureStructType);
+        ctx.stackKind = PrimitiveKind.NONE;
+    }
+
+    private void emitSpreadAdapt(HirExpr.SpreadAdapt s) {
+        WasmCodeBuilder c = ctx.code;
+        int line = s.meta().line();
+        LoweringTargets.SpreadAdapt adapt = s.adapt();
+        if (adapt == null || adapt.kind() == LoweringTargets.SpreadKind.NONE
+                || adapt.kind() == LoweringTargets.SpreadKind.AS_IS
+                || adapt.kind() == LoweringTargets.SpreadKind.TO_ITERABLE) {
+            emitBoxed(s.value());
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
+        emitBoxed(s.value());
+        int src = ctx.newLocal("$spSrc", ts.anyRef());
+        c.localSet(src);
+        emitSpreadAdaptValue(src, adapt, line);
+    }
+
+    /** Adapts an already-evaluated boxed spread value in {@code src} according to {@code adapt}. */
+    public void emitSpreadAdaptValue(int src, LoweringTargets.SpreadAdapt adapt, int line) {
+        WasmCodeBuilder c = ctx.code;
+        if (adapt == null || adapt.kind() == LoweringTargets.SpreadKind.NONE
+                || adapt.kind() == LoweringTargets.SpreadKind.AS_IS
+                || adapt.kind() == LoweringTargets.SpreadKind.TO_ITERABLE) {
+            c.localGet(src);
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
+        switch (adapt.kind()) {
+            case TO_LIST_COPY -> {
+                int l = ctx.newLocal("$spList", WasmValType.ref(ts.listType));
+                c.i32Const(4).call(linker.collections().fnListNew).localTee(l)
+                        .localGet(src).i32Const(line).call(linker.collections().fnListAddAll).drop()
+                        .localGet(l);
+            }
+            case TO_LIST_BORROWED -> {
+                c.localGet(src).refTest(ts.listType).if_(ts.anyRef())
+                        .localGet(src)
+                        .else_();
+                int l = ctx.newLocal("$spListB", WasmValType.ref(ts.listType));
+                c.i32Const(4).call(linker.collections().fnListNew).localTee(l)
+                        .localGet(src).i32Const(line).call(linker.collections().fnListAddAll).drop()
+                        .localGet(l)
+                        .end();
+            }
+            case TO_ARRAY -> {
+                int l = ctx.newLocal("$spArrL", WasmValType.ref(ts.listType));
+                c.i32Const(4).call(linker.collections().fnListNew).localTee(l)
+                        .localGet(src).i32Const(line).call(linker.collections().fnListAddAll).drop();
+                Class<?> comp = adapt.arrayComponentType();
+                PrimitiveKind ek = PrimitiveKind.NONE;
+                if (comp == int.class) ek = PrimitiveKind.INT;
+                else if (comp == double.class) ek = PrimitiveKind.DOUBLE;
+                else if (comp == long.class) ek = PrimitiveKind.LONG;
+                else if (comp == float.class) ek = PrimitiveKind.FLOAT;
+                else if (comp == byte.class) ek = PrimitiveKind.BYTE;
+                else if (comp == short.class) ek = PrimitiveKind.SHORT;
+                else if (comp == boolean.class) ek = PrimitiveKind.BOOL;
+                else if (comp == char.class) ek = PrimitiveKind.CHAR;
+                arrOps.emitArrayFromList(this, l, ek, line);
+            }
+            default -> c.localGet(src);
+        }
         ctx.stackKind = PrimitiveKind.NONE;
     }
 }

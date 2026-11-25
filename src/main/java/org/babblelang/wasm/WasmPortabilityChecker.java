@@ -259,9 +259,11 @@ public final class WasmPortabilityChecker {
                 checkExpr(as.left(), target, out);
             }
             case HirExpr.DynamicCall c -> {
-                if (c.callee() instanceof HirExpr.NameRead nr && "import".equals(nr.name())) {
-                    if (c.args().size() != 1 || !(c.args().get(0).value() instanceof HirExpr.Const cst && cst.value() instanceof String)) {
+                if (c.callee() instanceof HirExpr.NameRead nr && ("import".equals(nr.name()) || "importe".equals(nr.name()))) {
+                    if (c.args().size() != 1 || !(c.args().get(0).value() instanceof HirExpr.Const cst && cst.value() instanceof String path)) {
                         out.add(new Diagnostic(line, "dynamic import"));
+                    } else if (!path.endsWith(".ba")) {
+                        out.add(new Diagnostic(line, "Java package import : " + path));
                     }
                 } else {
                     checkExpr(c.callee(), target, out);
@@ -308,7 +310,12 @@ public final class WasmPortabilityChecker {
             case HirExpr.Binary b -> { checkExpr(b.left(), target, out); checkExpr(b.right(), target, out); }
             case HirExpr.Logic l -> { checkExpr(l.left(), target, out); checkExpr(l.right(), target, out); }
             case HirExpr.NonNull n -> checkExpr(n.operand(), target, out);
-            case HirExpr.SpreadAdapt s -> checkExpr(s.value(), target, out);
+            case HirExpr.SpreadAdapt s -> {
+                if (s.adapt() != null && s.adapt().elementSamTarget() != null) {
+                    out.add(new Diagnostic(line, s.adapt().elementSamTarget().samInterface().getName()));
+                }
+                checkExpr(s.value(), target, out);
+            }
             case HirExpr.Block b -> checkList(b.statements(), target, out);
             case HirExpr.If i -> { checkExpr(i.cond(), target, out); checkExpr(i.thenBranch(), target, out); checkExpr(i.elseBranch(), target, out); }
             case HirExpr.While w -> { checkExpr(w.cond(), target, out); checkExpr(w.body(), target, out); }
@@ -318,7 +325,14 @@ public final class WasmPortabilityChecker {
             case HirExpr.Throw t -> checkExpr(t.value(), target, out);
             case HirExpr.CoreCollectionCall c -> checkCallArgs(c.args(), target, out);
             case HirExpr.CoreMethodCall c -> { checkExpr(c.receiver(), target, out); checkList(c.args(), target, out); }
-            case HirExpr.SuperCall c -> checkCallArgs(c.args(), target, out);
+            case HirExpr.SuperCall c -> {
+                if (c.targetInfo() != null && c.targetInfo().directJavaClass() != null) {
+                    out.add(new Diagnostic(line, c.targetInfo().directJavaClass().getName() + "." + c.memberName()));
+                } else if (c.targetInfo() != null && c.targetInfo().providerJavaClass() != null) {
+                    out.add(new Diagnostic(line, c.targetInfo().providerJavaClass().getName() + "." + c.memberName()));
+                }
+                checkCallArgs(c.args(), target, out);
+            }
             case HirExpr.SelfRecurseCall c -> checkList(c.args(), target, out);
             case HirExpr.SelfTailCall c -> checkCallArgs(c.args(), target, out);
             case HirExpr.DirectBabbleCall c -> { checkExpr(c.callee(), target, out); checkList(c.args(), target, out); }
@@ -340,28 +354,35 @@ public final class WasmPortabilityChecker {
         if (descriptor == null || descriptor.isEmpty()) {
             return;
         }
-        // Descriptor syntax uses "java:<fqcn>" for Java class/interface checks
-        int idx = 0;
-        while ((idx = descriptor.indexOf("java:", idx)) >= 0) {
-            int start = idx + 5;
-            int end = start;
-            while (end < descriptor.length()) {
-                char c = descriptor.charAt(end);
-                if (Character.isLetterOrDigit(c) || c == '.' || c == '_' || c == '$') {
-                    end++;
-                } else {
-                    break;
-                }
-            }
-            String fqcn = descriptor.substring(start, end);
+        checkDescNodePortable(WasmTypeDesc.parse(descriptor), line, out);
+    }
+
+    private static void checkDescNodePortable(WasmTypeDesc desc, int line, List<Diagnostic> out) {
+        if (desc == null) {
+            return;
+        }
+        if ("java".equals(desc.kind())) {
+            String fqcn = desc.payload();
             if (!isPortableJavaTypeName(fqcn)) {
                 out.add(new Diagnostic(line, fqcn));
             }
-            idx = end;
+        } else {
+            for (WasmTypeDesc m : desc.members()) {
+                checkDescNodePortable(m, line, out);
+            }
         }
     }
 
     private static boolean isPortableJavaTypeName(String fqcn) {
+        if (fqcn.startsWith("[")) {
+            String elem = fqcn;
+            while (elem.startsWith("[")) elem = elem.substring(1);
+            if (elem.length() == 1) return true;
+            if (elem.startsWith("L") && elem.endsWith(";")) {
+                return isPortableJavaTypeName(elem.substring(1, elem.length() - 1));
+            }
+            return false;
+        }
         return fqcn.equals("java.lang.String")
                 || fqcn.equals("java.lang.Object")
                 || fqcn.equals("java.lang.Iterable")

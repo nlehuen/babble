@@ -109,6 +109,11 @@ public final class WasmCompiler {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("wasm-opt interrupted", e);
+        } catch (IOException e) {
+            if (e.getMessage() != null && e.getMessage().startsWith("wasm-opt ")) {
+                throw e;
+            }
+            throw new IOException("Cannot run wasm-opt : install Binaryen (wasm-opt) on PATH", e);
         }
     }
 }

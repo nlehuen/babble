@@ -115,15 +115,15 @@ public final class WasmTypeSystem {
         this.f64ArrType = module.addArrayType("F64Arr", WasmValType.F64, true);
         this.i64ConstArrType = module.addArrayType("I64ConstArr", WasmValType.I64, false);
 
-        // Primitive capture cells (mutable 1-field structs)
-        this.byteCellType = module.addStructType("ByteCell", true, -1, List.of(field("v", WasmValType.I32, true)));
-        this.shortCellType = module.addStructType("ShortCell", true, -1, List.of(field("v", WasmValType.I32, true)));
-        this.intCellType = module.addStructType("IntCell", true, -1, List.of(field("v", WasmValType.I32, true)));
-        this.longCellType = module.addStructType("LongCell", true, -1, List.of(field("v", WasmValType.I64, true)));
-        this.floatCellType = module.addStructType("FloatCell", true, -1, List.of(field("v", WasmValType.F32, true)));
-        this.doubleCellType = module.addStructType("DoubleCell", true, -1, List.of(field("v", WasmValType.F64, true)));
-        this.boolCellType = module.addStructType("BoolCell", true, -1, List.of(field("v", WasmValType.I32, true)));
-        this.charCellType = module.addStructType("CharCell", true, -1, List.of(field("v", WasmValType.I32, true)));
+        // Primitive capture cells (mutable value + defined-flag structs for Name-used-before-definition checks)
+        this.byteCellType = module.addStructType("ByteCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
+        this.shortCellType = module.addStructType("ShortCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
+        this.intCellType = module.addStructType("IntCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
+        this.longCellType = module.addStructType("LongCell", true, -1, List.of(field("v", WasmValType.I64, true), field("defined", WasmValType.I32, true)));
+        this.floatCellType = module.addStructType("FloatCell", true, -1, List.of(field("v", WasmValType.F32, true), field("defined", WasmValType.I32, true)));
+        this.doubleCellType = module.addStructType("DoubleCell", true, -1, List.of(field("v", WasmValType.F64, true), field("defined", WasmValType.I32, true)));
+        this.boolCellType = module.addStructType("BoolCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
+        this.charCellType = module.addStructType("CharCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
 
         // 2. Reserve indices for the core mutually recursive type group
         this.anyType = module.reserveTypeIndex();
@@ -285,7 +285,9 @@ public final class WasmTypeSystem {
                 field("toStringFn", WasmValType.refNull(toStrFnSigType), false),
                 field("getMemberFn", WasmValType.refNull(getMemFnSigType), false),
                 field("setMemberFn", WasmValType.refNull(setMemFnSigType), false),
-                field("opFn", WasmValType.refNull(opFnSigType), false)
+                field("opFn", WasmValType.refNull(opFnSigType), false),
+                field("typeId", refStr, false),
+                field("ifaceCaps", refAnyArrNull, false)
         ))));
         rec.add(new WasmTypeDef.SubType(objectType, "Object", false, anyType, new WasmTypeDef.StructType(List.of(
                 field("vtable", refVTable, false)
@@ -301,7 +303,8 @@ public final class WasmTypeSystem {
         rec.add(new WasmTypeDef.SubType(ifaceValType, "IfaceVal", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("ifaceIdx", WasmValType.I32, false),
                 field("name", refStr, false),
-                field("statics", refAnyArrNull, false)
+                field("statics", refAnyArrNull, false),
+                field("capEnv", refAnyNull, false)
         ))));
         rec.add(new WasmTypeDef.SubType(boundMethodType, "BoundMethod", true, fnBaseType, new WasmTypeDef.StructType(List.of(
                 field("genericCall", refGenericSig, false),
@@ -321,12 +324,15 @@ public final class WasmTypeSystem {
         // Portable core collections (BIP025-P3, BIP025-D6)
         rec.add(new WasmTypeDef.SubType(listType, "List", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("arr", refAnyArr, true),
-                field("size", WasmValType.I32, true)
+                field("size", WasmValType.I32, true),
+                field("parent", WasmValType.refNull(listType), true),
+                field("offset", WasmValType.I32, true)
         ))));
         rec.add(new WasmTypeDef.SubType(setType, "Set", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("arr", refAnyArr, true),
                 field("size", WasmValType.I32, true),
-                field("sorted", WasmValType.I32, false)
+                field("sorted", WasmValType.I32, false),
+                field("parentMap", WasmValType.refNull(mapType), true)
         ))));
         rec.add(new WasmTypeDef.SubType(entryType, "Entry", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("key", refAnyNull, false),
