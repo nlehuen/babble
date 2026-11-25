@@ -629,6 +629,34 @@ Measured on JDK 21 (`org.babblelang.bench.Benchmarks`, median of 20 warm runs af
 * **End-to-end AOT (`babblec`) verification:** `examples/raytracer-argon/raytracer.ba` (15 modules) renders byte-identical `scene.ppm` (`1,021,340` bytes) across `-O0` (`16.75 s`), `-O1` (`16.50 s`), and `-O2` (`18.65 s`). The ~13% delta on `argon` at `-O2` reflects SSA block-parameter move traffic in cold/mixed ray-traversal loops and is a clear target for future register coalescing and `BIP014-P5` Half B (`aegraph` elaboration).
 * **Coverage & parity:** All 6 dedicated `src/test/batest/compiler/mir_*.batest.md` suites plus `-O2` before/after MIR assertions across all 55 compiler `.batest.md` files pass across all 4 modes (`interpret`, `-O0`, `-O1`, `-O2`) with 0 divergences, and `SSA MIR (-O2)` reaches `93.1%` lines / `81.1%` branches (`>= 80.0%` across all 6 scopes).
 
+### 9.4 `argon` at `-O2` (`BIP014-I3` follow-up)
+
+`examples/raytracer-argon` ran slower at `-O2` than at `-O1` (§9.3: `18.65 s` vs. `16.50 s` through `babblec`; `~4%` through the engine on JDK 21). Profiling it (JFR, `PrintInlining`, `javap` of both levels' classes) found three causes, none of them the passes' rewrites:
+
+1. **The `MIR` passes did not beat C2 on this workload.** `SccpPass`, `GvnCsePass`, `LicmPass` and `AliasRlePass` mostly redo what HotSpot's C2 does to the bytecode anyway, so the steady-state render ran the same at both levels (`39.2 ms` vs. `38.7 ms`, median of 10 JVMs). The costs C2 cannot remove are Babble's : a fifth of the render went into `Namespace.lookup` (a name of the module or class body, such as `Vec3` in `Vec3(...)` inside `Vec3`'s own methods, walked up the closure's scopes and hashed on every call) and `ClassShape.staticIndex` (`Vec3.zero`).
+2. **`-O2` compiled the program in more time** : `+21 ms` warm, `~+160 ms` cold (`MirEmitter`'s slot allocator was quadratic, scanning every block's live sets for every value ; `SccpPass` evaluated a block again for every changed input, duplicates included ; `MirPassManager` ran the whole module again whenever any function had changed).
+3. **`MirEmitter` emitted larger bytecode** than `HirEmitter` (`41,618` instructions against `37,399` on `argon`, `+11%`) : every constant and temporary went through a local, every comparison was materialized as `0`/`1` and tested again. HotSpot's inlining heuristics go by bytecode size (`MaxInlineSize`, `FreqInlineSize`), which is what made the difference depend on the JVM.
+
+The fixes, all at `-O2` :
+
+* **Cached name reads** : `MirEmitter` emits a name read (`HirExpr.NameRead`, an `opaque.NameRead` in `MIR`) as an `invokedynamic` site bootstrapped by `Bootstrap.name`, whose `NameCache` keeps the `Slot` the name resolved to for the last namespace it saw : it walks and hashes once, then reads the slot, which still fails with `Name used before definition` until the definition runs. `Namespace.resolve` marks the scopes it looked through, and a later definition in one of them bumps `Namespace.epoch()`, invalidating every cached resolution, so a new shadowing definition is always seen. A site that sees another namespace (a module run again, in a new eval) resolves again.
+* **Compact emission** : constants of their own kind are rematerialized at each use instead of living in a local ; a comparison or `not` whose only use is its block's `BrIf` is emitted as the branch's conditional jump (`if_icmplt`, `Double.compare` + `iflt`...) ; a value whose only use is the first operand the next instruction loads stays on the operand stack. `argon`'s classes are now within `3%` of `-O1`'s instruction count.
+* **Compile time** : the slot allocator's liveness and intervals run on bit sets indexed by value id, linear in the live sets ; `SccpPass` queues a block at most once until it is evaluated ; after the first round, `MirPassManager` only runs the passes again on the functions the previous round changed (every pass is intra-procedural and deterministic, so the result is the same), and the passes of one `optimize` share each unchanged function's `MirCfg` (`MirCfg.withCache`).
+
+`org.babblelang.bench.Benchmarks` now has two `argon` rows : a `64 × 36`, `4` samples per pixel render of the final scene, and compiling its 15 modules in a new engine (what `-O2` costs before the first pixel). Its Javadoc says how to compare two levels : each in a JVM of its own, several times, with a fixed heap.
+
+Measured on JDK 21 (4 cores), before (`4d1fed7`) and after, medians ; every run renders the byte-identical `scene.ppm` :
+
+| `argon` | before `-O1` | before `-O2` | after `-O1` | after `-O2` | after `-O2` vs. `-O1` |
+|---|---:|---:|---:|---:|---:|
+| full render through the engine (`java -jar … -O<n> raytracer.ba`, 5 interleaved runs) | 8.63 s | 8.77 s | 8.51 s | **8.25 s** | **1.03×** |
+| full render, `babblec` jar (5 interleaved runs) | 7.17 s | 6.95 s | 6.96 s | **6.77 s** | **1.03×** |
+| `Benchmarks` render row (`-Xms1g -Xmx1g -XX:+UseParallelGC`, 6 JVMs per level) | 28.47 ms | 29.50 ms | 31.16 ms | **28.22 ms** | **1.10×** |
+| `-compile`, cold (5 runs) | 1.52 s | 1.73 s | 1.55 s | 1.68 s | 0.92× |
+| `Benchmarks` compile row, warm (5 JVMs per level) | 125.8 ms | 177.4 ms | 117.8 ms | 152.1 ms | 0.77× |
+
+`-O1`'s code is unchanged : its two columns differ by noise (`±5%` between JVMs). What `-O2` still pays to compile, in the passes' boxed maps and sets, its render now more than wins back.
+
 ---
 
 ## 10. Bibliography

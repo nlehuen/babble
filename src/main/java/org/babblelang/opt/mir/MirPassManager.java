@@ -3,6 +3,7 @@ package org.babblelang.opt.mir;
 import org.babblelang.ir.IrObserver;
 import org.babblelang.ir.IrSnapshot;
 import org.babblelang.ir.IrTier;
+import org.babblelang.ir.mir.MirCfg;
 import org.babblelang.ir.mir.MirFunction;
 import org.babblelang.ir.mir.MirModule;
 import org.babblelang.ir.mir.MirVerifier;
@@ -49,6 +50,10 @@ public final class MirPassManager {
     }
 
     public MirModule optimize(MirModule module, PassContext context, IrObserver observer, String moduleKey) {
+        return MirCfg.withCache(() -> run(module, context, observer, moduleKey));
+    }
+
+    private MirModule run(MirModule module, PassContext context, IrObserver observer, String moduleKey) {
         if (context.verify()) {
             MirVerifier.verify(module);
         }
