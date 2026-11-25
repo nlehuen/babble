@@ -267,11 +267,11 @@ fn safeFinally(v0: bool) -> int:
     v2: int = const 10
     br bb4
   bb4:
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(cleanup) {read:shared,throws}
     v4: int = convert.int v3
     v5: int = const 1
     v6: int = add v4, v5 {pure}
-    v7: any = opaque.NameAssign(v6) {impure}
+    v7: any = opaque.NameAssign(cleanup, v6) {impure}
     br bb5
   bb5:
     ret v2
@@ -282,11 +282,11 @@ fn safeFinally(v0: bool) -> int:
   bb7(v10: any) [handler]:
     br bb8
   bb8:
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(cleanup) {read:shared,throws}
     v12: int = convert.int v11
     v13: int = const 1
     v14: int = add v12, v13 {pure}
-    v15: any = opaque.NameAssign(v14) {impure}
+    v15: any = opaque.NameAssign(cleanup, v14) {impure}
     rethrow v10
 ```
 
@@ -301,11 +301,11 @@ fn safeFinally(v0: bool) -> int:
     v1: int = const 10
     br bb3
   bb3:
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(cleanup) {read:shared,throws}
     v3: int = convert.int v2
     v4: int = const 1
     v5: int = add v3, v4 {pure}
-    v6: any = opaque.NameAssign(v5) {impure}
+    v6: any = opaque.NameAssign(cleanup, v5) {impure}
     br bb4
   bb4:
     ret v1
@@ -316,11 +316,11 @@ fn safeFinally(v0: bool) -> int:
   bb6(v9: any) [handler]:
     br bb7
   bb7:
-    v10: any = opaque.NameRead() {impure}
+    v10: any = opaque.NameRead(cleanup) {read:shared,throws}
     v11: int = convert.int v10
     v12: int = const 1
     v13: int = add v11, v12 {pure}
-    v14: any = opaque.NameAssign(v13) {impure}
+    v14: any = opaque.NameAssign(cleanup, v13) {impure}
     rethrow v9
 ```
 
