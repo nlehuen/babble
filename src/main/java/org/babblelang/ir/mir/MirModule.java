@@ -52,6 +52,24 @@ public final class MirModule implements IrDumpable {
         return new MirModule(hir, updated, fallbacks);
     }
 
+    /** This module with some of its functions replaced, the others kept, in the same order. */
+    public MirModule withReplaced(Map<Integer, MirFunction> replacements) {
+        Map<Integer, MirFunction> merged = new LinkedHashMap<>(functions);
+        merged.putAll(replacements);
+        return new MirModule(hir, merged, fallbacks);
+    }
+
+    /** This module with only the functions of {@code ids}, for passes to run on them alone. */
+    public MirModule withOnly(java.util.Set<Integer> ids) {
+        Map<Integer, MirFunction> kept = new LinkedHashMap<>();
+        for (Map.Entry<Integer, MirFunction> e : functions.entrySet()) {
+            if (ids.contains(e.getKey())) {
+                kept.put(e.getKey(), e.getValue());
+            }
+        }
+        return new MirModule(hir, kept, fallbacks);
+    }
+
     @Override
     public org.babblelang.ir.IrTier tier() {
         return org.babblelang.ir.IrTier.MIR;

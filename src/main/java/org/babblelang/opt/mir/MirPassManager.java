@@ -3,11 +3,15 @@ package org.babblelang.opt.mir;
 import org.babblelang.ir.IrObserver;
 import org.babblelang.ir.IrSnapshot;
 import org.babblelang.ir.IrTier;
+import org.babblelang.ir.mir.MirFunction;
 import org.babblelang.ir.mir.MirModule;
 import org.babblelang.ir.mir.MirVerifier;
 import org.babblelang.opt.PassContext;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Bounded fixed-point SSA {@code MIR} pass driver ({@code BIP014-I3} §6.5, {@code BIP029}).
@@ -50,22 +54,34 @@ public final class MirPassManager {
         }
         notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.STAGE_BEFORE, module);
         MirModule current = module;
+        // Every pass is intra-procedural and deterministic, and returns a function it did not
+        // rewrite as is : a function no pass changed in a round would not change in the next one
+        // either, so each round after the first only runs on the functions the previous one changed.
+        Set<Integer> dirty = null;
         for (int iter = 0; iter < MAX_ITERATIONS && !passes.isEmpty(); iter++) {
-            int roundRewrites = 0;
+            MirModule work = dirty == null ? current : current.withOnly(dirty);
+            Map<Integer, MirFunction> roundStart = work.functions();
             for (MirPass pass : passes) {
-                MirPass.Result res = pass.run(current, context);
-                current = res.module();
+                MirPass.Result res = pass.run(work, context);
+                work = res.module();
                 if (res.rewrites() > 0) {
-                    roundRewrites += res.rewrites();
+                    current = current.withReplaced(work.functions());
                     if (context.verify()) {
                         MirVerifier.verify(current);
                     }
                 }
                 notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.afterPass(pass.name()), current);
             }
-            if (roundRewrites == 0) {
+            Set<Integer> changed = new LinkedHashSet<>();
+            for (Map.Entry<Integer, MirFunction> e : work.functions().entrySet()) {
+                if (e.getValue() != roundStart.get(e.getKey())) {
+                    changed.add(e.getKey());
+                }
+            }
+            if (changed.isEmpty()) {
                 break;
             }
+            dirty = changed;
         }
         notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.STAGE_FINAL, current);
         return current;

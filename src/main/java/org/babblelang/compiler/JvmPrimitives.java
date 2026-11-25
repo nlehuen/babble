@@ -85,6 +85,10 @@ final class JvmPrimitives {
             "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
                     + "Ljava/lang/String;Ljava/lang/String;)Ljava/lang/invoke/CallSite;",
             false);
+    static final Handle NAME_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "name",
+            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+                    + "Ljava/lang/String;)Ljava/lang/invoke/CallSite;",
+            false);
     static final Handle CALL_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "call",
             "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
             false);

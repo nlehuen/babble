@@ -129,7 +129,7 @@ public final class SccpPass implements MirPass {
 
         Set<Integer> execBlocks = new HashSet<>();
         Set<EdgeKey> execEdges = new HashSet<>();
-        Deque<Integer> blockWorklist = new ArrayDeque<>();
+        Deque<Integer> blockWorklist = new BlockWorklist();
 
         markBlockExec(fn.entryBlockId(), execBlocks, blockWorklist, blockMap, lattice);
 
@@ -221,6 +221,29 @@ public final class SccpPass implements MirPass {
     }
 
     private record EdgeInfo(EdgeKey key, List<MirVal> args) {
+    }
+
+    /**
+     * The blocks to evaluate again, each at most once until it is : a block whose inputs change
+     * several times before its turn is evaluated once, with all of them (the lattice is monotone,
+     * so the fixed point does not depend on the order).
+     */
+    private static final class BlockWorklist extends ArrayDeque<Integer> {
+        private final Set<Integer> queued = new HashSet<>();
+
+        @Override
+        public boolean add(Integer blockId) {
+            return queued.add(blockId) && super.add(blockId);
+        }
+
+        @Override
+        public Integer poll() {
+            Integer blockId = super.poll();
+            if (blockId != null) {
+                queued.remove(blockId);
+            }
+            return blockId;
+        }
     }
 
     private static void markBlockExec(int blockId, Set<Integer> execBlocks, Deque<Integer> worklist,

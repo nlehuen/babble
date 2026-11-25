@@ -528,6 +528,14 @@ public class BabbleCompilerTestCase {
         return methods;
     }
 
+    /**
+     * An {@code invokedynamic} call or member access : the name reads of {@code -O2}
+     * ({@code Bootstrap.name}, a cached scope lookup) call nothing.
+     */
+    private static boolean isDynamicCall(String op) {
+        return op.startsWith("INDY:") && !op.startsWith("INDY:org/babblelang/runtime/Bootstrap.name:");
+    }
+
     private static List<String> methodInstructions(byte[] classFile, String methodPrefix) {
         List<String> ops = new ArrayList<>();
         new ClassReader(classFile).accept(new ClassVisitor(Opcodes.ASM9) {
@@ -631,7 +639,7 @@ public class BabbleCompilerTestCase {
         List<String> normOps = methodInstructions(pointBytes, "m$norm$spec");
         Assertions.assertTrue(normOps.contains("IMUL") && normOps.contains("IADD"), normOps.toString());
         Assertions.assertTrue(normOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/Operators")
-                || o.startsWith("INDY:")), normOps.toString());
+                || isDynamicCall(o)), normOps.toString());
 
         byte[] lazyBytes = script.getClasses().entrySet().stream()
                 .filter(e -> e.getKey().endsWith("$Lazy")).findFirst().orElseThrow().getValue();
@@ -733,7 +741,7 @@ public class BabbleCompilerTestCase {
         // Direct calls with optional & reordered named args invoke fn$0$add$spec directly without indy.
         List<String> directOps = methodInstructions(script.getClassBytes(), "fn$1$directCalls$spec");
         Assertions.assertTrue(directOps.stream().anyMatch(o -> o.endsWith(".fn$0$add$spec")), directOps.toString());
-        Assertions.assertTrue(directOps.stream().noneMatch(o -> o.startsWith("INDY:")), directOps.toString());
+        Assertions.assertTrue(directOps.stream().noneMatch(o -> isDynamicCall(o)), directOps.toString());
 
         // Indirect calls through function value with omitted optional args use typedCallOpt indy.
         List<String> indirectOps = methodInstructions(script.getClassBytes(), "fn$2$indirectCalls$spec");
@@ -754,7 +762,7 @@ public class BabbleCompilerTestCase {
         List<String> ops = methodInstructions(script.getClassBytes(), "fn$0$run$spec");
         Assertions.assertTrue(ops.contains("CALL:java/util/stream/IntStream.of"), ops.toString());
         Assertions.assertTrue(ops.contains("CALL:java/lang/String.format"), ops.toString());
-        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:") || o.contains("Overloads")), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> isDynamicCall(o) || o.contains("Overloads")), ops.toString());
     }
 
     @Test
@@ -769,7 +777,7 @@ public class BabbleCompilerTestCase {
 
         List<String> ops = methodInstructions(script.getClassBytes(), "fn$0$biggest");
         Assertions.assertTrue(ops.contains("CALL:java/lang/Comparable.compareTo"), ops.toString());
-        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:") || o.contains("JavaLinker")), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> isDynamicCall(o) || o.contains("JavaLinker")), ops.toString());
     }
 
     @Test
@@ -784,7 +792,7 @@ public class BabbleCompilerTestCase {
         List<String> ops = methodInstructions(script.getClassBytes(), "fn$1$run$spec");
         Assertions.assertTrue(ops.contains("CALL:org/babblelang/runtime/ArgumentsView.ofInts"), ops.toString());
         Assertions.assertTrue(ops.stream().anyMatch(o -> o.endsWith(".fn$0$sumInts$spec")), ops.toString());
-        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:")), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> isDynamicCall(o)), ops.toString());
     }
 
     @Test
@@ -800,7 +808,7 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals(43, script.eval(new SimpleBindings()));
 
         List<String> ops = methodInstructions(script.getClassBytes(), "fn$2$run$spec");
-        Assertions.assertTrue(ops.stream().noneMatch(o -> o.startsWith("INDY:")), ops.toString());
+        Assertions.assertTrue(ops.stream().noneMatch(o -> isDynamicCall(o)), ops.toString());
     }
 
     @Test
@@ -829,7 +837,7 @@ public class BabbleCompilerTestCase {
         Assertions.assertTrue(
                 clsOps.stream().anyMatch(o -> o.endsWith(".m$f$1$spec") || o.endsWith("$C.k:I")),
                 clsOps.toString());
-        Assertions.assertTrue(clsOps.stream().noneMatch(o -> o.startsWith("INDY:")), clsOps.toString());
+        Assertions.assertTrue(clsOps.stream().noneMatch(o -> isDynamicCall(o)), clsOps.toString());
 
         // At -O0 (without O8 method inlining), both overload alternatives dispatch directly to m$f$0$spec and m$f$1$spec.
         ScriptEngine o0Engine = compilingEngine();
@@ -851,12 +859,12 @@ public class BabbleCompilerTestCase {
         List<String> o0ClsOps = methodInstructions(o0Script.getClassBytes(), "fn$0$callClass$spec");
         Assertions.assertTrue(o0ClsOps.stream().anyMatch(o -> o.endsWith(".m$f$0$spec")), o0ClsOps.toString());
         Assertions.assertTrue(o0ClsOps.stream().anyMatch(o -> o.endsWith(".m$f$1$spec")), o0ClsOps.toString());
-        Assertions.assertTrue(o0ClsOps.stream().noneMatch(o -> o.startsWith("INDY:")), o0ClsOps.toString());
+        Assertions.assertTrue(o0ClsOps.stream().noneMatch(o -> isDynamicCall(o)), o0ClsOps.toString());
 
         List<String> ifaceOps = methodInstructions(script.getClassBytes(), "fn$1$callIface$spec");
         Assertions.assertTrue(ifaceOps.stream().anyMatch(o -> o.endsWith(".bm$f$0")), ifaceOps.toString());
         Assertions.assertTrue(ifaceOps.stream().anyMatch(o -> o.endsWith(".bm$f$1")), ifaceOps.toString());
-        Assertions.assertTrue(ifaceOps.stream().noneMatch(o -> o.startsWith("INDY:")), ifaceOps.toString());
+        Assertions.assertTrue(ifaceOps.stream().noneMatch(o -> isDynamicCall(o)), ifaceOps.toString());
     }
 
     /** Per method of every generated class : whether it jumps backwards, and the methods it calls. */
@@ -974,7 +982,7 @@ public class BabbleCompilerTestCase {
 
         List<String> covOps = methodInstructions(script.getClassBytes(), "fn$6$covCall$spec");
         Assertions.assertTrue(covOps.stream().anyMatch(o -> o.endsWith(".bm$m")), covOps.toString());
-        Assertions.assertTrue(covOps.stream().noneMatch(o -> o.startsWith("INDY:")), covOps.toString());
+        Assertions.assertTrue(covOps.stream().noneMatch(o -> isDynamicCall(o)), covOps.toString());
     }
 
     @Test
