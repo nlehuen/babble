@@ -540,6 +540,12 @@ final class HirNameInitAnalysis {
                     List<HirCallArg> na = rewriteArgs(c.args(), guaranteed);
                     yield na == c.args() ? c : new HirExpr.CoreCollectionCall(c.collectionKind(), na, c.meta());
                 }
+                case HirExpr.CoreMethodCall c -> {
+                    HirExpr nr = fn.apply(c.receiver());
+                    List<HirExpr> na = rewriteList(c.args(), guaranteed);
+                    yield (nr == c.receiver() && na == c.args()) ? c
+                            : new HirExpr.CoreMethodCall(nr, c.receiverText(), c.selectorLine(), c.coreKind(), c.memberName(), na, c.meta());
+                }
                 case HirExpr.SuperCall c -> {
                     List<HirCallArg> na = rewriteArgs(c.args(), guaranteed);
                     yield na == c.args() ? c

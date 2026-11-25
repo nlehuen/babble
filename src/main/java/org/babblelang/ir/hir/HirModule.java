@@ -52,16 +52,16 @@ public record HirModule(
 
     public HirModule(
             String className, String sourceName, int startLine, String[] exports,
-            String[] topLevelDeclaredNames, List<HirExpr> topLevelStatements,
+            String[] topLevelDeclaredNames, boolean[] topLevelDeclaredFinals, List<HirExpr> topLevelStatements,
             Map<Integer, HirFunction> functions, Map<Integer, HirClass> classes,
             Map<Integer, HirInterface> interfaces, Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies,
             Map<String, String> allInterfaceJvmNames, Map<String, String> allClassJvmNames,
             Map<String, String> ownInterfaceJvmNames, Map<String, String> ownClassJvmNames,
             int nextVarId, int nextOwnerId
     ) {
-        this(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelStatements,
-                functions, classes, interfaces, typeHierarchies, allInterfaceJvmNames, allClassJvmNames,
-                ownInterfaceJvmNames, ownClassJvmNames, nextVarId, nextOwnerId, List.of());
+        this(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelDeclaredFinals,
+                topLevelStatements, functions, classes, interfaces, typeHierarchies, allInterfaceJvmNames,
+                allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames, nextVarId, nextOwnerId, List.of());
     }
 
     /** Target-neutral module identifier ({@code BIP025-D3}). */

@@ -88,8 +88,8 @@ public class WasmCompilerTestCase {
     @Test
     public void controlFlowLoopsBreakValueAndShortCircuit() throws Exception {
         String code = """
-                def sum = 0
-                def i = 0
+                var sum = 0
+                var i = 0
                 while i < 10 then (
                     i += 1
                     if i == 5 then (continue)
@@ -102,7 +102,7 @@ public class WasmCompilerTestCase {
                 )
                 assert(found == 100)
 
-                def calls = 0
+                var calls = 0
                 def bump = fn io (): int -> (calls += 1; calls)
                 assert((false and bump() > 0) == false)
                 assert(calls == 0)
@@ -121,7 +121,7 @@ public class WasmCompilerTestCase {
     public void closuresCaptureCellsAndHigherOrderFunctions() throws Exception {
         String code = """
                 def makeCounter = fn (start: int): fn io (): int -> (
-                    def n = start
+                    var n = start
                     fn io (): int -> (
                         n += 1
                         n
@@ -171,7 +171,7 @@ public class WasmCompilerTestCase {
                 assert(sub(b: 3, a: 2) == 235)
                 assert(sub(c: 9, a: 4) == 509)
 
-                def log = ""
+                var log = ""
                 def rec = fn io (tag: string, v: int): int -> (log += tag; v)
                 assert(sub(b: rec("B", 2), a: rec("A", 1)) == 123)
                 assert(log == "BA")
@@ -194,7 +194,7 @@ public class WasmCompilerTestCase {
     public void exceptionsCatchFinallySuppressionAndControlTransfer() throws Exception {
         // 1. try / catch / finally
         NodeWasmRunner.RunOutcome o1 = runWasm("""
-                def trace = ""
+                var trace = ""
                 def r1 = try (
                     trace += "T"
                     throw exception("boom")
@@ -213,7 +213,7 @@ public class WasmCompilerTestCase {
 
         // 2. Return intercepted by finally
         NodeWasmRunner.RunOutcome o2 = runWasm("""
-                def finRan = false
+                var finRan = false
                 def withRet = fn io (): int -> (
                     try (
                         return 42
@@ -229,7 +229,7 @@ public class WasmCompilerTestCase {
 
         // 3. Break intercepted by finally
         NodeWasmRunner.RunOutcome o3 = runWasm("""
-                def brkFin = 0
+                var brkFin = 0
                 def brkVal = while true then (
                     try (
                         break 77
@@ -377,15 +377,16 @@ public class WasmCompilerTestCase {
     public void classesMutableFieldsStaticsObjectsBoundMethodsAndCaptures() throws Exception {
         String code = """
                 def Counter = class (start: int = 0) (
-                    def value = start
-                    Counter.total += 1
+                    var value = start
+                    Counter.bumpTotal(1)
                     def inc = fn mut (by: int = 1): int -> (
                         this.value += by
                         this.value
                     )
                 ) static (
-                    def total = 0
-                    def bumpTotal = fn io (n: int): int -> (Counter.total += n; Counter.total)
+                    private var total = 0
+                    def getTotal = fn volatile (): int -> (this.total)
+                    def bumpTotal = fn io (n: int): int -> (this.total += n; this.total)
                 )
                 def Singleton = object (
                     def tag = "only-one"
@@ -393,7 +394,7 @@ public class WasmCompilerTestCase {
                 )
                 def c1 = Counter(10)
                 def c2 = Counter()
-                assert(Counter.total == 2)
+                assert(Counter.getTotal() == 2)
                 assert(Counter.bumpTotal(5) == 7)
                 assert(c1.inc() == 11)
                 assert(c1.inc(4) == 15)
@@ -409,7 +410,7 @@ public class WasmCompilerTestCase {
                 assert(Singleton.greet("wasm") == "only-one:wasm")
                 ;; Capturing class inside a function
                 def makeBox = fn io (base: int): int -> (
-                    def acc = base
+                    var acc = base
                     def Adder = class (def step: int) (
                         def run = fn io (): int -> (acc += this.step; acc)
                     )
@@ -728,20 +729,20 @@ public class WasmCompilerTestCase {
     @Test
     public void forLoopsArraysCollectionsCustomIterablesAndBreakValue() throws Exception {
         String code = """
-                def arrSum = 0
+                var arrSum = 0
                 for x in (array of int).of(10, 20, 30, 40) then (
                     if x == 20 then (continue)
                     arrSum += x
                 )
                 assert(arrSum == 80)
 
-                def dSum = 0.0
+                var dSum = 0.0
                 for d in (array of double).of(1.5, 2.5, 3.0) then (
                     dSum += d
                 )
                 assert(dSum == 7.0)
 
-                def listSum = 0
+                var listSum = 0
                 for v in list(1, 2, 3, 4, 5) then (
                     listSum += v
                 )
@@ -753,14 +754,14 @@ public class WasmCompilerTestCase {
                 assert(found == 22)
 
                 ;; Custom Babble iterable (like Argon's Range)
-                def RangeCursor = class (private def cur: int, private def stop: int) (
+                def RangeCursor = class (private var cur: int, private def stop: int) (
                     def hasNext = fn (): bool -> (this.cur < this.stop)
                     def next = fn mut (): int -> (def v = this.cur; this.cur += 1; v)
                 )
                 def Range = record (start: int, stop: int) (
                     def iterator = fn (): RangeCursor -> (RangeCursor(this.start, this.stop))
                 )
-                def rSum = 0
+                var rSum = 0
                 for i in Range(1, 6) then (
                     rSum += i
                 )
@@ -785,7 +786,7 @@ public class WasmCompilerTestCase {
     public void portableAppendableCustomOutputSink() throws Exception {
         String code = """
                 def Sink = class () implements java.lang.Appendable (
-                    def out = ""
+                    var out = ""
                     def append = overload (
                         fn io mut (csq: java.lang.CharSequence?): java.lang.Appendable -> (
                             this.out += string(csq)
@@ -1080,14 +1081,14 @@ public class WasmCompilerTestCase {
                         if boom then (throw exception("kaboom"))
                         10
                     ) finally (
-                        def x = 5
+                        var x = 5
                         def bump = fn io (): int -> (x += 1; x)
                         log.add(bump())
                         log.add(bump())
                     )
                 )
                 assert(run(false) == 10)
-                def caught = false
+                var caught = false
                 try (
                     run(true)
                 ) catch e then (
@@ -1134,7 +1135,7 @@ public class WasmCompilerTestCase {
                 assert(nested.get(0).get(1) == 99)
 
                 ;; Covariant RefArray store check rejects wrong runtime element type
-                def badStoreFailed = false
+                var badStoreFailed = false
                 try (
                     def cov: array of any = sa
                     cov.set(0, 123)
@@ -1152,7 +1153,7 @@ public class WasmCompilerTestCase {
     @Test
     public void userReplaceSafeCallNamedArgsAndOptDefaultClosureCapture() throws Exception {
         String code = """
-                def Box = class (def v: int) (
+                def Box = class (var v: int) (
                     def replace = fn mut (a: int, b: int): int -> (this.v = a + b; this.v)
                     def combine = fn (a: int, b: int): int -> (a * 10 + b)
                 )
@@ -1168,20 +1169,20 @@ public class WasmCompilerTestCase {
                 assert(mp?.size() == 1 and mp?.isEmpty() == false)
 
                 ;; Optional-default closure shares the parameter capture cell
-                def mk = fn volatile (x: int = 1, reader: fn volatile (): int = fn volatile (): int -> (x)): int -> (
+                def mk = fn volatile (var x: int = 1, reader: fn volatile (): int = fn volatile (): int -> (x)): int -> (
                     x = x + 10
                     reader()
                 )
                 assert(mk(5) == 15)
                 assert(mk() == 11)
 
-                ;; Same for class constructor parameter
-                def Holder = class (x: int = 2, def getter: fn volatile (): int = fn volatile (): int -> (x)) (
-                    x = x + 20
-                    def val: int = x
+                ;; Same for class constructor field + closure
+                def Holder = class (var x: int = 2) (
+                    this.x = this.x + 20
+                    def getter = fn volatile (): int -> (this.x)
                 )
                 def h = Holder(3)
-                assert(h.val == 23 and h.getter() == 23)
+                assert(h.x == 23 and h.getter() == 23)
                 h.getter()
                 """;
         NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
@@ -1225,7 +1226,7 @@ public class WasmCompilerTestCase {
     public void forwardReferenceRejectedAtRuntime() throws Exception {
         String code = """
                 def bad = fn (): int -> (later())
-                def caught = false
+                var caught = false
                 try (
                     bad()
                 ) catch e then (
@@ -1267,7 +1268,7 @@ public class WasmCompilerTestCase {
                     def toString = fn (): string -> (throw exception("boomFmt"))
                 )
                 def badArr = (array of any).of(Boom())
-                def threw = false
+                var threw = false
                 try (
                     string(badArr)
                 ) catch e then (
@@ -1284,7 +1285,7 @@ public class WasmCompilerTestCase {
                 ;; keySet.add throws, entry.setValue updates backing map
                 def m = map(entry("k", 1))
                 def ks = m.keySet()
-                def ksThrew = false
+                var ksThrew = false
                 try (
                     ks.add("z")
                 ) catch e then (
