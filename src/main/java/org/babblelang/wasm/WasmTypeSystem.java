@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Core WebAssembly 3.0 WasmGC type hierarchy and type-interning registry for Babble ({@code BIP025-P1},
+ * Core WebAssembly 3.0 WasmGC type hierarchy and type-interning registry for Babble ({@code BIP025-I1},
  * {@code BIP025-D4}, {@code BIP025-D5}, {@code BIP025-D7}, {@code BIP025-D13}).
  *
  * <p>Standalone primitive array types (notably {@code $CharArr = (array (mut i16))}) are declared
@@ -321,7 +321,7 @@ public final class WasmTypeSystem {
         rec.add(new WasmTypeDef.SubType(hostStreamType, "HostStream", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("kind", WasmValType.I32, false)
         ))));
-        // Portable core collections (BIP025-P3, BIP025-D6)
+        // Portable core collections (BIP025-I3, BIP025-D6)
         rec.add(new WasmTypeDef.SubType(listType, "List", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("arr", refAnyArr, true),
                 field("size", WasmValType.I32, true),

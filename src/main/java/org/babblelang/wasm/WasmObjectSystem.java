@@ -24,7 +24,7 @@ import java.util.Set;
  * {@code record} ({@code BIP025-D11}), {@code object} singletons, {@code interface}s,
  * {@code i64}/word-array interface bitsets ({@code is I} and single-mask {@code BIP022}
  * {@code is (A & B)}), typed closed-world {@code $ITable_I} structs, and single-implementer
- * devirtualization ({@code BIP025-P2}, {@code BIP025-D7}).
+ * devirtualization ({@code BIP025-I2}, {@code BIP025-D7}).
  */
 public final class WasmObjectSystem {
     public record ITableSlot(

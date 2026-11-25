@@ -17,7 +17,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * End-to-end tests for the WebAssembly 3.0 backend ({@code BIP025-P1}): scalars, control flow,
+ * End-to-end tests for the WebAssembly 3.0 backend ({@code BIP025-I1}): scalars, control flow,
  * closures, {@code BIP024} tail calls, {@code BIP021} optional/named/overloaded calls,
  * {@code BIP028} exceptions &amp; 2-copy {@code finally}, and {@code -target wasm-js|wasm-bare} CLI.
  */
@@ -325,7 +325,7 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals("from-cli:42\n", stdout);
     }
 
-    // ---------------------------------------------------------------- BIP025-P2 Object model, arrays & modules
+    // ---------------------------------------------------------------- BIP025-I2 Object model, arrays & modules
 
     @Test
     public void recordsImmutableFieldsOperatorsAndValueSemantics() throws Exception {
@@ -619,7 +619,7 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals("lenSq=25.0 area=12.0\n", stdout);
     }
 
-    // ---------------------------------------------------------------- BIP025-P3 Strings, Collections, For, Appendable & Argon
+    // ---------------------------------------------------------------- BIP025-I3 Strings, Collections, For, Appendable & Argon
 
     @Test
     public void stringsPortableApiParity() throws Exception {
@@ -875,7 +875,7 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals(jvmOut.toString(), wasmStdout, "Argon mini PPM must match JVM byte-for-byte");
     }
 
-    // ---------------------------------------------------------------- BIP025-P4 Host Imports, CLI Args, Debug Names & Canvas Demo
+    // ---------------------------------------------------------------- BIP025-I4 Host Imports, CLI Args, Debug Names & Canvas Demo
 
     @Test
     public void wasmHostImportAxiomsWithEffectsAndStrings() throws Exception {

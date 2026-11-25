@@ -18,7 +18,7 @@ import java.util.Set;
 
 /**
  * Whole-program closed-world linker from {@link HirModule}s to a single WebAssembly 3.0
- * {@link WasmModule} ({@code BIP025-P1}, {@code BIP025-P2}, {@code BIP025-D3}).
+ * {@link WasmModule} ({@code BIP025-I1}, {@code BIP025-I2}, {@code BIP025-D3}).
  *
  * <p>Resolves module globals, {@code $ModuleVal} exports, classes/records/objects, interfaces
  * &amp; typed {@code $ITable_I}s, functions &amp; closures, generic call trampolines, module

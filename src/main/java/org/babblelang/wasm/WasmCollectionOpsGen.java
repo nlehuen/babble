@@ -5,7 +5,7 @@ import java.util.List;
 /**
  * Generates WasmGC runtime support for Babble's portable core collections ({@code list}, {@code set},
  * {@code sortedset}, {@code map}, {@code sortedmap}, {@code entry}, and {@code $CollectionIter})
- * ({@code BIP025-P3}, {@code BIP025-D6}) with exact JVM {@code java.util.*} semantics.
+ * ({@code BIP025-I3}, {@code BIP025-D6}) with exact JVM {@code java.util.*} semantics.
  */
 public final class WasmCollectionOpsGen {
     private final WasmModule mod;

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Pure-Java WebAssembly 3.0 binary encoder ({@code BIP025-P0}, {@code BIP025-D2}).
+ * Pure-Java WebAssembly 3.0 binary encoder ({@code BIP025-I0}, {@code BIP025-D2}).
  *
  * <p>Encodes {@link WasmModule} into spec-compliant {@code .wasm} bytes (WasmGC {@code rec}/{@code sub},
  * typed function references, {@code try_table}/{@code exnref} tags, tail calls, passive data segments,

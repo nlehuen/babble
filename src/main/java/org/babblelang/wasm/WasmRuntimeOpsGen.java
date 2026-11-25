@@ -9,7 +9,7 @@ import java.util.Map;
 /**
  * Generates dynamic operator helpers, scalar conversions ({@code byte()}..{@code string()}),
  * {@code is <builtin>}, {@code classof}, and first-class built-in function singletons
- * ({@code BIP025-P1}).
+ * ({@code BIP025-I1}).
  */
 public final class WasmRuntimeOpsGen {
     public static final int BUILTIN_BYTE = 0;

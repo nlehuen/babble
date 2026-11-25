@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Fluent builder for WebAssembly 3.0 function bodies and constant expressions ({@code BIP025-P0}).
+ * Fluent builder for WebAssembly 3.0 function bodies and constant expressions ({@code BIP025-I0}).
  */
 public final class WasmCodeBuilder {
     private final List<WasmInstr> instructions = new ArrayList<>();

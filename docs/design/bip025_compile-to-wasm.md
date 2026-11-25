@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 025 |
 | **Date** | 2026-11-22 *(decisions settled 2026-11-24)* |
-| **Status** | Decided (`BIP025-Q1`–`Q10` settled as `BIP025-D1`–`D10`, plus `BIP025-D11`–`D13` covering post-draft `BIP014-I4`, portable I/O, and `BIP028` exception handling; phased implementation plan `BIP025-P0`–`P5`) |
+| **Status** | Implemented (`BIP025-Q1`–`Q10` settled as `BIP025-D1`–`D10`, plus `BIP025-D11`–`D13`; `BIP025-I0`–`I5` implemented with 100% portable `.batest.md` 4-mode parity, `wat` goldens, browser `<canvas>` demo, and byte-identical `examples/raytracer-argon/scene.ppm` rendered on WebAssembly 3.0 / Node.js V8) |
 | **Depends on** | Bytecode compiler, `RM001` typed primitive lowering & `RM003` interfaces ([bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), modules ([bip005_modules.md](bip005_modules.md)), `ModuleSource` & `babblec` AOT compilation ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static effects, ownership & axioms (`RM002`/`RM007`/`RM008`/`RM009`, [bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md), [bip019_refactoring-axioms.md](bip019_refactoring-axioms.md), [bip030_axiom-nullability-and-inferred-effects.md](bip030_axiom-nullability-and-inferred-effects.md)), static typing, core types, arrays, optional/generic/overloaded arguments, intersections, type aliases & self tail calls ([bip008_static-typing.md](bip008_static-typing.md), [bip011_core-types.md](bip011_core-types.md), [bip020_array-types.md](bip020_array-types.md), [bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md), [bip022_intersection-types.md](bip022_intersection-types.md), [bip023_type-aliases.md](bip023_type-aliases.md), [bip024_tail-calls.md](bip024_tail-calls.md)), exception handling ([bip028_exception-handling.md](bip028_exception-handling.md)), `.batest.md` v2 differential & IR/WAT golden harness ([bip009_test-coverage.md](bip009_test-coverage.md), [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)), decoupled `HIR`, Nanopass optimizer, `ScalarReplacePass` & `RM012` compiler modularity ([bip014_optimization-passes.md](bip014_optimization-passes.md) `BIP014-I0`–`I2`, `BIP014-I4`, [bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md)), and multi-target `babblec -target` CLI design ([bip018_tracking-java-improvements.md](bip018_tracking-java-improvements.md)) |
-| **Scope** | Whole-program ahead-of-time compilation of Babble from target-neutral structured `HIR` to **WebAssembly 3.0** (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, and tail calls); target-neutralizing `HIR` and defining Babble's portable core & I/O boundary; WasmGC lowering of all scalars, strings, arrays, core collections, closures, classes, strictly immutable `record`s, interfaces, intersections, unions, self tail calls, and full `BIP028` `try`/`catch`/`finally`/`throw`; browser/Node.js (`wasm-js`) and pure-compute (`wasm-bare`) target profiles (deferring `wasm-wasi` until WasmGC Component Model Canonical ABI stabilizes); zero-dependency pure-Java `.wasm`/`.wat` emission & `WasmVerifier`; persistent Node.js (V8) differential testing against `Interpreter` and JVM `compile` via `.batest.md` (`wat` goldens included); and a 6-phase rollout (`BIP025-P0`–`P5`) culminating in byte-identical `examples/raytracer-argon/scene.ppm` rendered in WebAssembly |
+| **Scope** | Whole-program ahead-of-time compilation of Babble from target-neutral structured `HIR` to **WebAssembly 3.0** (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, and tail calls); target-neutralizing `HIR` and defining Babble's portable core & I/O boundary; WasmGC lowering of all scalars, strings, arrays, core collections, closures, classes, strictly immutable `record`s, interfaces, intersections, unions, self tail calls, and full `BIP028` `try`/`catch`/`finally`/`throw`; browser/Node.js (`wasm-js`) and pure-compute (`wasm-bare`) target profiles (deferring `wasm-wasi` until WasmGC Component Model Canonical ABI stabilizes); zero-dependency pure-Java `.wasm`/`.wat` emission & `WasmVerifier`; persistent Node.js (V8) differential testing against `Interpreter` and JVM `compile` via `.batest.md` (`wat` goldens included); and a 6-phase rollout (`BIP025-I0`–`I5`) culminating in byte-identical `examples/raytracer-argon/scene.ppm` rendered in WebAssembly |
 
 ---
 
@@ -28,7 +28,7 @@ Adding a **WebAssembly 3.0 backend** directly beneath Babble's `HIR` optimizer a
 * **Compiler engineering & architectural hygiene:** Targeting a second, genuinely different VM (structured control flow, nominal GC structs/arrays with single inheritance, invariant GC arrays, no reflection or `invokedynamic`, explicit host imports) stress-tests Babble's `HIR` and forces a crisp boundary between *Babble the language* and *Babble's JVM host*.
 * **Fast-starting, sandboxed AOT artifacts:** Sub-millisecond cold start and compact `.wasm` binaries (tens of KB rather than a JRE + fat jar) for browser, Node.js, and pure-compute embedded/plugin workloads (`-target wasm-js` and `-target wasm-bare`).
 
-This proposal lays out the ecosystem baseline (§2), compares four compilation strategies (§3), audits every JVM leak in `HIR` and the front end (§4), specifies the exact lowering of every Babble construct to WebAssembly 3.0 (§5), defines the host interop and CLI surface (§6), designs the verification and `.batest.md` differential test harness (§7), records the thirteen settled design decisions (`BIP025-D1`–`D13`, §8), and outlines the six-phase implementation plan (`BIP025-P0`–`P5`, §9).
+This proposal lays out the ecosystem baseline (§2), compares four compilation strategies (§3), audits every JVM leak in `HIR` and the front end (§4), specifies the exact lowering of every Babble construct to WebAssembly 3.0 (§5), defines the host interop and CLI surface (§6), designs the verification and `.batest.md` differential test harness (§7), records the thirteen settled design decisions (`BIP025-D1`–`D13`, §8), and outlines the six-phase implementation plan (`BIP025-I0`–`I5`, §9).
 
 ---
 
@@ -62,7 +62,7 @@ WebAssembly 3.0 (`[WASM30]`, W3C Release 3.0, September 2025) standardized the e
 
 **WASI 0.3.0** (`[WASI03]`, launched June 2026, ratified October 2026) sits on the **WebAssembly Component Model** (WIT interfaces + native async). However, **WasmGC integration into the Component Model Canonical ABI** is still at pre-proposal stage (`[CM-GC]`, `WebAssembly/component-model#525`): Component Model interfaces currently pass strings, lists, and records across component boundaries via **linear memory** (`realloc` + pointer/length), not directly as WasmGC `struct`/`array` references.
 
-Rather than maintaining throwaway `wasi_snapshot_preview1` linear-memory staging boilerplate during backend bring-up, **`BIP025-D8` focuses `BIP025-P0`–`P5` exclusively on `-target wasm-bare` and `-target wasm-js`** (which covers browsers, Node.js CLI/benchmarks, and zero-import compute modules with zero linear-memory glue), deferring `-target wasm-wasi` and WASI Component Model packaging until `[CM-GC]` stabilizes.
+Rather than maintaining throwaway `wasi_snapshot_preview1` linear-memory staging boilerplate during backend bring-up, **`BIP025-D8` focuses `BIP025-I0`–`I5` exclusively on `-target wasm-bare` and `-target wasm-js`** (which covers browsers, Node.js CLI/benchmarks, and zero-import compute modules with zero linear-memory glue), deferring `-target wasm-wasi` and WASI Component Model packaging until `[CM-GC]` stabilizes.
 
 ### 2.4 Lessons from Prior Art in GC-Language → WasmGC Compilers
 
@@ -99,13 +99,13 @@ Why this fits Babble like a glove:
 
 ---
 
-## 4. Target-Neutralizing the Front End & `HIR` (`BIP025-P0`, `BIP025-D3`, `BIP025-D12`)
+## 4. Target-Neutralizing the Front End & `HIR` (`BIP025-I0`, `BIP025-D3`, `BIP025-D12`)
 
 A direct audit of `src/main/java/org/babblelang/ir/hir/` and `src/main/java/org/babblelang/analysis/` reveals exactly where JVM assumptions currently live. Most of the front end is already target-neutral (especially after `BIP027-I1`–`I6` and `BIP028` kept `HirExpr.Try`/`Throw`/`CoreExceptionRef` target-neutral); the remaining JVM leaks are localized and small:
 
 ### 4.1 Codebase Audit of Current JVM Coupling
 
-| File / Subsystem | Current JVM-Specific Field or Behavior | Target-Neutral Refactoring (`BIP025-P0`, `BIP025-D3`) |
+| File / Subsystem | Current JVM-Specific Field or Behavior | Target-Neutral Refactoring (`BIP025-I0`, `BIP025-D3`) |
 |---|---|---|
 | [`HirModule.java`](../../src/main/java/org/babblelang/ir/hir/HirModule.java) | `className`, `allInterfaceJvmNames`, `allClassJvmNames`, `ownInterfaceJvmNames`, `ownClassJvmNames` | Replace `className` with target-neutral `moduleId` / `symbolPrefix`; move JVM internal name maps into an optional `JvmLoweringMetadata` record (or derive them inside `HirEmitter` from `TypeHierarchyInfo` + `moduleId`). |
 | [`HirClass.java`](../../src/main/java/org/babblelang/ir/hir/HirClass.java) & [`HirInterface.java`](../../src/main/java/org/babblelang/ir/hir/HirInterface.java) | `jvmName`, `implementedJvmInterfaces`, `javaInterfaces`, `extendedJvmInterfaces`, `ClassShape` | Key classes/interfaces by their stable Babble `typeId` (`lib/vec3.ba#Vec3`, already used by `BIP008` `T17` and `typeHierarchies`). Keep `javaInterfaces` empty on non-JVM targets (rejected at type-check time). |
@@ -449,12 +449,12 @@ Babble's static effect and ownership system gives the Wasm backend optimization 
 
 ### 6.1 Target Profiles (`BIP025-D8`)
 
-Extending `BIP018`'s `-target` flag on `babblec`, `BIP025` implements two WebAssembly target profiles in `BIP025-P0`–`P5` and defers `-target wasm-wasi` until WasmGC Component Model Canonical ABI (`[CM-GC]`) stabilizes (`BIP025-D8`):
+Extending `BIP018`'s `-target` flag on `babblec`, `BIP025` implements two WebAssembly target profiles in `BIP025-I0`–`I5` and defers `-target wasm-wasi` until WasmGC Component Model Canonical ABI (`[CM-GC]`) stabilizes (`BIP025-D8`):
 
 | CLI Target | Status | Host Environment | Standard Host Imports | Emitted Artifacts | Typical Use Case |
 |---|---|---|---|---|---|
-| `-target wasm-bare` | **`BIP025-P1`** | Any Wasm 3.0 engine (embedded, plugin, sandbox, Node.js) | **None** (zero imports; `print`/`println`/`STDOUT`/`args` disallowed unless explicitly declared via host `axiom`) | `app.wasm` | Pure-compute libraries, deterministic plugins, embedded evaluators. |
-| `-target wasm-js` | **`BIP025-P1` (minimal), `BIP025-P4` (full)** | Browsers (Chrome/Firefox/Safari) & Node.js (V8) | `babble:env` (`write_stdout`, `write_stderr`, `args`, `now_ms`), `wasm:js-string` boundary helpers + user `axiom wasm.*` JS host imports | `app.wasm` + `app.mjs` (thin ~2–3 KB ES module loader) | Browser playgrounds, interactive `<canvas>` apps (Argon in the browser), Node.js CLI/benchmarks & CI test execution. |
+| `-target wasm-bare` | **`BIP025-I1`** | Any Wasm 3.0 engine (embedded, plugin, sandbox, Node.js) | **None** (zero imports; `print`/`println`/`STDOUT`/`args` disallowed unless explicitly declared via host `axiom`) | `app.wasm` | Pure-compute libraries, deterministic plugins, embedded evaluators. |
+| `-target wasm-js` | **`BIP025-I1` (minimal), `BIP025-I4` (full)** | Browsers (Chrome/Firefox/Safari) & Node.js (V8) | `babble:env` (`write_stdout`, `write_stderr`, `args`, `now_ms`), `wasm:js-string` boundary helpers + user `axiom wasm.*` JS host imports | `app.wasm` + `app.mjs` (thin ~2–3 KB ES module loader) | Browser playgrounds, interactive `<canvas>` apps (Argon in the browser), Node.js CLI/benchmarks & CI test execution. |
 | `-target wasm-wasi` | **Deferred (`BIP025-D8`)** | Wasmtime 47+, WASI runtimes | WASI Component Model (awaiting `[CM-GC]` WasmGC Canonical ABI) | `app.wasm` (component) | Standalone WASI CLI/server components once `[CM-GC]` standardizes. |
 
 ### 6.2 Exporting Babble Functions to the Host
@@ -520,7 +520,7 @@ Babble's engineering discipline rests on **continuous differential verification*
    * **Zero extra `pom.xml` dependencies:** No JVM Wasm runtime dependency (such as Endive) is added to Maven.
    * **CI & local ergonomics:** Mandatory in GitHub Actions CI (where Node.js 22+ is preinstalled); gracefully skipped locally if `node` is not on `PATH` (while `WasmVerifier` and `WatPrinter` unit tests still run unconditionally on plain JDK 21).
    * **4-mode `.batest.md` parity & `wat` goldens (`BIP029`):** Any `.batest.md` case that does not reference `java.*`/`javax.*` (identified automatically by `WasmPortabilityChecker`) runs in **4 modes** — `interpret`, `compile -O1`, `compile -O0`, and **`wasm`** — asserting identical `stdout`, `stderr`, return values, and error messages, alongside `BIP029`'s reserved `wat` golden/`check` blocks.
-3. **Browser Cross-Engine Verification (`BIP025-P4`):**
+3. **Browser Cross-Engine Verification (`BIP025-I4`):**
    The interactive browser `<canvas>` demo verifies `-target wasm-js` across Chrome (V8), Firefox (SpiderMonkey), and Safari (WebKit), ensuring we never depend on V8-only quirks.
 4. **Flagship End-to-End Acceptance Milestone — `examples/raytracer-argon`:**
    ```bash
@@ -541,12 +541,12 @@ All ten original open questions (`BIP025-Q1`–`Q10`) plus three post-draft arch
 |---|---|---|
 | **`BIP025-D1`** | `BIP025-Q1` | **WebAssembly 3.0 exclusively:** Target Wasm 3.0 (`WasmGC` + typed function refs + `try_table`/`exnref` + tail calls) with no Wasm 2.0 linear-memory GC fallback. |
 | **`BIP025-D2`** | `BIP025-Q2` | **Pure-Java `WasmWriter`:** Emit `.wasm` directly from `HIR` via a zero-dependency pure-Java `WasmWriter`, paired with `WatPrinter` (for `-Dbabble.dumpWasm=wat` and `BIP029` `wat` blocks) and an optional `-wasm-opt` hook when Binaryen is on `PATH`. |
-| **`BIP025-D3`** | `BIP025-Q3` | **Clean `HIR` target neutralization & structured emission:** Decouple JVM metadata (`jvmName`, `Class<?>`, `Java*Target`) out of `HIR` in `BIP025-P0` (sealed `HirArrayElementType`, `CoreMethodCall`, target-neutral IDs) and emit Wasm directly from structured `HIR` (no Relooper/Stackifier; no dependency on lowering through CFG `MIR`). |
+| **`BIP025-D3`** | `BIP025-Q3` | **Clean `HIR` target neutralization & structured emission:** Decouple JVM metadata (`jvmName`, `Class<?>`, `Java*Target`) out of `HIR` in `BIP025-I0` (sealed `HirArrayElementType`, `CoreMethodCall`, target-neutral IDs) and emit Wasm directly from structured `HIR` (no Relooper/Stackifier; no dependency on lowering through CFG `MIR`). |
 | **`BIP025-D4`** | `BIP025-Q4` | **Uniform `(array i16)` `$String`:** Represent `string` uniformly as a `sub final $Any` WasmGC struct wrapping immutable UTF-16 `(array i16)` (+ cached Java-compatible hash) across all Wasm targets, bridging to JS strings via `wasm:js-string` `fromCharCodeArray`/`intoCharCodeArray` at the `wasm-js` boundary. |
 | **`BIP025-D5`** | `BIP025-Q5` | **Distinct `$Box*` structs first:** Lower boxed primitives (`any`/`T?`/unions/generics) to `sub final $Any` box structs (`$BoxByte`..`$BoxDouble`) with global singletons for `bool` and small cached `byte`/`int`/`char` values; defer bit-tagged `i31ref` for sub-32-bit primitives as an optional later optimization. |
 | **`BIP025-D6`** | `BIP025-Q6` | **Babble-written portable core prelude:** Implement portable core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`) and higher-level `string` ops in Babble prelude modules compiled via `HIR` and tree-shaken by `WasmLinker`, with strict-subset contracts in `src/main/java/org/babblelang/axioms/portable/` and only tiny low-level intrinsics emitted in Java. |
 | **`BIP025-D7`** | `BIP025-Q7` | **Closed-world interface bitsets & itables:** Embed an `i64` (or word-array for $K > 64$) interface bitset on `$VTable` for $O(1)$ `is` and single-mask `BIP022` `A & B`, paired with closed-world typed itables (direct-indexed for small $K$, row-displacement compressed for large $K$) and single-implementer devirtualization. |
-| **`BIP025-D8`** | `BIP025-Q8` | **Focus on `wasm-bare` & `wasm-js`, defer `wasm-wasi`:** Ship `-target wasm-bare` and `-target wasm-js` across `BIP025-P0`–`P5` (pulling minimal `wasm-js` into `BIP025-P1`), and defer `-target wasm-wasi` and WASI Component Model packaging until WasmGC Component Model Canonical ABI (`[CM-GC]`) stabilizes. |
+| **`BIP025-D8`** | `BIP025-Q8` | **Focus on `wasm-bare` & `wasm-js`, defer `wasm-wasi`:** Ship `-target wasm-bare` and `-target wasm-js` across `BIP025-I0`–`I5` (pulling minimal `wasm-js` into `BIP025-I1`), and defer `-target wasm-wasi` and WASI Component Model packaging until WasmGC Component Model Canonical ABI (`[CM-GC]`) stabilizes. |
 | **`BIP025-D9`** | `BIP025-Q9` | **Zero-grammar-change host imports via `axiom`:** Reuse `BIP019`/`BIP030` `axiom` syntax (`axiom wasm.<mod>.<name>: fn ...`) with zero changes to `Babble.g4` to declare Wasm imports `"<mod>"` `"<name>"` and expose `wasm.<mod>.<name>` on Wasm targets with full `BIP016`/`BIP030` effect and nullability enforcement, paired with curated `std/` modules on top. |
 | **`BIP025-D10`** | `BIP025-Q10` | **Zero-dep `WasmVerifier` + persistent Node.js (V8) worker:** Validate binaries in-JVM with pure-Java `WasmVerifier` and execute `wasm-bare` and `wasm-js` (`app.mjs`, `wasm:js-string`, `exnref`, Argon, 4-mode `.batest.md`) via a persistent Node.js (V8) JUnit worker — zero extra `pom.xml` dependencies, mandatory in CI, gracefully skipped locally if `node` is absent. |
 | **`BIP025-D11`** | *(post-`BIP014-I4`)* | **Strictly immutable WasmGC `record` fields:** Skip `FbipReusePass` `RecordReuse` (`BIP014-I4` `O10`) on Wasm targets so every `record` struct field remains non-`mut` (enabling TurboFan/Cranelift GVN and avoiding GC write barriers), relying on `ScalarReplacePass` (`O9`) to eliminate short-lived `record` allocations at `HIR`. |
@@ -555,11 +555,11 @@ All ten original open questions (`BIP025-Q1`–`Q10`) plus three post-draft arch
 
 ---
 
-## 9. Phased Implementation Plan (`BIP025-P0`–`P5`)
+## 9. Phased Implementation Plan (`BIP025-I0`–`I5`)
 
-Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B package` (`interpret`, `compile -O1`, `compile -O0`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `-format -check`), and adds incremental Wasm test coverage. In the overall roadmap, `BIP025-P0` remains sequenced after `BIP014-I3` (SSA `MIR`) settles the `HIR`/`MIR` boundary so `HIR` target neutralization happens once cleanly.
+Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B package` (`interpret`, `compile -O1`, `compile -O0`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `-format -check`), and adds incremental Wasm test coverage. In the overall roadmap, `BIP025-I0` was sequenced after `BIP014-I3` (SSA `MIR`) settled the `HIR`/`MIR` boundary so `HIR` target neutralization happened once cleanly.
 
-### `BIP025-P0` — Target-Neutral `HIR`, Target Profiles, `WasmWriter` & `BIP029` `wat` Plumbing
+### `BIP025-I0` — Target-Neutral `HIR`, Target Profiles, `WasmWriter` & `BIP029` `wat` Plumbing
 * **Deliverables:**
   * Introduce `CompilationTarget` (`JVM`, `WASM_JS`, `WASM_BARE`; unified with `BIP018-P1`'s `TargetProfile`, whichever lands first) in `org.babblelang.compiler` and `org.babblelang.analysis`.
   * Refactor JVM-specific metadata out of `HirModule`, `HirClass`, `HirInterface`, `HirFunction`, and `HirExpr` (`ArrayCreate`/`ArrayOp` → `HirArrayElementType`, `CoreMethodCall` for portable `string`/collection/`exception` methods, `classTypeId` replacing `externalClassJvmName`/`classJvmName`, `BIP025-D3`) with **zero behavioral change** on the JVM backend.
@@ -567,14 +567,14 @@ Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B p
   * Implement `org.babblelang.wasm`: pure-Java Wasm 3.0 binary encoder (`WasmModule`, `WasmType`, `WasmFunc`, `WasmCodeBuilder`, `WasmWriter` with LEB128 + WasmGC `0xFB` / `try_table` / tail-call opcodes), `WatPrinter` (`-Dbabble.dumpWasm=wat`), `WasmVerifier` (`babble.verify=true`), and `BIP029` `.batest.md` `wat` block plumbing.
 * **Exit criteria:** Full JVM `mvn -B package` green with zero diffs; unit tests emitting and validating hand-constructed WasmGC/exception/tail-call `.wasm` modules via `WasmVerifier` and Node.js (V8).
 
-### `BIP025-P1` — Core Language MVP (`wasm-bare` & Minimal `wasm-js`, `BIP028` Exceptions, Tail Calls)
+### `BIP025-I1` — Core Language MVP (`wasm-bare` & Minimal `wasm-js`, `BIP028` Exceptions, Tail Calls)
 * **Deliverables:**
   * `WasmEmitter` lowering all 8 primitives (`byte`..`char`), numeric promotions/widening, exact `Operators` (`Double.compare` parity, `/` float division, wrap-around, `Truth`), `If`, `While`, `Break` (with value), `Continue`, `Return`, local/global variables, direct calls, `BIP024` `SelfTailCall` (`return_call`), `SelfRecurseCall`, first-class closures & capture cells, `BIP021` optional/named/overloaded arguments, full `BIP028` `try`/`catch`/`finally`/`throw` + `$BabbleException` (`BIP025-D13`), and basic `print`/`println`/`assert` host bindings.
   * Wire `-target wasm-bare` and minimal `-target wasm-js` (`app.wasm` + minimal `app.mjs` for stdout/stderr/exceptions/`_start`) into `Babblec` and `Main` (`BIP025-D8`).
   * Add persistent Node.js (V8) JUnit worker (`BIP025-D10`) and `WasmTestCase` executing core `.batest.md` files (arithmetic, comparisons, control flow, functions, closures, tail recursion, optional/named/overloaded args, `try`/`catch`/`finally`/`throw`) against `Interpreter` and JVM `compile`.
 * **Exit criteria:** Core scalar/control-flow/function/closure/exception `.batest.md` suites pass with 0 divergences between `interpret`, `compile -O1`, `compile -O0`, and `wasm`.
 
-### `BIP025-P2` — Object Model, Immutable `record`s, Interfaces, Intersections, Arrays & Multi-Module Linking
+### `BIP025-I2` — Object Model, Immutable `record`s, Interfaces, Intersections, Arrays & Multi-Module Linking
 * **Deliverables:**
   * Lower `class`, strictly immutable `record`s (skipping `FbipReusePass` `RecordReuse` per `BIP025-D11`, with generated `equals`/`hashCode`/`toString`), `object` singletons, static blocks, `this`, `super(I).m()`, `$defined` bitmasks, and operator methods.
   * Lower Babble `interface`s (default methods, closed-world interface bitsets for `is` and `BIP022` `A & B`, closed-world itables for `InterfaceCall`, single-implementer devirtualization, `BIP025-D7`).
@@ -582,7 +582,7 @@ Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B p
   * Implement `WasmLinker` whole-program multi-module compilation (`BIP005` static imports, cyclic-import `$mod_state` guards, unboxed export globals, dead-code tree shaking, reproducible binary output).
 * **Exit criteria:** Object model, `record`, interface, intersection, array, and multi-module `.batest.md` suites pass differentially in Wasm.
 
-### `BIP025-P3` — Strings, Portable Core Collections, Portable `STDOUT` & **Argon Ray Tracer Milestone**
+### `BIP025-I3` — Strings, Portable Core Collections, Portable `STDOUT` & **Argon Ray Tracer Milestone**
 * **Deliverables:**
   * Complete `$String` (`(array i16)` + cached hash, `BIP025-D4`) and portable `string`/`exception` API (declared in `src/main/java/org/babblelang/axioms/portable/`).
   * Ship portable `Appendable` (`STDOUT`/`STDERR`/`to:`) and target-neutral `builtins.ba` view (`BIP025-D12`), plus Babble-written Wasm prelude (`BIP025-D6`) for `list`, `set`, `sortedset`, `map`, `sortedmap`, `entry`, and `for`-loop iteration (`BIP013` across `array`, `list`, and custom Babble iterables/iterators).
@@ -590,7 +590,7 @@ Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B p
   * Add Wasm benchmark entries to `Benchmarks` comparing `interpret`, JVM `-O1`, and Node.js (V8).
 * **Exit criteria:** Byte-identical `examples/raytracer-argon/scene.ppm` in WebAssembly with zero edits to Argon; all portable collection/iterator/string `.batest.md` cases green.
 
-### `BIP025-P4` — Full Browser Interop (`wasm-js`), Host Axioms, Debugging & Interactive Demo
+### `BIP025-I4` — Full Browser Interop (`wasm-js`), Host Axioms, Debugging & Interactive Demo
 * **Deliverables:**
   * Complete `-target wasm-js` `app.mjs` glue (`wasm:js-string` `fromCharCodeArray`/`intoCharCodeArray`, `TypedArray` bridges for exported `array of <prim>`, stdout/stderr callbacks, `args`, and exception formatting).
   * Implement `axiom wasm.<mod>.<name>: fn ...` host-import bindings (`BIP025-D9`) with `BIP016`/`BIP030` effect and nullability enforcement (plus hardware Wasm math intrinsics).
@@ -598,14 +598,14 @@ Each phase is independently shippable, preserves 100% green 3-mode JVM `mvn -B p
   * Ship an example browser page rendering `examples/raytracer-argon` progressively onto an HTML `<canvas>` using pure Babble + 2 Canvas host axioms.
 * **Exit criteria:** Full `wasm-js` and host-axiom test suite green in Node.js (V8); browser `<canvas>` demo renders cleanly in Chrome, Firefox, and Safari.
 
-### `BIP025-P5` — Wasm Optimizations, `wat` Goldens & Full Portable `.batest.md` Parity
+### `BIP025-I5` — Wasm Optimizations, `wat` Goldens & Full Portable `.batest.md` Parity
 * **Deliverables:**
   * Exploit `BIP007`/`BIP016`/`BIP028` (`frozen`, `nothrow`, `finallyNothrow`, `unique`) for immutable WasmGC fields, check elision, and `BIP014-I4` `ScalarReplacePass` synergy; add optional `-wasm-opt` hook when Binaryen is installed.
   * Add canonical `wat` golden/`check` assertions in `src/test/batest/compiler/*.batest.md` (`BIP029`) verifying immutable `record` fields, single-mask `A & B` checks, `return_call` tail calls, and `finallyNothrow` elision.
   * Integrate 4-mode portable `.batest.md` execution into GitHub Actions CI (`interpret`, `compile -O1`, `compile -O0`, `wasm` on Node.js V8).
 * **Exit criteria:** 100% of portable `.batest.md` cases pass identically across all four execution modes; measurable speedup on `argon.wasm` from immutable fields + `ScalarReplacePass`.
 
-### Deferred / Future Work (Post-`BIP025-P5`)
+### Deferred / Future Work (Post-`BIP025-I5`)
 * **`-target wasm-wasi` & WASI Component Model (`BIP025-D8`):** Add standalone WASI CLI/server component output (with WIT export generation) once the WebAssembly Component Model WasmGC Canonical ABI (`[CM-GC]`) stabilizes, avoiding throwaway `wasi_snapshot_preview1` linear-memory staging.
 * **Tagged `i31ref` boxing (`BIP025-D5`):** Optional internal optimization bit-packing boxed `bool`/`byte`/`short`/`char` into `i31ref` if boxing ever shows up in profiles.
 

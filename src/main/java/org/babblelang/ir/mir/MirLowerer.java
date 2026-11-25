@@ -68,6 +68,12 @@ public final class MirLowerer {
     public static List<HirExpr> opaqueChildExprs(HirExpr expr) {
         return switch (expr) {
             case HirExpr.CoreCollectionCall c -> extractCallArgs(c.args());
+            case HirExpr.CoreMethodCall c -> {
+                List<HirExpr> out = new ArrayList<>(1 + c.args().size());
+                out.add(c.receiver());
+                out.addAll(c.args());
+                yield out;
+            }
             case HirExpr.SuperCall c -> extractCallArgs(c.args());
             case HirExpr.ArrayCreate c -> c.args();
             case HirExpr.ArrayOp op -> {
@@ -504,6 +510,10 @@ public final class MirLowerer {
                     scanStmts(c.args(), visibleVars, tryOuterVars);
                 }
                 case HirExpr.JavaMethodCall c -> {
+                    scanExpr(c.receiver(), visibleVars, tryOuterVars);
+                    scanStmts(c.args(), visibleVars, tryOuterVars);
+                }
+                case HirExpr.CoreMethodCall c -> {
                     scanExpr(c.receiver(), visibleVars, tryOuterVars);
                     scanStmts(c.args(), visibleVars, tryOuterVars);
                 }

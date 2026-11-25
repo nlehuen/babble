@@ -7,7 +7,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Pure-Java structural and type-index validator for {@link WasmModule} ({@code BIP025-P0},
+ * Pure-Java structural and type-index validator for {@link WasmModule} ({@code BIP025-I0},
  * {@code BIP025-D10}, enabled under {@code -Dbabble.verify=true}).
  *
  * <p>Validates WebAssembly 3.0 invariants before binary emission: recursive type group integrity,

@@ -89,7 +89,7 @@ public final class Babblec {
 
     /**
      * Compiles a Babble program ahead of time to a WebAssembly 3.0 {@code .wasm} module
-     * (plus sibling {@code .mjs} loader on {@code wasm-js}) ({@code BIP025-P1}).
+     * (plus sibling {@code .mjs} loader on {@code wasm-js}) ({@code BIP025-I1}).
      *
      * @return the number of linked modules compiled into the output binary
      */

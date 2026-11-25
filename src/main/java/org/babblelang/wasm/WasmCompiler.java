@@ -14,7 +14,7 @@ import java.util.List;
  * portability checking ({@link WasmPortabilityChecker}), closed-world linking
  * ({@link WasmProgramLinker}), structural verification ({@link WasmVerifier}),
  * WAT rendering ({@link WatPrinter}), binary encoding ({@link WasmWriter}),
- * and JS ES module glue emission ({@link WasmJsGlueGen}) ({@code BIP025-P1}).
+ * and JS ES module glue emission ({@link WasmJsGlueGen}) ({@code BIP025-I1}).
  */
 public final class WasmCompiler {
     public record Options(

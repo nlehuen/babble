@@ -5,7 +5,7 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * LEB128 encoding helpers for WebAssembly 3.0 binary emission ({@code BIP025-P0}).
+ * LEB128 encoding helpers for WebAssembly 3.0 binary emission ({@code BIP025-I0}).
  */
 final class WasmLeb128 {
     private WasmLeb128() {

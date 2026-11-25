@@ -12,7 +12,7 @@ import java.util.List;
  * Emits {@code BIP013} {@code for} loops, portable core collection constructors &amp; methods
  * ({@code list}, {@code set}, {@code sortedset}, {@code map}, {@code sortedmap}, {@code entry}),
  * portable {@code string} methods, portable {@code java.lang.Math} / constants, and portable
- * {@code Appendable} calls ({@code BIP025-P3}, {@code BIP025-D4}, {@code BIP025-D6}, {@code BIP025-D12}).
+ * {@code Appendable} calls ({@code BIP025-I3}, {@code BIP025-D4}, {@code BIP025-D6}, {@code BIP025-D12}).
  */
 public final class WasmCoreEmitter {
     private final WasmProgramLinker linker;

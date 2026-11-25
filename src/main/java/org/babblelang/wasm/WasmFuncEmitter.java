@@ -16,7 +16,7 @@ import java.util.Map;
 
 /**
  * Direct structured HIR-to-Wasm 3.0 emitter for function bodies and module initializers
- * ({@code BIP025-P1}, {@code BIP025-D3}, {@code BIP025-D13}).
+ * ({@code BIP025-I1}, {@code BIP025-D3}, {@code BIP025-D13}).
  */
 public final class WasmFuncEmitter {
     /** Per-function emission state (locals, control stack, current stack PrimitiveKind). */

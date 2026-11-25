@@ -15,7 +15,7 @@ import java.util.List;
  * {@code InterfaceExpr}, {@code ThisFieldGet}/{@code Assign}, {@code RecordNew},
  * {@code DirectThisMethodCall}, {@code InterfaceCall} (with single-implementer devirtualization),
  * {@code SuperCall}, {@code ModuleExportGet}, {@code DynamicSelect}/{@code FieldAssign}, and
- * {@code SafeCall} ({@code BIP025-P2}, {@code BIP025-D7}, {@code BIP025-D11}).
+ * {@code SafeCall} ({@code BIP025-I2}, {@code BIP025-D7}, {@code BIP025-D11}).
  */
 public final class WasmMemberEmitter {
     private final WasmProgramLinker linker;

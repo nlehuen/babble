@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 /**
- * Unit tests for {@code BIP025-P0} pure-Java WebAssembly 3.0 binary emission ({@link WasmWriter}),
+ * Unit tests for {@code BIP025-I0} pure-Java WebAssembly 3.0 binary emission ({@link WasmWriter}),
  * text printing ({@link WatPrinter}), structural verification ({@link WasmVerifier}), and real
  * Node.js (V8) execution of WasmGC structs/arrays, typed function refs, tail calls, and
  * {@code try_table}/{@code exnref} exceptions.
