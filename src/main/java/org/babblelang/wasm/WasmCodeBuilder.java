@@ -54,6 +54,10 @@ public final class WasmCodeBuilder {
         return add(new WasmInstr.TryTable(WasmInstr.BlockType.of(result), catches));
     }
 
+    public WasmCodeBuilder tryTableType(int funcTypeIdx, List<WasmInstr.CatchClause> catches) {
+        return add(new WasmInstr.TryTable(new WasmInstr.BlockType.TypeIdx(funcTypeIdx), catches));
+    }
+
     public WasmCodeBuilder tryTable(List<WasmInstr.CatchClause> catches) {
         return add(new WasmInstr.TryTable(WasmInstr.BlockType.EMPTY, catches));
     }

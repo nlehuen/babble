@@ -50,6 +50,24 @@ public final class NodeWasmRunner {
                     resultJson: res === undefined ? 'null' : JSON.stringify(res),
                   };
                 }
+                if (req.babbleBare) {
+                  const wasmMod = await WebAssembly.compile(bytes);
+                  const instance = await WebAssembly.instantiate(wasmMod, {});
+                  const status = instance.exports._babble_run();
+                  const readStr = (lenFn, charFn) => {
+                    const n = lenFn();
+                    if (n < 0) return null;
+                    let s = '';
+                    for (let i = 0; i < n; i++) s += String.fromCharCode(charFn(i));
+                    return s;
+                  };
+                  if (status !== 0) {
+                    const err = readStr(instance.exports._babble_error_len, instance.exports._babble_error_char);
+                    return { ok: false, stdout: '', stderr: '', error: err || 'Uncaught Babble exception', resultJson: 'null' };
+                  }
+                  const res = readStr(instance.exports._babble_result_len, instance.exports._babble_result_char);
+                  return { ok: true, stdout: '', stderr: '', error: null, resultJson: JSON.stringify(res) };
+                }
                 const compileOpts = req.jsStringBuiltins ? { builtins: ['js-string'] } : undefined;
                 const wasmMod = compileOpts
                   ? await WebAssembly.compile(bytes, compileOpts)
@@ -84,6 +102,7 @@ public final class NodeWasmRunner {
                 };
               } catch (err) {
                 const msg = (err && err.babbleMessage) ? err.babbleMessage
+                  : (err && err.stack) ? err.stack
                   : (err && err.message) ? err.message : String(err);
                 return {
                   ok: false,
@@ -161,6 +180,12 @@ public final class NodeWasmRunner {
         }
         json.append("]}");
         return send(json.toString());
+    }
+
+    /** Executes a Babble-compiled {@code wasm-bare} module (zero imports) via {@code _babble_run}. */
+    public static RunOutcome runBabbleBare(byte[] wasmBytes) {
+        String json = "{\"wasmBase64\":\"" + Base64.getEncoder().encodeToString(wasmBytes) + "\",\"babbleBare\":true}";
+        return send(json);
     }
 
     public static RunOutcome runJs(byte[] wasmBytes, String mjsSource, List<String> args, String hostEvalJs) {
