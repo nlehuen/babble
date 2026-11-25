@@ -9,7 +9,10 @@ import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 import org.babblelang.ir.hir.HirVar;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -86,6 +89,12 @@ public final class WasmProgramLinker {
         public final int index;
         public final ModuleInput input;
         public final Map<String, Integer> topLevelGlobals = new LinkedHashMap<>();
+        public final Map<String, Integer> topLevelDefIndex = new LinkedHashMap<>();
+        public final Map<String, ModuleLinkInfo> immutableModuleImports = new LinkedHashMap<>();
+        public final Map<String, FuncInfo> immutableTopLevelFuncs = new LinkedHashMap<>();
+        public final Map<String, WasmObjectSystem.ClassInfo> immutableTopLevelClasses = new LinkedHashMap<>();
+        public final Map<Integer, Integer> funcOwnerTopLevelStmtIdx = new HashMap<>();
+        public final Map<Integer, Integer> classOwnerTopLevelStmtIdx = new HashMap<>();
         public final Map<Integer, FuncInfo> functions = new LinkedHashMap<>();
         public final Set<Integer> interfaceDefaultFuncIds = new HashSet<>();
         public final Map<Integer, Integer> interfaceDefaultOwnerIfaceId = new LinkedHashMap<>();
@@ -306,6 +315,7 @@ public final class WasmProgramLinker {
                 }
             }
         }
+        indexImmutableStaticBindings();
 
         // Phase 2: Emit all function/method bodies, constructors, vtable hooks, itables, and module inits
         WasmCallEmitter callEmitter = new WasmCallEmitter(this);
@@ -354,6 +364,297 @@ public final class WasmProgramLinker {
             for (HirExpr op : ov.operands()) {
                 markStaticFnExpr(info, op, ci, ii);
             }
+        }
+    }
+
+    /**
+     * Indexes immutable top-level module imports, functions, classes, and class static methods
+     * across the closed-world module DAG so {@link WasmCallEmitter} can emit direct typed Wasm
+     * {@code call} instructions instead of runtime {@code $ModuleVal}/{@code $ClassVal} lookups
+     * and {@code $generic} boxing arrays.
+     */
+    private void indexImmutableStaticBindings() {
+        Set<String> globallyAssignedMembers = new HashSet<>();
+        Map<Integer, Set<String>> moduleReassignedNames = new HashMap<>();
+        for (ModuleLinkInfo info : linkedModules) {
+            Set<String> reassigned = new HashSet<>();
+            walkModuleExprs(info.input.hir(), e -> {
+                if (e instanceof HirExpr.NameAssign na) {
+                    reassigned.add(na.name());
+                } else if (e instanceof HirExpr.DynamicFieldAssign dfa) {
+                    globallyAssignedMembers.add(dfa.memberName());
+                }
+            });
+            moduleReassignedNames.put(info.index, reassigned);
+        }
+
+        // Pass 1: record top-level statement ownership + direct immutable bindings within each module
+        for (ModuleLinkInfo info : linkedModules) {
+            HirModule hm = info.input.hir();
+            Set<String> reassigned = moduleReassignedNames.getOrDefault(info.index, Set.of());
+            Map<String, Integer> defCounts = new HashMap<>();
+            List<HirExpr> stmts = hm.topLevelStatements();
+            for (HirExpr stmt : stmts) {
+                if (stmt instanceof HirExpr.Def d && d.var() == null) {
+                    defCounts.merge(d.name(), 1, Integer::sum);
+                }
+            }
+            for (int i = 0; i < stmts.size(); i++) {
+                final int stmtIdx = i;
+                HirExpr stmt = stmts.get(i);
+                markOwnedByTopLevelStmt(info, stmt, stmtIdx);
+                if (!(stmt instanceof HirExpr.Def d) || d.var() != null || d.value() == null) {
+                    continue;
+                }
+                if (defCounts.getOrDefault(d.name(), 0) != 1 || reassigned.contains(d.name())) {
+                    continue;
+                }
+                info.topLevelDefIndex.put(d.name(), i);
+                HirExpr val = unwrapTypeApply(d.value());
+                ModuleLinkInfo imported = resolveStaticImportExpr(info, val);
+                if (imported != null && isAcyclicDependency(info, imported)) {
+                    info.immutableModuleImports.put(d.name(), imported);
+                } else if (val instanceof HirExpr.FunctionRef fr) {
+                    FuncInfo fi = info.functions.get(fr.functionId());
+                    if (fi != null && !fi.hasEnvParam && !fi.hasThisParam) {
+                        info.immutableTopLevelFuncs.put(d.name(), fi);
+                    }
+                } else if (val instanceof HirExpr.ClassExpr ce) {
+                    WasmObjectSystem.ClassInfo ci = objects.classByLocal(info.index, ce.classId());
+                    if (ci != null && !ci.hasCaptures) {
+                        info.immutableTopLevelClasses.put(d.name(), ci);
+                    }
+                }
+            }
+        }
+
+        // Pass 2: propagate immutable imported aliases (`def X = import("...").Y` or `def X = mod.Y`)
+        for (int pass = 0; pass < linkedModules.size(); pass++) {
+            boolean changed = false;
+            for (ModuleLinkInfo info : linkedModules) {
+                List<HirExpr> stmts = info.input.hir().topLevelStatements();
+                for (int i = 0; i < stmts.size(); i++) {
+                    if (!(stmts.get(i) instanceof HirExpr.Def d) || d.var() != null || d.value() == null) {
+                        continue;
+                    }
+                    if (!info.topLevelDefIndex.containsKey(d.name())) {
+                        continue;
+                    }
+                    HirExpr val = unwrapTypeApply(d.value());
+                    if (val instanceof HirExpr.ModuleExportGet meg) {
+                        ModuleLinkInfo targetMod = resolveStaticImportExpr(info, unwrapTypeApply(meg.receiver()));
+                        if (targetMod == null && meg.receiver() instanceof HirExpr.NameRead nr) {
+                            Integer modDefIdx = info.topLevelDefIndex.get(nr.name());
+                            if (modDefIdx != null && modDefIdx < i) {
+                                targetMod = info.immutableModuleImports.get(nr.name());
+                            }
+                        }
+                        if (targetMod != null && isAcyclicDependency(info, targetMod)) {
+                            String exportName = meg.target().name();
+                            if (!info.immutableTopLevelFuncs.containsKey(d.name())) {
+                                FuncInfo tfi = targetMod.immutableTopLevelFuncs.get(exportName);
+                                if (tfi != null) {
+                                    info.immutableTopLevelFuncs.put(d.name(), tfi);
+                                    changed = true;
+                                }
+                            }
+                            if (!info.immutableTopLevelClasses.containsKey(d.name())) {
+                                WasmObjectSystem.ClassInfo tci = targetMod.immutableTopLevelClasses.get(exportName);
+                                if (tci != null) {
+                                    info.immutableTopLevelClasses.put(d.name(), tci);
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if (!changed) break;
+        }
+
+        // Pass 3: index immutable static methods on classes (e.g. `HitRecord.create`)
+        for (ModuleLinkInfo info : linkedModules) {
+            for (HirClass hc : info.input.hir().classes().values()) {
+                if (hc.staticBlock() == null) continue;
+                WasmObjectSystem.ClassInfo ci = objects.classByLocal(info.index, hc.id());
+                if (ci == null) continue;
+                List<HirExpr> body = hc.staticBlock().body();
+                Map<String, Integer> stDefCounts = new HashMap<>();
+                Set<String> stReassigned = new HashSet<>();
+                for (HirExpr e : body) {
+                    if (e instanceof HirExpr.Def d && d.var() == null) {
+                        stDefCounts.merge(d.name(), 1, Integer::sum);
+                    }
+                    walkExpr(e, x -> {
+                        if (x instanceof HirExpr.NameAssign na) stReassigned.add(na.name());
+                    });
+                }
+                for (HirExpr e : body) {
+                    if (!(e instanceof HirExpr.Def d) || d.var() != null || d.value() == null) continue;
+                    if (stDefCounts.getOrDefault(d.name(), 0) != 1) continue;
+                    if (stReassigned.contains(d.name()) || globallyAssignedMembers.contains(d.name())) continue;
+                    HirExpr val = unwrapTypeApply(d.value());
+                    if (val instanceof HirExpr.FunctionRef fr) {
+                        FuncInfo fi = info.functions.get(fr.functionId());
+                        if (fi != null && !fi.hasEnvParam && !fi.hasThisParam) {
+                            ci.immutableStaticMethods.put(d.name(), fi);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private void markOwnedByTopLevelStmt(ModuleLinkInfo info, HirExpr root, int stmtIdx) {
+        HirModule hm = info.input.hir();
+        Deque<HirExpr> work = new ArrayDeque<>();
+        Set<Integer> seenFns = new HashSet<>();
+        Set<Integer> seenCls = new HashSet<>();
+        Set<Integer> seenIfaces = new HashSet<>();
+        if (root != null) work.add(root);
+        while (!work.isEmpty()) {
+            HirExpr cur = work.poll();
+            walkExpr(cur, e -> {
+                if (e instanceof HirExpr.FunctionRef fr && seenFns.add(fr.functionId())) {
+                    info.funcOwnerTopLevelStmtIdx.putIfAbsent(fr.functionId(), stmtIdx);
+                    HirFunction hf = hm.functions().get(fr.functionId());
+                    if (hf != null) {
+                        for (HirParam p : hf.params()) if (p.defaultValue() != null) work.add(p.defaultValue());
+                        work.addAll(hf.body());
+                    }
+                } else if (e instanceof HirExpr.ClassExpr ce && seenCls.add(ce.classId())) {
+                    info.classOwnerTopLevelStmtIdx.putIfAbsent(ce.classId(), stmtIdx);
+                    HirClass hc = hm.classes().get(ce.classId());
+                    if (hc != null) {
+                        for (HirParam p : hc.params()) if (p.defaultValue() != null) work.add(p.defaultValue());
+                        work.addAll(hc.body());
+                        if (hc.staticBlock() != null) work.addAll(hc.staticBlock().body());
+                    }
+                } else if (e instanceof HirExpr.InterfaceExpr ie && seenIfaces.add(ie.interfaceId())) {
+                    HirInterface hi = hm.interfaces().get(ie.interfaceId());
+                    if (hi != null) {
+                        work.addAll(hi.body());
+                        if (hi.staticBlock() != null) work.addAll(hi.staticBlock().body());
+                    }
+                }
+            });
+        }
+    }
+
+    private static HirExpr unwrapTypeApply(HirExpr e) {
+        while (e instanceof HirExpr.TypeApply ta) {
+            e = ta.inner();
+        }
+        return e;
+    }
+
+    private ModuleLinkInfo resolveStaticImportExpr(ModuleLinkInfo fromMod, HirExpr expr) {
+        if (expr instanceof HirExpr.DynamicCall dc
+                && dc.callee() instanceof HirExpr.NameRead nr
+                && ("import".equals(nr.name()) || "importe".equals(nr.name()))
+                && dc.args().size() == 1
+                && dc.args().get(0).value() instanceof HirExpr.Const cst
+                && cst.value() instanceof String path) {
+            String key = fromMod.input.staticImports().get(path);
+            return key != null ? moduleByKey(key) : null;
+        }
+        return null;
+    }
+
+    /** True iff {@code targetMod} does not transitively import {@code fromMod} (no init cycle). */
+    private boolean isAcyclicDependency(ModuleLinkInfo fromMod, ModuleLinkInfo targetMod) {
+        if (fromMod.index == targetMod.index) return false;
+        Set<Integer> visited = new HashSet<>();
+        Deque<ModuleLinkInfo> stack = new ArrayDeque<>();
+        stack.push(targetMod);
+        visited.add(targetMod.index);
+        while (!stack.isEmpty()) {
+            ModuleLinkInfo cur = stack.pop();
+            for (String depKey : cur.input.staticImports().values()) {
+                ModuleLinkInfo dep = moduleByKey(depKey);
+                if (dep == null) continue;
+                if (dep.index == fromMod.index) return false;
+                if (visited.add(dep.index)) stack.push(dep);
+            }
+        }
+        return true;
+    }
+
+    private static void walkModuleExprs(HirModule hm, java.util.function.Consumer<HirExpr> visitor) {
+        for (HirExpr e : hm.topLevelStatements()) walkExpr(e, visitor);
+        for (HirFunction f : hm.functions().values()) {
+            for (HirParam p : f.params()) walkExpr(p.defaultValue(), visitor);
+            for (HirExpr e : f.body()) walkExpr(e, visitor);
+        }
+        for (HirClass c : hm.classes().values()) {
+            for (HirParam p : c.params()) walkExpr(p.defaultValue(), visitor);
+            for (HirExpr e : c.body()) walkExpr(e, visitor);
+            if (c.staticBlock() != null) {
+                for (HirExpr e : c.staticBlock().body()) walkExpr(e, visitor);
+            }
+        }
+        for (HirInterface hi : hm.interfaces().values()) {
+            for (HirExpr e : hi.body()) walkExpr(e, visitor);
+            if (hi.staticBlock() != null) {
+                for (HirExpr e : hi.staticBlock().body()) walkExpr(e, visitor);
+            }
+        }
+    }
+
+    private static void walkExpr(HirExpr e, java.util.function.Consumer<HirExpr> visitor) {
+        if (e == null) return;
+        visitor.accept(e);
+        switch (e) {
+            case HirExpr.Block b -> { for (HirExpr s : b.statements()) walkExpr(s, visitor); }
+            case HirExpr.Def d -> walkExpr(d.value(), visitor);
+            case HirExpr.VarAssign a -> walkExpr(a.value(), visitor);
+            case HirExpr.NameAssign a -> walkExpr(a.value(), visitor);
+            case HirExpr.ThisFieldAssign a -> { walkExpr(a.receiver(), visitor); walkExpr(a.value(), visitor); }
+            case HirExpr.DynamicFieldAssign a -> { walkExpr(a.receiver(), visitor); walkExpr(a.value(), visitor); }
+            case HirExpr.ThisFieldGet g -> walkExpr(g.receiver(), visitor);
+            case HirExpr.ModuleExportGet g -> walkExpr(g.receiver(), visitor);
+            case HirExpr.DynamicSelect s -> walkExpr(s.receiver(), visitor);
+            case HirExpr.Unary u -> walkExpr(u.operand(), visitor);
+            case HirExpr.Binary b -> { walkExpr(b.left(), visitor); walkExpr(b.right(), visitor); }
+            case HirExpr.Logic l -> { walkExpr(l.left(), visitor); walkExpr(l.right(), visitor); }
+            case HirExpr.If i -> { walkExpr(i.cond(), visitor); walkExpr(i.thenBranch(), visitor); walkExpr(i.elseBranch(), visitor); }
+            case HirExpr.While w -> { walkExpr(w.cond(), visitor); walkExpr(w.body(), visitor); }
+            case HirExpr.For f -> { walkExpr(f.iterable(), visitor); for (HirExpr s : f.body()) walkExpr(s, visitor); }
+            case HirExpr.Return r -> walkExpr(r.value(), visitor);
+            case HirExpr.Break b -> walkExpr(b.value(), visitor);
+            case HirExpr.Throw t -> walkExpr(t.value(), visitor);
+            case HirExpr.Try t -> {
+                for (HirExpr s : t.tryBody()) walkExpr(s, visitor);
+                for (HirExpr.HirCatch hc : t.catches()) for (HirExpr s : hc.body()) walkExpr(s, visitor);
+                for (HirExpr s : t.finallyBody()) walkExpr(s, visitor);
+            }
+            case HirExpr.DynamicCall c -> { walkExpr(c.callee(), visitor); for (var a : c.args()) walkExpr(a.value(), visitor); }
+            case HirExpr.DirectBabbleCall c -> { walkExpr(c.callee(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.DirectThisMethodCall c -> { walkExpr(c.receiver(), visitor); for (var a : c.args()) walkExpr(a.value(), visitor); }
+            case HirExpr.InterfaceCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.SafeCall c -> { walkExpr(c.receiver(), visitor); for (var a : c.args()) walkExpr(a.value(), visitor); }
+            case HirExpr.SelfRecurseCall c -> { for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.SelfTailCall c -> { for (var a : c.args()) walkExpr(a.value(), visitor); }
+            case HirExpr.CoreMethodCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.SuperCall c -> { for (var a : c.args()) walkExpr(a.value(), visitor); }
+            case HirExpr.RecordNew r -> { walkExpr(r.classRef(), visitor); for (HirExpr a : r.args()) walkExpr(a, visitor); }
+            case HirExpr.RecordReuse r -> { walkExpr(r.target(), visitor); for (HirExpr a : r.args()) walkExpr(a, visitor); }
+            case HirExpr.MakeOverloadSet m -> { for (HirExpr op : m.operands()) walkExpr(op, visitor); }
+            case HirExpr.OverloadSelect s -> walkExpr(s.set(), visitor);
+            case HirExpr.OverloadDispatch d -> { walkExpr(d.callee(), visitor); for (HirExpr a : d.args()) walkExpr(a, visitor); }
+            case HirExpr.CoreCollectionCall c -> { for (var a : c.args()) walkExpr(a.value(), visitor); }
+            case HirExpr.ArrayCreate a -> { for (HirExpr x : a.args()) walkExpr(x, visitor); }
+            case HirExpr.ArrayOp a -> { walkExpr(a.receiver(), visitor); for (HirExpr x : a.args()) walkExpr(x, visitor); }
+            case HirExpr.SpreadAdapt s -> walkExpr(s.value(), visitor);
+            case HirExpr.TypeApply t -> walkExpr(t.inner(), visitor);
+            case HirExpr.Is i -> walkExpr(i.left(), visitor);
+            case HirExpr.As a -> walkExpr(a.left(), visitor);
+            case HirExpr.NonNull n -> walkExpr(n.operand(), visitor);
+            case HirExpr.Move m -> walkExpr(m.operand(), visitor);
+            case HirExpr.Freeze f -> walkExpr(f.operand(), visitor);
+            case HirExpr.JavaMethodCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.JavaConstructorCall c -> { for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            default -> {}
         }
     }
 

@@ -102,6 +102,7 @@ public final class WasmObjectSystem {
         public WasmModule.FuncDef getMemberDef;
         public WasmModule.FuncDef setMemberDef;
         public WasmModule.FuncDef opDef;
+        public final Map<String, WasmProgramLinker.FuncInfo> immutableStaticMethods = new LinkedHashMap<>();
 
         public final Map<String, Integer> boundMethodGenericFns = new LinkedHashMap<>();
 
