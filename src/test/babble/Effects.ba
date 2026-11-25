@@ -120,3 +120,35 @@ assert(logged(3) == 8)
 ;; The returned closure aliases f and g (it is not a store), so a calling callback can be composed
 def twice = fn calling f (f: fn (x: int): int, x: int): int -> (compose(f, f)(x))
 assert(twice(fn (y: int): int -> (y * 3), 2) == 18)
+
+;; A frame-local callback reassigning the caller's var, passed to a higher-order method too big to
+;; inline : the call is a statement whose result is unused, yet it is not dead code
+def Bag = class () (
+    private def items: list of int = list()
+    def add = fn mut (x: int) -> (
+        this.items.add(x)
+    )
+    def visit = fn calling f (f: fn (item: int): any?) -> (
+        def seen: int = this.items.size()
+        def low: int = seen * 2 + 1
+        def high: int = low * 3 - seen
+        def span: int = if high > low then (high - low) else (low - high)
+        for item in this.items then (
+            if item + span >= low - high and item - span <= high + low then (f(item)) else (f(item))
+        )
+    )
+    def countAbove = fn calling pred (pred: fn (item: int): bool): int -> (
+        var matched: int = 0
+        this.visit(fn (item: int) -> (
+            if pred(item) then (
+                matched += 1
+            )
+        ))
+        matched
+    )
+)
+def bag: Bag = Bag()
+bag.add(1)
+bag.add(2)
+bag.add(3)
+assert(bag.countAbove(fn (x: int): bool -> (x > 1)) == 2, "a call to a calling method is not dead code")

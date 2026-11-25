@@ -133,7 +133,8 @@ public final class HirPurity {
                     yield false;
                 }
                 HirFunction fn = module.function(c.targetFunctionId());
-                yield fn != null && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
+                yield fn != null && isCallSitePure(fn, c.meta().effects())
+                        && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
             }
             case HirExpr.JavaMethodCall c -> {
                 if (c.target().isStatic()) {
@@ -194,7 +195,8 @@ public final class HirPurity {
                 }
                 if (c.targetFunctionId() >= 0) {
                     HirFunction fn = module.function(c.targetFunctionId());
-                    yield fn != null && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
+                    yield fn != null && isCallSitePure(fn, c.meta().effects())
+                            && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
                 }
                 EffectSet fx = c.meta().effects();
                 yield fx.isPure() && fx.isNothrow() && fx.terminating();
@@ -307,6 +309,52 @@ public final class HirPurity {
             }
         }
         return true;
+    }
+
+    /**
+     * Whether a direct call of {@code fn} can be pure, as far as its callable arguments go. A
+     * function that calls or passes on a function-typed parameter ({@code fn calling f},
+     * {@code BIP017}) has its own effects only on condition of what each call passes : a callback
+     * may reassign a local of the caller's frame (a {@code borrow} closure, {@code BIP016} §4.5),
+     * which is no effect of the caller as a whole, but makes the call itself impure. Only the
+     * call site's effects know, so they must be pure too.
+     */
+    private static boolean isCallSitePure(HirFunction fn, EffectSet callSiteEffects) {
+        return callSiteEffects.isPure() || !usesCallableParameter(fn);
+    }
+
+    private static boolean usesCallableParameter(HirFunction fn) {
+        Set<HirVar> callables = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (org.babblelang.ir.hir.HirParam p : fn.params()) {
+            if (p.var() != null && p.checkedType() != null && p.checkedType().startsWith("fn|")) {
+                callables.add(p.var());
+            }
+        }
+        if (callables.isEmpty()) {
+            return false;
+        }
+        boolean[] found = {false};
+        for (HirExpr stmt : fn.body()) {
+            findVarReads(stmt, callables, found);
+            if (found[0]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void findVarReads(HirExpr expr, Set<HirVar> vars, boolean[] found) {
+        if (expr == null || found[0]) {
+            return;
+        }
+        if (expr instanceof HirExpr.VarRead r && vars.contains(r.var())) {
+            found[0] = true;
+            return;
+        }
+        HirRewriter.rewriteChildren(expr, child -> {
+            findVarReads(child, vars, found);
+            return child;
+        });
     }
 
     public static boolean isFunctionPureNothrowTerminating(HirFunction fn, EffectSet callSiteEffects,
