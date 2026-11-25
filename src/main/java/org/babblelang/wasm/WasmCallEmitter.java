@@ -335,8 +335,93 @@ public final class WasmCallEmitter {
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
+        // 1c. Direct static dispatch for immutable cross-module functions (`mod.fn(...)`),
+        //     immutable class static methods (`Cls.create(...)`), and imported top-level functions.
+        WasmProgramLinker.FuncInfo staticTarget = resolveDirectStaticCallee(call);
+        if (staticTarget != null && canDirectStaticDispatch(staticTarget, call)) {
+            emitBoundDirectArgs(staticTarget, -1, null, call.args(), call.binding(), call.meta().line());
+            ctx.code.call(staticTarget.directFuncIdx);
+            ctx.stackKind = staticTarget.hir.returnKind();
+            return;
+        }
         // 2. General indirect call via $FnBase.genericCall (honoring static ArgumentBinding if present!)
         emitGenericCallWithCallArgs(call.callee(), call.args(), call.binding(), call.meta().kind(), call.meta().line());
+    }
+
+    private WasmProgramLinker.FuncInfo resolveDirectStaticCallee(HirExpr.DynamicCall call) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        int curStmt = ctx.currentTopLevelStmtIdx;
+        if (curStmt < 0) {
+            return null;
+        }
+        HirExpr callee = call.callee();
+        while (callee instanceof HirExpr.TypeApply ta) {
+            callee = ta.inner();
+        }
+        if (callee instanceof HirExpr.ModuleExportGet meg && meg.receiver() instanceof HirExpr.NameRead modNr) {
+            if (isShadowedInNsScopes(modNr.name()) || !isDefinedBeforeStmt(ctx.modInfo, modNr.name(), curStmt)) {
+                return null;
+            }
+            WasmProgramLinker.ModuleLinkInfo targetMod = ctx.modInfo.immutableModuleImports.get(modNr.name());
+            return targetMod != null ? targetMod.immutableTopLevelFuncs.get(meg.target().name()) : null;
+        }
+        if (callee instanceof HirExpr.DynamicSelect ds && !ds.safe() && ds.receiver() instanceof HirExpr.NameRead clsNr) {
+            if (isShadowedInNsScopes(clsNr.name()) || !isDefinedBeforeStmt(ctx.modInfo, clsNr.name(), curStmt)) {
+                return null;
+            }
+            WasmObjectSystem.ClassInfo ci = ctx.modInfo.immutableTopLevelClasses.get(clsNr.name());
+            return ci != null ? ci.immutableStaticMethods.get(ds.memberName()) : null;
+        }
+        if (callee instanceof HirExpr.NameRead fnNr) {
+            if (isShadowedInNsScopes(fnNr.name()) || !isDefinedBeforeStmt(ctx.modInfo, fnNr.name(), curStmt)) {
+                return null;
+            }
+            return ctx.modInfo.immutableTopLevelFuncs.get(fnNr.name());
+        }
+        return null;
+    }
+
+    private static boolean isDefinedBeforeStmt(WasmProgramLinker.ModuleLinkInfo modInfo, String name, int curStmt) {
+        Integer defIdx = modInfo.topLevelDefIndex.get(name);
+        return defIdx != null && defIdx < curStmt;
+    }
+
+    private boolean isShadowedInNsScopes(String name) {
+        for (var scope : fe.ctx().nsScopes) {
+            if (scope.containsKey(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean canDirectStaticDispatch(WasmProgramLinker.FuncInfo fi, HirExpr.DynamicCall call) {
+        if (fi.hasEnvParam || fi.hasThisParam) {
+            return false;
+        }
+        HirFunction hf = fi.hir;
+        LoweringTargets.ArgumentBinding binding = call.binding();
+        if (binding != null) {
+            return binding.paramCount() == hf.params().size();
+        }
+        if (hf.restIndex() >= 0) {
+            return false;
+        }
+        List<HirCallArg> args = call.args();
+        if (args.size() > hf.params().size()) {
+            return false;
+        }
+        for (HirCallArg a : args) {
+            if (a.name() != null || a.value() instanceof HirExpr.SpreadAdapt) {
+                return false;
+            }
+        }
+        for (int p = args.size(); p < hf.params().size(); p++) {
+            if (hf.params().get(p).defaultValue() == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private boolean isShadowedLocalOrGlobal(String name) {

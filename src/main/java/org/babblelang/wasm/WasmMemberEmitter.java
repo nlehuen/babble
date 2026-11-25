@@ -50,6 +50,7 @@ public final class WasmMemberEmitter {
         WasmFuncEmitter.EmitCtx cctx = new WasmFuncEmitter.EmitCtx(
                 ci.modInfo, null, fn, paramIdx, PrimitiveKind.NONE, -1, optMaskLocal);
         cctx.ownerClass = ci;
+        cctx.currentTopLevelStmtIdx = ci.modInfo.classOwnerTopLevelStmtIdx.getOrDefault(ci.hir.id(), -1);
         fe.setCtx(cctx);
         try {
             WasmCodeBuilder c = cctx.code;
@@ -425,6 +426,21 @@ public final class WasmMemberEmitter {
 
     // ---------------------------------------------------------------- ThisFieldGet & ThisFieldAssign
 
+    private boolean isDirectOwnerThis(HirExpr receiver, WasmObjectSystem.ClassInfo ci) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        if (ctx.thisLocal < 0 || ctx.ownerClass == null || ctx.ownerClass.structTypeIdx != ci.structTypeIdx) {
+            return false;
+        }
+        if (!(receiver instanceof HirExpr.ThisRef t)) {
+            return false;
+        }
+        if (t.var() == null) {
+            return true;
+        }
+        WasmFuncEmitter.VarSlot slot = ctx.vars.get(t.var().id());
+        return slot == null || (!slot.isCell() && !slot.isCapturedField() && slot.localIdx() == ctx.thisLocal);
+    }
+
     public void emitThisFieldGet(HirExpr.ThisFieldGet g) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
@@ -444,26 +460,33 @@ public final class WasmMemberEmitter {
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
-        fe.emitBoxed(g.receiver());
+        boolean directThis = isDirectOwnerThis(g.receiver(), ci);
+        if (directThis) {
+            c.localGet(ctx.thisLocal);
+        } else {
+            fe.emitBoxed(g.receiver());
+            c.refCast(ci.structTypeIdx);
+        }
         PrimitiveKind mk = ci.memberKinds[g.memberIndex()];
-        if (ci.defMaskFieldIdx >= 0 && g.memberIndex() < ci.hir.primDefBits().length && ci.hir.primDefBits()[g.memberIndex()] >= 0) {
+        boolean needsCheck = !g.definitelyDefined();
+        if (needsCheck && ci.defMaskFieldIdx >= 0 && g.memberIndex() < ci.hir.primDefBits().length && ci.hir.primDefBits()[g.memberIndex()] >= 0) {
             int recv = ctx.newLocal("$tfGetR", WasmValType.refNull(ci.structTypeIdx));
             int bit = 1 << ci.hir.primDefBits()[g.memberIndex()];
-            c.refCast(ci.structTypeIdx).localTee(recv)
+            c.localTee(recv)
                     .structGet(ci.structTypeIdx, ci.defMaskFieldIdx)
                     .i32Const(bit).op(WasmInstr.SimpleOp.I32_AND).op(WasmInstr.SimpleOp.I32_EQZ).if_();
             rt.emitStringLit(c, "Member used before definition : " + g.memberName());
             c.i32Const(g.meta().line()).call(rt.fnThrowMsg).unreachable().end();
             c.localGet(recv).refAsNonNull().structGet(ci.structTypeIdx, fi);
-        } else if (mk == PrimitiveKind.NONE) {
+        } else if (needsCheck && mk == PrimitiveKind.NONE) {
             int tmp = ctx.newLocal("$tfGetV", ts.anyRef());
-            c.refCast(ci.structTypeIdx).structGet(ci.structTypeIdx, fi)
+            c.structGet(ci.structTypeIdx, fi)
                     .localTee(tmp).globalGet(rt.gUndefined).refEq().if_();
             rt.emitStringLit(c, "Member used before definition : " + g.memberName());
             c.i32Const(g.meta().line()).call(rt.fnThrowMsg).unreachable().end();
             c.localGet(tmp);
         } else {
-            c.refCast(ci.structTypeIdx).structGet(ci.structTypeIdx, fi);
+            c.structGet(ci.structTypeIdx, fi);
         }
         ctx.stackKind = mk;
     }
@@ -479,9 +502,14 @@ public final class WasmMemberEmitter {
         }
         int fi = ci.memberToStructField[a.memberIndex()];
         PrimitiveKind fk = ci.memberKinds[a.memberIndex()];
-        fe.emitBoxed(a.receiver());
-        int recv = ctx.newLocal("$tfRecv", WasmValType.refNull(ci.structTypeIdx));
-        c.refCast(ci.structTypeIdx).localSet(recv);
+        int recv;
+        if (isDirectOwnerThis(a.receiver(), ci)) {
+            recv = ctx.thisLocal;
+        } else {
+            fe.emitBoxed(a.receiver());
+            recv = ctx.newLocal("$tfRecv", WasmValType.refNull(ci.structTypeIdx));
+            c.refCast(ci.structTypeIdx).localSet(recv);
+        }
 
         // Reject assignment to a field before its `def` has run during construction
         if (ci.defMaskFieldIdx >= 0 && a.memberIndex() < ci.hir.primDefBits().length && ci.hir.primDefBits()[a.memberIndex()] >= 0) {
