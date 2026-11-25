@@ -5,7 +5,7 @@ import org.babblelang.analysis.PrimitiveKind;
 import java.util.Objects;
 
 /**
- * Immutable SSA value identity in {@link MirFunction} ({@code BIP014-P3}).
+ * Immutable SSA value identity in {@link MirFunction} ({@code BIP014-I3}).
  *
  * <p>Equality and hashing are keyed solely on {@link #id()}. Every SSA value is defined exactly once
  * (either as a function parameter, a basic-block parameter, or the result of a {@link MirInst}) and

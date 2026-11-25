@@ -1,7 +1,7 @@
 package org.babblelang.ir.mir;
 
 /**
- * Exception handler entry attached to a protected {@link MirBlock} ({@code BIP014-P3}, {@code BIP028}).
+ * Exception handler entry attached to a protected {@link MirBlock} ({@code BIP014-I3}, {@code BIP028}).
  *
  * <p>Handlers on a block are ordered innermost-to-outermost matching the JVM {@code exception_table}.
  * When an instruction in the protected block throws a matching {@link Throwable}, control transfers

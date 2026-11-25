@@ -7,7 +7,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Structural and SSA dominance verifier for {@link MirModule} ({@code BIP014-P3} §6.5).
+ * Structural and SSA dominance verifier for {@link MirModule} ({@code BIP014-I3} §6.5).
  *
  * <p>Runs immediately after {@link MirLowerer} and after every modifying {@code MirPass} whenever
  * {@code -Dbabble.verify=true} is active. Checks:

@@ -25,7 +25,7 @@ import java.util.List;
 /**
  * Unit tests for SSA {@code MIR} lowering, {@link MirCfg}, {@link MirVerifier},
  * {@link org.babblelang.ir.mir.MirCanonicalPrinter}, and {@link CliIrDumper} MIR specs
- * ({@code BIP014-P3}, {@code BIP029}).
+ * ({@code BIP014-I3}, {@code BIP029}).
  */
 public class MirCanonicalPrinterTestCase {
 

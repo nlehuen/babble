@@ -4,7 +4,7 @@ import org.babblelang.ir.mir.MirModule;
 import org.babblelang.opt.PassContext;
 
 /**
- * Single SSA {@code MIR} optimization pass ({@code BIP014-P3} §6.4).
+ * Single SSA {@code MIR} optimization pass ({@code BIP014-I3} §6.4).
  */
 public interface MirPass {
     record Result(MirModule module, int rewrites) {

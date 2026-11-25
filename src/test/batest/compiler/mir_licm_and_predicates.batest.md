@@ -1,4 +1,4 @@
-# SSA MIR LICM and Predicate Reordering (BIP014-P3)
+# SSA MIR LICM and Predicate Reordering (BIP014-I3)
 
 Tests `LicmPass` (natural-loop preheader hoisting of pure, frozen, and un-clobbered
 reads, plus structural `Narrow` safety) and `PredicateReorderPass` (short-circuit pure

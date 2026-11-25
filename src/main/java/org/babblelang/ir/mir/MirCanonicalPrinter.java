@@ -23,7 +23,7 @@ import java.util.regex.Pattern;
 
 /**
  * Canonical, deterministic, preamble-independent printer for {@link MirModule}
- * ({@code BIP014-P3} §6.5, {@code BIP029-I1} §4.3).
+ * ({@code BIP014-I3} §6.5, {@code BIP029-I1} §4.3).
  *
  * <p>Guarantees:
  * <ul>

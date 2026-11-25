@@ -1,4 +1,4 @@
-# SSA MIR Primitive Array Loops, Custom Iterators, and Uninitialized Slots (BIP014-P3)
+# SSA MIR Primitive Array Loops, Custom Iterators, and Uninitialized Slots (BIP014-I3)
 
 Tests `MirEmitter` lowering of primitive/reference array `for` loops (`BALOAD`/`SALOAD`/`LALOAD`/`FALOAD`/`CALOAD`/`AALOAD`),
 custom Babble `Iterable` and `Iterator` `for` loops, parallel-copy swap cycles, and uninitialized primitive/reference locals.

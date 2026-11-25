@@ -459,16 +459,15 @@ fn nLt (a:int, b:int) -> bool {nothrow unique}
 ```hir
 ;; hir -O1 fn=nLt
 fn nLt (a:int, b:int) -> bool {nothrow unique}
-  (not (<:bool var(a) var(b)))
+  (>=:bool var(a) var(b))
 ```
 
 ```mir
 ;; mir -O2 fn=nLt stage=before,final
 fn nLt(v0: int, v1: int) -> bool:
   bb0:
-    v2: bool = lt v0, v1 {pure}
-    v3: bool = not v2 {pure}
-    ret v3
+    v2: bool = gte v0, v1 {pure}
+    ret v2
 ```
 
 ## AlgebraicRules.negateExactComparison : equality ops and byte/short/char vs double
@@ -490,16 +489,15 @@ fn nEq (a:int, b:int) -> bool {nothrow commutative unique}
 ```hir
 ;; hir -O1 fn=nEq
 fn nEq (a:int, b:int) -> bool {nothrow commutative unique}
-  (not (==:bool var(a) var(b)))
+  (<>:bool var(a) var(b))
 ```
 
 ```mir
 ;; mir -O2 fn=nEq stage=before,final
 fn nEq(v0: int, v1: int) -> bool:
   bb0:
-    v2: bool = eq v0, v1 {pure}
-    v3: bool = not v2 {pure}
-    ret v3
+    v2: bool = neq v0, v1 {pure}
+    ret v2
 ```
 
 ## AlgebraicRules.isExactOrderedClass : char vs double and mixed int-double comparisons
@@ -520,7 +518,7 @@ fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
 ```hir
 ;; hir -O1 fn=nMix
 fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
-  (and (not (<:bool var(a) 1.5:double)) (not (<:bool var(b) 1.5:double)))
+  (and (>=:bool var(a) 1.5:double) (>=:bool var(b) 1.5:double))
 ```
 
 ```mir
@@ -529,18 +527,16 @@ fn nMix(v0: int, v1: int) -> bool:
   bb0:
     v2: double = convert.double v0
     v3: double = const 1.5
-    v4: bool = lt v2, v3 {pure}
-    v5: bool = not v4 {pure}
-    v6: bool = const false
-    br_if v5, bb1, bb2(v6)
+    v4: bool = gte v2, v3 {pure}
+    v5: bool = const false
+    br_if v4, bb1, bb2(v5)
   bb1:
-    v7: double = convert.double v1
-    v8: double = const 1.5
-    v9: bool = lt v7, v8 {pure}
-    v10: bool = not v9 {pure}
-    br bb2(v10)
-  bb2(v11: bool):
-    ret v11
+    v6: double = convert.double v1
+    v7: double = const 1.5
+    v8: bool = gte v6, v7 {pure}
+    br bb2(v8)
+  bb2(v9: bool):
+    ret v9
 ```
 
 ```mir
@@ -549,17 +545,15 @@ fn nMix(v0: int, v1: int) -> bool:
   bb0:
     v2: double = convert.double v0
     v3: double = const 1.5
-    v4: bool = lt v2, v3 {pure}
-    v5: bool = not v4 {pure}
-    v6: bool = const false
-    br_if v5, bb1, bb2(v6)
+    v4: bool = gte v2, v3 {pure}
+    v5: bool = const false
+    br_if v4, bb1, bb2(v5)
   bb1:
-    v7: double = convert.double v1
-    v8: bool = lt v7, v3 {pure}
-    v9: bool = not v8 {pure}
-    br bb2(v9)
-  bb2(v10: bool):
-    ret v10
+    v6: double = convert.double v1
+    v7: bool = gte v6, v3 {pure}
+    br bb2(v7)
+  bb2(v8: bool):
+    ret v8
 ```
 
 ## AlgebraicRules.iteAndOrderRules : equal branches, positive-guard abs, and non-neg guard

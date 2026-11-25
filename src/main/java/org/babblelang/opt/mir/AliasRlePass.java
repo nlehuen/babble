@@ -21,7 +21,7 @@ import java.util.Set;
 
 /**
  * Alias-aware Redundant Load Elimination and Store-to-Load Forwarding ({@code O7}) over SSA
- * {@link MirModule} ({@code BIP014-P3} §6.4).
+ * {@link MirModule} ({@code BIP014-I3} §6.4).
  *
  * <p>Uses {@link MirEffect.AliasClass} ({@code FROZEN}, {@code UNIQUE_PARAM(k)}, {@code SHARED})
  * to forward {@code StoreField}/{@code StoreJavaField} values directly to dominating loads and

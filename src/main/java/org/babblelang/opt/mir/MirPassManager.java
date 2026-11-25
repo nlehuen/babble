@@ -10,7 +10,7 @@ import org.babblelang.opt.PassContext;
 import java.util.List;
 
 /**
- * Bounded fixed-point SSA {@code MIR} pass driver ({@code BIP014-P3} §6.5, {@code BIP029}).
+ * Bounded fixed-point SSA {@code MIR} pass driver ({@code BIP014-I3} §6.5, {@code BIP029}).
  *
  * <p>Emits {@link IrSnapshot}s on {@link IrTier#MIR} at {@code before}, {@code after:<PassName>},
  * and {@code final} stages whenever an {@link IrObserver} requests them, and runs

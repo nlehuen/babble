@@ -149,11 +149,11 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
   - `error` (optional `# error regex`) — expected fatal compile-time or runtime error (`Kind.USER_ERROR`; omitting `error` asserts `Kind.OK`).
   - The `regex` flag compiles the block body with `Pattern.MULTILINE | Pattern.DOTALL` and matches the whole channel (`matcher(actual).matches()`), so `.*` spans multiple lines automatically. Use `regex` only for text that varies with JDK version, never to loosen a Babble message.
 - **IR golden & check blocks (`BIP029`)** :
-  - Open with ```` ```hir ```` or ```` ```mir ```` and put the directive on line 1 : `;; <hir|mir> <opt-levels> <target> [stage=<before|final|after:PassName>] [in=<module.ba>] [regex|check]`.
-  - `<opt-levels>` : `-O0`, `-O1`, `-O0,-O1`, or future `-O2`. Blocks whose opt-levels do not match the active run are skipped.
+  - Open with ```` ```hir ```` or ```` ```mir ```` and put the directive on line 1 : `;; <hir|mir> <opt-levels> <target> [stage=<before|final|before,final|after:PassName>] [in=<module.ba>] [regex|check]`.
+  - `<opt-levels>` : `-O0`, `-O1`, `-O0,-O1`, or `-O2`. Blocks whose opt-levels do not match the active run are skipped.
   - `<target>` : `fn=<name>`, `fn=<Type>.<method>`, `class=<name>`, `record=<name>`, `interface=<name>`, `top-level`, or `module`.
-  - Default mode compares exact canonical IR (`HirCanonicalPrinter`, preamble-independent and locally renumbered). `check` mode evaluates line predicates (`contains <s>`, `!contains <s>`, `count <N> <s>`, `regex <pat>`) and is only allowed when the actual canonical IR dump has at least `batest.minDumpSizeForUsingPartialChecks` lines (default `30`, `0` disables); shorter dumps must use exact goldens for readability.
-  - Every case under `src/test/batest/compiler/` must include at least one `hir` expectation applicable to `-O0` and at least one applicable to `-O1` (enforced by `BatestV2HarnessTestCase`; use `-O0,-O1` when canonical HIR is identical at both levels).
+  - Default mode compares exact canonical IR (`HirCanonicalPrinter` / `MirCanonicalPrinter`, preamble-independent and locally renumbered). `check` mode evaluates line predicates (`contains <s>`, `!contains <s>`, `count <N> <s>`, `regex <pat>`) and is only allowed when the actual canonical IR dump has at least `batest.minDumpSizeForUsingPartialChecks` lines (default `30`, `0` disables); shorter dumps must use exact goldens for readability.
+  - Every non-error, non-session case under `src/test/batest/compiler/` must include at least one `hir` expectation applicable to `-O0`, at least one `hir` applicable to `-O1`, at least one `mir -O2` expectation matching `stage=before`, and at least one `mir -O2` expectation matching `stage=final` (enforced by `BatestV2Parser` and `BatestV2HarnessTestCase`; use `hir -O0,-O1` when canonical HIR is identical at both levels, and `mir -O2 ... stage=before,final` when pre- and post-pass MIR are identical).
   - Update stale exact-golden IR blocks safely after intentional optimizer/printer changes with `-Dbatest.updateIr=true` (rewrites only exact IR block bodies below their `;; hir`/`;; mir` directive on behaviorally-passing verified cases and fails loudly afterward so CI can never pass with blessing enabled).
 - **Error normalization and `Kind`** ([`BatestRunner`](../java/org/babblelang/tests/batest/BatestRunner.java)) :
   - Wrapper prefixes (`BabbleException:`, `ScriptException:`), trailing `in <src> at line number N`, embedded line coordinates, dynamic type IDs (`expected T#, got T#`), OS-locale `FileNotFoundException` reasons (`(<OS error>)`), JDK 22+ reflective receiver wording, and `InvocationTargetException` wrappers are normalized; `StackOverflowError` becomes `Stack overflow`.
@@ -200,7 +200,7 @@ Verify pure `PredictionMode.SLL` parsing across all `.batest.md` files :
 mvn -q test -Dtest=ParserGrammarTestCase
 ```
 
-Run the full 3-JVM 5-scope JaCoCo coverage gate (`>= 80%` line and `>= 80%` branch coverage per scope) :
+Run the full 4-JVM 6-scope JaCoCo coverage gate (`>= 80%` line and `>= 80%` branch coverage per scope) :
 
 ```bash
 mvn -q verify -Pbatest

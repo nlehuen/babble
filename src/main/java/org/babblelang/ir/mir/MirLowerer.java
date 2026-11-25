@@ -32,7 +32,7 @@ import java.util.Set;
 
 /**
  * Lowers an ANTLR-free {@link HirModule} into per-function SSA {@link MirModule}
- * ({@code BIP014-P3} §6.4).
+ * ({@code BIP014-I3} §6.4).
  *
  * <p>Every non-namespace-scoped {@link HirFunction} (including methods and functions containing
  * {@code BIP028} {@code try}/{@code catch}/{@code finally}/{@code throw}) is lowered into a

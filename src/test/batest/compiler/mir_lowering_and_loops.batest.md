@@ -1,4 +1,4 @@
-# SSA MIR Lowering, Primitives, Loops, and Tail Calls (BIP014-P3)
+# SSA MIR Lowering, Primitives, Loops, and Tail Calls (BIP014-I3)
 
 Tests HIR-to-MIR lowering (`MirLowerer`) and bytecode emission (`MirEmitter`) across
 primitives, loops, swap cycles, narrowing anchors, tail calls, and non-lowered markers.

@@ -21,7 +21,7 @@ import java.util.Set;
 
 /**
  * Dead Code, Dead Block-Parameter, Unreachable-Block, and Empty-Trampoline Elimination
- * ({@code O4}) over SSA {@link MirModule} ({@code BIP014-P3} §6.4).
+ * ({@code O4}) over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  */
 public final class MirDcePass implements MirPass {
     @Override

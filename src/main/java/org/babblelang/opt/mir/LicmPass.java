@@ -19,7 +19,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Natural-loop Invariant Code Motion ({@code O6}) over SSA {@link MirModule} ({@code BIP014-P3} §6.4).
+ * Natural-loop Invariant Code Motion ({@code O6}) over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  *
  * <p>Hoists loop-invariant {@code PURE} (nothrow, terminating, deterministic) and un-clobbered
  * {@code READ} ({@code FROZEN}, or disjoint {@code UNIQUE_PARAM(k)}) instructions into the loop

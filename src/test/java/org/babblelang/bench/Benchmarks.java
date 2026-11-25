@@ -105,15 +105,36 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(200000)");
+        scripts.put("mir : header LICM + GVN/CSE + predicate reorder",
+                "def slow = fn nothrow (x : double) : bool -> (\n"
+                        + "    java.lang.Math.sin(x) + java.lang.Math.cos(x) > 0.0\n"
+                        + ")\n"
+                        + "def run = fn (a : int, b : int, x : double) : double -> (\n"
+                        + "    def i = 0\n"
+                        + "    def s = 0.0\n"
+                        + "    while i < a * b + 10000 then (\n"
+                        + "        def t = java.lang.Math.abs(java.lang.Math.abs(x))\n"
+                        + "        if slow(x + i * 1.0) and (i < 10) then ( s = s + t )\n"
+                        + "        i = i + 1\n"
+                        + "    )\n"
+                        + "    s\n"
+                        + ")\n"
+                        + "run(40, 1000, -2.5)");
 
-        System.out.println("| Benchmark | interpret (ms) | -O0 (ms) | -O1 (ms) | -O1/-O0 |");
-        System.out.println("|---|---:|---:|---:|---:|");
+        String filter = args.length > 0 ? args[0] : "";
+        System.out.println("| Benchmark | interpret (ms) | -O0 (ms) | -O1 (ms) | -O2 (ms) | -O2/-O0 | -O2/-O1 |");
+        System.out.println("|---|---:|---:|---:|---:|---:|---:|");
         for (Map.Entry<String, String> script : scripts.entrySet()) {
+            if (!filter.isEmpty() && !script.getKey().contains(filter)) {
+                continue;
+            }
             double interpreted = time("interpret", 0, script.getValue());
             double opt0 = time("compile", 0, script.getValue());
             double opt1 = time("compile", 1, script.getValue());
-            System.out.printf("| %s | %.2f | %.2f | %.2f | %.2fx |%n",
-                    script.getKey(), interpreted, opt0, opt1, opt0 / Math.max(opt1, 1e-6));
+            double opt2 = time("compile", 2, script.getValue());
+            System.out.printf("| %s | %.2f | %.2f | %.2f | %.2f | %.2fx | %.2fx |%n",
+                    script.getKey(), interpreted, opt0, opt1, opt2,
+                    opt0 / Math.max(opt2, 1e-6), opt1 / Math.max(opt2, 1e-6));
         }
     }
 
