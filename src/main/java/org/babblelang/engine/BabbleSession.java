@@ -107,7 +107,9 @@ public final class BabbleSession {
             analysis.recordCompilation(compiled.getScriptClass().getClassLoader(),
                     compiled.interfaceJvmNames(), compiled.classJvmNames());
         }
-        return script.eval(new ScriptRuntime(namespace, context.getWriter(), modules));
+        Object result = script.eval(new ScriptRuntime(namespace, context.getWriter(), modules));
+        analysis.markScopeClean(scopes);
+        return result;
     }
 
     /**

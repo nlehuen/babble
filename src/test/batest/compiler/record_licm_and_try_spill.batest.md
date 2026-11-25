@@ -261,7 +261,7 @@ fn r () -> int {nothrow unique}
 ;; mir -O2 fn=r stage=before
 fn r() -> int:
   bb0:
-    v0: any = opaque.NameRead(X) {read:shared}
+    v0: any = name_read X {pure}
     v1: int = const 5
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: any = freeze v2
@@ -288,7 +288,7 @@ fn r() -> int:
 ;; mir -O2 fn=r
 fn r() -> int:
   bb0:
-    v0: any = opaque.NameRead(X) {read:shared}
+    v0: any = name_read X {pure}
     v1: int = const 5
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: any = freeze v2
@@ -443,11 +443,11 @@ fn run(v0: int) -> double:
   bb2:
     ret v6
   bb3:
-    v9: any = opaque.NameRead(double) {read:shared,throws}
+    v9: any = name_read double {pure}
     v10: double = opaque.DynamicCall(v9, v0) {impure}
     v11: double = const 0.0
-    v12: any = opaque.NameRead(double) {read:shared,throws}
-    v13: any = opaque.NameRead(TOP_K) {read:shared}
+    v12: any = name_read double {pure}
+    v13: any = name_read TOP_K {pure}
     v14: double = opaque.DynamicCall(v12, v13) {impure}
     v15: double = add v6, v14 {pure}
     v16: any = convert.any v0
@@ -467,28 +467,27 @@ fn run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
-    v3: any = convert.any v0
+    v3: any = name_read double {pure}
+    v4: any = name_read TOP_K {pure}
+    v5: any = convert.any v0
     br bb1(v2, v1)
-  bb1(v4: int, v5: double):
-    v6: int = const 3
-    v7: bool = lt v4, v6 {pure}
-    br_if v7, bb3, bb2
+  bb1(v6: int, v7: double):
+    v8: int = const 3
+    v9: bool = lt v6, v8 {pure}
+    br_if v9, bb3, bb2
   bb2:
-    ret v5
+    ret v7
   bb3:
-    v8: any = opaque.NameRead(double) {read:shared,throws}
-    v9: double = opaque.DynamicCall(v8, v0) {impure}
-    v10: any = opaque.NameRead(double) {read:shared,throws}
-    v11: any = opaque.NameRead(TOP_K) {read:shared}
-    v12: double = opaque.DynamicCall(v10, v11) {impure}
-    v13: double = add v5, v12 {pure}
-    v14: any = checkcast v3 <double|double|>
-    v15: double = convert.double v14
-    v16: double = add v13, v15 {pure}
-    v17: double = add v16, v9 {pure}
-    v18: int = const 1
-    v19: int = add v4, v18 {pure}
-    br bb1(v19, v17)
+    v10: double = opaque.DynamicCall(v3, v0) {impure}
+    v11: double = opaque.DynamicCall(v3, v4) {impure}
+    v12: double = add v7, v11 {pure}
+    v13: any = checkcast v5 <double|double|>
+    v14: double = convert.double v13
+    v15: double = add v12, v14 {pure}
+    v16: double = add v15, v10 {pure}
+    v17: int = const 1
+    v18: int = add v6, v17 {pure}
+    br bb1(v18, v16)
 ```
 
 ## Try expression inside RecordNew and RecordReuse arguments (stack-empty normalization)
@@ -548,7 +547,7 @@ fn bump(v0: any [unique], v1: bool) -> any:
     v3: any = const null
     br bb4(v3)
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: bool = const false
     v6: bool = opaque.DynamicCall(v4, v5) {impure}
     v7: any = convert.any v6
@@ -580,7 +579,7 @@ fn bump(v0: any [unique], v1: bool) -> any:
   bb1 [unwind: ThrownException -> bb5, Exception -> bb4]:
     br_if v1, bb2, bb3
   bb2 [unwind: ThrownException -> bb5, Exception -> bb4]:
-    v3: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read assert {pure}
     v4: bool = const false
     v5: bool = opaque.DynamicCall(v3, v4) {impure}
     br bb3
@@ -649,7 +648,7 @@ fn r (fl:bool) -> int {nothrow unique}
 ;; mir -O2 fn=r stage=before
 fn r(v0: bool) -> int:
   bb0:
-    v1: any = opaque.NameRead(Box) {read:shared}
+    v1: any = name_read Box {pure}
     v2: int = const 1
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: int = call_method v3.put(v0) {impure}
@@ -660,7 +659,7 @@ fn r(v0: bool) -> int:
     v5: any = const null
     br bb4(v5)
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v6: any = opaque.NameRead(assert) {read:shared,throws}
+    v6: any = name_read assert {pure}
     v7: bool = const false
     v8: bool = opaque.DynamicCall(v6, v7) {impure}
     v9: any = convert.any v8
@@ -686,7 +685,7 @@ fn r(v0: bool) -> int:
 ;; mir -O2 fn=r
 fn r(v0: bool) -> int:
   bb0:
-    v1: any = opaque.NameRead(Box) {read:shared}
+    v1: any = name_read Box {pure}
     v2: int = const 1
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: int = call_method v3.put(v0) {impure}
@@ -694,7 +693,7 @@ fn r(v0: bool) -> int:
   bb1 [unwind: ThrownException -> bb5, Exception -> bb4]:
     br_if v0, bb2, bb3
   bb2 [unwind: ThrownException -> bb5, Exception -> bb4]:
-    v5: any = opaque.NameRead(assert) {read:shared,throws}
+    v5: any = name_read assert {pure}
     v6: bool = const false
     v7: bool = opaque.DynamicCall(v5, v6) {impure}
     br bb3
@@ -763,7 +762,7 @@ fn r(v0: bool) -> int:
     v1: any = const null
     br bb4(v1)
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v2: any = opaque.NameRead(assert) {read:shared,throws}
+    v2: any = name_read assert {pure}
     v3: bool = const false
     v4: bool = opaque.DynamicCall(v2, v3) {impure}
     v5: any = convert.any v4
@@ -780,10 +779,12 @@ fn r(v0: bool) -> int:
     v12: int = const 20
     br bb8(v12)
   bb8(v13: int):
-    v14: any = opaque.NameAssign(top, v13) {impure}
-    v15: any = opaque.NameRead(top) {read:shared,throws}
-    v16: int = convert.int v15
-    ret v16
+    v14: any = convert.any v13
+    v15: any = name_assign top, v14 {write:shared,throws}
+    v16: any = checkcast v15 <int|int|>
+    v17: any = name_read top {read:shared}
+    v18: int = convert.int v17
+    ret v18
 ```
 
 ```mir
@@ -794,7 +795,7 @@ fn r(v0: bool) -> int:
   bb1 [unwind: ThrownException -> bb5, Exception -> bb4]:
     br_if v0, bb2, bb3
   bb2 [unwind: ThrownException -> bb5, Exception -> bb4]:
-    v1: any = opaque.NameRead(assert) {read:shared,throws}
+    v1: any = name_read assert {pure}
     v2: bool = const false
     v3: bool = opaque.DynamicCall(v1, v2) {impure}
     br bb3
@@ -809,8 +810,10 @@ fn r(v0: bool) -> int:
     v7: int = const 20
     br bb7(v7)
   bb7(v8: int):
-    v9: any = opaque.NameAssign(top, v8) {impure}
-    v10: any = opaque.NameRead(top) {read:shared,throws}
-    v11: int = convert.int v10
-    ret v11
+    v9: any = convert.any v8
+    v10: any = name_assign top, v9 {write:shared,throws}
+    v11: any = checkcast v10 <int|int|>
+    v12: any = name_read top {read:shared}
+    v13: int = convert.int v12
+    ret v13
 ```

@@ -47,7 +47,6 @@ public final class MirLowerer {
     }
 
     public static MirModule lower(HirModule module) {
-        Set<String> initTopLevelBindings = findInitTopLevelBindings(module);
         Map<Integer, MirFunction> functions = new LinkedHashMap<>();
         Map<Integer, String> fallbacks = new LinkedHashMap<>();
         for (HirFunction fn : module.functions().values()) {
@@ -55,221 +54,10 @@ public final class MirLowerer {
                 fallbacks.put(fn.id(), "namespace-scoped");
                 continue;
             }
-            MirFunction mirFn = new FunctionLowerer(module, fn, initTopLevelBindings).lower();
+            MirFunction mirFn = new FunctionLowerer(module, fn).lower();
             functions.put(fn.id(), mirFn);
         }
         return new MirModule(module, functions, fallbacks);
-    }
-
-    /**
-     * Collects top-level {@code def name = fn|class|record|interface|const} bindings in the
-     * leading pure declaration prefix of {@code module} that are never reassigned by any
-     * {@link HirExpr.NameAssign} anywhere in {@code module}. Mirrors
-     * {@code HirPurity.findDefinitelyInitializedTopLevelBindings} without coupling {@code ir} to
-     * {@code opt}.
-     */
-    private static Set<String> findInitTopLevelBindings(HirModule module) {
-        Set<String> reassigned = new HashSet<>();
-        collectNameAssignsInList(module.topLevelStatements(), reassigned);
-        for (HirFunction f : module.functions().values()) {
-            for (HirParam p : f.params()) {
-                collectNameAssigns(p.defaultValue(), reassigned);
-            }
-            collectNameAssignsInList(f.body(), reassigned);
-        }
-        for (HirClass c : module.classes().values()) {
-            for (HirParam p : c.params()) {
-                collectNameAssigns(p.defaultValue(), reassigned);
-            }
-            collectNameAssignsInList(c.body(), reassigned);
-            if (c.staticBlock() != null) {
-                collectNameAssignsInList(c.staticBlock().body(), reassigned);
-            }
-        }
-        for (var iface : module.interfaces().values()) {
-            collectNameAssignsInList(iface.body(), reassigned);
-            if (iface.staticBlock() != null) {
-                collectNameAssignsInList(iface.staticBlock().body(), reassigned);
-            }
-        }
-        Set<String> bindings = new HashSet<>();
-        for (HirExpr stmt : module.topLevelStatements()) {
-            if (stmt instanceof HirExpr.Def d && d.var() == null
-                    && d.target().kind() == LoweringTargets.DefKind.LEXICAL) {
-                HirExpr val = unwrapTransparentStatic(d.value());
-                boolean purePrefixDecl = false;
-                if (val instanceof HirExpr.FunctionRef || val instanceof HirExpr.Const) {
-                    purePrefixDecl = true;
-                } else if (val instanceof HirExpr.ClassExpr ce) {
-                    HirClass cls = module.classes().get(ce.classId());
-                    purePrefixDecl = cls != null && !cls.isObject() && cls.staticBlock() == null;
-                } else if (val instanceof HirExpr.InterfaceExpr ie) {
-                    var iface = module.interfaces().get(ie.interfaceId());
-                    purePrefixDecl = iface != null && iface.staticBlock() == null;
-                }
-                if (purePrefixDecl) {
-                    if (!reassigned.contains(d.name())) {
-                        bindings.add(d.name());
-                    }
-                    continue;
-                }
-            }
-            break;
-        }
-        return bindings;
-    }
-
-    private static HirExpr unwrapTransparentStatic(HirExpr expr) {
-        while (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
-            expr = b.statements().get(0);
-        }
-        return expr;
-    }
-
-    private static void collectNameAssignsInList(List<HirExpr> exprs, Set<String> out) {
-        if (exprs == null) return;
-        for (HirExpr e : exprs) {
-            collectNameAssigns(e, out);
-        }
-    }
-
-    private static void collectNameAssignsInArgs(List<HirCallArg> args, Set<String> out) {
-        if (args == null) return;
-        for (HirCallArg a : args) {
-            collectNameAssigns(a.value(), out);
-        }
-    }
-
-    private static void collectNameAssigns(HirExpr expr, Set<String> out) {
-        if (expr == null) return;
-        switch (expr) {
-            case HirExpr.NameAssign a -> {
-                out.add(a.name());
-                collectNameAssigns(a.value(), out);
-            }
-            case HirExpr.Def d -> collectNameAssigns(d.value(), out);
-            case HirExpr.VarAssign a -> collectNameAssigns(a.value(), out);
-            case HirExpr.ThisFieldAssign a -> {
-                collectNameAssigns(a.receiver(), out);
-                collectNameAssigns(a.value(), out);
-            }
-            case HirExpr.JavaFieldAssign a -> {
-                collectNameAssigns(a.receiver(), out);
-                collectNameAssigns(a.value(), out);
-            }
-            case HirExpr.DynamicFieldAssign a -> {
-                collectNameAssigns(a.receiver(), out);
-                collectNameAssigns(a.value(), out);
-            }
-            case HirExpr.ThisFieldGet g -> collectNameAssigns(g.receiver(), out);
-            case HirExpr.JavaFieldGet g -> collectNameAssigns(g.receiver(), out);
-            case HirExpr.ArrayCreate c -> collectNameAssignsInList(c.args(), out);
-            case HirExpr.ArrayOp op -> {
-                collectNameAssigns(op.receiver(), out);
-                collectNameAssignsInList(op.args(), out);
-            }
-            case HirExpr.ModuleExportGet g -> collectNameAssigns(g.receiver(), out);
-            case HirExpr.DynamicSelect s -> collectNameAssigns(s.receiver(), out);
-            case HirExpr.Unary u -> collectNameAssigns(u.operand(), out);
-            case HirExpr.Binary b -> {
-                collectNameAssigns(b.left(), out);
-                collectNameAssigns(b.right(), out);
-            }
-            case HirExpr.Logic l -> {
-                collectNameAssigns(l.left(), out);
-                collectNameAssigns(l.right(), out);
-            }
-            case HirExpr.Is i -> collectNameAssigns(i.left(), out);
-            case HirExpr.As a -> collectNameAssigns(a.left(), out);
-            case HirExpr.NonNull n -> collectNameAssigns(n.operand(), out);
-            case HirExpr.SpreadAdapt s -> collectNameAssigns(s.value(), out);
-            case HirExpr.JavaSamAdapt j -> collectNameAssigns(j.value(), out);
-            case HirExpr.Block b -> collectNameAssignsInList(b.statements(), out);
-            case HirExpr.If i -> {
-                collectNameAssigns(i.cond(), out);
-                collectNameAssigns(i.thenBranch(), out);
-                collectNameAssigns(i.elseBranch(), out);
-            }
-            case HirExpr.While w -> {
-                collectNameAssigns(w.cond(), out);
-                collectNameAssigns(w.body(), out);
-            }
-            case HirExpr.For f -> {
-                collectNameAssigns(f.iterable(), out);
-                collectNameAssignsInList(f.body(), out);
-            }
-            case HirExpr.Try t -> {
-                collectNameAssignsInList(t.tryBody(), out);
-                for (HirExpr.HirCatch c : t.catches()) {
-                    collectNameAssignsInList(c.body(), out);
-                }
-                collectNameAssignsInList(t.finallyBody(), out);
-            }
-            case HirExpr.Return r -> collectNameAssigns(r.value(), out);
-            case HirExpr.Throw th -> collectNameAssigns(th.value(), out);
-            case HirExpr.CoreCollectionCall c -> collectNameAssignsInArgs(c.args(), out);
-            case HirExpr.SuperCall c -> collectNameAssignsInArgs(c.args(), out);
-            case HirExpr.SelfRecurseCall c -> collectNameAssignsInList(c.args(), out);
-            case HirExpr.SelfTailCall c -> collectNameAssignsInArgs(c.args(), out);
-            case HirExpr.DirectBabbleCall c -> {
-                collectNameAssigns(c.callee(), out);
-                collectNameAssignsInList(c.args(), out);
-            }
-            case HirExpr.DirectThisMethodCall c -> {
-                collectNameAssigns(c.receiver(), out);
-                collectNameAssignsInArgs(c.args(), out);
-            }
-            case HirExpr.InterfaceCall c -> {
-                collectNameAssigns(c.receiver(), out);
-                collectNameAssignsInList(c.args(), out);
-            }
-            case HirExpr.JavaConstructorCall c -> {
-                collectNameAssigns(c.callee(), out);
-                collectNameAssignsInList(c.args(), out);
-            }
-            case HirExpr.JavaMethodCall c -> {
-                collectNameAssigns(c.receiver(), out);
-                collectNameAssignsInList(c.args(), out);
-            }
-            case HirExpr.SafeCall c -> {
-                collectNameAssigns(c.receiver(), out);
-                collectNameAssignsInArgs(c.args(), out);
-            }
-            case HirExpr.DynamicCall c -> {
-                collectNameAssigns(c.callee(), out);
-                collectNameAssignsInArgs(c.args(), out);
-            }
-            case HirExpr.MakeOverloadSet m -> collectNameAssignsInList(m.operands(), out);
-            case HirExpr.OverloadSelect s -> collectNameAssigns(s.set(), out);
-            case HirExpr.OverloadDispatch d -> {
-                collectNameAssigns(d.callee(), out);
-                collectNameAssignsInList(d.args(), out);
-            }
-            case HirExpr.TypeApply t -> collectNameAssigns(t.inner(), out);
-            case HirExpr.RecordNew r -> {
-                collectNameAssigns(r.classRef(), out);
-                collectNameAssignsInList(r.args(), out);
-            }
-            case HirExpr.RecordReuse r -> {
-                collectNameAssigns(r.target(), out);
-                collectNameAssignsInList(r.args(), out);
-            }
-            case HirExpr.Move m -> collectNameAssigns(m.operand(), out);
-            case HirExpr.Freeze f -> collectNameAssigns(f.operand(), out);
-            case HirExpr.Const ignored -> {}
-            case HirExpr.IntParseFallback ignored -> {}
-            case HirExpr.CoreCollectionRef ignored -> {}
-            case HirExpr.CoreExceptionRef ignored -> {}
-            case HirExpr.VarRead ignored -> {}
-            case HirExpr.NameRead ignored -> {}
-            case HirExpr.ThisRef ignored -> {}
-            case HirExpr.RecurseRef ignored -> {}
-            case HirExpr.Break ignored -> {}
-            case HirExpr.Continue ignored -> {}
-            case HirExpr.FunctionRef ignored -> {}
-            case HirExpr.ClassExpr ignored -> {}
-            case HirExpr.InterfaceExpr ignored -> {}
-        }
     }
 
     /**
@@ -339,7 +127,6 @@ public final class MirLowerer {
     private static final class FunctionLowerer {
         private final HirModule module;
         private final HirFunction fn;
-        private final Set<String> initTopLevelBindings;
         private final Set<Integer> pinnedVarIds = new LinkedHashSet<>();
         private final Map<Integer, HirVar> pinnedVarsById = new LinkedHashMap<>();
         private final Map<Integer, HirVar> varById = new HashMap<>();
@@ -413,10 +200,9 @@ public final class MirLowerer {
         private record NarrowHint(HirVar var, MirInst.NarrowKind kind, String desc, boolean onTrueBranch) {
         }
 
-        FunctionLowerer(HirModule module, HirFunction fn, Set<String> initTopLevelBindings) {
+        FunctionLowerer(HirModule module, HirFunction fn) {
             this.module = module;
             this.fn = fn;
-            this.initTopLevelBindings = initTopLevelBindings;
         }
 
         MirFunction lower() {
@@ -1087,10 +873,12 @@ public final class MirLowerer {
             MirVal res = switch (expr) {
                 case HirExpr.Const c -> emitConst(c.value(), constKind(c.value()), ln);
                 case HirExpr.VarRead v -> readVar(v.var(), ln);
+                case HirExpr.NameRead nr -> lowerNameRead(nr);
                 case HirExpr.ThisRef t -> t.var() != null ? readVar(t.var(), ln) : lowerOpaque(expr);
                 case HirExpr.RecurseRef r -> r.var() != null ? readVar(r.var(), ln) : lowerOpaque(expr);
                 case HirExpr.Def d -> lowerDef(d);
                 case HirExpr.VarAssign a -> lowerVarAssign(a);
+                case HirExpr.NameAssign a -> lowerNameAssign(a);
                 case HirExpr.ThisFieldGet g -> lowerThisFieldGet(g);
                 case HirExpr.ThisFieldAssign a -> lowerThisFieldAssign(a);
                 case HirExpr.JavaFieldGet g -> lowerJavaFieldGet(g);
@@ -1185,6 +973,35 @@ public final class MirLowerer {
             return conv;
         }
 
+        private MirVal lowerNameRead(HirExpr.NameRead nr) {
+            int ln = nr.meta().line();
+            boolean defDef = nr.definitelyDefined();
+            MirEffect fx;
+            if (nr.finalBinding()) {
+                fx = defDef ? MirEffect.PURE_NOTHROW : MirEffect.PURE_MAY_THROW;
+            } else {
+                fx = defDef ? MirEffect.READ_SHARED : MirEffect.READ_SHARED_THROW;
+            }
+            MirVal res = newVal(PrimitiveKind.NONE, nr.name());
+            emit(new MirInst.NameRead(res, nr.name(), nr.finalBinding(), ln, fx));
+            return applyCheckedType(res, nr.meta().checkedType(), ln);
+        }
+
+        private MirVal lowerNameAssign(HirExpr.NameAssign a) {
+            int ln = a.meta().line();
+            MirVal val = lowerAndWiden(a.value());
+            if (cur.isTerminated()) return val;
+            if (a.operator() == null) {
+                val = applyWideningRank(val, a.meta().wideningRank(), ln);
+            }
+            MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+            MirVal res = newVal(PrimitiveKind.NONE, a.name());
+            MirEffect fx = a.operator() == null ? MirEffect.WRITE_SHARED_THROW : MirEffect.IMPURE_THROW;
+            emit(new MirInst.NameAssign(res, a.name(), a.operator(), boxed, a.targetText(), a.valueText(),
+                    a.operator() != null ? a.meta().wideningRank() : -1, ln, fx));
+            return applyCheckedType(res, a.meta().checkedType(), ln);
+        }
+
         // ------------------------------------------------------------------ fields & arrays
 
         private MirVal lowerThisFieldGet(HirExpr.ThisFieldGet g) {
@@ -1195,7 +1012,7 @@ public final class MirLowerer {
             MirEffect fx = thisFieldReadEffect(g, recv);
             MirVal res = newVal(outKind, g.memberName());
             emit(new MirInst.LoadField(res, recv, g.receiverText(), g.classId(), g.externalClassJvmName(),
-                    g.memberIndex(), g.memberName(), g.fieldKind(), g.recordField(), g.definitelyDefined(), ln, fx));
+                    g.memberIndex(), g.memberName(), g.fieldKind(), g.immutableField(), g.definitelyDefined(), ln, fx));
             return applyCheckedType(res, g.meta().checkedType(), ln);
         }
 
@@ -1214,20 +1031,20 @@ public final class MirLowerer {
 
         private MirEffect thisFieldReadEffect(HirExpr.ThisFieldGet g, MirVal recv) {
             MirEffect.AliasClass alias = aliasOf(recv, g.receiver().meta());
-            if (g.recordField()) {
+            if (g.immutableField()) {
                 alias = MirEffect.AliasClass.FROZEN;
             }
             boolean nothrow;
             if (g.receiverText() == null && g.classId() >= 0 && g.memberIndex() >= 0) {
                 HirClass cls = module.clazz(g.classId());
-                nothrow = cls != null && cls.shape().isValue()
+                nothrow = cls != null && g.immutableField() && g.definitelyDefined()
                         && (g.memberIndex() >= cls.primDefBits().length || cls.primDefBits()[g.memberIndex()] < 0);
             } else {
-                nothrow = g.recordField() && g.definitelyDefined()
+                nothrow = g.immutableField() && g.definitelyDefined()
                         && (g.receiver() instanceof HirExpr.ThisRef || g.receiver() instanceof HirExpr.RecordNew
                         || g.receiver() instanceof HirExpr.VarRead);
             }
-            if (g.recordField() && nothrow) {
+            if (g.immutableField() && nothrow) {
                 return MirEffect.READ_FROZEN;
             }
             return MirEffect.read(alias, nothrow, true, true);
@@ -2607,9 +2424,6 @@ public final class MirLowerer {
             return switch (expr) {
                 case HirExpr.CoreCollectionRef ignored -> MirEffect.PURE_NOTHROW;
                 case HirExpr.CoreExceptionRef ignored -> MirEffect.PURE_NOTHROW;
-                case HirExpr.NameRead nr -> initTopLevelBindings.contains(nr.name())
-                        ? MirEffect.READ_SHARED
-                        : MirEffect.READ_SHARED_THROW;
                 case HirExpr.FunctionRef fr -> {
                     HirFunction target = module.function(fr.functionId());
                     yield (target != null && !target.capturedVars().isEmpty())

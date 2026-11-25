@@ -48,6 +48,8 @@ public sealed interface MirInst permits
         MirInst.SlotDecl,
         MirInst.SlotRead,
         MirInst.SlotWrite,
+        MirInst.NameRead,
+        MirInst.NameAssign,
         MirInst.ScopeEnter,
         MirInst.ScopeExit,
         MirInst.ForIterInit,
@@ -388,7 +390,7 @@ public sealed interface MirInst permits
             int memberIndex,
             String memberName,
             PrimitiveKind fieldKind,
-            boolean recordField,
+            boolean immutableField,
             boolean definitelyDefined,
             int line,
             MirEffect effect
@@ -409,7 +411,7 @@ public sealed interface MirInst permits
             MirVal nr = fn.apply(receiver);
             return nr == receiver ? this
                     : new LoadField(result, nr, receiverText, classId, externalClassJvmName, memberIndex,
-                    memberName, fieldKind, recordField, definitelyDefined, line, effect);
+                    memberName, fieldKind, immutableField, definitelyDefined, line, effect);
         }
     }
 
@@ -1235,10 +1237,73 @@ public sealed interface MirInst permits
     }
 
     /**
+     * First-class namespace binding read ({@code BIP034-D7}).
+     *
+     * <p>Immutable definitely-initialized {@code def} bindings carry {@link MirEffect#PURE_NOTHROW};
+     * immutable late {@code def}s carry {@link MirEffect#PURE_MAY_THROW}; mutable {@code var}s carry
+     * {@link MirEffect#READ_SHARED} or {@link MirEffect#READ_SHARED_THROW}.
+     */
+    record NameRead(
+            MirVal result,
+            String name,
+            boolean finalBinding,
+            int line,
+            MirEffect effect
+    ) implements MirInst {
+        public NameRead {
+            Objects.requireNonNull(result, "result");
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public List<MirVal> usedValues() {
+            return List.of();
+        }
+
+        @Override
+        public MirInst remapUses(UnaryOperator<MirVal> fn) {
+            return this;
+        }
+    }
+
+    /** First-class namespace binding assignment ({@code BIP034-D7}). */
+    record NameAssign(
+            MirVal result,
+            String name,
+            String operator,
+            MirVal value,
+            String targetText,
+            String valueText,
+            int wideningRank,
+            int line,
+            MirEffect effect
+    ) implements MirInst {
+        public NameAssign {
+            Objects.requireNonNull(result, "result");
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(value, "value");
+            Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public List<MirVal> usedValues() {
+            return List.of(value);
+        }
+
+        @Override
+        public MirInst remapUses(UnaryOperator<MirVal> fn) {
+            MirVal nv = fn.apply(value);
+            return nv == value ? this
+                    : new NameAssign(result, name, operator, nv, targetText, valueText, wideningRank, line, effect);
+        }
+    }
+
+    /**
      * Atomic Babble-specific expression whose sub-expressions have already been lowered to SSA
      * {@link #operands()} (e.g., {@code DynamicCall}, {@code SuperCall}, {@code OverloadDispatch},
      * {@code CoreCollectionCall}, {@code ArrayCreate}, {@code ClassExpr}, {@code FunctionRef},
-     * {@code NameRead}/{@code NameAssign}, {@code ModuleExportGet}).
+     * {@code ModuleExportGet}).
      */
     record OpaqueExpr(
             MirVal result,

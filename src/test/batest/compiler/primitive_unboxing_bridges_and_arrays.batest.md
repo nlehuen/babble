@@ -123,7 +123,7 @@ class C:
       v1: any = is v0 <int>
       br_if v1, bb2, bb1
     bb1:
-      v2: any = opaque.NameRead(int) {read:shared,throws}
+      v2: any = name_read int {pure}
       v3: int = opaque.DynamicCall(v2, v0) {impure}
       br bb3(v3)
     bb2:
@@ -141,7 +141,7 @@ class C:
       br bb3(v2)
     bb2:
       v3: any = narrow.is v0 <int>
-      v4: any = opaque.NameRead(double) {read:shared,throws}
+      v4: any = name_read double {pure}
       v5: double = opaque.DynamicCall(v4, v3) {impure}
       br bb3(v5)
     bb3(v6: double):
@@ -172,7 +172,7 @@ class C
 class C:
   fn C.f(v0: double, v1: float) -> double:
     bb0:
-      v2: any = opaque.NameRead(double) {read:shared,throws}
+      v2: any = name_read double {pure}
       v3: double = opaque.DynamicCall(v2, v1) {impure}
       v4: double = add v0, v3 {pure}
       ret v4

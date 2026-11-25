@@ -811,6 +811,8 @@ final class MirEmitter {
                 mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Throwables", "addSuppressed",
                         "(Ljava/lang/Throwable;Ljava/lang/Throwable;)V", false);
             }
+            case MirInst.NameRead nr -> emitNameRead(nr);
+            case MirInst.NameAssign na -> emitNameAssign(na);
             case MirInst.OpaqueExpr op -> emitOpaque(op);
         }
     }
@@ -1054,9 +1056,23 @@ final class MirEmitter {
         HirExpr ph = placeholder(lf.receiver(), lf.line());
         withOverrides(Map.of(ph, operandOf(lf.receiver())), () -> emitter.assigns.emitThisFieldGet(
                 new HirExpr.ThisFieldGet(ph, lf.receiverText(), lf.classId(), lf.externalClassJvmName(),
-                        lf.memberIndex(), lf.memberName(), lf.fieldKind(), lf.recordField(), lf.definitelyDefined(),
+                        lf.memberIndex(), lf.memberName(), lf.fieldKind(), lf.immutableField(), lf.definitelyDefined(),
                         ExprMeta.of(lf.line(), lf.result().kind()))));
         storeResult(lf.result());
+    }
+
+    private void emitNameRead(MirInst.NameRead nr) {
+        emitter.loadVarOrName(null, nr.name(), nr.line());
+        storeResult(nr.result());
+    }
+
+    private void emitNameAssign(MirInst.NameAssign na) {
+        HirExpr ph = placeholder(na.value(), na.line());
+        ExprMeta meta = new ExprMeta(na.line(), PrimitiveKind.NONE, na.wideningRank(), null,
+                org.babblelang.analysis.EffectSet.EMPTY, false, false);
+        withOverrides(Map.of(ph, operandOf(na.value())), () -> emitter.assigns.emitNameAssign(
+                new HirExpr.NameAssign(na.name(), na.operator(), ph, na.targetText(), na.valueText(), meta)));
+        storeResult(na.result());
     }
 
     private void emitStoreField(MirInst.StoreField sf) {

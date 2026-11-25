@@ -128,9 +128,7 @@ top-level:
   (def Buf (class-ref Buf))
   (def mkC (fn-ref mkC))
   (def mulObj (class-ref object))
-  (call name(assert) (==:bool (block
-        (def $this name(mulObj))
-        6.5:double) 6.5:double))
+  (call name(assert) true:bool)
 ```
 
 ```mir
@@ -236,18 +234,32 @@ interface W
 ```
 
 ```mir
-;; mir -O2 interface=W stage=before,final
+;; mir -O2 interface=W stage=before
 interface W:
   fn forEachRemaining(v0: any) -> any:
     bb0:
-      v1: any = opaque.NameRead(print) {read:shared,throws}
+      v1: any = name_read print {pure}
       v2: any = const "<"
       v3: any = opaque.DynamicCall(v1, v2) {impure}
       v4: any = opaque.SuperCall(forEachRemaining, v0) {impure}
-      v5: any = opaque.NameRead(print) {read:shared,throws}
+      v5: any = name_read print {pure}
       v6: any = const ">"
       v7: any = opaque.DynamicCall(v5, v6) {impure}
       ret v7
+```
+
+```mir
+;; mir -O2 interface=W
+interface W:
+  fn forEachRemaining(v0: any) -> any:
+    bb0:
+      v1: any = name_read print {pure}
+      v2: any = const "<"
+      v3: any = opaque.DynamicCall(v1, v2) {impure}
+      v4: any = opaque.SuperCall(forEachRemaining, v0) {impure}
+      v5: any = const ">"
+      v6: any = opaque.DynamicCall(v1, v5) {impure}
+      ret v6
 ```
 
 ## Case 7
@@ -304,7 +316,7 @@ class Widener:
       v1: int = slot_read scale {read:shared,throws}
       v2: int = mul v0, v1 {pure}
       v3: any = slot_read this {pure}
-      v4: int = load_field v3.factor {read:shared,throws}
+      v4: int = load_field v3.factor {read:frozen,throws}
       v5: int = mul v2, v4 {pure}
       ret v5
 ```
@@ -411,7 +423,7 @@ class LongInc (d:int)
 class LongInc:
   fn LongInc.applyAsLong(v0: any) -> int:
     bb0:
-      v1: any = opaque.NameRead(int) {read:shared,throws}
+      v1: any = name_read int {pure}
       v2: any = checkcast v0 <long|long|>
       v3: int = opaque.DynamicCall(v1, v2) {impure}
       v4: int = slot_read d {read:shared,throws}
@@ -445,6 +457,6 @@ class Flag:
   fn Flag.getAsBoolean() -> bool:
     bb0:
       v0: any = slot_read this {pure}
-      v1: bool = load_field v0.v {read:shared,throws}
+      v1: bool = load_field v0.v {read:frozen}
       ret v1
 ```

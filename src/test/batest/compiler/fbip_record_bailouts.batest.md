@@ -61,7 +61,7 @@ fn merge(v0: any [unique], v1: any [unique], v2: any) -> any:
     v3: int = load_field v0.count {read:frozen}
     v4: int = load_field v1.count {read:frozen}
     v5: int = add v3, v4 {pure}
-    v6: any = opaque.NameRead(int) {read:shared,throws}
+    v6: any = name_read int {pure}
     v7: double = load_field v2.x {read:frozen}
     v8: int = opaque.DynamicCall(v6, v7) {impure}
     v9: int = add v5, v8 {pure}
@@ -199,7 +199,7 @@ fn toExt (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=toExt stage=before,final
 fn toExt(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(m) {read:shared,throws}
+    v1: any = name_read m {pure}
     v2: any = opaque.ModuleExportGet(v1.ExtHolder) {impure}
     v3: any = load_field v0.items {read:frozen}
     v4: int = load_field v0.count {read:frozen}
@@ -209,12 +209,12 @@ fn toExt(v0: any [unique]) -> any:
     ret v7
 ```
 
-## FBIP record reuse classRef purity : local alias reuses while non-init alias bails out
+## FBIP record reuse classRef purity : local alias reuses while mutable alias bails out
 
 ```babble
-def HRef = Holder
+var HRef = Holder
 def pureLocal = fn (unique h: Holder): Holder -> ( def H = Holder ; H(h.items, h.count + 1) )
-def nonInitRef = fn (unique h: Holder): Holder -> ( HRef(h.items, h.count + 2) )
+def nonInitRef = fn volatile (unique h: Holder): Holder -> ( HRef(h.items, h.count + 2) )
 assert(pureLocal(Holder(list(1), 1)).count == 2 and nonInitRef(Holder(list(1), 1)).count == 3)
 ```
 
@@ -228,13 +228,12 @@ fn pureLocal (h:obj) -> obj {nothrow}
 ```hir
 ;; hir -O1 fn=pureLocal
 fn pureLocal (h:obj) -> obj {nothrow}
-  (def H name(Holder))
   (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
 ```hir
 ;; hir -O0,-O1 fn=nonInitRef
-fn nonInitRef (h:obj) -> obj {nothrow}
+fn nonInitRef (h:obj) -> obj {volatile nothrow}
   (record-new Holder (get-this-field items) (+:int (get-this-field count) 2:int))
 ```
 
@@ -242,7 +241,7 @@ fn nonInitRef (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=nonInitRef stage=before,final
 fn nonInitRef(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(HRef) {read:shared,throws}
+    v1: any = name_read HRef {read:shared}
     v2: any = load_field v0.items {read:frozen}
     v3: int = load_field v0.count {read:frozen}
     v4: int = const 2
@@ -271,11 +270,11 @@ fn impureRef (h:obj) -> obj {io}
 ;; mir -O2 fn=impureRef stage=before,final
 fn impureRef(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(log) {read:shared,throws}
+    v1: any = name_read log {pure,throws}
     v2: any = const "H"
     v3: any = call_java v1.append(v2) {impure}
     v4: any = checkcast v3 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v5: any = opaque.NameRead(Holder) {read:shared}
+    v5: any = name_read Holder {pure}
     v6: any = load_field v0.items {read:frozen}
     v7: int = load_field v0.count {read:frozen}
     v8: int = const 3

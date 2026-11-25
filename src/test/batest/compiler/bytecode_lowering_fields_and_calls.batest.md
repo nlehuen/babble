@@ -301,7 +301,7 @@ fn fwd () -> int {nothrow unique}
 fn fwd() -> int:
   bb0:
     v0: any = opaque.FunctionRef(g) {read:shared}
-    v1: any = opaque.NameRead(java) {read:shared,throws}
+    v1: any = name_read java {pure}
     v2: any = opaque.DynamicSelect(v1.lang) {impure}
     v3: any = opaque.DynamicSelect(v2.Math) {impure}
     slot_init M, v3 {write:shared,throws}
@@ -335,11 +335,11 @@ fn run () -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before,final
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead(Box) {read:shared}
+    v0: any = name_read Box {pure}
     v1: int = const 4
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: any = move v2
-    v4: int = load_field v3.v {read:shared,throws}
+    v4: int = load_field v3.v {read:frozen}
     ret v4
 ```
 
@@ -377,10 +377,10 @@ fn mkLocal() -> int:
     v5: any = opaque.ArrayCreate(v2, v4) {impure}
     v6: int = const 0
     v7: any = array_get v5[v6] {read:shared,throws}
-    v8: int = load_field v7.v {read:shared,throws}
+    v8: int = load_field v7.v {read:frozen,throws}
     v9: int = const 1
     v10: any = array_get v5[v9] {read:shared,throws}
-    v11: int = load_field v10.v {read:shared,throws}
+    v11: int = load_field v10.v {read:frozen,throws}
     v12: int = add v8, v11 {pure}
     ret v12
 ```
@@ -610,7 +610,7 @@ fn f (x:int, d:obj=1:int) -> double {nothrow unique}
 ;; mir -O2 fn=f stage=before,final
 fn f(v0: int, v1: any) -> double:
   bb0:
-    v2: any = opaque.NameRead(double) {read:shared,throws}
+    v2: any = name_read double {pure}
     v3: double = opaque.DynamicCall(v2, v0) {impure}
     v4: any = is v1 <double>
     br_if v4, bb2, bb1

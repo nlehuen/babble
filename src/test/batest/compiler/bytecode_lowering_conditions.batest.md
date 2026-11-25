@@ -41,7 +41,7 @@ fn fold (x:int) -> bool {pure unique}
 ;; mir -O2 fn=fold stage=before
 fn fold(v0: int) -> bool:
   bb0:
-    v1: any = opaque.NameRead(assert) {read:shared,throws}
+    v1: any = name_read assert {pure}
     v2: int = const 5
     v3: bool = eq v0, v2 {pure}
     v4: bool = const false
@@ -59,7 +59,7 @@ fn fold(v0: int) -> bool:
     br bb4(v10)
   bb4(v11: bool):
     v12: bool = opaque.DynamicCall(v1, v11) {impure}
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
+    v13: any = name_read assert {pure}
     v14: int = const 5
     v15: bool = eq v0, v14 {pure}
     v16: bool = const false
@@ -70,7 +70,7 @@ fn fold(v0: int) -> bool:
     br bb6(v18)
   bb6(v19: bool):
     v20: bool = opaque.DynamicCall(v13, v19) {impure}
-    v21: any = opaque.NameRead(assert) {read:shared,throws}
+    v21: any = name_read assert {pure}
     v22: bool = const true
     v23: bool = opaque.DynamicCall(v21, v22) {impure}
     ret v23
@@ -80,7 +80,7 @@ fn fold(v0: int) -> bool:
 ;; mir -O2 fn=fold
 fn fold(v0: int) -> bool:
   bb0:
-    v1: any = opaque.NameRead(assert) {read:shared,throws}
+    v1: any = name_read assert {pure}
     v2: int = const 5
     v3: bool = eq v0, v2 {pure}
     v4: bool = const false
@@ -93,16 +93,14 @@ fn fold(v0: int) -> bool:
     br bb4(v3)
   bb4(v6: bool):
     v7: bool = opaque.DynamicCall(v1, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
     br_if v3, bb5, bb6(v4)
   bb5:
     br bb6(v3)
-  bb6(v9: bool):
-    v10: bool = opaque.DynamicCall(v8, v9) {impure}
-    v11: any = opaque.NameRead(assert) {read:shared,throws}
-    v12: bool = const true
-    v13: bool = opaque.DynamicCall(v11, v12) {impure}
-    ret v13
+  bb6(v8: bool):
+    v9: bool = opaque.DynamicCall(v1, v8) {impure}
+    v10: bool = const true
+    v11: bool = opaque.DynamicCall(v1, v10) {impure}
+    ret v11
 ```
 
 ## evalIntConstant nested unary minus including 32-bit Integer.MIN_VALUE negation wrap, plus mixed widening
@@ -135,7 +133,7 @@ top-level:
 top-level:
   (def dynNum (fn-ref dynNum))
   (def x 4:int)
-  (def z (+:int (+:int (+:int (+:int (neg name(x)) 21:int) 3:int) -2147483648:int) (neg (neg name(x)))))
+  (def z (+:int (+:int (neg name(x)) -2147483624:int) name(x)))
   (def dm 3.0:double)
   (def dmin -2147483648:int)
   (call name(assert) (==:bool name(z) -2147483624:int))
@@ -180,10 +178,10 @@ top-level:
   (def b2 false:bool)
   (def x 8:int)
   (def y 9:int)
-  (call name(assert) (and (==:bool (==:bool name(b1) name(b2)) false:bool) (==:bool (<>:bool name(b1) name(b2)) true:bool)))
+  (call name(assert) (and (<>:bool name(b1) name(b2)) (<>:bool name(b1) name(b2))))
   (call name(assert) (if (>=:bool name(x) 5:int) true:bool false:bool))
   (call name(assert) (if (or (<:bool name(x) 5:int) (<:bool name(y) 5:int)) false:bool true:bool))
-  (call name(assert) (and (and (==:bool name(b1) true:bool) (<>:bool name(b1) false:bool)) true:bool))
+  (call name(assert) (and (and name(b1) name(b1)) true:bool))
 ```
 
 ```mir

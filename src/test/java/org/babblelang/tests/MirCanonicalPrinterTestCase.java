@@ -208,32 +208,43 @@ public class MirCanonicalPrinterTestCase {
 
         MirModule before = lowerFromSource(src, 1);
         String useBothBefore = before.printCanonical(IrTarget.parse("fn=useBoth"));
-        Assertions.assertTrue(useBothBefore.contains("opaque.NameRead(Pair) {read:shared}"), useBothBefore);
-        Assertions.assertTrue(useBothBefore.contains("opaque.NameRead(counter) {read:shared,throws}"), useBothBefore);
+        Assertions.assertTrue(useBothBefore.contains("name_read Pair {pure}"), useBothBefore);
+        Assertions.assertTrue(useBothBefore.contains("name_read counter {read:shared}"), useBothBefore);
         Assertions.assertTrue(useBothBefore.contains("record_new Pair["), useBothBefore);
 
         String bumpBefore = before.printCanonical(IrTarget.parse("fn=bump"));
-        Assertions.assertTrue(bumpBefore.contains("opaque.NameAssign(counter,"), bumpBefore);
+        Assertions.assertTrue(bumpBefore.contains("name_assign counter,"), bumpBefore);
 
         String lateBefore = before.printCanonical(IrTarget.parse("fn=readLate"));
-        Assertions.assertTrue(lateBefore.contains("opaque.NameRead(lateConst) {read:shared,throws}"), lateBefore);
+        Assertions.assertTrue(lateBefore.contains("name_read lateConst {pure,throws}"), lateBefore);
 
         // Optimize at -O2: GVN + LICM should hoist and deduplicate the two Pair reads into one in bb0.
         MirModule after = org.babblelang.opt.mir.MirPassManager.defaultFor(2)
                 .optimize(before, org.babblelang.opt.PassContext.of(2, true, null), null, "test");
         String useBothAfter = after.printCanonical(IrTarget.parse("fn=useBoth"));
-        int pairReads = useBothAfter.split("opaque\\.NameRead\\(Pair\\)", -1).length - 1;
-        Assertions.assertEquals(1, pairReads, "Expected GVN/LICM to leave a single NameRead(Pair):\n" + useBothAfter);
+        int pairReads = useBothAfter.split("name_read Pair", -1).length - 1;
+        Assertions.assertEquals(1, pairReads, "Expected GVN/LICM to leave a single name_read Pair:\n" + useBothAfter);
 
-        // A class with a static block can run user code during declaration, so bindings after it
-        // must remain {read:shared,throws}.
-        String staticBlockSrc = ""
+        // A pure non-escaping static block keeps the inductive header open (BIP034-D6), so
+        // afterStatic is {pure}, whereas an active static block calling a function stops the
+        // header so afterActive remains {pure,throws}.
+        String pureStaticSrc = ""
                 + "def f = fn (): int -> ( afterStatic )\n"
                 + "def WithStatic = class () () static ( def x = 1 )\n"
                 + "def afterStatic = 42\n"
                 + "assert(f() == 42 and WithStatic.x == 1)\n";
-        MirModule staticMir = lowerFromSource(staticBlockSrc, 1);
-        String fDump = staticMir.printCanonical(IrTarget.parse("fn=f"));
-        Assertions.assertTrue(fDump.contains("opaque.NameRead(afterStatic) {read:shared,throws}"), fDump);
+        MirModule pureStaticMir = lowerFromSource(pureStaticSrc, 1);
+        String fPureDump = pureStaticMir.printCanonical(IrTarget.parse("fn=f"));
+        Assertions.assertTrue(fPureDump.contains("name_read afterStatic {pure}"), fPureDump);
+
+        String activeStaticSrc = ""
+                + "def ping = fn io (): int -> ( 1 )\n"
+                + "def f = fn (): int -> ( afterActive )\n"
+                + "def WithActive = class () () static ( def x = ping() )\n"
+                + "def afterActive = 42\n"
+                + "assert(f() == 42 and WithActive.x == 1)\n";
+        MirModule activeStaticMir = lowerFromSource(activeStaticSrc, 1);
+        String fActiveDump = activeStaticMir.printCanonical(IrTarget.parse("fn=f"));
+        Assertions.assertTrue(fActiveDump.contains("name_read afterActive {pure,throws}"), fActiveDump);
     }
 }

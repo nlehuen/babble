@@ -54,6 +54,7 @@ public final class LoweringMetadata {
     private final Set<ParserRuleContext> expressionUnique = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<BabbleParser.BooleanOpContext> logicRightNarrowed = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.CallContext, String> builtinOwnershipCalls = new IdentityHashMap<>();
+    private final Set<BabbleParser.SelectorContext> publicStaticDefSelects = Collections.newSetFromMap(new IdentityHashMap<>());
 
     LoweringMetadata() {
     }
@@ -401,6 +402,14 @@ public final class LoweringMetadata {
     /** {@code "move"} or {@code "freeze"} when {@code ctx} calls the unshadowed built-in, else null. */
     public String builtinOwnershipCall(BabbleParser.CallContext ctx) {
         return builtinOwnershipCalls.get(ctx);
+    }
+
+    void markPublicStaticDefSelect(BabbleParser.SelectorContext ctx) {
+        publicStaticDefSelects.add(ctx);
+    }
+
+    public boolean isPublicStaticDefSelect(BabbleParser.SelectorContext ctx) {
+        return publicStaticDefSelects.contains(ctx);
     }
 }
 

@@ -125,8 +125,8 @@ fn run(v0: int) -> int:
   bb8:
     br bb9
   bb9 [unwind: Throwable -> bb10]:
-    v13: any = opaque.NameRead(discard) {read:shared,throws}
-    v14: any = opaque.NameRead(bump) {read:shared}
+    v13: any = name_read discard {pure}
+    v14: any = name_read bump {pure}
     v15: int = call bump() {impure}
     v16: any = opaque.DynamicCall(v13, v15) {impure}
     br bb11
@@ -136,8 +136,8 @@ fn run(v0: int) -> int:
   bb11:
     rethrow v12
   bb12:
-    v18: any = opaque.NameRead(discard) {read:shared,throws}
-    v19: any = opaque.NameRead(bump) {read:shared}
+    v18: any = name_read discard {pure}
+    v19: any = name_read bump {pure}
     v20: int = call bump() {impure}
     v21: any = opaque.DynamicCall(v18, v20) {impure}
     br bb13
@@ -156,8 +156,8 @@ fn run(v0: int) -> int:
     v2: int = add v0, v1 {pure}
     br bb1
   bb1:
-    v3: any = opaque.NameRead(discard) {read:shared,throws}
-    v4: any = opaque.NameRead(bump) {read:shared}
+    v3: any = name_read discard {pure}
+    v4: any = name_read bump {pure}
     v5: int = call bump() {impure}
     v6: any = opaque.DynamicCall(v3, v5) {impure}
     br bb2
@@ -539,8 +539,8 @@ fn run(v0: int, v1: any) -> int:
     br bb1(v29, v28, v26)
   bb8:
     v30: int = for_next v18, v23
-    v31: any = opaque.NameRead(discard) {read:shared,throws}
-    v32: any = opaque.NameRead(bump) {read:shared}
+    v31: any = name_read discard {pure}
+    v32: any = name_read bump {pure}
     v33: int = call bump() {impure}
     v34: any = opaque.DynamicCall(v31, v33) {impure}
     br bb9
@@ -563,47 +563,47 @@ fn run(v0: int, v1: any) -> int:
 fn run(v0: int, v1: any) -> int:
   bb0:
     v2: int = const 0
+    v3: any = name_read discard {pure}
+    v4: any = name_read bump {pure}
     br bb1(v2, v2)
-  bb1(v3: int, v4: int):
-    v5: bool = lt v3, v0 {pure}
-    br_if v5, bb3, bb2
+  bb1(v5: int, v6: int):
+    v7: bool = lt v5, v0 {pure}
+    br_if v7, bb3, bb2
   bb2:
-    ret v4
+    ret v6
   bb3:
-    v6: any = for_init.array v1
-    v7: int = array_len v6 {read:frozen}
+    v8: any = for_init.array v1
+    v9: int = array_len v8 {read:frozen}
     br bb4(v2)
-  bb4(v8: int):
-    v9: bool = for_has_next v6, v8, v7
-    br_if v9, bb10, bb5
+  bb4(v10: int):
+    v11: bool = for_has_next v8, v10, v9
+    br_if v11, bb10, bb5
   bb5:
-    v10: int = const 1
-    v11: int = add v4, v10 {pure}
-    v12: any = for_init.array v1
-    v13: int = array_len v12 {read:frozen}
+    v12: int = const 1
+    v13: int = add v6, v12 {pure}
+    v14: any = for_init.array v1
+    v15: int = array_len v14 {read:frozen}
     br bb6(v2)
-  bb6(v14: int):
-    v15: bool = for_has_next v12, v14, v13
-    br_if v15, bb8, bb7
+  bb6(v16: int):
+    v17: bool = for_has_next v14, v16, v15
+    br_if v17, bb8, bb7
   bb7:
-    v16: int = add v11, v10 {pure}
-    v17: int = add v3, v10 {pure}
-    br bb1(v17, v16)
+    v18: int = add v13, v12 {pure}
+    v19: int = add v5, v12 {pure}
+    br bb1(v19, v18)
   bb8:
-    v18: int = for_next v12, v14
-    v19: any = opaque.NameRead(discard) {read:shared,throws}
-    v20: any = opaque.NameRead(bump) {read:shared}
+    v20: int = for_next v14, v16
     v21: int = call bump() {impure}
-    v22: any = opaque.DynamicCall(v19, v21) {impure}
+    v22: any = opaque.DynamicCall(v3, v21) {impure}
     br bb9
   bb9:
-    v23: int = add v14, v10 {pure}
+    v23: int = add v16, v12 {pure}
     br bb6(v23)
   bb10:
-    v24: int = for_next v6, v8
+    v24: int = for_next v8, v10
     br bb11
   bb11:
     v25: int = const 1
-    v26: int = add v8, v25 {pure}
+    v26: int = add v10, v25 {pure}
     br bb4(v26)
 ```

@@ -56,7 +56,7 @@ fn run () -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead(step) {read:shared,throws}
+    v0: any = name_read step {pure,throws}
     v1: any = const "A"
     v2: int = call step(v1) {impure}
     v3: int = const 8
@@ -208,7 +208,6 @@ fn run (x:int) -> int {pure unique}
 ;; hir -O1 fn=run
 fn run (x:int) -> int {pure unique}
   (def d2 (fn-ref d2))
-  (def d3 (type-apply name(idG)))
   (def d4 (as var(x) double|double|))
   (+:int var(x) 1:int)
 ```
@@ -218,13 +217,12 @@ fn run (x:int) -> int {pure unique}
 fn run(v0: int) -> int:
   bb0:
     v1: any = opaque.FunctionRef(d2) {pure}
-    v2: any = opaque.NameRead(idG) {read:shared}
-    v3: any = convert.any v0
-    v4: any = checkcast v3 <double|double|>
-    v5: double = convert.double v4
-    v6: int = const 1
-    v7: int = add v0, v6 {pure}
-    ret v7
+    v2: any = convert.any v0
+    v3: any = checkcast v2 <double|double|>
+    v4: double = convert.double v3
+    v5: int = const 1
+    v6: int = add v0, v5 {pure}
+    ret v6
 ```
 
 ```mir
@@ -337,7 +335,7 @@ fn run(v0: any, v1: any) -> int:
     v10: any = for_next v5
     v11: any = checkcast v10 <int|int|>
     v12: int = convert.int v11
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
+    v13: any = name_read assert {pure}
     v14: int = const 0
     v15: bool = gt v12, v14 {pure}
     v16: bool = opaque.DynamicCall(v13, v15) {impure}
@@ -353,21 +351,21 @@ fn run(v0: any, v1: any) -> int:
     v3: any = opaque.DynamicFieldAssign(v0.v +=, v2) {impure}
     v4: int = load_field v0.v {read:shared,throws}
     v5: any = for_init.java_iterable v1
+    v6: any = name_read assert {pure}
     br bb1
   bb1:
-    v6: bool = for_has_next v5
-    br_if v6, bb3, bb2
+    v7: bool = for_has_next v5
+    br_if v7, bb3, bb2
   bb2:
-    v7: int = load_field v0.v {read:shared,throws}
-    ret v7
+    v8: int = load_field v0.v {read:shared,throws}
+    ret v8
   bb3:
-    v8: any = for_next v5
-    v9: any = checkcast v8 <int|int|>
-    v10: int = convert.int v9
-    v11: any = opaque.NameRead(assert) {read:shared,throws}
+    v9: any = for_next v5
+    v10: any = checkcast v9 <int|int|>
+    v11: int = convert.int v10
     v12: int = const 0
-    v13: bool = gt v10, v12 {pure}
-    v14: bool = opaque.DynamicCall(v11, v13) {impure}
+    v13: bool = gt v11, v12 {pure}
+    v14: bool = opaque.DynamicCall(v6, v13) {impure}
     br bb1
 ```
 
@@ -484,7 +482,7 @@ fn runNamed (x:int) -> int {nothrow unique}
 ;; mir -O2 fn=runNamed stage=before,final
 fn runNamed(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(discard) {read:shared,throws}
+    v1: any = name_read discard {pure}
     v2: int = const 1
     v3: int = add v0, v2 {pure}
     v4: any = opaque.DynamicCall(v1, v3) {impure}
@@ -510,7 +508,7 @@ fn run (x:int) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(discard) {read:shared,throws}
+    v1: any = name_read discard {read:shared}
     v2: int = opaque.DynamicCall(v1, v0) {impure}
     ret v2
 ```
@@ -534,7 +532,7 @@ fn run (x:int) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(discard) {read:shared,throws}
+    v1: any = name_read discard {read:shared}
     v2: int = const 3
     v3: int = opaque.DynamicCall(v1, v0, v2) {impure}
     ret v3

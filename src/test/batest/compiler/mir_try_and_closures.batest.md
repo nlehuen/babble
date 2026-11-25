@@ -98,7 +98,7 @@ fn handle(v0: int) -> int:
     v14: any = new_java Error(v13) {pure!}
     rethrow v14
   bb8 [unwind: ThrownException -> bb12, Error -> bb9, * -> bb15]:
-    v15: any = opaque.NameRead(E) {read:shared}
+    v15: any = name_read E {pure}
     v16: any = const "bad"
     v17: any = record_new E[v15](v16) {pure}
     throw v17
@@ -174,7 +174,7 @@ fn handle(v0: int) -> int:
     v10: any = new_java Error(v9) {pure!}
     rethrow v10
   bb6 [unwind: ThrownException -> bb10, Error -> bb7, * -> bb13]:
-    v11: any = opaque.NameRead(E) {read:shared}
+    v11: any = name_read E {pure}
     v12: any = const "bad"
     v13: any = record_new E[v11](v12) {pure}
     throw v13

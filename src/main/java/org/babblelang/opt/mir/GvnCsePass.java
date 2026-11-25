@@ -543,8 +543,20 @@ public final class GvnCsePass implements MirPass {
                     canonicalArgs(cm.args(), cm.commutative())) : null;
             case MirInst.SlotRead sr -> sr.effect().isPureFloatable()
                     ? new SlotReadKey(sr.var(), sr.result().kind()) : null;
-            case MirInst.OpaqueExpr op -> (op.template() instanceof HirExpr.NameRead nr && op.effect().isReadFloatable())
-                    ? new NameReadKey(nr.name(), op.result().kind(), epochs.epochFor(op.effect().alias())) : null;
+            case MirInst.NameRead nr -> {
+                if (nr.effect().isPureFloatable()) {
+                    yield new PureNameReadKey(nr.name(), nr.result().kind());
+                }
+                if (nr.finalBinding() && nr.effect().kind() == MirEffect.Kind.PURE) {
+                    // PURE_MAY_THROW: once a dominating read succeeds on a non-exception path, the
+                    // final slot is initialized forever (catch handlers receive parentTable via visitDom).
+                    yield new PureNameReadKey(nr.name(), nr.result().kind());
+                }
+                if (nr.effect().isReadFloatable()) {
+                    yield new NameReadKey(nr.name(), nr.result().kind(), epochs.epochFor(nr.effect().alias()));
+                }
+                yield null;
+            }
             default -> null;
         };
     }
@@ -598,5 +610,6 @@ public final class GvnCsePass implements MirPass {
     private record CallJavaKey(int recvId, Method method, PrimitiveKind kind, List<Integer> argIds) {}
     private record CallMethodKey(int recvId, int fnId, PrimitiveKind kind, List<Integer> argIds) {}
     private record SlotReadKey(org.babblelang.ir.hir.HirVar var, PrimitiveKind kind) {}
+    private record PureNameReadKey(String name, PrimitiveKind kind) {}
     private record NameReadKey(String name, PrimitiveKind kind, int epoch) {}
 }

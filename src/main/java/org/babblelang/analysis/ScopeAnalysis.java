@@ -476,4 +476,139 @@ public final class ScopeAnalysis {
         }
         return null;
     }
+
+    /**
+     * Resolves {@code name} at {@code occurrence} to determine whether the binding is immutable
+     * ({@code def} / prelude implicit / parameter) for {@code BIP034-P3} HIR/MIR purity.
+     */
+    public boolean isFinalName(ParserRuleContext occurrence, String name) {
+        if (pass == null) {
+            return org.babblelang.runtime.Implicits.isImplicit(name);
+        }
+        ScopeNode scope = enclosingScopeOf(occurrence);
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            ParserRuleContext decl = s.names.get(name);
+            if (decl != null) {
+                return !isVar(decl);
+            }
+        }
+        return org.babblelang.runtime.Implicits.isImplicit(name);
+    }
+
+    /**
+     * Whether {@code name} at {@code occurrence} is guaranteed initialized before the current
+     * file executes (either a prelude implicit or a binding from a cleanly completed earlier REPL input).
+     */
+    public boolean isDefinitelyDefinedFromSessionOrPrelude(ParserRuleContext occurrence, String name) {
+        if (pass == null) {
+            return org.babblelang.runtime.Implicits.isImplicit(name);
+        }
+        ScopeNode scope = enclosingScopeOf(occurrence);
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            ParserRuleContext decl = s.names.get(name);
+            if (decl != null) {
+                if (s == pass.fileScope) {
+                    return false;
+                }
+                return s.kind == ScopeNode.Kind.FILE && session != null && session.isCleanScope(s);
+            }
+        }
+        return org.babblelang.runtime.Implicits.isImplicit(name);
+    }
+
+    /** Whether {@code name} at {@code occurrence} resolves directly to the current file's top-level scope. */
+    public boolean resolvesToFileScope(ParserRuleContext occurrence, String name) {
+        if (pass == null) {
+            return false;
+        }
+        ScopeNode scope = enclosingScopeOf(occurrence);
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            ParserRuleContext decl = s.names.get(name);
+            if (decl != null) {
+                return s == pass.fileScope;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether {@code call} is a static {@code import("...")} that cannot transitively depend on
+     * (and therefore cannot invoke or observe callables of) the current module ({@code BIP034-D6}).
+     */
+    public boolean isNonCyclicStaticImport(BabbleParser.CallContext call) {
+        if (pass == null || call == null) {
+            return false;
+        }
+        ModuleInterface imported = pass.modules.get(call);
+        if (imported != null) {
+            return !transitivelyDependsOn(imported, moduleInterface);
+        }
+        // Static Java package import `import("java...")`: no Babble module code executes.
+        if (call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() == null
+                && "import".equals(selectorName(sel))
+                && call.callParameters().callParameter().size() == 1) {
+            BabbleParser.CallParameterContext arg = call.callParameters().callParameter(0);
+            if (arg.memberName() == null && arg.spread == null
+                    && arg.expression() instanceof BabbleParser.StringContext string
+                    && resolveLexicalDecl(sel, "import") == null) {
+                // Only treat as Java package import when it did NOT resolve to a Babble module.
+                String lit = org.babblelang.parser.StringLiterals.decode(string);
+                return !lit.endsWith(".ba");
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Whether {@code sel} selects a public static {@code def} member on an imported (non-cyclic)
+     * or same-file Babble type (e.g. {@code Interval.empty}, {@code BIP034-D6}).
+     */
+    public boolean isPublicStaticDefSelect(BabbleParser.SelectorContext sel) {
+        return sel != null && lowering.isPublicStaticDefSelect(sel);
+    }
+
+    private ParserRuleContext resolveLexicalDecl(ParserRuleContext occurrence, String name) {
+        for (ScopeNode s = enclosingScopeOf(occurrence); s != null; s = s.parent) {
+            ParserRuleContext decl = s.names.get(name);
+            if (decl != null) {
+                return decl;
+            }
+        }
+        return null;
+    }
+
+    private ScopeNode enclosingScopeOf(ParserRuleContext ctx) {
+        for (ParserRuleContext p = ctx; p != null; p = p.getParent()) {
+            ScopeNode node = pass.scopeNodes.get(p);
+            if (node != null) {
+                return node;
+            }
+        }
+        return pass.fileScope;
+    }
+
+    private static boolean transitivelyDependsOn(ModuleInterface start, ModuleInterface target) {
+        if (start == null || target == null) {
+            return false;
+        }
+        if (start == target) {
+            return true;
+        }
+        java.util.ArrayDeque<ModuleInterface> work = new java.util.ArrayDeque<>();
+        Set<ModuleInterface> visited = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        work.add(start);
+        visited.add(start);
+        while (!work.isEmpty()) {
+            ModuleInterface cur = work.poll();
+            for (ModuleInterface dep : cur.dependencies()) {
+                if (dep == target) {
+                    return true;
+                }
+                if (visited.add(dep)) {
+                    work.add(dep);
+                }
+            }
+        }
+        return false;
+    }
 }

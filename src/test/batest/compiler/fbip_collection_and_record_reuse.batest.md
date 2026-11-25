@@ -190,7 +190,7 @@ fn bumpV (v:obj) -> obj {nothrow unique}
 ;; mir -O2 fn=bumpV stage=before,final
 fn bumpV(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(Vec3) {read:shared}
+    v1: any = name_read Vec3 {pure}
     v2: double = load_field v0.x {read:frozen}
     v3: double = const 1.0
     v4: double = add v2, v3 {pure}
@@ -265,7 +265,7 @@ fn esc (h:obj) -> obj {pure}
 fn esc(v0: any [unique]) -> any:
   bb0:
     v1: any = opaque.CoreCollectionCall(list, v0) {impure}
-    v2: any = opaque.NameRead(Holder) {read:shared}
+    v2: any = name_read Holder {pure}
     v3: int = const 0
     v4: any = call_java v1.get(v3) {impure}
     v5: any = checkcast v4 <babble|Holder>
@@ -302,7 +302,7 @@ fn f2 (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=f2 stage=before,final
 fn f2(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(Holder) {read:shared}
+    v1: any = name_read Holder {pure}
     v2: int = load_field v0.count {read:frozen}
     v3: int = const 1
     v4: int = add v2, v3 {pure}
@@ -330,7 +330,7 @@ fn f2 (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=f2 stage=before,final
 fn f2(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(O) {read:shared}
+    v1: any = name_read O {pure}
     v2: any = load_field v0.items {read:frozen}
     v3: int = load_field v0.count {read:frozen}
     v4: int = const 1
@@ -357,7 +357,7 @@ fn f (v:obj) -> obj {nothrow unique}
 ;; mir -O2 fn=f stage=before,final
 fn f(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead(m) {read:shared,throws}
+    v1: any = name_read m {pure}
     v2: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
     v3: double = load_field v0.x {read:frozen}
     v4: double = const 1.0

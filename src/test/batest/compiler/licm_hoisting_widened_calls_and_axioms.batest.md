@@ -441,7 +441,7 @@ fn run(v0: int) -> double:
     v5: double = convert.double v4
     v6: double = convert.double v0
     v7: double = div v5, v6 {pure}
-    v8: any = opaque.NameRead(double) {read:shared,throws}
+    v8: any = name_read double {pure}
     v9: double = opaque.DynamicCall(v8, v7) {impure}
     v10: any = const null
     br bb1(v10, v3, v1, v2)
@@ -452,7 +452,7 @@ fn run(v0: int) -> double:
   bb2:
     ret v13
   bb3:
-    v17: any = opaque.NameRead(double) {read:shared,throws}
+    v17: any = name_read double {pure}
     v18: int = const 2
     v19: double = opaque.DynamicCall(v17, v18) {impure}
     v20: double = call_java Math.sin(v14) {pure}
@@ -477,7 +477,7 @@ fn run(v0: int) -> double:
     v4: double = const 10.0
     v5: double = convert.double v0
     v6: double = div v4, v5 {pure}
-    v7: any = opaque.NameRead(double) {read:shared,throws}
+    v7: any = name_read double {pure}
     v8: double = opaque.DynamicCall(v7, v6) {impure}
     br bb1(v3, v1, v2)
   bb1(v9: int, v10: double, v11: double):
@@ -487,17 +487,16 @@ fn run(v0: int) -> double:
   bb2:
     ret v10
   bb3:
-    v14: any = opaque.NameRead(double) {read:shared,throws}
-    v15: double = opaque.DynamicCall(v14, v12) {impure}
-    v16: double = call_java Math.sin(v11) {pure}
-    v17: double = add v15, v16 {pure}
-    v18: double = add v17, v8 {pure}
-    v19: double = add v10, v18 {pure}
-    v20: double = const 0.5
-    v21: double = add v11, v20 {pure}
-    v22: int = const 1
-    v23: int = add v9, v22 {pure}
-    br bb1(v23, v19, v21)
+    v14: double = opaque.DynamicCall(v7, v12) {impure}
+    v15: double = call_java Math.sin(v11) {pure}
+    v16: double = add v14, v15 {pure}
+    v17: double = add v16, v8 {pure}
+    v18: double = add v10, v17 {pure}
+    v19: double = const 0.5
+    v20: double = add v11, v19 {pure}
+    v21: int = const 1
+    v22: int = add v9, v21 {pure}
+    br bb1(v22, v18, v20)
 ```
 
 ## Captured variable mutated by closure blocks LICM on bigInt(cap)

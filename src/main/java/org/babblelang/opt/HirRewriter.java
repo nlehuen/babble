@@ -77,7 +77,10 @@ public final class HirRewriter {
             }
             case HirExpr.ThisFieldGet g -> {
                 HirExpr nr = transform.apply(g.receiver());
-                yield nr == g.receiver() ? g : new HirExpr.ThisFieldGet(nr, g.classId(), g.memberIndex(), g.memberName(), g.meta());
+                yield nr == g.receiver() ? g : new HirExpr.ThisFieldGet(
+                        nr, g.receiverText(), g.classId(), g.externalClassJvmName(),
+                        g.memberIndex(), g.memberName(), g.fieldKind(), g.immutableField(),
+                        g.definitelyDefined(), g.meta());
             }
             case HirExpr.JavaFieldGet g -> {
                 HirExpr nr = transform.apply(g.receiver());

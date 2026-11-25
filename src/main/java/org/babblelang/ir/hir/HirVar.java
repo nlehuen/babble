@@ -19,10 +19,17 @@ public record HirVar(
         boolean cell,
         boolean used,
         boolean mayBeUndefined,
-        boolean definitelyDefined
+        boolean definitelyDefined,
+        boolean mutable
 ) {
     public HirVar {
         primitiveKind = primitiveKind != null ? primitiveKind : PrimitiveKind.NONE;
+    }
+
+    public HirVar(int id, String name, Resolution.Variable.Kind kind, int ownerMethodId,
+                  PrimitiveKind primitiveKind, boolean cell, boolean used,
+                  boolean mayBeUndefined, boolean definitelyDefined) {
+        this(id, name, kind, ownerMethodId, primitiveKind, cell, used, mayBeUndefined, definitelyDefined, false);
     }
 
     /** Synthetic hidden field name on a compiled class for a constructor-captured cell. */
@@ -31,11 +38,11 @@ public record HirVar(
     }
 
     public HirVar withIdAndOwner(int newId, int newOwnerMethodId) {
-        return new HirVar(newId, name, kind, newOwnerMethodId, primitiveKind, cell, used, mayBeUndefined, definitelyDefined);
+        return new HirVar(newId, name, kind, newOwnerMethodId, primitiveKind, cell, used, mayBeUndefined, definitelyDefined, mutable);
     }
 
     public HirVar asUsed() {
-        return used ? this : new HirVar(id, name, kind, ownerMethodId, primitiveKind, cell, true, mayBeUndefined, definitelyDefined);
+        return used ? this : new HirVar(id, name, kind, ownerMethodId, primitiveKind, cell, true, mayBeUndefined, definitelyDefined, mutable);
     }
 
     @Override

@@ -267,9 +267,7 @@ top-level:
   (def revInt (fn-ref revInt))
   (def revStr (fn-ref revStr))
   (def big (overload (fn-ref big#1) (fn-ref big#2)))
-  (call name(assert) (and (==:bool (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) (==:bool (block
-          (overload-select #1 name(big))
-          3:int) 3:int)))
+  (call name(assert) (and (==:bool (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) true:bool))
   (call name(assert) (==:bool (block
         (overload-select #0 (overload (fn-ref <anon#0>) (fn-ref <anon#1>)))
         6:int) 6:int))
@@ -301,7 +299,7 @@ fn run (u:obj) -> obj {nothrow unique}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: any) -> any:
   bb0:
-    v1: any = opaque.NameRead(f) {read:shared,throws}
+    v1: any = name_read f {pure}
     v2: any = opaque.OverloadDispatch(v1, v0) {impure}
     ret v2
 ```
@@ -327,7 +325,7 @@ fn runG (u:obj) -> obj {nothrow unique}
 ;; mir -O2 fn=runG stage=before,final
 fn runG(v0: any) -> any:
   bb0:
-    v1: any = opaque.NameRead(g) {read:shared,throws}
+    v1: any = name_read g {pure}
     v2: any = opaque.OverloadDispatch(v1, v0) {impure}
     ret v2
 ```
@@ -497,7 +495,7 @@ fn takeIt(v0: any) -> int:
   bb3:
     v7: any = for_next v2
     v8: any = checkcast v7 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
-    v9: any = opaque.NameRead(tests) {read:shared,throws}
+    v9: any = name_read tests {pure}
     v10: any = opaque.DynamicSelect(v9.JavaClassDemo) {impure}
     v11: any = opaque.DynamicSelect(v10.invokeHiddenSam) {impure}
     v12: int = const 4
@@ -514,22 +512,22 @@ fn takeIt(v0: any) -> int:
   bb0:
     v1: int = const 0
     v2: any = for_init.java_iterable v0
+    v3: any = name_read tests {pure}
     br bb1(v1)
-  bb1(v3: int):
-    v4: bool = for_has_next v2
-    br_if v4, bb3, bb2
+  bb1(v4: int):
+    v5: bool = for_has_next v2
+    br_if v5, bb3, bb2
   bb2:
-    ret v3
+    ret v4
   bb3:
-    v5: any = for_next v2
-    v6: any = checkcast v5 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
-    v7: any = opaque.NameRead(tests) {read:shared,throws}
-    v8: any = opaque.DynamicSelect(v7.JavaClassDemo) {impure}
+    v6: any = for_next v2
+    v7: any = checkcast v6 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
+    v8: any = opaque.DynamicSelect(v3.JavaClassDemo) {impure}
     v9: any = opaque.DynamicSelect(v8.invokeHiddenSam) {impure}
     v10: int = const 4
-    v11: any = opaque.DynamicCall(v9, v6, v10) {impure}
+    v11: any = opaque.DynamicCall(v9, v7, v10) {impure}
     v12: int = convert.int v11
-    v13: int = add v3, v12 {pure}
+    v13: int = add v4, v12 {pure}
     br bb1(v13)
 ```
 
@@ -553,7 +551,7 @@ fn takeL (xs:obj) -> int {io}
 ;; mir -O2 fn=takeL stage=before,final
 fn takeL(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead(tests) {read:shared,throws}
+    v1: any = name_read tests {pure}
     v2: any = opaque.DynamicSelect(v1.JavaClassDemo) {impure}
     v3: any = opaque.DynamicSelect(v2.invokeHiddenSam) {impure}
     v4: int = const 0
@@ -585,7 +583,7 @@ fn takeArr (xs:obj) -> int {io}
 ;; mir -O2 fn=takeArr stage=before,final
 fn takeArr(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead(tests) {read:shared,throws}
+    v1: any = name_read tests {pure}
     v2: any = opaque.DynamicSelect(v1.JavaClassDemo) {impure}
     v3: any = opaque.DynamicSelect(v2.invokeHiddenSerializable) {impure}
     v4: int = const 0

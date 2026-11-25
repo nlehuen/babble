@@ -216,7 +216,7 @@ fn run(v0: any, v1: any) -> double:
     ret v18
   bb3:
     v19: int = for_next v7, v12
-    v20: any = opaque.NameRead(double) {read:shared,throws}
+    v20: any = name_read double {pure}
     v21: double = opaque.DynamicCall(v20, v19) {impure}
     v22: double = add v4, v21 {pure}
     v23: int = const 0
@@ -250,20 +250,20 @@ fn run(v0: any, v1: any) -> double:
     v7: any = for_init.array v1
     v8: int = array_len v7 {read:frozen}
     v9: int = const 0
+    v10: any = name_read double {pure}
     br bb1(v9, v2)
-  bb1(v10: int, v11: double):
-    v12: bool = for_has_next v7, v10, v8
-    br_if v12, bb3, bb2
+  bb1(v11: int, v12: double):
+    v13: bool = for_has_next v7, v11, v8
+    br_if v13, bb3, bb2
   bb2:
-    v13: double = call_java Math.hypot(v5, v3) {pure}
-    v14: double = add v11, v13 {pure}
-    ret v14
+    v14: double = call_java Math.hypot(v5, v3) {pure}
+    v15: double = add v12, v14 {pure}
+    ret v15
   bb3:
-    v15: int = for_next v7, v10
-    v16: any = opaque.NameRead(double) {read:shared,throws}
-    v17: double = opaque.DynamicCall(v16, v15) {impure}
+    v16: int = for_next v7, v11
+    v17: double = opaque.DynamicCall(v10, v16) {impure}
     v18: double = add v4, v17 {pure}
-    v19: bool = lt v15, v9 {pure}
+    v19: bool = lt v16, v9 {pure}
     br_if v19, bb5, bb4
   bb4:
     br bb6(v2)
@@ -271,11 +271,11 @@ fn run(v0: any, v1: any) -> double:
     br bb6(v6)
   bb6(v20: double):
     v21: double = add v18, v20 {pure}
-    v22: double = add v11, v21 {pure}
+    v22: double = add v12, v21 {pure}
     br bb7
   bb7:
     v23: int = const 1
-    v24: int = add v10, v23 {pure}
+    v24: int = add v11, v23 {pure}
     br bb1(v24, v22)
 ```
 
@@ -385,28 +385,28 @@ fn Box.run(v0: int, v1: byte) -> double:
     ret v7
   bb3:
     v9: short = convert.short v1
-    v10: any = opaque.NameRead(short) {read:shared,throws}
+    v10: any = name_read short {pure}
     v11: int = const 4
     v12: short = opaque.DynamicCall(v10, v11) {impure}
     v13: int = convert.int v12
-    v14: any = opaque.NameRead(int) {read:shared,throws}
+    v14: any = name_read int {pure}
     v15: int = opaque.DynamicCall(v14, v1) {impure}
     v16: int = add v13, v15 {pure}
-    v17: any = opaque.NameRead(int) {read:shared,throws}
+    v17: any = name_read int {pure}
     v18: int = const 5
     v19: int = opaque.DynamicCall(v17, v18) {impure}
     v20: int = const 1
     v21: int = add v19, v20 {pure}
     v22: long = convert.long v21
-    v23: any = opaque.NameRead(double) {read:shared,throws}
+    v23: any = name_read double {pure}
     v24: double = opaque.DynamicCall(v23, v9) {impure}
-    v25: any = opaque.NameRead(double) {read:shared,throws}
+    v25: any = name_read double {pure}
     v26: double = opaque.DynamicCall(v25, v16) {impure}
     v27: double = add v24, v26 {pure}
-    v28: any = opaque.NameRead(double) {read:shared,throws}
+    v28: any = name_read double {pure}
     v29: double = opaque.DynamicCall(v28, v22) {impure}
     v30: double = add v27, v29 {pure}
-    v31: any = opaque.NameRead(double) {read:shared,throws}
+    v31: any = name_read double {pure}
     v32: float = const 4.0f
     v33: double = opaque.DynamicCall(v31, v32) {impure}
     v34: double = add v30, v33 {pure}
@@ -424,41 +424,37 @@ fn Box.run(v0: int, v1: byte) -> double:
     v2: double = const 0.0
     v3: int = const 0
     v4: short = convert.short v1
+    v5: any = name_read short {pure}
+    v6: any = name_read int {pure}
+    v7: any = name_read double {pure}
     br bb1(v3, v2)
-  bb1(v5: int, v6: double):
-    v7: bool = lt v5, v0 {pure}
-    br_if v7, bb3, bb2
+  bb1(v8: int, v9: double):
+    v10: bool = lt v8, v0 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    ret v6
+    ret v9
   bb3:
-    v8: any = opaque.NameRead(short) {read:shared,throws}
-    v9: int = const 4
-    v10: short = opaque.DynamicCall(v8, v9) {impure}
-    v11: int = convert.int v10
-    v12: any = opaque.NameRead(int) {read:shared,throws}
-    v13: int = opaque.DynamicCall(v12, v1) {impure}
-    v14: int = add v11, v13 {pure}
-    v15: any = opaque.NameRead(int) {read:shared,throws}
+    v11: int = const 4
+    v12: short = opaque.DynamicCall(v5, v11) {impure}
+    v13: int = convert.int v12
+    v14: int = opaque.DynamicCall(v6, v1) {impure}
+    v15: int = add v13, v14 {pure}
     v16: int = const 5
-    v17: int = opaque.DynamicCall(v15, v16) {impure}
+    v17: int = opaque.DynamicCall(v6, v16) {impure}
     v18: int = const 1
     v19: int = add v17, v18 {pure}
     v20: long = convert.long v19
-    v21: any = opaque.NameRead(double) {read:shared,throws}
-    v22: double = opaque.DynamicCall(v21, v4) {impure}
-    v23: any = opaque.NameRead(double) {read:shared,throws}
-    v24: double = opaque.DynamicCall(v23, v14) {impure}
-    v25: double = add v22, v24 {pure}
-    v26: any = opaque.NameRead(double) {read:shared,throws}
-    v27: double = opaque.DynamicCall(v26, v20) {impure}
+    v21: double = opaque.DynamicCall(v7, v4) {impure}
+    v22: double = opaque.DynamicCall(v7, v15) {impure}
+    v23: double = add v21, v22 {pure}
+    v24: double = opaque.DynamicCall(v7, v20) {impure}
+    v25: double = add v23, v24 {pure}
+    v26: float = const 4.0f
+    v27: double = opaque.DynamicCall(v7, v26) {impure}
     v28: double = add v25, v27 {pure}
-    v29: any = opaque.NameRead(double) {read:shared,throws}
-    v30: float = const 4.0f
-    v31: double = opaque.DynamicCall(v29, v30) {impure}
-    v32: double = add v28, v31 {pure}
-    v33: double = add v6, v32 {pure}
-    v34: int = add v5, v18 {pure}
-    br bb1(v34, v33)
+    v29: double = add v9, v28 {pure}
+    v30: int = add v8, v18 {pure}
+    br bb1(v30, v29)
 ```
 
 ## Class-based LICM hoisting : Unary/Binary/DIV, ThisRef, and fnVar
@@ -495,12 +491,15 @@ fn Box.run (n:int) -> double {nothrow unique}
   (def a 0.0:double)
   (def i 0:int)
   (def fv (fn-ref fv))
-  (while (<:bool var(i) var(n))
-    (block
-      (set a += (+:double (+:double (/:double (jcall Math.sin (get-this-field x)) 2.0:double) (neg (jcall Math.toRadians (get-this-field x)))) (block
-            (def z (get-this-field x))
-            (jcall Math.sin var(z)))))
-      (set i += 1:int)))
+  (block
+    (def $licm0 (+:double (/:double (jcall Math.sin (get-this-field x)) 2.0:double) (neg (jcall Math.toRadians (get-this-field x)))))
+    (def $licm1 (get-this-field x))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += (+:double var($licm0) (block
+              (def z var($licm1))
+              (jcall Math.sin var(z)))))
+        (set i += 1:int))))
   var(a)
 ```
 
@@ -511,31 +510,31 @@ fn Box.run(v0: int) -> double:
     v1: double = const 0.0
     v2: int = const 0
     v3: any = opaque.FunctionRef(fv) {pure}
-    v4: any = const null
-    br bb1(v4, v2, v1)
-  bb1(v5: any, v6: int, v7: double):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
+    v4: any = slot_read this {pure}
+    v5: double = load_field v4.x {read:frozen}
+    v6: double = call_java Math.sin(v5) {pure}
+    v7: double = const 2.0
+    v8: double = div v6, v7 {pure}
     v9: any = slot_read this {pure}
-    v10: double = load_field v9.x {read:shared,throws}
-    v11: double = call_java Math.sin(v10) {pure}
-    v12: double = const 2.0
-    v13: double = div v11, v12 {pure}
+    v10: double = load_field v9.x {read:frozen}
+    v11: double = call_java Math.toRadians(v10) {pure}
+    v12: double = neg v11 {pure}
+    v13: double = add v8, v12 {pure}
     v14: any = slot_read this {pure}
-    v15: double = load_field v14.x {read:shared,throws}
-    v16: double = call_java Math.toRadians(v15) {pure}
-    v17: double = neg v16 {pure}
-    v18: double = add v13, v17 {pure}
-    v19: any = slot_read this {pure}
-    v20: double = load_field v19.x {read:shared,throws}
-    v21: double = call_java Math.sin(v20) {pure}
-    v22: double = add v18, v21 {pure}
-    v23: double = add v7, v22 {pure}
+    v15: double = load_field v14.x {read:frozen}
+    v16: any = const null
+    br bb1(v16, v2, v1)
+  bb1(v17: any, v18: int, v19: double):
+    v20: bool = lt v18, v0 {pure}
+    br_if v20, bb3, bb2
+  bb2:
+    ret v19
+  bb3:
+    v21: double = call_java Math.sin(v15) {pure}
+    v22: double = add v13, v21 {pure}
+    v23: double = add v19, v22 {pure}
     v24: int = const 1
-    v25: int = add v6, v24 {pure}
+    v25: int = add v18, v24 {pure}
     v26: any = convert.any v25
     br bb1(v26, v25, v23)
 ```
@@ -546,25 +545,25 @@ fn Box.run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
+    v3: any = slot_read this {pure}
+    v4: double = load_field v3.x {read:frozen}
+    v5: double = call_java Math.sin(v4) {pure}
+    v6: double = const 2.0
+    v7: double = div v5, v6 {pure}
+    v8: double = call_java Math.toRadians(v4) {pure}
+    v9: double = neg v8 {pure}
+    v10: double = add v7, v9 {pure}
+    v11: double = add v10, v5 {pure}
     br bb1(v2, v1)
-  bb1(v3: int, v4: double):
-    v5: bool = lt v3, v0 {pure}
-    br_if v5, bb3, bb2
+  bb1(v12: int, v13: double):
+    v14: bool = lt v12, v0 {pure}
+    br_if v14, bb3, bb2
   bb2:
-    ret v4
+    ret v13
   bb3:
-    v6: any = slot_read this {pure}
-    v7: double = load_field v6.x {read:shared,throws}
-    v8: double = call_java Math.sin(v7) {pure}
-    v9: double = const 2.0
-    v10: double = div v8, v9 {pure}
-    v11: double = call_java Math.toRadians(v7) {pure}
-    v12: double = neg v11 {pure}
-    v13: double = add v10, v12 {pure}
-    v14: double = add v13, v8 {pure}
-    v15: double = add v4, v14 {pure}
+    v15: double = add v13, v11 {pure}
     v16: int = const 1
-    v17: int = add v3, v16 {pure}
+    v17: int = add v12, v16 {pure}
     br bb1(v17, v15)
 ```
 
@@ -604,11 +603,13 @@ fn Box.run (n:int, f:bool, xs:obj) -> int {pure unique}
   (def a 0:int)
   (def i 0:int)
   (def raw 1:int)
-  (while (<:bool var(i) var(n))
-    (block
-      (def l6 (if (or var(f) (and (not var(f)) (>:bool (array-op SIZE var(xs)) 0:int))) 1:int 2:int))
-      (set a += (+:int (+:int var(l6) (jcall String.length (jcall String.trim (get-this-field nm)))) (if (==:bool var(i) 0:int) (as var(raw) int|int|) 0:int)))
-      (set i += 1:int)))
+  (block
+    (def $licm0 (get-this-field nm))
+    (while (<:bool var(i) var(n))
+      (block
+        (def l6 (if (or var(f) (and (not var(f)) (>:bool (array-op SIZE var(xs)) 0:int))) 1:int 2:int))
+        (set a += (+:int (+:int var(l6) (jcall String.length (jcall String.trim var($licm0)))) (if (==:bool var(i) 0:int) (as var(raw) int|int|) 0:int)))
+        (set i += 1:int))))
   var(a)
 ```
 
@@ -620,44 +621,44 @@ fn Box.run(v0: int, v1: bool, v2: any) -> int:
     v4: int = const 0
     v5: int = const 1
     v6: any = convert.any v5
-    v7: any = const null
-    br bb1(v7, v4, v3)
-  bb1(v8: any, v9: int, v10: int):
-    v11: bool = lt v9, v0 {pure}
-    br_if v11, bb3, bb2
+    v7: any = slot_read this {pure}
+    v8: any = load_field v7.nm {read:frozen}
+    v9: any = const null
+    br bb1(v9, v4, v3)
+  bb1(v10: any, v11: int, v12: int):
+    v13: bool = lt v11, v0 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    ret v10
+    ret v12
   bb3:
-    v12: bool = const true
-    br_if v1, bb7(v12), bb4
+    v14: bool = const true
+    br_if v1, bb7(v14), bb4
   bb4:
-    v13: bool = not v1 {pure}
-    v14: bool = const false
-    br_if v13, bb5, bb6(v14)
+    v15: bool = not v1 {pure}
+    v16: bool = const false
+    br_if v15, bb5, bb6(v16)
   bb5:
-    v15: int = array_len v2 {read:frozen,throws}
-    v16: int = const 0
-    v17: bool = gt v15, v16 {pure}
-    br bb6(v17)
-  bb6(v18: bool):
-    br bb7(v18)
-  bb7(v19: bool):
-    br_if v19, bb9, bb8
+    v17: int = array_len v2 {read:frozen,throws}
+    v18: int = const 0
+    v19: bool = gt v17, v18 {pure}
+    br bb6(v19)
+  bb6(v20: bool):
+    br bb7(v20)
+  bb7(v21: bool):
+    br_if v21, bb9, bb8
   bb8:
-    v20: int = const 2
-    br bb10(v20)
+    v22: int = const 2
+    br bb10(v22)
   bb9:
-    v21: int = const 1
-    br bb10(v21)
-  bb10(v22: int):
-    v23: any = slot_read this {pure}
-    v24: any = load_field v23.nm {read:shared,throws}
-    v25: any = call_java v24.trim() {impure}
+    v23: int = const 1
+    br bb10(v23)
+  bb10(v24: int):
+    v25: any = call_java v8.trim() {impure}
     v26: any = checkcast v25 <string|string|>
     v27: int = call_java v26.length() {pure,throws}
-    v28: int = add v22, v27 {pure}
+    v28: int = add v24, v27 {pure}
     v29: int = const 0
-    v30: bool = eq v9, v29 {pure}
+    v30: bool = eq v11, v29 {pure}
     br_if v30, bb12, bb11
   bb11:
     v31: int = const 0
@@ -668,9 +669,9 @@ fn Box.run(v0: int, v1: bool, v2: any) -> int:
     br bb13(v33)
   bb13(v34: int):
     v35: int = add v28, v34 {pure}
-    v36: int = add v10, v35 {pure}
+    v36: int = add v12, v35 {pure}
     v37: int = const 1
-    v38: int = add v9, v37 {pure}
+    v38: int = add v11, v37 {pure}
     v39: any = convert.any v38
     br bb1(v39, v38, v36)
 ```
@@ -681,40 +682,40 @@ fn Box.run(v0: int, v1: bool, v2: any) -> int:
   bb0:
     v3: int = const 0
     v4: int = const 1
-    v5: bool = not v1 {pure}
+    v5: any = slot_read this {pure}
+    v6: any = load_field v5.nm {read:frozen}
+    v7: bool = not v1 {pure}
     br bb1(v3, v3)
-  bb1(v6: int, v7: int):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
+  bb1(v8: int, v9: int):
+    v10: bool = lt v8, v0 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    ret v7
+    ret v9
   bb3:
-    v9: bool = const true
-    br_if v1, bb7(v9), bb4
+    v11: bool = const true
+    br_if v1, bb7(v11), bb4
   bb4:
-    v10: bool = const false
-    br_if v5, bb5, bb6(v10)
+    v12: bool = const false
+    br_if v7, bb5, bb6(v12)
   bb5:
-    v11: int = array_len v2 {read:frozen,throws}
-    v12: bool = gt v11, v3 {pure}
-    br bb6(v12)
-  bb6(v13: bool):
-    br bb7(v13)
-  bb7(v14: bool):
-    br_if v14, bb9, bb8
+    v13: int = array_len v2 {read:frozen,throws}
+    v14: bool = gt v13, v3 {pure}
+    br bb6(v14)
+  bb6(v15: bool):
+    br bb7(v15)
+  bb7(v16: bool):
+    br_if v16, bb9, bb8
   bb8:
-    v15: int = const 2
-    br bb10(v15)
+    v17: int = const 2
+    br bb10(v17)
   bb9:
     br bb10(v4)
-  bb10(v16: int):
-    v17: any = slot_read this {pure}
-    v18: any = load_field v17.nm {read:shared,throws}
-    v19: any = call_java v18.trim() {impure}
+  bb10(v18: int):
+    v19: any = call_java v6.trim() {impure}
     v20: any = checkcast v19 <string|string|>
     v21: int = call_java v20.length() {pure,throws}
-    v22: int = add v16, v21 {pure}
-    v23: bool = eq v6, v3 {pure}
+    v22: int = add v18, v21 {pure}
+    v23: bool = eq v8, v3 {pure}
     br_if v23, bb12, bb11
   bb11:
     br bb13(v3)
@@ -722,7 +723,7 @@ fn Box.run(v0: int, v1: bool, v2: any) -> int:
     br bb13(v4)
   bb13(v24: int):
     v25: int = add v22, v24 {pure}
-    v26: int = add v7, v25 {pure}
-    v27: int = add v6, v4 {pure}
+    v26: int = add v9, v25 {pure}
+    v27: int = add v8, v4 {pure}
     br bb1(v27, v26)
 ```

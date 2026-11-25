@@ -515,4 +515,49 @@ public class ReplTestCase {
         session.eval("v = 7");
         Assertions.assertEquals(7, session.eval("volV()"));
     }
+
+    @Test
+    public void testBip034ReplCleanVsFailedDefNameReadPurity() throws Exception {
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(org.babblelang.compiler.BabbleCompiler.OPT_LEVEL, 2);
+        org.babblelang.ir.mir.MirModule[] captured = new org.babblelang.ir.mir.MirModule[1];
+        engine.put(org.babblelang.compiler.BabbleCompiler.IR_OBSERVER, new org.babblelang.ir.IrObserver() {
+            @Override
+            public boolean wants(org.babblelang.ir.IrTier tier, int opt, String stage) {
+                return tier == org.babblelang.ir.IrTier.MIR && org.babblelang.ir.IrSnapshot.STAGE_BEFORE.equals(stage);
+            }
+
+            @Override
+            public void onSnapshot(org.babblelang.ir.IrSnapshot snapshot) {
+                if (snapshot.ir() instanceof org.babblelang.ir.mir.MirModule mm) {
+                    captured[0] = mm;
+                }
+            }
+        });
+        javax.script.SimpleScriptContext ctx = new javax.script.SimpleScriptContext();
+        ctx.setBindings(engine.createBindings(), javax.script.ScriptContext.ENGINE_SCOPE);
+        ctx.setWriter(new StringWriter());
+        ctx.setErrorWriter(new StringWriter());
+        BabbleSession session = engine.newSession(ctx);
+
+        // 1. Clean earlier REPL `def` is definitely defined -> `name_read k {pure}`.
+        session.eval("def k = 42");
+        session.eval("def readK = fn (): int -> ( k )");
+        Assertions.assertNotNull(captured[0]);
+        String readKDump = captured[0].printCanonical(org.babblelang.ir.IrTarget.parse("fn=readK"));
+        Assertions.assertTrue(readKDump.contains("name_read k {pure}"), readKDump);
+        Assertions.assertEquals(42, session.eval("readK()"));
+
+        // 2. Failed earlier REPL input leaves `broken` uninitialized -> `name_read broken {pure,throws}`
+        //    and calling readBroken() throws `Name used before definition : broken`.
+        Assertions.assertThrows(ScriptException.class, () -> session.eval("def fail = fn io (): int -> ( throw exception(\"boom\") ; 0 ) ; def broken = fail()"));
+        captured[0] = null;
+        session.eval("def readBroken = fn (): int -> ( broken )");
+        Assertions.assertNotNull(captured[0]);
+        String readBrokenDump = captured[0].printCanonical(org.babblelang.ir.IrTarget.parse("fn=readBroken"));
+        Assertions.assertTrue(readBrokenDump.contains("name_read broken {pure,throws}"), readBrokenDump);
+        ScriptException tdz = Assertions.assertThrows(ScriptException.class, () -> session.eval("readBroken()"));
+        Assertions.assertTrue(tdz.getMessage().contains("Name used before definition : broken"), tdz.getMessage());
+    }
 }

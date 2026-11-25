@@ -92,7 +92,7 @@ fn rhsTry(v0: any) -> int:
     v1: int = const 10
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = opaque.NameRead(parse) {read:shared}
+    v2: any = name_read parse {pure}
     v3: int = call parse(v0) {impure}
     br bb4(v3)
   bb2(v4: any) [handler]:
@@ -156,7 +156,7 @@ fn logicTry(v0: bool, v1: any) -> bool:
   bb0:
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = opaque.NameRead(parse) {read:shared}
+    v2: any = name_read parse {pure}
     v3: int = call parse(v1) {impure}
     v4: int = const 0
     v5: bool = gt v3, v4 {pure}
@@ -177,7 +177,7 @@ fn logicTry(v0: bool, v1: any) -> bool:
   bb7:
     br bb8
   bb8 [unwind: BabbleException -> bb9]:
-    v12: any = opaque.NameRead(parse) {read:shared}
+    v12: any = name_read parse {pure}
     v13: int = call parse(v1) {impure}
     v14: int = const 0
     v15: bool = gt v13, v14 {pure}
@@ -204,7 +204,7 @@ fn logicTry(v0: bool, v1: any) -> bool:
   bb0:
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = opaque.NameRead(parse) {read:shared}
+    v2: any = name_read parse {pure}
     v3: int = call parse(v1) {impure}
     v4: int = const 0
     v5: bool = gt v3, v4 {pure}
@@ -222,7 +222,7 @@ fn logicTry(v0: bool, v1: any) -> bool:
   bb6(v10: bool):
     br_if v0, bb7, bb11(v9)
   bb7 [unwind: BabbleException -> bb8]:
-    v11: any = opaque.NameRead(parse) {read:shared}
+    v11: any = name_read parse {pure}
     v12: int = call parse(v1) {impure}
     v13: int = const 0
     v14: bool = gt v12, v13 {pure}
@@ -271,7 +271,7 @@ fn bumpTop(v0: any) -> int:
   bb0:
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v1: any = opaque.NameRead(parse) {read:shared}
+    v1: any = name_read parse {pure}
     v2: int = call parse(v0) {impure}
     br bb4(v2)
   bb2(v3: any) [handler]:
@@ -280,10 +280,12 @@ fn bumpTop(v0: any) -> int:
     v4: int = const 5
     br bb4(v4)
   bb4(v5: int):
-    v6: any = opaque.NameAssign(top +=, v5) {impure}
-    v7: any = opaque.NameRead(top) {read:shared,throws}
-    v8: int = convert.int v7
-    ret v8
+    v6: any = convert.any v5
+    v7: any = name_assign top += v6 {impure}
+    v8: any = checkcast v7 <int|int|>
+    v9: any = name_read top {read:shared}
+    v10: int = convert.int v9
+    ret v10
 ```
 
 ## JavaFieldAssign : instance simple, compound, and receiver try
@@ -361,7 +363,7 @@ fn run(v0: any, v1: bool) -> int:
     v4: any = new_java Point(v2, v3) {pure}
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v5: any = opaque.NameRead(parse) {read:shared}
+    v5: any = name_read parse {pure}
     v6: int = call parse(v0) {impure}
     br bb4(v6)
   bb2(v7: any) [handler]:
@@ -374,7 +376,7 @@ fn run(v0: any, v1: bool) -> int:
     v10: int = load_jfield v4.y {read:shared,throws}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v11: any = opaque.NameRead(parse) {read:shared}
+    v11: any = name_read parse {pure}
     v12: int = call parse(v0) {impure}
     br bb8(v12)
   bb6(v13: any) [handler]:
@@ -387,7 +389,7 @@ fn run(v0: any, v1: bool) -> int:
     store_jfield v4.y, v16 {write:shared,throws}
     br bb9
   bb9 [unwind: BabbleException -> bb10]:
-    v17: any = opaque.NameRead(fail) {read:shared}
+    v17: any = name_read fail {pure}
     v18: any = opaque.DynamicCall(v17, v1, v4) {impure}
     br bb12(v18)
   bb10(v19: any) [handler]:
@@ -431,13 +433,13 @@ fn run (s:obj) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead(import) {read:shared,throws}
+    v1: any = name_read import {pure}
     v2: any = const "org.babblelang.tests"
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: any = opaque.DynamicSelect(v3.JavaClassDemo) {impure}
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v5: any = opaque.NameRead(parse) {read:shared}
+    v5: any = name_read parse {pure}
     v6: int = call parse(v0) {impure}
     br bb4(v6)
   bb2(v7: any) [handler]:
@@ -501,12 +503,12 @@ fn run (s:obj, f:bool) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: any, v1: bool) -> int:
   bb0:
-    v2: any = opaque.NameRead(Box) {read:shared}
+    v2: any = name_read Box {pure}
     v3: int = const 10
     v4: any = opaque.DynamicCall(v2, v3) {impure}
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v5: any = opaque.NameRead(parse) {read:shared}
+    v5: any = name_read parse {pure}
     v6: int = call parse(v0) {impure}
     br bb4(v6)
   bb2(v7: any) [handler]:
@@ -518,7 +520,7 @@ fn run(v0: any, v1: bool) -> int:
     v10: any = opaque.DynamicFieldAssign(v4.v +=, v9) {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v11: any = opaque.NameRead(fail) {read:shared}
+    v11: any = name_read fail {pure}
     v12: any = opaque.DynamicCall(v11, v1, v4) {impure}
     br bb8(v12)
   bb6(v13: any) [handler]:

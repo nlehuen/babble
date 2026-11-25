@@ -143,7 +143,14 @@ public sealed interface HirExpr permits
     record VarRead(HirVar var, ExprMeta meta) implements HirExpr {
     }
 
-    record NameRead(String name, ExprMeta meta) implements HirExpr {
+    record NameRead(String name, boolean finalBinding, boolean definitelyDefined, ExprMeta meta) implements HirExpr {
+        public NameRead(String name, ExprMeta meta) {
+            this(name, false, false, meta);
+        }
+
+        public NameRead asDefinitelyDefined() {
+            return definitelyDefined ? this : new NameRead(name, finalBinding, true, meta);
+        }
     }
 
     record ThisRef(HirVar var, int enclosingClassId, ExprMeta meta) implements HirExpr {
@@ -231,7 +238,7 @@ public sealed interface HirExpr permits
             int memberIndex,
             String memberName,
             PrimitiveKind fieldKind,
-            boolean recordField,
+            boolean immutableField,
             boolean definitelyDefined,
             ExprMeta meta
     ) implements HirExpr {

@@ -52,7 +52,7 @@ fn run () -> int {io}
 fn run() -> int:
   bb0:
     v0: int = const 0
-    v1: any = opaque.NameRead(Sub) {read:shared}
+    v1: any = name_read Sub {pure}
     v2: int = const 4
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: int = const 2
@@ -112,7 +112,7 @@ fn run() -> int:
 fn run() -> int:
   bb0:
     v0: int = const 0
-    v1: any = opaque.NameRead(Sub) {read:shared}
+    v1: any = name_read Sub {pure}
     v2: int = const 4
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: int = const 2
@@ -440,33 +440,35 @@ fn MC.run(v0: int) -> int:
     v7: bool = lt v5, v0 {pure}
     br_if v7, bb3, bb2
   bb2:
-    v8: any = opaque.NameRead(topM) {read:shared,throws}
+    v8: any = name_read topM {read:shared}
     v9: int = convert.int v8
     v10: int = add v6, v9 {pure}
     ret v10
   bb3:
     v11: int = const 1
-    v12: any = opaque.NameAssign(topM +=, v11) {impure}
-    v13: any = slot_read this {pure}
-    v14: int = load_field v13.mf {read:shared,throws}
-    v15: int = const 1
-    v16: int = add v14, v15 {pure}
-    store_field v13.mf, v16 {write:shared,throws}
-    v17: any = slot_read this {pure}
-    v18: int = load_field v17.mf {read:shared,throws}
-    v19: any = const "ab"
-    v20: any = nonnull v19
-    v21: int = call_java v20.length() {pure,throws}
-    v22: int = add v18, v21 {pure}
-    v23: any = opaque.NameRead(bigId) {read:shared,throws}
-    v24: int = const 4
-    v25: int = opaque.DynamicCall(v23, v24) {impure}
-    v26: int = add v22, v25 {pure}
-    v27: int = add v6, v26 {pure}
-    v28: int = const 1
-    v29: int = add v5, v28 {pure}
-    v30: any = convert.any v29
-    br bb1(v30, v29, v27)
+    v12: any = convert.any v11
+    v13: any = name_assign topM += v12 {impure}
+    v14: any = checkcast v13 <int|int|>
+    v15: any = slot_read this {pure}
+    v16: int = load_field v15.mf {read:shared,throws}
+    v17: int = const 1
+    v18: int = add v16, v17 {pure}
+    store_field v15.mf, v18 {write:shared,throws}
+    v19: any = slot_read this {pure}
+    v20: int = load_field v19.mf {read:shared,throws}
+    v21: any = const "ab"
+    v22: any = nonnull v21
+    v23: int = call_java v22.length() {pure,throws}
+    v24: int = add v20, v23 {pure}
+    v25: any = name_read bigId {pure}
+    v26: int = const 4
+    v27: int = opaque.DynamicCall(v25, v26) {impure}
+    v28: int = add v24, v27 {pure}
+    v29: int = add v6, v28 {pure}
+    v30: int = const 1
+    v31: int = add v5, v30 {pure}
+    v32: any = convert.any v31
+    br bb1(v32, v31, v29)
 ```
 
 ```mir
@@ -474,33 +476,35 @@ fn MC.run(v0: int) -> int:
 fn MC.run(v0: int) -> int:
   bb0:
     v1: int = const 0
+    v2: any = name_read bigId {pure}
     br bb1(v1, v1)
-  bb1(v2: int, v3: int):
-    v4: bool = lt v2, v0 {pure}
-    br_if v4, bb3, bb2
+  bb1(v3: int, v4: int):
+    v5: bool = lt v3, v0 {pure}
+    br_if v5, bb3, bb2
   bb2:
-    v5: any = opaque.NameRead(topM) {read:shared,throws}
-    v6: int = convert.int v5
-    v7: int = add v3, v6 {pure}
-    ret v7
+    v6: any = name_read topM {read:shared}
+    v7: int = convert.int v6
+    v8: int = add v4, v7 {pure}
+    ret v8
   bb3:
-    v8: int = const 1
-    v9: any = opaque.NameAssign(topM +=, v8) {impure}
-    v10: any = slot_read this {pure}
-    v11: int = load_field v10.mf {read:shared,throws}
-    v12: int = add v11, v8 {pure}
-    store_field v10.mf, v12 {write:shared,throws}
-    v13: any = const "ab"
-    v14: any = nonnull v13
-    v15: int = call_java v14.length() {pure,throws}
-    v16: int = add v12, v15 {pure}
-    v17: any = opaque.NameRead(bigId) {read:shared,throws}
-    v18: int = const 4
-    v19: int = opaque.DynamicCall(v17, v18) {impure}
-    v20: int = add v16, v19 {pure}
-    v21: int = add v3, v20 {pure}
-    v22: int = add v2, v8 {pure}
-    br bb1(v22, v21)
+    v9: int = const 1
+    v10: any = const 1
+    v11: any = name_assign topM += v10 {impure}
+    v12: any = checkcast v11 <int|int|>
+    v13: any = slot_read this {pure}
+    v14: int = load_field v13.mf {read:shared,throws}
+    v15: int = add v14, v9 {pure}
+    store_field v13.mf, v15 {write:shared,throws}
+    v16: any = const "ab"
+    v17: any = nonnull v16
+    v18: int = call_java v17.length() {pure,throws}
+    v19: int = add v15, v18 {pure}
+    v20: int = const 4
+    v21: int = opaque.DynamicCall(v2, v20) {impure}
+    v22: int = add v19, v21 {pure}
+    v23: int = add v4, v22 {pure}
+    v24: int = add v3, v9 {pure}
+    br bb1(v24, v23)
 ```
 
 ## HirPurity.collectModifiedVars : nested fn, class, interface, StringBuilder, list, and is check inside while
@@ -581,7 +585,7 @@ fn run() -> int:
     v20: int = add v18, v19 {pure}
     v21: int = const 3
     v22: any = opaque.DynamicCall(v11, v21) {impure}
-    v23: int = load_field v22.v {read:shared,throws}
+    v23: int = load_field v22.v {read:frozen,throws}
     v24: int = add v20, v23 {pure}
     v25: bool = is v9 <babble|IfcL>
     br_if v25, bb5, bb4
@@ -626,7 +630,7 @@ fn run() -> int:
     v14: int = add v13, v3 {pure}
     v15: int = const 3
     v16: any = opaque.DynamicCall(v7, v15) {impure}
-    v17: int = load_field v16.v {read:shared,throws}
+    v17: int = load_field v16.v {read:frozen,throws}
     v18: int = add v14, v17 {pure}
     v19: bool = is v6 <babble|IfcL>
     br_if v19, bb5, bb4

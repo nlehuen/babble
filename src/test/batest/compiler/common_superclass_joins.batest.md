@@ -43,11 +43,11 @@ fn pickRoot(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(C2) {read:shared}
+    v1: any = name_read C2 {pure}
     v2: any = opaque.DynamicCall(v1) {impure}
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead(C1) {read:shared}
+    v3: any = name_read C1 {pure}
     v4: any = opaque.DynamicCall(v3) {impure}
     br bb3(v4)
   bb3(v5: any):
@@ -82,11 +82,11 @@ fn joinD(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(D2) {read:shared}
+    v1: any = name_read D2 {pure}
     v2: any = opaque.DynamicCall(v1) {impure}
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead(D1) {read:shared}
+    v3: any = name_read D1 {pure}
     v4: any = opaque.DynamicCall(v3) {impure}
     br bb3(v4)
   bb3(v5: any):
@@ -369,11 +369,11 @@ fn pickCls(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(B) {read:shared}
+    v1: any = name_read B {pure}
     v2: any = opaque.DynamicCall(v1) {impure}
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead(A) {read:shared}
+    v3: any = name_read A {pure}
     v4: any = opaque.DynamicCall(v3) {impure}
     br bb3(v4)
   bb3(v5: any):

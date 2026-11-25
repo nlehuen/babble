@@ -633,12 +633,12 @@ fn run(v0: int) -> int:
     v6: any = new_java IOException(v5) {pure!}
     rethrow v6
   bb4 [unwind: ThrownException -> bb8, IOException -> bb6]:
-    v7: any = opaque.NameRead(TopErrB) {read:shared}
+    v7: any = name_read TopErrB {pure}
     v8: int = const 22
     v9: any = opaque.DynamicCall(v7, v8) {impure}
     throw v9
   bb5 [unwind: ThrownException -> bb8, IOException -> bb6]:
-    v10: any = opaque.NameRead(TopErrA) {read:shared}
+    v10: any = name_read TopErrA {pure}
     v11: int = const 11
     v12: any = opaque.DynamicCall(v10, v11) {impure}
     throw v12
@@ -657,10 +657,10 @@ fn run(v0: int) -> int:
   bb10:
     rethrow v15
   bb11:
-    v19: int = load_field v16.code {read:shared,throws}
+    v19: int = load_field v16.code {read:frozen}
     br bb13(v19)
   bb12:
-    v20: int = load_field v16.code {read:shared,throws}
+    v20: int = load_field v16.code {read:frozen}
     br bb13(v20)
   bb13(v21: int):
     ret v21
@@ -735,10 +735,10 @@ fn run(v0: bool) -> any:
   bb6:
     rethrow v7
   bb7:
-    v11: any = load_field v8.msg {read:shared,throws}
+    v11: any = load_field v8.msg {read:frozen}
     br bb9(v11)
   bb8:
-    v12: any = load_field v8.msg {read:shared,throws}
+    v12: any = load_field v8.msg {read:frozen}
     br bb9(v12)
   bb9(v13: any):
     ret v13

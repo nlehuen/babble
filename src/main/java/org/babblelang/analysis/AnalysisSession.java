@@ -55,6 +55,8 @@ public final class AnalysisSession {
     private final Map<String, String> interfaceJvmNames = new LinkedHashMap<>();
     private final Map<String, String> classJvmNames = new LinkedHashMap<>();
     private final Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies = new LinkedHashMap<>();
+    /** Committed input file scopes whose evaluation finished normally (BIP034-D6). */
+    private final Set<ScopeNode> cleanScopes = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
     /**
      * Makes an analysed input part of the session, for the inputs that follow.
@@ -98,6 +100,17 @@ public final class AnalysisSession {
         }
         scope = file;
         return true;
+    }
+
+    /** Records that the committed input completed runtime evaluation without throwing (BIP034-D6). */
+    public void markScopeClean(ScopeAnalysis analysis) {
+        if (analysis != null && analysis.pass() != null && analysis.pass().fileScope != null) {
+            cleanScopes.add(analysis.pass().fileScope);
+        }
+    }
+
+    boolean isCleanScope(ScopeNode scope) {
+        return scope != null && cleanScopes.contains(scope);
     }
 
     public void recordCompilation(ClassLoader loader, Map<String, String> interfaceJvmNames) {

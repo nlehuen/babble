@@ -120,12 +120,12 @@ fn joinRec(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(R2) {read:shared}
+    v1: any = name_read R2 {pure}
     v2: int = const 2
     v3: any = record_new R2[v1](v2) {pure}
     br bb3(v3)
   bb2:
-    v4: any = opaque.NameRead(R1) {read:shared}
+    v4: any = name_read R1 {pure}
     v5: int = const 1
     v6: any = record_new R1[v4](v5) {pure}
     br bb3(v6)
@@ -476,7 +476,7 @@ fn loopJoin (n:int) -> obj {nothrow}
 ;; mir -O2 fn=loopJoin stage=before
 fn loopJoin(v0: int) -> any:
   bb0:
-    v1: any = opaque.NameRead(R1) {read:shared}
+    v1: any = name_read R1 {pure}
     v2: int = const 0
     v3: any = record_new R1[v1](v2) {pure}
     v4: int = const 0
@@ -492,11 +492,11 @@ fn loopJoin(v0: int) -> any:
     v11: bool = eq v7, v10 {pure}
     br_if v11, bb5, bb4
   bb4:
-    v12: any = opaque.NameRead(R2) {read:shared}
+    v12: any = name_read R2 {pure}
     v13: any = record_new R2[v12](v7) {pure}
     br bb6(v13)
   bb5:
-    v14: any = opaque.NameRead(R1) {read:shared}
+    v14: any = name_read R1 {pure}
     v15: any = record_new R1[v14](v7) {pure}
     br bb6(v15)
   bb6(v16: any):
@@ -510,10 +510,10 @@ fn loopJoin(v0: int) -> any:
 ;; mir -O2 fn=loopJoin
 fn loopJoin(v0: int) -> any:
   bb0:
-    v1: any = opaque.NameRead(R1) {read:shared}
+    v1: any = name_read R1 {pure}
     v2: int = const 0
     v3: any = record_new R1[v1](v2) {pure}
-    v4: any = opaque.NameRead(R2) {read:shared}
+    v4: any = name_read R2 {pure}
     br bb1(v2, v3)
   bb1(v5: int, v6: any):
     v7: bool = lt v5, v0 {pure}

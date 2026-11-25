@@ -62,7 +62,7 @@ fn run (n:int) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(applyOp) {read:shared}
+    v1: any = name_read applyOp {pure}
     v2: any = opaque.FunctionRef(<anon>) {pure}
     v3: any = opaque.JavaSamAdapt(v2) {impure}
     v4: int = call applyOp(v0, v3) {impure}
@@ -164,7 +164,7 @@ fn run (n:int) -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(MutBox) {read:shared}
+    v1: any = name_read MutBox {pure}
     v2: int = const 1
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     store_field v3.x, v0 {write:shared,throws}
@@ -181,7 +181,7 @@ fn run(v0: int) -> int:
 ;; mir -O2 fn=run
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(MutBox) {read:shared}
+    v1: any = name_read MutBox {pure}
     v2: int = const 1
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     store_field v3.x, v0 {write:shared,throws}
@@ -361,7 +361,7 @@ fn run (x:int, y:int) -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int, v1: int) -> int:
   bb0:
-    v2: any = opaque.NameRead(Pair) {read:shared}
+    v2: any = name_read Pair {pure}
     v3: int = const 10
     v4: int = const 0
     v5: any = record_new Pair[v2](v3, v4) {pure}
@@ -400,7 +400,7 @@ fn run (p:int) -> int {pure unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(idG) {read:shared}
+    v1: any = name_read idG {pure}
     v2: int = opaque.DynamicCall(v1, v0) {impure}
     v3: int = const 1
     v4: int = add v0, v3 {pure}
@@ -415,7 +415,7 @@ fn run(v0: int) -> int:
 ;; mir -O2 fn=run
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(idG) {read:shared}
+    v1: any = name_read idG {pure}
     v2: int = opaque.DynamicCall(v1, v0) {impure}
     v3: int = const 1
     v4: int = add v0, v3 {pure}
@@ -476,7 +476,7 @@ fn run (n:int, fl:bool) -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int, v1: bool) -> int:
   bb0:
-    v2: any = opaque.NameRead(Pair) {read:shared}
+    v2: any = name_read Pair {pure}
     v3: int = const 0
     v4: any = record_new Pair[v2](v0, v3) {pure}
     slot_init p, v4 {write:shared}
@@ -511,7 +511,7 @@ fn run(v0: int, v1: bool) -> int:
 ;; mir -O2 fn=run
 fn run(v0: int, v1: bool) -> int:
   bb0:
-    v2: any = opaque.NameRead(Pair) {read:shared}
+    v2: any = name_read Pair {pure}
     v3: int = const 0
     v4: any = record_new Pair[v2](v0, v3) {pure}
     slot_init p, v4 {write:shared}
@@ -581,7 +581,7 @@ fn run(v0: int, v1: bool) -> double:
     v2: double = convert.double v0
     v3: double = const 0.5
     v4: double = add v2, v3 {pure}
-    v5: any = opaque.NameRead(double) {read:shared,throws}
+    v5: any = name_read double {pure}
     v6: any = const null
     br_if v1, bb2, bb1
   bb1:
@@ -628,7 +628,7 @@ fn run(v0: int, v1: bool) -> double:
     v2: double = convert.double v0
     v3: double = const 0.5
     v4: double = add v2, v3 {pure}
-    v5: any = opaque.NameRead(double) {read:shared,throws}
+    v5: any = name_read double {pure}
     br_if v1, bb2, bb1
   bb1:
     v6: any = const 9

@@ -32,17 +32,17 @@ fn neg (a:int, b:double, c:obj) -> bool {pure unique}
 ;; mir -O2 fn=neg stage=before
 fn neg(v0: int, v1: double, v2: any) -> bool:
   bb0:
-    v3: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read assert {pure}
     v4: int = neg v0 {pure}
     v5: int = const -4
     v6: bool = eq v4, v5 {pure}
     v7: bool = opaque.DynamicCall(v3, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
+    v8: any = name_read assert {pure}
     v9: double = neg v1 {pure}
     v10: double = const -1.5
     v11: bool = eq v9, v10 {pure}
     v12: bool = opaque.DynamicCall(v8, v11) {impure}
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
+    v13: any = name_read assert {pure}
     v14: any = neg v2 {impure}
     v15: int = const -9
     v16: any = convert.any v15
@@ -55,22 +55,20 @@ fn neg(v0: int, v1: double, v2: any) -> bool:
 ;; mir -O2 fn=neg
 fn neg(v0: int, v1: double, v2: any) -> bool:
   bb0:
-    v3: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read assert {pure}
     v4: int = neg v0 {pure}
     v5: int = const -4
     v6: bool = eq v4, v5 {pure}
     v7: bool = opaque.DynamicCall(v3, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
-    v9: double = neg v1 {pure}
-    v10: double = const -1.5
-    v11: bool = eq v9, v10 {pure}
-    v12: bool = opaque.DynamicCall(v8, v11) {impure}
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
-    v14: any = neg v2 {impure}
-    v15: any = const -9
-    v16: any = eq v14, v15 {pure,throws}
-    v17: bool = opaque.DynamicCall(v13, v16) {impure}
-    ret v17
+    v8: double = neg v1 {pure}
+    v9: double = const -1.5
+    v10: bool = eq v8, v9 {pure}
+    v11: bool = opaque.DynamicCall(v3, v10) {impure}
+    v12: any = neg v2 {impure}
+    v13: any = const -9
+    v14: any = eq v12, v13 {pure,throws}
+    v15: bool = opaque.DynamicCall(v3, v14) {impure}
+    ret v15
 ```
 
 ## Widening return, as-cast, block/while double widening, and methodless object
@@ -297,7 +295,7 @@ fn C.run() -> bool:
     v26: any = add v23, v25 {impure}
     v27: double = convert.double v26
     store_field v21.d, v27 {write:shared,throws}
-    v28: any = opaque.NameRead(assert) {read:shared,throws}
+    v28: any = name_read assert {pure}
     v29: double = const 6.5
     v30: any = convert.any v29
     v31: any = eq v7, v30 {pure,throws}
@@ -349,7 +347,7 @@ fn C.run() -> bool:
     v14: any = add v13, v2 {impure}
     v15: double = convert.double v14
     store_field v5.d, v15 {write:shared,throws}
-    v16: any = opaque.NameRead(assert) {read:shared,throws}
+    v16: any = name_read assert {pure}
     v17: any = const 6.5
     v18: any = eq v4, v17 {pure,throws}
     v19: bool = not v18 {pure}
