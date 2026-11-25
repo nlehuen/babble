@@ -85,6 +85,7 @@ public final class HirPurity {
             case HirExpr.CoreExceptionRef r -> true;
             case HirExpr.FunctionRef f -> true;
             case HirExpr.VarRead v -> !v.var().mayBeUndefined() || v.var().definitelyDefined();
+            case HirExpr.NameRead nr -> nr.finalBinding() && nr.definitelyDefined();
             case HirExpr.ThisRef t -> t.var() != null && (!t.var().mayBeUndefined() || t.var().definitelyDefined());
             case HirExpr.Unary u -> {
                 if (!isPureNothrowTerminating(u.operand(), module, visitingFns)) {
@@ -161,11 +162,11 @@ public final class HirPurity {
                         yield false;
                     }
                     HirClass cls = module.clazz(g.classId());
-                    yield cls != null && cls.shape().isValue()
+                    yield cls != null && g.immutableField() && g.definitelyDefined()
                             && (g.memberIndex() >= cls.primDefBits().length || cls.primDefBits()[g.memberIndex()] < 0)
                             && isPureNothrowTerminating(g.receiver(), module, visitingFns);
                 }
-                yield g.recordField() && g.definitelyDefined()
+                yield g.immutableField() && g.definitelyDefined()
                         && isPureNothrowTerminating(g.receiver(), module, visitingFns)
                         && (g.receiver() instanceof HirExpr.ThisRef || g.receiver() instanceof HirExpr.RecordNew
                         || g.receiver() instanceof HirExpr.VarRead);

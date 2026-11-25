@@ -352,7 +352,7 @@ fn f () -> bool {io}
 ;; mir -O2 fn=f stage=before,final
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(bumpD) {read:shared}
+    v0: any = name_read bumpD {pure}
     v1: double = call bumpD() {impure}
     v2: double = call_java Math.floor(v1) {pure}
     v3: double = call_java Math.abs(v2) {pure}
@@ -361,7 +361,7 @@ fn f() -> bool:
     v6: bool = const false
     br_if v5, bb1, bb2(v6)
   bb1:
-    v7: any = opaque.NameRead(bumpS) {read:shared}
+    v7: any = name_read bumpS {pure}
     v8: any = call bumpS() {impure}
     v9: any = call_java v8.toUpperCase() {impure}
     v10: any = checkcast v9 <string|string|>
@@ -598,9 +598,9 @@ fn checkNoRefl(v0: any) -> bool:
     v9: bool = const false
     br_if v8, bb3, bb4(v9)
   bb3:
-    v10: any = opaque.NameRead(bump) {read:shared}
+    v10: any = name_read bump {pure}
     v11: int = call bump() {impure}
-    v12: any = opaque.NameRead(bump) {read:shared}
+    v12: any = name_read bump {pure}
     v13: int = call bump() {impure}
     v14: bool = neq v11, v13 {pure}
     br bb4(v14)
@@ -608,9 +608,9 @@ fn checkNoRefl(v0: any) -> bool:
     v16: bool = const false
     br_if v15, bb5, bb6(v16)
   bb5:
-    v17: any = opaque.NameRead(bump) {read:shared}
+    v17: any = name_read bump {pure}
     v18: int = call bump() {impure}
-    v19: any = opaque.NameRead(bump) {read:shared}
+    v19: any = name_read bump {pure}
     v20: int = call bump() {impure}
     v21: bool = neq v18, v20 {pure}
     br bb6(v21)
@@ -635,23 +635,21 @@ fn checkNoRefl(v0: any) -> bool:
   bb2(v8: bool):
     br_if v8, bb3, bb4(v4)
   bb3:
-    v9: any = opaque.NameRead(bump) {read:shared}
+    v9: any = name_read bump {pure}
     v10: int = call bump() {impure}
-    v11: any = opaque.NameRead(bump) {read:shared}
-    v12: int = call bump() {impure}
-    v13: bool = neq v10, v12 {pure}
-    br bb4(v13)
-  bb4(v14: bool):
-    br_if v14, bb5, bb6(v4)
+    v11: int = call bump() {impure}
+    v12: bool = neq v10, v11 {pure}
+    br bb4(v12)
+  bb4(v13: bool):
+    br_if v13, bb5, bb6(v4)
   bb5:
-    v15: any = opaque.NameRead(bump) {read:shared}
+    v14: any = name_read bump {pure}
+    v15: int = call bump() {impure}
     v16: int = call bump() {impure}
-    v17: any = opaque.NameRead(bump) {read:shared}
-    v18: int = call bump() {impure}
-    v19: bool = neq v16, v18 {pure}
-    br bb6(v19)
-  bb6(v20: bool):
-    ret v20
+    v17: bool = neq v15, v16 {pure}
+    br bb6(v17)
+  bb6(v18: bool):
+    ret v18
 ```
 
 ## Negated comparison rewrites (not (a == b) -> a != b, etc.) and E-graph equivalence

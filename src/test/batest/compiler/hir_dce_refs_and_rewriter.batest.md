@@ -130,13 +130,13 @@ fn run (arr:obj) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead(mod) {read:shared,throws}
+    v1: any = name_read mod {pure}
     v2: any = opaque.ModuleExportGet(v1.val) {impure}
     v3: int = convert.int v2
-    v4: any = opaque.NameRead(sumV) {read:shared,throws}
+    v4: any = name_read sumV {pure}
     v5: int = call sumV(v0) {impure}
     v6: int = add v3, v5 {pure}
-    v7: any = opaque.NameRead(idG) {read:shared,throws}
+    v7: any = name_read idG {pure}
     v8: int = const 3
     v9: int = opaque.DynamicCall(v7, v8) {impure}
     v10: int = add v6, v9 {pure}
@@ -400,7 +400,6 @@ fn run (n:int) -> int {pure unique}
 ;; hir -O1 fn=run
 fn run (n:int) -> int {pure unique}
   (block
-    name(Pair)
     (def $sr_p_0 var(n))
     (def $sr_p_1 2:int))
   (def xs (core-new list var(n)))
@@ -412,17 +411,16 @@ fn run (n:int) -> int {pure unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead(Pair) {read:shared}
-    v2: int = const 2
-    v3: any = opaque.CoreCollectionCall(list, v0) {impure}
-    v4: any = move v3
-    v5: int = add v0, v2 {pure}
-    v6: int = const 0
-    v7: any = call_java v4.get(v6) {impure}
-    v8: any = checkcast v7 <int|int|>
-    v9: int = convert.int v8
-    v10: int = add v5, v9 {pure}
-    ret v10
+    v1: int = const 2
+    v2: any = opaque.CoreCollectionCall(list, v0) {impure}
+    v3: any = move v2
+    v4: int = add v0, v1 {pure}
+    v5: int = const 0
+    v6: any = call_java v3.get(v5) {impure}
+    v7: any = checkcast v6 <int|int|>
+    v8: int = convert.int v7
+    v9: int = add v4, v8 {pure}
+    ret v9
 ```
 
 ```mir

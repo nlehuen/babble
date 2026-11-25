@@ -72,20 +72,20 @@ fn f () -> bool {pure unique}
 ;; mir -O2 fn=f stage=before
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(byte) {read:shared,throws}
+    v0: any = name_read byte {pure}
     v1: int = const 1
     v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = opaque.NameRead(byte) {read:shared,throws}
+    v3: any = name_read byte {pure}
     v4: int = const 2
     v5: byte = opaque.DynamicCall(v3, v4) {impure}
     v6: bool = lt v2, v5 {pure}
     v7: bool = const false
     br_if v6, bb1, bb2(v7)
   bb1:
-    v8: any = opaque.NameRead(short) {read:shared,throws}
+    v8: any = name_read short {pure}
     v9: int = const 1
     v10: short = opaque.DynamicCall(v8, v9) {impure}
-    v11: any = opaque.NameRead(short) {read:shared,throws}
+    v11: any = name_read short {pure}
     v12: int = const 2
     v13: short = opaque.DynamicCall(v11, v12) {impure}
     v14: bool = lt v10, v13 {pure}
@@ -98,24 +98,22 @@ fn f() -> bool:
 ;; mir -O2 fn=f
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(byte) {read:shared,throws}
+    v0: any = name_read byte {pure}
     v1: int = const 1
     v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = opaque.NameRead(byte) {read:shared,throws}
-    v4: int = const 2
-    v5: byte = opaque.DynamicCall(v3, v4) {impure}
-    v6: bool = lt v2, v5 {pure}
-    v7: bool = const false
-    br_if v6, bb1, bb2(v7)
+    v3: int = const 2
+    v4: byte = opaque.DynamicCall(v0, v3) {impure}
+    v5: bool = lt v2, v4 {pure}
+    v6: bool = const false
+    br_if v5, bb1, bb2(v6)
   bb1:
-    v8: any = opaque.NameRead(short) {read:shared,throws}
-    v9: short = opaque.DynamicCall(v8, v1) {impure}
-    v10: any = opaque.NameRead(short) {read:shared,throws}
-    v11: short = opaque.DynamicCall(v10, v4) {impure}
-    v12: bool = lt v9, v11 {pure}
-    br bb2(v12)
-  bb2(v13: bool):
-    ret v13
+    v7: any = name_read short {pure}
+    v8: short = opaque.DynamicCall(v7, v1) {impure}
+    v9: short = opaque.DynamicCall(v7, v3) {impure}
+    v10: bool = lt v8, v9 {pure}
+    br bb2(v10)
+  bb2(v11: bool):
+    ret v11
 ```
 
 ## Case 3
@@ -222,7 +220,7 @@ fn f () -> bool {pure unique}
 ;; mir -O2 fn=f stage=before
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(byte) {read:shared,throws}
+    v0: any = name_read byte {pure}
     v1: int = const 3
     v2: byte = opaque.DynamicCall(v0, v1) {impure}
     v3: short = convert.short v2
@@ -243,7 +241,7 @@ fn f() -> bool:
 ;; mir -O2 fn=f
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(byte) {read:shared,throws}
+    v0: any = name_read byte {pure}
     v1: int = const 3
     v2: byte = opaque.DynamicCall(v0, v1) {impure}
     v3: long = convert.long v2
@@ -299,15 +297,15 @@ fn f () -> bool {pure unique}
 ;; mir -O2 fn=f stage=before
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(byte) {read:shared,throws}
+    v0: any = name_read byte {pure}
     v1: int = const 3
     v2: byte = opaque.DynamicCall(v0, v1) {impure}
     v3: short = convert.short v2
-    v4: any = opaque.NameRead(short) {read:shared,throws}
+    v4: any = name_read short {pure}
     v5: int = const 4
     v6: short = opaque.DynamicCall(v4, v5) {impure}
     v7: long = convert.long v6
-    v8: any = opaque.NameRead(short) {read:shared,throws}
+    v8: any = name_read short {pure}
     v9: int = const 3
     v10: short = opaque.DynamicCall(v8, v9) {impure}
     v11: bool = eq v3, v10 {pure}
@@ -359,51 +357,50 @@ fn f() -> bool:
 ;; mir -O2 fn=f
 fn f() -> bool:
   bb0:
-    v0: any = opaque.NameRead(byte) {read:shared,throws}
+    v0: any = name_read byte {pure}
     v1: int = const 3
     v2: byte = opaque.DynamicCall(v0, v1) {impure}
     v3: short = convert.short v2
-    v4: any = opaque.NameRead(short) {read:shared,throws}
+    v4: any = name_read short {pure}
     v5: int = const 4
     v6: short = opaque.DynamicCall(v4, v5) {impure}
     v7: long = convert.long v6
-    v8: any = opaque.NameRead(short) {read:shared,throws}
-    v9: short = opaque.DynamicCall(v8, v1) {impure}
-    v10: bool = eq v3, v9 {pure}
-    v11: bool = const false
-    br_if v10, bb1, bb2(v11)
+    v8: short = opaque.DynamicCall(v4, v1) {impure}
+    v9: bool = eq v3, v8 {pure}
+    v10: bool = const false
+    br_if v9, bb1, bb2(v10)
   bb1:
-    v12: long = const 4L
-    v13: bool = eq v7, v12 {pure}
-    br bb2(v13)
-  bb2(v14: bool):
-    br_if v14, bb3, bb4(v11)
+    v11: long = const 4L
+    v12: bool = eq v7, v11 {pure}
+    br bb2(v12)
+  bb2(v13: bool):
+    br_if v13, bb3, bb4(v10)
   bb3:
-    v15: bool = const true
-    br bb4(v15)
-  bb4(v16: bool):
-    br_if v16, bb5, bb6(v11)
+    v14: bool = const true
+    br bb4(v14)
+  bb4(v15: bool):
+    br_if v15, bb5, bb6(v10)
   bb5:
-    v17: bool = const true
-    br bb6(v17)
-  bb6(v18: bool):
-    br_if v18, bb7, bb8(v11)
+    v16: bool = const true
+    br bb6(v16)
+  bb6(v17: bool):
+    br_if v17, bb7, bb8(v10)
   bb7:
-    v19: bool = const true
-    br bb8(v19)
-  bb8(v20: bool):
-    br_if v20, bb9, bb10(v11)
+    v18: bool = const true
+    br bb8(v18)
+  bb8(v19: bool):
+    br_if v19, bb9, bb10(v10)
   bb9:
-    v21: bool = const true
-    br bb10(v21)
-  bb10(v22: bool):
-    br_if v22, bb11, bb12(v11)
+    v20: bool = const true
+    br bb10(v20)
+  bb10(v21: bool):
+    br_if v21, bb11, bb12(v10)
   bb11:
-    v23: any = const null
-    v24: any = eq v23, v23 {pure,throws}
+    v22: any = const null
+    v23: any = eq v22, v22 {pure,throws}
+    v24: bool = not v23 {pure}
     v25: bool = not v24 {pure}
-    v26: bool = not v25 {pure}
-    br bb12(v26)
-  bb12(v27: bool):
-    ret v27
+    br bb12(v25)
+  bb12(v26: bool):
+    ret v26
 ```

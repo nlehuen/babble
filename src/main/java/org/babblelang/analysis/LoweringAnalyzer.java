@@ -452,6 +452,11 @@ final class LoweringAnalyzer {
             if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
                 pass.analysis.lowering().setModuleExportTarget(selector, new LoweringTargets.ModuleExportTarget(index, name, module.module().name()));
             }
+        } else if (receiver instanceof Type.ClassValue cv) {
+            TypeNode.Member sm = cv.node().statics.get(name);
+            if (sm != null && !sm.isPrivate() && !sm.isMutable()) {
+                pass.analysis.lowering().markPublicStaticDefSelect(selector);
+            }
         } else {
             LoweringTargets.JavaFieldTarget target = fieldReadTarget(receiver, name, checker.algebra());
             if (target != null) {
@@ -464,10 +469,10 @@ final class LoweringAnalyzer {
                     TypeNode.Member member = inst.node().members.get(name);
                     if (member != null && !member.isMethod()) {
                         PrimitiveKind fk = inst.node().memberKinds.getOrDefault(name, PrimitiveKind.NONE);
-                        boolean recordVal = inst.node().kind == ClassShape.Kind.VALUE_CLASS;
+                        boolean immutableField = inst.node().kind == ClassShape.Kind.VALUE_CLASS || !member.isMutable();
                         boolean defDefined = inst.node().definiteFields.contains(name);
                         pass.analysis.lowering().setClassFieldTarget(selector, new LoweringTargets.ClassFieldTarget(
-                                inst.node().id, name, member.index, fk, recordVal, defDefined));
+                                inst.node().id, name, member.index, fk, immutableField, defDefined));
                     }
                 }
             }

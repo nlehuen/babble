@@ -493,6 +493,17 @@ public final class MirCanonicalPrinter {
                     .append(" <").append(formatCatchTarget(cm.target())).append('>');
             case MirInst.AddSuppressed as -> sb.append("add_suppressed ").append(val(vals, as.primary()))
                     .append(", ").append(val(vals, as.secondary()));
+            case MirInst.NameRead nr -> sb.append("name_read ").append(nr.name())
+                    .append(" {").append(nr.effect().canonicalTag()).append('}');
+            case MirInst.NameAssign na -> {
+                sb.append("name_assign ").append(na.name());
+                if (na.operator() != null) {
+                    sb.append(' ').append(na.operator()).append("= ").append(val(vals, na.value()));
+                } else {
+                    sb.append(", ").append(val(vals, na.value()));
+                }
+                sb.append(" {").append(na.effect().canonicalTag()).append('}');
+            }
             case MirInst.OpaqueExpr op -> {
                 sb.append("opaque.").append(op.template().getClass().getSimpleName()).append('(');
                 formatOpaqueOperands(sb, hir, op, vals);
@@ -505,16 +516,6 @@ public final class MirCanonicalPrinter {
                                              Map<Integer, String> vals) {
         List<MirVal> ops = op.operands();
         switch (op.template()) {
-            case HirExpr.NameRead nr -> sb.append(nr.name());
-            case HirExpr.NameAssign na -> {
-                sb.append(na.name());
-                if (na.operator() != null) {
-                    sb.append(' ').append(na.operator()).append('=');
-                }
-                if (!ops.isEmpty()) {
-                    sb.append(", ").append(val(vals, ops.get(0)));
-                }
-            }
             case HirExpr.ModuleExportGet mg -> {
                 if (!ops.isEmpty()) {
                     sb.append(val(vals, ops.get(0))).append('.');

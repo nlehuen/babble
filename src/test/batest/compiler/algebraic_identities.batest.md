@@ -57,19 +57,19 @@ fn checkBool (b:bool) -> bool {pure unique}
 ;; mir -O2 fn=checkBool stage=before
 fn checkBool(v0: bool) -> bool:
   bb0:
-    v1: any = opaque.NameRead(assert) {read:shared,throws}
+    v1: any = name_read assert {pure}
     v2: bool = const true
     v3: bool = opaque.DynamicCall(v1, v2) {impure}
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: bool = const true
     v6: bool = opaque.DynamicCall(v4, v5) {impure}
-    v7: any = opaque.NameRead(assert) {read:shared,throws}
+    v7: any = name_read assert {pure}
     v8: bool = const true
     v9: bool = opaque.DynamicCall(v7, v8) {impure}
-    v10: any = opaque.NameRead(assert) {read:shared,throws}
+    v10: any = name_read assert {pure}
     v11: bool = const true
     v12: bool = opaque.DynamicCall(v10, v11) {impure}
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
+    v13: any = name_read assert {pure}
     v14: bool = const true
     v15: bool = opaque.DynamicCall(v13, v14) {impure}
     ret v15
@@ -79,18 +79,14 @@ fn checkBool(v0: bool) -> bool:
 ;; mir -O2 fn=checkBool
 fn checkBool(v0: bool) -> bool:
   bb0:
-    v1: any = opaque.NameRead(assert) {read:shared,throws}
+    v1: any = name_read assert {pure}
     v2: bool = const true
     v3: bool = opaque.DynamicCall(v1, v2) {impure}
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
-    v5: bool = opaque.DynamicCall(v4, v2) {impure}
-    v6: any = opaque.NameRead(assert) {read:shared,throws}
-    v7: bool = opaque.DynamicCall(v6, v2) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
-    v9: bool = opaque.DynamicCall(v8, v2) {impure}
-    v10: any = opaque.NameRead(assert) {read:shared,throws}
-    v11: bool = opaque.DynamicCall(v10, v2) {impure}
-    ret v11
+    v4: bool = opaque.DynamicCall(v1, v2) {impure}
+    v5: bool = opaque.DynamicCall(v1, v2) {impure}
+    v6: bool = opaque.DynamicCall(v1, v2) {impure}
+    v7: bool = opaque.DynamicCall(v1, v2) {impure}
+    ret v7
 ```
 
 ## Case 2
@@ -128,23 +124,23 @@ fn checkInt (x:int, eAdd0:int, eAddC:int, eMul:int) -> bool {pure unique}
 ;; mir -O2 fn=checkInt stage=before
 fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: int = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
     v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
+    v8: any = name_read assert {pure}
     v9: int = add v0, v0 {pure}
     v10: int = const 8
     v11: int = add v9, v10 {pure}
     v12: bool = eq v11, v2 {pure}
     v13: bool = opaque.DynamicCall(v8, v12) {impure}
-    v14: any = opaque.NameRead(assert) {read:shared,throws}
+    v14: any = name_read assert {pure}
     v15: int = neg v0 {pure}
     v16: int = add v0, v15 {pure}
     v17: int = const 0
     v18: bool = eq v16, v17 {pure}
     v19: bool = opaque.DynamicCall(v14, v18) {impure}
-    v20: any = opaque.NameRead(assert) {read:shared,throws}
+    v20: any = name_read assert {pure}
     v21: int = add v0, v0 {pure}
     v22: int = const 3
     v23: int = mul v0, v22 {pure}
@@ -161,31 +157,28 @@ fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
 ;; mir -O2 fn=checkInt
 fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: int = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
     v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
-    v9: int = const 8
-    v10: int = add v5, v9 {pure}
-    v11: bool = eq v10, v2 {pure}
-    v12: bool = opaque.DynamicCall(v8, v11) {impure}
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
-    v14: int = neg v0 {pure}
-    v15: int = add v0, v14 {pure}
-    v16: int = const 0
-    v17: bool = eq v15, v16 {pure}
-    v18: bool = opaque.DynamicCall(v13, v17) {impure}
-    v19: any = opaque.NameRead(assert) {read:shared,throws}
-    v20: int = const 3
+    v8: int = const 8
+    v9: int = add v5, v8 {pure}
+    v10: bool = eq v9, v2 {pure}
+    v11: bool = opaque.DynamicCall(v4, v10) {impure}
+    v12: int = neg v0 {pure}
+    v13: int = add v0, v12 {pure}
+    v14: int = const 0
+    v15: bool = eq v13, v14 {pure}
+    v16: bool = opaque.DynamicCall(v4, v15) {impure}
+    v17: int = const 3
+    v18: int = mul v0, v17 {pure}
+    v19: int = add v5, v18 {pure}
+    v20: int = const 6
     v21: int = mul v0, v20 {pure}
-    v22: int = add v5, v21 {pure}
-    v23: int = const 6
-    v24: int = mul v0, v23 {pure}
-    v25: int = add v22, v24 {pure}
-    v26: bool = eq v25, v3 {pure}
-    v27: bool = opaque.DynamicCall(v19, v26) {impure}
-    ret v27
+    v22: int = add v19, v21 {pure}
+    v23: bool = eq v22, v3 {pure}
+    v24: bool = opaque.DynamicCall(v4, v23) {impure}
+    ret v24
 ```
 
 ## Case 3
@@ -223,23 +216,23 @@ fn checkLong (lx:long, eAdd0:long, eAddC:long, eMul:long) -> bool {pure unique}
 ;; mir -O2 fn=checkLong stage=before
 fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: long = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
     v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
+    v8: any = name_read assert {pure}
     v9: long = add v0, v0 {pure}
     v10: long = const 8L
     v11: long = add v9, v10 {pure}
     v12: bool = eq v11, v2 {pure}
     v13: bool = opaque.DynamicCall(v8, v12) {impure}
-    v14: any = opaque.NameRead(assert) {read:shared,throws}
+    v14: any = name_read assert {pure}
     v15: long = neg v0 {pure}
     v16: long = add v0, v15 {pure}
     v17: long = const 0L
     v18: bool = eq v16, v17 {pure}
     v19: bool = opaque.DynamicCall(v14, v18) {impure}
-    v20: any = opaque.NameRead(assert) {read:shared,throws}
+    v20: any = name_read assert {pure}
     v21: long = add v0, v0 {pure}
     v22: long = const 3L
     v23: long = mul v0, v22 {pure}
@@ -256,31 +249,28 @@ fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
 ;; mir -O2 fn=checkLong
 fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: long = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
     v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: any = opaque.NameRead(assert) {read:shared,throws}
-    v9: long = const 8L
-    v10: long = add v5, v9 {pure}
-    v11: bool = eq v10, v2 {pure}
-    v12: bool = opaque.DynamicCall(v8, v11) {impure}
-    v13: any = opaque.NameRead(assert) {read:shared,throws}
-    v14: long = neg v0 {pure}
-    v15: long = add v0, v14 {pure}
-    v16: long = const 0L
-    v17: bool = eq v15, v16 {pure}
-    v18: bool = opaque.DynamicCall(v13, v17) {impure}
-    v19: any = opaque.NameRead(assert) {read:shared,throws}
-    v20: long = const 3L
+    v8: long = const 8L
+    v9: long = add v5, v8 {pure}
+    v10: bool = eq v9, v2 {pure}
+    v11: bool = opaque.DynamicCall(v4, v10) {impure}
+    v12: long = neg v0 {pure}
+    v13: long = add v0, v12 {pure}
+    v14: long = const 0L
+    v15: bool = eq v13, v14 {pure}
+    v16: bool = opaque.DynamicCall(v4, v15) {impure}
+    v17: long = const 3L
+    v18: long = mul v0, v17 {pure}
+    v19: long = add v5, v18 {pure}
+    v20: long = const 6L
     v21: long = mul v0, v20 {pure}
-    v22: long = add v5, v21 {pure}
-    v23: long = const 6L
-    v24: long = mul v0, v23 {pure}
-    v25: long = add v22, v24 {pure}
-    v26: bool = eq v25, v3 {pure}
-    v27: bool = opaque.DynamicCall(v19, v26) {impure}
-    ret v27
+    v22: long = add v19, v21 {pure}
+    v23: bool = eq v22, v3 {pure}
+    v24: bool = opaque.DynamicCall(v4, v23) {impure}
+    ret v24
 ```
 
 ## String reassociation and IEEE-754 preservation (NaN * 0.0 != 0.0, no float/double reassociation)
@@ -316,12 +306,12 @@ fn checkStrIeee (s:obj, d:double, expStr:obj, expNan:bool) -> bool {pure}
 ;; mir -O2 fn=checkStrIeee stage=before
 fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: any = const "ab"
     v6: any = strcat v0, v5 {pure}
     v7: any = eq v6, v2 {pure}
     v8: bool = opaque.DynamicCall(v4, v7) {impure}
-    v9: any = opaque.NameRead(assert) {read:shared,throws}
+    v9: any = name_read assert {pure}
     v10: double = const 0.0
     v11: double = mul v1, v10 {pure}
     v12: double = const 0.0
@@ -331,7 +321,7 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v16: bool = opaque.DynamicCall(v9, v15) {impure}
     br_if v3, bb2, bb1
   bb1:
-    v17: any = opaque.NameRead(assert) {read:shared,throws}
+    v17: any = name_read assert {pure}
     v18: double = const 1.0
     v19: double = add v1, v18 {pure}
     v20: double = const 2.0
@@ -341,7 +331,7 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v24: bool = opaque.DynamicCall(v17, v23) {impure}
     br bb3(v24)
   bb2:
-    v25: any = opaque.NameRead(assert) {read:shared,throws}
+    v25: any = name_read assert {pure}
     v26: double = const 1.0
     v27: double = add v1, v26 {pure}
     v28: double = const 2.0
@@ -357,40 +347,37 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
 ;; mir -O2 fn=checkStrIeee
 fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: any = const "ab"
     v6: any = strcat v0, v5 {pure}
     v7: any = eq v6, v2 {pure}
     v8: bool = opaque.DynamicCall(v4, v7) {impure}
-    v9: any = opaque.NameRead(assert) {read:shared,throws}
-    v10: double = const 0.0
-    v11: double = mul v1, v10 {pure}
-    v12: double = add v11, v10 {pure}
-    v13: bool = call_java Double.isNaN(v12) {pure}
-    v14: bool = eq v13, v3 {pure}
-    v15: bool = opaque.DynamicCall(v9, v14) {impure}
+    v9: double = const 0.0
+    v10: double = mul v1, v9 {pure}
+    v11: double = add v10, v9 {pure}
+    v12: bool = call_java Double.isNaN(v11) {pure}
+    v13: bool = eq v12, v3 {pure}
+    v14: bool = opaque.DynamicCall(v4, v13) {impure}
     br_if v3, bb2, bb1
   bb1:
-    v16: any = opaque.NameRead(assert) {read:shared,throws}
-    v17: double = const 1.0
-    v18: double = add v1, v17 {pure}
-    v19: double = const 2.0
-    v20: double = add v18, v19 {pure}
-    v21: double = const 3.0
-    v22: bool = eq v20, v21 {pure}
-    v23: bool = opaque.DynamicCall(v16, v22) {impure}
-    br bb3(v23)
+    v15: double = const 1.0
+    v16: double = add v1, v15 {pure}
+    v17: double = const 2.0
+    v18: double = add v16, v17 {pure}
+    v19: double = const 3.0
+    v20: bool = eq v18, v19 {pure}
+    v21: bool = opaque.DynamicCall(v4, v20) {impure}
+    br bb3(v21)
   bb2:
-    v24: any = opaque.NameRead(assert) {read:shared,throws}
-    v25: double = const 1.0
-    v26: double = add v1, v25 {pure}
-    v27: double = const 2.0
-    v28: double = add v26, v27 {pure}
-    v29: bool = call_java Double.isNaN(v28) {pure}
-    v30: bool = opaque.DynamicCall(v24, v29) {impure}
-    br bb3(v30)
-  bb3(v31: bool):
-    ret v31
+    v22: double = const 1.0
+    v23: double = add v1, v22 {pure}
+    v24: double = const 2.0
+    v25: double = add v23, v24 {pure}
+    v26: bool = call_java Double.isNaN(v25) {pure}
+    v27: bool = opaque.DynamicCall(v4, v26) {impure}
+    br bb3(v27)
+  bb3(v28: bool):
+    ret v28
 ```
 
 ## Impure operands must not be dropped by * 0 or reordered
@@ -460,7 +447,7 @@ fn checkNonReassoc (x:int, y:int, s:obj, t:obj) -> bool {pure unique}
 ;; mir -O2 fn=checkNonReassoc stage=before
 fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: int = add v0, v1 {pure}
     v6: int = const 2
     v7: int = add v5, v6 {pure}
@@ -489,7 +476,7 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
     br bb4(v24)
   bb4(v25: bool):
     v26: bool = opaque.DynamicCall(v4, v25) {impure}
-    v27: any = opaque.NameRead(assert) {read:shared,throws}
+    v27: any = name_read assert {pure}
     v28: int = const 0
     v29: bool = lt v0, v28 {pure}
     br_if v29, bb6, bb5
@@ -518,7 +505,7 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
 ;; mir -O2 fn=checkNonReassoc
 fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: int = add v0, v1 {pure}
     v6: int = const 2
     v7: int = add v5, v6 {pure}
@@ -546,25 +533,24 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
     br bb4(v23)
   bb4(v24: bool):
     v25: bool = opaque.DynamicCall(v4, v24) {impure}
-    v26: any = opaque.NameRead(assert) {read:shared,throws}
-    v27: int = const 0
-    v28: bool = lt v0, v27 {pure}
-    br_if v28, bb6, bb5
+    v26: int = const 0
+    v27: bool = lt v0, v26 {pure}
+    br_if v27, bb6, bb5
   bb5:
     br bb7(v0)
   bb6:
-    br bb7(v27)
-  bb7(v29: int):
-    v30: bool = lt v29, v27 {pure}
-    br_if v30, bb9, bb8
+    br bb7(v26)
+  bb7(v28: int):
+    v29: bool = lt v28, v26 {pure}
+    br_if v29, bb9, bb8
   bb8:
-    br bb10(v29)
+    br bb10(v28)
   bb9:
-    br bb10(v27)
-  bb10(v31: int):
-    v32: bool = eq v31, v6 {pure}
-    v33: bool = opaque.DynamicCall(v26, v32) {impure}
-    ret v33
+    br bb10(v26)
+  bb10(v30: int):
+    v31: bool = eq v30, v6 {pure}
+    v32: bool = opaque.DynamicCall(v4, v31) {impure}
+    ret v32
 ```
 
 ## Non-dropping arithmetic identities with impure operands (`e + 0`, `0 + e`, `e - 0`, `e * 1`, `1 * e`)

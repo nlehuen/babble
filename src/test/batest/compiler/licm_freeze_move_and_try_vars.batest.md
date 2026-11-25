@@ -56,7 +56,7 @@ fn run (n:int, mc:obj, fmc:obj) -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int, v1: any, v2: any) -> double:
   bb0:
-    v3: any = opaque.NameRead(java) {read:shared,throws}
+    v3: any = name_read java {pure}
     v4: any = opaque.DynamicSelect(v3.lang) {impure}
     v5: any = opaque.DynamicSelect(v4.Math) {impure}
     v6: double = const 0.0
@@ -74,7 +74,7 @@ fn run(v0: int, v1: any, v2: any) -> double:
   bb2:
     ret v16
   bb3:
-    v18: any = opaque.NameRead(double) {read:shared,throws}
+    v18: any = name_read double {pure}
     v19: double = opaque.DynamicCall(v18, v12) {impure}
     v20: double = const 0.0
     v21: double = add v19, v20 {pure}
@@ -89,7 +89,7 @@ fn run(v0: int, v1: any, v2: any) -> double:
 ;; mir -O2 fn=run
 fn run(v0: int, v1: any, v2: any) -> double:
   bb0:
-    v3: any = opaque.NameRead(java) {read:shared,throws}
+    v3: any = name_read java {pure}
     v4: any = opaque.DynamicSelect(v3.lang) {impure}
     v5: any = opaque.DynamicSelect(v4.Math) {impure}
     v6: double = const 0.0
@@ -97,19 +97,19 @@ fn run(v0: int, v1: any, v2: any) -> double:
     v8: int = const 2
     v9: int = add v0, v8 {pure}
     v10: int = add v9, v9 {pure}
+    v11: any = name_read double {pure}
     br bb1(v7, v6)
-  bb1(v11: int, v12: double):
-    v13: bool = lt v11, v0 {pure}
-    br_if v13, bb3, bb2
+  bb1(v12: int, v13: double):
+    v14: bool = lt v12, v0 {pure}
+    br_if v14, bb3, bb2
   bb2:
-    ret v12
+    ret v13
   bb3:
-    v14: any = opaque.NameRead(double) {read:shared,throws}
-    v15: double = opaque.DynamicCall(v14, v10) {impure}
+    v15: double = opaque.DynamicCall(v11, v10) {impure}
     v16: double = add v15, v6 {pure}
-    v17: double = add v12, v16 {pure}
+    v17: double = add v13, v16 {pure}
     v18: int = const 1
-    v19: int = add v11, v18 {pure}
+    v19: int = add v12, v18 {pure}
     br bb1(v19, v17)
 ```
 
@@ -277,7 +277,7 @@ fn run(v0: int, v1: int) -> double:
     v14: int = const 1
     v15: int = const 2
     v16: any = opaque.ArrayCreate(v14, v15) {impure}
-    v17: any = opaque.NameRead(double) {read:shared,throws}
+    v17: any = name_read double {pure}
     v18: any = move v13
     v19: int = call_java v18.size() {pure,throws}
     v20: any = freeze v16
@@ -301,26 +301,26 @@ fn run(v0: int, v1: int) -> double:
     v4: int = const 1
     v5: int = add v1, v4 {pure}
     v6: double = convert.double v5
+    v7: any = name_read double {pure}
     br bb1(v3, v2)
-  bb1(v7: int, v8: double):
-    v9: bool = lt v7, v0 {pure}
-    br_if v9, bb3, bb2
+  bb1(v8: int, v9: double):
+    v10: bool = lt v8, v0 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    ret v8
+    ret v9
   bb3:
-    v10: any = opaque.CoreCollectionCall(list, v4) {impure}
-    v11: int = const 2
-    v12: any = opaque.ArrayCreate(v4, v11) {impure}
-    v13: any = opaque.NameRead(double) {read:shared,throws}
-    v14: any = move v10
+    v11: any = opaque.CoreCollectionCall(list, v4) {impure}
+    v12: int = const 2
+    v13: any = opaque.ArrayCreate(v4, v12) {impure}
+    v14: any = move v11
     v15: int = call_java v14.size() {pure,throws}
-    v16: any = freeze v12
+    v16: any = freeze v13
     v17: int = array_len v16 {read:frozen,throws}
     v18: int = add v15, v17 {pure}
-    v19: double = opaque.DynamicCall(v13, v18) {impure}
+    v19: double = opaque.DynamicCall(v7, v18) {impure}
     v20: double = add v19, v6 {pure}
-    v21: double = add v8, v20 {pure}
-    v22: int = add v7, v4 {pure}
+    v21: double = add v9, v20 {pure}
+    v22: int = add v8, v4 {pure}
     br bb1(v22, v21)
 ```
 
@@ -371,7 +371,7 @@ fn run(v0: int, v1: int) -> int:
   bb0:
     v2: int = const 0
     v3: int = const 0
-    v4: any = opaque.NameRead(bigAny) {read:shared}
+    v4: any = name_read bigAny {pure}
     v5: int = call bigAny(v1) {pure}
     v6: any = const null
     br bb1(v6, v3, v2)
@@ -393,7 +393,7 @@ fn run(v0: int, v1: int) -> int:
 fn run(v0: int, v1: int) -> int:
   bb0:
     v2: int = const 0
-    v3: any = opaque.NameRead(bigAny) {read:shared}
+    v3: any = name_read bigAny {pure}
     v4: int = call bigAny(v1) {pure}
     br bb1(v2, v2)
   bb1(v5: int, v6: int):

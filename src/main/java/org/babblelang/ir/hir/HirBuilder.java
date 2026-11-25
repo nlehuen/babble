@@ -62,6 +62,9 @@ public final class HirBuilder {
     private final List<BabbleParser.InterfaceExpressionContext> orderedInterfaces = new ArrayList<>();
     private final List<ParserRuleContext> orderedClasses = new ArrayList<>();
     private final List<BabbleParser.FunctionLiteralContext> orderedFunctions = new ArrayList<>();
+    private final Set<HirExpr> fileScopeNameReads = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<HirExpr> nonCyclicImports = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Set<HirExpr> publicStaticDefSelects = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
     private int nextOwnerId = 1;
     private int nextVarId = 1;
@@ -118,6 +121,10 @@ public final class HirBuilder {
             HirInterface iface = lowerInterface(ifaceCtx);
             hirInterfaces.put(iface.id(), iface);
         }
+
+        // Pass 3: BIP034-D6 inductive non-escaping header & self-class definite-init analysis.
+        HirNameInitAnalysis.annotate(topLevel, hirFunctions, hirClasses, hirInterfaces,
+                fileScopeNameReads, nonCyclicImports, publicStaticDefSelects);
 
         return new HirModule(
                 className,
@@ -363,6 +370,7 @@ public final class HirBuilder {
             ParserRuleContext decl = rv.declaration();
             PrimitiveKind pk = decl != null ? scopes.lowering().declarationKind(decl) : PrimitiveKind.NONE;
             boolean defDef = decl != null && scopes.lowering().isDefinitelyDefined(decl);
+            boolean mutable = decl != null && ScopeAnalysis.isVar(decl);
             return new HirVar(
                     nextVarId++,
                     rv.name(),
@@ -372,7 +380,8 @@ public final class HirBuilder {
                     rv.isCell(),
                     rv.isUsed(),
                     rv.mayBeUndefined(),
-                    defDef
+                    defDef,
+                    mutable
             );
         });
     }
@@ -888,7 +897,7 @@ public final class HirBuilder {
             if (v != null) {
                 return new HirExpr.VarRead(hirVar(v), metaOf(ref));
             }
-            return new HirExpr.NameRead(ref.coreScalarKeyword().getText(), metaOf(ref));
+            return makeNameRead(ref, ref.coreScalarKeyword().getText());
         }
         if (ctx instanceof BabbleParser.CoreCollectionContext col) {
             return new HirExpr.CoreCollectionRef(col.coreCollectionKeyword().getText(), metaOf(col));
@@ -1158,6 +1167,16 @@ public final class HirBuilder {
         return outer == null ? wrapJavaSam(ifNode, ctx) : ifNode;
     }
 
+    private HirExpr.NameRead makeNameRead(ParserRuleContext ctx, String name) {
+        boolean isFinal = scopes.isFinalName(ctx, name);
+        boolean defDefined = scopes.isDefinitelyDefinedFromSessionOrPrelude(ctx, name);
+        HirExpr.NameRead nr = new HirExpr.NameRead(name, isFinal, defDefined, metaOf(ctx));
+        if (!defDefined && scopes.resolvesToFileScope(ctx, name)) {
+            fileScopeNameReads.add(nr);
+        }
+        return nr;
+    }
+
     private HirExpr lowerSelector(BabbleParser.SelectorContext ctx) {
         String name = ScopeAnalysis.selectorName(ctx);
         BabbleParser.ExpressionContext receiver = ctx.expression();
@@ -1166,7 +1185,7 @@ public final class HirBuilder {
             if (v != null) {
                 return new HirExpr.VarRead(hirVar(v), metaOf(ctx));
             }
-            return new HirExpr.NameRead(name, metaOf(ctx));
+            return makeNameRead(ctx, name);
         }
         if (ctx.safe != null) {
             return new HirExpr.DynamicSelect(lowerExpr(receiver), receiver.getText(), name, true, metaOf(ctx));
@@ -1183,7 +1202,18 @@ public final class HirBuilder {
         if (receiver instanceof BabbleParser.ThisExpressionContext thisExpr) {
             int clsId = thisCompiledClassIdAt(thisExpr);
             int fieldIdx = compiledFieldIndex(thisExpr, name);
-            return new HirExpr.ThisFieldGet(lowerExpr(receiver), clsId, fieldIdx, name, metaOf(ctx));
+            boolean immutableField = false;
+            boolean defDefined = false;
+            if (clsId >= 0 && fieldIdx >= 0) {
+                ParserRuleContext clsCtx = findThisCompiledClassCtx(thisExpr);
+                ClassShape shape = clsCtx != null ? scopes.hierarchy().shape(clsCtx) : null;
+                if (shape != null) {
+                    immutableField = shape.isValue() || !shape.isMutable(fieldIdx);
+                    defDefined = shape.isHeaderParameterMember(fieldIdx);
+                }
+            }
+            return new HirExpr.ThisFieldGet(lowerExpr(receiver), null, clsId, null, fieldIdx, name,
+                    PrimitiveKind.NONE, immutableField, defDefined, metaOf(ctx));
         }
         LoweringTargets.ClassFieldTarget classField = scopes.lowering().classFieldTarget(ctx);
         if (classField != null) {
@@ -1191,16 +1221,20 @@ public final class HirBuilder {
             if (localClsId != null) {
                 return new HirExpr.ThisFieldGet(lowerExpr(receiver), receiver.getText(), localClsId, null,
                         classField.memberIndex(), classField.memberName(), classField.fieldKind(),
-                        classField.recordValue(), classField.definitelyDefined(), metaOf(ctx));
+                        classField.immutableField(), classField.definitelyDefined(), metaOf(ctx));
             }
             String extJvm = allClassJvmNames.get(classField.classTypeId());
             if (extJvm != null && classField.definitelyDefined()) {
                 return new HirExpr.ThisFieldGet(lowerExpr(receiver), receiver.getText(), -1, extJvm,
                         classField.memberIndex(), classField.memberName(), classField.fieldKind(),
-                        classField.recordValue(), true, metaOf(ctx));
+                        classField.immutableField(), true, metaOf(ctx));
             }
         }
-        return new HirExpr.DynamicSelect(lowerExpr(receiver), receiver.getText(), name, false, metaOf(ctx));
+        HirExpr.DynamicSelect ds = new HirExpr.DynamicSelect(lowerExpr(receiver), receiver.getText(), name, false, metaOf(ctx));
+        if (scopes.isPublicStaticDefSelect(ctx)) {
+            publicStaticDefSelects.add(ds);
+        }
+        return ds;
     }
 
     private HirExpr lowerAssign(BabbleParser.AssignExpressionContext ctx) {
@@ -1585,7 +1619,7 @@ public final class HirBuilder {
         }
 
         // 10. General dynamic call (including typedCall/typedCallOpt indy when babbleSig != null)
-        return new HirExpr.DynamicCall(
+        HirExpr.DynamicCall dc = new HirExpr.DynamicCall(
                 lowerExpr(ctx.expression()),
                 lowerCallArgs(params, spreadAdapts),
                 binding,
@@ -1593,6 +1627,10 @@ public final class HirBuilder {
                 SyntaxText.callSite(ctx, sourceName),
                 meta
         );
+        if (scopes.isNonCyclicStaticImport(ctx)) {
+            nonCyclicImports.add(dc);
+        }
+        return dc;
     }
 
     private HirExpr wrapSpreadAdapt(HirExpr expr, LoweringTargets.SpreadAdapt[] adapts, int index, int line) {

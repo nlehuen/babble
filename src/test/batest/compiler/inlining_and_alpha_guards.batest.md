@@ -313,7 +313,7 @@ fn run(v0: int) -> int:
     v8: int = const 2
     v9: int = mul v7, v8 {pure}
     v10: int = add v4, v9 {pure}
-    v11: any = opaque.NameRead(selfByName) {read:shared}
+    v11: any = name_read selfByName {pure}
     v12: int = call selfByName(v0) {pure}
     v13: int = add v10, v12 {pure}
     ret v13
@@ -329,7 +329,7 @@ fn run(v0: int) -> int:
     v4: int = mul v2, v3 {pure}
     v5: int = const 10
     v6: int = add v4, v5 {pure}
-    v7: any = opaque.NameRead(selfByName) {read:shared}
+    v7: any = name_read selfByName {pure}
     v8: int = call selfByName(v0) {pure}
     v9: int = add v6, v8 {pure}
     ret v9
@@ -368,18 +368,18 @@ fn run (b:byte, i:int, f:float) -> bool {pure unique}
 fn run(v0: byte, v1: int, v2: float) -> bool:
   bb0:
     v3: short = convert.short v0
-    v4: any = opaque.NameRead(short) {read:shared,throws}
+    v4: any = name_read short {pure}
     v5: int = const 2
     v6: short = opaque.DynamicCall(v4, v5) {impure}
     v7: bool = eq v3, v6 {pure}
     v8: bool = const false
     br_if v7, bb1, bb2(v8)
   bb1:
-    v9: any = opaque.NameRead(byte) {read:shared,throws}
+    v9: any = name_read byte {pure}
     v10: int = const 3
     v11: byte = opaque.DynamicCall(v9, v10) {impure}
     v12: short = convert.short v11
-    v13: any = opaque.NameRead(short) {read:shared,throws}
+    v13: any = name_read short {pure}
     v14: int = const 3
     v15: short = opaque.DynamicCall(v13, v14) {impure}
     v16: bool = eq v12, v15 {pure}
@@ -441,65 +441,64 @@ fn run(v0: byte, v1: int, v2: float) -> bool:
 fn run(v0: byte, v1: int, v2: float) -> bool:
   bb0:
     v3: short = convert.short v0
-    v4: any = opaque.NameRead(short) {read:shared,throws}
+    v4: any = name_read short {pure}
     v5: int = const 2
     v6: short = opaque.DynamicCall(v4, v5) {impure}
     v7: bool = eq v3, v6 {pure}
     v8: bool = const false
     br_if v7, bb1, bb2(v8)
   bb1:
-    v9: any = opaque.NameRead(byte) {read:shared,throws}
+    v9: any = name_read byte {pure}
     v10: int = const 3
     v11: byte = opaque.DynamicCall(v9, v10) {impure}
     v12: short = convert.short v11
-    v13: any = opaque.NameRead(short) {read:shared,throws}
-    v14: short = opaque.DynamicCall(v13, v10) {impure}
-    v15: bool = eq v12, v14 {pure}
-    br bb2(v15)
-  bb2(v16: bool):
-    br_if v16, bb3, bb4(v8)
+    v13: short = opaque.DynamicCall(v4, v10) {impure}
+    v14: bool = eq v12, v13 {pure}
+    br bb2(v14)
+  bb2(v15: bool):
+    br_if v15, bb3, bb4(v8)
   bb3:
-    v17: long = convert.long v1
-    v18: long = const 1L
-    v19: long = add v17, v18 {pure}
-    v20: long = const 5L
-    v21: bool = eq v19, v20 {pure}
-    br bb4(v21)
-  bb4(v22: bool):
-    br_if v22, bb5, bb6(v8)
+    v16: long = convert.long v1
+    v17: long = const 1L
+    v18: long = add v16, v17 {pure}
+    v19: long = const 5L
+    v20: bool = eq v18, v19 {pure}
+    br bb4(v20)
+  bb4(v21: bool):
+    br_if v21, bb5, bb6(v8)
   bb5:
-    v23: bool = const true
-    br bb6(v23)
-  bb6(v24: bool):
-    br_if v24, bb7, bb8(v8)
+    v22: bool = const true
+    br bb6(v22)
+  bb6(v23: bool):
+    br_if v23, bb7, bb8(v8)
   bb7:
-    v25: float = convert.float v1
-    v26: float = const 1.5f
-    v27: float = add v25, v26 {pure}
-    v28: float = const 5.5f
-    v29: bool = eq v27, v28 {pure}
-    br bb8(v29)
-  bb8(v30: bool):
-    br_if v30, bb9, bb10(v8)
+    v24: float = convert.float v1
+    v25: float = const 1.5f
+    v26: float = add v24, v25 {pure}
+    v27: float = const 5.5f
+    v28: bool = eq v26, v27 {pure}
+    br bb8(v28)
+  bb8(v29: bool):
+    br_if v29, bb9, bb10(v8)
   bb9:
-    v31: bool = const true
-    br bb10(v31)
-  bb10(v32: bool):
-    br_if v32, bb11, bb12(v8)
+    v30: bool = const true
+    br bb10(v30)
+  bb10(v31: bool):
+    br_if v31, bb11, bb12(v8)
   bb11:
-    v33: double = convert.double v2
-    v34: double = const 0.5
-    v35: double = add v33, v34 {pure}
-    v36: double = const 2.0
-    v37: bool = eq v35, v36 {pure}
-    br bb12(v37)
-  bb12(v38: bool):
-    br_if v38, bb13, bb14(v8)
+    v32: double = convert.double v2
+    v33: double = const 0.5
+    v34: double = add v32, v33 {pure}
+    v35: double = const 2.0
+    v36: bool = eq v34, v35 {pure}
+    br bb12(v36)
+  bb12(v37: bool):
+    br_if v37, bb13, bb14(v8)
   bb13:
-    v39: bool = const true
-    br bb14(v39)
-  bb14(v40: bool):
-    ret v40
+    v38: bool = const true
+    br bb14(v38)
+  bb14(v39: bool):
+    ret v39
 ```
 
 ## InlinePass : widened single-stmt inline call and trailing-return callee
@@ -533,7 +532,7 @@ fn run (p:int) -> double {nothrow monotone unique}
 fn run(v0: int) -> double:
   bb0:
     v1: double = convert.double v0
-    v2: any = opaque.NameRead(double) {read:shared,throws}
+    v2: any = name_read double {pure}
     v3: double = opaque.DynamicCall(v2, v0) {impure}
     v4: double = add v1, v3 {pure}
     ret v4

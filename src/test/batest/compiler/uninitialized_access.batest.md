@@ -72,7 +72,6 @@ top-level:
         (def b#1 name(ok))
         (get-this-field x)) 9:int))
   (call name(assert) (==:bool (block
-        (def $this name(ok))
         (def b#2 name(ok))
         (get-this-field x)) 9:int))
 ```
@@ -113,7 +112,6 @@ top-level:
   (def safeRead (fn-ref safeRead))
   (def ok (call name(B) false:bool))
   (call name(assert) (==:bool (block
-        (def $this name(ok))
         (def b name(ok))
         (get-this-field x)) 9:int))
   (call name(B) true:bool)

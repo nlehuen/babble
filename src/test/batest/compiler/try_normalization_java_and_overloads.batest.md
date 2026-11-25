@@ -81,7 +81,7 @@ fn run(v0: any, v1: bool) -> int:
     v2: int = const 1
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v3: any = opaque.NameRead(parse) {read:shared}
+    v3: any = name_read parse {pure}
     v4: int = call parse(v0) {impure}
     br bb4(v4)
   bb2(v5: any) [handler]:
@@ -93,12 +93,12 @@ fn run(v0: any, v1: bool) -> int:
     v8: any = new_java Point(v2, v7) {impure}
     br_if v1, bb6, bb5
   bb5:
-    v9: any = opaque.NameRead(java) {read:shared,throws}
+    v9: any = name_read java {pure}
     v10: any = opaque.DynamicSelect(v9.awt) {impure}
     v11: any = opaque.DynamicSelect(v10.Point) {impure}
     br bb7(v11)
   bb6:
-    v12: any = opaque.NameRead(java) {read:shared,throws}
+    v12: any = name_read java {pure}
     v13: any = opaque.DynamicSelect(v12.awt) {impure}
     v14: any = opaque.DynamicSelect(v13.Point) {impure}
     br bb7(v14)
@@ -106,7 +106,7 @@ fn run(v0: any, v1: bool) -> int:
     v16: int = const 3
     br bb8
   bb8 [unwind: BabbleException -> bb9]:
-    v17: any = opaque.NameRead(parse) {read:shared}
+    v17: any = name_read parse {pure}
     v18: int = call parse(v0) {impure}
     br bb11(v18)
   bb9(v19: any) [handler]:
@@ -145,8 +145,8 @@ fn run(v0: bool) -> int:
   bb0:
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v1: any = opaque.NameRead(fail) {read:shared}
-    v2: any = opaque.NameRead(java) {read:shared,throws}
+    v1: any = name_read fail {pure}
+    v2: any = name_read java {pure}
     v3: any = opaque.DynamicSelect(v2.awt) {impure}
     v4: any = opaque.DynamicSelect(v3.Point) {impure}
     v5: any = opaque.DynamicCall(v1, v0, v4) {impure}
@@ -154,7 +154,7 @@ fn run(v0: bool) -> int:
   bb2(v6: any) [handler]:
     br bb3
   bb3:
-    v7: any = opaque.NameRead(java) {read:shared,throws}
+    v7: any = name_read java {pure}
     v8: any = opaque.DynamicSelect(v7.awt) {impure}
     v9: any = opaque.DynamicSelect(v8.Point) {impure}
     br bb4(v9)
@@ -251,7 +251,7 @@ fn run(v0: any, v1: bool) -> any:
     v2: int = const 1
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v3: any = opaque.NameRead(parse) {read:shared}
+    v3: any = name_read parse {pure}
     v4: int = call parse(v0) {impure}
     br bb4(v4)
   bb2(v5: any) [handler]:
@@ -264,7 +264,7 @@ fn run(v0: any, v1: bool) -> any:
     v9: any = new_java StringBuilder() {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v10: any = opaque.NameRead(parse) {read:shared}
+    v10: any = name_read parse {pure}
     v11: int = call parse(v0) {impure}
     br bb8(v11)
   bb6(v12: any) [handler]:
@@ -277,7 +277,7 @@ fn run(v0: any, v1: bool) -> any:
     v16: any = checkcast v15 <java|java.lang.StringBuilder|java.lang.StringBuilder>
     br bb9
   bb9 [unwind: BabbleException -> bb10]:
-    v17: any = opaque.NameRead(fail) {read:shared}
+    v17: any = name_read fail {pure}
     v18: any = opaque.DynamicCall(v17, v1, v9) {impure}
     br bb12(v18)
   bb10(v19: any) [handler]:
@@ -351,7 +351,7 @@ fn run(v0: bool) -> int:
     v1: any = opaque.FunctionRef(g) {pure}
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = opaque.NameRead(fail) {read:shared}
+    v2: any = name_read fail {pure}
     v3: any = opaque.DynamicCall(v2, v0, v1) {impure}
     br bb4(v3)
   bb2(v4: any) [handler]:
@@ -363,7 +363,7 @@ fn run(v0: bool) -> int:
     v7: int = opaque.DynamicCall(v5, v6) {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v8: any = opaque.NameRead(getOpt) {read:shared}
+    v8: any = name_read getOpt {pure}
     v9: any = call getOpt(v0) {impure}
     br bb8(v9)
   bb6(v10: any) [handler]:
@@ -402,7 +402,7 @@ fn run(v0: bool) -> int:
     v1: any = opaque.FunctionRef(g) {pure}
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = opaque.NameRead(fail) {read:shared}
+    v2: any = name_read fail {pure}
     v3: any = opaque.DynamicCall(v2, v0, v1) {impure}
     br bb4(v3)
   bb2(v4: any) [handler]:
@@ -414,7 +414,7 @@ fn run(v0: bool) -> int:
     v7: int = opaque.DynamicCall(v5, v6) {impure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v8: any = opaque.NameRead(getOpt) {read:shared}
+    v8: any = name_read getOpt {pure}
     v9: any = call getOpt(v0) {impure}
     br bb8(v9)
   bb6(v10: any) [handler]:
@@ -526,23 +526,23 @@ fn run (f:bool, u:obj) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: bool, v1: any) -> int:
   bb0:
-    v2: any = opaque.NameRead(fi) {read:shared}
+    v2: any = name_read fi {pure}
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v3: any = opaque.NameRead(fail) {read:shared}
-    v4: any = opaque.NameRead(fs) {read:shared}
+    v3: any = name_read fail {pure}
+    v4: any = name_read fs {pure}
     v5: any = opaque.DynamicCall(v3, v0, v4) {impure}
     br bb4(v5)
   bb2(v6: any) [handler]:
     br bb3
   bb3:
-    v7: any = opaque.NameRead(fs) {read:shared}
+    v7: any = name_read fs {pure}
     br bb4(v7)
   bb4(v8: any):
     v9: any = opaque.MakeOverloadSet(v2, v8) {pure}
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v10: any = opaque.NameRead(fail) {read:shared}
+    v10: any = name_read fail {pure}
     v11: any = opaque.DynamicCall(v10, v0, v1) {impure}
     br bb8(v11)
   bb6(v12: any) [handler]:
@@ -554,7 +554,7 @@ fn run(v0: bool, v1: any) -> int:
     v15: int = opaque.OverloadDispatch(v9, v14) {impure}
     br bb9
   bb9 [unwind: BabbleException -> bb10]:
-    v16: any = opaque.NameRead(fail) {read:shared}
+    v16: any = name_read fail {pure}
     v17: any = opaque.DynamicCall(v16, v0, v9) {impure}
     br bb12(v17)
   bb10(v18: any) [handler]:

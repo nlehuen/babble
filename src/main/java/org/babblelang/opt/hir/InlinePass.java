@@ -640,7 +640,8 @@ public final class InlinePass implements HirPass {
                     false,
                     v.used(),
                     v.mayBeUndefined(),
-                    v.definitelyDefined()
+                    v.definitelyDefined(),
+                    v.mutable()
             );
             varMap.put(v.id(), fresh);
             blockDeclared.add(fresh);
@@ -720,21 +721,22 @@ public final class InlinePass implements HirPass {
                     if (g.externalClassJvmName() != null) {
                         String rt = receiverText != null ? receiverText : g.receiverText();
                         yield new HirExpr.ThisFieldGet(nr, rt, -1, g.externalClassJvmName(), g.memberIndex(),
-                                g.memberName(), g.fieldKind(), g.recordField(), g.definitelyDefined(), g.meta());
+                                g.memberName(), g.fieldKind(), g.immutableField(), g.definitelyDefined(), g.meta());
                     }
                     if (receiverCls != null && g.classId() == receiverCls.id() && g.memberIndex() >= 0) {
                         PrimitiveKind fk = receiverCls.memberKinds()[g.memberIndex()];
-                        boolean isRec = receiverCls.shape().isValue();
-                        boolean isDef = isRec && (g.memberIndex() >= receiverCls.primDefBits().length
+                        boolean isImm = receiverCls.shape().isValue() || !receiverCls.shape().isMutable(g.memberIndex());
+                        boolean isDef = receiverCls.shape().isHeaderParameterMember(g.memberIndex())
+                                && (g.memberIndex() >= receiverCls.primDefBits().length
                                 || receiverCls.primDefBits()[g.memberIndex()] < 0);
                         String rt = receiverText != null ? receiverText : g.receiverText();
                         yield new HirExpr.ThisFieldGet(nr, rt, g.classId(), null, g.memberIndex(),
-                                g.memberName(), fk, isRec, isDef, g.meta());
+                                g.memberName(), fk, isImm, isDef, g.meta());
                     }
                 }
                 yield nr == g.receiver() ? g : new HirExpr.ThisFieldGet(nr, g.receiverText(), g.classId(),
                         g.externalClassJvmName(), g.memberIndex(), g.memberName(), g.fieldKind(),
-                        g.recordField(), g.definitelyDefined(), g.meta());
+                        g.immutableField(), g.definitelyDefined(), g.meta());
             }
             case HirExpr.VarRead v -> {
                 HirExpr subst = substExprs.get(v.var().id());

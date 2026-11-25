@@ -163,7 +163,7 @@ public final class ScalarReplacePass implements HirPass {
 
     private static boolean isPureClassRef(HirExpr classRef, boolean isInstance, HirModule module, Set<String> initBindings) {
         if (classRef instanceof HirExpr.NameRead nr) {
-            return initBindings.contains(nr.name());
+            return (nr.finalBinding() && nr.definitelyDefined()) || initBindings.contains(nr.name());
         }
         if (classRef instanceof HirExpr.ClassExpr) {
             return true;
@@ -180,7 +180,7 @@ public final class ScalarReplacePass implements HirPass {
         }
         boolean typeMatch = (layout.classId() >= 0 && g.classId() == layout.classId())
                 || (g.externalClassJvmName() != null && g.externalClassJvmName().equals(layout.classJvmName()));
-        if (!typeMatch || (g.receiverText() != null && (!g.recordField() || !g.definitelyDefined()))) {
+        if (!typeMatch || (g.receiverText() != null && (!g.immutableField() || !g.definitelyDefined()))) {
             return -1;
         }
         return layout.paramIndexForMember(g.memberIndex());

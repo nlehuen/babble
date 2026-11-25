@@ -326,21 +326,24 @@ fn run (b:byte, raw:obj) -> double {pure unique}
 fn run (b:byte, raw:obj) -> double {pure unique}
   (def a 0.0:double)
   (def k 0:int)
-  (while (<:bool var(k) 2:int)
-    (block
-      (set a += (+:double (block
-            (def x#1 (as var(b) double|double|))
-            var(x#1)) (call name(double) (+:int (+:int (+:int (block
-                    (def x#2 name(topRO))
-                    var(x#2)) (block
-                    (def x#3
-                      (block
-                        (def t (call name(int) var(b)))
-                        var(t)))
-                    var(x#3))) (block
-                  (def x#4 (as var(raw) int|int|))
-                  var(x#4))) 2:int))))
-      (set k += 1:int)))
+  (block
+    (def $licm0
+      (block
+        (def x#1 name(topRO))
+        var(x#1)))
+    (while (<:bool var(k) 2:int)
+      (block
+        (set a += (+:double (block
+              (def x#2 (as var(b) double|double|))
+              var(x#2)) (call name(double) (+:int (+:int (+:int var($licm0) (block
+                      (def x#3
+                        (block
+                          (def t (call name(int) var(b)))
+                          var(t)))
+                      var(x#3))) (block
+                    (def x#4 (as var(raw) int|int|))
+                    var(x#4))) 2:int))))
+        (set k += 1:int))))
   var(a)
 ```
 
@@ -350,37 +353,37 @@ fn run(v0: byte, v1: any) -> double:
   bb0:
     v2: double = const 0.0
     v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v2)
-  bb1(v5: any, v6: int, v7: double):
-    v8: int = const 2
-    v9: bool = lt v6, v8 {pure}
-    br_if v9, bb3, bb2
+    v4: any = name_read topRO {pure}
+    v5: any = widen#2 v4
+    v6: int = convert.int v5
+    v7: any = const null
+    br bb1(v7, v3, v2)
+  bb1(v8: any, v9: int, v10: double):
+    v11: int = const 2
+    v12: bool = lt v9, v11 {pure}
+    br_if v12, bb3, bb2
   bb2:
-    ret v7
+    ret v10
   bb3:
-    v10: any = convert.any v0
-    v11: any = checkcast v10 <double|double|>
-    v12: any = widen#5 v11
-    v13: double = convert.double v12
-    v14: any = opaque.NameRead(double) {read:shared,throws}
-    v15: any = opaque.NameRead(topRO) {read:shared}
-    v16: any = widen#2 v15
-    v17: int = convert.int v16
-    v18: any = opaque.NameRead(int) {read:shared,throws}
+    v13: any = convert.any v0
+    v14: any = checkcast v13 <double|double|>
+    v15: any = widen#5 v14
+    v16: double = convert.double v15
+    v17: any = name_read double {pure}
+    v18: any = name_read int {pure}
     v19: int = opaque.DynamicCall(v18, v0) {impure}
-    v20: int = add v17, v19 {pure}
+    v20: int = add v6, v19 {pure}
     v21: any = checkcast v1 <int|int|>
     v22: any = widen#2 v21
     v23: int = convert.int v22
     v24: int = add v20, v23 {pure}
     v25: int = const 2
     v26: int = add v24, v25 {pure}
-    v27: double = opaque.DynamicCall(v14, v26) {impure}
-    v28: double = add v13, v27 {pure}
-    v29: double = add v7, v28 {pure}
+    v27: double = opaque.DynamicCall(v17, v26) {impure}
+    v28: double = add v16, v27 {pure}
+    v29: double = add v10, v28 {pure}
     v30: int = const 1
-    v31: int = add v6, v30 {pure}
+    v31: int = add v9, v30 {pure}
     v32: any = convert.any v31
     br bb1(v32, v31, v29)
 ```
@@ -391,33 +394,33 @@ fn run(v0: byte, v1: any) -> double:
   bb0:
     v2: double = const 0.0
     v3: int = const 0
-    v4: any = convert.any v0
+    v4: any = name_read topRO {pure}
+    v5: any = widen#2 v4
+    v6: int = convert.int v5
+    v7: any = convert.any v0
+    v8: any = name_read double {pure}
+    v9: any = name_read int {pure}
     br bb1(v3, v2)
-  bb1(v5: int, v6: double):
-    v7: int = const 2
-    v8: bool = lt v5, v7 {pure}
-    br_if v8, bb3, bb2
+  bb1(v10: int, v11: double):
+    v12: int = const 2
+    v13: bool = lt v10, v12 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    ret v6
+    ret v11
   bb3:
-    v9: any = checkcast v4 <double|double|>
-    v10: double = convert.double v9
-    v11: any = opaque.NameRead(double) {read:shared,throws}
-    v12: any = opaque.NameRead(topRO) {read:shared}
-    v13: any = widen#2 v12
-    v14: int = convert.int v13
-    v15: any = opaque.NameRead(int) {read:shared,throws}
-    v16: int = opaque.DynamicCall(v15, v0) {impure}
-    v17: int = add v14, v16 {pure}
+    v14: any = checkcast v7 <double|double|>
+    v15: double = convert.double v14
+    v16: int = opaque.DynamicCall(v9, v0) {impure}
+    v17: int = add v6, v16 {pure}
     v18: any = checkcast v1 <int|int|>
     v19: int = convert.int v18
     v20: int = add v17, v19 {pure}
-    v21: int = add v20, v7 {pure}
-    v22: double = opaque.DynamicCall(v11, v21) {impure}
-    v23: double = add v10, v22 {pure}
-    v24: double = add v6, v23 {pure}
+    v21: int = add v20, v12 {pure}
+    v22: double = opaque.DynamicCall(v8, v21) {impure}
+    v23: double = add v15, v22 {pure}
+    v24: double = add v11, v23 {pure}
     v25: int = const 1
-    v26: int = add v5, v25 {pure}
+    v26: int = add v10, v25 {pure}
     br bb1(v26, v24)
 ```
 
@@ -454,10 +457,10 @@ fn C.run (n:int) -> int {nothrow unique}
   (def a 0:int)
   (def k 0:int)
   (block
-    (def $licm0 (+:int var(n) 1:int))
+    (def $licm0 (+:int (+:int var(n) 1:int) (get-this-field v)))
     (while (<:bool var(k) var(n))
       (block
-        (set a += (+:int var($licm0) (get-this-field v)))
+        (set a += var($licm0))
         (set k += 1:int))))
   var(a)
 ```
@@ -471,20 +474,20 @@ fn C.run(v0: int) -> int:
     v3: int = const 0
     v4: int = const 1
     v5: int = add v0, v4 {pure}
-    v6: any = const null
-    br bb1(v6, v3, v2)
-  bb1(v7: any, v8: int, v9: int):
-    v10: bool = lt v8, v0 {pure}
-    br_if v10, bb3, bb2
+    v6: any = slot_read this {pure}
+    v7: int = load_field v6.v {read:frozen}
+    v8: int = add v5, v7 {pure}
+    v9: any = const null
+    br bb1(v9, v3, v2)
+  bb1(v10: any, v11: int, v12: int):
+    v13: bool = lt v11, v0 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    ret v9
+    ret v12
   bb3:
-    v11: any = slot_read this {pure}
-    v12: int = load_field v11.v {read:shared,throws}
-    v13: int = add v5, v12 {pure}
-    v14: int = add v9, v13 {pure}
+    v14: int = add v12, v8 {pure}
     v15: int = const 1
-    v16: int = add v8, v15 {pure}
+    v16: int = add v11, v15 {pure}
     v17: any = convert.any v16
     br bb1(v17, v16, v14)
 ```
@@ -496,18 +499,18 @@ fn C.run(v0: int) -> int:
     v1: int = const 0
     v2: int = const 1
     v3: int = add v0, v2 {pure}
+    v4: any = slot_read this {pure}
+    v5: int = load_field v4.v {read:frozen}
+    v6: int = add v3, v5 {pure}
     br bb1(v1, v1)
-  bb1(v4: int, v5: int):
-    v6: bool = lt v4, v0 {pure}
-    br_if v6, bb3, bb2
+  bb1(v7: int, v8: int):
+    v9: bool = lt v7, v0 {pure}
+    br_if v9, bb3, bb2
   bb2:
-    ret v5
+    ret v8
   bb3:
-    v7: any = slot_read this {pure}
-    v8: int = load_field v7.v {read:shared,throws}
-    v9: int = add v3, v8 {pure}
-    v10: int = add v5, v9 {pure}
-    v11: int = add v4, v2 {pure}
+    v10: int = add v8, v6 {pure}
+    v11: int = add v7, v2 {pure}
     br bb1(v11, v10)
 ```
 
@@ -542,11 +545,7 @@ fn run (x:obj, arr:obj) -> int {pure unique}
   (def acc 0:int)
   (while (<:bool var(i) 4:int)
     (block
-      (set acc += (+:int (+:int (+:int (+:int (as var(x) int|int|) (call (type-apply name(id)) (as var(x) int|int|))) (array-op SIZE var(arr))) (block
-              (overload-select #0 name(ov))
-              3:int)) (block
-            (overload-select #1 name(ov))
-            3:int)))
+      (set acc += (+:int (+:int (+:int (+:int (as var(x) int|int|) (call (type-apply name(id)) (as var(x) int|int|))) (array-op SIZE var(arr))) 3:int) 3:int))
       (set i += 1:int)))
   var(acc)
 ```
@@ -568,25 +567,21 @@ fn run(v0: any, v1: any) -> int:
   bb3:
     v10: any = checkcast v0 <int|int|>
     v11: int = convert.int v10
-    v12: any = opaque.NameRead(id) {read:shared}
+    v12: any = name_read id {pure}
     v13: any = checkcast v0 <int|int|>
     v14: int = opaque.DynamicCall(v12, v13) {impure}
     v15: int = add v11, v14 {pure}
     v16: int = array_len v1 {read:frozen,throws}
     v17: int = add v15, v16 {pure}
-    v18: any = opaque.NameRead(ov) {read:shared,throws}
-    v19: any = opaque.OverloadSelect(v18) {pure}
+    v18: int = const 3
+    v19: int = add v17, v18 {pure}
     v20: int = const 3
-    v21: int = add v17, v20 {pure}
-    v22: any = opaque.NameRead(ov) {read:shared,throws}
-    v23: any = opaque.OverloadSelect(v22) {pure}
-    v24: int = const 3
-    v25: int = add v21, v24 {pure}
-    v26: int = add v7, v25 {pure}
-    v27: int = const 1
-    v28: int = add v6, v27 {pure}
-    v29: any = convert.any v28
-    br bb1(v29, v28, v26)
+    v21: int = add v19, v20 {pure}
+    v22: int = add v7, v21 {pure}
+    v23: int = const 1
+    v24: int = add v6, v23 {pure}
+    v25: any = convert.any v24
+    br bb1(v25, v24, v22)
 ```
 
 ```mir
@@ -594,29 +589,27 @@ fn run(v0: any, v1: any) -> int:
 fn run(v0: any, v1: any) -> int:
   bb0:
     v2: int = const 0
+    v3: any = name_read id {pure}
     br bb1(v2, v2)
-  bb1(v3: int, v4: int):
-    v5: int = const 4
-    v6: bool = lt v3, v5 {pure}
-    br_if v6, bb3, bb2
+  bb1(v4: int, v5: int):
+    v6: int = const 4
+    v7: bool = lt v4, v6 {pure}
+    br_if v7, bb3, bb2
   bb2:
-    ret v4
+    ret v5
   bb3:
-    v7: any = checkcast v0 <int|int|>
-    v8: int = convert.int v7
-    v9: any = opaque.NameRead(id) {read:shared}
+    v8: any = checkcast v0 <int|int|>
+    v9: int = convert.int v8
     v10: any = checkcast v0 <int|int|>
-    v11: int = opaque.DynamicCall(v9, v10) {impure}
-    v12: int = add v8, v11 {pure}
+    v11: int = opaque.DynamicCall(v3, v10) {impure}
+    v12: int = add v9, v11 {pure}
     v13: int = array_len v1 {read:frozen,throws}
     v14: int = add v12, v13 {pure}
-    v15: any = opaque.NameRead(ov) {read:shared,throws}
-    v16: int = const 3
-    v17: int = add v14, v16 {pure}
-    v18: any = opaque.NameRead(ov) {read:shared,throws}
-    v19: int = add v17, v16 {pure}
+    v15: int = const 3
+    v16: int = add v14, v15 {pure}
+    v17: int = add v16, v15 {pure}
+    v18: int = add v5, v17 {pure}
+    v19: int = const 1
     v20: int = add v4, v19 {pure}
-    v21: int = const 1
-    v22: int = add v3, v21 {pure}
-    br bb1(v22, v20)
+    br bb1(v20, v18)
 ```

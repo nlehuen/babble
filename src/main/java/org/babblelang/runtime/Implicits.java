@@ -11,6 +11,7 @@ import org.babblelang.engine.impl.natives.java.ImportFunction;
 
 import java.io.PrintWriter;
 import java.io.Writer;
+import java.util.Set;
 
 /**
  * The names every script sees without defining them : {@code print}, {@code assert},
@@ -18,7 +19,20 @@ import java.io.Writer;
  * aliases). The engine and a compiled program's launcher build them the same way.
  */
 public final class Implicits {
+    private static final Set<String> IMPLICIT_NAMES = Set.of(
+            "java", "javax", "import", "importe",
+            "print", "println", "affiche", "afficherc",
+            "assert", "suppose", "same", "classof", "move", "freeze", "discard",
+            "byte", "short", "int", "long", "float", "double", "bool", "char", "string",
+            "STDOUT"
+    );
+
     private Implicits() {
+    }
+
+    /** Whether {@code name} is a final root prelude implicit always initialized before any script runs. */
+    public static boolean isImplicit(String name) {
+        return name != null && IMPLICIT_NAMES.contains(name);
     }
 
     /** The built-ins, shared by every eval of an engine. */

@@ -53,8 +53,8 @@ fn checkIntIdem (x:int, ec:int, ea:int) -> bool {pure unique}
 ;; mir -O2 fn=checkIntIdem stage=before
 fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
   bb0:
-    v3: any = opaque.NameRead(bigClamp) {read:shared}
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read bigClamp {pure}
+    v4: any = name_read assert {pure}
     v5: int = const 0
     v6: bool = lt v0, v5 {pure}
     br_if v6, bb2, bb1
@@ -89,7 +89,7 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
     br bb10(v20)
   bb10(v21: bool):
     v22: bool = opaque.DynamicCall(v4, v21) {impure}
-    v23: any = opaque.NameRead(assert) {read:shared,throws}
+    v23: any = name_read assert {pure}
     v24: int = call_java Math.abs(v0) {pure}
     v25: bool = eq v24, v2 {pure}
     v26: bool = opaque.DynamicCall(v23, v25) {impure}
@@ -100,8 +100,8 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
 ;; mir -O2 fn=checkIntIdem
 fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
   bb0:
-    v3: any = opaque.NameRead(bigClamp) {read:shared}
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read bigClamp {pure}
+    v4: any = name_read assert {pure}
     v5: int = const 0
     v6: bool = lt v0, v5 {pure}
     br_if v6, bb2, bb1
@@ -131,11 +131,10 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
     br bb10(v15)
   bb10(v16: bool):
     v17: bool = opaque.DynamicCall(v4, v16) {impure}
-    v18: any = opaque.NameRead(assert) {read:shared,throws}
-    v19: int = call_java Math.abs(v0) {pure}
-    v20: bool = eq v19, v2 {pure}
-    v21: bool = opaque.DynamicCall(v18, v20) {impure}
-    ret v21
+    v18: int = call_java Math.abs(v0) {pure}
+    v19: bool = eq v18, v2 {pure}
+    v20: bool = opaque.DynamicCall(v4, v19) {impure}
+    ret v20
 ```
 
 ## Idempotent Math.floor preserving NaN and IEEE-754 -0.0 (checked by raw bits since +0.0 == -0.0)
@@ -169,7 +168,7 @@ fn checkFloor (d:double) -> bool {pure unique}
 fn checkFloor(v0: double) -> bool:
   bb0:
     v1: double = call_java Math.floor(v0) {pure}
-    v2: any = opaque.NameRead(assert) {read:shared,throws}
+    v2: any = name_read assert {pure}
     v3: bool = call_java Double.isNaN(v0) {pure}
     br_if v3, bb2, bb1
   bb1:
@@ -212,20 +211,20 @@ fn checkStrIdem (s:obj, ch:char, es:obj, ech:char) -> bool {pure unique}
 ```
 
 ```mir
-;; mir -O2 fn=checkStrIdem stage=before,final
+;; mir -O2 fn=checkStrIdem stage=before
 fn checkStrIdem(v0: any, v1: char, v2: any, v3: char) -> bool:
   bb0:
-    v4: any = opaque.NameRead(assert) {read:shared,throws}
+    v4: any = name_read assert {pure}
     v5: any = call_java v0.trim() {impure}
     v6: any = checkcast v5 <string|string|>
     v7: any = eq v6, v2 {pure}
     v8: bool = opaque.DynamicCall(v4, v7) {impure}
-    v9: any = opaque.NameRead(assert) {read:shared,throws}
-    v10: any = opaque.NameRead(java) {read:shared,throws}
+    v9: any = name_read assert {pure}
+    v10: any = name_read java {pure}
     v11: any = opaque.DynamicSelect(v10.lang) {impure}
     v12: any = opaque.DynamicSelect(v11.Character) {impure}
     v13: any = opaque.DynamicSelect(v12.toLowerCase) {impure}
-    v14: any = opaque.NameRead(java) {read:shared,throws}
+    v14: any = name_read java {pure}
     v15: any = opaque.DynamicSelect(v14.lang) {impure}
     v16: any = opaque.DynamicSelect(v15.Character) {impure}
     v17: any = opaque.DynamicSelect(v16.toLowerCase) {impure}
@@ -235,6 +234,30 @@ fn checkStrIdem(v0: any, v1: char, v2: any, v3: char) -> bool:
     v21: bool = eq v20, v3 {pure}
     v22: bool = opaque.DynamicCall(v9, v21) {impure}
     ret v22
+```
+
+```mir
+;; mir -O2 fn=checkStrIdem
+fn checkStrIdem(v0: any, v1: char, v2: any, v3: char) -> bool:
+  bb0:
+    v4: any = name_read assert {pure}
+    v5: any = call_java v0.trim() {impure}
+    v6: any = checkcast v5 <string|string|>
+    v7: any = eq v6, v2 {pure}
+    v8: bool = opaque.DynamicCall(v4, v7) {impure}
+    v9: any = name_read java {pure}
+    v10: any = opaque.DynamicSelect(v9.lang) {impure}
+    v11: any = opaque.DynamicSelect(v10.Character) {impure}
+    v12: any = opaque.DynamicSelect(v11.toLowerCase) {impure}
+    v13: any = opaque.DynamicSelect(v9.lang) {impure}
+    v14: any = opaque.DynamicSelect(v13.Character) {impure}
+    v15: any = opaque.DynamicSelect(v14.toLowerCase) {impure}
+    v16: any = opaque.DynamicCall(v15, v1) {impure}
+    v17: any = opaque.DynamicCall(v12, v16) {impure}
+    v18: char = convert.char v17
+    v19: bool = eq v18, v3 {pure}
+    v20: bool = opaque.DynamicCall(v4, v19) {impure}
+    ret v20
 ```
 
 ## Widened idempotent Java call (wideningRank >= 0) and non-prefix Babble idempotent call stay intact
@@ -275,14 +298,14 @@ fn checkGuard(v0: int) -> bool:
   bb0:
     v1: int = call_java Math.abs(v0) {pure}
     v2: double = convert.double v1
-    v3: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read assert {pure}
     v4: double = const 5.0
     v5: bool = eq v2, v4 {pure}
     v6: bool = const false
     br_if v5, bb1, bb8(v6)
   bb1:
-    v7: any = opaque.NameRead(lateClamp) {read:shared,throws}
-    v8: any = opaque.NameRead(lateClamp) {read:shared,throws}
+    v7: any = name_read lateClamp {pure,throws}
+    v8: any = name_read lateClamp {pure,throws}
     v9: int = const 0
     v10: bool = lt v0, v9 {pure}
     br_if v10, bb3, bb2
@@ -315,34 +338,33 @@ fn checkGuard(v0: int) -> bool:
   bb0:
     v1: int = call_java Math.abs(v0) {pure}
     v2: double = convert.double v1
-    v3: any = opaque.NameRead(assert) {read:shared,throws}
+    v3: any = name_read assert {pure}
     v4: double = const 5.0
     v5: bool = eq v2, v4 {pure}
     v6: bool = const false
     br_if v5, bb1, bb8(v6)
   bb1:
-    v7: any = opaque.NameRead(lateClamp) {read:shared,throws}
-    v8: any = opaque.NameRead(lateClamp) {read:shared,throws}
-    v9: int = const 0
-    v10: bool = lt v0, v9 {pure}
-    br_if v10, bb3, bb2
+    v7: any = name_read lateClamp {pure,throws}
+    v8: int = const 0
+    v9: bool = lt v0, v8 {pure}
+    br_if v9, bb3, bb2
   bb2:
     br bb4(v0)
   bb3:
-    br bb4(v9)
-  bb4(v11: int):
-    v12: bool = lt v11, v9 {pure}
-    br_if v12, bb6, bb5
+    br bb4(v8)
+  bb4(v10: int):
+    v11: bool = lt v10, v8 {pure}
+    br_if v11, bb6, bb5
   bb5:
-    br bb7(v11)
+    br bb7(v10)
   bb6:
-    br bb7(v9)
-  bb7(v13: int):
-    v14: bool = eq v13, v9 {pure}
-    br bb8(v14)
-  bb8(v15: bool):
-    v16: bool = opaque.DynamicCall(v3, v15) {impure}
-    ret v16
+    br bb7(v8)
+  bb7(v12: int):
+    v13: bool = eq v12, v8 {pure}
+    br bb8(v13)
+  bb8(v14: bool):
+    v15: bool = opaque.DynamicCall(v3, v14) {impure}
+    ret v15
 ```
 
 ## Non-dropping idempotent collapse on impure arguments (`f(f(impure())) -> f(impure())`)
@@ -436,7 +458,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb2(v5: bool):
     br_if v5, bb4, bb3
   bb3:
-    v6: any = opaque.NameRead(idT) {read:shared}
+    v6: any = name_read idT {pure}
     v7: int = const 1
     v8: int = opaque.DynamicCall(v6, v7) {impure}
     br bb5(v8)
@@ -455,7 +477,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
     v15: int = const 0
     br bb8(v15)
   bb8(v16: int):
-    v17: any = opaque.NameRead(int) {read:shared,throws}
+    v17: any = name_read int {pure}
     v18: int = array_len v0 {read:frozen,throws}
     v19: any = convert.any v18
     v20: any = checkcast v19 <double|double|>
@@ -477,7 +499,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb2(v5: bool):
     br_if v5, bb4, bb3
   bb3:
-    v6: any = opaque.NameRead(idT) {read:shared}
+    v6: any = name_read idT {pure}
     v7: int = const 1
     v8: int = opaque.DynamicCall(v6, v7) {impure}
     br bb5(v8)
@@ -495,7 +517,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb7:
     br bb8(v13)
   bb8(v15: int):
-    v16: any = opaque.NameRead(int) {read:shared,throws}
+    v16: any = name_read int {pure}
     v17: int = array_len v0 {read:frozen,throws}
     v18: any = convert.any v17
     v19: any = checkcast v18 <double|double|>

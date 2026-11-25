@@ -220,7 +220,7 @@ class C:
       v1: any = opaque.SuperCall(greet, v0) {impure}
       v2: int = convert.int v1
       v3: any = slot_read this {pure}
-      v4: int = load_field v3.v {read:shared,throws}
+      v4: int = load_field v3.v {read:frozen}
       v5: int = add v2, v4 {pure}
       ret v5
 ```

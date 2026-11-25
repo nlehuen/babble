@@ -155,7 +155,7 @@ public final class HirLicmPass implements HirPass {
             return true;
         }
         if (expr instanceof HirExpr.ThisFieldGet g
-                && ((g.recordField() && g.definitelyDefined()) || g.receiver().meta().frozen())) {
+                && ((g.immutableField() && g.definitelyDefined()) || g.receiver().meta().frozen())) {
             return true;
         }
         if (expr instanceof HirExpr.Binary || expr instanceof HirExpr.Unary) {
@@ -170,7 +170,7 @@ public final class HirLicmPass implements HirPass {
             case HirExpr.DirectThisMethodCall c -> true;
             case HirExpr.InterfaceCall c -> true;
             case HirExpr.JavaMethodCall c -> true;
-            case HirExpr.ThisFieldGet g -> (g.recordField() && g.definitelyDefined()) || g.receiver().meta().frozen();
+            case HirExpr.ThisFieldGet g -> (g.immutableField() && g.definitelyDefined()) || g.receiver().meta().frozen();
             case HirExpr.Binary b -> containsCallOrNestedOp(b.left()) || containsCallOrNestedOp(b.right())
                     || b.left() instanceof HirExpr.Binary || b.right() instanceof HirExpr.Binary
                     || b.op() == HirExpr.BinaryOp.DIV;
@@ -202,8 +202,10 @@ public final class HirLicmPass implements HirPass {
                 }
             }
             case HirExpr.NameRead n -> {
-                ok[0] = false;
-                return;
+                if (!(n.finalBinding() && n.definitelyDefined())) {
+                    ok[0] = false;
+                    return;
+                }
             }
             case HirExpr.ThisRef t -> {
                 if (t.var() == null || t.var().cell() || modified.contains(t.var().id())) {

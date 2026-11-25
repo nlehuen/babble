@@ -236,12 +236,12 @@ fn run() -> int:
     v0: any = opaque.FunctionRef(ov) {pure}
     v1: any = opaque.FunctionRef(ov) {pure}
     v2: any = opaque.MakeOverloadSet(v0, v1) {pure}
-    v3: any = opaque.NameRead(java) {read:shared,throws}
+    v3: any = name_read java {pure}
     v4: any = opaque.DynamicSelect(v3.lang) {impure}
     v5: any = opaque.DynamicSelect(v4.Math) {impure}
-    v6: any = opaque.NameRead(bump) {read:shared}
+    v6: any = name_read bump {pure}
     v7: int = call bump() {impure}
-    v8: any = opaque.NameRead(java) {read:shared,throws}
+    v8: any = name_read java {pure}
     v9: any = opaque.DynamicSelect(v8.lang) {impure}
     v10: any = opaque.DynamicSelect(v9.Math) {impure}
     v11: int = const -5
@@ -254,18 +254,17 @@ fn run() -> int:
 ;; mir -O2 fn=run
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead(java) {read:shared,throws}
+    v0: any = name_read java {pure}
     v1: any = opaque.DynamicSelect(v0.lang) {impure}
     v2: any = opaque.DynamicSelect(v1.Math) {impure}
-    v3: any = opaque.NameRead(bump) {read:shared}
+    v3: any = name_read bump {pure}
     v4: int = call bump() {impure}
-    v5: any = opaque.NameRead(java) {read:shared,throws}
-    v6: any = opaque.DynamicSelect(v5.lang) {impure}
-    v7: any = opaque.DynamicSelect(v6.Math) {impure}
-    v8: int = const -5
-    v9: int = call_java v7.abs(v8) {impure}
-    v10: int = const 1
-    ret v10
+    v5: any = opaque.DynamicSelect(v0.lang) {impure}
+    v6: any = opaque.DynamicSelect(v5.Math) {impure}
+    v7: int = const -5
+    v8: int = call_java v6.abs(v7) {impure}
+    v9: int = const 1
+    ret v9
 ```
 
 ## HirPurity : cross-module DirectThisMethodCall pure, throwing, and volatile paths
@@ -395,7 +394,7 @@ fn run (vi:obj) -> int {io}
 ;; mir -O2 fn=run stage=before
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead(R) {read:shared}
+    v1: any = name_read R {pure}
     v2: int = const 1
     v3: any = record_new R[v1](v2) {pure}
     v4: any = opaque.DynamicSelect(v3.b) {impure}
@@ -409,7 +408,7 @@ fn run(v0: any) -> int:
 ;; mir -O2 fn=run
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead(R) {read:shared}
+    v1: any = name_read R {pure}
     v2: int = const 1
     v3: any = record_new R[v1](v2) {pure}
     v4: any = opaque.DynamicSelect(v3.b) {impure}
@@ -460,11 +459,11 @@ fn run() -> int:
   bb0:
     v0: any = opaque.ClassExpr(LR) {impure}
     v1: int = const 1
-    v2: any = opaque.NameRead(R) {read:shared}
+    v2: any = name_read R {pure}
     v3: int = const 3
     v4: any = opaque.DynamicCall(v2, v3) {impure}
-    v5: int = load_field v4.x {read:frozen}
-    v6: any = opaque.NameRead(R) {read:shared}
+    v5: int = load_field v4.x {read:frozen,throws}
+    v6: any = name_read R {pure}
     v7: int = const 3
     v8: any = opaque.DynamicCall(v6, v7) {impure}
     v9: int = load_field v8.y {read:frozen,throws}
@@ -479,11 +478,11 @@ fn run() -> int:
   bb0:
     v0: any = opaque.ClassExpr(LR) {impure}
     v1: int = const 1
-    v2: any = opaque.NameRead(R) {read:shared}
+    v2: any = name_read R {pure}
     v3: int = const 3
     v4: any = opaque.DynamicCall(v2, v3) {impure}
-    v5: any = opaque.NameRead(R) {read:shared}
-    v6: any = opaque.DynamicCall(v5, v3) {impure}
+    v5: int = load_field v4.x {read:frozen,throws}
+    v6: any = opaque.DynamicCall(v2, v3) {impure}
     v7: int = load_field v6.y {read:frozen,throws}
     ret v1
 ```
@@ -551,9 +550,9 @@ fn run(v0: int) -> int:
   bb0:
     slot_init outer, v0 {write:shared}
     v1: any = opaque.FunctionRef(cl) {read:shared}
-    v2: any = opaque.NameRead(LateR) {read:shared,throws}
+    v2: any = name_read LateR {pure,throws}
     v3: int = const 1
-    v4: any = opaque.NameRead(fUninit) {read:shared,throws}
+    v4: any = name_read fUninit {pure,throws}
     v5: any = const null
     v6: int = const 1
     v7: int = add v0, v6 {pure}
@@ -576,9 +575,9 @@ fn run(v0: int) -> int:
   bb0:
     slot_init outer, v0 {write:shared}
     v1: any = opaque.FunctionRef(cl) {read:shared}
-    v2: any = opaque.NameRead(LateR) {read:shared,throws}
+    v2: any = name_read LateR {pure,throws}
     v3: int = const 1
-    v4: any = opaque.NameRead(fUninit) {read:shared,throws}
+    v4: any = name_read fUninit {pure,throws}
     v5: int = add v0, v3 {pure}
     v6: any = convert.any v5
     v7: int = nonnull v6

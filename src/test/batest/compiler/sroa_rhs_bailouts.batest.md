@@ -70,7 +70,7 @@ fn run (fl:bool) -> int {pure unique}
 fn run(v0: bool) -> int:
   bb0:
     v1: any = const null
-    v2: any = opaque.NameRead(Vec3) {read:shared}
+    v2: any = name_read Vec3 {pure}
     v3: double = const 1.0
     v4: double = const 2.0
     v5: double = const 3.0
@@ -80,14 +80,14 @@ fn run(v0: bool) -> int:
     v7: any = const null
     br bb3(v7, v6)
   bb2:
-    v8: any = opaque.NameRead(Pair) {read:shared}
+    v8: any = name_read Pair {pure}
     v9: int = const 4
     v10: int = const 5
     v11: any = record_new Pair[v8](v9, v10) {pure}
     br bb3(v11, v11)
   bb3(v12: any, v13: any):
     v14: any = const null
-    v15: any = opaque.NameRead(Vec3) {read:shared}
+    v15: any = name_read Vec3 {pure}
     v16: double = const 2.0
     v17: double = const 3.0
     v18: double = const 4.0
@@ -105,7 +105,7 @@ fn run(v0: bool) -> int:
     v26: int = load_field v25.a {read:frozen}
     br bb6(v26)
   bb6(v27: int):
-    v28: any = opaque.NameRead(int) {read:shared,throws}
+    v28: any = name_read int {pure}
     v29: any = nonnull v19
     v30: double = load_field v29.x {read:frozen,throws}
     v31: int = opaque.DynamicCall(v28, v30) {impure}
@@ -132,7 +132,7 @@ fn run(v0: bool) -> int:
 fn run(v0: bool) -> int:
   bb0:
     v1: any = const null
-    v2: any = opaque.NameRead(Vec3) {read:shared}
+    v2: any = name_read Vec3 {pure}
     v3: double = const 1.0
     v4: double = const 2.0
     v5: double = const 3.0
@@ -141,44 +141,43 @@ fn run(v0: bool) -> int:
   bb1:
     br bb3(v6)
   bb2:
-    v7: any = opaque.NameRead(Pair) {read:shared}
+    v7: any = name_read Pair {pure}
     v8: int = const 4
     v9: int = const 5
     v10: any = record_new Pair[v7](v8, v9) {pure}
     br bb3(v10)
   bb3(v11: any):
-    v12: any = opaque.NameRead(Vec3) {read:shared}
-    v13: double = const 4.0
-    v14: any = record_new Vec3[v12](v4, v5, v13) {pure}
-    v15: int = const 1
-    v16: any = const 1
-    v17: bool = is v11 <babble|Pair>
-    br_if v17, bb5, bb4
+    v12: double = const 4.0
+    v13: any = record_new Vec3[v2](v4, v5, v12) {pure}
+    v14: int = const 1
+    v15: any = const 1
+    v16: bool = is v11 <babble|Pair>
+    br_if v16, bb5, bb4
   bb4:
-    v18: int = const 0
-    br bb6(v18)
+    v17: int = const 0
+    br bb6(v17)
   bb5:
-    v19: any = narrow.is v11 <babble|Pair>
-    v20: int = load_field v19.a {read:frozen}
-    br bb6(v20)
-  bb6(v21: int):
-    v22: any = opaque.NameRead(int) {read:shared,throws}
-    v23: any = nonnull v14
-    v24: double = load_field v23.x {read:frozen,throws}
-    v25: int = opaque.DynamicCall(v22, v24) {impure}
-    v26: int = add v21, v25 {pure}
-    v27: int = nonnull v16
-    v28: int = add v26, v27 {pure}
-    v29: any = eq v1, v1 {pure,throws}
-    br_if v29, bb8, bb7
+    v18: any = narrow.is v11 <babble|Pair>
+    v19: int = load_field v18.a {read:frozen}
+    br bb6(v19)
+  bb6(v20: int):
+    v21: any = name_read int {pure}
+    v22: any = nonnull v13
+    v23: double = load_field v22.x {read:frozen,throws}
+    v24: int = opaque.DynamicCall(v21, v23) {impure}
+    v25: int = add v20, v24 {pure}
+    v26: int = nonnull v15
+    v27: int = add v25, v26 {pure}
+    v28: any = eq v1, v1 {pure,throws}
+    br_if v28, bb8, bb7
   bb7:
-    br bb9(v15)
+    br bb9(v14)
   bb8:
-    v30: int = const 0
-    br bb9(v30)
-  bb9(v31: int):
-    v32: int = add v28, v31 {pure}
-    ret v32
+    v29: int = const 0
+    br bb9(v29)
+  bb9(v30: int):
+    v31: int = add v27, v30 {pure}
+    ret v31
 ```
 
 ## SROA verification bailouts : typed def/assign, value-used assign, and statement if/else
@@ -229,12 +228,12 @@ fn run (fl:bool) -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: bool) -> double:
   bb0:
-    v1: any = opaque.NameRead(Vec3) {read:shared}
+    v1: any = name_read Vec3 {pure}
     v2: double = const 1.0
     v3: double = const 2.0
     v4: double = const 3.0
     v5: any = record_new Vec3[v1](v2, v3, v4) {pure}
-    v6: any = opaque.NameRead(Vec3) {read:shared}
+    v6: any = name_read Vec3 {pure}
     v7: double = const 2.0
     v8: double = const 3.0
     v9: double = const 4.0
@@ -265,7 +264,7 @@ fn run(v0: bool) -> double:
 ;; mir -O2 fn=run
 fn run(v0: bool) -> double:
   bb0:
-    v1: any = opaque.NameRead(Vec3) {read:shared}
+    v1: any = name_read Vec3 {pure}
     v2: double = const 1.0
     v3: double = const 2.0
     v4: double = const 3.0
@@ -321,12 +320,12 @@ fn run(v0: bool) -> double:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(mkVec) {read:shared}
+    v1: any = name_read mkVec {pure}
     v2: double = const 4.0
     v3: any = call mkVec(v2) {pure}
     br bb3(v3)
   bb2:
-    v4: any = opaque.NameRead(Vec3) {read:shared}
+    v4: any = name_read Vec3 {pure}
     v5: double = const 1.0
     v6: double = const 2.0
     v7: double = const 3.0
@@ -335,19 +334,19 @@ fn run(v0: bool) -> double:
   bb3(v9: any):
     br_if v0, bb5, bb4
   bb4:
-    v10: any = opaque.NameRead(Vec3) {read:shared}
+    v10: any = name_read Vec3 {pure}
     v11: double = const 2.0
     v12: double = const 3.0
     v13: double = const 4.0
     v14: any = record_new Vec3[v10](v11, v12, v13) {pure}
     br bb6(v14)
   bb5:
-    v15: any = opaque.NameRead(mkVec) {read:shared}
+    v15: any = name_read mkVec {pure}
     v16: double = const 5.0
     v17: any = call mkVec(v16) {pure}
     br bb6(v17)
   bb6(v18: any):
-    v19: any = opaque.NameRead(Vec3) {read:shared}
+    v19: any = name_read Vec3 {pure}
     v20: double = const 1.0
     v21: double = const 2.0
     v22: double = const 3.0
@@ -357,7 +356,7 @@ fn run(v0: bool) -> double:
     v24: any = const null
     br bb9(v24, v23)
   bb8:
-    v25: any = opaque.NameRead(mkVec) {read:shared}
+    v25: any = name_read mkVec {pure}
     v26: double = const 6.0
     v27: any = call mkVec(v26) {pure}
     br bb9(v27, v27)
@@ -376,12 +375,12 @@ fn run(v0: bool) -> double:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(mkVec) {read:shared}
+    v1: any = name_read mkVec {pure}
     v2: double = const 4.0
     v3: any = call mkVec(v2) {pure}
     br bb3(v3)
   bb2:
-    v4: any = opaque.NameRead(Vec3) {read:shared}
+    v4: any = name_read Vec3 {pure}
     v5: double = const 1.0
     v6: double = const 2.0
     v7: double = const 3.0
@@ -390,19 +389,19 @@ fn run(v0: bool) -> double:
   bb3(v9: any):
     br_if v0, bb5, bb4
   bb4:
-    v10: any = opaque.NameRead(Vec3) {read:shared}
+    v10: any = name_read Vec3 {pure}
     v11: double = const 2.0
     v12: double = const 3.0
     v13: double = const 4.0
     v14: any = record_new Vec3[v10](v11, v12, v13) {pure}
     br bb6(v14)
   bb5:
-    v15: any = opaque.NameRead(mkVec) {read:shared}
+    v15: any = name_read mkVec {pure}
     v16: double = const 5.0
     v17: any = call mkVec(v16) {pure}
     br bb6(v17)
   bb6(v18: any):
-    v19: any = opaque.NameRead(Vec3) {read:shared}
+    v19: any = name_read Vec3 {pure}
     v20: double = const 1.0
     v21: double = const 2.0
     v22: double = const 3.0
@@ -411,7 +410,7 @@ fn run(v0: bool) -> double:
   bb7:
     br bb9(v23)
   bb8:
-    v24: any = opaque.NameRead(mkVec) {read:shared}
+    v24: any = name_read mkVec {pure}
     v25: double = const 6.0
     v26: any = call mkVec(v25) {pure}
     br bb9(v26)
@@ -467,13 +466,13 @@ fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: any, v1: any, v2: bool) -> double:
   bb0:
-    v3: any = opaque.NameRead(Vec3) {read:shared}
+    v3: any = name_read Vec3 {pure}
     v4: double = const 1.0
     v5: double = const 2.0
     v6: double = const 3.0
     v7: any = record_new Vec3[v3](v4, v5, v6) {pure}
     v8: any = checkcast v0 <babble|Vec3>
-    v9: any = opaque.NameRead(Vec3) {read:shared}
+    v9: any = name_read Vec3 {pure}
     v10: double = const 1.0
     v11: double = const 2.0
     v12: double = const 3.0
@@ -485,12 +484,12 @@ fn run(v0: any, v1: any, v2: bool) -> double:
   bb2:
     br bb3(v1, v1)
   bb3(v15: any, v16: any):
-    v17: any = opaque.NameRead(Vec3) {read:shared}
+    v17: any = name_read Vec3 {pure}
     v18: double = const 1.0
     v19: double = const 2.0
     v20: double = const 3.0
     v21: any = record_new Vec3[v17](v18, v19, v20) {pure}
-    v22: any = opaque.NameRead(Pair) {read:shared}
+    v22: any = name_read Pair {pure}
     v23: int = const 4
     v24: int = const 5
     v25: any = record_new Pair[v22](v23, v24) {pure}
@@ -510,7 +509,7 @@ fn run(v0: any, v1: any, v2: bool) -> double:
     br bb9(v31)
   bb8:
     v32: any = narrow.is v26 <babble|Pair>
-    v33: any = opaque.NameRead(double) {read:shared,throws}
+    v33: any = name_read double {pure}
     v34: int = load_field v32.a {read:frozen}
     v35: double = opaque.DynamicCall(v33, v34) {impure}
     br bb9(v35)
@@ -523,7 +522,7 @@ fn run(v0: any, v1: any, v2: bool) -> double:
 ;; mir -O2 fn=run
 fn run(v0: any, v1: any, v2: bool) -> double:
   bb0:
-    v3: any = opaque.NameRead(Vec3) {read:shared}
+    v3: any = name_read Vec3 {pure}
     v4: double = const 1.0
     v5: double = const 2.0
     v6: double = const 3.0
@@ -535,35 +534,34 @@ fn run(v0: any, v1: any, v2: bool) -> double:
   bb2:
     br bb3(v1)
   bb3(v9: any):
-    v10: any = opaque.NameRead(Vec3) {read:shared}
-    v11: any = record_new Vec3[v10](v4, v5, v6) {pure}
-    v12: any = opaque.NameRead(Pair) {read:shared}
-    v13: int = const 4
-    v14: int = const 5
-    v15: any = record_new Pair[v12](v13, v14) {pure}
+    v10: any = record_new Vec3[v3](v4, v5, v6) {pure}
+    v11: any = name_read Pair {pure}
+    v12: int = const 4
+    v13: int = const 5
+    v14: any = record_new Pair[v11](v12, v13) {pure}
     br_if v2, bb5, bb4
   bb4:
-    br bb6(v15)
+    br bb6(v14)
   bb5:
-    br bb6(v11)
-  bb6(v16: any):
-    v17: double = load_field v7.x {read:frozen}
-    v18: double = load_field v9.x {read:frozen}
-    v19: double = add v17, v18 {pure}
-    v20: bool = is v16 <babble|Pair>
-    br_if v20, bb8, bb7
+    br bb6(v10)
+  bb6(v15: any):
+    v16: double = load_field v7.x {read:frozen}
+    v17: double = load_field v9.x {read:frozen}
+    v18: double = add v16, v17 {pure}
+    v19: bool = is v15 <babble|Pair>
+    br_if v19, bb8, bb7
   bb7:
-    v21: double = load_field v11.x {read:frozen}
-    br bb9(v21)
+    v20: double = load_field v10.x {read:frozen}
+    br bb9(v20)
   bb8:
-    v22: any = narrow.is v16 <babble|Pair>
-    v23: any = opaque.NameRead(double) {read:shared,throws}
-    v24: int = load_field v22.a {read:frozen}
-    v25: double = opaque.DynamicCall(v23, v24) {impure}
-    br bb9(v25)
-  bb9(v26: double):
-    v27: double = add v19, v26 {pure}
-    ret v27
+    v21: any = narrow.is v15 <babble|Pair>
+    v22: any = name_read double {pure}
+    v23: int = load_field v21.a {read:frozen}
+    v24: double = opaque.DynamicCall(v22, v23) {impure}
+    br bb9(v24)
+  bb9(v25: double):
+    v26: double = add v18, v25 {pure}
+    ret v26
 ```
 
 ## SROA destructured RHS bailouts : mismatched RecordNew, empty block, and one-armed if
@@ -602,13 +600,13 @@ fn run(v0: bool) -> double:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(Pair) {read:shared}
+    v1: any = name_read Pair {pure}
     v2: int = const 4
     v3: int = const 5
     v4: any = record_new Pair[v1](v2, v3) {pure}
     br bb3(v4)
   bb2:
-    v5: any = opaque.NameRead(Vec3) {read:shared}
+    v5: any = name_read Vec3 {pure}
     v6: double = const 1.0
     v7: double = const 2.0
     v8: double = const 3.0
@@ -620,7 +618,7 @@ fn run(v0: bool) -> double:
     v11: any = const null
     br bb6(v11)
   bb5:
-    v12: any = opaque.NameRead(Vec3) {read:shared}
+    v12: any = name_read Vec3 {pure}
     v13: double = const 1.0
     v14: double = const 2.0
     v15: double = const 3.0
@@ -635,7 +633,7 @@ fn run(v0: bool) -> double:
     v19: any = const null
     br bb10(v19)
   bb9:
-    v20: any = opaque.NameRead(Vec3) {read:shared}
+    v20: any = name_read Vec3 {pure}
     v21: double = const 2.0
     v22: double = const 0.0
     v23: double = const 0.0
@@ -644,7 +642,7 @@ fn run(v0: bool) -> double:
   bb10(v25: any):
     br bb12(v25)
   bb11:
-    v26: any = opaque.NameRead(Vec3) {read:shared}
+    v26: any = name_read Vec3 {pure}
     v27: double = const 1.0
     v28: double = const 2.0
     v29: double = const 3.0
@@ -694,13 +692,13 @@ fn run(v0: bool) -> double:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead(Pair) {read:shared}
+    v1: any = name_read Pair {pure}
     v2: int = const 4
     v3: int = const 5
     v4: any = record_new Pair[v1](v2, v3) {pure}
     br bb3(v4)
   bb2:
-    v5: any = opaque.NameRead(Vec3) {read:shared}
+    v5: any = name_read Vec3 {pure}
     v6: double = const 1.0
     v7: double = const 2.0
     v8: double = const 3.0
@@ -712,7 +710,7 @@ fn run(v0: bool) -> double:
     v11: any = const null
     br bb6(v11)
   bb5:
-    v12: any = opaque.NameRead(Vec3) {read:shared}
+    v12: any = name_read Vec3 {pure}
     v13: double = const 1.0
     v14: double = const 2.0
     v15: double = const 3.0
@@ -727,7 +725,7 @@ fn run(v0: bool) -> double:
     v19: any = const null
     br bb10(v19)
   bb9:
-    v20: any = opaque.NameRead(Vec3) {read:shared}
+    v20: any = name_read Vec3 {pure}
     v21: double = const 2.0
     v22: double = const 0.0
     v23: any = record_new Vec3[v20](v21, v22, v22) {pure}
@@ -735,7 +733,7 @@ fn run(v0: bool) -> double:
   bb10(v24: any):
     br bb12(v24)
   bb11:
-    v25: any = opaque.NameRead(Vec3) {read:shared}
+    v25: any = name_read Vec3 {pure}
     v26: double = const 1.0
     v27: double = const 2.0
     v28: double = const 3.0

@@ -185,7 +185,7 @@ class CFold (x:int)
 ```hir
 ;; hir -O1 class=CFold
 class CFold (x:int)
-  (def v (+:int 9:int (get-this-field x)))
+  (def v (+:int (get-this-field x) 9:int))
   static:
     (def S 42:int)
 ```

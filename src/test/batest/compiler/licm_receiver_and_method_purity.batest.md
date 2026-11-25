@@ -277,13 +277,13 @@ fn run(v0: byte) -> bool:
     v2: short = convert.short v0
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead(byte) {read:shared,throws}
+    v3: any = name_read byte {pure}
     v4: int = const 3
     v5: byte = opaque.DynamicCall(v3, v4) {impure}
     v6: short = convert.short v5
     br bb3(v6)
   bb3(v7: short):
-    v8: any = opaque.NameRead(short) {read:shared,throws}
+    v8: any = name_read short {pure}
     v9: int = const 3
     v10: short = opaque.DynamicCall(v8, v9) {impure}
     v11: bool = eq v7, v10 {pure}
@@ -309,13 +309,13 @@ fn run(v0: byte) -> bool:
     v1: bool = const true
     br bb1
   bb1:
-    v2: any = opaque.NameRead(byte) {read:shared,throws}
+    v2: any = name_read byte {pure}
     v3: int = const 3
     v4: byte = opaque.DynamicCall(v2, v3) {impure}
     v5: short = convert.short v4
     br bb2(v5)
   bb2(v6: short):
-    v7: any = opaque.NameRead(short) {read:shared,throws}
+    v7: any = name_read short {pure}
     v8: short = opaque.DynamicCall(v7, v3) {impure}
     v9: bool = eq v6, v8 {pure}
     v10: bool = const false
@@ -448,10 +448,12 @@ fn run (n:int, fc:obj) -> int {nothrow unique}
 fn run (n:int, fc:obj) -> int {nothrow unique}
   (def a 0:int)
   (def i 0:int)
-  (while (<:bool var(i) var(n))
-    (block
-      (set a += (+:int (+:int (get-this-field v) (neg (get-this-field v))) 1:int))
-      (set i += 1:int)))
+  (block
+    (def $licm0 (+:int (+:int (get-this-field v) (neg (get-this-field v))) 1:int))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += var($licm0))
+        (set i += 1:int))))
   var(a)
 ```
 
@@ -461,23 +463,23 @@ fn run(v0: int, v1: any) -> int:
   bb0:
     v2: int = const 0
     v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v2)
-  bb1(v5: any, v6: int, v7: int):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
+    v4: int = load_field v1.v {read:frozen}
+    v5: int = load_field v1.v {read:frozen}
+    v6: int = neg v5 {pure}
+    v7: int = add v4, v6 {pure}
+    v8: int = const 1
+    v9: int = add v7, v8 {pure}
+    v10: any = const null
+    br bb1(v10, v3, v2)
+  bb1(v11: any, v12: int, v13: int):
+    v14: bool = lt v12, v0 {pure}
+    br_if v14, bb3, bb2
   bb2:
-    ret v7
+    ret v13
   bb3:
-    v9: int = load_field v1.v {read:frozen,throws}
-    v10: int = load_field v1.v {read:frozen,throws}
-    v11: int = neg v10 {pure}
-    v12: int = add v9, v11 {pure}
-    v13: int = const 1
-    v14: int = add v12, v13 {pure}
-    v15: int = add v7, v14 {pure}
+    v15: int = add v13, v9 {pure}
     v16: int = const 1
-    v17: int = add v6, v16 {pure}
+    v17: int = add v12, v16 {pure}
     v18: any = convert.any v17
     br bb1(v18, v17, v15)
 ```
@@ -487,20 +489,20 @@ fn run(v0: int, v1: any) -> int:
 fn run(v0: int, v1: any) -> int:
   bb0:
     v2: int = const 0
+    v3: int = load_field v1.v {read:frozen}
+    v4: int = neg v3 {pure}
+    v5: int = add v3, v4 {pure}
+    v6: int = const 1
+    v7: int = add v5, v6 {pure}
     br bb1(v2, v2)
-  bb1(v3: int, v4: int):
-    v5: bool = lt v3, v0 {pure}
-    br_if v5, bb3, bb2
+  bb1(v8: int, v9: int):
+    v10: bool = lt v8, v0 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    ret v4
+    ret v9
   bb3:
-    v6: int = load_field v1.v {read:frozen,throws}
-    v7: int = neg v6 {pure}
-    v8: int = add v6, v7 {pure}
-    v9: int = const 1
-    v10: int = add v8, v9 {pure}
-    v11: int = add v4, v10 {pure}
-    v12: int = add v3, v9 {pure}
+    v11: int = add v9, v7 {pure}
+    v12: int = add v8, v6 {pure}
     br bb1(v12, v11)
 ```
 

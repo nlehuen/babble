@@ -80,17 +80,17 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
   bb2:
     ret v10
   bb3:
-    v12: any = opaque.NameRead(byte) {read:shared,throws}
+    v12: any = name_read byte {pure}
     v13: int = const 2
     v14: byte = opaque.DynamicCall(v12, v13) {impure}
     v15: any = convert.any v14
     v16: any = checkcast v15 <double|double|>
     v17: double = convert.double v16
-    v18: any = opaque.NameRead(int) {read:shared,throws}
+    v18: any = name_read int {pure}
     v19: int = opaque.DynamicCall(v18, v1) {impure}
     v20: int = const 1
     v21: int = add v19, v20 {pure}
-    v22: any = opaque.NameRead(double) {read:shared,throws}
+    v22: any = name_read double {pure}
     v23: double = opaque.DynamicCall(v22, v21) {impure}
     v24: double = add v17, v23 {pure}
     v25: double = add v10, v24 {pure}
@@ -105,7 +105,7 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
     v29: any = const null
     br bb8(v29, v25)
   bb7:
-    v30: any = opaque.NameRead(double) {read:shared,throws}
+    v30: any = name_read double {pure}
     v31: int = call bump() {impure}
     v32: double = opaque.DynamicCall(v30, v31) {impure}
     v33: double = add v25, v32 {pure}
@@ -126,31 +126,31 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
     v4: int = const 0
     v5: int = const 1
     slot_init c, v5 {write:shared}
+    v6: any = name_read byte {pure}
+    v7: any = name_read int {pure}
+    v8: any = name_read double {pure}
     br bb1(v4, v3)
-  bb1(v6: int, v7: double):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
+  bb1(v9: int, v10: double):
+    v11: bool = lt v9, v0 {pure}
+    br_if v11, bb3, bb2
   bb2:
-    ret v7
+    ret v10
   bb3:
-    v9: any = opaque.NameRead(byte) {read:shared,throws}
-    v10: int = const 2
-    v11: byte = opaque.DynamicCall(v9, v10) {impure}
-    v12: any = convert.any v11
-    v13: any = checkcast v12 <double|double|>
-    v14: double = convert.double v13
-    v15: any = opaque.NameRead(int) {read:shared,throws}
-    v16: int = opaque.DynamicCall(v15, v1) {impure}
-    v17: int = add v16, v5 {pure}
-    v18: any = opaque.NameRead(double) {read:shared,throws}
-    v19: double = opaque.DynamicCall(v18, v17) {impure}
-    v20: double = add v14, v19 {pure}
-    v21: double = add v7, v20 {pure}
+    v12: int = const 2
+    v13: byte = opaque.DynamicCall(v6, v12) {impure}
+    v14: any = convert.any v13
+    v15: any = checkcast v14 <double|double|>
+    v16: double = convert.double v15
+    v17: int = opaque.DynamicCall(v7, v1) {impure}
+    v18: int = add v17, v5 {pure}
+    v19: double = opaque.DynamicCall(v8, v18) {impure}
+    v20: double = add v16, v19 {pure}
+    v21: double = add v10, v20 {pure}
     br bb4
   bb4:
     br bb5(v21)
   bb5(v22: double):
-    v23: int = add v6, v5 {pure}
+    v23: int = add v9, v5 {pure}
     br bb1(v23, v22)
 ```
 
@@ -237,9 +237,9 @@ fn RV.run(v0: int) -> long:
     v15: int = convert.int v6
     v16: long = convert.long v8
     v17: any = convert.any v12
-    v18: any = opaque.NameRead(long) {read:shared,throws}
+    v18: any = name_read long {pure}
     v19: long = opaque.DynamicCall(v18, v14) {impure}
-    v20: any = opaque.NameRead(long) {read:shared,throws}
+    v20: any = name_read long {pure}
     v21: long = opaque.DynamicCall(v20, v15) {impure}
     v22: long = add v19, v21 {pure}
     v23: long = add v22, v16 {pure}
@@ -264,26 +264,25 @@ fn RV.run(v0: int) -> long:
     v6: short = convert.short v4
     v7: int = convert.int v4
     v8: long = convert.long v5
+    v9: any = name_read long {pure}
     br bb1(v2, v1)
-  bb1(v9: int, v10: long):
-    v11: bool = lt v9, v0 {pure}
-    br_if v11, bb3, bb2
+  bb1(v10: int, v11: long):
+    v12: bool = lt v10, v0 {pure}
+    br_if v12, bb3, bb2
   bb2:
-    ret v10
+    ret v11
   bb3:
-    v12: any = convert.any v10
-    v13: any = opaque.NameRead(long) {read:shared,throws}
-    v14: long = opaque.DynamicCall(v13, v6) {impure}
-    v15: any = opaque.NameRead(long) {read:shared,throws}
-    v16: long = opaque.DynamicCall(v15, v7) {impure}
-    v17: long = add v14, v16 {pure}
-    v18: long = add v17, v8 {pure}
-    v19: any = convert.any v18
-    v20: any = add v12, v19 {impure}
-    v21: long = convert.long v20
-    v22: int = const 1
-    v23: int = add v9, v22 {pure}
-    br bb1(v23, v21)
+    v13: any = convert.any v11
+    v14: long = opaque.DynamicCall(v9, v6) {impure}
+    v15: long = opaque.DynamicCall(v9, v7) {impure}
+    v16: long = add v14, v15 {pure}
+    v17: long = add v16, v8 {pure}
+    v18: any = convert.any v17
+    v19: any = add v13, v18 {impure}
+    v20: long = convert.long v19
+    v21: int = const 1
+    v22: int = add v10, v21 {pure}
+    br bb1(v22, v20)
 ```
 
 ## Record-based LICM : ThisFieldGet + DirectBabbleCall across effectiveKind 4..5 (float/double)
@@ -359,7 +358,7 @@ fn RV.run(v0: int) -> double:
   bb3:
     v12: float = convert.float v4
     v13: double = convert.double v6
-    v14: any = opaque.NameRead(double) {read:shared,throws}
+    v14: any = name_read double {pure}
     v15: double = opaque.DynamicCall(v14, v12) {impure}
     v16: double = add v15, v13 {pure}
     v17: double = add v10, v16 {pure}
@@ -380,19 +379,19 @@ fn RV.run(v0: int) -> double:
     v5: float = load_field v3.fl {read:frozen}
     v6: float = convert.float v4
     v7: double = convert.double v5
+    v8: any = name_read double {pure}
     br bb1(v2, v1)
-  bb1(v8: int, v9: double):
-    v10: bool = lt v8, v0 {pure}
-    br_if v10, bb3, bb2
+  bb1(v9: int, v10: double):
+    v11: bool = lt v9, v0 {pure}
+    br_if v11, bb3, bb2
   bb2:
-    ret v9
+    ret v10
   bb3:
-    v11: any = opaque.NameRead(double) {read:shared,throws}
-    v12: double = opaque.DynamicCall(v11, v6) {impure}
+    v12: double = opaque.DynamicCall(v8, v6) {impure}
     v13: double = add v12, v7 {pure}
-    v14: double = add v9, v13 {pure}
+    v14: double = add v10, v13 {pure}
     v15: int = const 1
-    v16: int = add v8, v15 {pure}
+    v16: int = add v9, v15 {pure}
     br bb1(v16, v14)
 ```
 
@@ -427,12 +426,16 @@ fn RV.run (n:int) -> double {nothrow unique}
   (def a 0.0:double)
   (def k 0:int)
   (def fnD (fn-ref fnD))
-  (while (<:bool var(k) var(n))
-    (block
-      (set a += (+:double (block
-            (def v (get-this-field d))
-            (jcall Math.sin var(v))) (if (and (get-this-field f) (>:bool (array-op SIZE (get-this-field xs)) 0:int)) 1.0:double 2.0:double)))
-      (set k += 1:int)))
+  (block
+    (def $licm0 (get-this-field d))
+    (def $licm1 (get-this-field f))
+    (def $licm2 (get-this-field xs))
+    (while (<:bool var(k) var(n))
+      (block
+        (set a += (+:double (block
+              (def v var($licm0))
+              (jcall Math.sin var(v))) (if (and var($licm1) (>:bool (array-op SIZE var($licm2)) 0:int)) 1.0:double 2.0:double)))
+        (set k += 1:int))))
   var(a)
 ```
 
@@ -443,25 +446,25 @@ fn RV.run(v0: int) -> double:
     v1: double = const 0.0
     v2: int = const 0
     v3: any = opaque.FunctionRef(fnD) {pure}
-    v4: any = const null
-    br bb1(v4, v2, v1)
-  bb1(v5: any, v6: int, v7: double):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
+    v4: any = slot_read this {pure}
+    v5: double = load_field v4.d {read:frozen}
+    v6: any = slot_read this {pure}
+    v7: bool = load_field v6.f {read:frozen}
+    v8: any = slot_read this {pure}
+    v9: any = load_field v8.xs {read:frozen}
+    v10: any = const null
+    br bb1(v10, v2, v1)
+  bb1(v11: any, v12: int, v13: double):
+    v14: bool = lt v12, v0 {pure}
+    br_if v14, bb3, bb2
   bb2:
-    ret v7
+    ret v13
   bb3:
-    v9: any = slot_read this {pure}
-    v10: double = load_field v9.d {read:frozen}
-    v11: double = call_java Math.sin(v10) {pure}
-    v12: any = slot_read this {pure}
-    v13: bool = load_field v12.f {read:frozen}
-    v14: bool = const false
-    br_if v13, bb4, bb5(v14)
+    v15: double = call_java Math.sin(v5) {pure}
+    v16: bool = const false
+    br_if v7, bb4, bb5(v16)
   bb4:
-    v15: any = slot_read this {pure}
-    v16: any = load_field v15.xs {read:frozen}
-    v17: int = array_len v16 {read:frozen,throws}
+    v17: int = array_len v9 {read:frozen,throws}
     v18: int = const 0
     v19: bool = gt v17, v18 {pure}
     br bb5(v19)
@@ -474,10 +477,10 @@ fn RV.run(v0: int) -> double:
     v22: double = const 1.0
     br bb8(v22)
   bb8(v23: double):
-    v24: double = add v11, v23 {pure}
-    v25: double = add v7, v24 {pure}
+    v24: double = add v15, v23 {pure}
+    v25: double = add v13, v24 {pure}
     v26: int = const 1
-    v27: int = add v6, v26 {pure}
+    v27: int = add v12, v26 {pure}
     v28: any = convert.any v27
     br bb1(v28, v27, v25)
 ```
@@ -488,22 +491,22 @@ fn RV.run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
+    v3: any = slot_read this {pure}
+    v4: double = load_field v3.d {read:frozen}
+    v5: bool = load_field v3.f {read:frozen}
+    v6: any = load_field v3.xs {read:frozen}
+    v7: double = call_java Math.sin(v4) {pure}
     br bb1(v2, v1)
-  bb1(v3: int, v4: double):
-    v5: bool = lt v3, v0 {pure}
-    br_if v5, bb3, bb2
+  bb1(v8: int, v9: double):
+    v10: bool = lt v8, v0 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    ret v4
+    ret v9
   bb3:
-    v6: any = slot_read this {pure}
-    v7: double = load_field v6.d {read:frozen}
-    v8: double = call_java Math.sin(v7) {pure}
-    v9: bool = load_field v6.f {read:frozen}
-    v10: bool = const false
-    br_if v9, bb4, bb5(v10)
+    v11: bool = const false
+    br_if v5, bb4, bb5(v11)
   bb4:
-    v11: any = load_field v6.xs {read:frozen}
-    v12: int = array_len v11 {read:frozen,throws}
+    v12: int = array_len v6 {read:frozen,throws}
     v13: bool = gt v12, v2 {pure}
     br bb5(v13)
   bb5(v14: bool):
@@ -515,10 +518,10 @@ fn RV.run(v0: int) -> double:
     v16: double = const 1.0
     br bb8(v16)
   bb8(v17: double):
-    v18: double = add v8, v17 {pure}
-    v19: double = add v4, v18 {pure}
+    v18: double = add v7, v17 {pure}
+    v19: double = add v9, v18 {pure}
     v20: int = const 1
-    v21: int = add v3, v20 {pure}
+    v21: int = add v8, v20 {pure}
     br bb1(v21, v19)
 ```
 
@@ -579,7 +582,7 @@ fn RV.run() -> double:
     ret v12
   bb3:
     v14: int = for_next v6, v11
-    v15: any = opaque.NameRead(double) {read:shared,throws}
+    v15: any = name_read double {pure}
     v16: double = opaque.DynamicCall(v15, v14) {impure}
     v17: double = add v3, v16 {pure}
     v18: double = add v12, v17 {pure}
@@ -603,21 +606,21 @@ fn RV.run() -> double:
     v5: any = for_init.array v4
     v6: int = array_len v5 {read:frozen}
     v7: int = const 0
+    v8: any = name_read double {pure}
     br bb1(v7, v0)
-  bb1(v8: int, v9: double):
-    v10: bool = for_has_next v5, v8, v6
-    br_if v10, bb3, bb2
+  bb1(v9: int, v10: double):
+    v11: bool = for_has_next v5, v9, v6
+    br_if v11, bb3, bb2
   bb2:
-    ret v9
+    ret v10
   bb3:
-    v11: int = for_next v5, v8
-    v12: any = opaque.NameRead(double) {read:shared,throws}
-    v13: double = opaque.DynamicCall(v12, v11) {impure}
+    v12: int = for_next v5, v9
+    v13: double = opaque.DynamicCall(v8, v12) {impure}
     v14: double = add v3, v13 {pure}
-    v15: double = add v9, v14 {pure}
+    v15: double = add v10, v14 {pure}
     br bb4
   bb4:
     v16: int = const 1
-    v17: int = add v8, v16 {pure}
+    v17: int = add v9, v16 {pure}
     br bb1(v17, v15)
 ```

@@ -137,6 +137,19 @@ public final class ClassShape {
         return parameterMembers[parameter];
     }
 
+    /** Whether member {@code memberIndex} is initialized directly by a constructor header parameter. */
+    public boolean isHeaderParameterMember(int memberIndex) {
+        if (memberIndex < 0) {
+            return false;
+        }
+        for (int pm : parameterMembers) {
+            if (pm == memberIndex) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public int requiredParameters() {
         return requiredParameters;
     }

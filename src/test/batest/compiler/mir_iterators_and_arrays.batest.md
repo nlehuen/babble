@@ -475,7 +475,7 @@ fn sumCustom () -> int {pure unique}
 fn sumCustom() -> int:
   bb0:
     v0: int = const 0
-    v1: any = opaque.NameRead(Rng) {read:shared}
+    v1: any = name_read Rng {pure}
     v2: int = const 3
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: any = for_init.babble_iterable v3
@@ -485,7 +485,7 @@ fn sumCustom() -> int:
     v8: bool = for_has_next v4
     br_if v8, bb6, bb2
   bb2:
-    v9: any = opaque.NameRead(Cnt) {read:shared}
+    v9: any = name_read Cnt {pure}
     v10: int = const 3
     v11: any = opaque.DynamicCall(v9, v10) {impure}
     v12: any = for_init.babble_iterator v11
@@ -513,7 +513,7 @@ fn sumCustom() -> int:
 fn sumCustom() -> int:
   bb0:
     v0: int = const 0
-    v1: any = opaque.NameRead(Rng) {read:shared}
+    v1: any = name_read Rng {pure}
     v2: int = const 3
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: any = for_init.babble_iterable v3
@@ -522,7 +522,7 @@ fn sumCustom() -> int:
     v6: bool = for_has_next v4
     br_if v6, bb6, bb2
   bb2:
-    v7: any = opaque.NameRead(Cnt) {read:shared}
+    v7: any = name_read Cnt {pure}
     v8: any = opaque.DynamicCall(v7, v2) {impure}
     v9: any = for_init.babble_iterator v8
     br bb3(v5)

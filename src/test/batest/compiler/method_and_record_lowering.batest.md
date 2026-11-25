@@ -43,7 +43,7 @@ fn C.run () -> bool {pure unique}
 ;; mir -O2 fn=C.run stage=before
 fn C.run() -> bool:
   bb0:
-    v0: any = opaque.NameRead(assert) {read:shared,throws}
+    v0: any = name_read assert {pure}
     v1: any = slot_read this {pure}
     v2: int = const 2
     v3: int = call_method v1.optM(v2) {pure}
@@ -67,7 +67,7 @@ fn C.run() -> bool:
 ;; mir -O2 fn=C.run
 fn C.run() -> bool:
   bb0:
-    v0: any = opaque.NameRead(assert) {read:shared,throws}
+    v0: any = name_read assert {pure}
     v1: any = slot_read this {pure}
     v2: int = const 2
     v3: int = call_method v1.optM(v2) {pure}
@@ -133,7 +133,7 @@ fn C.run() -> bool:
     v13: int = call_method v11.optM(v12) {pure}
     v14: double = convert.double v13
     store_field v10.d, v14 {write:shared,throws}
-    v15: any = opaque.NameRead(assert) {read:shared,throws}
+    v15: any = name_read assert {pure}
     v16: any = slot_read this {pure}
     v17: double = load_field v16.d {read:shared,throws}
     v18: double = const 11.0
@@ -180,7 +180,7 @@ fn C.run() -> bool:
     v8: int = call_method v0.optM(v7) {pure}
     v9: double = convert.double v8
     store_field v0.d, v9 {write:shared,throws}
-    v10: any = opaque.NameRead(assert) {read:shared,throws}
+    v10: any = name_read assert {pure}
     v11: double = const 11.0
     v12: bool = eq v9, v11 {pure}
     v13: bool = const false
@@ -611,7 +611,7 @@ fn C.run () -> int {pure unique}
 fn C.run() -> int:
   bb0:
     v0: any = slot_read this {pure}
-    v1: any = load_field v0.cb {read:shared,throws}
+    v1: any = load_field v0.cb {read:frozen}
     v2: int = const 3
     v3: int = opaque.DynamicCall(v1, v2) {impure}
     v4: any = slot_read this {pure}
@@ -619,7 +619,7 @@ fn C.run() -> int:
     v6: int = opaque.DynamicCall(v5) {impure}
     v7: int = add v3, v6 {pure}
     v8: any = slot_read this {pure}
-    v9: int = load_field v8.n {read:shared,throws}
+    v9: int = load_field v8.n {read:frozen}
     v10: int = const 2
     v11: int = add v9, v10 {pure}
     v12: int = add v7, v11 {pure}
@@ -631,13 +631,13 @@ fn C.run() -> int:
 fn C.run() -> int:
   bb0:
     v0: any = slot_read this {pure}
-    v1: any = load_field v0.cb {read:shared,throws}
+    v1: any = load_field v0.cb {read:frozen}
     v2: int = const 3
     v3: int = opaque.DynamicCall(v1, v2) {impure}
     v4: any = load_field v0.greet {read:shared,throws}
     v5: int = opaque.DynamicCall(v4) {impure}
     v6: int = add v3, v5 {pure}
-    v7: int = load_field v0.n {read:shared,throws}
+    v7: int = load_field v0.n {read:frozen}
     v8: int = const 2
     v9: int = add v7, v8 {pure}
     v10: int = add v6, v9 {pure}
@@ -664,9 +664,7 @@ top-level:
 top-level:
   (def Vec (class-ref Vec))
   (def obj (class-ref object))
-  (call name(assert) (==:bool (block
-        (def $this name(obj))
-        7:int) 7:int))
+  (call name(assert) true:bool)
 ```
 
 ```mir
@@ -704,7 +702,7 @@ record CellRec:
     bb0:
       v0: any = slot_read this {pure}
       v1: int = load_field v0.x {read:frozen}
-      v2: any = opaque.NameRead(k) {read:shared}
+      v2: any = name_read k {pure}
       v3: int = convert.int v2
       v4: int = add v1, v3 {pure}
       ret v4
@@ -787,13 +785,10 @@ class C
 ```hir
 ;; hir -O1 class=C
 class C
-  (def r1
-    (block
-      (def loc#1 (overload name(extI) name(extS)))
-      7:int))
+  (def r1 7:int)
   (def r2
     (block
-      (def loc#2 (overload (fn-ref loc#1) (fn-ref loc#2)))
+      (def loc (overload (fn-ref loc#1) (fn-ref loc#2)))
       12:int))
 ```
 
