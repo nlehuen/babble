@@ -116,7 +116,7 @@ public final class Babblec {
 
         List<org.babblelang.wasm.WasmProgramLinker.ModuleInput> inputs = hirMods.stream()
                 .map(m -> new org.babblelang.wasm.WasmProgramLinker.ModuleInput(
-                        m.id().key(), m.id().displayName(), m.hir()))
+                        m.id().key(), m.id().displayName(), m.hir(), m.staticImportKeys()))
                 .toList();
         org.babblelang.wasm.WasmCompiler.Options defaults = org.babblelang.wasm.WasmCompiler.Options.defaults(target);
         org.babblelang.wasm.WasmCompiler.Options opts = new org.babblelang.wasm.WasmCompiler.Options(

@@ -28,7 +28,7 @@ public class WasmCompilerTestCase {
         engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         List<BabbleScriptEngine.HirProgramModule> mods = engine.compileSourceToHir(source, "test.ba", target);
         List<WasmProgramLinker.ModuleInput> inputs = mods.stream()
-                .map(m -> new WasmProgramLinker.ModuleInput(m.id().key(), m.id().displayName(), m.hir()))
+                .map(m -> new WasmProgramLinker.ModuleInput(m.id().key(), m.id().displayName(), m.hir(), m.staticImportKeys()))
                 .toList();
         boolean dumpWat = WasmCompiler.Options.defaults(target).dumpWat();
         WasmCompiler.Options opts = new WasmCompiler.Options(target, true, true, dumpWat, false);
@@ -319,5 +319,299 @@ public class WasmCompilerTestCase {
         int exit = p.waitFor();
         Assertions.assertEquals(0, exit, "node hello.mjs failed : " + stderr);
         Assertions.assertEquals("from-cli:42\n", stdout);
+    }
+
+    // ---------------------------------------------------------------- BIP025-P2 Object model, arrays & modules
+
+    @Test
+    public void recordsImmutableFieldsOperatorsAndValueSemantics() throws Exception {
+        String code = """
+                def Vec2 = record (x: double, y: double) (
+                    def plus = fn (other: Vec2): Vec2 -> (Vec2(this.x + other.x, this.y + other.y))
+                    def minus = fn (other: Vec2): Vec2 -> (Vec2(this.x - other.x, this.y - other.y))
+                    def times = fn (s: double): Vec2 -> (Vec2(this.x * s, this.y * s))
+                    def neg = fn (): Vec2 -> (Vec2(-this.x, -this.y))
+                    def dot = fn (other: Vec2): double -> (this.x * other.x + this.y * other.y)
+                )
+                def a = Vec2(1.0, 2.0)
+                def b = Vec2(1.0, 2.0)
+                def c = Vec2(3.0, 4.0)
+                assert(a == b)
+                assert(a != c)
+                assert(not same(a, b))
+                assert(same(a, a))
+                assert(classof(a) == Vec2)
+                assert(a is Vec2)
+                assert(string(a) == "Vec2(x: 1.0, y: 2.0)")
+                def sum = a + c
+                assert(sum == Vec2(4.0, 6.0))
+                assert((c - a) == Vec2(2.0, 2.0))
+                assert((a * 3.0) == Vec2(3.0, 6.0))
+                assert((-a) == Vec2(-1.0, -2.0))
+                assert(a.dot(c) == 11.0)
+                ;; Dynamic constructor via first-class class value
+                def ctor: fn (double, double): Vec2 = Vec2
+                def d = ctor(5.0, 6.0)
+                assert(d == Vec2(5.0, 6.0))
+                string(sum)
+                """;
+        WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_BARE, 1);
+        String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
+        // BIP025-D11: record parameter fields must be strictly immutable (no `(mut f64)`)!
+        Assertions.assertTrue(wat.contains("(field $f_x f64)") && wat.contains("(field $f_y f64)"),
+                "Expected immutable f64 fields for record Vec2 in WAT");
+        Assertions.assertFalse(wat.contains("(field $f_x (mut f64))"),
+                "Record fields must NOT be mutable in WasmGC (BIP025-D11)");
+
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(compiled.wasmBytes());
+        Assertions.assertTrue(out.ok(), "Records test failed : " + out.error());
+        Assertions.assertEquals("\"Vec2(x: 4.0, y: 6.0)\"", out.resultJson());
+    }
+
+    @Test
+    public void classesMutableFieldsStaticsObjectsBoundMethodsAndCaptures() throws Exception {
+        String code = """
+                def Counter = class (start: int = 0) (
+                    def value = start
+                    Counter.total += 1
+                    def inc = fn mut (by: int = 1): int -> (
+                        this.value += by
+                        this.value
+                    )
+                ) static (
+                    def total = 0
+                    def bumpTotal = fn io (n: int): int -> (Counter.total += n; Counter.total)
+                )
+                def Singleton = object (
+                    def tag = "only-one"
+                    def greet = fn (who: string): string -> (this.tag + ":" + who)
+                )
+                def c1 = Counter(10)
+                def c2 = Counter()
+                assert(Counter.total == 2)
+                assert(Counter.bumpTotal(5) == 7)
+                assert(c1.inc() == 11)
+                assert(c1.inc(4) == 15)
+                assert(c2.inc() == 1)
+                assert(c1 != c2)
+                assert(c1 == c1)
+                ;; Bound method passed as first-class function
+                def f = c1.inc
+                assert(f(5) == 20)
+                assert(c1.value == 20)
+                ;; Object singleton identity
+                assert(same(Singleton, Singleton))
+                assert(Singleton.greet("wasm") == "only-one:wasm")
+                ;; Capturing class inside a function
+                def makeBox = fn io (base: int): int -> (
+                    def acc = base
+                    def Adder = class (def step: int) (
+                        def run = fn io (): int -> (acc += this.step; acc)
+                    )
+                    def a = Adder(3)
+                    assert(a.run() == base + 3)
+                    a.run()
+                )
+                assert(makeBox(10) == 16)
+                c1.value
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Classes/objects test failed : " + out.error());
+        Assertions.assertEquals("\"20\"", out.resultJson());
+    }
+
+    @Test
+    public void interfacesDefaultsSuperBitsetIntersectionAndDevirtualization() throws Exception {
+        String code = """
+                def Named = interface (
+                    def name: fn (): string
+                    def label = fn (): string -> ("<" + this.name() + ">")
+                )
+                def Aged = interface (
+                    def age: fn (): int
+                )
+                def SingleOnly = interface (
+                    def ping: fn (): int
+                )
+                def Dog = record (n: string, a: int) implements Named, Aged, SingleOnly (
+                    def name = fn (): string -> (this.n)
+                    def age = fn (): int -> (this.a)
+                    def ping = fn (): int -> (this.a * 10)
+                    def label = fn (): string -> ("Dog:" + super(Named).label())
+                )
+                def Cat = record (n: string) implements Named (
+                    def name = fn (): string -> (this.n)
+                )
+                def describe = fn (x: Named): string -> (x.label())
+                def pingSingle = fn (s: SingleOnly): int -> (s.ping())
+                def checkBoth = fn (x: any): bool -> (x is (Named & Aged))
+
+                def d = Dog("Rex", 4)
+                def c = Cat("Mittens")
+                assert(describe(d) == "Dog:<Rex>")
+                assert(describe(c) == "<Mittens>")
+                assert(pingSingle(d) == 40)
+                assert(d is Named)
+                assert(d is Aged)
+                assert(checkBoth(d))
+                assert(c is Named)
+                assert(not (c is Aged))
+                assert(not checkBoth(c))
+                assert(not checkBoth(42))
+                def asNamed = (d as any) as Named
+                assert(asNamed.name() == "Rex")
+                def opt: Named? = null
+                assert(opt?.name() == null)
+                def opt2: Named? = c
+                assert(opt2?.name() == "Mittens")
+                describe(d)
+                """;
+        WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_BARE, 1);
+        String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
+        // BIP025-D7: single-mask i64.and + i64.eq for intersection `x is (Named & Aged)`
+        Assertions.assertTrue(wat.contains("i64.and") && wat.contains("i64.eq"),
+                "Expected single-mask i64.and + i64.eq for interface intersection in WAT");
+
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(compiled.wasmBytes());
+        Assertions.assertTrue(out.ok(), "Interfaces test failed : " + out.error());
+        Assertions.assertEquals("\"Dog:<Rex>\"", out.resultJson());
+    }
+
+    @Test
+    public void arraysPrimitiveRefDeepEqualityAndBoundsChecks() throws Exception {
+        String code = """
+                def a = (array of int)(4)
+                assert(a.size() == 4)
+                assert(a.get(0) == 0)
+                a.set(0, 10)
+                a.set(1, 20)
+                a.set(2, 30)
+                a.set(3, 40)
+                def b = (array of int).of(10, 20, 30, 40)
+                assert(a == b)
+                assert(string(b) == "[10, 20, 30, 40]")
+
+                def ds = (array of double).of(1.5, 2.5)
+                assert(ds.get(0) + ds.get(1) == 4.0)
+
+                def Point = record (x: int, y: int) ()
+                def pts = (array of Point?)(2)
+                pts.set(0, Point(1, 2))
+                pts.set(1, Point(3, 4))
+                assert(pts.get(1) == Point(3, 4))
+                assert(string(pts) == "[Point(x: 1, y: 2), Point(x: 3, y: 4)]")
+
+                def oobCaught = try (
+                    a.get(99)
+                    false
+                ) catch e: exception then (
+                    true
+                )
+                assert(oobCaught)
+
+                def negCaught = try (
+                    (array of int)(-1)
+                    false
+                ) catch e: exception then (
+                    true
+                )
+                assert(negCaught)
+                string(b)
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Arrays test failed : " + out.error());
+        Assertions.assertEquals("\"[10, 20, 30, 40]\"", out.resultJson());
+    }
+
+    @Test
+    public void nominalThrowCatchAndNominalOverloadDispatch() throws Exception {
+        String code = """
+                def DomainErr = interface (
+                    def code: fn (): int
+                )
+                def NotFound = record (id: int) implements DomainErr (
+                    def code = fn (): int -> (404)
+                )
+                def Denied = record (who: string) implements DomainErr (
+                    def code = fn (): int -> (403)
+                )
+                def c1 = try (
+                    throw NotFound(7)
+                    0
+                ) catch e: Denied then (
+                    -1
+                ) catch e: NotFound then (
+                    e.id
+                )
+                assert(c1 == 7)
+
+                def c2 = try (
+                    throw Denied("guest")
+                    0
+                ) catch e: DomainErr then (
+                    e.code()
+                )
+                assert(c2 == 403)
+
+                def describe = overload (
+                    fn (e: NotFound): string -> ("nf:" + e.id),
+                    fn (e: Denied): string -> ("dn:" + e.who)
+                )
+                def handle = fn (x: NotFound | Denied): string -> (describe(x))
+                assert(handle(NotFound(9)) == "nf:9")
+                assert(handle(Denied("bob")) == "dn:bob")
+                handle(NotFound(9))
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Nominal catch/overload test failed : " + out.error());
+        Assertions.assertEquals("\"nf:9\"", out.resultJson());
+    }
+
+    @Test
+    public void multiModuleStaticImportLinkingAndExecution(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        Files.writeString(dir.resolve("vec.ba"), """
+                export def Vec2 = record (x: double, y: double) (
+                    def plus = fn (o: Vec2): Vec2 -> (Vec2(this.x + o.x, this.y + o.y))
+                    def lenSq = fn (): double -> (this.x * this.x + this.y * this.y)
+                )
+                export def ORIGIN = Vec2(0.0, 0.0)
+                """, StandardCharsets.UTF_8);
+        Files.writeString(dir.resolve("shape.ba"), """
+                def vec = import("vec.ba")
+                export def Shape = interface (
+                    def area: fn (): double
+                )
+                export def Box = record (size: vec.Vec2) implements Shape (
+                    def area = fn (): double -> (this.size.x * this.size.y)
+                )
+                """, StandardCharsets.UTF_8);
+        Path main = dir.resolve("main.ba");
+        Files.writeString(main, """
+                def vec = import("vec.ba")
+                def shape = import("shape.ba")
+                def v = vec.ORIGIN + vec.Vec2(3.0, 4.0)
+                def s: shape.Shape = shape.Box(v)
+                println("lenSq=", v.lenSq(), " area=", s.area())
+                """, StandardCharsets.UTF_8);
+
+        Path wasmOut = dir.resolve("app.wasm");
+        Path mjsOut = dir.resolve("app.mjs");
+        java.io.StringWriter errBuf = new java.io.StringWriter();
+        int status = org.babblelang.Main.run(
+                new String[]{"-compile", "-target", "wasm-js", main.toString(), "-o", wasmOut.toString()},
+                new java.io.BufferedReader(new java.io.StringReader("")),
+                new java.io.PrintWriter(new java.io.StringWriter()),
+                new java.io.PrintWriter(errBuf), false);
+        Assertions.assertEquals(0, status, "Multi-module compile failed : " + errBuf);
+
+        Process p = new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
+        String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = p.waitFor();
+        Assertions.assertEquals(0, exit, "Multi-module node execution failed : " + stderr);
+        Assertions.assertEquals("lenSq=25.0 area=12.0\n", stdout);
     }
 }

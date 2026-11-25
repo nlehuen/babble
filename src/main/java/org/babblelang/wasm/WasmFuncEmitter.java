@@ -30,6 +30,9 @@ public final class WasmFuncEmitter {
         public final int envLocal;        // -1 if no env param
         public final int optMaskLocal;    // -1 if no optMask param
         public final int selfFnLocal;     // -1 if not allocated
+        public int thisLocal = -1;        // >= 0 inside class/interface methods & constructors
+        public WasmObjectSystem.ClassInfo ownerClass; // non-null inside class methods & constructors
+        public int staticArrayLocal = -1; // >= 0 inside static blocks
         public final Map<Integer, VarSlot> vars = new HashMap<>();
         public final List<Map<String, Integer>> nsScopes = new ArrayList<>(); // shadowed namespace-scoped locals
         public final List<String> blockStack = new ArrayList<>(); // structured Wasm block depth tracker
@@ -85,7 +88,10 @@ public final class WasmFuncEmitter {
     private final WasmTypeSystem ts;
     private final WasmRuntimeGen rt;
     private final WasmRuntimeOpsGen ops;
+    private final WasmArrayOpsGen arrOps;
+    private final WasmObjectSystem objects;
     private final WasmCallEmitter calls;
+    private final WasmMemberEmitter members;
     private EmitCtx ctx;
 
     public WasmFuncEmitter(WasmProgramLinker linker, WasmCallEmitter calls) {
@@ -93,11 +99,26 @@ public final class WasmFuncEmitter {
         this.ts = linker.types();
         this.rt = linker.runtime();
         this.ops = linker.ops();
+        this.arrOps = linker.arrays();
+        this.objects = linker.objects();
         this.calls = calls;
+        this.members = new WasmMemberEmitter(linker, this, calls);
     }
 
     public EmitCtx ctx() {
         return ctx;
+    }
+
+    public void setCtx(EmitCtx ctx) {
+        this.ctx = ctx;
+    }
+
+    public WasmMemberEmitter members() {
+        return members;
+    }
+
+    public void emitClassConstructorBody(WasmObjectSystem.ClassInfo ci) {
+        members.emitClassConstructorBody(ci);
     }
 
     // ---------------------------------------------------------------- entry points
@@ -108,11 +129,25 @@ public final class WasmFuncEmitter {
         this.ctx = new EmitCtx(modInfo, null, fn, 0, PrimitiveKind.NONE, -1, -1);
         try {
             WasmCodeBuilder c = ctx.code;
-            // Guard: if state != 0 return null (prevents re-running on static re-import)
+            // Guard: if state != 0 return null (prevents re-running on static re-import / cycles)
             c.globalGet(modInfo.initStateGlobalIdx).if_()
                     .refNull(ts.anyType).return_()
                     .end();
             c.i32Const(1).globalSet(modInfo.initStateGlobalIdx);
+
+            // Pre-create $ModuleVal shell with empty exports array (so cyclic imports see a valid $ModuleVal)
+            String[] exportNames = modInfo.input.hir().exports();
+            int expArrLocal = ctx.newLocal("$modExp", WasmValType.refNull(ts.anyArrType));
+            c.i32Const(exportNames.length).arrayNewDefault(ts.anyArrType).localSet(expArrLocal);
+            c.i32Const(modInfo.index);
+            rt.emitStringLit(c, modInfo.input.displayName());
+            c.localGet(expArrLocal).refAsNonNull();
+            for (String en : exportNames) {
+                rt.emitStringLit(c, en);
+            }
+            c.arrayNewFixed(ts.anyArrType, exportNames.length)
+                    .structNew(ts.moduleValType)
+                    .globalSet(modInfo.modValGlobalIdx);
 
             // Initialize all top-level module globals to $G_UNDEFINED
             for (int g : modInfo.topLevelGlobals.values()) {
@@ -130,6 +165,15 @@ public final class WasmFuncEmitter {
                 emitBoxed(stmts.get(stmts.size() - 1));
                 c.localSet(resLocal);
             }
+
+            // Populate $ModuleVal.exports array from exported top-level globals
+            for (int i = 0; i < exportNames.length; i++) {
+                Integer g = modInfo.topLevelGlobals.get(exportNames[i]);
+                if (g != null) {
+                    c.localGet(expArrLocal).refAsNonNull().i32Const(i).globalGet(g).arraySet(ts.anyArrType);
+                }
+            }
+
             c.i32Const(2).globalSet(modInfo.initStateGlobalIdx);
             c.localGet(resLocal);
         } finally {
@@ -140,6 +184,7 @@ public final class WasmFuncEmitter {
     public void emitFunction(WasmProgramLinker.ModuleLinkInfo modInfo, WasmProgramLinker.FuncInfo fi) {
         HirFunction hf = fi.hir;
         int paramIdx = 0;
+        int thisLocal = fi.hasThisParam ? paramIdx++ : -1;
         int envLocal = fi.hasEnvParam ? paramIdx++ : -1;
         int firstParamIdx = paramIdx;
         paramIdx += hf.params().size();
@@ -147,14 +192,26 @@ public final class WasmFuncEmitter {
 
         EmitCtx prev = this.ctx;
         this.ctx = new EmitCtx(modInfo, fi, fi.directFuncDef, paramIdx, hf.returnKind(), envLocal, optMaskLocal);
+        this.ctx.thisLocal = thisLocal;
+        this.ctx.ownerClass = fi.ownerClass;
         try {
             WasmCodeBuilder c = ctx.code;
 
-            // 1. Register captured variables as fields of $env (fields 3, 4, ...)
-            for (int i = 0; i < hf.capturedVars().size(); i++) {
-                HirVar cv = hf.capturedVars().get(i);
-                int cellType = ts.cellTypeFor(cv.primitiveKind());
-                ctx.vars.put(cv.id(), new VarSlot(-1, cv.primitiveKind(), true, cellType, true, 3 + i));
+            // 1. Register captured variables (from $env closure fields OR $this ownerClass capture fields)
+            if (fi.ownerClass != null) {
+                List<HirVar> clsCaps = fi.ownerClass.hir.capturedVars();
+                for (int i = 0; i < clsCaps.size(); i++) {
+                    HirVar cv = clsCaps.get(i);
+                    int cellType = ts.cellTypeFor(cv.primitiveKind());
+                    ctx.vars.put(cv.id(), new VarSlot(-1, cv.primitiveKind(), true, cellType, true,
+                            fi.ownerClass.captureBaseFieldIdx + i));
+                }
+            } else {
+                for (int i = 0; i < hf.capturedVars().size(); i++) {
+                    HirVar cv = hf.capturedVars().get(i);
+                    int cellType = ts.cellTypeFor(cv.primitiveKind());
+                    ctx.vars.put(cv.id(), new VarSlot(-1, cv.primitiveKind(), true, cellType, true, 3 + i));
+                }
             }
 
             // 2. Evaluate optional parameter defaults when $optMask bit is set (in param order!)
@@ -166,7 +223,6 @@ public final class WasmFuncEmitter {
                         int pLocal = firstParamIdx + i;
                         c.localGet(optMaskLocal).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_AND).if_();
                         ctx.pushBlock("opt_def");
-                        // Make previously bound params visible during default evaluation
                         bindParamSlotIfUnbound(p, pLocal, false);
                         emitAs(p.defaultValue(), p.kind());
                         c.localSet(pLocal);
@@ -198,6 +254,16 @@ public final class WasmFuncEmitter {
 
             // 4. Allocate locals / cells for all declared variables in this function
             for (HirVar v : hf.declaredVars()) {
+                if (thisLocal >= 0 && "this".equals(v.name())) {
+                    if (v.cell()) {
+                        int cellLocal = ctx.newLocal("cell_this", WasmValType.ref(ts.refCellType));
+                        c.localGet(thisLocal).structNew(ts.refCellType).localSet(cellLocal);
+                        ctx.vars.put(v.id(), new VarSlot(cellLocal, PrimitiveKind.NONE, true, ts.refCellType, false, -1));
+                    } else {
+                        ctx.vars.put(v.id(), new VarSlot(thisLocal, PrimitiveKind.NONE, false, -1, false, -1));
+                    }
+                    continue;
+                }
                 allocateLocalVar(v);
             }
 
@@ -250,10 +316,18 @@ public final class WasmFuncEmitter {
             case HirExpr.CoreExceptionRef r -> emitCoreExceptionRef();
             case HirExpr.VarRead v -> emitVarRead(v.var(), v.meta().line());
             case HirExpr.NameRead n -> emitNameRead(n.name(), n.meta().line());
+            case HirExpr.ThisRef t -> emitThisRef(t);
             case HirExpr.RecurseRef r -> emitRecurseRef();
             case HirExpr.Def d -> emitDef(d);
             case HirExpr.VarAssign a -> emitVarAssign(a);
             case HirExpr.NameAssign a -> emitNameAssign(a);
+            case HirExpr.ThisFieldGet g -> members.emitThisFieldGet(g);
+            case HirExpr.ThisFieldAssign a -> members.emitThisFieldAssign(a);
+            case HirExpr.DynamicFieldAssign a -> members.emitDynamicFieldAssign(a);
+            case HirExpr.ArrayCreate ac -> arrOps.emitArrayCreate(this, ac);
+            case HirExpr.ArrayOp ao -> arrOps.emitArrayOp(this, ao);
+            case HirExpr.ModuleExportGet g -> members.emitModuleExportGet(g);
+            case HirExpr.DynamicSelect s -> members.emitDynamicSelect(s);
             case HirExpr.Unary u -> emitUnary(u);
             case HirExpr.Binary b -> emitBinary(b);
             case HirExpr.Logic l -> emitLogic(l);
@@ -269,17 +343,23 @@ public final class WasmFuncEmitter {
             case HirExpr.Return r -> emitReturn(r);
             case HirExpr.Throw t -> emitThrow(t);
             case HirExpr.FunctionRef f -> emitFunctionRef(f);
+            case HirExpr.ClassExpr c -> members.emitClassExpr(c);
+            case HirExpr.InterfaceExpr i -> members.emitInterfaceExpr(i);
+            case HirExpr.RecordNew r -> members.emitRecordNew(r);
             case HirExpr.TypeApply t -> emitBoxed(t.inner());
             case HirExpr.Move m -> emitAndWiden(m.operand());
             case HirExpr.Freeze f -> emitAndWiden(f.operand());
             case HirExpr.SelfRecurseCall c -> calls.emitSelfRecurseCall(c);
             case HirExpr.SelfTailCall c -> calls.emitSelfTailCall(c);
             case HirExpr.DirectBabbleCall c -> calls.emitDirectBabbleCall(c);
+            case HirExpr.DirectThisMethodCall c -> members.emitDirectThisMethodCall(c);
+            case HirExpr.InterfaceCall c -> members.emitInterfaceCall(c);
+            case HirExpr.SuperCall c -> members.emitSuperCall(c);
+            case HirExpr.SafeCall c -> members.emitSafeCall(c);
             case HirExpr.DynamicCall c -> calls.emitDynamicCall(c);
             case HirExpr.MakeOverloadSet m -> calls.emitMakeOverloadSet(m);
             case HirExpr.OverloadSelect s -> calls.emitOverloadSelect(s);
             case HirExpr.OverloadDispatch d -> calls.emitOverloadDispatch(d);
-            case HirExpr.DynamicSelect s -> emitDynamicSelect(s);
             case HirExpr.CoreMethodCall c -> emitCoreMethodCall(c);
             case HirExpr.JavaMethodCall j -> calls.emitPortableJavaMethodCall(j);
             case HirExpr.JavaConstructorCall j -> calls.emitPortableJavaConstructorCall(j);
@@ -476,8 +556,13 @@ public final class WasmFuncEmitter {
         }
         WasmCodeBuilder c = ctx.code;
         if (slot.isCapturedField()) {
-            c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
-                    .structGet(slot.cellTypeIdx(), 0);
+            if (ctx.ownerClass != null) {
+                c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                        .structGet(slot.cellTypeIdx(), 0);
+            } else {
+                c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
+                        .structGet(slot.cellTypeIdx(), 0);
+            }
         } else if (slot.isCell()) {
             c.localGet(slot.localIdx()).structGet(slot.cellTypeIdx(), 0);
         } else {
@@ -487,6 +572,22 @@ public final class WasmFuncEmitter {
             emitUndefinedCheck(v.name(), line);
         }
         ctx.stackKind = slot.kind();
+    }
+
+    private void emitThisRef(HirExpr.ThisRef t) {
+        WasmCodeBuilder c = ctx.code;
+        if (t.var() != null && ctx.vars.containsKey(t.var().id())) {
+            emitVarRead(t.var(), t.meta().line());
+            return;
+        }
+        if (ctx.thisLocal >= 0) {
+            c.localGet(ctx.thisLocal);
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
+        rt.emitStringLit(c, "this used outside of class or interface");
+        c.i32Const(t.meta().line()).call(rt.fnThrowMsg).unreachable();
+        ctx.stackKind = PrimitiveKind.NONE;
     }
 
     private void emitUndefinedCheck(String name, int line) {
@@ -555,14 +656,76 @@ public final class WasmFuncEmitter {
             c.refNull(ts.anyType);
         } else if (ctx.funcInfo.hasEnvParam) {
             c.localGet(ctx.envLocal);
-        } else {
+        } else if (ctx.funcInfo.singletonGlobalIdx >= 0) {
             c.globalGet(ctx.funcInfo.singletonGlobalIdx).refAsNonNull();
+        } else {
+            c.refNull(ts.anyType);
         }
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
     private void emitDef(HirExpr.Def d) {
         WasmCodeBuilder c = ctx.code;
+        if (d.target() != null) {
+            switch (d.target().kind()) {
+                case REQUIRED, DEFAULT -> {
+                    c.refNull(ts.anyType);
+                    ctx.stackKind = PrimitiveKind.NONE;
+                    return;
+                }
+                case MEMBER -> {
+                    WasmObjectSystem.ClassInfo ci = ctx.ownerClass;
+                    int mIdx = d.target().index();
+                    if (ci == null || mIdx < 0 || mIdx >= ci.memberToStructField.length || ci.memberToStructField[mIdx] < 0) {
+                        // Method declaration (already compiled as class method): no-op at runtime
+                        c.refNull(ts.anyType);
+                        ctx.stackKind = PrimitiveKind.NONE;
+                        return;
+                    }
+                    int fi = ci.memberToStructField[mIdx];
+                    PrimitiveKind fk = ci.memberKinds[mIdx];
+                    if (!ci.fieldMutable[mIdx]) {
+                        // Strictly immutable record field already initialized in struct.new
+                        c.localGet(ctx.thisLocal).refAsNonNull().structGet(ci.structTypeIdx, fi);
+                        ctx.stackKind = fk;
+                        return;
+                    }
+                    if (d.value() != null) {
+                        emitAs(d.value(), fk);
+                    } else {
+                        ts.emitDefaultValue(c, ts.valTypeFor(fk));
+                    }
+                    int valTmp = ctx.newLocal("$mDefVal", ts.valTypeFor(fk));
+                    c.localTee(valTmp);
+                    c.localGet(ctx.thisLocal).refAsNonNull().localGet(valTmp).structSet(ci.structTypeIdx, fi);
+                    if (ci.defMaskFieldIdx >= 0 && mIdx < ci.hir.primDefBits().length && ci.hir.primDefBits()[mIdx] >= 0) {
+                        int bit = 1 << ci.hir.primDefBits()[mIdx];
+                        c.localGet(ctx.thisLocal).refAsNonNull()
+                                .localGet(ctx.thisLocal).refAsNonNull().structGet(ci.structTypeIdx, ci.defMaskFieldIdx)
+                                .i32Const(bit).op(WasmInstr.SimpleOp.I32_OR)
+                                .structSet(ci.structTypeIdx, ci.defMaskFieldIdx);
+                    }
+                    ctx.stackKind = fk;
+                    return;
+                }
+                case STATIC -> {
+                    if (d.value() != null) {
+                        emitBoxed(d.value());
+                    } else {
+                        c.refNull(ts.anyType);
+                    }
+                    int stTmp = ctx.newLocal("$stDefVal", ts.anyRef());
+                    c.localTee(stTmp);
+                    if (ctx.staticArrayLocal >= 0 && d.target().index() >= 0) {
+                        c.localGet(ctx.staticArrayLocal).refAsNonNull()
+                                .i32Const(d.target().index()).localGet(stTmp).arraySet(ts.anyArrType);
+                    }
+                    ctx.stackKind = PrimitiveKind.NONE;
+                    return;
+                }
+                case LEXICAL -> { /* fall through below */ }
+            }
+        }
         if (d.var() != null) {
             allocateLocalVar(d.var());
             VarSlot slot = ctx.vars.get(d.var().id());
@@ -611,10 +774,17 @@ public final class WasmFuncEmitter {
         WasmCodeBuilder c = ctx.code;
         int tmp = ctx.newLocal("$stTmp", ts.valTypeFor(slot.kind()));
         if (slot.isCapturedField()) {
-            c.localSet(tmp)
-                    .localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
-                    .localGet(tmp).structSet(slot.cellTypeIdx(), 0)
-                    .localGet(tmp);
+            if (ctx.ownerClass != null) {
+                c.localSet(tmp)
+                        .localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx())
+                        .localGet(tmp).structSet(slot.cellTypeIdx(), 0)
+                        .localGet(tmp);
+            } else {
+                c.localSet(tmp)
+                        .localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx())
+                        .localGet(tmp).structSet(slot.cellTypeIdx(), 0)
+                        .localGet(tmp);
+            }
         } else if (slot.isCell()) {
             c.localSet(tmp)
                     .localGet(slot.localIdx()).localGet(tmp).structSet(slot.cellTypeIdx(), 0)
@@ -675,8 +845,8 @@ public final class WasmFuncEmitter {
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitCompoundValue(PrimitiveKind lhsKind, Runnable emitLhs, String assignOp, HirExpr rhs,
-                                   String lhsText, String rhsText, int line) {
+    public void emitCompoundValue(PrimitiveKind lhsKind, Runnable emitLhs, String assignOp, HirExpr rhs,
+                                  String lhsText, String rhsText, int line) {
         HirExpr.BinaryOp binOp = switch (assignOp) {
             case "+", "+=" -> HirExpr.BinaryOp.ADD;
             case "-", "-=" -> HirExpr.BinaryOp.SUB;
@@ -950,40 +1120,73 @@ public final class WasmFuncEmitter {
     private void emitIs(HirExpr.Is i) {
         WasmCodeBuilder c = ctx.code;
         emitBoxed(i.left());
+        int valLocal = ctx.newLocal("$isVal", ts.anyRef());
+        c.localSet(valLocal);
+        if (objects.emitNominalIsCheck(c, valLocal, i.target(), i.intersectionTargets())) {
+            ctx.stackKind = PrimitiveKind.BOOL;
+            return;
+        }
         if (i.builtin() != null) {
             int bid = WasmRuntimeOpsGen.builtinId(i.builtin());
             if (bid >= 0) {
-                c.i32Const(bid).call(ops.fnIsBuiltin);
+                c.localGet(valLocal).i32Const(bid).call(ops.fnIsBuiltin);
                 ctx.stackKind = PrimitiveKind.BOOL;
                 return;
             }
         }
-        // Descriptor fallback for builtin names
         if (i.descriptor() != null) {
             int bid = WasmRuntimeOpsGen.builtinId(i.descriptor());
             if (bid >= 0) {
-                c.i32Const(bid).call(ops.fnIsBuiltin);
+                c.localGet(valLocal).i32Const(bid).call(ops.fnIsBuiltin);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return;
+            }
+            if (i.descriptor().startsWith("array|") || "array".equals(i.descriptor())) {
+                c.localGet(valLocal).refTest(ts.arrayBaseType);
                 ctx.stackKind = PrimitiveKind.BOOL;
                 return;
             }
         }
-        c.drop().i32Const(0);
+        c.i32Const(0);
         ctx.stackKind = PrimitiveKind.BOOL;
     }
 
     private void emitAsExpr(HirExpr.As a) {
         WasmCodeBuilder c = ctx.code;
         String desc = a.targetDescriptor();
+        boolean nullable = desc != null && (desc.endsWith("?") || desc.startsWith("nullable|"));
+        if (a.target() != null) {
+            emitBoxed(a.left());
+            int tmp = ctx.newLocal("$asTmp", ts.anyRef());
+            c.localSet(tmp);
+            if (nullable) {
+                c.localGet(tmp).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                ctx.pushBlock("as_nn");
+            }
+            objects.emitNominalIsCheck(c, tmp, a.target(), List.of());
+            c.op(WasmInstr.SimpleOp.I32_EQZ).if_();
+            rt.emitStringLit(c, "Cannot cast to " + (desc != null ? desc : a.target().typeId()));
+            c.i32Const(a.meta().line()).call(rt.fnThrowMsg).unreachable().end();
+            if (nullable) {
+                ctx.popBlock();
+                c.end();
+            }
+            c.localGet(tmp);
+            ctx.stackKind = PrimitiveKind.NONE;
+            if (a.meta().kind().isPrimitive()) {
+                convertStack(PrimitiveKind.NONE, a.meta().kind(), a.meta().line());
+            }
+            return;
+        }
         if (desc != null) {
-            boolean nullable = desc.endsWith("?");
-            String base = nullable ? desc.substring(0, desc.length() - 1) : desc;
+            String base = desc.endsWith("?") ? desc.substring(0, desc.length() - 1) : desc;
             int bid = WasmRuntimeOpsGen.builtinId(base);
             if (bid >= 0) {
                 emitBoxed(a.left());
                 int tmp = ctx.newLocal("$asTmp", ts.anyRef());
-                c.localTee(tmp);
+                c.localSet(tmp);
                 if (nullable) {
-                    c.refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                    c.localGet(tmp).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_();
                     ctx.pushBlock("as_nn");
                 }
                 c.localGet(tmp).i32Const(bid).call(ops.fnIsBuiltin).op(WasmInstr.SimpleOp.I32_EQZ).if_();
@@ -1386,8 +1589,20 @@ public final class WasmFuncEmitter {
             c.i32Const(1);
             return;
         }
-        if (target.catchesBabble() && (target.babbleTargets() == null || target.babbleTargets().isEmpty())) {
-            c.localGet(exnValLocal).refTest(ts.babbleExnType);
+        boolean hasTargets = target.babbleTargets() != null && !target.babbleTargets().isEmpty();
+        if (hasTargets) {
+            boolean first = true;
+            for (LoweringTargets.IsTarget bt : target.babbleTargets()) {
+                objects.emitNominalIsCheck(c, exnValLocal, bt, List.of());
+                if (!first) {
+                    c.op(WasmInstr.SimpleOp.I32_OR);
+                }
+                first = false;
+            }
+            if (target.typeDescriptor() != null && target.typeDescriptor().contains("exception")) {
+                c.localGet(exnValLocal).refTest(ts.babbleExnType)
+                        .op(WasmInstr.SimpleOp.I32_OR);
+            }
             return;
         }
         if (target.typeDescriptor() != null) {
@@ -1397,12 +1612,11 @@ public final class WasmFuncEmitter {
                 return;
             }
         }
-        // Fallback: match BabbleException if catchesBabble
         if (target.catchesBabble()) {
             c.localGet(exnValLocal).refTest(ts.babbleExnType);
-        } else {
-            c.i32Const(1);
+            return;
         }
+        c.i32Const(1);
     }
 
     private void emitTryBodyScoped(HirExpr.Try t, PrimitiveKind resKind) {
@@ -1497,7 +1711,11 @@ public final class WasmFuncEmitter {
                 throw new IllegalStateException("Missing captured variable slot : " + cv);
             }
             if (slot.isCapturedField()) {
-                c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx());
+                if (ctx.ownerClass != null) {
+                    c.localGet(ctx.thisLocal).refAsNonNull().structGet(ctx.ownerClass.structTypeIdx, slot.captureFieldIdx());
+                } else {
+                    c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx());
+                }
             } else if (slot.isCell()) {
                 c.localGet(slot.localIdx());
             } else {
@@ -1512,38 +1730,7 @@ public final class WasmFuncEmitter {
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
-    // ---------------------------------------------------------------- member select & core methods (exception / string basics in P1)
-
-    private void emitDynamicSelect(HirExpr.DynamicSelect s) {
-        WasmCodeBuilder c = ctx.code;
-        emitBoxed(s.receiver());
-        int recv = ctx.newLocal("$selRecv", ts.anyRef());
-        c.localTee(recv);
-        if (s.safe()) {
-            c.refIsNull().if_(ts.anyRef()).refNull(ts.anyType).else_();
-            ctx.pushBlock("safe_sel");
-        } else {
-            c.refIsNull().if_();
-            rt.emitStringLit(c, "Null receiver for ." + s.memberName());
-            c.i32Const(s.meta().line()).call(rt.fnThrowMsg).unreachable().end();
-        }
-        // Handle BabbleException properties: message, cause, suppressed
-        if ("message".equals(s.memberName()) || "cause".equals(s.memberName())) {
-            c.localGet(recv).refTest(ts.babbleExnType).if_(ts.anyRef())
-                    .localGet(recv).refCast(ts.babbleExnType)
-                    .structGet(ts.babbleExnType, "message".equals(s.memberName()) ? 0 : 1)
-                    .else_()
-                    .refNull(ts.anyType)
-                    .end();
-        } else {
-            c.refNull(ts.anyType);
-        }
-        if (s.safe()) {
-            ctx.popBlock();
-            c.end();
-        }
-        ctx.stackKind = PrimitiveKind.NONE;
-    }
+    // ---------------------------------------------------------------- core methods (exception / string basics)
 
     private void emitCoreMethodCall(HirExpr.CoreMethodCall call) {
         WasmCodeBuilder c = ctx.code;

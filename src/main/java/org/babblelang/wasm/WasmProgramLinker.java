@@ -1,30 +1,40 @@
 package org.babblelang.wasm;
 
 import org.babblelang.analysis.CompilationTarget;
-import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
+import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 import org.babblelang.ir.hir.HirVar;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Whole-program closed-world linker from {@link HirModule}s to a single WebAssembly 3.0
- * {@link WasmModule} ({@code BIP025-P1}, {@code BIP025-D3}).
+ * {@link WasmModule} ({@code BIP025-P1}, {@code BIP025-P2}, {@code BIP025-D3}).
  *
- * <p>Resolves module globals, function declarations, closure struct layouts, generic call
- * trampolines, module initialization guards, and entry-point exports.
+ * <p>Resolves module globals, {@code $ModuleVal} exports, classes/records/objects, interfaces
+ * &amp; typed {@code $ITable_I}s, functions &amp; closures, generic call trampolines, module
+ * initialization guards, and entry-point exports.
  */
 public final class WasmProgramLinker {
-    public record ModuleInput(String key, String displayName, HirModule hir) {
+    public record ModuleInput(String key, String displayName, HirModule hir, Map<String, String> staticImports) {
+        public ModuleInput {
+            staticImports = staticImports != null ? Map.copyOf(staticImports) : Map.of();
+        }
+
+        public ModuleInput(String key, String displayName, HirModule hir) {
+            this(key, displayName, hir, Map.of());
+        }
     }
 
-    /** Metadata for one compiled Babble function in the linked Wasm module. */
+    /** Metadata for one compiled Babble function, class method, or interface default method. */
     public static final class FuncInfo {
         public final int moduleIndex;
         public final HirFunction hir;
@@ -32,42 +42,57 @@ public final class WasmProgramLinker {
         public final WasmModule.FuncDef directFuncDef;
         public final int genericFuncIdx;
         public final WasmModule.FuncDef genericFuncDef;
-        public final int closureStructType; // -1 if capture-free (uses $FnBase)
-        public final int singletonGlobalIdx; // >= 0 if capture-free (zero-alloc FunctionRef)
+        public final int closureStructType; // -1 if capture-free (uses $FnBase) or class/interface method
+        public final int singletonGlobalIdx; // >= 0 if capture-free standalone function
         public final List<WasmValType> captureFieldTypes;
         public final boolean hasEnvParam;
+        public final boolean hasThisParam;
+        public final WasmObjectSystem.ClassInfo ownerClass; // non-null for class/record/object methods
+        public final boolean isInterfaceDefault;
         public final boolean hasOptMaskParam;
 
         FuncInfo(int moduleIndex, HirFunction hir, WasmModule.FuncDef directFuncDef,
                  WasmModule.FuncDef genericFuncDef, int closureStructType, int singletonGlobalIdx,
-                 List<WasmValType> captureFieldTypes, boolean hasEnvParam, boolean hasOptMaskParam) {
+                 List<WasmValType> captureFieldTypes, boolean hasEnvParam, boolean hasThisParam,
+                 WasmObjectSystem.ClassInfo ownerClass, boolean isInterfaceDefault, boolean hasOptMaskParam) {
             this.moduleIndex = moduleIndex;
             this.hir = hir;
             this.directFuncIdx = directFuncDef.funcIndex();
             this.directFuncDef = directFuncDef;
-            this.genericFuncIdx = genericFuncDef.funcIndex();
+            this.genericFuncIdx = genericFuncDef != null ? genericFuncDef.funcIndex() : -1;
             this.genericFuncDef = genericFuncDef;
             this.closureStructType = closureStructType;
             this.singletonGlobalIdx = singletonGlobalIdx;
             this.captureFieldTypes = List.copyOf(captureFieldTypes);
             this.hasEnvParam = hasEnvParam;
+            this.hasThisParam = hasThisParam;
+            this.ownerClass = ownerClass;
+            this.isInterfaceDefault = isInterfaceDefault;
             this.hasOptMaskParam = hasOptMaskParam;
         }
     }
 
-    /** Per-module linked state: top-level globals, init function, and function table. */
+    /** Per-module linked state: top-level globals, ModuleVal, init function, and function table. */
     public static final class ModuleLinkInfo {
         public final int index;
         public final ModuleInput input;
         public final Map<String, Integer> topLevelGlobals = new LinkedHashMap<>();
         public final Map<Integer, FuncInfo> functions = new LinkedHashMap<>();
+        public final Set<Integer> interfaceDefaultFuncIds = new HashSet<>();
         public int initStateGlobalIdx; // 0 = uninit, 1 = initing, 2 = done
+        public int modValGlobalIdx;    // (mut (ref null $ModuleVal))
         public int initFuncIdx;
         public WasmModule.FuncDef initFuncDef;
 
         ModuleLinkInfo(int index, ModuleInput input) {
             this.index = index;
             this.input = input;
+            for (HirInterface hi : input.hir().interfaces().values()) {
+                interfaceDefaultFuncIds.addAll(hi.defaultFunctionIds().values());
+                for (List<Integer> ids : hi.defaultOverloadFunctionIds().values()) {
+                    interfaceDefaultFuncIds.addAll(ids);
+                }
+            }
         }
     }
 
@@ -77,6 +102,8 @@ public final class WasmProgramLinker {
     private final WasmTypeSystem ts;
     private final WasmRuntimeGen rt;
     private final WasmRuntimeOpsGen ops;
+    private final WasmArrayOpsGen arrOps;
+    private final WasmObjectSystem objects;
     private final List<ModuleLinkInfo> linkedModules = new ArrayList<>();
     private final Map<String, ModuleLinkInfo> modulesByKey = new LinkedHashMap<>();
     private final WasmModule.FuncDef fnInitSingletonsDef;
@@ -89,6 +116,10 @@ public final class WasmProgramLinker {
         this.ts = new WasmTypeSystem(mod, target);
         this.rt = new WasmRuntimeGen(mod, ts, target);
         this.ops = new WasmRuntimeOpsGen(mod, ts, rt, target);
+        this.arrOps = new WasmArrayOpsGen(mod, ts, rt);
+        this.rt.emitPolymorphicHelpers(arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat);
+        this.objects = new WasmObjectSystem(this);
+        this.ops.emitClassofWithTable(objects.gClassVals);
         this.fnInitSingletonsDef = mod.addFunction("init_fn_singletons", ts.internFuncType(List.of(), List.of()));
     }
 
@@ -114,6 +145,14 @@ public final class WasmProgramLinker {
         return ops;
     }
 
+    public WasmArrayOpsGen arrays() {
+        return arrOps;
+    }
+
+    public WasmObjectSystem objects() {
+        return objects;
+    }
+
     public CompilationTarget target() {
         return target;
     }
@@ -127,7 +166,7 @@ public final class WasmProgramLinker {
     }
 
     private void build() {
-        // Phase 1: Declare module globals, closure struct types, and Wasm function signatures for all modules
+        // Phase 1a: Create ModuleLinkInfo shells and top-level globals for every module
         for (int m = 0; m < inputs.size(); m++) {
             ModuleInput in = inputs.get(m);
             ModuleLinkInfo info = new ModuleLinkInfo(m, in);
@@ -137,14 +176,21 @@ public final class WasmProgramLinker {
 
             info.initStateGlobalIdx = mod.addGlobal("M" + m + "_state", WasmValType.I32, true,
                     List.of(new WasmInstr.I32Const(0)));
+            info.modValGlobalIdx = mod.addGlobal("M" + m + "_mod", WasmValType.refNull(ts.moduleValType), true,
+                    ts.defaultConstExpr(WasmValType.refNull(ts.moduleValType)));
 
-            // Declare globals for all top-level names (initialized to $G_UNDEFINED at module init)
             for (String name : in.hir().topLevelDeclaredNames()) {
                 int g = mod.addGlobal("M" + m + "_g_" + sanitizeName(name), ts.anyRef(), true,
                         ts.defaultConstExpr(ts.anyRef()));
                 info.topLevelGlobals.put(name, g);
             }
-            // Also scan top-level statements for any Def whose name isn't in topLevelDeclaredNames
+            for (String exp : in.hir().exports()) {
+                if (!info.topLevelGlobals.containsKey(exp)) {
+                    int g = mod.addGlobal("M" + m + "_g_" + sanitizeName(exp), ts.anyRef(), true,
+                            ts.defaultConstExpr(ts.anyRef()));
+                    info.topLevelGlobals.put(exp, g);
+                }
+            }
             for (HirExpr stmt : in.hir().topLevelStatements()) {
                 if (stmt instanceof HirExpr.Def d && d.var() == null && !info.topLevelGlobals.containsKey(d.name())) {
                     int g = mod.addGlobal("M" + m + "_g_" + sanitizeName(d.name()), ts.anyRef(), true,
@@ -153,18 +199,22 @@ public final class WasmProgramLinker {
                 }
             }
 
-            // Declare module init function: () -> (ref null $Any) (returns value of last top-level expression)
             int initSig = ts.internFuncType(List.of(), List.of(ts.anyRef()));
             info.initFuncDef = mod.addFunction("M" + m + "_init", initSig);
             info.initFuncIdx = info.initFuncDef.funcIndex();
+        }
 
-            // Declare all HirFunctions in this module
-            for (HirFunction fn : in.hir().functions().values()) {
+        // Phase 1b: Declare all interfaces, classes, records, objects, bitsets & itables globally
+        objects.declareAll(linkedModules);
+
+        // Phase 1c: Declare all functions, class methods, and interface default methods
+        for (ModuleLinkInfo info : linkedModules) {
+            for (HirFunction fn : info.input.hir().functions().values()) {
                 declareFunction(info, fn);
             }
         }
 
-        // Phase 2: Emit all function bodies and generic trampolines
+        // Phase 2: Emit all function/method bodies, constructors, vtable hooks, itables, and module inits
         WasmCallEmitter callEmitter = new WasmCallEmitter(this);
         WasmFuncEmitter funcEmitter = new WasmFuncEmitter(this, callEmitter);
         callEmitter.setFuncEmitter(funcEmitter);
@@ -172,12 +222,18 @@ public final class WasmProgramLinker {
         for (ModuleLinkInfo info : linkedModules) {
             for (FuncInfo fi : info.functions.values()) {
                 funcEmitter.emitFunction(info, fi);
-                callEmitter.emitGenericTrampoline(info, fi);
+                if (fi.genericFuncDef != null) {
+                    callEmitter.emitGenericTrampoline(info, fi);
+                }
             }
+        }
+        objects.emitAll(funcEmitter, callEmitter);
+
+        for (ModuleLinkInfo info : linkedModules) {
             funcEmitter.emitModuleInit(info);
         }
 
-        // Phase 3: Emit entry-point exports (_start, _babble_run, and bare-compatible result/error readers)
+        // Phase 3: Emit entry-point exports (_start, _babble_run, and result/error readers)
         emitEntryPoints();
 
         // Phase 4: Finalize passive UTF-16 string literal segment
@@ -185,11 +241,18 @@ public final class WasmProgramLinker {
     }
 
     private void declareFunction(ModuleLinkInfo modInfo, HirFunction fn) {
+        WasmObjectSystem.ClassInfo ownerClass = fn.ownerClassId() >= 0
+                ? objects.classByLocal(modInfo.index, fn.ownerClassId()) : null;
+        boolean isIfaceDefault = ownerClass == null && modInfo.interfaceDefaultFuncIds.contains(fn.id());
+        boolean hasThis = ownerClass != null || isIfaceDefault;
+
         List<WasmValType> capTypes = new ArrayList<>();
-        for (HirVar cv : fn.capturedVars()) {
-            capTypes.add(WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
+        if (!hasThis) {
+            for (HirVar cv : fn.capturedVars()) {
+                capTypes.add(WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
+            }
         }
-        boolean hasEnv = !capTypes.isEmpty();
+        boolean hasEnv = !hasThis && !capTypes.isEmpty();
         int closureType = -1;
         if (hasEnv) {
             closureType = ts.addClosureType("M" + modInfo.index + "_Clos_" + fn.id(), capTypes);
@@ -198,7 +261,13 @@ public final class WasmProgramLinker {
         boolean hasOptMask = fn.hasOptionalMask();
         List<WasmValType> params = new ArrayList<>();
         List<String> paramNames = new ArrayList<>();
-        if (hasEnv) {
+        if (ownerClass != null) {
+            params.add(WasmValType.ref(ownerClass.structTypeIdx));
+            paramNames.add("$this");
+        } else if (isIfaceDefault) {
+            params.add(WasmValType.ref(ts.objectType));
+            paramNames.add("$this");
+        } else if (hasEnv) {
             params.add(WasmValType.ref(closureType));
             paramNames.add("$env");
         }
@@ -216,24 +285,27 @@ public final class WasmProgramLinker {
         String fnLabel = "M" + modInfo.index + "_fn" + fn.id()
                 + (fn.name() != null && !fn.name().isEmpty() ? "_" + sanitizeName(fn.name()) : "");
         WasmModule.FuncDef directDef = mod.addFunction(fnLabel, directSig, paramNames);
-        WasmModule.FuncDef genericDef = mod.addFunction(fnLabel + "$generic", ts.genericCallSigType,
-                List.of("self", "args", "names"));
-        mod.declareFuncRef(genericDef.funcIndex());
 
+        WasmModule.FuncDef genericDef = null;
         int singletonGlobal = -1;
-        if (!hasEnv) {
-            singletonGlobal = mod.addGlobal("G_" + fnLabel, WasmValType.refNull(ts.fnBaseType), true,
-                    ts.defaultConstExpr(WasmValType.refNull(ts.fnBaseType)));
-            WasmCodeBuilder init = fnInitSingletonsDef.code();
-            init.refFunc(genericDef.funcIndex());
-            rt.emitStringLit(init, fn.name() != null && !fn.name().isEmpty() ? fn.name() : "<fn>");
-            init.i32Const(fn.id())
-                    .structNew(ts.fnBaseType)
-                    .globalSet(singletonGlobal);
+        if (!hasThis) {
+            genericDef = mod.addFunction(fnLabel + "$generic", ts.genericCallSigType,
+                    List.of("self", "args", "names"));
+            mod.declareFuncRef(genericDef.funcIndex());
+            if (!hasEnv) {
+                singletonGlobal = mod.addGlobal("G_" + fnLabel, WasmValType.refNull(ts.fnBaseType), true,
+                        ts.defaultConstExpr(WasmValType.refNull(ts.fnBaseType)));
+                WasmCodeBuilder init = fnInitSingletonsDef.code();
+                init.refFunc(genericDef.funcIndex());
+                rt.emitStringLit(init, fn.name() != null && !fn.name().isEmpty() ? fn.name() : "<fn>");
+                init.i32Const(fn.id())
+                        .structNew(ts.fnBaseType)
+                        .globalSet(singletonGlobal);
+            }
         }
 
         FuncInfo fi = new FuncInfo(modInfo.index, fn, directDef, genericDef, closureType, singletonGlobal,
-                capTypes, hasEnv, hasOptMask);
+                capTypes, hasEnv, hasThis, ownerClass, isIfaceDefault, hasOptMask);
         modInfo.functions.put(fn.id(), fi);
     }
 
@@ -242,40 +314,38 @@ public final class WasmProgramLinker {
         int tI32 = ts.internFuncType(List.of(), List.of(WasmValType.I32));
         int tI32ToI32 = ts.internFuncType(List.of(WasmValType.I32), List.of(WasmValType.I32));
 
-        // 1. Exported _start(): initializes strings/builtins/singletons and executes entry module (uncaught exn propagates!)
         WasmModule.FuncDef startFn = mod.addFunction("_start", tVoid);
         WasmCodeBuilder sc = startFn.code();
         sc.call(rt.fnInitStrings)
                 .call(ops.fnInitBuiltins)
+                .call(arrOps.fnInitArrayTypes)
+                .call(objects.fnInitObjects)
                 .call(fnInitSingletonsDef.funcIndex());
         if (!linkedModules.isEmpty()) {
             sc.call(linkedModules.get(0).initFuncIdx).globalSet(rt.gLastResult);
         }
         mod.addExport("_start", WasmModule.ExportKind.FUNC, startFn.funcIndex());
 
-        // 2. Exported _babble_run() -> i32: runs _start catching $babble_exn (returns 0 on ok, 1 on uncaught Babble exception).
-        // Stores formatted error in G_LAST_ERROR so both wasm-js and zero-import wasm-bare runners can inspect it cleanly!
         WasmModule.FuncDef runFn = mod.addFunction("_babble_run", tI32);
         int exnVal = runFn.addLocal("exnVal", ts.anyRef(), 0);
         int exnLine = runFn.addLocal("exnLine", WasmValType.I32, 0);
         WasmCodeBuilder rc = runFn.code();
         rc.refNull(ts.stringType).globalSet(rt.gLastError);
-        rc.block(WasmValType.I32) // $done -> i32
-                .blockType(ts.exnCatchPairType) // $catch -> ((ref $Any), i32)
+        rc.block(WasmValType.I32)
+                .blockType(ts.exnCatchPairType)
                 .tryTable(List.of(WasmInstr.CatchClause.catchTag(rt.babbleExnTag, 0)))
                 .call(startFn.funcIndex())
                 .end()
                 .i32Const(0)
-                .br(1) // br $done with 0 (OK)
-                .end() // $catch
+                .br(1)
+                .end()
                 .localSet(exnLine)
                 .localSet(exnVal)
                 .localGet(exnVal).call(rt.fnFormat).globalSet(rt.gLastError)
                 .i32Const(1)
-                .end(); // $done
+                .end();
         mod.addExport("_babble_run", WasmModule.ExportKind.FUNC, runFn.funcIndex());
 
-        // 3. Bare-compatible string readers for formatted result & last error (zero host imports!)
         WasmModule.FuncDef resStrLen = mod.addFunction("_babble_result_len", tI32);
         resStrLen.code().globalGet(rt.gLastResult).call(rt.fnFormat)
                 .structGet(ts.stringType, 0).arrayLen();
@@ -299,7 +369,6 @@ public final class WasmProgramLinker {
                 .structGet(ts.stringType, 0).localGet(0).arrayGetU(ts.charArrType);
         mod.addExport("_babble_error_char", WasmModule.ExportKind.FUNC, errStrChar.funcIndex());
 
-        // 4. On wasm-js, also export formatted result/error as externref JS strings for zero-loop interop
         if (target == CompilationTarget.WASM_JS) {
             int tExt = ts.internFuncType(List.of(), List.of(WasmValType.EXTERNREF));
             WasmModule.FuncDef resJs = mod.addFunction("_babble_result_js", tExt);

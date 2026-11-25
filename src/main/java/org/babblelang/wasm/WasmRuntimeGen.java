@@ -104,6 +104,10 @@ public final class WasmRuntimeGen {
     public final int fnAssert;
     public final int fnPrint;
 
+    private final WasmModule.FuncDef dEqualsDef;
+    private final WasmModule.FuncDef dHashCodeDef;
+    private final WasmModule.FuncDef dFormatDef;
+
     // Common interned strings
     public final int sNull;
     public final int sTrue;
@@ -344,6 +348,10 @@ public final class WasmRuntimeGen {
         emitUnboxBool(dUnboxBool);
         emitUnboxChar(dUnboxChar);
 
+        this.dEqualsDef = dEquals;
+        this.dHashCodeDef = dHashCode;
+        this.dFormatDef = dFormat;
+
         emitF64Compare(dF64Cmp);
         emitF32Compare(dF32Cmp);
         emitTruth(dTruth);
@@ -351,17 +359,21 @@ public final class WasmRuntimeGen {
         emitNumAsLong(dNumAsLong);
         emitNumAsDouble(dNumAsDouble);
         emitWidenNumeric(dWidenNum);
-        emitEquals(dEquals);
         emitSame(dSame);
-        emitHashCode(dHashCode);
         emitCompare(dCompare);
-        emitFormat(dFormat);
 
         emitMakeExn(dMakeExn);
         emitThrowMsg(dThrowMsg);
         emitAddSuppressed(dAddSupp);
         emitAssert(dAssert);
         emitPrint(dPrint);
+    }
+
+    /** Emits {@code equals}, {@code hashCode}, and {@code format} with direct {@code $ArrayBase} hooks ({@code BIP025-P2}). */
+    public void emitPolymorphicHelpers(int fnArrEq, int fnArrHash, int fnArrFmt) {
+        emitEquals(dEqualsDef, fnArrEq);
+        emitHashCode(dHashCodeDef, fnArrHash);
+        emitFormat(dFormatDef, fnArrFmt);
     }
 
     // ---------------------------------------------------------------- string literal pool
@@ -1057,7 +1069,7 @@ public final class WasmRuntimeGen {
 
     // ---------------------------------------------------------------- equals / same / hash / compare / format
 
-    private void emitEquals(WasmModule.FuncDef fn) {
+    private void emitEquals(WasmModule.FuncDef fn, int fnArrEq) {
         WasmCodeBuilder c = fn.code();
         int ra = fn.addLocal("ra", WasmValType.I32, 2);
         int rb = fn.addLocal("rb", WasmValType.I32, 2);
@@ -1117,6 +1129,18 @@ public final class WasmRuntimeGen {
                 .i32Const(0).return_()
                 .end();
 
+        // Arrays (deep structural equality)
+        if (fnArrEq >= 0) {
+            c.localGet(0).refTest(ts.arrayBaseType).if_()
+                    .localGet(1).refTest(ts.arrayBaseType).if_()
+                    .localGet(0).refCast(ts.arrayBaseType)
+                    .localGet(1).refCast(ts.arrayBaseType)
+                    .call(fnArrEq).return_()
+                    .end()
+                    .i32Const(0).return_()
+                    .end();
+        }
+
         // Babble $Object custom/record equalsFn
         c.localGet(0).refTest(ts.objectType).if_()
                 .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0)
@@ -1153,7 +1177,7 @@ public final class WasmRuntimeGen {
         c.i32Const(0);
     }
 
-    private void emitHashCode(WasmModule.FuncDef fn) {
+    private void emitHashCode(WasmModule.FuncDef fn, int fnArrHash) {
         WasmCodeBuilder c = fn.code();
         int r = fn.addLocal("r", WasmValType.I32, 1);
         int l = fn.addLocal("l", WasmValType.I64, 1);
@@ -1186,6 +1210,10 @@ public final class WasmRuntimeGen {
                 .localGet(0).refCast(ts.boxBoolType).structGet(ts.boxBoolType, 0).select().return_().end();
         c.localGet(0).refTest(ts.boxCharType).if_()
                 .localGet(0).refCast(ts.boxCharType).structGet(ts.boxCharType, 0).return_().end();
+        if (fnArrHash >= 0) {
+            c.localGet(0).refTest(ts.arrayBaseType).if_()
+                    .localGet(0).refCast(ts.arrayBaseType).call(fnArrHash).return_().end();
+        }
         c.localGet(0).refTest(ts.objectType).if_()
                 .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0)
                 .structGet(ts.vtableType, 7).localTee(hFn)
@@ -1249,7 +1277,7 @@ public final class WasmRuntimeGen {
                 .localGet(4).call(fnThrowMsg).unreachable();
     }
 
-    private void emitFormat(WasmModule.FuncDef fn) {
+    private void emitFormat(WasmModule.FuncDef fn, int fnArrFmt) {
         WasmCodeBuilder c = fn.code();
         int toStrFn = fn.addLocal("toStrFn", WasmValType.refNull(ts.toStrFnSigType), 1);
 
@@ -1288,6 +1316,11 @@ public final class WasmRuntimeGen {
                 .end();
         emitStringLit(c, "exception");
         c.return_().end();
+
+        if (fnArrFmt >= 0) {
+            c.localGet(0).refTest(ts.arrayBaseType).if_()
+                    .localGet(0).refCast(ts.arrayBaseType).call(fnArrFmt).return_().end();
+        }
 
         c.localGet(0).refTest(ts.objectType).if_()
                 .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0)
