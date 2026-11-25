@@ -382,7 +382,7 @@ public final class LoweringTargets {
     ) {
     }
 
-    /** Direct compiled Babble class/record field read target ({@code BIP014-I4}, {@code BIP034-P3}). */
+    /** Direct compiled Babble class/record field read target ({@code BIP014-I4}, {@code BIP034-I3}). */
     public record ClassFieldTarget(
             String classTypeId,
             String memberName,

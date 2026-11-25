@@ -1,6 +1,6 @@
 # Immutable def and mutable var across all declaration sites
 
-References : `BIP034-P1` (`BIP034-D1` through `BIP034-D11`), `BlockScopes`, `TypeChecks`, `ClassShape`, `Slot`, `Members`.
+References : `BIP034-I1` (`BIP034-D1` through `BIP034-D11`), `BlockScopes`, `TypeChecks`, `ClassShape`, `Slot`, `Members`.
 
 ## Local and top-level var mutation and def immutability
 

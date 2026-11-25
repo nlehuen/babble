@@ -1,6 +1,6 @@
-# BIP034-P2 : EffectChecker precision for def vs var and REPL determinism soundness
+# BIP034-I2 : EffectChecker precision for def vs var and REPL determinism soundness
 
-References : `BIP034-P2`, `EffectBodyWalker`, `EffectChecker`, `AnalysisSession`.
+References : `BIP034-I2`, `EffectBodyWalker`, `EffectChecker`, `AnalysisSession`.
 
 ## Regular class def vs var fields : pure def getter and mut bump
 

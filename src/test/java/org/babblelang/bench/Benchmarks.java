@@ -51,7 +51,7 @@ public final class Benchmarks {
                 def rng: raytracer.Rng = raytracer.Rng(2026)
                 def world: raytracer.Hittable = raytracer.BVHNode.fromList(raytracer.Scenes.finalScene(rng: rng, gridRadius: 11))
                 def cam: raytracer.Camera = raytracer.Camera(aspectRatio: 16.0 / 9.0, imageWidth: 64, samplesPerPixel: 4, maxDepth: 12)
-                def sum: double = 0.0
+                var sum: double = 0.0
                 for j in raytracer.Range(0, cam.imageHeight) then (
                     for i in raytracer.Range(0, cam.imageWidth) then (
                         def c: raytracer.Vec3 = cam.renderPixel(i, j, world, rng)
@@ -92,25 +92,25 @@ public final class Benchmarks {
         scripts.put("fib(25) : calls and arithmetic",
                 "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
         scripts.put("while loop : locals and while",
-                "def loop = fn (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
+                "def loop = fn (n : int) : int -> ( var i = 0 ; var s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
         scripts.put("tail-recursive sum : self tail calls (BIP024)",
                 "def sum = fn (n : int, acc : int) : int -> ( if n == 0 then ( acc ) else ( sum(n - 1, acc + n) ) ) ; sum(300000, 0)");
         scripts.put("Counter.ba closure : captured variables",
-                "def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; def i = 0\n"
+                "def counter = fn () -> ( var c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; var i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
         scripts.put("Stack.ba push/pop : objects and methods",
-                stack + "def l : Stack of int = create() ; def i = 0\n"
+                stack + "def l : Stack of int = create() ; var i = 0\n"
                         + "while i < 20000 then ( l.push(i) ; i = i + 1 )\n"
                         + "while l.size > 0 then ( l.pop() )");
         scripts.put("ArrayList add/get : Java interop",
-                "def l : java.util.ArrayList of int = java.util.ArrayList() ; def i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
-                        + "def s = 0 ; i = 0 ; while i < 20000 then ( s = s + l.get(i) ; i = i + 1 ) ; s");
+                "def l : java.util.ArrayList of int = java.util.ArrayList() ; var i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
+                        + "var s = 0 ; i = 0 ; while i < 20000 then ( s = s + l.get(i) ; i = i + 1 ) ; s");
         // BIP014 optimizer microbenchmarks
         scripts.put("opt : const fold + dead branch + algebraic",
                 "def f = fn (n : int) : int -> (\n"
                         + "    def k = (2 + 3) * (10 - 4)\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0\n"
                         + "    while i < n then (\n"
                         + "        def d = if true then ( (i * 1 + 0) + k ) else ( i * 999 )\n"
                         + "        s = s + d\n"
@@ -123,8 +123,8 @@ public final class Benchmarks {
                 "def sq = fn (x : int) : int -> ( x * x )\n"
                         + "def inc = fn (x : int) : int -> ( x + 1 )\n"
                         + "def run = fn (n : int) : int -> (\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0\n"
                         + "    while i < n then (\n"
                         + "        s = s + sq(inc(i))\n"
                         + "        i = i + 1\n"
@@ -137,8 +137,8 @@ public final class Benchmarks {
                         + "axiom java.lang.Math.sin: fn pure nothrow\n"
                         + "def heavy = fn (x : double) : double -> ( java.lang.Math.sqrt(x * x + 1.0) + java.lang.Math.sin(x) )\n"
                         + "def run = fn (n : int, a : double) : double -> (\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0.0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0.0\n"
                         + "    while i < n then (\n"
                         + "        s = s + heavy(a) + double(i)\n"
                         + "        i = i + 1\n"
@@ -154,8 +154,8 @@ public final class Benchmarks {
                         + "def run = fn (n : int) : double -> (\n"
                         + "    def a = Vec3(1.0, 2.0, 3.0)\n"
                         + "    def b = Vec3(0.5, -0.25, 0.125)\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0.0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0.0\n"
                         + "    while i < n then (\n"
                         + "        def c = a + b\n"
                         + "        s = s + c.dot(a)\n"
@@ -169,8 +169,8 @@ public final class Benchmarks {
                         + "    java.lang.Math.sin(x) + java.lang.Math.cos(x) > 0.0\n"
                         + ")\n"
                         + "def run = fn (a : int, b : int, x : double) : double -> (\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0.0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0.0\n"
                         + "    while i < a * b + 10000 then (\n"
                         + "        def t = java.lang.Math.abs(java.lang.Math.abs(x))\n"
                         + "        if slow(x + i * 1.0) and (i < 10) then ( s = s + t )\n"
@@ -184,9 +184,9 @@ public final class Benchmarks {
                         + "def stepB = fn (x : double) : double -> ( if x > 100.0 then ( x * 0.2 + 2.0 ) else ( x * 0.4 + 2.5 ) )\n"
                         + "def run = fn (n : int, a : fn (double) : double, b : fn (double) : double) : double -> (\n"
                         + "    if n <= 0 then ( return 0.0 )\n"
-                        + "    def i = 0\n"
-                        + "    def odd = false\n"
-                        + "    def acc = 1.0\n"
+                        + "    var i = 0\n"
+                        + "    var odd = false\n"
+                        + "    var acc = 1.0\n"
                         + "    while i < n then (\n"
                         + "        odd = not odd\n"
                         + "        def f : fn (double) : double = if odd then ( a ) else ( b )\n"
@@ -199,10 +199,10 @@ public final class Benchmarks {
         scripts.put("mir : branch-heavy math & AABB slab loop",
                 "def sqrt = fn (x : double) : double -> (\n"
                         + "    if x <= 0.0 then ( return 0.0 )\n"
-                        + "    def g = if x > 1.0 then ( x * 0.5 ) else ( 1.0 )\n"
+                        + "    var g = if x > 1.0 then ( x * 0.5 ) else ( 1.0 )\n"
                         + "    while g * g > x * 16.0 then ( g = g * 0.25 )\n"
                         + "    while g * g * 16.0 < x then ( g = g * 4.0 )\n"
-                        + "    def i = 0\n"
+                        + "    var i = 0\n"
                         + "    while i < 10 then (\n"
                         + "        g = 0.5 * (g + x / g)\n"
                         + "        i = i + 1\n"
@@ -210,19 +210,19 @@ public final class Benchmarks {
                         + "    g\n"
                         + ")\n"
                         + "def slab = fn (ox : double, dx : double, minX : double, maxX : double, tMin0 : double, tMax0 : double) : bool -> (\n"
-                        + "    def tMin = tMin0\n"
-                        + "    def tMax = tMax0\n"
+                        + "    var tMin = tMin0\n"
+                        + "    var tMax = tMax0\n"
                         + "    def inv = 1.0 / dx\n"
-                        + "    def t0 = (minX - ox) * inv\n"
-                        + "    def t1 = (maxX - ox) * inv\n"
+                        + "    var t0 = (minX - ox) * inv\n"
+                        + "    var t1 = (maxX - ox) * inv\n"
                         + "    if inv < 0.0 then ( def tmp = t0 ; t0 = t1 ; t1 = tmp )\n"
                         + "    if t0 > tMin then ( tMin = t0 )\n"
                         + "    if t1 < tMax then ( tMax = t1 )\n"
                         + "    tMax > tMin\n"
                         + ")\n"
                         + "def run = fn (n : int) : double -> (\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0.0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0.0\n"
                         + "    while i < n then (\n"
                         + "        def x = 1.0 + (i - int(i / 17) * 17) * 0.37\n"
                         + "        if slab(0.0, x, 0.5, 4.0, 0.001, 100.0) then ( s = s + sqrt(x) )\n"
@@ -266,8 +266,8 @@ public final class Benchmarks {
                         + "def run = fn (n : int) : double -> (\n"
                         + "    def root : Hittable = build(0, 31)\n"
                         + "    def rayT = Interval(0.001, 100.0)\n"
-                        + "    def i = 0\n"
-                        + "    def s = 0.0\n"
+                        + "    var i = 0\n"
+                        + "    var s = 0.0\n"
                         + "    while i < n then (\n"
                         + "        def h = root.hit((i - int(i / 32) * 32) * 1.0, rayT)\n"
                         + "        if h != null then ( s = s + h.t )\n"

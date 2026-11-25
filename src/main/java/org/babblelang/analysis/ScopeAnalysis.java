@@ -479,7 +479,7 @@ public final class ScopeAnalysis {
 
     /**
      * Resolves {@code name} at {@code occurrence} to determine whether the binding is immutable
-     * ({@code def} / prelude implicit / parameter) for {@code BIP034-P3} HIR/MIR purity.
+     * ({@code def} / prelude implicit / parameter) for {@code BIP034-I3} HIR/MIR purity.
      */
     public boolean isFinalName(ParserRuleContext occurrence, String name) {
         if (pass == null) {

@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 034 |
 | **Date** | 2026-11-25 |
-| **Status** | Decided (`BIP034-Q1`–`BIP034-Q11` → `BIP034-D1`–`BIP034-D11` settled ; `BIP034-P1`–`BIP034-P5` planned) |
+| **Status** | Implemented (`BIP034-Q1`–`BIP034-Q11` → `BIP034-D1`–`BIP034-D11` settled ; `BIP034-I1`–`BIP034-I5` implemented) |
 | **Depends on** | Object model ([bip002_object-model.md](bip002_object-model.md)), interactive sessions ([bip004_repl.md](bip004_repl.md)), modules ([bip005_modules.md](bip005_modules.md)), effects & ownership ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md)), predicate-free grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md)), HIR & SSA MIR optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md)) |
 | **Scope** | Splitting Babble's single `def` declaration into non-reassignable `def` and explicitly reassignable `var` across locals, module-private top-level bindings, `class`/`object` fields, `private var` static fields, `class` parameters, and optional `fn (var ...)` parameters ; requiring `= expr` on both `def` and `var` outside interfaces ; keeping public module exports, interface bodies, and public `static` members strictly `def` ; retiring whole-file `reassigned` scans and `AnalysisSession.reassigned` ; making reads of top-level `def` function and class/record/interface definitions genuinely pure (`HirPurity.isPureNothrowTerminating`, first-class MIR `name_read Pair {pure}`, epoch-free GVN/LICM, and `Bootstrap.NameCache`/`SelectCache` fast paths) ; upgrading per-field immutability on regular `class`es in `EffectChecker`, `HIR`, and `MIR` ; value-capturing immutable `def` locals without `Cell` allocation ; and migrating existing `.ba` / `.batest.md` / test sources via a deterministic AST-backed migrator |
 
@@ -155,13 +155,13 @@ All eleven design questions (`BIP034-Q1`–`BIP034-Q11`) are settled:
 * **`BIP034-D6` (`BIP034-Q6`) — Keep sequential TDZ semantics + non-escaping header / clean-REPL / self-method definite-initialization analysis.**
   Top-level definitions retain Babble's existing sequential Temporal Dead Zone (TDZ) semantics (`Name used before definition` when read before the `def` line executes, preserving `BabbleScopesTestCase:78` and `values_and_operators.batest.md:600`). Static non-escaping module-header, clean-REPL-input, and self-class definite-initialization analysis (§6.2) proves `definitelyDefined = true` so reads of `def` functions, classes, records, interfaces, constants, and non-cyclic imports are `{pure}` (`MirEffect.PURE_NOTHROW`) in all normal modules (including `Pair` and `Vec3`).
 * **`BIP034-D7` (`BIP034-Q7`) — Promote `NameRead` and `NameAssign` to first-class MIR instructions.**
-  In `BIP034-P3`, `MirInst.NameRead` (`name_read Pair {pure}`) and `MirInst.NameAssign` (`name_assign counter, v1 {write:shared}`) replace the `MirInst.OpaqueExpr` wrapper for lexical/global name accesses.
+  In `BIP034-I3`, `MirInst.NameRead` (`name_read Pair {pure}`) and `MirInst.NameAssign` (`name_assign counter, v1 {write:shared}`) replace the `MirInst.OpaqueExpr` wrapper for lexical/global name accesses.
 * **`BIP034-D8` (`BIP034-Q8`) — Restrict `interface` bodies to `def` only.**
   `var` is forbidden in `interface` bodies (`Interface members cannot be var : <name>`). Interface data members (`def x: T`) are read-only and covariant (satisfied by `def x: U` or `var x: U` with `U <: T` in implementing classes/records/objects); mutable state on an interface is accessed through `fn mut` methods.
-* **`BIP034-D9` (`BIP034-Q9`) — Keep all 5 implementation phases (`BIP034-P1`–`BIP034-P5`) in `BIP034`.**
-  Runtime inline-cache fast paths (`BIP034-P4`: `Bootstrap.NameCache` & `SelectCache`) and value-capture for immutable `def` locals without `Cell` allocation + `ACC_FINAL` (`BIP034-P5`) stay tracked as follow-up phases of `BIP034`.
-* **`BIP034-D10` (`BIP034-Q10`) — Hard cutover migration in `BIP034-P1` via a deterministic AST-backed migrator.**
-  Consistent with `BIP012`, `BIP016`, `BIP026-I1`, and `BIP030`, `BIP034-P1` performs a single hard cutover using a deterministic ANTLR-token migrator across `examples/`, `src/test/babble/`, `src/test/batest/`, and `src/test/java/` (no temporary deprecation period).
+* **`BIP034-D9` (`BIP034-Q9`) — Keep all 5 implementation phases (`BIP034-I1`–`BIP034-I5`) in `BIP034`.**
+  Runtime inline-cache fast paths (`BIP034-I4`: `Bootstrap.NameCache` & `SelectCache`) and value-capture for immutable `def` locals without `Cell` allocation + `ACC_FINAL` (`BIP034-I5`) stay tracked as follow-up phases of `BIP034`.
+* **`BIP034-D10` (`BIP034-Q10`) — Hard cutover migration in `BIP034-I1` via a deterministic AST-backed migrator.**
+  Consistent with `BIP012`, `BIP016`, `BIP026-I1`, and `BIP030`, `BIP034-I1` performs a single hard cutover using a deterministic ANTLR-token migrator across `examples/`, `src/test/babble/`, `src/test/batest/`, and `src/test/java/` (no temporary deprecation period).
 * **`BIP034-D11` (`BIP034-Q11`) — Allow only `private var` in `static ( ... )` blocks.**
   Mirroring `BIP034-D4` (no `export var`) and `BIP034-D8` (`def`-only interfaces), public static members on classes, records, and interfaces are **always `def`** (`Public static members cannot be var : <name>`). Mutable static state uses `private var` encapsulated behind static `fn volatile` / `fn io` methods. Consequently, every externally visible static member read (`Vec3.zero`, `Interval.empty`, `Cls.CONST`) is guaranteed to target a `def`.
 
@@ -315,7 +315,7 @@ To prove `definitelyDefined = true` (`nothrow = true`) for real-world modules li
 | Top-level `var` (definitely initialized) | `false` | `true` | `false` | `READ_SHARED` | `name_read counter {read:shared}` | Epoch-scoped GVN (`NameReadKey(name, kind, epoch)`); LICM out of pure/read-only loops; DCE if unused. |
 | Top-level `var` (init not proven) | `false` | `false` | `false` | `READ_SHARED_THROW` | `name_read lateVar {read:shared,throws}` | Preserves TDZ exception; does not act as a write barrier for unrelated loads. |
 
-In `BIP034-P3` (`BIP034-D7`):
+In `BIP034-I3` (`BIP034-D7`):
 * `MirInst.NameRead(MirVal result, String name, boolean finalBinding, MirEffect effect, int line)` and `MirInst.NameAssign(MirVal result, String name, MirVal value, MirEffect effect, int line)` become first-class MIR instructions (`name_read Pair {pure}`, `name_assign counter, v1 {write:shared}`), eliminating `OpaqueExpr` special-casing in `GvnCsePass`, `MirLowerer`, and `MirCanonicalPrinter`.
 * `GvnCsePass` uses epoch-free `PureNameReadKey(String name, PrimitiveKind kind)` for `PURE_NOTHROW` `NameRead`s and records `PURE_MAY_THROW` `NameRead`s after execution so strictly dominated duplicate reads reuse the first SSA value — guarded by `GvnCsePass`'s existing `!child.handlerEntry() && normalSinglePred` exception-edge discipline so a `catch` handler entered precisely when the first `name_read` threw `Name used before definition` never reuses its uninitialized result.
 * Because `BIP034-D4` forbids `export var`, `ModuleExportGet` on a non-cyclic static import of an immutable `def` export (function, class, record, interface, constant) is likewise guaranteed immutable!
@@ -325,9 +325,9 @@ In `BIP034-P3` (`BIP034-D7`):
 `Slot<T>` (`src/main/java/org/babblelang/runtime/Slot.java`) **already** has a `private final boolean isFinal` field — it is simply hardcoded to `false` in `Namespace.declare` today.
 
 1. **`Namespace.declare` sets `isFinal = true` for `def`s and `false` for `var`s** (and `Namespace.defineParameter(name, value, isFinal)` sets `isFinal = true` for implicitly-`def` parameters and `false` for `fn (var ...)` parameters).
-2. **`Bootstrap.NameCache` constant fast path (`BIP034-P4`):**
+2. **`Bootstrap.NameCache` constant fast path (`BIP034-I4`):**
    When `Bootstrap.NameCache.lookup(Namespace)` resolves a `Slot` with `slot.isFinal() && slot.isSet()`, the `Resolution` record caches the resolved `Object value` directly (skipping `r.slot.get()` and its `if (set)` branch on every access — or specializing a monomorphic `MutableCallSite` guard `(ns == cachedNs && Namespace.epoch() == cachedEpoch)` directly to `MethodHandles.constant(Object.class, value)` so HotSpot C2 constant-folds `Vec3` / `Pair` / `math`!).
-3. **`Bootstrap.SelectCache` constant fast paths for `Module` exports & `BabbleType` static `def`s (`BIP034-P4`):**
+3. **`Bootstrap.SelectCache` constant fast paths for `Module` exports & `BabbleType` static `def`s (`BIP034-I4`):**
    * **Static `def` members (`Vec3.zero`, `Interval.empty`, `Vec3.randomUnitVector`):** Because `BIP034-D11` restricts `static` `var`s to `private var`, **every** externally visible static member (`!shape.isStaticPrivate(idx) && !shape.isStaticMutable(idx)`) — both static `def` values and static `def` methods (already bound as `BoundMethod` to `bt`) — is constant forever for that `BabbleType` instance once initialized. `SelectCache.relink` can guard on `IS_SAME.bindTo(bt)` and return `MethodHandles.dropArguments(MethodHandles.constant(Object.class, result), 0, Object.class)`, eliminating both the `HashMap` lookup in `ClassShape.staticIndex` noted in `BIP014` §9.4 and per-call `BoundMethod` allocation across all optimization levels!
    * **Module exports (`math.pi`, `math.min`):** Because `BIP034-D4` forbids `export var`, every initialized `Module` export is also constant forever for that `Module` instance, so `SelectCache`'s existing `target instanceof Module mod` branch can likewise return `MethodHandles.constant(Object.class, result)` directly instead of calling `EXPORT_AT` (`Slot.get()`) on every read!
 
@@ -368,23 +368,23 @@ Once binding mutability is a local syntactic fact (`isVar(decl)`):
 * **`def` fields on regular `class`es become `READ_FROZEN` in MIR and hoistable in `HirLicmPass`:**
   Generalizing `HirExpr.ThisFieldGet.recordField()` → `immutableField()` (true for all `record` fields **and** all `def` fields on regular `class`/`object`s) unlocks `MirEffect.READ_FROZEN`, `AliasRlePass` redundant-load elimination, and `HirLicmPass`/`LicmPass` loop hoisting on regular classes (`Sphere`, `BVHNode`, `Lambertian`, `RangeCursor.stop`).
   *(Soundness note: inside the class's own constructor `cls$N$Name`, `this.defField` is only marked `definitelyDefined = true` for header `def` parameters, which are initialized before the constructor body starts — preserving `Member used before definition` for body `def`s read before their definition line!)*
-* **Value-capture for immutable `def` locals (`BIP034-P5`):**
+* **Value-capture for immutable `def` locals (`BIP034-I5`):**
   In `Resolver` (`use()`), a captured variable that is a definitely-initialized `def` (including non-`var` `fn` parameters, `for` loop vars, `catch` params, and local `def`s whose declaration dominates the closure creation — excluding self-recursive or mutually-recursive local `def` closures initialized later) does **not** need a heap-allocated `Cell` / `IntCell` / `DoubleCell` / `BoolCell` wrapper:
   * Reference captures (`string`, `Vec3`, `list`, `fn`, `this`, objects) and compiled class hidden fields (`$v$x` in `ClassGen`, including all 8 primitive kinds) store the raw value directly with **zero** wrapper/box allocation and zero indirection.
   * Primitive captures stored in `CompiledFunction`'s `Object[] captured` array box once at closure creation (`Integer.valueOf`, etc.) rather than allocating an `IntCell`..`CharCell` at `def` entry, eliminating `Cell` allocation on paths that never construct the closure and removing a pointer dereference on every read.
 * **Alignment with `BIP018` (Java improvements) and JVMS `ACC_FINAL`:**
-  * Under JVMS §4.5 / §6.5, an `ACC_FINAL` instance field may only be written by `PUTFIELD` inside `<init>` of its declaring class (not from `cls$N$Name` or `$new`). In `BIP034-P5`, `ClassGen` emits a typed `<init>(BabbleClass, ScriptRuntime, <headerDefParams...>)` constructor that initializes header `def` fields directly (starting with `fastRecord` and classes whose header `def` fields are passed directly to `<init>`), making `ACC_FINAL` verifiable on JDK 21 and laying the exact groundwork for `BIP018-P2` (`JEP 500` trusted-final constant folding) and `BIP018-P4` (`JEP 539` `ACC_STRICT_INIT`).
+  * Under JVMS §4.5 / §6.5, an `ACC_FINAL` instance field may only be written by `PUTFIELD` inside `<init>` of its declaring class (not from `cls$N$Name` or `$new`). In `BIP034-I5`, `ClassGen` emits a typed `<init>(BabbleClass, ScriptRuntime, <headerDefParams...>)` constructor that initializes header `def` fields directly (starting with `fastRecord` and classes whose header `def` fields are passed directly to `<init>`), making `ACC_FINAL` verifiable on JDK 21 and laying the exact groundwork for `BIP018-P2` (`JEP 500` trusted-final constant folding) and `BIP018-P4` (`JEP 539` `ACC_STRICT_INIT`).
   * `BIP018` §8.1 (`lazy def`) and §8.2 (`scoped def`) already assume `def` is strictly read-only — `BIP034` makes that universal.
 * **Alignment with `BIP025` (WebAssembly 3.0 / `WasmGC`):**
   `BIP025-D11` emits immutable `(field ...)` for `record` fields and `(field (mut ...))` for mutable fields; with `BIP034`, every `def` field on regular `class`es also becomes an immutable WasmGC `(field ...)`.
 
 ---
 
-## 8. Implementation Plan (`BIP034-P1`–`BIP034-P5`)
+## 8. Implementation Plan (`BIP034-I1`–`BIP034-I5`)
 
 Each phase keeps `mvn -B package -PO2` green across all four execution modes (`interpret`, `compile -O0`, `compile -O1`, `compile -O2`), passes `ArchitectureBoundaryTestCase` / `RuntimeBoundaryTestCase` / `ParserGrammarTestCase`, and maintains `-format -check` cleanliness.
 
-### `BIP034-P1` — Grammar, Front-End Enforcement, Runtime Metadata & Repository Migration
+### `BIP034-I1` — Grammar, Front-End Enforcement, Runtime Metadata & Repository Migration
 * Add `VAR: 'var'` (and `VAR` in `memberName`) to `Babble.g4`; update `defExpression`, `classParam`, and `fnParam` (`BIP034-D1`, `BIP034-D2`).
 * Update `Formatter` to emit `def` / `var` verbatim in definitions, `class` parameters, and `fn` parameters.
 * Add `ClassShape.MUTABLE = 4` (with `isMutable` / `isStaticMutable` and `encode`/`decode` support); update `Slot.set` (`Cannot assign to def : ...`), `Namespace.declare` / `Namespace.defineParameter(name, value, isFinal)` (wired through `Interpreter`, `Arguments`/`Binder`, and `CompiledFunction` parameter metadata), and runtime `BabbleType`/`InterpretedInstance`/`BabbleObjects`/`Members` (`Cannot assign to def member : ...`).
@@ -394,13 +394,13 @@ Each phase keeps `mvn -B package -PO2` green across all four execution modes (`i
   * Update `TypeEnv.enterCallable` to evict only `var` bindings.
 * Run a deterministic ANTLR-token migration tool (`BIP034-D10`) over `examples/`, `src/test/babble/`, `src/test/batest/`, and `src/test/java/` to rewrite reassigned `def`s to `var`, uninitialized non-interface `def x: T?` to `var x: T? = null`, `export var` / public static `var` fixtures (e.g., `call_and_body_effects.batest.md`, `unique_and_borrow_ownership.batest.md`) to encapsulated private `var` + accessors, and reassigned `fn` parameters (e.g., `Test1.ba`) to `var` params or local `var`s; format with `-format -w`; add dedicated `def`/`var` positive & error tests across all declaration sites.
 
-### `BIP034-P2` — `EffectChecker` Precision & REPL Soundness
+### `BIP034-I2` — `EffectChecker` Precision & REPL Soundness
 * Close the §2 item 3 REPL determinism hole (verified in `ReplTestCase` and `EffectsTestCase`).
 * Upgrade `EffectBodyWalker.readsMutableBabbleMember` to check per-field `member.isMutable()` on regular `class`es and `object`s.
 * Simplify static `def` checks, `escapedCapturedLocals` (`var`-only), and `EffectAstExtractors` (`AlgebraicVerifier` / `SizeChangeTermination`).
 * Add `.batest.md` tests under `src/test/batest/effects/` covering `def` vs. `var` fields on regular `class`es, `private var` statics, module-private `var` with exported `fn volatile`/`fn io` accessors, and REPL determinism.
 
-### `BIP034-P3` — Pure Function & Class `NameRead` + First-Class MIR `NameRead` + Immutable `class` Field Loads
+### `BIP034-I3` — Pure Function & Class `NameRead` + First-Class MIR `NameRead` + Immutable `class` Field Loads
 * Implement §6.2's inductive non-escaping module header, clean-REPL-input, and self-class definite-initialization analysis (`BIP034-D6`) in `HirBuilder` (and `MirLowerer`).
 * Add `boolean mutable` to `HirVar`, `(boolean finalBinding, boolean definitelyDefined)` to `HirExpr.NameRead`, and generalize `HirExpr.ThisFieldGet.recordField()` → `immutableField()` (covering `record` fields and `def` fields on regular `class`es).
 * Update `HirPurity.isPureNothrowTerminating` (`NameRead` returns `finalBinding && definitelyDefined`), `HirLicmPass`, and `HirDcePass`.
@@ -408,12 +408,12 @@ Each phase keeps `mvn -B package -PO2` green across all four execution modes (`i
 * Update `GvnCsePass` with epoch-free `PureNameReadKey` and exception-edge-guarded dominated `PURE_MAY_THROW` duplicate CSE; verify `LicmPass` hoists `{pure}` `name_read`s out of `io`/mutating loops.
 * Regenerate canonical HIR/MIR goldens (`-Dbatest.updateIr=true`) and verify `inline_and_alpha_rename.batest.md` (`name_read Pair {pure}`) and `vec3.ba` (`name_read Vec3 {pure}`).
 
-### `BIP034-P4` — Runtime Inline-Cache Fast Paths (`NameCache` & `SelectCache`)
+### `BIP034-I4` — Runtime Inline-Cache Fast Paths (`NameCache` & `SelectCache`)
 * Upgrade `Bootstrap.NameCache` to cache the value of initialized final `Slot`s directly (§6.4).
 * Upgrade `Bootstrap.SelectCache` to constant-fold both public static `def` members (`Vec3.zero`, `Interval.empty`, `AABB.empty`, static `def` methods) on `BabbleType` and initialized `def` exports on `Module` (§6.4).
 * Benchmark `examples/raytracer-argon` and `Benchmarks` across `-O0`, `-O1`, and `-O2` (separate JVMs with `-Xms1g -Xmx1g -XX:+UseParallelGC`) and record before/after measurements.
 
-### `BIP034-P5` — Value-Capture for Immutable `def` Locals & `ACC_FINAL` Constructors
+### `BIP034-I5` — Value-Capture for Immutable `def` Locals & `ACC_FINAL` Constructors
 * Update `Resolver`, `HirBuilder`, and `HirEmitter` so captured definitely-initialized `def` locals (including non-`var` `fn` parameters, `for` vars, and `catch` params) are captured by value rather than allocating a mutable `Cell` / `IntCell` / `DoubleCell` / `BoolCell` (§7.4).
 * Generate typed `<init>(BabbleClass, ScriptRuntime, <headerDefParams...>)` constructors in `ClassGen` so immutable header `def` fields are initialized inside `<init>` and marked `ACC_FINAL` cleanly under JVMS verification (aligning with `BIP018-P2` / `JEP 500` and `BIP025-D11`).
 
@@ -433,3 +433,24 @@ Each phase keeps `mvn -B package -PO2` green across all four execution modes (`i
 3. **Coverage & end-to-end verification:**
    * Full 4-JVM 6-scope `mvn -q verify -Pbatest` passes `>= 80%` line and `>= 80%` branch coverage on all 6 scopes with 0 divergences.
    * `examples/raytracer-argon/raytracer.ba` renders byte-identical `examples/raytracer-argon/scene.ppm` (`1,021,340` bytes) across `-O0`, `-O1`, and `-O2`, with `Benchmarks` confirming improved or neutral runtime and compile-time performance.
+
+---
+
+## 10. Implementation & Benchmark Notes
+
+All five phases (`BIP034-I1`–`BIP034-I5`) are implemented and verified across all four execution modes (`interpret`, `-O0`, `-O1`, `-O2` with `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter`):
+
+* **`examples/raytracer-argon/raytracer.ba` byte-identity:** renders `examples/raytracer-argon/scene.ppm` (`1,021,340` bytes) byte-for-byte identically at `-O0` (16.25 s), `-O1` (16.74 s), and `-O2` (14.34 s).
+* **Isolated-JVM `Benchmarks` (`-Xms1g -Xmx1g -XX:+UseParallelGC`, one JVM per optimization level):**
+
+| Benchmark | `-O0` (ms) | `-O1` (ms) | `-O2` (ms) | `-O2` vs `-O0` | `-O2` vs `-O1` |
+|---|---:|---:|---:|---:|---:|
+| `fib(25) : calls and arithmetic` | 3.04 | 2.52 | 0.87 | 3.49× | 2.90× |
+| `opt : small helper inlining` | 3.04 | 0.59 | 0.60 | 5.07× | 0.98× |
+| `opt : loop-invariant pure call (LICM)` | 10.14 | 3.93 | 3.94 | 2.57× | 1.00× |
+| `mir : header LICM + GVN/CSE + predicate reorder` | 1.92 | 1.81 | 0.11 | 17.45× | 16.45× |
+| `mir : branch-heavy math & AABB slab loop` | 0.68 | 2.47 | 0.38 | 1.79× | 6.50× |
+| `mir : BVH-style interface dispatch` | 4.00 | 2.14 | 1.90 | 2.11× | 1.13× |
+| `argon ray tracer : 64x36, 4 samples per pixel` | 73.77 | 72.48 | 61.74 | 1.19× | 1.17× |
+| `argon ray tracer : compile its 15 modules` | 244.02 | 390.10 | 432.99 | 0.56× | 0.90× |
+

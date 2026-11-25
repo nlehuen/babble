@@ -72,9 +72,9 @@ def adder = fn (a: int): fn (b: int): int -> (
     )
 )
 
-;; loops
-def fac2 = fn (n: int): int -> (
-    def result = 1
+;; loops (`def` bindings are immutable; use `var` when a binding is reassigned)
+def fac2 = fn (var n: int): int -> (
+    var result = 1
     while n > 1 then (
         ;; use ";" to put several statements on one line
         result = result * n ; n = n - 1
@@ -105,9 +105,9 @@ def apply = fn (a: int, f: fn (v: int): int = fn (v) -> (v)) -> ( f(a) )
 
 ;; closures
 def counter = fn () -> (
-    def c = 0
+    var c = 0
 
-    fn () -> (
+    fn io () -> (
         c = c + 1
     )
 )
@@ -411,9 +411,9 @@ list.add(3) ; list.add(1) ; list.add(2)
 list.removeIf(fn (v) -> ( v > 2 ))          ;; a Predicate
 assert(list.size() == 2)
 
-def Countdown = class (private def n: int) implements java.util.Iterator of int (
+def Countdown = class (private var n: int) implements java.util.Iterator of int (
     def hasNext = fn () -> ( this.n > 0 )
-    def next = fn () -> ( this.n = this.n - 1 ; this.n + 1 )
+    def next = fn mut () -> ( this.n = this.n - 1 ; this.n + 1 )
 )
 def seen: java.util.List of int = java.util.ArrayList()
 Countdown(3).forEachRemaining(fn (v) -> ( seen.add(v) ))   ;; a Java default method
@@ -860,6 +860,7 @@ Language features :
 - [x] no semicolons at end of line : newlines are significant and end the current statement, except after tokens that call for a continuation (operators, `,`, `=`, `->`, `then`, ...). Semicolons are only needed to separate multiple statements on the same line.
 - [x] everything is an expression, including blocks, `if`, `while`, `for`, `try`/`catch`/`finally`, and `throw`.
 - [x] block scope : blocks, `if` branches, `while` bodies, `for` bodies, and `try`/`catch`/`finally` blocks are scopes, and names are hoisted to the start of their scope.
+- [x] immutable `def` and mutable `var` bindings ([BIP034](docs/design/bip034_immutable-def-and-mutable-var.md)) : `def` bindings (including `export`s, `interface` members, public `static` members, `record` fields, and function parameters by default) cannot be reassigned, while `var` explicitly opts into reassignment on locals, module-private top-level bindings, `class`/`object` fields, `private var` static fields, and optional `fn (var ...)` parameters ; enables pure function/class `NameRead`s (`name_read Pair {pure}`), per-field `def` immutability (`READ_FROZEN` and `ACC_FINAL` typed `<init>` constructors), value-capture without `Cell` allocation, and constant-folding inline caches in `Bootstrap.NameCache`/`SelectCache`.
 - [x] exception handling : expression-oriented `try (...) catch [e] [: A | B] then (...) finally (...)`, `throw` (`Type.NOTHING`), lowercase core `exception` type (`BabbleException`), direct JVM `Throwable` propagation, open nominal Babble exceptions via `ThrownException` isolated from Java `Exception`/`RuntimeException` catches, untyped non-`Error` catch-all, forbidden escaping `return`/`break`/`continue` in `finally` with automatic `addSuppressed`, `nothrow` restoration & dead-catch warnings, intra-procedural local-catch `@BORROWED` provenance, JVM `exception_table` + inline `finally` duplication with `try`-range splitting, and `-O1` dead-catch elimination (see [BIP028](docs/design/bip028_exception-handling.md)).
 - [x] first-class iterators, `for ... in ... then (...)` loops, and uniform `break [expr]` / `continue` across `while` and `for` loops, plus parameterized static factories `(list of int).of(...)` / `list.of(...)` (`RM009`, see [BIP013](docs/design/bip013_iterators.md)).
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
