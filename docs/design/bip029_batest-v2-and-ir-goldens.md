@@ -5,7 +5,7 @@
 | **BIP** | 029 |
 | **Date** | 2026-11-23 |
 | **Status** | Implemented (`BIP029-Q1`–`Q10` → `BIP029-D1`–`D10` settled; `BIP029-I1`–`I4` implemented) |
-| **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), ANTLR-free `HIR`, `HirPrinter`, `-O0`/`-O1` Nanopass pipeline (`BIP014-I1`–`I2`, `BIP014-I4`, `BIP014-D9`), and planned Tier 2 SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md), `BIP014-I3`, `BIP014-P5`), unified E-graph pass ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md), `BIP027-I2`), `HirTryNormalize` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
+| **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), typed `HIR`, `HirPrinter`, `-O0`/`-O1` Nanopass pipeline (`BIP014-I1`–`I2`, `BIP014-I4`, `BIP014-D9`), and planned Tier 2 SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md), `BIP014-I3`, `BIP014-P5`), unified E-graph pass ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md), `BIP027-I2`), `HirTryNormalize` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
 | **Scope** | Redesigned, readable, extensible `.batest.md` v2 specification format (named `##` cases, prose documentation, explicit `stdout`/`stderr`/`error` blocks with uniform `DOTALL` `regex` flag, case-scoped virtual modules, `babble session` inputs, extensible IR/artifact blocks); unified compiler IR dumping & observation architecture (`IrTier`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) spanning `HIR` (`-O0`/`-O1`/`-O2`) and upcoming `BIP014-I3` SSA `MIR` (`-O2`, `before`/`after:<Pass>`/`final`); canonical preamble- and ID-independent printers (`HirCanonicalPrinter` and the `MirCanonicalPrinter` contract); 3-JVM/4-JVM Surefire and `-Pbatest` `BatestCoverageReporter` integration; guarded IR-only update mode (`-Dbatest.updateIr=true`); and lossless migration of all 103 existing `.batest` files (`2,060` cases) to `.batest.md` |
 
 ---
@@ -304,11 +304,11 @@ A core requirement of `BIP029` is ensuring that **both** `HIR` (`BIP014-I1`–`I
 
 ### 4.1 Package & Interface Architecture (`org.babblelang.ir`)
 
-All shared IR dumping interfaces live in a tiny, ANTLR-free package **`org.babblelang.ir`** (strictly outside `org.babblelang.runtime`, enforced by `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase`):
+All shared IR dumping interfaces live in a tiny, AST-decoupled package **`org.babblelang.ir`** (strictly outside `org.babblelang.runtime`, enforced by `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase`):
 
 ```mermaid
 flowchart TB
-    subgraph IR["org.babblelang.ir (ANTLR-free, runtime-isolated)"]
+    subgraph IR["org.babblelang.ir (AST-decoupled, runtime-isolated)"]
         Tier["IrTier\n(HIR, MIR)"]
         Target["IrTarget\n(Fn, Method, Type, TopLevel, Module)"]
         Dumpable["IrDumpable\n(printCanonical(IrTarget), printRaw())"]
@@ -460,7 +460,7 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 ## 7. Phased Implementation Plan
 
 ### `BIP029-I1` — Unified IR Observation Pipeline (`HIR` + `MIR`-Ready) & `HirCanonicalPrinter`
-- Create `org.babblelang.ir` core abstractions: `IrTier` (`HIR`, `MIR`), `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver` (ANTLR-free, zero `org.babblelang.runtime` references).
+- Create `org.babblelang.ir` core abstractions: `IrTier` (`HIR`, `MIR`), `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver` (strictly separated from the parsed AST and `org.babblelang.runtime`).
 - Implement `org.babblelang.ir.hir.HirCanonicalPrinter` (`HirModule implements IrDumpable`) with target resolution (`fn=`, `fn=Type.m`, `class=`/`record=`/`interface=`, `top-level`, `module`), local variable/temp renumbering, symbolic call/type names, `Script$N$` stripping, and structured 2-space indentation (`BIP029-D5`, `BIP029-D7`).
 - Wire per-engine `BabbleCompiler.IR_OBSERVER` into `BabbleCompiler` and `PassManager` (`before`, `after:<PassName>`, `final`), gated lazily by `observer.wants(...)`, and unify `-Dbabble.dumpIr` onto the same `IrObserver` mechanism (`BIP029-D6`).
 - Add `HirCanonicalPrinterTestCase` verifying preamble-independence, shadowed locals, synthetic temp renumbering, `after:<Pass>` hooks, and `ArchitectureBoundaryTestCase` / `RuntimeBoundaryTestCase` compliance.
@@ -491,4 +491,4 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 2. **Real regression detection:** Temporarily disabling any `-O1` pass (`HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`) causes the corresponding `.batest.md` IR golden tests to fail loudly with a readable line diff — even though behavioral execution remains green.
 3. **Explicit outcome soundness:** A case expecting `error` fails if the snippet merely prints that string to stdout and exits normally; a case omitting `stdout` and `stderr` fails if anything is printed to either stream.
 4. **Zero-friction `BIP014-I3` `MIR` readiness:** `org.babblelang.ir` (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) and `.batest.md`'s `mir` (`;; mir -O2 ...`) parser/matcher/blesser are ready in place so `BIP014-I3` only has to implement `MirCanonicalPrinter` and emit snapshots from `MirPassManager`.
-5. **Boundaries & full CI parity:** `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase` pass (`org.babblelang.runtime` stays IR-free; `org.babblelang.ir` stays ANTLR-free); full `mvn -B package` (all 3 Surefire runs) and `mvn -q verify -Pbatest` (all 5 scopes `>= 75%` branch coverage, `0` divergences) pass cleanly under parallel JUnit execution.
+5. **Boundaries & full CI parity:** `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase` pass (`org.babblelang.runtime` stays IR-free; `org.babblelang.ir` stays decoupled from the parsed AST); full `mvn -B package` (all 3 Surefire runs) and `mvn -q verify -Pbatest` (all 5 scopes `>= 75%` branch coverage, `0` divergences) pass cleanly under parallel JUnit execution.
