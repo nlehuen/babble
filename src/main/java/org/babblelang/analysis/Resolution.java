@@ -66,7 +66,7 @@ public final class Resolution {
             return cell;
         }
 
-        /** Whether a nested method captures this immutable, definitely-initialized variable by value ({@code BIP034-P5}). */
+        /** Whether a nested method captures this immutable, definitely-initialized variable by value ({@code BIP034-I5}). */
         public boolean isCapturedByValue() {
             return capturedByValue;
         }

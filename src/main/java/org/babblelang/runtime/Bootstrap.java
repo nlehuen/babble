@@ -91,7 +91,7 @@ public final class Bootstrap {
     /**
      * {@code name(Namespace ns) -> Object} : {@code ns.lookup(variable)}, inline-caching the
      * resolved slot or constant final value for the namespaces the site sees ({@code BIP014-I3},
-     * {@code BIP034-P4}).
+     * {@code BIP034-I4}).
      * <p>
      * For initialized {@code def} slots ({@code slot.isFinal() && slot.isSet()}), the call site
      * links a guarded {@link MethodHandles#constant} so HotSpot C2 constant-folds the resolved

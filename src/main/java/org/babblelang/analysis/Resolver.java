@@ -161,7 +161,7 @@ final class Resolver {
      * A variable used from another method than its own is captured, and every method
      * between the use and the declaration carries it. Immutable variables that are
      * definitely initialized before every capture site are captured by value
-     * ({@code BIP034-P5}); mutable {@code var}s and forward/self-recursive captures use a
+     * ({@code BIP034-I5}); mutable {@code var}s and forward/self-recursive captures use a
      * heap {@code Cell}.
      */
     private void use(Resolution.Variable variable, ScopeNode declScope, ScopeNode from) {

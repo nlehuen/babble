@@ -126,7 +126,7 @@ public class ResolverTestCase {
 
     @Test
     public void testConstructorParametersUsedByMethodsAreCells() {
-        // BIP034-P5: immutable non-member class param `start` is value-captured (no Cell);
+        // BIP034-I5: immutable non-member class param `start` is value-captured (no Cell);
         // mutable `fn (var start)` parameter still lives in a Cell.
         Assertions.assertEquals(List.of("start CAPTURED", "start LOCAL"),
                 bindings("def C = class (start) ( def next = fn () -> ( start + 1 ) ; def first = start )"));

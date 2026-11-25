@@ -1,4 +1,4 @@
-# BIP034-P3 pure name_read, exception-guarded CSE, and immutable class fields
+# BIP034-I3 pure name_read, exception-guarded CSE, and immutable class fields
 
 ## Header defs after pure static block and Java import lower to pure name_read
 
