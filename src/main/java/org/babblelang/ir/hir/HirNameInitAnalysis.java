@@ -16,7 +16,7 @@ import java.util.function.UnaryOperator;
  * Inductive non-escaping module header and self-class definite-initialization analysis
  * ({@code BIP034-D6}, §6.2).
  *
- * <p>Runs over ANTLR-free HIR right before {@link HirBuilder} constructs {@link HirModule},
+ * <p>Runs over HIR right before {@link HirBuilder} constructs {@link HirModule},
  * upgrading {@link HirExpr.NameRead#definitelyDefined()} from {@code false} to {@code true}
  * wherever static execution order guarantees the target top-level binding is already
  * initialized (preserving sequential TDZ semantics for forward references and active
