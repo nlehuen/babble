@@ -940,4 +940,29 @@ public class EffectsTestCase {
                 badPure((list of int).of(1))
                 """, "violates pure guarantee");
     }
+
+    @Test
+    public void testBip034PerFieldImmutabilityAndStaticPrivateVar() {
+        // Reading a regular class's `def` field vs `var` field, plus `private var` static vs `def` static:
+        assertClean("""
+                def Range = class (private var cur: int, private def stop: int) (
+                    def getStop = fn (): int -> ( this.stop )
+                    def hasNext = fn (): bool -> ( this.cur < this.stop )
+                ) static (
+                    def defaultStop = 10
+                    private var created = 0
+                    def getDefault = fn (): int -> ( this.defaultStop )
+                    def getCreated = fn volatile (): int -> ( this.created )
+                    def bumpCreated = fn io (): int -> ( this.created += 1 ; this.created )
+                )
+                def r = Range(0, Range.getDefault())
+                assert(r.getStop() == 10 and r.hasNext())
+                """);
+        assertHasError("""
+                def C = class () () static (
+                    private var s = 1
+                    def bad = fn (): int -> ( this.s )
+                )
+                """, "violates deterministic guarantee");
+    }
 }

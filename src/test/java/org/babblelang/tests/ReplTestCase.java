@@ -496,4 +496,23 @@ public class ReplTestCase {
         Assertions.assertEquals("\"hi\"", lines.get(1), lines.toString());
         Assertions.assertEquals("exception", lines.get(2), lines.toString());
     }
+
+    @Test
+    public void testBip034ReplDeterminismSoundness() throws Exception {
+        BabbleSession session = session();
+        session.eval("def k = 10");
+        session.eval("var v = 1");
+        // Reading an earlier `def` of an immutable value is pure; reassigning it is statically rejected forever.
+        session.eval("def pureK = fn (): int -> ( k + 1 )");
+        Assertions.assertEquals(11, session.eval("pureK()"));
+        ScriptException assignDef = Assertions.assertThrows(ScriptException.class, () -> session.eval("k = 20"));
+        Assertions.assertTrue(assignDef.getMessage().contains("Cannot assign to def : k"), assignDef.getMessage());
+        // Reading an earlier `var` in a pure function is rejected (must be volatile).
+        ScriptException badVarRead = Assertions.assertThrows(ScriptException.class, () -> session.eval("def badV = fn (): int -> ( v )"));
+        Assertions.assertTrue(badVarRead.getMessage().contains("violates deterministic guarantee"), badVarRead.getMessage());
+        session.eval("def volV = fn volatile (): int -> ( v )");
+        Assertions.assertEquals(1, session.eval("volV()"));
+        session.eval("v = 7");
+        Assertions.assertEquals(7, session.eval("volV()"));
+    }
 }
