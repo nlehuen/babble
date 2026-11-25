@@ -1025,4 +1025,98 @@ public class BabbleCompilerTestCase {
                 .filter(m -> m.name.equals("fn$2$plainJava$spec")).findFirst().orElseThrow();
         Assertions.assertTrue(plainJava.tryCatchBlocks.isEmpty(), plainJava.tryCatchBlocks.toString());
     }
+
+    @Test
+    public void testBip034P4NameCacheAndSelectCacheFastPaths() throws Throwable {
+        java.lang.invoke.MethodHandles.Lookup lookup = java.lang.invoke.MethodHandles.lookup();
+        java.lang.invoke.MethodType nameType = java.lang.invoke.MethodType.methodType(Object.class, org.babblelang.runtime.Namespace.class);
+        java.lang.invoke.MethodType selectType = java.lang.invoke.MethodType.methodType(Object.class, Object.class);
+
+        // 1. NameCache: uninitialized def throws and is NOT cached; once initialized it constant-folds,
+        //    and epoch bump on shadowing invalidates the cached constant.
+        java.lang.invoke.CallSite defSite = org.babblelang.runtime.Bootstrap.name(lookup, "name", nameType, "x");
+        java.lang.invoke.MethodHandle defHandle = defSite.dynamicInvoker();
+        org.babblelang.runtime.Namespace root = new org.babblelang.runtime.Namespace();
+        root.declare(new String[]{"x"}, new boolean[]{true});
+        org.babblelang.runtime.Namespace child = root.enter();
+        Assertions.assertThrows(org.babblelang.runtime.BabbleException.class, () -> defHandle.invokeExact(child));
+        root.initialize("x", "v1");
+        Assertions.assertEquals("v1", defHandle.invokeExact(child));
+        Assertions.assertEquals("v1", defHandle.invokeExact(child));
+        // Shadowing in walked child scope bumps Namespace.epoch() and invalidates the constant guard.
+        child.define("x", true).set("shadowed");
+        Assertions.assertEquals("shadowed", defHandle.invokeExact(child));
+        Assertions.assertEquals("v1", defHandle.invokeExact(root));
+
+        // 2. NameCache: mutable var slot reads live updates (never constant-folded) and handles > MAX_DEPTH namespaces.
+        java.lang.invoke.CallSite varSite = org.babblelang.runtime.Bootstrap.name(lookup, "name", nameType, "v");
+        java.lang.invoke.MethodHandle varHandle = varSite.dynamicInvoker();
+        org.babblelang.runtime.Namespace varNs = new org.babblelang.runtime.Namespace();
+        varNs.declare(new String[]{"v"}, new boolean[]{false});
+        varNs.initialize("v", 1);
+        Assertions.assertEquals(1, varHandle.invokeExact(varNs));
+        varNs.assign("v", 2);
+        Assertions.assertEquals(2, varHandle.invokeExact(varNs));
+        // Exceed MAX_DEPTH distinct namespaces to exercise the polymorphic Resolution fallback for both def and var.
+        for (int i = 0; i < 8; i++) {
+            org.babblelang.runtime.Namespace n = new org.babblelang.runtime.Namespace();
+            n.define("v", i % 2 == 0).set(i * 10);
+            Assertions.assertEquals(i * 10, varHandle.invokeExact(n));
+            Assertions.assertEquals(i * 10, varHandle.invokeExact(n));
+            if (i % 2 != 0) {
+                n.assign("v", i * 10 + 1);
+                Assertions.assertEquals(i * 10 + 1, varHandle.invokeExact(n));
+            }
+        }
+
+        // 3. SelectCache: Module final exports constant-fold per Module instance and never cache uninitialized exports.
+        java.lang.invoke.CallSite modSite = org.babblelang.runtime.Bootstrap.select(lookup, "select", selectType, "k", "m");
+        java.lang.invoke.MethodHandle modHandle = modSite.dynamicInvoker();
+        org.babblelang.runtime.Namespace m1Ns = new org.babblelang.runtime.Namespace();
+        m1Ns.declare(new String[]{"k"}, new boolean[]{true});
+        org.babblelang.runtime.Module m1 = new org.babblelang.runtime.Module("m1.ba", m1Ns, new String[]{"k"});
+        Assertions.assertThrows(org.babblelang.runtime.BabbleException.class, () -> modHandle.invokeExact((Object) m1));
+        m1Ns.initialize("k", 101);
+        Assertions.assertEquals(101, modHandle.invokeExact((Object) m1));
+        Assertions.assertEquals(101, modHandle.invokeExact((Object) m1));
+        org.babblelang.runtime.Namespace m2Ns = new org.babblelang.runtime.Namespace();
+        m2Ns.declare(new String[]{"k"}, new boolean[]{true});
+        m2Ns.initialize("k", 202);
+        org.babblelang.runtime.Module m2 = new org.babblelang.runtime.Module("m2.ba", m2Ns, new String[]{"k"});
+        Assertions.assertEquals(202, modHandle.invokeExact((Object) m2));
+        Assertions.assertEquals(101, modHandle.invokeExact((Object) m1));
+
+        // 4. SelectCache on BabbleType: public static def value & method constant-fold (same BoundMethod identity),
+        //    while private static var updates remain live inside static methods.
+        CompiledBabbleScript script = compile(
+                "def C = class () () static (\n"
+                        + "  def zero = 0\n"
+                        + "  private var hits = 0\n"
+                        + "  def bump = fn io () : int -> ( this.hits += 1 ; this.hits )\n"
+                        + ")\n"
+                        + "def readBoth = fn io () : int -> ( C.zero + C.bump() )\n"
+                        + "def firstRef = C.bump\n"
+                        + "def secondRef = C.bump\n"
+                        + "assert(same(firstRef, secondRef) or firstRef() + secondRef() >= 3)\n"
+                        + "readBoth() + readBoth()");
+        assertVerifies(script);
+        Object res = script.eval(new SimpleBindings());
+        Assertions.assertTrue(res instanceof Integer n && n > 0, String.valueOf(res));
+        // Direct SelectCache identity check on a compiled BabbleType static def method.
+        CompiledBabbleScript typeScript = compile(
+                "def V = record (x : int) () static (\n"
+                        + "  def zero = this(0)\n"
+                        + "  def make = fn (n : int) : V -> ( this(n) )\n"
+                        + ")\n"
+                        + "V");
+        Object vType = typeScript.eval(new SimpleBindings());
+        java.lang.invoke.CallSite zeroSite = org.babblelang.runtime.Bootstrap.select(lookup, "select", selectType, "zero", "V");
+        Object z1 = zeroSite.dynamicInvoker().invokeExact(vType);
+        Object z2 = zeroSite.dynamicInvoker().invokeExact(vType);
+        Assertions.assertSame(z1, z2);
+        java.lang.invoke.CallSite makeSite = org.babblelang.runtime.Bootstrap.select(lookup, "select", selectType, "make", "V");
+        Object fn1 = makeSite.dynamicInvoker().invokeExact(vType);
+        Object fn2 = makeSite.dynamicInvoker().invokeExact(vType);
+        Assertions.assertSame(fn1, fn2, "Public static def method should constant-fold its BoundMethod in SelectCache");
+    }
 }

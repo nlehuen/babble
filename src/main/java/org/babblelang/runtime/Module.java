@@ -58,6 +58,18 @@ public final class Module implements HasMembers {
         return slot.get();
     }
 
+    public boolean isExportFinal(int index) {
+        if (index < 0 || index >= exportNames.length) {
+            return false;
+        }
+        Slot<Object> slot = exportSlots[index];
+        if (slot == null) {
+            slot = root.get(exportNames[index]);
+            exportSlots[index] = slot;
+        }
+        return slot != null && slot.isFinal();
+    }
+
     @Override
     public Object getMember(String member, boolean own) {
         if (!exports.contains(member)) {

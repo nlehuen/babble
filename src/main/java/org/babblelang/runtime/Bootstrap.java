@@ -4,7 +4,6 @@ import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.engine.impl.natives.java.JavaLinker;
 import org.babblelang.engine.impl.natives.java.JavaPackage;
 
-import java.lang.invoke.ConstantCallSite;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -48,11 +47,17 @@ public final class Bootstrap {
     private static final MethodHandle REQUIRE_MEMBER_DEFINED;
     private static final MethodHandle EXPORT_AT;
     private static final MethodHandle NAME_LOOKUP;
+    private static final MethodHandle NAME_FALLBACK;
+    private static final MethodHandle IS_SAME_NS_AND_EPOCH;
+    private static final MethodHandle SLOT_GET;
 
     static {
         try {
             MethodType call = MethodType.methodType(Object.class, Callable.class, ScriptRuntime.class, String[].class, CallSite.class, Object[].class);
             NAME_LOOKUP = LOOKUP.findVirtual(NameCache.class, "lookup", MethodType.methodType(Object.class, Namespace.class));
+            NAME_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "nameFallback", MethodType.methodType(Object.class, NameCache.class, Namespace.class));
+            IS_SAME_NS_AND_EPOCH = LOOKUP.findStatic(Bootstrap.class, "isSameNsAndEpoch", MethodType.methodType(boolean.class, Namespace.class, int.class, Namespace.class));
+            SLOT_GET = LOOKUP.findVirtual(Slot.class, "get", MethodType.methodType(Object.class));
             CALL_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "callFallback", MethodType.methodType(Object.class, CallCache.class, Object[].class));
             CALL_GENERIC = LOOKUP.findStatic(Bootstrap.class, "callGeneric", call);
             CALLABLE_CALL = LOOKUP.findVirtual(Callable.class, "call", CALL);
@@ -84,40 +89,78 @@ public final class Bootstrap {
     // ------------------------------------------------------------------ names
 
     /**
-     * {@code name(Namespace ns) -> Object} : {@code ns.lookup(variable)}, with the slot the name
-     * resolves to cached for the last namespace the site saw (at {@code -O2}, {@code BIP014-I3}).
-     * A name of a module or a class body, read from a method or function, is looked up in the
-     * same closure on every call : the site walks the scopes and hashes the name once, then
-     * reads the slot directly, which still fails when the definition has not run yet. A site
-     * that sees another namespace resolves the name again, and caches that.
+     * {@code name(Namespace ns) -> Object} : {@code ns.lookup(variable)}, inline-caching the
+     * resolved slot or constant final value for the namespaces the site sees ({@code BIP014-I3},
+     * {@code BIP034-P4}).
+     * <p>
+     * For initialized {@code def} slots ({@code slot.isFinal() && slot.isSet()}), the call site
+     * links a guarded {@link MethodHandles#constant} so HotSpot C2 constant-folds the resolved
+     * function, class, module, or constant directly. Mutable {@code var} slots link a guarded
+     * direct {@link Slot#get()} handle. Past {@link #MAX_DEPTH} distinct namespaces/epochs, the
+     * site settles on a 1-entry {@link Resolution} cache without degrading to uncached scope walks.
+     * Uninitialized slots throw before linking and are never cached.
      */
     public static java.lang.invoke.CallSite name(MethodHandles.Lookup lookup, String name, MethodType type, String variable) {
-        return new ConstantCallSite(NAME_LOOKUP.bindTo(new NameCache(variable)).asType(type));
+        return new NameCache(type, variable);
     }
 
-    static final class NameCache {
+    static final class NameCache extends MutableCallSite {
         private final String name;
-        /** The last resolution, immutable so that threads see it whole. */
+        private final MethodHandle polymorphic;
+        private int depth;
+        /** Fallback 1-entry cache used once a site exceeds {@link #MAX_DEPTH} distinct namespaces. */
         private Resolution last;
 
-        NameCache(String name) {
+        NameCache(MethodType type, String name) {
+            super(type);
             this.name = name;
+            this.polymorphic = NAME_LOOKUP.bindTo(this).asType(type);
+            setTarget(NAME_FALLBACK.bindTo(this).asType(type));
         }
 
-        private record Resolution(Namespace namespace, Slot<Object> slot, int epoch) {
+        private record Resolution(Namespace namespace, Slot<Object> slot, int epoch, boolean constant, Object value) {
         }
 
         Object lookup(Namespace namespace) {
             Resolution r = last;
             if (r != null && r.namespace == namespace && r.epoch == Namespace.epoch()) {
-                return r.slot.get();
+                return r.constant ? r.value : r.slot.get();
             }
             // A miss costs the walk the uncached lookup does, and the resolution it keeps.
             int epoch = Namespace.epoch();
             Slot<Object> slot = namespace.resolve(name);
-            last = new Resolution(namespace, slot, epoch);
-            return slot.get();
+            Object value = slot.get();
+            last = new Resolution(namespace, slot, epoch, slot.isFinal(), value);
+            return value;
         }
+
+        synchronized void relink(Namespace namespace, Slot<Object> slot, int epoch, Object value) {
+            if (depth > MAX_DEPTH || Namespace.epoch() != epoch) {
+                return;
+            }
+            if (++depth > MAX_DEPTH) {
+                last = new Resolution(namespace, slot, epoch, slot.isFinal(), value);
+                setTarget(polymorphic);
+                return;
+            }
+            MethodHandle test = MethodHandles.insertArguments(IS_SAME_NS_AND_EPOCH, 0, namespace, epoch);
+            MethodHandle fast = slot.isFinal()
+                    ? MethodHandles.dropArguments(MethodHandles.constant(Object.class, value), 0, Namespace.class)
+                    : MethodHandles.dropArguments(SLOT_GET.bindTo(slot), 0, Namespace.class);
+            setTarget(MethodHandles.guardWithTest(test, fast.asType(type()), getTarget()));
+        }
+    }
+
+    private static Object nameFallback(NameCache cache, Namespace namespace) {
+        int epoch = Namespace.epoch();
+        Slot<Object> slot = namespace.resolve(cache.name);
+        Object value = slot.get();
+        cache.relink(namespace, slot, epoch, value);
+        return value;
+    }
+
+    private static boolean isSameNsAndEpoch(Namespace expected, int expectedEpoch, Namespace actual) {
+        return actual == expected && Namespace.epoch() == expectedEpoch;
     }
 
     // ------------------------------------------------------------------ calls
@@ -561,7 +604,21 @@ public final class Bootstrap {
                 int index = mod.exportIndex(member);
                 if (index >= 0) {
                     test = IS_SAME.bindTo(mod);
-                    fast = MethodHandles.dropArguments(MethodHandles.insertArguments(EXPORT_AT.bindTo(mod), 0, index), 0, Object.class);
+                    if (mod.isExportFinal(index)) {
+                        // BIP034-D4: initialized final module export is constant for this Module instance.
+                        fast = MethodHandles.dropArguments(MethodHandles.constant(Object.class, result), 0, Object.class);
+                    } else {
+                        fast = MethodHandles.dropArguments(MethodHandles.insertArguments(EXPORT_AT.bindTo(mod), 0, index), 0, Object.class);
+                    }
+                }
+            } else if (target instanceof BabbleType bt) {
+                ClassShape shape = bt.shape();
+                int index = shape.staticIndex(member);
+                if (index >= 0 && !shape.isStaticPrivate(index) && !shape.isStaticMutable(index)) {
+                    // BIP034-D11: initialized public static def (value or bound static method) is
+                    // constant forever for this BabbleType instance.
+                    test = IS_SAME.bindTo(bt);
+                    fast = MethodHandles.dropArguments(MethodHandles.constant(Object.class, result), 0, Object.class);
                 }
             } else if (BabbleObjects.isCompiledInstance(target)) {
                 test = IS_CLASS.bindTo(target.getClass());
