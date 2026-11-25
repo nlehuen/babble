@@ -148,6 +148,7 @@ public final class BabbleCompiler {
             });
         }
         HirEmitter emitter = new HirEmitter(hir, mir, parentLoader);
+        emitter.cacheNameReadsInBodies = hirRes.passCtx().optLevel() >= 1;
         Map<String, byte[]> classes = emitter.generate();
 
         String dump = System.getProperty(DUMP_CLASSES);

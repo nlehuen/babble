@@ -325,6 +325,7 @@ In `BIP034-I3` (`BIP034-D7`):
 `Slot<T>` (`src/main/java/org/babblelang/runtime/Slot.java`) **already** has a `private final boolean isFinal` field — it is simply hardcoded to `false` in `Namespace.declare` today.
 
 1. **`Namespace.declare` sets `isFinal = true` for `def`s and `false` for `var`s** (and `Namespace.defineParameter(name, value, isFinal)` sets `isFinal = true` for implicitly-`def` parameters and `false` for `fn (var ...)` parameters).
+   *(Since `BIP014`'s argon follow-up (§9.4), the name sites are used from `-O1` for the bodies of functions and methods that are not namespace-scoped, and a final, definitely-defined read of a class's own top-level name inside one of its methods compiles to `this.$babble$class` with no site at all.)*
 2. **`Bootstrap.NameCache` constant fast path (`BIP034-I4`):**
    When `Bootstrap.NameCache.lookup(Namespace)` resolves a `Slot` with `slot.isFinal() && slot.isSet()`, the `Resolution` record caches the resolved `Object value` directly (skipping `r.slot.get()` and its `if (set)` branch on every access — or specializing a monomorphic `MutableCallSite` guard `(ns == cachedNs && Namespace.epoch() == cachedEpoch)` directly to `MethodHandles.constant(Object.class, value)` so HotSpot C2 constant-folds `Vec3` / `Pair` / `math`!).
 3. **`Bootstrap.SelectCache` constant fast paths for `Module` exports & `BabbleType` static `def`s (`BIP034-I4`):**

@@ -86,6 +86,13 @@ final class HirEmitter {
         this(module, null, runtimeLoader);
     }
 
+    /**
+     * Whether the bodies of functions and methods read names through caching {@code Bootstrap.name}
+     * sites (from {@code -O1}) : their namespace is the same closure from call to call, unlike
+     * {@code run}'s, a static block's or a namespace-scoped function's.
+     */
+    boolean cacheNameReadsInBodies;
+
     HirEmitter(HirModule module, org.babblelang.ir.mir.MirModule mirModule, ClassLoader runtimeLoader) {
         this.module = module;
         this.mirModule = mirModule;
@@ -673,6 +680,7 @@ final class HirEmitter {
     }
 
     private void functionBody(HirFunction fn, String paramsField, String selfType) {
+        ctx.cacheNameReads = cacheNameReadsInBodies && !fn.namespaceScope();
         ctx.beginTailLoop(null, -1);
         org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
         initFrameLocals(fn, selfType, mirFn);
@@ -690,6 +698,7 @@ final class HirEmitter {
     }
 
     private void functionBodySpec(HirFunction fn, String selfType, int[] paramSlots, int maskSlot) {
+        ctx.cacheNameReads = cacheNameReadsInBodies && !fn.namespaceScope();
         MethodVisitor mv = ctx.mv;
         ctx.beginTailLoop(paramSlots, maskSlot);
         org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
@@ -1147,6 +1156,46 @@ final class HirEmitter {
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
+    /** Top-level {@code def C = class or record}, name to class id : see {@link #loadName}. */
+    private Map<String, Integer> selfClassBindings;
+
+    private Map<String, Integer> selfClassBindings() {
+        if (selfClassBindings == null) {
+            selfClassBindings = new HashMap<>();
+            for (HirExpr stmt : module.topLevelStatements()) {
+                if (stmt instanceof HirExpr.Def d && d.var() == null
+                        && d.target().kind() == org.babblelang.analysis.LoweringTargets.DefKind.LEXICAL) {
+                    HirExpr value = d.value();
+                    while (value instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
+                        value = b.statements().get(0);
+                    }
+                    if (value instanceof HirExpr.ClassExpr ce && !module.clazz(ce.classId()).isObject()) {
+                        selfClassBindings.put(d.name(), ce.classId());
+                    }
+                }
+            }
+        }
+        return selfClassBindings;
+    }
+
+    /**
+     * A name read. Inside a method of class {@code C}, a read of the top-level {@code def C} that
+     * binds it, final and definitely defined, is the receiver's class : classes cannot be
+     * extended, so {@code this.$babble$class} is that very class value, without a lookup. A
+     * read that could run before the binding (from a static block) is not definitely defined,
+     * and keeps the lookup and its error.
+     */
+    void loadName(String name, boolean finalAndDefined, int lineNumber) {
+        if (finalAndDefined && ctx.methodClass != null
+                && Integer.valueOf(ctx.methodClass.cls.id()).equals(selfClassBindings().get(name))) {
+            ctx.mv.visitVarInsn(ALOAD, ctx.thizLocal);
+            ctx.mv.visitFieldInsn(GETFIELD, ctx.methodClass.name, "$babble$class", "L" + BABBLE_CLASS + ";");
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
+        loadVarOrName(null, name, lineNumber);
+    }
+
     void loadVarOrName(HirVar var, String name, int lineNumber) {
         if (var != null) {
             loadVariable(var, lineNumber);
@@ -1260,7 +1309,7 @@ final class HirEmitter {
             case HirExpr.CoreCollectionRef r -> emitCoreCollectionRef(r);
             case HirExpr.CoreExceptionRef r -> emitCoreExceptionRef(r);
             case HirExpr.VarRead v -> loadVariable(v.var(), v.meta().line());
-            case HirExpr.NameRead n -> loadVarOrName(null, n.name(), n.meta().line());
+            case HirExpr.NameRead n -> loadName(n.name(), n.finalBinding() && n.definitelyDefined(), n.meta().line());
             case HirExpr.ThisRef t -> loadVarOrName(t.var(), "this", t.meta().line());
             case HirExpr.RecurseRef r -> loadVarOrName(r.var(), "$recurse", r.meta().line());
             case HirExpr.Def d -> assigns.emitDef(d);
