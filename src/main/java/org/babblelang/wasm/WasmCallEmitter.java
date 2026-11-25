@@ -201,6 +201,17 @@ public final class WasmCallEmitter {
                 return;
             }
         }
+        // 0b. Direct Wasm host import call: wasm.<mod>.<name>(...) (BIP025-P4, BIP025-D9)
+        if (call.callee() instanceof HirExpr.DynamicSelect fnSel && !fnSel.safe()
+                && fnSel.receiver() instanceof HirExpr.DynamicSelect modSel && !modSel.safe()
+                && modSel.receiver() instanceof HirExpr.NameRead wasmNr && "wasm".equals(wasmNr.name())
+                && !isShadowedLocalOrGlobal("wasm")) {
+            WasmProgramLinker.WasmImportBinding binding = linker.wasmImport(modSel.memberName(), fnSel.memberName());
+            if (binding != null) {
+                emitWasmHostImportCall(binding, call.args(), call.meta().line());
+                return;
+            }
+        }
         // 1. Direct built-in recognition (print, println, assert, conversions, same, classof, exception)
         if (call.callee() instanceof HirExpr.NameRead nr && WasmFuncEmitter.isBuiltinName(nr.name())
                 && !isShadowedLocalOrGlobal(nr.name())) {
@@ -1158,5 +1169,62 @@ public final class WasmCallEmitter {
         rt.emitStringLit(c, "Unsupported Java constructor on Wasm : " + owner);
         c.i32Const(line).call(rt.fnThrowMsg).unreachable();
         ctx.stackKind = PrimitiveKind.NONE;
+    }
+
+    /** Emits a direct Wasm host import call declared via {@code axiom wasm.<mod>.<name>: fn ...} ({@code BIP025-D9}). */
+    private void emitWasmHostImportCall(WasmProgramLinker.WasmImportBinding binding, List<HirCallArg> args, int line) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        LoweringTargets.WasmImportSpec spec = binding.spec();
+        int n = spec.paramKinds().length;
+        for (int i = 0; i < n; i++) {
+            HirExpr arg = i < args.size() ? args.get(i).value() : null;
+            if (spec.paramIsString()[i]) {
+                if (arg == null) {
+                    c.refNull(WasmValType.HeapType.Abstract.EXTERN);
+                } else {
+                    fe.emitBoxed(arg);
+                    int tmp = ctx.newLocal("$wStrArg", ts.anyRef());
+                    c.localTee(tmp).refIsNull().if_(WasmValType.EXTERNREF)
+                            .refNull(WasmValType.HeapType.Abstract.EXTERN)
+                            .else_()
+                            .localGet(tmp).refCast(ts.stringType).call(rt.fnToExternStr)
+                            .end();
+                }
+            } else if (spec.paramKinds()[i] != PrimitiveKind.NONE) {
+                if (arg == null) {
+                    ts.emitDefaultValue(c, ts.valTypeFor(spec.paramKinds()[i]));
+                } else {
+                    fe.emitAs(arg, spec.paramKinds()[i]);
+                }
+            } else {
+                if (arg == null) {
+                    c.refNull(WasmValType.HeapType.Abstract.EXTERN);
+                } else {
+                    fe.emitBoxed(arg);
+                    int tmp = ctx.newLocal("$wAnyArg", ts.anyRef());
+                    c.localTee(tmp).refIsNull().if_(WasmValType.EXTERNREF)
+                            .refNull(WasmValType.HeapType.Abstract.EXTERN)
+                            .else_()
+                            .localGet(tmp).call(rt.fnFormat).call(rt.fnToExternStr)
+                            .end();
+                }
+            }
+        }
+        c.call(binding.funcIdx());
+        if (spec.returnIsVoid()) {
+            c.refNull(ts.anyType);
+            ctx.stackKind = PrimitiveKind.NONE;
+        } else if (spec.returnIsString() || spec.returnKind() == PrimitiveKind.NONE) {
+            int extTmp = ctx.newLocal("$wRetExt", WasmValType.EXTERNREF);
+            c.localTee(extTmp).refIsNull().if_(ts.anyRef())
+                    .refNull(ts.anyType)
+                    .else_()
+                    .localGet(extTmp).call(rt.fnFromExternStr)
+                    .end();
+            ctx.stackKind = PrimitiveKind.NONE;
+        } else {
+            ctx.stackKind = spec.returnKind();
+        }
     }
 }

@@ -39,6 +39,20 @@ public final class ModuleInterface {
         this.exportIndices = Map.copyOf(indices);
     }
 
+    private ModuleInterface(String name, Map<String, Type> members) {
+        this.name = name;
+        this.exports = Set.copyOf(members.keySet());
+        this.exportIndices = Map.of(); // -1 exportIndex so LoweringAnalyzer emits DynamicSelect, not ModuleExportGet
+        this.summary = new TypedModuleSummary(
+                Map.copyOf(members), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+                Map.of(), Map.of(), AxiomData.AxiomTable.EMPTY, null);
+    }
+
+    /** Synthetic typed namespace (e.g. {@code wasm} / {@code wasm.<mod>} host imports, {@code BIP025-D9}). */
+    static ModuleInterface synthetic(String name, Map<String, Type> members) {
+        return new ModuleInterface(name, members);
+    }
+
     /** The file, as messages name it : the same name as the runtime module's. */
     public String name() {
         return name;

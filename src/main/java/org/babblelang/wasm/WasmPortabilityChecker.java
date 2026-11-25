@@ -54,7 +54,7 @@ public final class WasmPortabilityChecker {
     );
 
     private static final Set<String> WASM_BARE_FORBIDDEN_NAMES = Set.of(
-            "print", "println", "affiche", "afficherc", "STDOUT", "STDERR", "STDIN", "args"
+            "print", "println", "affiche", "afficherc", "STDOUT", "STDERR", "STDIN", "args", "wasm"
     );
 
     public record Diagnostic(int line, String detail) {
@@ -143,6 +143,11 @@ public final class WasmPortabilityChecker {
     }
 
     private static void checkModule(HirModule mod, CompilationTarget target, List<Diagnostic> out) {
+        if (target.isWasmBare() && !mod.wasmImports().isEmpty()) {
+            for (LoweringTargets.WasmImportSpec spec : mod.wasmImports()) {
+                out.add(new Diagnostic(0, "wasm." + spec.module() + "." + spec.name() + " (disallowed on wasm-bare)"));
+            }
+        }
         checkList(mod.topLevelStatements(), target, out);
         for (HirFunction fn : mod.functions().values()) {
             for (HirParam p : fn.params()) {

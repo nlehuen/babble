@@ -90,14 +90,17 @@ public final class WasmJsGlueGen {
                 }
 
                 export function createBabbleImports(options = {}) {
-                  const onStdout = options.stdout ?? ((s) => {
+                  const onStdout = options.onStdout ?? options.stdout ?? ((s) => {
                     if (typeof process !== "undefined" && process.stdout) process.stdout.write(s);
                     else console.log(s);
                   });
-                  const onStderr = options.stderr ?? ((s) => {
+                  const onStderr = options.onStderr ?? options.stderr ?? ((s) => {
                     if (typeof process !== "undefined" && process.stderr) process.stderr.write(s);
                     else console.error(s);
                   });
+                  const cliArgs = Array.isArray(options.args)
+                    ? options.args.map(String)
+                    : (typeof process !== "undefined" && Array.isArray(process.argv) ? process.argv.slice(2) : []);
                   const env = {
                     write_stdout: (s) => onStdout(String(s)),
                     write_stderr: (s) => onStderr(String(s)),
@@ -105,10 +108,14 @@ public final class WasmJsGlueGen {
                     format_f32: (f) => formatJavaFloat(f),
                     parse_f64: (s) => parseJavaDouble(s),
                     parse_f32: (s) => parseJavaFloat(s),
+                    args_count: () => cliArgs.length,
+                    arg_at: (i) => cliArgs[i] ?? "",
+                    now_ms: () => BigInt(Date.now()),
                   };
                   const imports = { "babble:env": env };
-                  if (options.host && typeof options.host === "object") {
-                    for (const [k, v] of Object.entries(options.host)) {
+                  const extra = options.imports ?? options.host;
+                  if (extra && typeof extra === "object") {
+                    for (const [k, v] of Object.entries(extra)) {
                       imports[k] = v;
                     }
                   }

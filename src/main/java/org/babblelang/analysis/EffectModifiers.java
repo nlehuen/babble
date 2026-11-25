@@ -375,6 +375,9 @@ final class EffectModifiers {
                 sink.report("axiom declarations are disabled on this engine", ctx);
                 continue;
             }
+            if (AxiomData.isWasmImportAxiom(ctx)) {
+                continue;
+            }
             AxiomData.ClassResolver resolver = path -> resolveAxiomClassPath(path, scope);
             AxiomData.ParsedAxiom parsed = AxiomData.parse(ctx, resolver, false, sink);
             if (parsed == null || !parsed.isJava()) {

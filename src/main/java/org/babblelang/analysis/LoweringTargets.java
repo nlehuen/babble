@@ -425,5 +425,21 @@ public final class LoweringTargets {
     ) {
         public static final ParamOwnership DEFAULT = new ParamOwnership(false, true, false, null);
     }
+
+    /** Declared WebAssembly host-import signature from {@code axiom wasm.<mod>.<name>: fn ...} ({@code BIP025-D9}). */
+    public record WasmImportSpec(
+            String module,
+            String name,
+            PrimitiveKind[] paramKinds,
+            boolean[] paramIsString,
+            PrimitiveKind returnKind,
+            boolean returnIsString,
+            boolean returnIsVoid
+    ) {
+        public WasmImportSpec {
+            paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
+            paramIsString = paramIsString != null ? paramIsString.clone() : new boolean[0];
+        }
+    }
 }
 

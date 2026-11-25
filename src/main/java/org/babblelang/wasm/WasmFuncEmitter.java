@@ -651,6 +651,11 @@ public final class WasmFuncEmitter {
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
+        if ("args".equals(name)) {
+            c.globalGet(rt.gArgs).refAsNonNull();
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         if (isBuiltinName(name)) {
             int bg = ops.builtinCallableGlobal(name);
             c.globalGet(bg).refAsNonNull();

@@ -31,7 +31,8 @@ public record HirModule(
         Map<String, String> ownInterfaceJvmNames,
         Map<String, String> ownClassJvmNames,
         int nextVarId,
-        int nextOwnerId
+        int nextOwnerId,
+        List<LoweringTargets.WasmImportSpec> wasmImports
 ) implements IrDumpable {
     public HirModule {
         exports = exports != null ? exports.clone() : new String[0];
@@ -46,6 +47,21 @@ public record HirModule(
         allClassJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(allClassJvmNames));
         ownInterfaceJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(ownInterfaceJvmNames));
         ownClassJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(ownClassJvmNames));
+        wasmImports = wasmImports != null ? List.copyOf(wasmImports) : List.of();
+    }
+
+    public HirModule(
+            String className, String sourceName, int startLine, String[] exports,
+            String[] topLevelDeclaredNames, List<HirExpr> topLevelStatements,
+            Map<Integer, HirFunction> functions, Map<Integer, HirClass> classes,
+            Map<Integer, HirInterface> interfaces, Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies,
+            Map<String, String> allInterfaceJvmNames, Map<String, String> allClassJvmNames,
+            Map<String, String> ownInterfaceJvmNames, Map<String, String> ownClassJvmNames,
+            int nextVarId, int nextOwnerId
+    ) {
+        this(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelStatements,
+                functions, classes, interfaces, typeHierarchies, allInterfaceJvmNames, allClassJvmNames,
+                ownInterfaceJvmNames, ownClassJvmNames, nextVarId, nextOwnerId, List.of());
     }
 
     /** Target-neutral module identifier ({@code BIP025-D3}). */
@@ -80,7 +96,7 @@ public record HirModule(
         return new HirModule(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelDeclaredFinals,
                 newTopLevelStatements, newFunctions, newClasses, newInterfaces, typeHierarchies,
                 allInterfaceJvmNames, allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames,
-                newNextVarId, newNextOwnerId);
+                newNextVarId, newNextOwnerId, wasmImports);
     }
 
     @Override

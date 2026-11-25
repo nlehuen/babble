@@ -399,6 +399,16 @@ public final class LoweringMetadata {
         builtinOwnershipCalls.put(ctx, kind);
     }
 
+    private final Map<String, LoweringTargets.WasmImportSpec> wasmImports = new java.util.LinkedHashMap<>();
+
+    void addWasmImport(LoweringTargets.WasmImportSpec spec) {
+        wasmImports.put(spec.module() + "." + spec.name(), spec);
+    }
+
+    public List<LoweringTargets.WasmImportSpec> wasmImports() {
+        return List.copyOf(wasmImports.values());
+    }
+
     /** {@code "move"} or {@code "freeze"} when {@code ctx} calls the unshadowed built-in, else null. */
     public String builtinOwnershipCall(BabbleParser.CallContext ctx) {
         return builtinOwnershipCalls.get(ctx);

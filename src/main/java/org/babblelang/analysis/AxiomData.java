@@ -1167,6 +1167,22 @@ final class AxiomData {
                 && ctx.target != null && ctx.target.memberName().isEmpty();
     }
 
+    /** Whether {@code ctx} is a WebAssembly host-import axiom ({@code axiom wasm.<mod>.<name>: fn ...}, {@code BIP025-D9}). */
+    static boolean isWasmImportAxiom(BabbleParser.AxiomExpressionContext ctx) {
+        return ctx != null && ctx.axiomType() != null && ctx.axiomType().FN() != null
+                && ctx.target != null && ctx.target.ID() != null
+                && "wasm".equals(ctx.target.ID().getText())
+                && ctx.target.memberName().size() == 2;
+    }
+
+    static String wasmImportModule(BabbleParser.AxiomExpressionContext ctx) {
+        return isWasmImportAxiom(ctx) ? ctx.target.memberName(0).getText() : null;
+    }
+
+    static String wasmImportName(BabbleParser.AxiomExpressionContext ctx) {
+        return isWasmImportAxiom(ctx) ? ctx.target.memberName(1).getText() : null;
+    }
+
     /** Returns the Babble name of a single-segment axiom target (identifier or core scalar keyword). */
     static String babbleName(BabbleParser.AxiomExpressionContext ctx) {
         if (!isBabbleNameAxiom(ctx)) {
@@ -1176,13 +1192,16 @@ final class AxiomData {
     }
 
     /**
-     * Parses a Babble-name axiom ({@code axiom foo: fn ... (params): ret}) into a {@link Type.Function}
+     * Parses a Babble-name axiom ({@code axiom foo: fn ... (params): ret}) or Wasm host-import axiom
+     * ({@code axiom wasm.<mod>.<name>: fn ...}) into a {@link Type.Function}
      * using {@code typeResolver} to resolve each parameter/return {@link BabbleParser.TypeContext}.
      */
     static Type.Function parseBabbleAxiomFunction(BabbleParser.AxiomExpressionContext ctx,
                                                   java.util.function.Function<BabbleParser.TypeContext, Type> typeResolver,
                                                   ErrorSink errors) {
-        String name = babbleName(ctx);
+        String name = isWasmImportAxiom(ctx)
+                ? "wasm." + wasmImportModule(ctx) + "." + wasmImportName(ctx)
+                : babbleName(ctx);
         if (name == null) {
             return null;
         }
