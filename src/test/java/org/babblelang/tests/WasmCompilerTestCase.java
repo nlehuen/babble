@@ -1388,4 +1388,78 @@ public class WasmCompilerTestCase {
         Assertions.assertTrue(err.contains("Error : "), "Expected Error prefix : " + err);
         Assertions.assertFalse(err.contains("Error : Error : "), "Duplicate Error prefix : " + err);
     }
+
+    @Test
+    public void bip034ImmutabilityValueCaptureAndStaticFolding() throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        String code = """
+                def K: double = 2.5
+                def INF: double = 1.0 / 0.0
+                def DYN_SCALE: double = double(list.of(1).size())
+                def Box = class (def a: int, var b: int) (
+                    private def doubled: int = this.a * 2
+                    def total = fn (): int -> (this.a + this.b + this.doubled)
+                    def bump = fn mut (d: int): int -> (
+                        this.b += d
+                        this.b
+                    )
+                ) static (
+                    def ORIGIN = this(10, 20)
+                    def FACTOR: double = 3.0
+                )
+                def makeAdder = fn (base: int): fn (int): int -> (
+                    def offset: int = base + 1
+                    fn (x: int): int -> (x + offset)
+                )
+                def makeCounter = fn (): fn io (): int -> (
+                    var n: int = 0
+                    fn io (): int -> (
+                        n += 1
+                        n
+                    )
+                )
+                def run = fn io (): double -> (
+                    def b = Box(3, 4)
+                    assert(b.total() == 13)
+                    assert(b.bump(5) == 9)
+                    assert(b.total() == 18)
+                    assert(Box.ORIGIN.total() == 50)
+                    assert(Box.FACTOR == 3.0)
+                    assert(INF > 1.0e100)
+                    def add = makeAdder(10)
+                    assert(add(5) == 16)
+                    def cnt = makeCounter()
+                    assert(cnt() == 1)
+                    assert(cnt() == 2)
+                    K * Box.FACTOR * DYN_SCALE + double(b.total())
+                )
+                run()
+                """;
+        WasmCompiler.CompileResult compiled = compileRaw(code, CompilationTarget.WASM_BARE, 1, false);
+        Assertions.assertTrue(compiled.ok(), "Portability errors : " + compiled.portabilityErrors());
+        String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
+
+        // 1. Header `def a: int` is strictly immutable in WasmGC struct, while `var b: int` is mutable
+        Assertions.assertTrue(wat.contains("(field $f_a i32)"), "Expected immutable header def field $f_a : " + wat);
+        Assertions.assertTrue(wat.contains("(field $f_b (mut i32))"), "Expected mutable header var field $f_b : " + wat);
+
+        // 2. BIP034-I5 value-capture: makeAdder's inner closure captures raw `i32` directly (not $IntCell)
+        Assertions.assertTrue(wat.contains("(field $cap0 i32)"), "Expected value-captured raw i32 field in closure : " + wat);
+        // Mutable `var n` in makeCounter still uses a cell capture
+        Assertions.assertTrue(wat.contains("(field $cap0 (ref $IntCell))"), "Expected cell-captured $IntCell for var : " + wat);
+
+        // 3. Unboxed primitive top-level global for non-const `DYN_SCALE` + constant-folded `INF` / `K` / `Box.FACTOR`
+        Assertions.assertTrue(wat.contains("M0_gp_DYN_SCALE"), "Expected unboxed primitive global M0_gp_DYN_SCALE");
+        Assertions.assertTrue(wat.contains("f64.const inf"), "Expected folded f64.const inf");
+
+        // 4. Dedicated global for immutable static `def ORIGIN` and direct constructor call `$C0_Box$new`
+        Assertions.assertTrue(wat.contains("global.get $G_ST_C0_Box_ORIGIN"), "Expected direct static def global.get");
+        Assertions.assertTrue(wat.contains("call $C0_Box$new"), "Expected direct regular class constructor call");
+
+        // 5. Execute in V8 and verify result
+        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(compiled.wasmBytes());
+        Assertions.assertTrue(out.ok(), "V8 execution failed : " + out.error());
+        Assertions.assertEquals("\"25.5\"", out.resultJson());
+    }
 }
+

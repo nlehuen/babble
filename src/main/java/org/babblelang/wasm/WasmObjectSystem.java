@@ -74,10 +74,12 @@ public final class WasmObjectSystem {
         public final int[] memberToStructField; // -1 if method
         public final PrimitiveKind[] memberKinds;
         public final boolean[] fieldMutable;
+        public final boolean[] guaranteedDefinedAfterCtor;
         public final int defMaskFieldIdx; // -1 if none
         public final int captureBaseFieldIdx;
         public final int hiddenCellBaseFieldIdx;
         public final List<HirVar> hiddenCells;
+        public final Map<Integer, Integer> valueHiddenVarToField = new LinkedHashMap<>();
         public final boolean hasCaptures;
         public final boolean hasCapturingIfaces;
         public final long ifaceBits;
@@ -102,12 +104,16 @@ public final class WasmObjectSystem {
         public WasmModule.FuncDef getMemberDef;
         public WasmModule.FuncDef setMemberDef;
         public WasmModule.FuncDef opDef;
+        public int[] staticFieldGlobals = new int[0];
         public final Map<String, WasmProgramLinker.FuncInfo> immutableStaticMethods = new LinkedHashMap<>();
+        public final Set<String> immutableStaticFields = new LinkedHashSet<>();
+        public final Map<String, Object> immutableStaticConsts = new LinkedHashMap<>();
 
         public final Map<String, Integer> boundMethodGenericFns = new LinkedHashMap<>();
 
         ClassInfo(int classId, WasmProgramLinker.ModuleLinkInfo modInfo, HirClass hir, int structTypeIdx,
                   int[] memberToStructField, PrimitiveKind[] memberKinds, boolean[] fieldMutable,
+                  boolean[] guaranteedDefinedAfterCtor,
                   int defMaskFieldIdx, int captureBaseFieldIdx, int hiddenCellBaseFieldIdx, List<HirVar> hiddenCells,
                   boolean hasCapturingIfaces, long ifaceBits, long[] ifaceWords) {
             this.classId = classId;
@@ -118,10 +124,17 @@ public final class WasmObjectSystem {
             this.memberToStructField = memberToStructField;
             this.memberKinds = memberKinds;
             this.fieldMutable = fieldMutable;
+            this.guaranteedDefinedAfterCtor = guaranteedDefinedAfterCtor;
             this.defMaskFieldIdx = defMaskFieldIdx;
             this.captureBaseFieldIdx = captureBaseFieldIdx;
             this.hiddenCellBaseFieldIdx = hiddenCellBaseFieldIdx;
             this.hiddenCells = List.copyOf(hiddenCells);
+            for (int i = 0; i < this.hiddenCells.size(); i++) {
+                HirVar hv = this.hiddenCells.get(i);
+                if (WasmProgramLinker.isValueCapture(hv)) {
+                    this.valueHiddenVarToField.put(hv.id(), hiddenCellBaseFieldIdx + i);
+                }
+            }
             this.hasCaptures = !hir.capturedVars().isEmpty();
             this.hasCapturingIfaces = hasCapturingIfaces;
             this.ifaceBits = ifaceBits;
@@ -287,7 +300,10 @@ public final class WasmObjectSystem {
                 List<WasmTypeDef.Field> capFields = new ArrayList<>();
                 for (int ci = 0; ci < ii.capturedVars.size(); ci++) {
                     HirVar cv = ii.capturedVars.get(ci);
-                    capFields.add(WasmTypeSystem.field("$icap" + ci, WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())), false));
+                    WasmValType capType = WasmProgramLinker.isValueCapture(cv)
+                            ? ts.valTypeFor(cv.primitiveKind())
+                            : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind()));
+                    capFields.add(WasmTypeSystem.field("$icap" + ci, capType, false));
                 }
                 ii.capStructTypeIdx = mod.addStructType("IfaceCap_" + ii.ifaceIdx, true, ts.anyType, capFields);
                 ii.latestCapEnvGlobalIdx = mod.addGlobal("G_IFACE_CAP_" + ii.ifaceIdx,
@@ -346,8 +362,10 @@ public final class WasmObjectSystem {
                         fieldMutable[i] = false;
                     } else {
                         memberToField[i] = structFields.size();
-                        // BIP025-D11: ALL record parameter fields (and fastRecord fields) are strictly immutable!
-                        boolean mut = !isRecord || (!isParamMember[i] && !hc.fastRecord());
+                        // BIP025-D11 + BIP034-I5: record fields AND header `def` parameter fields on regular
+                        // classes are initialized directly in struct.new and strictly immutable in WasmGC!
+                        boolean immutableHeaderParam = isParamMember[i] && !shape.isMutable(i);
+                        boolean mut = !immutableHeaderParam && !(isRecord && hc.fastRecord());
                         fieldMutable[i] = mut;
                         structFields.add(WasmTypeSystem.field("f_" + mname, ts.valTypeFor(mk), mut));
                     }
@@ -355,32 +373,47 @@ public final class WasmObjectSystem {
 
                 int defMaskField = -1;
                 if (!isRecord && hc.primDefCount() > 0) {
-                    defMaskField = structFields.size();
-                    structFields.add(WasmTypeSystem.field("$defMask", WasmValType.I32, true));
+                    boolean needsDefMask = false;
+                    for (int i = 0; i < shape.memberCount(); i++) {
+                        if (fieldMutable[i] && i < hc.primDefBits().length && hc.primDefBits()[i] >= 0) {
+                            needsDefMask = true;
+                            break;
+                        }
+                    }
+                    if (needsDefMask) {
+                        defMaskField = structFields.size();
+                        structFields.add(WasmTypeSystem.field("$defMask", WasmValType.I32, true));
+                    }
                 }
 
                 int capBase = structFields.size();
                 for (int i = 0; i < hc.capturedVars().size(); i++) {
                     HirVar cv = hc.capturedVars().get(i);
-                    structFields.add(WasmTypeSystem.field("$cap" + i, WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())), false));
+                    WasmValType capType = WasmProgramLinker.isValueCapture(cv)
+                            ? ts.valTypeFor(cv.primitiveKind())
+                            : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind()));
+                    structFields.add(WasmTypeSystem.field("$cap" + i, capType, false));
                 }
 
                 int hiddenBase = structFields.size();
                 List<HirVar> hiddenCells = new ArrayList<>();
                 Set<Integer> seenHidden = new LinkedHashSet<>();
                 for (HirParam p : hc.params()) {
-                    if (p.var() != null && p.var().cell() && seenHidden.add(p.var().id())) {
+                    if (p.var() != null && (p.var().cell() || p.var().capturedByValue()) && seenHidden.add(p.var().id())) {
                         hiddenCells.add(p.var());
                     }
                 }
                 for (HirVar dv : hc.declaredVars()) {
-                    if (dv.cell() && seenHidden.add(dv.id())) {
+                    if ((dv.cell() || dv.capturedByValue()) && seenHidden.add(dv.id())) {
                         hiddenCells.add(dv);
                     }
                 }
                 for (int i = 0; i < hiddenCells.size(); i++) {
                     HirVar hv = hiddenCells.get(i);
-                    structFields.add(WasmTypeSystem.field("$hc" + i, WasmValType.refNull(ts.cellTypeFor(hv.primitiveKind())), true));
+                    WasmValType hvt = WasmProgramLinker.isValueCapture(hv)
+                            ? ts.valTypeFor(hv.primitiveKind())
+                            : WasmValType.refNull(ts.cellTypeFor(hv.primitiveKind()));
+                    structFields.add(WasmTypeSystem.field("$hc" + i, hvt, true));
                 }
 
                 String cname = "C" + classId + "_" + WasmProgramLinker.sanitizeName(shape.name());
@@ -453,8 +486,10 @@ public final class WasmObjectSystem {
             }
         }
 
+        boolean[] guaranteedDefinedAfterCtor = computeGuaranteedDefinedAfterCtor(hc, memberToField, fieldMutable);
+
         ClassInfo ci = new ClassInfo(classId, m, hc, structTypeIdx, memberToField, memberKinds, fieldMutable,
-                defMaskField, capBase, hiddenBase, hiddenCells, hasCapIfaces, bits, words);
+                guaranteedDefinedAfterCtor, defMaskField, capBase, hiddenBase, hiddenCells, hasCapIfaces, bits, words);
         ci.implementedIfaces.addAll(implSet);
         for (IfaceInfo ii : implSet) {
             ii.implementers.add(ci);
@@ -474,7 +509,10 @@ public final class WasmObjectSystem {
             cvFields.add(WasmTypeSystem.field("statics", WasmValType.refNull(ts.anyArrType), false));
             for (int i = 0; i < hc.capturedVars().size(); i++) {
                 HirVar cv = hc.capturedVars().get(i);
-                cvFields.add(WasmTypeSystem.field("$cap" + i, WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())), false));
+                WasmValType capVt = WasmProgramLinker.isValueCapture(cv)
+                        ? ts.valTypeFor(cv.primitiveKind())
+                        : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind()));
+                cvFields.add(WasmTypeSystem.field("$cap" + i, capVt, false));
             }
             ci.classValStructType = mod.addStructType(cname + "_ClassVal", true, ts.classValType, cvFields);
         } else {
@@ -482,6 +520,15 @@ public final class WasmObjectSystem {
         }
         ci.staticInitDoneGlobalIdx = mod.addGlobal("G_CLS_INIT_" + cname, WasmValType.I32, true,
                 List.of(new WasmInstr.I32Const(0)));
+        int staticCount = shape.staticCount();
+        if (staticCount > 0) {
+            ci.staticFieldGlobals = new int[staticCount];
+            for (int s = 0; s < staticCount; s++) {
+                ci.staticFieldGlobals[s] = mod.addGlobal(
+                        "G_ST_" + cname + "_" + WasmProgramLinker.sanitizeName(shape.staticMember(s)),
+                        ts.anyRef(), true, ts.defaultConstExpr(ts.anyRef()));
+            }
+        }
         if (hc.isObject()) {
             ci.singletonObjGlobalIdx = mod.addGlobal("G_OBJ_" + cname, WasmValType.refNull(structTypeIdx), true,
                     ts.defaultConstExpr(WasmValType.refNull(structTypeIdx)));
@@ -501,7 +548,9 @@ public final class WasmObjectSystem {
         }
         for (int i = 0; i < hc.capturedVars().size(); i++) {
             HirVar cv = hc.capturedVars().get(i);
-            ctorParams.add(WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
+            ctorParams.add(WasmProgramLinker.isValueCapture(cv)
+                    ? ts.valTypeFor(cv.primitiveKind())
+                    : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
             ctorParamNames.add("$cap" + i);
         }
         for (HirParam p : hc.params()) {
@@ -538,6 +587,100 @@ public final class WasmObjectSystem {
         if (hc.typeId() != null) classesByTypeId.put(hc.typeId(), ci);
         if (hc.jvmName() != null) classesByJvmName.put(hc.jvmName(), ci);
         classesByLocal.put(localKey(m.index, hc.id()), ci);
+    }
+
+    private static boolean[] computeGuaranteedDefinedAfterCtor(HirClass hc, int[] memberToField, boolean[] fieldMutable) {
+        ClassShape shape = hc.shape();
+        boolean[] guaranteed = new boolean[shape.memberCount()];
+        for (int i = 0; i < shape.memberCount(); i++) {
+            if (memberToField[i] >= 0 && (!fieldMutable[i] || shape.isHeaderParameterMember(i))) {
+                guaranteed[i] = true;
+            }
+        }
+        boolean escapesThis = false;
+        for (HirExpr stmt : hc.body()) {
+            if (stmt instanceof HirExpr.Def d
+                    && d.target() != null && d.target().kind() == LoweringTargets.DefKind.MEMBER
+                    && d.target().index() >= 0 && d.target().index() < memberToField.length
+                    && memberToField[d.target().index()] < 0) {
+                continue; // compiled method declaration, not evaluated during construction
+            }
+            if (exprEscapesThis(stmt)) {
+                escapesThis = true;
+                break;
+            }
+        }
+        if (!escapesThis) {
+            for (HirExpr stmt : hc.body()) {
+                if (stmt instanceof HirExpr.Def d
+                        && d.target() != null && d.target().kind() == LoweringTargets.DefKind.MEMBER
+                        && d.value() != null) {
+                    int mIdx = d.target().index();
+                    if (mIdx >= 0 && mIdx < guaranteed.length && memberToField[mIdx] >= 0) {
+                        guaranteed[mIdx] = true;
+                    }
+                }
+            }
+        }
+        return guaranteed;
+    }
+
+    private static boolean exprEscapesThis(HirExpr e) {
+        if (e == null) return false;
+        return switch (e) {
+            case HirExpr.Const ignored -> false;
+            case HirExpr.IntParseFallback ignored -> false;
+            case HirExpr.CoreExceptionRef ignored -> false;
+            case HirExpr.CoreCollectionRef ignored -> false;
+            case HirExpr.NameRead ignored -> false;
+            case HirExpr.RecurseRef ignored -> false;
+            case HirExpr.VarRead v -> v.var() != null
+                    && (v.var().kind() == org.babblelang.analysis.Resolution.Variable.Kind.THIS
+                        || "this".equals(v.var().name()));
+            case HirExpr.ThisRef ignored -> true;
+            case HirExpr.ThisFieldGet g -> !(g.receiver() instanceof HirExpr.ThisRef) && exprEscapesThis(g.receiver());
+            case HirExpr.Def d -> exprEscapesThis(d.value());
+            case HirExpr.Unary u -> exprEscapesThis(u.operand());
+            case HirExpr.Binary b -> exprEscapesThis(b.left()) || exprEscapesThis(b.right());
+            case HirExpr.Logic l -> exprEscapesThis(l.left()) || exprEscapesThis(l.right());
+            case HirExpr.ModuleExportGet g -> exprEscapesThis(g.receiver());
+            case HirExpr.DynamicSelect s -> exprEscapesThis(s.receiver());
+            case HirExpr.RecordNew r -> exprEscapesThis(r.classRef()) || anyEscapesThis(r.args());
+            case HirExpr.DynamicCall c -> exprEscapesThis(c.callee()) || anyCallArgsEscapeThis(c.args());
+            case HirExpr.DirectBabbleCall c -> exprEscapesThis(c.callee()) || anyEscapesThis(c.args());
+            case HirExpr.DirectThisMethodCall c -> exprEscapesThis(c.receiver()) || anyCallArgsEscapeThis(c.args());
+            case HirExpr.CoreMethodCall c -> exprEscapesThis(c.receiver()) || anyEscapesThis(c.args());
+            case HirExpr.CoreCollectionCall c -> anyCallArgsEscapeThis(c.args());
+            case HirExpr.ArrayCreate a -> anyEscapesThis(a.args());
+            case HirExpr.ArrayOp a -> exprEscapesThis(a.receiver()) || anyEscapesThis(a.args());
+            case HirExpr.If i -> exprEscapesThis(i.cond()) || exprEscapesThis(i.thenBranch()) || exprEscapesThis(i.elseBranch());
+            case HirExpr.Block b -> anyEscapesThis(b.statements());
+            case HirExpr.TypeApply t -> exprEscapesThis(t.inner());
+            case HirExpr.Is i -> exprEscapesThis(i.left());
+            case HirExpr.As a -> exprEscapesThis(a.left());
+            case HirExpr.NonNull n -> exprEscapesThis(n.operand());
+            case HirExpr.Move m -> exprEscapesThis(m.operand());
+            case HirExpr.Freeze f -> exprEscapesThis(f.operand());
+            case HirExpr.SpreadAdapt s -> exprEscapesThis(s.value());
+            case HirExpr.JavaMethodCall c -> exprEscapesThis(c.receiver()) || anyEscapesThis(c.args());
+            case HirExpr.JavaConstructorCall c -> anyEscapesThis(c.args());
+            case HirExpr.JavaFieldGet f -> exprEscapesThis(f.receiver());
+            default -> true;
+        };
+    }
+
+    private static boolean anyEscapesThis(List<HirExpr> exprs) {
+        for (HirExpr x : exprs) {
+            if (exprEscapesThis(x)) return true;
+        }
+        return false;
+    }
+
+    private static boolean anyCallArgsEscapeThis(List<HirCallArg> args) {
+        for (HirCallArg a : args) {
+            if (exprEscapesThis(a.value())) return true;
+        }
+        return false;
     }
 
     // ---------------------------------------------------------------- Phase 2: Emit constructors, vtable hooks, itables, init_objects
@@ -849,7 +992,8 @@ public final class WasmObjectSystem {
             c.call(rt.fnStrEq).if_();
             int fi = ci.memberToStructField[i];
             if (fi >= 0) {
-                if (ci.defMaskFieldIdx >= 0 && i < ci.hir.primDefBits().length && ci.hir.primDefBits()[i] >= 0) {
+                boolean needsCheck = ci.fieldMutable[i] && !ci.guaranteedDefinedAfterCtor[i];
+                if (needsCheck && ci.defMaskFieldIdx >= 0 && i < ci.hir.primDefBits().length && ci.hir.primDefBits()[i] >= 0) {
                     int bit = 1 << ci.hir.primDefBits()[i];
                     c.localGet(self).refAsNonNull().structGet(ci.structTypeIdx, ci.defMaskFieldIdx)
                             .i32Const(bit).op(WasmInstr.SimpleOp.I32_AND).op(WasmInstr.SimpleOp.I32_EQZ).if_();
@@ -859,7 +1003,7 @@ public final class WasmObjectSystem {
                 c.localGet(self).refAsNonNull().structGet(ci.structTypeIdx, fi);
                 if (ci.memberKinds[i].isPrimitive()) {
                     c.call(rt.boxFuncFor(ci.memberKinds[i]));
-                } else {
+                } else if (needsCheck) {
                     c.localTee(tmp).globalGet(rt.gUndefined).refEq().if_();
                     rt.emitStringLit(c, "Member used before definition : " + mname);
                     c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable().end();
@@ -911,7 +1055,10 @@ public final class WasmObjectSystem {
                 rt.emitStringLit(c, "Cannot assign method : " + mname);
                 c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
             } else if (!ci.fieldMutable[i]) {
-                rt.emitStringLit(c, "Cannot reassign field of record " + ci.shape.name() + " : " + mname);
+                String msg = ci.shape.isValue()
+                        ? "Cannot reassign field of record " + ci.shape.name() + " : " + mname
+                        : "Cannot assign to def member : " + mname;
+                rt.emitStringLit(c, msg);
                 c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
             } else {
                 // Reject writes to fields that have not been defined yet during construction
@@ -1401,6 +1548,9 @@ public final class WasmObjectSystem {
                     .globalGet(ci.vtableGlobalIdx).refAsNonNull();
             int csc = ci.shape.staticCount();
             if (csc > 0) {
+                for (int s = 0; s < csc; s++) {
+                    c.globalGet(rt.gUndefined).globalSet(ci.staticFieldGlobals[s]);
+                }
                 for (int s = 0; s < csc; s++) {
                     c.globalGet(rt.gUndefined);
                 }
