@@ -401,26 +401,24 @@ fn run(v0: byte, v1: any) -> double:
     ret v6
   bb3:
     v9: any = checkcast v4 <double|double|>
-    v10: any = widen#5 v9
-    v11: double = convert.double v10
+    v10: double = convert.double v9
+    v11: any = opaque.NameRead() {impure}
     v12: any = opaque.NameRead() {impure}
-    v13: any = opaque.NameRead() {impure}
-    v14: any = widen#2 v13
-    v15: int = convert.int v14
-    v16: any = opaque.NameRead() {impure}
-    v17: int = opaque.DynamicCall(v16, v0) {impure}
-    v18: int = add v15, v17 {pure}
-    v19: any = checkcast v1 <int|int|>
-    v20: any = widen#2 v19
-    v21: int = convert.int v20
-    v22: int = add v18, v21 {pure}
-    v23: int = add v22, v7 {pure}
-    v24: double = opaque.DynamicCall(v12, v23) {impure}
-    v25: double = add v11, v24 {pure}
-    v26: double = add v6, v25 {pure}
-    v27: int = const 1
-    v28: int = add v5, v27 {pure}
-    br bb1(v28, v26)
+    v13: any = widen#2 v12
+    v14: int = convert.int v13
+    v15: any = opaque.NameRead() {impure}
+    v16: int = opaque.DynamicCall(v15, v0) {impure}
+    v17: int = add v14, v16 {pure}
+    v18: any = checkcast v1 <int|int|>
+    v19: int = convert.int v18
+    v20: int = add v17, v19 {pure}
+    v21: int = add v20, v7 {pure}
+    v22: double = opaque.DynamicCall(v11, v21) {impure}
+    v23: double = add v10, v22 {pure}
+    v24: double = add v6, v23 {pure}
+    v25: int = const 1
+    v26: int = add v5, v25 {pure}
+    br bb1(v26, v24)
 ```
 
 ## HirLicmPass : local non-capturing fn (DirectBabbleCall with VarRead callee) and non-value class ThisFieldGet

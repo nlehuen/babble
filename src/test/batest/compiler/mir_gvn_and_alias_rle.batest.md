@@ -535,3 +535,374 @@ fn condWrite(v0: bool, v1: any [unique]) -> int:
     v6: int = add v2, v5 {pure}
     ret v6
 ```
+
+## Convert simplification : unbox(box(a)) -> a through CheckCast and Narrow (with IEEE-754 -0.0)
+
+```babble
+def roundTrip = fn (x: int, d: double): double -> (
+    def a: any = x ; def b: int? = x ; def c: any = d
+    def r1: int = a as int
+    def r2: int = if b != null then (b + 1) else (0)
+    def r3: double = if c is double then (c) else (0.0)
+    r3 + (r1 + r2)
+)
+assert(roundTrip(5, 2.5) == 13.5 and 1.0 / ((fn (d: double): double -> (def a: any = d ; a as double))(-0.0)) < 0.0)
+```
+
+```hir
+;; hir -O0 fn=roundTrip
+fn roundTrip (x:int, d:double) -> double {pure unique}
+  (def a var(x))
+  (def b var(x))
+  (def c var(d))
+  (def r1 (as var(a) int|int|))
+  (def r2 (if (<>:bool var(b) null) (block (+:int var(b) 1:int)) (block 0:int)))
+  (def r3 (if (is var(c) double) (block var(c)) (block 0.0:double)))
+  (+:double var(r3) (block (+:int var(r1) var(r2))))
+```
+
+```hir
+;; hir -O1 fn=roundTrip
+fn roundTrip (x:int, d:double) -> double {pure unique}
+  (def a var(x))
+  (def b var(x))
+  (def c var(d))
+  (def r1 (as var(a) int|int|))
+  (def r2 (if (<>:bool var(b) null) (+:int var(b) 1:int) 0:int))
+  (def r3 (if (is var(c) double) var(c) 0.0:double))
+  (+:double var(r3) (+:int var(r1) var(r2)))
+```
+
+```mir
+;; mir -O2 fn=roundTrip stage=before
+fn roundTrip(v0: int, v1: double) -> double:
+  bb0:
+    v2: any = convert.any v0
+    v3: any = convert.any v0
+    v4: any = convert.any v1
+    v5: any = checkcast v2 <int|int|>
+    v6: int = convert.int v5
+    v7: any = const null
+    v8: any = neq v3, v7 {pure,throws}
+    br_if v8, bb2, bb1
+  bb1:
+    v9: int = const 0
+    br bb3(v9)
+  bb2:
+    v10: any = narrow.nonnull v3 <non-null>
+    v11: int = convert.int v10
+    v12: int = const 1
+    v13: int = add v11, v12 {pure}
+    br bb3(v13)
+  bb3(v14: int):
+    v15: any = is v4 <double>
+    br_if v15, bb5, bb4
+  bb4:
+    v16: double = const 0.0
+    br bb6(v16)
+  bb5:
+    v17: any = narrow.is v4 <double>
+    v18: double = convert.double v17
+    br bb6(v18)
+  bb6(v19: double):
+    v20: int = add v6, v14 {pure}
+    v21: double = convert.double v20
+    v22: double = add v19, v21 {pure}
+    ret v22
+```
+
+```mir
+;; mir -O2 fn=roundTrip
+fn roundTrip(v0: int, v1: double) -> double:
+  bb0:
+    v2: any = convert.any v0
+    v3: any = convert.any v1
+    v4: any = const null
+    v5: any = neq v2, v4 {pure,throws}
+    br_if v5, bb2, bb1
+  bb1:
+    v6: int = const 0
+    br bb3(v6)
+  bb2:
+    v7: int = const 1
+    v8: int = add v0, v7 {pure}
+    br bb3(v8)
+  bb3(v9: int):
+    v10: any = is v3 <double>
+    br_if v10, bb5, bb4
+  bb4:
+    v11: double = const 0.0
+    br bb6(v11)
+  bb5:
+    br bb6(v1)
+  bb6(v12: double):
+    v13: int = add v0, v9 {pure}
+    v14: double = convert.double v13
+    v15: double = add v12, v14 {pure}
+    ret v15
+```
+
+## Convert simplification : sound box(unbox(a)) -> a on CheckCast, Narrow, and NonNull
+
+```babble
+def rbCheck = fn (xs: list of int): any -> (def y: int = xs.get(0) ; y)
+def rbNarrow = fn (x: int?, z: any?): any? -> (
+    if x != null then (def y: int = x ; y) else if z is double then (def d: double = z ; d) else (null)
+)
+def rbNN = fn (x: int?): any -> (def y: int = x! ; y)
+assert(rbCheck(list(42)) == 42 and rbNarrow(7, null) == 7 and rbNarrow(null, 3.5) == 3.5 and rbNN(9) == 9)
+```
+
+```hir
+;; hir -O0 fn=rbCheck
+fn rbCheck (xs:obj) -> obj {pure unique}
+  (def y (jcall List.get var(xs) 0:int))
+  var(y)
+```
+
+```hir
+;; hir -O1 fn=rbCheck
+fn rbCheck (xs:obj) -> obj {pure unique}
+  (def y (jcall List.get var(xs) 0:int))
+  var(y)
+```
+
+```mir
+;; mir -O2 fn=rbCheck stage=before
+fn rbCheck(v0: any) -> any:
+  bb0:
+    v1: int = const 0
+    v2: any = call_java v0.get(v1) {impure}
+    v3: any = checkcast v2 <int|int|>
+    v4: int = convert.int v3
+    v5: any = convert.any v4
+    ret v5
+```
+
+```mir
+;; mir -O2 fn=rbCheck
+fn rbCheck(v0: any) -> any:
+  bb0:
+    v1: int = const 0
+    v2: any = call_java v0.get(v1) {impure}
+    v3: any = checkcast v2 <int|int|>
+    ret v3
+```
+
+```mir
+;; mir -O2 fn=rbNarrow stage=before
+fn rbNarrow(v0: any, v1: any) -> any:
+  bb0:
+    v2: any = const null
+    v3: any = neq v0, v2 {pure,throws}
+    br_if v3, bb5, bb1
+  bb1:
+    v4: any = is v1 <double>
+    br_if v4, bb3, bb2
+  bb2:
+    v5: any = const null
+    br bb4(v5)
+  bb3:
+    v6: any = narrow.is v1 <double>
+    v7: double = convert.double v6
+    v8: any = convert.any v7
+    br bb4(v8)
+  bb4(v9: any):
+    br bb6(v9)
+  bb5:
+    v10: any = narrow.nonnull v0 <non-null>
+    v11: int = convert.int v10
+    v12: any = convert.any v11
+    br bb6(v12)
+  bb6(v13: any):
+    ret v13
+```
+
+```mir
+;; mir -O2 fn=rbNarrow
+fn rbNarrow(v0: any, v1: any) -> any:
+  bb0:
+    v2: any = const null
+    v3: any = neq v0, v2 {pure,throws}
+    br_if v3, bb5, bb1
+  bb1:
+    v4: any = is v1 <double>
+    br_if v4, bb3, bb2
+  bb2:
+    br bb4(v2)
+  bb3:
+    v5: any = narrow.is v1 <double>
+    br bb4(v5)
+  bb4(v6: any):
+    br bb6(v6)
+  bb5:
+    v7: any = narrow.nonnull v0 <non-null>
+    br bb6(v7)
+  bb6(v8: any):
+    ret v8
+```
+
+```mir
+;; mir -O2 fn=rbNN stage=before
+fn rbNN(v0: any) -> any:
+  bb0:
+    v1: int = nonnull v0
+    v2: any = convert.any v1
+    ret v2
+```
+
+```mir
+;; mir -O2 fn=rbNN
+fn rbNN(v0: any) -> any:
+  bb0:
+    v1: int = nonnull v0
+    ret v0
+```
+
+## Convert simplification : box(nonnull(null)) still throws expected int error
+
+```babble
+def rbNN = fn (x: int?): any -> (def y: int = x! ; y)
+rbNN(null)
+```
+
+```error
+Type error : expected int, got null
+```
+
+## Convert simplification : cross-pass AliasRLE + GVN unbox(narrow(box(x))) -> x
+
+```babble
+def Holder = class (def v: any) (
+    def setAndRead = fn mut (x: int): int -> (
+        this.v = x
+        def cur = this.v
+        if cur is int then (cur + 10) else (0)
+    )
+)
+assert(Holder("init").setAndRead(5) == 15)
+```
+
+```hir
+;; hir -O0 fn=Holder.setAndRead
+fn Holder.setAndRead (x:int) -> int {nothrow mut}
+  (set-this-field v var(x))
+  (def cur (get-this-field v))
+  (if (is var(cur) int) (block (+:int var(cur) 10:int)) (block 0:int))
+```
+
+```hir
+;; hir -O1 fn=Holder.setAndRead
+fn Holder.setAndRead (x:int) -> int {nothrow mut}
+  (set-this-field v var(x))
+  (def cur (get-this-field v))
+  (if (is var(cur) int) (+:int var(cur) 10:int) 0:int)
+```
+
+```mir
+;; mir -O2 fn=Holder.setAndRead stage=before
+fn Holder.setAndRead(v0: int) -> int:
+  bb0:
+    v1: any = slot_read this {pure}
+    v2: any = convert.any v0
+    store_field v1.v, v2 {write:shared,throws}
+    v3: any = slot_read this {pure}
+    v4: any = load_field v3.v {read:shared,throws}
+    v5: any = is v4 <int>
+    br_if v5, bb2, bb1
+  bb1:
+    v6: int = const 0
+    br bb3(v6)
+  bb2:
+    v7: any = narrow.is v4 <int>
+    v8: int = convert.int v7
+    v9: int = const 10
+    v10: int = add v8, v9 {pure}
+    br bb3(v10)
+  bb3(v11: int):
+    ret v11
+```
+
+```mir
+;; mir -O2 fn=Holder.setAndRead
+fn Holder.setAndRead(v0: int) -> int:
+  bb0:
+    v1: any = slot_read this {pure}
+    v2: any = convert.any v0
+    store_field v1.v, v2 {write:shared,throws}
+    v3: any = is v2 <int>
+    br_if v3, bb2, bb1
+  bb1:
+    v4: int = const 0
+    br bb3(v4)
+  bb2:
+    v5: int = const 10
+    v6: int = add v0, v5 {pure}
+    br bb3(v6)
+  bb3(v7: int):
+    ret v7
+```
+
+## Convert simplification : soundness guards (lossy int->float->double, NonNull Narrow + CheckCast, int as double)
+
+```babble
+def lossy = fn (x: int): double -> (def f: float = x ; def d: double = f ; d)
+def widenAs = fn (x: int): any -> (x as double)
+def nc = fn (x: any?): int -> (if x != null then (x as int) else (-1))
+assert(lossy(16777217) == 16777216.0 and widenAs(3) is double and nc(4) == 4 and nc(null) == -1)
+def bad = false ; try (nc("oops")) catch e: exception then (bad = true) ; assert(bad)
+```
+
+```hir
+;; hir -O0 fn=lossy
+fn lossy (x:int) -> double {nothrow monotone injective unique}
+  (def f var(x))
+  (def d var(f))
+  var(d)
+```
+
+```hir
+;; hir -O1 fn=lossy
+fn lossy (x:int) -> double {nothrow monotone injective unique}
+  (def f var(x))
+  (def d var(f))
+  var(d)
+```
+
+```mir
+;; mir -O2 fn=lossy stage=before,final
+fn lossy(v0: int) -> double:
+  bb0:
+    v1: float = convert.float v0
+    v2: double = convert.double v1
+    ret v2
+```
+
+```mir
+;; mir -O2 fn=widenAs stage=before,final
+fn widenAs(v0: int) -> any:
+  bb0:
+    v1: any = convert.any v0
+    v2: any = checkcast v1 <double|double|>
+    ret v2
+```
+
+```mir
+;; mir -O2 fn=nc stage=before,final
+fn nc(v0: any) -> int:
+  bb0:
+    v1: any = const null
+    v2: any = neq v0, v1 {pure,throws}
+    br_if v2, bb2, bb1
+  bb1:
+    v3: int = const -1
+    br bb3(v3)
+  bb2:
+    v4: any = narrow.nonnull v0 <non-null>
+    v5: any = checkcast v4 <int|int|>
+    v6: int = convert.int v5
+    br bb3(v6)
+  bb3(v7: int):
+    ret v7
+```
+

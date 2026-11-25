@@ -741,6 +741,51 @@ public class OptimizerTestCase {
                 "Expected -O2 instruction count (" + realInsns2 + ") <= -O1 (" + realInsns1 + ")");
     }
 
+    @Test
+    public void testO2BoxUnboxConvertCancellation() throws Exception {
+        String code = ""
+                + "def unboxBox = fn (x : int) : int -> (\n"
+                + "  def a : any = x\n"
+                + "  (a as int) + 1\n"
+                + ")\n"
+                + "def boxUnbox = fn (x : int?) : any? -> (\n"
+                + "  if x != null then (\n"
+                + "    def y : int = x\n"
+                + "    y\n"
+                + "  ) else ( null )\n"
+                + ")\n"
+                + "unboxBox(41) + (boxUnbox(5) as int)\n";
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 2);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
+        Assertions.assertEquals(47, ((Number) cs.eval()).intValue());
+
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+
+        String unboxBoxMethod = cn.methods.stream()
+                .map(m -> m.name)
+                .filter(n -> n.endsWith("$unboxBox$spec"))
+                .findFirst().orElseThrow();
+        List<String> unboxBoxCalls = methodCalls(cn, unboxBoxMethod);
+        Assertions.assertTrue(unboxBoxCalls.stream().noneMatch(c ->
+                        c.equals("java/lang/Integer.valueOf")
+                                || c.equals("org/babblelang/runtime/JavaTypes.unboxInt")
+                                || c.equals("org/babblelang/runtime/Types.check")),
+                "Expected unbox(box(a)) + CheckCast eliminated at -O2, got: " + unboxBoxCalls);
+
+        String boxUnboxMethod = cn.methods.stream()
+                .map(m -> m.name)
+                .filter(n -> n.endsWith("$boxUnbox"))
+                .findFirst().orElseThrow();
+        List<String> boxUnboxCalls = methodCalls(cn, boxUnboxMethod);
+        Assertions.assertTrue(boxUnboxCalls.stream().noneMatch(c ->
+                        c.equals("java/lang/Integer.valueOf")
+                                || c.equals("org/babblelang/runtime/JavaTypes.unboxInt")),
+                "Expected box(unbox(narrow(a))) eliminated at -O2, got: " + boxUnboxCalls);
+    }
+
     private static List<String> methodCalls(ClassNode cn, String methodName) {
         MethodNode mn = cn.methods.stream().filter(m -> m.name.equals(methodName)).findFirst()
                 .orElseThrow(() -> new AssertionError("Missing method " + methodName + " in "
