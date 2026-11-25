@@ -376,7 +376,7 @@ Once binding mutability is a local syntactic fact (`isVar(decl)`):
   * Under JVMS §4.5 / §6.5, an `ACC_FINAL` instance field may only be written by `PUTFIELD` inside `<init>` of its declaring class (not from `cls$N$Name` or `$new`). In `BIP034-I5`, `ClassGen` emits a typed `<init>(BabbleClass, ScriptRuntime, <headerDefParams...>)` constructor that initializes header `def` fields directly (starting with `fastRecord` and classes whose header `def` fields are passed directly to `<init>`), making `ACC_FINAL` verifiable on JDK 21 and laying the exact groundwork for `BIP018-P2` (`JEP 500` trusted-final constant folding) and `BIP018-P4` (`JEP 539` `ACC_STRICT_INIT`).
   * `BIP018` §8.1 (`lazy def`) and §8.2 (`scoped def`) already assume `def` is strictly read-only — `BIP034` makes that universal.
 * **Alignment with `BIP025` (WebAssembly 3.0 / `WasmGC`):**
-  `BIP025-D11` emits immutable `(field ...)` for `record` fields and `(field (mut ...))` for mutable fields; with `BIP034`, every `def` field on regular `class`es also becomes an immutable WasmGC `(field ...)`.
+  `BIP025-D11` emits immutable `(field ...)` for `record` fields and `(field (mut ...))` for mutable fields; with `BIP034`, header `def` fields on regular `class`es also become immutable WasmGC `(field ...)`s initialized by `struct.new`, body `def` fields set unconditionally by a constructor that never lets `this` escape skip their read-before-definition checks, and `BIP034-I5` value-captures are stored unboxed in closure/class structs without `$Cell` allocation (`BIP025` §5.6).
 
 ---
 

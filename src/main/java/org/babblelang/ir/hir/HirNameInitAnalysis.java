@@ -424,13 +424,13 @@ final class HirNameInitAnalysis {
                 }
                 case HirExpr.ArrayCreate c -> {
                     List<HirExpr> na = rewriteList(c.args(), guaranteed);
-                    yield na == c.args() ? c : new HirExpr.ArrayCreate(c.kind(), c.elemKind(), c.componentInternalName(), c.componentIsJavaInterface(), c.componentClass(), na, c.meta());
+                    yield na == c.args() ? c : new HirExpr.ArrayCreate(c.kind(), c.elemKind(), c.elementType(), c.componentInternalName(), c.componentIsJavaInterface(), c.componentClass(), na, c.meta());
                 }
                 case HirExpr.ArrayOp op -> {
                     HirExpr nr = fn.apply(op.receiver());
                     List<HirExpr> na = rewriteList(op.args(), guaranteed);
                     yield (nr == op.receiver() && na == op.args()) ? op
-                            : new HirExpr.ArrayOp(op.kind(), nr, op.receiverText(), op.elemKind(), op.arrayClass(), op.componentClass(), na, op.meta());
+                            : new HirExpr.ArrayOp(op.kind(), nr, op.receiverText(), op.elemKind(), op.elementType(), op.arrayClass(), op.componentClass(), na, op.meta());
                 }
                 case HirExpr.ModuleExportGet g -> {
                     HirExpr nr = fn.apply(g.receiver());

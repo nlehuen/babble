@@ -84,12 +84,24 @@ public final class WasmProgramLinker {
         public WasmObjectSystem.IfaceInfo staticOwnerIface;
     }
 
+    /** Whether {@code cv} is a {@code BIP034-I5} value-captured immutable {@code def} (no {@code $Cell}). */
+    public static boolean isValueCapture(HirVar cv) {
+        return cv != null && cv.capturedByValue() && !cv.cell();
+    }
+
+    /** Unboxed primitive Wasm global backing an immutable top-level primitive {@code def}. */
+    public record PrimitiveGlobal(int ownerModIndex, int globalIdx, org.babblelang.analysis.PrimitiveKind kind) {
+    }
+
     /** Per-module linked state: top-level globals, ModuleVal, init function, and function table. */
     public static final class ModuleLinkInfo {
         public final int index;
         public final ModuleInput input;
         public final Map<String, Integer> topLevelGlobals = new LinkedHashMap<>();
         public final Map<String, Integer> topLevelDefIndex = new LinkedHashMap<>();
+        public final Set<String> immutableTopLevelNames = new HashSet<>();
+        public final Map<String, Object> immutableTopLevelConsts = new LinkedHashMap<>();
+        public final Map<String, PrimitiveGlobal> immutableTopLevelPrimGlobals = new LinkedHashMap<>();
         public final Map<String, ModuleLinkInfo> immutableModuleImports = new LinkedHashMap<>();
         public final Map<String, FuncInfo> immutableTopLevelFuncs = new LinkedHashMap<>();
         public final Map<String, WasmObjectSystem.ClassInfo> immutableTopLevelClasses = new LinkedHashMap<>();
@@ -396,6 +408,13 @@ public final class WasmProgramLinker {
         // Pass 1: record top-level statement ownership + direct immutable bindings within each module
         for (ModuleLinkInfo info : linkedModules) {
             HirModule hm = info.input.hir();
+            String[] declNames = hm.topLevelDeclaredNames();
+            boolean[] declFinals = hm.topLevelDeclaredFinals();
+            for (int fi = 0; fi < Math.min(declNames.length, declFinals.length); fi++) {
+                if (declFinals[fi]) {
+                    info.immutableTopLevelNames.add(declNames[fi]);
+                }
+            }
             Set<String> reassigned = moduleReassignedNames.getOrDefault(info.index, Set.of());
             Map<String, Integer> defCounts = new HashMap<>();
             List<HirExpr> stmts = hm.topLevelStatements();
@@ -415,6 +434,7 @@ public final class WasmProgramLinker {
                     continue;
                 }
                 info.topLevelDefIndex.put(d.name(), i);
+                info.immutableTopLevelNames.add(d.name());
                 HirExpr val = unwrapTypeApply(d.value());
                 ModuleLinkInfo imported = resolveStaticImportExpr(info, val);
                 if (imported != null && isAcyclicDependency(info, imported)) {
@@ -429,6 +449,15 @@ public final class WasmProgramLinker {
                     if (ci != null && !ci.hasCaptures) {
                         info.immutableTopLevelClasses.put(d.name(), ci);
                     }
+                } else if (val instanceof HirExpr.Const cst && isFoldableConst(cst.value())
+                        && d.meta().wideningRank() < 0) {
+                    info.immutableTopLevelConsts.put(d.name(), cst.value());
+                } else if (d.value().meta().kind().isPrimitive()
+                        && d.meta().wideningRank() < 0) {
+                    org.babblelang.analysis.PrimitiveKind pk = d.value().meta().kind();
+                    int pg = mod.addGlobal("M" + info.index + "_gp_" + sanitizeName(d.name()),
+                            ts.valTypeFor(pk), true, ts.defaultConstExpr(ts.valTypeFor(pk)));
+                    info.immutableTopLevelPrimGlobals.put(d.name(), new PrimitiveGlobal(info.index, pg, pk));
                 }
             }
         }
@@ -470,6 +499,22 @@ public final class WasmProgramLinker {
                                     changed = true;
                                 }
                             }
+                            if (!info.immutableTopLevelConsts.containsKey(d.name())
+                                    && d.meta().wideningRank() < 0) {
+                                Object tcst = targetMod.immutableTopLevelConsts.get(exportName);
+                                if (tcst != null) {
+                                    info.immutableTopLevelConsts.put(d.name(), tcst);
+                                    changed = true;
+                                }
+                            }
+                            if (!info.immutableTopLevelPrimGlobals.containsKey(d.name())
+                                    && d.meta().wideningRank() < 0) {
+                                PrimitiveGlobal tpg = targetMod.immutableTopLevelPrimGlobals.get(exportName);
+                                if (tpg != null) {
+                                    info.immutableTopLevelPrimGlobals.put(d.name(), tpg);
+                                    changed = true;
+                                }
+                            }
                         }
                     }
                 }
@@ -477,7 +522,7 @@ public final class WasmProgramLinker {
             if (!changed) break;
         }
 
-        // Pass 3: index immutable static methods on classes (e.g. `HitRecord.create`)
+        // Pass 3: index immutable static methods & fields on classes (e.g. `HitRecord.create`, `Vec3.ZERO`)
         for (ModuleLinkInfo info : linkedModules) {
             for (HirClass hc : info.input.hir().classes().values()) {
                 if (hc.staticBlock() == null) continue;
@@ -510,18 +555,33 @@ public final class WasmProgramLinker {
                 }
                 for (HirExpr e : body) {
                     if (!(e instanceof HirExpr.Def d) || d.var() != null || d.value() == null) continue;
-                    if (stDefCounts.getOrDefault(d.name(), 0) != 1) continue;
-                    if (stReassigned.contains(d.name()) || globallyAssignedMembers.contains(d.name())) continue;
+                    if (stDefCounts.getOrDefault(d.name(), 0) != 1 || stReassigned.contains(d.name())) continue;
+                    int sIdx = ci.shape.staticIndex(d.name());
+                    boolean isImmutableStaticDef = sIdx >= 0 && !ci.shape.isStaticMutable(sIdx);
+                    if (!isImmutableStaticDef && globallyAssignedMembers.contains(d.name())) continue;
+                    if (isImmutableStaticDef) {
+                        ci.immutableStaticFields.add(d.name());
+                    }
                     HirExpr val = unwrapTypeApply(d.value());
                     if (val instanceof HirExpr.FunctionRef fr) {
                         FuncInfo fi = info.functions.get(fr.functionId());
                         if (fi != null && !fi.hasEnvParam && !fi.hasThisParam) {
                             ci.immutableStaticMethods.put(d.name(), fi);
                         }
+                    } else if (isImmutableStaticDef
+                            && val instanceof HirExpr.Const cst && isFoldableConst(cst.value())
+                            && d.meta().wideningRank() < 0) {
+                        ci.immutableStaticConsts.put(d.name(), cst.value());
                     }
                 }
             }
         }
+    }
+
+    private static boolean isFoldableConst(Object value) {
+        return value instanceof Byte || value instanceof Short || value instanceof Integer
+                || value instanceof Long || value instanceof Float || value instanceof Double
+                || value instanceof Boolean || value instanceof Character || value instanceof String;
     }
 
     private void markOwnedByTopLevelStmt(ModuleLinkInfo info, HirExpr root, int stmtIdx) {
@@ -689,7 +749,9 @@ public final class WasmProgramLinker {
         List<WasmValType> capTypes = new ArrayList<>();
         if (!hasThis) {
             for (HirVar cv : fn.capturedVars()) {
-                capTypes.add(WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
+                capTypes.add(isValueCapture(cv)
+                        ? ts.valTypeFor(cv.primitiveKind())
+                        : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
             }
         }
         boolean hasEnv = !hasThis && !capTypes.isEmpty();

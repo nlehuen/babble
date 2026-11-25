@@ -65,10 +65,11 @@ public final class WasmCallEmitter {
             return vr.var() != null && (!vr.var().mayBeUndefined() || vr.var().definitelyDefined());
         }
         if (expr instanceof HirExpr.NameRead nr) {
-            for (int i = ctx.nsScopes.size() - 1; i >= 0; i--) {
-                if (ctx.nsScopes.get(i).containsKey(nr.name())) {
-                    return false;
-                }
+            if (fe.isShadowedInNsScope(nr.name())) {
+                return false;
+            }
+            if (nr.definitelyDefined()) {
+                return true;
             }
             Integer defIdx = ctx.modInfo.topLevelDefIndex.get(nr.name());
             return defIdx != null && ctx.currentTopLevelStmtIdx >= 0 && defIdx < ctx.currentTopLevelStmtIdx;
@@ -438,6 +439,15 @@ public final class WasmCallEmitter {
             ctx.stackKind = staticTarget.hir.returnKind();
             return;
         }
+        // 1d. Direct typed constructor call for immutable non-capturing classes (`RangeCursor(a, b)`, `Sphere(...)`).
+        WasmObjectSystem.ClassInfo directCtorCls = fe.members().resolveDirectImmutableClass(call.callee());
+        if (directCtorCls != null && canDirectCtorDispatch(directCtorCls, call)) {
+            fe.members().emitBoundParams(directCtorCls.hir.params(), directCtorCls.ctorHasOptMask, false,
+                    null, call.args(), call.binding(), call.meta().line());
+            ctx.code.call(directCtorCls.directCtorIdx);
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         // 2. General indirect call via $FnBase.genericCall (honoring static ArgumentBinding if present!)
         emitGenericCallWithCallArgs(call.callee(), call.args(), call.binding(), call.meta().kind(), call.meta().line());
     }
@@ -445,29 +455,25 @@ public final class WasmCallEmitter {
     private WasmProgramLinker.FuncInfo resolveDirectStaticCallee(HirExpr.DynamicCall call) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         int curStmt = ctx.currentTopLevelStmtIdx;
-        if (curStmt < 0) {
-            return null;
-        }
         HirExpr callee = call.callee();
         while (callee instanceof HirExpr.TypeApply ta) {
             callee = ta.inner();
         }
         if (callee instanceof HirExpr.ModuleExportGet meg && meg.receiver() instanceof HirExpr.NameRead modNr) {
-            if (isShadowedInNsScopes(modNr.name()) || !isDefinedBeforeStmt(ctx.modInfo, modNr.name(), curStmt)) {
+            if (isShadowedInNsScopes(modNr.name())
+                    || (!modNr.definitelyDefined() && !isDefinedBeforeStmt(ctx.modInfo, modNr.name(), curStmt))) {
                 return null;
             }
             WasmProgramLinker.ModuleLinkInfo targetMod = ctx.modInfo.immutableModuleImports.get(modNr.name());
             return targetMod != null ? targetMod.immutableTopLevelFuncs.get(meg.target().name()) : null;
         }
-        if (callee instanceof HirExpr.DynamicSelect ds && !ds.safe() && ds.receiver() instanceof HirExpr.NameRead clsNr) {
-            if (isShadowedInNsScopes(clsNr.name()) || !isDefinedBeforeStmt(ctx.modInfo, clsNr.name(), curStmt)) {
-                return null;
-            }
-            WasmObjectSystem.ClassInfo ci = ctx.modInfo.immutableTopLevelClasses.get(clsNr.name());
+        if (callee instanceof HirExpr.DynamicSelect ds && !ds.safe()) {
+            WasmObjectSystem.ClassInfo ci = fe.members().resolveDirectImmutableClass(ds.receiver());
             return ci != null ? ci.immutableStaticMethods.get(ds.memberName()) : null;
         }
         if (callee instanceof HirExpr.NameRead fnNr) {
-            if (isShadowedInNsScopes(fnNr.name()) || !isDefinedBeforeStmt(ctx.modInfo, fnNr.name(), curStmt)) {
+            if (isShadowedInNsScopes(fnNr.name())
+                    || (!fnNr.definitelyDefined() && !isDefinedBeforeStmt(ctx.modInfo, fnNr.name(), curStmt))) {
                 return null;
             }
             return ctx.modInfo.immutableTopLevelFuncs.get(fnNr.name());
@@ -476,17 +482,58 @@ public final class WasmCallEmitter {
     }
 
     private static boolean isDefinedBeforeStmt(WasmProgramLinker.ModuleLinkInfo modInfo, String name, int curStmt) {
+        if (curStmt < 0) {
+            return false;
+        }
         Integer defIdx = modInfo.topLevelDefIndex.get(name);
         return defIdx != null && defIdx < curStmt;
     }
 
     private boolean isShadowedInNsScopes(String name) {
-        for (var scope : fe.ctx().nsScopes) {
-            if (scope.containsKey(name)) {
-                return true;
+        return fe.isShadowedInNsScope(name);
+    }
+
+    private static boolean canDirectCtorDispatch(WasmObjectSystem.ClassInfo ci, HirExpr.DynamicCall call) {
+        if (ci.hir.isObject() || ci.hasCaptures || ci.hasCapturingIfaces) {
+            return false;
+        }
+        List<HirParam> params = ci.hir.params();
+        int optCount = 0;
+        for (HirParam p : params) {
+            if (p.defaultValue() != null) optCount++;
+        }
+        LoweringTargets.ArgumentBinding binding = call.binding();
+        if (binding != null) {
+            if (binding.hasRest() || binding.paramCount() != params.size()) {
+                return false;
+            }
+            if (optCount > 0 && !ci.ctorHasOptMask) {
+                for (int p = 0; p < params.size(); p++) {
+                    if (p >= binding.paramToArg().length || binding.paramToArg()[p] < 0) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+        List<HirCallArg> args = call.args();
+        if (args.size() > params.size()) {
+            return false;
+        }
+        if (optCount > 0 && !ci.ctorHasOptMask && args.size() < params.size()) {
+            return false;
+        }
+        for (HirCallArg a : args) {
+            if (a.name() != null || a.value() instanceof HirExpr.SpreadAdapt) {
+                return false;
             }
         }
-        return false;
+        for (int p = args.size(); p < params.size(); p++) {
+            if (params.get(p).defaultValue() == null) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean canDirectStaticDispatch(WasmProgramLinker.FuncInfo fi, HirExpr.DynamicCall call) {
