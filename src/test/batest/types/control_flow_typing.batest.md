@@ -21,9 +21,9 @@ assert(unionIf(true) == 1 and unionIf(false) == "a")
 
 ```babble
 def runWhile = fn () : double? -> (
-    def k = 0
+    var k = 0
     while k < 2 then ( k += 1 ; 99 )
-    def wk = 0
+    var wk = 0
     def wd : double? = while wk < 2 then ( wk += 1 ; 42 )
     wd
 )
@@ -33,7 +33,7 @@ assert(runWhile() == 42.0)
 ## Case 3
 
 ```babble
-def unionWhile = fn (k : int) -> ( while k < 2 then ( k += 1 ; 42 ) )
+def unionWhile = fn (var k : int) -> ( while k < 2 then ( k += 1 ; 42 ) )
 def w : double? = while false then ( 1 )
 while false then ( 1 )
 assert(unionWhile(0) == 42 and unionWhile(5) == null)
@@ -65,7 +65,7 @@ Type error : expected int, got string
 ## Error : Type error : expected int, got null (2)
 
 ```babble
-def badWhileExp = fn (k : int) : int -> ( while k < 2 then ( k += 1 ; 42 ) )
+def badWhileExp = fn (var k : int) : int -> ( while k < 2 then ( k += 1 ; 42 ) )
 badWhileExp(0)
 ```
 
@@ -120,7 +120,7 @@ assert(pick(true) == 1 and pick(false) == "a")
 ## Case 11
 
 ```babble
-def pick = fn (flag : bool, x : int) : double -> (
+def pick = fn (flag : bool, var x : int) : double -> (
     x = 10
     if flag then ( return x ) else ( return 2.5 )
 )

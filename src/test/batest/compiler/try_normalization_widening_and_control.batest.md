@@ -458,8 +458,8 @@ fn run(v0: any, v1: bool) -> int:
 
 ```babble
 def run = fn io (s: string): int -> (
-    def w = 0 ; while (try (parse(s) > w) catch : exception then (false)) then (w += 1)
-    def wb = 0 ; while wb < 1 then (wb += try (parse(s)) catch : exception then (1))
+    var w = 0 ; while (try (parse(s) > w) catch : exception then (false)) then (w += 1)
+    var wb = 0 ; while wb < 1 then (wb += try (parse(s)) catch : exception then (1))
     w + wb
 )
 assert(run("2") == 4 and run("bad") == 1)
@@ -613,7 +613,7 @@ fn run(v0: any) -> int:
 ```babble
 def Pair = record (a: int, b: int) ()
 def run = fn io (s: string, f: bool): int -> (
-    def fs = 0
+    var fs = 0
     for e in (try (fail(f, list(1, 2))) catch : exception then (list(3))) then (
         fs += e + (try (parse(s)) catch : exception then (0))
     )

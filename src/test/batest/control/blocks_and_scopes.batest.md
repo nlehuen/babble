@@ -61,7 +61,7 @@ Name used before definition : a
 ```babble
 def f = fn () -> (
     a = 10
-    def a = 5
+    var a = 5
 )
 print(f())
 ```
@@ -107,7 +107,7 @@ assert(c == 3)
 
 ```babble
 def f: fn (a: int = ..., ..., b: int): int = fn (a: int = 1, ..., b: int): int -> ( a + b )
-def g: fn (xs: int?...): int = fn (xs: int?...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def g: fn (xs: int?...): int = fn (xs: int?...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
 assert(f(b: 4) == 5 and g(1, null) == 2)
 ```
 
@@ -186,9 +186,9 @@ Cannot assign to expression
 ## Loop continue inside a finally block is allowed
 
 ```babble
-def sum = 0
+var sum = 0
 try ( () ) finally (
-    def i = 0
+    var i = 0
     while i < 4 then (
         i += 1
         if i == 2 then ( continue )
@@ -232,7 +232,7 @@ Missing type : x
 
 ```babble
 def f = fn (b: bool): int -> (
-  def a: int? = 1 ; def x: int? = 2 ; def y: int? = 3 ; def z = 0 ; z = 1
+  def a: int? = 1 ; var x: int? = 2 ; var y: int? = 3 ; var z = 0 ; z = 1
   if a != null and x != null and y != null then (
     def r1 = fn (): int -> (a + 1)
     if b then (x = null) else (y = null)

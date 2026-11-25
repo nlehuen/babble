@@ -101,7 +101,7 @@ fn recVal(v0: int) -> int:
 ```babble
 def mod = import("dce_mod.ba")
 def idG of T = fn (x: T): T -> (x)
-def sumV = fn io (xs: int...): int -> (def s = 0 ; for e in xs then (s += e) ; s)
+def sumV = fn io (xs: int...): int -> (var s = 0 ; for e in xs then (s += e) ; s)
 def run = fn io (arr: array of int): int -> (
     (discard(1) ; mod).val + sumV(...(discard(1) ; arr)) + ((discard(1) ; idG) of int)(3)
 )
@@ -149,7 +149,7 @@ fn run(v0: any) -> int:
 def idL = fn (xs: list of int): list of int -> (xs)
 def recN = fn (n: int): int -> (if n <= 0 then (0) else (1 + recurse(n - (1 + 0))))
 def run = fn (xs: list of int): int -> (
-    def b = 0 ; for e in idL(xs) then (b += e) ; b + recN(2)
+    var b = 0 ; for e in idL(xs) then (b += e) ; b + recN(2)
 )
 assert(run(list(4, 5)) == 11)
 ```

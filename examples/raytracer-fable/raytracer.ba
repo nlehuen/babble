@@ -47,9 +47,9 @@ def world = HittableList()
 world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
 
 def rng = java.util.Random(20)  ;; a fixed seed : the same scene every time
-def a = -11
+var a = -11
 while a < 11 then (
-    def b = -11
+    var b = -11
     while b < 11 then (
         def chooseMat = rng.nextDouble()
         def center = Vec3(a + 0.9 * rng.nextDouble(), 0.2, b + 0.9 * rng.nextDouble())

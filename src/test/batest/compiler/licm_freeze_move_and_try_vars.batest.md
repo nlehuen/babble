@@ -16,7 +16,7 @@ def bigSink = fn nothrow (x: double): double -> (return x ; x)
 ```babble
 def PC = class (def x: int) (def pm = fn nothrow (k: int): int -> (return k + 2 ; k))
 def run = fn (n: int, mc: PC, fmc: frozen PC): double -> (
-    def mCls = java.lang.Math ; def a = 0.0 ; def i = 0
+    def mCls = java.lang.Math ; var a = 0.0 ; var i = 0
     while i < n then (a += double(mc.pm(n) + fmc.pm(n)) + mCls.sin(0.0) ; i += 1) ; a
 )
 assert(run(2, PC(1), freeze(PC(1))) == 16.0)
@@ -120,7 +120,7 @@ def PI = interface (def m = fn nothrow (k: int): int -> (return k + 1 ; k))
 def PC = class () implements PI ()
 def PR = record (x: int) implements PI ()
 def run = fn (n: int, vi: PI, fvi: frozen PI, pr: PR): int -> (
-    def a = 0 ; def i = 0
+    var a = 0 ; var i = 0
     while i < n then (a += vi.m(n) + fvi.m(n) + pr.m(n) ; i += 1) ; a
 )
 assert(run(2, PC(), freeze(PC()), PR(1)) == 18)
@@ -209,7 +209,7 @@ fn run(v0: int, v1: any, v2: any, v3: any) -> int:
 def bm = fn nothrow (s: list of int): int -> (return s.size() ; 0)
 def bf = fn nothrow (s: frozen array of int): int -> (return s.size() ; 0)
 def run = fn (n: int, x: int): double -> (
-  def a = 0.0 ; def i = 0
+  var a = 0.0 ; var i = 0
   while i < n then (
     def s = list(1) ; def r = array.of(1, 2)
     a += double(bm(move(s)) + bf(freeze(r))) + bigSink((x + 1)) ; i += 1
@@ -329,7 +329,7 @@ fn run(v0: int, v1: int) -> double:
 ```babble
 def bigAny = fn nothrow (v: any?): int -> (if same(v, null) then (return 0) ; 1)
 def run = fn (n: int, x: int): int -> (
-  def a = 0 ; def i = 0
+  var a = 0 ; var i = 0
   while i < n then (a += bigAny(x as any?) ; i += 1) ; a
 )
 assert(run(3, 5) == 3)
@@ -412,7 +412,7 @@ fn run(v0: int, v1: int) -> int:
 
 ```babble
 def run = fn (n: int): int -> (
-  def s = 0 ; def i = 0
+  var s = 0 ; var i = 0
   while i < n then (
     s += try (
       if i < 0 then (throw java.lang.ArithmeticException("x"))

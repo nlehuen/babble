@@ -16,7 +16,7 @@ def bigSink = fn nothrow (x: double): double -> (return x ; x)
 ```babble
 def run = fn (a: int, b: int, flag: bool, xs: list of int): double -> (
   def unusedOv = overload (fn (n: int): int -> (n + 1), fn (s: string): int -> (s.length()))
-  def acc = 0.0
+  var acc = 0.0
   for e in xs then (if flag and (a > 0) then (acc += (a / b) + (a + b) + e))
   acc
 )
@@ -140,7 +140,7 @@ fn run(v0: int, v1: int, v2: bool, v3: any) -> double:
 ```babble
 def useRef = fn nothrow (f: fn nothrow (int): int, c: any): int -> (return f(1) ; 0)
 def run = fn (s: string, flag: bool, n: int): int -> (
-  def i = 0 ; def acc = 0
+  var i = 0 ; var acc = 0
   while i < n then (
     acc += s.length() + (if flag then (1) else (2)) + useRef(fn nothrow (x: int): int -> (x + 1), list)
     i += 1
@@ -334,8 +334,8 @@ fn run(v0: byte) -> bool:
 
 ```babble
 def sumScaled = fn (n: int, angle: double): double -> (
-    def i = 0
-    def acc = 0.0
+    var i = 0
+    var acc = 0.0
     while i < n then (
         acc += java.lang.Math.cos(angle) * 2.0
         i += 1
@@ -422,7 +422,7 @@ fn sumScaled(v0: int, v1: double) -> double:
 ```babble
 def FC = class (def v: int) ()
 def run = fn (n: int, fc: frozen FC): int -> (
-    def a = 0 ; def i = 0
+    var a = 0 ; var i = 0
     while i < n then (
         a += fc.v + (-fc.v) + 1
         i += 1
@@ -510,7 +510,7 @@ fn run(v0: int, v1: any) -> int:
 def CR = record (x: int) (
     def run = fn (n: int): int -> (
         def cap = fn (): int -> (this.x)
-        def a = 0 ; def i = 0
+        var a = 0 ; var i = 0
         while i < n then (
             a += this.x + (fn nothrow (k: int): int -> (return k + 1 ; k))(n)
             i += 1

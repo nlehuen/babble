@@ -173,7 +173,7 @@ class SC:
 def VarI = interface ( def sum: fn (a: int, xs: int...): int )
 def VarC = class () implements VarI (
     def sum = fn (xs: int...): int -> (
-        def acc = 0
+        var acc = 0
         for v in xs then ( acc += v )
         acc
     )
@@ -243,7 +243,7 @@ class VarC:
 ```babble
 def Pair = interface ( def join: fn (a: int, b: int): int )
 def RestC = class () implements Pair (
-    def join = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+    def join = fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 )
 def p: Pair = RestC()
 assert(p.join(4, 9) == 13)
@@ -310,7 +310,7 @@ class RestC:
 ```babble
 def SumSink = class () implements t.JavaClassDemo.VarArgsSink (
     def sum = fn (xs: int...): int -> (
-        def acc = 0
+        var acc = 0
         for x in xs then ( acc += x )
         acc
     )
@@ -478,7 +478,7 @@ class Tag:
 ## Java interface void bridge discarding 2-slot double return with POP2
 
 ```babble
-def WideVoid = class (def n: int) implements java.lang.Runnable (
+def WideVoid = class (var n: int) implements java.lang.Runnable (
     def run = fn mut (): double -> ( this.n += 1 ; 2.5 )
 )
 def w = WideVoid(0) ; def r: java.lang.Runnable = w

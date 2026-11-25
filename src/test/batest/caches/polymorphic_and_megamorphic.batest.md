@@ -15,9 +15,9 @@ def F = type fn (int): int
 
 ;; Test rig : invokes 4 polymorphic callables across `n` passes at a single call site
 def run4 = fn (a: F, b: F, c: F, d: F, n: int): int -> (
-    def t = 0 ; def p = 0
+    var t = 0 ; var p = 0
     while p < n then (
-        def i = 0
+        var i = 0
         while i < 4 then (t += (if i == 0 then (a) else if i == 1 then (b) else if i == 2 then (c) else (d))(i) ; i += 1)
         p += 1
     )
@@ -34,7 +34,7 @@ def pick = fn volatile (i : int) : Sh -> (
     else if k == 3 then ( S4(i) ) else if k == 4 then ( S5(i) ) else ( S6 )
 )
 def invoke = fn (s : Sh) : int -> ( s.v() )
-def total = 0 ; def i = 0
+var total = 0 ; var i = 0
 while i < 18 then ( total += invoke(pick(i)) ; i += 1 )
 assert(total == 213)
 ```
@@ -47,7 +47,7 @@ def fs = list.of(
     fn (x: int): int -> ( x + 3 ), fn (x: int): int -> ( x + 4 ),
     fn (x: int): int -> ( x + 5 ), fn (x: int): int -> ( x * 2 )
 )
-def sum = 0 ; def i = 0
+var sum = 0 ; var i = 0
 while i < 12 then (
     def f = fs.get(i - int(i / 6) * 6)
     sum += f(i)
@@ -64,7 +64,7 @@ def gs = (list of (fn (int): int)).of(
     fn (x: int, y: int = 0): int -> ( x + y + 3 ), fn (x: int, y: int = 0): int -> ( x + y + 4 ),
     fn (x: int, y: int = 0): int -> ( x + y + 5 ), fn (x: int, y: int = 0): int -> ( x + y + 6 )
 )
-def s = 0
+var s = 0
 for g in gs then ( s += g(0) )
 assert(s == 21)
 ```
@@ -76,7 +76,7 @@ def items = (list of (java.util.Collection of int)).of(
     java.util.ArrayList(), java.util.LinkedList(), java.util.Vector(),
     java.util.Stack(), java.util.ArrayDeque()
 )
-def sizes = 0 ; def j = 0
+var sizes = 0 ; var j = 0
 while j < 10 then (
     sizes += items.get(j - int(j / 5) * 5).size()
     j += 1
@@ -91,7 +91,7 @@ def extSpec = fn (x: int): int -> ( x + 10 )
 def Holder = class () ( def ms = extSpec )
 def h = Holder()
 def bmSpec: fn (int): int = h.ms
-def s = 0 ; def i = 0
+var s = 0 ; var i = 0
 while i < 3 then ( s += bmSpec(i) ; i += 1 )
 assert(s == 33)
 ```
@@ -103,7 +103,7 @@ def extSpread = fn (x: int, y: int = 5): int -> ( x + y )
 def Holder = class () ( def md = extSpread )
 def h = Holder()
 def bmDirect = h.md
-def s = 0 ; def i = 0
+var s = 0 ; var i = 0
 while i < 3 then ( s += bmDirect(i) ; i += 1 )
 assert(s == 18)
 ```
@@ -111,7 +111,7 @@ assert(s == 18)
 ## Static field on Java instance in loop (SelectCache isSame)
 
 ```babble
-def total = 0 ; def i = 0
+var total = 0 ; var i = 0
 while i < 3 then (
     total += java.io.StreamTokenizer(java.io.StringReader("x")).TT_EOF
     i += 1
@@ -143,7 +143,7 @@ def IDef = interface (
 def ci = (class () implements IDef ())()
 def fSpec : fn (int): int = ci.dmSpec
 def fSpread : fn (int): int = ci.dmSpread
-def s1 = 0 ; def s2 = 0 ; def i = 0
+var s1 = 0 ; var s2 = 0 ; var i = 0
 while i < 3 then ( s1 += fSpec(i) ; s2 += fSpread(i) ; i += 1 )
 assert(s1 == 33 and s2 == 18)
 ```
@@ -156,7 +156,7 @@ def IDef = interface (
 )
 def ci = (class () implements IDef ())()
 def fAny = ci.dmAny
-def s = 0 ; def i = 0
+var s = 0 ; var i = 0
 while i < 3 then ( s += fAny(i) as int ; i += 1 )
 assert(s == 18)
 ```
@@ -186,7 +186,7 @@ assert(run4(fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x + 2 ), c.m, c
 def I = interface ( def a = fn (x: int, s: string): string -> ( s + ":" + x ) )
 def c = (class () implements I ( def m = fn (x: int, s: string): string -> ( s + "=" + (x + 10) ) ))()
 def fs = list.of(fn (x: int, s: string): string -> ( s + "!" ), c.m, c.a, c.a)
-def o = "" ; def i = 0
+var o = "" ; var i = 0
 while i < 4 then ( o += fs.get(i)(i, "k") + ";" ; i += 1 )
 assert(o == "k!;k=11;k:2;k:3;")
 ```

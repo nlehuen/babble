@@ -70,7 +70,7 @@ public class BabbleNativesTestCase extends BabbleTestBase {
         assertError("Not an int : \"2.5\"", " int(\"2.5\") ");
         assertError("Not a double : \"x\"", " double(\"x\") ");
         assertError("Not a number : true", " int(true) ");
-        assertError("Missing parameter : value", " def f = int ; f = f ; f() ");
+        assertError("Missing parameter : value", " var f = int ; f = f ; f() ");
     }
 
     private void assertError(String message, String source) {

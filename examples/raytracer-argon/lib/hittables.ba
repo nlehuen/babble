@@ -33,7 +33,7 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
             return null
         )
         def sqrtd: double = math.sqrt(discriminant)
-        def root: double = (h - sqrtd) / a
+        var root: double = (h - sqrtd) / a
         if not rayT.surrounds(root) then (
             root = (h + sqrtd) / a
             if not rayT.surrounds(root) then (
@@ -54,7 +54,7 @@ export def Sphere = class (def center: Vec3, def radius: double, def mat: Materi
 
 export def HittableList = class () implements Hittable (
     private def items: list of Hittable = list()
-    private def bbox: AABB = AABB.empty
+    private var bbox: AABB = AABB.empty
 
     def size = fn (): int -> (
         this.items.size()
@@ -92,7 +92,7 @@ export def HittableList = class () implements Hittable (
 
     ;; Higher-order predicate counter using a closure over a mutable local
     def countWhere = fn calling pred (pred: fn (item: Hittable): bool): int -> (
-        def matched: int = 0
+        var matched: int = 0
         this.forEach(fn (item: Hittable) -> (
             if pred(item) then (
                 matched += 1
@@ -102,8 +102,8 @@ export def HittableList = class () implements Hittable (
     )
 
     def hit = fn (r: Ray, rayT: Interval): HitRecord? -> (
-        def closestRecord: HitRecord? = null
-        def closestSoFar: double = rayT.max
+        var closestRecord: HitRecord? = null
+        var closestSoFar: double = rayT.max
         for item in this.items then (
             def tempRec: HitRecord? = item.hit(r, Interval(rayT.min, closestSoFar))
             if tempRec != null then (
@@ -147,8 +147,8 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         if items.size() == 1 then (
             return items.get(0)
         )
-        def box: AABB = AABB.empty
-        def cbox: AABB = AABB.empty
+        var box: AABB = AABB.empty
+        var cbox: AABB = AABB.empty
         for item in items then (
             box = AABB.enclose(box, item.boundingBox())
             cbox = cbox.expandPoint(item.boundingBox().center())
@@ -173,7 +173,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         if left.size() == 0 or right.size() == 0 then (
             left.clear()
             right.clear()
-            def goLeft: bool = true
+            var goLeft: bool = true
             for item in items then (
                 if goLeft then (
                     left.add(item)

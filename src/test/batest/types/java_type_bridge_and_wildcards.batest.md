@@ -209,7 +209,7 @@ Type error : type argument int cannot be a primitive in array of T
 ## Spreading callable list into Java SAM array and array into Java List
 
 ```babble
-def n = 0
+var n = 0
 def fns = list(fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x * 3 ))
 def r = Demo.vaRunAll(...fns)
 def rs = list(fn io () -> ( n += 1 ))

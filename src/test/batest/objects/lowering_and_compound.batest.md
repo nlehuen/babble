@@ -15,15 +15,14 @@ def Vec = class (def x : int, def y : int) (
 )
 ```
 
-## Non-def constructor params captured and mutated by methods (hiddenCells)
+## Non-def constructor params captured by methods (hiddenCells)
 
 ```babble
 def Account = class (initial : int, rate : double = 1.5, tag : string = "acct") (
-    def add = fn io (amount : int) : string -> (
-        initial += amount
-        rate += amount * 0.5
-        tag += "!"
-        "" + initial + ":" + rate + ":" + tag
+    var balance : int = initial
+    def add = fn mut (amount : int) : string -> (
+        this.balance += amount
+        "" + this.balance + ":" + (rate + amount * 0.5) + ":" + tag + "!"
     )
 )
 def a = Account(10)
@@ -57,7 +56,7 @@ assert(adder() == 110)
 ## Compound assignments on this.field (int/double/string) and external obj.field
 
 ```babble
-def C = class (def iv : int, def dv : double, def sv : string, def vec : Vec) (
+def C = class (var iv : int, var dv : double, var sv : string, def vec : Vec) (
     def tick = fn mut () -> (
         this.iv += 2 ; this.iv -= 1 ; this.iv *= 3
         this.dv += 1.5 ; this.dv -= 0.5 ; this.dv *= 2.0 ; this.dv /= 2.0
@@ -74,9 +73,9 @@ assert(c.iv == 11)
 ## Compound assignments on local int and double variables
 
 ```babble
-def k = 10
+var k = 10
 k -= 3 ; k *= 4
-def d = 2.5
+var d = 2.5
 d -= 0.5 ; d *= 3.0 ; d /= 2.0
 assert(k == 28)
 assert(d == 3.0)
@@ -85,7 +84,7 @@ assert(d == 3.0)
 ## Compound assignments on class with operator methods
 
 ```babble
-def v = Vec(2, 3)
+var v = Vec(2, 3)
 v += Vec(4, 5)
 v -= Vec(1, 1)
 v *= Vec(2, 3)
@@ -106,12 +105,12 @@ assert(string(nv) == "V(-5,-7)")
 def Counter = class (def n : int) (
     def id = fn () : int -> ( this.n )
 ) static (
-    def count = 0
-    def selfTag = fn () : string -> ( "" + this.count )
-    def peek = fn () : int -> ( Counter.count )
+    private var count = 0
+    def bump = fn io () -> ( this.count = 10 ; this.count += 5 )
+    def selfTag = fn volatile () : string -> ( "" + this.count )
+    def peek = fn volatile () : int -> ( this.count )
 )
-Counter.count = 10
-Counter.count += 5
+Counter.bump()
 assert(Counter.selfTag() == "15")
 assert(Counter.peek() == 15)
 ```
@@ -215,7 +214,7 @@ assert(x == 10)
 ## Reference-typed while loop result and empty while yielding null
 
 ```babble
-def n = 0
+var n = 0
 def last : string? = while n < 3 then (
     n += 1
     "step:" + n
@@ -238,7 +237,7 @@ assert(java.lang.StringBuilder(s).length() + java.lang.StringBuilder(s2).length(
 
 ```babble
 ;; babble large="large script (>2000 AST nodes) exercises splitStatements and run$N helpers"
-def acc = 0
+var acc = 0
 acc += 1
 acc += 1
 acc += 1

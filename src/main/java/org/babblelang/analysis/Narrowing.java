@@ -53,7 +53,7 @@ final class Narrowing {
     }
 
     Type narrowedType(ParserRuleContext declaration) {
-        if (checker.capturedReassigned().contains(declaration)) {
+        if (checker.isCapturedReassigned(declaration)) {
             return null;
         }
         return checker.env().lookup(declaration);
@@ -148,7 +148,7 @@ final class Narrowing {
                     || resolved instanceof BabbleParser.CatchClauseContext
                     || (resolved instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc))) {
                 ParserRuleContext decl = (ParserRuleContext) resolved;
-                if (!checker.capturedReassigned().contains(decl)
+                if (!checker.isCapturedReassigned(decl)
                         && (!checker.isReassigned(decl) || Objects.equals(TypeChecker.callableScope(checker.occurrenceScope(selector)), TypeChecker.callableScope(checker.scopeOf(decl))))) {
                     return decl;
                 }

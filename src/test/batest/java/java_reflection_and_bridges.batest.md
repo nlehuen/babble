@@ -103,7 +103,7 @@ assert(not (x is java.lang.AutoCloseable))
 ## Case 8
 
 ```babble
-def ran = false
+var ran = false
 def R = class () implements java.lang.Runnable (
     def run = fn io () -> ( ran = true )
 )

@@ -37,8 +37,12 @@ public class Namespace implements Scope<Object> {
      * already declared.
      */
     public Namespace child(String[] declared) {
+        return child(declared, null);
+    }
+
+    public Namespace child(String[] declared, boolean[] finals) {
         Namespace child = new Namespace(this);
-        child.declare(declared);
+        child.declare(declared, finals);
         return child;
     }
 
@@ -59,8 +63,13 @@ public class Namespace implements Scope<Object> {
      * but reading them fails until their definition runs.
      */
     public void declare(String[] names) {
-        for (String name : names) {
-            define(name, false);
+        declare(names, null);
+    }
+
+    public void declare(String[] names, boolean[] finals) {
+        for (int i = 0; i < names.length; i++) {
+            boolean isFinal = finals != null && i < finals.length && finals[i];
+            define(names[i], isFinal);
         }
     }
 
@@ -81,7 +90,11 @@ public class Namespace implements Scope<Object> {
      * Binds a parameter of a function call.
      */
     public void defineParameter(String name, Object value) {
-        define(name, false).set(value);
+        defineParameter(name, value, true);
+    }
+
+    public void defineParameter(String name, Object value, boolean isFinal) {
+        define(name, isFinal).set(value);
     }
 
     /**

@@ -40,7 +40,8 @@ public class Function implements BabbleFunction {
 
     /** One activation of the function : a fresh frame, its parameters bound, and its body run. */
     private Object activate(Object thiz, ScriptRuntime rt, Object[] args, String[] names) {
-        Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz, interpreter.scopes().declared(definition));
+        Namespace namespace = Frames.enter(closure, recurseTarget(thiz), thiz,
+                interpreter.scopes().declared(definition), interpreter.scopes().declaredFinals(definition));
         String[] parameters = interpreter.scopes().calls().parameters(definition);
         int restIdx = interpreter.scopes().calls().restIndex(definition);
         Arguments.Binder binder = Arguments.binder(parameters, interpreter.scopes().calls().keywordOnlyStart(definition), restIdx, args, names);
@@ -64,7 +65,7 @@ public class Function implements BabbleFunction {
                 value = Values.toJavaSam(value, paramSam.samInterface(), paramSam.markers(), rt);
             }
             value = org.babblelang.runtime.Types.check(value, interpreter.scopes().lowering().checkedType(paramDecl));
-            namespace.defineParameter(parameters[i], value);
+            namespace.defineParameter(parameters[i], value, !ScopeAnalysis.isVar(paramDecl));
         }
         binder.rejectLeftovers();
         Object result;

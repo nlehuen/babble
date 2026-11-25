@@ -5,7 +5,7 @@ Runtime arithmetic inputs go through a mutable-state helper so -O1 cannot consta
 
 ```babble
 ;; babble preamble
-def _i = 0
+var _i = 0
 def rt = fn io (x : int) : int -> ( _i = x ; _i )
 
 def Checked = record (x : int) (
@@ -106,11 +106,11 @@ Integer out of range : -2147483649
 ## Compound assignment: +=, -=, *= keep int; /= widens int variable to double
 
 ```babble
-def n = rt(10)
+var n = rt(10)
 n += rt(5) ; n -= rt(3) ; n *= rt(2)
 assert(n == 24)
 assert(string(classof(n)) == "java.lang.Integer")
-def d = rt(10)
+var d = rt(10)
 d /= rt(4)
 assert(d == 2.5)
 assert(string(classof(d)) == "java.lang.Double")

@@ -350,7 +350,7 @@ fn run(v0: int) -> int:
 
 ```babble
 def heavyLoop = fn (a: Vec3, s: int): double -> (
-    def acc = 0.0
+    var acc = 0.0
     for k in list(1, 2) then (
         def t = (a.x + double(k)) * double(s) + a.y * a.z
         acc = acc + t + a.x - a.y + a.z
@@ -662,8 +662,8 @@ fn r() -> int:
 ## Inlining with parameter reassignment, widening read, for loop, and move inside callee
 
 ```babble
-def f = fn (x: int): double -> (
-    def s = 0
+def f = fn (var x: int): double -> (
+    var s = 0
     for k in list(1, 2) then ( s = s + k )
     x = x + s
     x + 0.5
@@ -806,7 +806,7 @@ def Box = class (def v: int) (
 )
 def ap = fn (f: fn (int, int): int): int -> ( f(3, 2) )
 def r = fn (): int -> (
-    def b = Box(10) ; def k = 5
+    var b = Box(10) ; def k = 5
     b.add(( b = Box(20) ; 1 )) + b.v + ap(fn (a: int, c: int): int -> ( a - c + k ))
 )
 assert(r() == 37)

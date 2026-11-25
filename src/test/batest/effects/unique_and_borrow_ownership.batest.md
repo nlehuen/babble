@@ -4,12 +4,12 @@ References : `BIP007` (effects & ownership), `BIP027` (`CallEffectAnalyzer`, `Ef
 
 ```babble
 ;; babble preamble
-def Box = class (def v: int) (
+def Box = class (var v: int) (
     def inc = fn mut (): int -> ( this.v += 1 ; this.v )
     def self = fn (): Box -> ( this )
     def bumpSelf = fn mut (): Box -> ( this.v += 1 ; this )
 )
-def Holder = class (def child: Box?) (
+def Holder = class (var child: Box?) (
     def link = fn mut (shared n: Box): int -> ( this.child = n ; n.v )
     def bumpChild = fn mut () -> ( def c = this.child ; if c != null then ( c.v += 1 ) )
 )
@@ -83,7 +83,7 @@ Use of moved variable b
 ## Freeze rejects borrowed parameter even after local reassignment
 
 ```babble
-def f = fn (b: Box): frozen Box -> ( b = Box(1) ; freeze(b) )
+def f = fn (var b: Box): frozen Box -> ( b = Box(1) ; freeze(b) )
 ```
 
 ```error
@@ -106,7 +106,7 @@ Use of moved variable b
 def Counter = class (def n: int) (
     def plus = fn (d: int): Counter -> ( Counter(this.n + d) )
 )
-def f = fn (): Counter -> ( def c = Counter(1) ; def d = move(c) ; c += 1 ; d )
+def f = fn (): Counter -> ( var c = Counter(1) ; def d = move(c) ; c += 1 ; d )
 ```
 
 ```error
@@ -146,7 +146,7 @@ Argument for unique parameter b must be unique
 ## Passing rebound borrowed parameter to Babble unique parameter is rejected
 
 ```babble
-def f = fn (b: Box): int -> ( b = Box(1) ; consumeBox(b) )
+def f = fn (var b: Box): int -> ( b = Box(1) ; consumeBox(b) )
 ```
 
 ```error
@@ -184,7 +184,7 @@ Cannot call mut method on frozen value
 ## Calling shared Babble method on frozen receiver is rejected
 
 ```babble
-def Leaker = class (def v: int) (
+def Leaker = class (var v: int) (
     def leak = fn io shared (): Leaker -> ( this )
 )
 def f = fn io (fl: frozen Leaker): Leaker -> ( fl.leak() )
@@ -197,7 +197,7 @@ Cannot call shared method on frozen value
 ## Calling shared Babble method on unique local demotes uniqueness
 
 ```babble
-def Leaker = class (def v: int) (
+def Leaker = class (var v: int) (
     def leak = fn io shared (): Leaker -> ( this )
 )
 def f = fn io (): frozen Leaker -> ( def x = Leaker(1) ; discard(x.leak()) ; freeze(x) )
@@ -307,7 +307,7 @@ Use of moved variable b
 
 ```babble
 axiom java.util.Objects.requireNonNull: fn of T (unique obj: T): T
-def f = fn (b: Box): Box -> ( b = Box(1) ; java.util.Objects.requireNonNull(b) )
+def f = fn (var b: Box): Box -> ( b = Box(1) ; java.util.Objects.requireNonNull(b) )
 ```
 
 ```error
@@ -419,7 +419,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Local fresh container mut method with extra mut parameter stores normally
 
 ```babble
-def Linker = class (def child: Box?) (
+def Linker = class (var child: Box?) (
     def linkMut = fn mut (shared n: Box, mut other: Box): int -> ( this.child = n ; other.v += 1 ; n.v )
 )
 def f = fn (shared b: Box, mut o: Box): int -> ( def l = Linker(null) ; l.linkMut(b, o) )
@@ -440,8 +440,8 @@ Cannot mutate parameter b (mut method h.bumpChild) : mark parameter as mut b
 ## Constructors : body field store and unique parameter store
 
 ```babble
-def Wrap = class (b: Box) ( def slot: Box? = null ; this.slot = b )
-def WrapU = class (unique u: Box) ( def slot: Box? = null ; this.slot = u )
+def Wrap = class (b: Box) ( var slot: Box? = null ; this.slot = b )
+def WrapU = class (unique u: Box) ( var slot: Box? = null ; this.slot = u )
 def WrapUField = class (unique u: Box) ( def slot = u )
 def w = WrapU(Box(2)) ; def wf = WrapUField(Box(3)) ; def w2 = Wrap(Box(1))
 assert(wf.slot.v == 3 and w.slot != null and w2.slot != null)
@@ -450,7 +450,7 @@ assert(wf.slot.v == 3 and w.slot != null and w2.slot != null)
 ## Constructors : non-stored borrowed parameter and non-hermetic constructor
 
 ```babble
-def ReadOnly = class (b: Box) ( def v: int = b.v )
+def ReadOnly = class (b: Box) ( var v: int = b.v )
 def Loud = class (def b: Box) ( println(this.b.v) )
 def f = fn (b: Box): int -> ( ReadOnly(b).v )
 def g = fn io (b: Box): int -> ( Loud(b).b.v )
@@ -474,7 +474,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Self-assignment this.next = this is allowed without shared
 
 ```babble
-def Chain = class (def next: Chain?) (
+def Chain = class (var next: Chain?) (
     def cycle = fn mut () -> ( this.next = this )
 )
 def c = Chain(null)
@@ -485,7 +485,7 @@ assert(same(c.next, c))
 ## Escaping this into parameter field requires shared
 
 ```babble
-def Chain = class (def next: Chain?) (
+def Chain = class (var next: Chain?) (
     def attach = fn mut (mut p: Chain) -> ( p.next = this )
 )
 ```
@@ -508,7 +508,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 
 ```babble
 def f = fn (): frozen Box -> (
-    def slot: Box? = null
+    var slot: Box? = null
     def h = fn (): frozen Box -> ( def u = Box(1) ; slot = u ; freeze(u) )
     h()
 )
@@ -521,7 +521,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Assigning unique local to global variable demotes uniqueness
 
 ```babble
-def gSlot: Box? = null
+var gSlot: Box? = null
 def f = fn io (): frozen Box -> ( def u = Box(1) ; gSlot = u ; freeze(u) )
 ```
 
@@ -532,8 +532,10 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Assigning unique local to static class field demotes uniqueness
 
 ```babble
-def Cache = class () () static ( def slot: Box? = null )
-def f = fn io (): frozen Box -> ( def u = Box(1) ; Cache.slot = u ; freeze(u) )
+def Cache = class () () static (
+    private var slot: Box? = null
+    def f = fn io (): frozen Box -> ( def u = Box(1) ; this.slot = u ; freeze(u) )
+)
 ```
 
 ```error
@@ -558,7 +560,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Throwing unique local caught locally or conditionally escaping demotes uniqueness
 
 ```babble
-def ErrBox = class (def v: int) ()
+def ErrBox = class (var v: int) ()
 def f = fn (): frozen ErrBox -> (
     def u = ErrBox(1)
     try ( throw u ) catch e: ErrBox then ( discard(e) )
@@ -573,7 +575,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Conditionally throwing unique local out of function demotes uniqueness
 
 ```babble
-def ErrBox = class (def v: int) ()
+def ErrBox = class (var v: int) ()
 def f = fn (flag: bool): frozen ErrBox -> (
     def u = ErrBox(1)
     if flag then ( throw u )
@@ -606,7 +608,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Copied spread of unique local into shared rest parameter demotes uniqueness
 
 ```babble
-def sink = fn (shared items: Box...): int -> ( def n = 0 ; for x in items then ( n += 1 ) ; n )
+def sink = fn (shared items: Box...): int -> ( var n = 0 ; for x in items then ( n += 1 ) ; n )
 def f = fn (): frozen list of Box -> ( def xs = list(Box(1)) ; discard(sink(...xs)) ; freeze(xs) )
 ```
 
@@ -628,7 +630,7 @@ Cannot freeze expression : value is not unique or deeply immutable
 ## Fresh rvalue spread into rest parameter succeeds
 
 ```babble
-def sink = fn (shared items: Box...): int -> ( def n = 0 ; for x in items then ( n += 1 ) ; n )
+def sink = fn (shared items: Box...): int -> ( var n = 0 ; for x in items then ( n += 1 ) ; n )
 assert(sink(...list(Box(1), Box(2))) == 2)
 ```
 
@@ -636,8 +638,8 @@ assert(sink(...list(Box(1), Box(2))) == 2)
 
 ```babble
 def bad = fn (r: Root, n: int) -> (
-    def a0 = r.a.x ; def a1: Box? = null ; def a2: Box? = null ; def a3: Box? = null ; def a4 = r.a.y
-    def i = 0
+    def a0 = r.a.x ; var a1: Box? = null ; var a2: Box? = null ; var a3: Box? = null ; var a4 = r.a.y
+    var i = 0
     while i < n then (
         if i == 0 then ( def tmp = Box(0) ; discard(tmp) )
         a4 = a3 ; a3 = a2 ; a2 = a1 ; a1 = a0 ; i += 1
@@ -653,7 +655,7 @@ Cannot mutate parameter r (field assignment .v) : mark parameter as mut r
 ## Reachability Origin.join flattens element taint across param and this branches
 
 ```babble
-def Mix = class (def v: int) (
+def Mix = class (var v: int) (
     def joinPT = fn shared (f: bool, shared b: Box, o: list of any): int -> (
         def l1 = if f then ( list of any (b) ) else ( o )
         def l2 = if f then ( list of any (this) ) else ( o )
@@ -668,7 +670,7 @@ assert(Mix(1).joinPT(true, Box(2), list of any ()) == 2)
 
 ```babble
 def gBox = Box(7)
-def Mix = class (def v: int) (
+def Mix = class (var v: int) (
     def joinExt = fn io shared (flag: bool, shared b: Box, other: list of any): int -> (
         def l = if flag then ( list of any (gBox) ) else ( other )
         def mix = list of any () ; mix.add(b) ; mix.add(this) ; mix.add(gBox)

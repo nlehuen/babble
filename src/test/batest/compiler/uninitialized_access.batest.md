@@ -189,7 +189,7 @@ fn f () -> obj {nothrow unique}
 def f = fn () : bool -> (
     def w = fn () : bool -> ( b = false )
     w()
-    def b = true
+    var b = true
     b
 )
 f()
@@ -239,7 +239,7 @@ fn f () -> obj {nothrow unique}
 def f = fn () : double -> (
     def w = fn () : double -> ( d = 2.5 )
     w()
-    def d = 1.5
+    var d = 1.5
     d
 )
 f()
@@ -264,7 +264,7 @@ fn f () -> double {nothrow unique}
 def f = fn () : int -> (
     def w = fn () : int -> ( i = 9 )
     w()
-    def i = 1
+    var i = 1
     i
 )
 f()
@@ -311,7 +311,7 @@ fn readRef () -> obj {nothrow unique}
 ```babble
 def assignRef = fn () : string -> (
     s = "ok"
-    def s = "hi"
+    var s = "hi"
     s
 )
 assignRef()

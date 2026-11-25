@@ -92,7 +92,7 @@ public class TerminalInputTestCase {
     public void testCompletionRunsNothing() throws Exception {
         StringWriter output = new StringWriter();
         BabbleSession session = session(output);
-        session.eval("def made = 0");
+        session.eval("var made = 0");
         session.eval("def Box = record (v : int) ()");
         session.eval("def make = fn io () : Box -> ( made = made + 1 ; println(\"made\") ; Box(1) )");
         Assertions.assertEquals(List.of(), complete(session, "make()."));

@@ -15,7 +15,7 @@ export def ModCustom = class (def x: int) (
 ;; babble preamble
 def Reg = class (def v: int) ()
 def Box = class (def v: int) ()
-def MutBox = class (def value : int) (
+def MutBox = class (var value : int) (
     def addTo = fn mut (k : int) : int -> ( this.value += k ; this.value )
     def read = fn () : int -> ( this.value )
 )
@@ -24,7 +24,7 @@ def MutBox = class (def value : int) (
 ## Error : Function badHerm violates pure guarantee (performs I/O or external mu...
 
 ```babble
-def g = 1
+var g = 1
 g = 2
 def badHerm = fn () -> ( g = 3 )
 ```
@@ -158,7 +158,7 @@ Function badSamClass violates pure guarantee (performs I/O or external mutation)
 ## Error : Exclusivity error : mut target b aliases argument b
 
 ```babble
-def SwapBox = class (def v: int) (
+def SwapBox = class (var v: int) (
     def swapWith = fn mut (mut other: SwapBox) -> (
         def t = this.v
         this.v = other.v
@@ -237,7 +237,7 @@ assert(sIdem("ok") == "ok")
 ## Case 18
 
 ```babble
-def MBox = class (def v: int) (
+def MBox = class (var v: int) (
     def addL = fn mut commutative (d: int): int -> ( this.v = this.v + d )
     def addR = fn mut commutative (d: int): int -> ( this.v = d + this.v )
 )
@@ -251,7 +251,7 @@ assert(mc2(2) == 3)
 ## Case 19
 
 ```babble
-def MBox = class (def v: int) (
+def MBox = class (var v: int) (
     def addPlus = fn mut commutative (d: int): int -> ( this.v += d )
 )
 def mb = MBox(0)
@@ -278,7 +278,7 @@ Function badStaticRead violates deterministic guarantee : mark function as volat
 def negF: fn monotone (x: double): double = fn (x: double): double -> ( -(-x) )
 def dblSum: fn monotone (x: double): double = fn (x: double): double -> ( x + x )
 def oddMul: fn injective (x: int): int = fn (x: int): int -> ( x * 3 )
-def loc = 1
+var loc = 1
 loc += 2
 assert(negF(2.5) == 2.5)
 assert(dblSum(1.5) == 3.0)
@@ -389,7 +389,7 @@ monotone requires ordered parameter and return types without mut
 ## Case 32
 
 ```babble
-def C = class (def v: int) (
+def C = class (var v: int) (
     def mMut = fn mut (): int -> ( this.v = 1; this.v )
     def mPure = fn (): int -> ( this.v )
     def pick = fn shared (flag: bool) -> (
@@ -418,7 +418,7 @@ Type error : expected () : () : int, got shared () : () : int
 ## Error : static block inside hermetic function violates hermetic guarantee
 
 ```babble
-def SBox = class (def v: int) (
+def SBox = class (var v: int) (
     def fHerm = fn volatile mut () -> (
         def C = class () () static ( println("side") )
         this.v += 1
@@ -539,7 +539,7 @@ Exclusivity error : mut target x aliases argument x
 ## Compound-assigning an outer variable inside a pure function is rejected
 
 ```babble
-def g = 0
+var g = 0
 def badPure = fn () : int -> ( g += 1 ; g )
 ```
 

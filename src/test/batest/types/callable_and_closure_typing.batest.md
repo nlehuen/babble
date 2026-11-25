@@ -6,7 +6,7 @@ checkMissingTypes), TypeChecks (interface conformance, super defaults)
 
 ```babble
 ;; babble preamble
-def Box = class (def v : int) ()
+def Box = class (var v : int) ()
 def I1 = interface ( def m : fn () : int )
 ```
 
@@ -24,7 +24,7 @@ implements needs a statically known interface
 ## Case 2
 
 ```babble
-def Entry = class (def k : any, def v : any) implements java.util.Map.Entry of (any, any) (
+def Entry = class (def k : any, var v : any) implements java.util.Map.Entry of (any, any) (
     def getKey = fn () -> ( this.k )
     def getValue = fn () -> ( this.v )
     def setValue = fn mut (shared x : any) -> ( def o = this.v ; this.v = x ; o )
@@ -41,7 +41,7 @@ def C1 = class () implements I1, I2 (
     def m = fn () : int -> ( 1 )
     def b = fn () : int -> ( 2 )
 )
-def c = C1()
+var c = C1()
 assert(c.m() == 1 and c.b() == 2)
 ```
 
@@ -131,7 +131,7 @@ missing is not a member of I
 
 ```babble
 def Container of T = interface ( def get : fn () : T )
-def BadContainer = class (def v : string) implements Container of int (
+def BadContainer = class (var v : string) implements Container of int (
     def get = fn () : string -> ( this.v )
 )
 ```
@@ -334,7 +334,7 @@ def pickFn = fn (flag : bool) -> (
     if flag then ( fn (mut b : Box) : int -> ( b.v = 1 ; b.v ) )
     else ( fn (b : Box) : int -> ( b.v ) )
 )
-def rf = fn (b : Box) : int -> ( b.v )
+var rf = fn (b : Box) : int -> ( b.v )
 rf = fn (mut b : Box) : int -> ( b.v = 2 ; b.v )
 def bx = Box(5)
 assert(pickFn(false)(bx) == 5 and rf(bx) == 2)
@@ -352,7 +352,7 @@ assert(pickDiff(true)(3) == 3 and pickDiff(false)(3) == 4)
 ## Escaping this from a class constructor disables call-site parameter inference
 
 ```babble
-def holder = object ( def c : any? = null )
+def holder = object ( var c : any? = null )
 def Esc = class (x) (
     def _ = ( holder.c = this )
     def r : int = x + 1
@@ -366,7 +366,7 @@ Missing type : x
 ## Case 34
 
 ```babble
-def Wrap of T = class (def v : T) (
+def Wrap of T = class (var v : T) (
     def inner = fn (x) -> (
         def keep : T = this.v
         x
@@ -421,7 +421,7 @@ Missing type : x
 ## Error : Missing type : x (2)
 
 ```babble
-def x = null
+var x = null
 ```
 
 ```error
@@ -483,7 +483,7 @@ Missing type : rec (recursive)
 ## Error : Missing type : x (recursive)
 
 ```babble
-def x = x + 1
+var x = x + 1
 ```
 
 ```error
@@ -498,7 +498,7 @@ def Runner = class () (
 )
 def InitBox = class () (
     Runner().go(this)
-    def x = 0
+    var x = 0
 )
 InitBox()
 ```

@@ -84,13 +84,13 @@ def runTests = fn io () -> (
     assert(sceneList.countWhere(fn (h: raytracer.Hittable): bool -> (h is raytracer.Sphere)) == 5, "countWhere failed")
 
     ;; Babble iterables in for loops: Range, HittableList, continue and break with a value
-    def upperSum: int = 0
+    var upperSum: int = 0
     for k in raytracer.Range(0, 6) then (
         if k < 3 then (continue)
         upperSum += k
     )
     assert(upperSum == 12, "Range / continue failed")
-    def spheres: int = 0
+    var spheres: int = 0
     for h in sceneList then (
         if h is raytracer.Sphere then (spheres += 1)
     )

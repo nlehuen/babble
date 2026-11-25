@@ -5,8 +5,8 @@
 def Node = class (def value, def next) ()
 
 def sumList = fn (head): int -> (
-    def total = 0
-    def cur: Node? = head
+    var total = 0
+    var cur: Node? = head
     while cur != null then (
         total += cur.value
         cur = cur.next
@@ -97,11 +97,11 @@ def nullVal: null = null
 assert(nullVal == null)
 
 ;; Reassignment widening null -> int? and null -> double?
-def infInt = null
+var infInt = null
 infInt = 7
 assert(infInt == 7)
 
-def infDbl = null
+var infDbl = null
 infDbl = 1
 assert(infDbl is double and infDbl == 1.0)
 infDbl = 2.5
@@ -140,8 +140,8 @@ def chainedMultiline: int? = a1
 assert(chainedMultiline == 25)
 
 ;; Short-circuiting: LHS evaluated once, call arguments not evaluated when LHS is null
-def rhsRuns = 0
-def lhsRuns = 0
+var rhsRuns = 0
+var lhsRuns = 0
 def getReceiver = fn io (present: bool): A? -> (
     lhsRuns += 1
     if present then (A(4)) else (null)

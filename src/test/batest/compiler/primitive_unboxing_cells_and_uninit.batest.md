@@ -8,7 +8,7 @@ References : BIP011 (§7 primitive unboxing), BIP001 (RM001/RM003 lowering)
 
 ```babble
 def make = fn () -> (
-    def b : byte = 1; def s : short = 10; def c : char = 'a'
+    var b : byte = 1; var s : short = 10; var c : char = 'a'
     fn io () : string -> (
         b = byte(int(b) + 1); s = short(int(s) + 2); c = char(int(c) + 1)
         string(b) + ":" + string(s) + ":" + string(c)
@@ -45,7 +45,7 @@ fn make() -> any:
 
 ```babble
 def make = fn () -> (
-    def l : long = 100L; def f : float = 1.5f
+    var l : long = 100L; var f : float = 1.5f
     fn io () : string -> (
         l = l + 10L; f = f + 0.5f
         string(l) + ":" + string(f)
@@ -106,7 +106,7 @@ fn run () -> byte {nothrow unique}
 def run = fn () : byte -> (
     def f = fn () : byte -> ( x = byte(2) )
     def r = f()
-    def x : byte = 1
+    var x : byte = 1
     r
 )
 run()
@@ -156,7 +156,7 @@ fn run () -> short {nothrow unique}
 def run = fn () : short -> (
     def f = fn () : short -> ( x = short(2) )
     def r = f()
-    def x : short = 1
+    var x : short = 1
     r
 )
 run()
@@ -206,7 +206,7 @@ fn run () -> long {nothrow unique}
 def run = fn () : long -> (
     def f = fn () : long -> ( x = 2L )
     def r = f()
-    def x : long = 1L
+    var x : long = 1L
     r
 )
 run()
@@ -256,7 +256,7 @@ fn run () -> float {nothrow unique}
 def run = fn () : float -> (
     def f = fn () : float -> ( x = 2.0f )
     def r = f()
-    def x : float = 1.0f
+    var x : float = 1.0f
     r
 )
 run()
@@ -306,7 +306,7 @@ fn run () -> char {nothrow unique}
 def run = fn () : char -> (
     def f = fn () : char -> ( x = 'b' )
     def r = f()
-    def x : char = 'a'
+    var x : char = 'a'
     r
 )
 run()

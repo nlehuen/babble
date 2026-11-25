@@ -8,7 +8,7 @@ Shared custom iterable fixture for loop-variable type narrowing cases
 def Item = interface ( def k : fn () : int )
 def Sub = class (def r : double) implements Item ( def k = fn () : int -> ( 1 ) )
 def Other = class () implements Item ( def k = fn () : int -> ( 2 ) )
-def ItemIter = class (private def i : int) (
+def ItemIter = class (private var i : int) (
     def hasNext = fn () : bool -> ( this.i < 2 )
     def next = fn mut () : Item -> ( this.i += 1 ; if this.i == 1 then ( Other() ) else ( Sub(2.5) ) )
 )
@@ -19,7 +19,7 @@ def Items = class () ( def iterator = fn () : ItemIter -> ( ItemIter(0) ) )
 
 ```babble
 def foo = (list of int).of(1, 2, 3)
-def sum = 0
+var sum = 0
 for value in foo then (
     sum += value
 )
@@ -31,7 +31,7 @@ assert(sum == 6)
 ```babble
 def a = list.of(10, 20, 30)
 def b = (list of int).of()
-def s = 0
+var s = 0
 for x in a then ( s += x )
 def r = for x in b then ( x )
 assert(s == 60)
@@ -42,7 +42,7 @@ assert(r == null)
 
 ```babble
 def xs = (java.util.List of int).of(2, 4, 6)
-def total = 0
+var total = 0
 for v in xs then ( total += v )
 assert(total == 12)
 ```
@@ -51,10 +51,10 @@ assert(total == 12)
 
 ```babble
 def s = (set of string).of("hi", "there")
-def len = 0
+var len = 0
 for w in s then ( len += w.length() )
 def m = (map of (string, int)).of("a", 3, "b", 4)
-def msum = 0
+var msum = 0
 for e in m.entrySet() then ( msum += e.getValue() )
 assert(len == 7)
 assert(msum == 7)
@@ -64,13 +64,13 @@ assert(msum == 7)
 
 ```babble
 def cs = "abcd".toCharArray()
-def n = 0
+var n = 0
 for c in cs then (
     if c == 'b' then ( continue )
     n += 1
 )
 def parts = "x,y,z".split(",")
-def out = ""
+var out = ""
 for p in parts then (
     if p == "z" then ( break )
     out = out + p
@@ -83,7 +83,7 @@ assert(out == "xy")
 
 ```babble
 def it = list(1, 2, 3, 4).iterator()
-def acc = 0
+var acc = 0
 for v in it then ( acc += v )
 assert(acc == 10)
 ```
@@ -92,7 +92,7 @@ assert(acc == 10)
 
 ```babble
 def CounterIter = class (n : int) (
-    def i : int = 0
+    var i : int = 0
     def hasNext = fn () : bool -> ( this.i < n )
     def next = fn mut () : int -> (
         def cur = this.i
@@ -103,7 +103,7 @@ def CounterIter = class (n : int) (
 def Counter = record (n : int) (
     def iterator = fn () : CounterIter -> ( CounterIter(this.n) )
 )
-def s = 0
+var s = 0
 for v in Counter(5) then ( s += v )
 assert(s == 10)
 ```
@@ -112,7 +112,7 @@ assert(s == 10)
 
 ```babble
 def Countdown = class (n : int) (
-    def cur : int = n
+    var cur : int = n
     def hasNext = fn () : bool -> ( this.cur > 0 )
     def next = fn mut () : int -> (
         def v = this.cur
@@ -120,7 +120,7 @@ def Countdown = class (n : int) (
         v
     )
 )
-def acc = 0
+var acc = 0
 for v in Countdown(4) then ( acc = acc * 10 + v )
 assert(acc == 4321)
 ```
@@ -141,7 +141,7 @@ assert(fns.get(2)() == 30)
 
 ```babble
 def x = (list of int).of(1, 2, 3)
-def sum = 0
+var sum = 0
 for x in x then ( sum += x )
 assert(sum == 6)
 assert(x.size() == 3)
@@ -150,7 +150,7 @@ assert(x.size() == 3)
 ## Case 11
 
 ```babble
-def sum = 0.0
+var sum = 0.0
 for x : double in (list of int).of(1, 2, 3) then ( sum += x )
 assert(sum == 6.0)
 ```
@@ -175,8 +175,8 @@ assert(r3 == 99)
 ## Case 13
 
 ```babble
-def i = 0
-def sum = 0
+var i = 0
+var sum = 0
 while i < 6 then (
     i += 1
     if i == 3 then ( continue )
@@ -194,7 +194,7 @@ assert(w == 2.5)
 ## Case 14
 
 ```babble
-def total = 0
+var total = 0
 for i in (list of int).of(1, 2, 3) then (
     for j in (list of int).of(10, 20, 30) then (
         if j == 20 then ( continue )
@@ -209,7 +209,7 @@ assert(total == 60)
 
 ```babble
 def sumFrozen = fn (xs : frozen list of int) : int -> (
-    def s = 0
+    var s = 0
     for v in xs then ( s += v )
     s
 )
@@ -358,7 +358,7 @@ No such member : r
 def Bag = class (def xs : list of int) (
     def iterator = fn () : java.util.Iterator of int -> ( this.xs.iterator() )
 )
-def all = 0
+var all = 0
 for v in Bag(list(1, 2, 3)) then ( all += v )
 def stopped = for v in Bag(list(1, 2, 3, 4)) then (
     if v == 2 then ( continue )
@@ -371,7 +371,7 @@ assert(all == 6 and stopped == 30)
 ## Custom Babble iterable supports continue and break with a value
 
 ```babble
-def skipped = 0
+var skipped = 0
 for h in Items() then (
     if h.k() == 2 then ( continue )
     skipped += h.k()
@@ -387,7 +387,7 @@ assert(skipped == 1 and hit == 77)
 
 ```babble
 def sumInter = fn (xs : java.lang.Iterable of int & java.io.Serializable) : int -> (
-    def s = 0 ; for v in xs then ( s += v ) ; s
+    var s = 0 ; for v in xs then ( s += v ) ; s
 )
 assert(sumInter(java.util.ArrayList of int (list(2, 3))) == 5)
 ```
@@ -396,7 +396,7 @@ assert(sumInter(java.util.ArrayList of int (list(2, 3))) == 5)
 
 ```babble
 def sumBound of (T : java.lang.Iterable of int) = fn (xs : frozen T) : int -> (
-    def s = 0 ; for v in xs then ( s += v ) ; s
+    var s = 0 ; for v in xs then ( s += v ) ; s
 )
 assert(sumBound(freeze(java.util.ArrayList of int (list(4, 5)))) == 9)
 ```

@@ -97,7 +97,7 @@ export def Camera = class (
     )
 
     def renderPixel = fn (i: int, j: int, world: Hittable, mut rng: Rng): Vec3 -> (
-        def pixelColor: Vec3 = Vec3.zero
+        var pixelColor: Vec3 = Vec3.zero
         for sample in Range(0, this.samplesPerPixel) then (
             def r: Ray = this.getRay(i, j, rng)
             pixelColor += this.rayColor(r, this.maxDepth, world, rng)

@@ -116,10 +116,10 @@ public class BabbleExpressionsTestCase extends BabbleTestBase {
 
     @Test
     public void testBooleanShortcuts() throws Exception {
-        Assertions.assertEquals(1, interpret(" def a = 1 ; a == 0 and (a=2) ; a "));
-        Assertions.assertEquals(2, interpret(" def a = 1 ; a == 0 or (a=2) ; a "));
-        Assertions.assertEquals(2, interpret(" def a = 1 ; a == 1 and (a=2) ; a "));
-        Assertions.assertEquals(1, interpret(" def a = 1 ; a == 1 or (a=2) ; a "));
+        Assertions.assertEquals(1, interpret(" var a = 1 ; a == 0 and (a=2) ; a "));
+        Assertions.assertEquals(2, interpret(" var a = 1 ; a == 0 or (a=2) ; a "));
+        Assertions.assertEquals(2, interpret(" var a = 1 ; a == 1 and (a=2) ; a "));
+        Assertions.assertEquals(1, interpret(" var a = 1 ; a == 1 or (a=2) ; a "));
     }
 
     @Test

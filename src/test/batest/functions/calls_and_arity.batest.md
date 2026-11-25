@@ -131,7 +131,7 @@ def f2 = fn (x: int): int? -> ( x + 3 )
 def f3 = fn (x: int): int? -> ( x + 4 )
 def f4 = fn (x: int): int? -> ( x + 5 )
 def f5 = fn (x: int): int? -> ( x + 6 )
-def t = 0
+var t = 0
 for f in (list of fn (int): int?).of(f0, f1, f2, f3, f4, f5, f0) then ( t += callIntOpt(f, 1)! )
 assert(t == 29)
 ```

@@ -64,7 +64,7 @@ assert(tcr.getTreeCellRendererComponent(jt, "v", true, false, true, 0, false) ==
 ## Varargs SAM adapter packs rest arguments and passes raw array
 
 ```babble
-def s1 = Demo.VarArgsSink(fn (xs: int...): int -> ( def t = 0 ; for x in xs then ( t += x ) ; t ))
+def s1 = Demo.VarArgsSink(fn (xs: int...): int -> ( var t = 0 ; for x in xs then ( t += x ) ; t ))
 def s2 = Demo.VarArgsSink(fn (xs: array of int): int -> ( xs.size() ))
 assert(Demo.invokeVarArgsSink(s1, 1, 2, 3) == 6 and Demo.invokeVarArgsSink(s2, 4, 5) == 2)
 ```
@@ -81,7 +81,7 @@ assert(Demo.invokeVarArgsSink(s3, 7, 8) == 12)
 
 ```babble
 def PlainSink = class () implements tests.JavaClassDemo.VarArgsSink (
-    def sum = fn (xs: int...): int -> ( def t = 0 ; for x in xs then ( t += x ) ; t )
+    def sum = fn (xs: int...): int -> ( var t = 0 ; for x in xs then ( t += x ) ; t )
 )
 def ArrSink = class () implements tests.JavaClassDemo.VarArgsSink (
     def sum = fn (xs: array of int): int -> ( xs.size() )
@@ -96,7 +96,7 @@ assert(Demo.invokeVarArgsSink(ArrSink(), 7, 8, 9) == 3)
 def OvSink = class () implements tests.JavaClassDemo.VarArgsSink (
     def sum = overload (
         fn (s: string): int -> ( s.length() ),
-        fn (xs: int...): int -> ( def t = 0 ; for x in xs then ( t += x ) ; t )
+        fn (xs: int...): int -> ( var t = 0 ; for x in xs then ( t += x ) ; t )
     )
 )
 assert(Demo.invokeVarArgsSink(OvSink(), 1, 2, 3) == 6)
@@ -270,7 +270,7 @@ No applicable overload for (null, bool) : candidates are fn (n : int) : string, 
 ## OverloadSet dynamic call packs unpacked single rest argument through BiFunction
 
 ```babble
-def ov = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string, xs: int...): string -> ( def t = 0 ; for x in xs then ( t += x ) ; s + ":" + t ) )
+def ov = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string, xs: int...): string -> ( var t = 0 ; for x in xs then ( t += x ) ; s + ":" + t ) )
 def bf = java.util.function.BiFunction of (string, int, string)(ov)
 assert(bf.apply("k", 7) == "k:7")
 ```
@@ -292,7 +292,7 @@ assert(C().run() == "i:3")
 
 ```babble
 def S = interface (
-    def f = overload ( fn (n: int): int -> ( n ), fn (s: string, xs: int...): int -> ( def t = 0 ; for x in xs then ( t += x ) ; t ) )
+    def f = overload ( fn (n: int): int -> ( n ), fn (s: string, xs: int...): int -> ( var t = 0 ; for x in xs then ( t += x ) ; t ) )
 )
 def C = class () implements S (
     def f = overload ( fn (n: int): int -> ( super.f(n) ), fn (s: string, xs: int...): int -> ( super.f(s, ...xs) ) )

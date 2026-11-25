@@ -126,7 +126,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         // A static field that isn't final is read each time, from the same place in the code too.
         Assertions.assertEquals("[0, 1, 2]", interpret(DEMO + "Demo.reset()\n"
                 + "def seen : java.util.List of int = java.util.ArrayList()\n"
-                + "def i = 0\n"
+                + "var i = 0\n"
                 + "while i < 3 then ( seen.add(Demo.counter) ; Demo.bump() ; i = i + 1 )\n"
                 + "seen.toString()"));
     }
@@ -145,7 +145,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
         // A static field that isn't final can be assigned too.
         Assertions.assertEquals(5, interpret(DEMO + "Demo.counter = 5 ; Demo.counter"));
         // A function goes to a functional interface's field once converted.
-        Assertions.assertEquals(1, interpret(DEMO + "def d = Demo() ; def n = 0 ; d.action = java.lang.Runnable(fn () -> ( n = n + 1 )) ; d.runAction() ; n"));
+        Assertions.assertEquals(1, interpret(DEMO + "def d = Demo() ; var n = 0 ; d.action = java.lang.Runnable(fn io () -> ( n = n + 1 )) ; d.runAction() ; n"));
     }
 
     @Test
@@ -213,7 +213,7 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
                 {"Demo.boxedInt(false)!", "Type error : expected int, got null"},
                 {"Demo.boxedDouble(false)!", "Type error : expected double, got null"},
                 {"Demo.boxedBool(false)!", "Type error : expected bool, got null"},
-                {"def i = 0 ; while i < 5 then ( Demo.boxedInt(i < 4)! ; i = i + 1 )", "Type error : expected int, got null"},
+                {"var i = 0 ; while i < 5 then ( Demo.boxedInt(i < 4)! ; i = i + 1 )", "Type error : expected int, got null"},
                 {"Demo.setStaticBoxedInt(null) ; Demo.staticBoxedInt!", "Type error : expected int, got null"},
                 {"Demo.STATIC_FINAL_NULL_INT!", "Type error : expected int, got null"},
                 {"Demo().instanceBoxedInt!", "Type error : expected int, got null"},
@@ -229,9 +229,9 @@ public class BabbleJavaInteropTestCase extends BabbleTestBase {
     public void testJavaVarArgsInterfaceBridge() throws Exception {
         String code = "def tests = import(\"org.babblelang.tests\")\n"
                 + "def Impl = class () implements tests.JavaClassDemo.VarArgsSink (\n"
-                + "  def sum = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )\n"
+                + "  def sum = fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )\n"
                 + ")\n"
-                + "def sam = tests.JavaClassDemo.VarArgsSink(fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s ))\n"
+                + "def sam = tests.JavaClassDemo.VarArgsSink(fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s ))\n"
                 + "tests.JavaClassDemo.invokeVarArgsSink(Impl(), 1, 2, 3) + tests.JavaClassDemo.invokeVarArgsSink(sam, 10, 20)";
         Assertions.assertEquals(36, interpret(code));
     }

@@ -28,6 +28,8 @@ public final class ClassShape {
     /** A member initialised by a function literal : a method, or an interface default. */
     public static final int METHOD = 1;
     public static final int PRIVATE = 2;
+    /** A member declared with {@code var} rather than {@code def} ({@code BIP034}). */
+    public static final int MUTABLE = 4;
 
     private final Kind kind;
     private final String name;
@@ -123,6 +125,10 @@ public final class ClassShape {
         return (flags[index] & PRIVATE) != 0;
     }
 
+    public boolean isMutable(int index) {
+        return (flags[index] & MUTABLE) != 0;
+    }
+
     public String[] parameters() {
         return parameters;
     }
@@ -157,6 +163,10 @@ public final class ClassShape {
 
     public boolean isStaticPrivate(int index) {
         return (staticFlags[index] & PRIVATE) != 0;
+    }
+
+    public boolean isStaticMutable(int index) {
+        return (staticFlags[index] & MUTABLE) != 0;
     }
 
     public String id() {

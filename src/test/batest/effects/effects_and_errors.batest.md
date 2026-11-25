@@ -11,7 +11,7 @@ export def abs2 = java.lang.Math.abs
 
 ```babble
 ;; babble preamble
-def Box = class (def v : int) (
+def Box = class (var v : int) (
     def mutThis = fn mut () -> ( this.v += 1 )
 )
 ```
@@ -261,7 +261,7 @@ Function p violates pure guarantee (performs I/O or external mutation) : mark fu
 ## Returning a closure capturing this is return-through-borrow of this (BIP017-D6)
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def escape = fn () : fn () : int -> ( fn () -> ( this.v ) )
 )
 assert(C(4).escape()() == 4)
@@ -270,7 +270,7 @@ assert(C(4).escape()() == 4)
 ## Error : Borrowed parameter x escapes via outer variable sink : mark parameter...
 
 ```babble
-def sink : Box? = null
+var sink : Box? = null
 def leak = fn io (x : Box) -> ( sink = x )
 ```
 
@@ -281,7 +281,7 @@ Borrowed parameter x escapes via outer variable sink : mark parameter as shared 
 ## Error : Inner closure mutates this : enclosing function is not declared mut
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def bad = fn () -> (
         def inner = fn mut () -> ( this.v += 1 )
         inner()

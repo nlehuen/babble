@@ -7,7 +7,7 @@ References : `BIP001-I2`, `BIP014-I2`, `org.babblelang.opt.hir.HirTryNormalize`.
 def parse = fn io (s: string): int -> (try (java.lang.Integer.parseInt(s)) catch then (throw exception("bad")))
 def addIO = fn io (a: int, b: int): int -> (a + b)
 def fail of T = fn io (f: bool, v: T): T -> (if f then (throw exception("e")) else (v))
-def Box = class (def v: int) (
+def Box = class (var v: int) (
     def addIO = fn io (a: int, b: int): int -> (this.v + a + b)
     def bumpCompound = fn mut io (s: string): int -> (
         this.v += try (parse(s)) catch : exception then (5)
@@ -29,7 +29,7 @@ def SubCalc = class () implements Calc (
 def run = fn io (s: string, f: bool): int -> (
     def a = (array of int).of(1, try (parse(s)) catch : exception then (2), 9)
     a.set(0, try (parse(s)) catch : exception then (4))
-    def v = (try (fail(f, a)) catch : exception then (a)).get(0)
+    var v = (try (fail(f, a)) catch : exception then (a)).get(0)
     v + a.get(1) + a.get(2)
 )
 assert(run("3", false) == 15 and run("x", true) == 15)

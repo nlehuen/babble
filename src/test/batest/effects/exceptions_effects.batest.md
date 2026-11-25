@@ -120,7 +120,7 @@ assert(wrap(fn (): int -> (parse("x"))) == -1)
 
 ```babble
 def f = fn (): int -> (
-    def n = 0
+    var n = 0
     def v = try (1 + 2) finally (n += 1)
     v + n
 )
@@ -200,7 +200,7 @@ assert(localOk(Box(42)) == 42)
 ## Local-catch provenance still rejects escaping the caught variable out of catch
 
 ```babble
-def leaked: Leak? = null
+var leaked: Leak? = null
 def bad = fn io (b: Box): int -> (
     try (
         throw Leak(b)
@@ -255,7 +255,7 @@ Use of moved variable b
 ```babble
 def sink = fn (unique b: Box): int -> (b.value)
 def bad = fn (s: string): int -> (
-    def b = Box(1)
+    var b = Box(1)
     try (
         def v = sink(move(b))
         def n = parse(s)
@@ -275,7 +275,7 @@ Use of moved variable b
 
 ```babble
 def run = fn (n: int): int -> (
-    def i = 0
+    var i = 0
     while true then (
         i += 1
         if i == n then (throw Err("done"))

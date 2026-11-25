@@ -79,8 +79,8 @@ Not a scope : p
 
 ```babble
 def testWhileEvict = fn (p: Point?): int -> (
-    def cur = p
-    def n = 0
+    var cur = p
+    var n = 0
     if cur != null then (
         def f = fn (): int -> ( n = n + 1 ; n )
         f()
@@ -99,7 +99,7 @@ assert(testWhileEvict(Point(3)) == 2)
 
 ```babble
 def testBranchKill = fn (p: Point?, flag: bool): int -> (
-    def cur = p
+    var cur = p
     if cur != null then (
         if flag then ( cur = null ) else ( cur.x )
         if cur != null then ( cur.x ) else ( -1 )
@@ -116,8 +116,8 @@ assert(testBranchKill(null, false) == -2)
 
 ```babble
 def bad = fn (p: Point?) -> (
-    def cur = p
-    def n = 0
+    var cur = p
+    var n = 0
     if cur != null then (
         while n < 1 then (
             cur = null
@@ -200,12 +200,12 @@ Type error : expected string, got java.lang.Runnable
 
 ```babble
 def Counter = class () (
-    def v: int = 1
+    var v: int = 1
     def inc = fn mut (d: int): int -> ( this.v += d ; this.v )
 )
-def obj = object ( def n = 2 )
+def obj = object ( var n = 2 )
 obj.n += 3
-def x = 1
+var x = 1
 x += 2.5
 assert(Counter().inc(4) == 5)
 assert(obj.n == 5)
@@ -215,11 +215,11 @@ assert(x == 3.5)
 ## Case 15
 
 ```babble
-def y = 1
+var y = 1
 y = null
-def z = null
+var z = null
 z = "ok"
-def f = fn (a: int): int -> ( a + 1 )
+var f = fn (a: int): int -> ( a + 1 )
 f = fn (a: int): int -> ( a + 2 )
 assert(y == null)
 assert(z == "ok")

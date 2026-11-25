@@ -9,7 +9,7 @@ export def bump = fn (x: int): int -> ( x + 1 )
 
 ```babble
 ;; babble preamble
-def Box = class (def v: int) ()
+def Box = class (var v: int) ()
 def Pair = record (a: int, b: int) ()
 def Tri = record (a: int, b: int, c: int) ()
 def Wrap = record (v: int) ()
@@ -17,7 +17,7 @@ def Unit = record () ()
 def Tree = record (v: int, left: Tree?, right: Tree?) (
     def getVal = fn (): int -> ( this.v )
 )
-def Vec = class (def v: int) (
+def Vec = class (var v: int) (
     def div = fn (o: Vec): Vec -> ( Vec(int(this.v / o.v)) )
 )
 def id of T = fn (x: T): T -> ( x )
@@ -296,8 +296,8 @@ assert(c3(3) == 7 and c4(2) == 7 and c5("abc") == 3)
 ## Statement extraction : last-stmt assign, param reassign, and sub-expr return
 
 ```babble
-def lastAssign = fn commutative (a: int, b: int): int -> ( def s = a ; s += b )
-def pRe = fn (a: int, b: int): int -> ( a += b ; a )
+def lastAssign = fn commutative (a: int, b: int): int -> ( var s = a ; s += b )
+def pRe = fn (var a: int, b: int): int -> ( a += b ; a )
 def subRet = fn (x: int): int -> ( 1 + (return x) )
 assert(lastAssign(2, 3) == 5 and pRe(2, 3) == 5 and subRet(4) == 4)
 ```
@@ -317,7 +317,7 @@ assert(litW(1.0) == 6.0 and ifShort(true, short(9)) == short(1))
 ## Extraction bailouts : Vec custom div/compound and early-return else-if
 
 ```babble
-def vDiv = fn (a: Vec, b: Vec): Vec -> ( def s = a ; s /= b ; s )
+def vDiv = fn (a: Vec, b: Vec): Vec -> ( var s = a ; s /= b ; s )
 def eIf = fn (x: int, b: Box): int -> ( if x < 0 then ( return 0 ) else if x > 9 then ( return 9 ) ; x )
 def eUn = fn (x: int, b: Box): int -> ( if x < 0 then ( return b.v ) ; x )
 assert(vDiv(Vec(6), Vec(2)).v == 3 and eIf(5, Box(1)) == 5 and eUn(5, Box(1)) == 5)
@@ -345,9 +345,9 @@ assert(deep(5) == 40)
 ## Mut body extraction : empty body, local assign, fresh local mutation, and Vec compound
 
 ```babble
-def M = class (def v: int, def vec: Vec) (
+def M = class (var v: int, var vec: Vec) (
     def noop = fn mut () -> ()
-    def locA = fn mut (x: int) -> ( x = x + 1 )
+    def locA = fn mut (var x: int) -> ( x = x + 1 )
     def mkB = fn mut () -> ( def b = Box(0) ; b.v = 1 ; Box(1) )
     def divV = fn mut (shared d: Vec) -> ( this.vec /= d )
 )
@@ -360,7 +360,7 @@ assert(m.vec.v == 4)
 ```babble
 def incB = fn (mut b: Box): int -> ( b.v += 1 ; b.v )
 def volR = fn volatile (): int -> ( extInt )
-def M = class (def v: int) (
+def M = class (var v: int) (
     def callM = fn mut (mut b: Box) -> ( this.v = incB(b) )
     def callV = fn volatile mut () -> ( this.v = volR() )
 )
@@ -382,7 +382,7 @@ assert(b1.v == 5 and h.a.v == 5)
 ## Mut body extraction error : mut method writing unannotated param hits mutParams bailout
 
 ```babble
-def C = class (def v: int) ( def bad = fn mut (b: Box) -> ( b.v = 1 ) )
+def C = class (var v: int) ( def bad = fn mut (b: Box) -> ( b.v = 1 ) )
 ```
 
 ```error
@@ -392,10 +392,10 @@ Cannot mutate parameter b (field assignment .v) : mark parameter as mut b
 ## Reassigned local function and outer mutable or reassigned vars in extractExpr and callSymbol
 
 ```babble
-def r = 1 ; r = 2
+var r = 1 ; r = 2
 def ob = Box(1)
 def f = fn (x: int, g: fn (int): int): int -> (
-    def h = fn (k: int): int -> ( k )
+    var h = fn (k: int): int -> ( k )
     h = g
     h(x) + g(x)
 )
@@ -574,7 +574,7 @@ assert(f(1, BP(), BP()) == 0)
 ```babble
 def fCtrl = fn (n: int): int -> (
     def I = interface ()
-    def u: int? = null
+    var u: int? = null
     u = 1
     if n <= 0 then ( 0 ) else ( (u!) + ( def t = n - 1 ; fCtrl(t) ) + (if n == 1 then ( 0 ) else ( fCtrl(n - 1) )) )
 )
@@ -640,7 +640,7 @@ assert(c.m(1, c) == 0 and c.ov(1) == 0)
 ```babble
 def getF = fn (): fn (int): int -> ( fInd )
 def fInd = fn (n: int): int -> ( if n <= 0 then ( 0 ) else ( getF()(n - 1) ) )
-def r = fn volatile (n: int): int -> ( if n <= 0 then ( 0 ) else ( r(n - 1) ) )
+var r = fn volatile (n: int): int -> ( if n <= 0 then ( 0 ) else ( r(n - 1) ) )
 r = fn volatile (n: int): int -> ( n )
 assert(fInd(1) == 0 and r(2) == 2)
 ```

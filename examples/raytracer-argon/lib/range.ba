@@ -3,7 +3,7 @@
 ;; A Babble iterable : Range has iterator(), its RangeCursor has hasNext() and next(),
 ;; which `for i in Range(0, n) then (...)` calls unboxed (BIP013).
 ;; ------------------------------------------------------------------------
-export def RangeCursor = class (private def cur: int, private def stop: int) (
+export def RangeCursor = class (private var cur: int, private def stop: int) (
     def hasNext = fn (): bool -> (
         this.cur < this.stop
     )

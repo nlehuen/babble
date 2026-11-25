@@ -100,7 +100,7 @@ public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
     public void testForLoopOverMutableCollectionComposesReads() throws Exception {
         String script = """
                 def sumList = fn (xs: list of int): int -> (
-                    def total = 0
+                    var total = 0
                     for x in xs then (
                         total += x
                     )

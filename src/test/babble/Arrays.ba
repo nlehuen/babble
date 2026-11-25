@@ -98,7 +98,7 @@ assert(anyArr.size() == 3 and anyNullArr == (array of any?).of("present", null))
 ;; 3. Copying with `from:` and `for` iteration
 def copiedInts = array(from: list(4, 5, 6))
 def widenedDoubles = (array of double)(from: copiedInts)
-def sum = 0.0
+var sum = 0.0
 for x in widenedDoubles then (
     sum += x
 )
@@ -125,7 +125,7 @@ assert("" + p1 == "Packet(tag: hdr, payload: [10, 20])")
 ;; 5. Pure functions with `frozen` and fresh `unique` arrays
 def buildRange = fn (n: int): unique array of int -> (
     def out = (array of int)(n)
-    def i = 0
+    var i = 0
     while i < n then (
         out.set(i, i * i)
         i += 1
@@ -134,7 +134,7 @@ def buildRange = fn (n: int): unique array of int -> (
 )
 def frozenSquares: frozen array of int = freeze(buildRange(4))
 def sumFrozen = fn (xs: frozen array of int): int -> (
-    def acc = 0
+    var acc = 0
     for v in xs then (
         acc += v
     )
@@ -149,7 +149,7 @@ def asBoth: array of (Shape & Named) = circles
 assert(asShapes.get(1).area() == 12 and asBoth.get(0).name() == "a")
 
 def countNonNull = fn io (xs: array of string?): int -> (
-    def c = 0
+    var c = 0
     for s in xs then (
         if s != null then (c += 1)
     )

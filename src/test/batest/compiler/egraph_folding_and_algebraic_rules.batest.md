@@ -13,7 +13,7 @@ export def ExtRec = record (v: int) (
 
 ```babble
 ;; babble preamble
-def tick = 0
+var tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
 def bigInt = fn nothrow (x: int): int -> (return x ; x)
 def volLen = fn volatile nothrow (): int -> (def n = java.lang.System.lineSeparator().length() ; return n ; n)

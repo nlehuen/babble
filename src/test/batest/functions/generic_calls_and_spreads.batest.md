@@ -192,7 +192,7 @@ assert(g != null and g() == 42 and h == null)
 ## Spreading frozen array into non-frozen shared Iterable
 
 ```babble
-def takeIt = fn (shared xs: java.lang.Iterable of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def takeIt = fn (shared xs: java.lang.Iterable of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 def fa: frozen array of int = freeze(array.of(4, 5))
 assert(takeIt(...fa) == 9)
 ```
@@ -201,7 +201,7 @@ assert(takeIt(...fa) == 9)
 
 ```babble
 def runArr = fn io (shared ops: array of java.util.function.IntUnaryOperator): int -> ( ops.get(0).applyAsInt(3) )
-def runRest = fn io (shared ops: java.util.function.IntUnaryOperator...): int -> ( def v = 2 ; for o in ops then ( v = o.applyAsInt(v) ) ; v )
+def runRest = fn io (shared ops: java.util.function.IntUnaryOperator...): int -> ( var v = 2 ; for o in ops then ( v = o.applyAsInt(v) ) ; v )
 def fns = list(fn (x: int): int -> ( x * 2 ))
 assert(runArr(...fns) == 6 and runRest(...fns) == 4)
 ```
@@ -255,7 +255,7 @@ b.plus is not callable
 
 ```babble
 def Runner = class () ( def plus of (T: java.lang.Runnable) = fn io (shared r: T): int -> ( r.run() ; 1 ) )
-def n = 0
+var n = 0
 def c = Runner()
 assert((c + fn io () -> ( n += 1 )) == 1 and n == 1)
 ```

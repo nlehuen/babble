@@ -208,7 +208,7 @@ def fs = list.of(
     fn (x : int) : int -> ( x + 4 ),
     fn (x : int) : int -> ( x + 5 )
 )
-def sum = 0
+var sum = 0
 for f in fs then ( sum += f(10) )
 assert(sum == 75)
 ```

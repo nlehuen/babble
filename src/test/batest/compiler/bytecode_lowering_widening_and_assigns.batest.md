@@ -78,7 +78,7 @@ fn neg(v0: int, v1: double, v2: any) -> bool:
 ```babble
 def wf1 = fn () : double -> ( 1 )
 def wf2 = fn (flag : bool) : double -> ( if flag then ( 1 ) else ( 2.5 ) )
-def k = 0
+var k = 0
 def wd : double? = while k < 2 then ( k += 1 ; 42 )
 def bd : double = ( def t = 3 ; t )
 def obj = object ( def k : int = 7 )
@@ -138,8 +138,8 @@ fn wf2(v0: bool) -> double:
 ## Widening assignments on local and Babble int field
 
 ```babble
-def x = 1
-def b = (class () ( def v : int = 2 ))()
+var x = 1
+def b = (class () ( var v : int = 2 ))()
 def d1 : double = (x = 5) ; def d2 : double = (x += 3)
 def d3 : double = (b.v = 7) ; def d4 : double = (b.v += 2)
 def d5 : double = (b.v -= 1) ; def d6 : double = (b.v *= 2)
@@ -218,9 +218,9 @@ top-level ; [not-lowered: top-level]
 ## Boxed/fallback compound assignments on union local and instance fields
 
 ```babble
-def C = class (def n : int, def d : double) (
+def C = class (var n : int, var d : double) (
     def run = fn mut () -> (
-        def loc : int | double = 9
+        var loc : int | double = 9
         loc /= 2 ; loc += dynNum(2)
         this.n *= 2 ; this.n -= 1
         this.d /= 2 ; this.d += dynNum(2)
@@ -377,7 +377,7 @@ fn C.run() -> bool:
 
 ```babble
 def StaticBox = class () () static (
-    def sx : int | double = 9
+    private var sx : int | double = 9
     def go = fn io () : int | double -> ( this.sx /= 2 ; this.sx )
 )
 assert(StaticBox.go() == 4.5)

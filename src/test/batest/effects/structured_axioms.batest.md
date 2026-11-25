@@ -509,8 +509,8 @@ def Point = record (x: int, y: int) ()
 def sumPair = fn nothrow (p: Point, tag: string, n: int): int -> (p.x + p.y + tag.length() + n)
 def run = fn (n: int): int -> (
     def p = Point(3, 4)
-    def acc = 0
-    def i = 0
+    var acc = 0
+    var i = 0
     while i < n then (
         acc += sumPair(p, "hi", 1) + java.lang.Math.abs(java.lang.Math.abs(-2))
         i += 1
@@ -527,8 +527,8 @@ def Cell = class (def v: int) ()
 def readCell = fn nothrow (c: Cell): int -> (c.v)
 def run = fn (n: int): int -> (
     def c = Cell(5)
-    def acc = 0
-    def i = 0
+    var acc = 0
+    var i = 0
     while i < n then (
         acc += readCell(c)
         i += 1
@@ -907,7 +907,7 @@ assert(S("ok").toString() == "ok")
 ## Error : Function compareTo violates deterministic guarantee of axiom java.lan...
 
 ```babble
-def ext = 0 ; ext = 1
+var ext = 0 ; ext = 1
 def VolCmp = class (def v: int) implements java.lang.Comparable of VolCmp (
   def compareTo = fn volatile (other: VolCmp): int -> (this.v - other.v + ext)
 )

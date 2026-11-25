@@ -19,7 +19,7 @@ def nonPureThrow = fn (x: int): double -> (def q = 10 / x ; return double(q) ; d
 
 ```babble
 def run = fn io (n: int, b: byte, f: bool): double -> (
-  def a = 0.0 ; def i = 0 ; def c = 1 ; def bump = fn io (): int -> (c += 1 ; c)
+  var a = 0.0 ; var i = 0 ; var c = 1 ; def bump = fn io (): int -> (c += 1 ; c)
   while i < n then (
     a += (byte(2) as double) + (def t = int(b) + 1 ; double(t))
     if f and false then (a += double(bump())) ; i += 1
@@ -159,7 +159,7 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
 ```babble
 def RV = record (a: byte, i: int) (
   def run = fn (n: int): long -> (
-    def r = 0L ; def k = 0
+    var r = 0L ; var k = 0
     while k < n then (
       def hs: short = bigByte(this.a) ; def hi: int = bigByte(this.a) ; def hl: long = bigInt(this.i)
       r += long(hs) + long(hi) + hl ; k += 1
@@ -291,7 +291,7 @@ fn RV.run(v0: int) -> long:
 ```babble
 def RV = record (i: int, fl: float) (
   def run = fn (n: int): double -> (
-    def r = 0.0 ; def k = 0
+    var r = 0.0 ; var k = 0
     while k < n then (
       def hf: float = bigInt(this.i) ; def hd: double = bigFloat(this.fl)
       r += double(hf) + hd ; k += 1
@@ -401,7 +401,7 @@ fn RV.run(v0: int) -> double:
 ```babble
 def RV = record (d: double, f: bool, xs: frozen array of int) (
   def run = fn (n: int): double -> (
-    def a = 0.0 ; def k = 0 ; def fnD = fn (v: double): double -> (java.lang.Math.sin(v))
+    var a = 0.0 ; var k = 0 ; def fnD = fn (v: double): double -> (java.lang.Math.sin(v))
     while k < n then (a += fnD(this.d) + (if this.f and (this.xs.size() > 0) then (1.0) else (2.0)) ; k += 1) ; a
   )
 )
@@ -527,7 +527,7 @@ fn RV.run(v0: int) -> double:
 ```babble
 def RV = record (d: double, arr: frozen array of int) (
   def run = fn (): double -> (
-    def a = 0.0
+    var a = 0.0
     for e in this.arr then (a += java.lang.Math.sin(this.d) + double(e))
     a
   )

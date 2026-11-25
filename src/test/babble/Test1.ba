@@ -23,8 +23,8 @@ def adder = fn (a: int): fn (b: int): int -> (
 )
 
 ;; loops
-def fac2 = fn (n) -> (
-    def result = 1
+def fac2 = fn (var n) -> (
+    var result = 1
     while n > 1 then (
         ;; use ";" to put several statements on one line
         result = result * n; n = n - 1
@@ -66,7 +66,7 @@ def apply = fn (a, f: fn (v: int): int = fn (v: int) -> (v)) -> (f(a))
 ;; using function scopes as poor man's objects
 ;; like in Javascript
 def counter = fn () -> (
-    def c = 0
+    var c = 0
 
     fn () -> (
         c = c + 1
@@ -76,7 +76,7 @@ def counter = fn () -> (
 ;; object literals : members are reached through "this"
 def counter2 = fn () -> (
     return object (
-        def v = 0
+        var v = 0
         def inc = fn mut () -> (
             this.v = this.v + 1
         )

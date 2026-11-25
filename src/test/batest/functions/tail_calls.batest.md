@@ -91,7 +91,7 @@ def g = fn (n: int): int -> (forever recurse(n + 1))
 ## continue does not leave the loop, and break only leaves the inner one.
 
 ```babble
-def x = 0
+var x = 0
 while true then (
     x += 1
     while true then (break)
@@ -135,7 +135,7 @@ assert(f(2, 3) == -1)
 def a = fn (n: int): int -> (if n > 0 then (return forever recurse(n - 1)) else (a(1)))
 def b = fn (n: int): int -> (if n > 0 then (b(n)) else if n < 0 then (forever b(n)) else (b(1)))
 def c = fn (): int -> (
-    def i = 0
+    var i = 0
     forever (while (true) then (i += 1))
     i
 )
@@ -266,7 +266,7 @@ Loop without an exit : while true. If this is intended, wrap the expression with
 ## forever around multi-expression block does not acknowledge inner while true
 
 ```babble
-def i = 0
+var i = 0
 forever ( i += 1 ; while true then ( i += 1 ) )
 ```
 
@@ -290,7 +290,7 @@ assert(f(20000) == 0)
 ## Self call in catch with finally is not tail-optimized
 
 ```babble
-def ticks = 0
+var ticks = 0
 def f = fn io (n: int): int -> (
     if n == 0 then ( 0 )
     else (
@@ -305,7 +305,7 @@ assert(f(5) == 0 and ticks == 5)
 ## Variadic and spread self-calls bypass static tail-call binding
 
 ```babble
-def vr = fn (n: int, xs: int...): int -> ( if n == 0 then ( def c = 0 ; for x in xs then ( c += 1 ) ; c ) else ( recurse(n - 1, 1) ) )
+def vr = fn (n: int, xs: int...): int -> ( if n == 0 then ( var c = 0 ; for x in xs then ( c += 1 ) ; c ) else ( recurse(n - 1, 1) ) )
 def sp = fn (n: int, xs: list of int): int -> ( if n == 0 then ( xs.size() ) else ( sp(n - 1, ...list(1, 2, 3)) ) )
 assert(vr(3, 1) == 1 and sp(3, list(1)) == 3)
 ```

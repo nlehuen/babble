@@ -859,4 +859,35 @@ public class FormatterTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testVarFormatting() throws Exception {
+        assertFormats("""
+                var x: int = 0
+                def f = fn (var n: int, var mut xs: list of int): int -> (
+                    var acc = n
+                    acc += xs.size()
+                    acc
+                )
+                def C = class (def id: int, var count: int, private var hidden: int = 0) (
+                    var cb: fn (int): int = fn (k: int): int -> (k)
+                ) static (
+                    def tag = "C"
+                    private var total = 0
+                )
+                """, """
+                var  x : int = 0
+                def f = fn ( var  n : int , var  mut  xs : list  of  int ) : int -> (
+                var acc=n
+                acc+=xs.size()
+                acc
+                )
+                def C = class ( def id : int , var count : int , private  var  hidden : int = 0 ) (
+                var cb : fn ( int ) : int = fn ( k : int ) : int -> ( k )
+                ) static (
+                def tag="C"
+                private  var  total = 0
+                )
+                """);
+    }
 }

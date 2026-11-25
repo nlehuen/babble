@@ -16,7 +16,7 @@ export def Square = class (def corner: Vec, def side: int) implements Shape (
 )
 
 ;; state private to the module, reached through exported functions
-def created = 0
+var created = 0
 export def unitSquare = fn io () -> (
     created = created + 1
     Square(vectors.origin, 1)

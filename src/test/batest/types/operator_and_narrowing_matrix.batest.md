@@ -150,16 +150,16 @@ assert(f(Item(2), Item(3)) == 7)
 ## Narrowing for-loop variables, catch variables, and assigned-local skipping in nested objects
 
 ```babble
-def sum = 0
+var sum = 0
 for x in list of int?(1, null, 3) then (
     if x != null then ( sum += x )
 )
 def caught = try ( throw Item(5) ) catch e then (
     if e is Item then ( e.v ) else ( 0 )
 )
-def done = false
+var done = false
 while not done then (
-    def o = object ( def k = 1 ; this.k = 2 )
+    def o = object ( var k = 1 ; this.k = 2 )
     done = true
 )
 assert(sum == 4 and caught == 5)
@@ -168,7 +168,7 @@ assert(sum == 4 and caught == 5)
 ## Reassigned local is not narrowable across closure boundary
 
 ```babble
-def x : int? = 5
+var x : int? = 5
 def bad = fn volatile () : int -> ( if x != null then ( x + 1 ) else ( 0 ) )
 x = null
 ```

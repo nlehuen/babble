@@ -41,6 +41,7 @@ final class ConstantPool {
     private final String sourceName;
     private final List<Entry> entries = new ArrayList<>();
     private final Map<List<String>, String> stringArrays = new HashMap<>();
+    private final Map<String, String> booleanArrays = new HashMap<>();
     private final Map<List<Class<?>>, String> classArrays = new HashMap<>();
     private final Map<String, String> typeFields = new HashMap<>();
 
@@ -62,6 +63,28 @@ final class ConstantPool {
     String stringArrayField(String[] values) {
         return stringArrays.computeIfAbsent(Arrays.asList(values), key ->
                 add("NAMES", "[Ljava/lang/String;", estimateSize(values), m -> pushStringArray(m, values)));
+    }
+
+    String booleanArrayField(boolean[] values) {
+        StringBuilder key = new StringBuilder(values.length);
+        for (boolean b : values) {
+            key.append(b ? '1' : '0');
+        }
+        return booleanArrays.computeIfAbsent(key.toString(), k ->
+                add("FINALS", "[Z", 8 + values.length * 6, m -> pushBooleanArray(m, values)));
+    }
+
+    private static void pushBooleanArray(MethodVisitor mv, boolean[] values) {
+        pushInt(mv, values.length);
+        mv.visitIntInsn(NEWARRAY, T_BOOLEAN);
+        for (int i = 0; i < values.length; i++) {
+            if (values[i]) {
+                mv.visitInsn(DUP);
+                pushInt(mv, i);
+                mv.visitInsn(ICONST_1);
+                mv.visitInsn(BASTORE);
+            }
+        }
     }
 
     String classArrayField(Class<?>[] classes) {

@@ -20,7 +20,7 @@ def nonPureThrow = fn (x: int): double -> (def q = 10 / x ; return double(q) ; d
 ```babble
 def RV = record (a: byte, d: double, s: string) (
   def run = fn (n: int): double -> (
-    def r = 0.0 ; def k = 0
+    var r = 0.0 ; var k = 0
     while k < n then (
       r += double(("  " + this.s + "  ").trim().length()) + (this.a as double) + (this.d + 1.0) / 2.0 ; k += 1
     )
@@ -147,7 +147,7 @@ fn RV.run(v0: int) -> double:
 ```babble
 def RV = record (a: byte, i: int, f: bool) (
   def run = fn (n: int): double -> (
-    def r = 0.0 ; def k = 0
+    var r = 0.0 ; var k = 0
     while k < n then (
       r += bigSink((this.a as double) + (if this.f and (this.i > 0) or (not this.f) then (1.0) else (2.0))) ; k += 1
     )
@@ -290,7 +290,7 @@ fn RV.run(v0: int) -> double:
 ```babble
 def bigOpt = fn nothrow (x: double?): double -> (def r = if x == null then (0.0) else (1.0) ; return r ; r)
 def run = fn (d: double, f: bool): double -> (
-  def a = 0.0 ; def loc = bigSink ; def k = 0
+  var a = 0.0 ; def loc = bigSink ; var k = 0
   while k < 2 then (a += bigImpl(d) + bigSink((-d) + (if f then (1.0) else (2.0))) + bigOpt(if f then (d)) + loc(d) ; k += 1) ; a
 )
 assert(java.lang.Math.round(run(1.0, true) * 100.0) == 568L)
@@ -449,7 +449,7 @@ fn run(v0: double, v1: bool) -> double:
 def tS = fn nothrow (m: bool, v: short): int -> (def r = if m then (int(v)) else (0) ; return r ; r)
 def tI = fn nothrow (m: bool, v: int): int -> (def r = if m then (v) else (0) ; return r ; r)
 def run = fn (b: byte): int -> (
-  def a = 0 ; def mf = true ; def k = 0
+  var a = 0 ; var mf = true ; var k = 0
   while k < 2 then (a += tS(mf, bigByte(b)) + tI(mf, bigByte(b)) ; mf = not mf ; k += 1) ; a
 )
 assert(run(byte(2)) == 4)
@@ -576,7 +576,7 @@ fn run(v0: byte) -> int:
 ```babble
 def tL = fn nothrow (m: bool, v: long): long -> (def r = if m then (v) else (0L) ; return r ; r)
 def run = fn (i: int): long -> (
-  def a = 0L ; def mf = true ; def ml = 1L ; def k = 0
+  var a = 0L ; var mf = true ; var ml = 1L ; var k = 0
   while k < 2 then (a += tL(mf, bigInt(i)) + (ml + bigInt(i)) ; mf = not mf ; ml += 1L ; k += 1) ; a
 )
 assert(run(3) == 12L)

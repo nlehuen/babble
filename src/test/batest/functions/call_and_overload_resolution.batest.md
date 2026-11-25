@@ -22,7 +22,7 @@ def GenC = record (v: string) implements GenI of string ( def get = fn (): strin
 def MySink = class () implements tests.JavaClassDemo.VarArgsSink (
     def sum = overload (
         fn (s: string): int -> ( s.length() ),
-        fn (xs: int...): int -> ( def t = 0 ; for x in xs then ( t += x ) ; t )
+        fn (xs: int...): int -> ( var t = 0 ; for x in xs then ( t += x ) ; t )
     )
 )
 assert(Demo.invokeVarArgsSink(MySink(), 1, 2, 3) == 6)
@@ -130,7 +130,7 @@ Ambiguous overloads of bad : bad(frozen (I1 & I2)) fits fn (x : frozen I1) : int
 
 ```babble
 def f = overload (
-    fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s ),
+    fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s ),
     fn (a: int, ..., tag: string): int -> ( a + tag.length() )
 )
 assert(f(1, 2, 3) == 6 and f(5, tag: "hi") == 7)
@@ -223,7 +223,7 @@ No applicable overload of f for (array of int) : candidates are (xs : array of T
 
 ```babble
 def g = overload (
-    fn of T (xs: T...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n ),
+    fn of T (xs: T...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n ),
     fn (tag: string, xs: list of int): int -> ( tag.length() + xs.size() )
 )
 assert(g(...list(1, 2)) == 2 and g(...array.of("a", "b", "c")) == 3 and g("k", ...array.of(1, 2)) == 3)

@@ -97,8 +97,25 @@ final class TypeEnv {
         return next.isEmpty() ? EMPTY : new TypeEnv(Collections.unmodifiableMap(next));
     }
 
-    TypeEnv enterCallable(Set<ParserRuleContext> reassigned) {
-        return evictAll(reassigned);
+    TypeEnv enterCallable() {
+        if (narrowings.isEmpty()) {
+            return this;
+        }
+        boolean changed = false;
+        Map<ParserRuleContext, Type> next = null;
+        for (ParserRuleContext decl : narrowings.keySet()) {
+            if (ScopeAnalysis.isVar(decl)) {
+                if (!changed) {
+                    next = new IdentityHashMap<>(narrowings);
+                    changed = true;
+                }
+                next.remove(decl);
+            }
+        }
+        if (!changed) {
+            return this;
+        }
+        return next.isEmpty() ? EMPTY : new TypeEnv(Collections.unmodifiableMap(next));
     }
 
     /**

@@ -13,7 +13,7 @@ def coerce of T = fn io (shared x: any?): T -> (
 def fPlain = fn (a: int, b: int = 20): int -> ( a * 10 + b )
 def fOne = fn (a: int): int -> ( a )
 def fRest = fn (a: int, xs: int..., k: int = 10): int -> (
-    def s = a * 100 + k
+    var s = a * 100 + k
     for x in xs then ( s += x )
     s
 )

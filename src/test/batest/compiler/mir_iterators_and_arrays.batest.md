@@ -7,7 +7,7 @@ custom Babble `Iterable` and `Iterator` `for` loops, parallel-copy swap cycles, 
 
 ```babble
 def sumNum = fn (bs: array of byte, ss: array of short, ls: array of long, fs: array of float): double -> (
-    def r = 0.0
+    var r = 0.0
     for b in bs then (r += b)
     for s in ss then (r += s)
     for l in ls then (r += l)
@@ -232,7 +232,7 @@ fn sumNum(v0: any, v1: any, v2: any, v3: any) -> double:
 
 ```babble
 def sumRef = fn (cs: array of char, ps: array of bool, ts: array of string): int -> (
-    def r = 0
+    var r = 0
     for c in cs then (if c == 'a' then (r += 1))
     for p in ps then (if p then (r += 2))
     for t in ts then (r += t.length())
@@ -430,13 +430,13 @@ fn sumRef(v0: any, v1: any, v2: any) -> int:
 
 ```babble
 def Cnt = class (k: int) (
-  def n = k ; def i = 0
+  def n = k ; var i = 0
   def hasNext = fn (): bool -> (this.i < this.n)
   def next = fn mut (): int -> (def v = this.i ; this.i += 1 ; v)
 )
 def Rng = class (k: int) (def n = k ; def iterator = fn (): Cnt -> (Cnt(this.n)))
 def sumCustom = fn (): int -> (
-  def s = 0
+  var s = 0
   for x in Rng(3) then (s += x)
   for y in Cnt(3) then (s += y)
   s
@@ -548,9 +548,9 @@ def initAndSwap = fn (flag: bool): int -> (
     def r = if flag then (0) else (u + t.length())
     def u: int = 2
     def t: string = "xyz"
-    def a = u
-    def b = t.length()
-    def k = 0
+    var a = u
+    var b = t.length()
+    var k = 0
     while k < 3 then (def tmp = a ; a = b ; b = tmp ; k += 1)
     a * 10 + b + r
 )

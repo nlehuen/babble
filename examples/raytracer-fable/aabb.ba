@@ -47,12 +47,12 @@ export def AABB = record (
     def hit = fn (r: Ray, tmin: double, tmax: double): bool -> (
         def orig: Vec3 = r.origin
         def dir: Vec3 = r.direction
-        def curMin: double = tmin
-        def curMax: double = tmax
+        var curMin: double = tmin
+        var curMax: double = tmax
 
         def invX: double = 1.0 / dir.x
-        def tx0: double = (this.minX - orig.x) * invX
-        def tx1: double = (this.maxX - orig.x) * invX
+        var tx0: double = (this.minX - orig.x) * invX
+        var tx1: double = (this.maxX - orig.x) * invX
         if invX < 0.0 then (
             def tmpX: double = tx0
             tx0 = tx1
@@ -63,8 +63,8 @@ export def AABB = record (
         if curMax <= curMin then (return false)
 
         def invY: double = 1.0 / dir.y
-        def ty0: double = (this.minY - orig.y) * invY
-        def ty1: double = (this.maxY - orig.y) * invY
+        var ty0: double = (this.minY - orig.y) * invY
+        var ty1: double = (this.maxY - orig.y) * invY
         if invY < 0.0 then (
             def tmpY: double = ty0
             ty0 = ty1
@@ -75,8 +75,8 @@ export def AABB = record (
         if curMax <= curMin then (return false)
 
         def invZ: double = 1.0 / dir.z
-        def tz0: double = (this.minZ - orig.z) * invZ
-        def tz1: double = (this.maxZ - orig.z) * invZ
+        var tz0: double = (this.minZ - orig.z) * invZ
+        var tz1: double = (this.maxZ - orig.z) * invZ
         if invZ < 0.0 then (
             def tmpZ: double = tz0
             tz0 = tz1

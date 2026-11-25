@@ -21,7 +21,7 @@ def ratio: double = double(half)
 assert(ratio == 4.0)
 
 ;; ---- compound assignment on a variable : x op= v is x = x op v
-def i = 0
+var i = 0
 i += 3
 i *= 4
 i -= 2
@@ -29,18 +29,18 @@ assert(i == 10)
 i /= 4
 assert(i == 2.5)
 
-def s = "n = "
+var s = "n = "
 s += 1
 assert(s == "n = 1")
 
 ;; Its value is the value assigned.
-def k: int = 1
+var k: int = 1
 assert((k += 2) == 3)
 assert(k == 3)
 
 ;; In a loop, and on a captured variable.
-def total = 0
-def n = 0
+var total = 0
+var n = 0
 while n < 5 then (
     n += 1
     total += n
@@ -48,7 +48,7 @@ while n < 5 then (
 assert(total == 15)
 
 def counter = fn () -> (
-    def count = 0
+    var count = 0
     fn () -> (count += 1)
 )
 def next = counter()
@@ -57,7 +57,7 @@ assert(next() == 2)
 
 ;; ---- on members
 def Account = class () (
-    def balance: int = 0
+    var balance: int = 0
     def deposit = fn (amount) -> (this.balance += amount)
     def withdraw = fn (amount) -> (this.balance -= amount)
 )
@@ -67,12 +67,12 @@ assert(account.withdraw(30) == 70)
 account.balance *= 2
 assert(account.balance == 140)
 
-def box = object (def v = 1)
+def box = object (var v = 1)
 box.v += 1
 assert(box.v == 2)
 
 ;; The receiver is evaluated once.
-def calls = 0
+var calls = 0
 def get = fn io () -> (
     calls += 1
     box
@@ -86,13 +86,13 @@ def V = record (x, y) (
     def plus = fn (o): V -> (V(this.x + o.x, this.y + o.y))
     def times = fn (k): V -> (V(this.x * k, this.y * k))
 )
-def v = V(1, 2)
+var v = V(1, 2)
 v += V(10, 20)
 v *= 2
 assert(v == V(22, 44))
 
 def Particle = class () (
-    def position = V(0, 0)
+    var position = V(0, 0)
     def move = fn (d) -> (this.position += d)
 )
 def p = Particle()

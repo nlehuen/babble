@@ -163,7 +163,7 @@ interface IBase:
 def I1 = interface ( def calc = fn (x : int) : int -> ( x + 10 ) )
 def I2 = interface extends I1 ( def calc = fn (x : int) : int -> ( super.calc(x) + 2 ) )
 def C2 = class () implements I2 (
-    def run = fn (x : int) : int -> (
+    def run = fn (var x : int) : int -> (
         def inner = fn () : int -> ( super.calc(x) + 1 )
         inner() + super.calc(x = x + 1)
     )

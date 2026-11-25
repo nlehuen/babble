@@ -125,6 +125,7 @@ public final class HirBuilder {
                 file.getStart().getLine(),
                 scopes.exports(),
                 scopes.declared(file),
+                scopes.declaredFinals(file),
                 topLevel,
                 hirFunctions,
                 hirClasses,
@@ -412,6 +413,7 @@ public final class HirBuilder {
                         defVal != null ? lowerExpr(defVal) : null,
                         scopes.lowering().javaSamTarget(p),
                         scopes.lowering().paramOwnership(p),
+                        ScopeAnalysis.isVar(p),
                         p.getStart().getLine()
                 ));
             }

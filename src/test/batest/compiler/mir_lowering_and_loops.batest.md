@@ -109,7 +109,7 @@ fn prims(v0: byte, v1: short, v2: int, v3: long, v4: float, v5: double, v6: char
 
 ```babble
 def sumArr = fn (xs: array of int): int -> (
-    def acc = 0
+    var acc = 0
     for x in xs then (
         if x < 0 then (continue)
         if x == 99 then (break)
@@ -225,7 +225,7 @@ fn sumArr(v0: any) -> int:
 
 ```babble
 def sumDyn = fn (xs: array of int | list of int): int -> (
-    def s = 0
+    var s = 0
     for v in xs then (s += v)
     s
 )
@@ -299,9 +299,9 @@ fn sumDyn(v0: any) -> int:
 
 ```babble
 def fib = fn (n: int): int -> (
-    def a = 0
-    def b = 1
-    def i = 0
+    var a = 0
+    var b = 1
+    var i = 0
     while i < n then (
         def t = a + b
         a = b

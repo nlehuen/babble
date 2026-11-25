@@ -54,7 +54,7 @@ public class ReplTestCase {
     @Test
     public void aModuleIsLoadedOncePerSession(@org.junit.jupiter.api.io.TempDir java.nio.file.Path directory) throws Exception {
         java.nio.file.Path counter = directory.resolve("counter.ba");
-        java.nio.file.Files.writeString(counter, "println(\"loading\")\ndef n = 0\nexport def next = fn io () -> ( n = n + 1 )");
+        java.nio.file.Files.writeString(counter, "println(\"loading\")\nvar n = 0\nexport def next = fn io () -> ( n = n + 1 )");
         String path = counter.toString().replace("\\", "\\\\");
         StringWriter output = new StringWriter();
         BabbleSession session = session(output);
@@ -90,19 +90,24 @@ public class ReplTestCase {
     @Test
     public void testRedefinitionShadowsAndAssignmentChanges() throws Exception {
         BabbleSession session = session();
-        session.eval("def x = 1");
-        session.eval("def get = fn () -> ( x )");
+        session.eval("var x = 1");
+        session.eval("def get = fn volatile () -> ( x )");
         // An assignment changes the variable everyone sees.
         session.eval("x = 5");
         Assertions.assertEquals(5, session.eval("get()"));
         // A new definition is another variable : get keeps the one it was written against.
-        session.eval("def x = 10");
+        session.eval("var x = 10");
         Assertions.assertEquals(5, session.eval("get()"));
         Assertions.assertEquals(10, session.eval("x"));
         session.eval("x = 11");
         Assertions.assertEquals(5, session.eval("get()"));
         // Inside one input, a name is still defined only once.
         assertFails(session, "def y = 1 ; def y = 2", "Name already defined : y");
+        // A def from an earlier input cannot be reassigned, closing the REPL determinism hole (BIP034).
+        session.eval("def c = 1");
+        session.eval("def readC = fn () -> ( c )");
+        assertFails(session, "c = 2", "Cannot assign to def : c");
+        Assertions.assertEquals(1, session.eval("readC()"));
     }
 
     @Test
@@ -146,13 +151,13 @@ public class ReplTestCase {
                 "Type error : expected () : double, got () : int");
         session.eval("def sq = Sq(3)");
         assertFails(session, "sq.nope", "No such member : nope");
-        session.eval("def C = class (private def n = 0) ( def next = fn mut () -> ( this.n = this.n + 1 ) )");
+        session.eval("def C = class (private var n = 0) ( def next = fn mut () -> ( this.n = this.n + 1 ) )");
         session.eval("def c = C()");
         assertFails(session, "c.n", "n is private");
         Assertions.assertEquals(2, session.eval("c.next() ; c.next()"));
-        // Once assigned, a name is no longer a statically known interface.
+        // A def interface cannot be reassigned, and a non-static alias is not a statically known interface.
         session.eval("def I = interface ( def m = fn () -> ( 1 ) )");
-        assertFails(session, "I = 3", "Type error : expected interface I, got int");
+        assertFails(session, "I = 3", "Cannot assign to def : I");
         session.eval("def id = fn (x : any) : any -> ( x ) ; def J : any = id(I)");
         assertFails(session, "class () implements J ()", "implements needs a statically known interface");
     }
@@ -198,7 +203,7 @@ public class ReplTestCase {
     @Test
     public void testInferenceFollowsAssignments() throws Exception {
         BabbleSession session = session(new StringWriter());
-        session.eval("def n = 1");
+        session.eval("var n = 1");
         assertFails(session, "def s : string = n", "Type error : expected string, got int");
         assertFails(session, "n = \"x\"", "Type error : expected int, got string");
         Assertions.assertEquals(1, session.eval("n"));
@@ -245,7 +250,7 @@ public class ReplTestCase {
                 transcript("1 + 2", "\"a\\\"b\"", "1.5", "1 < 2", "def f = fn () -> ( 1 )", "fn () -> ( 1 )", "def P = record (x : int, y : int) ()", "P(1, 2)", "def I = interface ()",
                         "def l : java.util.List of int = java.util.ArrayList() ; l.add(1) ; l", "java.util", "java.lang.Math",
                         // null is not shown, and output is.
-                        "null", "def n : any?", "println(\"hi\")"));
+                        "null", "def n : any? = null", "println(\"hi\")"));
     }
 
     @Test
@@ -327,7 +332,7 @@ public class ReplTestCase {
         Assertions.assertEquals(81, session.eval("quad(3)"));
 
         // `mut` method and static call-site exclusivity persist across inputs:
-        session.eval("def Box = class (def v: int) ( def addFrom = fn mut (other: Box) -> ( this.v += other.v ) )");
+        session.eval("def Box = class (var v: int) ( def addFrom = fn mut (other: Box) -> ( this.v += other.v ) )");
         session.eval("def a = Box(10) ; def b = Box(5)");
         session.eval("a.addFrom(b)");
         Assertions.assertEquals(15, session.eval("a.v"));

@@ -58,7 +58,7 @@ def anyTile: any = Tile()
 assert((anyTile as Shape & Named).name() == "tile")
 
 ;; a nullable intersection
-def maybe: (Shape & Named)? = null
+var maybe: (Shape & Named)? = null
 assert(maybe == null)
 maybe = Tile()
 assert(maybe?.name() == "tile")
@@ -82,7 +82,7 @@ def nums: java.util.List of int = list.of(3, 9, 4)
 assert(java.util.Collections.max(nums)! + 1 == 10)
 
 ;; Eager Java SAM+markers adapter materialization (Runnable & Serializable)
-def ran = 0
+var ran = 0
 def runner: java.lang.Runnable & java.io.Serializable = fn io () -> (ran = ran + 1)
 assert(runner is java.lang.Runnable & java.io.Serializable)
 runner.run()

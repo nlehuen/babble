@@ -12,12 +12,16 @@ public final class Frames {
      * defined afterwards, while they are bound.
      */
     public static Namespace enter(Namespace closure, Callable recurseTarget, Object thiz, String[] declared) {
+        return enter(closure, recurseTarget, thiz, declared, null);
+    }
+
+    public static Namespace enter(Namespace closure, Callable recurseTarget, Object thiz, String[] declared, boolean[] finals) {
         Namespace namespace = closure.enter();
         namespace.define("$recurse", true).set(recurseTarget);
         if (thiz != Undefined.UNBOUND) {
             namespace.define("this", true).set(thiz);
         }
-        namespace.declare(declared);
+        namespace.declare(declared, finals);
         return namespace;
     }
 

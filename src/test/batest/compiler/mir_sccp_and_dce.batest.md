@@ -193,9 +193,9 @@ fn ieee(v0: bool) -> double:
 
 ```babble
 def deadLoopParam = fn (n: int): int -> (
-    def live = 0
-    def dead = 1
-    def i = 0
+    var live = 0
+    var dead = 1
+    var i = 0
     while i < n then (
         live += i
         dead = dead * 3 + 1
@@ -413,7 +413,7 @@ def sccpBoolChar = fn (p: bool): int -> (
     def b = if p then (true) else (true)
     def c = if p then ('b') else ('b')
     def s: string? = if p then (null) else (null)
-    def r = 0
+    var r = 0
     if (b == true) and (b <> false) then (r += 1)
     if (c >= 'a') and (c <= 'c') and (c <> 'z') then (r += 2)
     if s == null then (r += 4)
@@ -572,7 +572,7 @@ def sccpRel = fn (p: bool): int -> (
     def l = if p then (5L) else (5L)
     def f = if p then (2.5f) else (2.5f)
     def d = if p then (3.5) else (3.5)
-    def r = 0
+    var r = 0
     if (l <= 5L) and (l <> 6L) then (r += 1)
     if (f >= 2.5f) and (d > 3.0) then (r += 2)
     r

@@ -65,6 +65,9 @@ public abstract class BabbleType implements HasMembers {
         if (shape.isStaticMethod(index)) {
             throw Members.cannotAssignMethod(name);
         }
+        if (!shape.isStaticMutable(index)) {
+            throw Members.cannotAssignDef(name);
+        }
         if (statics[index] == Undefined.UNDEFINED) {
             throw Members.usedBeforeDefinition(name);
         }

@@ -69,7 +69,7 @@ fn run() -> int:
 def log = java.lang.StringBuilder()
 def step = fn io (t: string): int -> (log.append(t) ; 1)
 def run = fn io (xs: list of int): int -> (
-    def total = 0
+    var total = 0
     for x in xs then (
         if x < 0 then (continue ; step("C"))
         if x > 10 then (break ; step("B"))
@@ -241,7 +241,7 @@ fn run(v0: int) -> int:
 ## HirDcePass & HirPurity : dead pure-local Block with nested Block + finite-collection for loop
 
 ```babble
-def sumL = fn (xs: list of int): int -> (def s = 0 ; for e in xs then (s += e) ; s)
+def sumL = fn (xs: list of int): int -> (var s = 0 ; for e in xs then (s += e) ; s)
 def run = fn (xs: list of int, p: int): int -> (
   def deadSum = sumL(xs)
   def deadBlk = (def a = p + 1 ; (def b = a + 2 ; b))
@@ -280,7 +280,7 @@ fn run(v0: any, v1: int) -> int:
 ## HirPurity : dead mutable-arg call and throwing/non-terminating for loop stay preserved
 
 ```babble
-def Box = class (def v: int) ()
+def Box = class (var v: int) ()
 def touch = fn (mut b: Box): int -> (b.v += 1 ; b.v)
 def run = fn (mut b: Box, xs: list of int): int -> (
   def d1 = touch(b)
@@ -375,7 +375,7 @@ fn run(v0: any, v1: any) -> int:
 
 ```babble
 def fnDef = fn (a: int = (def d = 1 ; 1 + 2), b: int = (def e = 2 ; 3 + 4)): int -> (
-    def unused: int?
+    def unused: int? = null
     a + b
 )
 def ClsDef = class (def x: int = (def d = 1 ; 2 + 3)) ()
@@ -388,14 +388,14 @@ fn fnDef (a:int=(block
     (def d 1:int)
     (+:int 1:int 2:int)), b:int=(block
     (def e 2:int)
-    (+:int 3:int 4:int))) -> int {nothrow unique}
-  (def unused)
+    (+:int 3:int 4:int))) -> int {nothrow commutative associative unique}
+  (def unused null)
   (+:int var(a) var(b))
 ```
 
 ```hir
 ;; hir -O1 fn=fnDef
-fn fnDef (a:int=3:int, b:int=7:int) -> int {nothrow unique}
+fn fnDef (a:int=3:int, b:int=7:int) -> int {nothrow commutative associative unique}
   (+:int var(a) var(b))
 ```
 
@@ -494,7 +494,7 @@ fn runNamed(v0: int) -> int:
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (1-arg)
 
 ```babble
-def discard = fn (x: int): int -> (x * 2)
+var discard = fn (x: int): int -> (x * 2)
 discard = fn (x: int): int -> (x * 3)
 def run = fn io (x: int): int -> (discard(x))
 assert(run(4) == 12)
@@ -518,7 +518,7 @@ fn run(v0: int) -> int:
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (2-arg)
 
 ```babble
-def discard = fn (a: int, b: int): int -> (a + b)
+var discard = fn (a: int, b: int): int -> (a + b)
 discard = fn (a: int, b: int): int -> (a + b + 1)
 def run = fn io (x: int): int -> (discard(x, 3))
 assert(run(4) == 8)

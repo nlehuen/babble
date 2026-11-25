@@ -79,7 +79,7 @@ Function bad violates pure guarantee (performs I/O or external mutation) : mark 
 ```babble
 def countPure = fn () : int -> (
     def xs = list("a", "bb")
-    def total = 0
+    var total = 0
     xs.forEach(fn (s : string) -> ( total += 1 ))
     total
 )

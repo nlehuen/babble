@@ -20,6 +20,7 @@ public record HirModule(
         int startLine,
         String[] exports,
         String[] topLevelDeclaredNames,
+        boolean[] topLevelDeclaredFinals,
         List<HirExpr> topLevelStatements,
         Map<Integer, HirFunction> functions,
         Map<Integer, HirClass> classes,
@@ -35,6 +36,7 @@ public record HirModule(
     public HirModule {
         exports = exports != null ? exports.clone() : new String[0];
         topLevelDeclaredNames = topLevelDeclaredNames != null ? topLevelDeclaredNames.clone() : new String[0];
+        topLevelDeclaredFinals = topLevelDeclaredFinals != null ? topLevelDeclaredFinals.clone() : new boolean[0];
         topLevelStatements = List.copyOf(topLevelStatements);
         functions = Collections.unmodifiableMap(new LinkedHashMap<>(functions));
         classes = Collections.unmodifiableMap(new LinkedHashMap<>(classes));
@@ -70,7 +72,7 @@ public record HirModule(
             int newNextVarId,
             int newNextOwnerId
     ) {
-        return new HirModule(className, sourceName, startLine, exports, topLevelDeclaredNames,
+        return new HirModule(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelDeclaredFinals,
                 newTopLevelStatements, newFunctions, newClasses, newInterfaces, typeHierarchies,
                 allInterfaceJvmNames, allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames,
                 newNextVarId, newNextOwnerId);

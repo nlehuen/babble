@@ -4,8 +4,8 @@
 def Node of T = class (def value: T, def next: (Node of T)?) ()
 
 def Stack of T = class () (
-    def size = 0
-    def head: (Node of T)? = null
+    var size = 0
+    var head: (Node of T)? = null
 
     def push = fn mut (shared a: T) -> (
         this.size = this.size + 1
@@ -47,9 +47,9 @@ def Stack of T = class () (
     )
 
     def join = fn (sep = " ") -> (
-        def current = this.head
-        def result = ""
-        def first = true
+        var current = this.head
+        var result = ""
+        var first = true
 
         while current then (
             if first then (

@@ -203,7 +203,7 @@ interface SS:
 
 ```babble
 def BP = interface ( def f: fn (a: int, b: int): int )
-def SR = interface extends BP ( def f = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s ) )
+def SR = interface extends BP ( def f = fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s ) )
 def c: BP = (class () implements SR ())()
 assert(c.f(3, 4) == 7)
 ```

@@ -15,7 +15,7 @@ def VBox = record (x : any?) ()
 ```babble
 def xs : ju.ArrayList of any? = ju.ArrayList()
 def addFn : fn io (shared v : any?) : bool = xs.add
-def i = 0
+var i = 0
 while i < 2 then ( addFn("x") ; i += 1 )
 addFn(null)
 addFn(java.lang.StringBuilder("y"))
@@ -52,7 +52,7 @@ No applicable overload of java.lang.StringBuilder.append for (null, java.lang.St
 
 ```babble
 def parse : fn io (s : string) : int = java.lang.Integer.parseInt
-def i = 0
+var i = 0
 while i < 3 then (
     if i == 2 then ( parse("bad") ) else ( parse("12") )
     i += 1
@@ -67,7 +67,7 @@ java.lang.NumberFormatException : For input string: "bad"
 
 ```babble
 def decFn : fn io (s : string) : java.lang.Integer = java.lang.Integer.decode
-def i = 0
+var i = 0
 while i < 3 then (
     if i == 2 then ( decFn("bad") ) else ( decFn("10") )
     i += 1
@@ -96,8 +96,8 @@ def pickSb = fn io (i : int) : java.lang.StringBuilder -> (
     else if i == 1 then ( java.lang.StringBuilder("bb") )
     else ( java.lang.StringBuilder("ccc") )
 )
-def total = 0
-def i = 0
+var total = 0
+var i = 0
 while i < 3 then ( total += pickSb(i).length() ; i += 1 )
 assert(total == 6)
 ```
@@ -107,7 +107,7 @@ assert(total == 6)
 ```babble
 def tbl : ju.Map of (any?, any?) = ju.HashMap()
 def putFn : fn io (shared k : any?, shared v : any?) : any? = tbl.put
-def i = 0
+var i = 0
 while i < 3 then ( putFn("k" + i, "v" + i) ; i += 1 )
 putFn(null, java.lang.StringBuilder("sb"))
 assert(tbl.get("k1") == "v1" and string(tbl.get(null)) == "sb")
@@ -117,8 +117,8 @@ assert(tbl.get("k1") == "v1" and string(tbl.get(null)) == "sb")
 
 ```babble
 def toStrFn : fn io (shared o : any?) : string = ju.Objects.toString
-def s = ""
-def i = 0
+var s = ""
+var i = 0
 while i < 3 then ( s += toStrFn("x") ; i += 1 )
 s += toStrFn(null) + ":" + toStrFn(java.lang.StringBuilder("y"))
 assert(s == "xxxnull:y")
@@ -130,8 +130,8 @@ assert(s == "xxxnull:y")
 def pickSb = fn io (k : int) : java.lang.StringBuilder -> (
     if k == 0 then ( java.lang.StringBuilder("a") ) else ( java.lang.StringBuilder("bb") )
 )
-def total = 0
-def i = 0
+var total = 0
+var i = 0
 while i < 3 then ( total += (pickSb(i).length)() ; i += 1 )
 assert(total == 5)
 ```
@@ -142,8 +142,8 @@ assert(total == 5)
 def pickBig = fn io (k : int) : java.math.BigInteger -> (
     if k == 0 then ( java.math.BigInteger.valueOf(1) ) else ( java.math.BigInteger.valueOf(2) )
 )
-def bigSum = java.math.BigInteger.ZERO
-def i = 0
+var bigSum = java.math.BigInteger.ZERO
+var i = 0
 while i < 3 then ( bigSum = (pickBig(i).add)(java.math.BigInteger.ONE) ; i += 1 )
 assert(bigSum.toString() == "3")
 ```
@@ -156,7 +156,7 @@ def xs : ju.List of any? = ju.ArrayList()
 def add : fn io (shared v : any?) : bool = xs.add
 def src : ju.List of any? = ju.ArrayList()
 src.add("s") ; src.add(null) ; src.add(java.lang.StringBuilder("sb")) ; src.add(K(1)) ; src.add(K)
-def p = 0
+var p = 0
 while p < 2 then ( for e in src then ( add(e) ) ; p += 1 )
 assert(xs.size() == 10)
 ```
@@ -168,7 +168,7 @@ def K = class (def v : int) ( def toString = fn () : string -> ( "K" ) )
 def toStr : fn io (shared o : any?) : string = ju.Objects.toString
 def items : ju.List of any? = ju.ArrayList()
 items.add("s") ; items.add(null) ; items.add(java.lang.StringBuilder("sb")) ; items.add(K(1)) ; items.add(K)
-def out = ""
+var out = ""
 for x in items then ( out = out + toStr(x) + ";" )
 assert(out == "s;null;sb;K;class K;")
 ```
@@ -179,7 +179,7 @@ assert(out == "s;null;sb;K;class K;")
 def arr : ju.List of any? = ju.ArrayList()
 arr.add(java.lang.StringBuilder("a"))
 arr.add((ju.ArrayList of any?)())
-def k = 0
+var k = 0
 while k < 2 then (
     for e in arr then ( ju.Objects.equals(e, "a") ; ju.Objects.toString(e) )
     k += 1
@@ -194,8 +194,8 @@ assert(empty.isEmpty() and not ju.List.of(1, 2).isEmpty())
 def B = class (def x : int) ()
 def items : ju.List of any? = ju.ArrayList()
 items.add("hi") ; items.add(B(1)) ; items.add(B) ; items.add(fn (x : int) : int -> ( x + 1 ))
-def lastStr : string? = ""
-def p = 0
+var lastStr : string? = ""
+var p = 0
 while p < 2 then (
     for x in items then ( lastStr = ju.Objects.toString(x) )
     p += 1
@@ -221,7 +221,7 @@ def R = class () implements java.lang.Runnable (
 def xs : ju.List of any? = ju.ArrayList()
 xs.add("a") ; xs.add(null) ; xs.add(java.lang.StringBuilder("z")) ; xs.add(R())
 def ts : fn io (shared o : any?, d : string) : string = ju.Objects.toString
-def acc = ""
+var acc = ""
 for x in xs then ( acc += ts(x, "nil") + ";" )
 assert(acc == "a;nil;z;R;")
 ```
@@ -499,11 +499,13 @@ def C = class (def x : int) (
     def m = fn () : int -> ( 1 )
 ) static (
     private def sp = 7
-    def sv = 10
+    private var sv = 10
+    def setSv = fn io (v : int) -> ( this.sv = v )
+    def getSv = fn volatile () : int -> ( this.sv )
     def sm = fn () : int -> ( this.sp )
 )
-C.sv = 25
-assert(C.sv == 25 and C.sm() == 7 and C(3).m() == 1)
+C.setSv(25)
+assert(C.getSv() == 25 and C.sm() == 7 and C(3).m() == 1)
 ```
 
 ## 1-arg toString does not override 0-arg toString; Java default method on BabbleInstance

@@ -141,7 +141,7 @@ assert(r == 9)
 ## Unmatched Babble value escapes past Java Exception catch while running finally
 
 ```babble
-def ran = false
+var ran = false
 def outer = try (
     try (
         throw ParseError(5, "esc")
@@ -262,7 +262,7 @@ assert(x == 15 and y == 6 and p.msg == "b")
 ## HirTryNormalize : try inside field assignment, compound assignment, and safe call
 
 ```babble
-def Box = class (def v: int) ()
+def Box = class (var v: int) ()
 def b = Box(10)
 b.v = try (parse("bad")) catch : java.lang.NumberFormatException then (20)
 b.v += try (parse("5")) catch : java.lang.NumberFormatException then (0)
@@ -290,7 +290,7 @@ assert(makeReader("x")() == "err:NumberFormatException")
 
 ```babble
 def log = list of string()
-def v = try (
+var v = try (
     log.add("try")
     99
 ) finally (
@@ -303,7 +303,7 @@ assert(v == 99 and log == list("try", "finally"))
 
 ```babble
 def f = fn (): int -> (
-    def x = 10
+    var x = 10
     try (
         return x
     ) finally (
@@ -357,7 +357,7 @@ assert(msg == "inner-fail" and log == list("inner", "outer"))
 ```babble
 def log = list of string()
 def res = try (
-    def i = 0
+    var i = 0
     while i < 3 then (
         i += 1
         try (
@@ -425,13 +425,13 @@ assert(msg == "cleanup-fail")
 
 ```babble
 def f = fn (): int -> (
-    def s = 0
+    var s = 0
     try (
         1
     ) finally (
         def h = fn (): int -> (return 5)
         s += h()
-        def k = 0
+        var k = 0
         while k < 10 then (
             k += 1
             if k == 3 then (break)

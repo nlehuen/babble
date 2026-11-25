@@ -5,7 +5,7 @@ References : BIP002 (classes, static blocks), BIP001 (unboxed fields, $defined b
 ```babble
 ;; babble preamble
 def Counter = class (def label : string, seed : int = 0) (
-    private def count = seed
+    private var count = seed
     def step = fn mut (delta : int = 1) : int -> (
         this.count += delta
         this.count
@@ -44,7 +44,7 @@ assert(c.describe() == "hits=16")
 ## Case 3
 
 ```babble
-def Vec = class (def i : int, def d : double, def b : bool) (
+def Vec = class (def i : int, def d : double, var b : bool) (
     def sum = fn () : double -> ( this.i + this.d )
     def toggle = fn mut () : bool -> ( this.b = not this.b ; this.b )
 )

@@ -7,7 +7,7 @@ References : `BIP001-I2`, `BIP014-I2`, `org.babblelang.opt.hir.HirTryNormalize`.
 def parse = fn io (s: string): int -> (try (java.lang.Integer.parseInt(s)) catch then (throw exception("bad")))
 def addIO = fn io (a: int, b: int): int -> (a + b)
 def fail of T = fn io (f: bool, v: T): T -> (if f then (throw exception("e")) else (v))
-def Box = class (def v: int) (
+def Box = class (var v: int) (
     def addIO = fn io (a: int, b: int): int -> (this.v + a + b)
     def bumpCompound = fn mut io (s: string): int -> (
         this.v += try (parse(s)) catch : exception then (5)
@@ -244,7 +244,7 @@ fn logicTry(v0: bool, v1: any) -> bool:
 ## Compound NameAssign and ThisFieldAssign with try RHS
 
 ```babble
-def top = 10
+var top = 10
 def bumpTop = fn io (s: string): int -> (
     top += try (parse(s)) catch : exception then (5)
     top

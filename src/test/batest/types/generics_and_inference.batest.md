@@ -247,7 +247,7 @@ f is not callable
 ## Error : Type error : expected int, got double (x is double because of the ass...
 
 ```babble
-def x = 1
+var x = 1
 def takeInt = fn (n: int) -> ( n )
 takeInt(x)
 x = 1.5
@@ -295,8 +295,8 @@ def wrap of T = fn (x: T): ValBox of T -> ( ValBox(x) )
 def u: string | ValBox of int = wrap(42)
 def func: java.util.function.Function of (int, Pair) = Pair
 def uv = if u is ValBox then ( u.v ) else ( 0 )
-def a = 1 ; a = 2.5
-def b = null ; b = "ok"
+var a = 1 ; a = 2.5
+var b = null ; b = "ok"
 assert(uv == 42 and func.apply(7).v == 7)
 assert(a == 2.5 and b == "ok")
 ```

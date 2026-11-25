@@ -145,7 +145,7 @@ Nullable inside an intersection : Named? (write (Shape & Named)?)
 ## Case 13
 
 ```babble
-def m: (Shape & Named)? = null
+var m: (Shape & Named)? = null
 assert(m == null)
 m = Tile()
 assert(m?.name() == "tile")

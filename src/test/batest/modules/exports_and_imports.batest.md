@@ -4,12 +4,12 @@ References : BIP005 (modules & exports), BIP016/BIP017 (cross-module effects), B
 
 ```babble
 ;; babble module=math.ba
-def loads = 0
+var loads = 0
 def bump = fn io () : int -> ( loads += 1 ; loads )
 def secret = 99
 export def pi = 3.0
 export def add = fn (a : int, b : int) : int -> ( a + b )
-export def Box = class (def x : int) (
+export def Box = class (var x : int) (
     def get = fn () : int -> ( this.x )
 )
 export def mul = fn (a : int, b : int) : int -> ( a * b )
@@ -25,7 +25,7 @@ export def calc = fn (a : int, b : int) : int -> ( w.sumAndMul(a, b) )
 
 ```babble
 ;; babble module=hof.ba
-export def Box = class (def x : int) ()
+export def Box = class (var x : int) ()
 export def apply = fn io (n : int, f : fn io (v : int) : int) : int -> ( f(n) )
 export def applyOpt = fn io (n : int, f : fn io (v : int) : int = fn (v : int) : int -> ( v + 1 )) : int -> ( f(n) )
 export def mutateWith = fn (mut b : Box, f : fn (mut m : Box) : int) : int -> ( f(b) )

@@ -197,7 +197,7 @@ public class ModuleSourcesTestCase {
 
     @Test
     public void twoNamesForOneKeyAreOneModule() throws Exception {
-        MemorySource source = new MemorySource().put("/lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = fn io () -> ( n = n + 1 )");
+        MemorySource source = new MemorySource().put("/lib/counter.ba", "println(\"loading\")\nvar n = 0\nexport def next = fn io () -> ( n = n + 1 )");
         Object result = run(engine(source), "import(\"lib/counter.ba\").next()\nimport(\"lib/../lib/./counter.ba\").next()", "/main.ba");
         Assertions.assertEquals(2, result);
         Assertions.assertEquals("loading" + System.lineSeparator(), output.toString());

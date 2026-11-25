@@ -6,7 +6,7 @@ References : BIP002 (singleton objects)
 
 ```babble
 def counter = object (
-    private def n = 0
+    private var n = 0
     def inc = fn mut (k : int = 1) : int -> ( this.n += k ; this.n )
     def read = fn () : int -> ( this.n )
 )

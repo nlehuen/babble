@@ -329,7 +329,9 @@ final class MemberTypes {
                 ownerNode = resolved.owner();
                 member = resolved.member();
                 env = resolved.env();
-            } else if (inheritedMember(instance, name) == null) {
+            } else if (inheritedMember(instance, name) != null) {
+                checker.warn("Cannot assign method : " + name, at);
+            } else {
                 checker.warn("No such member : " + name, at);
             }
         } else if (receiver instanceof Type.ClassValue value) {
@@ -350,6 +352,19 @@ final class MemberTypes {
         }
         if (member.isPrivate() && !own) {
             checker.warn(name + " is private", at);
+            return null;
+        }
+        if (member.isMethod()) {
+            checker.warn("Cannot assign method : " + name, at);
+            return null;
+        }
+        if (ownerNode != null && ownerNode.kind == org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS
+                && receiver instanceof Type.Instance) {
+            checker.warn("Value members are read-only : " + name, at);
+            return null;
+        }
+        if (!member.isMutable()) {
+            checker.warn("Cannot assign to def member : " + name, at);
             return null;
         }
         if (!checker.isLocal(member.declaration) || (!checker.inFile(member.declaration) && checker.pass().session != null)) {

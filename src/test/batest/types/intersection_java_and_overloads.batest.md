@@ -32,7 +32,7 @@ assert(java.util.Collections.max(ss) == "z")
 ```babble
 assert(Demo.sumAsDoubles(3, 4) == 7.0)
 assert(Demo.maxPair("a", "b") == "b")
-def count = 0
+var count = 0
 assert(Demo.runSerializable(fn io () -> ( count += 1 )))
 assert(Demo.runSerializableSwapped(fn io () -> ( count += 2 )))
 assert(count == 3)
@@ -41,7 +41,7 @@ assert(count == 3)
 ## Multi-bound SAM+markers infers unannotated lambda parameter from Consumer<String> & Serializable
 
 ```babble
-def seen = ""
+var seen = ""
 def res = Demo.acceptSerializable(fn io (s) -> ( seen = s + "!" ), "hi")
 assert(seen == "hi!" and res == "hi:true")
 ```
@@ -60,7 +60,7 @@ assert(Demo.isSerializableRunnable(d) and pass(fn () -> ()) and pass(mk()))
 ## Eager SAM+markers in parameter default value
 
 ```babble
-def hits = 0
+var hits = 0
 def pass = fn io (shared r: java.lang.Runnable & java.io.Serializable = fn io () -> ( hits += 10 )): bool -> (
     r.run() ; Demo.isSerializableRunnable(r)
 )
@@ -70,8 +70,8 @@ assert(pass() and hits == 10)
 ## Eager SAM+markers across local assign, as cast, and if join
 
 ```babble
-def hits = 0
-def r: java.lang.Runnable & java.io.Serializable = fn () -> ()
+var hits = 0
+var r: java.lang.Runnable & java.io.Serializable = fn () -> ()
 r = if hits == 0 then ( fn io () -> ( hits += 1 ) ) else ( fn () -> () )
 def cR = (fn io () -> ( hits += 2 )) as (java.lang.Runnable & java.io.Serializable)
 assert(Demo.isSerializableRunnable(r) and Demo.isSerializableRunnable(cR))
@@ -81,7 +81,7 @@ r.run() ; cR.run() ; assert(hits == 3)
 ## Eager SAM+markers in typed for-loop variable
 
 ```babble
-def hits = 0
+var hits = 0
 for x: java.lang.Runnable & java.io.Serializable in list(fn io () -> ( hits += 4 )) then (
     assert(Demo.isSerializableRunnable(x)) ; x.run()
 )
@@ -99,7 +99,7 @@ assert(adapted(fn () -> ()))
 ## Marker interfaces with default methods, override-equivalent SAMs, and Proxy fallback
 
 ```babble
-def n = 0
+var n = 0
 def md: java.lang.Runnable & Demo.MarkerWithDefault = fn io () -> ( n += 1 )
 def ss: java.lang.Runnable & Demo.SameSigRunnable = fn io () -> ( n += 2 )
 md.run() ; ss.run()
@@ -304,7 +304,7 @@ Function bad violates pure guarantee (performs I/O or external mutation) : mark 
 ```babble
 def k = 1 + 2 ; def f1: (fn ()) | int = fn () -> ()
 def run = fn (xs: list of ((fn ()) | int)): bool -> (
-    def ok = false
+    var ok = false
     for x: (java.lang.Runnable & java.io.Serializable) | int in xs then (
         if k == 3 and x is java.lang.Runnable & java.io.Serializable then ( ok = Demo.isSerializableRunnable(x) )
     )
@@ -326,7 +326,7 @@ assert(res!(41) == 42)
 ## For-expression result itself adapts when flowing into nullable SAM target
 
 ```babble
-def ran = false
+var ran = false
 def take = fn io (shared r: java.lang.Runnable?): bool -> ( if r != null then ( r.run() ; true ) else ( false ) )
 assert(take(for i in list.of(1) then ( fn io () -> ( ran = true ) )) and ran)
 ```
@@ -437,7 +437,7 @@ super outside of a method
 
 ```babble
 def Base = interface ( def m = fn (): int -> ( 42 ) )
-def out = 0
+var out = 0
 def Sub = class () implements Base ( def r: java.lang.Runnable = fn io () -> ( def Inner = class () implements Base ( def g = fn (): int -> ( super.m() ) ) ; out = Inner().g() ) )
 Sub().r.run() ; assert(out == 42)
 ```
@@ -472,7 +472,7 @@ No applicable overload of f for (frozen list of int | int) : candidates are (xs 
 
 ```babble
 def Box = class (def s: Shape) ()
-def mk = fn (xs: Shape...): Box -> ( def b = Box(Disk()) ; for s in xs then ( b = Box(s) ) ; b )
+def mk = fn (xs: Shape...): Box -> ( var b = Box(Disk()) ; for s in xs then ( b = Box(s) ) ; b )
 def f = overload ( fn (k: int, xs: Shape...): Box -> ( mk(...xs) ), fn (k: string, xs: Shape...): Box -> ( Box(Disk()) ) )
 def u: int | string = 1 ; def fa: frozen array of Shape = freeze((array of Shape).of(Disk()))
 f(u, ...fa)
@@ -622,7 +622,7 @@ java.lang.UnsupportedOperationException
 ## Spread Babble callable list into array of Runnable propagates ScriptRuntime
 
 ```babble
-def ran = false
+var ran = false
 def take = fn io (xs: array of java.lang.Runnable): array of java.lang.Runnable -> ( xs )
 def rs = list.of(fn io () -> ( ran = true ))
 def ar = take(...rs) ; ar.get(0).run()
@@ -685,7 +685,7 @@ assert(copyMut(1, 2) == 3)
 def It = class () implements java.lang.Iterable of int (
     def iterator = fn (): java.util.Iterator of int -> ( list(1, 2, 3).iterator() )
 )
-def sumL = fn (shared xs: list of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumL = fn (shared xs: list of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 def m = It() ; assert(sumL(...m) == 6 and list(from: m).size() == 3)
 ```
 
@@ -695,8 +695,8 @@ def m = It() ; assert(sumL(...m) == 6 and list(from: m).size() == 3)
 def It = class () implements java.lang.Iterable of int (
     def iterator = fn (): java.util.Iterator of int -> ( list(2, 4).iterator() )
 )
-def sumR = fn (shared xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
-def fm = freeze(It()) ; def t = 0 ; for x in fm then ( t += x )
+def sumR = fn (shared xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
+def fm = freeze(It()) ; var t = 0 ; for x in fm then ( t += x )
 assert(sumR(...It()) == 6 and sumR(...fm) == 6 and t == 6)
 ```
 
@@ -776,7 +776,7 @@ Missing type : cannot infer type arguments for OpNeg().neg
 ## Variadic SAM and SAM+markers rest spreads and forwarding
 
 ```babble
-def fns = list(fn io () -> ()) ; def n = 0
+def fns = list(fn io () -> ()) ; var n = 0
 def rs = fn io (shared xs: (java.lang.Runnable & java.io.Serializable)...): bool -> (
     for x in xs then ( x.run() ; n += 1 ) ; true
 )
@@ -789,7 +789,7 @@ assert(rs(...fns) and fwd(...fns) and n == 2)
 ```babble
 def ffns = freeze(list(fn io () -> ()))
 def chk = fn (xs: (java.lang.Runnable & java.io.Serializable)...): bool -> (
-    def ok = false
+    var ok = false
     for x in xs then ( ok = x is java.lang.Runnable and x is java.io.Serializable )
     ok
 )
@@ -799,7 +799,7 @@ assert(chk(...ffns))
 ## Union-split overload non-spread and mixed TO_SAM rest adaptation
 
 ```babble
-def fns = list(fn io () -> ()) ; def n = 0
+def fns = list(fn io () -> ()) ; var n = 0
 def ov = overload (
     fn io (k: int, shared xs: (java.lang.Runnable & java.io.Serializable)...): int -> ( 0 ),
     fn io (k: string, shared xs: (java.lang.Runnable & java.io.Serializable)...): int -> ( for x in xs then ( x.run() ; n += 1 ) ; n )
@@ -824,7 +824,7 @@ def u: int | string = "s" ; assert(ov(u, fn io () -> ()))
 
 ```babble
 def RS = type java.lang.Runnable & java.io.Serializable
-def fns = list(fn io () -> ()) ; def u: int | string = "s" ; def n = 0
+def fns = list(fn io () -> ()) ; def u: int | string = "s" ; var n = 0
 def ovG = overload (
     fn of (T: RS) io (k: int, shared xs: T...): int -> ( 0 ),
     fn of (T: RS) io (k: string, shared xs: T...): int -> ( for x in xs then ( x.run() ; n += 1 ) ; n )
@@ -836,7 +836,7 @@ assert(ovG(u, ...fns) == 1)
 
 ```babble
 def RS = type java.lang.Runnable & java.io.Serializable
-def u: int | string = "s" ; def n = 0
+def u: int | string = "s" ; var n = 0
 def ovN = overload (
     fn of (T: RS) io (k: int, shared r: T): int -> ( 0 ),
     fn of (T: RS) io (k: string, shared r: T): int -> ( r.run() ; n += 1 ; n )
@@ -848,7 +848,7 @@ assert(ovN(u, fn io () -> ()) == 1)
 
 ```babble
 def RS = type java.lang.Runnable & java.io.Serializable
-def fns = list(fn io () -> ()) ; def u: int | string = "s" ; def n = 0
+def fns = list(fn io () -> ()) ; def u: int | string = "s" ; var n = 0
 def ovL = overload (
     fn of (T: RS) io (k: int, shared xs: list of T): int -> ( 0 ),
     fn of (T: RS) io (k: string, shared xs: list of T): int -> ( for x in xs then ( x.run() ; n += 1 ) ; n )

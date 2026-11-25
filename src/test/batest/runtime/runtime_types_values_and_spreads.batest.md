@@ -14,9 +14,9 @@ def coerce of T = fn io (shared x: any?): T -> (
 def Tag = class (def id: int) ()
 def tests = import("org.babblelang.tests")
 def demo = tests.JavaClassDemo
-def countRest = fn (xs: any?...): int -> ( def n = 0 ; for _ in xs then ( n += 1 ) ; n )
+def countRest = fn (xs: any?...): int -> ( var n = 0 ; for _ in xs then ( n += 1 ) ; n )
 def iterRest = fn (xs: int...): java.util.Iterator of int -> ( xs.iterator() )
-def sumRest = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumRest = fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 def A = type java.lang.annotation.Annotation
 ```
 
@@ -187,7 +187,7 @@ assert(w(1) == 1.0 and w("a") == "a" and java.util.Objects.toString(ov) != null 
 
 ```babble
 def ra = (array of java.lang.Runnable?)(1)
-def ran = 0
+var ran = 0
 coerce of (fn io (i: int, v: any?): null)(ra.set)(0, fn io () -> ( ran += 1 ))
 ra.get(0)!.run()
 def ov = overload ( fn (x: int): int -> ( x + 2 ), fn (x: string): int -> ( 0 ) )
@@ -198,7 +198,7 @@ assert(ran == 1 and java.util.function.IntUnaryOperator(ov).applyAsInt(3) == 5)
 
 ```babble
 def ca = (array of java.lang.CharSequence?)(1)
-def caught = false
+var caught = false
 try ( coerce of (fn io (i: int, v: any?): null)(ca.set)(0, fn () -> ( () )) )
 catch e: java.lang.ArrayStoreException then ( caught = true )
 assert(caught)

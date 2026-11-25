@@ -41,7 +41,7 @@ assert(r.x == 1 and r.m != null)
 ```babble
 def RSam = record (r: java.lang.Runnable) ()
 def R9 = record (a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, i: int) ()
-def ran = false
+var ran = false
 RSam(fn io () -> ( ran = true )).r.run()
 assert(ran and R9(1, 2, 3, 4, 5, 6, 7, 8, 9).i == 9)
 ```
@@ -190,7 +190,7 @@ implements needs a statically known interface
 ## implements rejects reassigned interface variable
 
 ```babble
-def I = BaseI
+var I = BaseI
 I = OvBase
 def C = class () implements I ()
 ```
@@ -388,8 +388,8 @@ secret is private
 ## Spread into borrowed and shared int rest parameters
 
 ```babble
-def sB = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
-def sS = fn (shared xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sB = fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
+def sS = fn (shared xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 assert(sB(1, ...list(2, 3)) == 6 and sS(1, ...list(2, 3)) == 6)
 ```
 
@@ -397,7 +397,7 @@ assert(sB(1, ...list(2, 3)) == 6 and sS(1, ...list(2, 3)) == 6)
 
 ```babble
 def runAll = fn io (shared rs: java.lang.Runnable...) -> ( for r in rs then ( r.run() ) )
-def c = 0 ; def inc = fn io () -> ( c += 1 )
+var c = 0 ; def inc = fn io () -> ( c += 1 )
 runAll(...list(inc, inc))
 assert(c == 2)
 ```

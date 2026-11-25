@@ -281,7 +281,7 @@ class PInt:
 ## Array for-loops over byte, bool, short, long, and float arrays
 
 ```babble
-def s = 0
+var s = 0
 for b in (array of byte).of(byte(1), byte(2)) then ( s += int(b) )
 for z in (array of bool).of(true, false, true) then ( if z then ( s += 10 ) )
 for sh in (array of short).of(short(3), short(4)) then ( s += int(sh) )
@@ -342,7 +342,7 @@ top-level ; [not-lowered: top-level]
 ## Capturing bool, byte, short, and char for-loop variables in closures
 
 ```babble
-def s = 0
+var s = 0
 for z in (array of bool).of(true) then ( def g = fn (): int -> ( if z then (1) else (0) ); s += g() )
 for b in (array of byte).of(byte(2)) then ( def g = fn (): int -> ( int(b) ); s += g() )
 for h in (array of short).of(short(3)) then ( def g = fn (): int -> ( int(h) ); s += g() )

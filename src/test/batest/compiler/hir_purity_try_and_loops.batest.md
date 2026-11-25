@@ -13,7 +13,7 @@ export def ExtRec = record (v: int) (
 
 ```babble
 ;; babble preamble
-def tick = 0
+var tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
 def bigInt = fn nothrow (x: int): int -> (return x ; x)
 def volLen = fn volatile nothrow (): int -> (def n = java.lang.System.lineSeparator().length() ; return n ; n)
@@ -229,7 +229,7 @@ def VR = record (k: int) implements VI (
     def vt = fn volatile nothrow (): int -> (def n = volLen() ; return this.k + n ; this.k)
 )
 def run = fn volatile (n: int, vr: VR, vi: VI): int -> (
-    def a = 0 ; def i = 0
+    var a = 0 ; var i = 0
     while i < n then (a += vr.vt() + vi.vt() ; i += 1) ; a
 )
 assert(run(2, VR(1), VR(1)) >= 8)
@@ -323,7 +323,7 @@ fn run(v0: int, v1: any, v2: any) -> int:
 
 ```babble
 def run = fn volatile (n: int): int -> (
-    def a = 0 ; def i = 0
+    var a = 0 ; var i = 0
     while i < n then (
         a += volLen() + java.lang.System.lineSeparator().length() + bigInt(volLen() + volLen())
         i += 1
@@ -437,7 +437,7 @@ fn run(v0: int) -> int:
 
 ```babble
 def run = fn io (n: int, xs: frozen array of int): int -> (
-    def a = 0 ; def i = 0
+    var a = 0 ; var i = 0
     while i < n then (
         a += bigInt((for e in xs then (discard(volLen())) ; 1))
         def u = (for e in xs then (discard(bump())) ; 1)

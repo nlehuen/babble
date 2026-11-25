@@ -34,7 +34,7 @@ assert(empty?.next?.read() == null)
 ## Short-circuit : null receiver must not evaluate method arguments
 
 ```babble
-def hits = 0
+var hits = 0
 def side = fn io (): int -> ( hits += 1 ; 99 )
 def C = class (def x: int) (
     def calc = fn (k: int): int -> ( this.x + k )

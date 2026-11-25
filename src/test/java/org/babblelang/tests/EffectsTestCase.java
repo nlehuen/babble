@@ -227,7 +227,7 @@ public class EffectsTestCase {
 
         // Untyped inline lambda infers `mut`, `io`, `volatile`, and `shared`; typed function requires explicit modifiers!
         assertClean("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def untypedSet = fn (b) -> (b.x = 1)
                 def caller = fn (mut b: Box) -> (untypedSet(b))
                 caller(Box(0))
@@ -237,23 +237,23 @@ public class EffectsTestCase {
                 def run = fn io (): int -> (logIt(42))
                 """);
         assertClean("""
-                def g: int = 1
+                var g: int = 1
                 g = 2
                 def readG = fn (x) -> (g + x)
                 def run = fn volatile (): int -> (readG(0))
                 """);
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def untypedSet = fn (b) -> (b.x = 1)
                 def badCaller = fn (b: Box) -> (untypedSet(b))
                 badCaller(Box(0))
                 """, "Cannot mutate parameter b");
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def typedSet = fn (b: Box) -> (b.x = 1)
                 """, "Cannot mutate parameter b");
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def retTypedSet = fn (b): int -> (b.x = 1; 1)
                 retTypedSet(Box(0))
                 """, "Cannot mutate parameter b");
@@ -265,17 +265,17 @@ public class EffectsTestCase {
     public void testVerifiedConstraintsAndMutExclusivity() {
         // BIP016: pure-by-default allows `mut` params & `fn mut` methods (hermetic + deterministic + explicit mutation)!
         assertClean("""
-                def Box = class (def x: int) (
+                def Box = class (var x: int) (
                     def bump = fn mut (): int -> (this.x = this.x + 1; this.x)
                 )
                 def setBox = fn (mut b: Box): int -> (b.x = 1; b.bump())
                 """);
 
-        // Pure-by-default allows local `def` reassignments and fresh-local object mutation, while rejecting I/O & outer writes:
+        // Pure-by-default allows local `var` reassignments and fresh-local object mutation, while rejecting I/O & outer writes:
         assertClean("""
                 def sumTo = fn nothrow (n: int): int -> (
-                    def acc: int = 0
-                    def i: int = 1
+                    var acc: int = 0
+                    var i: int = 1
                     while i <= n then (
                         acc += i
                         i += 1
@@ -287,19 +287,19 @@ public class EffectsTestCase {
                 def f = fn (x: int): int -> (println(x); x)
                 """, "violates pure guarantee");
         assertHasError("""
-                def g: int = 0
+                var g: int = 0
                 def f = fn (x: int): int -> (g = x; x)
                 """, "violates pure guarantee");
         assertHasError("""
-                def g: int = 0
+                var g: int = 0
                 def f = fn volatile (x: int): int -> (g = x; x)
                 """, "volatile");
         assertClean("""
-                def g: int = 0
+                var g: int = 0
                 def f = fn io (x: int): int -> (g = x; println(g); x)
                 """);
         assertClean("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def f = fn (): int -> (
                     def b = Box(1)
                     b.x = 2
@@ -307,7 +307,7 @@ public class EffectsTestCase {
                 )
                 """);
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def g = Box(1)
                 def f = fn (): int -> (
                     g.x = 2
@@ -317,22 +317,22 @@ public class EffectsTestCase {
 
         // Determinism checks (pure-by-default rejects volatile reads; `fn volatile` allows them):
         assertHasError("""
-                def g: int = 1
+                var g: int = 1
                 g = 2
                 def f = fn (x: int): int -> (x + g)
                 """, "volatile");
         assertClean("""
-                def g: int = 1
+                var g: int = 1
                 g = 2
                 def f = fn volatile (x: int): int -> (x + g)
                 """);
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def g = Box(1)
                 def f = fn (): int -> (g.x)
                 """, "volatile");
         assertClean("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def g = Box(1)
                 def f = fn volatile (): int -> (g.x)
                 """);
@@ -384,7 +384,7 @@ public class EffectsTestCase {
     public void testAliasTrackingBorrowEscapeAndCallSiteExclusivity() {
         // Local alias and sub-reference bypass attempts (`def a = p; a.x = 1`, `p.child.x = 1`, `def s = this; s.x = 1`):
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def f = fn (p: Box): int -> (
                     def alias = p
                     alias.x = 2
@@ -392,7 +392,7 @@ public class EffectsTestCase {
                 )
                 """, "Cannot mutate parameter p");
         assertHasError("""
-                def Leaf = class (def x: int) ()
+                def Leaf = class (var x: int) ()
                 def Node = class (def child: Leaf) ()
                 def f = fn (n: Node): int -> (
                     n.child.x = 9
@@ -400,7 +400,7 @@ public class EffectsTestCase {
                 )
                 """, "Cannot mutate parameter n");
         assertHasError("""
-                def C = class (def x: int) (
+                def C = class (var x: int) (
                     def sneak = fn (): int -> (
                         def self = this
                         self.x = 5
@@ -409,7 +409,7 @@ public class EffectsTestCase {
                 )
                 """, "Cannot mutate this");
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def f = fn (c: bool, mut a: Box, b: Box): int -> (
                     def pick = if c then (a) else (b)
                     pick.x = 1
@@ -428,17 +428,17 @@ public class EffectsTestCase {
                 """);
         assertHasError("""
                 def Box = class (def x: int) ()
-                def sink: Box? = null
+                var sink: Box? = null
                 def escGlobal = fn io (b: Box): int -> (sink = b; 1)
                 """, "Borrowed parameter b escapes");
         assertHasError("""
                 def Box = class (def x: int) ()
-                def Holder = class (def ref: Box?) ()
+                def Holder = class (var ref: Box?) ()
                 def escField = fn (mut h: Holder, b: Box): int -> (h.ref = b; 1)
                 """, "Borrowed parameter b escapes via field .ref");
         assertClean("""
                 def Box = class (def x: int) ()
-                def Holder = class (def ref: Box?) ()
+                def Holder = class (var ref: Box?) ()
                 def storeField = fn (mut h: Holder, shared b: Box): int -> (h.ref = b; 1)
                 """);
         // A closure capturing b aliases it : returning it is return-through-borrow, storing it escapes (BIP017-D6).
@@ -448,17 +448,17 @@ public class EffectsTestCase {
                 """);
         assertHasError("""
                 def Box = class (def x: int) ()
-                def Holder = class (def ref: any?) ()
+                def Holder = class (var ref: any?) ()
                 def stashClosure = fn (mut h: Holder, b: Box): int -> (h.ref = fn () -> (b); 1)
                 """, "Borrowed parameter b escapes via field .ref");
         assertHasError("""
-                def Holder = class (def ref: any?) ()
+                def Holder = class (var ref: any?) ()
                 def Box = class (def x: int) (
                     def leakThis = fn (mut h: Holder) -> (h.ref = this)
                 )
                 """, "Borrowed this escapes via field .ref");
         assertClean("""
-                def Holder = class (def ref: any?) ()
+                def Holder = class (var ref: any?) ()
                 def Box = class (def x: int) (
                     def storeThis = fn shared (mut h: Holder) -> (h.ref = this)
                 )
@@ -473,7 +473,7 @@ public class EffectsTestCase {
 
         // Static call-site `mut` exclusivity:
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def swap = fn (mut a: Box, mut b: Box) -> (
                     def t = a.x
                     a.x = b.x
@@ -483,14 +483,14 @@ public class EffectsTestCase {
                 swap(b, b)
                 """, "Exclusivity error");
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def rw = fn (mut a: Box, b: Box): int -> (a.x = b.x + 1; a.x)
                 def x = Box(1)
                 def y = x
                 rw(x, y)
                 """, "Exclusivity error");
         assertHasError("""
-                def Box = class (def x: int) (
+                def Box = class (var x: int) (
                     def addFrom = fn mut (other: Box) -> (this.x += other.x)
                 )
                 def Wrap = class (def b: Box) ()
@@ -500,7 +500,7 @@ public class EffectsTestCase {
 
         // Dynamic indexed expressions (`list.get(i)`, `list.get(j)`) and `string` arguments are permitted:
         assertClean("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def swap = fn (mut a: Box, mut b: Box) -> (
                     def t = a.x
                     a.x = b.x
@@ -545,10 +545,10 @@ public class EffectsTestCase {
                 def bad = fn nothrow (x: int?): int -> (x as int)
                 """, "nothrow");
 
-        // Frame-local (default `@BORROWED`) helper closure updating enclosing function's local `def` preserves pure `nothrow`:
+        // Frame-local (default `@BORROWED`) helper closure updating enclosing function's local `var` preserves pure `nothrow`:
         assertClean("""
                 def repeat = fn nothrow calling step (n: int, step: fn (i: int): int): int -> (
-                    def i: int = 0
+                    var i: int = 0
                     while i < n then (
                         step(i)
                         i += 1
@@ -556,7 +556,7 @@ public class EffectsTestCase {
                     n
                 )
                 def triangle = fn nothrow (n: int): int -> (
-                    def total: int = 0
+                    var total: int = 0
                     repeat(n, fn nothrow (k: int): int -> (
                         total += k
                         total
@@ -646,19 +646,19 @@ public class EffectsTestCase {
                 def needPure: fn (x: int): int = noisy
                 """, "Type error");
         assertHasError("""
-                def g: int = 1
+                var g: int = 1
                 g = 2
                 def vol = fn volatile (x: int): int -> (x + g)
                 def needPure: fn (x: int): int = vol
                 """, "Type error");
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def mutFn = fn (mut b: Box): int -> (b.x = 1; 1)
                 def noMutAllowed: fn (b: Box): int = mutFn
                 """, "Type error");
         assertHasError("""
                 def Box = class (def x: int) ()
-                def sink: Box? = null
+                var sink: Box? = null
                 def escaping = fn io (shared b: Box): int -> (sink = b; 1)
                 def needBorrow: fn io (b: Box): int = escaping
                 """, "Type error");
@@ -900,7 +900,7 @@ public class EffectsTestCase {
                     out
                 )
                 export def Acc = class () (
-                    def total: int = 0
+                    var total: int = 0
                     def append = fn mut (x: int) -> (
                         this.total += x
                     )
@@ -914,14 +914,14 @@ public class EffectsTestCase {
         Object result = eval(engine, """
                 def lib = import("hof_lib.ba")
                 def runPure = fn (shared xs: list of int): int -> (
-                    def sum: int = 0
+                    var sum: int = 0
                     lib.forEachInt(xs, fn (x: int) -> (
                         sum += x
                     ))
                     def acc = lib.Acc()
                     lib.forEachInt(xs, acc.append)
                     def doubled = lib.mapList(xs, fn (x: int): int -> (x * 2))
-                    def dsum: int = 0
+                    var dsum: int = 0
                     for d in doubled then (
                         dsum += d
                     )

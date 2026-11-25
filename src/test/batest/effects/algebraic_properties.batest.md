@@ -4,7 +4,7 @@ References : BIP007, BIP016, BIP017, EffectChecker
 
 ```babble
 ;; babble preamble
-def Box = class (def v : int) ()
+def Box = class (var v : int) ()
 def Val = record (x : int) (
     def get = fn () : int -> ( this.x )
 )
@@ -27,7 +27,7 @@ static block inside pure function violates pure guarantee
 ## Error : static block inside hermetic function violates hermetic guarantee
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def makeBadStatic = fn volatile mut () -> (
         def I = interface () static ( println("bad") )
         this.v += 1
@@ -157,7 +157,7 @@ Function badComm declared commutative violates commutative guarantee
 ## Error : Function bad declared commutative violates commutative guarantee
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def bad = fn mut commutative () : int -> ( this.v )
 )
 ```
@@ -358,7 +358,7 @@ assert(idCheck(7) == 7)
 ## Case 32
 
 ```babble
-def M = class (def v : int) (
+def M = class (var v : int) (
     def setV = fn mut idempotent (x : int) -> ( this.v = x )
     def fwdSet = fn mut idempotent (x : int) -> ( this.setV(x) )
 )
@@ -384,7 +384,7 @@ assert(b.v == 4)
 ## Case 34
 
 ```babble
-def M = class (def v : int) (
+def M = class (var v : int) (
     def addAssign = fn mut commutative (d : int) -> ( this.v += d )
     def fwdAdd = fn mut commutative (d : int) -> ( this.addAssign(d) )
 )
@@ -399,7 +399,7 @@ assert(m.v == 5)
 ## Case 35
 
 ```babble
-def M = class (def v : int) (
+def M = class (var v : int) (
     def addLeft = fn mut commutative (d : int) -> ( this.v = this.v + d )
     def addRight = fn mut commutative (d : int) -> ( this.v = d + this.v )
 )
@@ -436,7 +436,7 @@ value class BadV2 constructor must be pure
 ## Error : value class BadV3 constructor must be deterministic
 
 ```babble
-def g = 1
+var g = 1
 g = 2
 def BadV3 = record (x : int) (
     def y = g
@@ -454,7 +454,7 @@ def Custom = class (def x : int) (
     def toString = fn () : string -> ( "C" )
 )
 def pStr = fn (x : int) : string -> (
-    def s = "v=" + Val(x) + ":" + Custom(x) + ":" + (if x > 0 then ( x ) else ( "z" ))
+    var s = "v=" + Val(x) + ":" + Custom(x) + ":" + (if x > 0 then ( x ) else ( "z" ))
     s += Val(x)
     s
 )
@@ -486,7 +486,7 @@ Warning : Redundant cast : int
 ## Error : Function badObj violates pure guarantee (performs I/O or external mut...
 
 ```babble
-def outer = 0
+var outer = 0
 def badObj = fn () -> (
     def o = object (
         outer = 1
@@ -504,7 +504,7 @@ Function badObj violates pure guarantee (performs I/O or external mutation) : ma
 ```babble
 def applyZero = fn calling f (f : fn () : int) : int -> ( f() )
 def pureWithFrame = fn (n : int) : int -> (
-    def acc = n
+    var acc = n
     def step = fn (k : int) : int -> ( acc += k ; acc )
     def r1 = step(2)
     applyZero(fn () : int -> ( acc += 3 ; acc ))
@@ -525,7 +525,7 @@ assert(specCaller(5) == 6)
 ## Returned closure capturing this aliases receiver (BIP017-D6)
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def okMut = fn mut shared () : fn mut () : int -> (
         def inner = fn mut () -> ( this.v += 1 )
         inner
@@ -541,7 +541,7 @@ assert(c.reader()() == 11)
 ## Storing a returned closure that aliases borrowed parameter b escapes b (BIP017-D6)
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def reader = fn () : fn () : int -> ( fn () -> ( this.v ) )
 )
 def Holder = class () ( def ref : any? = null )
@@ -555,7 +555,7 @@ Borrowed parameter b escapes via field .ref : mark parameter as shared b
 ## Error : Cannot mutate this (field assignment .v) : function is not declared mut
 
 ```babble
-def C = class (def v : int) (
+def C = class (var v : int) (
     def badNoMut = fn () : null -> (
         this.v = 1
         null
@@ -572,8 +572,8 @@ Cannot mutate this (field assignment .v) : function is not declared mut
 ```babble
 def Node = class (def next : Node?) ()
 def walk = fn (start : Node?) : int -> (
-    def cur : Node? = start
-    def c = 0
+    var cur : Node? = start
+    var c = 0
     while cur != null then (
         c += 1
         cur = cur.next

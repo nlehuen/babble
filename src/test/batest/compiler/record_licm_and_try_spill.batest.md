@@ -31,8 +31,8 @@ def Box = record (v: int) implements Metric (
 )
 def run = fn (m: frozen Metric, b: Box, n: int): int -> (
     def unused = m.score()
-    def i = 0
-    def s = 0
+    var i = 0
+    var s = 0
     while i < n then ( s = s + m.score() + b.v + i ; i = i + 1 )
     s
 )
@@ -124,7 +124,7 @@ def B = record (x: double, y: double) (
     )
 )
 def r = fn (): double -> (
-    def b = B(1.0, 2.0) ; def s = 0.0 ; def i = 0
+    def b = B(1.0, 2.0) ; var s = 0.0 ; var i = 0
     while i < 3 then ( s = s + b.c(1.0) ; i = i + 1 )
     s
 )
@@ -235,9 +235,9 @@ fn r() -> double:
 ## LICM on frozen mutable class field read
 
 ```babble
-def X = class (def v: int) ()
+def X = class (var v: int) ()
 def r = fn (): int -> (
-    def f = freeze(X(5)) ; def s = 0 ; def i = 0
+    def f = freeze(X(5)) ; var s = 0 ; var i = 0
     while i < 3 then ( s = s + f.v ; i = i + 1 )
     s
 )
@@ -315,7 +315,7 @@ def Op = interface ( def f: fn (int): int )
 def IO = record (k: int) implements Op ( def f = fn (n: int): int -> ( this.k + n ) )
 def MO = class (def k: int) implements Op ( def f = fn (n: int): int -> ( this.k + n ) )
 def r = fn (a: Op, b: Op): int -> (
-    def s = 0 ; def i = 0
+    var s = 0 ; var i = 0
     while i < 3 then ( s = s + a.f(2) + b.f(2) ; i = i + 1 )
     s
 )
@@ -389,9 +389,9 @@ fn r(v0: any, v1: any) -> int:
 ```babble
 def TOP_K = 7
 def run = fn (x: int): double -> (
-    def s = 0.0 ; def i = 0
+    var s = 0.0 ; var i = 0
     while i < 3 then (
-        def v = freeze(Vec3(double(x), 1.0, 0.0))
+        var v = freeze(Vec3(double(x), 1.0, 0.0))
         s = s + double(TOP_K) + (x as double) + v.x
         i = i + 1
     )
@@ -498,7 +498,7 @@ def bump = fn (unique h: Holder, fl: bool): Holder -> (
     Holder(h.items, try ( if fl then ( assert(false) ) ; h.count + 1 ) catch e then ( 9 ))
 )
 def r = fn (fl: bool): double -> (
-    def v = Vec3(1.0, try ( if fl then ( assert(false) ) ; 2.0 ) catch e then ( 8.0 ), 3.0)
+    var v = Vec3(1.0, try ( if fl then ( assert(false) ) ; 2.0 ) catch e then ( 8.0 ), 3.0)
     v.y + double(bump(Holder(list(1), 4), fl).count)
 )
 assert(r(false) == 7.0 and r(true) == 17.0)
@@ -604,7 +604,7 @@ fn bump(v0: any [unique], v1: bool) -> any:
 ## Try expression inside ThisFieldAssign and DirectThisMethodCall
 
 ```babble
-def Box = class (def v: int) (
+def Box = class (var v: int) (
     def put = fn mut (fl: bool): int -> ( this.v = try ( if fl then ( assert(false) ) ; 7 ) catch e then ( 8 ) ; this.v )
     def add = fn (n: int): int -> ( this.v + n )
 )
@@ -717,7 +717,7 @@ fn r(v0: bool) -> int:
 ## Try expression inside top-level NameAssign
 
 ```babble
-def top = 0
+var top = 0
 def r = fn io (fl: bool): int -> ( top = try ( if fl then ( assert(false) ) ; 10 ) catch e then ( 20 ) ; top )
 assert(r(false) == 10 and r(true) == 20)
 ```

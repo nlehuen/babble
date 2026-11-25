@@ -49,7 +49,7 @@ assert(li.ping() == 7 and c.code() == 30 and c is LocalI)
 def jutil = import("java.util")
 def Entry = java.util.Map.Entry
 def Runner = class (def n : int) implements java.lang.Runnable (
-    def ran = ""
+    var ran = ""
     def run = fn mut () -> ( this.ran = "run:m" + this.n )
 )
 def runner = Runner(3)

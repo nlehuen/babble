@@ -11,7 +11,7 @@ def ScatterResult = import("interfaces.ba").ScatterResult
 ;; ------------------------------------------------------------------------
 export def Lambertian = class (def albedo: Vec3) implements Material (
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
-        def scatterDirection: Vec3 = rec.normal + Vec3.randomUnitVector(rng)
+        var scatterDirection: Vec3 = rec.normal + Vec3.randomUnitVector(rng)
         if scatterDirection.nearZero() then (
             scatterDirection = rec.normal
         )
@@ -29,7 +29,7 @@ export def Metal = class (def albedo: Vec3, fuzzIn: double = 0.0) implements Mat
     def fuzz: double = if fuzzIn < 1.0 then (math.max(0.0, fuzzIn)) else (1.0)
 
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): ScatterResult? -> (
-        def reflected: Vec3 = rIn.dir.reflect(rec.normal)
+        var reflected: Vec3 = rIn.dir.reflect(rec.normal)
         reflected = reflected.unit() + Vec3.randomUnitVector(rng) * this.fuzz
         if reflected.dot(rec.normal) > 0.0 then (
             ScatterResult(this.albedo, Ray(rec.p, reflected))
@@ -68,7 +68,7 @@ export def Dielectric = class (def refractionIndex: double) implements Material 
 ) static (
     ;; Schlick's approximation for reflectance
     def reflectance = fn (cosine: double, refractionIndex: double): double -> (
-        def r0: double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
+        var r0: double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
         r0 *= r0
         r0 + (1.0 - r0) * math.powInt(1.0 - cosine, 5)
     )

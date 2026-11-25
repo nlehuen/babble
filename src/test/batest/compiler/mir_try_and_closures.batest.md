@@ -8,7 +8,7 @@ plus loop-local `Cell` capture preservation across MIR passes.
 ```babble
 def E = record (m: string) ()
 def handle = fn (k: int): int -> (
-    def o = 0
+    var o = 0
     try (
         o = 1
         if k == 1 then (throw E("bad"))
@@ -224,7 +224,7 @@ fn handle(v0: int) -> int:
 
 ```babble
 def supTest = fn volatile (): int -> (
-    def n = 0
+    var n = 0
     try (
         try (throw java.lang.RuntimeException("p"))
         finally (throw java.lang.IllegalArgumentException("s"))

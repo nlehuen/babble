@@ -355,8 +355,8 @@ public class BatestHarnessTestCase {
 
                 ```babble
                 ;; babble session
-                def x = 1
-                def get = fn () : int -> ( x )
+                var x = 1
+                def get = fn volatile () : int -> ( x )
                 ```
 
                 ```babble
@@ -366,7 +366,7 @@ public class BatestHarnessTestCase {
 
                 ```babble
                 ;; babble session
-                def x = 100
+                var x = 100
                 println(get(), ":", x)
                 ```
 

@@ -75,7 +75,7 @@ def cols : list of L = list.of(
     (java.util.Vector of int)(), (java.util.Stack of int)(),
     java.util.List.of(1, 2), java.util.Collections.singletonList(9)
 )
-def sum = 0
+var sum = 0
 for p in list.of(0, 1) then (
     for c in cols then ( def o : L? = c; sum += o?.size()! )
 )

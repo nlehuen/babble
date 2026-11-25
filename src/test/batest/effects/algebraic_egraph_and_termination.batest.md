@@ -4,7 +4,7 @@ References : BIP027 (BIP027-I6, BIP027-D1, BIP027-D8), BIP007 (BIP007-D8)
 
 ```babble
 ;; babble preamble
-def Box = class (def v : int) ()
+def Box = class (var v : int) ()
 def Pair = record (a : int, b : int) ()
 def Node = record (v : int, next : Node?) ()
 
@@ -13,7 +13,7 @@ def fib = fn (n : int) : int -> (
 )
 
 def sumList = fn (xs : list of int) : int -> (
-    def s = 0
+    var s = 0
     for x in xs then ( s += x )
     s
 )
@@ -96,7 +96,7 @@ assert(absDiff(9, 3) == 6)
 ## Case 7
 
 ```babble
-def Accum = class (def v : int) (
+def Accum = class (var v : int) (
     def clampPos = fn mut idempotent () -> (
         this.v = if this.v < 0 then ( 0 ) else ( this.v )
     )
@@ -114,7 +114,7 @@ assert(a.v == 6)
 ## Case 8
 
 ```babble
-def MaxAccum = class (def v : int) (
+def MaxAccum = class (var v : int) (
     def keepMax = fn mut idempotent commutative (d : int) -> (
         this.v = if d > this.v then ( d ) else ( this.v )
     )
@@ -128,7 +128,7 @@ assert(a.v == 5)
 ## IEEE-754 double accumulation is not associative, hence not mut commutative
 
 ```babble
-def DAccum = class (def v : double) (
+def DAccum = class (var v : double) (
     def add = fn mut commutative (d : double) -> ( this.v += d )
 )
 ```
@@ -350,7 +350,7 @@ Unused pure expression
 ## SCP : negative cases (reassigned param, escaping ref) stay non-terminating
 
 ```babble
-def fReassign = fn (n : int) : int -> ( if n <= 0 then ( 0 ) else ( n = n - 1 ; fReassign(n) ) )
+def fReassign = fn (var n : int) : int -> ( if n <= 0 then ( 0 ) else ( n = n - 1 ; fReassign(n) ) )
 def fEscape = fn (n : int) : int -> ( def g = fEscape ; if n <= 0 then ( 0 ) else ( g(n - 1) ) )
 def ok = fn (n : int) : int -> ( fReassign(n) ; fEscape(n) ; n )
 assert(ok(2) == 2)
@@ -456,7 +456,7 @@ assert(ok(2) == 2)
 
 ```babble
 def sumSq = fn commutative (a : int, b : int) : int -> (
-    def s = a
+    var s = a
     s += b
     s * s
 )

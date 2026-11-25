@@ -6,7 +6,7 @@ References : TypeChecker, Interpreter, HirBuilder
 
 ```babble
 def findFirstEven = fn (n : int) : int -> (
-    def i = 1
+    var i = 1
     while i <= n then (
         if i == 4 then (
             return i

@@ -136,4 +136,8 @@ public final class Members {
     static BabbleException readOnly(String name) {
         return new BabbleException("Value members are read-only : " + name);
     }
+
+    static BabbleException cannotAssignDef(String name) {
+        return new BabbleException("Cannot assign to def member : " + name);
+    }
 }

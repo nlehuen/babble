@@ -69,8 +69,8 @@ public class TailCallsTestCase {
     public void testSelfCallsOnly() {
         Assertions.assertEquals(List.of("byName(n-1)", "this.walk(n-1)", "recurse(n-1)"),
                 tailCalls("def byName = fn (n : int) : int -> ( if n > 0 then ( byName(n - 1) ) else ( 0 ) )\n"
-                        // Reassigned : not statically known to be the function itself.
-                        + "def moved = fn volatile (n : int) : int -> ( if n > 0 then ( moved(n - 1) ) else ( 0 ) )\n"
+                        // Mutable var : not statically known to be the function itself.
+                        + "var moved = fn volatile (n : int) : int -> ( if n > 0 then ( moved(n - 1) ) else ( 0 ) )\n"
                         + "moved = fn (n : int) : int -> ( 0 )\n"
                         + "def outer = fn (n : int) : int -> ( def inner = fn (m : int) : int -> ( outer(m) ) ; inner(n) )\n"
                         + "def W = class () (\n"

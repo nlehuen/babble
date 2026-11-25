@@ -22,7 +22,7 @@ def C2 = class (def d: int) implements java.util.function.IntUnaryOperator, java
 ## Reconstructing an object literal class fails with object literals error
 
 ```babble
-def o = object ( def x = 1 )
+def o = object ( var x = 1 )
 coerce of (fn (): any?)(classof(o))()
 ```
 
@@ -51,8 +51,8 @@ assert("" + R1(1) == "R1(x: 1)" and dyn(R1(1)) != dyn(R2(1)))
 ## Polymorphic union field read checks primitive definedness across classes
 
 ```babble
-def A = class (def x: int) ()
-def B = class (def x: int) ()
+def A = class (var x: int) ()
+def B = class (var x: int) ()
 def readX = fn (o: A | B): int -> ( o.x )
 assert(readX(A(10)) == 10 and readX(B(20)) == 20)
 ```
@@ -60,7 +60,7 @@ assert(readX(A(10)) == 10 and readX(B(20)) == 20)
 ## Mutable class fields update cleanly and non-value class toString formats class name
 
 ```babble
-def Box = class (def x: int) ()
+def Box = class (var x: int) ()
 def b = Box(1)
 b.x = 42
 assert(b.x == 42 and ("" + b).startsWith("Box@"))
@@ -69,11 +69,11 @@ assert(b.x == 42 and ("" + b).startsWith("Box@"))
 ## Polymorphic union field read detects primitive member used before definition
 
 ```babble
-def Other = class (def x: int) ()
+def Other = class (var x: int) ()
 def readX = fn (o: Bad | Other): int -> ( o.x )
 def Bad = class () (
     def y = readX(this)
-    def x: int = 5
+    var x: int = 5
 )
 assert(readX(Other(1)) == 1)
 Bad()

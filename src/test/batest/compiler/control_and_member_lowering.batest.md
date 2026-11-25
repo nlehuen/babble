@@ -122,7 +122,7 @@ fn check(v0: int) -> int:
 
 ```babble
 def check = fn (x: int, y: int, s1: string, s2: string): int -> (
-    def r = 0
+    var r = 0
     if -x then ( r += 1 )
     if x + y then ( r += 2 )
     if s1 == s2 then ( r += 4 )
@@ -230,7 +230,7 @@ fn check(v0: int, v1: int, v2: any, v3: any) -> int:
 
 ```babble
 def check = fn (l0: long, l1: long, f0: float, f1: float, d0: double, d1: double): int -> (
-    def r = 0
+    var r = 0
     if not l0 then ( r += 1 )
     if not l1 then ( r += 2 )
     if not f0 then ( r += 4 )
@@ -783,7 +783,7 @@ top-level ; [not-lowered: top-level]
 def getS = fn io () -> ( import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.SampleHelpers )
 def before = getS().mutableCounter
 getS().mutableCounter += byte(0)
-def loc: int = 10
+var loc: int = 10
 loc += byte(5)
 assert(getS().mutableCounter == before and loc == 15)
 ```

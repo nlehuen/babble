@@ -20,7 +20,7 @@ def nonPureThrow = fn (x: int): double -> (def q = 10 / x ; return double(q) ; d
 ```babble
 def Vec = record (x: double, y: double) ()
 def run = fn (n: int, v: Vec, xs: array of int, f: bool): double -> (
-  def a = 0.0 ; def i = 0
+  var a = 0.0 ; var i = 0
   while i < n then (
     def c = if f and (xs.size() > 0) then (1.5) else (2.5)
     a += java.lang.Math.hypot(v.x, v.y) + (-v.y) + c + (def t = v.x * 2.0 ; t) ; i += 1
@@ -161,7 +161,7 @@ def Vec = record (x: double, y: double) (
   def len = fn nothrow (): double -> (java.lang.Math.hypot(this.x, this.y))
 )
 def run = fn (v: Vec, xs: array of int): double -> (
-  def a = 0.0
+  var a = 0.0
   for e in xs then (a += java.lang.Math.sin(v.y) + double(e) + (if e < 0 then (-v.x) else (0.0)))
   a + v.len()
 )
@@ -282,11 +282,11 @@ fn run(v0: any, v1: any) -> double:
 ## Throwing and impure calls must not be hoisted out of loops
 
 ```babble
-def tickCount = 0
+var tickCount = 0
 def tick = fn io (): int -> (tickCount += 1 ; tickCount)
-def unsafeDiv = 0 ; def j = 0
+var unsafeDiv = 0 ; var j = 0
 while j < 0 then (unsafeDiv += java.lang.Math.floorDiv(10, j) ; j += 1)
-def ticks = 0 ; def k = 0
+var ticks = 0 ; var k = 0
 while k < 3 then (ticks += tick() ; k += 1)
 assert(unsafeDiv == 0 and ticks == 6 and tickCount == 3)
 ```
@@ -327,7 +327,7 @@ top-level ; [not-lowered: top-level]
 ```babble
 def Box = class (def x: double) (
   def run = fn (n: int, b: byte): double -> (
-    def a = 0.0 ; def i = 0
+    var a = 0.0 ; var i = 0
     while i < n then (
       def l1: short = b ; def l2: int = short(4) + int(b)
       def l3: long = int(5) + 1 ; def l4: float = 1.5f + 2.5f
@@ -466,7 +466,7 @@ fn Box.run(v0: int, v1: byte) -> double:
 ```babble
 def Box = class (def x: double) (
   def run = fn (n: int): double -> (
-    def a = 0.0 ; def i = 0 ; def fv = fn (z: double): double -> (java.lang.Math.sin(z))
+    var a = 0.0 ; var i = 0 ; def fv = fn (z: double): double -> (java.lang.Math.sin(z))
     while i < n then (
       a += java.lang.Math.sin(this.x) / 2.0 + (-java.lang.Math.toRadians(this.x)) + fv(this.x) ; i += 1
     )
@@ -573,7 +573,7 @@ fn Box.run(v0: int) -> double:
 ```babble
 def Box = class (def nm: string) (
   def run = fn (n: int, f: bool, xs: array of int): int -> (
-    def a = 0 ; def i = 0 ; def raw: any = 1
+    var a = 0 ; var i = 0 ; def raw: any = 1
     while i < n then (
       def l6 = if f or (not f and (xs.size() > 0)) then (1) else (2)
       a += l6 + this.nm.trim().length() + (if i == 0 then ((raw as int) + 0) else (0)) ; i += 1

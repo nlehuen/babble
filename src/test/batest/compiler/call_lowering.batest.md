@@ -310,8 +310,8 @@ fn run(v0: any) -> any:
 
 ```babble
 def g = overload (
-    fn (x : int, r : int...) : int -> ( def s = x ; for v in r then ( s += v ) ; s ),
-    fn (s : string, r : string...) : string -> ( def o = s ; for v in r then ( o += v ) ; o )
+    fn (x : int, r : int...) : int -> ( var s = x ; for v in r then ( s += v ) ; s ),
+    fn (s : string, r : string...) : string -> ( var o = s ; for v in r then ( o += v ) ; o )
 )
 def runG = fn (u : int | string) : int | string -> ( g(u) )
 assert(runG(3) == 3 and runG("a") == "a")
@@ -338,7 +338,7 @@ fn runG(v0: any) -> any:
 def Box = class () (
     def m = overload (
         fn (x : int, a : int = 1, b : int = 2) : int -> ( x + a + b ),
-        fn (s : string, r : string...) : string -> ( def o = s ; for v in r then ( o += v ) ; o )
+        fn (s : string, r : string...) : string -> ( var o = s ; for v in r then ( o += v ) ; o )
     )
 )
 def run = fn (bx : Box, u : int | string) : int | string -> ( bx.m(u) )
@@ -465,7 +465,7 @@ interface IOv:
 
 ```babble
 def takeIt = fn io (shared xs: java.lang.Iterable of tests.JavaClassDemo.HiddenIntSam): int -> (
-    def n = 0 ; for x in xs then ( n += tests.JavaClassDemo.invokeHiddenSam(x, 4) ) ; n
+    var n = 0 ; for x in xs then ( n += tests.JavaClassDemo.invokeHiddenSam(x, 4) ) ; n
 )
 def fns = list(fn (x: int): int -> ( x + 1 ), fn (x: int): int -> ( x * 2 ))
 assert(takeIt(...fns) == 13)

@@ -149,7 +149,7 @@ fn absTwice(v0: double, v1: any) -> double:
 
 ```babble
 def Box = class (init: int) (
-    def v = init
+    var v = init
     def setAndRead = fn mut (nv: int): int -> (
         this.v = nv
         this.v + this.v
@@ -230,7 +230,7 @@ fn frozenAcrossWrite(v0: any, v1: any, v2: int) -> int:
 ## AliasRLE preserves reads of one unique parameter across writes to another unique parameter
 
 ```babble
-def Cell = class (init: int) (def v = init)
+def Cell = class (init: int) (var v = init)
 def disjointUnique = fn (unique a: Cell, unique b: Cell): int -> (
     def x = a.v
     b.v = 99
@@ -286,7 +286,7 @@ fn disjointUnique(v0: any [unique], v1: any [unique]) -> int:
 
 ```babble
 def clamp0 = fn (x: int): int -> (
-    def r = x
+    var r = x
     if r < 0 then (r = 0)
     if r > 10 then (r = 10)
     def a = r + 1 - 1
@@ -476,7 +476,7 @@ fn gvnCalls(v0: int, v1: int) -> int:
 ## GVN invalidates unique epochs across control-flow merge after conditional write
 
 ```babble
-def Box = class (init: int) (def v = init)
+def Box = class (init: int) (var v = init)
 def condWrite = fn (flag: bool, unique b: Box): int -> (
     def before = b.v
     if flag then (b.v = 10)
@@ -773,7 +773,7 @@ Type error : expected int, got null
 ## Convert simplification : cross-pass AliasRLE + GVN unbox(narrow(box(x))) -> x
 
 ```babble
-def Holder = class (def v: any) (
+def Holder = class (var v: any) (
     def setAndRead = fn mut (x: int): int -> (
         this.v = x
         def cur = this.v
@@ -850,7 +850,7 @@ def lossy = fn (x: int): double -> (def f: float = x ; def d: double = f ; d)
 def widenAs = fn (x: int): any -> (x as double)
 def nc = fn (x: any?): int -> (if x != null then (x as int) else (-1))
 assert(lossy(16777217) == 16777216.0 and widenAs(3) is double and nc(4) == 4 and nc(null) == -1)
-def bad = false ; try (nc("oops")) catch e: exception then (bad = true) ; assert(bad)
+var bad = false ; try (nc("oops")) catch e: exception then (bad = true) ; assert(bad)
 ```
 
 ```hir

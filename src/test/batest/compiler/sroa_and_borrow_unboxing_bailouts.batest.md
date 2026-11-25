@@ -650,7 +650,7 @@ def capP = fn (a: Vec3, b: Vec3): double -> (
     def g = fn (): double -> ( a.x )
     g() + b.y
 )
-def reas = fn (a: Vec3, b: Vec3): double -> (
+def reas = fn (var a: Vec3, b: Vec3): double -> (
     if a.x < -999.0 then ( return 0.0 )
     a = Vec3(0.0, 0.0, 0.0) ; a.x + b.y
 )
@@ -795,7 +795,7 @@ top-level ; [not-lowered: top-level]
 ```babble
 def work = fn (a: Vec3, b: Vec3): double -> (
     if a.x < -999.0 then ( return 0.0 )
-    def tmp: double?
+    var tmp: double? = null
     def xs = list(a)
     def h = Holder(list(1), 2)
     def h2 = move(h)
@@ -809,7 +809,7 @@ assert(work(Vec3(1.0, 2.0, 3.0), Vec3(4.0, 5.0, 6.0)) == 9.0)
 ;; hir -O0 fn=work
 fn work (a:obj, b:obj) -> double {nothrow unique}
   (if (<:bool (get-this-field x) -999.0:double) (block (return 0.0:double)))
-  (def tmp)
+  (def tmp null)
   (def xs (core-new list var(a)))
   (def h (record-new Holder (core-new list 1:int) 2:int))
   (def h2 (move var(h)))
@@ -826,7 +826,7 @@ fn work (a:obj, b:obj) -> double {nothrow unique}
 ;; hir -O1 fn=work
 fn work (a:obj, b:obj) -> double {nothrow unique}
   (if (<:bool (get-this-field x) -999.0:double) (return 0.0:double))
-  (def tmp)
+  (def tmp null)
   (def xs (core-new list var(a)))
   (block
     (def $sr_h_0 (core-new list 1:int))

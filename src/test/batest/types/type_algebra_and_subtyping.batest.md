@@ -340,9 +340,9 @@ Type error : expected java.lang.Runnable & java.io.Serializable, got (x : int) :
 ## Reassigning pure function to io and shared merges signatures
 
 ```babble
-def f = fn (x : Box) : int -> ( x.v )
+var f = fn (x : Box) : int -> ( x.v )
 f = fn io (x : Box) : int -> ( x.v + 1 )
-def g = fn (x : Box) : int -> ( x.v )
+var g = fn (x : Box) : int -> ( x.v )
 g = fn (shared x : Box) : int -> ( x.v + 2 )
 assert(f(Box(1)) == 2 and g(Box(1)) == 3)
 ```
@@ -361,7 +361,7 @@ assert(h(false)(fn () : int -> ( 4 )) == 5)
 
 ```babble
 def w = fn (b : bool) : int -> (
-    def x = 1
+    var x = 1
     x = if b then ( 2 ) else ( null )
     def s = if b then ( byte(1) ) else ( short(2) )
     def i = if b then ( short(2) ) else ( 3 )

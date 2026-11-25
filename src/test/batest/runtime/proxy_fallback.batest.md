@@ -175,7 +175,7 @@ assert(cmp.compare("a", "b") == 0 and func.applyAsInt(4) == 5)
 
 ```babble
 def Sp = class () implements ju.Spliterator of int (
-  def d = false
+  var d = false
   def tryAdvance = fn io mut (shared a : juf.Consumer of any?) -> ( if this.d then ( false ) else ( this.d = true ; a.accept(42) ; true ) )
   def trySplit = fn () -> ( null )
   def estimateSize = fn () -> ( 1 )

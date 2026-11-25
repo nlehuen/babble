@@ -186,7 +186,8 @@ final class HirEmitter {
         ctx.line(module.startLine());
         ctx.mv.visitVarInsn(ALOAD, ctx.nsLocal);
         getStringArray(module.topLevelDeclaredNames());
-        ctx.mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "declare", "([Ljava/lang/String;)V", false);
+        ctx.mv.visitFieldInsn(GETSTATIC, className, constantPool.booleanArrayField(module.topLevelDeclaredFinals()), "[Z");
+        ctx.mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "declare", "([Ljava/lang/String;[Z)V", false);
 
         if (chunks.size() == 1) {
             statements(chunks.get(0));
@@ -687,7 +688,8 @@ final class HirEmitter {
                 mv.visitLdcInsn(param.name());
                 loadKindOn(mv, pk, paramSlots[i]);
                 boxOn(mv, pk);
-                mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;)V", false);
+                mv.visitInsn(param.mutable() ? ICONST_0 : ICONST_1);
+                mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;Z)V", false);
             }
         }
         if (mirFn != null) {
@@ -830,7 +832,8 @@ final class HirEmitter {
                 mv.visitVarInsn(ALOAD, ctx.frameNs);
                 mv.visitLdcInsn(param.name());
                 mv.visitVarInsn(ALOAD, value);
-                mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;)V", false);
+                mv.visitInsn(param.mutable() ? ICONST_0 : ICONST_1);
+                mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;Z)V", false);
             }
         }
         Label bound = new Label();

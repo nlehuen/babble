@@ -34,6 +34,6 @@ public class BabbleControlTestCase extends BabbleTestBase {
 
     @Test
     public void testWhile() throws Exception {
-        Assertions.assertEquals(10, interpret("def i = 0 ; while i<10 then ( i = i + 1 ) ; i"));
+        Assertions.assertEquals(10, interpret("var i = 0 ; while i<10 then ( i = i + 1 ) ; i"));
     }
 }

@@ -88,12 +88,12 @@ fn caller (v:obj) -> int {pure unique}
 
 ```babble
 def inlBlocks = fn (n: int, xs: list of int): int -> (
-    def res = 0
+    var res = 0
     if n > 0 then (def inner = n * 2 ; res += inner) else (res = 1)
     for e in xs then (res += e)
     res
 )
-def smallWhile = fn (x: int): int -> (def i = x ; while i < 3 then (i += 1) ; i)
+def smallWhile = fn (x: int): int -> (var i = x ; while i < 3 then (i += 1) ; i)
 assert(inlBlocks(3, list(1, 2)) == 9 and inlBlocks(0, list(4)) == 5 and smallWhile(2) == 3)
 ```
 
@@ -275,7 +275,7 @@ top-level ; [not-lowered: top-level]
 ## InlinePass : reassigned parameter in callee (freshParam allocation) and self-recursion by name
 
 ```babble
-def incMut = fn (mut x: int): int -> (x = x + 1 ; x * 2)
+def incMut = fn (var mut x: int): int -> (x = x + 1 ; x * 2)
 def selfByName = fn (n: int): int -> (if n <= 0 then (0) else (selfByName(n - 1) + 1))
 def run = fn io (v: int): int -> (incMut(v) + incMut(4) + selfByName(v))
 assert(run(3) == 21)

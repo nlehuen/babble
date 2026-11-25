@@ -13,7 +13,7 @@ def Vec2 = record (x: double, y: double) (
     )
 )
 
-def Counter = class (def value: int = 0) (
+def Counter = class (var value: int = 0) (
     def add = fn mut (delta: int): int -> (
         this.value += delta
         this.value
@@ -32,7 +32,7 @@ def mapInt = fn calling f (f: fn (x: int): int, v: int): int -> (f(v))
 
 ;; Verified pure nothrow caller using fn calling f + frame-local helper
 def forEachUpTo = fn calling f (n: int, f: fn (i: int): int): int -> (
-    def i: int = 1
+    var i: int = 1
     while i <= n then (
         f(i)
         i += 1
@@ -41,7 +41,7 @@ def forEachUpTo = fn calling f (n: int, f: fn (i: int): int): int -> (
 )
 
 def sumSquares = fn nothrow (n: int): int -> (
-    def total: int = 0
+    var total: int = 0
     forEachUpTo(n, fn (i: int): int -> (
         total += mapInt(square, i)
         total
