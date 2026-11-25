@@ -652,6 +652,21 @@ public final class Bootstrap {
             if (index < 0 || shape.isPrivate(index)) {
                 return null;
             }
+            if (shape.isMethod(index)) {
+                // Through the class's $m$<name> accessor : a method may be a per-class constant with no field.
+                MethodHandle accessor;
+                try {
+                    accessor = MethodHandles.privateLookupIn(instance.getClass(), LOOKUP)
+                            .findVirtual(instance.getClass(), "$m$" + member, MethodType.methodType(Object.class));
+                } catch (ReflectiveOperationException | SecurityException e) {
+                    return null;
+                }
+                accessor = accessor.asType(MethodType.methodType(Object.class, Object.class));
+                // method(accessor(receiver), receiver, name)
+                MethodHandle bind = MethodHandles.insertArguments(METHOD, 2, member);
+                bind = MethodHandles.filterArguments(bind, 0, accessor);
+                return MethodHandles.permuteArguments(bind, MethodType.methodType(Object.class, Object.class), 0, 0);
+            }
             Class<?> fieldType;
             try {
                 fieldType = instance.getClass().getDeclaredField(member).getType();

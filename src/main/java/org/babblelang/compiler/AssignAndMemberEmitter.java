@@ -77,6 +77,12 @@ final class AssignAndMemberEmitter {
                 c.stackKind = mk;
                 return;
             }
+            if (c.constructorClass.isStaticMethodMember(idx)) {
+                // A per-class constant : the instance has no field to set.
+                defValueAs(d, PrimitiveKind.NONE);
+                c.stackKind = PrimitiveKind.NONE;
+                return;
+            }
             mv.visitVarInsn(ALOAD, c.typedThisLocal);
             defValueAs(d, PrimitiveKind.NONE);
             mv.visitInsn(DUP_X1);
