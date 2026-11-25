@@ -51,14 +51,14 @@ export def sqrt = fn (x: double): double -> (
     if x <= 0.0 then (
         return 0.0
     )
-    def g: double = if x > 1.0 then (x * 0.5) else (1.0)
+    var g: double = if x > 1.0 then (x * 0.5) else (1.0)
     while g * g > x * 16.0 then (
         g *= 0.25
     )
     while g * g * 16.0 < x then (
         g *= 4.0
     )
-    def i: int = 0
+    var i: int = 0
     while i < 10 then (
         g = 0.5 * (g + x / g)
         i += 1
@@ -68,7 +68,7 @@ export def sqrt = fn (x: double): double -> (
 
 ;; Angle reduction into [-pi, pi]
 export def wrapAngle = fn (x: double): double -> (
-    def a: double = x
+    var a: double = x
     while a > pi then (a -= twoPi)
     while a < -pi then (a += twoPi)
     a
@@ -78,9 +78,9 @@ export def wrapAngle = fn (x: double): double -> (
 export def sin = fn (x: double): double -> (
     def a: double = wrapAngle(x)
     def x2: double = a * a
-    def term: double = a
-    def sum: double = a
-    def n: int = 1
+    var term: double = a
+    var sum: double = a
+    var n: int = 1
     while n <= 10 then (
         def denom: double = (2 * n) * (2 * n + 1)
         term = -term * x2 / denom
@@ -94,9 +94,9 @@ export def sin = fn (x: double): double -> (
 export def cos = fn (x: double): double -> (
     def a: double = wrapAngle(x)
     def x2: double = a * a
-    def term: double = 1.0
-    def sum: double = 1.0
-    def n: int = 1
+    var term: double = 1.0
+    var sum: double = 1.0
+    var n: int = 1
     while n <= 10 then (
         def denom: double = (2 * n - 1) * (2 * n)
         term = -term * x2 / denom

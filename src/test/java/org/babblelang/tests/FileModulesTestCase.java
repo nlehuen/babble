@@ -72,7 +72,7 @@ public class FileModulesTestCase {
 
     @Test
     public void everySpellingOfAFileIsOneModule() throws Exception {
-        file("lib/counter.ba", "println(\"loading\")\ndef n = 0\nexport def next = fn io () -> ( n = n + 1 )");
+        file("lib/counter.ba", "println(\"loading\")\nvar n = 0\nexport def next = fn io () -> ( n = n + 1 )");
         Files.createSymbolicLink(directory.resolve("link.ba"), directory.resolve("lib/counter.ba"));
         Object result = run("import(\"lib/counter.ba\").next()\nimport(\"lib/../lib/counter.ba\").next()\nimport(\"link.ba\").next()");
         Assertions.assertEquals(3, result);

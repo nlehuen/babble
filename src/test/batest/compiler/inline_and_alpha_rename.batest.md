@@ -17,7 +17,7 @@ def idG of T = fn (x: T): T -> (x)
 
 ```babble
 def make = fn (k: int): int -> (
-    def Local = class (def x: int) (
+    def Local = class (var x: int) (
         def addK = fn (y: int): int -> (this.x + y + k)
     )
     Local(3).addK(4)
@@ -125,7 +125,7 @@ record Counter:
 ## InlinePass.scanCalleeBody and alphaRename : mutable class method ThisFieldAssign inlined
 
 ```babble
-def MutBox = class (def x: int) (
+def MutBox = class (var x: int) (
     def setGet = fn mut (v: int): int -> (this.x = v ; this.x)
 )
 def run = fn (n: int): int -> (
@@ -428,7 +428,7 @@ fn run(v0: int) -> int:
 ```babble
 def combine = fn (a: int, b: int): int -> (a * 10 + b)
 def run = fn (n: int, fl: bool): int -> (
-    def p = Pair(n, 0) ; def cap = fn (): int -> (p.x) ; def x = n
+    def p = Pair(n, 0) ; def cap = fn (): int -> (p.x) ; var x = n
     def r1 = combine(x, (x = x + 1 ; x))
     def g = if false then (combine(y, 1)) else (0)
     def y = if fl then (2) else (3)
@@ -544,8 +544,8 @@ fn run(v0: int, v1: bool) -> int:
 ## InlinePass.alphaRename : VarRead widening substitution, uninitialized Def, and for-body local def
 
 ```babble
-def choose = fn (fl: bool, a: int, b: int): int -> (def y: int? ; if fl then (y = a) else (y = b) ; y!)
-def sum2 = fn (xs: list of int): int -> (def s = 0 ; for e in xs then (def d = e * 2 ; s += d) ; s)
+def choose = fn (fl: bool, a: int, b: int): int -> (var y: int? = null ; if fl then (y = a) else (y = b) ; y!)
+def sum2 = fn (xs: list of int): int -> (var s = 0 ; for e in xs then (def d = e * 2 ; s += d) ; s)
 def run = fn (p: int, fl: bool): double -> (
     widen(p) + double(choose(fl, p, 9) + sum2(list(1, 2)))
 )
@@ -562,7 +562,7 @@ fn run (p:int, fl:bool) -> double {pure unique}
 ;; hir -O1 fn=run
 fn run (p:int, fl:bool) -> double {pure unique}
   (+:double (+:double var(p) 0.5:double) (call name(double) (+:int (block
-          (def y)
+          (def y null)
           (if var(fl) (set y var(p)) (set y 9:int))
           (nonnull var(y))) (block
           (def xs (core-new list 1:int 2:int))
@@ -833,7 +833,7 @@ def Tag = interface (def tag = fn (): int -> (7))
 def Good = class (p: Pair) implements Tag (
     assert(p.x > 0) ; def y = p.x + 1 ; def get = fn (): int -> (this.y)
 )
-def Leak2 = class (def x: int) (
+def Leak2 = class (var x: int) (
     def box = list(this, 1) ; def get = fn (): int -> (this.x)
 )
 assert(Good(Pair(3, 0)).get() + Good(Pair(3, 0)).tag() + Leak2(3).get() == 14)

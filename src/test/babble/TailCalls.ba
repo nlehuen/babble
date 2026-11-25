@@ -89,7 +89,7 @@ assert(fact(10) == 3628800)
 ;; forever acknowledges code that never ends (BIP024-D7, D8) : defined, never called
 def spin = fn (n: int): int -> (forever recurse(n + 1))
 def idle = fn (): int -> (
-    def ticks = 0
+    var ticks = 0
     forever while true then (ticks += 1)
     ticks
 )

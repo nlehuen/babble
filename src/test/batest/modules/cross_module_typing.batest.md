@@ -168,7 +168,7 @@ No such export : missingExport in ce_mod_a.ba
 ```babble
 def m = import("ce_mod_a.ba")
 def ec = m.ExportCls(5)
-def out = 0
+var out = 0
 def r = object implements java.lang.Runnable (
     def run = fn io () -> ( out = ec.pub(3) )
 )
@@ -229,7 +229,7 @@ assert(f(8) == 8)
 
 ```babble
 def lang = import("java.lang")
-def MyRun = class (def mut ran: bool) implements lang.Runnable (
+def MyRun = class (var mut ran: bool) implements lang.Runnable (
     def run = fn mut () -> ( this.ran = true )
 )
 def r = MyRun(false)

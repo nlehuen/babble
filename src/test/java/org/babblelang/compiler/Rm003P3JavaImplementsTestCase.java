@@ -44,7 +44,7 @@ public class Rm003P3JavaImplementsTestCase {
                     def compareTo = fn (o : Ordered) : int -> ( this.key() - o.key() )
                 )
                 def Node = class (def k : int) implements Ordered, java.util.function.IntUnaryOperator, java.util.Iterator of int (
-                    private def used = false
+                    private var used = false
                     def key = fn () : int -> ( this.k )
                     def applyAsInt = fn (x : int) : int -> ( x + this.k )
                     def hasNext = fn () : bool -> ( not this.used )

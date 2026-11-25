@@ -191,7 +191,7 @@ assert(sPred.test("ok"))
 ## Case 16
 
 ```babble
-def seen = 0
+var seen = 0
 def pCons = java.util.function.Consumer(fn io (p: java.awt.Point) -> ( seen = p.x ))
 def Holder = class (def x: int) ()
 pCons.accept(java.awt.Point(9, 1))

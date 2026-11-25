@@ -389,7 +389,7 @@ fn mkLocal() -> int:
 
 ```babble
 def pick = fn (a : bool, b : bool) : double -> ( if a then ( 1 ) else if b then ( 2 ) else ( 3.5 ) )
-def sumR = fn (a : int, xs : int...) : int -> ( def s = a ; for x in xs then ( s += x ) ; s )
+def sumR = fn (a : int, xs : int...) : int -> ( var s = a ; for x in xs then ( s += x ) ; s )
 def sub = fn (a : int, b : int) : int -> ( a - b )
 assert(pick(false, true) == 2.0 and pick(false, false) == 3.5 and sumR(1, 2, 3) == 6 and sub(b: 2, a: 10) == 8)
 ```
@@ -514,7 +514,7 @@ class Big:
 
 ```babble
 def sumRest = fn (a: int, b: int, c: int, d: int, e: int, f: int, g: int, h: int, xs: int...): int -> (
-    def t = a + b + c + d + e + f + g + h
+    var t = a + b + c + d + e + f + g + h
     for x in xs then ( t += x )
     t
 )

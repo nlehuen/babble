@@ -58,6 +58,10 @@ final class TypeNode {
             return (flags & ClassShape.PRIVATE) != 0;
         }
 
+        boolean isMutable() {
+            return (flags & ClassShape.MUTABLE) != 0;
+        }
+
         void detachAst() {
             this.declaration = null;
             this.function = null;

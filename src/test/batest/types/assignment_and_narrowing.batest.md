@@ -16,7 +16,7 @@ def Both = class () implements I1, I2, java.lang.Runnable (
 def Only1 = class () implements I1 (
     def a = fn () : int -> ( 3 )
 )
-def Box = class (def n : int) ()
+def Box = class (var n : int) ()
 def takeInt = fn (n : int) : int -> ( n )
 ```
 
@@ -117,7 +117,7 @@ Cannot cast to parameterized type : java.util.List of int
 ## Error : Cannot cast to parameterized type : java.util.List of int (2)
 
 ```babble
-def x : any? = null
+var x : any? = null
 def l = x as java.util.List of int
 ```
 
@@ -154,7 +154,7 @@ def mkR = fn () : java.lang.Runnable -> (
     object implements java.lang.Runnable ( def run = fn () -> ( () ) )
 )
 def r : java.lang.Runnable = mkR()
-def n = r as java.lang.Number
+var n = r as java.lang.Number
 ```
 
 ```error
@@ -195,7 +195,7 @@ Type error : expected java.lang.Runnable, got string
 ## Error : Type error : expected string, got null
 
 ```babble
-def x : null = null
+var x : null = null
 x as string
 ```
 
@@ -248,7 +248,7 @@ Cannot cast to type parameter : T
 ## Case 21
 
 ```babble
-def x : I1 = Both()
+var x : I1 = Both()
 def r : java.lang.Runnable = Both()
 assert(x is I2)
 assert(x is java.lang.Runnable)
@@ -307,7 +307,7 @@ assert("hi" is java.lang.CharSequence)
 
 ```babble
 def check = fn (x : I1, u : int | double | string) : string -> (
-    def r = if x is I2 then ( "" + x.b() ) else ( "no2" )
+    var r = if x is I2 then ( "" + x.b() ) else ( "no2" )
     if not (u is string) then (
         r += if u is int then ( ":i" ) else ( ":d" )
     ) else (
@@ -324,7 +324,7 @@ assert(check(Only1(), "s") == "no2:s")
 
 ```babble
 def checkObj = fn (obj : any?) : string -> (
-    def r = ""
+    var r = ""
     if obj is java.lang.Runnable then ( r += "run:" )
     if obj is Both then ( r += "both:" )
     if not (obj == null) and obj is any then ( r += "any" )
@@ -364,7 +364,7 @@ assert(check(Only1(), java.lang.StringBuilder("z")) == "0:0:0")
 
 ```babble
 def check = fn (a : Box?, b : Box?, c : bool?) : string -> (
-    def s = if null != a then ( "" + a.n ) else ( "-" )
+    var s = if null != a then ( "" + a.n ) else ( "-" )
     s += if not (null == b) then ( "" + b.n ) else ( "-" )
     if ((a != null)) then ( s += "!" )
     if c == true then ( s += "T" )
@@ -378,7 +378,7 @@ assert(check(null, Box(4), false) == "-4")
 
 ```babble
 def check = fn (a : Box?, b : Box?) : string -> (
-    def s = if (a != null and b != null) then ( "" + (a.n + b.n) ) else ( "n" )
+    var s = if (a != null and b != null) then ( "" + (a.n + b.n) ) else ( "n" )
     s += if (a == null or b == null) then ( "z" ) else ( "p" )
     s
 )
@@ -413,14 +413,14 @@ assert(guardElse(null) == -3 and guardElse(10) == 13)
 ## Case 34
 
 ```babble
-def a = null ; a = 5
-def b = 1 ; b = null
-def c = 2 ; c = 3.5
-def n1 = null ; n1 = 1 ; n1 = 2.5
-def n2 = 1 ; n2 = null ; n2 = 3.5
-def v : int? = null ; v = 42
-def w : int | double? = 3 ; w = null ; w = 2.5
-def opt : string? = "a" ; opt = null
+var a = null ; a = 5
+var b = 1 ; b = null
+var c = 2 ; c = 3.5
+var n1 = null ; n1 = 1 ; n1 = 2.5
+var n2 = 1 ; n2 = null ; n2 = 3.5
+var v : int? = null ; v = 42
+var w : int | double? = 3 ; w = null ; w = 2.5
+var opt : string? = "a" ; opt = null
 assert(a == 5 and b == null and c == 3.5)
 assert(n1 == 2.5 and n2 == 3.5)
 assert(v == 42 and w == 2.5 and opt == null)
@@ -429,10 +429,10 @@ assert(v == 42 and w == 2.5 and opt == null)
 ## Case 35
 
 ```babble
-def count = 0
-def func = fn (x : int) : int -> ( x + 1 )
+var count = 0
+var func = fn (x : int) : int -> ( x + 1 )
 func = fn io (x : int) : int -> ( count += 1 ; x + 2 )
-def fnMut : fn (mut b : Box) : int = fn (b : Box) : int -> ( b.n )
+var fnMut : fn (mut b : Box) : int = fn (b : Box) : int -> ( b.n )
 fnMut = fn (mut b : Box) : int -> ( b.n += 1 ; b.n )
 def bx = Box(10)
 assert(func(1) == 3 and count == 1)
@@ -442,7 +442,7 @@ assert(fnMut(bx) == 11)
 ## Case 36
 
 ```babble
-def count = 0
+var count = 0
 def pick = fn (flag : bool) -> (
     if flag then ( fn (x : int) : int -> ( x ) )
     else ( fn io (x : int) : int -> ( count += 1 ; x ) )
@@ -454,7 +454,7 @@ assert(pick(false)(5) == 5 and count == 1)
 ## Case 37
 
 ```babble
-def f = fn (n : int) : int -> ( n )
+var f = fn (n : int) : int -> ( n )
 f = fn (n : int) : int -> ( n + 1 )
 assert(f(3) == 4)
 ```
@@ -462,7 +462,7 @@ assert(f(3) == 4)
 ## Error : Type error : expected int, got string
 
 ```babble
-def x = 1
+var x = 1
 x = "bad"
 ```
 
@@ -473,8 +473,8 @@ Type error : expected int, got string
 ## Error : Type error : expected int, got double (x is double because of the ass...
 
 ```babble
-def x = 1
-def y : int = 0
+var x = 1
+var y : int = 0
 y = x
 x = 1.5
 ```
@@ -486,7 +486,7 @@ Type error : expected int, got double (x is double because of the assignment)
 ## Error : Type error : expected int, got double (x is double because of the ass... (2)
 
 ```babble
-def x = 1
+var x = 1
 takeInt(x)
 x = 2.5
 ```
@@ -498,9 +498,9 @@ Type error : expected int, got double (x is double because of the assignment)
 ## Error : Type error : expected int, got double (x is double because of the ass... (3)
 
 ```babble
-def Holder = class () ( def x = 1 )
+def Holder = class () ( var x = 1 )
 def c = Holder()
-def y : int = 0
+var y : int = 0
 y = c.x
 c.x = 1.5
 ```
@@ -512,8 +512,8 @@ Type error : expected int, got double (x is double because of the assignment)
 ## Error : Type error : expected int, got double (x is double because of the ass... (4)
 
 ```babble
-def C = object ( def x = 1 )
-def y : int = 0
+def C = object ( var x = 1 )
+var y : int = 0
 y = C.x
 C.x = 1.5
 ```
@@ -526,7 +526,7 @@ Type error : expected int, got double (x is double because of the assignment)
 
 ```babble
 def f = fn (a) -> (
-    def y : int = 0
+    var y : int = 0
     y = a
     a
 )
@@ -553,9 +553,9 @@ Type error : expected int, got double (x is double because of the call)
 ## Error : Type error : expected int, got double (2)
 
 ```babble
-def PBox = class (def x = 1) ()
+def PBox = class (var x = 1) ()
 def pb = PBox(1)
-def y : int = 0
+var y : int = 0
 y = pb.x
 def pb2 = PBox(1.5)
 ```
@@ -578,7 +578,7 @@ Type error : expected int, got double
 ## Error : Type error : expected int, got double (4)
 
 ```babble
-def x = 1
+var x = 1
 x = 2.5
 def y : int = x
 ```

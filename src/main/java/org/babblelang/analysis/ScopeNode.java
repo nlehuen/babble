@@ -32,6 +32,8 @@ final class ScopeNode {
     final Map<String, BabbleParser.AxiomExpressionContext> babbleAxioms = new LinkedHashMap<>();
     /** The names defined here, declared when the scope is entered (hoisting). */
     final List<String> declared = new ArrayList<>();
+    /** Parallel finality flags for {@link #declared} ({@code true} for {@code def}, {@code false} for {@code var}). */
+    final List<Boolean> declaredFinals = new ArrayList<>();
     /** For class, interface and static bodies : the type. */
     final TypeNode type;
     /** For a function scope : the type when the function is a method, default or static method. */

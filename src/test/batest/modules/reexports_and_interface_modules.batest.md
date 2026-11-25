@@ -29,7 +29,6 @@ export def Shape = base.Shape
 export def shapes = base
 export def mutBox = base.Vec(1)
 export def mutableVal = 1
-mutableVal = 2
 export def ov = overload(base.addOne, fn (s: string): int -> ( s.length() ))
 export def twoLocals = fn (): int -> (
     def f1 = fn (): int -> ( def Dup = class (def a: int) () ; Dup(1).a )

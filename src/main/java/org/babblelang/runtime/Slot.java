@@ -12,13 +12,21 @@ public class Slot<T> {
         this.isFinal = isFinal;
     }
 
+    public boolean isFinal() {
+        return isFinal;
+    }
+
+    public boolean isSet() {
+        return set;
+    }
+
     /**
      * Gives the slot its value : the initial write of a definition, or a later write.
      */
     public void set(T value) {
         if (set) {
             if (isFinal) {
-                throw new IllegalStateException("Slot already set : " + name);
+                throw new BabbleException("Cannot assign to def : " + name);
             }
         } else {
             set = true;

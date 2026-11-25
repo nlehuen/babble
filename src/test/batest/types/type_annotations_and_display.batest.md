@@ -525,7 +525,7 @@ f
 ## TypeDisplay renders nullable rest parameter function result
 
 ```babble
-def f = fn (a : int?...) : int -> ( def n = 0 ; for x in a then ( n += 1 ) ; n )
+def f = fn (a : int?...) : int -> ( var n = 0 ; for x in a then ( n += 1 ) ; n )
 assert(f(1, null) == 2)
 f
 ```
@@ -533,7 +533,7 @@ f
 ## TypeDisplay renders union rest parameter function result
 
 ```babble
-def f = fn (a : (int | string)...) : int -> ( def n = 0 ; for x in a then ( n += 1 ) ; n )
+def f = fn (a : (int | string)...) : int -> ( var n = 0 ; for x in a then ( n += 1 ) ; n )
 assert(f(1, "a") == 2)
 f
 ```
@@ -541,7 +541,7 @@ f
 ## TypeDisplay renders intersection rest parameter function result
 
 ```babble
-def f = fn (a : (IA & IB)...) : int -> ( def n = 0 ; for x in a then ( n += 1 ) ; n )
+def f = fn (a : (IA & IB)...) : int -> ( var n = 0 ; for x in a then ( n += 1 ) ; n )
 assert(f() == 0)
 f
 ```
@@ -549,7 +549,7 @@ f
 ## TypeDisplay renders function rest parameter function result
 
 ```babble
-def f = fn (a : (fn (int) : int)...) : int -> ( def n = 0 ; for x in a then ( n += 1 ) ; n )
+def f = fn (a : (fn (int) : int)...) : int -> ( var n = 0 ; for x in a then ( n += 1 ) ; n )
 assert(f() == 0)
 f
 ```
@@ -557,7 +557,7 @@ f
 ## TypeDisplay renders frozen rest parameter function result
 
 ```babble
-def f = fn (a : (frozen (Box of int))...) : int -> ( def n = 0 ; for x in a then ( n += 1 ) ; n )
+def f = fn (a : (frozen (Box of int))...) : int -> ( var n = 0 ; for x in a then ( n += 1 ) ; n )
 assert(f() == 0)
 f
 ```

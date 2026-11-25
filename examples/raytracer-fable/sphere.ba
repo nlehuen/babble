@@ -34,7 +34,7 @@ export def Sphere = class (def center: Vec3, def radius: double, def material: M
         def sqrtd: double = Math.sqrt(discriminant)
 
         ;; find the nearest root that lies in the acceptable range
-        def root: double = (h - sqrtd) / a
+        var root: double = (h - sqrtd) / a
         if root <= tmin or tmax <= root then (
             root = (h + sqrtd) / a
             if root <= tmin or tmax <= root then (return null)

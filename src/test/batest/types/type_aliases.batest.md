@@ -52,7 +52,7 @@ assert((a as ShapeWithText).area() == 2.0)
 ## `is T?` accepts null while `is T` does not
 
 ```babble
-def maybe: ShapeWithText? = null
+var maybe: ShapeWithText? = null
 assert(not (maybe is ShapeWithText))
 assert(maybe is ShapeWithText?)
 maybe = Tile()
@@ -63,7 +63,7 @@ assert(maybe is ShapeWithText?)
 ## Case 4
 
 ```babble
-def d: Disk? = null
+var d: Disk? = null
 assert(d is Shape?)
 assert(not (d is Shape))
 assert(d is Named?)

@@ -56,14 +56,10 @@ final class TypeChecks {
 
     private final BlockScopes pass;
     private final ScopeAnalysis analysis;
-    private final Set<ParserRuleContext> reassigned = new HashSet<>();
 
     TypeChecks(BlockScopes pass) {
         this.pass = pass;
         this.analysis = pass.analysis;
-        if (pass.session != null) {
-            reassigned.addAll(pass.session.reassigned);
-        }
     }
 
     void run() {
@@ -77,8 +73,13 @@ final class TypeChecks {
                 throw new AnalysisException("Cannot assign to catch parameter : " + assignment.name(),
                         assignment.ctx().lhs.getStart().getLine());
             }
-            if (definition != null) {
-                reassigned.add(definition);
+            if (definition instanceof BabbleParser.DefExpressionContext def && def.VAR() == null) {
+                throw new AnalysisException("Cannot assign to def : " + assignment.name(),
+                        assignment.ctx().lhs.getStart().getLine());
+            }
+            if (ScopeAnalysis.isParamDecl(definition) && !ScopeAnalysis.isVar(definition)) {
+                throw new AnalysisException("Cannot assign to parameter : " + assignment.name(),
+                        assignment.ctx().lhs.getStart().getLine());
             }
         }
         for (TypeNode type : pass.types) {
@@ -150,7 +151,7 @@ final class TypeChecks {
      */
     private Object resolveDefinition(ParserRuleContext definition, List<String> path, int index, BabbleParser.TypeContext type,
                                      boolean forInterface, int depth) {
-        if (!(definition instanceof BabbleParser.DefExpressionContext def) || reassigned.contains(def) || def.value == null || depth > 16) {
+        if (!(definition instanceof BabbleParser.DefExpressionContext def) || ScopeAnalysis.isVar(def) || def.value == null || depth > 16) {
             throw notStatic(type);
         }
         BabbleParser.ExpressionContext value = def.value;
@@ -172,7 +173,7 @@ final class TypeChecks {
                 return module.resolveType(rest, 0, type, forInterface);
             }
         }
-        // def Shape = Other, a never-reassigned alias.
+        // def Shape = Other, an immutable alias.
         if (value instanceof BabbleParser.SelectorContext alias && alias.expression() == null) {
             ParserRuleContext target = resolveName(alias.ID().getText(), scope);
             if (target != null) {
@@ -204,7 +205,7 @@ final class TypeChecks {
 
     /**
      * The module an expression holds, when it is known statically : a static import, a
-     * never-reassigned def holding one, or an export of a module that is one.
+     * {@code def} holding one, or an export of a module that is one.
      */
     private ModuleInterface moduleOf(BabbleParser.ExpressionContext expression, ScopeNode scope, int depth) {
         if (depth > 16 || expression == null) {
@@ -232,7 +233,7 @@ final class TypeChecks {
             return null;
         }
         ParserRuleContext definition = pass.fileScope.names.get(export);
-        if (definition instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
+        if (definition instanceof BabbleParser.DefExpressionContext def && !ScopeAnalysis.isVar(def)) {
             return moduleOf(def.value, pass.definitionScopes.get(def), depth + 1);
         }
         return null;
@@ -580,11 +581,38 @@ final class TypeChecks {
         int line = access.ctx().getStart().getLine();
         if (access.receiver() instanceof BabbleParser.ThisExpressionContext) {
             ScopeNode thisScope = BlockScopes.thisScope(access.scope());
-            if (thisScope.kind == ScopeNode.Kind.INTERFACE_BODY && !isInterfaceMember(thisScope.type, access.member())) {
-                throw new AnalysisException(access.member() + " is not a member of " + thisScope.type.name, line);
-            }
-            if (access.assignment() && thisScope.kind == ScopeNode.Kind.CLASS_BODY && thisScope.type.kind == ClassShape.Kind.VALUE_CLASS) {
-                throw new AnalysisException("Value members are read-only : " + access.member(), line);
+            if (thisScope.kind == ScopeNode.Kind.INTERFACE_BODY) {
+                if (!isInterfaceMember(thisScope.type, access.member())) {
+                    throw new AnalysisException(access.member() + " is not a member of " + thisScope.type.name, line);
+                }
+                if (access.assignment()) {
+                    TypeNode.Member member = MemberTypes.findMember(thisScope.type, access.member());
+                    if (member == null || member.isMethod()) {
+                        throw new AnalysisException("Cannot assign method : " + access.member(), line);
+                    }
+                    throw new AnalysisException("Cannot assign to def member : " + access.member(), line);
+                }
+            } else if (access.assignment() && thisScope.kind == ScopeNode.Kind.CLASS_BODY) {
+                TypeNode.Member member = thisScope.type.members.get(access.member());
+                if (member != null && member.isMethod()) {
+                    throw new AnalysisException("Cannot assign method : " + access.member(), line);
+                }
+                if (thisScope.type.kind == ClassShape.Kind.VALUE_CLASS) {
+                    throw new AnalysisException("Value members are read-only : " + access.member(), line);
+                }
+                if (member != null && !member.isMutable()) {
+                    throw new AnalysisException("Cannot assign to def member : " + access.member(), line);
+                }
+            } else if (access.assignment() && thisScope.kind == ScopeNode.Kind.STATIC_BODY) {
+                TypeNode.Member member = thisScope.type.statics.get(access.member());
+                if (member != null) {
+                    if (member.isMethod()) {
+                        throw new AnalysisException("Cannot assign method : " + access.member(), line);
+                    }
+                    if (!member.isMutable()) {
+                        throw new AnalysisException("Cannot assign to def member : " + access.member(), line);
+                    }
+                }
             }
             return;
         }
@@ -607,8 +635,16 @@ final class TypeChecks {
         if (member.isPrivate()) {
             throw new AnalysisException(access.member() + " is private", line);
         }
-        if (access.assignment() && type.kind == ClassShape.Kind.VALUE_CLASS) {
-            throw new AnalysisException("Value members are read-only : " + access.member(), line);
+        if (access.assignment()) {
+            if (member.isMethod()) {
+                throw new AnalysisException("Cannot assign method : " + access.member(), line);
+            }
+            if (type.kind == ClassShape.Kind.VALUE_CLASS) {
+                throw new AnalysisException("Value members are read-only : " + access.member(), line);
+            }
+            if (!member.isMutable()) {
+                throw new AnalysisException("Cannot assign to def member : " + access.member(), line);
+            }
         }
     }
 
@@ -657,7 +693,7 @@ final class TypeChecks {
     /**
      * The class of an expression's value when it is statically known : an object literal,
      * a construction through a name bound to a class literal, or a name bound to one of
-     * these, none of them reassigned.
+     * these, none of them mutable.
      */
     private TypeNode staticClassOf(BabbleParser.ExpressionContext expression, ScopeNode scope, int depth) {
         if (depth > 8) {
@@ -684,11 +720,11 @@ final class TypeChecks {
         return null;
     }
 
-    /** The lexical def a plain name refers to, if it is never reassigned. */
+    /** The immutable lexical {@code def} a plain name refers to, or null. */
     private BabbleParser.DefExpressionContext definitionOf(BabbleParser.ExpressionContext expression, ScopeNode scope) {
         if (expression instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
             ParserRuleContext definition = resolveName(selector.ID().getText(), scope);
-            if (definition instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
+            if (definition instanceof BabbleParser.DefExpressionContext def && !ScopeAnalysis.isVar(def)) {
                 return def;
             }
         }

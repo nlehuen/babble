@@ -319,7 +319,7 @@ public class Rm003P1AnalysisTestCase {
         // Cross-REPL reassignment invalidates static type alias & IsTarget
         AnalysisSession session = new AnalysisSession();
         ScopeAnalysis r1 = BlockScopes.analyze(BabbleScriptEngine.parseSource(
-                "def C1 = class () ()\n def C2 = class () ()\n def RA : any = C1", "r1.ba"), session);
+                "def C1 = class () ()\n def C2 = class () ()\n var RA : any = C1", "r1.ba"), session);
         session.commit(r1);
         ScopeAnalysis r2 = BlockScopes.analyze(BabbleScriptEngine.parseSource(
                 "RA = C2", "r2.ba"), session);

@@ -8,7 +8,7 @@ References : BIP027-I4, BIP027-D5, BIP019 §4, Reachability, SymbolicEffectSumma
 ;; Virtual module exporting parametric HOFs (direct and nested) to verify single-pass
 ;; SymbolicEffectSummary parity across module boundaries.
 
-export def Box = class (def v: int) ()
+export def Box = class (var v: int) ()
 export def applyBox = fn (f: fn (Box): int, b: Box): int -> ( f(b) )
 export def applyBox2 = fn (f: fn (Box): int, b: Box): int -> ( applyBox(f, b) )
 export def applyMutBox = fn (f: fn (mut Box): int, mut b: Box): int -> ( f(b) )
@@ -16,9 +16,9 @@ export def applyMutBox = fn (f: fn (mut Box): int, mut b: Box): int -> ( f(b) )
 
 ```babble
 ;; babble preamble
-def Box = class (def v: int) ()
+def Box = class (var v: int) ()
 def Pair = class (def a: Box, def b: Box) ()
-def Node = class (def v: int, def next: Node?) ()
+def Node = class (var v: int, def next: Node?) ()
 
 def swapBoxes = fn (mut x: Box, mut y: Box) -> (
     def t = x.v
@@ -99,9 +99,9 @@ Exclusivity error : mut target n aliases argument d
 
 ```babble
 def f = fn (p: Box, mut q: Box): int -> (
-    def a0 = p; def a1 = q; def a2 = q; def a3 = q; def a4 = q
-    def a5 = q; def a6 = q; def a7 = q; def a8 = q; def a9 = q
-    def i = 0
+    def a0 = p; var a1 = q; var a2 = q; var a3 = q; var a4 = q
+    var a5 = q; var a6 = q; var a7 = q; var a8 = q; var a9 = q
+    var i = 0
     while i < 12 then (
         a9 = a8; a8 = a7; a7 = a6; a6 = a5; a5 = a4
         a4 = a3; a3 = a2; a2 = a1; a1 = a0; i = i + 1
@@ -120,7 +120,7 @@ Cannot mutate parameter p (field assignment .v) : mark parameter as mut p
 
 ```babble
 def walkAndMut = fn (head: Node): int -> (
-    def cur: Node? = head
+    var cur: Node? = head
     while cur != null then (
         cur.v = cur.v + 1
         cur = cur.next
@@ -178,7 +178,7 @@ Cannot mutate parameter b (mut parameter b) : mark parameter as mut b
 def apply1 = fn (f: fn (int): int, x: int): int -> ( f(x) )
 def apply2 = fn (f: fn (int): int, x: int): int -> ( apply1(f, x) )
 def compute = fn (n: int): int -> (
-    def acc = 0
+    var acc = 0
     def addTo = fn (k: int): int -> ( acc = acc + k; acc )
     apply2(addTo, n) + apply2(addTo, n)
 )

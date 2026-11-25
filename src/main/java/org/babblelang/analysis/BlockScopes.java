@@ -181,7 +181,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         } finally {
             scopes.pop();
         }
-        analysis.setDeclared(owner, scope.declared.toArray(new String[0]));
+        boolean[] finals = new boolean[scope.declaredFinals.size()];
+        for (int i = 0; i < finals.length; i++) {
+            finals[i] = scope.declaredFinals.get(i);
+        }
+        analysis.setDeclared(owner, scope.declared.toArray(new String[0]), finals);
         return scope;
     }
 
@@ -232,6 +236,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         definitionScopes.put(declaration, scope);
         if (hoisted) {
             scope.declared.add(text);
+            scope.declaredFinals.add(!ScopeAnalysis.isVar(declaration));
         }
     }
 
@@ -258,7 +263,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         while (cur.getParent() instanceof BabbleParser.OverloadExpressionContext ov) {
             cur = ov;
         }
-        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur ? def : null;
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur && def.VAR() == null ? def : null;
     }
 
     /** Collects direct function literal operands of an {@code overload (...)}; returns true if every operand is a function literal. */
@@ -434,7 +439,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                         if (!parameterNames.add(name.getText())) {
                             throw error("Name already defined : " + name.getText(), name);
                         }
-                        boolean member = parameter.DEF() != null || isValue;
+                        boolean isVar = parameter.VAR() != null;
+                        if (isValue && isVar) {
+                            throw error("Value class members cannot be var : " + name.getText(), parameter.VAR().getSymbol());
+                        }
+                        boolean member = parameter.DEF() != null || isVar || isValue;
                         if (parameter.PRIVATE() != null && !member) {
                             throw error("private only applies to members", parameter.PRIVATE().getSymbol());
                         }
@@ -446,7 +455,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                         }
                         type.parameters.add(name.getText());
                         if (member) {
-                            int flags = parameter.PRIVATE() != null ? ClassShape.PRIVATE : 0;
+                            int flags = (parameter.PRIVATE() != null ? ClassShape.PRIVATE : 0)
+                                    | (isVar ? ClassShape.MUTABLE : 0);
                             type.parameterMembers.add(addMember(type.members, name, flags, parameter, null).index);
                         } else {
                             type.parameterMembers.add(-1);
@@ -538,13 +548,16 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     // ---------------------------------------------------------------- definitions
 
-    /** {@code export def} : only for the names of the file itself. */
-    private void export(org.antlr.v4.runtime.tree.TerminalNode export, Token name) {
+    /** {@code export def} : only for the top-level {@code def} names of the file itself. */
+    private void export(org.antlr.v4.runtime.tree.TerminalNode export, Token name, BabbleParser.DefExpressionContext ctx) {
         if (export == null) {
             return;
         }
         if (current().kind != ScopeNode.Kind.FILE) {
             throw error("export only applies to the top-level definitions of a file : " + name.getText(), export.getSymbol());
+        }
+        if (ctx != null && ctx.VAR() != null) {
+            throw error("Cannot export a var : " + name.getText(), ctx.VAR().getSymbol());
         }
         analysis.addExport(name.getText());
     }
@@ -555,8 +568,15 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         if (scope.whileTests > 0) {
             throw error("Definition in a while test : " + ctx.name.getText(), ctx.name);
         }
-        export(ctx.EXPORT(), ctx.name);
+        boolean isVar = ctx.VAR() != null;
+        export(ctx.EXPORT(), ctx.name, ctx);
         boolean isPrivate = ctx.PRIVATE() != null;
+        if (isVar && ctx.typeParameters() != null) {
+            throw error("Type parameters only apply to def : " + ctx.name.getText(), ctx.typeParameters());
+        }
+        if (isVar && ctx.value instanceof BabbleParser.TypeAliasExpressionContext) {
+            throw error("Type alias must be declared with def : " + ctx.name.getText(), ctx.VAR().getSymbol());
+        }
         BabbleParser.FunctionLiteralContext function = ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
         BabbleParser.OverloadExpressionContext overload = ctx.value instanceof BabbleParser.OverloadExpressionContext ov ? ov : null;
         List<BabbleParser.FunctionLiteralContext> overloadFns = List.of();
@@ -566,7 +586,14 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             allOverloadLiterals = collectOverloadFunctions(overload, collected);
             overloadFns = collected;
         }
-        int flags = ((function != null || overload != null) ? ClassShape.METHOD : 0) | (isPrivate ? ClassShape.PRIVATE : 0);
+        // BIP034-D5 : `var f = fn ...` in a class/object/static body is a mutable field, not a method.
+        boolean isMethod = !isVar && (function != null || overload != null);
+        int flags = (isMethod ? ClassShape.METHOD : 0)
+                | (isPrivate ? ClassShape.PRIVATE : 0)
+                | (isVar ? ClassShape.MUTABLE : 0);
+        BabbleParser.FunctionLiteralContext memberFn = isMethod ? function : null;
+        boolean memberOverload = isMethod && overload != null;
+        List<BabbleParser.FunctionLiteralContext> memberOverloadFns = isMethod ? overloadFns : List.of();
 
         if (ctx.typeParameters() != null) {
             visit(ctx.typeParameters());
@@ -584,27 +611,45 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
         switch (scope.kind) {
             case CLASS_BODY -> {
-                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function, overload != null, overloadFns);
+                if (isVar && scope.type.kind == ClassShape.Kind.VALUE_CLASS) {
+                    throw error("Value class members cannot be var : " + ctx.name.getText(), ctx.VAR().getSymbol());
+                }
+                if (ctx.value == null) {
+                    throw error("Declaration requires an initializer : " + ctx.name.getText(), ctx.name);
+                }
+                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, memberFn, memberOverload, memberOverloadFns);
                 analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(LoweringTargets.DefKind.MEMBER, member.index));
             }
             case STATIC_BODY -> {
-                TypeNode.Member member = addMember(scope.type.statics, ctx.name, flags, ctx, function, overload != null, overloadFns);
+                if (isVar && !isPrivate) {
+                    throw error("Public static members cannot be var : " + ctx.name.getText(), ctx.VAR().getSymbol());
+                }
+                if (ctx.value == null) {
+                    throw error("Declaration requires an initializer : " + ctx.name.getText(), ctx.name);
+                }
+                TypeNode.Member member = addMember(scope.type.statics, ctx.name, flags, ctx, memberFn, memberOverload, memberOverloadFns);
                 analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(LoweringTargets.DefKind.STATIC, member.index));
             }
             case INTERFACE_BODY -> {
+                if (isVar) {
+                    throw error("Interface members cannot be var : " + ctx.name.getText(), ctx.VAR().getSymbol());
+                }
                 if (isPrivate) {
                     throw error("Interface members cannot be private : " + ctx.name.getText(), ctx.PRIVATE().getSymbol());
                 }
                 if (ctx.value != null && function == null && !(overload != null && allOverloadLiterals)) {
                     throw error("An interface default must be a function literal : " + ctx.name.getText(), ctx.name);
                 }
-                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, function, overload != null, overloadFns);
+                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, memberFn, memberOverload, memberOverloadFns);
                 analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(
                         (function != null || overload != null) ? LoweringTargets.DefKind.DEFAULT : LoweringTargets.DefKind.REQUIRED, member.index));
             }
             default -> {
                 if (isPrivate) {
                     throw error("private only applies to members", ctx.PRIVATE().getSymbol());
+                }
+                if (ctx.value == null) {
+                    throw error("Declaration requires an initializer : " + ctx.name.getText(), ctx.name);
                 }
                 declare(ctx.name, ctx, true);
             }

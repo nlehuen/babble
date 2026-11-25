@@ -73,7 +73,7 @@ public class TypeCheckerTestCase {
     public void testUnannotatedParametersRequireTypes() {
         assertDiagnostics("def f = fn (a, b) -> ( a + b )\n"
                         + "def g = fn (x) -> ( x.foo(1) )\n"
-                        + "def i = 0 ; i = i + 1 ; i.y\n"
+                        + "var i = 0 ; i = i + 1 ; i.y\n"
                         + "def n = null",
                 "1:13 Missing type : a",
                 "1:16 Missing type : b",
@@ -89,14 +89,14 @@ public class TypeCheckerTestCase {
                 "2:18 Type error : expected string, got int",
                 "5:15 Type error : expected int, got double");
         // P6a : plain types (including string and any) are non-nullable; use T? for nullable.
-        assertDiagnostics("def a : int = null\ndef b : string = null\ndef c : bool\ndef d : any = null\ndef e : string? = null\ndef f : any?\ndef g : double = if true then ( 1 ) else ( 2.5 )",
+        assertDiagnostics("def a : int = null\ndef b : string = null\ndef c : bool = null\ndef d : any = null\ndef e : string? = null\ndef f : any? = null\ndef g : double = if true then ( 1 ) else ( 2.5 )",
                 "1:15 Type error : expected int, got null",
                 "2:18 Type error : expected string, got null",
-                "3:1 Type error : expected bool, got null",
+                "3:16 Type error : expected bool, got null",
                 "4:15 Type error : expected any, got null");
-        assertDiagnostics("def a : int = 1\na = \"x\"\ndef f = fn (n : int) -> ( n = 2.5 )",
+        assertDiagnostics("var a : int = 1\na = \"x\"\ndef f = fn (var n : int) -> ( n = 2.5 )",
                 "2:5 Type error : expected int, got string",
-                "3:31 Type error : expected int, got double");
+                "3:35 Type error : expected int, got double");
     }
 
     @Test
@@ -155,7 +155,7 @@ public class TypeCheckerTestCase {
                 "1:16 Missing type : b",
                 "2:1 Missing parameter : b",
                 "3:3 Type error : expected int, got string");
-        assertDiagnostics("def n = 1\nn = \"x\"\ndef s : string = n\ndef m = null\ndef t : int = m",
+        assertDiagnostics("var n = 1\nn = \"x\"\ndef s : string = n\ndef m = null\ndef t : int = m",
                 "2:5 Type error : expected int, got string",
                 "3:18 Type error : expected string, got int",
                 "4:1 Missing type : m",
@@ -173,15 +173,15 @@ public class TypeCheckerTestCase {
     @Test
     public void testCompoundAssignment() {
         // Typed as x = x op v : the result against what the target declares, the operands as for op.
-        assertDiagnostics("def a : int = 1\na += 2\na *= 2.0\na /= 2\ndef s : string = \"x\"\ns += 1\ns -= 1\ndef d : double = 1.0\nd /= 3",
+        assertDiagnostics("var a : int = 1\na += 2\na *= 2.0\na /= 2\nvar s : string = \"x\"\ns += 1\ns -= 1\nvar d : double = 1.0\nd /= 3",
                 "3:1 Type error : expected int, got double",
                 "4:1 Type error : expected int, got double",
                 "7:1 Not a number : s");
-        assertDiagnostics("def C = class () ( def n : int = 0 ; def m = fn mut () -> ( this.n /= 2 ) )\ndef c = C()\nc.n += 1\nc.n += \"x\"\nc.q += 1",
+        assertDiagnostics("def C = class () ( var n : int = 0 ; def m = fn mut () -> ( this.n /= 2 ) )\ndef c = C()\nc.n += 1\nc.n += \"x\"\nc.q += 1",
                 "1:61 Type error : expected int, got double",
                 "4:8 Not a number : \"x\"",
                 "5:1 No such member : q");
-        assertDiagnostics("def V = record (x : int) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) )\ndef v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
+        assertDiagnostics("def V = record (x : int) ( def plus = fn (o : V) : V -> ( V(this.x + o.x) ) )\nvar v : V = V(1)\nv += V(2)\nv += 1\nv -= V(1)",
                 "4:6 Type error : expected V, got int",
                 "5:1 No such member : minus");
     }
@@ -200,7 +200,7 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testMembers() {
-        String point = "def Point = class (def x : int, y = 0) (\n  def norm = fn () : int -> ( this.x + this.missing )\n  def label : string = \"p\"\n) static ( def origin = fn () -> ( this(0) ) )\n";
+        String point = "def Point = class (def x : int, y = 0) (\n  def norm = fn () : int -> ( this.x + this.missing )\n  var label : string = \"p\"\n) static ( def origin = fn () -> ( this(0) ) )\n";
         assertDiagnostics(point + "def p = Point(1)\ndef n : string = p.x\np.label = 1\np.nope\nPoint(\"a\")\nPoint.origin()\nPoint.nope",
                 "2:40 No such member : missing",
                 "6:18 Type error : expected string, got int",
@@ -363,7 +363,7 @@ public class TypeCheckerTestCase {
                 "4:19 Not a scope : x",
                 "5:7 Type error : expected (x : int) : int, got (x : int) : string");
         assertDiagnostics("def Point = class (def x : int) ()\n"
-                        + "def f : fn (p : Point) : int = fn (p) -> ( p.x )\n"
+                        + "var f : fn (p : Point) : int = fn (p) -> ( p.x )\n"
                         + "def bad : fn (p : Point) : int = fn (p) -> ( p.nope )\n"
                         + "f = fn (q) -> ( q.nope )\n"
                         + "def add : fn (a : int) : fn (b : int) : int = fn (a) -> ( fn (b) -> ( a + b ) )\n"
@@ -432,7 +432,7 @@ public class TypeCheckerTestCase {
                         + "  def a : string = if x is java.lang.Integer then ( x + 1 ) else ( 0 )\n"
                         + "  if x is java.lang.Integer then ( x.nope )\n"
                         + "  if x is java.util.List then ( x.nope() )\n)\n"
-                        + "def r : any = 1\nr = \"a\"\nif r is java.lang.Integer then ( r.nope )",
+                        + "var r : any = 1\nr = \"a\"\nif r is java.lang.Integer then ( r.nope )",
                 "2:51 Type error : expected string, got int",
                 "2:66 Type error : expected string, got int",
                 "3:36 Not a scope : x",
@@ -714,41 +714,40 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testStrictS2MembersAndClassHeaders() {
-        assertDiagnostics("def C = class (x, y = 1, def z = \"a\") (\n"
+        assertDiagnostics("def C = class (x, y = 1, var z = \"a\") (\n"
                 + "  def m = null\n"
-                + "  def n\n"
-                + "  def ok = null\n"
+                + "  var n = null\n"
+                + "  var ok = null\n"
                 + "  def setOk = fn mut (v : string) -> ( this.ok = v )\n"
                 + "  def a = this.b\n"
                 + "  def b = this.a\n"
                 + ") static (\n"
-                + "  def s = 1\n"
+                + "  private var s = 1 ; def badS = fn io () -> ( this.s = \"wrong\" )\n"
                 + "  def bad = null\n"
                 + ")\n"
                 + "def I = interface ( def req ; def deflt = fn (a) -> ( 1 ) )\n"
-                + "C(1, \"bad\").z = 2\n"
-                + "C.s = \"wrong\"",
+                + "C(1, \"bad\").z = 2",
                 "2:3 Missing type : m",
                 "3:3 Missing type : n",
                 "6:3 Missing type : a (recursive)",
+                "9:57 Type error : expected int, got string",
                 "10:3 Missing type : bad",
                 "12:21 Missing type : req",
                 "12:47 Missing type : a",
                 "13:6 Type error : expected int, got string",
-                "13:17 Type error : expected string, got int",
-                "14:7 Type error : expected int, got string");
+                "13:17 Type error : expected string, got int");
     }
 
     @Test
     public void testStrictS3S4DefInferenceAndWidening() {
-        assertDiagnostics("def empty\n"
+        assertDiagnostics("var empty = null\n"
                 + "def nulled = null\n"
-                + "def m = null\n"
+                + "var m = null\n"
                 + "m = \"ok\"\n"
                 + "def len : int = m.nope\n"
-                + "def i = 0\n"
+                + "var i = 0\n"
                 + "i = \"a\"\n"
-                + "def intNull = null\n"
+                + "var intNull = null\n"
                 + "intNull = 1\n"
                 + "def intUse : int = intNull\n"
                 + "m = 1",
@@ -759,14 +758,14 @@ public class TypeCheckerTestCase {
                 "10:20 Type error : expected int, got int?",
                 "11:5 Type error : expected string?, got int");
         // Widening int -> double across later assignments notifies earlier uses with the widening line.
-        assertDiagnostics("def i = 1\n"
+        assertDiagnostics("var i = 1\n"
                 + "def use : int = i\n"
                 + "i = 1.5\n"
-                + "def j = 10\n"
+                + "var j = 10\n"
                 + "def k : int = j\n"
                 + "j = j / 2\n"
                 + "def C = class () (\n"
-                + "  def x = 1\n"
+                + "  var x = 1\n"
                 + "  def f = fn () : int -> ( this.x )\n"
                 + "  def g = fn mut () -> ( this.x = 1.5 )\n"
                 + ")",
@@ -877,15 +876,15 @@ public class TypeCheckerTestCase {
         assertDiagnostics("def r = fn (n : int) : int -> ( forever recurse(n + 1) )\n"
                 + "def s = fn (n : int) : int -> ( forever if n > 0 then ( s(n - 1) ) else ( s(1) ) )\n"
                 + "def t = fn (n : int) : int -> ( if n > 0 then ( t(n - 1) ) else ( forever t(1) ) )\n"
-                + "def u = fn (n : int) -> ( forever (while true then ( n += 1 )) )");
+                + "def u = fn (var n : int) -> ( forever (while true then ( n += 1 )) )");
     }
 
     @Test
     public void testLoopsWithoutExit() throws Exception {
         // BIP024-D8 : while true with no break or return and nothing that can throw never ends.
-        assertDiagnostics("def x = 0\n"
+        assertDiagnostics("var x = 0\n"
                 + "while true then ( x += 1 )\n"
-                + "def f = fn (): int -> ( def i = 0 ; while (true) then ( i += 1 ; while true then ( break ) ) ; i )\n"
+                + "def f = fn (): int -> ( var i = 0 ; while (true) then ( i += 1 ; while true then ( break ) ) ; i )\n"
                 + "while true then ( if x > 3 then ( break ) ; x += 1 )\n"
                 + "def g = fn (): int -> ( while true then ( return 1 ) ; 0 )\n"
                 + "while true then ( assert(x < 9) ; x += 1 )\n"
@@ -939,8 +938,8 @@ public class TypeCheckerTestCase {
         context.setWriter(new StringWriter());
         context.setErrorWriter(errors);
         org.babblelang.engine.BabbleSession session = engine.newSession(context);
-        session.eval("def x = 1");
-        session.eval("def C = class (def k = 1) ( def m = \"a\" )");
+        session.eval("var x = 1");
+        session.eval("def C = class (var k = 1) ( var m = \"a\" )");
         session.eval("def c = C()");
         // Inference from input 1 is closed : widening x or c.k or mutating c.m incompatibly fails.
         ScriptException e1 = Assertions.assertThrows(ScriptException.class, () -> session.eval("x = 1.5"));
@@ -1044,7 +1043,7 @@ public class TypeCheckerTestCase {
                         + "def OpGenT = class () ( def plus = overload ( fn of T (x : list of T) : T -> ( x.get(0) ), fn (x : int) : int -> ( x ) ) )\n"
                         + "def fBox = overload ( fn (x : A) : Box -> ( Box(x) ), fn (x : int) : Box -> ( Box(RA()) ) )\n"
                         + "def fGenBox = overload ( fn of T (xs : list of T) : BoxG of T -> ( BoxG(xs) ), fn (x : int) : int -> ( x ) )\n"
-                        + "def fSpread = overload ( fn (k : int, xs : A...) : Box -> ( def b = Box(RA()) ; for a in xs then ( b = Box(a) ) ; b ), fn (k : string, xs : A...) : Box -> ( Box(RA()) ) )\n"
+                        + "def fSpread = overload ( fn (k : int, xs : A...) : Box -> ( var b = Box(RA()) ; for a in xs then ( b = Box(a) ) ; b ), fn (k : string, xs : A...) : Box -> ( Box(RA()) ) )\n"
                         + "def fa : frozen A = RA()\n"
                         + "def ua : frozen A | int = fa\n"
                         + "def fl : frozen list of int = freeze(list.of(1, 2))\n"
@@ -1097,7 +1096,7 @@ public class TypeCheckerTestCase {
                         + "def badAmbig = g(...fs, u)",
                 "7:16 Cannot dispatch g on Shape | Named : its alternatives are not told apart at runtime");
 
-        assertDiagnostics("def MutA = class (def mut v : int) ( def inc = fn mut () -> ( this.v += 1 ) )\n"
+        assertDiagnostics("def MutA = class (var mut v : int) ( def inc = fn mut () -> ( this.v += 1 ) )\n"
                         + "def leakIter = fn (shared xs : java.lang.Iterable of MutA) : java.lang.Iterable of MutA -> ( xs )\n"
                         + "def fl : frozen list of MutA = freeze(list(MutA(1)))\n"
                         + "def badIter = leakIter(...fl)\n"
@@ -1143,14 +1142,14 @@ public class TypeCheckerTestCase {
                 "10:43 Type error : expected any, got any?");
 
         // Reassignment widening: int <-> null notifies earlier uses; incompatible reassignments still fail.
-        assertDiagnostics("def z = 1\n"
+        assertDiagnostics("var z = 1\n"
                         + "def u : int = z\n"
                         + "z = null\n"
-                        + "def n = null\n"
+                        + "var n = null\n"
                         + "n = 1\n"
                         + "n = 2.5\n"
                         + "def badD : int = n\n"
-                        + "def s = \"a\"\n"
+                        + "var s = \"a\"\n"
                         + "s = 1",
                 "2:15 Type error : expected int, got int? (z is int? because of the assignment at line 3)",
                 "7:18 Type error : expected int, got double?",
@@ -1182,11 +1181,11 @@ public class TypeCheckerTestCase {
                         + "  def ok2 : string = if y is any then ( y + \"!\" ) else ( \"nil\" )\n"
                         + "  def ok3 : string = if y == null then ( \"nil\" ) else ( y + \"!\" )\n"
                         + "  def ok4 : int = if node then ( node.v ) else ( 0 )\n"
-                        + "  def cur : N? = node\n"
+                        + "  var cur : N? = node\n"
                         + "  while cur != null then ( def val : int = cur.v ; cur = cur.next )\n"
                         + "  cur.v\n"
                         + ")\n"
-                        + "def g = fn (x : string?) -> (\n"
+                        + "def g = fn (var x : string?) -> (\n"
                         + "  if x != null then (\n"
                         + "    def cb = fn () -> ( x + \"!\" )\n"
                         + "    x = null\n"
@@ -1301,7 +1300,7 @@ public class TypeCheckerTestCase {
                         + "  def get = fn () : Sub -> ( Sub(\"s\") )\n"
                         + "  def opt = fn () : string -> ( \"s\" )\n"
                         + "  def accept = fn (x : any, extra = 0) : int -> ( extra )\n"
-                        + "  def val = 1\n"
+                        + "  var val = 1\n"
                         + "  def widen = fn mut () -> ( this.val = 1.5 )\n"
                         + ")");
     }
@@ -1401,7 +1400,7 @@ public class TypeCheckerTestCase {
                 + "def ik : int? = iface?.k\n"
                 + "def jl : (java.util.List of B)? = java.util.List.of(B(9))\n"
                 + "def jv : int? = jl?.get(0)?.v\n"
-                + "def late = A(4)\n"
+                + "var late = A(4)\n"
                 + "def lateB : B? = late?.f()\n"
                 + "late = null");
 
@@ -1511,7 +1510,7 @@ public class TypeCheckerTestCase {
                         + "apply(esc2, 1)\n"
                         + "def esc3 = fn (x) -> ( if false then ( return recurse ) ; fn (v : int) -> ( v ) )\n"
                         + "esc3(1)\n"
-                        + "def reass = fn (x) -> ( x )\n"
+                        + "var reass = fn (x) -> ( x )\n"
                         + "reass = fn (x : int) -> ( x )\n"
                         + "reass(1)\n"
                         + "export def expFn = fn (x) -> ( x )\n"

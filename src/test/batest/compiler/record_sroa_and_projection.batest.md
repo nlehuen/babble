@@ -26,9 +26,9 @@ def Holder = record (items: list of int, count: int) ()
 
 ```babble
 def run = fn (n: int): double -> (
-    def acc = Vec3(0.0, 0.0, 0.0)
+    var acc = Vec3(0.0, 0.0, 0.0)
     def step = Vec3(1.0, 2.0, 3.0)
-    def i = 0
+    var i = 0
     while i < n then (
         acc = (acc + step).swap()
         i = i + 1
@@ -254,8 +254,8 @@ fn run() -> double:
 
 ```babble
 def pick = fn (flag: bool): double -> (
-    def p = if flag then ( Vec3(1.0, 2.0, 3.0) ) else ( Vec3(4.0, 5.0, 6.0) )
-    def q = p
+    var p = if flag then ( Vec3(1.0, 2.0, 3.0) ) else ( Vec3(4.0, 5.0, 6.0) )
+    var q = p
     q = q
     if flag then ( p = Vec3(p.z, p.y, p.x) )
     p.x + q.y + p.z
@@ -605,7 +605,7 @@ fn run() -> bool:
 
 ```babble
 def run = fn (): double -> (
-    def s = 0.0
+    var s = 0.0
     for i in list(1, 2, 3) then ( def v = Vec3(double(i), 1.0, 0.0) ; s = s + v.x + v.y )
     try (
         if s < 0.0 then ( assert(false) )

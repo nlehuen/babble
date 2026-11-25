@@ -93,7 +93,7 @@ public class BabblecTestCase {
     private void program() throws IOException {
         file("lib/shapes.ba", SHAPES);
         file("lib/square.ba", "def shapes = import(\"shapes.ba\")\n"
-                + "def made = 0\n"
+                + "var made = 0\n"
                 + "export def Square = class (def side : int) implements shapes.Shape ( def area = fn () : double -> ( 1.0 * this.side * this.side ) )\n"
                 + "export def make = fn io (side : int) -> ( made = made + 1 ; Square(side) )\n"
                 + "export def count = fn volatile () -> ( made )\n");
@@ -189,13 +189,13 @@ public class BabblecTestCase {
 
     /** A program whose main script imports b, c or what it is told, dynamically. */
     private void dynamicProgram() throws IOException {
-        file("lib/a.ba", "println(\"loading a\")\ndef n = 0\nexport def next = fn io () : int -> ( n = n + 1 )\nexport def names : java.util.Map of (string, string) = java.util.HashMap()\nexport def actions : java.util.Map of (string, java.lang.Runnable) = java.util.HashMap()");
+        file("lib/a.ba", "println(\"loading a\")\nvar n = 0\nexport def next = fn io () : int -> ( n = n + 1 )\nexport def names : java.util.Map of (string, string) = java.util.HashMap()\nexport def actions : java.util.Map of (string, java.lang.Runnable) = java.util.HashMap()");
         file("lib/b.ba", "def a = import(\"a.ba\")\nimport(\"c.ba\")\nexport def name = \"b, \" + (a.names.get(\"c\") as string) + \", a at \" + a.next()\na.names.put(\"b\", name)");
         file("lib/c.ba", "def a = import(\"a.ba\")\nexport def name = \"c\"\na.names.put(\"c\", name)\ndef id = fn (v : any?) : any? -> ( v )\nexport def fail = fn () : int -> ( 1 + (id(null) as int) )\na.actions.put(\"c\", java.lang.Runnable(fn () -> ( fail() )))");
         file("main.ba", "def a = import(\"lib/a.ba\")\n"
                 + "a.next()\n"
                 + "def load = fn io (n : string) : string -> ( import(\"lib/\" + n + \".ba\") ; a.names.get(n) as string )\n"
-                + "def i = 0\n"
+                + "var i = 0\n"
                 + "while i < args.size() then ( println(load(args.get(i) as string)) ; i = i + 1 )\n");
     }
 

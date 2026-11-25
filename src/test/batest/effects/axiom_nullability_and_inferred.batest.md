@@ -112,7 +112,7 @@ assert(work() == 4)
 ```babble
 def countToks = fn (csv: string!): int -> (
     def st = java.util.StringTokenizer(csv, ",")
-    def n = 0
+    var n = 0
     while st.hasMoreTokens() then (
         def t: string = st.nextToken()
         n += t.length()
@@ -174,7 +174,7 @@ assert(tail == "ello" and mid == "ell")
 
 ```babble
 axiom java.util.function.Supplier.get: fn ... : any!
-def n = 0
+var n = 0
 def S = class () implements java.util.function.Supplier of string (
     def get = fn io (): string! -> (
         n += 1
@@ -189,7 +189,7 @@ assert(s.get() == "v=1")
 
 ```babble
 axiom java.util.function.Supplier.get: fn : any!
-def n = 0
+var n = 0
 def S = class () implements java.util.function.Supplier of string (
     def get = fn io (): string! -> (
         n += 1

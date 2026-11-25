@@ -19,7 +19,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | EXCEPTION | ANY | V
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR;
 
 effectPrefix: effectWord+ callingClause?
             | callingClause;
@@ -44,7 +44,7 @@ axiomMember: DEF (memberName | '*') ':' axiomType;
 
 expression:
           ifExpr                                              # ifExpression
-          | (EXPORT | PRIVATE)? DEF name=ID (OF typeParameters)? (':' type)?
+          | (EXPORT | PRIVATE)? (DEF | VAR) name=ID (OF typeParameters)? (':' type)?
                      ('=' NL* value=expression)?   # defExpression
           | EXPORT? AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType   # axiomExpression
           | TYPE NL* aliased=type                             # typeAliasExpression
@@ -121,13 +121,13 @@ classParameters: '(' NL* classParam (NL* ',' NL* classParam)* (NL* ',' NL* kwSep
                | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=classParam)* NL* ')'
                | '(' NL* ')';
 
-classParam: PRIVATE? DEF? paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
+classParam: PRIVATE? (DEF | VAR)? paramModifier* ID (':' type)? ('=' NL* defaultValue=expression)?;
 
 fnParameters: '(' NL* fnParam (NL* ',' NL* fnParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnParam)*)? NL* ')'
             | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnParam)* NL* ')'
             | '(' NL* ')';
 
-fnParam: paramModifier* ID (':' type rest=(ELLIPSIS | Q_ELLIPSIS)?)? ('=' NL* defaultValue=expression)?;
+fnParam: VAR? paramModifier* ID (':' type rest=(ELLIPSIS | Q_ELLIPSIS)?)? ('=' NL* defaultValue=expression)?;
 
 fnTypeParameters: '(' NL* fnTypeParam (NL* ',' NL* fnTypeParam)* (NL* ',' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnTypeParam)*)? NL* ')'
                 | '(' NL* kwSep=ELLIPSIS (NL* ',' NL* kwParam+=fnTypeParam)* NL* ')'
@@ -249,6 +249,7 @@ IF: 'if';
 THEN: 'then';
 ELSE: 'else';
 DEF: 'def';
+VAR: 'var';
 RETURN: 'return';
 FOREVER: 'forever';
 BREAK: 'break';

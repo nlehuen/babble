@@ -91,7 +91,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         Assertions.assertEquals(3, interpret("def f = fn (a:int, b:int) -> ( return a + b ) ; f(1,2)"));
 
         // It unwinds out of a loop...
-        Assertions.assertEquals(3, interpret("def f = fn ():int -> ( def i = 0 ; while i < 10 then ( i = i + 1 ; if i == 3 then ( return i ) ) ; 0 - 1 ) ; f()"));
+        Assertions.assertEquals(3, interpret("def f = fn ():int -> ( var i = 0 ; while i < 10 then ( i = i + 1 ; if i == 3 then ( return i ) ) ; 0 - 1 ) ; f()"));
 
         // ... and out of arbitrarily nested blocks, but only up to the innermost function.
         Assertions.assertEquals(1, interpret("def f = fn ():int -> ( ( ( return 1 ) ) ; 2 ) ; f()"));
@@ -178,7 +178,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
 
     @Test
     public void testFunctionScope() throws Exception {
-        Assertions.assertEquals(102, interpret("def a = 99 ; def add = fn (a:int, b:int):int -> ( a = a + 1 ; a + b ) ; add(1,1) + a"));
+        Assertions.assertEquals(102, interpret("def a = 99 ; def add = fn (var a:int, b:int):int -> ( a = a + 1 ; a + b ) ; add(1,1) + a"));
     }
 
     @Test
@@ -202,7 +202,7 @@ public class BabbleFunctionsTestCase extends BabbleTestBase {
         // so the recursive call lost its receiver and "this" was undefined inside it.
         Assertions.assertEquals(6, interpret(
                 "def o = object (\n"
-                        + "  def total = 0\n"
+                        + "  var total = 0\n"
                         + "  def down = fn mut (n:int):int -> (\n"
                         + "    if n < 1 then ( this.total ) else ( this.total = this.total + n ; recurse(n - 1) )\n"
                         + "  )\n"

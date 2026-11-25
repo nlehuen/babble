@@ -30,7 +30,7 @@ assert(-a == Vec(-2.0, -3.0))
 ## Case 2
 
 ```babble
-def v = Vec(1.0, 2.0)
+var v = Vec(1.0, 2.0)
 v += Vec(2.0, 1.0)
 v -= Vec(0.5, 0.5)
 v *= 2.0
@@ -41,8 +41,8 @@ assert(v == Vec(1.0, 1.0))
 ## Division produces double, so compound /= on an int field fails type checking
 
 ```babble
-def Box = class (def x : int) ()
-def calls = 0
+def Box = class (var x : int) ()
+var calls = 0
 def getBox = fn io (b : Box) : Box -> ( calls += 1 ; b )
 def b = Box(10)
 getBox(b).x += 5
@@ -58,8 +58,8 @@ Type error : expected int, got double
 ## Compound assignment on a member field evaluates the receiver expression only once
 
 ```babble
-def Box = class (def x : double) ()
-def calls = 0
+def Box = class (var x : double) ()
+var calls = 0
 def getBox = fn io (b : Box) : Box -> ( calls += 1 ; b )
 def b = Box(10.0)
 getBox(b).x += 5
@@ -96,7 +96,7 @@ No such member : neg
 
 ```babble
 def dyn = fn (v : any) : any -> ( v )
-def x : any = dyn(true)
+var x : any = dyn(true)
 x += 1
 ```
 

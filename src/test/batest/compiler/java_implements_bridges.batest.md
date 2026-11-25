@@ -23,11 +23,11 @@ def mkC = fn io () -> (java.util.function.Consumer(fn io (x: any?) -> (print(x))
 ## Case 1
 
 ```babble
-def Counter = class (private def n: int) implements java.util.function.IntSupplier, java.lang.Runnable (
+def Counter = class (private var n: int) implements java.util.function.IntSupplier, java.lang.Runnable (
     def run = fn mut (): any? -> (this.n += 10 ; null)
     def getAsInt = fn (): int -> (this.n)
 )
-def c = Counter(5)
+var c = Counter(5)
 def r: java.lang.Runnable = c
 r.run()
 def sup: java.util.function.IntSupplier = c
@@ -214,7 +214,7 @@ def W = interface extends java.util.Iterator of int (
     print("<") ; super(java.util.Iterator).forEachRemaining(a) ; print(">")
   )
 )
-def R = class (private def c: int) implements W (
+def R = class (private var c: int) implements W (
   def hasNext = fn (): bool -> (this.c < 4)
   def next = fn mut (): int -> (this.c += 1 ; this.c - 1)
 )

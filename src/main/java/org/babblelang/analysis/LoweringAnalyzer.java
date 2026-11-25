@@ -1255,7 +1255,7 @@ final class LoweringAnalyzer {
                 String descriptor = descriptor(type);
                 pass.analysis.lowering().setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent() instanceof BabbleParser.ClassExpressionContext cls
-                        && (ScopeAnalysis.paramIsDef(parameter) || pass.typeNodes.get(cls).kind == ClassShape.Kind.VALUE_CLASS)) {
+                        && (ScopeAnalysis.paramIsMember(parameter) || pass.typeNodes.get(cls).kind == ClassShape.Kind.VALUE_CLASS)) {
                     putType(pass.typeNodes.get(cls).memberTypes, ScopeAnalysis.paramId(parameter).getText(), descriptor);
                 }
             }

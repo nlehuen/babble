@@ -134,7 +134,7 @@ Type error : expected int, got T
 ```babble
 def g = fn (x : int) : int -> ( x + 1 )
 def ov = overload (g, fn (s : string) : string -> ( s + "!" ))
-def f : fn (int) : int = (ov)
+var f : fn (int) : int = (ov)
 f = ov
 def ret = fn () : fn (string) : string -> ( return ov )
 def anon = (overload (fn (x : int) : int -> ( x * 2 ), fn (s : string) : string -> ( s )))(5)
@@ -212,7 +212,7 @@ assert(f(7, 8) == 7 and g(true) == 1.0 and g(false) == null)
 
 ```babble
 def fns = list of (fn () : null)(fn () -> ( null ))
-def n = 0
+var n = 0
 for r : java.lang.Runnable in fns then ( r.run() ; n += 1 )
 assert(n == 1)
 ```

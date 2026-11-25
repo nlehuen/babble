@@ -15,7 +15,7 @@ export def Material = interface (
 
 export def Lambertian = class (def albedo: Vec3) implements Material (
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
-        def direction: Vec3 = rec.normal + Vec3.randomUnit(rng)
+        var direction: Vec3 = rec.normal + Vec3.randomUnit(rng)
         ;; catch degenerate scatter direction
         if direction.nearZero() then (direction = rec.normal)
         Scatter(this.albedo, Ray(rec.p, direction))
@@ -26,7 +26,7 @@ export def Metal = class (def albedo: Vec3, fuzz: double) implements Material (
     def fuzz: double = Math.min(fuzz, 1.0)
 
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
-        def reflected: Vec3 = rIn.direction.reflect(rec.normal)
+        var reflected: Vec3 = rIn.direction.reflect(rec.normal)
         reflected = reflected.unit() + Vec3.randomUnit(rng) * this.fuzz
         if reflected.dot(rec.normal) > 0 then (
             Scatter(this.albedo, Ray(rec.p, reflected))
@@ -39,7 +39,7 @@ export def Metal = class (def albedo: Vec3, fuzz: double) implements Material (
 export def Dielectric = class (def refractionIndex: double) implements Material (
     ;; Schlick's approximation for reflectance
     private def reflectance = fn (cosine, refractionIndex): double -> (
-        def r0: double = (1 - refractionIndex) / (1 + refractionIndex)
+        var r0: double = (1 - refractionIndex) / (1 + refractionIndex)
         r0 *= r0
         r0 + (1 - r0) * Math.pow(1 - cosine, 5)
     )

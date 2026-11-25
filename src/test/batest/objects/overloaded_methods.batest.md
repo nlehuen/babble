@@ -164,7 +164,7 @@ BadLog.append has no alternative for java.lang.Appendable.append(java.lang.CharS
 def Vec2 = record (x: double, y: double) (
     def times = overload ( fn (t: double): Vec2 -> ( Vec2(this.x * t, this.y * t) ), fn (v: Vec2): Vec2 -> ( Vec2(this.x * v.x, this.y * v.y) ) )
 )
-def a = Vec2(2.0, 3.0) ; def b = Vec2(4.0, 5.0) ; def m = Vec2(1.0, 2.0) ; m *= 3 ; m *= Vec2(2.0, 5.0)
+def a = Vec2(2.0, 3.0) ; def b = Vec2(4.0, 5.0) ; var m = Vec2(1.0, 2.0) ; m *= 3 ; m *= Vec2(2.0, 5.0)
 assert(a * 2 == Vec2(4.0, 6.0) and a * b == Vec2(8.0, 15.0) and m == Vec2(6.0, 30.0))
 ```
 
@@ -209,7 +209,7 @@ No applicable overload of Vec2(1.0,2.0).times for (string) : candidates are (t :
 def Num = record (v: double) (
     def minus = overload ( fn (d: double): Num -> ( Num(this.v - d) ), fn (o: Num): Num -> ( Num(this.v - o.v) ) )
 )
-def a = Num(10.0) ; def u: double | Num = Num(2.0) ; def m = Num(20.0) ; m -= 5 ; m -= Num(3.0)
+def a = Num(10.0) ; def u: double | Num = Num(2.0) ; var m = Num(20.0) ; m -= 5 ; m -= Num(3.0)
 assert(a - 3 == Num(7.0) and a - Num(2.0) == Num(8.0) and a - u == Num(8.0) and m == Num(12.0))
 ```
 
@@ -219,7 +219,7 @@ assert(a - 3 == Num(7.0) and a - Num(2.0) == Num(8.0) and a - u == Num(8.0) and 
 def Num = record (v: double) (
     def div = overload ( fn (d: double): Num -> ( Num(this.v / d) ), fn (o: Num): Num -> ( Num(this.v / o.v) ) )
 )
-def a = Num(10.0) ; def m = Num(12.0) ; m /= 2 ; m /= Num(3.0)
+def a = Num(10.0) ; var m = Num(12.0) ; m /= 2 ; m /= Num(3.0)
 assert(a / 4 == Num(2.5) and a / Num(2.0) == Num(5.0) and m == Num(2.0))
 ```
 
@@ -271,7 +271,7 @@ assert(C().run() == "a:null|a:true")
 ## Dynamic super.f dispatch forwarding a packed rest parameter via ...xs
 
 ```babble
-def S = interface ( def f = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string, xs: int...): string -> ( def t = 0 ; for x in xs then ( t += x ) ; s + ":" + t ) ) )
+def S = interface ( def f = overload ( fn (n: int): string -> ( "i:" + n ), fn (s: string, xs: int...): string -> ( var t = 0 ; for x in xs then ( t += x ) ; s + ":" + t ) ) )
 def C = class () implements S (
     def f = overload ( fn (n: int): string -> ( "[" + super.f(n) + "]" ), fn (s: string, xs: int...): string -> ( "[" + super.f(s, ...xs) + "]" ) )
 )

@@ -5,16 +5,16 @@ References : BIP021-I4 (BIP021-D7, D8, D19, D21), ArgumentsView, Spreads, CallSo
 
 ```babble
 ;; babble preamble
-def sumInts = fn (xs: int...): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumInts = fn (xs: int...): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 def listOf of T = fn (xs: T...): list of T -> ( list(from: xs) )
-def Counter = class (def mut n: int) ( def inc = fn mut () -> ( this.n += 1 ) )
+def Counter = class (var mut n: int) ( def inc = fn mut () -> ( this.n += 1 ) )
 ```
 
 ## Case 1
 
 ```babble
 def join = fn (parts: string..., sep: string = ",", pre: string = ""): string -> (
-    def r = pre ; def f = true
+    var r = pre ; var f = true
     for p in parts then ( if not f then ( r = r + sep ) ; f = false ; r = r + p )
     r
 )
@@ -25,57 +25,57 @@ assert(join("a", "b", sep: "/", pre: "[") == "[a/b" and join("a", "b", pre: "(",
 ## Case 2
 
 ```babble
-def sumB = fn (xs: byte...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
-def sumS = fn (xs: short...): int -> ( def s = 0 ; for x in xs then ( s += int(x) ) ; s )
+def sumB = fn (xs: byte...): int -> ( var s = 0 ; for x in xs then ( s += int(x) ) ; s )
+def sumS = fn (xs: short...): int -> ( var s = 0 ; for x in xs then ( s += int(x) ) ; s )
 assert(sumB(byte(1), byte(2), byte(3)) == 6 and sumS(short(10), short(20)) == 30)
 ```
 
 ## Case 3
 
 ```babble
-def sumL = fn (xs: long...): long -> ( def s = 0L ; for x in xs then ( s += x ) ; s )
+def sumL = fn (xs: long...): long -> ( var s = 0L ; for x in xs then ( s += x ) ; s )
 assert(sumInts(1, 2, 3, 4) == 10 and sumL(100L, 200L) == 300L)
 ```
 
 ## Case 4
 
 ```babble
-def sumF = fn (xs: float...): float -> ( def s = 0.0f ; for x in xs then ( s += x ) ; s )
-def sumD = fn (xs: double...): double -> ( def s = 0.0 ; for x in xs then ( s += x ) ; s )
+def sumF = fn (xs: float...): float -> ( var s = 0.0f ; for x in xs then ( s += x ) ; s )
+def sumD = fn (xs: double...): double -> ( var s = 0.0 ; for x in xs then ( s += x ) ; s )
 assert(sumF(1.5f, 2.5f) == 4.0f and sumD(1, 2.5, 3) == 6.5)
 ```
 
 ## Case 5
 
 ```babble
-def cntT = fn (xs: bool...): int -> ( def c = 0 ; for x in xs then ( if x then ( c += 1 ) ) ; c )
-def catC = fn (xs: char...): string -> ( def s = "" ; for x in xs then ( s = s + java.lang.String.valueOf(x) ) ; s )
+def cntT = fn (xs: bool...): int -> ( var c = 0 ; for x in xs then ( if x then ( c += 1 ) ) ; c )
+def catC = fn (xs: char...): string -> ( var s = "" ; for x in xs then ( s = s + java.lang.String.valueOf(x) ) ; s )
 assert(cntT(true, false, true) == 2 and catC('h', 'i', '!') == "hi!")
 ```
 
 ## Empty primitive rest views exercise 0-element ArgumentsView factories
 
 ```babble
-def cB = fn (xs: byte...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
-def cS = fn (xs: short...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
-def cL = fn (xs: long...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cB = fn (xs: byte...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cS = fn (xs: short...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cL = fn (xs: long...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
 assert(cB() == 0 and cS() == 0 and sumInts() == 0 and cL() == 0)
 ```
 
 ## Case 7
 
 ```babble
-def cF = fn (xs: float...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
-def cD = fn (xs: double...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
-def cZ = fn (xs: bool...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cF = fn (xs: float...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cD = fn (xs: double...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cZ = fn (xs: bool...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
 assert(cF() == 0 and cD() == 0 and cZ() == 0)
 ```
 
 ## Case 8
 
 ```babble
-def cC = fn (xs: char...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
-def cStr = fn (xs: string...): int -> ( def n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cC = fn (xs: char...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
+def cStr = fn (xs: string...): int -> ( var n = 0 ; for x in xs then ( n += 1 ) ; n )
 assert(cC() == 0 and cStr() == 0 and cStr(...array.of("a", "b")) == 2)
 ```
 
@@ -92,7 +92,7 @@ assert(sumInts(0, ...a1, 10, ...l1, ...s1, 20) == 45)
 ## Case 10
 
 ```babble
-def cnt = fn (xs: any?...): int -> ( def c = 0 ; for x in xs then ( c += 1 ) ; c )
+def cnt = fn (xs: any?...): int -> ( var c = 0 ; for x in xs then ( c += 1 ) ; c )
 def ab = (array of byte).of(byte(1), byte(2))
 def ash = (array of short).of(short(3), short(4))
 def al = array.of(5L, 6L)
@@ -106,14 +106,14 @@ assert(cnt(...ab, ...ash, ...al, ...af, ...ad, ...az, ...ac) == 15)
 ## Case 11
 
 ```babble
-def iterSum = fn (xs: java.lang.Iterable of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def iterSum = fn (xs: java.lang.Iterable of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 assert(iterSum(...array.of(1, 2, 3)) == 6 and iterSum(...list(4, 5)) == 9)
 ```
 
 ## Case 12
 
 ```babble
-def listSum = fn (xs: list of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def listSum = fn (xs: list of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 def arr = array.of(1, 2, 3)
 assert(listSum(...arr) == 6 and listSum(...list(4, 5)) == 9 and listSum(...set(6, 7)) == 13 and listSum(xs: ...arr) == 6)
 ```
@@ -130,7 +130,7 @@ assert(mutAppend(...st, 88) == 3 and st.size() == 2)
 ## Case 14
 
 ```babble
-def arrDblSum = fn (xs: array of double): double -> ( def s = 0.0 ; for x in xs then ( s += x ) ; s )
+def arrDblSum = fn (xs: array of double): double -> ( var s = 0.0 ; for x in xs then ( s += x ) ; s )
 assert(arrDblSum(...array.of(1, 2, 3)) == 6.0 and arrDblSum(...list(4, 5)) == 9.0)
 ```
 
@@ -193,7 +193,7 @@ assert(fShifted(1, 2, 3, 4) == 10 and fShifted(1, 2, 3, 4, scale: 10) == 100)
 ## Variadic (list of int)... assigned to fixed fn (xs: list of int) wraps the single list in a 1-element rest...
 
 ```babble
-def countLists = fn (xss: (list of int)...): int -> ( def c = 0 ; for xs in xss then ( c += xs.size() ) ; c )
+def countLists = fn (xss: (list of int)...): int -> ( var c = 0 ; for xs in xss then ( c += xs.size() ) ; c )
 def oneList: fn (xs: list of int): int = countLists
 assert(oneList(list(10, 20, 30)) == 3)
 ```
@@ -211,7 +211,7 @@ assert(xs == list(1, 2, 3, 4) and empty.size() == 0 and sw.toString().trim() == 
 ## Case 23
 
 ```babble
-def countNulls = fn (items: string?...): int -> ( def c = 0 ; for s in items then ( if s == null then ( c += 1 ) ) ; c )
+def countNulls = fn (items: string?...): int -> ( var c = 0 ; for s in items then ( if s == null then ( c += 1 ) ) ; c )
 assert(countNulls("a", null, "b", null) == 2)
 ```
 
@@ -222,7 +222,7 @@ def bumpAll = fn (mut cs: Counter...) -> ( for c in cs then ( c.inc() ) )
 def asIter = fn (xs: int...): java.lang.Iterable of int -> ( xs )
 def c1 = Counter(1) ; def c2 = Counter(10)
 bumpAll(c1, c2)
-def s = 0 ; for x in asIter(4, 5, 6) then ( s += x )
+var s = 0 ; for x in asIter(4, 5, 6) then ( s += x )
 assert(c1.n == 2 and c2.n == 11 and s == 15)
 ```
 

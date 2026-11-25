@@ -52,8 +52,8 @@ assert(fmt("%d:%s", 9, "ok") == "9:ok")
 
 ;; Babble variadic rest parameters, keyword-only params, and spreads (BIP021-I4 / BIP021-D5..D7)
 def join = fn (parts: string..., sep: string = ", "): string -> (
-    def res = ""
-    def first = true
+    var res = ""
+    var first = true
     for p in parts then (
         if not first then (res = res + sep)
         first = false
@@ -71,7 +71,7 @@ assert(join(...names) == "alpha, beta")
 assert(join("start", ...names, "end", sep: "-") == "start-alpha-beta-end")
 
 def sumInts = fn (xs: int...): int -> (
-    def total = 0
+    var total = 0
     for x in xs then (total += x)
     total
 )
@@ -91,7 +91,7 @@ assert(emptyStrs.size() == 0)
 
 ;; Spread into non-rest sequence parameters (list, array, Iterable)
 def totalList = fn (xs: list of int): int -> (
-    def s = 0
+    var s = 0
     for x in xs then (s += x)
     s
 )
@@ -99,7 +99,7 @@ assert(totalList(...intArr) == 6)
 assert(totalList(...java.util.Set.of(10, 20)) == 30)
 
 def sumArray = fn (xs: array of int): int -> (
-    def s = 0
+    var s = 0
     for x in xs then (s += x)
     s
 )
@@ -115,7 +115,7 @@ assert(java.util.stream.IntStream.of(...list(2, 3, 5)).sum() == 10)
 
 ;; Nullable rest elements (T?...) and print spread
 def countNulls = fn (xs: int?...): int -> (
-    def c = 0
+    var c = 0
     for x in xs then (if x == null then (c += 1))
     c
 )

@@ -156,7 +156,7 @@ public class OwnershipTestCase {
 
         // Transitive field read: field of frozen Outer is frozen Inner (cannot mutate inner.v!)
         assertHasError("""
-                def Inner = class (def v: int) ()
+                def Inner = class (var v: int) ()
                 def Outer = class (def inner: Inner) ()
                 def f = fn (o: frozen Outer) -> (
                     def i = o.inner
@@ -166,7 +166,7 @@ public class OwnershipTestCase {
 
         // Calling mut method on frozen value is rejected
         assertHasError("""
-                def Box = class (def x: int) (
+                def Box = class (var x: int) (
                     def update = fn mut (v: int) -> ( this.x = v )
                 )
                 def f = fn (b: frozen Box) -> ( b.update(3) )
@@ -195,7 +195,7 @@ public class OwnershipTestCase {
     public void testUniqueLocalsMoveFreezeAndDefiniteUnassignment() throws Exception {
         // Fresh local mutation inside pure function + inferred unique return + @TERMINATING (bip007 §5.2)
         String stats = """
-                def Stats = class (def count: int = 0, def total: int = 0) (
+                def Stats = class (var count: int = 0, var total: int = 0) (
                     def add = fn mut nothrow (v: int) -> (
                         this.count = this.count + 1
                         this.total = this.total + v
@@ -256,10 +256,10 @@ public class OwnershipTestCase {
 
         // Reassigning after move restores usability!
         String reassign = """
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def f = fn (flag: bool): int -> (
-                    def b = Box(1)
-                    def sum = 0
+                    var b = Box(1)
+                    var sum = 0
                     if flag then (
                         def c = move(b)
                         sum += c.x
@@ -275,7 +275,7 @@ public class OwnershipTestCase {
 
         // Aliasing `def alias = b` without `move` demotes both to @EXTERNAL
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def f = fn (): int -> (
                     def b = Box(1)
                     def alias = b
@@ -295,7 +295,7 @@ public class OwnershipTestCase {
     public void testUniqueParamsReturnsCoreCollectionsAndJavaAnnotation() throws Exception {
         // Consuming `unique` param vs default `@BORROWED` param
         String uniqueParams = """
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def consume = fn (unique b: Box): unique Box -> (
                     b.x = b.x + 1
                     b
@@ -325,7 +325,7 @@ public class OwnershipTestCase {
 
         // `mut` param enforces exclusivity (aliasing two args rejected)
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def both = fn (mut a: Box, b: Box): int -> ( a.x = a.x + b.x; a.x )
                 def run = fn (): int -> (
                     def b = Box(10)
@@ -441,7 +441,7 @@ public class OwnershipTestCase {
 
         // BIP016-D5: `io` is orthogonal to `unique`, `@BORROWED`, and `frozen`
         String ioOrtho = """
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def logAndFreeze = fn io (): frozen Box -> (
                     def b = Box(7)
                     println(b.x)
@@ -458,7 +458,7 @@ public class OwnershipTestCase {
         // `io` still enforces `@BORROWED` store-escape on default parameters!
         assertHasError("""
                 def Box = class (def x: int) ()
-                def sink: Box? = null
+                var sink: Box? = null
                 def bad = fn io (b: Box) -> ( println(b.x); sink = b )
                 """, "Borrowed parameter b escapes");
 
@@ -477,7 +477,7 @@ public class OwnershipTestCase {
     public void testBip016D10ReturnThroughBorrowIdMinAndSoundness() throws Exception {
         // BIP016-D10: `id` and `min` require ZERO `shared` keywords and do NOT virally infect callers!
         String idAndMin = """
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def min of T = fn (a: T, b: T, cmp: fn (x: T, y: T): int): T -> (
                     if cmp(a, b) < 0 then ( a ) else ( b )
@@ -506,7 +506,7 @@ public class OwnershipTestCase {
 
         // Soundness #1: mutating returned reference from borrowed params is rejected!
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def bad = fn (b: Box) -> ( id(b).x = 99 )
                 """, "Cannot mutate parameter b");
@@ -515,13 +515,13 @@ public class OwnershipTestCase {
         assertHasError("""
                 def Box = class (def x: int) ()
                 def id of T = fn (x: T): T -> ( x )
-                def sink: Box? = null
+                var sink: Box? = null
                 def bad = fn io (b: Box) -> ( sink = id(b) )
                 """, "Borrowed parameter b escapes");
 
         // Soundness #3 (Hole 1): `def alias = id(u)` demotes `u` from @UNIQUE so `freeze(u)` is rejected!
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def exploit = fn (): frozen Box -> (
                     def u = Box(1)
@@ -534,7 +534,7 @@ public class OwnershipTestCase {
 
         // Soundness #4 (Hole 1): `def alias = id(u); swap(u, alias)` is rejected by exclusivity!
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def swap = fn (mut a: Box, mut b: Box) -> (
                     def t = a.x
@@ -550,7 +550,7 @@ public class OwnershipTestCase {
 
         // Soundness #5 (Hole 2): `unwrap(fb)` and `id<Box>(fb)` CANNOT unfreeze `frozen Box` into mutable `Box`!
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def unwrap = fn (b: Box): Box -> ( b )
                 def exploit = fn (): int -> (
                     def fb: frozen Box = freeze(Box(1))
@@ -605,10 +605,10 @@ public class OwnershipTestCase {
         assertClean(stateless);
         Assertions.assertEquals(0, evalBothModes(stateless));
 
-        // Stateful object singleton (has a non-function field) still requires `volatile`!
+        // Stateful object singleton (has a mutable field) still requires `volatile`!
         assertHasError("""
                 def Stateful = object (
-                    def count: int = 1
+                    var count: int = 1
                 )
                 def bad = fn (): int -> ( Stateful.count )
                 """, "volatile");
@@ -617,8 +617,8 @@ public class OwnershipTestCase {
         String localContainer = """
                 def Box = class (def x: int) ()
                 def Bag = class (
-                    def first: Box? = null,
-                    def count: int = 0
+                    var first: Box? = null,
+                    var count: int = 0
                 ) (
                     def add = fn mut (shared b: Box) -> (
                         if this.first == null then ( this.first = b )
@@ -647,8 +647,8 @@ public class OwnershipTestCase {
 
         // Soundness check #2: Mutating an element read back from a local container is rejected in pure fn!
         assertHasError("""
-                def Box = class (def x: int) ()
-                def Bag = class (def first: Box? = null) (
+                def Box = class (var x: int) ()
+                def Bag = class (var first: Box? = null) (
                     def add = fn mut (shared b: Box) -> ( this.first = b )
                 )
                 def bad = fn (a: Box): int -> (
@@ -661,7 +661,7 @@ public class OwnershipTestCase {
 
         // Soundness check #3: Calling a deep-mutating method (`deepMutThis`) on a local container holding `a` is rejected!
         assertHasError("""
-                def Box = class (def x: int) ()
+                def Box = class (var x: int) ()
                 def Holder = class (def inner: Box) (
                     def poke = fn mut () -> ( this.inner.x = 99 )
                 )
@@ -679,7 +679,7 @@ public class OwnershipTestCase {
                 def Node = record (v: int, next: Node?) ()
                 def straight = fn (x: int): int -> ( x + 1 )
                 def loopy = fn (n: int): int -> (
-                    def i = 0
+                    var i = 0
                     while i < n then ( i += 1 )
                     i
                 )
@@ -701,12 +701,12 @@ public class OwnershipTestCase {
                     if xs == null then ( 0 ) else ( 1 + len(xs.next) )
                 )
                 def sumList = fn (xs: list of int): int -> (
-                    def s = 0
+                    var s = 0
                     for x in xs then ( s += x )
                     s
                 )
                 def mutFor = fn io (mut xs: list of int): int -> (
-                    def s = 0
+                    var s = 0
                     for x in xs then ( xs.add(x) ; s += x )
                     s
                 )
@@ -752,7 +752,7 @@ public class OwnershipTestCase {
                 """, "Unused pure expression");
         assertHasError("""
                 def sumList = fn (xs: list of int): int -> (
-                    def s = 0
+                    var s = 0
                     for x in xs then ( s += x )
                     s
                 )
@@ -784,7 +784,7 @@ public class OwnershipTestCase {
     public void testSpreadAndCallReturnOwnershipSoundness() throws Exception {
         // TO_LIST_COPY / TO_ARRAY spread of mutable elements must demote uniqueOwner on escape/return.
         assertHasError("""
-                def MutA = class (def v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
+                def MutA = class (var v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
                 def idM = fn (xs: list of MutA): list of MutA -> ( xs )
                 def exploit2 = fn io (): frozen array of MutA -> (
                     def ma = array.of(MutA(10))
@@ -795,8 +795,8 @@ public class OwnershipTestCase {
                 )
                 """, "Cannot freeze expression");
         assertHasError("""
-                def MutA = class (def v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
-                def sink: (list of MutA)? = null
+                def MutA = class (var v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
+                var sink: (list of MutA)? = null
                 def leak = fn io (shared xs: list of MutA) -> ( sink = xs )
                 def exploit3 = fn io (): frozen array of MutA -> (
                     def ma = array.of(MutA(10))

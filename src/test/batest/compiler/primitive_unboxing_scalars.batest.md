@@ -504,7 +504,7 @@ fn check(v0: byte, v1: byte, v2: short, v3: short, v4: long, v5: float, v6: char
 ## Case 8
 
 ```babble
-def H = class (def b: byte, def s: short, def l: long, def f: float, def c: char) (
+def H = class (var b: byte, var s: short, var l: long, var f: float, var c: char) (
     def sum = fn (x: long): long -> ( this.l + x + long(this.b) + long(this.s) )
 )
 def h = H(byte(3), short(9), 1000L, 2.25f, 'K')

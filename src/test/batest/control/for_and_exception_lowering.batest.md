@@ -26,7 +26,7 @@ def AppErr = class (def msg: string) ()
 ## For loop over Babble interface-typed iterable and inherited-method iterator
 
 ```babble
-def RIter = class (def c: int, def n: int) implements IntIterI (
+def RIter = class (var c: int, def n: int) implements IntIterI (
     def hasNext = fn (): bool -> ( this.c < this.n )
     def next = fn mut (): int -> ( def v = this.c ; this.c += 1 ; v )
 )
@@ -34,19 +34,19 @@ def RSeq = class (def n: int) implements IntSeqI (
     def iterator = fn (): IntIterI -> ( RIter(0, this.n) )
 )
 def seq: IntSeqI = RSeq(4)
-def s = 0 ; for v in seq then ( s += v )
+var s = 0 ; for v in seq then ( s += v )
 assert(s == 6)
 ```
 
 ## For loop directly over Babble generic interface iterator
 
 ```babble
-def OneIter = class (def done: bool) implements GenIterI of string (
+def OneIter = class (var done: bool) implements GenIterI of string (
     def hasNext = fn (): bool -> ( not this.done )
     def next = fn mut (): string -> ( this.done = true ; "ok" )
 )
 def it: GenIterI of string = OneIter(false)
-def out = ""
+var out = ""
 for s in it then ( out = out + s )
 assert(out == "ok")
 ```
@@ -55,7 +55,7 @@ assert(out == "ok")
 
 ```babble
 def arr: array of string = array.of("a", "b")
-def out = ""
+var out = ""
 for s in arr then ( out = out + s )
 assert(out == "ab")
 ```

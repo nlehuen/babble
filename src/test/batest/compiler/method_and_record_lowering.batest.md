@@ -89,7 +89,7 @@ fn C.run() -> bool:
 ## this.field assign, compound assign, and spread-to-double field assign
 
 ```babble
-def C = class (def d : double, def label : string, def n : int) (
+def C = class (var d : double, var label : string, var n : int) (
     def optM = fn (a : int, b : int = 10) : int -> ( a + b )
     def run = fn mut () -> (
         this.label = "abc" ; this.label += "!" ; this.n += 5
@@ -207,7 +207,7 @@ fn C.run() -> bool:
 ## recurse with omitted optional arg inside class method and top-level function, plus enclosing captured cell
 
 ```babble
-def enclosing = 10
+var enclosing = 10
 def C = class () (
     def recOpt = fn (n : int, step : int = 1) : int -> ( if n <= 0 then ( 0 ) else ( step + recurse(n - 1) ) )
     def bump = fn io () : int -> ( enclosing += 1 ; this.recOpt(3) )
@@ -271,22 +271,21 @@ fn sumDown(v0: int, v1: int) -> int:
 
 ```babble
 def make = fn (start : double) -> (
-    def outer = start
+    var outer = start
     def C = class (p : double) (
-        def bump = fn io mut () : double -> ( outer += 1.0 ; p += 0.5 ; outer + p )
+        def bump = fn io () : double -> ( outer += 1.0 ; outer + p )
     )
     C(2.0)
 )
 def inst = make(10.0)
-assert(inst.bump() == 13.5)
-assert(inst.bump() == 15.0)
+assert(inst.bump() == 13.0)
+assert(inst.bump() == 14.0)
 ```
 
 ```hir
 ;; hir -O0,-O1 fn=C.bump
-fn C.bump () -> double {io mut}
+fn C.bump () -> double {io}
   (set outer += 1.0:double)
-  (set p += 0.5:double)
   (+:double var(outer) var(p))
 ```
 
@@ -298,14 +297,10 @@ fn C.bump() -> double:
     v1: double = const 1.0
     v2: double = add v0, v1 {pure}
     slot_write outer, v2 {write:shared}
-    v3: double = slot_read p {read:shared,throws}
-    v4: double = const 0.5
+    v3: double = slot_read outer {read:shared}
+    v4: double = slot_read p {read:shared,throws}
     v5: double = add v3, v4 {pure}
-    slot_write p, v5 {write:shared,throws}
-    v6: double = slot_read outer {read:shared}
-    v7: double = slot_read p {read:shared,throws}
-    v8: double = add v6, v7 {pure}
-    ret v8
+    ret v5
 ```
 
 ## Static block this assign, compound assign, and this reference
@@ -314,7 +309,7 @@ fn C.bump() -> double:
 def C = class () (
     def getV = fn () : int -> ( 7 )
 ) static (
-    def x = 1
+    private var x = 1
     def bump = fn io () : int -> ( this.x = 2 ; this.x += 3 ; this.x )
     def me = fn () -> ( this )
 )
@@ -397,7 +392,7 @@ interface IWithConst:
 ## BabbleInstance operator methods (neg, plus, minus, times, div, compound +=) and folded unary minus
 
 ```babble
-def v = Vec(10) ; def c = Vec(5) ; c += 3
+def v = Vec(10) ; var c = Vec(5) ; c += 3
 assert((-v).n == -10 and -(1 + 1) == -2 and (v + 2).n == 12 and (v - 3).n == 7)
 assert((v * 4).n == 40 and (v / 2).n == 5 and c.n == 8)
 ```
@@ -685,7 +680,7 @@ top-level ; [not-lowered: top-level]
 def R9 = record (a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, i:int) ()
 def k = 3 ; def CellRec = record (x: int) ( def get = fn (): int -> ( this.x + k ) )
 def SamRec = record (r: java.lang.Runnable) ()
-def hits = 0 ; def sr = SamRec(fn io () -> ( hits += 1 )) ; sr.r.run()
+var hits = 0 ; def sr = SamRec(fn io () -> ( hits += 1 )) ; sr.r.run()
 assert(R9(1, 2, 3, 4, 5, 6, 7, 8, 9).i == 9 and CellRec(4).get() == 7 and hits == 1)
 ```
 

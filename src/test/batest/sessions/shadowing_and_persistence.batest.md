@@ -7,7 +7,7 @@ References : BIP004 (sessions & REPL)
 ```babble
 ;; babble session
 def x = 10
-def acc = 0
+var acc = 0
 ```
 
 ```babble
@@ -34,7 +34,7 @@ assert(inc(1) == 101)
 
 ```babble
 ;; babble session
-def v = 1
+var v = 1
 ```
 
 ```babble

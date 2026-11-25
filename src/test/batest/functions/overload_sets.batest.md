@@ -346,7 +346,7 @@ assert(ov(b: 2, a: 1) == "ab:1,2" and ov(5) == "ab:5,10" and ov(fn (x) -> ( x * 
 ```babble
 def ov = overload (
     fn (n: int): string -> ( "i:" + n ),
-    fn (s: string, xs: int...): string -> ( def t = 0 ; for x in xs then ( t += x ) ; s + ":" + t )
+    fn (s: string, xs: int...): string -> ( var t = 0 ; for x in xs then ( t += x ) ; s + ":" + t )
 )
 assert(ov("sum", 1, 2, 3) == "sum:6" and ov("sp", ...list(4, 5)) == "sp:9")
 ```

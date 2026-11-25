@@ -115,9 +115,9 @@ assert(check(Impl(), "ok"))
 ## Reassignment merging two compatible function types (`TypeAlgebra.mergeFunctions`)
 
 ```babble
-def f = fn (x: int): int -> (x + 1)
+var f = fn (x: int): int -> (x + 1)
 f = fn (x: int): int -> (x * 2)
-def g: fn (int): any = fn (x: int): int -> (x)
+var g: fn (int): any = fn (x: int): int -> (x)
 g = fn (x: int): string -> ("v" + x)
 assert(f(3) == 6 and g(4) == "v4")
 ```

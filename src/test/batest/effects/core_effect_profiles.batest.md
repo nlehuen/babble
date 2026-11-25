@@ -180,7 +180,7 @@ Cannot mutate parameter xs (mut Java method sub.add) : mark parameter as mut xs
 ## Error : Borrowed parameter xs escapes via outer variable sink : mark paramete...
 
 ```babble
-def sink : (list of int)? = null
+var sink : (list of int)? = null
 def badSubEscape = fn io (xs : list of int) -> (
     sink = xs.subList(0, 1)
 )

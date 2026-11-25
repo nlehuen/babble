@@ -80,8 +80,8 @@ public class HirCanonicalPrinterTestCase {
     public void testPreambleIndependenceAndSyntheticTempRenumbering() throws Exception {
         String core = ""
                 + "def sumScaled = fn (n: int, angle: double): double -> (\n"
-                + "    def i = 0\n"
-                + "    def acc = 0.0\n"
+                + "    var i = 0\n"
+                + "    var acc = 0.0\n"
                 + "    while i < n then (\n"
                 + "        acc += java.lang.Math.cos(angle) * 2.0\n"
                 + "        i += 1\n"

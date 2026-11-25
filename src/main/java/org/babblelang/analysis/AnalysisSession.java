@@ -35,8 +35,6 @@ public final class AnalysisSession {
     final Map<ParserRuleContext, ScopeNode> occurrenceScopes = new HashMap<>();
     /** The interfaces of the files earlier inputs imported statically, by import call. */
     final Map<org.babblelang.parser.BabbleParser.CallContext, ModuleInterface> modules = new LinkedHashMap<>();
-    /** The definitions some input assigned : nothing static is known of them any more. */
-    final Set<ParserRuleContext> reassigned = new HashSet<>();
     /** Frozen inferred declaration types from earlier inputs (§6, Q5). */
     final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
     /** Frozen inferred member and static types from earlier inputs (§6, Q5). */
@@ -92,12 +90,6 @@ public final class AnalysisSession {
         }
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());
-        }
-        for (BlockScopes.PendingAssignment assignment : pass.assignments) {
-            ParserRuleContext definition = TypeChecks.resolveName(assignment.name(), assignment.scope());
-            if (definition != null) {
-                reassigned.add(definition);
-            }
         }
         ScopeNode file = pass.fileScope;
         if (file.names.isEmpty()) {

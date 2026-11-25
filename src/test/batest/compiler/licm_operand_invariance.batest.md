@@ -15,9 +15,9 @@ def bigSink = fn nothrow (x: double): double -> (return x ; x)
 
 ```babble
 def recWhile = fn (n: int): int -> (
-  def i = 0 ; def s = 0
+  var i = 0 ; var s = 0
   while i < 1 then (
-    def j = 0 ; while j < 2 then (j += 1)
+    var j = 0 ; while j < 2 then (j += 1)
     if n > 0 then (s += recurse(n - 1) + 1) ; s += j ; i += 1
   )
   s
@@ -151,7 +151,7 @@ fn recWhile(v0: int) -> int:
 ```babble
 def bigBool = fn nothrow (b: bool): int -> (def r = if b then (1) else (0) ; return r ; r)
 def run = fn (f: bool, i: int, arr: frozen array of int): int -> (
-  def a = 0 ; def k = 0
+  var a = 0 ; var k = 0
   while k < 2 then (
     a += bigBool(f and (i > 0)) + bigBool(not f) + bigInt((discard(i + 1) ; i + 2)) + bigInt(arr.size()) ; k += 1
   ) ; a
@@ -299,7 +299,7 @@ fn run(v0: bool, v1: int, v2: any) -> int:
 ```babble
 def topRO = 4
 def run = fn (b: byte, raw: any): double -> (
-  def a = 0.0 ; def k = 0
+  var a = 0.0 ; var k = 0
   while k < 2 then (
     a += bigSink(b as double) + double(bigInt(topRO) + bigInt((def t = int(b) ; t)) + bigInt(raw as int) + "  hi  ".trim().length()) ; k += 1
   ) ; a
@@ -427,7 +427,7 @@ fn run(v0: byte, v1: any) -> double:
 def C = class (def v: int) (
   def run = fn (n: int): int -> (
     def loc = fn nothrow (x: int): int -> (return x + 1 ; x)
-    def a = 0 ; def k = 0
+    var a = 0 ; var k = 0
     while k < n then (a += loc(n) + this.v ; k += 1) ; a
   )
 )
@@ -517,7 +517,7 @@ fn C.run(v0: int) -> int:
 def id of T = fn (x: T): int -> (1)
 def ov = overload (fn (a: int): int -> (a + 1), fn (a: int, b: int): int -> (a + b))
 def run = fn (x: any, arr: array of int): int -> (
-  def i = 0 ; def acc = 0
+  var i = 0 ; var acc = 0
   while i < 4 then (acc += (x as int) + (id of int)(x as int) + arr.size() + ov(2) + ov(1, 2) ; i += 1) ; acc
 )
 assert(run(5, array.of(10, 20, 30)) == 60)

@@ -1,5 +1,5 @@
 def counter = fn () -> (
-    def c = 0
+    var c = 0
 
     fn () -> (
         c = c + 1

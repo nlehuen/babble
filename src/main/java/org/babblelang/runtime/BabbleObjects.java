@@ -229,6 +229,9 @@ public final class BabbleObjects {
         if (shape.isValue()) {
             throw Members.readOnly(name);
         }
+        if (!shape.isMutable(index)) {
+            throw Members.cannotAssignDef(name);
+        }
         if (field(info, instance, index) == Undefined.UNDEFINED) {
             throw Members.usedBeforeDefinition(name);
         }

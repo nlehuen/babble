@@ -4,8 +4,8 @@ References : `BIP007` (HOF effects), `BIP027` (`SymbolicEffectSummary`, `CallEff
 
 ```babble
 ;; babble module=hof_summaries_lib.ba
-export def Box = class (def v: int) ()
-export def Holder = class () ( def ref: Box? = null )
+export def Box = class (var v: int) ()
+export def Holder = class () ( var ref: Box? = null )
 export def idBox = fn (b: Box): Box -> ( b )
 export def readBox = fn (b: Box): int -> ( b.v )
 export def storeBox = fn (mut h: Holder, shared b: Box) -> ( h.ref = b )
@@ -15,9 +15,9 @@ export def fwdStore = fn (mut h: Holder, shared b: Box, f: fn (mut Holder, share
 
 ```babble
 ;; babble preamble
-def Box = class (def v: int) ()
-def Holder = class () ( def ref: any? = null )
-def Cell = class (def v: int) (
+def Box = class (var v: int) ()
+def Holder = class () ( var ref: any? = null )
+def Cell = class (var v: int) (
     def applySelf = fn mut (f: fn (mut Cell): int): int -> ( f(this) )
     def inspectSelf = fn (f: fn (Cell): int): int -> ( f(this) )
     def bumpAndCall = fn mut (f: fn (int): int): int -> ( this.v += 1 ; f(this.v) )
@@ -141,7 +141,7 @@ Borrowed parameter c escapes via method call c.shareSelf : mark parameter as sha
 ```babble
 def applyBoth = fn (f: fn (int): int, g: fn (int): int, x: int): int -> ( g(f(x)) )
 def outer = fn (): int -> (
-    def acc = 0
+    var acc = 0
     def r = applyBoth(fn (a: int): int -> ( acc += a ; acc ), fn (b: int): int -> ( acc += b ; acc ), 3)
     r + acc
 )
@@ -190,7 +190,7 @@ assert(out(Holder(), Box(2), Box(4), cb) == 7)
 ```babble
 def run0 = fn (f: fn (): int): int -> ( f() + 1 )
 def outer = fn (): int -> (
-    def acc = 1
+    var acc = 1
     def a = run0(fn (): int -> ( 2 ))
     def b = run0(fn (): int -> ( acc += 2 ; acc ))
     a + b + acc

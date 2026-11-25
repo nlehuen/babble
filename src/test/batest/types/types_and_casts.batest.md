@@ -132,9 +132,9 @@ assert(checkGuards(false) == 1099)
 
 ```babble
 def checkReassign = fn (flag : bool) : bool -> (
-    def w : int | string = 1
+    var w : int | string = 1
     def killedIf = if w is int then ( w = "s" ; 1 ) else ( 0 )
-    def k : int | string = 3
+    var k : int | string = 3
     if flag then ( k = "z" )
     killedIf == 1 and (k is string)
 )
@@ -146,7 +146,7 @@ assert(not checkReassign(false))
 
 ```babble
 def checkClosure = fn () : int | string -> (
-    def u = 2
+    var u = 2
     def closureKill = fn () : int | string -> ( u )
     if u is int then (
         def f = fn () -> ( u = 9 )

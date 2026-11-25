@@ -37,7 +37,7 @@ assert(p.a == 1 and p.b == "x" and p.code() == 7 and p.tag() == "b" and P.kind =
 ;; babble session
 def I = interface ( def v: fn (): int )
 def C = class (def n: int) implements I ( def v = fn (): int -> ( this.n ) )
-def m = 1
+var m = 1
 m = 2
 ```
 

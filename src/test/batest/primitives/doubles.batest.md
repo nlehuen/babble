@@ -5,8 +5,8 @@ Runtime arithmetic inputs go through mutable-state helpers so -O1 cannot constan
 
 ```babble
 ;; babble preamble
-def _d = 0.0
-def _i = 0
+var _d = 0.0
+var _i = 0
 def rtD = fn io (x : double) : double -> ( _d = x ; _d )
 def rtI = fn io (x : int) : int -> ( _i = x ; _i )
 ```
@@ -83,7 +83,7 @@ assert(rtD(2.5) >= rtI(2))
 ## Case 7
 
 ```babble
-def x = rtD(1.5)
+var x = rtD(1.5)
 x += rtI(2) ; x -= rtD(0.5) ; x *= rtI(3) ; x /= rtI(2)
 assert(x == 4.5)
 ```

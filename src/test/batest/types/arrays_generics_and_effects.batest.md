@@ -8,7 +8,7 @@ export def Ints = type array of int
 export def Grid of T = type array of (array of T)
 export def ModBag of T = class (def xs: array of T) ()
 export def sumInts = fn (xs: Ints): int -> (
-    def acc = 0
+    var acc = 0
     for x in xs then (acc += x)
     acc
 )
@@ -56,7 +56,7 @@ assert(string(grid) == "[[1, 2], [3]]")
 ```babble
 def buildSquares = fn (n: int): unique array of int -> (
     def out = (array of int)(n)
-    def i = 0
+    var i = 0
     while i < n then (
         out.set(i, (i + 1) * (i + 1))
         i += 1
@@ -239,10 +239,10 @@ Type error : type argument int cannot be a primitive in array of T
 
 ```babble
 def sumUnion = fn (seq: list of int | array of int): int -> (
-    def s = 0 ; for x in seq then (s += x) ; s
+    var s = 0 ; for x in seq then (s += x) ; s
 )
 def sumJavaUnion = fn (seq: list of int | set of int): int -> (
-    def s = 0 ; for x in seq then (s += x) ; s
+    var s = 0 ; for x in seq then (s += x) ; s
 )
 assert(sumUnion(array.of(1, 2)) == 3 and sumUnion(list(3, 4)) == 7)
 assert(sumJavaUnion(list(5, 6)) == 11)
@@ -253,7 +253,7 @@ assert(sumJavaUnion(list(5, 6)) == 11)
 ```babble
 def frArr: frozen array of int = freeze(array.of(1, 2, 3))
 def frList: frozen list of int = freeze(list(4, 5))
-def frSum = 0
+var frSum = 0
 for x in frArr then (frSum += x)
 for x in frList then (frSum += x)
 assert(frSum == 15)
@@ -262,10 +262,10 @@ assert(frSum == 15)
 ## Case 22
 
 ```babble
-def total = 0
+var total = 0
 def rawIt = list(10, 20).iterator()
 for x in rawIt then (total += x)
-def MyIter = class (def i: int = 0) (
+def MyIter = class (var i: int = 0) (
     def hasNext = fn shared (): bool -> (this.i < 2)
     def next = fn mut (): int -> (this.i += 1 ; this.i)
 )

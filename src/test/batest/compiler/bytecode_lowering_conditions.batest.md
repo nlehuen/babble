@@ -195,7 +195,7 @@ top-level ; [not-lowered: top-level]
 
 ```babble
 def check = fn (d1 : double, d0 : double, i1 : int, i0 : int) : string -> (
-    def out = ""
+    var out = ""
     out += if d1 then ( "1" ) else ( "0" )
     out += if d0 then ( "1" ) else ( "0" )
     out += if i1 then ( "1" ) else ( "0" )
@@ -275,7 +275,7 @@ fn check(v0: double, v1: double, v2: int, v3: int) -> any:
 
 ```babble
 def checkD = fn (d : double) : int -> (
-    def hits = 0
+    var hits = 0
     if d < 3.0 then ( hits += 1 )
     if d <= 2.5 then ( hits += 1 )
     if d == 2.5 then ( hits += 1 )
@@ -462,7 +462,7 @@ fn checkD(v0: double) -> int:
 
 ```babble
 def checkI = fn (a : int, b : int) : string -> (
-    def o = ""
+    var o = ""
     o += if a == b then ( "1" ) else ( "0" )
     o += if a != b then ( "1" ) else ( "0" )
     o += if a > 0 and b > 0 then ( "1" ) else ( "0" )
@@ -623,7 +623,7 @@ fn checkI(v0: int, v1: int) -> any:
 
 ```babble
 def chk = fn (a: double, b: double): string -> (
-    def o = ""
+    var o = ""
     o += if a == b then ("1") else ("0")
     o += if a != b then ("1") else ("0")
     o += if a < b then ("1") else ("0")

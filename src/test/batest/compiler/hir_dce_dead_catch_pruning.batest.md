@@ -25,7 +25,7 @@ def pick = fn (x: int): int -> (if x > 0 then (addMul(x, 1)) else (0))
 ```babble
 def idT of T = fn (x: T): T -> (x)
 def run = fn (arr: array of int, flag: bool, n: int): double -> (
-  def i = 0 ; def acc = 0.0
+  var i = 0 ; var acc = 0.0
   while i < n then (
     def k = double(arr.size()) + (if flag and true then (idT of double(1.0)) else (0.0)) + (1 as double)
     acc += k ; i += 1

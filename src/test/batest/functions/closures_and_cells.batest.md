@@ -6,7 +6,7 @@ References : BIP001 (closures), IntCell / DoubleCell / BoolCell / Cell, pushDefa
 
 ```babble
 def makeCounter = fn () -> (
-    def i = 0 ; def d = 0.5 ; def b = false ; def s = "x"
+    var i = 0 ; var d = 0.5 ; var b = false ; var s = "x"
     fn io () : string -> (
         i += 1 ; d += 1.25 ; b = not b ; s += "y"
         "" + i + ":" + d + ":" + b + ":" + s
@@ -22,7 +22,7 @@ assert(c2() == "1:1.75:true:xy")
 
 ```babble
 def sharedCapture = fn () -> (
-    def count = 10
+    var count = 10
     def inc = fn (k : int) : int -> ( count += k ; count )
     def read = fn () : int -> ( count )
     assert(inc(5) == 15)
@@ -47,7 +47,7 @@ assert(outer(7)() == 107)
 
 ```babble
 def widenCapture = fn io () -> (
-    def v = 1
+    var v = 1
     def read = fn () -> ( v )
     v = 2.5
     assert(read() == 2.5)
@@ -97,7 +97,7 @@ Name used before definition : s
 ```babble
 def f = fn io () -> ( b = false )
 f()
-def b = true
+var b = true
 ```
 
 ```error
@@ -109,7 +109,7 @@ Name used before definition : b
 ```babble
 def f = fn io () -> ( d = 2.5 )
 f()
-def d = 1.5
+var d = 1.5
 ```
 
 ```error
@@ -121,7 +121,7 @@ Name used before definition : d
 ```babble
 def f = fn io () -> ( x = 2 )
 f()
-def x = 1
+var x = 1
 ```
 
 ```error

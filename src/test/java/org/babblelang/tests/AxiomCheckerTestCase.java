@@ -90,7 +90,7 @@ public class AxiomCheckerTestCase {
 
         // Non-deterministic counter declared `axiom deterministic`
         AxiomChecker.Report rDet = engine.checkAxioms("""
-                def counter = 0
+                var counter = 0
                 def badDet = fn axiom pure (x: int): int -> (
                     counter += 1
                     x + counter

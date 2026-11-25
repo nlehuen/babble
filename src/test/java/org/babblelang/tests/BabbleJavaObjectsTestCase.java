@@ -62,7 +62,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     // ---------------------------------------------------------------- classes implementing Java interfaces
 
-    private static final String COUNTDOWN = "def Countdown = class (private def n : int) implements java.util.Iterator of int (\n"
+    private static final String COUNTDOWN = "def Countdown = class (private var n : int) implements java.util.Iterator of int (\n"
             + "    def hasNext = fn () : bool -> ( this.n > 0 )\n"
             + "    def next = fn mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
             + ")\n";
@@ -143,7 +143,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     @Test
     public void testOverridingAJavaDefault() throws Exception {
-        Assertions.assertEquals("[321]", output("def Countdown = class (private def n : int) implements java.util.Iterator of int (\n"
+        Assertions.assertEquals("[321]", output("def Countdown = class (private var n : int) implements java.util.Iterator of int (\n"
                 + "    def hasNext = fn () : bool -> ( this.n > 0 )\n"
                 + "    def next = fn mut () : int -> ( this.n = this.n - 1 ; this.n + 1 )\n"
                 + "    def forEachRemaining = fn io shared (shared f : java.util.function.Consumer of any?) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
@@ -186,7 +186,7 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
         Assertions.assertEquals("[1]", output("def Loud = interface extends java.util.Iterator of int (\n"
                 + "    def forEachRemaining = fn io shared (shared f : java.util.function.Consumer of any?) : any? -> ( print(\"[\") ; super(java.util.Iterator).forEachRemaining(f) ; print(\"]\") )\n"
                 + ")\n"
-                + "def One = class () implements Loud ( def done = false ; def hasNext = fn () : bool -> ( not this.done ) ; def next = fn mut () : int -> ( this.done = true ; 1 ) )\n"
+                + "def One = class () implements Loud ( var done = false ; def hasNext = fn () : bool -> ( not this.done ) ; def next = fn mut () : int -> ( this.done = true ; 1 ) )\n"
                 + "One().forEachRemaining(java.util.function.Consumer(fn io (v : any?) -> ( print(v) )))"));
     }
 
@@ -247,9 +247,9 @@ public class BabbleJavaObjectsTestCase extends BabbleTestBase {
 
     @Test
     public void testSetMemberFromJavaStillChecksDeclaredTypes() throws Exception {
-        String cls = DEMO + "def C = class (def x : double = 0.0) () static ( def s : int = 1 )\n";
+        String cls = DEMO + "def C = class (var x : double = 0.0) () static ( def s : int = 1 )\n";
         Assertions.assertEquals(2.0, interpret(cls + "def c = C() ; Demo.setMemberRaw(c, \"x\", 2) ; c.x"));
         assertFails(cls + "def c = C() ; Demo.setMemberRaw(c, \"x\", \"bad\")", "Type error : expected double, got string", 3);
-        assertFails(cls + "Demo.setMemberRaw(C, \"s\", \"bad\")", "Type error : expected int, got string", 3);
+        assertFails(cls + "Demo.setMemberRaw(C, \"s\", \"bad\")", "Cannot assign to def member : s", 3);
     }
 }

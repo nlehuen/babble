@@ -164,8 +164,8 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testConstructorVariablesCapturedByMethodsAreHiddenFields() throws Exception {
-        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = fn io () -> ( start = start + 1 ) ) ; def c = C(10) ; c.next() ; c.next()");
-        Assertions.assertEquals(12, script.eval(new SimpleBindings()));
+        CompiledBabbleScript script = compile("def C = class (start : int) ( def next = fn () -> ( start + 1 ) ) ; def c = C(10) ; c.next()");
+        Assertions.assertEquals(11, script.eval(new SimpleBindings()));
         byte[] c = script.getClasses().entrySet().stream().filter(e -> e.getKey().endsWith("$C")).findFirst().orElseThrow().getValue();
         Assertions.assertEquals(List.of("$babble$class", "$babble$rt", "next", "$v$start"), fieldNames(c));
         assertVerifies(script);
@@ -201,7 +201,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testACompiledScriptCanBeEvaluatedManyTimes() throws Exception {
-        CompiledBabbleScript script = compile("def counter = fn () -> ( def c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + (start as int)");
+        CompiledBabbleScript script = compile("def counter = fn () -> ( var c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; c() ; c() + (start as int)");
         Bindings first = new SimpleBindings();
         first.put("start", 10);
         Bindings second = new SimpleBindings();
@@ -214,9 +214,9 @@ public class BabbleCompilerTestCase {
     public void testTrickyShapesVerify() throws Exception {
         String[] scripts = {
                 "def g = fn (a : int, b : int) -> ( a + b ) ; def f = fn () : int -> ( g(1, return 2) ) ; f()",
-                "def f = fn (n : int) : int -> ( def r = 0 ; while n > 0 then ( if n == 3 then ( return n ) ; r = r + n ; n = n - 1 ) ; r ) ; f(5)",
-                "def i = 0 ; while i < 3 then ( i = i + 1 ) ; null",
-                "def a = 1 ; a == 0 and ( a = 2 ; true ) ; a == 1 or ( a = 3 ; true ) ; not (a == 1)",
+                "def f = fn (var n : int) : int -> ( var r = 0 ; while n > 0 then ( if n == 3 then ( return n ) ; r = r + n ; n = n - 1 ) ; r ) ; f(5)",
+                "var i = 0 ; while i < 3 then ( i = i + 1 ) ; null",
+                "var a = 1 ; a == 0 and ( a = 2 ; true ) ; a == 1 or ( a = 3 ; true ) ; not (a == 1)",
                 "def f = fn (a : int, b = a + 1, c : fn () : int = fn () -> ( b )) -> ( a + c() ) ; f(1) + f(1, c: fn () -> ( 10 ))",
                 "def C = class (def v : int) ( def m = fn () -> ( this.v ) ) ; C(4).m()",
                 "( def a = 1 ; ( def b = a + 1 ; ( def c = b + 1 ; c ) ) )",
@@ -231,7 +231,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testLargeScriptsAreSplitIntoSeveralMethods() throws Exception {
-        StringBuilder source = new StringBuilder("def total = 0\n");
+        StringBuilder source = new StringBuilder("var total = 0\n");
         for (int i = 0; i < 5000; i++) {
             source.append("def v").append(i).append(" = ").append(i).append(" ; total = total + v").append(i).append("\n");
         }
@@ -290,7 +290,7 @@ public class BabbleCompilerTestCase {
         for (int i = 0; i < 10; i++) {
             source.append("fs.add(Box(fn (x : int, y : int = ").append(i).append(") -> ( x * y )))\n");
         }
-        source.append("def total = 0 ; def i = 0 ; def k = 0\n"
+        source.append("var total = 0 ; var i = 0 ; var k = 0\n"
                 + "while i < 1000 then ( total = total + (fs.get(k) as Box).f(i) ; i = i + 1 ; k = if k == 9 then ( 0 ) else ( k + 1 ) ) ; total");
         long expected = 0;
         for (int i = 0; i < 1000; i++) {
@@ -303,7 +303,7 @@ public class BabbleCompilerTestCase {
 
     @Test
     public void testManyCallSitesAndLongTexts() throws Exception {
-        StringBuilder source = new StringBuilder("def f = fn (a : any) : any -> ( a )\ndef n = 0\n");
+        StringBuilder source = new StringBuilder("def f = fn (a : any) : any -> ( a )\nvar n = 0\n");
         for (int i = 0; i < 3000; i++) {
             source.append("n = n + (f(").append(i).append(") as int)\n");
         }
@@ -402,7 +402,7 @@ public class BabbleCompilerTestCase {
     @Test
     public void testP5OmitsRedundantRuntimeTypeChecksAndKeepsAsCasts() throws Exception {
         CompiledBabbleScript checked = compile(
-                "def Box = class (def x : double = 1) (\n"
+                "def Box = class (var x : double = 1) (\n"
                         + "  def putVal = fn mut (v : double = 2) : double -> (\n"
                         + "    this.x = v\n"
                         + "    this.x += 1\n"
@@ -410,7 +410,7 @@ public class BabbleCompilerTestCase {
                         + "    2\n"
                         + "  )\n"
                         + ")\n"
-                        + "def d : double = 1\n"
+                        + "var d : double = 1\n"
                         + "d = 2\n"
                         + "d += 3\n"
                         + "def f = fn (a : int, b : double = 4) : double -> ( a + b )\n"
@@ -596,11 +596,11 @@ public class BabbleCompilerTestCase {
                         + "  def b : int = 5\n"
                         + ")\n"
                         + "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( recurse(n - 1) + recurse(n - 2) ) )\n"
-                        + "def loop = fn (n : int) : int -> ( def i = 0 ; def s = 0 ; while i < n then ( s += i ; i += 1 ) ; s )\n"
-                        + "def counter = fn () -> ( def c = 0 ; fn io () : int -> ( c = c + 1 ) )\n"
+                        + "def loop = fn (n : int) : int -> ( var i = 0 ; var s = 0 ; while i < n then ( s += i ; i += 1 ) ; s )\n"
+                        + "def counter = fn () -> ( var c = 0 ; fn io () : int -> ( c = c + 1 ) )\n"
                         + "def widenJoin = fn (c : bool) : double -> ( if c then ( 1 ) else ( 2.5 ) )\n"
                         + "def foldCheck = fn (n : int) : int -> (\n"
-                        + "  def touched = 0\n"
+                        + "  var touched = 0\n"
                         + "  def inc = fn () : int -> ( touched = touched + 1 ; 99 )\n"
                         + "  def z = inc() * 0\n"
                         + "  def folded = 1 + 2 * 3\n"
@@ -783,7 +783,7 @@ public class BabbleCompilerTestCase {
     @Test
     public void testBip021P4PrimitiveRestArrayEmission() throws Exception {
         CompiledBabbleScript script = compile(
-                "def sumInts = fn (xs : int...) : int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )\n"
+                "def sumInts = fn (xs : int...) : int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )\n"
                         + "def run = fn (a : int, b : int) : int -> ( sumInts(a, b, 3) )\n"
                         + "run(10, 20)");
         assertVerifies(script);

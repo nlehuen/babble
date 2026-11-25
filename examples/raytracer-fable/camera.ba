@@ -103,12 +103,12 @@ export def Camera = class (
 
         def renderLines = fn io (): null -> (
             def rng = java.util.Random()
-            def j: int = nextLine.getAndIncrement()
+            var j: int = nextLine.getAndIncrement()
             while j < this.imageHeight then (
-                def i: int = 0
+                var i: int = 0
                 while i < this.imageWidth then (
-                    def color = Vec3(0.0, 0.0, 0.0)
-                    def sample: int = 0
+                    var color = Vec3(0.0, 0.0, 0.0)
+                    var sample: int = 0
                     while sample < this.samplesPerPixel then (
                         color += this.rayColor(this.getRay(i, j, rng), this.maxDepth, world, rng)
                         sample += 1

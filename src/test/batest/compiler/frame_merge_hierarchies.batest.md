@@ -441,7 +441,7 @@ fn ci(v0: bool) -> any:
 ```babble
 def leafCheck = fn (f: bool): any -> ( if f then ( (array of Leaf?)(0) ) else ( (array of AltBase?)(0) ) )
 def loopJoin = fn (n: int): any -> (
-    def cur: any = R1(0) ; def i = 0
+    var cur: any = R1(0) ; var i = 0
     while i < n then ( cur = if i == 0 then ( R1(i) ) else ( R2(i) ) ; i += 1 )
     cur
 )

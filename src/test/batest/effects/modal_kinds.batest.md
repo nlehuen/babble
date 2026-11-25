@@ -6,10 +6,10 @@ References : BIP027-I5 (ModalKindTable, docs/design/bip027_tackling-complexity-i
 
 ```babble
 ;; babble preamble
-def Box = class (def v : int) ()
+def Box = class (var v : int) ()
 def Pair of (A, B) = record (a : A, b : B) ()
 def Node = record (v : int, next : Node?) ()
-def Holder = class (def x : any?) ()
+def Holder = class (var x : any?) ()
 ```
 
 ## Case 1

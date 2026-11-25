@@ -18,8 +18,8 @@ def MH = tests.EffectsTestCase.MutableHolder
 def MHT = type tests.EffectsTestCase.MutableHolder
 def UH = tests.EffectsTestCase.UnassumedHelper
 def UF = tests.OwnershipTestCase.UniqueFactory
-def Box = class (def v: int) ()
-def Holder = class (def x: any?) ()
+def Box = class (var v: int) ()
+def Holder = class (var x: any?) ()
 def Node = record (v: int, next: Node?) ()
 ```
 

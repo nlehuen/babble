@@ -8,7 +8,7 @@ def tests = import("org.babblelang.tests")
 def HF = tests.EffectsTestCase.HostFixtures
 def MH = tests.EffectsTestCase.MutableHolder
 def MHT = type tests.EffectsTestCase.MutableHolder
-def Box = class (def v: int) ()
+def Box = class (var v: int) ()
 def MutCtor = class (mut b: Box) ( b.v += 1 )
 def RetainCtor = class (shared b: Box) ()
 ```
@@ -17,7 +17,7 @@ def RetainCtor = class (shared b: Box) ()
 
 ```babble
 axiom java.lang.Comparable.compareTo: fn io
-def C = class (def v: int) implements java.lang.Comparable of C (
+def C = class (var v: int) implements java.lang.Comparable of C (
     def compareTo = fn io (o: C): int -> ( println("cmp") ; this.v - o.v )
 )
 assert(C(3).compareTo(C(1)) == 2)
@@ -31,7 +31,7 @@ cmp
 
 ```babble
 axiom java.lang.Runnable.run: fn mut (): void
-def R = class (def v: int) implements java.lang.Runnable (
+def R = class (var v: int) implements java.lang.Runnable (
     def run = fn mut () -> ( this.v += 1 )
 )
 def r = R(1) ; r.run()
@@ -42,7 +42,7 @@ assert(r.v == 2)
 
 ```babble
 axiom java.lang.Runnable.run: fn mut (): void
-def R = class (def v: int) implements java.lang.Runnable (
+def R = class (var v: int) implements java.lang.Runnable (
     def run = fn io () -> ( println("x") )
 )
 ```
@@ -110,7 +110,7 @@ assert(Mk().get().v == 4)
 ## Inherited borrow receiver axiom violated by shared method
 
 ```babble
-def C = class (def v: int) implements java.lang.Comparable of C (
+def C = class (var v: int) implements java.lang.Comparable of C (
     def compareTo = fn shared (other: C): int -> ( this.v - other.v )
 )
 ```
@@ -162,7 +162,7 @@ Function accept violates pure guarantee of axiom java.util.function.BiConsumer.a
 ```babble
 axiom java.lang.Object.clone: fn pure
 axiom java.lang.Object.equals: fn pure
-def C = class (def v: int) (
+def C = class (var v: int) (
     def clone = fn (): any -> ( this )
     def equals = fn io (a: any, b: any): bool -> ( println("eq") ; a == b )
 )
@@ -182,7 +182,7 @@ Warning : equals has no effect on == : use a value class
 ```babble
 axiom java.lang.Comparable of T: class exact ( def compareTo: fn io )
 axiom java.lang.Object: class ( def *: fn io ) static ( def new: fn pure ; def foo: fn pure )
-def C = class (def v: int) implements java.lang.Comparable of C (
+def C = class (var v: int) implements java.lang.Comparable of C (
     def compareTo = fn (o: C): int -> ( this.v - o.v )
 )
 assert(C(2).compareTo(C(1)) == 1)
@@ -205,7 +205,7 @@ assert(c is java.io.Closeable)
 ```babble
 def run = fn (shared cb: fn (): int): int -> ( cb() )
 def outer = fn (): int -> (
-    def x = 0
+    var x = 0
     run(fn () -> ( x += 1 ; x )) + x
 )
 assert(outer() == 2)
@@ -225,7 +225,7 @@ assert(outer()() == 5)
 def outer = fn (): int -> (
     def x = 1
     def a = (fn () -> ( x + 1 ))()
-    def h = fn () -> ( 1 )
+    var h = fn () -> ( 1 )
     h = fn () -> ( 2 )
     a + h()
 )
@@ -361,14 +361,14 @@ def f1 = fn axiom volatile (): int -> ( 1 )
 def f2 = fn axiom volatile (mut x: Box): int -> ( x.v )
 def f3 = fn axiom (): unique Box -> ( Box(1) )
 def f4 = fn axiom (shared x: Box): int -> ( x.v )
-def C = class (def v: int) ( def m = fn axiom shared (): int -> ( this.v ) )
+def C = class (var v: int) ( def m = fn axiom shared (): int -> ( this.v ) )
 assert(f1() + f2(Box(2)) + f3().v + f4(Box(3)) + C(4).m() == 11)
 ```
 
 ## Visible summaries for io nothrow, volatile mut param, and volatile mut method
 
 ```babble
-def C = class (def v: int) (
+def C = class (var v: int) (
     def vm = fn volatile mut (): int -> ( this.v += 1 ; this.v )
 )
 def ioNt = fn io nothrow (): int -> ( 1 )
@@ -408,7 +408,7 @@ assert(fIo() + fAx() + blk == 6)
 ## Java axiom placement rejected inside volatile mut method
 
 ```babble
-def C = class (def v: int) (
+def C = class (var v: int) (
     def bad = fn volatile mut (): int -> ( axiom java.lang.Math.abs: fn pure (a: int): int ; this.v )
 )
 ```

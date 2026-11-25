@@ -10,7 +10,7 @@ def Demo = import("org.babblelang.tests").JavaClassDemo
 ## Case 1
 
 ```babble
-def log = ""
+var log = ""
 def r1 = java.lang.Runnable(fn () -> ( log += "a" ))
 def r2 = java.lang.Runnable(fn () -> ( log += "b" ))
 r1.run()

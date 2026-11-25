@@ -128,7 +128,7 @@ fn checkMisc(v0: any) -> bool:
 
 ```babble
 def f = fn (): bool -> (
-    def x = 0
+    var x = 0
     while false then (x += 1)
     def negOk = -(1 + 2) == -3 and -(1.5 + 2.5) == -4.0
     def cmpOk = (1 < 2L) and (1L < 2.5) and not (3 < 2) and not (3 == 4) and not (2 >= 3)
@@ -414,7 +414,7 @@ fn trimmed() -> any:
 
 ```babble
 def branch = fn (): int -> ( if 2 < 3 then (42) else (99) )
-def deadLoop = fn (): int -> ( def x = 7 ; while false then (x = 99) ; x )
+def deadLoop = fn (): int -> ( var x = 7 ; while false then (x = 99) ; x )
 assert(branch() == 42 and deadLoop() == 7)
 ```
 
@@ -597,7 +597,7 @@ fn run(v0: int) -> int:
 def run = fn (k: int, xs: list of int, ys: list of int): int -> (
     def a = try (if k == 0 then (throw exception("e")) else (k)) catch : exception then (2 + 3)
     def b = try (k) finally (def z = 4 + 5 ; discard(z))
-    def s = 0
+    var s = 0
     for e in (if true then (xs) else (ys)) then (s += e)
     a + b + s
 )

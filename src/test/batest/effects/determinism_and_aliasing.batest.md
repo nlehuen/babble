@@ -5,12 +5,12 @@ BIP016 (pure/volatile/io), EffectChecker, EffectSet
 
 ```babble
 ;; babble preamble
-def Box = class (def v: int) (
+def Box = class (var v: int) (
     def get = fn (): int -> (this.v)
     def bump = fn mut (): int -> (this.v += 1 ; this.v)
 )
 
-def Holder = class (def child: Box?) (
+def Holder = class (var child: Box?) (
     def link = fn mut (shared n: Box): int -> (
         this.child = n
         n.v
@@ -35,7 +35,7 @@ assert(readBox(b) == 11)
 ## Error : Function badRead violates deterministic guarantee : mark function as ...
 
 ```babble
-def counter = 0
+var counter = 0
 counter = 1
 def badRead = fn (): int -> (counter)
 ```

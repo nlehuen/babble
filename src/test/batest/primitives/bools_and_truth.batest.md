@@ -5,7 +5,7 @@ References : BIP011 (core scalar types), BIP008 (strict bool in assert), Values.
 ## Case 1
 
 ```babble
-def calls = 0
+var calls = 0
 def bump = fn io (r : bool) : bool -> ( calls += 1 ; r )
 assert(not (false and bump(true)))
 assert(calls == 0)

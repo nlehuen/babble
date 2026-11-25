@@ -408,7 +408,7 @@ public class Bip020P3ArrayOpsTestCase {
                 def outerReadVol: fn volatile (): int = fn volatile (): int -> ( outer.get(0) )
                 def outerEqVol: fn volatile (): bool = fn volatile (): bool -> ( outer == frzOuter )
                 def outerLoopVol: fn volatile (): int = fn volatile (): int -> (
-                    def sum = 0
+                    var sum = 0
                     for x in outer then ( sum += x )
                     sum
                 )
@@ -423,7 +423,7 @@ public class Bip020P3ArrayOpsTestCase {
         assertRejected("def outer = array.of(1, 2)\ndef badRead: fn (): int = fn (): int -> ( outer.get(0) )", "volatile");
         assertRejected("def outer = array.of(1, 2)\ndef frz = freeze(array.of(1, 2))\ndef badEq: fn (): bool = fn (): bool -> ( outer == frz )", "volatile");
         assertRejected("def outer = array.of(1, 2)\ndef badStr: fn (): string = fn (): string -> ( \"\" + outer )", "volatile");
-        assertRejected("def outer = array.of(1, 2)\ndef badFor: fn (): int = fn (): int -> ( def s = 0 ; for x in outer then ( s += x ) ; s )", "volatile");
+        assertRejected("def outer = array.of(1, 2)\ndef badFor: fn (): int = fn (): int -> ( var s = 0 ; for x in outer then ( s += x ) ; s )", "volatile");
         assertRejected("def badMutParam = fn (a: array of int) -> ( a.set(0, 5) )", "mut");
         assertRejected("def frz = freeze(array.of(1, 2))\ndef badFrzSet = fn () -> ( frz.set(0, 5) )", "Cannot call mut method set on frozen value");
         assertRejected("def Box = class (def v: int) ()\ndef sharedBox = Box(1)\ndef badUnique: fn (): unique array of Box = fn (): unique array of Box -> ( array.of(sharedBox) )", "unique");

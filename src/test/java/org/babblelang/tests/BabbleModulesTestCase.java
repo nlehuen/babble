@@ -75,10 +75,11 @@ public class BabbleModulesTestCase extends BabbleTestBase {
 
     @Test
     public void exportsAreReadOnlyFromOutside() throws Exception {
-        file("lib.ba", "export def n = 1\nexport def bump = fn io () -> ( n = n + 1 )");
+        file("lib.ba", "export def n = 1\nvar count = 1\nexport def bump = fn io () -> ( count = count + 1 )\nexport def current = fn volatile () -> ( count )");
         Assertions.assertTrue(failure("def lib = import(\"lib.ba\") ; lib.n = 5").contains("Cannot assign to an export : n"));
-        // The module itself can reassign them, and importers see the current value.
-        Assertions.assertEquals(3, run("def lib = import(\"lib.ba\") ; lib.bump() ; lib.bump() ; lib.n"));
+        // Module-private vars can be mutated through exported functions; export var is forbidden (BIP034-D4).
+        Assertions.assertEquals(3, run("def lib = import(\"lib.ba\") ; lib.bump() ; lib.bump() ; lib.current()"));
+        Assertions.assertTrue(failure("export var bad = 1").contains("Cannot export a var : bad"));
     }
 
     @Test
@@ -162,7 +163,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
     @Test
     public void exportedClasses() throws Exception {
         file("lib.ba", "export def Point = record (x : int, y : int) () ; export def zero = Point(0, 0)\n"
-                + "export def Counter = class () ( def n = 0 ; def next = fn mut () -> ( this.n = this.n + 1 ) ) static ( def start = fn () -> ( this() ) )");
+                + "export def Counter = class () ( var n = 0 ; def next = fn mut () -> ( this.n = this.n + 1 ) ) static ( def start = fn () -> ( this() ) )");
         Assertions.assertEquals(true, run("def lib = import(\"lib.ba\") ; lib.zero == lib.Point(0, 0)"));
         Assertions.assertEquals(2, run("def Counter = import(\"lib.ba\").Counter ; def c = Counter.start() ; c.next() ; c.next()"));
     }
@@ -401,7 +402,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
             engine.put(BabbleScriptEngine.MODE, mode);
             String script = "def P = import(\"lib.ba\").P\n"
                     + "def read = fn (o : P) : int -> ( o.open )\n"
-                    + "def i = 0 ; def s = 0 ; while i < 10000 then ( s = s + read(P()) ; i = i + 1 )\n";
+                    + "var i = 0 ; var s = 0 ; while i < 10000 then ( s = s + read(P()) ; i = i + 1 )\n";
             Assertions.assertEquals(10000, run(engine, script + "s"), mode);
             String peek = "def P = import(\"lib.ba\").P\ndef peek = fn (o : P) -> ( o.secret )\npeek(P())";
             ScriptException e = Assertions.assertThrows(ScriptException.class, () -> run(engine, peek), mode);
@@ -596,7 +597,7 @@ public class BabbleModulesTestCase extends BabbleTestBase {
                 export def inferredAdd = fn (x: int, y: int): int -> (x + y)
                 export def lockedVolatile = fn volatile (x: int): int -> (x + 1)
                 export def applyOnce = fn io (f: fn io (x: int): int, v: int): int -> (f(v))
-                export def Counter = class (def n: int = 0) (
+                export def Counter = class (var n: int = 0) (
                     def bump = fn mut (d: int): int -> (
                         this.n += d
                         this.n

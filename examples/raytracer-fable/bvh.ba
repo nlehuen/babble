@@ -37,8 +37,8 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
             return items
         )
 
-        def cbox: AABB = AABB.empty
-        def i: int = 0
+        var cbox: AABB = AABB.empty
+        var i: int = 0
         while i < count then (
             def center = items.objects.get(i).boundingBox().center()
             if center != null then (
@@ -68,7 +68,7 @@ export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: A
         if leftList.objects.size() == 0 or rightList.objects.size() == 0 then (
             leftList.clear()
             rightList.clear()
-            def goLeft: bool = true
+            var goLeft: bool = true
             i = 0
             while i < count then (
                 def item = items.objects.get(i)

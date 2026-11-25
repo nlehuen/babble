@@ -253,7 +253,7 @@ Missing type : cannot infer type arguments for f
 
 ```babble
 def countAll of (S : java.lang.Iterable of int) = fn (xs : S) : int -> (
-    def total = 0
+    var total = 0
     for x in xs then (
         total += x
     )

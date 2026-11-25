@@ -13,7 +13,7 @@ export def ExtRec = record (v: int) (
 
 ```babble
 ;; babble preamble
-def tick = 0
+var tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
 def bigInt = fn nothrow (x: int): int -> (return x ; x)
 def volLen = fn volatile nothrow (): int -> (def n = java.lang.System.lineSeparator().length() ; return n ; n)
@@ -25,7 +25,7 @@ def volLen = fn volatile nothrow (): int -> (def n = java.lang.System.lineSepara
 
 ```babble
 def run = fn io (n: int): int -> (
-    def pt = java.awt.Point(1, 2) ; def a = 0 ; def i = 0
+    def pt = java.awt.Point(1, 2) ; var a = 0 ; var i = 0
     def u1 = "ab".equals("cd") ; def u2 = "ab".equals(pt)
     while i < n then (
         a += (if "ab".equals("ab") and not "ab".equals(pt) then (1) else (0)) ; i += 1
@@ -274,7 +274,7 @@ fn run() -> int:
 def ext = import("ext_rec.ba")
 def run = fn volatile (er: ext.ExtRec): int -> (
     def u1 = er.getPure() ; def u2 = er.getThrow() ; def u3 = er.getVol()
-    def a = 0 ; def i = 0
+    var a = 0 ; var i = 0
     while i < 2 then (a += er.getPure() + er.getVol() ; i += 1)
     a
 )
@@ -493,7 +493,7 @@ fn run() -> int:
 ```babble
 tick = 1
 def LateR = record (k: int) ()
-def fUninit = fn (k: int): int -> (def u: int? ; u = k + 1 ; u!)
+def fUninit = fn (k: int): int -> (var u: int?=null; u=k+1; u!)
 def run = fn io (k: int): int -> (
     def outer = k ; def cl = fn nothrow (): int -> (outer + 1)
     def u0 = LateR(1) ; def u1 = fUninit(k) ; def u2 = cl()
@@ -532,7 +532,7 @@ fn run (k:int) -> int {io}
   (def u1
     (block
       name(fUninit)
-      (def u)
+      (def u null)
       (set u (+:int var(k) 1:int))
       (nonnull var(u))))
   (def u2 (call-fn cl))

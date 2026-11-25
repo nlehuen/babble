@@ -53,7 +53,7 @@ public class MainTestCase {
 
     @Test
     public void testAScriptGetsItsArguments() throws Exception {
-        String echo = script("echo.ba", "def i = 0\nwhile i < args.size() then ( println(i, \" \", args.get(i)) ; i = i + 1 )\nprintln(args.size())");
+        String echo = script("echo.ba", "var i = 0\nwhile i < args.size() then ( println(i, \" \", args.get(i)) ; i = i + 1 )\nprintln(args.size())");
         Assertions.assertEquals(List.of("0 a", "1 -keep-alive", "2 b c", "3"), run("", echo, "a", "-keep-alive", "b c").out());
         Assertions.assertEquals(List.of("0"), run("", echo).out());
         // A script can define the name for itself.

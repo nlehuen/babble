@@ -9,8 +9,8 @@ predicate reordering and negative narrowing-safety tests).
 ```babble
 def Scale = record (k: double) ()
 def sumScaled = fn (s: Scale, angle: double, n: int): double -> (
-    def i = 0
-    def acc = 0.0
+    var i = 0
+    var acc = 0.0
     while i < n then (
         def factor = s.k * java.lang.Math.cos(angle)
         acc += factor
@@ -100,8 +100,8 @@ fn sumScaled(v0: any, v1: double, v2: int) -> double:
 ```babble
 def Limit = record (k: int) ()
 def sumToBound = fn (lim: Limit, a: int, b: int): int -> (
-    def i = 0
-    def acc = 0
+    var i = 0
+    var acc = 0
     while i < a * b + lim.k then (
         acc += i
         i += 1
@@ -205,9 +205,9 @@ fn sumToBound(v0: any, v1: int, v2: int) -> int:
 
 ```babble
 def guardedLoop = fn (flag: bool, s: string?, n: int): int -> (
-    def acc = 0
+    var acc = 0
     if flag then (
-        def i = 0
+        var i = 0
         while i < n then (
             if s <> null then (acc += s.length())
             i += 1
@@ -648,8 +648,8 @@ fn rankCost(v0: any, v1: int) -> int:
 
 ```babble
 def guardedCond = fn (flag: bool, a: int, b: int): int -> (
-    def i = 0
-    def acc = 0
+    var i = 0
+    var acc = 0
     if flag then (
         while i < a * b + 1 then (
             acc += i

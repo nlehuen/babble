@@ -6,14 +6,14 @@ References : BIP002 (operator methods), BIP008 (static typing), BIP011 (core typ
 
 ```babble
 ;; babble preamble
-def Vec = class (def x : int) (
+def Vec = class (var x : int) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x) )
     def minus = fn (o : Vec) : Vec -> ( Vec(this.x - o.x) )
     def times = fn (k : int) : Vec -> ( Vec(this.x * k) )
     def div = fn (k : int) : Vec -> ( Vec(this.x + k) )
     def neg = fn () : Vec -> ( Vec(-(this.x)) )
 )
-def Box = class (def v : int) (
+def Box = class (var v : int) (
     def get = fn () : int -> ( this.v )
 )
 ```
@@ -97,7 +97,7 @@ assert((u + Vec(5)).x == 9 and (-u).x == -4)
 ## Case 8
 
 ```babble
-def Box2 = class (def x : int) (
+def Box2 = class (var x : int) (
     def plus = fn (o : Vec) : Vec -> ( Vec(this.x + o.x + 10) )
 )
 def pick = fn (flag : bool) : Vec | Box2 -> ( if flag then ( Vec(3) ) else ( Box2(1) ) )
@@ -205,10 +205,10 @@ Not comparable : f1 and f2
 ## Case 18
 
 ```babble
-def s = "hi"
+var s = "hi"
 s += "!"
-def addParam = fn (p : int) : int -> ( p += 4 ; p )
-def Counter = class (def x : int) (
+def addParam = fn (var p : int) : int -> ( p += 4 ; p )
+def Counter = class (var x : int) (
     def bump = fn mut (d : int) : int -> (
         this.x = 5
         this.x += d
@@ -221,7 +221,7 @@ assert(s == "hi!" and addParam(6) == 10 and Counter(1).bump(2) == 7)
 ## Case 19
 
 ```babble
-def Comp = class (def i : int, def d : double, def s : string, def u : int | double) (
+def Comp = class (var i : int, var d : double, var s : string, var u : int | double) (
     def run = fn mut () -> (
         this.i += 2 ; this.i -= 1 ; this.d /= 2 ; this.s += "!" ; this.u += 1.5
     )
@@ -236,7 +236,7 @@ assert(c.i == 9 and c.d == 4.5 and c.s == "hi!" and c.u == 2.5)
 ## Error : Not a number : b
 
 ```babble
-def b = true
+var b = true
 b += false
 ```
 
@@ -247,7 +247,7 @@ Not a number : b
 ## Error : Not a number : s
 
 ```babble
-def s = "hi"
+var s = "hi"
 s -= "i"
 ```
 
@@ -258,8 +258,8 @@ Not a number : s
 ## Error : Value members are read-only : x
 
 ```babble
-def Val = record (def x : int) ()
-def v = Val(1)
+def Val = record (x : int) ()
+var v = Val(1)
 v.x += 1
 ```
 
@@ -281,7 +281,7 @@ assert(nilBox?.v == null)
 ## Error : Not nullable : x
 
 ```babble
-def x = 5
+var x = 5
 x?.foo
 ```
 
@@ -303,13 +303,15 @@ Not a scope : opt
 ## Case 26
 
 ```babble
-def GBox of T = class (def v : T) () static (
-    def count = 0
+def GBox of T = class (var v : T) () static (
+    private var count = 0
+    def setCount = fn io (n : int) -> ( this.count = n )
+    def getCount = fn volatile () : int -> ( this.count )
 )
 def b = GBox(10)
 b.v = 20
-GBox.count = 5
-assert(b.v == 20 and GBox.count == 5)
+GBox.setCount(5)
+assert(b.v == 20 and GBox.getCount() == 5)
 ```
 
 ## Error : Not a scope : (5)
@@ -357,7 +359,7 @@ No such member : missing
 ## Error : x is private
 
 ```babble
-def C = class () ( private def x : int = 1 )
+def C = class () ( private var x : int = 1 )
 def c = C()
 c.x = 2
 ```
@@ -392,7 +394,7 @@ No such field in array of char : length (use size())
 ## Assigning to a field of a frozen value is rejected
 
 ```babble
-def Cell = class (def v : int) ()
+def Cell = class (var v : int) ()
 def fb : frozen Cell = freeze(Cell(1))
 fb.v = 2
 ```
@@ -404,7 +406,7 @@ Cannot assign to field of frozen value
 ## Reading and writing fields through a bounded TypeVar and a generic instance
 
 ```babble
-def GCell of T = class (def v : T) ()
+def GCell of T = class (var v : T) ()
 def setCell of (T : GCell of int) = fn (mut b : T, x : int) -> ( b.v = x )
 def b = GCell of int (1)
 setCell(b, 9)

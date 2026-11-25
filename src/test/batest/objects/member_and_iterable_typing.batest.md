@@ -7,9 +7,9 @@ References : `BIP008` (typing & object model), `BIP022` (intersections), `analys
 def tests = import("org.babblelang.tests")
 def HasVal = interface ( def x: int )
 def SubHasVal = interface extends HasVal ()
-def Holder = class (def x: int, private def secret: int) implements SubHasVal ()
-def GenBox of T = class (init: T) ( def val = init )
-def CntIter = class (private def i: int) (
+def Holder = class (var x: int, private def secret: int) implements SubHasVal ()
+def GenBox of T = class (init: T) ( var val = init )
+def CntIter = class (private var i: int) (
     def hasNext = fn (): bool -> ( this.i < 2 )
     def next = fn mut (): int -> ( this.i += 1 ; this.i )
 )
@@ -70,14 +70,24 @@ def readMagic = fn (x: java.io.ObjectStreamConstants & java.lang.Runnable): shor
 assert(readMagic != null)
 ```
 
-## Assigning field inherited through sub-interface and bounded TypeVar
+## Reading field inherited through sub-interface and bounded TypeVar
+
+```babble
+def getSub = fn (s: SubHasVal): int -> ( s.x )
+def getBound of (T: HasVal) = fn (t: T): int -> ( t.x )
+def h = Holder(1, 9)
+h.x = 20
+assert(getSub(h) == 20 and getBound(h) == 20)
+```
+
+## Assigning field through sub-interface fails because interface members are def
 
 ```babble
 def setSub = fn (mut s: SubHasVal, v: int) -> ( s.x = v )
-def setBound of (T: HasVal) = fn (mut t: T, v: int) -> ( t.x = v )
-def h = Holder(1, 9)
-setSub(h, 10) ; assert(h.x == 10)
-setBound(h, 20) ; assert(h.x == 20)
+```
+
+```error
+Cannot assign to def member : x
 ```
 
 ## Assigning unannotated inferred field of generic class from outside checks substituted type
@@ -125,7 +135,7 @@ Not a scope : n
 
 ```babble
 def RunWrap = interface extends java.lang.Runnable ()
-def Both = class (def n: int) implements RunWrap, tests.JavaClassDemo.SameSigRunnable (
+def Both = class (var n: int) implements RunWrap, tests.JavaClassDemo.SameSigRunnable (
     def run = overload ( fn mut (): void -> ( this.n += 1 ; () ), fn mut (k: int): void -> ( this.n += k ; () ) )
 )
 def b = Both(0) ; b.run() ; b.run(4)
@@ -158,16 +168,16 @@ Type error : expected () : int, got () : string
 ## For loop over bounded TypeVar and frozen TypeVar
 
 ```babble
-def sumT of (T: java.lang.Iterable of int) = fn (xs: T): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
-def sumF of (T: java.lang.Iterable of int) = fn (xs: frozen T): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumT of (T: java.lang.Iterable of int) = fn (xs: T): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
+def sumF of (T: java.lang.Iterable of int) = fn (xs: frozen T): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 assert(sumT(list(1, 2, 3)) == 6 and sumF(freeze(list(4, 5))) == 9)
 ```
 
 ## For loop over intersection finds iterable second member mutable and frozen
 
 ```babble
-def sumI = fn (xs: java.io.Serializable & java.util.List of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
-def sumFI = fn (xs: frozen (java.io.Serializable & java.util.List of int)): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def sumI = fn (xs: java.io.Serializable & java.util.List of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
+def sumFI = fn (xs: frozen (java.io.Serializable & java.util.List of int)): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 assert(sumI(java.util.ArrayList(list(2, 3))) == 5 and sumFI(freeze(java.util.ArrayList(list(4, 5)))) == 9)
 ```
 
@@ -184,25 +194,25 @@ Not iterable : java.lang.Runnable & java.io.Serializable
 ## For loop over union of Java iterables and union of Java iterators
 
 ```babble
-def sumJI = fn (u: list of int | set of int): int -> ( def s = 0 ; for x in u then ( s += x ) ; s )
-def sumIt = fn (mut u: java.util.Iterator of int | java.util.ListIterator of int): int -> ( def s = 0 ; for x in u then ( s += x ) ; s )
+def sumJI = fn (u: list of int | set of int): int -> ( var s = 0 ; for x in u then ( s += x ) ; s )
+def sumIt = fn (mut u: java.util.Iterator of int | java.util.ListIterator of int): int -> ( var s = 0 ; for x in u then ( s += x ) ; s )
 assert(sumJI(list(1, 2)) == 3 and sumIt(list(3, 4).iterator()) == 7)
 ```
 
 ## For loop over frozen union mixing list and array
 
 ```babble
-def sumMix = fn (u: frozen (list of int | array of int)): int -> ( def s = 0 ; for x in u then ( s += x ) ; s )
+def sumMix = fn (u: frozen (list of int | array of int)): int -> ( var s = 0 ; for x in u then ( s += x ) ; s )
 assert(sumMix(freeze(array.of(5, 6))) == 11)
 ```
 
 ## For loop over Babble-to-Java iterator wrapper, direct Babble iterator, and Java Iterator
 
 ```babble
-def s1 = 0 ; for x in JavaIterWrap(list(10, 20)) then ( s1 += x )
-def s2 = 0 ; for x in CntIter(0) then ( s2 += x )
+var s1 = 0 ; for x in JavaIterWrap(list(10, 20)) then ( s1 += x )
+var s2 = 0 ; for x in CntIter(0) then ( s2 += x )
 def it = list(1, 2).iterator()
-def c = 0 ; for x in it then ( c += 1 )
+var c = 0 ; for x in it then ( c += 1 )
 assert(s1 == 30 and s2 == 3 and c == 2)
 ```
 

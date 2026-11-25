@@ -14,9 +14,9 @@ def bigSink = fn nothrow (x: double): double -> (return x ; x)
 ## HirPurity.collectModifiedVars : array.set, field/Java writes, and nested for loop
 
 ```babble
-def Sub = class (def f: int) ()
+def Sub = class (var f: int) ()
 def run = fn io (): int -> (
-  def a = 0 ; def s = Sub(4) ; def pt = java.awt.Point(2, 3) ; def i = 0
+  var a = 0 ; def s = Sub(4) ; def pt = java.awt.Point(2, 3) ; var i = 0
   while i < 2 then (
     def a1 = (array of int)(2) ; a1.set(0, i + 1) ; s.f = 5 ; pt.x = 7
     for v in a1 then (a += v)
@@ -158,11 +158,11 @@ fn run() -> int:
 
 ```babble
 def I = interface (def g = fn (x: int): int -> (x + 1))
-def S = class (def f: int) implements I (
+def S = class (var f: int) implements I (
   def m = fn (x: int): int -> (this.f + x)
-  def s = fn (x: int): int -> (def a = 0 ; def i = 0 ; while i < 2 then (a += super.g(x) + this.m(x) ; i += 1) ; a)
+  def s = fn (x: int): int -> (var a = 0 ; var i = 0 ; while i < 2 then (a += super.g(x) + this.m(x) ; i += 1) ; a)
 )
-def r = fn (v: I): int -> (def a = 0 ; def i = 0 ; while i < 2 then (a += v.g(1) ; i += 1) ; a)
+def r = fn (v: I): int -> (var a = 0 ; var i = 0 ; while i < 2 then (a += v.g(1) ; i += 1) ; a)
 assert(S(5).s(1) == 16 and r(S(5)) == 4)
 ```
 
@@ -246,9 +246,9 @@ fn S.s(v0: int) -> int:
 ## HirPurity.collectModifiedVars : is, as, and safe-nav (?.) inside while
 
 ```babble
-def S = class (def f: int) (def m = fn (x: int): int -> (this.f + x))
+def S = class (var f: int) (def m = fn (x: int): int -> (this.f + x))
 def run = fn (s: S, o: S?, d: any): int -> (
-  def a = 0 ; def i = 0
+  var a = 0 ; var i = 0
   while i < 2 then (a += (d as S).m(1) + (if (s is S) and (o?.m(1) != null) then (1) else (0)) ; i += 1) ; a
 )
 assert(run(S(5), S(5), S(5)) == 14)
@@ -385,11 +385,11 @@ fn run(v0: any, v1: any, v2: any) -> int:
 ## HirPurity.collectModifiedVars : top-level/this writes, !, generic TypeApply
 
 ```babble
-def topM = 0 ; topM = 1
+var topM = 0 ; topM = 1
 def bigId of T = fn nothrow (x: T): T -> (def f = fn (): int -> (0) ; discard(f) ; x)
-def MC = class (def mf: int) (
+def MC = class (var mf: int) (
   def run = fn mut io (n: int): int -> (
-    def i = 0 ; def s = 0
+    var i = 0 ; var s = 0
     while i < n then (
       topM += 1 ; this.mf += 1 ; def os: string? = "ab"
       s += this.mf + os!.length() + (bigId of int)(4) ; i += 1
@@ -507,7 +507,7 @@ fn MC.run(v0: int) -> int:
 
 ```babble
 def run = fn io (): int -> (
-  def i = 0 ; def s = 0
+  var i = 0 ; var s = 0
   while i < 2 then (
     def sb = java.lang.StringBuilder("x") ; def fnL = fn (z: int): int -> (z + 1)
     def ClsL = class (def v: int) () ; def IfcL = interface () ; def av: any = sb

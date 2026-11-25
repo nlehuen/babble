@@ -30,10 +30,10 @@ def heavy = fn (a: Vec3, b: Vec3): double -> (
 ```babble
 def run = fn (fl: bool): int -> (
     def u: any? = ()
-    def p: Vec3 | Pair = Vec3(1.0, 2.0, 3.0)
+    var p: Vec3 | Pair = Vec3(1.0, 2.0, 3.0)
     if fl then ( p = Pair(4, 5) )
-    def q: Vec3? ; q = Vec3(2.0, 3.0, 4.0)
-    def tmp: int? ; tmp = 1
+    var q: Vec3? = null ; q = Vec3(2.0, 3.0, 4.0)
+    var tmp: int? = null ; tmp = 1
     (if p is Pair then ( p.a ) else ( 0 )) + int(q!.x) + tmp! + (if u == null then ( 0 ) else ( 1 ))
 )
 assert(run(true) == 7 and run(false) == 3)
@@ -45,9 +45,9 @@ fn run (fl:bool) -> int {pure unique}
   (def u (block))
   (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
   (if var(fl) (block (set p (record-new Pair 4:int 5:int))))
-  (def q)
+  (def q null)
   (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
-  (def tmp)
+  (def tmp null)
   (set tmp 1:int)
   (+:int (+:int (+:int (block (if (is var(p) Pair) (block (get-this-field a)) (block 0:int))) (call name(int) (get-this-field x))) (nonnull var(tmp))) (block (if (==:bool var(u) null) (block 0:int) (block 1:int))))
 ```
@@ -58,9 +58,9 @@ fn run (fl:bool) -> int {pure unique}
   (def u (block))
   (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
   (if var(fl) (set p (record-new Pair 4:int 5:int)))
-  (def q)
+  (def q null)
   (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
-  (def tmp)
+  (def tmp null)
   (set tmp 1:int)
   (+:int (+:int (+:int (if (is var(p) Pair) (get-this-field a) 0:int) (call name(int) (get-this-field x))) (nonnull var(tmp))) (if (==:bool var(u) null) 0:int 1:int))
 ```
@@ -184,10 +184,10 @@ fn run(v0: bool) -> int:
 ## SROA verification bailouts : typed def/assign, value-used assign, and statement if/else
 
 ```babble
-def valA = fn (): Vec3 -> ( def p = Vec3(1.0, 2.0, 3.0) ; p = Vec3(4.0, 5.0, 6.0) )
+def valA = fn (): Vec3 -> ( var p = Vec3(1.0, 2.0, 3.0) ; p = Vec3(4.0, 5.0, 6.0) )
 def run = fn (fl: bool): double -> (
-    def t: Vec3 = Vec3(1.0, 2.0, 3.0) ; t = Vec3(2.0, 3.0, 4.0)
-    def s = Vec3(0.0, 0.0, 0.0)
+    var t: Vec3 = Vec3(1.0, 2.0, 3.0) ; t = Vec3(2.0, 3.0, 4.0)
+    var s = Vec3(0.0, 0.0, 0.0)
     if fl then ( s = Vec3(1.0, 2.0, 3.0) ) else ( s = Vec3(4.0, 5.0, 6.0) )
     t.x + s.x
 )
@@ -288,7 +288,7 @@ fn run(v0: bool) -> double:
 def run = fn (fl: bool): double -> (
     def a = if fl then ( Vec3(1.0, 2.0, 3.0) ) else ( mkVec(4.0) )
     def b = if fl then ( mkVec(5.0) ) else ( Vec3(2.0, 3.0, 4.0) )
-    def c = Vec3(1.0, 2.0, 3.0)
+    var c = Vec3(1.0, 2.0, 3.0)
     if fl then ( c = mkVec(6.0) )
     a.x + b.x + c.x
 )
@@ -428,8 +428,8 @@ fn run(v0: bool) -> double:
 
 ```babble
 def run = fn (x: any, pv: Vec3, fl: bool): double -> (
-    def p = Vec3(1.0, 2.0, 3.0) ; p = (x as Vec3)
-    def q = Vec3(1.0, 2.0, 3.0) ; if fl then ( q = pv )
+    var p = Vec3(1.0, 2.0, 3.0) ; p = (x as Vec3)
+    var q = Vec3(1.0, 2.0, 3.0) ; if fl then ( q = pv )
     def a = Vec3(1.0, 2.0, 3.0) ; def b = Pair(4, 5)
     def m = if fl then ( a ) else ( b )
     p.x + q.x + (if m is Pair then ( double(m.a) ) else ( a.x ))

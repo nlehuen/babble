@@ -21,12 +21,14 @@ import java.util.Set;
  */
 public final class ScopeAnalysis {
     private static final String[] NONE = new String[0];
+    private static final boolean[] NO_FINALS = new boolean[0];
 
     /** A warning or diagnostic, at a line, and at a column (from 1) when it has one, else -1. */
     public record Warning(String message, int line, int column) {
     }
 
     private final ParseTreeProperty<String[]> declared = new ParseTreeProperty<>();
+    private final ParseTreeProperty<boolean[]> declaredFinals = new ParseTreeProperty<>();
     private final Set<String> exports = new LinkedHashSet<>();
     private final List<Warning> warnings = new ArrayList<>();
     private final List<Warning> typeDiagnostics = new ArrayList<>();
@@ -114,8 +116,9 @@ public final class ScopeAnalysis {
         return exports.toArray(NONE);
     }
 
-    void setDeclared(ParserRuleContext owner, String[] names) {
+    void setDeclared(ParserRuleContext owner, String[] names, boolean[] finals) {
         declared.put(owner, names);
+        declaredFinals.put(owner, finals);
     }
 
     /**
@@ -127,6 +130,15 @@ public final class ScopeAnalysis {
     public String[] declared(ParserRuleContext owner) {
         String[] names = declared.get(owner);
         return names != null ? names : NONE;
+    }
+
+    /**
+     * Parallel finality flags for {@link #declared(ParserRuleContext)} ({@code true} for {@code def},
+     * {@code false} for {@code var}).
+     */
+    public boolean[] declaredFinals(ParserRuleContext owner) {
+        boolean[] finals = declaredFinals.get(owner);
+        return finals != null ? finals : NO_FINALS;
     }
 
     /**
@@ -377,6 +389,25 @@ public final class ScopeAnalysis {
     /** True when a class parameter is marked {@code def}. */
     public static boolean paramIsDef(ParserRuleContext param) {
         return param instanceof BabbleParser.ClassParamContext cp && cp.DEF() != null;
+    }
+
+    /** True when a class parameter declares a member field ({@code def} or {@code var}). */
+    public static boolean paramIsMember(ParserRuleContext param) {
+        return param instanceof BabbleParser.ClassParamContext cp && (cp.DEF() != null || cp.VAR() != null);
+    }
+
+    /** True when a declaration ({@code defExpression}, {@code classParam}, or {@code fnParam}) is marked {@code var}. */
+    public static boolean isVar(ParseTree tree) {
+        if (tree instanceof BabbleParser.DefExpressionContext def) {
+            return def.VAR() != null;
+        }
+        if (tree instanceof BabbleParser.ClassParamContext cp) {
+            return cp.VAR() != null;
+        }
+        if (tree instanceof BabbleParser.FnParamContext fp) {
+            return fp.VAR() != null;
+        }
+        return false;
     }
 
     /** Named argument label on a call parameter, or {@code null} if positional. */

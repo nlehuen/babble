@@ -108,7 +108,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (scopes == null) {
             scopes = BlockScopes.analyze(ctx);
         }
-        namespace.declare(scopes.declared(ctx));
+        namespace.declare(scopes.declared(ctx), scopes.declaredFinals(ctx));
         Object result = null;
         try {
             for (BabbleParser.ExpressionContext statement : ctx.expression()) {
@@ -426,9 +426,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Namespace before = namespace;
         String[] declared = scopes.declared(cc.catchBlock);
         if (cc.name != null || declared.length > 0) {
-            namespace = namespace.child(declared);
+            namespace = namespace.child(declared, scopes.declaredFinals(cc.catchBlock));
             if (cc.name != null) {
-                namespace.define(cc.name.getText(), false).set(bound);
+                namespace.define(cc.name.getText(), true).set(bound);
             }
         }
         try {
@@ -449,7 +449,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             return visitStatements(ctx.expression());
         }
         Namespace before = namespace;
-        namespace = namespace.child(scopes.declared(ctx));
+        namespace = namespace.child(scopes.declared(ctx), scopes.declaredFinals(ctx));
         try {
             return visitStatements(ctx.expression());
         } finally {
@@ -779,8 +779,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             elem = Values.widenNumeric(elem, elemRank);
         }
         Namespace before = namespace;
-        namespace = namespace.child(blockDeclared);
-        namespace.define(loopVar, false).set(elem);
+        namespace = namespace.child(blockDeclared, scopes.declaredFinals(ctx.forBlock));
+        namespace.define(loopVar, true).set(elem);
         try {
             return widen(ctx.forBlock, visitStatements(ctx.forBlock.expression()));
         } finally {

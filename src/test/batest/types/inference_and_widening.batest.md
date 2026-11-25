@@ -5,7 +5,7 @@ References : BIP008 (D6 reassignment widening, P7 call-site parameter inference)
 ## Reassignment to double widens the local across its entire scope (BIP008-D6)
 
 ```babble
-def x = 1
+var x = 1
 def asInt = x + 2
 x = 2.5
 def asDouble = x + 1
@@ -18,7 +18,7 @@ assert(string(classof(x)) == "java.lang.Double")
 ## Case 2
 
 ```babble
-def x: int? = 3
+var x: int? = 3
 def y: double? = x
 def z: double? = 4
 assert(x == 3)
@@ -30,7 +30,7 @@ assert(string(classof(y)) == "java.lang.Double")
 ## Error : Type error : expected int, got double
 
 ```babble
-def Box = class (def x: int) ()
+def Box = class (var x: int) ()
 def b = Box(1)
 b.x = 2.5
 ```

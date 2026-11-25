@@ -5,7 +5,7 @@ References : `BIP007` (effects & purity), `BIP027` (`CallEffectAnalyzer`, `Effec
 ```babble
 ;; babble module=eff_exports.ba
 export def x = 1
-export def mutCounter = 0
+var mutCounter = 0
 mutCounter = 1
 export def IoCons = class () implements java.util.function.Consumer of any (
     def accept = fn io (v: any) -> ( println(v) )
@@ -14,7 +14,7 @@ export def IoCons = class () implements java.util.function.Consumer of any (
 
 ```babble
 ;; babble preamble
-def Box = class (def v: int) (
+def Box = class (var v: int) (
     def inc = fn mut (): int -> ( this.v += 1 ; this.v )
 )
 def ListPair = class (def xs: list of int, def ys: list of int) (
@@ -63,7 +63,7 @@ assert(ioLoops(list(9), b) == 3 and gList2.size() == 3)
 
 ```babble
 axiom java.util.LinkedList.iterator: fn mut (): (java.util.Iterator of any!)!
-def bad = fn (xs: java.util.LinkedList of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def bad = fn (xs: java.util.LinkedList of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 ```
 
 ```error
@@ -74,7 +74,7 @@ Cannot mutate parameter xs (iterator) : mark parameter as mut xs
 
 ```babble
 axiom java.util.LinkedList.iterator: fn view volatile (): (java.util.Iterator of any!)!
-def f = fn volatile (xs: java.util.LinkedList of int): int -> ( def s = 0 ; for x in xs then ( s += x ) ; s )
+def f = fn volatile (xs: java.util.LinkedList of int): int -> ( var s = 0 ; for x in xs then ( s += x ) ; s )
 def ll = java.util.LinkedList of int () ; ll.add(3) ; ll.add(4)
 assert(f(ll) == 7)
 ```
@@ -82,14 +82,14 @@ assert(f(ll) == 7)
 ## For-loop over pure Babble Iterable with mut iterator requires mut parameter
 
 ```babble
-def BIter = class (def n: int) (
+def BIter = class (var n: int) (
     def hasNext = fn (): bool -> ( this.n > 0 )
     def next = fn mut (): int -> ( this.n -= 1 ; this.n )
 )
-def BSeq = class (def n: int) (
+def BSeq = class (var n: int) (
     def iterator = fn mut (): BIter -> ( BIter(this.n) )
 )
-def bad = fn (it: BSeq): int -> ( def s = 0 ; for x in it then ( s += x ) ; s )
+def bad = fn (it: BSeq): int -> ( var s = 0 ; for x in it then ( s += x ) ; s )
 ```
 
 ```error
@@ -99,11 +99,11 @@ Cannot mutate parameter it (iterator) : mark parameter as mut it
 ## For-loop over pure Babble Iterator with mut hasNext requires mut parameter
 
 ```babble
-def BIter = class (def n: int) (
+def BIter = class (var n: int) (
     def hasNext = fn mut (): bool -> ( this.n > 0 )
     def next = fn (): int -> ( this.n )
 )
-def bad = fn (it: BIter): int -> ( def s = 0 ; for x in it then ( s += x ) ; s )
+def bad = fn (it: BIter): int -> ( var s = 0 ; for x in it then ( s += x ) ; s )
 ```
 
 ```error
@@ -114,7 +114,7 @@ Cannot mutate parameter it (hasNext) : mark parameter as mut it
 
 ```babble
 def bad = fn (xs: list of int, p: Box) -> (
-    def a0 = p ; def a1: Box? = null ; def a2: Box? = null ; def a3: Box? = null
+    def a0 = p ; var a1: Box? = null ; var a2: Box? = null ; var a3: Box? = null
     for x in xs then ( discard(x) ; a3 = a2 ; a2 = a1 ; a1 = a0 )
     if a3 != null then ( a3.v = 1 )
 )
@@ -187,7 +187,7 @@ assert(nested(fn (n: int): int -> ( n * 2 ), 5) == 20)
 ## Own calling parameter escaping via outer assignment is rejected
 
 ```babble
-def sink: (fn (int): int)? = null
+var sink: (fn (int): int)? = null
 def bad = fn io calling f (f: fn (int): int) -> ( sink = f )
 ```
 
@@ -221,7 +221,7 @@ assert(wrap(fn (x: int): int -> ( x + 1 ))(4) == 5)
 
 ```babble
 def f = fn (): bool -> (
-    def a = (array of int).of(1, 2)
+    var a = (array of int).of(1, 2)
     def b = (array of int).of(1, 2)
     a.set(0, value: 9)
     def s1 = (a).size()
@@ -412,7 +412,7 @@ Function bad declared nothrow violates nothrow guarantee
 
 ```babble
 def outer = fn (): int -> (
-    def acc = 0
+    var acc = 0
     def mid = fn (): int -> (
         def inner = fn (): int -> ( acc = acc + 1 ; acc )
         inner() + inner()
@@ -425,7 +425,7 @@ assert(outer() == 3)
 ## Recursive mut method exercises self-receiver Origin.isEmpty
 
 ```babble
-def Dec = class (def n: int) (
+def Dec = class (var n: int) (
     def dec = fn mut (k: int): int -> ( if k <= 0 then ( this.n ) else ( this.n -= 1 ; recurse(k - 1) ) )
 )
 assert(Dec(5).dec(3) == 2)
@@ -434,8 +434,8 @@ assert(Dec(5).dec(3) == 2)
 ## Unannotated lambda infers mutParams alongside explicit mut and shared methods
 
 ```babble
-def store: any? = null
-def C = class (def v: int) (
+var store: any? = null
+def C = class (var v: int) (
     def bump = fn mut () -> ( this.v += 1 )
     def bumpInner = fn mut () -> ( def h = fn mut () -> ( this.v += 1 ) ; h() )
     def leak = fn io shared () -> ( store = this )
@@ -497,7 +497,7 @@ assert(f2(true) == 20)
 def f3 = fn (c: bool, b: Box): int -> (
   def u1 = if c then ( fn (x: Box): Box -> ( Box(1) ) ) else ( fn (x: Box): Box -> ( x ) )
   def u2 = if c then ( fn (): Box -> ( Box(1) ) ) else ( fn (): Box -> ( Box(2) ) )
-  def nt = if c then ( fn (n: int): int -> ( while n > 0 then ( n -= 1 ) ; n ) ) else ( fn (n: int): int -> ( n ) )
+  def nt = if c then ( fn (var n: int): int -> ( while n > 0 then ( n -= 1 ) ; n ) ) else ( fn (n: int): int -> ( n ) )
   u1(b).v + u2().v + nt(1)
 )
 assert(f3(true, Box(9)) == 2)
@@ -506,7 +506,7 @@ assert(f3(true, Box(9)) == 2)
 ## EffectSet.intersect joins shared and non-shared method branches
 
 ```babble
-def S = class (def v: int) (
+def S = class (var v: int) (
     def a = fn shared (): S -> ( this )
     def b = fn (): S -> ( discard(Box(1)) ; this )
 )
@@ -532,7 +532,7 @@ assert(runAll() == 23)
 def fPure = fn calling f (f: fn (): int): int -> ( f() )
 def runAll = fn volatile (): int -> (
     def c = fPure(fn volatile (): int -> ( gBox.v ))
-    def d = fPure(fn (): int -> ( def i = 1 ; while i > 0 then ( i -= 1 ) ; i ))
+    def d = fPure(fn (): int -> ( var i = 1 ; while i > 0 then ( i -= 1 ) ; i ))
     c + d
 )
 assert(runAll() == 10)
@@ -578,7 +578,7 @@ fn ntUniq () -> obj {nothrow unique}
 ```babble
 def mutThrowUniq = fn (mut b: Box, s: string): Box -> ( b.v = int(s) ; Box(b.v) )
 def mutThrowInt = fn (mut b: Box, s: string): int -> ( b.v = int(s) ; b.v )
-def SharedCls = class (def v: int) (
+def SharedCls = class (var v: int) (
     def leak = fn io shared (): SharedCls -> ( this )
 )
 def b = Box(0)

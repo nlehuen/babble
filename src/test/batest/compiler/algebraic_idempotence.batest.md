@@ -13,7 +13,7 @@ def bigClamp = fn axiom pure nothrow idempotent (x: int): int -> (
     r
 )
 
-def tick = 0
+var tick = 0
 def bump = fn io (): int -> (tick += 1 ; tick)
 ```
 

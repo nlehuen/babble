@@ -8,37 +8,39 @@ import javax.script.ScriptException;
 public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testIncr() throws Exception {
-        Assertions.assertEquals(2, interpret("def i = 0 ; ( i = i + 1 ) ; i = i + 1 ; i"));
+        Assertions.assertEquals(2, interpret("var i = 0 ; ( i = i + 1 ) ; i = i + 1 ; i"));
     }
 
     @Test
     public void testPrecedence() throws Exception {
-        Assertions.assertEquals(2, interpret("def value = 1; value = value + 1 ; value"));
+        Assertions.assertEquals(2, interpret("var value = 1; value = value + 1 ; value"));
         Assertions.assertEquals(2, interpret("def o = object (def value = 1) ; def value = o.value + 1 ; value"));
-        Assertions.assertEquals(1, interpret("def o = object (def value = 1) ; def value : any? ; value = o.value ; value"));
+        Assertions.assertEquals(1, interpret("def o = object (def value = 1) ; var value : any? = null ; value = o.value ; value"));
     }
 
     @Test
     public void testDef() throws Exception {
-        Assertions.assertEquals(null, interpret("def i : any?"));
-        Assertions.assertEquals(null, interpret("def i : any? ; i"));
-        Assertions.assertEquals(1, interpret("def i : any? ; i = 1"));
-        Assertions.assertEquals(1, interpret("def i : any? ; i = 1 ; i"));
-        assertStaticFails("def i : any", "Type error : expected any, got null", 1);
+        Assertions.assertEquals(null, interpret("var i : any? = null"));
+        Assertions.assertEquals(null, interpret("var i : any? = null ; i"));
+        Assertions.assertEquals(1, interpret("var i : any? = null ; i = 1"));
+        Assertions.assertEquals(1, interpret("var i : any? = null ; i = 1 ; i"));
+        assertFails("def i : any?", "Declaration requires an initializer : i");
+        assertFails("var i : any?", "Declaration requires an initializer : i");
+        assertFails("def i = 1 ; i = 2", "Cannot assign to def : i");
     }
 
     @Test
     public void testAssign() throws Exception {
         Assertions.assertEquals(0, interpret("def i = 0 ; i"));
-        Assertions.assertEquals(1, interpret("def i = 0 ; i = 1"));
-        Assertions.assertEquals(2, interpret("def i = 0 ; i = 1 ; i = i + 1"));
-        Assertions.assertEquals(2, interpret("def i = 0 ; i = 1 ; i = i + 1 ; i"));
+        Assertions.assertEquals(1, interpret("var i = 0 ; i = 1"));
+        Assertions.assertEquals(2, interpret("var i = 0 ; i = 1 ; i = i + 1"));
+        Assertions.assertEquals(2, interpret("var i = 0 ; i = 1 ; i = i + 1 ; i"));
     }
 
     @Test
     public void testBlockScope() {
         assertFails("def a = 1 ; (def b = 2) ; a ; b", "No such name : b");
-        assertFails("def a = 1 ; (def b = 2) ; a = 1 ; b = 5", "No such name : b");
+        assertFails("var a = 1 ; (def b = 2) ; a = 1 ; b = 5", "No such name : b");
         // Rejected before anything runs.
         assertFails("def a = 1 ; def a = 2", "Name already defined : a");
     }
@@ -46,7 +48,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testBranchesAndLoopBodiesAreScopes() {
         assertFails("def i = 1 ; if i > 0 then ( def y = 1 ) ; y", "No such name : y");
-        assertFails("def i = 0 ; while i < 3 then ( def x = i * 2 ; i = i + 1 ) ; x", "No such name : x");
+        assertFails("var i = 0 ; while i < 3 then ( def x = i * 2 ; i = i + 1 ) ; x", "No such name : x");
     }
 
     @Test
@@ -54,17 +56,17 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         Assertions.assertEquals(3, interpret("def a = 1 ; def b = ( def a = 2 ; a + 1 ) ; b"));
         Assertions.assertEquals(1, interpret("def a = 1 ; ( def a = 2 ) ; a"));
         // An assignment still reaches the nearest declared name.
-        Assertions.assertEquals(5, interpret("def a = 1 ; ( a = 5 ) ; a"));
+        Assertions.assertEquals(5, interpret("var a = 1 ; ( a = 5 ) ; a"));
     }
 
     @Test
     public void testLoopBodyIsAFreshScopeOnEachIteration() throws Exception {
         // Used to fail on the second iteration with "Name already defined : x".
-        Assertions.assertEquals(4, interpret("def i = 0 ; def s = 0 ; while i < 3 then ( def x = i * 2 ; s = s + x ; i = i + 1 ) ; s - 2"));
+        Assertions.assertEquals(4, interpret("var i = 0 ; var s = 0 ; while i < 3 then ( def x = i * 2 ; s = s + x ; i = i + 1 ) ; s - 2"));
         // Closures created in different iterations capture different variables.
         Assertions.assertEquals(3, interpret(
                 "def Box = class (def f : fn () : int) ()\n"
-                        + "def l : java.util.List of Box = java.util.ArrayList() ; def i = 0\n"
+                        + "def l : java.util.List of Box = java.util.ArrayList() ; var i = 0\n"
                         + "while i < 3 then ( def x = i ; l.add(Box(fn () -> ( x ))) ; i = i + 1 )\n"
                         + "(l.get(0) as Box).f() + (l.get(1) as Box).f() + (l.get(2) as Box).f()"));
     }
@@ -73,7 +75,7 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     public void testNamesAreHoistedToTheStartOfTheirScope() {
         // The local "a" shadows the outer one from the start of the function body.
         assertFails("def a = 1 ; def f = fn () -> ( def b = a ; def a = 2 ; b + a ) ; f()", "Name used before definition : a");
-        assertFails("def f = fn () -> ( x = 1 ; def x = 2 ) ; f()", "Name used before definition : x");
+        assertFails("def f = fn () -> ( x = 1 ; var x = 2 ) ; f()", "Name used before definition : x");
         // At the top level, an implicit of the same name is shadowed too.
         assertFails("println(1) ; def println = fn (x : any) -> ( x )", "Name used before definition : println");
     }
@@ -82,9 +84,9 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     public void testRedefinitionsAreRejectedBeforeRunning() {
         assertFails("def f = fn (a : int) -> ( def a = 2 ) ; 1", "Name already defined : a");
         assertFails("def f = fn (a : int, a : int) -> ( a ) ; 1", "Name already defined : a");
-        assertFails("def i = 0 ; def f = fn (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
+        assertFails("var i = 0 ; def f = fn (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
         // A block in the test is a scope of its own, entered on every evaluation.
-        Assertions.assertDoesNotThrow(() -> interpret("def i = 0 ; while ( def x = i ; x < 2 ) then ( i = i + 1 )"));
+        Assertions.assertDoesNotThrow(() -> interpret("var i = 0 ; while ( def x = i ; x < 2 ) then ( i = i + 1 )"));
     }
 
     @Test

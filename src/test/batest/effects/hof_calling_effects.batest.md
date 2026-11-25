@@ -14,12 +14,12 @@ def mapList of (T, R) = fn calling f (shared xs: list of T, f: fn (x: T): R): li
 def IntSeq = interface ( def forEach: fn calling f (f: fn (x: int): any?) )
 def RangeSeq = class (def n: int) implements IntSeq (
     def forEach = fn calling f (f: fn (x: int): any?) -> (
-        def i: int = 0
+        var i: int = 0
         while i < this.n then ( f(i); i += 1 )
     )
 )
 def IntBuf = class () (
-    def total: int = 0
+    var total: int = 0
     def append = fn mut (x: int) -> ( this.total += x )
 )
 ```
@@ -28,7 +28,7 @@ def IntBuf = class () (
 
 ```babble
 def pureUse = fn (x: int): int -> (apply(fn (n: int): int -> (n * 2), x))
-def g: int = 10
+var g: int = 10
 g = 20
 def volUse = fn volatile (x: int): int -> (apply(fn volatile (n: int): int -> (n + g), x))
 assert(pureUse(5) == 10)
@@ -59,7 +59,7 @@ Function bad violates pure guarantee (performs I/O or external mutation) : mark 
 ## Error : Function bad violates deterministic guarantee : mark function as vola...
 
 ```babble
-def g: int = 1
+var g: int = 1
 g = 2
 def bad = fn (x: int): int -> (apply(fn volatile (n: int): int -> (n + g), x))
 ```
@@ -125,7 +125,7 @@ Function bad violates pure guarantee (performs I/O or external mutation) : mark 
 
 ```babble
 def sumSeq = fn (seq: IntSeq): int -> (
-    def total: int = 0
+    var total: int = 0
     seq.forEach(fn (x: int) -> ( total += x ))
     total
 )
@@ -162,7 +162,7 @@ Cannot mutate parameter out (forwarded mut callback out.append) : mark parameter
 
 ```babble
 def SelfSeq = class () (
-    def total: int = 0
+    var total: int = 0
     def append = fn mut (x: int) -> ( this.total += x )
     def forEach = fn calling f (f: fn (x: int): any?) -> ( f(1) )
 )
@@ -178,7 +178,7 @@ Exclusivity error : mut target s aliases argument s
 ```babble
 def wrapDirect = fn calling g (g: fn (x: int): int, v: int): int -> (apply(g, v))
 def wrapClosure = fn calling g (g: fn (x: int): int, v: int): int -> (
-    def acc: int = 0
+    var acc: int = 0
     acc = apply(fn (x: int): int -> (g(x) + 1), v)
     acc
 )
@@ -204,7 +204,7 @@ assert(asIo(fn io (x: int): int -> (x + 3), 10) == 13)
 ```babble
 def asPoly: fn calling f (f: fn (x: int): int, v: int): int = apply
 def run = fn (h: fn calling f (f: fn (x: int): int, v: int): int): int -> (
-    def sum: int = 0
+    var sum: int = 0
     h(fn (x: int): int -> (sum += x; sum), 7)
 )
 assert(run(asPoly) == 7)
@@ -330,7 +330,7 @@ Function bad violates pure guarantee (performs I/O or external mutation) : mark 
 ## SymbolicEffectSummary : thisFlow (mutThis propagation) and extFlow (external mutation -> io)
 
 ```babble
-def Cell = class (def v: int) (
+def Cell = class (var v: int) (
     def applySelf = fn mut calling f (f: fn (mut Cell): int): int -> (f(this))
 )
 def g = Cell(1)

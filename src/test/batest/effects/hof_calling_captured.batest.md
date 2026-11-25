@@ -16,7 +16,7 @@ def dbl = fn (x: int): int -> (x * 2)
 def ioId = fn io (x: int): int -> (println("in " + x); x)
 
 def Holder = class () (
-    def cb: (fn (x: int): int)? = null
+    var cb: (fn (x: int): int)? = null
     def put = fn mut (shared f: fn (x: int): int) -> (this.cb = f)
 )
 ```

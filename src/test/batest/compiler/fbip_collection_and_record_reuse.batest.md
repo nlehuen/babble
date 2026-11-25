@@ -280,7 +280,7 @@ fn esc(v0: any [unique]) -> any:
 ## FBIP reuse disqualifiers : reassigned unique param and reordered named args
 
 ```babble
-def f1 = fn (unique h: Holder): Holder -> ( h = Holder(h.items, h.count + 1) ; Holder(h.items, h.count) )
+def f1 = fn (var unique h: Holder): Holder -> ( h = Holder(h.items, h.count + 1) ; Holder(h.items, h.count) )
 def f2 = fn (unique h: Holder): Holder -> ( return Holder(count: h.count + 1, items: h.items) )
 assert(f1(Holder(list(1), 1)).count == 2 and f2(Holder(list(1), 2)).count == 3)
 ```

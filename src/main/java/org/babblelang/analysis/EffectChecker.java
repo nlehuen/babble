@@ -639,7 +639,7 @@ final class EffectChecker {
             }
             mutParams[i] = !isValue && pm.mut();
             uniqueParams[i] = pm.unique();
-            boolean storedAsField = isValue || params.get(i).DEF() != null;
+            boolean storedAsField = isValue || ScopeAnalysis.paramIsMember(params.get(i));
             Type pType = checker.typeOfDeclarationForEffects(params.get(i));
             if (storedAsField && !uniqueParams[i] && !javaResolver.isDeeplyImmutable(pType)) {
                 ctorStored.set(i);
@@ -876,7 +876,7 @@ final class EffectChecker {
             if (p.defaultValue != null) {
                 analyzer.eval(p.defaultValue);
             }
-            if ((isValue || p.DEF() != null) && !current.uniqueParams()[i] && !javaResolver.isDeeplyImmutable(checker.typeOfDeclarationForEffects(p))) {
+            if ((isValue || ScopeAnalysis.paramIsMember(p)) && !current.uniqueParams()[i] && !javaResolver.isDeeplyImmutable(checker.typeOfDeclarationForEffects(p))) {
                 analyzer.ctorStoredParams.set(i);
             }
         }

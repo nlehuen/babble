@@ -23,7 +23,7 @@ assert(fmt(null) == "nil")
 ## Case 2
 
 ```babble
-def maybe: (int | string)? = 7
+var maybe: (int | string)? = 7
 assert(maybe == 7)
 maybe = "hi"
 assert(maybe == "hi")
@@ -56,7 +56,7 @@ Not a scope : c
 ## Late null reassignment widens an inferred non-null local to T?
 
 ```babble
-def x = 10
+var x = 10
 assert(x == 10)
 x = null
 assert(x == null)

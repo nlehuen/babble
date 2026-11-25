@@ -30,7 +30,7 @@ def heavy = fn (a: Vec3, b: Vec3): double -> (
 ```babble
 def Plain = class (def k: int) ()
 def merge = fn (unique a: Holder, unique b: Holder, v: Vec3): Holder -> (
-    def c = a.count + b.count + int(v.x)
+    var c = a.count + b.count + int(v.x)
     c = c + 1
     Holder(a.items, c)
 )

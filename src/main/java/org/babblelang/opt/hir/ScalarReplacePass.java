@@ -610,7 +610,7 @@ public final class ScalarReplacePass implements HirPass {
                     newDeclaredVars.add(newVar);
                 }
                 newParams.add(new HirParam(p.name(), newVar, p.kind(), p.wideningRank(), p.checkedType(),
-                        p.memberIndex(), p.defaultValue(), p.samTarget(), p.ownership(), p.line()));
+                        p.memberIndex(), p.defaultValue(), p.samTarget(), p.ownership(), p.mutable(), p.line()));
             }
         }
 

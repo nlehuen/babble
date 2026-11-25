@@ -78,7 +78,6 @@ final class TypeChecker {
 
     private final BlockScopes pass;
     private final Map<ParserRuleContext, ScopeNode> occurrenceScopes = new HashMap<>();
-    private final Set<ParserRuleContext> reassigned = new HashSet<>();
     private final Set<ParserRuleContext> capturedReassigned = new HashSet<>();
     private final Map<ParserRuleContext, Type> types = new HashMap<>();
     private final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
@@ -401,6 +400,11 @@ final class TypeChecker {
         return capturedReassigned;
     }
 
+    boolean isCapturedReassigned(ParserRuleContext decl) {
+        return capturedReassigned.contains(decl)
+                || (pass.session != null && ScopeAnalysis.isVar(decl) && !inFile(decl));
+    }
+
     OperatorTypes operators() {
         return operators;
     }
@@ -433,15 +437,12 @@ final class TypeChecker {
         this.file = file;
         if (pass.session != null) {
             occurrenceScopes.putAll(pass.session.occurrenceScopes);
-            reassigned.addAll(pass.session.reassigned);
-            capturedReassigned.addAll(pass.session.reassigned);
         }
         for (BlockScopes.Occurrence occurrence : pass.occurrences) {
             occurrenceScopes.put(occurrence.ctx(), occurrence.scope());
         }
         for (BlockScopes.PendingAssignment assignment : pass.assignments) {
             if (resolveName(null, assignment.name(), assignment.scope()) instanceof ParserRuleContext declaration) {
-                reassigned.add(declaration);
                 if (!Objects.equals(callableScope(assignment.scope()), callableScope(scopeOf(declaration)))) {
                     capturedReassigned.add(declaration);
                 }
@@ -711,7 +712,7 @@ final class TypeChecker {
                 && block.getParent() instanceof BabbleParser.FunctionLiteralContext fn
                 && fn.functionBlock == block) {
             TypeEnv saved = env;
-            env = saved.enterCallable(reassigned);
+            env = saved.enterCallable();
             try {
                 check(block, expectedReturnType(fn));
             } finally {
@@ -1051,7 +1052,7 @@ final class TypeChecker {
         slots.read(SlotInference.DEFS, declaration);
         if (inferredDefs.containsKey(declaration)
                 && !(declaration instanceof BabbleParser.DefExpressionContext def
-                && !reassigned.contains(def) && (unwrapFunctionLiteral(def.value) != null
+                && !ScopeAnalysis.isVar(def) && (unwrapFunctionLiteral(def.value) != null
                 || def.value instanceof BabbleParser.OverloadExpressionContext))) {
             return inferredDefs.get(declaration);
         }
@@ -1293,7 +1294,7 @@ final class TypeChecker {
                 return false;
             }
             BabbleParser.DefExpressionContext def = owningDefExpr(cls);
-            return def != null && !reassigned.contains(def) && !isExported(def);
+            return def != null && !ScopeAnalysis.isVar(def) && !isExported(def);
         }
         if (owner instanceof BabbleParser.FunctionLiteralContext fn) {
             ScopeNode fnScope = scopeOf(fn);
@@ -1318,7 +1319,7 @@ final class TypeChecker {
                 return true;
             }
             BabbleParser.DefExpressionContext def = owningDefExpr(fn);
-            return def != null && !reassigned.contains(def) && !isExported(def);
+            return def != null && !ScopeAnalysis.isVar(def) && !isExported(def);
         }
         return false;
     }
@@ -1473,7 +1474,7 @@ final class TypeChecker {
         inferringResult.add(literal);
         inferenceStack.push(literal);
         TypeEnv savedEnv = env;
-        env = savedEnv.enterCallable(reassigned);
+        env = savedEnv.enterCallable();
         Type result;
         try {
             result = computeBodyResult(literal, contextualReturnTypes.get(literal));
@@ -1950,7 +1951,7 @@ final class TypeChecker {
             if (sel.expression() == null) {
                 ScopeNode scope = occurrenceScopes.get(sel);
                 Object resolved = scope != null ? resolveName(sel, sel.ID().getText(), scope) : null;
-                if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)) {
+                if (resolved instanceof BabbleParser.DefExpressionContext def && !ScopeAnalysis.isVar(def)) {
                     return def.type() == null && def.value instanceof BabbleParser.OverloadExpressionContext;
                 }
                 return false;
@@ -1989,7 +1990,7 @@ final class TypeChecker {
             if (sel.expression() == null) {
                 ScopeNode scope = occurrenceScopes.get(sel);
                 Object resolved = scope != null ? resolveName(sel, sel.ID().getText(), scope) : null;
-                if (resolved instanceof BabbleParser.DefExpressionContext def && !reassigned.contains(def)
+                if (resolved instanceof BabbleParser.DefExpressionContext def && !ScopeAnalysis.isVar(def)
                         && def.value instanceof BabbleParser.OverloadExpressionContext ov && inFile(ov)) {
                     return overloadAltLiterals.get(ov);
                 }
@@ -2794,7 +2795,7 @@ final class TypeChecker {
             if (ctx.functionBlock != null && !types.containsKey(ctx.functionBlock)
                     && (ctx.type() == null || inferenceStack.isEmpty())) {
                 TypeEnv saved = env;
-                env = saved.enterCallable(reassigned);
+                env = saved.enterCallable();
                 try {
                     check(ctx.functionBlock, expectedReturnType(ctx));
                 } finally {
@@ -2875,7 +2876,7 @@ final class TypeChecker {
             for (BabbleParser.FunctionLiteralContext lit : pendingBodies) {
                 if (lit.functionBlock != null && !types.containsKey(lit.functionBlock)) {
                     TypeEnv saved = env;
-                    env = saved.enterCallable(reassigned);
+                    env = saved.enterCallable();
                     try {
                         check(lit.functionBlock, expectedReturnType(lit));
                     } finally {
@@ -3777,7 +3778,7 @@ final class TypeChecker {
     }
 
     boolean isReassigned(ParserRuleContext decl) {
-        return reassigned.contains(decl);
+        return ScopeAnalysis.isVar(decl);
     }
 
     AxiomData.AxiomTable exportedAxioms() {

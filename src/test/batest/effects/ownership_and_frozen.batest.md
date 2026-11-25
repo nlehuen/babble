@@ -5,7 +5,7 @@ References : BIP007 (BIP007-I2, BIP007-D7), BIP016 (BIP016-D10)
 ```babble
 ;; babble preamble
 def MyRecord = record (a: int) ()
-def Box = class (def n: int) ()
+def Box = class (var n: int) ()
 def id of T = fn (x: T): T -> ( x )
 ```
 
@@ -31,7 +31,7 @@ assert(c != null and c.a == 5)
 ## Unique local builder mutated inside a pure function and frozen for read-only sharing
 
 ```babble
-def Counter = class (def n: int = 0) (
+def Counter = class (var n: int = 0) (
     def inc = fn mut nothrow () -> ( this.n = this.n + 1 )
     def value = fn nothrow (): int -> ( this.n )
 )

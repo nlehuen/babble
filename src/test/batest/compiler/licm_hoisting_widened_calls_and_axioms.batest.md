@@ -20,7 +20,7 @@ def nonPureThrow = fn (x: int): double -> (def q = 10 / x ; return double(q) ; d
 ```babble
 def tF = fn nothrow (m: bool, v: float): float -> (def r = if m then (v) else (0.0f) ; return r ; r)
 def run = fn (i: int): float -> (
-  def a = 0.0f ; def mf = true ; def mfl = 1.0f ; def k = 0
+  var a = 0.0f ; var mf = true ; var mfl = 1.0f ; var k = 0
   while k < 2 then (a += tF(mf, bigInt(i)) + (mfl + bigInt(i)) ; mf = not mf ; mfl += 1.0f ; k += 1) ; a
 )
 assert(run(3) == 12.0f)
@@ -151,7 +151,7 @@ fn run(v0: int) -> float:
 ```babble
 def tD = fn nothrow (m: bool, v: double): double -> (def r = if m then (v) else (0.0) ; return r ; r)
 def run = fn (fl: float, i: int): double -> (
-  def a = 0.0 ; def mf = true ; def md = 1.0 ; def k = 0
+  var a = 0.0 ; var mf = true ; var md = 1.0 ; var k = 0
   while k < 2 then (a += tD(mf, bigFloat(fl)) + (md + bigInt(i)) ; mf = not mf ; md += 1.0 ; k += 1) ; a
 )
 assert(run(1.5f, 3) == 10.5)
@@ -272,7 +272,7 @@ fn run(v0: float, v1: int) -> double:
 axiom java.lang.Integer.bitCount: fn pure nothrow
 axiom java.util.Objects.nonNull: fn pure nothrow
 def run = fn io (ro: int): int -> (
-  def a = 0 ; def pt = java.awt.Point(1, 2) ; def k = 0
+  var a = 0 ; def pt = java.awt.Point(1, 2) ; var k = 0
   while k < 2 then (
     a += java.lang.Integer.bitCount(ro) + (if java.util.Objects.nonNull("ab") and java.util.Objects.nonNull(pt) then (1) else (0)) ; k += 1
   ) ; a
@@ -389,7 +389,7 @@ fn run(v0: int) -> int:
 
 ```babble
 def run = fn (ro: int): double -> (
-  def a = 0.0 ; def ml = 1.0 ; def k = 0
+  var a = 0.0 ; var ml = 1.0 ; var k = 0
   while k < 2 then (
     a += double(bigInt("ok".length())) + java.lang.Math.sin(ml) + nonPureThrow(ro) ; ml += 0.5 ; k += 1
   ) ; a
@@ -504,7 +504,7 @@ fn run(v0: int) -> double:
 
 ```babble
 def run = fn io (): int -> (
-  def a = 0 ; def cap = 2 ; def bump = fn io (): int -> (cap += 1 ; cap) ; def k = 0
+  var a = 0 ; var cap = 2 ; def bump = fn io (): int -> (cap += 1 ; cap) ; var k = 0
   while k < 2 then (
     a += bigInt(cap)
     if false then (a += bump())

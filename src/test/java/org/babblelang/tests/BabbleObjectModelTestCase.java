@@ -45,7 +45,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
 
     @Test
     public void testConstructorParametersAndDefaults() throws Exception {
-        String account = "def Account = class (def owner : string, def balance = 0) (\n"
+        String account = "def Account = class (def owner : string, var balance = 0) (\n"
                 + "    def deposit = fn mut (n : int) -> ( this.balance = this.balance + n )\n"
                 + ")\n";
         Assertions.assertEquals(5, interpret(account + "def a = Account(\"ann\") ; a.deposit(5) ; a.balance"));
@@ -57,10 +57,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testPlainParametersAreLexicalVariables() throws Exception {
         // A plain parameter is visible in the whole body, methods included, and is not a member.
         String counter = "def Counter = class (start : int, step = 1) (\n"
-                + "    def next = fn io () -> ( start = start + step )\n"
+                + "    private var cur = start\n"
+                + "    def next = fn mut () -> ( this.cur = this.cur + step )\n"
                 + ")\n";
         Assertions.assertEquals(14, interpret(counter + "def c = Counter(10, 2) ; c.next() ; c.next()"));
-        assertStaticFails(counter + "Counter(1).start", "No such member : start", 4, 1);
+        assertStaticFails(counter + "Counter(1).start", "No such member : start", 5, 1);
         // The long form of a header member : a body def initialised from the parameter.
         Assertions.assertEquals("ann", interpret("def A = class (owner : string) ( def owner = owner ) ; A(\"ann\").owner"));
     }
@@ -84,7 +85,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testFixedMemberSetAndReadOnlyMethods() {
         assertStaticFails("def o = object ( def v = 1 ) ; o.w = 2", "No such member : w", 1, 32);
-        assertStaticFails("def o = object ( def m = fn () -> ( 1 ) ) ; o.m = 2", "Type error : expected () : int, got int", 1, 51);
+        assertFails("def o = object ( def m = fn () -> ( 1 ) ) ; o.m = 2", "Cannot assign method : m", 1);
     }
 
     @Test
@@ -145,7 +146,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     // ---------------------------------------------------------------- private
 
     private static final String COUNTER = "def Counter = class (private def step = 1) (\n"
-            + "    private def n = 0\n"
+            + "    private var n = 0\n"
             + "    private def bump = fn mut () -> ( this.n = this.n + this.step )\n"
             + "    def next = fn mut () -> ( this.bump() ; this.n )\n"
             + "    def bumper = fn shared () -> ( this.bump )\n"
@@ -196,7 +197,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
             + ")\n"
             + "static (\n"
             + "    def origin = this(0, 0)\n"
-            + "    private def created = 0\n"
+            + "    private var created = 0\n"
             + "    def make = fn io (x : int, y : int) : Point -> (\n"
             + "        this.created = this.created + 1\n"
             + "        this(x, y)\n"
@@ -300,7 +301,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testValueMembersAreReadOnly() {
         String point = "def Point = record (x : int, y : int) ()\n";
         assertFails(point + "def p = Point(1, 2) ; p.x = 5", "Value members are read-only : x", 2);
-        assertFails(point + "def f = fn io (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2);
+        assertStaticFails(point + "def f = fn io (p : Point) -> ( p.x = 5 ) ; f(Point(1, 2))", "Value members are read-only : x", 2, 32);
         assertFails("def P = record (x : int) ( def m = fn () -> ( this.x = 2 ) )", "Value members are read-only : x");
     }
 
@@ -366,7 +367,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     @Test
     public void testImplementsMustBeStatic() {
         assertFails("def mk = fn () -> ( interface () ) ; def C = class () implements mk ()", "implements needs a statically known interface");
-        assertFails("def I = interface () ; I = 1 ; def C = class () implements I ()", "implements needs a statically known interface");
+        assertFails("var I = interface () ; I = 1 ; def C = class () implements I ()", "implements needs a statically known interface");
         assertFails("def D = class () () ; def C = class () implements D ()", "implements needs a statically known interface");
         assertFails("def C = class () implements Nothing ()", "implements needs a statically known interface");
         assertFails("def I = interface extends I ()", "Interface extends itself : I");

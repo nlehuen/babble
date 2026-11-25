@@ -9,7 +9,7 @@ assert("a" + "b" == "ab")
 assert("a" + 1 == "a1")
 assert("a" + null == "anull")
 assert("a" + true == "atrue")
-def s = "hi"
+var s = "hi"
 s += 42
 s += "!"
 assert(s == "hi42!")
