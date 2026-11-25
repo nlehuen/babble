@@ -1106,7 +1106,9 @@ dominated by the per-call reflection that `BIP001-I3` caches.
   - one field per member, and a `field(int)`/`setField(int, Object)` switch for everything that
     goes through `Members` (the interpreter's `BabbleInstance` keeps its array);
   - methods are JVM instance methods, the receiver in local 0, behind one shared
-    `CompiledMethod` per method literal;
+    `CompiledMethod` per method literal; a `fastRecord`'s methods have no field at all : their
+    value is that per-class constant, read through the class's `$m$<name>()` accessor by other
+    modules and by `SelectCache` (`BIP014-I3` follow-up, §9.4 of the optimization BIP);
   - a constructor parameter captured by a method lives in a hidden field holding its cell
     (`$v$start`), and outer variables are captured once per class value;
   - `this.x` compiles to `GETFIELD`/`PUTFIELD`, with the undefined check, and `this.m(args)` to

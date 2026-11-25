@@ -477,11 +477,16 @@ final class CallEmitter {
         } else {
             emitter.assigns.loadThisAs(c.receiver(), gen);
         }
-        mv.visitInsn(DUP);
-        mv.visitFieldInsn(GETFIELD, gen.name, c.memberName(), "Ljava/lang/Object;");
-        mv.visitLdcInsn(c.memberName());
-        mc.line(ln);
-        mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        int memberIdx = gen.shape.memberIndex(c.memberName());
+        if (gen.isStaticMethodMember(memberIdx)) {
+            gen.loadStaticMethodMember(mv, memberIdx);
+        } else {
+            mv.visitInsn(DUP);
+            mv.visitFieldInsn(GETFIELD, gen.name, c.memberName(), "Ljava/lang/Object;");
+            mv.visitLdcInsn(c.memberName());
+            mc.line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        }
         if (c.overloadAltIndex() >= 0) {
             ConstantPool.pushInt(mv, c.overloadAltIndex());
             mv.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "memberOf", "(Ljava/lang/Object;I)L" + CALLABLE + ";", false);
@@ -550,7 +555,8 @@ final class CallEmitter {
         mv.visitLabel(ok);
         mv.visitTypeInsn(CHECKCAST, ownerJvm);
         mv.visitInsn(DUP);
-        mv.visitFieldInsn(GETFIELD, ownerJvm, c.memberName(), "Ljava/lang/Object;");
+        // Through the accessor : whether the class keeps the method in a field is its own business.
+        mv.visitMethodInsn(INVOKEVIRTUAL, ownerJvm, ClassGen.methodAccessor(c.memberName()), "()Ljava/lang/Object;", false);
         mv.visitLdcInsn(c.memberName());
         mc.line(ln);
         mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);

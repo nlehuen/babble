@@ -142,6 +142,32 @@ public class BabbleCompilerTestCase {
         return names;
     }
 
+    /**
+     * A record's methods are per-class constants : its instances have no field for them, and
+     * every way of reaching a method still works (direct calls, the generic constructor of an
+     * omitted default, a selected method value, an interface call, an operator method, overloads).
+     */
+    @Test
+    public void testRecordMethodsAreNotInstanceFields() throws Exception {
+        CompiledBabbleScript script = compile("def Shape = interface ( def area: fn (): double )\n"
+                + "def R = record (w : double, h : double = 2.0) implements Shape (\n"
+                + "  def area = fn () : double -> ( this.w * this.h )\n"
+                + "  def plus = fn (o : R) : R -> ( R(this.w + o.w, this.h + o.h) )\n"
+                + "  def scale = overload (\n"
+                + "    fn (k : double) : R -> ( R(this.w * k, this.h * k) ),\n"
+                + "    fn (k : int) : R -> ( R(this.w * k, this.h * k) )\n"
+                + "  )\n"
+                + ")\n"
+                + "def a = R(1.0, 3.0) ; def b = R(2.0) ; def s : Shape = a ; def f = a.area\n"
+                + "\"\" + (a + b).area() + \" \" + s.area() + \" \" + f() + \" \" + a.scale(2).area() + \" \" + a.scale(0.5).area()");
+        assertVerifies(script);
+        Assertions.assertEquals("15.0 3.0 3.0 12.0 0.75", script.eval(new SimpleBindings()));
+        byte[] r = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$R")).findFirst().orElseThrow().getValue();
+        Assertions.assertEquals(List.of("$babble$class", "$babble$rt", "w", "h"), fieldNames(r));
+        Assertions.assertTrue(methodNames(r).containsAll(List.of("$m$area", "$m$plus", "$m$scale")), methodNames(r).toString());
+    }
+
     @Test
     public void testClassesCompileToJvmClasses() throws Exception {
         CompiledBabbleScript script = compile("def Point = record (x : int, y : int) ( def norm = fn () -> ( this.x + this.y ) ) static ( def o = this(0, 0) )\n"
@@ -154,11 +180,12 @@ public class BabbleCompilerTestCase {
         for (String pattern : List.of("cls\\$\\d+\\$Point", "fn\\$\\d+\\$d", "cls\\$\\d+\\$object")) {
             Assertions.assertTrue(names.stream().anyMatch(name -> name.matches(pattern)), pattern + " in " + names);
         }
-        // Each class expression has its own class, with a field per member and its methods.
+        // Each class expression has its own class, with a field per member and its methods. A record's
+        // methods are per-class constants, read through their $m$ accessor : no field per instance.
         Map.Entry<String, byte[]> point = script.getClasses().entrySet().stream()
                 .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow();
-        Assertions.assertEquals(List.of("$babble$class", "$babble$rt", "x", "y", "norm"), fieldNames(point.getValue()));
-        Assertions.assertTrue(methodNames(point.getValue()).containsAll(List.of("<init>", "$babble$field", "$babble$setField", "m$norm")), methodNames(point.getValue()).toString());
+        Assertions.assertEquals(List.of("$babble$class", "$babble$rt", "x", "y"), fieldNames(point.getValue()));
+        Assertions.assertTrue(methodNames(point.getValue()).containsAll(List.of("<init>", "$babble$field", "$babble$setField", "m$norm", "$m$norm")), methodNames(point.getValue()).toString());
         Assertions.assertEquals(4, script.getClasses().size());
     }
 
@@ -635,7 +662,7 @@ public class BabbleCompilerTestCase {
 
         byte[] pointBytes = script.getClasses().entrySet().stream()
                 .filter(e -> e.getKey().endsWith("$Point")).findFirst().orElseThrow().getValue();
-        Assertions.assertEquals(List.of("$babble$class:Lorg/babblelang/runtime/BabbleClass;", "$babble$rt:Lorg/babblelang/runtime/ScriptRuntime;", "x:I", "y:I", "norm:Ljava/lang/Object;"), fieldEntries(pointBytes));
+        Assertions.assertEquals(List.of("$babble$class:Lorg/babblelang/runtime/BabbleClass;", "$babble$rt:Lorg/babblelang/runtime/ScriptRuntime;", "x:I", "y:I"), fieldEntries(pointBytes));
         List<String> normOps = methodInstructions(pointBytes, "m$norm$spec");
         Assertions.assertTrue(normOps.contains("IMUL") && normOps.contains("IADD"), normOps.toString());
         Assertions.assertTrue(normOps.stream().noneMatch(o -> o.contains("org/babblelang/runtime/Operators")
@@ -920,7 +947,7 @@ public class BabbleCompilerTestCase {
         Assertions.assertEquals("705082704x10120", script.eval(new SimpleBindings()));
         Map<String, Map.Entry<Boolean, List<String>>> methods = jumpsAndCalls(script);
         for (String suffix : List.of("$sum", "$sum$spec", "$boxed", "$many", "walk", "walk$spec")) {
-            List<String> names = methods.keySet().stream().filter(n -> n.endsWith(suffix)).toList();
+            List<String> names = methods.keySet().stream().filter(n -> n.endsWith(suffix) && !n.startsWith("$m$")).toList();
             Assertions.assertEquals(1, names.size(), suffix + " in " + methods.keySet());
             String name = names.get(0);
             Assertions.assertTrue(methods.get(name).getKey(), name + " jumps back");

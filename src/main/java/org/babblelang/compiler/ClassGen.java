@@ -97,6 +97,67 @@ final class ClassGen {
         return variable != null && hiddenVarIds.contains(variable.id());
     }
 
+    /**
+     * The member {@code def}s of a {@code fastRecord}, by member index : its methods, whose value
+     * is the same per-class {@code CompiledMethod} or {@code OverloadSet} constant for every
+     * instance and can never be assigned. They get no instance field : every reader loads the
+     * script class's constant instead (see {@link #loadStaticMethodMember}).
+     */
+    private Map<Integer, org.babblelang.ir.hir.HirExpr.Def> staticMethodDefs;
+
+    private Map<Integer, org.babblelang.ir.hir.HirExpr.Def> staticMethodDefs() {
+        if (staticMethodDefs == null) {
+            staticMethodDefs = new HashMap<>();
+            if (cls.fastRecord()) {
+                for (org.babblelang.ir.hir.HirExpr stmt : cls.body()) {
+                    if (stmt instanceof org.babblelang.ir.hir.HirExpr.Def d
+                            && d.target().kind() == LoweringTargets.DefKind.MEMBER
+                            && shape.isMethod(d.target().index())
+                            && (d.value() instanceof org.babblelang.ir.hir.HirExpr.FunctionRef
+                            || d.value() instanceof org.babblelang.ir.hir.HirExpr.MakeOverloadSet)) {
+                        staticMethodDefs.put(d.target().index(), d);
+                    }
+                }
+            }
+        }
+        return staticMethodDefs;
+    }
+
+    /** Whether member {@code index} is a method kept in a per-class constant rather than an instance field. */
+    boolean isStaticMethodMember(int index) {
+        return staticMethodDefs().containsKey(index);
+    }
+
+    /** Pushes the per-class constant of a {@linkplain #isStaticMethodMember static method member}. */
+    void loadStaticMethodMember(MethodVisitor m, int index) {
+        org.babblelang.ir.hir.HirExpr.Def d = staticMethodDefs().get(index);
+        if (d.value() instanceof org.babblelang.ir.hir.HirExpr.FunctionRef ref) {
+            String field = emitter.compiledMethodField(emitter.module.function(ref.functionId()), this);
+            m.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + COMPILED_METHOD + ";");
+        } else {
+            String field = emitter.cachedMethodOverloadField((org.babblelang.ir.hir.HirExpr.MakeOverloadSet) d.value(), this);
+            m.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + OVERLOAD_SET + ";");
+        }
+    }
+
+    /**
+     * Pushes method member {@code index} of the instance on the stack, consuming it : the
+     * per-class constant, or the instance's field.
+     */
+    void loadMethodMember(MethodVisitor m, int index) {
+        if (isStaticMethodMember(index)) {
+            m.visitInsn(POP);
+            loadStaticMethodMember(m, index);
+        } else {
+            m.visitFieldInsn(GETFIELD, name, shape.member(index), "Ljava/lang/Object;");
+        }
+    }
+
+    /** The name of the accessor every compiled class has for each of its methods, whatever its layout. */
+    static String methodAccessor(String member) {
+        return "$m$" + member;
+    }
+
     private static boolean canUseFinalHeaderInit(HirClass cls) {
         for (HirParam p : cls.params()) {
             if (p.defaultValue() != null && referencesThis(p.defaultValue())) {
@@ -166,6 +227,9 @@ final class ClassGen {
         writer.visitField(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC, "$babble$class", "L" + BABBLE_CLASS + ";", null, null).visitEnd();
         writer.visitField(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC, "$babble$rt", "L" + SCRIPT_RUNTIME + ";", null, null).visitEnd();
         for (int i = 0; i < shape.memberCount(); i++) {
+            if (isStaticMethodMember(i)) {
+                continue;
+            }
             int access = isFinalField(i) ? (ACC_PUBLIC | ACC_FINAL) : ACC_PUBLIC;
             writer.visitField(access, shape.member(i), jvmDescriptor(memberKinds[i]), null, null).visitEnd();
         }
@@ -197,7 +261,7 @@ final class ClassGen {
             paramSlot += mk.slots();
         }
         for (int i = 0; i < shape.memberCount(); i++) {
-            if (!isFinalField(i) && !memberKinds[i].isPrimitive()) {
+            if (!isFinalField(i) && !memberKinds[i].isPrimitive() && !isStaticMethodMember(i)) {
                 init.visitVarInsn(ALOAD, 0);
                 init.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
                 init.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
@@ -219,6 +283,7 @@ final class ClassGen {
         }
         memberTable("$babble$field", "(I)Ljava/lang/Object;", false);
         memberTable("$babble$setField", "(ILjava/lang/Object;)V", true);
+        emitMethodAccessors();
         if (primDefCount > 0) {
             isMemberDefinedMethod();
         }
@@ -287,21 +352,7 @@ final class ClassGen {
                 slot += p.kind().slots();
             }
         }
-        for (org.babblelang.ir.hir.HirExpr stmt : cls.body()) {
-            if (stmt instanceof org.babblelang.ir.hir.HirExpr.Def d) {
-                if (d.value() instanceof org.babblelang.ir.hir.HirExpr.FunctionRef ref) {
-                    String methodField = emitter.compiledMethodField(emitter.module.function(ref.functionId()), this);
-                    m.visitInsn(DUP);
-                    m.visitFieldInsn(GETSTATIC, emitter.className, methodField, "L" + COMPILED_METHOD + ";");
-                    m.visitFieldInsn(PUTFIELD, name, d.name(), "Ljava/lang/Object;");
-                } else if (d.value() instanceof org.babblelang.ir.hir.HirExpr.MakeOverloadSet mos) {
-                    String ovField = emitter.cachedMethodOverloadField(mos, this);
-                    m.visitInsn(DUP);
-                    m.visitFieldInsn(GETSTATIC, emitter.className, ovField, "L" + OVERLOAD_SET + ";");
-                    m.visitFieldInsn(PUTFIELD, name, d.name(), "Ljava/lang/Object;");
-                }
-            }
-        }
+        // The methods are per-class constants (isStaticMethodMember) : nothing to store.
         m.visitInsn(ARETURN);
         m.visitMaxs(0, 0);
         m.visitEnd();
@@ -332,10 +383,14 @@ final class ClassGen {
                     int fnCount = fn.params().size();
                     String jvmMethod = fn.jvmMethodName();
                     m.visitVarInsn(ALOAD, 0);
-                    m.visitInsn(DUP);
-                    m.visitFieldInsn(GETFIELD, name, memberName, "Ljava/lang/Object;");
-                    m.visitLdcInsn(memberName);
-                    m.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                    if (isStaticMethodMember(ownIdx)) {
+                        loadStaticMethodMember(m, ownIdx);
+                    } else {
+                        m.visitInsn(DUP);
+                        m.visitFieldInsn(GETFIELD, name, memberName, "Ljava/lang/Object;");
+                        m.visitLdcInsn(memberName);
+                        m.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                    }
                     if (ownOverload) {
                         ConstantPool.pushInt(m, altIdx);
                         m.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "memberOf",
@@ -554,10 +609,15 @@ final class ClassGen {
                 int fnCount = fn.params().size();
                 String jvmMethod = fn.jvmMethodName();
                 m.visitVarInsn(ALOAD, 0);
-                m.visitInsn(DUP);
-                m.visitFieldInsn(GETFIELD, name, mName, "Ljava/lang/Object;");
-                m.visitLdcInsn(mName);
-                m.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                int mIdx = shape.memberIndex(mName);
+                if (isStaticMethodMember(mIdx)) {
+                    loadStaticMethodMember(m, mIdx);
+                } else {
+                    m.visitInsn(DUP);
+                    m.visitFieldInsn(GETFIELD, name, mName, "Ljava/lang/Object;");
+                    m.visitLdcInsn(mName);
+                    m.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                }
                 if (ownOverload) {
                     ConstantPool.pushInt(m, overloadAltIdx);
                     m.visitMethodInsn(INVOKESTATIC, OVERLOAD_SET, "memberOf",
@@ -739,6 +799,27 @@ final class ClassGen {
         m.visitEnd();
     }
 
+    /**
+     * {@code $m$<name>()}, for each method member : its value, the per-class constant or the
+     * instance's field. Other modules call methods through it, so that they do not depend on
+     * which of the two the class keeps.
+     */
+    private void emitMethodAccessors() {
+        for (int i = 0; i < shape.memberCount(); i++) {
+            if (!shape.isMethod(i)) {
+                continue;
+            }
+            MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, methodAccessor(shape.member(i)),
+                    "()Ljava/lang/Object;", null, null);
+            m.visitCode();
+            m.visitVarInsn(ALOAD, 0);
+            loadMethodMember(m, i);
+            m.visitInsn(ARETURN);
+            m.visitMaxs(0, 0);
+            m.visitEnd();
+        }
+    }
+
     private void memberTable(String method, String descriptor, boolean set) {
         MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, method, descriptor, null, null);
         m.visitCode();
@@ -746,15 +827,20 @@ final class ClassGen {
         if (shape.memberCount() > 0) {
             Label[] cases = new Label[shape.memberCount()];
             for (int i = 0; i < cases.length; i++) {
-                cases[i] = (set && isFinalField(i)) ? fallback : new Label();
+                cases[i] = (set && (isFinalField(i) || isStaticMethodMember(i))) ? fallback : new Label();
             }
             m.visitVarInsn(ILOAD, 1);
             m.visitTableSwitchInsn(0, cases.length - 1, fallback, cases);
             for (int i = 0; i < cases.length; i++) {
-                if (set && isFinalField(i)) {
+                if (set && (isFinalField(i) || isStaticMethodMember(i))) {
                     continue;
                 }
                 m.visitLabel(cases[i]);
+                if (!set && isStaticMethodMember(i)) {
+                    loadStaticMethodMember(m, i);
+                    m.visitInsn(ARETURN);
+                    continue;
+                }
                 PrimitiveKind mk = memberKinds[i];
                 String desc = jvmDescriptor(mk);
                 if (set) {

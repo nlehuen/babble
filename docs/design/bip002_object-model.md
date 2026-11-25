@@ -740,7 +740,9 @@ final class Script$7$Point extends BabbleInstanceBase implements Script$7$Shape 
 ```
 
 * **Methods are JVM instance methods,** with the receiver in local 0. There is no per-instance
-  closure.
+  closure. A `record` whose body only defines methods keeps no field for them either : every
+  instance would hold the same per-class `CompiledMethod`, so readers load that constant (or
+  call the class's `$m$<name>()` accessor) instead.
 * **A member access with a known receiver class** compiles to `GETFIELD`/`PUTFIELD`, and a call
   to `INVOKEVIRTUAL`. That happens when the receiver is `this`, or when the type checker knows
   its class. An unknown receiver goes through `Members.select`, which uses the class's member
