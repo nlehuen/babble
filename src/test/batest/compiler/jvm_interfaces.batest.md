@@ -83,7 +83,7 @@ class Impl:
     bb0:
       v3: double = convert.double v0
       v4: double = add v3, v1 {pure}
-      v5: double = slot_read bias {read:shared,throws}
+      v5: double = slot_read bias {pure}
       v6: double = add v4, v5 {pure}
       br_if v2, bb2, bb1
     bb1:
@@ -129,7 +129,7 @@ class C:
     bb0:
       v1: any = opaque.SuperCall(add, v0) {impure}
       v2: int = convert.int v1
-      v3: int = slot_read m {read:shared,throws}
+      v3: int = slot_read m {pure}
       v4: int = mul v2, v3 {pure}
       ret v4
 ```
@@ -253,11 +253,11 @@ class IBox (v:int)
 class IBox:
   fn IBox.get() -> int:
     bb0:
-      v0: int = slot_read v {read:shared,throws}
+      v0: int = slot_read v {pure}
       ret v0
   fn IBox.xf(v0: int) -> int:
     bb0:
-      v1: int = slot_read v {read:shared,throws}
+      v1: int = slot_read v {pure}
       v2: int = add v0, v1 {pure}
       ret v2
 ```
@@ -289,11 +289,11 @@ class DBox (v:double)
 class DBox:
   fn DBox.get() -> double:
     bb0:
-      v0: double = slot_read v {read:shared,throws}
+      v0: double = slot_read v {pure}
       ret v0
   fn DBox.xf(v0: double) -> double:
     bb0:
-      v1: double = slot_read v {read:shared,throws}
+      v1: double = slot_read v {pure}
       v2: double = add v0, v1 {pure}
       ret v2
 ```
@@ -423,7 +423,7 @@ class NsImpl:
     bb0:
       v1: any = opaque.SuperCall(base, v0) {impure}
       v2: int = convert.int v1
-      v3: int = slot_read d {read:shared,throws}
+      v3: int = slot_read d {pure}
       v4: int = add v2, v3 {pure}
       ret v4
 ```
@@ -545,8 +545,8 @@ class Rect (w:double, h:double)
 class Rect:
   fn Rect.area() -> double:
     bb0:
-      v0: double = slot_read w {read:shared,throws}
-      v1: double = slot_read h {read:shared,throws}
+      v0: double = slot_read w {pure}
+      v1: double = slot_read h {pure}
       v2: double = mul v0, v1 {pure}
       ret v2
   fn Rect.scale(v0: double) -> double:

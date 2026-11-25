@@ -434,7 +434,7 @@ public final class ScalarReplacePass implements HirPass {
 
         for (int i = 0; i < params.size(); i++) {
             HirParam p = params.get(i);
-            RecordLayout layout = (p.isBorrow() && p.recordTypeId() != null && p.var() != null && !p.var().cell()
+            RecordLayout layout = (p.isBorrow() && p.recordTypeId() != null && p.var() != null && !p.var().isCaptured()
                     && p.samTarget() == null)
                     ? localLayouts.get(p.recordTypeId()) : null;
             if (layout != null) {
@@ -565,7 +565,7 @@ public final class ScalarReplacePass implements HirPass {
                     return false;
                 }
             } else if (arg instanceof HirExpr.VarRead vr) {
-                if (vr.var().cell() || (vr.var().mayBeUndefined() && !vr.var().definitelyDefined())) {
+                if (vr.var().isCaptured() || (vr.var().mayBeUndefined() && !vr.var().definitelyDefined())) {
                     return false;
                 }
             } else {
@@ -870,7 +870,7 @@ public final class ScalarReplacePass implements HirPass {
 
     private static void addEligibleVars(List<HirVar> vars, Set<Integer> exclude, Map<Integer, HirVar> out) {
         for (HirVar v : vars) {
-            if (!v.cell() && v.kind() == Resolution.Variable.Kind.DEFINITION
+            if (!v.isCaptured() && v.kind() == Resolution.Variable.Kind.DEFINITION
                     && (exclude == null || !exclude.contains(v.id()))
                     && (!v.mayBeUndefined() || v.definitelyDefined())) {
                 out.put(v.id(), v);

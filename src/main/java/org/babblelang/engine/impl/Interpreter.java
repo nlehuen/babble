@@ -211,7 +211,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
 
         @Override
-        public void construct(BabbleClass babbleClass, Object instance, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        public Object construct(BabbleClass babbleClass, Object instance, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
             Namespace scope = Classes.constructorScope(babbleClass, instance);
             ClassShape shape = babbleClass.shape();
             String[] parameters = shape.parameters();
@@ -238,6 +238,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             BabbleParser.BlockContext body = ctx instanceof BabbleParser.ClassExpressionContext c ? c.classBlock
                     : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
             runIn(scope, body.expression());
+            return instance;
         }
     }
 

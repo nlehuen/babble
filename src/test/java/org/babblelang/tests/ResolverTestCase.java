@@ -126,9 +126,33 @@ public class ResolverTestCase {
 
     @Test
     public void testConstructorParametersUsedByMethodsAreCells() {
-        // Read by the constructor itself, the parameter is a cell there, since a method captures it.
-        Assertions.assertEquals(List.of("start CAPTURED", "start CELL"),
+        // BIP034-P5: immutable non-member class param `start` is value-captured (no Cell);
+        // mutable `fn (var start)` parameter still lives in a Cell.
+        Assertions.assertEquals(List.of("start CAPTURED", "start LOCAL"),
                 bindings("def C = class (start) ( def next = fn () -> ( start + 1 ) ; def first = start )"));
+        Assertions.assertEquals(List.of("start= CAPTURED", "start CAPTURED", "start CELL"),
+                bindings("def f = fn (var start) -> ( def next = fn () -> ( start = start + 1 ) ; start )"));
+    }
+
+    @Test
+    public void testBip034P5ValueCaptureVsCellCapture() {
+        // Dominating immutable local def -> value-captured (LOCAL in owner, CAPTURED in lambda, no Cell).
+        Assertions.assertEquals(List.of("a CAPTURED", "a LOCAL"),
+                bindings("def f = fn () -> ( def a = 1 ; def g = fn () -> ( a ) ; a )"));
+        // Mutable local var -> cell-captured (CELL in owner, CAPTURED in lambda).
+        Assertions.assertEquals(List.of("a= CAPTURED", "a CAPTURED", "a CELL"),
+                bindings("def f = fn () -> ( var a = 1 ; def g = fn () -> ( a = a + 1 ) ; a )"));
+        // Self-recursive local def -> capture site is inside def's own RHS -> must use Cell.
+        Assertions.assertEquals(List.of("n LOCAL", "n LOCAL", "fact CAPTURED", "n LOCAL", "fact CELL"),
+                bindings("def f = fn () -> ( def fact = fn (n: int): int -> ( if n <= 1 then ( 1 ) else ( n * fact(n - 1) ) ) ; fact(5) )"));
+        // Forward mutual recursion: `b` captured by earlier `a` uses Cell; `a` captured by later `b` is value-captured.
+        Assertions.assertEquals(List.of("b CAPTURED", "a CAPTURED", "a LOCAL", "b CELL"),
+                bindings("def f = fn () -> ( def a = fn () -> ( b() ) ; def b = fn () -> ( a() ) ; a ; b )"));
+        // Parameter captured in later default -> value-captured; parameter captured in earlier default -> Cell.
+        Assertions.assertEquals(List.of("x CAPTURED", "x LOCAL", "g LOCAL"),
+                bindings("def f = fn (x = 1, g = fn () -> ( x )) -> ( x + g() )"));
+        Assertions.assertEquals(List.of("y CAPTURED", "g LOCAL", "y CELL"),
+                bindings("def f = fn (g = fn () -> ( y ), y = 1) -> ( g() + y )"));
     }
 
     @Test

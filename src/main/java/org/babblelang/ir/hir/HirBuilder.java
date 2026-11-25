@@ -381,7 +381,8 @@ public final class HirBuilder {
                     rv.isUsed(),
                     rv.mayBeUndefined(),
                     defDef,
-                    mutable
+                    mutable,
+                    rv.isCapturedByValue()
             );
         });
     }
@@ -595,7 +596,7 @@ public final class HirBuilder {
             return false;
         }
         for (HirVar v : declared) {
-            if (v.cell()) {
+            if (v.isCaptured()) {
                 return false;
             }
         }

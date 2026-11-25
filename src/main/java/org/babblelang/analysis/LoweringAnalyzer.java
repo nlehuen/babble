@@ -321,7 +321,7 @@ final class LoweringAnalyzer {
                 List<BabbleParser.ClassParamContext> paramCtxs = clsCtx.classParameters().classParam();
                 boolean noHiddenCells = true;
                 for (Resolution.Variable v : resolution.declared(clsCtx)) {
-                    if (v.isCell()) {
+                    if (v.isCaptured()) {
                         noHiddenCells = false;
                         break;
                     }

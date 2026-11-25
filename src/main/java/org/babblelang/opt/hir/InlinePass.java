@@ -308,12 +308,12 @@ public final class InlinePass implements HirPass {
 
     private static boolean checkParamsAndBody(HirFunction fn, int allowedThisClassId, int maxNodes) {
         for (HirParam p : fn.params()) {
-            if (p.var() == null || p.var().cell() || p.samTarget() != null) {
+            if (p.var() == null || p.var().isCaptured() || p.samTarget() != null) {
                 return false;
             }
         }
         for (HirVar v : fn.declaredVars()) {
-            if (v.cell()) {
+            if (v.isCaptured()) {
                 return false;
             }
         }
@@ -376,13 +376,13 @@ public final class InlinePass implements HirPass {
                 }
             }
             case HirExpr.VarRead v -> {
-                if (v.var().cell()) {
+                if (v.var().isCaptured()) {
                     ok[0] = false;
                     return;
                 }
             }
             case HirExpr.VarAssign a -> {
-                if (a.var().cell()) {
+                if (a.var().isCaptured()) {
                     ok[0] = false;
                     return;
                 }
@@ -417,19 +417,19 @@ public final class InlinePass implements HirPass {
                     return;
                 }
                 for (HirVar v : b.declaredVars()) {
-                    if (v.cell()) {
+                    if (v.isCaptured()) {
                         ok[0] = false;
                         return;
                     }
                 }
             }
             case HirExpr.For f -> {
-                if (f.loopVar() != null && f.loopVar().cell()) {
+                if (f.loopVar() != null && f.loopVar().isCaptured()) {
                     ok[0] = false;
                     return;
                 }
                 for (HirVar v : f.bodyDeclaredVars()) {
-                    if (v.cell()) {
+                    if (v.isCaptured()) {
                         ok[0] = false;
                         return;
                     }

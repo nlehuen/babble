@@ -284,7 +284,7 @@ class AddOp (delta:int)
 class AddOp:
   fn AddOp.applyAsInt(v0: int) -> int:
     bb0:
-      v1: int = slot_read delta {read:shared,throws}
+      v1: int = slot_read delta {pure}
       v2: int = add v0, v1 {pure}
       ret v2
 ```
@@ -313,7 +313,7 @@ class Widener (scale:int)
 class Widener:
   fn Widener.applyAsLong(v0: int) -> int:
     bb0:
-      v1: int = slot_read scale {read:shared,throws}
+      v1: int = slot_read scale {pure}
       v2: int = mul v0, v1 {pure}
       v3: any = slot_read this {pure}
       v4: int = load_field v3.factor {read:frozen,throws}
@@ -426,7 +426,7 @@ class LongInc:
       v1: any = name_read int {pure}
       v2: any = checkcast v0 <long|long|>
       v3: int = opaque.DynamicCall(v1, v2) {impure}
-      v4: int = slot_read d {read:shared,throws}
+      v4: int = slot_read d {pure}
       v5: int = add v3, v4 {pure}
       ret v5
 ```

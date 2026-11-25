@@ -163,6 +163,7 @@ final class HirEmitter {
             interfaceGens.put(iface.id(), gen);
             interfaceGensByTypeId.put(iface.shape().id(), gen);
         }
+        java.util.Set<Integer> fbipReusedClassIds = collectFbipReusedClassIds(module);
         for (HirClass cls : module.classes().values()) {
             if (!cls.hasCompiledClass()) {
                 continue;
@@ -171,10 +172,52 @@ final class HirEmitter {
             parents.add(OBJECT);
             parents.addAll(cls.implementedJvmInterfaces());
             generatedClassParents.put(cls.jvmName(), List.copyOf(parents));
-            ClassGen gen = new ClassGen(this, cls);
+            ClassGen gen = new ClassGen(this, cls, fbipReusedClassIds.contains(cls.id()));
             gen.begin();
             classGens.put(cls.id(), gen);
         }
+    }
+
+    private static java.util.Set<Integer> collectFbipReusedClassIds(HirModule module) {
+        java.util.Set<Integer> reused = new java.util.HashSet<>();
+        for (HirExpr e : module.topLevelStatements()) {
+            scanRecordReuse(e, reused);
+        }
+        for (HirFunction fn : module.functions().values()) {
+            for (HirParam p : fn.params()) {
+                scanRecordReuse(p.defaultValue(), reused);
+            }
+            for (HirExpr e : fn.body()) {
+                scanRecordReuse(e, reused);
+            }
+        }
+        for (HirClass cls : module.classes().values()) {
+            for (HirParam p : cls.params()) {
+                scanRecordReuse(p.defaultValue(), reused);
+            }
+            for (HirExpr e : cls.body()) {
+                scanRecordReuse(e, reused);
+            }
+            if (cls.staticBlock() != null) {
+                for (HirExpr e : cls.staticBlock().body()) {
+                    scanRecordReuse(e, reused);
+                }
+            }
+        }
+        return reused;
+    }
+
+    private static void scanRecordReuse(HirExpr expr, java.util.Set<Integer> out) {
+        if (expr == null) {
+            return;
+        }
+        if (expr instanceof HirExpr.RecordReuse rr && rr.classId() >= 0) {
+            out.add(rr.classId());
+        }
+        org.babblelang.opt.HirRewriter.rewriteChildren(expr, child -> {
+            scanRecordReuse(child, out);
+            return child;
+        });
     }
 
     // ---------------------------------------------------------------- run / chunking
@@ -712,31 +755,71 @@ final class HirEmitter {
         MethodVisitor mv = ctx.mv;
         loadCapturedCells(BABBLE_CLASS);
 
-        ctx.constructorClass = classGens.get(cls.id());
-        if (ctx.constructorClass != null) {
+        ClassGen gen = classGens.get(cls.id());
+        ctx.constructorClass = gen;
+        boolean deferredInit = gen != null && gen.hasFinalHeaderFields();
+        if (gen != null && !deferredInit) {
             ctx.typedThisLocal = ctx.newLocal();
             mv.visitVarInsn(ALOAD, INSTANCE);
-            mv.visitTypeInsn(CHECKCAST, ctx.constructorClass.name);
+            mv.visitTypeInsn(CHECKCAST, gen.name);
             mv.visitVarInsn(ASTORE, ctx.typedThisLocal);
+        } else {
+            ctx.typedThisLocal = -1;
         }
         mv.visitVarInsn(ALOAD, SELF);
         mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
         mv.visitVarInsn(ASTORE, FN_NS);
         for (HirVar variable : declareVariables(cls.declaredVars())) {
-            if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
+            if (!deferredInit && variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
                 mv.visitVarInsn(ALOAD, INSTANCE);
                 initVariable(variable, PrimitiveKind.NONE);
             }
         }
 
-        bindParameters(constantPool.stringArrayField(shape.parameters()), cls.params(), shape.keywordOnlyStart(), -1, shape);
+        Map<Integer, Integer> deferredMembers = deferredInit ? new java.util.LinkedHashMap<>() : null;
+        bindParameters(constantPool.stringArrayField(shape.parameters()), cls.params(), shape.keywordOnlyStart(), -1, shape, deferredMembers);
+        if (deferredInit) {
+            ctx.typedThisLocal = ctx.newLocal();
+            mv.visitTypeInsn(NEW, gen.name);
+            mv.visitInsn(DUP);
+            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitVarInsn(ALOAD, FN_RT);
+            for (int memberIdx : gen.finalHeaderMemberIndices) {
+                loadKindOn(mv, gen.memberKinds[memberIdx], deferredMembers.get(memberIdx));
+            }
+            mv.visitMethodInsn(INVOKESPECIAL, gen.name, "<init>", gen.initDescriptor, false);
+            mv.visitVarInsn(ASTORE, ctx.typedThisLocal);
+            for (HirVar variable : cls.declaredVars()) {
+                if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
+                    mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
+                    initVariable(variable, PrimitiveKind.NONE);
+                } else if (variable.isCaptured()) {
+                    publishHidden(variable);
+                }
+            }
+            for (Map.Entry<Integer, Integer> entry : deferredMembers.entrySet()) {
+                int memberIdx = entry.getKey();
+                if (!gen.isFinalField(memberIdx)) {
+                    PrimitiveKind mk = gen.memberKinds[memberIdx];
+                    mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
+                    loadKindOn(mv, mk, entry.getValue());
+                    mv.visitFieldInsn(PUTFIELD, gen.name, shape.member(memberIdx), jvmDescriptor(mk));
+                }
+            }
+        }
         statements(cls.body());
         popOn(mv, ctx.stackKind);
-        mv.visitInsn(RETURN);
+        mv.visitVarInsn(ALOAD, deferredInit ? ctx.typedThisLocal : INSTANCE);
+        mv.visitInsn(ARETURN);
         ctx.finish();
     }
 
     private void bindParameters(String paramsField, List<HirParam> params, int kwStart, int restIndex, ClassShape shape) {
+        bindParameters(paramsField, params, kwStart, restIndex, shape, null);
+    }
+
+    private void bindParameters(String paramsField, List<HirParam> params, int kwStart, int restIndex, ClassShape shape,
+                                Map<Integer, Integer> deferredMembers) {
         MethodVisitor mv = ctx.mv;
         boolean spread = ctx.parameterBase >= 0;
         int binder = spread ? BINDER_LOCAL : ctx.newLocal();
@@ -810,12 +893,22 @@ final class HirEmitter {
             int member = shape != null ? param.memberIndex() : -1;
             if (member >= 0 && ctx.constructorClass != null) {
                 PrimitiveKind mk = ctx.constructorClass.memberKinds[member];
-                mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
-                mv.visitVarInsn(ALOAD, value);
-                ctx.stackKind = PrimitiveKind.NONE;
-                convertStack(PrimitiveKind.NONE, mk);
-                mv.visitFieldInsn(PUTFIELD, ctx.constructorClass.name, shape.member(member), jvmDescriptor(mk));
-                ctx.stackKind = PrimitiveKind.NONE;
+                if (deferredMembers != null) {
+                    mv.visitVarInsn(ALOAD, value);
+                    ctx.stackKind = PrimitiveKind.NONE;
+                    convertStack(PrimitiveKind.NONE, mk);
+                    int mSlot = ctx.newLocal(mk);
+                    storeKindOn(mv, mk, mSlot);
+                    deferredMembers.put(member, mSlot);
+                    ctx.stackKind = PrimitiveKind.NONE;
+                } else {
+                    mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
+                    mv.visitVarInsn(ALOAD, value);
+                    ctx.stackKind = PrimitiveKind.NONE;
+                    convertStack(PrimitiveKind.NONE, mk);
+                    mv.visitFieldInsn(PUTFIELD, ctx.constructorClass.name, shape.member(member), jvmDescriptor(mk));
+                    ctx.stackKind = PrimitiveKind.NONE;
+                }
             } else if (param.var() != null) {
                 HirVar variable = param.var();
                 PrimitiveKind vk = variable.primitiveKind();
@@ -882,7 +975,7 @@ final class HirEmitter {
                     String cc = cellClass(vk);
                     mv.visitMethodInsn(INVOKESTATIC, cc, "undefined", "()L" + cc + ";", false);
                     mv.visitVarInsn(ASTORE, slot);
-                    publishCell(variable);
+                    publishHidden(variable);
                 } else if (vk.isPrimitive()) {
                     emitDefaultValueOn(mv, vk);
                     storeKindOn(mv, vk, slot);
@@ -895,11 +988,13 @@ final class HirEmitter {
         return variables;
     }
 
-    private void publishCell(HirVar variable) {
-        if (ctx.constructorClass != null && variable.cell() && variable.ownerMethodId() == ctx.constructorClass.cls.id()) {
+    private void publishHidden(HirVar variable) {
+        if (ctx.constructorClass != null && ctx.typedThisLocal >= 0 && variable.isCaptured()
+                && ctx.constructorClass.hasHiddenField(variable)) {
+            PrimitiveKind vk = variable.cell() ? PrimitiveKind.NONE : variable.primitiveKind();
             ctx.mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
-            ctx.mv.visitVarInsn(ALOAD, ctx.slots.get(variable.id()));
-            ctx.mv.visitFieldInsn(PUTFIELD, ctx.constructorClass.name, variable.hiddenFieldName(), "Ljava/lang/Object;");
+            loadKindOn(ctx.mv, vk, ctx.slots.get(variable.id()));
+            ctx.mv.visitFieldInsn(PUTFIELD, ctx.constructorClass.name, variable.hiddenFieldName(), jvmDescriptor(vk));
         }
     }
 
@@ -909,7 +1004,7 @@ final class HirEmitter {
             String cc = cellClass(vk);
             mv.visitMethodInsn(INVOKESTATIC, cc, "of", "(" + jvmDescriptor(vk) + ")L" + cc + ";", false);
             mv.visitVarInsn(ASTORE, ctx.slots.get(variable.id()));
-            publishCell(variable);
+            publishHidden(variable);
             return;
         }
         storeKindOn(mv, vk, ctx.slots.get(variable.id()));
@@ -917,6 +1012,9 @@ final class HirEmitter {
         if (defSlot != null) {
             mv.visitInsn(ICONST_1);
             mv.visitVarInsn(ISTORE, defSlot);
+        }
+        if (variable.capturedByValue()) {
+            publishHidden(variable);
         }
     }
 
@@ -951,6 +1049,23 @@ final class HirEmitter {
                 mv.visitMethodInsn(INVOKEVIRTUAL, cc, "read", "(Ljava/lang/String;)" + desc, false);
             } else {
                 mv.visitFieldInsn(GETFIELD, cc, "value", desc);
+            }
+            ctx.stackKind = vk;
+            return;
+        }
+        if (variable.capturedByValue() && variable.ownerMethodId() != ctx.methodOwnerId) {
+            if (ctx.methodClass != null && variable.ownerMethodId() == ctx.methodClass.cls.id()) {
+                mv.visitVarInsn(ALOAD, 0);
+                mv.visitFieldInsn(GETFIELD, ctx.methodClass.name, variable.hiddenFieldName(), jvmDescriptor(vk));
+                ctx.stackKind = vk;
+                return;
+            }
+            int idx = ctx.capturedVariables.indexOf(variable);
+            mv.visitVarInsn(ALOAD, ctx.capturedLocal);
+            ConstantPool.pushInt(mv, idx);
+            mv.visitInsn(AALOAD);
+            if (vk.isPrimitive()) {
+                unboxOn(mv, vk);
             }
             ctx.stackKind = vk;
             return;
@@ -1011,6 +1126,9 @@ final class HirEmitter {
             }
             dupOn(mv, vk);
             storeKindOn(mv, vk, slot);
+            if (definition && variable.capturedByValue()) {
+                publishHidden(variable);
+            }
             ctx.stackKind = vk;
             return;
         }
@@ -1022,6 +1140,9 @@ final class HirEmitter {
         }
         mv.visitInsn(DUP);
         mv.visitVarInsn(ASTORE, slot);
+        if (definition && variable.capturedByValue()) {
+            publishHidden(variable);
+        }
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
@@ -1053,8 +1174,35 @@ final class HirEmitter {
         for (int i = 0; i < captured.size(); i++) {
             mv.visitInsn(DUP);
             ConstantPool.pushInt(mv, i);
-            loadCell(captured.get(i));
+            HirVar variable = captured.get(i);
+            if (variable.cell()) {
+                loadCell(variable);
+            } else {
+                loadCapturedValueBoxed(variable);
+            }
             mv.visitInsn(AASTORE);
+        }
+    }
+
+    private void loadCapturedValueBoxed(HirVar variable) {
+        MethodVisitor mv = ctx.mv;
+        PrimitiveKind vk = variable.primitiveKind();
+        if (variable.ownerMethodId() == ctx.methodOwnerId) {
+            loadKindOn(mv, vk, ctx.slots.get(variable.id()));
+            if (vk.isPrimitive()) {
+                boxOn(mv, vk);
+            }
+        } else if (ctx.methodClass != null && variable.ownerMethodId() == ctx.methodClass.cls.id()) {
+            mv.visitVarInsn(ALOAD, 0);
+            mv.visitFieldInsn(GETFIELD, ctx.methodClass.name, variable.hiddenFieldName(), jvmDescriptor(vk));
+            if (vk.isPrimitive()) {
+                boxOn(mv, vk);
+            }
+        } else {
+            int idx = ctx.capturedVariables.indexOf(variable);
+            mv.visitVarInsn(ALOAD, ctx.capturedLocal);
+            ConstantPool.pushInt(mv, idx);
+            mv.visitInsn(AALOAD);
         }
     }
 
@@ -1386,7 +1534,11 @@ final class HirEmitter {
                             + (gen != null ? "L" + INSTANCE_FACTORY + ";" : "") + "L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
         } else {
             if (gen != null) {
-                emitInstanceFactory(gen);
+                if (gen.hasFinalHeaderFields()) {
+                    mv.visitInsn(ACONST_NULL);
+                } else {
+                    emitInstanceFactory(gen);
+                }
                 mv.visitMethodInsn(INVOKESTATIC, CLASSES, "newClass",
                         "(L" + CLASS_SHAPE + ";L" + NAMESPACE + ";[Ljava/lang/Object;L" + CLASS_BODY + ";[Ljava/lang/Object;L" + INSTANCE_FACTORY + ";)L" + BABBLE_CLASS + ";", false);
             } else {

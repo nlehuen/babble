@@ -1119,4 +1119,86 @@ public class BabbleCompilerTestCase {
         Object fn2 = makeSite.dynamicInvoker().invokeExact(vType);
         Assertions.assertSame(fn1, fn2, "Public static def method should constant-fold its BoundMethod in SelectCache");
     }
+
+    @Test
+    public void testBip034P5ValueCaptureAndAccFinalConstructors() throws Exception {
+        CompiledBabbleScript script = compile(
+                "def Point = record (x : int, y : int) (\n"
+                        + "  def sum = fn () : int -> ( this.x + this.y )\n"
+                        + ")\n"
+                        + "def Counter = class (def step : int, var bonus : int, secret : int) (\n"
+                        + "  def run = fn mut (n : int) : int -> ( this.bonus += this.step * n + secret ; this.bonus )\n"
+                        + ")\n"
+                        + "def makeAdder = fn (base : int) -> (\n"
+                        + "  def doubled = base * 2\n"
+                        + "  fn (k : int) : int -> ( base + doubled + k )\n"
+                        + ")\n"
+                        + "def makeMut = fn () -> (\n"
+                        + "  var acc = 0\n"
+                        + "  fn io (k : int) : int -> ( acc += k ; acc )\n"
+                        + ")\n"
+                        + "def makeRec = fn () -> (\n"
+                        + "  def fact = fn (n : int) : int -> ( if n <= 1 then ( 1 ) else ( n * fact(n - 1) ) )\n"
+                        + "  fact(5)\n"
+                        + ")\n"
+                        + "def p1 = Point(3, 4)\n"
+                        + "def p2 = Point(y: 6, x: 5)\n"
+                        + "def c = Counter(2, 10, 7)\n"
+                        + "def add = makeAdder(4)\n"
+                        + "def m = makeMut()\n"
+                        + "assert(p1.sum() == 7 and p2.sum() == 11)\n"
+                        + "assert(c.run(3) == 23 and c.bonus == 23)\n"
+                        + "assert(add(5) == 17 and m(3) == 3 and m(4) == 7 and makeRec() == 120)\n"
+                        + "p1.sum() + p2.sum() + c.bonus + add(5) + makeRec()");
+        assertVerifies(script);
+        Assertions.assertEquals(7 + 11 + 23 + 17 + 120, script.eval(new SimpleBindings()));
+
+        // 1. Value-capture: makeAdder has ZERO IntCell/Cell allocations or reads!
+        String adderMethod = methodDescriptors(script.getClassBytes()).stream()
+                .map(d -> d.substring(0, d.indexOf(':')))
+                .filter(m -> m.endsWith("$makeAdder")).findFirst().orElseThrow();
+        List<String> adderOps = methodInstructions(script.getClassBytes(), adderMethod);
+        Assertions.assertFalse(adderOps.isEmpty(), "Expected instructions in " + adderMethod);
+        Assertions.assertTrue(adderOps.stream().noneMatch(o -> o.contains("Cell")),
+                "Expected makeAdder to capture immutable base/doubled by value with zero Cell ops: " + adderOps);
+        // Mutable var capture in makeMut still uses IntCell.
+        String mutMethod = methodDescriptors(script.getClassBytes()).stream()
+                .map(d -> d.substring(0, d.indexOf(':')))
+                .filter(m -> m.endsWith("$makeMut")).findFirst().orElseThrow();
+        List<String> mutOps = methodInstructions(script.getClassBytes(), mutMethod);
+        Assertions.assertTrue(mutOps.stream().anyMatch(o -> o.contains("IntCell")),
+                "Expected makeMut to use IntCell for mutable var acc: " + mutOps);
+
+        // 2. ACC_FINAL header def fields & typed <init> on both Point (record) and Counter (regular class).
+        byte[] pointBytes = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$Point")).map(java.util.Map.Entry::getValue).findFirst().orElseThrow();
+        org.objectweb.asm.tree.ClassNode pointNode = new org.objectweb.asm.tree.ClassNode();
+        new ClassReader(pointBytes).accept(pointNode, 0);
+        for (String fName : List.of("x", "y")) {
+            org.objectweb.asm.tree.FieldNode fn = pointNode.fields.stream()
+                    .filter(f -> f.name.equals(fName)).findFirst().orElseThrow();
+            Assertions.assertTrue((fn.access & Opcodes.ACC_FINAL) != 0,
+                    "Expected Point." + fName + " to be ACC_FINAL");
+        }
+        Assertions.assertTrue(pointNode.methods.stream()
+                        .anyMatch(m -> m.name.equals("<init>") && m.desc.endsWith(";II)V")),
+                "Expected Point typed <init>(BabbleClass, ScriptRuntime, int, int)V");
+
+        byte[] counterBytes = script.getClasses().entrySet().stream()
+                .filter(e -> e.getKey().endsWith("$Counter")).map(java.util.Map.Entry::getValue).findFirst().orElseThrow();
+        org.objectweb.asm.tree.ClassNode counterNode = new org.objectweb.asm.tree.ClassNode();
+        new ClassReader(counterBytes).accept(counterNode, 0);
+        org.objectweb.asm.tree.FieldNode stepField = counterNode.fields.stream()
+                .filter(f -> f.name.equals("step")).findFirst().orElseThrow();
+        org.objectweb.asm.tree.FieldNode bonusField = counterNode.fields.stream()
+                .filter(f -> f.name.equals("bonus")).findFirst().orElseThrow();
+        org.objectweb.asm.tree.FieldNode secretField = counterNode.fields.stream()
+                .filter(f -> f.name.equals("$v$secret")).findFirst().orElseThrow();
+        Assertions.assertTrue((stepField.access & Opcodes.ACC_FINAL) != 0, "Expected Counter.step to be ACC_FINAL");
+        Assertions.assertTrue((bonusField.access & Opcodes.ACC_FINAL) == 0, "Expected Counter.bonus (var) NOT to be ACC_FINAL");
+        Assertions.assertEquals("I", secretField.desc, "Expected value-captured class param $v$secret to have raw int descriptor");
+        Assertions.assertTrue(counterNode.methods.stream()
+                        .anyMatch(m -> m.name.equals("<init>") && m.desc.endsWith(";I)V")),
+                "Expected Counter typed <init>(BabbleClass, ScriptRuntime, int)V");
+    }
 }

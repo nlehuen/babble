@@ -321,7 +321,7 @@ public final class MirLowerer {
         }
 
         private boolean mustAlwaysPin(HirVar v) {
-            return v.cell()
+            return v.isCaptured()
                     || (v.mayBeUndefined() && !v.definitelyDefined())
                     || v.kind() == Resolution.Variable.Kind.THIS
                     || v.kind() == Resolution.Variable.Kind.RECURSE;
@@ -809,7 +809,9 @@ public final class MirLowerer {
         }
 
         private MirEffect slotReadEffect(HirVar v) {
-            if (!v.cell() && (v.kind() == Resolution.Variable.Kind.THIS || v.kind() == Resolution.Variable.Kind.RECURSE)) {
+            if (!v.cell() && ((v.capturedByValue() && v.ownerMethodId() != fn.id())
+                    || v.kind() == Resolution.Variable.Kind.THIS
+                    || v.kind() == Resolution.Variable.Kind.RECURSE)) {
                 return MirEffect.PURE_NOTHROW;
             }
             boolean nothrow = !v.mayBeUndefined() || v.definitelyDefined();

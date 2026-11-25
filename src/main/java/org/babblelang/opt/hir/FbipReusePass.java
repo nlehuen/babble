@@ -110,7 +110,7 @@ public final class FbipReusePass implements HirPass {
         Map<String, HirParam> uniqueByTypeId = new HashMap<>();
         Set<Integer> uniqueParamVarIds = new HashSet<>();
         for (HirParam p : fn.params()) {
-            if (!p.isUnique() || p.recordTypeId() == null || p.var() == null || p.var().cell()) {
+            if (!p.isUnique() || p.recordTypeId() == null || p.var() == null || p.var().isCaptured()) {
                 continue;
             }
             HirClass cls = findLocalFastRecord(module, p.recordTypeId());
