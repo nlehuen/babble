@@ -279,29 +279,27 @@ fn run(v0: byte) -> bool:
   bb2:
     v3: any = opaque.NameRead() {impure}
     v4: int = const 3
-    v5: any = opaque.DynamicCall(v3, v4) {impure}
-    v6: any = widen#1 v5
-    v7: short = convert.short v6
-    br bb3(v7)
-  bb3(v8: short):
-    v9: any = opaque.NameRead() {impure}
-    v10: int = const 3
-    v11: any = opaque.DynamicCall(v9, v10) {impure}
-    v12: short = convert.short v11
-    v13: bool = eq v8, v12 {pure}
-    v14: bool = const false
-    br_if v13, bb4, bb5(v14)
+    v5: byte = opaque.DynamicCall(v3, v4) {impure}
+    v6: short = convert.short v5
+    br bb3(v6)
+  bb3(v7: short):
+    v8: any = opaque.NameRead() {impure}
+    v9: int = const 3
+    v10: short = opaque.DynamicCall(v8, v9) {impure}
+    v11: bool = eq v7, v10 {pure}
+    v12: bool = const false
+    br_if v11, bb4, bb5(v12)
   bb4:
-    v15: bool = const true
-    br bb5(v15)
-  bb5(v16: bool):
-    v17: bool = const false
-    br_if v16, bb6, bb7(v17)
+    v13: bool = const true
+    br bb5(v13)
+  bb5(v14: bool):
+    v15: bool = const false
+    br_if v14, bb6, bb7(v15)
   bb6:
-    v18: bool = const true
-    br bb7(v18)
-  bb7(v19: bool):
-    ret v19
+    v16: bool = const true
+    br bb7(v16)
+  bb7(v17: bool):
+    ret v17
 ```
 
 ```mir
@@ -313,25 +311,23 @@ fn run(v0: byte) -> bool:
   bb1:
     v2: any = opaque.NameRead() {impure}
     v3: int = const 3
-    v4: any = opaque.DynamicCall(v2, v3) {impure}
-    v5: any = widen#1 v4
-    v6: short = convert.short v5
-    br bb2(v6)
-  bb2(v7: short):
-    v8: any = opaque.NameRead() {impure}
-    v9: any = opaque.DynamicCall(v8, v3) {impure}
-    v10: short = convert.short v9
-    v11: bool = eq v7, v10 {pure}
-    v12: bool = const false
-    br_if v11, bb3, bb4(v12)
+    v4: byte = opaque.DynamicCall(v2, v3) {impure}
+    v5: short = convert.short v4
+    br bb2(v5)
+  bb2(v6: short):
+    v7: any = opaque.NameRead() {impure}
+    v8: short = opaque.DynamicCall(v7, v3) {impure}
+    v9: bool = eq v6, v8 {pure}
+    v10: bool = const false
+    br_if v9, bb3, bb4(v10)
   bb3:
     br bb4(v1)
-  bb4(v13: bool):
-    br_if v13, bb5, bb6(v12)
+  bb4(v11: bool):
+    br_if v11, bb5, bb6(v10)
   bb5:
     br bb6(v1)
-  bb6(v14: bool):
-    ret v14
+  bb6(v12: bool):
+    ret v12
 ```
 
 ## Canonical HIR golden : loop-invariant Math.cos hoisted to preheader (-O0 vs -O1)

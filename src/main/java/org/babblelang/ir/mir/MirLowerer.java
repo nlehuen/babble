@@ -2362,8 +2362,31 @@ public final class MirLowerer {
                     case HASH_CODE -> PrimitiveKind.INT;
                     default -> PrimitiveKind.NONE;
                 };
+                case HirExpr.DynamicCall c -> c.meta().checkedType() == null
+                        ? dynamicCallResultKind(c) : PrimitiveKind.NONE;
+                case HirExpr.OverloadDispatch d -> d.meta().checkedType() == null
+                        ? d.meta().kind() : PrimitiveKind.NONE;
                 default -> PrimitiveKind.NONE;
             };
+        }
+
+        private static PrimitiveKind dynamicCallResultKind(HirExpr.DynamicCall c) {
+            LoweringTargets.FunctionSignature sig = c.babbleSig();
+            if (sig == null) {
+                return PrimitiveKind.NONE;
+            }
+            LoweringTargets.ArgumentBinding binding = c.binding();
+            if (binding != null) {
+                return binding.paramCount() == sig.parameterKinds().length
+                        ? sig.returnKind() : PrimitiveKind.NONE;
+            }
+            for (HirCallArg arg : c.args()) {
+                if (arg.name() != null) {
+                    return PrimitiveKind.NONE;
+                }
+            }
+            return c.args().size() == sig.parameterKinds().length
+                    ? sig.returnKind() : PrimitiveKind.NONE;
         }
 
         private MirEffect opaqueEffect(HirExpr expr, List<MirVal> operands) {

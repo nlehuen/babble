@@ -59,9 +59,8 @@ fn C.run() -> bool:
     v11: bool = eq v9, v10 {pure}
     br bb2(v11)
   bb2(v12: bool):
-    v13: any = opaque.DynamicCall(v0, v12) {impure}
-    v14: bool = convert.bool v13
-    ret v14
+    v13: bool = opaque.DynamicCall(v0, v12) {impure}
+    ret v13
 ```
 
 ```mir
@@ -83,9 +82,8 @@ fn C.run() -> bool:
     v10: bool = eq v8, v9 {pure}
     br bb2(v10)
   bb2(v11: bool):
-    v12: any = opaque.DynamicCall(v0, v11) {impure}
-    v13: bool = convert.bool v12
-    ret v13
+    v12: bool = opaque.DynamicCall(v0, v11) {impure}
+    ret v12
 ```
 
 ## this.field assign, compound assign, and spread-to-double field assign
@@ -160,9 +158,8 @@ fn C.run() -> bool:
     v32: bool = eq v30, v31 {pure}
     br bb4(v32)
   bb4(v33: bool):
-    v34: any = opaque.DynamicCall(v15, v33) {impure}
-    v35: bool = convert.bool v34
-    ret v35
+    v34: bool = opaque.DynamicCall(v15, v33) {impure}
+    ret v34
 ```
 
 ```mir
@@ -204,9 +201,8 @@ fn C.run() -> bool:
     v23: bool = eq v21, v22 {pure}
     br bb4(v23)
   bb4(v24: bool):
-    v25: any = opaque.DynamicCall(v10, v24) {impure}
-    v26: bool = convert.bool v25
-    ret v26
+    v25: bool = opaque.DynamicCall(v10, v24) {impure}
+    ret v25
 ```
 
 ## recurse with omitted optional arg inside class method and top-level function, plus enclosing captured cell
@@ -510,15 +506,14 @@ fn r9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8
     v12: any = slot_read $recurse {pure}
     v13: int = const 1
     v14: int = sub v0, v13 {pure}
-    v15: any = opaque.DynamicCall(v12, v14, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
-    v16: int = convert.int v15
-    v17: int = add v11, v16 {pure}
-    br bb3(v17)
+    v15: int = opaque.DynamicCall(v12, v14, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
+    v16: int = add v11, v15 {pure}
+    br bb3(v16)
   bb2:
-    v18: int = const 0
-    br bb3(v18)
-  bb3(v19: int):
-    ret v19
+    v17: int = const 0
+    br bb3(v17)
+  bb3(v18: int):
+    ret v18
 ```
 
 ```mir
@@ -532,14 +527,13 @@ fn r9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8
     v11: int = const 1
     v12: any = slot_read $recurse {pure}
     v13: int = sub v0, v11 {pure}
-    v14: any = opaque.DynamicCall(v12, v13, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
-    v15: int = convert.int v14
-    v16: int = add v11, v15 {pure}
-    br bb3(v16)
+    v14: int = opaque.DynamicCall(v12, v13, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
+    v15: int = add v11, v14 {pure}
+    br bb3(v15)
   bb2:
     br bb3(v9)
-  bb3(v17: int):
-    ret v17
+  bb3(v16: int):
+    ret v16
 ```
 
 ## Direct this.method call with >8 default params (0 args, positional, and reordered named args)
@@ -625,19 +619,17 @@ fn C.run() -> int:
     v0: any = slot_read this {pure}
     v1: any = load_field v0.cb {read:shared,throws}
     v2: int = const 3
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
-    v4: int = convert.int v3
-    v5: any = slot_read this {pure}
-    v6: any = load_field v5.greet {read:shared,throws}
-    v7: any = opaque.DynamicCall(v6) {impure}
-    v8: int = convert.int v7
-    v9: int = add v4, v8 {pure}
-    v10: any = slot_read this {pure}
-    v11: int = load_field v10.n {read:shared,throws}
-    v12: int = const 2
-    v13: int = add v11, v12 {pure}
-    v14: int = add v9, v13 {pure}
-    ret v14
+    v3: int = opaque.DynamicCall(v1, v2) {impure}
+    v4: any = slot_read this {pure}
+    v5: any = load_field v4.greet {read:shared,throws}
+    v6: int = opaque.DynamicCall(v5) {impure}
+    v7: int = add v3, v6 {pure}
+    v8: any = slot_read this {pure}
+    v9: int = load_field v8.n {read:shared,throws}
+    v10: int = const 2
+    v11: int = add v9, v10 {pure}
+    v12: int = add v7, v11 {pure}
+    ret v12
 ```
 
 ```mir
@@ -647,17 +639,15 @@ fn C.run() -> int:
     v0: any = slot_read this {pure}
     v1: any = load_field v0.cb {read:shared,throws}
     v2: int = const 3
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
-    v4: int = convert.int v3
-    v5: any = load_field v0.greet {read:shared,throws}
-    v6: any = opaque.DynamicCall(v5) {impure}
-    v7: int = convert.int v6
-    v8: int = add v4, v7 {pure}
-    v9: int = load_field v0.n {read:shared,throws}
-    v10: int = const 2
-    v11: int = add v9, v10 {pure}
-    v12: int = add v8, v11 {pure}
-    ret v12
+    v3: int = opaque.DynamicCall(v1, v2) {impure}
+    v4: any = load_field v0.greet {read:shared,throws}
+    v5: int = opaque.DynamicCall(v4) {impure}
+    v6: int = add v3, v5 {pure}
+    v7: int = load_field v0.n {read:shared,throws}
+    v8: int = const 2
+    v9: int = add v7, v8 {pure}
+    v10: int = add v6, v9 {pure}
+    ret v10
 ```
 
 ## Object literal this.method dispatch

@@ -21,7 +21,10 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.util.CheckClassAdapter;
@@ -629,6 +632,113 @@ public class OptimizerTestCase {
         Path jar = dir.resolve("app-o2.jar");
         Babblec.compile(dir.resolve("main.ba"), dir, jar, new javax.script.SimpleScriptContext(), 2);
         Assertions.assertEquals("10", runJar(jar));
+    }
+
+    @Test
+    public void testO2TypedCallPrimitiveReturnNoBoxUnbox() throws Exception {
+        String code = ""
+                + "def dA = fn (x : double) : double -> ( x * 0.5 + 1.0 )\n"
+                + "def dB = fn (x : double) : double -> ( x * 0.25 + 2.0 )\n"
+                + "def iA = fn (x : int) : int -> ( x + 3 )\n"
+                + "def iB = fn (x : int) : int -> ( x + 5 )\n"
+                + "def bA = fn (x : double) : bool -> ( x > 1.0 )\n"
+                + "def bB = fn (x : double) : bool -> ( x < 10.0 )\n"
+                + "def run = fn (flag : bool, x : double, k : int) : double -> (\n"
+                + "  def fd : fn (double) : double = if flag then (dA) else (dB)\n"
+                + "  def fi : fn (int) : int = if flag then (iA) else (iB)\n"
+                + "  def fb : fn (double) : bool = if flag then (bA) else (bB)\n"
+                + "  def d = fd(x)\n"
+                + "  def n = fi(k)\n"
+                + "  if fb(d) then ( d + n ) else ( d - n )\n"
+                + ")\n"
+                + "run(true, 4.0, 2)\n";
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 2);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
+        Assertions.assertEquals(8.0, ((Number) cs.eval()).doubleValue(), 1e-9);
+
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+        MethodNode mn = cn.methods.stream().filter(m -> m.name.endsWith("$run$spec")).findFirst()
+                .orElseThrow(() -> new AssertionError("Missing $run$spec method"));
+        List<String> calls = new ArrayList<>();
+        int typedCalls = 0;
+        for (var insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn instanceof MethodInsnNode mi) {
+                calls.add(mi.owner + "." + mi.name);
+            } else if (insn instanceof InvokeDynamicInsnNode indy && "typedCall".equals(indy.name)) {
+                typedCalls++;
+            }
+        }
+        Assertions.assertEquals(3, typedCalls, "Expected 3 typedCall sites in $run$spec");
+        Assertions.assertTrue(calls.stream().noneMatch(c ->
+                        c.equals("java/lang/Double.valueOf")
+                                || c.equals("java/lang/Integer.valueOf")
+                                || c.equals("java/lang/Boolean.valueOf")
+                                || c.startsWith("org/babblelang/runtime/JavaTypes.unbox")),
+                "Expected zero box/unbox round-trips for primitive typedCall returns at -O2, got: " + calls);
+    }
+
+    @Test
+    public void testO2CompactMirBytecodeConstantsAndDiscardPop() throws Exception {
+        String code = ""
+                + "def sink = fn io (x : int) : int -> ( x + 1 )\n"
+                + "def kernel = fn io (x : double, n : int) : double -> (\n"
+                + "  sink(n)\n"
+                + "  if x <= 0.0 then ( return 0.0 )\n"
+                + "  def g = if x > 1.0 then ( x * 0.5 ) else ( 1.0 )\n"
+                + "  def i = 0\n"
+                + "  while i < n then (\n"
+                + "    g = 0.5 * (g + x / g)\n"
+                + "    i += 1\n"
+                + "  )\n"
+                + "  g\n"
+                + ")\n"
+                + "kernel(9.0, 6)\n";
+        BabbleScriptEngine o1Engine = newEngine();
+        o1Engine.put(BabbleScriptEngine.MODE, "compile");
+        o1Engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        CompiledBabbleScript cs1 = (CompiledBabbleScript) o1Engine.compile(code);
+
+        BabbleScriptEngine o2Engine = newEngine();
+        o2Engine.put(BabbleScriptEngine.MODE, "compile");
+        o2Engine.put(BabbleCompiler.OPT_LEVEL, 2);
+        CompiledBabbleScript cs2 = (CompiledBabbleScript) o2Engine.compile(code);
+
+        Assertions.assertEquals(((Number) cs1.eval()).doubleValue(), ((Number) cs2.eval()).doubleValue(), 1e-12);
+
+        ClassNode cn1 = new ClassNode();
+        new ClassReader(cs1.getClassBytes()).accept(cn1, 0);
+        MethodNode mn1 = cn1.methods.stream().filter(m -> m.name.endsWith("$kernel$spec")).findFirst().orElseThrow();
+
+        ClassNode cn2 = new ClassNode();
+        new ClassReader(cs2.getClassBytes()).accept(cn2, 0);
+        MethodNode mn2 = cn2.methods.stream().filter(m -> m.name.endsWith("$kernel$spec")).findFirst().orElseThrow();
+
+        boolean sawDconst0 = false;
+        boolean sawDconst1 = false;
+        boolean sawPop = false;
+        int realInsns1 = 0;
+        int realInsns2 = 0;
+        for (var insn = mn1.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() >= 0) realInsns1++;
+        }
+        for (var insn = mn2.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            int op = insn.getOpcode();
+            if (op >= 0) realInsns2++;
+            if (op == Opcodes.DCONST_0) sawDconst0 = true;
+            if (op == Opcodes.DCONST_1) sawDconst1 = true;
+            if (op == Opcodes.POP) sawPop = true;
+            if (insn instanceof LdcInsnNode ldc && ldc.cst instanceof Double d) {
+                Assertions.assertFalse(Double.doubleToRawLongBits(d) == 0L || d == 1.0d,
+                        "Expected DCONST_0/DCONST_1 instead of LDC for " + d);
+            }
+        }
+        Assertions.assertTrue(sawDconst0 && sawDconst1, "Expected DCONST_0 and DCONST_1 in -O2 kernel");
+        Assertions.assertTrue(sawPop, "Expected POP for discarded sink(n) result in -O2 kernel");
+        Assertions.assertTrue(realInsns2 <= realInsns1,
+                "Expected -O2 instruction count (" + realInsns2 + ") <= -O1 (" + realInsns1 + ")");
     }
 
     private static List<String> methodCalls(ClassNode cn, String methodName) {

@@ -444,23 +444,21 @@ fn run(v0: int) -> double:
     ret v6
   bb3:
     v9: any = opaque.NameRead() {impure}
-    v10: any = opaque.DynamicCall(v9, v0) {impure}
-    v11: double = convert.double v10
-    v12: double = const 0.0
+    v10: double = opaque.DynamicCall(v9, v0) {impure}
+    v11: double = const 0.0
+    v12: any = opaque.NameRead() {impure}
     v13: any = opaque.NameRead() {impure}
-    v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicCall(v13, v14) {impure}
-    v16: double = convert.double v15
-    v17: double = add v6, v16 {pure}
-    v18: any = convert.any v0
-    v19: any = checkcast v18 <double|double|>
-    v20: double = convert.double v19
-    v21: double = add v17, v20 {pure}
-    v22: double = add v21, v11 {pure}
-    v23: int = const 1
-    v24: int = add v5, v23 {pure}
-    v25: any = convert.any v24
-    br bb1(v25, v24, v22)
+    v14: double = opaque.DynamicCall(v12, v13) {impure}
+    v15: double = add v6, v14 {pure}
+    v16: any = convert.any v0
+    v17: any = checkcast v16 <double|double|>
+    v18: double = convert.double v17
+    v19: double = add v15, v18 {pure}
+    v20: double = add v19, v10 {pure}
+    v21: int = const 1
+    v22: int = add v5, v21 {pure}
+    v23: any = convert.any v22
+    br bb1(v23, v22, v20)
 ```
 
 ```mir
@@ -479,20 +477,18 @@ fn run(v0: int) -> double:
     ret v5
   bb3:
     v8: any = opaque.NameRead() {impure}
-    v9: any = opaque.DynamicCall(v8, v0) {impure}
-    v10: double = convert.double v9
+    v9: double = opaque.DynamicCall(v8, v0) {impure}
+    v10: any = opaque.NameRead() {impure}
     v11: any = opaque.NameRead() {impure}
-    v12: any = opaque.NameRead() {impure}
-    v13: any = opaque.DynamicCall(v11, v12) {impure}
-    v14: double = convert.double v13
-    v15: double = add v5, v14 {pure}
-    v16: any = checkcast v3 <double|double|>
-    v17: double = convert.double v16
-    v18: double = add v15, v17 {pure}
-    v19: double = add v18, v10 {pure}
-    v20: int = const 1
-    v21: int = add v4, v20 {pure}
-    br bb1(v21, v19)
+    v12: double = opaque.DynamicCall(v10, v11) {impure}
+    v13: double = add v5, v12 {pure}
+    v14: any = checkcast v3 <double|double|>
+    v15: double = convert.double v14
+    v16: double = add v13, v15 {pure}
+    v17: double = add v16, v9 {pure}
+    v18: int = const 1
+    v19: int = add v4, v18 {pure}
+    br bb1(v19, v17)
 ```
 
 ## Try expression inside RecordNew and RecordReuse arguments (stack-empty normalization)
@@ -554,24 +550,25 @@ fn bump(v0: any [unique], v1: bool) -> any:
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
     v4: any = opaque.NameRead() {impure}
     v5: bool = const false
-    v6: any = opaque.DynamicCall(v4, v5) {impure}
-    br bb4(v6)
-  bb4(v7: any) [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v8: int = load_field v0.count {read:frozen}
-    v9: int = const 1
-    v10: int = add v8, v9 {pure}
-    br bb8(v10)
-  bb5(v11: any) [handler]:
-    br bb7(v11)
-  bb6(v12: any) [handler]:
-    v13: any = unwrap_thrown v12
-    br bb7(v13)
-  bb7(v14: any):
-    v15: int = const 9
-    br bb8(v15)
-  bb8(v16: int):
-    v17: any = record_reuse v0 as Holder(v2, v16) {write:shared}
-    ret v17
+    v6: bool = opaque.DynamicCall(v4, v5) {impure}
+    v7: any = convert.any v6
+    br bb4(v7)
+  bb4(v8: any) [unwind: ThrownException -> bb6, Exception -> bb5]:
+    v9: int = load_field v0.count {read:frozen}
+    v10: int = const 1
+    v11: int = add v9, v10 {pure}
+    br bb8(v11)
+  bb5(v12: any) [handler]:
+    br bb7(v12)
+  bb6(v13: any) [handler]:
+    v14: any = unwrap_thrown v13
+    br bb7(v14)
+  bb7(v15: any):
+    v16: int = const 9
+    br bb8(v16)
+  bb8(v17: int):
+    v18: any = record_reuse v0 as Holder(v2, v17) {write:shared}
+    ret v18
 ```
 
 ```mir
@@ -585,7 +582,7 @@ fn bump(v0: any [unique], v1: bool) -> any:
   bb2 [unwind: ThrownException -> bb5, Exception -> bb4]:
     v3: any = opaque.NameRead() {impure}
     v4: bool = const false
-    v5: any = opaque.DynamicCall(v3, v4) {impure}
+    v5: bool = opaque.DynamicCall(v3, v4) {impure}
     br bb3
   bb3 [unwind: ThrownException -> bb5, Exception -> bb4]:
     v6: int = load_field v0.count {read:frozen}
@@ -665,23 +662,24 @@ fn r(v0: bool) -> int:
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
     v6: any = opaque.NameRead() {impure}
     v7: bool = const false
-    v8: any = opaque.DynamicCall(v6, v7) {impure}
-    br bb4(v8)
-  bb4(v9: any) [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v10: int = const 2
-    br bb8(v10)
-  bb5(v11: any) [handler]:
-    br bb7(v11)
-  bb6(v12: any) [handler]:
-    v13: any = unwrap_thrown v12
-    br bb7(v13)
-  bb7(v14: any):
-    v15: int = const 3
-    br bb8(v15)
-  bb8(v16: int):
-    v17: int = load_field v3.v {read:shared,throws}
-    v18: int = add v17, v16 {pure}
-    ret v18
+    v8: bool = opaque.DynamicCall(v6, v7) {impure}
+    v9: any = convert.any v8
+    br bb4(v9)
+  bb4(v10: any) [unwind: ThrownException -> bb6, Exception -> bb5]:
+    v11: int = const 2
+    br bb8(v11)
+  bb5(v12: any) [handler]:
+    br bb7(v12)
+  bb6(v13: any) [handler]:
+    v14: any = unwrap_thrown v13
+    br bb7(v14)
+  bb7(v15: any):
+    v16: int = const 3
+    br bb8(v16)
+  bb8(v17: int):
+    v18: int = load_field v3.v {read:shared,throws}
+    v19: int = add v18, v17 {pure}
+    ret v19
 ```
 
 ```mir
@@ -698,7 +696,7 @@ fn r(v0: bool) -> int:
   bb2 [unwind: ThrownException -> bb5, Exception -> bb4]:
     v5: any = opaque.NameRead() {impure}
     v6: bool = const false
-    v7: any = opaque.DynamicCall(v5, v6) {impure}
+    v7: bool = opaque.DynamicCall(v5, v6) {impure}
     br bb3
   bb3 [unwind: ThrownException -> bb5, Exception -> bb4]:
     v8: int = const 2
@@ -767,24 +765,25 @@ fn r(v0: bool) -> int:
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
     v2: any = opaque.NameRead() {impure}
     v3: bool = const false
-    v4: any = opaque.DynamicCall(v2, v3) {impure}
-    br bb4(v4)
-  bb4(v5: any) [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v6: int = const 10
-    br bb8(v6)
-  bb5(v7: any) [handler]:
-    br bb7(v7)
-  bb6(v8: any) [handler]:
-    v9: any = unwrap_thrown v8
-    br bb7(v9)
-  bb7(v10: any):
-    v11: int = const 20
-    br bb8(v11)
-  bb8(v12: int):
-    v13: any = opaque.NameAssign(v12) {impure}
-    v14: any = opaque.NameRead() {impure}
-    v15: int = convert.int v14
-    ret v15
+    v4: bool = opaque.DynamicCall(v2, v3) {impure}
+    v5: any = convert.any v4
+    br bb4(v5)
+  bb4(v6: any) [unwind: ThrownException -> bb6, Exception -> bb5]:
+    v7: int = const 10
+    br bb8(v7)
+  bb5(v8: any) [handler]:
+    br bb7(v8)
+  bb6(v9: any) [handler]:
+    v10: any = unwrap_thrown v9
+    br bb7(v10)
+  bb7(v11: any):
+    v12: int = const 20
+    br bb8(v12)
+  bb8(v13: int):
+    v14: any = opaque.NameAssign(v13) {impure}
+    v15: any = opaque.NameRead() {impure}
+    v16: int = convert.int v15
+    ret v16
 ```
 
 ```mir
@@ -797,7 +796,7 @@ fn r(v0: bool) -> int:
   bb2 [unwind: ThrownException -> bb5, Exception -> bb4]:
     v1: any = opaque.NameRead() {impure}
     v2: bool = const false
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
+    v3: bool = opaque.DynamicCall(v1, v2) {impure}
     br bb3
   bb3 [unwind: ThrownException -> bb5, Exception -> bb4]:
     v4: int = const 10

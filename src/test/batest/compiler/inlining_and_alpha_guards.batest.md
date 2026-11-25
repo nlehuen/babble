@@ -191,16 +191,15 @@ fn passRec(v0: int) -> int:
     v3: any = slot_read $recurse {pure}
     v4: int = const 1
     v5: int = sub v0, v4 {pure}
-    v6: any = opaque.DynamicCall(v3, v5) {impure}
-    v7: int = convert.int v6
-    v8: int = const 1
-    v9: int = add v7, v8 {pure}
-    br bb3(v9)
+    v6: int = opaque.DynamicCall(v3, v5) {impure}
+    v7: int = const 1
+    v8: int = add v6, v7 {pure}
+    br bb3(v8)
   bb2:
-    v10: int = const 0
-    br bb3(v10)
-  bb3(v11: int):
-    ret v11
+    v9: int = const 0
+    br bb3(v9)
+  bb3(v10: int):
+    ret v10
 ```
 
 ```mir
@@ -214,14 +213,13 @@ fn passRec(v0: int) -> int:
     v3: any = slot_read $recurse {pure}
     v4: int = const 1
     v5: int = sub v0, v4 {pure}
-    v6: any = opaque.DynamicCall(v3, v5) {impure}
-    v7: int = convert.int v6
-    v8: int = add v7, v4 {pure}
-    br bb3(v8)
+    v6: int = opaque.DynamicCall(v3, v5) {impure}
+    v7: int = add v6, v4 {pure}
+    br bb3(v7)
   bb2:
     br bb3(v1)
-  bb3(v9: int):
-    ret v9
+  bb3(v8: int):
+    ret v8
 ```
 
 ## InlinePass.scanCalleeBody guards : local interface and block cell capture
@@ -372,73 +370,70 @@ fn run(v0: byte, v1: int, v2: float) -> bool:
     v3: short = convert.short v0
     v4: any = opaque.NameRead() {impure}
     v5: int = const 2
-    v6: any = opaque.DynamicCall(v4, v5) {impure}
-    v7: short = convert.short v6
-    v8: bool = eq v3, v7 {pure}
-    v9: bool = const false
-    br_if v8, bb1, bb2(v9)
+    v6: short = opaque.DynamicCall(v4, v5) {impure}
+    v7: bool = eq v3, v6 {pure}
+    v8: bool = const false
+    br_if v7, bb1, bb2(v8)
   bb1:
-    v10: any = opaque.NameRead() {impure}
-    v11: int = const 3
-    v12: any = opaque.DynamicCall(v10, v11) {impure}
-    v13: byte = convert.byte v12
-    v14: short = convert.short v13
-    v15: any = opaque.NameRead() {impure}
-    v16: int = const 3
-    v17: any = opaque.DynamicCall(v15, v16) {impure}
-    v18: short = convert.short v17
-    v19: bool = eq v14, v18 {pure}
-    br bb2(v19)
-  bb2(v20: bool):
-    v21: bool = const false
-    br_if v20, bb3, bb4(v21)
+    v9: any = opaque.NameRead() {impure}
+    v10: int = const 3
+    v11: byte = opaque.DynamicCall(v9, v10) {impure}
+    v12: short = convert.short v11
+    v13: any = opaque.NameRead() {impure}
+    v14: int = const 3
+    v15: short = opaque.DynamicCall(v13, v14) {impure}
+    v16: bool = eq v12, v15 {pure}
+    br bb2(v16)
+  bb2(v17: bool):
+    v18: bool = const false
+    br_if v17, bb3, bb4(v18)
   bb3:
-    v22: long = convert.long v1
-    v23: long = const 1L
-    v24: long = add v22, v23 {pure}
-    v25: long = const 5L
-    v26: bool = eq v24, v25 {pure}
-    br bb4(v26)
-  bb4(v27: bool):
-    v28: bool = const false
-    br_if v27, bb5, bb6(v28)
+    v19: long = convert.long v1
+    v20: long = const 1L
+    v21: long = add v19, v20 {pure}
+    v22: long = const 5L
+    v23: bool = eq v21, v22 {pure}
+    br bb4(v23)
+  bb4(v24: bool):
+    v25: bool = const false
+    br_if v24, bb5, bb6(v25)
   bb5:
-    v29: bool = const true
-    br bb6(v29)
-  bb6(v30: bool):
-    v31: bool = const false
-    br_if v30, bb7, bb8(v31)
+    v26: bool = const true
+    br bb6(v26)
+  bb6(v27: bool):
+    v28: bool = const false
+    br_if v27, bb7, bb8(v28)
   bb7:
-    v32: float = convert.float v1
-    v33: float = const 1.5f
-    v34: float = add v32, v33 {pure}
-    v35: float = const 5.5f
-    v36: bool = eq v34, v35 {pure}
-    br bb8(v36)
-  bb8(v37: bool):
-    v38: bool = const false
-    br_if v37, bb9, bb10(v38)
+    v29: float = convert.float v1
+    v30: float = const 1.5f
+    v31: float = add v29, v30 {pure}
+    v32: float = const 5.5f
+    v33: bool = eq v31, v32 {pure}
+    br bb8(v33)
+  bb8(v34: bool):
+    v35: bool = const false
+    br_if v34, bb9, bb10(v35)
   bb9:
-    v39: bool = const true
-    br bb10(v39)
-  bb10(v40: bool):
-    v41: bool = const false
-    br_if v40, bb11, bb12(v41)
+    v36: bool = const true
+    br bb10(v36)
+  bb10(v37: bool):
+    v38: bool = const false
+    br_if v37, bb11, bb12(v38)
   bb11:
-    v42: double = convert.double v2
-    v43: double = const 0.5
-    v44: double = add v42, v43 {pure}
-    v45: double = const 2.0
-    v46: bool = eq v44, v45 {pure}
-    br bb12(v46)
-  bb12(v47: bool):
-    v48: bool = const false
-    br_if v47, bb13, bb14(v48)
+    v39: double = convert.double v2
+    v40: double = const 0.5
+    v41: double = add v39, v40 {pure}
+    v42: double = const 2.0
+    v43: bool = eq v41, v42 {pure}
+    br bb12(v43)
+  bb12(v44: bool):
+    v45: bool = const false
+    br_if v44, bb13, bb14(v45)
   bb13:
-    v49: bool = const true
-    br bb14(v49)
-  bb14(v50: bool):
-    ret v50
+    v46: bool = const true
+    br bb14(v46)
+  bb14(v47: bool):
+    ret v47
 ```
 
 ```mir
@@ -448,66 +443,63 @@ fn run(v0: byte, v1: int, v2: float) -> bool:
     v3: short = convert.short v0
     v4: any = opaque.NameRead() {impure}
     v5: int = const 2
-    v6: any = opaque.DynamicCall(v4, v5) {impure}
-    v7: short = convert.short v6
-    v8: bool = eq v3, v7 {pure}
-    v9: bool = const false
-    br_if v8, bb1, bb2(v9)
+    v6: short = opaque.DynamicCall(v4, v5) {impure}
+    v7: bool = eq v3, v6 {pure}
+    v8: bool = const false
+    br_if v7, bb1, bb2(v8)
   bb1:
-    v10: any = opaque.NameRead() {impure}
-    v11: int = const 3
-    v12: any = opaque.DynamicCall(v10, v11) {impure}
-    v13: byte = convert.byte v12
-    v14: short = convert.short v13
-    v15: any = opaque.NameRead() {impure}
-    v16: any = opaque.DynamicCall(v15, v11) {impure}
-    v17: short = convert.short v16
-    v18: bool = eq v14, v17 {pure}
-    br bb2(v18)
-  bb2(v19: bool):
-    br_if v19, bb3, bb4(v9)
+    v9: any = opaque.NameRead() {impure}
+    v10: int = const 3
+    v11: byte = opaque.DynamicCall(v9, v10) {impure}
+    v12: short = convert.short v11
+    v13: any = opaque.NameRead() {impure}
+    v14: short = opaque.DynamicCall(v13, v10) {impure}
+    v15: bool = eq v12, v14 {pure}
+    br bb2(v15)
+  bb2(v16: bool):
+    br_if v16, bb3, bb4(v8)
   bb3:
-    v20: long = convert.long v1
-    v21: long = const 1L
-    v22: long = add v20, v21 {pure}
-    v23: long = const 5L
-    v24: bool = eq v22, v23 {pure}
-    br bb4(v24)
-  bb4(v25: bool):
-    br_if v25, bb5, bb6(v9)
+    v17: long = convert.long v1
+    v18: long = const 1L
+    v19: long = add v17, v18 {pure}
+    v20: long = const 5L
+    v21: bool = eq v19, v20 {pure}
+    br bb4(v21)
+  bb4(v22: bool):
+    br_if v22, bb5, bb6(v8)
   bb5:
-    v26: bool = const true
-    br bb6(v26)
-  bb6(v27: bool):
-    br_if v27, bb7, bb8(v9)
+    v23: bool = const true
+    br bb6(v23)
+  bb6(v24: bool):
+    br_if v24, bb7, bb8(v8)
   bb7:
-    v28: float = convert.float v1
-    v29: float = const 1.5f
-    v30: float = add v28, v29 {pure}
-    v31: float = const 5.5f
-    v32: bool = eq v30, v31 {pure}
-    br bb8(v32)
-  bb8(v33: bool):
-    br_if v33, bb9, bb10(v9)
+    v25: float = convert.float v1
+    v26: float = const 1.5f
+    v27: float = add v25, v26 {pure}
+    v28: float = const 5.5f
+    v29: bool = eq v27, v28 {pure}
+    br bb8(v29)
+  bb8(v30: bool):
+    br_if v30, bb9, bb10(v8)
   bb9:
-    v34: bool = const true
-    br bb10(v34)
-  bb10(v35: bool):
-    br_if v35, bb11, bb12(v9)
+    v31: bool = const true
+    br bb10(v31)
+  bb10(v32: bool):
+    br_if v32, bb11, bb12(v8)
   bb11:
-    v36: double = convert.double v2
-    v37: double = const 0.5
-    v38: double = add v36, v37 {pure}
-    v39: double = const 2.0
-    v40: bool = eq v38, v39 {pure}
-    br bb12(v40)
-  bb12(v41: bool):
-    br_if v41, bb13, bb14(v9)
+    v33: double = convert.double v2
+    v34: double = const 0.5
+    v35: double = add v33, v34 {pure}
+    v36: double = const 2.0
+    v37: bool = eq v35, v36 {pure}
+    br bb12(v37)
+  bb12(v38: bool):
+    br_if v38, bb13, bb14(v8)
   bb13:
-    v42: bool = const true
-    br bb14(v42)
-  bb14(v43: bool):
-    ret v43
+    v39: bool = const true
+    br bb14(v39)
+  bb14(v40: bool):
+    ret v40
 ```
 
 ## InlinePass : widened single-stmt inline call and trailing-return callee
@@ -542,10 +534,9 @@ fn run(v0: int) -> double:
   bb0:
     v1: double = convert.double v0
     v2: any = opaque.NameRead() {impure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
-    v4: double = convert.double v3
-    v5: double = add v1, v4 {pure}
-    ret v5
+    v3: double = opaque.DynamicCall(v2, v0) {impure}
+    v4: double = add v1, v3 {pure}
+    ret v4
 ```
 
 ## Canonical HIR golden : small-function inlining and dead-code elimination (-O0 vs -O1)

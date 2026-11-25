@@ -124,15 +124,14 @@ class C:
       br_if v1, bb2, bb1
     bb1:
       v2: any = opaque.NameRead() {impure}
-      v3: any = opaque.DynamicCall(v2, v0) {impure}
-      v4: int = convert.int v3
-      br bb3(v4)
+      v3: int = opaque.DynamicCall(v2, v0) {impure}
+      br bb3(v3)
     bb2:
-      v5: any = narrow.is v0 <int>
-      v6: int = convert.int v5
-      br bb3(v6)
-    bb3(v7: int):
-      ret v7
+      v4: any = narrow.is v0 <int>
+      v5: int = convert.int v4
+      br bb3(v5)
+    bb3(v6: int):
+      ret v6
   fn C.b(v0: any) -> double:
     bb0:
       v1: any = is v0 <int>
@@ -143,11 +142,10 @@ class C:
     bb2:
       v3: any = narrow.is v0 <int>
       v4: any = opaque.NameRead() {impure}
-      v5: any = opaque.DynamicCall(v4, v3) {impure}
-      v6: double = convert.double v5
-      br bb3(v6)
-    bb3(v7: double):
-      ret v7
+      v5: double = opaque.DynamicCall(v4, v3) {impure}
+      br bb3(v5)
+    bb3(v6: double):
+      ret v6
 ```
 
 ## Optional union bridge null-guard adaptation into primitive double and default float
@@ -175,10 +173,9 @@ class C:
   fn C.f(v0: double, v1: float) -> double:
     bb0:
       v2: any = opaque.NameRead() {impure}
-      v3: any = opaque.DynamicCall(v2, v1) {impure}
-      v4: double = convert.double v3
-      v5: double = add v0, v4 {pure}
-      ret v5
+      v3: double = opaque.DynamicCall(v2, v1) {impure}
+      v4: double = add v0, v3 {pure}
+      ret v4
 ```
 
 ## Optional union bridge null-guard adaptation and non-optional boxed widening into nullable double

@@ -82,42 +82,40 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
   bb3:
     v12: any = opaque.NameRead() {impure}
     v13: int = const 2
-    v14: any = opaque.DynamicCall(v12, v13) {impure}
-    v15: any = checkcast v14 <double|double|>
-    v16: double = convert.double v15
-    v17: any = opaque.NameRead() {impure}
-    v18: any = opaque.DynamicCall(v17, v1) {impure}
-    v19: int = convert.int v18
+    v14: byte = opaque.DynamicCall(v12, v13) {impure}
+    v15: any = convert.any v14
+    v16: any = checkcast v15 <double|double|>
+    v17: double = convert.double v16
+    v18: any = opaque.NameRead() {impure}
+    v19: int = opaque.DynamicCall(v18, v1) {impure}
     v20: int = const 1
     v21: int = add v19, v20 {pure}
     v22: any = opaque.NameRead() {impure}
-    v23: any = opaque.DynamicCall(v22, v21) {impure}
-    v24: double = convert.double v23
-    v25: double = add v16, v24 {pure}
-    v26: double = add v10, v25 {pure}
-    v27: bool = const false
-    br_if v2, bb4, bb5(v27)
+    v23: double = opaque.DynamicCall(v22, v21) {impure}
+    v24: double = add v17, v23 {pure}
+    v25: double = add v10, v24 {pure}
+    v26: bool = const false
+    br_if v2, bb4, bb5(v26)
   bb4:
-    v28: bool = const false
-    br bb5(v28)
-  bb5(v29: bool):
-    br_if v29, bb7, bb6
+    v27: bool = const false
+    br bb5(v27)
+  bb5(v28: bool):
+    br_if v28, bb7, bb6
   bb6:
-    v30: any = const null
-    br bb8(v30, v26)
+    v29: any = const null
+    br bb8(v29, v25)
   bb7:
-    v31: any = opaque.NameRead() {impure}
-    v32: int = call bump() {impure}
-    v33: any = opaque.DynamicCall(v31, v32) {impure}
-    v34: double = convert.double v33
-    v35: double = add v26, v34 {pure}
-    v36: any = convert.any v35
-    br bb8(v36, v35)
-  bb8(v37: any, v38: double):
-    v39: int = const 1
-    v40: int = add v9, v39 {pure}
-    v41: any = convert.any v40
-    br bb1(v41, v40, v38)
+    v30: any = opaque.NameRead() {impure}
+    v31: int = call bump() {impure}
+    v32: double = opaque.DynamicCall(v30, v31) {impure}
+    v33: double = add v25, v32 {pure}
+    v34: any = convert.any v33
+    br bb8(v34, v33)
+  bb8(v35: any, v36: double):
+    v37: int = const 1
+    v38: int = add v9, v37 {pure}
+    v39: any = convert.any v38
+    br bb1(v39, v38, v36)
 ```
 
 ```mir
@@ -137,24 +135,23 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
   bb3:
     v9: any = opaque.NameRead() {impure}
     v10: int = const 2
-    v11: any = opaque.DynamicCall(v9, v10) {impure}
-    v12: any = checkcast v11 <double|double|>
-    v13: double = convert.double v12
-    v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicCall(v14, v1) {impure}
-    v16: int = convert.int v15
+    v11: byte = opaque.DynamicCall(v9, v10) {impure}
+    v12: any = convert.any v11
+    v13: any = checkcast v12 <double|double|>
+    v14: double = convert.double v13
+    v15: any = opaque.NameRead() {impure}
+    v16: int = opaque.DynamicCall(v15, v1) {impure}
     v17: int = add v16, v5 {pure}
     v18: any = opaque.NameRead() {impure}
-    v19: any = opaque.DynamicCall(v18, v17) {impure}
-    v20: double = convert.double v19
-    v21: double = add v13, v20 {pure}
-    v22: double = add v7, v21 {pure}
+    v19: double = opaque.DynamicCall(v18, v17) {impure}
+    v20: double = add v14, v19 {pure}
+    v21: double = add v7, v20 {pure}
     br bb4
   bb4:
-    br bb5(v22)
-  bb5(v23: double):
-    v24: int = add v6, v5 {pure}
-    br bb1(v24, v23)
+    br bb5(v21)
+  bb5(v22: double):
+    v23: int = add v6, v5 {pure}
+    br bb1(v23, v22)
 ```
 
 ## Record-based LICM : ThisFieldGet + DirectBabbleCall across effectiveKind 1..3 (short/int/long)
@@ -241,20 +238,18 @@ fn RV.run(v0: int) -> long:
     v16: long = convert.long v8
     v17: any = convert.any v12
     v18: any = opaque.NameRead() {impure}
-    v19: any = opaque.DynamicCall(v18, v14) {impure}
-    v20: long = convert.long v19
-    v21: any = opaque.NameRead() {impure}
-    v22: any = opaque.DynamicCall(v21, v15) {impure}
-    v23: long = convert.long v22
-    v24: long = add v20, v23 {pure}
-    v25: long = add v24, v16 {pure}
-    v26: any = convert.any v25
-    v27: any = add v17, v26 {impure}
-    v28: long = convert.long v27
-    v29: int = const 1
-    v30: int = add v11, v29 {pure}
-    v31: any = convert.any v30
-    br bb1(v31, v30, v28)
+    v19: long = opaque.DynamicCall(v18, v14) {impure}
+    v20: any = opaque.NameRead() {impure}
+    v21: long = opaque.DynamicCall(v20, v15) {impure}
+    v22: long = add v19, v21 {pure}
+    v23: long = add v22, v16 {pure}
+    v24: any = convert.any v23
+    v25: any = add v17, v24 {impure}
+    v26: long = convert.long v25
+    v27: int = const 1
+    v28: int = add v11, v27 {pure}
+    v29: any = convert.any v28
+    br bb1(v29, v28, v26)
 ```
 
 ```mir
@@ -278,19 +273,17 @@ fn RV.run(v0: int) -> long:
   bb3:
     v12: any = convert.any v10
     v13: any = opaque.NameRead() {impure}
-    v14: any = opaque.DynamicCall(v13, v6) {impure}
-    v15: long = convert.long v14
-    v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.DynamicCall(v16, v7) {impure}
-    v18: long = convert.long v17
-    v19: long = add v15, v18 {pure}
-    v20: long = add v19, v8 {pure}
-    v21: any = convert.any v20
-    v22: any = add v12, v21 {impure}
-    v23: long = convert.long v22
-    v24: int = const 1
-    v25: int = add v9, v24 {pure}
-    br bb1(v25, v23)
+    v14: long = opaque.DynamicCall(v13, v6) {impure}
+    v15: any = opaque.NameRead() {impure}
+    v16: long = opaque.DynamicCall(v15, v7) {impure}
+    v17: long = add v14, v16 {pure}
+    v18: long = add v17, v8 {pure}
+    v19: any = convert.any v18
+    v20: any = add v12, v19 {impure}
+    v21: long = convert.long v20
+    v22: int = const 1
+    v23: int = add v9, v22 {pure}
+    br bb1(v23, v21)
 ```
 
 ## Record-based LICM : ThisFieldGet + DirectBabbleCall across effectiveKind 4..5 (float/double)
@@ -367,14 +360,13 @@ fn RV.run(v0: int) -> double:
     v12: float = convert.float v4
     v13: double = convert.double v6
     v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicCall(v14, v12) {impure}
-    v16: double = convert.double v15
-    v17: double = add v16, v13 {pure}
-    v18: double = add v10, v17 {pure}
-    v19: int = const 1
-    v20: int = add v9, v19 {pure}
-    v21: any = convert.any v20
-    br bb1(v21, v20, v18)
+    v15: double = opaque.DynamicCall(v14, v12) {impure}
+    v16: double = add v15, v13 {pure}
+    v17: double = add v10, v16 {pure}
+    v18: int = const 1
+    v19: int = add v9, v18 {pure}
+    v20: any = convert.any v19
+    br bb1(v20, v19, v17)
 ```
 
 ```mir
@@ -396,13 +388,12 @@ fn RV.run(v0: int) -> double:
     ret v9
   bb3:
     v11: any = opaque.NameRead() {impure}
-    v12: any = opaque.DynamicCall(v11, v6) {impure}
-    v13: double = convert.double v12
-    v14: double = add v13, v7 {pure}
-    v15: double = add v9, v14 {pure}
-    v16: int = const 1
-    v17: int = add v8, v16 {pure}
-    br bb1(v17, v15)
+    v12: double = opaque.DynamicCall(v11, v6) {impure}
+    v13: double = add v12, v7 {pure}
+    v14: double = add v9, v13 {pure}
+    v15: int = const 1
+    v16: int = add v8, v15 {pure}
+    br bb1(v16, v14)
 ```
 
 ## Record-based LICM : while loop with fnDyn and Logic + frozen array.size
@@ -589,16 +580,15 @@ fn RV.run() -> double:
   bb3:
     v14: int = for_next v6, v11
     v15: any = opaque.NameRead() {impure}
-    v16: any = opaque.DynamicCall(v15, v14) {impure}
-    v17: double = convert.double v16
-    v18: double = add v3, v17 {pure}
-    v19: double = add v12, v18 {pure}
-    v20: any = convert.any v19
+    v16: double = opaque.DynamicCall(v15, v14) {impure}
+    v17: double = add v3, v16 {pure}
+    v18: double = add v12, v17 {pure}
+    v19: any = convert.any v18
     br bb4
   bb4:
-    v21: int = const 1
-    v22: int = add v11, v21 {pure}
-    br bb1(v20, v22, v19)
+    v20: int = const 1
+    v21: int = add v11, v20 {pure}
+    br bb1(v19, v21, v18)
 ```
 
 ```mir
@@ -622,13 +612,12 @@ fn RV.run() -> double:
   bb3:
     v11: int = for_next v5, v8
     v12: any = opaque.NameRead() {impure}
-    v13: any = opaque.DynamicCall(v12, v11) {impure}
-    v14: double = convert.double v13
-    v15: double = add v3, v14 {pure}
-    v16: double = add v9, v15 {pure}
+    v13: double = opaque.DynamicCall(v12, v11) {impure}
+    v14: double = add v3, v13 {pure}
+    v15: double = add v9, v14 {pure}
     br bb4
   bb4:
-    v17: int = const 1
-    v18: int = add v8, v17 {pure}
-    br bb1(v18, v16)
+    v16: int = const 1
+    v17: int = add v8, v16 {pure}
+    br bb1(v17, v15)
 ```

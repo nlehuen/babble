@@ -65,16 +65,15 @@ fn recVal(v0: int) -> int:
     v3: any = slot_read $recurse {pure}
     v4: int = const 1
     v5: int = sub v0, v4 {pure}
-    v6: any = opaque.DynamicCall(v3, v5) {impure}
-    v7: int = convert.int v6
-    v8: int = const 1
-    v9: int = add v7, v8 {pure}
-    br bb3(v9)
+    v6: int = opaque.DynamicCall(v3, v5) {impure}
+    v7: int = const 1
+    v8: int = add v6, v7 {pure}
+    br bb3(v8)
   bb2:
-    v10: int = const 0
-    br bb3(v10)
-  bb3(v11: int):
-    ret v11
+    v9: int = const 0
+    br bb3(v9)
+  bb3(v10: int):
+    ret v10
 ```
 
 ```mir
@@ -88,14 +87,13 @@ fn recVal(v0: int) -> int:
     v3: any = slot_read $recurse {pure}
     v4: int = const 1
     v5: int = sub v0, v4 {pure}
-    v6: any = opaque.DynamicCall(v3, v5) {impure}
-    v7: int = convert.int v6
-    v8: int = add v7, v4 {pure}
-    br bb3(v8)
+    v6: int = opaque.DynamicCall(v3, v5) {impure}
+    v7: int = add v6, v4 {pure}
+    br bb3(v7)
   bb2:
     br bb3(v1)
-  bb3(v9: int):
-    ret v9
+  bb3(v8: int):
+    ret v8
 ```
 
 ## HirRewriter : ModuleExportGet, SpreadAdapt, and TypeApply child rewrites
@@ -140,10 +138,9 @@ fn run(v0: any) -> int:
     v6: int = add v3, v5 {pure}
     v7: any = opaque.NameRead() {impure}
     v8: int = const 3
-    v9: any = opaque.DynamicCall(v7, v8) {impure}
-    v10: int = convert.int v9
-    v11: int = add v6, v10 {pure}
-    ret v11
+    v9: int = opaque.DynamicCall(v7, v8) {impure}
+    v10: int = add v6, v9 {pure}
+    ret v10
 ```
 
 ## HirRewriter : For iterable and SelfRecurseCall argument rewrites

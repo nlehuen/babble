@@ -87,20 +87,19 @@ fn RV.run(v0: int) -> double:
     v21: any = call_java v8.trim() {impure}
     v22: any = checkcast v21 <string|string|>
     v23: int = call_java v22.length() {pure,throws}
-    v24: any = opaque.DynamicCall(v20, v23) {impure}
-    v25: double = convert.double v24
-    v26: any = slot_read this {pure}
-    v27: byte = load_field v26.a {read:frozen}
-    v28: any = convert.any v27
-    v29: any = checkcast v28 <double|double|>
-    v30: double = convert.double v29
-    v31: double = add v25, v30 {pure}
-    v32: double = add v31, v14 {pure}
-    v33: double = add v18, v32 {pure}
-    v34: int = const 1
-    v35: int = add v17, v34 {pure}
-    v36: any = convert.any v35
-    br bb1(v36, v35, v33)
+    v24: double = opaque.DynamicCall(v20, v23) {impure}
+    v25: any = slot_read this {pure}
+    v26: byte = load_field v25.a {read:frozen}
+    v27: any = convert.any v26
+    v28: any = checkcast v27 <double|double|>
+    v29: double = convert.double v28
+    v30: double = add v24, v29 {pure}
+    v31: double = add v30, v14 {pure}
+    v32: double = add v18, v31 {pure}
+    v33: int = const 1
+    v34: int = add v17, v33 {pure}
+    v35: any = convert.any v34
+    br bb1(v35, v34, v32)
 ```
 
 ```mir
@@ -132,16 +131,15 @@ fn RV.run(v0: int) -> double:
     v19: any = call_java v7.trim() {impure}
     v20: any = checkcast v19 <string|string|>
     v21: int = call_java v20.length() {pure,throws}
-    v22: any = opaque.DynamicCall(v18, v21) {impure}
-    v23: double = convert.double v22
-    v24: any = checkcast v14 <double|double|>
-    v25: double = convert.double v24
-    v26: double = add v23, v25 {pure}
-    v27: double = add v26, v12 {pure}
-    v28: double = add v16, v27 {pure}
-    v29: int = const 1
-    v30: int = add v15, v29 {pure}
-    br bb1(v30, v28)
+    v22: double = opaque.DynamicCall(v18, v21) {impure}
+    v23: any = checkcast v14 <double|double|>
+    v24: double = convert.double v23
+    v25: double = add v22, v24 {pure}
+    v26: double = add v25, v12 {pure}
+    v27: double = add v16, v26 {pure}
+    v28: int = const 1
+    v29: int = add v15, v28 {pure}
+    br bb1(v29, v27)
 ```
 
 ## Record-based LICM : bigSink over As + Logic
@@ -383,14 +381,13 @@ fn run(v0: double, v1: bool) -> double:
     br bb12(v26)
   bb12(v27: double):
     v28: double = add v17, v27 {pure}
-    v29: any = opaque.DynamicCall(v3, v0) {impure}
-    v30: double = convert.double v29
-    v31: double = add v28, v30 {pure}
-    v32: double = add v9, v31 {pure}
-    v33: int = const 1
-    v34: int = add v8, v33 {pure}
-    v35: any = convert.any v34
-    br bb1(v35, v34, v32)
+    v29: double = opaque.DynamicCall(v3, v0) {impure}
+    v30: double = add v28, v29 {pure}
+    v31: double = add v9, v30 {pure}
+    v32: int = const 1
+    v33: int = add v8, v32 {pure}
+    v34: any = convert.any v33
+    br bb1(v34, v33, v31)
 ```
 
 ```mir
@@ -438,13 +435,12 @@ fn run(v0: double, v1: bool) -> double:
     br bb12(v2)
   bb12(v22: double):
     v23: double = add v17, v22 {pure}
-    v24: any = opaque.DynamicCall(v3, v0) {impure}
-    v25: double = convert.double v24
-    v26: double = add v23, v25 {pure}
-    v27: double = add v10, v26 {pure}
-    v28: int = const 1
-    v29: int = add v9, v28 {pure}
-    br bb1(v29, v27)
+    v24: double = opaque.DynamicCall(v3, v0) {impure}
+    v25: double = add v23, v24 {pure}
+    v26: double = add v10, v25 {pure}
+    v27: int = const 1
+    v28: int = add v9, v27 {pure}
+    br bb1(v28, v26)
 ```
 
 ## Hoisting widened non-inlineable calls passed to multi-arg functions (short/int)
@@ -518,24 +514,23 @@ fn run(v0: byte) -> int:
     br bb6(v13)
   bb5:
     v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicCall(v14, v4) {impure}
-    v16: int = convert.int v15
-    br bb6(v16)
-  bb6(v17: int):
+    v15: int = opaque.DynamicCall(v14, v4) {impure}
+    br bb6(v15)
+  bb6(v16: int):
     br_if v10, bb8, bb7
   bb7:
-    v18: int = const 0
-    br bb9(v18)
+    v17: int = const 0
+    br bb9(v17)
   bb8:
     br bb9(v5)
-  bb9(v19: int):
-    v20: int = add v17, v19 {pure}
-    v21: int = add v9, v20 {pure}
-    v22: bool = not v10 {pure}
-    v23: int = const 1
-    v24: int = add v8, v23 {pure}
-    v25: any = convert.any v24
-    br bb1(v25, v24, v21, v22)
+  bb9(v18: int):
+    v19: int = add v16, v18 {pure}
+    v20: int = add v9, v19 {pure}
+    v21: bool = not v10 {pure}
+    v22: int = const 1
+    v23: int = add v8, v22 {pure}
+    v24: any = convert.any v23
+    br bb1(v24, v23, v20, v21)
 ```
 
 ```mir
@@ -559,22 +554,21 @@ fn run(v0: byte) -> int:
     br bb6(v1)
   bb5:
     v10: any = opaque.NameRead() {impure}
-    v11: any = opaque.DynamicCall(v10, v3) {impure}
-    v12: int = convert.int v11
-    br bb6(v12)
-  bb6(v13: int):
+    v11: int = opaque.DynamicCall(v10, v3) {impure}
+    br bb6(v11)
+  bb6(v12: int):
     br_if v7, bb8, bb7
   bb7:
     br bb9(v1)
   bb8:
     br bb9(v4)
-  bb9(v14: int):
-    v15: int = add v13, v14 {pure}
-    v16: int = add v6, v15 {pure}
-    v17: bool = not v7 {pure}
-    v18: int = const 1
-    v19: int = add v5, v18 {pure}
-    br bb1(v19, v16, v17)
+  bb9(v13: int):
+    v14: int = add v12, v13 {pure}
+    v15: int = add v6, v14 {pure}
+    v16: bool = not v7 {pure}
+    v17: int = const 1
+    v18: int = add v5, v17 {pure}
+    br bb1(v18, v15, v16)
 ```
 
 ## Hoisting widened non-inlineable calls passed to multi-arg functions (long) and mixed with mutated long

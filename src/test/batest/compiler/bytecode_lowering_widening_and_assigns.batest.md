@@ -36,20 +36,19 @@ fn neg(v0: int, v1: double, v2: any) -> bool:
     v4: int = neg v0 {pure}
     v5: int = const -4
     v6: bool = eq v4, v5 {pure}
-    v7: any = opaque.DynamicCall(v3, v6) {impure}
+    v7: bool = opaque.DynamicCall(v3, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     v9: double = neg v1 {pure}
     v10: double = const -1.5
     v11: bool = eq v9, v10 {pure}
-    v12: any = opaque.DynamicCall(v8, v11) {impure}
+    v12: bool = opaque.DynamicCall(v8, v11) {impure}
     v13: any = opaque.NameRead() {impure}
     v14: any = neg v2 {impure}
     v15: int = const -9
     v16: any = convert.any v15
     v17: any = eq v14, v16 {pure,throws}
-    v18: any = opaque.DynamicCall(v13, v17) {impure}
-    v19: bool = convert.bool v18
-    ret v19
+    v18: bool = opaque.DynamicCall(v13, v17) {impure}
+    ret v18
 ```
 
 ```mir
@@ -60,19 +59,18 @@ fn neg(v0: int, v1: double, v2: any) -> bool:
     v4: int = neg v0 {pure}
     v5: int = const -4
     v6: bool = eq v4, v5 {pure}
-    v7: any = opaque.DynamicCall(v3, v6) {impure}
+    v7: bool = opaque.DynamicCall(v3, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     v9: double = neg v1 {pure}
     v10: double = const -1.5
     v11: bool = eq v9, v10 {pure}
-    v12: any = opaque.DynamicCall(v8, v11) {impure}
+    v12: bool = opaque.DynamicCall(v8, v11) {impure}
     v13: any = opaque.NameRead() {impure}
     v14: any = neg v2 {impure}
     v15: any = const -9
     v16: any = eq v14, v15 {pure,throws}
-    v17: any = opaque.DynamicCall(v13, v16) {impure}
-    v18: bool = convert.bool v17
-    ret v18
+    v17: bool = opaque.DynamicCall(v13, v16) {impure}
+    ret v17
 ```
 
 ## Widening return, as-cast, block/while double widening, and methodless object
@@ -323,9 +321,8 @@ fn C.run() -> bool:
     v44: bool = eq v42, v43 {pure}
     br bb4(v44)
   bb4(v45: bool):
-    v46: any = opaque.DynamicCall(v28, v45) {impure}
-    v47: bool = convert.bool v46
-    ret v47
+    v46: bool = opaque.DynamicCall(v28, v45) {impure}
+    ret v46
 ```
 
 ```mir
@@ -372,9 +369,8 @@ fn C.run() -> bool:
     v28: bool = eq v26, v27 {pure}
     br bb4(v28)
   bb4(v29: bool):
-    v30: any = opaque.DynamicCall(v16, v29) {impure}
-    v31: bool = convert.bool v30
-    ret v31
+    v30: bool = opaque.DynamicCall(v16, v29) {impure}
+    ret v30
 ```
 
 ## Boxed/fallback compound assignment on static union field

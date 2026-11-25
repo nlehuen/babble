@@ -399,11 +399,10 @@ fn run(v0: any) -> int:
     v2: int = const 1
     v3: any = record_new R(v2) {pure}
     v4: any = opaque.DynamicSelect(v3) {impure}
-    v5: any = opaque.DynamicCall(v4) {impure}
-    v6: int = convert.int v5
-    v7: int = call_iface v0.imp() {impure}
-    v8: int = const 1
-    ret v8
+    v5: int = opaque.DynamicCall(v4) {impure}
+    v6: int = call_iface v0.imp() {impure}
+    v7: int = const 1
+    ret v7
 ```
 
 ```mir
@@ -414,7 +413,7 @@ fn run(v0: any) -> int:
     v2: int = const 1
     v3: any = record_new R(v2) {pure}
     v4: any = opaque.DynamicSelect(v3) {impure}
-    v5: any = opaque.DynamicCall(v4) {impure}
+    v5: int = opaque.DynamicCall(v4) {impure}
     v6: int = call_iface v0.imp() {impure}
     ret v2
 ```

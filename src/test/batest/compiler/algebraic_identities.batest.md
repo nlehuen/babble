@@ -59,21 +59,20 @@ fn checkBool(v0: bool) -> bool:
   bb0:
     v1: any = opaque.NameRead() {impure}
     v2: bool = const true
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
+    v3: bool = opaque.DynamicCall(v1, v2) {impure}
     v4: any = opaque.NameRead() {impure}
     v5: bool = const true
-    v6: any = opaque.DynamicCall(v4, v5) {impure}
+    v6: bool = opaque.DynamicCall(v4, v5) {impure}
     v7: any = opaque.NameRead() {impure}
     v8: bool = const true
-    v9: any = opaque.DynamicCall(v7, v8) {impure}
+    v9: bool = opaque.DynamicCall(v7, v8) {impure}
     v10: any = opaque.NameRead() {impure}
     v11: bool = const true
-    v12: any = opaque.DynamicCall(v10, v11) {impure}
+    v12: bool = opaque.DynamicCall(v10, v11) {impure}
     v13: any = opaque.NameRead() {impure}
     v14: bool = const true
-    v15: any = opaque.DynamicCall(v13, v14) {impure}
-    v16: bool = convert.bool v15
-    ret v16
+    v15: bool = opaque.DynamicCall(v13, v14) {impure}
+    ret v15
 ```
 
 ```mir
@@ -82,17 +81,16 @@ fn checkBool(v0: bool) -> bool:
   bb0:
     v1: any = opaque.NameRead() {impure}
     v2: bool = const true
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
+    v3: bool = opaque.DynamicCall(v1, v2) {impure}
     v4: any = opaque.NameRead() {impure}
-    v5: any = opaque.DynamicCall(v4, v2) {impure}
+    v5: bool = opaque.DynamicCall(v4, v2) {impure}
     v6: any = opaque.NameRead() {impure}
-    v7: any = opaque.DynamicCall(v6, v2) {impure}
+    v7: bool = opaque.DynamicCall(v6, v2) {impure}
     v8: any = opaque.NameRead() {impure}
-    v9: any = opaque.DynamicCall(v8, v2) {impure}
+    v9: bool = opaque.DynamicCall(v8, v2) {impure}
     v10: any = opaque.NameRead() {impure}
-    v11: any = opaque.DynamicCall(v10, v2) {impure}
-    v12: bool = convert.bool v11
-    ret v12
+    v11: bool = opaque.DynamicCall(v10, v2) {impure}
+    ret v11
 ```
 
 ## Case 2
@@ -133,19 +131,19 @@ fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
     v4: any = opaque.NameRead() {impure}
     v5: int = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
-    v7: any = opaque.DynamicCall(v4, v6) {impure}
+    v7: bool = opaque.DynamicCall(v4, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     v9: int = add v0, v0 {pure}
     v10: int = const 8
     v11: int = add v9, v10 {pure}
     v12: bool = eq v11, v2 {pure}
-    v13: any = opaque.DynamicCall(v8, v12) {impure}
+    v13: bool = opaque.DynamicCall(v8, v12) {impure}
     v14: any = opaque.NameRead() {impure}
     v15: int = neg v0 {pure}
     v16: int = add v0, v15 {pure}
     v17: int = const 0
     v18: bool = eq v16, v17 {pure}
-    v19: any = opaque.DynamicCall(v14, v18) {impure}
+    v19: bool = opaque.DynamicCall(v14, v18) {impure}
     v20: any = opaque.NameRead() {impure}
     v21: int = add v0, v0 {pure}
     v22: int = const 3
@@ -155,9 +153,8 @@ fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
     v26: int = mul v0, v25 {pure}
     v27: int = add v24, v26 {pure}
     v28: bool = eq v27, v3 {pure}
-    v29: any = opaque.DynamicCall(v20, v28) {impure}
-    v30: bool = convert.bool v29
-    ret v30
+    v29: bool = opaque.DynamicCall(v20, v28) {impure}
+    ret v29
 ```
 
 ```mir
@@ -167,18 +164,18 @@ fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
     v4: any = opaque.NameRead() {impure}
     v5: int = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
-    v7: any = opaque.DynamicCall(v4, v6) {impure}
+    v7: bool = opaque.DynamicCall(v4, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     v9: int = const 8
     v10: int = add v5, v9 {pure}
     v11: bool = eq v10, v2 {pure}
-    v12: any = opaque.DynamicCall(v8, v11) {impure}
+    v12: bool = opaque.DynamicCall(v8, v11) {impure}
     v13: any = opaque.NameRead() {impure}
     v14: int = neg v0 {pure}
     v15: int = add v0, v14 {pure}
     v16: int = const 0
     v17: bool = eq v15, v16 {pure}
-    v18: any = opaque.DynamicCall(v13, v17) {impure}
+    v18: bool = opaque.DynamicCall(v13, v17) {impure}
     v19: any = opaque.NameRead() {impure}
     v20: int = const 3
     v21: int = mul v0, v20 {pure}
@@ -187,9 +184,8 @@ fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
     v24: int = mul v0, v23 {pure}
     v25: int = add v22, v24 {pure}
     v26: bool = eq v25, v3 {pure}
-    v27: any = opaque.DynamicCall(v19, v26) {impure}
-    v28: bool = convert.bool v27
-    ret v28
+    v27: bool = opaque.DynamicCall(v19, v26) {impure}
+    ret v27
 ```
 
 ## Case 3
@@ -230,19 +226,19 @@ fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
     v4: any = opaque.NameRead() {impure}
     v5: long = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
-    v7: any = opaque.DynamicCall(v4, v6) {impure}
+    v7: bool = opaque.DynamicCall(v4, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     v9: long = add v0, v0 {pure}
     v10: long = const 8L
     v11: long = add v9, v10 {pure}
     v12: bool = eq v11, v2 {pure}
-    v13: any = opaque.DynamicCall(v8, v12) {impure}
+    v13: bool = opaque.DynamicCall(v8, v12) {impure}
     v14: any = opaque.NameRead() {impure}
     v15: long = neg v0 {pure}
     v16: long = add v0, v15 {pure}
     v17: long = const 0L
     v18: bool = eq v16, v17 {pure}
-    v19: any = opaque.DynamicCall(v14, v18) {impure}
+    v19: bool = opaque.DynamicCall(v14, v18) {impure}
     v20: any = opaque.NameRead() {impure}
     v21: long = add v0, v0 {pure}
     v22: long = const 3L
@@ -252,9 +248,8 @@ fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
     v26: long = mul v0, v25 {pure}
     v27: long = add v24, v26 {pure}
     v28: bool = eq v27, v3 {pure}
-    v29: any = opaque.DynamicCall(v20, v28) {impure}
-    v30: bool = convert.bool v29
-    ret v30
+    v29: bool = opaque.DynamicCall(v20, v28) {impure}
+    ret v29
 ```
 
 ```mir
@@ -264,18 +259,18 @@ fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
     v4: any = opaque.NameRead() {impure}
     v5: long = add v0, v0 {pure}
     v6: bool = eq v5, v1 {pure}
-    v7: any = opaque.DynamicCall(v4, v6) {impure}
+    v7: bool = opaque.DynamicCall(v4, v6) {impure}
     v8: any = opaque.NameRead() {impure}
     v9: long = const 8L
     v10: long = add v5, v9 {pure}
     v11: bool = eq v10, v2 {pure}
-    v12: any = opaque.DynamicCall(v8, v11) {impure}
+    v12: bool = opaque.DynamicCall(v8, v11) {impure}
     v13: any = opaque.NameRead() {impure}
     v14: long = neg v0 {pure}
     v15: long = add v0, v14 {pure}
     v16: long = const 0L
     v17: bool = eq v15, v16 {pure}
-    v18: any = opaque.DynamicCall(v13, v17) {impure}
+    v18: bool = opaque.DynamicCall(v13, v17) {impure}
     v19: any = opaque.NameRead() {impure}
     v20: long = const 3L
     v21: long = mul v0, v20 {pure}
@@ -284,9 +279,8 @@ fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
     v24: long = mul v0, v23 {pure}
     v25: long = add v22, v24 {pure}
     v26: bool = eq v25, v3 {pure}
-    v27: any = opaque.DynamicCall(v19, v26) {impure}
-    v28: bool = convert.bool v27
-    ret v28
+    v27: bool = opaque.DynamicCall(v19, v26) {impure}
+    ret v27
 ```
 
 ## String reassociation and IEEE-754 preservation (NaN * 0.0 != 0.0, no float/double reassociation)
@@ -326,7 +320,7 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v5: any = const "ab"
     v6: any = strcat v0, v5 {pure}
     v7: any = eq v6, v2 {pure}
-    v8: any = opaque.DynamicCall(v4, v7) {impure}
+    v8: bool = opaque.DynamicCall(v4, v7) {impure}
     v9: any = opaque.NameRead() {impure}
     v10: double = const 0.0
     v11: double = mul v1, v10 {pure}
@@ -334,7 +328,7 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v13: double = add v11, v12 {pure}
     v14: bool = call_java Double.isNaN(v13) {pure}
     v15: bool = eq v14, v3 {pure}
-    v16: any = opaque.DynamicCall(v9, v15) {impure}
+    v16: bool = opaque.DynamicCall(v9, v15) {impure}
     br_if v3, bb2, bb1
   bb1:
     v17: any = opaque.NameRead() {impure}
@@ -344,21 +338,19 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v21: double = add v19, v20 {pure}
     v22: double = const 3.0
     v23: bool = eq v21, v22 {pure}
-    v24: any = opaque.DynamicCall(v17, v23) {impure}
-    v25: bool = convert.bool v24
-    br bb3(v25)
+    v24: bool = opaque.DynamicCall(v17, v23) {impure}
+    br bb3(v24)
   bb2:
-    v26: any = opaque.NameRead() {impure}
-    v27: double = const 1.0
-    v28: double = add v1, v27 {pure}
-    v29: double = const 2.0
-    v30: double = add v28, v29 {pure}
-    v31: bool = call_java Double.isNaN(v30) {pure}
-    v32: any = opaque.DynamicCall(v26, v31) {impure}
-    v33: bool = convert.bool v32
-    br bb3(v33)
-  bb3(v34: bool):
-    ret v34
+    v25: any = opaque.NameRead() {impure}
+    v26: double = const 1.0
+    v27: double = add v1, v26 {pure}
+    v28: double = const 2.0
+    v29: double = add v27, v28 {pure}
+    v30: bool = call_java Double.isNaN(v29) {pure}
+    v31: bool = opaque.DynamicCall(v25, v30) {impure}
+    br bb3(v31)
+  bb3(v32: bool):
+    ret v32
 ```
 
 ```mir
@@ -369,14 +361,14 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v5: any = const "ab"
     v6: any = strcat v0, v5 {pure}
     v7: any = eq v6, v2 {pure}
-    v8: any = opaque.DynamicCall(v4, v7) {impure}
+    v8: bool = opaque.DynamicCall(v4, v7) {impure}
     v9: any = opaque.NameRead() {impure}
     v10: double = const 0.0
     v11: double = mul v1, v10 {pure}
     v12: double = add v11, v10 {pure}
     v13: bool = call_java Double.isNaN(v12) {pure}
     v14: bool = eq v13, v3 {pure}
-    v15: any = opaque.DynamicCall(v9, v14) {impure}
+    v15: bool = opaque.DynamicCall(v9, v14) {impure}
     br_if v3, bb2, bb1
   bb1:
     v16: any = opaque.NameRead() {impure}
@@ -386,21 +378,19 @@ fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
     v20: double = add v18, v19 {pure}
     v21: double = const 3.0
     v22: bool = eq v20, v21 {pure}
-    v23: any = opaque.DynamicCall(v16, v22) {impure}
-    v24: bool = convert.bool v23
-    br bb3(v24)
+    v23: bool = opaque.DynamicCall(v16, v22) {impure}
+    br bb3(v23)
   bb2:
-    v25: any = opaque.NameRead() {impure}
-    v26: double = const 1.0
-    v27: double = add v1, v26 {pure}
-    v28: double = const 2.0
-    v29: double = add v27, v28 {pure}
-    v30: bool = call_java Double.isNaN(v29) {pure}
-    v31: any = opaque.DynamicCall(v25, v30) {impure}
-    v32: bool = convert.bool v31
-    br bb3(v32)
-  bb3(v33: bool):
-    ret v33
+    v24: any = opaque.NameRead() {impure}
+    v25: double = const 1.0
+    v26: double = add v1, v25 {pure}
+    v27: double = const 2.0
+    v28: double = add v26, v27 {pure}
+    v29: bool = call_java Double.isNaN(v28) {pure}
+    v30: bool = opaque.DynamicCall(v24, v29) {impure}
+    br bb3(v30)
+  bb3(v31: bool):
+    ret v31
 ```
 
 ## Impure operands must not be dropped by * 0 or reordered
@@ -498,7 +488,7 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
     v24: bool = not v23 {pure}
     br bb4(v24)
   bb4(v25: bool):
-    v26: any = opaque.DynamicCall(v4, v25) {impure}
+    v26: bool = opaque.DynamicCall(v4, v25) {impure}
     v27: any = opaque.NameRead() {impure}
     v28: int = const 0
     v29: bool = lt v0, v28 {pure}
@@ -520,9 +510,8 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
   bb10(v35: int):
     v36: int = const 2
     v37: bool = eq v35, v36 {pure}
-    v38: any = opaque.DynamicCall(v27, v37) {impure}
-    v39: bool = convert.bool v38
-    ret v39
+    v38: bool = opaque.DynamicCall(v27, v37) {impure}
+    ret v38
 ```
 
 ```mir
@@ -556,7 +545,7 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
     v23: bool = not v22 {pure}
     br bb4(v23)
   bb4(v24: bool):
-    v25: any = opaque.DynamicCall(v4, v24) {impure}
+    v25: bool = opaque.DynamicCall(v4, v24) {impure}
     v26: any = opaque.NameRead() {impure}
     v27: int = const 0
     v28: bool = lt v0, v27 {pure}
@@ -574,9 +563,8 @@ fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
     br bb10(v27)
   bb10(v31: int):
     v32: bool = eq v31, v6 {pure}
-    v33: any = opaque.DynamicCall(v26, v32) {impure}
-    v34: bool = convert.bool v33
-    ret v34
+    v33: bool = opaque.DynamicCall(v26, v32) {impure}
+    ret v33
 ```
 
 ## Non-dropping arithmetic identities with impure operands (`e + 0`, `0 + e`, `e - 0`, `e * 1`, `1 * e`)

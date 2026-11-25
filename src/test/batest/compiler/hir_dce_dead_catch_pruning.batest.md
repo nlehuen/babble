@@ -77,36 +77,34 @@ fn run(v0: any, v1: bool, v2: int) -> double:
   bb3:
     v10: any = opaque.NameRead() {impure}
     v11: int = array_len v0 {read:frozen,throws}
-    v12: any = opaque.DynamicCall(v10, v11) {impure}
-    v13: double = convert.double v12
-    v14: bool = const false
-    br_if v1, bb4, bb5(v14)
+    v12: double = opaque.DynamicCall(v10, v11) {impure}
+    v13: bool = const false
+    br_if v1, bb4, bb5(v13)
   bb4:
-    v15: bool = const true
-    br bb5(v15)
-  bb5(v16: bool):
-    br_if v16, bb7, bb6
+    v14: bool = const true
+    br bb5(v14)
+  bb5(v15: bool):
+    br_if v15, bb7, bb6
   bb6:
-    v17: double = const 0.0
-    br bb8(v17)
+    v16: double = const 0.0
+    br bb8(v16)
   bb7:
-    v18: any = opaque.NameRead() {impure}
-    v19: double = const 1.0
-    v20: any = opaque.DynamicCall(v18, v19) {impure}
-    v21: double = convert.double v20
-    br bb8(v21)
-  bb8(v22: double):
-    v23: double = add v13, v22 {pure}
-    v24: int = const 1
-    v25: any = convert.any v24
-    v26: any = checkcast v25 <double|double|>
-    v27: double = convert.double v26
-    v28: double = add v23, v27 {pure}
-    v29: double = add v8, v28 {pure}
-    v30: int = const 1
-    v31: int = add v7, v30 {pure}
-    v32: any = convert.any v31
-    br bb1(v32, v31, v29)
+    v17: any = opaque.NameRead() {impure}
+    v18: double = const 1.0
+    v19: double = opaque.DynamicCall(v17, v18) {impure}
+    br bb8(v19)
+  bb8(v20: double):
+    v21: double = add v12, v20 {pure}
+    v22: int = const 1
+    v23: any = convert.any v22
+    v24: any = checkcast v23 <double|double|>
+    v25: double = convert.double v24
+    v26: double = add v21, v25 {pure}
+    v27: double = add v8, v26 {pure}
+    v28: int = const 1
+    v29: int = add v7, v28 {pure}
+    v30: any = convert.any v29
+    br bb1(v30, v29, v27)
 ```
 
 ```mir
@@ -124,33 +122,31 @@ fn run(v0: any, v1: bool, v2: int) -> double:
   bb3:
     v8: any = opaque.NameRead() {impure}
     v9: int = array_len v0 {read:frozen,throws}
-    v10: any = opaque.DynamicCall(v8, v9) {impure}
-    v11: double = convert.double v10
-    v12: bool = const false
-    br_if v1, bb4, bb5(v12)
+    v10: double = opaque.DynamicCall(v8, v9) {impure}
+    v11: bool = const false
+    br_if v1, bb4, bb5(v11)
   bb4:
-    v13: bool = const true
-    br bb5(v13)
-  bb5(v14: bool):
-    br_if v14, bb7, bb6
+    v12: bool = const true
+    br bb5(v12)
+  bb5(v13: bool):
+    br_if v13, bb7, bb6
   bb6:
     br bb8(v4)
   bb7:
-    v15: any = opaque.NameRead() {impure}
-    v16: double = const 1.0
-    v17: any = opaque.DynamicCall(v15, v16) {impure}
-    v18: double = convert.double v17
-    br bb8(v18)
-  bb8(v19: double):
-    v20: double = add v11, v19 {pure}
-    v21: int = const 1
-    v22: any = const 1
-    v23: any = checkcast v22 <double|double|>
-    v24: double = convert.double v23
-    v25: double = add v20, v24 {pure}
-    v26: double = add v6, v25 {pure}
-    v27: int = add v5, v21 {pure}
-    br bb1(v27, v26)
+    v14: any = opaque.NameRead() {impure}
+    v15: double = const 1.0
+    v16: double = opaque.DynamicCall(v14, v15) {impure}
+    br bb8(v16)
+  bb8(v17: double):
+    v18: double = add v10, v17 {pure}
+    v19: int = const 1
+    v20: any = const 1
+    v21: any = checkcast v20 <double|double|>
+    v22: double = convert.double v21
+    v23: double = add v18, v22 {pure}
+    v24: double = add v6, v23 {pure}
+    v25: int = add v5, v19 {pure}
+    br bb1(v25, v24)
 ```
 
 ## Canonical HIR golden : dead-catch elimination on pure nothrow try body

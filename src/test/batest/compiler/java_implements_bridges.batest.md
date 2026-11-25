@@ -413,11 +413,10 @@ class LongInc:
     bb0:
       v1: any = opaque.NameRead() {impure}
       v2: any = checkcast v0 <long|long|>
-      v3: any = opaque.DynamicCall(v1, v2) {impure}
-      v4: int = convert.int v3
-      v5: int = slot_read d {read:shared,throws}
-      v6: int = add v4, v5 {pure}
-      ret v6
+      v3: int = opaque.DynamicCall(v1, v2) {impure}
+      v4: int = slot_read d {read:shared,throws}
+      v5: int = add v3, v4 {pure}
+      ret v5
 ```
 
 ## Case 12

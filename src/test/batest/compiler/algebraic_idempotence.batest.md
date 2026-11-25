@@ -83,19 +83,17 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
     v17: bool = const false
     br_if v16, bb9, bb10(v17)
   bb9:
-    v18: any = opaque.DynamicCall(v3, v0) {impure}
-    v19: any = opaque.DynamicCall(v3, v18) {impure}
-    v20: int = convert.int v19
-    v21: bool = eq v20, v1 {pure}
-    br bb10(v21)
-  bb10(v22: bool):
-    v23: any = opaque.DynamicCall(v4, v22) {impure}
-    v24: any = opaque.NameRead() {impure}
-    v25: int = call_java Math.abs(v0) {pure}
-    v26: bool = eq v25, v2 {pure}
-    v27: any = opaque.DynamicCall(v24, v26) {impure}
-    v28: bool = convert.bool v27
-    ret v28
+    v18: int = opaque.DynamicCall(v3, v0) {impure}
+    v19: int = opaque.DynamicCall(v3, v18) {impure}
+    v20: bool = eq v19, v1 {pure}
+    br bb10(v20)
+  bb10(v21: bool):
+    v22: bool = opaque.DynamicCall(v4, v21) {impure}
+    v23: any = opaque.NameRead() {impure}
+    v24: int = call_java Math.abs(v0) {pure}
+    v25: bool = eq v24, v2 {pure}
+    v26: bool = opaque.DynamicCall(v23, v25) {impure}
+    ret v26
 ```
 
 ```mir
@@ -127,19 +125,17 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
   bb8(v12: bool):
     br_if v12, bb9, bb10(v9)
   bb9:
-    v13: any = opaque.DynamicCall(v3, v0) {impure}
-    v14: any = opaque.DynamicCall(v3, v13) {impure}
-    v15: int = convert.int v14
-    v16: bool = eq v15, v1 {pure}
-    br bb10(v16)
-  bb10(v17: bool):
-    v18: any = opaque.DynamicCall(v4, v17) {impure}
-    v19: any = opaque.NameRead() {impure}
-    v20: int = call_java Math.abs(v0) {pure}
-    v21: bool = eq v20, v2 {pure}
-    v22: any = opaque.DynamicCall(v19, v21) {impure}
-    v23: bool = convert.bool v22
-    ret v23
+    v13: int = opaque.DynamicCall(v3, v0) {impure}
+    v14: int = opaque.DynamicCall(v3, v13) {impure}
+    v15: bool = eq v14, v1 {pure}
+    br bb10(v15)
+  bb10(v16: bool):
+    v17: bool = opaque.DynamicCall(v4, v16) {impure}
+    v18: any = opaque.NameRead() {impure}
+    v19: int = call_java Math.abs(v0) {pure}
+    v20: bool = eq v19, v2 {pure}
+    v21: bool = opaque.DynamicCall(v18, v20) {impure}
+    ret v21
 ```
 
 ## Idempotent Math.floor preserving NaN and IEEE-754 -0.0 (checked by raw bits since +0.0 == -0.0)
@@ -185,9 +181,8 @@ fn checkFloor(v0: double) -> bool:
     v7: bool = call_java Double.isNaN(v1) {pure}
     br bb3(v7)
   bb3(v8: bool):
-    v9: any = opaque.DynamicCall(v2, v8) {impure}
-    v10: bool = convert.bool v9
-    ret v10
+    v9: bool = opaque.DynamicCall(v2, v8) {impure}
+    ret v9
 ```
 
 ## Idempotent String.trim and Character.toLowerCase calls
@@ -224,7 +219,7 @@ fn checkStrIdem(v0: any, v1: char, v2: any, v3: char) -> bool:
     v5: any = call_java v0.trim() {impure}
     v6: any = checkcast v5 <string|string|>
     v7: any = eq v6, v2 {pure}
-    v8: any = opaque.DynamicCall(v4, v7) {impure}
+    v8: bool = opaque.DynamicCall(v4, v7) {impure}
     v9: any = opaque.NameRead() {impure}
     v10: any = opaque.NameRead() {impure}
     v11: any = opaque.DynamicSelect(v10) {impure}
@@ -238,9 +233,8 @@ fn checkStrIdem(v0: any, v1: char, v2: any, v3: char) -> bool:
     v19: any = opaque.DynamicCall(v13, v18) {impure}
     v20: char = convert.char v19
     v21: bool = eq v20, v3 {pure}
-    v22: any = opaque.DynamicCall(v9, v21) {impure}
-    v23: bool = convert.bool v22
-    ret v23
+    v22: bool = opaque.DynamicCall(v9, v21) {impure}
+    ret v22
 ```
 
 ## Widened idempotent Java call (wideningRank >= 0) and non-prefix Babble idempotent call stay intact
@@ -311,9 +305,8 @@ fn checkGuard(v0: int) -> bool:
     v18: bool = eq v16, v17 {pure}
     br bb8(v18)
   bb8(v19: bool):
-    v20: any = opaque.DynamicCall(v3, v19) {impure}
-    v21: bool = convert.bool v20
-    ret v21
+    v20: bool = opaque.DynamicCall(v3, v19) {impure}
+    ret v20
 ```
 
 ```mir
@@ -348,9 +341,8 @@ fn checkGuard(v0: int) -> bool:
     v14: bool = eq v13, v9 {pure}
     br bb8(v14)
   bb8(v15: bool):
-    v16: any = opaque.DynamicCall(v3, v15) {impure}
-    v17: bool = convert.bool v16
-    ret v17
+    v16: bool = opaque.DynamicCall(v3, v15) {impure}
+    ret v16
 ```
 
 ## Non-dropping idempotent collapse on impure arguments (`f(f(impure())) -> f(impure())`)
@@ -446,33 +438,31 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb3:
     v6: any = opaque.NameRead() {impure}
     v7: int = const 1
-    v8: any = opaque.DynamicCall(v6, v7) {impure}
-    v9: int = convert.int v8
-    br bb5(v9)
+    v8: int = opaque.DynamicCall(v6, v7) {impure}
+    br bb5(v8)
   bb4:
-    v10: int = array_len v0 {read:frozen,throws}
-    v11: int = call_java v1.length() {pure,throws}
-    v12: int = add v10, v11 {pure}
-    br bb5(v12)
-  bb5(v13: int):
-    v14: int = const 0
-    v15: bool = lt v13, v14 {pure}
-    br_if v15, bb7, bb6
+    v9: int = array_len v0 {read:frozen,throws}
+    v10: int = call_java v1.length() {pure,throws}
+    v11: int = add v9, v10 {pure}
+    br bb5(v11)
+  bb5(v12: int):
+    v13: int = const 0
+    v14: bool = lt v12, v13 {pure}
+    br_if v14, bb7, bb6
   bb6:
-    br bb8(v13)
+    br bb8(v12)
   bb7:
-    v16: int = const 0
-    br bb8(v16)
-  bb8(v17: int):
-    v18: any = opaque.NameRead() {impure}
-    v19: int = array_len v0 {read:frozen,throws}
-    v20: any = convert.any v19
-    v21: any = checkcast v20 <double|double|>
-    v22: any = opaque.DynamicCall(v18, v21) {impure}
-    v23: int = convert.int v22
-    v24: int = call_java Math.abs(v23) {pure}
-    v25: int = add v17, v24 {pure}
-    ret v25
+    v15: int = const 0
+    br bb8(v15)
+  bb8(v16: int):
+    v17: any = opaque.NameRead() {impure}
+    v18: int = array_len v0 {read:frozen,throws}
+    v19: any = convert.any v18
+    v20: any = checkcast v19 <double|double|>
+    v21: int = opaque.DynamicCall(v17, v20) {impure}
+    v22: int = call_java Math.abs(v21) {pure}
+    v23: int = add v16, v22 {pure}
+    ret v23
 ```
 
 ```mir
@@ -489,30 +479,28 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb3:
     v6: any = opaque.NameRead() {impure}
     v7: int = const 1
-    v8: any = opaque.DynamicCall(v6, v7) {impure}
-    v9: int = convert.int v8
-    br bb5(v9)
+    v8: int = opaque.DynamicCall(v6, v7) {impure}
+    br bb5(v8)
   bb4:
-    v10: int = array_len v0 {read:frozen,throws}
-    v11: int = call_java v1.length() {pure,throws}
-    v12: int = add v10, v11 {pure}
-    br bb5(v12)
-  bb5(v13: int):
-    v14: int = const 0
-    v15: bool = lt v13, v14 {pure}
-    br_if v15, bb7, bb6
+    v9: int = array_len v0 {read:frozen,throws}
+    v10: int = call_java v1.length() {pure,throws}
+    v11: int = add v9, v10 {pure}
+    br bb5(v11)
+  bb5(v12: int):
+    v13: int = const 0
+    v14: bool = lt v12, v13 {pure}
+    br_if v14, bb7, bb6
   bb6:
-    br bb8(v13)
+    br bb8(v12)
   bb7:
-    br bb8(v14)
-  bb8(v16: int):
-    v17: any = opaque.NameRead() {impure}
-    v18: int = array_len v0 {read:frozen,throws}
-    v19: any = convert.any v18
-    v20: any = checkcast v19 <double|double|>
-    v21: any = opaque.DynamicCall(v17, v20) {impure}
-    v22: int = convert.int v21
-    v23: int = call_java Math.abs(v22) {pure}
-    v24: int = add v16, v23 {pure}
-    ret v24
+    br bb8(v13)
+  bb8(v15: int):
+    v16: any = opaque.NameRead() {impure}
+    v17: int = array_len v0 {read:frozen,throws}
+    v18: any = convert.any v17
+    v19: any = checkcast v18 <double|double|>
+    v20: int = opaque.DynamicCall(v16, v19) {impure}
+    v21: int = call_java Math.abs(v20) {pure}
+    v22: int = add v15, v21 {pure}
+    ret v22
 ```

@@ -382,21 +382,21 @@ fn run(v0: int) -> any:
   bb0:
     v1: any = opaque.NameRead() {impure}
     v2: any = opaque.NameRead() {impure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
+    v3: byte = opaque.DynamicCall(v2, v0) {impure}
     v4: any = opaque.NameRead() {impure}
     v5: int = const 1
     v6: int = add v0, v5 {pure}
-    v7: any = opaque.DynamicCall(v4, v6) {impure}
+    v7: short = opaque.DynamicCall(v4, v6) {impure}
     v8: int = const 2
     v9: int = add v0, v8 {pure}
     v10: any = opaque.NameRead() {impure}
     v11: int = const 3
     v12: int = add v0, v11 {pure}
-    v13: any = opaque.DynamicCall(v10, v12) {impure}
+    v13: long = opaque.DynamicCall(v10, v12) {impure}
     v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicCall(v14, v0) {impure}
+    v15: float = opaque.DynamicCall(v14, v0) {impure}
     v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.DynamicCall(v16, v0) {impure}
+    v17: double = opaque.DynamicCall(v16, v0) {impure}
     v18: int = const 0
     v19: bool = gt v0, v18 {pure}
     v20: char = const 'A'
@@ -444,21 +444,21 @@ fn run(v0: int) -> any:
   bb0:
     v1: any = opaque.NameRead() {impure}
     v2: any = opaque.NameRead() {impure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
+    v3: byte = opaque.DynamicCall(v2, v0) {impure}
     v4: any = opaque.NameRead() {impure}
     v5: int = const 1
     v6: int = add v0, v5 {pure}
-    v7: any = opaque.DynamicCall(v4, v6) {impure}
+    v7: short = opaque.DynamicCall(v4, v6) {impure}
     v8: int = const 2
     v9: int = add v0, v8 {pure}
     v10: any = opaque.NameRead() {impure}
     v11: int = const 3
     v12: int = add v0, v11 {pure}
-    v13: any = opaque.DynamicCall(v10, v12) {impure}
+    v13: long = opaque.DynamicCall(v10, v12) {impure}
     v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicCall(v14, v0) {impure}
+    v15: float = opaque.DynamicCall(v14, v0) {impure}
     v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.DynamicCall(v16, v0) {impure}
+    v17: double = opaque.DynamicCall(v16, v0) {impure}
     v18: int = const 0
     v19: bool = gt v0, v18 {pure}
     v20: char = const 'A'
@@ -548,7 +548,7 @@ fn run() -> bool:
     br_if v13, bb1, bb2(v14)
   bb1:
     v15: any = opaque.NameRead() {impure}
-    v16: any = opaque.DynamicCall(v15, v4, v9) {impure}
+    v16: bool = opaque.DynamicCall(v15, v4, v9) {impure}
     v17: bool = not v16 {pure}
     br bb2(v17)
   bb2(v18: bool):
@@ -585,7 +585,7 @@ fn run() -> bool:
     br_if v10, bb1, bb2(v11)
   bb1:
     v12: any = opaque.NameRead() {impure}
-    v13: any = opaque.DynamicCall(v12, v4, v6) {impure}
+    v13: bool = opaque.DynamicCall(v12, v4, v6) {impure}
     v14: bool = not v13 {pure}
     br bb2(v14)
   bb2(v15: bool):
@@ -690,44 +690,44 @@ fn run() -> double:
   bb5 [unwind: ThrownException -> bb8, Exception -> bb7, * -> bb10]:
     v13: any = opaque.NameRead() {impure}
     v14: bool = const false
-    v15: any = opaque.DynamicCall(v13, v14) {impure}
-    br bb6(v15)
-  bb6(v16: any) [unwind: ThrownException -> bb8, Exception -> bb7, * -> bb10]:
-    v17: double = const 2.0
-    v18: double = const 0.0
-    v19: double = add v8, v17 {pure}
+    v15: bool = opaque.DynamicCall(v13, v14) {impure}
+    v16: any = convert.any v15
+    br bb6(v16)
+  bb6(v17: any) [unwind: ThrownException -> bb8, Exception -> bb7, * -> bb10]:
+    v18: double = const 2.0
+    v19: double = const 0.0
+    v20: double = add v8, v18 {pure}
     br bb13
-  bb7(v20: any) [handler]:
-    br bb9(v20)
-  bb8(v21: any) [handler]:
-    v22: any = unwrap_thrown v21
-    br bb9(v22)
-  bb9(v23: any) [unwind: * -> bb10]:
-    v24: double = const 0.0
+  bb7(v21: any) [handler]:
+    br bb9(v21)
+  bb8(v22: any) [handler]:
+    v23: any = unwrap_thrown v22
+    br bb9(v23)
+  bb9(v24: any) [unwind: * -> bb10]:
+    v25: double = const 0.0
     br bb12
-  bb10(v25: any) [handler]:
+  bb10(v26: any) [handler]:
     br bb11
   bb11:
-    v26: double = const 0.0
-    v27: any = const null
-    rethrow v25
+    v27: double = const 0.0
+    v28: any = const null
+    rethrow v26
   bb12:
-    v28: double = const 0.0
-    v29: any = const null
-    br bb14(v24)
+    v29: double = const 0.0
+    v30: any = const null
+    br bb14(v25)
   bb13:
-    v30: double = const 0.0
-    v31: any = const null
-    br bb14(v19)
-  bb14(v32: double):
-    ret v32
+    v31: double = const 0.0
+    v32: any = const null
+    br bb14(v20)
+  bb14(v33: double):
+    ret v33
   bb15:
-    v33: any = for_next v5
-    v34: any = checkcast v33 <int|int|>
-    v35: int = convert.int v34
-    v36: any = opaque.NameRead() {impure}
-    v37: any = opaque.DynamicCall(v36, v35) {impure}
-    v38: double = convert.double v37
+    v34: any = for_next v5
+    v35: any = checkcast v34 <int|int|>
+    v36: int = convert.int v35
+    v37: any = opaque.NameRead() {impure}
+    v38: double = opaque.DynamicCall(v37, v36) {impure}
     v39: double = const 1.0
     v40: double = const 0.0
     v41: double = add v8, v38 {pure}
@@ -756,7 +756,7 @@ fn run() -> double:
   bb3 [unwind: ThrownException -> bb8, Exception -> bb7, * -> bb5]:
     v9: any = opaque.NameRead() {impure}
     v10: bool = const false
-    v11: any = opaque.DynamicCall(v9, v10) {impure}
+    v11: bool = opaque.DynamicCall(v9, v10) {impure}
     br bb4
   bb4 [unwind: ThrownException -> bb8, Exception -> bb7, * -> bb5]:
     v12: double = const 2.0
@@ -781,12 +781,11 @@ fn run() -> double:
     v19: any = checkcast v18 <int|int|>
     v20: int = convert.int v19
     v21: any = opaque.NameRead() {impure}
-    v22: any = opaque.DynamicCall(v21, v20) {impure}
-    v23: double = convert.double v22
-    v24: double = const 1.0
-    v25: double = add v6, v23 {pure}
-    v26: double = add v25, v24 {pure}
-    br bb1(v26)
+    v22: double = opaque.DynamicCall(v21, v20) {impure}
+    v23: double = const 1.0
+    v24: double = add v6, v22 {pure}
+    v25: double = add v24, v23 {pure}
+    br bb1(v25)
 ```
 
 ## Projection beta-reduction through move, freeze, and cross-module record construction
@@ -831,10 +830,9 @@ fn run() -> double:
     v6: any = opaque.NameRead() {impure}
     v7: any = move v4
     v8: int = load_field v7.count {read:frozen,throws}
-    v9: any = opaque.DynamicCall(v6, v8) {impure}
-    v10: double = convert.double v9
-    v11: double = add v5, v10 {pure}
-    ret v11
+    v9: double = opaque.DynamicCall(v6, v8) {impure}
+    v10: double = add v5, v9 {pure}
+    ret v10
 ```
 
 ## SROA with freeze/move RHS, non-candidate param copy, non-record call, and one-armed if
@@ -891,13 +889,12 @@ fn r(v0: any, v1: bool) -> double:
     v7: double = const 28.0
     v8: double = const 0.0
     v9: any = opaque.NameRead() {impure}
-    v10: any = opaque.DynamicCall(v9, v6) {impure}
-    v11: double = convert.double v10
-    v12: double = add v2, v11 {pure}
-    v13: double = load_field v0.x {read:frozen}
-    v14: double = add v12, v13 {pure}
-    v15: double = add v14, v7 {pure}
-    ret v15
+    v10: double = opaque.DynamicCall(v9, v6) {impure}
+    v11: double = add v2, v10 {pure}
+    v12: double = load_field v0.x {read:frozen}
+    v13: double = add v11, v12 {pure}
+    v14: double = add v13, v7 {pure}
+    ret v14
 ```
 
 ```mir
@@ -910,13 +907,12 @@ fn r(v0: any, v1: bool) -> double:
     v5: int = const 4
     v6: double = const 28.0
     v7: any = opaque.NameRead() {impure}
-    v8: any = opaque.DynamicCall(v7, v5) {impure}
-    v9: double = convert.double v8
-    v10: double = add v2, v9 {pure}
-    v11: double = load_field v0.x {read:frozen}
-    v12: double = add v10, v11 {pure}
-    v13: double = add v12, v6 {pure}
-    ret v13
+    v8: double = opaque.DynamicCall(v7, v5) {impure}
+    v9: double = add v2, v8 {pure}
+    v10: double = load_field v0.x {read:frozen}
+    v11: double = add v9, v10 {pure}
+    v12: double = add v11, v6 {pure}
+    ret v12
 ```
 
 ## Projection beta-reduction with primitive widening (int -> double) and value-used local record def
@@ -957,8 +953,7 @@ fn r() -> double:
     v4: double = const 4.0
     v5: any = record_new P(v3, v4) {pure}
     v6: int = load_field v5.a {read:frozen}
-    v7: any = opaque.DynamicCall(v1, v6) {impure}
-    v8: double = convert.double v7
-    v9: double = add v0, v8 {pure}
-    ret v9
+    v7: double = opaque.DynamicCall(v1, v6) {impure}
+    v8: double = add v0, v7 {pure}
+    ret v8
 ```

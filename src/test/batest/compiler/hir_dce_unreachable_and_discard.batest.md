@@ -341,7 +341,7 @@ fn run(v0: any, v1: any) -> int:
     v13: any = opaque.NameRead() {impure}
     v14: int = const 0
     v15: bool = gt v12, v14 {pure}
-    v16: any = opaque.DynamicCall(v13, v15) {impure}
+    v16: bool = opaque.DynamicCall(v13, v15) {impure}
     v17: any = convert.any v12
     br bb1(v17)
 ```
@@ -368,7 +368,7 @@ fn run(v0: any, v1: any) -> int:
     v11: any = opaque.NameRead() {impure}
     v12: int = const 0
     v13: bool = gt v10, v12 {pure}
-    v14: any = opaque.DynamicCall(v11, v13) {impure}
+    v14: bool = opaque.DynamicCall(v11, v13) {impure}
     br bb1
 ```
 
@@ -512,9 +512,8 @@ fn run (x:int) -> int {io}
 fn run(v0: int) -> int:
   bb0:
     v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.DynamicCall(v1, v0) {impure}
-    v3: int = convert.int v2
-    ret v3
+    v2: int = opaque.DynamicCall(v1, v0) {impure}
+    ret v2
 ```
 
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (2-arg)
@@ -538,7 +537,6 @@ fn run(v0: int) -> int:
   bb0:
     v1: any = opaque.NameRead() {impure}
     v2: int = const 3
-    v3: any = opaque.DynamicCall(v1, v0, v2) {impure}
-    v4: int = convert.int v3
-    ret v4
+    v3: int = opaque.DynamicCall(v1, v0, v2) {impure}
+    ret v3
 ```

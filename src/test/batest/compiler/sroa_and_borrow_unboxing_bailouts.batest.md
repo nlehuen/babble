@@ -68,10 +68,9 @@ fn run(v0: int, v1: int) -> double:
     v7: double = add v2, v5 {pure}
     v8: any = opaque.NameRead() {impure}
     v9: any = checkcast v6 <int|int|>
-    v10: any = opaque.DynamicCall(v8, v9) {impure}
-    v11: double = convert.double v10
-    v12: double = add v7, v11 {pure}
-    ret v12
+    v10: double = opaque.DynamicCall(v8, v9) {impure}
+    v11: double = add v7, v10 {pure}
+    ret v11
 ```
 
 ## Projection beta-reduction and SROA with impure, local, and anonymous record class refs
@@ -144,14 +143,13 @@ fn run() -> double:
     v15: any = checkcast v14 <string|string|>
     v16: any = const "CS"
     v17: any = eq v15, v16 {pure}
-    v18: any = opaque.DynamicCall(v13, v17) {impure}
+    v18: bool = opaque.DynamicCall(v13, v17) {impure}
     v19: double = add v5, v10 {pure}
     v20: any = opaque.NameRead() {impure}
     v21: int = const 13
-    v22: any = opaque.DynamicCall(v20, v21) {impure}
-    v23: double = convert.double v22
-    v24: double = add v19, v23 {pure}
-    ret v24
+    v22: double = opaque.DynamicCall(v20, v21) {impure}
+    v23: double = add v19, v22 {pure}
+    ret v23
 ```
 
 ```mir
@@ -174,13 +172,12 @@ fn run() -> double:
     v13: any = checkcast v12 <string|string|>
     v14: any = const "CS"
     v15: any = eq v13, v14 {pure}
-    v16: any = opaque.DynamicCall(v11, v15) {impure}
+    v16: bool = opaque.DynamicCall(v11, v15) {impure}
     v17: any = opaque.NameRead() {impure}
     v18: int = const 13
-    v19: any = opaque.DynamicCall(v17, v18) {impure}
-    v20: double = convert.double v19
-    v21: double = add v9, v20 {pure}
-    ret v21
+    v19: double = opaque.DynamicCall(v17, v18) {impure}
+    v20: double = add v9, v19 {pure}
+    ret v20
 ```
 
 ## Projection beta-reduction on cross-module record via local and impure module receivers
@@ -241,7 +238,7 @@ fn run() -> double:
     v10: any = checkcast v9 <string|string|>
     v11: any = const "M"
     v12: any = eq v10, v11 {pure}
-    v13: any = opaque.DynamicCall(v8, v12) {impure}
+    v13: bool = opaque.DynamicCall(v8, v12) {impure}
     v14: double = const 2.0
     v15: double = add v14, v7 {pure}
     ret v15
@@ -262,7 +259,7 @@ fn run() -> double:
     v8: any = call_java v0.toString() {impure}
     v9: any = checkcast v8 <string|string|>
     v10: any = eq v9, v2 {pure}
-    v11: any = opaque.DynamicCall(v7, v10) {impure}
+    v11: bool = opaque.DynamicCall(v7, v10) {impure}
     v12: double = const 7.0
     ret v12
 ```
@@ -318,11 +315,10 @@ fn run() -> int:
     v8: int = const 0
     br bb3(v8)
   bb2:
-    v9: any = opaque.DynamicCall(v4) {impure}
-    v10: int = convert.int v9
-    br bb3(v10)
-  bb3(v11: int):
-    ret v11
+    v9: int = opaque.DynamicCall(v4) {impure}
+    br bb3(v9)
+  bb3(v10: int):
+    ret v10
 ```
 
 ## Inlined method-value projection on fast record disqualifies SROA and borrow unboxing
@@ -367,20 +363,18 @@ fn run() -> int:
     v1: int = const 5
     v2: any = record_new Box(v1) {pure}
     v3: any = load_field v2.inc {read:frozen,throws}
-    v4: any = opaque.DynamicCall(v3) {impure}
-    v5: int = convert.int v4
-    v6: any = opaque.NameRead() {impure}
-    v7: int = const 3
-    v8: any = record_new Box(v7) {pure}
-    v9: any = load_field v8.inc {read:frozen,throws}
-    v10: any = opaque.DynamicCall(v9) {impure}
-    v11: int = convert.int v10
-    v12: int = add v5, v11 {pure}
-    v13: any = opaque.NameRead() {impure}
-    v14: int = const 2
-    v15: int = call useB$unboxed(v2, v14) {pure,throws}
-    v16: int = add v12, v15 {pure}
-    ret v16
+    v4: int = opaque.DynamicCall(v3) {impure}
+    v5: any = opaque.NameRead() {impure}
+    v6: int = const 3
+    v7: any = record_new Box(v6) {pure}
+    v8: any = load_field v7.inc {read:frozen,throws}
+    v9: int = opaque.DynamicCall(v8) {impure}
+    v10: int = add v4, v9 {pure}
+    v11: any = opaque.NameRead() {impure}
+    v12: int = const 2
+    v13: int = call useB$unboxed(v2, v12) {pure,throws}
+    v14: int = add v10, v13 {pure}
+    ret v14
 ```
 
 ## Unboxed borrow call rewrite inside a function alongside non-unboxed and non-qualifying calls
@@ -456,7 +450,7 @@ fn run(v0: any, v1: any) -> double:
     v37: any = checkcast v36 <string|string|>
     v38: any = const "U"
     v39: any = eq v37, v38 {pure}
-    v40: any = opaque.DynamicCall(v35, v39) {impure}
+    v40: bool = opaque.DynamicCall(v35, v39) {impure}
     ret v34
 ```
 
@@ -498,7 +492,7 @@ fn run(v0: any, v1: any) -> double:
     v33: any = call_java v2.toString() {impure}
     v34: any = checkcast v33 <string|string|>
     v35: any = eq v34, v25 {pure}
-    v36: any = opaque.DynamicCall(v32, v35) {impure}
+    v36: bool = opaque.DynamicCall(v32, v35) {impure}
     ret v31
 ```
 
@@ -838,26 +832,26 @@ fn work(v0: any, v1: any) -> double:
     v14: any = opaque.NameRead() {impure}
     v15: int = call_java v7.size() {pure,throws}
     v16: int = add v10, v15 {pure}
-    v17: any = opaque.DynamicCall(v14, v16) {impure}
-    v18: double = convert.double v17
-    v19: double = add v13, v18 {pure}
-    v20: any = convert.any v19
+    v17: double = opaque.DynamicCall(v14, v16) {impure}
+    v18: double = add v13, v17 {pure}
+    v19: any = convert.any v18
     br bb3
   bb3 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v21: double = nonnull v20
-    v22: double = const 0.0
-    v23: bool = lt v21, v22 {pure}
-    br_if v23, bb5, bb4
+    v20: double = nonnull v19
+    v21: double = const 0.0
+    v22: bool = lt v20, v21 {pure}
+    br_if v22, bb5, bb4
   bb4 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v24: any = const null
-    br bb6(v24)
+    v23: any = const null
+    br bb6(v23)
   bb5 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v25: any = opaque.NameRead() {impure}
-    v26: bool = const false
-    v27: any = opaque.DynamicCall(v25, v26) {impure}
+    v24: any = opaque.NameRead() {impure}
+    v25: bool = const false
+    v26: bool = opaque.DynamicCall(v24, v25) {impure}
+    v27: any = convert.any v26
     br bb6(v27)
   bb6(v28: any) [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v29: double = nonnull v20
+    v29: double = nonnull v19
     br bb10(v29)
   bb7(v30: any) [handler]:
     br bb9(v30)
@@ -892,34 +886,33 @@ fn work(v0: any, v1: any) -> double:
     v11: any = opaque.NameRead() {impure}
     v12: int = call_java v5.size() {pure,throws}
     v13: int = add v8, v12 {pure}
-    v14: any = opaque.DynamicCall(v11, v13) {impure}
-    v15: double = convert.double v14
-    v16: double = add v10, v15 {pure}
-    v17: any = convert.any v16
+    v14: double = opaque.DynamicCall(v11, v13) {impure}
+    v15: double = add v10, v14 {pure}
+    v16: any = convert.any v15
     br bb2
   bb2 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v18: double = nonnull v17
-    v19: double = const 0.0
-    v20: bool = lt v18, v19 {pure}
-    br_if v20, bb3, bb4
+    v17: double = nonnull v16
+    v18: double = const 0.0
+    v19: bool = lt v17, v18 {pure}
+    br_if v19, bb3, bb4
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v21: any = opaque.NameRead() {impure}
-    v22: bool = const false
-    v23: any = opaque.DynamicCall(v21, v22) {impure}
+    v20: any = opaque.NameRead() {impure}
+    v21: bool = const false
+    v22: bool = opaque.DynamicCall(v20, v21) {impure}
     br bb4
   bb4 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v24: double = nonnull v17
-    br bb8(v24)
-  bb5(v25: any) [handler]:
+    v23: double = nonnull v16
+    br bb8(v23)
+  bb5(v24: any) [handler]:
     br bb7
-  bb6(v26: any) [handler]:
+  bb6(v25: any) [handler]:
     br bb7
   bb7:
-    v27: double = const 0.0
-    br bb8(v27)
-  bb8(v28: double):
-    ret v28
+    v26: double = const 0.0
+    br bb8(v26)
+  bb8(v27: double):
+    ret v27
   bb9:
-    v29: double = const 0.0
-    ret v29
+    v28: double = const 0.0
+    ret v28
 ```

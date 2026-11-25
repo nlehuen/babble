@@ -57,87 +57,82 @@ fn f() -> bool:
   bb1:
     v1: any = opaque.NameRead() {impure}
     v2: int = const 8
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
-    v4: short = convert.short v3
-    br bb3(v4)
+    v3: short = opaque.DynamicCall(v1, v2) {impure}
+    br bb3(v3)
   bb2:
-    v5: any = opaque.NameRead() {impure}
-    v6: int = const 7
-    v7: any = opaque.DynamicCall(v5, v6) {impure}
-    v8: any = widen#1 v7
-    v9: short = convert.short v8
-    br bb3(v9)
-  bb3(v10: short):
-    v11: bool = const true
-    br_if v11, bb5, bb4
+    v4: any = opaque.NameRead() {impure}
+    v5: int = const 7
+    v6: byte = opaque.DynamicCall(v4, v5) {impure}
+    v7: short = convert.short v6
+    br bb3(v7)
+  bb3(v8: short):
+    v9: bool = const true
+    br_if v9, bb5, bb4
   bb4:
-    v12: int = const 8
-    br bb6(v12)
+    v10: int = const 8
+    br bb6(v10)
   bb5:
-    v13: any = opaque.NameRead() {impure}
-    v14: int = const 7
-    v15: any = opaque.DynamicCall(v13, v14) {impure}
-    v16: any = widen#2 v15
-    v17: int = convert.int v16
-    br bb6(v17)
-  bb6(v18: int):
-    v19: any = opaque.NameRead() {impure}
-    v20: int = const 4
-    v21: any = opaque.DynamicCall(v19, v20) {impure}
-    v22: float = convert.float v21
-    v23: bool = const true
-    br_if v23, bb8, bb7
+    v11: any = opaque.NameRead() {impure}
+    v12: int = const 7
+    v13: short = opaque.DynamicCall(v11, v12) {impure}
+    v14: int = convert.int v13
+    br bb6(v14)
+  bb6(v15: int):
+    v16: any = opaque.NameRead() {impure}
+    v17: int = const 4
+    v18: float = opaque.DynamicCall(v16, v17) {impure}
+    v19: bool = const true
+    br_if v19, bb8, bb7
   bb7:
-    v24: double = const 6.5
-    br bb9(v24)
+    v20: double = const 6.5
+    br bb9(v20)
   bb8:
-    v25: int = const 5
-    v26: double = convert.double v25
-    br bb9(v26)
-  bb9(v27: double):
-    v28: any = const null
-    v29: any = const null
-    v30: any = eq v28, v29 {pure,throws}
-    v31: bool = not v30 {pure}
-    v32: bool = not v31 {pure}
-    v33: bool = const false
-    br_if v32, bb10, bb11(v33)
+    v21: int = const 5
+    v22: double = convert.double v21
+    br bb9(v22)
+  bb9(v23: double):
+    v24: any = const null
+    v25: any = const null
+    v26: any = eq v24, v25 {pure,throws}
+    v27: bool = not v26 {pure}
+    v28: bool = not v27 {pure}
+    v29: bool = const false
+    br_if v28, bb10, bb11(v29)
   bb10:
-    v34: any = opaque.NameRead() {impure}
-    v35: int = const 7
-    v36: any = opaque.DynamicCall(v34, v35) {impure}
-    v37: short = convert.short v36
-    v38: bool = eq v10, v37 {pure}
-    br bb11(v38)
-  bb11(v39: bool):
-    v40: bool = const false
-    br_if v39, bb12, bb13(v40)
+    v30: any = opaque.NameRead() {impure}
+    v31: int = const 7
+    v32: short = opaque.DynamicCall(v30, v31) {impure}
+    v33: bool = eq v8, v32 {pure}
+    br bb11(v33)
+  bb11(v34: bool):
+    v35: bool = const false
+    br_if v34, bb12, bb13(v35)
   bb12:
-    v41: int = const 7
-    v42: bool = eq v18, v41 {pure}
-    br bb13(v42)
-  bb13(v43: bool):
-    v44: bool = const false
-    br_if v43, bb14, bb15(v44)
+    v36: int = const 7
+    v37: bool = eq v15, v36 {pure}
+    br bb13(v37)
+  bb13(v38: bool):
+    v39: bool = const false
+    br_if v38, bb14, bb15(v39)
   bb14:
-    v45: bool = const true
-    br bb15(v45)
-  bb15(v46: bool):
-    v47: bool = const false
-    br_if v46, bb16, bb17(v47)
+    v40: bool = const true
+    br bb15(v40)
+  bb15(v41: bool):
+    v42: bool = const false
+    br_if v41, bb16, bb17(v42)
   bb16:
-    v48: float = const 4.0f
-    v49: bool = eq v22, v48 {pure}
-    br bb17(v49)
-  bb17(v50: bool):
-    v51: bool = const false
-    br_if v50, bb18, bb19(v51)
+    v43: float = const 4.0f
+    v44: bool = eq v18, v43 {pure}
+    br bb17(v44)
+  bb17(v45: bool):
+    v46: bool = const false
+    br_if v45, bb18, bb19(v46)
   bb18:
-    v52: double = const 5.0
-    v53: bool = eq v27, v52 {pure}
-    br bb19(v53)
-  bb19(v54: bool):
-    ret v54
+    v47: double = const 5.0
+    v48: bool = eq v23, v47 {pure}
+    br bb19(v48)
+  bb19(v49: bool):
+    ret v49
 ```
 
 ```mir
@@ -149,58 +144,54 @@ fn f() -> bool:
   bb1:
     v1: any = opaque.NameRead() {impure}
     v2: int = const 7
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
-    v4: any = widen#1 v3
-    v5: short = convert.short v4
-    br bb2(v5)
-  bb2(v6: short):
+    v3: byte = opaque.DynamicCall(v1, v2) {impure}
+    v4: short = convert.short v3
+    br bb2(v4)
+  bb2(v5: short):
     br bb3
   bb3:
-    v7: any = opaque.NameRead() {impure}
-    v8: any = opaque.DynamicCall(v7, v2) {impure}
-    v9: any = widen#2 v8
-    v10: int = convert.int v9
-    br bb4(v10)
-  bb4(v11: int):
-    v12: any = opaque.NameRead() {impure}
-    v13: int = const 4
-    v14: any = opaque.DynamicCall(v12, v13) {impure}
-    v15: float = convert.float v14
+    v6: any = opaque.NameRead() {impure}
+    v7: short = opaque.DynamicCall(v6, v2) {impure}
+    v8: int = convert.int v7
+    br bb4(v8)
+  bb4(v9: int):
+    v10: any = opaque.NameRead() {impure}
+    v11: int = const 4
+    v12: float = opaque.DynamicCall(v10, v11) {impure}
     br bb5
   bb5:
-    v16: any = const null
-    v17: any = eq v16, v16 {pure,throws}
-    v18: bool = not v17 {pure}
-    v19: bool = not v18 {pure}
-    v20: bool = const false
-    br_if v19, bb6, bb7(v20)
+    v13: any = const null
+    v14: any = eq v13, v13 {pure,throws}
+    v15: bool = not v14 {pure}
+    v16: bool = not v15 {pure}
+    v17: bool = const false
+    br_if v16, bb6, bb7(v17)
   bb6:
-    v21: any = opaque.NameRead() {impure}
-    v22: any = opaque.DynamicCall(v21, v2) {impure}
-    v23: short = convert.short v22
-    v24: bool = eq v6, v23 {pure}
-    br bb7(v24)
-  bb7(v25: bool):
-    br_if v25, bb8, bb9(v20)
+    v18: any = opaque.NameRead() {impure}
+    v19: short = opaque.DynamicCall(v18, v2) {impure}
+    v20: bool = eq v5, v19 {pure}
+    br bb7(v20)
+  bb7(v21: bool):
+    br_if v21, bb8, bb9(v17)
   bb8:
-    v26: bool = eq v11, v2 {pure}
-    br bb9(v26)
-  bb9(v27: bool):
-    br_if v27, bb10, bb11(v20)
+    v22: bool = eq v9, v2 {pure}
+    br bb9(v22)
+  bb9(v23: bool):
+    br_if v23, bb10, bb11(v17)
   bb10:
     br bb11(v0)
-  bb11(v28: bool):
-    br_if v28, bb12, bb13(v20)
+  bb11(v24: bool):
+    br_if v24, bb12, bb13(v17)
   bb12:
-    v29: float = const 4.0f
-    v30: bool = eq v15, v29 {pure}
-    br bb13(v30)
-  bb13(v31: bool):
-    br_if v31, bb14, bb15(v20)
+    v25: float = const 4.0f
+    v26: bool = eq v12, v25 {pure}
+    br bb13(v26)
+  bb13(v27: bool):
+    br_if v27, bb14, bb15(v17)
   bb14:
     br bb15(v0)
-  bb15(v32: bool):
-    ret v32
+  bb15(v28: bool):
+    ret v28
 ```
 
 ## Constant if-pruning with folded arithmetic branches and multi-statement blocks

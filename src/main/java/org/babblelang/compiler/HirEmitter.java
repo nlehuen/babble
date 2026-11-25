@@ -579,7 +579,7 @@ final class HirEmitter {
         mv.visitMethodInsn(INVOKEVIRTUAL, selfType, "recurseTarget", "(Ljava/lang/Object;)L" + CALLABLE + ";", false);
     }
 
-    private void initFrameLocals(HirFunction fn, String selfType) {
+    private void initFrameLocals(HirFunction fn, String selfType, org.babblelang.ir.mir.MirFunction mirFn) {
         MethodVisitor mv = ctx.mv;
         if (fn.namespaceScope()) {
             loadClosure();
@@ -591,7 +591,31 @@ final class HirEmitter {
         } else {
             loadClosure();
             mv.visitVarInsn(ASTORE, ctx.frameNs);
-            for (HirVar variable : declareVariables(fn.declaredVars())) {
+            List<HirVar> toDeclare = fn.declaredVars();
+            if (mirFn != null) {
+                Set<Integer> needed = new HashSet<>();
+                for (HirVar pv : mirFn.paramVars()) {
+                    needed.add(pv.id());
+                }
+                for (HirVar pv : mirFn.pinnedVars()) {
+                    needed.add(pv.id());
+                }
+                for (HirParam p : fn.params()) {
+                    if (p.var() != null) {
+                        needed.add(p.var().id());
+                    }
+                }
+                List<HirVar> filtered = new ArrayList<>(toDeclare.size());
+                for (HirVar v : toDeclare) {
+                    if (needed.contains(v.id())
+                            || v.kind() == Resolution.Variable.Kind.THIS
+                            || v.kind() == Resolution.Variable.Kind.RECURSE) {
+                        filtered.add(v);
+                    }
+                }
+                toDeclare = filtered;
+            }
+            for (HirVar variable : declareVariables(toDeclare)) {
                 if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
                     mv.visitVarInsn(ALOAD, ctx.thizLocal);
                     initVariable(variable, PrimitiveKind.NONE);
@@ -605,9 +629,9 @@ final class HirEmitter {
 
     private void functionBody(HirFunction fn, String paramsField, String selfType) {
         ctx.beginTailLoop(null, -1);
-        initFrameLocals(fn, selfType);
-        bindParameters(paramsField, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
         org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
+        initFrameLocals(fn, selfType, mirFn);
+        bindParameters(paramsField, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
         if (mirFn != null) {
             new MirEmitter(this, mirFn, fn, PrimitiveKind.NONE).emit();
             ctx.finish();
@@ -623,7 +647,8 @@ final class HirEmitter {
     private void functionBodySpec(HirFunction fn, String selfType, int[] paramSlots, int maskSlot) {
         MethodVisitor mv = ctx.mv;
         ctx.beginTailLoop(paramSlots, maskSlot);
-        initFrameLocals(fn, selfType);
+        org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
+        initFrameLocals(fn, selfType, mirFn);
         List<HirParam> params = fn.params();
         int optBit = 0;
         for (int i = 0; i < params.size(); i++) {
@@ -665,7 +690,6 @@ final class HirEmitter {
                 mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "defineParameter", "(Ljava/lang/String;Ljava/lang/Object;)V", false);
             }
         }
-        org.babblelang.ir.mir.MirFunction mirFn = mirModule != null ? mirModule.function(fn.id()) : null;
         if (mirFn != null) {
             new MirEmitter(this, mirFn, fn, ctx.methodReturnKind).emit();
             ctx.finish();
@@ -1142,7 +1166,9 @@ final class HirEmitter {
     }
 
     private void loadMirOperand(MethodEmitContext.MirOperand op) {
-        if (op.isConstant()) {
+        if (op.isStacked()) {
+            // Already on the operand stack, left there by the immediately preceding MIR instruction.
+        } else if (op.isConstant()) {
             MirEmitter.pushConstant(ctx.mv, op.constant());
         } else {
             loadKindOn(ctx.mv, op.kind(), op.slot());
