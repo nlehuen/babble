@@ -139,21 +139,39 @@ public final class WasmModule {
         return idx;
     }
 
-    /** Commits a recursive group whose subtypes were reserved starting at {@code firstIndex}. */
+    /** Commits a recursive group whose subtypes were reserved contiguously starting at the first uncommitted slot. */
     public void commitRecGroup(List<WasmTypeDef.SubType> subtypes) {
+        if (subtypes == null || subtypes.isEmpty()) {
+            throw new IllegalArgumentException("Rec group must not be empty");
+        }
+        int expected = 0;
+        while (expected < flatTypes.size() && flatTypes.get(expected) != null) {
+            expected++;
+        }
+        if (expected + subtypes.size() > flatTypes.size()) {
+            throw new IllegalArgumentException("Rec group exceeds reserved type indices");
+        }
         for (WasmTypeDef.SubType sub : subtypes) {
-            if (sub.index() < 0 || sub.index() >= flatTypes.size()) {
-                throw new IllegalArgumentException("Type index out of bounds : " + sub.index());
+            if (sub == null || sub.index() != expected) {
+                throw new IllegalArgumentException("Rec group subtypes must fill reserved indices contiguously starting at " + expected + ", got : " + (sub != null ? sub.index() : "null"));
             }
-            if (flatTypes.get(sub.index()) != null) {
-                throw new IllegalStateException("Duplicate Wasm type definition at index : " + sub.index());
+            if (flatTypes.get(expected) != null) {
+                throw new IllegalStateException("Duplicate Wasm type definition at index : " + expected);
             }
+            expected++;
+        }
+        for (WasmTypeDef.SubType sub : subtypes) {
             flatTypes.set(sub.index(), sub);
         }
         recGroups.add(new WasmTypeDef.RecGroup(subtypes));
     }
 
     public int addType(String name, boolean isFinal, int superTypeIndex, WasmTypeDef body) {
+        for (int i = 0; i < flatTypes.size(); i++) {
+            if (flatTypes.get(i) == null) {
+                throw new IllegalStateException("Cannot addType while reserved type index " + i + " is uncommitted");
+            }
+        }
         int idx = flatTypes.size();
         WasmTypeDef.SubType sub = new WasmTypeDef.SubType(idx, name, isFinal, superTypeIndex, body);
         flatTypes.add(sub);

@@ -151,6 +151,7 @@ public final class HirLicmPass implements HirPass {
         if (expr instanceof HirExpr.DirectBabbleCall
                 || expr instanceof HirExpr.DirectThisMethodCall
                 || expr instanceof HirExpr.InterfaceCall
+                || expr instanceof HirExpr.CoreMethodCall
                 || expr instanceof HirExpr.JavaMethodCall) {
             return true;
         }

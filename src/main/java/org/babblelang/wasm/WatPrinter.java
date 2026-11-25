@@ -211,8 +211,8 @@ public final class WatPrinter {
             case WasmInstr.Simple s -> sb.append(s.op().wat());
             case WasmInstr.I32Const c -> sb.append("i32.const ").append(c.value());
             case WasmInstr.I64Const c -> sb.append("i64.const ").append(c.value());
-            case WasmInstr.F32Const c -> sb.append("f32.const ").append(c.value());
-            case WasmInstr.F64Const c -> sb.append("f64.const ").append(c.value());
+            case WasmInstr.F32Const c -> sb.append("f32.const ").append(formatF32(c.value()));
+            case WasmInstr.F64Const c -> sb.append("f64.const ").append(formatF64(c.value()));
             case WasmInstr.Idx i -> {
                 sb.append(i.op().wat()).append(' ');
                 switch (i.op().idxKind()) {
@@ -336,11 +336,26 @@ public final class WatPrinter {
         return "$tag" + idx;
     }
 
+    private static String formatF32(float v) {
+        if (Float.isNaN(v)) return "nan";
+        if (v == Float.POSITIVE_INFINITY) return "inf";
+        if (v == Float.NEGATIVE_INFINITY) return "-inf";
+        return Float.toString(v);
+    }
+
+    private static String formatF64(double v) {
+        if (Double.isNaN(v)) return "nan";
+        if (v == Double.POSITIVE_INFINITY) return "inf";
+        if (v == Double.NEGATIVE_INFINITY) return "-inf";
+        return Double.toString(v);
+    }
+
     private static String sanitize(String raw) {
         StringBuilder sb = new StringBuilder(raw.length());
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
-            if (Character.isLetterOrDigit(c) || c == '_' || c == '$' || c == '.' || c == '-') {
+            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
+                    || c == '_' || c == '$' || c == '.' || c == '-') {
                 sb.append(c);
             } else {
                 sb.append('_');
@@ -350,7 +365,26 @@ public final class WatPrinter {
     }
 
     private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '\\') {
+                sb.append("\\\\");
+            } else if (c == '"') {
+                sb.append("\\\"");
+            } else if (c == '\n') {
+                sb.append("\\n");
+            } else if (c == '\r') {
+                sb.append("\\r");
+            } else if (c == '\t') {
+                sb.append("\\t");
+            } else if (c < 0x20 || c == 0x7F) {
+                sb.append(String.format("\\%02x", (int) c));
+            } else {
+                sb.append(c);
+            }
+        }
+        return sb.toString();
     }
 
     private static String escapeBytes(byte[] bytes) {

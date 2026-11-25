@@ -434,11 +434,21 @@ public final class LoweringTargets {
             boolean[] paramIsString,
             PrimitiveKind returnKind,
             boolean returnIsString,
-            boolean returnIsVoid
+            boolean returnIsVoid,
+            int line
     ) {
         public WasmImportSpec {
             paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
             paramIsString = paramIsString != null ? paramIsString.clone() : new boolean[0];
+        }
+
+        public boolean sameSignature(WasmImportSpec other) {
+            return other != null
+                    && java.util.Arrays.equals(paramKinds, other.paramKinds)
+                    && java.util.Arrays.equals(paramIsString, other.paramIsString)
+                    && returnKind == other.returnKind
+                    && returnIsString == other.returnIsString
+                    && returnIsVoid == other.returnIsVoid;
         }
     }
 }

@@ -159,6 +159,7 @@ public final class WasmProgramLinker {
                 arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat,
                 colOps.fnColEq, colOps.fnColHash, colOps.fnColFmt);
         this.objects = new WasmObjectSystem(this);
+        this.arrOps.emitTdSubtypeBody(objects);
         this.ops.emitClassofWithTable(objects.gClassVals);
         this.fnInitSingletonsDef = mod.addFunction("init_fn_singletons", ts.internFuncType(List.of(), List.of()));
     }
@@ -213,6 +214,10 @@ public final class WasmProgramLinker {
 
     public WasmModule module() {
         return mod;
+    }
+
+    public List<ModuleLinkInfo> linkedModules() {
+        return java.util.Collections.unmodifiableList(linkedModules);
     }
 
     public WasmTypeSystem types() {
@@ -481,12 +486,26 @@ public final class WasmProgramLinker {
                 List<HirExpr> body = hc.staticBlock().body();
                 Map<String, Integer> stDefCounts = new HashMap<>();
                 Set<String> stReassigned = new HashSet<>();
+                Deque<HirExpr> work = new ArrayDeque<>(body);
+                Set<Integer> seenFns = new HashSet<>();
                 for (HirExpr e : body) {
                     if (e instanceof HirExpr.Def d && d.var() == null) {
                         stDefCounts.merge(d.name(), 1, Integer::sum);
                     }
-                    walkExpr(e, x -> {
-                        if (x instanceof HirExpr.NameAssign na) stReassigned.add(na.name());
+                }
+                while (!work.isEmpty()) {
+                    walkExpr(work.poll(), x -> {
+                        if (x instanceof HirExpr.NameAssign na) {
+                            stReassigned.add(na.name());
+                        } else if (x instanceof HirExpr.FunctionRef fr && seenFns.add(fr.functionId())) {
+                            HirFunction hf = info.input.hir().functions().get(fr.functionId());
+                            if (hf != null) {
+                                for (HirParam p : hf.params()) {
+                                    if (p.defaultValue() != null) work.add(p.defaultValue());
+                                }
+                                work.addAll(hf.body());
+                            }
+                        }
                     });
                 }
                 for (HirExpr e : body) {

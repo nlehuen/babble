@@ -62,38 +62,27 @@ public final class WasmMemberEmitter {
                 cctx.vars.put(cv.id(), new WasmFuncEmitter.VarSlot(capStart + i, cv.primitiveKind(), true, cellType, false, -1));
             }
 
-            // 2. Evaluate optional parameter defaults if $optMask bit is set
-            if (ci.ctorHasOptMask) {
-                int optBit = 0;
-                for (int i = 0; i < ci.hir.params().size(); i++) {
-                    HirParam p = ci.hir.params().get(i);
-                    if (p.defaultValue() != null) {
-                        int pLocal = firstParamIdx + i;
-                        c.localGet(optMaskLocal).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_AND).if_();
-                        cctx.pushBlock("ctor_opt");
-                        bindCtorParam(cctx, p, pLocal);
-                        fe.emitAs(p.defaultValue(), p.kind());
-                        c.localSet(pLocal);
-                        cctx.popBlock();
-                        c.end();
-                        optBit++;
-                    }
-                    bindCtorParam(cctx, p, firstParamIdx + i);
-                }
-            } else {
-                for (int i = 0; i < ci.hir.params().size(); i++) {
-                    bindCtorParam(cctx, ci.hir.params().get(i), firstParamIdx + i);
-                }
-            }
-
-            // 3. Wrap any cell-captured constructor parameters
+            // 2. Evaluate optional parameter defaults and immediately wrap cell-captured params
+            int optBit = 0;
             for (int i = 0; i < ci.hir.params().size(); i++) {
                 HirParam p = ci.hir.params().get(i);
+                int pLocal = firstParamIdx + i;
+                if (ci.ctorHasOptMask && p.defaultValue() != null) {
+                    c.localGet(optMaskLocal).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_AND).if_();
+                    cctx.pushBlock("ctor_opt");
+                    bindCtorParam(cctx, p, pLocal);
+                    fe.emitAs(p.defaultValue(), p.kind());
+                    c.localSet(pLocal);
+                    cctx.popBlock();
+                    c.end();
+                    optBit++;
+                }
+                bindCtorParam(cctx, p, pLocal);
                 HirVar pv = p.var();
                 if (pv != null && pv.cell()) {
                     int cellType = ts.cellTypeFor(pv.primitiveKind());
                     int cellLocal = cctx.newLocal("cell_" + pv.name(), WasmValType.ref(cellType));
-                    c.localGet(firstParamIdx + i);
+                    c.localGet(pLocal);
                     fe.convertRawValue(p.kind(), pv.primitiveKind(), ci.hir.line());
                     if (pv.primitiveKind().isPrimitive()) {
                         c.i32Const(1);
@@ -126,8 +115,15 @@ public final class WasmMemberEmitter {
                 int pi = memberParamIdx[i];
                 if (pi >= 0) {
                     HirParam hp = ci.hir.params().get(pi);
-                    c.localGet(firstParamIdx + pi);
-                    fe.convertRawValue(hp.kind(), ci.memberKinds[i], ci.hir.line());
+                    HirVar pv = hp.var();
+                    WasmFuncEmitter.VarSlot pvSlot = pv != null ? cctx.vars.get(pv.id()) : null;
+                    if (pvSlot != null && pvSlot.isCell()) {
+                        c.localGet(pvSlot.localIdx()).refAsNonNull().structGet(pvSlot.cellTypeIdx(), 0);
+                        fe.convertRawValue(pvSlot.kind(), ci.memberKinds[i], ci.hir.line());
+                    } else {
+                        c.localGet(firstParamIdx + pi);
+                        fe.convertRawValue(hp.kind(), ci.memberKinds[i], ci.hir.line());
+                    }
                 } else if (ci.memberKinds[i] == PrimitiveKind.NONE) {
                     c.globalGet(rt.gUndefined);
                 } else {
@@ -413,7 +409,7 @@ public final class WasmMemberEmitter {
             } else {
                 emitPerEvalVTable(ci, rn.meta().line());
             }
-        } else if (rn.classRef() != null && !(rn.classRef() instanceof HirExpr.VarRead || rn.classRef() instanceof HirExpr.NameRead)) {
+        } else if (rn.classRef() != null && !calls.isGuaranteedDefinedPureRef(rn.classRef())) {
             fe.emitVoid(rn.classRef());
         }
         for (HirVar cv : ci.hir.capturedVars()) {
@@ -1196,16 +1192,17 @@ public final class WasmMemberEmitter {
                 .else_();
         ctx.pushBlock("safe_call");
         String m = sc.memberName();
-        boolean handledCore = false;
+        int extraEnds = 0;
         if ("length".equals(m) && sc.args().isEmpty()) {
-            c.localGet(recv).refTest(ts.stringType).if_(ts.anyRef())
-                    .localGet(recv).refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen().call(rt.fnBoxInt)
-                    .else_();
+            c.localGet(recv).refTest(ts.stringType).if_(ts.anyRef());
             ctx.pushBlock("sc_str_len");
-            handledCore = true;
+            c.localGet(recv).refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen().call(rt.fnBoxInt)
+                    .else_();
+            extraEnds = 1;
         } else if ("substring".equals(m) && (sc.args().size() == 1 || sc.args().size() == 2)) {
-            c.localGet(recv).refTest(ts.stringType).if_(ts.anyRef())
-                    .localGet(recv).refCast(ts.stringType);
+            c.localGet(recv).refTest(ts.stringType).if_(ts.anyRef());
+            ctx.pushBlock("sc_str_sub");
+            c.localGet(recv).refCast(ts.stringType);
             fe.emitAs(sc.args().get(0).value(), PrimitiveKind.INT);
             if (sc.args().size() == 1) {
                 c.localGet(recv).refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen();
@@ -1214,25 +1211,47 @@ public final class WasmMemberEmitter {
             }
             c.i32Const(line).call(linker.strings().fnSubstring)
                     .else_();
-            ctx.pushBlock("sc_str_sub");
-            handledCore = true;
+            extraEnds = 1;
         } else if ("isEmpty".equals(m) && sc.args().isEmpty()) {
-            c.localGet(recv).refTest(ts.stringType).if_(ts.anyRef())
-                    .localGet(recv).refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen()
+            c.localGet(recv).refTest(ts.stringType).if_(ts.anyRef());
+            ctx.pushBlock("sc_emp_str");
+            c.localGet(recv).refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen()
+                    .op(WasmInstr.SimpleOp.I32_EQZ).call(rt.fnBoxBool)
+                    .else_()
+                    .localGet(recv).refTest(ts.listType).if_(ts.anyRef());
+            ctx.pushBlock("sc_emp_list");
+            c.localGet(recv).refCast(ts.listType).structGet(ts.listType, 1)
+                    .op(WasmInstr.SimpleOp.I32_EQZ).call(rt.fnBoxBool)
+                    .else_()
+                    .localGet(recv).refTest(ts.setType).if_(ts.anyRef());
+            ctx.pushBlock("sc_emp_set");
+            c.localGet(recv).refCast(ts.setType).structGet(ts.setType, 1)
+                    .op(WasmInstr.SimpleOp.I32_EQZ).call(rt.fnBoxBool)
+                    .else_()
+                    .localGet(recv).refTest(ts.mapType).if_(ts.anyRef());
+            ctx.pushBlock("sc_emp_map");
+            c.localGet(recv).refCast(ts.mapType).structGet(ts.mapType, 2)
                     .op(WasmInstr.SimpleOp.I32_EQZ).call(rt.fnBoxBool)
                     .else_();
-            ctx.pushBlock("sc_str_emp");
-            handledCore = true;
+            extraEnds = 4;
         } else if ("size".equals(m) && sc.args().isEmpty()) {
-            c.localGet(recv).refTest(ts.arrayBaseType).if_(ts.anyRef())
-                    .localGet(recv).refCast(ts.arrayBaseType).call(linker.arrays().fnArraySize).call(rt.fnBoxInt)
+            c.localGet(recv).refTest(ts.arrayBaseType).if_(ts.anyRef());
+            ctx.pushBlock("sc_sz_arr");
+            c.localGet(recv).refCast(ts.arrayBaseType).call(linker.arrays().fnArraySize).call(rt.fnBoxInt)
                     .else_()
-                    .localGet(recv).refTest(ts.listType).if_(ts.anyRef())
-                    .localGet(recv).refCast(ts.listType).structGet(ts.listType, 1).call(rt.fnBoxInt)
+                    .localGet(recv).refTest(ts.listType).if_(ts.anyRef());
+            ctx.pushBlock("sc_sz_list");
+            c.localGet(recv).refCast(ts.listType).structGet(ts.listType, 1).call(rt.fnBoxInt)
+                    .else_()
+                    .localGet(recv).refTest(ts.setType).if_(ts.anyRef());
+            ctx.pushBlock("sc_sz_set");
+            c.localGet(recv).refCast(ts.setType).structGet(ts.setType, 1).call(rt.fnBoxInt)
+                    .else_()
+                    .localGet(recv).refTest(ts.mapType).if_(ts.anyRef());
+            ctx.pushBlock("sc_sz_map");
+            c.localGet(recv).refCast(ts.mapType).structGet(ts.mapType, 2).call(rt.fnBoxInt)
                     .else_();
-            ctx.pushBlock("sc_sz1");
-            ctx.pushBlock("sc_sz2");
-            handledCore = true;
+            extraEnds = 4;
         } else if ("toString".equals(m) && sc.args().isEmpty()) {
             c.localGet(recv).call(rt.fnFormat);
             ctx.popBlock();
@@ -1241,25 +1260,11 @@ public final class WasmMemberEmitter {
             return;
         }
 
-        emitDynamicMemberRead(recv, sc.memberName(), line);
-        int callee = ctx.newLocal("$scFn", WasmValType.refNull(ts.fnBaseType));
-        c.refCast(ts.fnBaseType).localSet(callee);
-        for (HirCallArg a : sc.args()) {
-            fe.emitBoxed(a.value());
-        }
-        int arr = ctx.newLocal("$scArgs", WasmValType.ref(ts.anyArrType));
-        c.arrayNewFixed(ts.anyArrType, sc.args().size()).localSet(arr);
-        c.localGet(callee).refAsNonNull().localGet(arr).refNull(ts.anyArrType)
-                .localGet(callee).refAsNonNull().structGet(ts.fnBaseType, 0)
-                .callRef(ts.genericCallSigType);
+        calls.emitDynamicMethodOnReceiverLocal(recv, sc.memberName(), sc.args(), sc.binding(), line);
 
-        if (handledCore) {
-            if ("size".equals(m)) {
-                ctx.popBlock(); c.end();
-                ctx.popBlock(); c.end();
-            } else {
-                ctx.popBlock(); c.end();
-            }
+        for (int e = 0; e < extraEnds; e++) {
+            ctx.popBlock();
+            c.end();
         }
         ctx.popBlock();
         c.end();
@@ -1273,37 +1278,18 @@ public final class WasmMemberEmitter {
         fe.emitBoxed(receiver);
         int recv = ctx.newLocal("$dmRecv", ts.anyRef());
         c.localSet(recv);
-        emitDynamicMemberRead(recv, memberName, line);
-        int fn = ctx.newLocal("$dmFn", WasmValType.refNull(ts.fnBaseType));
-        c.refCast(ts.fnBaseType).localSet(fn);
-        for (HirCallArg a : args) fe.emitBoxed(a.value());
-        int arr = ctx.newLocal("$dmArgs", WasmValType.ref(ts.anyArrType));
-        c.arrayNewFixed(ts.anyArrType, args.size()).localSet(arr);
-        c.localGet(fn).refAsNonNull().localGet(arr).refNull(ts.anyArrType)
-                .localGet(fn).refAsNonNull().structGet(ts.fnBaseType, 0)
-                .callRef(ts.genericCallSigType);
+        calls.emitDynamicMethodOnReceiverLocal(recv, memberName, args, null, line);
         ctx.stackKind = PrimitiveKind.NONE;
         if (expectedKind.isPrimitive()) fe.convertStack(PrimitiveKind.NONE, expectedKind, line);
     }
 
     private void emitDynamicMethodCallExprs(HirExpr receiver, String memberName, List<HirExpr> args,
                                             PrimitiveKind expectedKind, int line) {
-        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
-        WasmCodeBuilder c = ctx.code;
-        fe.emitBoxed(receiver);
-        int recv = ctx.newLocal("$dmRecv", ts.anyRef());
-        c.localSet(recv);
-        emitDynamicMemberRead(recv, memberName, line);
-        int fn = ctx.newLocal("$dmFn", WasmValType.refNull(ts.fnBaseType));
-        c.refCast(ts.fnBaseType).localSet(fn);
-        for (HirExpr a : args) fe.emitBoxed(a);
-        int arr = ctx.newLocal("$dmArgs", WasmValType.ref(ts.anyArrType));
-        c.arrayNewFixed(ts.anyArrType, args.size()).localSet(arr);
-        c.localGet(fn).refAsNonNull().localGet(arr).refNull(ts.anyArrType)
-                .localGet(fn).refAsNonNull().structGet(ts.fnBaseType, 0)
-                .callRef(ts.genericCallSigType);
-        ctx.stackKind = PrimitiveKind.NONE;
-        if (expectedKind.isPrimitive()) fe.convertStack(PrimitiveKind.NONE, expectedKind, line);
+        List<HirCallArg> callArgs = new java.util.ArrayList<>(args.size());
+        for (HirExpr a : args) {
+            callArgs.add(new HirCallArg(null, a));
+        }
+        emitDynamicMethodCall(receiver, memberName, callArgs, expectedKind, line);
     }
 
     /** Shared helper: binds positional/named/optional arguments for a parameter list. */

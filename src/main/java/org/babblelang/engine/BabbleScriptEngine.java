@@ -515,9 +515,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      */
     public List<HirProgramModule> compileSourceToHir(String code, String sourceName,
                                                      org.babblelang.analysis.CompilationTarget target) throws ScriptException {
-        Map<String, String> modules = new LinkedHashMap<>();
         String entryName = (sourceName != null && !sourceName.isBlank()) ? sourceName : "main.ba";
-        modules.put(entryName, code);
         ModuleSource existing = getModuleSource();
         ModuleSource composite = new ModuleSource() {
             @Override

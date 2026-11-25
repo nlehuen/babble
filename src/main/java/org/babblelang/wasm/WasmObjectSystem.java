@@ -953,29 +953,88 @@ public final class WasmObjectSystem {
         String[] opsList = {"plus", "minus", "times", "div", "neg"};
         for (String opName : opsList) {
             Integer mId = ci.hir.methodFunctionIds().get(opName);
-            if (mId == null) continue;
-            WasmProgramLinker.FuncInfo mfi = ci.modInfo.functions.get(mId);
-            if (mfi == null) continue;
+            List<Integer> ovIds = ci.hir.overloadMethodFunctionIds().get(opName);
+            if (mId == null && (ovIds == null || ovIds.isEmpty())) continue;
             c.localGet(1);
             rt.emitStringLit(c, opName);
             c.call(rt.fnStrEq).if_();
-            c.localGet(0).refCast(ci.structTypeIdx);
-            if (!"neg".equals(opName) && !mfi.hir.params().isEmpty()) {
-                c.localGet(2);
-                PrimitiveKind pk = mfi.hir.params().get(0).kind();
-                if (pk.isPrimitive()) {
-                    c.i32Const(ci.hir.line()).call(rt.unboxFuncFor(pk));
+            if (mId != null) {
+                WasmProgramLinker.FuncInfo mfi = ci.modInfo.functions.get(mId);
+                if (mfi != null) {
+                    emitOpDirectCall(c, ci, opName, mfi);
+                    c.return_();
+                }
+            } else {
+                // Overloaded operator methods: pick first matching alt by runtime argument type (or exact arity for neg)
+                for (int altId : ovIds) {
+                    WasmProgramLinker.FuncInfo mfi = ci.modInfo.functions.get(altId);
+                    if (mfi == null) continue;
+                    if ("neg".equals(opName)) {
+                        if (mfi.hir.params().isEmpty()) {
+                            emitOpDirectCall(c, ci, opName, mfi);
+                            c.return_();
+                        }
+                    } else if (!mfi.hir.params().isEmpty()) {
+                        PrimitiveKind pk = mfi.hir.params().get(0).kind();
+                        if (pk.isPrimitive()) {
+                            emitPrimMatchCheck(c, 2, pk);
+                            c.if_();
+                            emitOpDirectCall(c, ci, opName, mfi);
+                            c.return_().end();
+                        }
+                    }
+                }
+                // Fallback to non-primitive / widest alt
+                for (int altId : ovIds) {
+                    WasmProgramLinker.FuncInfo mfi = ci.modInfo.functions.get(altId);
+                    if (mfi != null && ("neg".equals(opName) || !mfi.hir.params().isEmpty())) {
+                        emitOpDirectCall(c, ci, opName, mfi);
+                        c.return_();
+                        break;
+                    }
                 }
             }
-            if (mfi.hasOptMaskParam) c.i32Const(0);
-            c.call(mfi.directFuncIdx);
-            if (mfi.hir.returnKind().isPrimitive()) {
-                c.call(rt.boxFuncFor(mfi.hir.returnKind()));
-            }
-            c.return_().end();
+            c.end();
         }
         rt.emitStringLit(c, "Operator method not defined on " + ci.shape.name() + " : ");
         c.localGet(1).call(rt.fnStrConcat).i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
+    }
+
+    private void emitOpDirectCall(WasmCodeBuilder c, ClassInfo ci, String opName, WasmProgramLinker.FuncInfo mfi) {
+        c.localGet(0).refCast(ci.structTypeIdx);
+        if (!"neg".equals(opName) && !mfi.hir.params().isEmpty()) {
+            c.localGet(2);
+            PrimitiveKind pk = mfi.hir.params().get(0).kind();
+            if (pk.isPrimitive()) {
+                c.i32Const(ci.hir.line()).call(rt.unboxFuncFor(pk));
+            }
+        }
+        if (mfi.hasOptMaskParam) c.i32Const(0);
+        c.call(mfi.directFuncIdx);
+        if (mfi.hir.returnKind().isPrimitive()) {
+            c.call(rt.boxFuncFor(mfi.hir.returnKind()));
+        }
+    }
+
+    private void emitPrimMatchCheck(WasmCodeBuilder c, int localIdx, PrimitiveKind pk) {
+        switch (pk) {
+            case BYTE -> c.localGet(localIdx).refTest(ts.boxByteType);
+            case SHORT -> c.localGet(localIdx).refTest(ts.boxShortType)
+                    .localGet(localIdx).refTest(ts.boxByteType).op(WasmInstr.SimpleOp.I32_OR);
+            case INT -> c.localGet(localIdx).refTest(ts.boxIntType)
+                    .localGet(localIdx).refTest(ts.boxShortType).op(WasmInstr.SimpleOp.I32_OR)
+                    .localGet(localIdx).refTest(ts.boxByteType).op(WasmInstr.SimpleOp.I32_OR);
+            case LONG -> c.localGet(localIdx).call(rt.fnNumRank).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
+                    .localGet(localIdx).call(rt.fnNumRank).i32Const(3).op(WasmInstr.SimpleOp.I32_LE_S)
+                    .op(WasmInstr.SimpleOp.I32_AND);
+            case FLOAT -> c.localGet(localIdx).call(rt.fnNumRank).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
+                    .localGet(localIdx).call(rt.fnNumRank).i32Const(4).op(WasmInstr.SimpleOp.I32_LE_S)
+                    .op(WasmInstr.SimpleOp.I32_AND);
+            case DOUBLE -> c.localGet(localIdx).call(rt.fnNumRank).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S);
+            case BOOL -> c.localGet(localIdx).refTest(ts.boxBoolType);
+            case CHAR -> c.localGet(localIdx).refTest(ts.boxCharType);
+            default -> c.i32Const(1);
+        }
     }
 
     /** Builds `$ITable_I` thunk function adapting `(ref $Object)` -> `(ref $Struct_C)` and invoking the implementation. */
@@ -997,9 +1056,22 @@ public final class WasmObjectSystem {
                 int fnLocal = thunk.addLocal("fldFn", WasmValType.refNull(ts.fnBaseType), paramCount);
                 c.localGet(0).refCast(ci.structTypeIdx).structGet(ci.structTypeIdx, fi)
                         .refCast(ts.fnBaseType).localTee(fnLocal).refAsNonNull();
+                int slotOptBit = 0;
                 for (int p = 0; p < slotParams.length; p++) {
-                    c.localGet(1 + p);
-                    emitConvertValue(c, slotParams[p], PrimitiveKind.NONE, ci.hir.line());
+                    boolean slotOpt = slot.hasOptMask() && slot.sig().isOptional(p);
+                    if (slotOpt) {
+                        c.localGet(1 + slotParams.length).i32Const(1 << slotOptBit).op(WasmInstr.SimpleOp.I32_AND)
+                                .if_(ts.anyRef())
+                                .globalGet(rt.gMissing)
+                                .else_()
+                                .localGet(1 + p);
+                        emitConvertValue(c, slotParams[p], PrimitiveKind.NONE, ci.hir.line());
+                        c.end();
+                        slotOptBit++;
+                    } else {
+                        c.localGet(1 + p);
+                        emitConvertValue(c, slotParams[p], PrimitiveKind.NONE, ci.hir.line());
+                    }
                 }
                 c.arrayNewFixed(ts.anyArrType, slotParams.length)
                         .refNull(ts.anyArrType)
@@ -1023,9 +1095,11 @@ public final class WasmObjectSystem {
         int slotRest = slot.sig().restIndex();
         if (implRest >= 0 && slotRest < 0) {
             int restLocal = thunk.addLocal("restL", WasmValType.ref(ts.listType), 1 + slotParams.length + (slot.hasOptMask() ? 1 : 0));
+            int slotOptBit = 0;
             for (int p = 0; p < impl.hir.params().size(); p++) {
                 HirParam hp = impl.hir.params().get(p);
                 PrimitiveKind implPk = hp.kind();
+                boolean slotOpt = p < slotParams.length && slot.hasOptMask() && slot.sig().isOptional(p);
                 if (p == implRest) {
                     c.i32Const(Math.max(4, slotParams.length - implRest))
                             .call(linker.collections().fnListNew).localTee(restLocal);
@@ -1035,30 +1109,52 @@ public final class WasmObjectSystem {
                         c.call(linker.collections().fnListAdd).drop();
                     }
                 } else if (p < slotParams.length) {
-                    c.localGet(1 + p);
-                    emitConvertValue(c, slotParams[p],
-                            impl.hasBoxedMissingOptParams && hp.defaultValue() != null ? PrimitiveKind.NONE : implPk,
-                            ci.hir.line());
+                    boolean boxedOpt = impl.hasBoxedMissingOptParams && hp.defaultValue() != null;
+                    if (boxedOpt && slotOpt) {
+                        c.localGet(1 + slotParams.length).i32Const(1 << slotOptBit).op(WasmInstr.SimpleOp.I32_AND)
+                                .if_(ts.anyRef())
+                                .globalGet(rt.gMissing)
+                                .else_()
+                                .localGet(1 + p);
+                        emitConvertValue(c, slotParams[p], PrimitiveKind.NONE, ci.hir.line());
+                        c.end();
+                    } else {
+                        c.localGet(1 + p);
+                        emitConvertValue(c, slotParams[p], boxedOpt ? PrimitiveKind.NONE : implPk, ci.hir.line());
+                    }
                 } else if (impl.hasBoxedMissingOptParams && hp.defaultValue() != null) {
                     c.globalGet(rt.gMissing);
                 } else {
                     ts.emitDefaultValue(c, ts.valTypeFor(implPk));
                 }
+                if (slotOpt) slotOptBit++;
             }
         } else {
+            int slotOptBit = 0;
             for (int p = 0; p < impl.hir.params().size(); p++) {
                 HirParam hp = impl.hir.params().get(p);
                 PrimitiveKind implPk = hp.kind();
+                boolean slotOpt = p < slotParams.length && slot.hasOptMask() && slot.sig().isOptional(p);
                 if (p < slotParams.length) {
-                    c.localGet(1 + p);
-                    emitConvertValue(c, slotParams[p],
-                            impl.hasBoxedMissingOptParams && hp.defaultValue() != null ? PrimitiveKind.NONE : implPk,
-                            ci.hir.line());
+                    boolean boxedOpt = impl.hasBoxedMissingOptParams && hp.defaultValue() != null;
+                    if (boxedOpt && slotOpt) {
+                        c.localGet(1 + slotParams.length).i32Const(1 << slotOptBit).op(WasmInstr.SimpleOp.I32_AND)
+                                .if_(ts.anyRef())
+                                .globalGet(rt.gMissing)
+                                .else_()
+                                .localGet(1 + p);
+                        emitConvertValue(c, slotParams[p], PrimitiveKind.NONE, ci.hir.line());
+                        c.end();
+                    } else {
+                        c.localGet(1 + p);
+                        emitConvertValue(c, slotParams[p], boxedOpt ? PrimitiveKind.NONE : implPk, ci.hir.line());
+                    }
                 } else if (impl.hasBoxedMissingOptParams && hp.defaultValue() != null) {
                     c.globalGet(rt.gMissing);
                 } else {
                     ts.emitDefaultValue(c, ts.valTypeFor(implPk));
                 }
+                if (slotOpt) slotOptBit++;
             }
         }
         if (impl.hasOptMaskParam) {

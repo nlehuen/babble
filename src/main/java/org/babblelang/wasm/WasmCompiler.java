@@ -94,10 +94,13 @@ public final class WasmCompiler {
     }
 
     private static void runWasmOpt(Path wasmPath) throws IOException {
+        Path normalized = wasmPath.toAbsolutePath().normalize();
+        Path parent = normalized.getParent();
+        Path tmp = Files.createTempFile(parent, ".babble-opt-", ".wasm");
         ProcessBuilder pb = new ProcessBuilder(
                 "wasm-opt", "-O3", "--enable-gc", "--enable-reference-types",
                 "--enable-exception-handling", "--enable-tail-call", "--enable-multivalue",
-                wasmPath.toString(), "-o", wasmPath.toString());
+                normalized.toString(), "-o", tmp.toString());
         pb.redirectErrorStream(true);
         try {
             Process p = pb.start();
@@ -106,6 +109,7 @@ public final class WasmCompiler {
             if (code != 0) {
                 throw new IOException("wasm-opt failed (exit " + code + ") : " + out.trim());
             }
+            Files.move(tmp, normalized, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IOException("wasm-opt interrupted", e);
@@ -114,6 +118,8 @@ public final class WasmCompiler {
                 throw e;
             }
             throw new IOException("Cannot run wasm-opt : install Binaryen (wasm-opt) on PATH", e);
+        } finally {
+            Files.deleteIfExists(tmp);
         }
     }
 }

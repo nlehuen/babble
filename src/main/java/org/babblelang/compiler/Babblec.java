@@ -126,7 +126,7 @@ public final class Babblec {
         if (!result.ok()) {
             Writer err = context.getErrorWriter();
             for (org.babblelang.wasm.WasmPortabilityChecker.Diagnostic d : result.portabilityErrors()) {
-                err.write("Error : " + d.format() + "\n");
+                err.write(d.format() + "\n");
             }
             err.flush();
             org.babblelang.wasm.WasmPortabilityChecker.Diagnostic first = result.portabilityErrors().get(0);

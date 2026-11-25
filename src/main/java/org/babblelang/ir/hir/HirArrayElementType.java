@@ -11,6 +11,7 @@ import org.babblelang.analysis.PrimitiveKind;
  */
 public sealed interface HirArrayElementType permits
         HirArrayElementType.Primitive,
+        HirArrayElementType.BoxedPrimitive,
         HirArrayElementType.StringType,
         HirArrayElementType.BabbleType,
         HirArrayElementType.Array,
@@ -20,6 +21,9 @@ public sealed interface HirArrayElementType permits
         HirArrayElementType.JavaClass {
 
     record Primitive(PrimitiveKind kind) implements HirArrayElementType {
+    }
+
+    record BoxedPrimitive(PrimitiveKind kind) implements HirArrayElementType {
     }
 
     record StringType() implements HirArrayElementType {
@@ -49,10 +53,13 @@ public sealed interface HirArrayElementType permits
             return new Primitive(elemKind);
         }
         HirArrayElementType base;
+        PrimitiveKind boxedPrim = boxedPrimitiveKind(componentClass);
         if (babbleTypeId != null) {
             base = new BabbleType(babbleTypeId, babbleIsInterface);
         } else if (componentClass == null || componentClass == Object.class) {
             base = new Any();
+        } else if (boxedPrim != null) {
+            base = new BoxedPrimitive(boxedPrim);
         } else if (componentClass == String.class) {
             base = new StringType();
         } else if (componentClass == org.babblelang.runtime.BabbleException.class) {
@@ -83,6 +90,10 @@ public sealed interface HirArrayElementType permits
             if (cls == boolean.class) return new Primitive(PrimitiveKind.BOOL);
             if (cls == char.class) return new Primitive(PrimitiveKind.CHAR);
         }
+        PrimitiveKind boxedPrim = boxedPrimitiveKind(cls);
+        if (boxedPrim != null) {
+            return new BoxedPrimitive(boxedPrim);
+        }
         if (cls == String.class) {
             return new StringType();
         }
@@ -97,6 +108,18 @@ public sealed interface HirArrayElementType permits
             return new CoreCollection(core);
         }
         return new JavaClass(cls);
+    }
+
+    private static PrimitiveKind boxedPrimitiveKind(Class<?> cls) {
+        if (cls == Byte.class) return PrimitiveKind.BYTE;
+        if (cls == Short.class) return PrimitiveKind.SHORT;
+        if (cls == Integer.class) return PrimitiveKind.INT;
+        if (cls == Long.class) return PrimitiveKind.LONG;
+        if (cls == Float.class) return PrimitiveKind.FLOAT;
+        if (cls == Double.class) return PrimitiveKind.DOUBLE;
+        if (cls == Boolean.class) return PrimitiveKind.BOOL;
+        if (cls == Character.class) return PrimitiveKind.CHAR;
+        return null;
     }
 
     private static String coreCollectionKind(Class<?> cls) {

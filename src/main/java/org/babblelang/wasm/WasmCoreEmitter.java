@@ -281,7 +281,10 @@ public final class WasmCoreEmitter {
                 if (fromArg != null) {
                     fe.emitBoxed(fromArg);
                     int tmp = ctx.newLocal("$reuseL", ts.anyRef());
-                    c.localTee(tmp).refTest(ts.listType).if_(ts.anyRef())
+                    c.localTee(tmp).refTest(ts.listType).if_(WasmValType.I32)
+                            .localGet(tmp).refCast(ts.listType).structGet(ts.listType, 2).refIsNull()
+                            .else_().i32Const(0).end()
+                            .if_(ts.anyRef())
                             .localGet(tmp)
                             .else_();
                     int l = ctx.newLocal("$newL", WasmValType.ref(ts.listType));
@@ -302,6 +305,8 @@ public final class WasmCoreEmitter {
                     int tmp = ctx.newLocal("$reuseS", ts.anyRef());
                     c.localTee(tmp).refTest(ts.setType).if_(WasmValType.I32)
                             .localGet(tmp).refCast(ts.setType).structGet(ts.setType, 2).op(WasmInstr.SimpleOp.I32_EQZ)
+                            .localGet(tmp).refCast(ts.setType).structGet(ts.setType, 3).refIsNull()
+                            .op(WasmInstr.SimpleOp.I32_AND)
                             .else_().i32Const(0).end()
                             .if_(ts.anyRef())
                             .localGet(tmp)
@@ -577,8 +582,13 @@ public final class WasmCoreEmitter {
         if (coreKind != null && dispatchCoreMethod(coreKind, name, call.receiver(), call.args(), call.meta().kind(), line)) {
             return;
         }
-        if ("java.lang.Math".equals(owner) && emitMathMethod(name, call.args(), call.meta().kind(), line)) {
-            return;
+        if ("java.lang.Math".equals(owner) || "java.lang.StrictMath".equals(owner)) {
+            if (!call.pureStaticReceiver() && call.receiver() != null) {
+                fe.emitVoid(call.receiver());
+            }
+            if (emitMathMethod(name, call.target().method(), call.args(), call.meta().kind(), line)) {
+                return;
+            }
         }
         if ("java.lang.Object".equals(owner) && emitObjectMethod(name, call.receiver(), call.args(), line)) {
             return;
@@ -599,9 +609,9 @@ public final class WasmCoreEmitter {
             case "java.util.Collection", "java.lang.Iterable" -> "collection";
             case "java.util.Map", "java.util.SortedMap", "java.util.NavigableMap",
                  "java.util.LinkedHashMap", "java.util.TreeMap", "java.util.HashMap" -> "map";
-            case "java.util.Map$Entry" -> "entry";
+            case "java.util.Map$Entry", "java.util.AbstractMap$SimpleImmutableEntry" -> "entry";
             case "java.util.Iterator" -> "iterator";
-            case "java.lang.Appendable" -> "appendable";
+            case "java.lang.Appendable", "java.io.Writer", "java.io.PrintWriter" -> "appendable";
             default -> null;
         };
     }
@@ -615,7 +625,7 @@ public final class WasmCoreEmitter {
             case "set", "sortedset" -> emitSetMethod(name, recv, args, line);
             case "collection" -> emitCollectionMethod(name, recv, args, line);
             case "map", "sortedmap" -> emitMapMethod(name, recv, args, line);
-            case "entry" -> emitEntryMethod(name, recv, args);
+            case "entry" -> emitEntryMethod(name, recv, args, line);
             case "iterator" -> emitIteratorMethod(name, recv, line);
             case "appendable" -> emitAppendableMethod(name, recv, args, line);
             default -> false;
@@ -774,7 +784,18 @@ public final class WasmCoreEmitter {
             case "compareTo" -> { fe.emitBoxed(args.get(0)); c.refCast(ts.stringType).call(strings.fnCompareTo); ctx.stackKind = PrimitiveKind.INT; return true; }
             case "concat" -> { fe.emitBoxed(args.get(0)); c.refCast(ts.stringType).call(rt.fnStrConcat); ctx.stackKind = PrimitiveKind.NONE; return true; }
             case "repeat" -> { fe.emitAs(args.get(0), PrimitiveKind.INT); c.i32Const(line).call(strings.fnRepeat); ctx.stackKind = PrimitiveKind.NONE; return true; }
-            case "split" -> { fe.emitBoxed(args.get(0)); c.refCast(ts.stringType).call(strings.fnSplit); ctx.stackKind = PrimitiveKind.NONE; return true; }
+            case "split" -> {
+                fe.emitBoxed(args.get(0));
+                c.refCast(ts.stringType);
+                if (args.size() >= 2) {
+                    fe.emitAs(args.get(1), PrimitiveKind.INT);
+                } else {
+                    c.i32Const(0);
+                }
+                c.call(strings.fnSplit);
+                ctx.stackKind = PrimitiveKind.NONE;
+                return true;
+            }
             case "toCharArray" -> { c.call(strings.fnToCharArray); ctx.stackKind = PrimitiveKind.NONE; return true; }
             case "equals" -> { fe.emitBoxed(args.get(0)); c.call(rt.fnEquals); ctx.stackKind = PrimitiveKind.BOOL; return true; }
             case "hashCode" -> { c.call(rt.fnStrHash); ctx.stackKind = PrimitiveKind.INT; return true; }
@@ -815,7 +836,8 @@ public final class WasmCoreEmitter {
             }
             case "set" -> { fe.emitAs(args.get(0), PrimitiveKind.INT); fe.emitBoxed(args.get(1)); c.i32Const(line).call(cols.fnListSet); ctx.stackKind = PrimitiveKind.NONE; return true; }
             case "remove" -> {
-                if (args.get(0).meta().kind() == PrimitiveKind.INT) {
+                PrimitiveKind ak = args.get(0).meta().kind();
+                if (ak == PrimitiveKind.INT || ak == PrimitiveKind.BYTE || ak == PrimitiveKind.SHORT) {
                     fe.emitAs(args.get(0), PrimitiveKind.INT);
                     c.i32Const(line).call(cols.fnListRemoveAt);
                     ctx.stackKind = PrimitiveKind.NONE;
@@ -912,12 +934,53 @@ public final class WasmCoreEmitter {
                 ctx.stackKind = PrimitiveKind.BOOL;
                 return true;
             }
+            case "remove" -> {
+                fe.emitBoxed(args.get(0));
+                int v = ctx.newLocal("$cv", ts.anyRef());
+                c.localSet(v);
+                c.localGet(col).refTest(ts.listType).if_(WasmValType.I32)
+                        .localGet(col).refCast(ts.listType).localGet(v).call(cols.fnListRemoveVal)
+                        .else_()
+                        .localGet(col).refCast(ts.setType).localGet(v).call(cols.fnSetRemove)
+                        .end();
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "addAll" -> {
+                fe.emitBoxed(args.get(0));
+                int src = ctx.newLocal("$cSrc", ts.anyRef());
+                c.localSet(src);
+                c.localGet(col).refTest(ts.listType).if_(WasmValType.I32)
+                        .localGet(col).refCast(ts.listType).localGet(src).i32Const(line).call(cols.fnListAddAll)
+                        .else_()
+                        .localGet(col).refCast(ts.setType).localGet(src).i32Const(line).call(cols.fnSetAddAll)
+                        .end();
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
             case "clear" -> {
                 c.localGet(col).refTest(ts.listType).if_()
                         .localGet(col).refCast(ts.listType).call(cols.fnListClear)
                         .else_()
                         .localGet(col).refCast(ts.setType).call(cols.fnSetClear)
                         .end().refNull(ts.anyType);
+                ctx.stackKind = PrimitiveKind.NONE;
+                return true;
+            }
+            case "equals" -> {
+                c.localGet(col);
+                fe.emitBoxed(args.get(0));
+                c.call(rt.fnEquals);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "hashCode" -> {
+                c.localGet(col).call(rt.fnHashCode);
+                ctx.stackKind = PrimitiveKind.INT;
+                return true;
+            }
+            case "toString" -> {
+                c.localGet(col).call(rt.fnFormat);
                 ctx.stackKind = PrimitiveKind.NONE;
                 return true;
             }
@@ -965,7 +1028,7 @@ public final class WasmCoreEmitter {
         }
     }
 
-    private boolean emitEntryMethod(String name, HirExpr recv, List<HirExpr> args) {
+    private boolean emitEntryMethod(String name, HirExpr recv, List<HirExpr> args, int line) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         fe.emitBoxed(recv);
@@ -974,12 +1037,8 @@ public final class WasmCoreEmitter {
             case "getKey" -> { c.structGet(ts.entryType, 0); ctx.stackKind = PrimitiveKind.NONE; return true; }
             case "getValue" -> { c.structGet(ts.entryType, 1); ctx.stackKind = PrimitiveKind.NONE; return true; }
             case "setValue" -> {
-                int e = ctx.newLocal("$ent", WasmValType.ref(ts.entryType));
-                int prev = ctx.newLocal("$ePrev", ts.anyRef());
-                c.localTee(e).structGet(ts.entryType, 1).localSet(prev);
-                c.localGet(e);
                 fe.emitBoxed(args.get(0));
-                c.structSet(ts.entryType, 1).localGet(prev);
+                c.i32Const(line).call(cols.fnEntrySetValue);
                 ctx.stackKind = PrimitiveKind.NONE;
                 return true;
             }
@@ -1059,11 +1118,23 @@ public final class WasmCoreEmitter {
         return false;
     }
 
-    private boolean emitMathMethod(String name, List<HirExpr> args, PrimitiveKind retKind, int line) {
+    private static PrimitiveKind javaClassToPrimitiveKind(Class<?> cls, PrimitiveKind fallback) {
+        if (cls == int.class) return PrimitiveKind.INT;
+        if (cls == long.class) return PrimitiveKind.LONG;
+        if (cls == float.class) return PrimitiveKind.FLOAT;
+        if (cls == double.class) return PrimitiveKind.DOUBLE;
+        return fallback;
+    }
+
+    private boolean emitMathMethod(String name, java.lang.reflect.Method method, List<HirExpr> args,
+                                   PrimitiveKind retKind, int line) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
+        Class<?>[] pTypes = method != null ? method.getParameterTypes() : new Class<?>[0];
         if (args.size() == 1) {
-            PrimitiveKind ak = retKind.isPrimitive() ? retKind : PrimitiveKind.DOUBLE;
+            PrimitiveKind ak = pTypes.length == 1
+                    ? javaClassToPrimitiveKind(pTypes[0], retKind.isPrimitive() ? retKind : PrimitiveKind.DOUBLE)
+                    : (retKind.isPrimitive() ? retKind : PrimitiveKind.DOUBLE);
             switch (name) {
                 case "abs" -> {
                     fe.emitAs(args.get(0), ak);
@@ -1092,17 +1163,48 @@ public final class WasmCoreEmitter {
                 case "ceil" -> { fe.emitAs(args.get(0), PrimitiveKind.DOUBLE); c.op(WasmInstr.SimpleOp.F64_CEIL); ctx.stackKind = PrimitiveKind.DOUBLE; return true; }
                 case "rint" -> { fe.emitAs(args.get(0), PrimitiveKind.DOUBLE); c.op(WasmInstr.SimpleOp.F64_NEAREST); ctx.stackKind = PrimitiveKind.DOUBLE; return true; }
                 case "round" -> {
-                    fe.emitAs(args.get(0), PrimitiveKind.DOUBLE);
-                    c.f64Const(0.5).op(WasmInstr.SimpleOp.F64_ADD).op(WasmInstr.SimpleOp.F64_FLOOR)
-                            .op(WasmInstr.SimpleOp.I64_TRUNC_SAT_F64_S);
-                    ctx.stackKind = PrimitiveKind.LONG;
+                    if (ak == PrimitiveKind.FLOAT) {
+                        // Exact Java Math.round(float) -> int
+                        int x = ctx.newLocal("$rndF", WasmValType.F32);
+                        fe.emitAs(args.get(0), PrimitiveKind.FLOAT);
+                        c.localTee(x).f32Const(0.49999997f).op(WasmInstr.SimpleOp.F32_EQ).if_(WasmValType.I32)
+                                .i32Const(0)
+                                .else_()
+                                .localGet(x).op(WasmInstr.SimpleOp.F32_ABS).f32Const(8388608.0f).op(WasmInstr.SimpleOp.F32_GE)
+                                .localGet(x).localGet(x).op(WasmInstr.SimpleOp.F32_NE).op(WasmInstr.SimpleOp.I32_OR)
+                                .if_(WasmValType.I32)
+                                .localGet(x).op(WasmInstr.SimpleOp.I32_TRUNC_SAT_F32_S)
+                                .else_()
+                                .localGet(x).f32Const(0.5f).op(WasmInstr.SimpleOp.F32_ADD).op(WasmInstr.SimpleOp.F32_FLOOR)
+                                .op(WasmInstr.SimpleOp.I32_TRUNC_SAT_F32_S)
+                                .end().end();
+                        ctx.stackKind = PrimitiveKind.INT;
+                    } else {
+                        // Exact Java Math.round(double) -> long
+                        int x = ctx.newLocal("$rndD", WasmValType.F64);
+                        fe.emitAs(args.get(0), PrimitiveKind.DOUBLE);
+                        c.localTee(x).f64Const(0.49999999999999994).op(WasmInstr.SimpleOp.F64_EQ).if_(WasmValType.I64)
+                                .i64Const(0L)
+                                .else_()
+                                .localGet(x).op(WasmInstr.SimpleOp.F64_ABS).f64Const(4503599627370496.0).op(WasmInstr.SimpleOp.F64_GE)
+                                .localGet(x).localGet(x).op(WasmInstr.SimpleOp.F64_NE).op(WasmInstr.SimpleOp.I32_OR)
+                                .if_(WasmValType.I64)
+                                .localGet(x).op(WasmInstr.SimpleOp.I64_TRUNC_SAT_F64_S)
+                                .else_()
+                                .localGet(x).f64Const(0.5).op(WasmInstr.SimpleOp.F64_ADD).op(WasmInstr.SimpleOp.F64_FLOOR)
+                                .op(WasmInstr.SimpleOp.I64_TRUNC_SAT_F64_S)
+                                .end().end();
+                        ctx.stackKind = PrimitiveKind.LONG;
+                    }
                     return true;
                 }
                 default -> { return false; }
             }
         }
         if (args.size() == 2) {
-            PrimitiveKind ak = retKind.isPrimitive() ? retKind : PrimitiveKind.DOUBLE;
+            PrimitiveKind ak = pTypes.length == 2
+                    ? javaClassToPrimitiveKind(pTypes[0], retKind.isPrimitive() ? retKind : PrimitiveKind.DOUBLE)
+                    : (retKind.isPrimitive() ? retKind : PrimitiveKind.DOUBLE);
             switch (name) {
                 case "min" -> {
                     fe.emitAs(args.get(0), ak);

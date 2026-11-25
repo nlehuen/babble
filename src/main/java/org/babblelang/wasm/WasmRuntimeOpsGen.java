@@ -557,6 +557,8 @@ public final class WasmRuntimeOpsGen {
     private void emitOutOfRange(WasmCodeBuilder c, String typeName, int valLocal, int textLocal, int lineLocal) {
         rt.emitStringLit(c, "Out of the " + typeName + " range : ");
         c.localGet(textLocal).structGet(ts.stringType, 0).arrayLen().i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S)
+                .localGet(textLocal).localGet(valLocal).call(rt.fnFormat).call(rt.fnStrEq).op(WasmInstr.SimpleOp.I32_EQZ)
+                .op(WasmInstr.SimpleOp.I32_AND)
                 .if_(WasmValType.ref(ts.stringType))
                 .localGet(textLocal);
         rt.emitStringLit(c, " = ");

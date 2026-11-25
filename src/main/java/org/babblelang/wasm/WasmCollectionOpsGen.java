@@ -41,6 +41,7 @@ public final class WasmCollectionOpsGen {
 
     // Entry
     public final int fnEntryNew;
+    public final int fnEntrySetValue;
 
     // Map / SortedMap
     public final int fnMapNew;
@@ -107,6 +108,7 @@ public final class WasmCollectionOpsGen {
         WasmModule.FuncDef dSetIter = mod.addFunction("set_iter", ts.internFuncType(List.of(refSet), List.of(refIter)), List.of("s"));
 
         WasmModule.FuncDef dEntryNew = mod.addFunction("entry_new", ts.internFuncType(List.of(refAny, refAny), List.of(refEntry)), List.of("k", "v"));
+        WasmModule.FuncDef dEntrySetVal = mod.addFunction("entry_setValue", ts.internFuncType(List.of(refEntry, refAny, WasmValType.I32), List.of(refAny)), List.of("e", "v", "line"));
 
         WasmModule.FuncDef dMapNew = mod.addFunction("map_new", ts.internFuncType(List.of(WasmValType.I32), List.of(refMap)), List.of("sorted"));
         WasmModule.FuncDef dMapPut = mod.addFunction("map_put", ts.internFuncType(List.of(refMap, refAny, refAny, WasmValType.I32), List.of(refAny)), List.of("m", "k", "v", "line"));
@@ -156,6 +158,7 @@ public final class WasmCollectionOpsGen {
         this.fnSetIter = dSetIter.funcIndex();
 
         this.fnEntryNew = dEntryNew.funcIndex();
+        this.fnEntrySetValue = dEntrySetVal.funcIndex();
 
         this.fnMapNew = dMapNew.funcIndex();
         this.fnMapPut = dMapPut.funcIndex();
@@ -184,6 +187,7 @@ public final class WasmCollectionOpsGen {
                 dListIdx, dListLastIdx, dListContains, dListClear, dListAddAll, dListSub, dListIter);
         emitSetOps(dSetNew, dSetAdd, dSetContains, dSetRem, dSetClear, dSetFirst, dSetLast, dSetAddAll, dSetIter);
         emitEntryNew(dEntryNew);
+        emitEntrySetValue(dEntrySetVal);
         emitMapOps(dMapNew, dMapPut, dMapGet, dMapGetDef, dMapHasK, dMapHasV, dMapRem,
                 dMapClear, dMapKeys, dMapVals, dMapEntries, dMapFirstK, dMapLastK, dMapPutAll);
         emitIterOps(dIterHas, dIterNext);
@@ -428,6 +432,11 @@ public final class WasmCollectionOpsGen {
         int sz = fn.addLocal("sz", WasmValType.I32, 3);
         int srcArr = fn.addLocal("srcArr", WasmValType.refNull(ts.anyArrType), 3);
 
+        // Reject null source (Java addAll throws NullPointerException)
+        c.localGet(1).refIsNull().if_();
+        rt.emitStringLit(c, "NullPointerException");
+        c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
+
         // From $List
         c.localGet(1).refTest(ts.listType).if_()
                 .localGet(1).refCast(ts.listType).structGet(ts.listType, 0).localSet(srcArr)
@@ -591,11 +600,22 @@ public final class WasmCollectionOpsGen {
             int k = dAdd.addLocal("k", WasmValType.I32, 3);
             int grown = dAdd.addLocal("grown", WasmValType.refNull(ts.anyArrType), 3);
 
+            // Map.keySet() views do not support add()
+            c.localGet(0).structGet(ts.setType, 3).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_();
+            rt.emitStringLit(c, "UnsupportedOperationException");
+            c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
+
             c.localGet(0).structGet(ts.setType, 0).localTee(arr).arrayLen().localSet(cap);
             c.localGet(0).structGet(ts.setType, 1).localSet(sz);
 
             // Find insertion position (or detect duplicate)
             c.localGet(0).structGet(ts.setType, 2).if_();
+            // Sorted set: validate comparability even on the first element (matching TreeSet)
+            c.localGet(sz).op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(1).localGet(1);
+            rt.emitStringLit(c, "a");
+            rt.emitStringLit(c, "b");
+            c.localGet(2).call(rt.fnCompare).drop().end();
             // Sorted set: linear/ordered scan with rt.fnCompare
             c.i32Const(0).localSet(pos);
             c.block().loop()
@@ -705,7 +725,20 @@ public final class WasmCollectionOpsGen {
     // ---------------------------------------------------------------- Entry & Map / SortedMap
 
     private void emitEntryNew(WasmModule.FuncDef d) {
-        d.code().localGet(0).localGet(1).structNew(ts.entryType);
+        d.code().localGet(0).localGet(1).refNull(ts.mapType).structNew(ts.entryType);
+    }
+
+    private void emitEntrySetValue(WasmModule.FuncDef d) {
+        WasmCodeBuilder c = d.code();
+        int prev = d.addLocal("prev", ts.anyRef(), 3);
+        c.localGet(0).structGet(ts.entryType, 1).localSet(prev);
+        c.localGet(0).localGet(1).structSet(ts.entryType, 1);
+        c.localGet(0).structGet(ts.entryType, 2).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                .localGet(0).structGet(ts.entryType, 2).refAsNonNull()
+                .localGet(0).structGet(ts.entryType, 0)
+                .localGet(1).localGet(2).call(fnMapPut).drop()
+                .end();
+        c.localGet(prev);
     }
 
     private void emitMapOps(WasmModule.FuncDef dNew, WasmModule.FuncDef dPut, WasmModule.FuncDef dGet,
@@ -737,6 +770,12 @@ public final class WasmCollectionOpsGen {
             c.localGet(0).structGet(ts.mapType, 2).localSet(sz);
 
             c.localGet(0).structGet(ts.mapType, 3).if_();
+            // Sorted map: validate key comparability even on first entry (matching TreeMap)
+            c.localGet(sz).op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(1).localGet(1);
+            rt.emitStringLit(c, "a");
+            rt.emitStringLit(c, "b");
+            c.localGet(3).call(rt.fnCompare).drop().end();
             // Sorted map: find position via rt.fnCompare
             c.i32Const(0).localSet(pos);
             c.block().loop()
@@ -960,7 +999,7 @@ public final class WasmCollectionOpsGen {
                     .localGet(s).refAsNonNull()
                     .localGet(0).structGet(ts.mapType, 0).localGet(i).arrayGet(ts.anyArrType)
                     .localGet(0).structGet(ts.mapType, 1).localGet(i).arrayGet(ts.anyArrType)
-                    .call(fnEntryNew)
+                    .localGet(0).structNew(ts.entryType)
                     .i32Const(0).call(fnSetAdd).drop()
                     .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
                     .br(1).end().end();
@@ -989,6 +1028,9 @@ public final class WasmCollectionOpsGen {
             int i = dPutAll.addLocal("i", WasmValType.I32, 3);
             int sz = dPutAll.addLocal("sz", WasmValType.I32, 3);
             int sm = dPutAll.addLocal("sm", WasmValType.refNull(ts.mapType), 3);
+            c.localGet(1).refIsNull().if_();
+            rt.emitStringLit(c, "NullPointerException");
+            c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
             c.localGet(1).refTest(ts.mapType).if_()
                     .localGet(1).refCast(ts.mapType).localTee(sm).structGet(ts.mapType, 2).localSet(sz)
                     .i32Const(0).localSet(i)
@@ -1137,20 +1179,19 @@ public final class WasmCollectionOpsGen {
     }
 
     private void emitColFmt(WasmModule.FuncDef fn) {
+        int gStack = mod.addGlobal("G_COL_FMT_STACK", WasmValType.refNull(ts.anyArrType), true,
+                ts.defaultConstExpr(WasmValType.refNull(ts.anyArrType)));
+        int gDepth = mod.addGlobal("G_COL_FMT_DEPTH", WasmValType.I32, true, List.of(new WasmInstr.I32Const(0)));
+
         WasmCodeBuilder c = fn.code();
         int out = fn.addLocal("out", WasmValType.refNull(ts.stringType), 1);
         int i = fn.addLocal("i", WasmValType.I32, 1);
         int sz = fn.addLocal("sz", WasmValType.I32, 1);
-        // $List or $Set -> "[a, b]"
-        c.localGet(0).refTest(ts.listType).if_();
-        emitSeqFmt(c, ts.listType, 0, 1, out, i, sz);
-        c.localGet(out).refAsNonNull().return_().end();
+        int depth = fn.addLocal("depth", WasmValType.I32, 1);
+        int stack = fn.addLocal("stack", WasmValType.refNull(ts.anyArrType), 1);
+        int exn = fn.addLocal("exn", WasmValType.EXNREF, 1);
 
-        c.localGet(0).refTest(ts.setType).if_();
-        emitSeqFmt(c, ts.setType, 0, 1, out, i, sz);
-        c.localGet(out).refAsNonNull().return_().end();
-
-        // $Entry -> "k=v"
+        // $Entry -> "k=v" (does not cycle directly without going through a collection/map)
         c.localGet(0).refTest(ts.entryType).if_()
                 .localGet(0).refCast(ts.entryType).structGet(ts.entryType, 0).call(rt.fnFormat);
         rt.emitStringLit(c, "=");
@@ -1158,8 +1199,45 @@ public final class WasmCollectionOpsGen {
                 .localGet(0).refCast(ts.entryType).structGet(ts.entryType, 1).call(rt.fnFormat)
                 .call(rt.fnStrConcat).return_().end();
 
+        // Lazy-init visited stack (capacity 64) for cycle detection on $List / $Set / $Map
+        c.globalGet(gStack).refIsNull().if_()
+                .i32Const(64).arrayNewDefault(ts.anyArrType).globalSet(gStack)
+                .end();
+        c.globalGet(gStack).localSet(stack);
+        c.globalGet(gDepth).localSet(depth);
+
+        // Cycle check
+        c.i32Const(0).localSet(i);
+        c.block().loop()
+                .localGet(i).localGet(depth).op(WasmInstr.SimpleOp.I32_GE_S).brIf(1)
+                .localGet(stack).refAsNonNull().localGet(i).arrayGet(ts.anyArrType)
+                .localGet(0).refEq().if_()
+                .localGet(0).refTest(ts.mapType).if_();
+        rt.emitStringLit(c, "(this Map)");
+        c.return_().end();
+        rt.emitStringLit(c, "(this Collection)");
+        c.return_().end()
+                .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
+                .br(0).end().end();
+
+        // Push self onto visited stack
+        c.localGet(depth).i32Const(64).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .localGet(stack).refAsNonNull().localGet(depth).localGet(0).arraySet(ts.anyArrType)
+                .localGet(depth).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).globalSet(gDepth)
+                .end();
+
+        // Guard formatting with try_table (catch_all_ref) so throwing element toString() restores stack
+        c.block(); // done (depth 1 from try_table)
+        c.block(WasmValType.EXNREF); // catch_exn (depth 0 from try_table)
+        c.tryTable(List.of(WasmInstr.CatchClause.catchAllRef(0)));
+
+        // $List or $Set -> "[a, b]"
+        c.localGet(0).refTest(ts.listType).if_();
+        emitSeqFmt(c, ts.listType, 0, 1, out, i, sz);
+        c.else_().localGet(0).refTest(ts.setType).if_();
+        emitSeqFmt(c, ts.setType, 0, 1, out, i, sz);
+        c.else_().localGet(0).refTest(ts.mapType).if_();
         // $Map -> "{k1=v1, k2=v2}"
-        c.localGet(0).refTest(ts.mapType).if_();
         rt.emitStringLit(c, "{");
         c.localSet(out)
                 .localGet(0).refCast(ts.mapType).structGet(ts.mapType, 2).localSet(sz)
@@ -1181,9 +1259,29 @@ public final class WasmCollectionOpsGen {
                 .br(1).end().end()
                 .localGet(out).refAsNonNull();
         rt.emitStringLit(c, "}");
-        c.call(rt.fnStrConcat).return_().end();
-
+        c.call(rt.fnStrConcat).localSet(out)
+                .else_();
         rt.emitStringLit(c, "<collection>");
+        c.localSet(out).end().end().end();
+
+        c.end(); // end try_table
+        c.br(1); // normal completion -> jump past catch_exn
+        c.end(); // end catch_exn -> stack: exnref
+        c.localSet(exn);
+        c.localGet(depth).i32Const(64).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .localGet(stack).refAsNonNull().localGet(depth).refNull(ts.anyType).arraySet(ts.anyArrType)
+                .end();
+        c.localGet(depth).globalSet(gDepth);
+        c.localGet(exn).refAsNonNull().throwRef();
+        c.end(); // end done
+
+        // Pop visited stack and clear slot
+        c.localGet(depth).i32Const(64).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .localGet(stack).refAsNonNull().localGet(depth).refNull(ts.anyType).arraySet(ts.anyArrType)
+                .end();
+        c.localGet(depth).globalSet(gDepth);
+
+        c.localGet(out).refAsNonNull();
     }
 
     private void emitSeqFmt(WasmCodeBuilder c, int structType, int arrField, int szField, int out, int i, int sz) {

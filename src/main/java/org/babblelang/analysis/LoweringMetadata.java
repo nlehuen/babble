@@ -405,6 +405,10 @@ public final class LoweringMetadata {
         wasmImports.put(spec.module() + "." + spec.name(), spec);
     }
 
+    public LoweringTargets.WasmImportSpec wasmImport(String module, String name) {
+        return wasmImports.get(module + "." + name);
+    }
+
     public List<LoweringTargets.WasmImportSpec> wasmImports() {
         return List.copyOf(wasmImports.values());
     }
