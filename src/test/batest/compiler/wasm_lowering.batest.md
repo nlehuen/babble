@@ -210,7 +210,7 @@ contains _compute
 ## Nothrow finally elides inner suppression handler (BIP025-D13, BIP028-D5)
 
 ```babble
-def cleanup = 0
+var cleanup = 0
 def safeFinally = fn io (boom: bool): int -> (
     try (
         if boom then (throw exception("boom"))
@@ -267,27 +267,31 @@ fn safeFinally(v0: bool) -> int:
     v2: int = const 10
     br bb4
   bb4:
-    v3: any = opaque.NameRead(cleanup) {read:shared,throws}
+    v3: any = name_read cleanup {read:shared}
     v4: int = convert.int v3
     v5: int = const 1
     v6: int = add v4, v5 {pure}
-    v7: any = opaque.NameAssign(cleanup, v6) {impure}
+    v7: any = convert.any v6
+    v8: any = name_assign cleanup, v7 {write:shared,throws}
+    v9: any = checkcast v8 <int|int|>
     br bb5
   bb5:
     ret v2
   bb6 [unwind: * -> bb7]:
-    v8: any = const "boom"
-    v9: any = new_java BabbleException(v8) {pure!}
-    rethrow v9
-  bb7(v10: any) [handler]:
+    v10: any = const "boom"
+    v11: any = new_java BabbleException(v10) {pure!}
+    rethrow v11
+  bb7(v12: any) [handler]:
     br bb8
   bb8:
-    v11: any = opaque.NameRead(cleanup) {read:shared,throws}
-    v12: int = convert.int v11
-    v13: int = const 1
-    v14: int = add v12, v13 {pure}
-    v15: any = opaque.NameAssign(cleanup, v14) {impure}
-    rethrow v10
+    v13: any = name_read cleanup {read:shared}
+    v14: int = convert.int v13
+    v15: int = const 1
+    v16: int = add v14, v15 {pure}
+    v17: any = convert.any v16
+    v18: any = name_assign cleanup, v17 {write:shared,throws}
+    v19: any = checkcast v18 <int|int|>
+    rethrow v12
 ```
 
 ```mir
@@ -301,27 +305,31 @@ fn safeFinally(v0: bool) -> int:
     v1: int = const 10
     br bb3
   bb3:
-    v2: any = opaque.NameRead(cleanup) {read:shared,throws}
+    v2: any = name_read cleanup {read:shared}
     v3: int = convert.int v2
     v4: int = const 1
     v5: int = add v3, v4 {pure}
-    v6: any = opaque.NameAssign(cleanup, v5) {impure}
+    v6: any = convert.any v5
+    v7: any = name_assign cleanup, v6 {write:shared,throws}
+    v8: any = checkcast v7 <int|int|>
     br bb4
   bb4:
     ret v1
   bb5 [unwind: * -> bb6]:
-    v7: any = const "boom"
-    v8: any = new_java BabbleException(v7) {pure!}
-    rethrow v8
-  bb6(v9: any) [handler]:
+    v9: any = const "boom"
+    v10: any = new_java BabbleException(v9) {pure!}
+    rethrow v10
+  bb6(v11: any) [handler]:
     br bb7
   bb7:
-    v10: any = opaque.NameRead(cleanup) {read:shared,throws}
-    v11: int = convert.int v10
-    v12: int = const 1
-    v13: int = add v11, v12 {pure}
-    v14: any = opaque.NameAssign(cleanup, v13) {impure}
-    rethrow v9
+    v12: any = name_read cleanup {read:shared}
+    v13: int = convert.int v12
+    v14: int = const 1
+    v15: int = add v13, v14 {pure}
+    v16: any = convert.any v15
+    v17: any = name_assign cleanup, v16 {write:shared,throws}
+    v18: any = checkcast v17 <int|int|>
+    rethrow v11
 ```
 
 ```wat
