@@ -29,7 +29,9 @@ import java.util.Set;
 public final class WasmObjectSystem {
     public record ITableSlot(
             int slotIdx,
+            String slotKey,
             String memberName,
+            int overloadAltIndex,
             LoweringTargets.FunctionSignature sig,
             int wasmSigTypeIdx,
             boolean hasOptMask
@@ -43,6 +45,11 @@ public final class WasmObjectSystem {
         public final List<ITableSlot> slots = new ArrayList<>();
         public final Map<String, ITableSlot> slotByName = new LinkedHashMap<>();
         public final List<ClassInfo> implementers = new ArrayList<>();
+        public final Set<String> allSuperIfaceIds = new LinkedHashSet<>();
+        public final List<HirVar> capturedVars = new ArrayList<>();
+        public int capStructTypeIdx = -1;
+        public int capSlotIdx = -1;
+        public int latestCapEnvGlobalIdx = -1;
         public int itableStructType = -1;
         public int ifaceValGlobalIdx = -1;
         public int staticInitDoneGlobalIdx = -1;
@@ -51,6 +58,10 @@ public final class WasmObjectSystem {
             this.ifaceIdx = ifaceIdx;
             this.modInfo = modInfo;
             this.hir = hir;
+        }
+
+        public boolean hasCaptures() {
+            return !capturedVars.isEmpty();
         }
     }
 
@@ -65,7 +76,10 @@ public final class WasmObjectSystem {
         public final boolean[] fieldMutable;
         public final int defMaskFieldIdx; // -1 if none
         public final int captureBaseFieldIdx;
+        public final int hiddenCellBaseFieldIdx;
+        public final List<HirVar> hiddenCells;
         public final boolean hasCaptures;
+        public final boolean hasCapturingIfaces;
         public final long ifaceBits;
         public final long[] ifaceWords; // null if <= 64 interfaces
         public final Set<IfaceInfo> implementedIfaces = new LinkedHashSet<>();
@@ -93,7 +107,8 @@ public final class WasmObjectSystem {
 
         ClassInfo(int classId, WasmProgramLinker.ModuleLinkInfo modInfo, HirClass hir, int structTypeIdx,
                   int[] memberToStructField, PrimitiveKind[] memberKinds, boolean[] fieldMutable,
-                  int defMaskFieldIdx, int captureBaseFieldIdx, long ifaceBits, long[] ifaceWords) {
+                  int defMaskFieldIdx, int captureBaseFieldIdx, int hiddenCellBaseFieldIdx, List<HirVar> hiddenCells,
+                  boolean hasCapturingIfaces, long ifaceBits, long[] ifaceWords) {
             this.classId = classId;
             this.modInfo = modInfo;
             this.hir = hir;
@@ -104,7 +119,10 @@ public final class WasmObjectSystem {
             this.fieldMutable = fieldMutable;
             this.defMaskFieldIdx = defMaskFieldIdx;
             this.captureBaseFieldIdx = captureBaseFieldIdx;
+            this.hiddenCellBaseFieldIdx = hiddenCellBaseFieldIdx;
+            this.hiddenCells = List.copyOf(hiddenCells);
             this.hasCaptures = !hir.capturedVars().isEmpty();
+            this.hasCapturingIfaces = hasCapturingIfaces;
             this.ifaceBits = ifaceBits;
             this.ifaceWords = ifaceWords;
         }
@@ -120,6 +138,7 @@ public final class WasmObjectSystem {
     private final Map<String, IfaceInfo> ifacesByTypeId = new LinkedHashMap<>();
     private final Map<String, IfaceInfo> ifacesByJvmName = new LinkedHashMap<>();
     private final Map<Long, IfaceInfo> ifacesByLocal = new LinkedHashMap<>();
+    private int capturingIfaceCount = 0;
 
     private final List<ClassInfo> allClasses = new ArrayList<>();
     private final Map<String, ClassInfo> classesByTypeId = new LinkedHashMap<>();
@@ -140,6 +159,10 @@ public final class WasmObjectSystem {
                 ts.defaultConstExpr(WasmValType.refNull(ts.anyArrType)));
         this.fnInitObjectsDef = mod.addFunction("init_objects", ts.internFuncType(List.of(), List.of()));
         this.fnInitObjects = fnInitObjectsDef.funcIndex();
+    }
+
+    public int capturingIfaceCount() {
+        return capturingIfaceCount;
     }
 
     public static long localKey(int modIdx, int id) {
@@ -205,25 +228,72 @@ public final class WasmObjectSystem {
             }
         }
 
-        // Step 2: Build $ITable_I structs for each interface
+        // Step 2: Build $ITable_I structs, super-interface sets, and capture structs for each interface
         for (IfaceInfo ii : allIfaces) {
             LoweringTargets.TypeHierarchyInfo thi = findHierarchy(modules, ii.hir.typeId());
+            if (thi != null && thi.allBabbleInterfaceIds() != null) {
+                ii.allSuperIfaceIds.addAll(thi.allBabbleInterfaceIds());
+            }
             List<WasmTypeDef.Field> itableFields = new ArrayList<>();
             if (thi != null && thi.interfaceMembers() != null) {
                 for (Map.Entry<String, LoweringTargets.MemberSpec> e : thi.interfaceMembers().entrySet()) {
                     LoweringTargets.MemberSpec ms = e.getValue();
-                    if (!ms.callable() || ms.declaredSignature() == null) {
-                        continue;
+                    if (ms.callable() && ms.declaredSignature() != null) {
+                        LoweringTargets.FunctionSignature sig = ms.declaredSignature();
+                        int slotIdx = ii.slots.size();
+                        int wasmSig = itableMethodSig(sig);
+                        ITableSlot slot = new ITableSlot(slotIdx, e.getKey(), e.getKey(), -1, sig, wasmSig, sig.hasOptionalMask());
+                        ii.slots.add(slot);
+                        ii.slotByName.put(e.getKey(), slot);
+                        itableFields.add(WasmTypeSystem.field("m_" + e.getKey(), WasmValType.ref(wasmSig), false));
+                    } else if (ms.isOverloaded()) {
+                        List<LoweringTargets.FunctionSignature> sigs = ms.overloadSignatures();
+                        for (int k = 0; k < sigs.size(); k++) {
+                            String slotKey = e.getKey() + "$" + k;
+                            LoweringTargets.FunctionSignature sig = sigs.get(k);
+                            int slotIdx = ii.slots.size();
+                            int wasmSig = itableMethodSig(sig);
+                            ITableSlot slot = new ITableSlot(slotIdx, slotKey, e.getKey(), k, sig, wasmSig, sig.hasOptionalMask());
+                            ii.slots.add(slot);
+                            ii.slotByName.put(slotKey, slot);
+                            itableFields.add(WasmTypeSystem.field("m_" + WasmProgramLinker.sanitizeName(slotKey), WasmValType.ref(wasmSig), false));
+                        }
                     }
-                    LoweringTargets.FunctionSignature sig = ms.declaredSignature();
-                    int slotIdx = ii.slots.size();
-                    int wasmSig = itableMethodSig(sig);
-                    ITableSlot slot = new ITableSlot(slotIdx, e.getKey(), sig, wasmSig, sig.hasOptionalMask());
-                    ii.slots.add(slot);
-                    ii.slotByName.put(e.getKey(), slot);
-                    itableFields.add(WasmTypeSystem.field("m_" + e.getKey(), WasmValType.ref(wasmSig), false));
                 }
             }
+            // Collect captured variables across all default methods of this interface
+            Set<Integer> seenCapIds = new LinkedHashSet<>();
+            for (int fnId : ii.hir.defaultFunctionIds().values()) {
+                HirFunction dfn = ii.modInfo.input.hir().functions().get(fnId);
+                if (dfn != null) {
+                    for (HirVar cv : dfn.capturedVars()) {
+                        if (seenCapIds.add(cv.id())) ii.capturedVars.add(cv);
+                    }
+                }
+            }
+            for (List<Integer> fnIds : ii.hir.defaultOverloadFunctionIds().values()) {
+                for (int fnId : fnIds) {
+                    HirFunction dfn = ii.modInfo.input.hir().functions().get(fnId);
+                    if (dfn != null) {
+                        for (HirVar cv : dfn.capturedVars()) {
+                            if (seenCapIds.add(cv.id())) ii.capturedVars.add(cv);
+                        }
+                    }
+                }
+            }
+            if (!ii.capturedVars.isEmpty()) {
+                ii.capSlotIdx = capturingIfaceCount++;
+                List<WasmTypeDef.Field> capFields = new ArrayList<>();
+                for (int ci = 0; ci < ii.capturedVars.size(); ci++) {
+                    HirVar cv = ii.capturedVars.get(ci);
+                    capFields.add(WasmTypeSystem.field("$icap" + ci, WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())), false));
+                }
+                ii.capStructTypeIdx = mod.addStructType("IfaceCap_" + ii.ifaceIdx, true, ts.anyType, capFields);
+                ii.latestCapEnvGlobalIdx = mod.addGlobal("G_IFACE_CAP_" + ii.ifaceIdx,
+                        WasmValType.refNull(ii.capStructTypeIdx), true,
+                        ts.defaultConstExpr(WasmValType.refNull(ii.capStructTypeIdx)));
+            }
+
             ii.itableStructType = mod.addStructType("ITable_" + ii.ifaceIdx + "_" + WasmProgramLinker.sanitizeName(ii.hir.shape().name()),
                     true, ts.itableBaseType, itableFields);
             ii.ifaceValGlobalIdx = mod.addGlobal("G_IFACE_" + ii.ifaceIdx, WasmValType.refNull(ts.ifaceValType), true,
@@ -232,11 +302,101 @@ public final class WasmObjectSystem {
                     List.of(new WasmInstr.I32Const(0)));
         }
 
-        // Step 3: Declare every HirClass (struct type, bitset, vtable/classVal globals, ctor & vtable hook signatures)
+        // Step 3: Declare every HirClass struct inside ONE WasmGC rec group so classes with
+        // identical field layouts (e.g. Circle(r: double) vs Square(s: double), or empty error classes)
+        // remain 100% nominally distinct under WasmGC iso-recursive type canonicalization!
+        List<WasmTypeDef.SubType> classRecGroup = new ArrayList<>();
+        record PendingClass(WasmProgramLinker.ModuleLinkInfo modInfo, HirClass hc, int classId,
+                            int structTypeIdx, int[] memberToField, PrimitiveKind[] memberKinds,
+                            boolean[] fieldMutable, int defMaskField, int capBase,
+                            int hiddenBase, List<HirVar> hiddenCells, String cname) {}
+        List<PendingClass> pending = new ArrayList<>();
         for (WasmProgramLinker.ModuleLinkInfo m : modules) {
             for (HirClass hc : m.input.hir().classes().values()) {
-                declareClass(modules, m, hc);
+                int classId = pending.size();
+                ClassShape shape = hc.shape();
+                boolean isRecord = shape.isValue();
+
+                boolean[] isParamMember = new boolean[shape.memberCount()];
+                for (int p = 0; p < shape.parameters().length; p++) {
+                    int mi = shape.parameterMember(p);
+                    if (mi >= 0 && mi < isParamMember.length) {
+                        isParamMember[mi] = true;
+                    }
+                }
+
+                List<WasmTypeDef.Field> structFields = new ArrayList<>();
+                structFields.add(WasmTypeSystem.field("vtable", WasmValType.ref(ts.vtableType), false));
+
+                int[] memberToField = new int[shape.memberCount()];
+                PrimitiveKind[] memberKinds = new PrimitiveKind[shape.memberCount()];
+                boolean[] fieldMutable = new boolean[shape.memberCount()];
+                for (int i = 0; i < shape.memberCount(); i++) {
+                    PrimitiveKind mk = i < hc.memberKinds().length && hc.memberKinds()[i] != null
+                            ? hc.memberKinds()[i] : PrimitiveKind.NONE;
+                    memberKinds[i] = mk;
+                    String mname = shape.member(i);
+                    List<Integer> ovIds = hc.overloadMethodFunctionIds().get(mname);
+                    boolean isCompiledMethod = shape.isMethod(i)
+                            && (hc.methodFunctionIds().containsKey(mname)
+                                || (ovIds != null && !ovIds.isEmpty() && ovIds.stream().allMatch(id -> id >= 0)));
+                    if (isCompiledMethod) {
+                        memberToField[i] = -1;
+                        fieldMutable[i] = false;
+                    } else {
+                        memberToField[i] = structFields.size();
+                        // BIP025-D11: ALL record parameter fields (and fastRecord fields) are strictly immutable!
+                        boolean mut = !isRecord || (!isParamMember[i] && !hc.fastRecord());
+                        fieldMutable[i] = mut;
+                        structFields.add(WasmTypeSystem.field("f_" + mname, ts.valTypeFor(mk), mut));
+                    }
+                }
+
+                int defMaskField = -1;
+                if (!isRecord && hc.primDefCount() > 0) {
+                    defMaskField = structFields.size();
+                    structFields.add(WasmTypeSystem.field("$defMask", WasmValType.I32, true));
+                }
+
+                int capBase = structFields.size();
+                for (int i = 0; i < hc.capturedVars().size(); i++) {
+                    HirVar cv = hc.capturedVars().get(i);
+                    structFields.add(WasmTypeSystem.field("$cap" + i, WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())), false));
+                }
+
+                int hiddenBase = structFields.size();
+                List<HirVar> hiddenCells = new ArrayList<>();
+                Set<Integer> seenHidden = new LinkedHashSet<>();
+                for (HirParam p : hc.params()) {
+                    if (p.var() != null && p.var().cell() && seenHidden.add(p.var().id())) {
+                        hiddenCells.add(p.var());
+                    }
+                }
+                for (HirVar dv : hc.declaredVars()) {
+                    if (dv.cell() && seenHidden.add(dv.id())) {
+                        hiddenCells.add(dv);
+                    }
+                }
+                for (int i = 0; i < hiddenCells.size(); i++) {
+                    HirVar hv = hiddenCells.get(i);
+                    structFields.add(WasmTypeSystem.field("$hc" + i, WasmValType.refNull(ts.cellTypeFor(hv.primitiveKind())), true));
+                }
+
+                String cname = "C" + classId + "_" + WasmProgramLinker.sanitizeName(shape.name());
+                int structTypeIdx = mod.reserveTypeIndex();
+                classRecGroup.add(new WasmTypeDef.SubType(structTypeIdx, cname, true, ts.objectType,
+                        new WasmTypeDef.StructType(structFields)));
+                pending.add(new PendingClass(m, hc, classId, structTypeIdx, memberToField, memberKinds,
+                        fieldMutable, defMaskField, capBase, hiddenBase, hiddenCells, cname));
             }
+        }
+        if (!classRecGroup.isEmpty()) {
+            mod.commitRecGroup(classRecGroup);
+        }
+        for (PendingClass pc : pending) {
+            finishDeclareClass(modules, pc.modInfo, pc.hc, pc.classId, pc.structTypeIdx,
+                    pc.memberToField, pc.memberKinds, pc.fieldMutable, pc.defMaskField,
+                    pc.capBase, pc.hiddenBase, pc.hiddenCells, pc.cname);
         }
     }
 
@@ -262,68 +422,26 @@ public final class WasmObjectSystem {
         return ts.internFuncType(params, results);
     }
 
-    private void declareClass(List<WasmProgramLinker.ModuleLinkInfo> modules, WasmProgramLinker.ModuleLinkInfo m, HirClass hc) {
-        int classId = allClasses.size();
+    private void finishDeclareClass(List<WasmProgramLinker.ModuleLinkInfo> modules, WasmProgramLinker.ModuleLinkInfo m,
+                                    HirClass hc, int classId, int structTypeIdx,
+                                    int[] memberToField, PrimitiveKind[] memberKinds, boolean[] fieldMutable,
+                                    int defMaskField, int capBase, int hiddenBase, List<HirVar> hiddenCells,
+                                    String cname) {
         ClassShape shape = hc.shape();
-        boolean isRecord = shape.isValue();
-
-        // Determine which members are parameter-backed (strictly immutable on records!)
-        boolean[] isParamMember = new boolean[shape.memberCount()];
-        for (int p = 0; p < shape.parameters().length; p++) {
-            int mi = shape.parameterMember(p);
-            if (mi >= 0 && mi < isParamMember.length) {
-                isParamMember[mi] = true;
-            }
-        }
-
-        List<WasmTypeDef.Field> structFields = new ArrayList<>();
-        structFields.add(WasmTypeSystem.field("vtable", WasmValType.ref(ts.vtableType), false));
-
-        int[] memberToField = new int[shape.memberCount()];
-        PrimitiveKind[] memberKinds = new PrimitiveKind[shape.memberCount()];
-        boolean[] fieldMutable = new boolean[shape.memberCount()];
-        for (int i = 0; i < shape.memberCount(); i++) {
-            PrimitiveKind mk = i < hc.memberKinds().length && hc.memberKinds()[i] != null
-                    ? hc.memberKinds()[i] : PrimitiveKind.NONE;
-            memberKinds[i] = mk;
-            if (shape.isMethod(i)) {
-                memberToField[i] = -1;
-                fieldMutable[i] = false;
-            } else {
-                memberToField[i] = structFields.size();
-                // BIP025-D11: ALL record parameter fields (and fastRecord fields) are strictly immutable!
-                boolean mut = !isRecord || (!isParamMember[i] && !hc.fastRecord());
-                fieldMutable[i] = mut;
-                structFields.add(WasmTypeSystem.field("f_" + shape.member(i), ts.valTypeFor(mk), mut));
-            }
-        }
-
-        int defMaskField = -1;
-        if (!isRecord && hc.primDefCount() > 0) {
-            defMaskField = structFields.size();
-            structFields.add(WasmTypeSystem.field("$defMask", WasmValType.I32, true));
-        }
-
-        int capBase = structFields.size();
-        for (int i = 0; i < hc.capturedVars().size(); i++) {
-            HirVar cv = hc.capturedVars().get(i);
-            structFields.add(WasmTypeSystem.field("$cap" + i, WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())), false));
-        }
-
-        String cname = "C" + classId + "_" + WasmProgramLinker.sanitizeName(shape.name());
-        int structTypeIdx = mod.addStructType(cname, true, ts.objectType, structFields);
 
         // Compute transitive interface bitset (BIP025-D7)
         long bits = 0L;
         int wordCount = allIfaces.size() > 64 ? (allIfaces.size() + 63) / 64 : 0;
         long[] words = wordCount > 0 ? new long[wordCount] : null;
         Set<IfaceInfo> implSet = new LinkedHashSet<>();
+        boolean hasCapIfaces = false;
         LoweringTargets.TypeHierarchyInfo thi = findHierarchy(modules, hc.typeId());
         if (thi != null && thi.allBabbleInterfaceIds() != null) {
             for (String iid : thi.allBabbleInterfaceIds()) {
                 IfaceInfo ii = ifacesByTypeId.get(iid);
                 if (ii != null) {
                     implSet.add(ii);
+                    if (ii.hasCaptures()) hasCapIfaces = true;
                     if (ii.ifaceIdx < 64) {
                         bits |= (1L << ii.ifaceIdx);
                     }
@@ -335,7 +453,7 @@ public final class WasmObjectSystem {
         }
 
         ClassInfo ci = new ClassInfo(classId, m, hc, structTypeIdx, memberToField, memberKinds, fieldMutable,
-                defMaskField, capBase, bits, words);
+                defMaskField, capBase, hiddenBase, hiddenCells, hasCapIfaces, bits, words);
         ci.implementedIfaces.addAll(implSet);
         for (IfaceInfo ii : implSet) {
             ii.implementers.add(ci);
@@ -376,6 +494,10 @@ public final class WasmObjectSystem {
         ci.ctorHasOptMask = optCount > 0 && optCount <= 32 && hc.params().size() <= 32;
         List<WasmValType> ctorParams = new ArrayList<>();
         List<String> ctorParamNames = new ArrayList<>();
+        if (ci.hasCapturingIfaces) {
+            ctorParams.add(WasmValType.ref(ts.vtableType));
+            ctorParamNames.add("$vtable");
+        }
         for (int i = 0; i < hc.capturedVars().size(); i++) {
             HirVar cv = hc.capturedVars().get(i);
             ctorParams.add(WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
@@ -464,6 +586,33 @@ public final class WasmObjectSystem {
             ce.emitBoundMethodTrampoline(bm, ci, mfi);
             ci.boundMethodGenericFns.put(e.getKey(), bm.funcIndex());
         }
+        // Inherited interface default methods (accessible via this.m / obj.m)
+        for (IfaceInfo ii : ci.implementedIfaces) {
+            for (String defName : ii.hir.defaultFunctionIds().keySet()) {
+                if (ci.boundMethodGenericFns.containsKey(defName) || hasShapeMember(ci.shape, defName)) {
+                    continue;
+                }
+                WasmProgramLinker.FuncInfo dfi = findClassOrDefaultImpl(ci, null, defName, -1, null);
+                if (dfi == null) continue;
+                WasmModule.FuncDef bm = mod.addFunction(
+                        "C" + ci.classId + "_bm_def_" + WasmProgramLinker.sanitizeName(defName),
+                        ts.genericCallSigType, List.of("self", "args", "names"));
+                mod.declareFuncRef(bm.funcIndex());
+                ce.emitBoundMethodTrampoline(bm, ci, dfi);
+                ci.boundMethodGenericFns.put(defName, bm.funcIndex());
+            }
+        }
+    }
+
+    private static boolean hasShapeMember(ClassShape shape, String name) {
+        return shapeIndexOf(shape, name) >= 0;
+    }
+
+    private static int shapeIndexOf(ClassShape shape, String name) {
+        for (int i = 0; i < shape.memberCount(); i++) {
+            if (name.equals(shape.member(i))) return i;
+        }
+        return -1;
     }
 
     private void emitClassConstructor(ClassInfo ci, WasmFuncEmitter fe) {
@@ -521,6 +670,9 @@ public final class WasmObjectSystem {
                 .br(1).end().end();
         c.end();
 
+        if (ci.hasCapturingIfaces) {
+            c.localGet(0).refCast(ts.classValType).structGet(ts.classValType, 4);
+        }
         if (ci.hasCaptures) {
             int cvSelf = fn.addLocal("cvSelf", WasmValType.refNull(ci.classValStructType), 3);
             c.localGet(0).refCast(ci.classValStructType).localSet(cvSelf);
@@ -687,6 +839,7 @@ public final class WasmObjectSystem {
     private void emitGetMemberHook(ClassInfo ci) {
         WasmCodeBuilder c = ci.getMemberDef.code();
         int self = ci.getMemberDef.addLocal("s", WasmValType.refNull(ci.structTypeIdx), 2);
+        int tmp = ci.getMemberDef.addLocal("v", ts.anyRef(), 2);
         c.localGet(0).refCast(ci.structTypeIdx).localSet(self);
         for (int i = 0; i < ci.shape.memberCount(); i++) {
             String mname = ci.shape.member(i);
@@ -695,9 +848,21 @@ public final class WasmObjectSystem {
             c.call(rt.fnStrEq).if_();
             int fi = ci.memberToStructField[i];
             if (fi >= 0) {
+                if (ci.defMaskFieldIdx >= 0 && i < ci.hir.primDefBits().length && ci.hir.primDefBits()[i] >= 0) {
+                    int bit = 1 << ci.hir.primDefBits()[i];
+                    c.localGet(self).refAsNonNull().structGet(ci.structTypeIdx, ci.defMaskFieldIdx)
+                            .i32Const(bit).op(WasmInstr.SimpleOp.I32_AND).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                    rt.emitStringLit(c, "Member used before definition : " + mname);
+                    c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable().end();
+                }
                 c.localGet(self).refAsNonNull().structGet(ci.structTypeIdx, fi);
                 if (ci.memberKinds[i].isPrimitive()) {
                     c.call(rt.boxFuncFor(ci.memberKinds[i]));
+                } else {
+                    c.localTee(tmp).globalGet(rt.gUndefined).refEq().if_();
+                    rt.emitStringLit(c, "Member used before definition : " + mname);
+                    c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable().end();
+                    c.localGet(tmp);
                 }
                 c.return_();
             } else {
@@ -713,6 +878,20 @@ public final class WasmObjectSystem {
             }
             c.end();
         }
+        // Check inherited interface default methods not declared directly on the class
+        for (Map.Entry<String, Integer> e : ci.boundMethodGenericFns.entrySet()) {
+            if (hasShapeMember(ci.shape, e.getKey())) continue;
+            c.localGet(1);
+            rt.emitStringLit(c, e.getKey());
+            c.call(rt.fnStrEq).if_();
+            c.refFunc(e.getValue());
+            rt.emitStringLit(c, e.getKey());
+            c.i32Const(-1)
+                    .localGet(0)
+                    .structNew(ts.boundMethodType)
+                    .return_();
+            c.end();
+        }
         rt.emitStringLit(c, "No such member in " + ci.shape.name() + " : ");
         c.localGet(1).call(rt.fnStrConcat).i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
     }
@@ -722,15 +901,31 @@ public final class WasmObjectSystem {
         int self = ci.setMemberDef.addLocal("s", WasmValType.refNull(ci.structTypeIdx), 3);
         c.localGet(0).refCast(ci.structTypeIdx).localSet(self);
         for (int i = 0; i < ci.shape.memberCount(); i++) {
+            String mname = ci.shape.member(i);
             int fi = ci.memberToStructField[i];
-            if (fi < 0) continue;
             c.localGet(1);
-            rt.emitStringLit(c, ci.shape.member(i));
+            rt.emitStringLit(c, mname);
             c.call(rt.fnStrEq).if_();
-            if (!ci.fieldMutable[i]) {
-                rt.emitStringLit(c, "Cannot reassign field of record " + ci.shape.name() + " : " + ci.shape.member(i));
+            if (fi < 0) {
+                rt.emitStringLit(c, "Cannot assign method : " + mname);
+                c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
+            } else if (!ci.fieldMutable[i]) {
+                rt.emitStringLit(c, "Cannot reassign field of record " + ci.shape.name() + " : " + mname);
                 c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
             } else {
+                // Reject writes to fields that have not been defined yet during construction
+                if (ci.defMaskFieldIdx >= 0 && i < ci.hir.primDefBits().length && ci.hir.primDefBits()[i] >= 0) {
+                    int bit = 1 << ci.hir.primDefBits()[i];
+                    c.localGet(self).refAsNonNull().structGet(ci.structTypeIdx, ci.defMaskFieldIdx)
+                            .i32Const(bit).op(WasmInstr.SimpleOp.I32_AND).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+                    rt.emitStringLit(c, "Member used before definition : " + mname);
+                    c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable().end();
+                } else if (ci.memberKinds[i] == PrimitiveKind.NONE) {
+                    c.localGet(self).refAsNonNull().structGet(ci.structTypeIdx, fi)
+                            .globalGet(rt.gUndefined).refEq().if_();
+                    rt.emitStringLit(c, "Member used before definition : " + mname);
+                    c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable().end();
+                }
                 c.localGet(self).refAsNonNull().localGet(2);
                 if (ci.memberKinds[i].isPrimitive()) {
                     c.i32Const(ci.hir.line()).call(rt.unboxFuncFor(ci.memberKinds[i]));
@@ -739,6 +934,14 @@ public final class WasmObjectSystem {
                 c.localGet(2).return_();
             }
             c.end();
+        }
+        for (String defName : ci.boundMethodGenericFns.keySet()) {
+            if (hasShapeMember(ci.shape, defName)) continue;
+            c.localGet(1);
+            rt.emitStringLit(c, defName);
+            c.call(rt.fnStrEq).if_();
+            rt.emitStringLit(c, "Cannot assign method : " + defName);
+            c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable().end();
         }
         rt.emitStringLit(c, "No such member in " + ci.shape.name() + " : ");
         c.localGet(1).call(rt.fnStrConcat).i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
@@ -776,14 +979,34 @@ public final class WasmObjectSystem {
 
     /** Builds `$ITable_I` thunk function adapting `(ref $Object)` -> `(ref $Struct_C)` and invoking the implementation. */
     private int emitITableThunk(ClassInfo ci, IfaceInfo ii, ITableSlot slot) {
-        // Find implementing method: either C's own method or default method from ii / transitive interfaces
-        WasmProgramLinker.FuncInfo impl = findClassOrDefaultImpl(ci, ii, slot.memberName());
+        // Find implementing method: either C's own method/overload or most-specific default method
+        WasmProgramLinker.FuncInfo impl = findClassOrDefaultImpl(ci, ii, slot.memberName(), slot.overloadAltIndex(), slot.sig());
         WasmModule.FuncDef thunk = mod.addFunction(
-                "thunk_C" + ci.classId + "_I" + ii.ifaceIdx + "_" + WasmProgramLinker.sanitizeName(slot.memberName()),
+                "thunk_C" + ci.classId + "_I" + ii.ifaceIdx + "_" + WasmProgramLinker.sanitizeName(slot.slotKey()),
                 slot.wasmSigTypeIdx());
         mod.declareFuncRef(thunk.funcIndex());
         WasmCodeBuilder c = thunk.code();
+        PrimitiveKind[] slotParams = slot.sig().parameterKinds();
         if (impl == null) {
+            // Check field-holding-function implementation (e.g. `def run = func`)
+            int mIdx = shapeIndexOf(ci.shape, slot.memberName());
+            if (mIdx >= 0 && ci.memberToStructField[mIdx] >= 0) {
+                int fi = ci.memberToStructField[mIdx];
+                int paramCount = 1 + slotParams.length + (slot.hasOptMask() ? 1 : 0);
+                int fnLocal = thunk.addLocal("fldFn", WasmValType.refNull(ts.fnBaseType), paramCount);
+                c.localGet(0).refCast(ci.structTypeIdx).structGet(ci.structTypeIdx, fi)
+                        .refCast(ts.fnBaseType).localTee(fnLocal).refAsNonNull();
+                for (int p = 0; p < slotParams.length; p++) {
+                    c.localGet(1 + p);
+                    emitConvertValue(c, slotParams[p], PrimitiveKind.NONE, ci.hir.line());
+                }
+                c.arrayNewFixed(ts.anyArrType, slotParams.length)
+                        .refNull(ts.anyArrType)
+                        .localGet(fnLocal).refAsNonNull().structGet(ts.fnBaseType, 0)
+                        .callRef(ts.genericCallSigType);
+                emitConvertValue(c, PrimitiveKind.NONE, slot.sig().returnKind(), ci.hir.line());
+                return thunk.funcIndex();
+            }
             rt.emitStringLit(c, "Unimplemented interface method : " + ii.hir.shape().name() + "." + slot.memberName());
             c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
             return thunk.funcIndex();
@@ -795,21 +1018,79 @@ public final class WasmObjectSystem {
         } else {
             c.localGet(0);
         }
-        PrimitiveKind[] slotParams = slot.sig().parameterKinds();
-        for (int p = 0; p < impl.hir.params().size(); p++) {
-            PrimitiveKind implPk = impl.hir.params().get(p).kind();
-            if (p < slotParams.length) {
-                c.localGet(1 + p);
-                emitConvertValue(c, slotParams[p], implPk, ci.hir.line());
-            } else {
-                ts.emitDefaultValue(c, ts.valTypeFor(implPk));
+        int implRest = impl.hir.restIndex();
+        int slotRest = slot.sig().restIndex();
+        if (implRest >= 0 && slotRest < 0) {
+            int restLocal = thunk.addLocal("restL", WasmValType.ref(ts.listType), 1 + slotParams.length + (slot.hasOptMask() ? 1 : 0));
+            for (int p = 0; p < impl.hir.params().size(); p++) {
+                HirParam hp = impl.hir.params().get(p);
+                PrimitiveKind implPk = hp.kind();
+                if (p == implRest) {
+                    c.i32Const(Math.max(4, slotParams.length - implRest))
+                            .call(linker.collections().fnListNew).localTee(restLocal);
+                    for (int k = implRest; k < slotParams.length; k++) {
+                        c.localGet(restLocal).localGet(1 + k);
+                        emitConvertValue(c, slotParams[k], PrimitiveKind.NONE, ci.hir.line());
+                        c.call(linker.collections().fnListAdd).drop();
+                    }
+                } else if (p < slotParams.length) {
+                    c.localGet(1 + p);
+                    emitConvertValue(c, slotParams[p],
+                            impl.hasBoxedMissingOptParams && hp.defaultValue() != null ? PrimitiveKind.NONE : implPk,
+                            ci.hir.line());
+                } else if (impl.hasBoxedMissingOptParams && hp.defaultValue() != null) {
+                    c.globalGet(rt.gMissing);
+                } else {
+                    ts.emitDefaultValue(c, ts.valTypeFor(implPk));
+                }
+            }
+        } else {
+            for (int p = 0; p < impl.hir.params().size(); p++) {
+                HirParam hp = impl.hir.params().get(p);
+                PrimitiveKind implPk = hp.kind();
+                if (p < slotParams.length) {
+                    c.localGet(1 + p);
+                    emitConvertValue(c, slotParams[p],
+                            impl.hasBoxedMissingOptParams && hp.defaultValue() != null ? PrimitiveKind.NONE : implPk,
+                            ci.hir.line());
+                } else if (impl.hasBoxedMissingOptParams && hp.defaultValue() != null) {
+                    c.globalGet(rt.gMissing);
+                } else {
+                    ts.emitDefaultValue(c, ts.valTypeFor(implPk));
+                }
             }
         }
         if (impl.hasOptMaskParam) {
+            int implParamCount = impl.hir.params().size();
+            int extraMask = 0;
+            int optBit = 0;
+            for (int p = 0; p < implParamCount; p++) {
+                if (impl.hir.params().get(p).defaultValue() != null) {
+                    if (p >= slotParams.length) {
+                        extraMask |= (1 << optBit);
+                    }
+                    optBit++;
+                }
+            }
             if (slot.hasOptMask()) {
-                c.localGet(1 + slotParams.length);
+                int outMask = thunk.addLocal("outMask", WasmValType.I32, 1 + slotParams.length + 1);
+                c.i32Const(extraMask).localSet(outMask);
+                int slotOptBit = 0;
+                int implOptBit = 0;
+                for (int p = 0; p < slotParams.length && p < implParamCount; p++) {
+                    boolean slotOpt = slot.sig().isOptional(p);
+                    boolean implOpt = impl.hir.params().get(p).defaultValue() != null;
+                    if (slotOpt && implOpt) {
+                        c.localGet(1 + slotParams.length).i32Const(1 << slotOptBit).op(WasmInstr.SimpleOp.I32_AND).if_()
+                                .localGet(outMask).i32Const(1 << implOptBit).op(WasmInstr.SimpleOp.I32_OR).localSet(outMask)
+                                .end();
+                    }
+                    if (slotOpt) slotOptBit++;
+                    if (implOpt) implOptBit++;
+                }
+                c.localGet(outMask);
             } else {
-                c.i32Const(0);
+                c.i32Const(extraMask);
             }
         }
         c.call(impl.directFuncIdx);
@@ -829,18 +1110,126 @@ public final class WasmObjectSystem {
     }
 
     public WasmProgramLinker.FuncInfo findClassOrDefaultImpl(ClassInfo ci, IfaceInfo ii, String memberName) {
-        Integer mId = ci.hir.methodFunctionIds().get(memberName);
-        if (mId != null) {
-            return ci.modInfo.functions.get(mId);
+        return findClassOrDefaultImpl(ci, ii, memberName, -1, null);
+    }
+
+    public WasmProgramLinker.FuncInfo findClassOrDefaultImpl(ClassInfo ci, IfaceInfo ii, String memberName,
+                                                             int overloadAltIndex,
+                                                             LoweringTargets.FunctionSignature targetSig) {
+        // 1. Class's own single method
+        if (overloadAltIndex < 0) {
+            Integer mId = ci.hir.methodFunctionIds().get(memberName);
+            if (mId != null) {
+                return ci.modInfo.functions.get(mId);
+            }
         }
-        Integer dId = ii.hir.defaultFunctionIds().get(memberName);
-        if (dId != null) {
-            return ii.modInfo.functions.get(dId);
+        // 2. Class's own overloaded method (matching overloadAltIndex or targetSig)
+        List<Integer> clsOvIds = ci.hir.overloadMethodFunctionIds().get(memberName);
+        if (clsOvIds != null && !clsOvIds.isEmpty()) {
+            WasmProgramLinker.FuncInfo matched = matchOverloadCandidate(ci.modInfo, clsOvIds, overloadAltIndex, targetSig);
+            if (matched != null) return matched;
         }
+        // 3. Most-specific inherited interface default method (sub-interface overrides super-interface!)
+        List<IfaceInfo> cands = new ArrayList<>();
         for (IfaceInfo imp : ci.implementedIfaces) {
-            Integer id2 = imp.hir.defaultFunctionIds().get(memberName);
-            if (id2 != null) {
-                return imp.modInfo.functions.get(id2);
+            if (!ifaceProvidesDefault(imp, memberName, overloadAltIndex)) continue;
+            if (ii == null || imp == ii || (ii.hir.typeId() != null && imp.allSuperIfaceIds.contains(ii.hir.typeId()))) {
+                cands.add(imp);
+            }
+        }
+        if (cands.isEmpty()) {
+            for (IfaceInfo imp : ci.implementedIfaces) {
+                if (ifaceProvidesDefault(imp, memberName, overloadAltIndex)) {
+                    cands.add(imp);
+                }
+            }
+        }
+        IfaceInfo winner = pickMostSpecificIface(cands);
+        if (winner != null) {
+            if (overloadAltIndex < 0) {
+                Integer dId = winner.hir.defaultFunctionIds().get(memberName);
+                if (dId != null) {
+                    return winner.modInfo.functions.get(dId);
+                }
+            }
+            List<Integer> defOvIds = winner.hir.defaultOverloadFunctionIds().get(memberName);
+            if (defOvIds != null && !defOvIds.isEmpty()) {
+                WasmProgramLinker.FuncInfo matched = matchOverloadCandidate(winner.modInfo, defOvIds, overloadAltIndex, targetSig);
+                if (matched != null) return matched;
+            }
+        }
+        return null;
+    }
+
+    private static boolean ifaceProvidesDefault(IfaceInfo imp, String memberName, int overloadAltIndex) {
+        if (overloadAltIndex < 0 && imp.hir.defaultFunctionIds().containsKey(memberName)) {
+            return true;
+        }
+        List<Integer> ovIds = imp.hir.defaultOverloadFunctionIds().get(memberName);
+        return ovIds != null && !ovIds.isEmpty();
+    }
+
+    private static IfaceInfo pickMostSpecificIface(List<IfaceInfo> cands) {
+        if (cands.isEmpty()) return null;
+        if (cands.size() == 1) return cands.get(0);
+        for (IfaceInfo cand : cands) {
+            String candId = cand.hir.typeId();
+            boolean overridden = false;
+            if (candId != null) {
+                for (IfaceInfo other : cands) {
+                    if (other != cand && other.allSuperIfaceIds.contains(candId)) {
+                        overridden = true;
+                        break;
+                    }
+                }
+            }
+            if (!overridden) return cand;
+        }
+        return cands.get(0);
+    }
+
+    private static WasmProgramLinker.FuncInfo matchOverloadCandidate(WasmProgramLinker.ModuleLinkInfo modInfo,
+                                                                     List<Integer> fnIds, int overloadAltIndex,
+                                                                     LoweringTargets.FunctionSignature targetSig) {
+        if (overloadAltIndex >= 0 && overloadAltIndex < fnIds.size()) {
+            int id = fnIds.get(overloadAltIndex);
+            if (id >= 0) {
+                WasmProgramLinker.FuncInfo fi = modInfo.functions.get(id);
+                if (fi != null) return fi;
+            }
+        }
+        if (targetSig != null) {
+            PrimitiveKind[] tParams = targetSig.parameterKinds();
+            // Exact param count & primitive kind match first
+            for (int id : fnIds) {
+                if (id < 0) continue;
+                WasmProgramLinker.FuncInfo fi = modInfo.functions.get(id);
+                if (fi == null || fi.hir.params().size() != tParams.length) continue;
+                boolean exact = true;
+                for (int i = 0; i < tParams.length; i++) {
+                    if (fi.hir.params().get(i).kind() != tParams[i]) {
+                        exact = false;
+                        break;
+                    }
+                }
+                if (exact) return fi;
+            }
+            // Compatible arity (with optional/rest params)
+            for (int id : fnIds) {
+                if (id < 0) continue;
+                WasmProgramLinker.FuncInfo fi = modInfo.functions.get(id);
+                if (fi == null) continue;
+                int req = fi.hir.requiredParams();
+                int max = fi.hir.restIndex() >= 0 ? Integer.MAX_VALUE : fi.hir.params().size();
+                if (tParams.length >= req && tParams.length <= max) {
+                    return fi;
+                }
+            }
+        }
+        for (int id : fnIds) {
+            if (id >= 0) {
+                WasmProgramLinker.FuncInfo fi = modInfo.functions.get(id);
+                if (fi != null) return fi;
             }
         }
         return null;
@@ -849,15 +1238,20 @@ public final class WasmObjectSystem {
     private void emitInitObjects() {
         WasmCodeBuilder c = fnInitObjectsDef.code();
 
-        // 1. Initialize $IfaceVal globals
+        // 1. Initialize $IfaceVal globals (statics slots initialized to $G_UNDEFINED)
         for (IfaceInfo ii : allIfaces) {
             c.i32Const(ii.ifaceIdx);
             rt.emitStringLit(c, ii.hir.shape().name());
-            if (ii.hir.shape().staticCount() > 0) {
-                c.i32Const(ii.hir.shape().staticCount()).arrayNewDefault(ts.anyArrType);
+            int sc = ii.hir.shape().staticCount();
+            if (sc > 0) {
+                for (int s = 0; s < sc; s++) {
+                    c.globalGet(rt.gUndefined);
+                }
+                c.arrayNewFixed(ts.anyArrType, sc);
             } else {
                 c.refNull(ts.anyArrType);
             }
+            c.refNull(ts.anyType); // capEnv (field 3)
             c.structNew(ts.ifaceValType).globalSet(ii.ifaceValGlobalIdx);
         }
 
@@ -896,18 +1290,24 @@ public final class WasmObjectSystem {
                     .refFunc(ci.toStringDef.funcIndex())
                     .refFunc(ci.getMemberDef.funcIndex())
                     .refFunc(ci.setMemberDef.funcIndex())
-                    .refFunc(ci.opDef.funcIndex())
-                    .structNew(ts.vtableType)
+                    .refFunc(ci.opDef.funcIndex());
+            rt.emitStringLit(c, ci.shape.id() != null ? ci.shape.id() : ci.shape.name());
+            c.refNull(ts.anyArrType); // ifaceCaps (field 13)
+            c.structNew(ts.vtableType)
                     .globalSet(ci.vtableGlobalIdx);
 
-            // $ClassVal
+            // $ClassVal (statics slots initialized to $G_UNDEFINED)
             c.refFunc(ci.genericCtorIdx);
             rt.emitStringLit(c, ci.shape.name());
             c.i32Const(ci.classId)
                     .i32Const(ci.classId)
                     .globalGet(ci.vtableGlobalIdx).refAsNonNull();
-            if (ci.shape.staticCount() > 0) {
-                c.i32Const(ci.shape.staticCount()).arrayNewDefault(ts.anyArrType);
+            int csc = ci.shape.staticCount();
+            if (csc > 0) {
+                for (int s = 0; s < csc; s++) {
+                    c.globalGet(rt.gUndefined);
+                }
+                c.arrayNewFixed(ts.anyArrType, csc);
             } else {
                 c.refNull(ts.anyArrType);
             }
@@ -962,6 +1362,22 @@ public final class WasmObjectSystem {
         }
         if (target != null) {
             return emitSingleTargetCheck(c, valLocal, target);
+        }
+        return false;
+    }
+
+    /** Emits a nominal class/interface {@code is} check by {@code typeId} (for descriptor-driven {@code is}/{@code as}). */
+    public boolean emitNominalIsCheckById(WasmCodeBuilder c, int valLocal, String typeId) {
+        if (typeId == null) {
+            return false;
+        }
+        IfaceInfo ii = ifaceByTypeId(typeId);
+        if (ii != null) {
+            return emitSingleTargetCheck(c, valLocal, new LoweringTargets.IsTarget(typeId, ClassShape.Kind.INTERFACE, null));
+        }
+        ClassInfo ci = classByTypeId(typeId);
+        if (ci != null) {
+            return emitSingleTargetCheck(c, valLocal, new LoweringTargets.IsTarget(typeId, ClassShape.Kind.CLASS, null));
         }
         return false;
     }

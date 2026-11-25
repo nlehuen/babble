@@ -17,6 +17,7 @@ public final class WasmArrayOpsGen {
     private final WasmModule mod;
     private final WasmTypeSystem ts;
     private final WasmRuntimeGen rt;
+    private final WasmRuntimeOpsGen ops;
 
     public final int fnArraySize;
     public final int fnArrayGetBoxed;
@@ -26,6 +27,8 @@ public final class WasmArrayOpsGen {
     public final int fnArrayFormat;
     public final int fnCheckBounds;
     public final int fnCheckNegSize;
+    public final int fnCheckRefStore;
+    public final int fnTdSubtype;
 
     // Primitive TypeDesc singletons (initialized in init_array_types)
     public final int gTdByte;
@@ -42,10 +45,11 @@ public final class WasmArrayOpsGen {
     private final WasmModule.FuncDef fnInitArrayTypesDef;
     public final int fnInitArrayTypes;
 
-    public WasmArrayOpsGen(WasmModule mod, WasmTypeSystem ts, WasmRuntimeGen rt) {
+    public WasmArrayOpsGen(WasmModule mod, WasmTypeSystem ts, WasmRuntimeGen rt, WasmRuntimeOpsGen ops) {
         this.mod = mod;
         this.ts = ts;
         this.rt = rt;
+        this.ops = ops;
 
         WasmValType refTdNull = WasmValType.refNull(ts.typeDescType);
         this.gTdByte = mod.addGlobal("TD_byte", refTdNull, true, ts.defaultConstExpr(refTdNull));
@@ -66,11 +70,17 @@ public final class WasmArrayOpsGen {
         WasmValType refArrBase = WasmValType.ref(ts.arrayBaseType);
         WasmValType refAnyNull = ts.anyRef();
         WasmValType refStr = WasmValType.ref(ts.stringType);
+        WasmValType refTd = WasmValType.ref(ts.typeDescType);
 
         WasmModule.FuncDef dNeg = mod.addFunction("arr_check_neg",
                 ts.internFuncType(List.of(WasmValType.I32, WasmValType.I32), List.of(WasmValType.I32)), List.of("n", "line"));
         WasmModule.FuncDef dBounds = mod.addFunction("arr_check_bounds",
                 ts.internFuncType(List.of(WasmValType.I32, WasmValType.I32, WasmValType.I32), List.of()), List.of("idx", "len", "line"));
+        WasmModule.FuncDef dTdSub = mod.addFunction("arr_td_subtype",
+                ts.internFuncType(List.of(refTd, refTd), List.of(WasmValType.I32)), List.of("actual", "expected"));
+        WasmModule.FuncDef dCheckStore = mod.addFunction("arr_check_ref_store",
+                ts.internFuncType(List.of(WasmValType.ref(ts.refArrayType), refAnyNull, WasmValType.I32), List.of()),
+                List.of("arr", "val", "line"));
         WasmModule.FuncDef dSize = mod.addFunction("arr_size",
                 ts.internFuncType(List.of(refArrBase), List.of(WasmValType.I32)), List.of("a"));
         WasmModule.FuncDef dGet = mod.addFunction("arr_get_boxed",
@@ -86,6 +96,8 @@ public final class WasmArrayOpsGen {
 
         this.fnCheckNegSize = dNeg.funcIndex();
         this.fnCheckBounds = dBounds.funcIndex();
+        this.fnTdSubtype = dTdSub.funcIndex();
+        this.fnCheckRefStore = dCheckStore.funcIndex();
         this.fnArraySize = dSize.funcIndex();
         this.fnArrayGetBoxed = dGet.funcIndex();
         this.fnArraySetBoxed = dSet.funcIndex();
@@ -95,6 +107,8 @@ public final class WasmArrayOpsGen {
 
         emitCheckNeg(dNeg);
         emitCheckBounds(dBounds);
+        emitTdSubtype(dTdSub);
+        emitCheckRefStore(dCheckStore);
         emitArraySize(dSize);
         emitArrayGetBoxed(dGet);
         emitArraySetBoxed(dSet);
@@ -105,16 +119,16 @@ public final class WasmArrayOpsGen {
 
     private void emitInitArrayTypes() {
         WasmCodeBuilder c = fnInitArrayTypesDef.code();
-        initTd(c, gTdByte, 1, 0, "byte");
-        initTd(c, gTdShort, 1, 1, "short");
-        initTd(c, gTdInt, 1, 2, "int");
-        initTd(c, gTdLong, 1, 3, "long");
-        initTd(c, gTdFloat, 1, 4, "float");
-        initTd(c, gTdDouble, 1, 5, "double");
-        initTd(c, gTdBool, 1, 6, "bool");
-        initTd(c, gTdChar, 1, 7, "char");
-        initTd(c, gTdAny, 0, 0, "any");
-        initTd(c, gTdString, 2, 8, "string");
+        initTd(c, gTdByte, 1, 0, "array of byte");
+        initTd(c, gTdShort, 1, 1, "array of short");
+        initTd(c, gTdInt, 1, 2, "array of int");
+        initTd(c, gTdLong, 1, 3, "array of long");
+        initTd(c, gTdFloat, 1, 4, "array of float");
+        initTd(c, gTdDouble, 1, 5, "array of double");
+        initTd(c, gTdBool, 1, 6, "array of bool");
+        initTd(c, gTdChar, 1, 7, "array of char");
+        initTd(c, gTdAny, 0, 0, "array of any");
+        initTd(c, gTdString, 2, 8, "array of string");
     }
 
     private void initTd(WasmCodeBuilder c, int globalIdx, int kind, int id, String name) {
@@ -178,7 +192,7 @@ public final class WasmArrayOpsGen {
     private void emitCheckNeg(WasmModule.FuncDef fn) {
         WasmCodeBuilder c = fn.code();
         c.localGet(0).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_();
-        rt.emitStringLit(c, "Negative array size : ");
+        rt.emitStringLit(c, "java.lang.NegativeArraySizeException: ");
         c.localGet(0).call(rt.fnIntToStr).call(rt.fnStrConcat)
                 .localGet(1).call(rt.fnThrowMsg).unreachable().end();
         c.localGet(0);
@@ -189,10 +203,85 @@ public final class WasmArrayOpsGen {
         c.localGet(0).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
                 .localGet(0).localGet(1).op(WasmInstr.SimpleOp.I32_GE_S)
                 .op(WasmInstr.SimpleOp.I32_OR).if_();
-        rt.emitStringLit(c, "Index ");
+        rt.emitStringLit(c, "java.lang.ArrayIndexOutOfBoundsException: Index ");
         c.localGet(0).call(rt.fnIntToStr).call(rt.fnStrConcat);
         rt.emitStringLit(c, " out of bounds for length ");
         c.call(rt.fnStrConcat).localGet(1).call(rt.fnIntToStr).call(rt.fnStrConcat)
+                .localGet(2).call(rt.fnThrowMsg).unreachable().end();
+    }
+
+    private void emitTdSubtype(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        // params: 0=actual ($TypeDesc), 1=expected ($TypeDesc) -> i32
+        int ak = fn.addLocal("ak", WasmValType.I32, 2);
+        int ek = fn.addLocal("ek", WasmValType.I32, 2);
+        c.localGet(1).structGet(ts.typeDescType, 0).localTee(ek)
+                .i32Const(0).op(WasmInstr.SimpleOp.I32_EQ).if_().i32Const(1).return_().end();
+        c.localGet(0).structGet(ts.typeDescType, 0).localSet(ak);
+        // Both nested arrays (kind == 5): recurse on elem TypeDesc
+        c.localGet(ak).i32Const(5).op(WasmInstr.SimpleOp.I32_EQ)
+                .localGet(ek).i32Const(5).op(WasmInstr.SimpleOp.I32_EQ).op(WasmInstr.SimpleOp.I32_AND).if_()
+                .localGet(0).structGet(ts.typeDescType, 2).refAsNonNull()
+                .localGet(1).structGet(ts.typeDescType, 2).refAsNonNull()
+                .call(fnTdSubtype).return_().end();
+        // Same kind and same id
+        c.localGet(ak).localGet(ek).op(WasmInstr.SimpleOp.I32_EQ)
+                .localGet(0).structGet(ts.typeDescType, 1)
+                .localGet(1).structGet(ts.typeDescType, 1).op(WasmInstr.SimpleOp.I32_EQ)
+                .op(WasmInstr.SimpleOp.I32_AND);
+    }
+
+    private void emitCheckRefStore(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        // params: 0=arr ($RefArray), 1=val (any?), 2=line (i32)
+        int td = fn.addLocal("td", WasmValType.refNull(ts.typeDescType), 3);
+        int kind = fn.addLocal("kind", WasmValType.I32, 3);
+        int id = fn.addLocal("id", WasmValType.I32, 3);
+        int ok = fn.addLocal("ok", WasmValType.I32, 3);
+        c.localGet(1).refIsNull().if_().return_().end();
+        c.localGet(0).structGet(ts.arrayBaseType, 0).localTee(td).refAsNonNull()
+                .structGet(ts.typeDescType, 0).localTee(kind)
+                .i32Const(0).op(WasmInstr.SimpleOp.I32_EQ).if_().return_().end();
+        c.localGet(td).refAsNonNull().structGet(ts.typeDescType, 1).localSet(id);
+        c.i32Const(1).localSet(ok);
+        // kind == 2: string
+        c.localGet(kind).i32Const(2).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(1).refTest(ts.stringType).localSet(ok)
+                .end();
+        // kind == 3: Babble class (exact classId)
+        c.localGet(kind).i32Const(3).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(1).refTest(ts.objectType).if_(WasmValType.I32)
+                .localGet(1).refCast(ts.objectType).structGet(ts.objectType, 0)
+                .structGet(ts.vtableType, 0).localGet(id).op(WasmInstr.SimpleOp.I32_EQ)
+                .else_().i32Const(0).end().localSet(ok)
+                .end();
+        // kind == 4: Babble interface (bitset)
+        c.localGet(kind).i32Const(4).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(1).refTest(ts.objectType).if_(WasmValType.I32)
+                .localGet(id).i32Const(64).op(WasmInstr.SimpleOp.I32_LT_S).if_(WasmValType.I32)
+                .localGet(1).refCast(ts.objectType).structGet(ts.objectType, 0).structGet(ts.vtableType, 2)
+                .i64Const(1L).localGet(id).op(WasmInstr.SimpleOp.I64_EXTEND_I32_U).op(WasmInstr.SimpleOp.I64_SHL)
+                .op(WasmInstr.SimpleOp.I64_AND).i64Const(0L).op(WasmInstr.SimpleOp.I64_NE)
+                .else_()
+                .localGet(1).refCast(ts.objectType).structGet(ts.objectType, 0).structGet(ts.vtableType, 3).refAsNonNull()
+                .localGet(id).i32Const(64).op(WasmInstr.SimpleOp.I32_DIV_U).arrayGet(ts.i64ConstArrType)
+                .i64Const(1L).localGet(id).i32Const(63).op(WasmInstr.SimpleOp.I32_AND)
+                .op(WasmInstr.SimpleOp.I64_EXTEND_I32_U).op(WasmInstr.SimpleOp.I64_SHL)
+                .op(WasmInstr.SimpleOp.I64_AND).i64Const(0L).op(WasmInstr.SimpleOp.I64_NE)
+                .end()
+                .else_().i32Const(0).end().localSet(ok)
+                .end();
+        // kind == 5: nested array (covariant TypeDesc subtype check)
+        c.localGet(kind).i32Const(5).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(1).refTest(ts.arrayBaseType).if_(WasmValType.I32)
+                .localGet(1).refCast(ts.arrayBaseType).structGet(ts.arrayBaseType, 0)
+                .localGet(td).refAsNonNull().structGet(ts.typeDescType, 2).refAsNonNull()
+                .call(fnTdSubtype)
+                .else_().i32Const(0).end().localSet(ok)
+                .end();
+        c.localGet(ok).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+        rt.emitStringLit(c, "java.lang.ArrayStoreException: ");
+        c.localGet(1).call(ops.fnDescribeType).call(rt.fnStrConcat)
                 .localGet(2).call(rt.fnThrowMsg).unreachable().end();
     }
 
@@ -254,6 +343,7 @@ public final class WasmArrayOpsGen {
         c.localGet(1).localGet(len).localGet(3).call(fnCheckBounds);
 
         c.localGet(0).refTest(ts.refArrayType).if_()
+                .localGet(0).refCast(ts.refArrayType).localGet(2).localGet(3).call(fnCheckRefStore)
                 .localGet(0).refCast(ts.refArrayType).structGet(ts.refArrayType, 1)
                 .localGet(1).localGet(2).arraySet(ts.anyArrType)
                 .localGet(2).return_().end();
@@ -335,14 +425,45 @@ public final class WasmArrayOpsGen {
     }
 
     private void emitArrayFormat(WasmModule.FuncDef fn) {
+        int gStack = mod.addGlobal("G_ARR_FMT_STACK", WasmValType.refNull(ts.anyArrType), true,
+                ts.defaultConstExpr(WasmValType.refNull(ts.anyArrType)));
+        int gDepth = mod.addGlobal("G_ARR_FMT_DEPTH", WasmValType.I32, true, List.of(new WasmInstr.I32Const(0)));
+
         WasmCodeBuilder c = fn.code();
         int len = fn.addLocal("len", WasmValType.I32, 1);
         int i = fn.addLocal("i", WasmValType.I32, 1);
         int acc = fn.addLocal("acc", WasmValType.refNull(ts.stringType), 1);
+        int depth = fn.addLocal("depth", WasmValType.I32, 1);
+        int stack = fn.addLocal("stack", WasmValType.refNull(ts.anyArrType), 1);
+
+        // Lazy-init visited stack (capacity 64)
+        c.globalGet(gStack).refIsNull().if_()
+                .i32Const(64).arrayNewDefault(ts.anyArrType).globalSet(gStack)
+                .end();
+        c.globalGet(gStack).localSet(stack);
+        c.globalGet(gDepth).localSet(depth);
+
+        // Cycle check: if self is already in stack[0..depth), return "[...]"
+        c.i32Const(0).localSet(i);
+        c.block().loop()
+                .localGet(i).localGet(depth).op(WasmInstr.SimpleOp.I32_GE_S).brIf(1)
+                .localGet(stack).refAsNonNull().localGet(i).arrayGet(ts.anyArrType)
+                .localGet(0).refEq().if_();
+        rt.emitStringLit(c, "[...]");
+        c.return_().end()
+                .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
+                .br(0).end().end();
+
+        // Push self onto visited stack
+        c.localGet(depth).i32Const(64).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .localGet(stack).refAsNonNull().localGet(depth).localGet(0).arraySet(ts.anyArrType)
+                .localGet(depth).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).globalSet(gDepth)
+                .end();
 
         rt.emitStringLit(c, "[");
         c.localSet(acc);
         c.localGet(0).call(fnArraySize).localSet(len);
+        c.i32Const(0).localSet(i);
         c.loop()
                 .localGet(i).localGet(len).op(WasmInstr.SimpleOp.I32_LT_S)
                 .if_()
@@ -358,6 +479,10 @@ public final class WasmArrayOpsGen {
                 .br(1)
                 .end()
                 .end();
+
+        // Pop visited stack
+        c.localGet(depth).globalSet(gDepth);
+
         c.localGet(acc).refAsNonNull();
         rt.emitStringLit(c, "]");
         c.call(rt.fnStrConcat);
@@ -375,7 +500,7 @@ public final class WasmArrayOpsGen {
 
         switch (ac.kind()) {
             case SIZE -> {
-                emitTypeDesc(c, ek, ac.elementType());
+                emitTypeDesc(fe, c, ek, ac.elementType());
                 fe.emitAs(ac.args().get(0), PrimitiveKind.INT);
                 c.i32Const(line).call(fnCheckNegSize)
                         .arrayNewDefault(backingType)
@@ -390,7 +515,7 @@ public final class WasmArrayOpsGen {
                     elemLocals[i] = ctx.newLocal("$ae" + i, ts.valTypeFor(ek));
                     c.localSet(elemLocals[i]);
                 }
-                emitTypeDesc(c, ek, ac.elementType());
+                emitTypeDesc(fe, c, ek, ac.elementType());
                 for (int i = 0; i < n; i++) {
                     c.localGet(elemLocals[i]);
                 }
@@ -466,7 +591,7 @@ public final class WasmArrayOpsGen {
                 ctx.popBlock();
                 c.end(); // end if arrayBaseType
 
-                emitTypeDesc(c, ek, ac.elementType());
+                emitTypeDesc(fe, c, ek, ac.elementType());
                 c.localGet(dst).refAsNonNull().structNew(wrapType);
                 ctx.stackKind = PrimitiveKind.NONE;
             }
@@ -500,15 +625,19 @@ public final class WasmArrayOpsGen {
             }
             case SET -> {
                 fe.emitBoxed(op.receiver());
+                int wrap = ctx.newLocal("$awrap", WasmValType.refNull(wrapType));
                 int arr = ctx.newLocal("$arr", WasmValType.refNull(backingType));
                 int idx = ctx.newLocal("$idx", WasmValType.I32);
                 int val = ctx.newLocal("$val", ts.valTypeFor(ek));
-                c.refCast(wrapType).structGet(wrapType, 1).localSet(arr);
+                c.refCast(wrapType).localTee(wrap).structGet(wrapType, 1).localSet(arr);
                 fe.emitAs(op.args().get(0), PrimitiveKind.INT);
                 c.localSet(idx);
                 fe.emitAs(op.args().get(1), ek);
                 c.localSet(val);
                 c.localGet(idx).localGet(arr).refAsNonNull().arrayLen().i32Const(line).call(fnCheckBounds);
+                if (ek == PrimitiveKind.NONE) {
+                    c.localGet(wrap).refAsNonNull().localGet(val).i32Const(line).call(fnCheckRefStore);
+                }
                 c.localGet(arr).refAsNonNull().localGet(idx).localGet(val).arraySet(backingType);
                 c.localGet(val);
                 ctx.stackKind = ek;
@@ -542,11 +671,106 @@ public final class WasmArrayOpsGen {
         }
     }
 
-    private void emitTypeDesc(WasmCodeBuilder c, PrimitiveKind ek, HirArrayElementType elemType) {
-        if (ek.isPrimitive()) {
+    private void emitTypeDesc(WasmFuncEmitter fe, WasmCodeBuilder c, PrimitiveKind ek, HirArrayElementType elemType) {
+        if (ek != null && ek.isPrimitive()) {
             c.globalGet(primTypeDescGlobal(ek)).refAsNonNull();
-        } else {
-            c.globalGet(gTdAny).refAsNonNull();
+            return;
         }
+        if (elemType == null || elemType instanceof HirArrayElementType.Any) {
+            c.globalGet(gTdAny).refAsNonNull();
+            return;
+        }
+        if (elemType instanceof HirArrayElementType.Primitive p) {
+            c.globalGet(primTypeDescGlobal(p.kind())).refAsNonNull();
+            return;
+        }
+        if (elemType instanceof HirArrayElementType.StringType) {
+            c.globalGet(gTdString).refAsNonNull();
+            return;
+        }
+        if (elemType instanceof HirArrayElementType.BabbleType bt) {
+            WasmObjectSystem objects = fe.linker().objects();
+            if (bt.isInterface()) {
+                WasmObjectSystem.IfaceInfo ii = objects.ifaceByTypeId(bt.typeId());
+                if (ii != null) {
+                    c.i32Const(4).i32Const(ii.ifaceIdx).refNull(ts.typeDescType);
+                    rt.emitStringLit(c, "array of " + ii.hir.shape().name());
+                    c.structNew(ts.typeDescType);
+                    return;
+                }
+            } else {
+                WasmObjectSystem.ClassInfo ci = objects.classByTypeId(bt.typeId());
+                if (ci != null) {
+                    c.i32Const(3).i32Const(ci.classId).refNull(ts.typeDescType);
+                    rt.emitStringLit(c, "array of " + ci.shape.name());
+                    c.structNew(ts.typeDescType);
+                    return;
+                }
+            }
+            c.globalGet(gTdAny).refAsNonNull();
+            return;
+        }
+        if (elemType instanceof HirArrayElementType.Array arr) {
+            c.i32Const(5).i32Const(0);
+            emitTypeDesc(fe, c, null, arr.element());
+            rt.emitStringLit(c, "array of (" + formatArrayDisplayName(fe, arr.element()) + ")");
+            c.structNew(ts.typeDescType);
+            return;
+        }
+        c.globalGet(gTdAny).refAsNonNull();
+    }
+
+    private String formatArrayDisplayName(WasmFuncEmitter fe, HirArrayElementType elemType) {
+        if (elemType instanceof HirArrayElementType.Primitive p) {
+            return "array of " + p.kind().name().toLowerCase(java.util.Locale.ROOT);
+        }
+        if (elemType instanceof HirArrayElementType.StringType) {
+            return "array of string";
+        }
+        if (elemType instanceof HirArrayElementType.BabbleType bt) {
+            WasmObjectSystem objects = fe.linker().objects();
+            if (bt.isInterface()) {
+                WasmObjectSystem.IfaceInfo ii = objects.ifaceByTypeId(bt.typeId());
+                if (ii != null) return "array of " + ii.hir.shape().name();
+            } else {
+                WasmObjectSystem.ClassInfo ci = objects.classByTypeId(bt.typeId());
+                if (ci != null) return "array of " + ci.shape.name();
+            }
+            return "array of any";
+        }
+        if (elemType instanceof HirArrayElementType.Array arr) {
+            return "array of (" + formatArrayDisplayName(fe, arr.element()) + ")";
+        }
+        return "array of any";
+    }
+
+    /** Allocates an array wrapper of {@code ek} and populates it from a {@code $List} local. */
+    public void emitArrayFromList(WasmFuncEmitter fe, int listLocal, PrimitiveKind ek, int line) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        int wrapType = wrapperTypeFor(ek);
+        int backingType = backingArrTypeFor(ek);
+        int len = ctx.newLocal("$afLen", WasmValType.I32);
+        int i = ctx.newLocal("$afI", WasmValType.I32);
+        int arrObj = ctx.newLocal("$afObj", WasmValType.ref(ts.arrayBaseType));
+        c.localGet(listLocal).structGet(ts.listType, 1).localSet(len);
+        emitTypeDesc(fe, c, ek, null);
+        c.localGet(len).arrayNewDefault(backingType).structNew(wrapType).localSet(arrObj);
+        c.i32Const(0).localSet(i);
+        int brk = ctx.pushBlock("af_brk");
+        c.block();
+        int loop = ctx.pushBlock("af_loop");
+        c.loop();
+        c.localGet(i).localGet(len).op(WasmInstr.SimpleOp.I32_GE_S).brIf(ctx.relDepth(brk));
+        c.localGet(arrObj).localGet(i)
+                .localGet(listLocal).structGet(ts.listType, 0).localGet(i).arrayGet(ts.anyArrType)
+                .i32Const(line).call(fnArraySetBoxed).drop();
+        c.localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
+                .br(ctx.relDepth(loop));
+        ctx.popBlock();
+        c.end();
+        ctx.popBlock();
+        c.end();
+        c.localGet(arrObj);
     }
 }

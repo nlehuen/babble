@@ -52,8 +52,10 @@ public final class WasmRuntimeOpsGen {
 
     public final int fnIsBuiltin;
     public final int fnClassof;
+    public final int fnDescribeType;
 
     private final WasmModule.FuncDef dClassofDef;
+    private WasmCollectionOpsGen colOps;
 
     // Built-in generic call dispatchers (for first-class references to print, int, exception, etc.)
     private final Map<String, Integer> builtinFnGlobals = new LinkedHashMap<>();
@@ -94,6 +96,8 @@ public final class WasmRuntimeOpsGen {
                 ts.internFuncType(List.of(refAnyNull, WasmValType.I32), List.of(WasmValType.I32)), List.of("v", "kind"));
         WasmModule.FuncDef dClassof = mod.addFunction("classof",
                 ts.internFuncType(List.of(refAnyNull), List.of(refAnyNull)), List.of("v"));
+        WasmModule.FuncDef dDescType = mod.addFunction("describe_type",
+                ts.internFuncType(List.of(refAnyNull), List.of(refStr)), List.of("v"));
 
         this.fnDynAdd = dAdd.funcIndex();
         this.fnDynSub = dSub.funcIndex();
@@ -113,6 +117,7 @@ public final class WasmRuntimeOpsGen {
         this.fnIsBuiltin = dIsBuiltin.funcIndex();
         this.dClassofDef = dClassof;
         this.fnClassof = dClassof.funcIndex();
+        this.fnDescribeType = dDescType.funcIndex();
 
         this.fnInitBuiltinsDef = mod.addFunction("init_builtins", ts.internFuncType(List.of(), List.of()));
         this.fnInitBuiltins = fnInitBuiltinsDef.funcIndex();
@@ -122,6 +127,7 @@ public final class WasmRuntimeOpsGen {
         emitDynBinary(dMul, "*", "times");
         emitDynBinary(dDiv, "/", "div");
         emitDynNeg(dNeg);
+        emitDescribeType(dDescType);
 
         emitConvIntegral(dCByte, "byte", -128L, 127L, -129.0, 128.0);
         emitConvIntegral(dCShort, "short", -32768L, 32767L, -32769.0, 32768.0);
@@ -550,7 +556,14 @@ public final class WasmRuntimeOpsGen {
 
     private void emitOutOfRange(WasmCodeBuilder c, String typeName, int valLocal, int textLocal, int lineLocal) {
         rt.emitStringLit(c, "Out of the " + typeName + " range : ");
-        c.localGet(valLocal).call(rt.fnFormat).call(rt.fnStrConcat)
+        c.localGet(textLocal).structGet(ts.stringType, 0).arrayLen().i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S)
+                .if_(WasmValType.ref(ts.stringType))
+                .localGet(textLocal);
+        rt.emitStringLit(c, " = ");
+        c.call(rt.fnStrConcat).else_();
+        rt.emitStringLit(c, "");
+        c.end().call(rt.fnStrConcat)
+                .localGet(valLocal).call(rt.fnFormat).call(rt.fnStrConcat)
                 .localGet(lineLocal).call(rt.fnThrowMsg).unreachable();
     }
 
@@ -599,6 +612,12 @@ public final class WasmRuntimeOpsGen {
 
     public void emitClassofWithTable(int gClassVals) {
         WasmCodeBuilder c = dClassofDef.code();
+        c.localGet(0).refTest(ts.classValType).if_();
+        rt.emitStringLit(c, "classof : a class has no class");
+        c.i32Const(0).call(rt.fnThrowMsg).unreachable().end();
+        c.localGet(0).refTest(ts.ifaceValType).if_();
+        rt.emitStringLit(c, "classof : an interface has no class");
+        c.i32Const(0).call(rt.fnThrowMsg).unreachable().end();
         c.localGet(0).refTest(ts.objectType).if_()
                 .globalGet(gClassVals).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
                 .globalGet(gClassVals).refAsNonNull()
@@ -607,6 +626,15 @@ public final class WasmRuntimeOpsGen {
                 .structGet(ts.vtableType, 0)
                 .arrayGet(ts.anyArrType).return_()
                 .end().end();
+        emitTypeNameCase(c, ts.boxByteType, "java.lang.Byte");
+        emitTypeNameCase(c, ts.boxShortType, "java.lang.Short");
+        emitTypeNameCase(c, ts.boxIntType, "java.lang.Integer");
+        emitTypeNameCase(c, ts.boxLongType, "java.lang.Long");
+        emitTypeNameCase(c, ts.boxFloatType, "java.lang.Float");
+        emitTypeNameCase(c, ts.boxDoubleType, "java.lang.Double");
+        emitTypeNameCase(c, ts.boxBoolType, "java.lang.Boolean");
+        emitTypeNameCase(c, ts.boxCharType, "java.lang.Character");
+        emitTypeNameCase(c, ts.stringType, "java.lang.String");
         c.refNull(ts.anyType);
     }
 
@@ -688,11 +716,111 @@ public final class WasmRuntimeOpsGen {
                         .localGet(1).i32Const(1).arrayGet(ts.anyArrType).localSet(cause).end();
                 c.localGet(msg).localGet(cause).i32Const(0).call(rt.fnMakeExn);
             }
+            case "col_list" -> {
+                int len = fn.addLocal("len", WasmValType.I32, 3);
+                int i = fn.addLocal("i", WasmValType.I32, 3);
+                int l = fn.addLocal("l", WasmValType.ref(ts.listType), 3);
+                c.localGet(1).arrayLen().localTee(len)
+                        .i32Const(4).op(WasmInstr.SimpleOp.I32_GE_S).if_(WasmValType.I32).localGet(len).else_().i32Const(4).end()
+                        .call(colOps.fnListNew).localSet(l)
+                        .i32Const(0).localSet(i)
+                        .block().loop()
+                        .localGet(i).localGet(len).op(WasmInstr.SimpleOp.I32_GE_S).brIf(1)
+                        .localGet(l).localGet(1).localGet(i).arrayGet(ts.anyArrType).call(colOps.fnListAdd).drop()
+                        .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i).br(0)
+                        .end().end()
+                        .localGet(l);
+            }
+            case "col_set", "col_sortedset" -> {
+                int sorted = "col_sortedset".equals(name) ? 1 : 0;
+                int len = fn.addLocal("len", WasmValType.I32, 3);
+                int i = fn.addLocal("i", WasmValType.I32, 3);
+                int s = fn.addLocal("s", WasmValType.ref(ts.setType), 3);
+                c.localGet(1).arrayLen().localSet(len)
+                        .i32Const(sorted).call(colOps.fnSetNew).localSet(s)
+                        .i32Const(0).localSet(i)
+                        .block().loop()
+                        .localGet(i).localGet(len).op(WasmInstr.SimpleOp.I32_GE_S).brIf(1)
+                        .localGet(s).localGet(1).localGet(i).arrayGet(ts.anyArrType).i32Const(0).call(colOps.fnSetAdd).drop()
+                        .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i).br(0)
+                        .end().end()
+                        .localGet(s);
+            }
+            case "col_map", "col_sortedmap" -> {
+                int sorted = "col_sortedmap".equals(name) ? 1 : 0;
+                int len = fn.addLocal("len", WasmValType.I32, 3);
+                int i = fn.addLocal("i", WasmValType.I32, 3);
+                int m = fn.addLocal("m", WasmValType.ref(ts.mapType), 3);
+                int e = fn.addLocal("e", ts.anyRef(), 3);
+                c.localGet(1).arrayLen().localSet(len)
+                        .i32Const(sorted).call(colOps.fnMapNew).localSet(m)
+                        .i32Const(0).localSet(i)
+                        .block().loop()
+                        .localGet(i).localGet(len).op(WasmInstr.SimpleOp.I32_GE_S).brIf(1)
+                        .localGet(1).localGet(i).arrayGet(ts.anyArrType).localSet(e)
+                        .localGet(m)
+                        .localGet(e).refCast(ts.entryType).structGet(ts.entryType, 0)
+                        .localGet(e).refCast(ts.entryType).structGet(ts.entryType, 1)
+                        .i32Const(0).call(colOps.fnMapPut).drop()
+                        .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i).br(0)
+                        .end().end()
+                        .localGet(m);
+            }
+            case "col_entry" -> {
+                c.localGet(1).i32Const(0).arrayGet(ts.anyArrType)
+                        .localGet(1).i32Const(1).arrayGet(ts.anyArrType)
+                        .call(colOps.fnEntryNew);
+            }
             default -> {
                 rt.emitStringLit(c, "Unsupported built-in : " + name);
                 c.i32Const(0).call(rt.fnThrowMsg).unreachable();
             }
         }
+    }
+
+    public void setCollections(WasmCollectionOpsGen colOps) {
+        this.colOps = colOps;
+    }
+
+    private void emitDescribeType(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        c.localGet(0).refIsNull().if_();
+        rt.emitStringLit(c, "null");
+        c.return_().end();
+        emitTypeNameCase(c, ts.boxByteType, "byte");
+        emitTypeNameCase(c, ts.boxShortType, "short");
+        emitTypeNameCase(c, ts.boxIntType, "int");
+        emitTypeNameCase(c, ts.boxLongType, "long");
+        emitTypeNameCase(c, ts.boxFloatType, "float");
+        emitTypeNameCase(c, ts.boxDoubleType, "double");
+        emitTypeNameCase(c, ts.boxBoolType, "bool");
+        emitTypeNameCase(c, ts.boxCharType, "char");
+        emitTypeNameCase(c, ts.stringType, "string");
+        emitTypeNameCase(c, ts.listType, "list");
+        emitTypeNameCase(c, ts.setType, "set");
+        emitTypeNameCase(c, ts.mapType, "map");
+        emitTypeNameCase(c, ts.entryType, "entry");
+        c.localGet(0).refTest(ts.arrayBaseType).if_()
+                .localGet(0).refCast(ts.arrayBaseType).structGet(ts.arrayBaseType, 0).structGet(ts.typeDescType, 3)
+                .return_().end();
+        emitTypeNameCase(c, ts.babbleExnType, "exception");
+        c.localGet(0).refTest(ts.objectType).if_()
+                .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0).structGet(ts.vtableType, 1)
+                .return_().end();
+        c.localGet(0).refTest(ts.classValType).if_();
+        rt.emitStringLit(c, "class ");
+        c.localGet(0).refCast(ts.classValType).structGet(ts.classValType, 1).call(rt.fnStrConcat).return_().end();
+        c.localGet(0).refTest(ts.ifaceValType).if_();
+        rt.emitStringLit(c, "interface ");
+        c.localGet(0).refCast(ts.ifaceValType).structGet(ts.ifaceValType, 1).call(rt.fnStrConcat).return_().end();
+        emitTypeNameCase(c, ts.fnBaseType, "function");
+        rt.emitStringLit(c, "any");
+    }
+
+    private void emitTypeNameCase(WasmCodeBuilder c, int structType, String label) {
+        c.localGet(0).refTest(structType).if_();
+        rt.emitStringLit(c, label);
+        c.return_().end();
     }
 
     private void emitConvWrapper(WasmCodeBuilder c, String name, int convFn, int boxFn) {

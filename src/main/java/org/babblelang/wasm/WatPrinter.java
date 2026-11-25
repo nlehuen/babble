@@ -365,4 +365,86 @@ public final class WatPrinter {
         }
         return sb.toString();
     }
+
+    /** Wraps {@code module} as an {@link org.babblelang.ir.IrDumpable} for {@link org.babblelang.ir.IrTier#WAT}. */
+    public static org.babblelang.ir.IrDumpable asDumpable(WasmModule module) {
+        return new org.babblelang.ir.IrDumpable() {
+            @Override
+            public org.babblelang.ir.IrTier tier() {
+                return org.babblelang.ir.IrTier.WAT;
+            }
+
+            @Override
+            public String printRaw() {
+                return print(module);
+            }
+
+            @Override
+            public String printCanonical(org.babblelang.ir.IrTarget target) {
+                if (target instanceof org.babblelang.ir.IrTarget.Module) {
+                    return print(module).strip();
+                }
+                StringBuilder sb = new StringBuilder(512);
+                if (target instanceof org.babblelang.ir.IrTarget.TopLevel) {
+                    for (WasmModule.FuncDef fn : module.definedFuncs()) {
+                        if ("M0_init".equals(fn.name())) {
+                            printFunc(sb, module, fn);
+                            return sb.toString().strip();
+                        }
+                    }
+                    throw new IllegalArgumentException("No top-level M0_init function in WAT module");
+                }
+                if (target instanceof org.babblelang.ir.IrTarget.Fn f) {
+                    String suffix = "_" + sanitize(f.name());
+                    for (WasmModule.FuncDef fn : module.definedFuncs()) {
+                        String n = fn.name();
+                        if (n != null && !n.endsWith("_generic") && !n.contains("$")
+                                && (n.equals(f.name()) || n.endsWith(suffix))) {
+                            printFunc(sb, module, fn);
+                        }
+                    }
+                    if (!sb.isEmpty()) {
+                        return sb.toString().strip();
+                    }
+                    throw new IllegalArgumentException("No WAT function matching : " + f.format());
+                }
+                if (target instanceof org.babblelang.ir.IrTarget.Method m) {
+                    String marker = "_" + sanitize(m.ownerName()) + "$" + sanitize(m.methodName());
+                    for (WasmModule.FuncDef fn : module.definedFuncs()) {
+                        String n = fn.name();
+                        if (n != null && !n.endsWith("_generic") && (n.endsWith(marker) || n.contains(marker + "$"))) {
+                            printFunc(sb, module, fn);
+                        }
+                    }
+                    if (!sb.isEmpty()) {
+                        return sb.toString().strip();
+                    }
+                    throw new IllegalArgumentException("No WAT method matching : " + m.format());
+                }
+                if (target instanceof org.babblelang.ir.IrTarget.TypeDef td) {
+                    String suffix = "_" + sanitize(td.name());
+                    for (WasmTypeDef.SubType sub : module.flatTypes()) {
+                        if (sub != null && sub.name() != null
+                                && (sub.name().equals(td.name()) || sub.name().endsWith(suffix))
+                                && !sub.name().startsWith("ClassVal_")) {
+                            printSubType(sb, module, sub);
+                            sb.append('\n');
+                        }
+                    }
+                    String methMarker = "_" + sanitize(td.name()) + "$";
+                    for (WasmModule.FuncDef fn : module.definedFuncs()) {
+                        String n = fn.name();
+                        if (n != null && !n.endsWith("_generic") && !n.endsWith("$ctor_generic") && n.contains(methMarker)) {
+                            printFunc(sb, module, fn);
+                        }
+                    }
+                    if (!sb.isEmpty()) {
+                        return sb.toString().strip();
+                    }
+                    throw new IllegalArgumentException("No WAT type matching : " + td.format());
+                }
+                return print(module).strip();
+            }
+        };
+    }
 }

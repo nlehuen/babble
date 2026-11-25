@@ -398,6 +398,8 @@ public final class WasmRuntimeGen {
         if (target != CompilationTarget.WASM_JS) {
             c.i32Const(0).arrayNewDefault(ts.anyArrType)
                     .i32Const(0)
+                    .refNull(ts.listType)
+                    .i32Const(0)
                     .structNew(ts.listType)
                     .globalSet(gArgs);
             return;
@@ -428,6 +430,8 @@ public final class WasmRuntimeGen {
                 .end()
                 .localGet(arr).refAsNonNull()
                 .localGet(n)
+                .refNull(ts.listType)
+                .i32Const(0)
                 .structNew(ts.listType)
                 .globalSet(gArgs);
     }
@@ -1418,8 +1422,33 @@ public final class WasmRuntimeGen {
                 .structGet(ts.vtableType, 1).return_()
                 .end();
 
-        c.localGet(0).refTest(ts.fnBaseType).if_()
-                .localGet(0).refCast(ts.fnBaseType).structGet(ts.fnBaseType, 1).return_().end();
+        c.localGet(0).refTest(ts.moduleValType).if_();
+        emitStringLit(c, "module ");
+        c.localGet(0).refCast(ts.moduleValType).structGet(ts.moduleValType, 1)
+                .call(fnStrConcat).return_().end();
+
+        c.localGet(0).refTest(ts.classValType).if_();
+        emitStringLit(c, "class ");
+        c.localGet(0).refCast(ts.classValType).structGet(ts.classValType, 1)
+                .call(fnStrConcat).return_().end();
+
+        c.localGet(0).refTest(ts.ifaceValType).if_();
+        emitStringLit(c, "interface ");
+        c.localGet(0).refCast(ts.ifaceValType).structGet(ts.ifaceValType, 1)
+                .call(fnStrConcat).return_().end();
+
+        c.localGet(0).refTest(ts.overloadSetType).if_()
+                .localGet(0).refCast(ts.overloadSetType).structGet(ts.overloadSetType, 1).return_().end();
+
+        c.localGet(0).refTest(ts.fnBaseType).if_();
+        int fnName = fn.addLocal("fnName", WasmValType.refNull(ts.stringType), 1);
+        c.localGet(0).refCast(ts.fnBaseType).structGet(ts.fnBaseType, 1).localTee(fnName).refAsNonNull();
+        emitStringLit(c, "<fn>");
+        c.call(fnStrEq).if_();
+        emitStringLit(c, "function");
+        c.return_().end();
+        emitStringLit(c, "function ");
+        c.localGet(fnName).refAsNonNull().call(fnStrConcat).return_().end();
 
         emitStringLit(c, "<object>");
     }

@@ -205,7 +205,8 @@ public final class WasmCollectionOpsGen {
             int cap = dNew.addLocal("c", WasmValType.I32, 1);
             c.localGet(0).i32Const(4).op(WasmInstr.SimpleOp.I32_LT_S)
                     .if_(WasmValType.I32).i32Const(4).else_().localGet(0).end().localSet(cap);
-            c.localGet(cap).arrayNewDefault(ts.anyArrType).i32Const(0).structNew(ts.listType);
+            c.localGet(cap).arrayNewDefault(ts.anyArrType).i32Const(0)
+                    .refNull(ts.listType).i32Const(0).structNew(ts.listType);
         }
         // list_add(l, v) -> i32 (1)
         {
@@ -225,22 +226,35 @@ public final class WasmCollectionOpsGen {
                     .end();
             c.localGet(arr).refAsNonNull().localGet(sz).localGet(1).arraySet(ts.anyArrType);
             c.localGet(0).localGet(sz).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).structSet(ts.listType, 1);
+            // Propagate to backing parent list if this is a subList view
+            c.localGet(0).structGet(ts.listType, 2).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(0).structGet(ts.listType, 2).refAsNonNull()
+                    .localGet(0).structGet(ts.listType, 3).localGet(sz).op(WasmInstr.SimpleOp.I32_ADD)
+                    .localGet(1).i32Const(0).call(fnListAddAt)
+                    .end();
             c.i32Const(1);
         }
         // list_addAt(l, i, v, line)
         {
             WasmCodeBuilder c = dAddAt.code();
             int sz = dAddAt.addLocal("sz", WasmValType.I32, 4);
+            int cap = dAddAt.addLocal("cap", WasmValType.I32, 4);
             int arr = dAddAt.addLocal("arr", WasmValType.refNull(ts.anyArrType), 4);
+            int grown = dAddAt.addLocal("grown", WasmValType.refNull(ts.anyArrType), 4);
             int k = dAddAt.addLocal("k", WasmValType.I32, 4);
             c.localGet(0).structGet(ts.listType, 1).localSet(sz);
             c.localGet(1).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
                     .localGet(1).localGet(sz).op(WasmInstr.SimpleOp.I32_GT_S).op(WasmInstr.SimpleOp.I32_OR).if_();
             rt.emitStringLit(c, "Index out of bounds");
             c.localGet(3).call(rt.fnThrowMsg).unreachable().end();
-            // Append dummy to ensure capacity & increment size
-            c.localGet(0).refNull(ts.anyType).call(fnListAdd).drop();
-            c.localGet(0).structGet(ts.listType, 0).localSet(arr);
+            c.localGet(0).structGet(ts.listType, 0).localTee(arr).arrayLen().localSet(cap);
+            c.localGet(sz).localGet(cap).op(WasmInstr.SimpleOp.I32_GE_S).if_()
+                    .localGet(cap).i32Const(2).op(WasmInstr.SimpleOp.I32_MUL).arrayNewDefault(ts.anyArrType).localTee(grown)
+                    .i32Const(0).localGet(arr).refAsNonNull().i32Const(0).localGet(sz)
+                    .arrayCopy(ts.anyArrType, ts.anyArrType)
+                    .localGet(0).localGet(grown).refAsNonNull().structSet(ts.listType, 0)
+                    .localGet(grown).localSet(arr)
+                    .end();
             c.localGet(sz).localSet(k);
             c.loop()
                     .localGet(k).localGet(1).op(WasmInstr.SimpleOp.I32_GT_S).if_()
@@ -250,6 +264,12 @@ public final class WasmCollectionOpsGen {
                     .localGet(k).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).localSet(k)
                     .br(1).end().end();
             c.localGet(arr).refAsNonNull().localGet(1).localGet(2).arraySet(ts.anyArrType);
+            c.localGet(0).localGet(sz).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).structSet(ts.listType, 1);
+            c.localGet(0).structGet(ts.listType, 2).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(0).structGet(ts.listType, 2).refAsNonNull()
+                    .localGet(0).structGet(ts.listType, 3).localGet(1).op(WasmInstr.SimpleOp.I32_ADD)
+                    .localGet(2).localGet(3).call(fnListAddAt)
+                    .end();
         }
         // list_get(l, i, line)
         {
@@ -272,6 +292,11 @@ public final class WasmCollectionOpsGen {
             c.localGet(3).call(rt.fnThrowMsg).unreachable().end();
             c.localGet(0).structGet(ts.listType, 0).localGet(1).arrayGet(ts.anyArrType).localSet(prev);
             c.localGet(0).structGet(ts.listType, 0).localGet(1).localGet(2).arraySet(ts.anyArrType);
+            c.localGet(0).structGet(ts.listType, 2).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(0).structGet(ts.listType, 2).refAsNonNull()
+                    .localGet(0).structGet(ts.listType, 3).localGet(1).op(WasmInstr.SimpleOp.I32_ADD)
+                    .localGet(2).localGet(3).call(fnListSet).drop()
+                    .end();
             c.localGet(prev);
         }
         // list_removeAt(l, i, line) -> prev
@@ -298,6 +323,11 @@ public final class WasmCollectionOpsGen {
                     .br(1).end().end();
             c.localGet(arr).refAsNonNull().localGet(sz).refNull(ts.anyType).arraySet(ts.anyArrType);
             c.localGet(0).localGet(sz).structSet(ts.listType, 1);
+            c.localGet(0).structGet(ts.listType, 2).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(0).structGet(ts.listType, 2).refAsNonNull()
+                    .localGet(0).structGet(ts.listType, 3).localGet(1).op(WasmInstr.SimpleOp.I32_ADD)
+                    .localGet(2).call(fnListRemoveAt).drop()
+                    .end();
             c.localGet(prev);
         }
         // list_indexOf(l, v)
@@ -343,7 +373,20 @@ public final class WasmCollectionOpsGen {
             c.localGet(0).localGet(idx).i32Const(0).call(fnListRemoveAt).drop().i32Const(1);
         }
         // list_clear(l)
-        dClear.code().localGet(0).i32Const(0).structSet(ts.listType, 1);
+        {
+            WasmCodeBuilder c = dClear.code();
+            int rem = dClear.addLocal("rem", WasmValType.I32, 1);
+            c.localGet(0).structGet(ts.listType, 2).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(0).structGet(ts.listType, 1).localSet(rem)
+                    .loop()
+                    .localGet(rem).i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S).if_()
+                    .localGet(0).structGet(ts.listType, 2).refAsNonNull()
+                    .localGet(0).structGet(ts.listType, 3).i32Const(0).call(fnListRemoveAt).drop()
+                    .localGet(rem).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).localSet(rem)
+                    .br(1).end().end()
+                    .end();
+            c.localGet(0).i32Const(0).structSet(ts.listType, 1);
+        }
         // list_addAll(l, src, line)
         emitCollectionAddAll(dAddAll, true);
         // list_subList(l, from, to, line)
@@ -367,6 +410,9 @@ public final class WasmCollectionOpsGen {
                     .call(fnListAdd).drop()
                     .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
                     .br(1).end().end();
+            // Link live backing parent & offset AFTER initial copy
+            c.localGet(res).refAsNonNull().localGet(0).structSet(ts.listType, 2);
+            c.localGet(res).refAsNonNull().localGet(1).structSet(ts.listType, 3);
             c.localGet(res).refAsNonNull();
         }
         // list_iter(l)
@@ -513,7 +559,8 @@ public final class WasmCollectionOpsGen {
                             WasmModule.FuncDef dRem, WasmModule.FuncDef dClear, WasmModule.FuncDef dFirst,
                             WasmModule.FuncDef dLast, WasmModule.FuncDef dAddAll, WasmModule.FuncDef dIter) {
         // set_new(sorted)
-        dNew.code().i32Const(4).arrayNewDefault(ts.anyArrType).i32Const(0).localGet(0).structNew(ts.setType);
+        dNew.code().i32Const(4).arrayNewDefault(ts.anyArrType).i32Const(0).localGet(0)
+                .refNull(ts.mapType).structNew(ts.setType);
 
         // set_contains(s, v)
         {
@@ -614,13 +661,20 @@ public final class WasmCollectionOpsGen {
                     .br(1).end().end()
                     .localGet(arr).refAsNonNull().localGet(sz).refNull(ts.anyType).arraySet(ts.anyArrType)
                     .localGet(0).localGet(sz).structSet(ts.setType, 1)
+                    .localGet(0).structGet(ts.setType, 3).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                    .localGet(0).structGet(ts.setType, 3).refAsNonNull().localGet(1).call(fnMapRemove).drop()
+                    .end()
                     .i32Const(1).return_().end()
                     .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
                     .br(1).end().end();
             c.i32Const(0);
         }
 
-        dClear.code().localGet(0).i32Const(0).structSet(ts.setType, 1);
+        dClear.code()
+                .localGet(0).i32Const(0).structSet(ts.setType, 1)
+                .localGet(0).structGet(ts.setType, 3).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                .localGet(0).structGet(ts.setType, 3).refAsNonNull().call(fnMapClear)
+                .end();
 
         // set_first(s, line)
         {
@@ -872,6 +926,7 @@ public final class WasmCollectionOpsGen {
                     .i32Const(0).call(fnSetAdd).drop()
                     .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
                     .br(1).end().end();
+            c.localGet(s).refAsNonNull().localGet(0).structSet(ts.setType, 3);
             c.localGet(s).refAsNonNull();
         }
         // map_values(m)

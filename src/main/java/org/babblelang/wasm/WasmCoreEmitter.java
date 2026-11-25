@@ -55,51 +55,61 @@ public final class WasmCoreEmitter {
         c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
 
         // Dispatch fast path for ARRAY when statically known, or runtime-checked array/collection/Babble iterable
+        int resLocal = ctx.newLocal("$forRes", ts.valTypeFor(resKind));
+        ts.emitDefaultValue(c, ts.valTypeFor(resKind));
+        c.localSet(resLocal);
+
         int breakDepth = ctx.pushBlock("for_brk");
         c.block(ts.valTypeFor(resKind));
 
         if (kind == LoweringTargets.ForKind.ARRAY) {
-            emitForOverArray(f, srcLocal, breakDepth, resKind, line);
+            emitForOverArray(f, srcLocal, breakDepth, resKind, resLocal, line);
         } else if (kind == LoweringTargets.ForKind.JAVA_ITERATOR) {
-            emitForOverIterator(f, srcLocal, breakDepth, resKind, line, false);
+            emitForOverIterator(f, srcLocal, breakDepth, resKind, resLocal, line, false);
         } else if (kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
-            emitForOverIterator(f, srcLocal, breakDepth, resKind, line, true);
+            emitForOverIterator(f, srcLocal, breakDepth, resKind, resLocal, line, true);
         } else {
             // JAVA_ITERABLE, BABBLE_ITERABLE, BABBLE_TO_JAVA_ITERABLE, DYNAMIC_UNION:
             // Fast path for $List, $Set, $ArrayBase, else call src.iterator() and iterate!
             int itLocal = ctx.newLocal("$forIt", ts.anyRef());
-            c.localGet(srcLocal).refTest(ts.listType).if_()
-                    .localGet(srcLocal).refCast(ts.listType).call(cols.fnListIter).localSet(itLocal)
-                    .else_();
-            c.localGet(srcLocal).refTest(ts.setType).if_()
-                    .localGet(srcLocal).refCast(ts.setType).call(cols.fnSetIter).localSet(itLocal)
-                    .else_();
-            c.localGet(srcLocal).refTest(ts.collectionIterType).if_()
-                    .localGet(srcLocal).localSet(itLocal)
-                    .else_();
+            c.localGet(srcLocal).refTest(ts.listType).if_();
+            ctx.pushBlock("for_is_list");
+            c.localGet(srcLocal).refCast(ts.listType).call(cols.fnListIter).localSet(itLocal);
+            c.else_();
+            c.localGet(srcLocal).refTest(ts.setType).if_();
+            ctx.pushBlock("for_is_set");
+            c.localGet(srcLocal).refCast(ts.setType).call(cols.fnSetIter).localSet(itLocal);
+            c.else_();
+            c.localGet(srcLocal).refTest(ts.collectionIterType).if_();
+            ctx.pushBlock("for_is_iter");
+            c.localGet(srcLocal).localSet(itLocal);
+            c.else_();
             c.localGet(srcLocal).refTest(ts.arrayBaseType).if_();
+            ctx.pushBlock("for_is_arr");
             var savedVars = new java.util.HashMap<>(ctx.vars);
-            emitForOverArray(f, srcLocal, breakDepth, resKind, line);
+            emitForOverArray(f, srcLocal, breakDepth, resKind, resLocal, line);
             ctx.vars.clear();
             ctx.vars.putAll(savedVars);
-            ts.emitDefaultValue(c, ts.valTypeFor(resKind));
-            c.br(ctx.relDepth(breakDepth));
+            c.localGet(resLocal).br(ctx.relDepth(breakDepth));
             c.else_();
             // Babble iterable: call src.iterator() via VTable getMemberFn or direct method
             emitCallZeroArgMember(srcLocal, "iterator", line);
             c.localSet(itLocal);
-            c.end().end().end().end();
+            ctx.popBlock(); c.end();
+            ctx.popBlock(); c.end();
+            ctx.popBlock(); c.end();
+            ctx.popBlock(); c.end();
 
-            emitForOverIterator(f, itLocal, breakDepth, resKind, line, kind == LoweringTargets.ForKind.BABBLE_ITERABLE);
+            emitForOverIterator(f, itLocal, breakDepth, resKind, resLocal, line, kind == LoweringTargets.ForKind.BABBLE_ITERABLE);
         }
 
-        ts.emitDefaultValue(c, ts.valTypeFor(resKind));
+        c.localGet(resLocal);
         ctx.popBlock();
         c.end(); // end for_brk
         ctx.stackKind = resKind;
     }
 
-    private void emitForOverArray(HirExpr.For f, int arrAnyLocal, int breakDepth, PrimitiveKind resKind, int line) {
+    private void emitForOverArray(HirExpr.For f, int arrAnyLocal, int breakDepth, PrimitiveKind resKind, int resLocal, int line) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         int idxLocal = ctx.newLocal("$forIdx", WasmValType.I32);
@@ -148,7 +158,7 @@ public final class WasmCoreEmitter {
 
         ctx.loops.push(new WasmFuncEmitter.LoopFrame(breakDepth, contStepDepth, resKind));
         try {
-            emitForBody(f);
+            emitForBody(f, resLocal, resKind);
         } finally {
             ctx.loops.pop();
         }
@@ -164,7 +174,7 @@ public final class WasmCoreEmitter {
         c.end(); // end loop
     }
 
-    private void emitForOverIterator(HirExpr.For f, int itLocal, int breakDepth, PrimitiveKind resKind, int line, boolean preferBabble) {
+    private void emitForOverIterator(HirExpr.For f, int itLocal, int breakDepth, PrimitiveKind resKind, int resLocal, int line, boolean preferBabble) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
 
@@ -194,7 +204,7 @@ public final class WasmCoreEmitter {
 
         ctx.loops.push(new WasmFuncEmitter.LoopFrame(breakDepth, loopDepth, resKind));
         try {
-            emitForBody(f);
+            emitForBody(f, resLocal, resKind);
         } finally {
             ctx.loops.pop();
         }
@@ -225,14 +235,13 @@ public final class WasmCoreEmitter {
         WasmFuncEmitter.VarSlot slot = ctx.vars.get(lv.id());
         emitElement.run();
         fe.convertStack(ctx.stackKind, slot.kind(), line);
-        fe.storeVarSlotAndKeep(slot);
+        fe.storeVarSlotAndKeep(slot, true);
         ctx.code.drop();
     }
 
-    private void emitForBody(HirExpr.For f) {
-        for (HirExpr stmt : f.body()) {
-            fe.emitVoid(stmt);
-        }
+    private void emitForBody(HirExpr.For f, int resLocal, PrimitiveKind resKind) {
+        fe.emitStmtList(f.body(), resKind);
+        fe.ctx().code.localSet(resLocal);
     }
 
     /** Calls a 0-argument method {@code memberName} on a Babble {@code $Object} stored in {@code recvLocal}. */
@@ -266,6 +275,69 @@ public final class WasmCoreEmitter {
         int line = call.meta().line();
 
         switch (kind) {
+            case "list$reuse" -> {
+                HirExpr fromArg = findNamedArg(args, "from");
+                if (fromArg == null && !args.isEmpty()) fromArg = args.get(0).value();
+                if (fromArg != null) {
+                    fe.emitBoxed(fromArg);
+                    int tmp = ctx.newLocal("$reuseL", ts.anyRef());
+                    c.localTee(tmp).refTest(ts.listType).if_(ts.anyRef())
+                            .localGet(tmp)
+                            .else_();
+                    int l = ctx.newLocal("$newL", WasmValType.ref(ts.listType));
+                    c.i32Const(4).call(cols.fnListNew).localTee(l)
+                            .localGet(tmp).i32Const(line).call(cols.fnListAddAll).drop()
+                            .localGet(l)
+                            .end();
+                } else {
+                    c.i32Const(4).call(cols.fnListNew);
+                }
+                ctx.stackKind = PrimitiveKind.NONE;
+            }
+            case "set$reuse" -> {
+                HirExpr fromArg = findNamedArg(args, "from");
+                if (fromArg == null && !args.isEmpty()) fromArg = args.get(0).value();
+                if (fromArg != null) {
+                    fe.emitBoxed(fromArg);
+                    int tmp = ctx.newLocal("$reuseS", ts.anyRef());
+                    c.localTee(tmp).refTest(ts.setType).if_(WasmValType.I32)
+                            .localGet(tmp).refCast(ts.setType).structGet(ts.setType, 2).op(WasmInstr.SimpleOp.I32_EQZ)
+                            .else_().i32Const(0).end()
+                            .if_(ts.anyRef())
+                            .localGet(tmp)
+                            .else_();
+                    int s = ctx.newLocal("$newS", WasmValType.ref(ts.setType));
+                    c.i32Const(0).call(cols.fnSetNew).localTee(s)
+                            .localGet(tmp).i32Const(line).call(cols.fnSetAddAll).drop()
+                            .localGet(s)
+                            .end();
+                } else {
+                    c.i32Const(0).call(cols.fnSetNew);
+                }
+                ctx.stackKind = PrimitiveKind.NONE;
+            }
+            case "map$reuse" -> {
+                HirExpr fromArg = findNamedArg(args, "from");
+                if (fromArg == null && !args.isEmpty()) fromArg = args.get(0).value();
+                if (fromArg != null) {
+                    fe.emitBoxed(fromArg);
+                    int tmp = ctx.newLocal("$reuseM", ts.anyRef());
+                    c.localTee(tmp).refTest(ts.mapType).if_(WasmValType.I32)
+                            .localGet(tmp).refCast(ts.mapType).structGet(ts.mapType, 3).op(WasmInstr.SimpleOp.I32_EQZ)
+                            .else_().i32Const(0).end()
+                            .if_(ts.anyRef())
+                            .localGet(tmp)
+                            .else_();
+                    int m = ctx.newLocal("$newM", WasmValType.ref(ts.mapType));
+                    c.i32Const(0).call(cols.fnMapNew).localTee(m)
+                            .localGet(tmp).i32Const(line).call(cols.fnMapPutAll)
+                            .localGet(m)
+                            .end();
+                } else {
+                    c.i32Const(0).call(cols.fnMapNew);
+                }
+                ctx.stackKind = PrimitiveKind.NONE;
+            }
             case "list" -> {
                 HirExpr fromArg = findNamedArg(args, "from");
                 HirExpr capArg = findNamedArg(args, "capacity");
@@ -279,8 +351,9 @@ public final class WasmCoreEmitter {
                     fe.emitAs(capArg, PrimitiveKind.INT);
                     int cap = ctx.newLocal("$cap", WasmValType.I32);
                     c.localTee(cap).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_();
-                    rt.emitStringLit(c, "Illegal Capacity");
-                    c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
+                    rt.emitStringLit(c, "java.lang.IllegalArgumentException : Illegal Capacity: ");
+                    c.localGet(cap).call(rt.fnIntToStr).call(rt.fnStrConcat)
+                            .i32Const(line).call(rt.fnThrowMsg).unreachable().end();
                     c.localGet(cap).call(cols.fnListNew);
                 } else {
                     int l = ctx.newLocal("$newL", WasmValType.ref(ts.listType));
@@ -372,6 +445,33 @@ public final class WasmCoreEmitter {
         }
     }
 
+    /** Emits {@code list.of(...)}, {@code set.of(...)}, {@code map.of(...)}, {@code copyOf(...)}, etc. */
+    public void emitCollectionFactoryCall(String kind, String method, List<HirCallArg> args, int line) {
+        if (("map".equals(kind) || "sortedmap".equals(kind)) && "of".equals(method)) {
+            WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+            WasmCodeBuilder c = ctx.code;
+            int sorted = "sortedmap".equals(kind) ? 1 : 0;
+            int m = ctx.newLocal("$mapOf", WasmValType.ref(ts.mapType));
+            c.i32Const(sorted).call(cols.fnMapNew).localSet(m);
+            for (int i = 0; i + 1 < args.size(); i += 2) {
+                c.localGet(m);
+                fe.emitBoxed(args.get(i).value());
+                fe.emitBoxed(args.get(i + 1).value());
+                c.i32Const(line).call(cols.fnMapPut).drop();
+            }
+            c.localGet(m);
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
+        List<HirCallArg> effectiveArgs = args;
+        if ("copyOf".equals(method) && args.size() == 1 && args.get(0).name() == null) {
+            effectiveArgs = List.of(new HirCallArg("from", args.get(0).value()));
+        }
+        emitCoreCollectionCall(new HirExpr.CoreCollectionCall(
+                kind, effectiveArgs,
+                new org.babblelang.ir.hir.ExprMeta(line, PrimitiveKind.NONE, 0, null, null, false, false)));
+    }
+
     public void emitCoreCollectionRef(HirExpr.CoreCollectionRef ref) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         int g = linker.ops().builtinCallableGlobal("col_" + ref.collectionKind());
@@ -451,6 +551,28 @@ public final class WasmCoreEmitter {
         String owner = call.target().method().getDeclaringClass().getName();
         String name = call.target().method().getName();
         int line = call.meta().line();
+        // Static portable collection factories: never evaluate pure static receiver (e.g. java.util.List)
+        if (("java.util.List".equals(owner) || "java.util.Set".equals(owner) || "java.util.Map".equals(owner))
+                && ("of".equals(name) || "copyOf".equals(name) || "ofEntries".equals(name) || "entry".equals(name))) {
+            if (!call.pureStaticReceiver() && call.receiver() != null) {
+                fe.emitVoid(call.receiver());
+            }
+            if ("entry".equals(name) && call.args().size() == 2) {
+                fe.emitBoxed(call.args().get(0));
+                fe.emitBoxed(call.args().get(1));
+                fe.ctx().code.call(cols.fnEntryNew);
+                fe.ctx().stackKind = PrimitiveKind.NONE;
+                return;
+            }
+            String colKind = "java.util.List".equals(owner) ? "list"
+                    : "java.util.Set".equals(owner) ? "set" : "map";
+            List<HirCallArg> cargs = new java.util.ArrayList<>(call.args().size());
+            for (HirExpr a : call.args()) {
+                cargs.add(new HirCallArg(null, a));
+            }
+            emitCollectionFactoryCall(colKind, name, cargs, line);
+            return;
+        }
         String coreKind = mapJavaOwnerToCoreKind(owner);
         if (coreKind != null && dispatchCoreMethod(coreKind, name, call.receiver(), call.args(), call.meta().kind(), line)) {
             return;

@@ -190,4 +190,41 @@ public class MainTestCase {
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms").status());
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms", "no.such.ClassOrPackage").status());
     }
+
+    @Test
+    public void testCompileWasmTargetsAndWasmOpt() throws Exception {
+        String hello = script("wasm_hello.ba", "println(\"hello wasm\")");
+        Path outJs = directory.resolve("hello_js.wasm");
+        Run rJs = run("", "-compile", hello, "-target", "wasm-js", "-o", outJs.toString());
+        Assertions.assertEquals(new Run(0, List.of("Wrote " + outJs + " : 1 module"), List.of()), rJs);
+        Assertions.assertTrue(Files.isRegularFile(outJs));
+        Assertions.assertTrue(Files.isRegularFile(directory.resolve("hello_js.mjs")));
+
+        String pure = script("wasm_pure.ba", "def x = 1 + 2\nx * 14");
+        Path outBare = directory.resolve("hello_bare.wasm");
+        Run rBare = run("", "-compile", pure, "-target", "wasm-bare", "-o", outBare.toString());
+        Assertions.assertEquals(new Run(0, List.of("Wrote " + outBare + " : 1 module"), List.of()), rBare);
+        Assertions.assertTrue(Files.isRegularFile(outBare));
+        Assertions.assertFalse(Files.exists(directory.resolve("hello_bare.mjs")));
+
+        // wasm-bare rejects host I/O (println) with exit 1
+        Run bareReject = run("", "-compile", hello, "-target", "wasm-bare", "-o", directory.resolve("bad_bare.wasm").toString());
+        Assertions.assertEquals(Main.FAILED, bareReject.status());
+        Assertions.assertTrue(bareReject.err().get(0).contains("wasm-bare"), bareReject.err().toString());
+
+        Run badTarget = run("", "-compile", hello, "-target", "wasm-unknown");
+        Assertions.assertEquals(Main.USAGE_ERROR, badTarget.status());
+        Assertions.assertTrue(badTarget.err().get(0).contains("Unknown compilation target"), badTarget.err().toString());
+
+        // -wasm-opt either succeeds (if Binaryen wasm-opt is installed) or fails gracefully with exit 1
+        Path outOpt = directory.resolve("hello_opt.wasm");
+        Run rOpt = run("", "-compile", hello, "-target", "wasm-js", "-wasm-opt", "-o", outOpt.toString());
+        if (rOpt.status() != 0) {
+            Assertions.assertEquals(Main.FAILED, rOpt.status());
+            Assertions.assertFalse(rOpt.err().isEmpty());
+            Assertions.assertTrue(rOpt.err().get(0).contains("wasm-opt"), rOpt.err().toString());
+        } else {
+            Assertions.assertTrue(Files.isRegularFile(outOpt));
+        }
+    }
 }

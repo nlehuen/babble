@@ -25,6 +25,7 @@ public final class NodeWasmRunner {
             const readline = require('readline');
             const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
             const textDecoder = new TextDecoder('utf-16le');
+            const mjsCache = new Map();
 
             async function handleRequest(req) {
               const bytes = Buffer.from(req.wasmBase64, 'base64');
@@ -33,9 +34,13 @@ public final class NodeWasmRunner {
               const args = Array.isArray(req.args) ? req.args : [];
               try {
                 if (req.mjsSource) {
-                  // Execute generated app.mjs loader via dynamic data URL import
-                  const b64 = Buffer.from(req.mjsSource, 'utf8').toString('base64');
-                  const mod = await import('data:text/javascript;base64,' + b64);
+                  // Execute generated app.mjs loader via cached dynamic data URL import
+                  let mod = mjsCache.get(req.mjsSource);
+                  if (!mod) {
+                    const b64 = Buffer.from(req.mjsSource, 'utf8').toString('base64');
+                    mod = await import('data:text/javascript;base64,' + b64);
+                    mjsCache.set(req.mjsSource, mod);
+                  }
                   const res = await mod.runWasmBytes(bytes, {
                     args,
                     stdout: (s) => stdoutChunks.push(String(s)),
