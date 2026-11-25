@@ -669,6 +669,27 @@ With the unboxed `typedCall`/`OverloadDispatch` lowering, SSA prologue local ski
 
 `-O1`'s code is unchanged : its two columns in the first table differ by noise (`±5%` between JVMs). What `-O2` still pays to compile, in the passes' boxed maps and sets, its render now more than wins back.
 
+#### After `BIP034` : record layout, self-class reads, name sites from `-O1`
+
+Once `BIP034` made name reads pure, the profile of the render (JFR, `-O2`) was led by `Vec3.$new` (`~29%`), `Double.compare` (`~23%`) and, at `-O1` only, `Namespace.lookup` (`~18%`). Three changes followed :
+
+* **No per-instance method fields in `fastRecord`s.** Every instance carried one `Object` field per method (`13` for `Vec3`), written twice per allocation (`UNDEFINED` in `<init>`, then the per-class `CompiledMethod` in `$new`), although the value is the same for every instance and can never be assigned. `ClassGen` now declares no field for them : `$new`, the generic constructor, direct calls, interface and Java bridges and `$babble$field` load the script class's `METHOD`/`OVERLOAD` constant, and every compiled class has a `$m$<name>()` accessor that cross-module calls and `SelectCache` use whatever the callee's layout.
+* **Self-class reads.** Inside a method of class `C`, a final, definitely defined read of the top-level `def C` is the receiver's `$babble$class` (`HirEmitter.loadName` : classes cannot be extended), with no lookup at any level ; a read a static block could run before the binding is not definitely defined, and keeps its lookup and its `Name used before definition` error.
+* **Name sites from `-O1`.** The bodies of functions and methods that are not namespace-scoped read their other names (a module's imports, other classes) through the caching `Bootstrap.name` sites at `-O1` too ; `run`, static blocks, constructors and `-O0` keep plain lookups.
+
+An exact fast path for floating comparisons was tried and dropped : strict IEEE `DCMPG`/`DCMPL` tests first, `Double.compare` only for equal or unordered operands, a single `DCMPG` against a constant that is neither NaN nor a zero. C2 already inlines `Double.compare` in `AABB.hit`, and the samples it showed were the slab test's own data-dependent branches : they moved to `AABB.hit` unchanged, and the render did not get measurably faster.
+
+Measured on JDK 21 (4 cores), before (`d1e7ebd`) and after, medians ; every run renders the byte-identical `scene.ppm` :
+
+| `argon` | before `-O1` | before `-O2` | after `-O1` | after `-O2` | after `-O2` vs. `-O1` |
+|---|---:|---:|---:|---:|---:|
+| full render through the engine (5 interleaved runs) | 7.73 s | 6.99 s | 5.05 s | **4.91 s** | **1.03×** |
+| full render, `babblec` jar (5 interleaved runs) | 5.47 s | 5.13 s | 3.62 s | **3.44 s** | **1.05×** |
+| `Benchmarks` render row (`-Xms1g -Xmx1g -XX:+UseParallelGC`, 5-6 JVMs per level) | 26.1 ms | 23.3 ms | 21.5 ms | **20.5 ms** | **1.05×** |
+| `Benchmarks` compile row, warm (5 JVMs per level) | 107 ms | 146 ms | 124 ms | 152 ms | 0.82× |
+
+The render is `35%` faster at `-O1` and `30%` at `-O2` ; `-O2` keeps a smaller lead, since `-O1` now shares the name sites, and the cost of compiling `MIR` weighs more on a shorter run.
+
 ---
 
 ## 10. Bibliography
