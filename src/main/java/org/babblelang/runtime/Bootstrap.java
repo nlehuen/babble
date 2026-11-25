@@ -4,6 +4,7 @@ import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.engine.impl.natives.java.JavaLinker;
 import org.babblelang.engine.impl.natives.java.JavaPackage;
 
+import java.lang.invoke.ConstantCallSite;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -46,10 +47,12 @@ public final class Bootstrap {
     private static final MethodHandle METHOD;
     private static final MethodHandle REQUIRE_MEMBER_DEFINED;
     private static final MethodHandle EXPORT_AT;
+    private static final MethodHandle NAME_LOOKUP;
 
     static {
         try {
             MethodType call = MethodType.methodType(Object.class, Callable.class, ScriptRuntime.class, String[].class, CallSite.class, Object[].class);
+            NAME_LOOKUP = LOOKUP.findVirtual(NameCache.class, "lookup", MethodType.methodType(Object.class, Namespace.class));
             CALL_FALLBACK = LOOKUP.findStatic(Bootstrap.class, "callFallback", MethodType.methodType(Object.class, CallCache.class, Object[].class));
             CALL_GENERIC = LOOKUP.findStatic(Bootstrap.class, "callGeneric", call);
             CALLABLE_CALL = LOOKUP.findVirtual(Callable.class, "call", CALL);
@@ -76,6 +79,45 @@ public final class Bootstrap {
     }
 
     private Bootstrap() {
+    }
+
+    // ------------------------------------------------------------------ names
+
+    /**
+     * {@code name(Namespace ns) -> Object} : {@code ns.lookup(variable)}, with the slot the name
+     * resolves to cached for the last namespace the site saw (at {@code -O2}, {@code BIP014-I3}).
+     * A name of a module or a class body, read from a method or function, is looked up in the
+     * same closure on every call : the site walks the scopes and hashes the name once, then
+     * reads the slot directly, which still fails when the definition has not run yet. A site
+     * that sees another namespace resolves the name again, and caches that.
+     */
+    public static java.lang.invoke.CallSite name(MethodHandles.Lookup lookup, String name, MethodType type, String variable) {
+        return new ConstantCallSite(NAME_LOOKUP.bindTo(new NameCache(variable)).asType(type));
+    }
+
+    static final class NameCache {
+        private final String name;
+        /** The last resolution, immutable so that threads see it whole. */
+        private Resolution last;
+
+        NameCache(String name) {
+            this.name = name;
+        }
+
+        private record Resolution(Namespace namespace, Slot<Object> slot, int epoch) {
+        }
+
+        Object lookup(Namespace namespace) {
+            Resolution r = last;
+            if (r != null && r.namespace == namespace && r.epoch == Namespace.epoch()) {
+                return r.slot.get();
+            }
+            // A miss costs the walk the uncached lookup does, and the resolution it keeps.
+            int epoch = Namespace.epoch();
+            Slot<Object> slot = namespace.resolve(name);
+            last = new Resolution(namespace, slot, epoch);
+            return slot.get();
+        }
     }
 
     // ------------------------------------------------------------------ calls

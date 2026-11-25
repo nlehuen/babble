@@ -1006,8 +1006,12 @@ final class HirEmitter {
         MethodVisitor mv = ctx.mv;
         ctx.line(lineNumber);
         mv.visitVarInsn(ALOAD, ctx.nsLocal);
-        mv.visitLdcInsn(name);
-        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+        if (ctx.cacheNameReads) {
+            mv.visitInvokeDynamicInsn("name", "(L" + NAMESPACE + ";)Ljava/lang/Object;", NAME_BOOTSTRAP, name);
+        } else {
+            mv.visitLdcInsn(name);
+            mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "lookup", "(Ljava/lang/String;)Ljava/lang/Object;", false);
+        }
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
@@ -1069,8 +1073,7 @@ final class HirEmitter {
         if (ctx.mirOverrides != null) {
             MethodEmitContext.MirOperand op = ctx.mirOverrides.get(expr);
             if (op != null) {
-                loadKindOn(ctx.mv, op.kind(), op.slot());
-                ctx.stackKind = op.kind();
+                loadMirOperand(op);
                 return;
             }
         }
@@ -1138,12 +1141,20 @@ final class HirEmitter {
         }
     }
 
+    private void loadMirOperand(MethodEmitContext.MirOperand op) {
+        if (op.isConstant()) {
+            MirEmitter.pushConstant(ctx.mv, op.constant());
+        } else {
+            loadKindOn(ctx.mv, op.kind(), op.slot());
+        }
+        ctx.stackKind = op.kind();
+    }
+
     void emitAndWiden(HirExpr expr) {
         if (ctx.mirOverrides != null) {
             MethodEmitContext.MirOperand op = ctx.mirOverrides.get(expr);
             if (op != null) {
-                loadKindOn(ctx.mv, op.kind(), op.slot());
-                ctx.stackKind = op.kind();
+                loadMirOperand(op);
                 return;
             }
         }

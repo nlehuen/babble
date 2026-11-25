@@ -25,7 +25,15 @@ final class MethodEmitContext {
     }
 
     /** Pre-evaluated SSA operand slot injected by {@link MirEmitter} when delegating ABI emission to {@link HirEmitter}. */
-    record MirOperand(int slot, PrimitiveKind kind) {
+    record MirOperand(int slot, PrimitiveKind kind, boolean isConstant, Object constant) {
+        MirOperand(int slot, PrimitiveKind kind) {
+            this(slot, kind, false, null);
+        }
+
+        /** A rematerialized constant : pushed where the operand is read, in no local. */
+        static MirOperand constant(Object value, PrimitiveKind kind) {
+            return new MirOperand(-1, kind, true, value);
+        }
     }
 
     static final class ActiveFinally {
@@ -89,6 +97,8 @@ final class MethodEmitContext {
     final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
     final Deque<ActiveFinally> activeFinallies = new ArrayDeque<>();
     Map<org.babblelang.ir.hir.HirExpr, MirOperand> mirOverrides;
+    /** Whether name reads go through caching {@code Bootstrap.name} sites ({@link MirEmitter}, at {@code -O2}). */
+    boolean cacheNameReads;
 
     void reset(MethodVisitor mv, int ownerId, int firstFreeLocal, int rt, int ns, List<HirVar> captured) {
         this.mv = mv;
@@ -116,6 +126,7 @@ final class MethodEmitContext {
         this.loopTargets.clear();
         this.activeFinallies.clear();
         this.mirOverrides = null;
+        this.cacheNameReads = false;
     }
 
     void finish() {

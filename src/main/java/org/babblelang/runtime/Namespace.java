@@ -5,10 +5,20 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Namespace implements Scope<Object> {
+    /**
+     * Bumped whenever a name is defined in a scope that a {@link #resolve} looked through : a
+     * cached resolution (a {@link Bootstrap} name site) is only valid for the epoch it was made in,
+     * since the new definition may now shadow the slot it found.
+     */
+    private static final AtomicInteger EPOCH = new AtomicInteger();
+
     private final Namespace parent;
     final Map<String, Slot<Object>> locals = new HashMap<>();
+    /** Whether a {@link #resolve} looked through this scope without finding its name here. */
+    private boolean walked;
 
     public Namespace() {
         this.parent = null;
@@ -38,6 +48,9 @@ public class Namespace implements Scope<Object> {
         }
         Slot<Object> slot = new Slot<>(key, isFinal);
         locals.put(key, slot);
+        if (walked) {
+            EPOCH.incrementAndGet();
+        }
         return slot;
     }
 
@@ -107,6 +120,29 @@ public class Namespace implements Scope<Object> {
             } else {
                 current = current.parent;
             }
+        }
+        throw new BabbleException("No such name : " + key);
+    }
+
+    /** The current epoch of name resolutions : see {@link #resolve}. */
+    static int epoch() {
+        return EPOCH.get();
+    }
+
+    /**
+     * {@link #get}, for a cache : the slot {@code key} resolves to from here, which stays the
+     * same as long as {@link #epoch} does. The scopes looked through on the way are marked, so
+     * that defining a name in one of them later starts a new epoch.
+     */
+    Slot<Object> resolve(String key) {
+        Namespace current = this;
+        while (current != null) {
+            Slot<Object> slot = current.locals.get(key);
+            if (slot != null) {
+                return slot;
+            }
+            current.walked = true;
+            current = current.parent;
         }
         throw new BabbleException("No such name : " + key);
     }
