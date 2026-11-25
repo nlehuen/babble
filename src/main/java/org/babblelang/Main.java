@@ -94,7 +94,7 @@ public final class Main {
      *                and edits lines with history and completion (docs/design/bip004_repl.md §9)
      * @return the exit status
      */
-    static int run(String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console) throws IOException {
+    public static int run(String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console) throws IOException {
         if (args.length > 0 && (args[0].equals("-compile") || args[0].equals("--compile"))) {
             return compile(args, out, err);
         }
@@ -199,21 +199,34 @@ public final class Main {
         return file != null ? Path.of(file) : Path.of(System.getProperty("user.home"), ".babble_history");
     }
 
-    /** {@code -compile main.ba [-o app.jar] [-root dir] [-O0|-O1|-O2]} : babblec. */
+    /** {@code -compile main.ba [-target jvm|wasm-js|wasm-bare] [-o app.jar|app.wasm] [-root dir] [-O0|-O1|-O2] [-wasm-opt]} : babblec. */
     private static int compile(String[] args, PrintWriter out, PrintWriter err) throws IOException {
         Path main = null;
-        Path jar = null;
+        Path output = null;
         Path root = null;
         Integer optLevel = null;
+        org.babblelang.analysis.CompilationTarget target = org.babblelang.analysis.CompilationTarget.JVM;
+        boolean wasmOpt = false;
         for (int i = 1; i < args.length; i++) {
             String option = args[i];
             if ((option.equals("-o") || option.equals("-root")) && i + 1 < args.length) {
                 Path value = Path.of(args[++i]);
                 if (option.equals("-o")) {
-                    jar = value;
+                    output = value;
                 } else {
                     root = value;
                 }
+            } else if ((option.equals("-target") || option.equals("--target")) && i + 1 < args.length) {
+                String tVal = args[++i];
+                try {
+                    target = org.babblelang.analysis.CompilationTarget.parse(tVal);
+                } catch (IllegalArgumentException e) {
+                    err.println("Error : " + e.getMessage());
+                    err.flush();
+                    return USAGE_ERROR;
+                }
+            } else if (option.equals("-wasm-opt") || option.equals("--wasm-opt")) {
+                wasmOpt = true;
             } else if (option.equals("-O0")) {
                 optLevel = 0;
             } else if (option.equals("-O1")) {
@@ -239,9 +252,10 @@ public final class Main {
         if (root == null) {
             root = directory;
         }
-        if (jar == null) {
+        if (output == null) {
             String name = main.getFileName().toString();
-            jar = directory.resolve((name.endsWith(".ba") ? name.substring(0, name.length() - 3) : name) + ".jar");
+            String stem = name.endsWith(".ba") ? name.substring(0, name.length() - 3) : name;
+            output = directory.resolve(stem + (target.isWasm() ? ".wasm" : ".jar"));
         }
         if (!Files.isRegularFile(main)) {
             err.println("Cannot read " + main + " : no such file");
@@ -252,8 +266,13 @@ public final class Main {
         context.setWriter(out);
         context.setErrorWriter(err);
         try {
-            org.babblelang.runtime.ProgramIndex index = org.babblelang.compiler.Babblec.compile(main, root, jar, context, optLevel);
-            out.println("Wrote " + jar + " : " + index.modules().size() + (index.modules().size() == 1 ? " module" : " modules"));
+            if (target.isWasm()) {
+                int count = org.babblelang.compiler.Babblec.compileWasm(main, root, output, target, context, optLevel, wasmOpt);
+                out.println("Wrote " + output + " : " + count + (count == 1 ? " module" : " modules"));
+            } else {
+                org.babblelang.runtime.ProgramIndex index = org.babblelang.compiler.Babblec.compile(main, root, output, context, optLevel);
+                out.println("Wrote " + output + " : " + index.modules().size() + (index.modules().size() == 1 ? " module" : " modules"));
+            }
             out.flush();
             return 0;
         } catch (TypeCheckException e) {

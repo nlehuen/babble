@@ -88,6 +88,55 @@ public final class Babblec {
     }
 
     /**
+     * Compiles a Babble program ahead of time to a WebAssembly 3.0 {@code .wasm} module
+     * (plus sibling {@code .mjs} loader on {@code wasm-js}) ({@code BIP025-P1}).
+     *
+     * @return the number of linked modules compiled into the output binary
+     */
+    public static int compileWasm(
+            Path main,
+            Path root,
+            Path outWasm,
+            org.babblelang.analysis.CompilationTarget target,
+            ScriptContext context,
+            Integer optLevel,
+            boolean wasmOpt
+    ) throws ScriptException, IOException {
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.setContext(context);
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.AOT_CROSS_MODULE, Boolean.TRUE);
+        engine.put(BabbleCompiler.AOT_INLINE_CACHE, new LinkedHashMap<String, org.babblelang.ir.hir.HirFunction>());
+        if (optLevel != null) {
+            engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
+        }
+        FileModuleSource source = FileModuleSource.rooted(root);
+        List<BabbleScriptEngine.HirProgramModule> hirMods = engine.compileProgramToHir(
+                source, main.toAbsolutePath().normalize().toString(), target);
+
+        List<org.babblelang.wasm.WasmProgramLinker.ModuleInput> inputs = hirMods.stream()
+                .map(m -> new org.babblelang.wasm.WasmProgramLinker.ModuleInput(
+                        m.id().key(), m.id().displayName(), m.hir()))
+                .toList();
+        org.babblelang.wasm.WasmCompiler.Options defaults = org.babblelang.wasm.WasmCompiler.Options.defaults(target);
+        org.babblelang.wasm.WasmCompiler.Options opts = new org.babblelang.wasm.WasmCompiler.Options(
+                target, defaults.verify(), defaults.debugNames(), defaults.dumpWat(), wasmOpt);
+        org.babblelang.wasm.WasmCompiler.CompileResult result = org.babblelang.wasm.WasmCompiler.compile(
+                inputs, opts, outWasm.getFileName().toString());
+        if (!result.ok()) {
+            Writer err = context.getErrorWriter();
+            for (org.babblelang.wasm.WasmPortabilityChecker.Diagnostic d : result.portabilityErrors()) {
+                err.write("Error : " + d.format() + "\n");
+            }
+            err.flush();
+            org.babblelang.wasm.WasmPortabilityChecker.Diagnostic first = result.portabilityErrors().get(0);
+            throw new org.babblelang.engine.TypeCheckException(first.format(), main.getFileName().toString(), first.line(), 1);
+        }
+        org.babblelang.wasm.WasmCompiler.writeOutputs(result, outWasm, opts);
+        return inputs.size();
+    }
+
+    /**
      * The root seen from the jar's directory, for the modules the jar doesn't hold, compiled
      * when Babble is on the class path : "." when the jar is next to the main script, as by
      * default. None when there is no relative path between them.

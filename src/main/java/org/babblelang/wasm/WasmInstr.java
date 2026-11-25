@@ -97,6 +97,14 @@ public sealed interface WasmInstr permits
         public CatchClause {
             Objects.requireNonNull(kind, "kind");
         }
+
+        public static CatchClause catchTag(int tagIndex, int labelIndex) {
+            return new CatchClause(CatchKind.CATCH, tagIndex, labelIndex);
+        }
+
+        public static CatchClause catchRefTag(int tagIndex, int labelIndex) {
+            return new CatchClause(CatchKind.CATCH_REF, tagIndex, labelIndex);
+        }
     }
 
     /** Zero-immediate opcodes (standard, 0xFB GC, and 0xFC saturating conversions). */
