@@ -179,6 +179,24 @@ public final class WasmCallEmitter {
 
     public void emitDynamicCall(HirExpr.DynamicCall call) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        // 0. Static module import("path") / importe("path") (BIP025-P2)
+        if (call.callee() instanceof HirExpr.NameRead nr
+                && ("import".equals(nr.name()) || "importe".equals(nr.name()))
+                && !isShadowedLocalOrGlobal(nr.name())
+                && call.args().size() == 1
+                && call.args().get(0).value() instanceof HirExpr.Const cst
+                && cst.value() instanceof String importPath) {
+            String targetKey = ctx.modInfo.input.staticImports().get(importPath);
+            WasmProgramLinker.ModuleLinkInfo targetMod = targetKey != null ? linker.moduleByKey(targetKey) : null;
+            if (targetMod != null) {
+                ctx.code.call(targetMod.initFuncIdx)
+                        .drop()
+                        .globalGet(targetMod.modValGlobalIdx)
+                        .refAsNonNull();
+                ctx.stackKind = PrimitiveKind.NONE;
+                return;
+            }
+        }
         // 1. Direct built-in recognition (print, println, assert, conversions, same, classof, exception)
         if (call.callee() instanceof HirExpr.NameRead nr && WasmFuncEmitter.isBuiltinName(nr.name())
                 && !isShadowedLocalOrGlobal(nr.name())) {
@@ -544,6 +562,98 @@ public final class WasmCallEmitter {
         }
     }
 
+    /**
+     * Emits a bound-method generic trampoline {@code (self: (ref $FnBase), args: (ref $AnyArr), names: (ref null $AnyArr)) -> any?}
+     * that unwraps {@code $BoundMethod.receiver} as {@code $this : (ref $Struct_C)} and invokes {@code mfi.directFuncIdx}.
+     */
+    public void emitBoundMethodTrampoline(WasmModule.FuncDef fn, WasmObjectSystem.ClassInfo ci, WasmProgramLinker.FuncInfo mfi) {
+        WasmCodeBuilder c = fn.code();
+        HirFunction hf = mfi.hir;
+        int paramCount = hf.params().size();
+
+        int argLen = fn.addLocal("argLen", WasmValType.I32, 3);
+        int optMask = fn.addLocal("optMask", WasmValType.I32, 3);
+        c.localGet(1).arrayLen().localSet(argLen);
+
+        int[] pLocals = new int[paramCount];
+        for (int p = 0; p < paramCount; p++) {
+            pLocals[p] = fn.addLocal("p" + p, ts.anyRef(), 3);
+            c.globalGet(rt.gMissing).localSet(pLocals[p]);
+        }
+
+        int idx = fn.addLocal("idx", WasmValType.I32, 3);
+        int nameAny = fn.addLocal("nameAny", ts.anyRef(), 3);
+        int valAny = fn.addLocal("valAny", ts.anyRef(), 3);
+
+        c.localGet(2).refIsNull().if_();
+        for (int p = 0; p < paramCount; p++) {
+            c.i32Const(p).localGet(argLen).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                    .localGet(1).i32Const(p).arrayGet(ts.anyArrType).localSet(pLocals[p])
+                    .end();
+        }
+        c.else_();
+        c.i32Const(0).localSet(idx);
+        c.loop()
+                .localGet(idx).localGet(argLen).op(WasmInstr.SimpleOp.I32_LT_S)
+                .if_()
+                .localGet(1).localGet(idx).arrayGet(ts.anyArrType).localSet(valAny)
+                .localGet(2).refAsNonNull().localGet(idx).arrayGet(ts.anyArrType).localTee(nameAny)
+                .refIsNull().if_();
+        for (int p = 0; p < paramCount; p++) {
+            c.localGet(idx).i32Const(p).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                    .localGet(valAny).localSet(pLocals[p])
+                    .end();
+        }
+        c.else_();
+        for (int p = 0; p < paramCount; p++) {
+            c.localGet(nameAny).refCast(ts.stringType);
+            rt.emitStringLit(c, hf.params().get(p).name());
+            c.call(rt.fnStrEq).if_()
+                    .localGet(valAny).localSet(pLocals[p])
+                    .end();
+        }
+        c.end()
+                .localGet(idx).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(idx)
+                .br(1)
+                .end()
+                .end();
+        c.end();
+
+        // Push $this receiver extracted from $BoundMethod.receiver (field 3)
+        c.localGet(0).refCast(ts.boundMethodType)
+                .structGet(ts.boundMethodType, 3)
+                .refCast(ci.structTypeIdx);
+
+        int optBit = 0;
+        for (int p = 0; p < paramCount; p++) {
+            HirParam hp = hf.params().get(p);
+            if (hp.defaultValue() != null) {
+                c.localGet(pLocals[p]).globalGet(rt.gMissing).refEq().if_(ts.valTypeFor(hp.kind()))
+                        .localGet(optMask).i32Const(1 << optBit).op(WasmInstr.SimpleOp.I32_OR).localSet(optMask);
+                ts.emitDefaultValue(c, ts.valTypeFor(hp.kind()));
+                c.else_();
+                c.localGet(pLocals[p]);
+                if (hp.kind().isPrimitive()) {
+                    c.i32Const(hf.line()).call(rt.unboxFuncFor(hp.kind()));
+                }
+                c.end();
+                optBit++;
+            } else {
+                c.localGet(pLocals[p]);
+                if (hp.kind().isPrimitive()) {
+                    c.i32Const(hf.line()).call(rt.unboxFuncFor(hp.kind()));
+                }
+            }
+        }
+        if (mfi.hasOptMaskParam) {
+            c.localGet(optMask);
+        }
+        c.call(mfi.directFuncIdx);
+        if (hf.returnKind().isPrimitive()) {
+            c.call(rt.boxFuncFor(hf.returnKind()));
+        }
+    }
+
     // ---------------------------------------------------------------- BIP021-I5 Overloads
 
     public void emitMakeOverloadSet(HirExpr.MakeOverloadSet m) {
@@ -743,6 +853,27 @@ public final class WasmCallEmitter {
             int bid = WasmRuntimeOpsGen.builtinId(desc);
             if (bid >= 0) {
                 c.localGet(argLocal).i32Const(bid).call(ops.fnIsBuiltin);
+            } else if (desc.startsWith("babble|")) {
+                int p2 = desc.lastIndexOf('|');
+                String typeId = p2 >= 0 ? desc.substring(p2 + 1) : desc;
+                WasmObjectSystem objects = linker.objects();
+                WasmObjectSystem.ClassInfo ci = objects.classByTypeId(typeId);
+                WasmObjectSystem.IfaceInfo ii = ci == null ? objects.ifaceByTypeId(typeId) : null;
+                if (ci != null) {
+                    c.localGet(argLocal).refTest(ci.structTypeIdx);
+                } else if (ii != null) {
+                    objects.emitNominalIsCheck(c, argLocal,
+                            new LoweringTargets.IsTarget(typeId, org.babblelang.runtime.ClassShape.Kind.INTERFACE),
+                            List.of());
+                } else {
+                    c.i32Const(0);
+                }
+            } else if (desc.startsWith("fn|")) {
+                c.localGet(argLocal).refTest(ts.fnBaseType);
+            } else if (desc.startsWith("java|") && desc.contains("|[")) {
+                c.localGet(argLocal).refTest(ts.arrayBaseType);
+            } else if (desc.contains("BabbleException")) {
+                c.localGet(argLocal).refTest(ts.babbleExnType);
             } else {
                 c.i32Const(0);
             }

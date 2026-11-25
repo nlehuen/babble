@@ -79,6 +79,8 @@ public final class WasmTypeSystem {
     public final int vtableType;
     public final int objectType;
     public final int classValType;
+    public final int ifaceValType;
+    public final int boundMethodType;
     public final int moduleValType;
     public final int hostStreamType;
 
@@ -158,6 +160,8 @@ public final class WasmTypeSystem {
         this.vtableType = module.reserveTypeIndex();
         this.objectType = module.reserveTypeIndex();
         this.classValType = module.reserveTypeIndex();
+        this.ifaceValType = module.reserveTypeIndex();
+        this.boundMethodType = module.reserveTypeIndex();
         this.moduleValType = module.reserveTypeIndex();
         this.hostStreamType = module.reserveTypeIndex();
 
@@ -276,13 +280,24 @@ public final class WasmTypeSystem {
         rec.add(new WasmTypeDef.SubType(objectType, "Object", false, anyType, new WasmTypeDef.StructType(List.of(
                 field("vtable", refVTable, false)
         ))));
-        rec.add(new WasmTypeDef.SubType(classValType, "ClassVal", true, fnBaseType, new WasmTypeDef.StructType(List.of(
+        rec.add(new WasmTypeDef.SubType(classValType, "ClassVal", false, fnBaseType, new WasmTypeDef.StructType(List.of(
                 field("genericCall", refGenericSig, false),
                 field("name", refStr, false),
                 field("fnId", WasmValType.I32, false),
                 field("classId", WasmValType.I32, false),
                 field("vtable", refVTable, false),
                 field("statics", refAnyArrNull, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(ifaceValType, "IfaceVal", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("ifaceIdx", WasmValType.I32, false),
+                field("name", refStr, false),
+                field("statics", refAnyArrNull, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(boundMethodType, "BoundMethod", true, fnBaseType, new WasmTypeDef.StructType(List.of(
+                field("genericCall", refGenericSig, false),
+                field("name", refStr, false),
+                field("fnId", WasmValType.I32, false),
+                field("recv", refObj, false)
         ))));
         rec.add(new WasmTypeDef.SubType(moduleValType, "ModuleVal", true, anyType, new WasmTypeDef.StructType(List.of(
                 field("modId", WasmValType.I32, false),

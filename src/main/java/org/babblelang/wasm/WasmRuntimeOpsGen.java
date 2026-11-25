@@ -53,6 +53,8 @@ public final class WasmRuntimeOpsGen {
     public final int fnIsBuiltin;
     public final int fnClassof;
 
+    private final WasmModule.FuncDef dClassofDef;
+
     // Built-in generic call dispatchers (for first-class references to print, int, exception, etc.)
     private final Map<String, Integer> builtinFnGlobals = new LinkedHashMap<>();
     private final WasmModule.FuncDef fnInitBuiltinsDef;
@@ -109,6 +111,7 @@ public final class WasmRuntimeOpsGen {
         this.fnConvChar = dCChar.funcIndex();
 
         this.fnIsBuiltin = dIsBuiltin.funcIndex();
+        this.dClassofDef = dClassof;
         this.fnClassof = dClassof.funcIndex();
 
         this.fnInitBuiltinsDef = mod.addFunction("init_builtins", ts.internFuncType(List.of(), List.of()));
@@ -130,7 +133,6 @@ public final class WasmRuntimeOpsGen {
         emitConvChar(dCChar);
 
         emitIsBuiltin(dIsBuiltin);
-        emitClassof(dClassof);
     }
 
     public static int builtinId(String name) {
@@ -579,9 +581,16 @@ public final class WasmRuntimeOpsGen {
         c.i32Const(0);
     }
 
-    private void emitClassof(WasmModule.FuncDef fn) {
-        WasmCodeBuilder c = fn.code();
-        // Returns $VTable or null for primitives/null; in P2 this maps classId -> $ClassVal global!
+    public void emitClassofWithTable(int gClassVals) {
+        WasmCodeBuilder c = dClassofDef.code();
+        c.localGet(0).refTest(ts.objectType).if_()
+                .globalGet(gClassVals).refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                .globalGet(gClassVals).refAsNonNull()
+                .localGet(0).refCast(ts.objectType)
+                .structGet(ts.objectType, 0)
+                .structGet(ts.vtableType, 0)
+                .arrayGet(ts.anyArrType).return_()
+                .end().end();
         c.refNull(ts.anyType);
     }
 
