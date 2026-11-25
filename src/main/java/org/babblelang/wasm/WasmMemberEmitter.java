@@ -142,6 +142,14 @@ public final class WasmMemberEmitter {
             // 5. Allocate local vars declared in constructor body and run constructor body
             for (HirVar v : ci.hir.declaredVars()) {
                 fe.allocateLocalVar(v);
+                if (v.kind() == org.babblelang.analysis.Resolution.Variable.Kind.THIS || "this".equals(v.name())) {
+                    WasmFuncEmitter.VarSlot slot = cctx.vars.get(v.id());
+                    if (slot != null) {
+                        c.localGet(thisLocal);
+                        fe.storeVarSlotAndKeep(slot);
+                        c.drop();
+                    }
+                }
             }
             for (HirExpr stmt : ci.hir.body()) {
                 fe.emitVoid(stmt);
@@ -172,9 +180,11 @@ public final class WasmMemberEmitter {
             c.globalGet(ci.staticInitDoneGlobalIdx).op(WasmInstr.SimpleOp.I32_EQZ).if_();
             ctx.pushBlock("cls_sinit");
             c.i32Const(1).globalSet(ci.staticInitDoneGlobalIdx);
+            int clsVal = ctx.newLocal("$clsStaticThis", ts.anyRef());
             int stArr = ctx.newLocal("$stArr", WasmValType.refNull(ts.anyArrType));
-            c.globalGet(ci.classValGlobalIdx).refAsNonNull().structGet(ts.classValType, 5).localSet(stArr);
-            emitStaticBlockBody(ci.hir.staticBlock(), stArr);
+            c.globalGet(ci.classValGlobalIdx).refAsNonNull().localTee(clsVal)
+                    .refCast(ts.classValType).structGet(ts.classValType, 5).localSet(stArr);
+            emitStaticBlockBody(ci.hir.staticBlock(), stArr, clsVal);
             ctx.popBlock();
             c.end();
         }
@@ -223,9 +233,11 @@ public final class WasmMemberEmitter {
             c.globalGet(ii.staticInitDoneGlobalIdx).op(WasmInstr.SimpleOp.I32_EQZ).if_();
             ctx.pushBlock("if_sinit");
             c.i32Const(1).globalSet(ii.staticInitDoneGlobalIdx);
+            int ifVal = ctx.newLocal("$ifStaticThis", ts.anyRef());
             int stArr = ctx.newLocal("$ifStArr", WasmValType.refNull(ts.anyArrType));
-            c.globalGet(ii.ifaceValGlobalIdx).refAsNonNull().structGet(ts.ifaceValType, 2).localSet(stArr);
-            emitStaticBlockBody(ii.hir.staticBlock(), stArr);
+            c.globalGet(ii.ifaceValGlobalIdx).refAsNonNull().localTee(ifVal)
+                    .refCast(ts.ifaceValType).structGet(ts.ifaceValType, 2).localSet(stArr);
+            emitStaticBlockBody(ii.hir.staticBlock(), stArr, ifVal);
             ctx.popBlock();
             c.end();
         }
@@ -233,12 +245,22 @@ public final class WasmMemberEmitter {
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitStaticBlockBody(HirStaticBlock sb, int staticArrLocal) {
+    private void emitStaticBlockBody(HirStaticBlock sb, int staticArrLocal, int typeValLocal) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         int prevSt = ctx.staticArrayLocal;
+        int prevThis = ctx.thisLocal;
         ctx.staticArrayLocal = staticArrLocal;
+        ctx.thisLocal = typeValLocal;
         for (HirVar v : sb.declaredVars()) {
             fe.allocateLocalVar(v);
+            if (v.kind() == org.babblelang.analysis.Resolution.Variable.Kind.THIS) {
+                WasmFuncEmitter.VarSlot slot = ctx.vars.get(v.id());
+                if (slot != null) {
+                    ctx.code.localGet(typeValLocal);
+                    fe.storeVarSlotAndKeep(slot);
+                    ctx.code.drop();
+                }
+            }
         }
         try {
             for (HirExpr stmt : sb.body()) {
@@ -246,6 +268,7 @@ public final class WasmMemberEmitter {
             }
         } finally {
             ctx.staticArrayLocal = prevSt;
+            ctx.thisLocal = prevThis;
         }
     }
 
@@ -263,7 +286,7 @@ public final class WasmMemberEmitter {
                 c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx());
             }
         } else if (slot.isCell()) {
-            c.localGet(slot.localIdx());
+            c.localGet(slot.localIdx()).refAsNonNull();
         } else {
             int cellType = ts.cellTypeFor(cv.primitiveKind());
             c.localGet(slot.localIdx());

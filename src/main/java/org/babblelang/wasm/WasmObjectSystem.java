@@ -445,6 +445,25 @@ public final class WasmObjectSystem {
             ce.emitBoundMethodTrampoline(bm, ci, mfi);
             ci.boundMethodGenericFns.put(e.getKey(), bm.funcIndex());
         }
+        for (Map.Entry<String, List<Integer>> e : ci.hir.overloadMethodFunctionIds().entrySet()) {
+            if (ci.boundMethodGenericFns.containsKey(e.getKey()) || e.getValue().isEmpty()) continue;
+            // Pick 1-arg reference overload if present (e.g. Appendable.append(CharSequence)), else alt 0
+            WasmProgramLinker.FuncInfo mfi = ci.modInfo.functions.get(e.getValue().get(0));
+            for (int id : e.getValue()) {
+                WasmProgramLinker.FuncInfo cand = ci.modInfo.functions.get(id);
+                if (cand != null && cand.hir.params().size() == 1 && !cand.hir.params().get(0).kind().isPrimitive()) {
+                    mfi = cand;
+                    break;
+                }
+            }
+            if (mfi == null) continue;
+            WasmModule.FuncDef bm = mod.addFunction(
+                    "C" + ci.classId + "_bm_" + WasmProgramLinker.sanitizeName(e.getKey()),
+                    ts.genericCallSigType, List.of("self", "args", "names"));
+            mod.declareFuncRef(bm.funcIndex());
+            ce.emitBoundMethodTrampoline(bm, ci, mfi);
+            ci.boundMethodGenericFns.put(e.getKey(), bm.funcIndex());
+        }
     }
 
     private void emitClassConstructor(ClassInfo ci, WasmFuncEmitter fe) {

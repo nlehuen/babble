@@ -27,17 +27,17 @@ import java.util.Set;
  */
 public final class WasmPortabilityChecker {
     private static final Set<String> PORTABLE_STRING_METHODS = Set.of(
-            "length", "isEmpty", "charAt", "substring", "indexOf", "lastIndexOf",
+            "length", "isEmpty", "isBlank", "charAt", "substring", "indexOf", "lastIndexOf",
             "startsWith", "endsWith", "contains", "replace", "trim", "strip",
             "toLowerCase", "toUpperCase", "equals", "equalsIgnoreCase", "compareTo",
-            "hashCode", "toString", "concat", "repeat", "split"
+            "hashCode", "toString", "concat", "repeat", "split", "toCharArray"
     );
 
     private static final Set<String> PORTABLE_COLLECTION_METHODS = Set.of(
             "size", "isEmpty", "clear", "contains", "containsKey", "containsValue",
-            "add", "addAll", "remove", "get", "set", "indexOf", "lastIndexOf",
-            "put", "putAll", "keySet", "values", "entrySet", "iterator",
-            "first", "last", "firstKey", "lastKey", "getKey", "getValue",
+            "add", "addAll", "remove", "get", "getFirst", "getLast", "set", "indexOf", "lastIndexOf",
+            "subList", "put", "putAll", "getOrDefault", "keySet", "values", "entrySet", "iterator",
+            "first", "last", "firstKey", "lastKey", "getKey", "getValue", "setValue",
             "equals", "hashCode", "toString", "of", "copyOf"
     );
 
@@ -46,7 +46,7 @@ public final class WasmPortabilityChecker {
     );
 
     private static final Set<String> PORTABLE_EXCEPTION_METHODS = Set.of(
-            "getMessage", "getCause", "getSuppressed", "toString"
+            "getMessage", "getCause", "getSuppressed", "addSuppressed", "toString"
     );
 
     private static final Set<String> PORTABLE_APPENDABLE_METHODS = Set.of(
@@ -155,7 +155,9 @@ public final class WasmPortabilityChecker {
         for (HirClass cls : mod.classes().values()) {
             if (!cls.javaInterfaces().isEmpty()) {
                 for (Class<?> jf : cls.javaInterfaces()) {
-                    out.add(new Diagnostic(cls.line(), jf.getName()));
+                    if (jf != Appendable.class) {
+                        out.add(new Diagnostic(cls.line(), jf.getName()));
+                    }
                 }
             }
             for (HirParam p : cls.params()) {

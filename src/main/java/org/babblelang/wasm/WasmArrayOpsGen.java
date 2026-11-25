@@ -398,13 +398,17 @@ public final class WasmArrayOpsGen {
                 ctx.stackKind = PrimitiveKind.NONE;
             }
             case FROM -> {
-                // Copy from another array (P3 extends this to any Iterable/list/set!)
+                // Copy from $ArrayBase, $List, $Set, or any Babble Iterable
                 fe.emitBoxed(ac.args().get(0));
                 int src = ctx.newLocal("$fromSrc", ts.anyRef());
                 int len = ctx.newLocal("$fromLen", WasmValType.I32);
                 int dst = ctx.newLocal("$fromDst", WasmValType.refNull(backingType));
                 int idx = ctx.newLocal("$fromI", WasmValType.I32);
+                int srcArr = ctx.newLocal("$fromArr", WasmValType.refNull(ts.anyArrType));
                 c.localSet(src);
+
+                c.localGet(src).refTest(ts.arrayBaseType).if_();
+                ctx.pushBlock("arr_from_arr");
                 c.localGet(src).refCast(ts.arrayBaseType).call(fnArraySize).localTee(len)
                         .arrayNewDefault(backingType).localSet(dst);
                 c.i32Const(0).localSet(idx);
@@ -424,6 +428,44 @@ public final class WasmArrayOpsGen {
                 c.end();
                 ctx.popBlock();
                 c.end();
+                c.else_();
+                // Convert $List / $Set / Babble Iterable into (srcArr, len)
+                c.localGet(src).refTest(ts.listType).if_()
+                        .localGet(src).refCast(ts.listType).structGet(ts.listType, 0).localSet(srcArr)
+                        .localGet(src).refCast(ts.listType).structGet(ts.listType, 1).localSet(len)
+                        .else_()
+                        .localGet(src).refTest(ts.setType).if_()
+                        .localGet(src).refCast(ts.setType).structGet(ts.setType, 0).localSet(srcArr)
+                        .localGet(src).refCast(ts.setType).structGet(ts.setType, 1).localSet(len)
+                        .else_();
+                // Materialize general iterable into a temporary $List
+                int tmpList = ctx.newLocal("$fromTmpL", WasmValType.refNull(ts.listType));
+                c.i32Const(4).call(fe.linker().collections().fnListNew).localTee(tmpList).refAsNonNull()
+                        .localGet(src).i32Const(line).call(fe.linker().collections().fnListAddAll).drop()
+                        .localGet(tmpList).refAsNonNull().structGet(ts.listType, 0).localSet(srcArr)
+                        .localGet(tmpList).refAsNonNull().structGet(ts.listType, 1).localSet(len);
+                c.end().end();
+                c.localGet(len).arrayNewDefault(backingType).localSet(dst);
+                c.i32Const(0).localSet(idx);
+                ctx.pushBlock("arr_from_col_loop");
+                c.loop();
+                c.localGet(idx).localGet(len).op(WasmInstr.SimpleOp.I32_LT_S).if_();
+                ctx.pushBlock("arr_from_col_if");
+                c.localGet(dst).refAsNonNull().localGet(idx)
+                        .localGet(srcArr).refAsNonNull().localGet(idx).arrayGet(ts.anyArrType);
+                if (ek.isPrimitive()) {
+                    c.i32Const(line).call(rt.unboxFuncFor(ek));
+                }
+                c.arraySet(backingType)
+                        .localGet(idx).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(idx)
+                        .br(1);
+                ctx.popBlock();
+                c.end();
+                ctx.popBlock();
+                c.end();
+                ctx.popBlock();
+                c.end(); // end if arrayBaseType
+
                 emitTypeDesc(c, ek, ac.elementType());
                 c.localGet(dst).refAsNonNull().structNew(wrapType);
                 ctx.stackKind = PrimitiveKind.NONE;

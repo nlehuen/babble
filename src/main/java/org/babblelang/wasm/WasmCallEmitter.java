@@ -88,7 +88,9 @@ public final class WasmCallEmitter {
 
         // Fast path: identity positional args, no reordering, no omitted, no rest
         if (binding == null || binding.isIdentityPositional()) {
-            if (fi.hasEnvParam) {
+            if (fi.ownerClass != null || fi.isInterfaceDefault) {
+                c.localGet(ctx.thisLocal).refAsNonNull();
+            } else if (fi.hasEnvParam) {
                 c.localGet(envLocal).refAsNonNull();
             }
             for (int p = 0; p < paramCount; p++) {
@@ -134,7 +136,9 @@ public final class WasmCallEmitter {
             c.localSet(argLocals[a]);
         }
 
-        if (fi.hasEnvParam) {
+        if (fi.ownerClass != null || fi.isInterfaceDefault) {
+            c.localGet(ctx.thisLocal).refAsNonNull();
+        } else if (fi.hasEnvParam) {
             c.localGet(envLocal).refAsNonNull();
         }
         for (int p = 0; p < paramCount; p++) {
@@ -206,6 +210,36 @@ public final class WasmCallEmitter {
         }
         if (call.callee() instanceof HirExpr.CoreExceptionRef) {
             emitExceptionConstructorCall(call.args(), call.meta().line());
+            return;
+        }
+        // 1b. Overloaded portable String methods lowered as DynamicCall(DynamicSelect(recv, name), args)
+        if (call.callee() instanceof HirExpr.DynamicSelect ds && !ds.safe()
+                && "replace".equals(ds.memberName()) && call.args().size() == 2) {
+            WasmCodeBuilder c = ctx.code;
+            fe.emitBoxed(ds.receiver());
+            int r = ctx.newLocal("$strRepR", ts.anyRef());
+            c.localTee(r).refTest(ts.stringType).if_(ts.anyRef());
+            fe.emitBoxed(call.args().get(0).value());
+            int a0 = ctx.newLocal("$strRepA0", ts.anyRef());
+            c.localSet(a0);
+            fe.emitBoxed(call.args().get(1).value());
+            int a1 = ctx.newLocal("$strRepA1", ts.anyRef());
+            c.localSet(a1);
+            c.localGet(a0).refTest(ts.boxCharType).if_(WasmValType.ref(ts.stringType))
+                    .localGet(r).refCast(ts.stringType)
+                    .localGet(a0).refCast(ts.boxCharType).structGet(ts.boxCharType, 0)
+                    .localGet(a1).refCast(ts.boxCharType).structGet(ts.boxCharType, 0)
+                    .call(linker.strings().fnReplaceChar)
+                    .else_()
+                    .localGet(r).refCast(ts.stringType)
+                    .localGet(a0).refCast(ts.stringType)
+                    .localGet(a1).refCast(ts.stringType)
+                    .call(linker.strings().fnReplaceStr)
+                    .end()
+                    .else_();
+            rt.emitStringLit(c, "No such member : replace");
+            c.i32Const(call.meta().line()).call(rt.fnThrowMsg).unreachable().end();
+            ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
         // 2. General indirect call via $FnBase.genericCall

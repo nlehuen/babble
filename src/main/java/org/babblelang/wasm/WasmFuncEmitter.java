@@ -92,6 +92,7 @@ public final class WasmFuncEmitter {
     private final WasmObjectSystem objects;
     private final WasmCallEmitter calls;
     private final WasmMemberEmitter members;
+    private final WasmCoreEmitter core;
     private EmitCtx ctx;
 
     public WasmFuncEmitter(WasmProgramLinker linker, WasmCallEmitter calls) {
@@ -103,10 +104,16 @@ public final class WasmFuncEmitter {
         this.objects = linker.objects();
         this.calls = calls;
         this.members = new WasmMemberEmitter(linker, this, calls);
+        this.core = new WasmCoreEmitter(linker);
+        this.core.setFuncEmitter(this);
     }
 
     public EmitCtx ctx() {
         return ctx;
+    }
+
+    public WasmProgramLinker linker() {
+        return linker;
     }
 
     public void setCtx(EmitCtx ctx) {
@@ -253,8 +260,18 @@ public final class WasmFuncEmitter {
             }
 
             // 4. Allocate locals / cells for all declared variables in this function
+            if (thisLocal < 0 && (fi.staticOwnerClass != null || fi.staticOwnerIface != null)) {
+                int stThis = ctx.newLocal("$staticThis", ts.anyRef());
+                if (fi.staticOwnerClass != null) {
+                    c.globalGet(fi.staticOwnerClass.classValGlobalIdx).localSet(stThis);
+                } else {
+                    c.globalGet(fi.staticOwnerIface.ifaceValGlobalIdx).localSet(stThis);
+                }
+                thisLocal = stThis;
+                ctx.thisLocal = stThis;
+            }
             for (HirVar v : hf.declaredVars()) {
-                if (thisLocal >= 0 && "this".equals(v.name())) {
+                if (thisLocal >= 0 && (v.kind() == org.babblelang.analysis.Resolution.Variable.Kind.THIS || "this".equals(v.name()))) {
                     if (v.cell()) {
                         int cellLocal = ctx.newLocal("cell_this", WasmValType.ref(ts.refCellType));
                         c.localGet(thisLocal).structNew(ts.refCellType).localSet(cellLocal);
@@ -288,7 +305,7 @@ public final class WasmFuncEmitter {
         WasmCodeBuilder c = ctx.code;
         if (v.cell()) {
             int cellType = ts.cellTypeFor(v.primitiveKind());
-            int cellLocal = ctx.newLocal("cell_" + v.name(), WasmValType.ref(cellType));
+            int cellLocal = ctx.newLocal("cell_" + v.name(), WasmValType.refNull(cellType));
             if (v.primitiveKind() == PrimitiveKind.NONE) {
                 c.globalGet(rt.gUndefined);
             } else {
@@ -314,6 +331,8 @@ public final class WasmFuncEmitter {
             case HirExpr.Const c -> emitConst(c);
             case HirExpr.IntParseFallback f -> emitIntParseFallback(f);
             case HirExpr.CoreExceptionRef r -> emitCoreExceptionRef();
+            case HirExpr.CoreCollectionRef r -> core.emitCoreCollectionRef(r);
+            case HirExpr.CoreCollectionCall c -> core.emitCoreCollectionCall(c);
             case HirExpr.VarRead v -> emitVarRead(v.var(), v.meta().line());
             case HirExpr.NameRead n -> emitNameRead(n.name(), n.meta().line());
             case HirExpr.ThisRef t -> emitThisRef(t);
@@ -328,6 +347,7 @@ public final class WasmFuncEmitter {
             case HirExpr.ArrayOp ao -> arrOps.emitArrayOp(this, ao);
             case HirExpr.ModuleExportGet g -> members.emitModuleExportGet(g);
             case HirExpr.DynamicSelect s -> members.emitDynamicSelect(s);
+            case HirExpr.JavaFieldGet fg -> core.emitJavaFieldGet(fg);
             case HirExpr.Unary u -> emitUnary(u);
             case HirExpr.Binary b -> emitBinary(b);
             case HirExpr.Logic l -> emitLogic(l);
@@ -337,6 +357,7 @@ public final class WasmFuncEmitter {
             case HirExpr.Block b -> emitBlock(b);
             case HirExpr.If i -> emitIf(i);
             case HirExpr.While w -> emitWhile(w);
+            case HirExpr.For f -> core.emitFor(f);
             case HirExpr.Try t -> emitTry(t);
             case HirExpr.Break b -> emitBreak(b);
             case HirExpr.Continue c -> emitContinue();
@@ -360,8 +381,8 @@ public final class WasmFuncEmitter {
             case HirExpr.MakeOverloadSet m -> calls.emitMakeOverloadSet(m);
             case HirExpr.OverloadSelect s -> calls.emitOverloadSelect(s);
             case HirExpr.OverloadDispatch d -> calls.emitOverloadDispatch(d);
-            case HirExpr.CoreMethodCall c -> emitCoreMethodCall(c);
-            case HirExpr.JavaMethodCall j -> calls.emitPortableJavaMethodCall(j);
+            case HirExpr.CoreMethodCall c -> core.emitCoreMethodCall(c);
+            case HirExpr.JavaMethodCall j -> core.emitPortableJavaMethodCall(j);
             case HirExpr.JavaConstructorCall j -> calls.emitPortableJavaConstructorCall(j);
             case HirExpr.SpreadAdapt s -> emitBoxed(s.value());
             default -> {
@@ -770,7 +791,7 @@ public final class WasmFuncEmitter {
         ctx.stackKind = PrimitiveKind.NONE;
     }
 
-    private void storeVarSlotAndKeep(VarSlot slot) {
+    public void storeVarSlotAndKeep(VarSlot slot) {
         WasmCodeBuilder c = ctx.code;
         int tmp = ctx.newLocal("$stTmp", ts.valTypeFor(slot.kind()));
         if (slot.isCapturedField()) {
@@ -1717,7 +1738,7 @@ public final class WasmFuncEmitter {
                     c.localGet(ctx.envLocal).structGet(ctx.funcInfo.closureStructType, slot.captureFieldIdx());
                 }
             } else if (slot.isCell()) {
-                c.localGet(slot.localIdx());
+                c.localGet(slot.localIdx()).refAsNonNull();
             } else {
                 // Non-cell captured read-only local: wrap in fresh cell
                 int cellType = ts.cellTypeFor(cv.primitiveKind());
@@ -1727,56 +1748,6 @@ public final class WasmFuncEmitter {
             }
         }
         c.structNew(fi.closureStructType);
-        ctx.stackKind = PrimitiveKind.NONE;
-    }
-
-    // ---------------------------------------------------------------- core methods (exception / string basics)
-
-    private void emitCoreMethodCall(HirExpr.CoreMethodCall call) {
-        WasmCodeBuilder c = ctx.code;
-        if ("exception".equals(call.coreKind())) {
-            emitBoxed(call.receiver());
-            c.refCast(ts.babbleExnType);
-            if ("getMessage".equals(call.memberName())) {
-                c.structGet(ts.babbleExnType, 0);
-                ctx.stackKind = PrimitiveKind.NONE;
-                return;
-            }
-            if ("getCause".equals(call.memberName())) {
-                c.structGet(ts.babbleExnType, 1);
-                ctx.stackKind = PrimitiveKind.NONE;
-                return;
-            }
-            if ("getSuppressed".equals(call.memberName())) {
-                int exn = ctx.newLocal("$exn", WasmValType.refNull(ts.babbleExnType));
-                int cnt = ctx.newLocal("$scnt", WasmValType.I32);
-                int out = ctx.newLocal("$sout", WasmValType.refNull(ts.anyArrType));
-                c.localTee(exn).structGet(ts.babbleExnType, 3).localTee(cnt)
-                        .arrayNewDefault(ts.anyArrType).localSet(out);
-                c.localGet(cnt).i32Const(0).op(WasmInstr.SimpleOp.I32_GT_S).if_()
-                        .localGet(out).i32Const(0)
-                        .localGet(exn).structGet(ts.babbleExnType, 2).refAsNonNull()
-                        .i32Const(0).localGet(cnt)
-                        .arrayCopy(ts.anyArrType, ts.anyArrType)
-                        .end();
-                // Wrap in RefArray (TypeDesc placeholder)
-                c.i32Const(0).i32Const(0).refNull(ts.typeDescType);
-                rt.emitStringLit(c, "any");
-                c.structNew(ts.typeDescType)
-                        .localGet(out).refAsNonNull()
-                        .structNew(ts.refArrayType);
-                ctx.stackKind = PrimitiveKind.NONE;
-                return;
-            }
-        }
-        if ("string".equals(call.coreKind()) && "length".equals(call.memberName())) {
-            emitBoxed(call.receiver());
-            c.refCast(ts.stringType).structGet(ts.stringType, 0).arrayLen();
-            ctx.stackKind = PrimitiveKind.INT;
-            return;
-        }
-        rt.emitStringLit(c, "Unsupported core method : " + call.coreKind() + "." + call.memberName());
-        c.i32Const(call.meta().line()).call(rt.fnThrowMsg).unreachable();
         ctx.stackKind = PrimitiveKind.NONE;
     }
 }

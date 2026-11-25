@@ -614,4 +614,260 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals(0, exit, "Multi-module node execution failed : " + stderr);
         Assertions.assertEquals("lenSq=25.0 area=12.0\n", stdout);
     }
+
+    // ---------------------------------------------------------------- BIP025-P3 Strings, Collections, For, Appendable & Argon
+
+    @Test
+    public void stringsPortableApiParity() throws Exception {
+        String code = """
+                def s = "  Hello, Babble Wasm!  "
+                assert(s.length() == 23)
+                assert(not s.isEmpty())
+                assert("".isEmpty())
+                assert("   \\t\\n ".isBlank())
+                assert(not s.isBlank())
+                def t = s.trim()
+                assert(t == "Hello, Babble Wasm!")
+                assert(s.strip() == t)
+                assert(t.charAt(0) == 'H')
+                assert(t.substring(7) == "Babble Wasm!")
+                assert(t.substring(7, 13) == "Babble")
+                assert(t.indexOf("Babble") == 7)
+                assert(t.indexOf(int('a')) == 8)
+                assert(t.indexOf("xyz") == -1)
+                assert(t.lastIndexOf(int('a')) == 15)
+                assert(t.lastIndexOf("a") == 15)
+                assert(t.startsWith("Hello"))
+                assert(t.startsWith("Babble", 7))
+                assert(t.endsWith("Wasm!"))
+                assert(t.contains("Babble"))
+                assert(t.replace('a', 'A') == "Hello, BAbble WAsm!")
+                assert(t.replace("Wasm", "WASM3") == "Hello, Babble WASM3!")
+                assert(t.toLowerCase() == "hello, babble wasm!")
+                assert(t.toUpperCase() == "HELLO, BABBLE WASM!")
+                assert("AbC".equalsIgnoreCase("abc"))
+                assert("abc".compareTo("abd") < 0)
+                assert("abc".compareTo("abc") == 0)
+                assert("ab".concat("cd") == "abcd")
+                assert("ha".repeat(3) == "hahaha")
+                def parts = "a,b,c".split(",")
+                assert(parts.size() == 3 and parts.get(0) == "a" and parts.get(2) == "c")
+                def chars = "Hi".toCharArray()
+                assert(chars.size() == 2 and chars.get(0) == 'H' and chars.get(1) == 'i')
+                assert("hello".hashCode() == 99162322)
+                t.substring(7, 13)
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Strings test failed : " + out.error());
+        Assertions.assertEquals("\"Babble\"", out.resultJson());
+    }
+
+    @Test
+    public void coreCollectionsListSetSortedSetMapSortedMapEntry() throws Exception {
+        String code = """
+                def xs = list(1, 2, 3)
+                assert(xs is list and xs.size() == 3 and not xs.isEmpty())
+                xs.add(4)
+                xs.add(1, 10)
+                assert(xs == list(1, 10, 2, 3, 4))
+                assert(xs.get(1) == 10)
+                assert(xs.set(1, 20) == 10)
+                assert(xs.indexOf(20) == 1)
+                assert(xs.contains(3) and not xs.contains(99))
+                assert(xs.remove(1) == 20)
+                assert(xs == list(1, 2, 3, 4))
+                assert(xs.subList(1, 3) == list(2, 3))
+                def copy = list(from: xs)
+                assert(copy == xs and not same(copy, xs))
+                def arrFromList: array of int = array(from: xs)
+                assert(arrFromList == (array of int).of(1, 2, 3, 4))
+
+                def s = set("b", "a", "b", "c")
+                assert(s is set and not (s is sortedset))
+                assert(s.size() == 3 and s.contains("a"))
+                assert(s == set("c", "a", "b"))
+                assert(string(s) == "[b, a, c]")
+                assert(s.remove("a") and not s.contains("a"))
+
+                def ss = sortedset(30, 10, 20, 10)
+                assert(ss is set and ss is sortedset)
+                assert(ss.size() == 3)
+                assert(ss.first() == 10 and ss.last() == 30)
+                assert(string(ss) == "[10, 20, 30]")
+
+                def e = entry("k", 42)
+                assert(e is entry and e.getKey() == "k" and e.getValue() == 42)
+                assert(string(e) == "k=42")
+
+                def m = map(entry("b", 2), entry("a", 1))
+                assert(m is map and not (m is sortedmap))
+                assert(m.size() == 2 and m.get("a") == 1 and m.get("z") == null)
+                assert(m.getOrDefault("z", 99) == 99)
+                assert(m.containsKey("b") and m.containsValue(2))
+                assert(m.put("a", 10) == 1 and m.get("a") == 10)
+                assert(m.keySet() == set("a", "b"))
+                assert(m.values() == list(2, 10))
+                assert(m == map(entry("a", 10), entry("b", 2)))
+                assert(m.remove("b") == 2 and m.size() == 1)
+
+                def sm = sortedmap(entry("z", 1), entry("a", 2), entry("m", 3))
+                assert(sm is map and sm is sortedmap)
+                assert(sm.firstKey() == "a" and sm.lastKey() == "z")
+                assert(string(sm) == "{a=2, m=3, z=1}")
+                string(sm)
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "Collections test failed : " + out.error());
+        Assertions.assertEquals("\"{a=2, m=3, z=1}\"", out.resultJson());
+    }
+
+    @Test
+    public void forLoopsArraysCollectionsCustomIterablesAndBreakValue() throws Exception {
+        String code = """
+                def arrSum = 0
+                for x in (array of int).of(10, 20, 30, 40) then (
+                    if x == 20 then (continue)
+                    arrSum += x
+                )
+                assert(arrSum == 80)
+
+                def dSum = 0.0
+                for d in (array of double).of(1.5, 2.5, 3.0) then (
+                    dSum += d
+                )
+                assert(dSum == 7.0)
+
+                def listSum = 0
+                for v in list(1, 2, 3, 4, 5) then (
+                    listSum += v
+                )
+                assert(listSum == 15)
+
+                def found = for v in list(3, 7, 11, 15) then (
+                    if v > 10 then (break v * 2)
+                )
+                assert(found == 22)
+
+                ;; Custom Babble iterable (like Argon's Range)
+                def RangeCursor = class (private def cur: int, private def stop: int) (
+                    def hasNext = fn (): bool -> (this.cur < this.stop)
+                    def next = fn mut (): int -> (def v = this.cur; this.cur += 1; v)
+                )
+                def Range = record (start: int, stop: int) (
+                    def iterator = fn (): RangeCursor -> (RangeCursor(this.start, this.stop))
+                )
+                def rSum = 0
+                for i in Range(1, 6) then (
+                    rSum += i
+                )
+                assert(rSum == 15)
+
+                ;; Closure capturing loop variable gets a fresh cell per iteration
+                def fns: list of (fn (): int) = list()
+                for i in Range(0, 3) then (
+                    fns.add(fn (): int -> (i * 10))
+                )
+                def f0 = fns.get(0)
+                def f2 = fns.get(2)
+                assert(f0() == 0 and f2() == 20)
+                (found as int) + rSum
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
+        Assertions.assertTrue(out.ok(), "For loops test failed : " + out.error());
+        Assertions.assertEquals("\"37\"", out.resultJson());
+    }
+
+    @Test
+    public void portableAppendableCustomOutputSink() throws Exception {
+        String code = """
+                def Sink = class () implements java.lang.Appendable (
+                    def out = ""
+                    def append = overload (
+                        fn io mut (csq: java.lang.CharSequence?): java.lang.Appendable -> (
+                            this.out += string(csq)
+                            this
+                        ),
+                        fn io mut (csq: java.lang.CharSequence?, start: int, end: int): java.lang.Appendable -> (
+                            this.out += string(csq).substring(start, end)
+                            this
+                        ),
+                        fn io mut (c: char): java.lang.Appendable -> (
+                            this.out += string(c)
+                            this
+                        )
+                    )
+                )
+                def sink = Sink()
+                def writeTo = fn io (out: java.lang.Appendable = STDOUT) -> (
+                    println("line1:", 42, to: out)
+                    print("line2", to: out)
+                )
+                writeTo(out: sink)
+                assert(sink.out == "line1:42\\nline2")
+                sink.out
+                """;
+        NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_JS, 1);
+        Assertions.assertTrue(out.ok(), "Portable Appendable sink test failed : " + out.error());
+        Assertions.assertEquals("\"line1:42\\nline2\"", out.resultJson());
+        Assertions.assertEquals("", out.stdout(), "Custom sink must not write to STDOUT");
+    }
+
+    @Test
+    public void argonRayTracerMiniSceneMatchesJvmByteForByte(@TempDir Path dir) throws Exception {
+        Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
+        Path argonRoot = Path.of("examples/raytracer-argon").toAbsolutePath().normalize();
+        Path miniScript = dir.resolve("argon_mini.ba");
+        String libPath = argonRoot.resolve("lib/raytracer.ba").toString().replace("\\", "/");
+        // Small 16x9 render exercising all 15 unmodified Argon modules (Vec3, Ray, BVH, Sphere, Materials, Camera, Range, STDOUT)
+        String miniCode = """
+                def raytracer = import("%s")
+                def rng: raytracer.Rng = raytracer.Rng(2026)
+                def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: rng, gridRadius: 2)
+                def world: raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
+                def camera: raytracer.Camera = raytracer.Camera(
+                    aspectRatio: 16.0 / 9.0,
+                    imageWidth: 16,
+                    samplesPerPixel: 2,
+                    maxDepth: 6,
+                    vfov: 20.0,
+                    lookfrom: raytracer.Vec3(13.0, 2.0, 3.0),
+                    lookat: raytracer.Vec3(0.0, 0.0, 0.0),
+                    vup: raytracer.Vec3(0.0, 1.0, 0.0),
+                    defocusAngle: 0.6,
+                    focusDist: 10.0
+                )
+                camera.render(world, rng)
+                """.formatted(libPath);
+        Files.writeString(miniScript, miniCode, StandardCharsets.UTF_8);
+
+        // 1. Run on JVM
+        java.io.StringWriter jvmOut = new java.io.StringWriter();
+        java.io.StringWriter jvmErr = new java.io.StringWriter();
+        int jvmStatus = org.babblelang.Main.run(
+                new String[]{miniScript.toString()},
+                new java.io.BufferedReader(new java.io.StringReader("")),
+                new java.io.PrintWriter(jvmOut), new java.io.PrintWriter(jvmErr), false);
+        Assertions.assertEquals(0, jvmStatus, "JVM Argon mini render failed : " + jvmErr);
+
+        // 2. Compile to WebAssembly (wasm-js) and run in V8
+        Path wasmOut = dir.resolve("argon_mini.wasm");
+        Path mjsOut = dir.resolve("argon_mini.mjs");
+        java.io.StringWriter compileErr = new java.io.StringWriter();
+        int cmpStatus = org.babblelang.Main.run(
+                new String[]{"-compile", "-target", "wasm-js", miniScript.toString(), "-o", wasmOut.toString(), "-root", "/"},
+                new java.io.BufferedReader(new java.io.StringReader("")),
+                new java.io.PrintWriter(new java.io.StringWriter()),
+                new java.io.PrintWriter(compileErr), false);
+        Assertions.assertEquals(0, cmpStatus, "Wasm Argon mini compile failed : " + compileErr);
+
+        Process p = new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
+        String wasmStdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String wasmStderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        int exit = p.waitFor();
+        Assertions.assertEquals(0, exit, "V8 Argon mini render failed : " + wasmStderr);
+
+        // 3. Exact byte-for-byte PPM parity!
+        Assertions.assertTrue(wasmStdout.startsWith("P3\n16 9\n255\n"), "Expected PPM header");
+        Assertions.assertEquals(jvmOut.toString(), wasmStdout, "Argon mini PPM must match JVM byte-for-byte");
+    }
 }

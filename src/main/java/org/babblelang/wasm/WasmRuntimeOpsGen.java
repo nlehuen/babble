@@ -572,12 +572,28 @@ public final class WasmRuntimeOpsGen {
                 BUILTIN_BOOL, ts.boxBoolType,
                 BUILTIN_CHAR, ts.boxCharType,
                 BUILTIN_STRING, ts.stringType,
-                BUILTIN_EXCEPTION, ts.babbleExnType
+                BUILTIN_EXCEPTION, ts.babbleExnType,
+                BUILTIN_LIST, ts.listType,
+                BUILTIN_ENTRY, ts.entryType
         };
         for (int i = 0; i < boxMap.length; i += 2) {
             c.localGet(1).i32Const(boxMap[i]).op(WasmInstr.SimpleOp.I32_EQ).if_()
                     .localGet(0).refTest(boxMap[i + 1]).return_().end();
         }
+        // set / sortedset (sortedset is a subtype of set in Babble!)
+        c.localGet(1).i32Const(BUILTIN_SET).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(0).refTest(ts.setType).return_().end();
+        c.localGet(1).i32Const(BUILTIN_SORTEDSET).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(0).refTest(ts.setType).if_()
+                .localGet(0).refCast(ts.setType).structGet(ts.setType, 2).return_().end()
+                .i32Const(0).return_().end();
+        // map / sortedmap (sortedmap is a subtype of map in Babble!)
+        c.localGet(1).i32Const(BUILTIN_MAP).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(0).refTest(ts.mapType).return_().end();
+        c.localGet(1).i32Const(BUILTIN_SORTEDMAP).op(WasmInstr.SimpleOp.I32_EQ).if_()
+                .localGet(0).refTest(ts.mapType).if_()
+                .localGet(0).refCast(ts.mapType).structGet(ts.mapType, 3).return_().end()
+                .i32Const(0).return_().end();
         c.i32Const(0);
     }
 
