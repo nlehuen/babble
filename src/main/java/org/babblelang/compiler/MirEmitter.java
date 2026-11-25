@@ -1062,7 +1062,8 @@ final class MirEmitter {
     }
 
     private void emitNameRead(MirInst.NameRead nr) {
-        emitter.loadVarOrName(null, nr.name(), nr.line());
+        // Final and nothrow : the HIR read was final and definitely defined.
+        emitter.loadName(nr.name(), nr.finalBinding() && nr.effect().nothrow(), nr.line());
         storeResult(nr.result());
     }
 
