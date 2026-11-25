@@ -6,5 +6,5 @@ package org.babblelang.runtime;
  */
 @FunctionalInterface
 public interface ClassBody {
-    void construct(BabbleClass babbleClass, Object instance, ScriptRuntime rt, Object[] args, String[] names, CallSite site);
+    Object construct(BabbleClass babbleClass, Object instance, ScriptRuntime rt, Object[] args, String[] names, CallSite site);
 }

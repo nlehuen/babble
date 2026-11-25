@@ -71,7 +71,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 }
                 copy.set(i, nw);
             }
-            if (nw instanceof HirExpr.Def d && d.var() != null && !d.var().cell()
+            if (nw instanceof HirExpr.Def d && d.var() != null && !d.var().isCaptured()
                     && !assigned.contains(d.var().id())
                     && d.value() instanceof HirExpr.Const c) {
                 HirExpr.Const bound = coerceConstForVar(c, d.var(), d.meta().wideningRank());

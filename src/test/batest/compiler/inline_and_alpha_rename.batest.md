@@ -467,7 +467,6 @@ fn run (n:int, fl:bool) -> int {nothrow unique}
       (+:int (*:int var(a) 10:int) var(b#1))))
   (def y (if var(fl) 2:int 3:int))
   (+:int (+:int var(r1) (block
-        (def $this var(p))
         (def b#2 var(y))
         (+:int (+:int (get-this-field x) 1:int) var(b#2)))) (call-fn cap))
 ```
@@ -495,12 +494,12 @@ fn run(v0: int, v1: bool) -> int:
     br bb3(v12)
   bb3(v13: int):
     slot_init y, v13 {write:shared,throws}
-    v14: any = slot_read p {read:shared}
-    v15: int = slot_read y {read:shared,throws}
-    v16: int = load_field v14.x {read:frozen}
+    v14: int = slot_read y {read:shared,throws}
+    v15: any = slot_read p {read:shared}
+    v16: int = load_field v15.x {read:frozen}
     v17: int = const 1
     v18: int = add v16, v17 {pure}
-    v19: int = add v18, v15 {pure}
+    v19: int = add v18, v14 {pure}
     v20: int = add v10, v19 {pure}
     v21: int = call cap() {impure}
     v22: int = add v20, v21 {pure}
@@ -530,11 +529,11 @@ fn run(v0: int, v1: bool) -> int:
     br bb3(v12)
   bb3(v13: int):
     slot_init y, v13 {write:shared,throws}
-    v14: any = slot_read p {read:shared}
-    v15: int = slot_read y {read:shared,throws}
-    v16: int = load_field v14.x {read:frozen}
+    v14: int = slot_read y {read:shared,throws}
+    v15: any = slot_read p {read:shared}
+    v16: int = load_field v15.x {read:frozen}
     v17: int = add v16, v6 {pure}
-    v18: int = add v17, v15 {pure}
+    v18: int = add v17, v14 {pure}
     v19: int = add v10, v18 {pure}
     v20: int = call cap() {impure}
     v21: int = add v19, v20 {pure}

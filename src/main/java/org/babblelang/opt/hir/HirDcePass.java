@@ -132,7 +132,7 @@ public final class HirDcePass implements HirPass {
                 continue;
             }
             // Drop unused local frame def with pure initializer
-            if (!isLast && nw instanceof HirExpr.Def d && d.var() != null && !d.var().cell()
+            if (!isLast && nw instanceof HirExpr.Def d && d.var() != null && !d.var().isCaptured()
                     && d.var().kind() == Resolution.Variable.Kind.DEFINITION
                     && !usedVars.contains(d.var().id())
                     && (d.value() == null || HirPurity.isPureNothrowTerminating(d.value(), module))) {
@@ -256,7 +256,7 @@ public final class HirDcePass implements HirPass {
         List<HirVar> kept = null;
         for (int i = 0; i < declared.size(); i++) {
             HirVar v = declared.get(i);
-            boolean keep = v.cell()
+            boolean keep = v.isCaptured()
                     || v.kind() != Resolution.Variable.Kind.DEFINITION
                     || referenced.contains(v.id());
             if (!keep) {

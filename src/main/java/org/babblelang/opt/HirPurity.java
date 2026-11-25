@@ -231,7 +231,7 @@ public final class HirPurity {
         }
         Set<Integer> localIds = declaredVars.isEmpty() ? outerLocals : new HashSet<>(outerLocals);
         for (HirVar v : declaredVars) {
-            if (!v.cell()) {
+            if (!v.isCaptured()) {
                 localIds.add(v.id());
             }
         }
@@ -283,7 +283,7 @@ public final class HirPurity {
             }
             Set<Integer> extended = new HashSet<>(localIds);
             for (HirVar v : f.bodyDeclaredVars()) {
-                if (!v.cell()) {
+                if (!v.isCaptured()) {
                     extended.add(v.id());
                 }
             }
@@ -332,7 +332,7 @@ public final class HirPurity {
     }
 
     private static boolean isBodyStmtPureNothrowTerminating(HirExpr expr, HirModule module, Set<Integer> visitingFns) {
-        if (expr instanceof HirExpr.Def d && d.var() != null && !d.var().cell()) {
+        if (expr instanceof HirExpr.Def d && d.var() != null && !d.var().isCaptured()) {
             return d.value() == null || isPureNothrowTerminating(d.value(), module, visitingFns);
         }
         if (expr instanceof HirExpr.Return r) {

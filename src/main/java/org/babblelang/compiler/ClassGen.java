@@ -36,13 +36,17 @@ final class ClassGen {
     final String[] implementedInterfaces;
     final List<Class<?>> javaInterfaces;
     final ClassWriter writer;
-    final List<HirVar> hiddenCells = new ArrayList<>();
+    final List<HirVar> hiddenVars = new ArrayList<>();
+    final java.util.Set<Integer> hiddenVarIds = new java.util.HashSet<>();
     final PrimitiveKind[] memberKinds;
     final int[] primDefBits;
     final int primDefCount;
+    final int[] finalHeaderMemberIndices;
+    final boolean[] finalMemberFlags;
+    final String initDescriptor;
     final Map<String, String> superHelpers = new HashMap<>();
 
-    ClassGen(HirEmitter emitter, HirClass cls) {
+    ClassGen(HirEmitter emitter, HirClass cls, boolean fbipReused) {
         this.emitter = emitter;
         this.cls = cls;
         this.name = cls.jvmName();
@@ -52,13 +56,74 @@ final class ClassGen {
         this.writer = new ScriptClassWriter(emitter.runtimeLoader, emitter.className,
                 emitter.generatedClassParents, emitter.generatedInterfaceParents);
         for (HirVar variable : cls.declaredVars()) {
-            if (variable.cell()) {
-                hiddenCells.add(variable);
+            if (variable.isCaptured()) {
+                hiddenVars.add(variable);
+                hiddenVarIds.add(variable.id());
             }
         }
         this.memberKinds = cls.memberKinds();
         this.primDefBits = cls.primDefBits();
         this.primDefCount = cls.primDefCount();
+        this.finalMemberFlags = new boolean[shape.memberCount()];
+        if (!cls.isObject() && !fbipReused && canUseFinalHeaderInit(cls)) {
+            List<Integer> finals = new ArrayList<>();
+            for (HirParam p : cls.params()) {
+                int idx = p.memberIndex();
+                if (idx >= 0 && !shape.isMutable(idx)) {
+                    finals.add(idx);
+                    finalMemberFlags[idx] = true;
+                }
+            }
+            this.finalHeaderMemberIndices = finals.stream().mapToInt(Integer::intValue).toArray();
+        } else {
+            this.finalHeaderMemberIndices = new int[0];
+        }
+        StringBuilder initDesc = new StringBuilder("(L").append(BABBLE_CLASS).append(";L").append(SCRIPT_RUNTIME).append(';');
+        for (int idx : finalHeaderMemberIndices) {
+            initDesc.append(jvmDescriptor(memberKinds[idx]));
+        }
+        this.initDescriptor = initDesc.append(")V").toString();
+    }
+
+    boolean hasFinalHeaderFields() {
+        return finalHeaderMemberIndices.length > 0;
+    }
+
+    boolean isFinalField(int memberIndex) {
+        return memberIndex >= 0 && memberIndex < finalMemberFlags.length && finalMemberFlags[memberIndex];
+    }
+
+    boolean hasHiddenField(HirVar variable) {
+        return variable != null && hiddenVarIds.contains(variable.id());
+    }
+
+    private static boolean canUseFinalHeaderInit(HirClass cls) {
+        for (HirParam p : cls.params()) {
+            if (p.defaultValue() != null && referencesThis(p.defaultValue())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean referencesThis(org.babblelang.ir.hir.HirExpr expr) {
+        if (expr == null) {
+            return false;
+        }
+        if (expr instanceof org.babblelang.ir.hir.HirExpr.ThisRef
+                || expr instanceof org.babblelang.ir.hir.HirExpr.SuperCall
+                || expr instanceof org.babblelang.ir.hir.HirExpr.ThisFieldGet
+                || expr instanceof org.babblelang.ir.hir.HirExpr.ThisFieldAssign) {
+            return true;
+        }
+        boolean[] found = {false};
+        org.babblelang.opt.HirRewriter.rewriteChildren(expr, child -> {
+            if (!found[0] && referencesThis(child)) {
+                found[0] = true;
+            }
+            return child;
+        });
+        return found[0];
     }
 
     String methodName(String member) {
@@ -101,17 +166,19 @@ final class ClassGen {
         writer.visitField(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC, "$babble$class", "L" + BABBLE_CLASS + ";", null, null).visitEnd();
         writer.visitField(ACC_PUBLIC | ACC_FINAL | ACC_SYNTHETIC, "$babble$rt", "L" + SCRIPT_RUNTIME + ";", null, null).visitEnd();
         for (int i = 0; i < shape.memberCount(); i++) {
-            writer.visitField(ACC_PUBLIC, shape.member(i), jvmDescriptor(memberKinds[i]), null, null).visitEnd();
+            int access = isFinalField(i) ? (ACC_PUBLIC | ACC_FINAL) : ACC_PUBLIC;
+            writer.visitField(access, shape.member(i), jvmDescriptor(memberKinds[i]), null, null).visitEnd();
         }
-        for (HirVar variable : hiddenCells) {
-            writer.visitField(0, variable.hiddenFieldName(), "Ljava/lang/Object;", null, null).visitEnd();
+        for (HirVar variable : hiddenVars) {
+            String desc = variable.cell() ? "Ljava/lang/Object;" : jvmDescriptor(variable.primitiveKind());
+            writer.visitField(0, variable.hiddenFieldName(), desc, null, null).visitEnd();
         }
         int definedWords = (primDefCount + 31) / 32;
         for (int w = 0; w < definedWords; w++) {
             writer.visitField(0, "$defined$" + w, "I", null, null).visitEnd();
         }
 
-        MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", null, null);
+        MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", initDescriptor, null, null);
         init.visitCode();
         init.visitVarInsn(ALOAD, 0);
         init.visitMethodInsn(INVOKESPECIAL, OBJECT, "<init>", "()V", false);
@@ -121,8 +188,16 @@ final class ClassGen {
         init.visitVarInsn(ALOAD, 0);
         init.visitVarInsn(ALOAD, 2);
         init.visitFieldInsn(PUTFIELD, name, "$babble$rt", "L" + SCRIPT_RUNTIME + ";");
+        int paramSlot = 3;
+        for (int idx : finalHeaderMemberIndices) {
+            PrimitiveKind mk = memberKinds[idx];
+            init.visitVarInsn(ALOAD, 0);
+            loadKindOn(init, mk, paramSlot);
+            init.visitFieldInsn(PUTFIELD, name, shape.member(idx), jvmDescriptor(mk));
+            paramSlot += mk.slots();
+        }
         for (int i = 0; i < shape.memberCount(); i++) {
-            if (!memberKinds[i].isPrimitive()) {
+            if (!isFinalField(i) && !memberKinds[i].isPrimitive()) {
                 init.visitVarInsn(ALOAD, 0);
                 init.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
                 init.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
@@ -175,23 +250,42 @@ final class ClassGen {
         m.visitInsn(DUP);
         m.visitVarInsn(ALOAD, 0);
         m.visitVarInsn(ALOAD, 1);
-        m.visitMethodInsn(INVOKESPECIAL, name, "<init>", "(L" + BABBLE_CLASS + ";L" + SCRIPT_RUNTIME + ";)V", false);
-        int slot = 2;
-        for (int i = 0; i < params.size(); i++) {
-            HirParam p = params.get(i);
-            int memberIdx = p.memberIndex();
-            PrimitiveKind mk = memberKinds[memberIdx];
-            m.visitInsn(DUP);
-            loadKindOn(m, p.kind(), slot);
-            if (p.kind() != mk) {
-                if (p.kind().isPrimitive() && !mk.isPrimitive()) {
-                    boxOn(m, p.kind());
-                } else if (!p.kind().isPrimitive() && mk.isPrimitive()) {
-                    unboxOn(m, mk);
+        if (hasFinalHeaderFields()) {
+            int slot = 2;
+            for (int i = 0; i < params.size(); i++) {
+                HirParam p = params.get(i);
+                int memberIdx = p.memberIndex();
+                PrimitiveKind mk = memberKinds[memberIdx];
+                loadKindOn(m, p.kind(), slot);
+                if (p.kind() != mk) {
+                    if (p.kind().isPrimitive() && !mk.isPrimitive()) {
+                        boxOn(m, p.kind());
+                    } else if (!p.kind().isPrimitive() && mk.isPrimitive()) {
+                        unboxOn(m, mk);
+                    }
                 }
+                slot += p.kind().slots();
             }
-            m.visitFieldInsn(PUTFIELD, name, shape.member(memberIdx), jvmDescriptor(mk));
-            slot += p.kind().slots();
+            m.visitMethodInsn(INVOKESPECIAL, name, "<init>", initDescriptor, false);
+        } else {
+            m.visitMethodInsn(INVOKESPECIAL, name, "<init>", initDescriptor, false);
+            int slot = 2;
+            for (int i = 0; i < params.size(); i++) {
+                HirParam p = params.get(i);
+                int memberIdx = p.memberIndex();
+                PrimitiveKind mk = memberKinds[memberIdx];
+                m.visitInsn(DUP);
+                loadKindOn(m, p.kind(), slot);
+                if (p.kind() != mk) {
+                    if (p.kind().isPrimitive() && !mk.isPrimitive()) {
+                        boxOn(m, p.kind());
+                    } else if (!p.kind().isPrimitive() && mk.isPrimitive()) {
+                        unboxOn(m, mk);
+                    }
+                }
+                m.visitFieldInsn(PUTFIELD, name, shape.member(memberIdx), jvmDescriptor(mk));
+                slot += p.kind().slots();
+            }
         }
         for (org.babblelang.ir.hir.HirExpr stmt : cls.body()) {
             if (stmt instanceof org.babblelang.ir.hir.HirExpr.Def d) {
@@ -652,11 +746,14 @@ final class ClassGen {
         if (shape.memberCount() > 0) {
             Label[] cases = new Label[shape.memberCount()];
             for (int i = 0; i < cases.length; i++) {
-                cases[i] = new Label();
+                cases[i] = (set && isFinalField(i)) ? fallback : new Label();
             }
             m.visitVarInsn(ILOAD, 1);
             m.visitTableSwitchInsn(0, cases.length - 1, fallback, cases);
             for (int i = 0; i < cases.length; i++) {
+                if (set && isFinalField(i)) {
+                    continue;
+                }
                 m.visitLabel(cases[i]);
                 PrimitiveKind mk = memberKinds[i];
                 String desc = jvmDescriptor(mk);

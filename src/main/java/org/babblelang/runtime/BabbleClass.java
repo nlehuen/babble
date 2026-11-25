@@ -91,9 +91,8 @@ public final class BabbleClass extends BabbleType implements Callable {
     }
 
     public Object construct(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
-        Object instance = factory.create(this, rt);
-        body.construct(this, instance, rt, args, names, site);
-        return instance;
+        Object instance = factory != null ? factory.create(this, rt) : null;
+        return body.construct(this, instance, rt, args, names, site);
     }
 
     /** Creates the single instance of an object literal. */

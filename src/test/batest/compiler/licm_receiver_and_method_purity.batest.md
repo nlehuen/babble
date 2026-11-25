@@ -542,10 +542,14 @@ fn CR.run (n:int) -> int {nothrow unique}
   (def cap (fn-ref cap))
   (def a 0:int)
   (def i 0:int)
-  (while (<:bool var(i) var(n))
+  (block
+    (def $licm0 (get-this-field x))
     (block
-      (set a += (+:int (get-this-field x) (+:int var(n) 1:int)))
-      (set i += 1:int)))
+      (def $licm1 (+:int var($licm0) (+:int var(n) 1:int)))
+      (while (<:bool var(i) var(n))
+        (block
+          (set a += var($licm1))
+          (set i += 1:int)))))
   (+:int var(a) (call-fn cap))
 ```
 
@@ -556,24 +560,24 @@ fn CR.run(v0: int) -> int:
     v1: any = opaque.FunctionRef(cap) {read:shared}
     v2: int = const 0
     v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v2)
-  bb1(v5: any, v6: int, v7: int):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
+    v4: any = slot_read this {pure}
+    v5: int = load_field v4.x {read:frozen}
+    v6: int = const 1
+    v7: int = add v0, v6 {pure}
+    v8: int = add v5, v7 {pure}
+    v9: any = const null
+    br bb1(v9, v3, v2)
+  bb1(v10: any, v11: int, v12: int):
+    v13: bool = lt v11, v0 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    v9: int = call cap() {impure}
-    v10: int = add v7, v9 {pure}
-    ret v10
-  bb3:
-    v11: any = slot_read this {read:shared}
-    v12: int = load_field v11.x {read:frozen}
-    v13: int = const 1
-    v14: int = add v0, v13 {pure}
+    v14: int = call cap() {impure}
     v15: int = add v12, v14 {pure}
-    v16: int = add v7, v15 {pure}
+    ret v15
+  bb3:
+    v16: int = add v12, v8 {pure}
     v17: int = const 1
-    v18: int = add v6, v17 {pure}
+    v18: int = add v11, v17 {pure}
     v19: any = convert.any v18
     br bb1(v19, v18, v16)
 ```
@@ -584,21 +588,21 @@ fn CR.run(v0: int) -> int:
   bb0:
     v1: any = opaque.FunctionRef(cap) {read:shared}
     v2: int = const 0
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
+    v3: any = slot_read this {pure}
+    v4: int = load_field v3.x {read:frozen}
+    v5: int = const 1
+    v6: int = add v0, v5 {pure}
+    v7: int = add v4, v6 {pure}
     br bb1(v2, v2)
-  bb1(v5: int, v6: int):
-    v7: bool = lt v5, v0 {pure}
-    br_if v7, bb3, bb2
+  bb1(v8: int, v9: int):
+    v10: bool = lt v8, v0 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    v8: int = call cap() {impure}
-    v9: int = add v6, v8 {pure}
-    ret v9
+    v11: int = call cap() {impure}
+    v12: int = add v9, v11 {pure}
+    ret v12
   bb3:
-    v10: any = slot_read this {read:shared}
-    v11: int = load_field v10.x {read:frozen}
-    v12: int = add v11, v4 {pure}
-    v13: int = add v6, v12 {pure}
-    v14: int = add v5, v3 {pure}
+    v13: int = add v9, v7 {pure}
+    v14: int = add v8, v5 {pure}
     br bb1(v14, v13)
 ```

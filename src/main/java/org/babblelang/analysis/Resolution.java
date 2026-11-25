@@ -33,6 +33,7 @@ public final class Resolution {
         private final ParserRuleContext method;
         private final ParserRuleContext declaration;
         private boolean cell;
+        private boolean capturedByValue;
         private boolean used;
 
         Variable(String name, Kind kind, ParserRuleContext method, ParserRuleContext declaration) {
@@ -60,9 +61,19 @@ public final class Resolution {
             return method;
         }
 
-        /** Whether a nested method captures it : it then lives in a {@code Cell}. */
+        /** Whether a nested method captures it via a heap {@code Cell} (mutable or non-dominating capture). */
         public boolean isCell() {
             return cell;
+        }
+
+        /** Whether a nested method captures this immutable, definitely-initialized variable by value ({@code BIP034-P5}). */
+        public boolean isCapturedByValue() {
+            return capturedByValue;
+        }
+
+        /** Whether any nested method captures this variable (either via {@code Cell} or by value). */
+        public boolean isCaptured() {
+            return cell || capturedByValue;
         }
 
         /** Whether anything reads or assigns it. */
@@ -81,6 +92,13 @@ public final class Resolution {
 
         void markCell() {
             cell = true;
+            capturedByValue = false;
+        }
+
+        void markCapturedByValue() {
+            if (!cell) {
+                capturedByValue = true;
+            }
         }
 
         void markUsed() {
@@ -89,7 +107,7 @@ public final class Resolution {
 
         @Override
         public String toString() {
-            return name + (cell ? " (cell)" : "");
+            return name + (cell ? " (cell)" : capturedByValue ? " (value)" : "");
         }
     }
 

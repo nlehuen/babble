@@ -71,7 +71,7 @@ final class JvmPrimitives {
     static final String BODY_DESCRIPTOR = "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
     static final String CLASS_BODY_DESCRIPTOR = "(L" + BABBLE_CLASS + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
-            + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)V";
+            + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
     static final String METHOD_DESCRIPTOR = "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME
             + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
 

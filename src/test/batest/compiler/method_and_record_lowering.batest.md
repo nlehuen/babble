@@ -298,7 +298,7 @@ fn C.bump() -> double:
     v2: double = add v0, v1 {pure}
     slot_write outer, v2 {write:shared}
     v3: double = slot_read outer {read:shared}
-    v4: double = slot_read p {read:shared,throws}
+    v4: double = slot_read p {pure}
     v5: double = add v3, v4 {pure}
     ret v5
 ```
