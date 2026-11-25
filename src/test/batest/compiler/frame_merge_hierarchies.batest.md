@@ -120,14 +120,14 @@ fn joinRec(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(R2) {read:shared}
     v2: int = const 2
-    v3: any = record_new R2(v2) {pure}
+    v3: any = record_new R2[v1](v2) {pure}
     br bb3(v3)
   bb2:
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(R1) {read:shared}
     v5: int = const 1
-    v6: any = record_new R1(v5) {pure}
+    v6: any = record_new R1[v4](v5) {pure}
     br bb3(v6)
   bb3(v7: any):
     ret v7
@@ -476,9 +476,9 @@ fn loopJoin (n:int) -> obj {nothrow}
 ;; mir -O2 fn=loopJoin stage=before
 fn loopJoin(v0: int) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(R1) {read:shared}
     v2: int = const 0
-    v3: any = record_new R1(v2) {pure}
+    v3: any = record_new R1[v1](v2) {pure}
     v4: int = const 0
     v5: any = const null
     br bb1(v5, v4, v3)
@@ -492,12 +492,12 @@ fn loopJoin(v0: int) -> any:
     v11: bool = eq v7, v10 {pure}
     br_if v11, bb5, bb4
   bb4:
-    v12: any = opaque.NameRead() {impure}
-    v13: any = record_new R2(v7) {pure}
+    v12: any = opaque.NameRead(R2) {read:shared}
+    v13: any = record_new R2[v12](v7) {pure}
     br bb6(v13)
   bb5:
-    v14: any = opaque.NameRead() {impure}
-    v15: any = record_new R1(v7) {pure}
+    v14: any = opaque.NameRead(R1) {read:shared}
+    v15: any = record_new R1[v14](v7) {pure}
     br bb6(v15)
   bb6(v16: any):
     v17: int = const 1
@@ -510,28 +510,27 @@ fn loopJoin(v0: int) -> any:
 ;; mir -O2 fn=loopJoin
 fn loopJoin(v0: int) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(R1) {read:shared}
     v2: int = const 0
-    v3: any = record_new R1(v2) {pure}
+    v3: any = record_new R1[v1](v2) {pure}
+    v4: any = opaque.NameRead(R2) {read:shared}
     br bb1(v2, v3)
-  bb1(v4: int, v5: any):
-    v6: bool = lt v4, v0 {pure}
-    br_if v6, bb3, bb2
+  bb1(v5: int, v6: any):
+    v7: bool = lt v5, v0 {pure}
+    br_if v7, bb3, bb2
   bb2:
-    ret v5
+    ret v6
   bb3:
-    v7: bool = eq v4, v2 {pure}
-    br_if v7, bb5, bb4
+    v8: bool = eq v5, v2 {pure}
+    br_if v8, bb5, bb4
   bb4:
-    v8: any = opaque.NameRead() {impure}
-    v9: any = record_new R2(v4) {pure}
+    v9: any = record_new R2[v4](v5) {pure}
     br bb6(v9)
   bb5:
-    v10: any = opaque.NameRead() {impure}
-    v11: any = record_new R1(v4) {pure}
-    br bb6(v11)
-  bb6(v12: any):
-    v13: int = const 1
-    v14: int = add v4, v13 {pure}
-    br bb1(v14, v12)
+    v10: any = record_new R1[v1](v5) {pure}
+    br bb6(v10)
+  bb6(v11: any):
+    v12: int = const 1
+    v13: int = add v5, v12 {pure}
+    br bb1(v13, v11)
 ```

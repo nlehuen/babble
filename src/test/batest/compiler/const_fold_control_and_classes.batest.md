@@ -273,7 +273,7 @@ class Sub:
   fn Sub.callSup() -> int:
     bb0:
       v0: int = const 3
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(g, v0) {impure}
       v2: int = convert.int v1
       ret v2
 ```

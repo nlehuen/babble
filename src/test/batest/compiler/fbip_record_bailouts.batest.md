@@ -61,7 +61,7 @@ fn merge(v0: any [unique], v1: any [unique], v2: any) -> any:
     v3: int = load_field v0.count {read:frozen}
     v4: int = load_field v1.count {read:frozen}
     v5: int = add v3, v4 {pure}
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(int) {read:shared,throws}
     v7: double = load_field v2.x {read:frozen}
     v8: int = opaque.DynamicCall(v6, v7) {impure}
     v9: int = add v5, v8 {pure}
@@ -199,13 +199,13 @@ fn toExt (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=toExt stage=before,final
 fn toExt(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.ModuleExportGet(v1) {impure}
+    v1: any = opaque.NameRead(m) {read:shared,throws}
+    v2: any = opaque.ModuleExportGet(v1.ExtHolder) {impure}
     v3: any = load_field v0.items {read:frozen}
     v4: int = load_field v0.count {read:frozen}
     v5: int = const 1
     v6: int = add v4, v5 {pure}
-    v7: any = record_new ext_rec$ba$C1$ExtHolder(v3, v6) {pure}
+    v7: any = record_new ext_rec$ba$C1$ExtHolder[v2](v3, v6) {pure}
     ret v7
 ```
 
@@ -242,12 +242,12 @@ fn nonInitRef (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=nonInitRef stage=before,final
 fn nonInitRef(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(HRef) {read:shared,throws}
     v2: any = load_field v0.items {read:frozen}
     v3: int = load_field v0.count {read:frozen}
     v4: int = const 2
     v5: int = add v3, v4 {pure}
-    v6: any = record_new Holder(v2, v5) {pure}
+    v6: any = record_new Holder[v1](v2, v5) {pure}
     ret v6
 ```
 
@@ -271,15 +271,15 @@ fn impureRef (h:obj) -> obj {io}
 ;; mir -O2 fn=impureRef stage=before,final
 fn impureRef(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(log) {read:shared,throws}
     v2: any = const "H"
     v3: any = call_java v1.append(v2) {impure}
     v4: any = checkcast v3 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v5: any = opaque.NameRead() {impure}
+    v5: any = opaque.NameRead(Holder) {read:shared}
     v6: any = load_field v0.items {read:frozen}
     v7: int = load_field v0.count {read:frozen}
     v8: int = const 3
     v9: int = add v7, v8 {pure}
-    v10: any = record_new Holder(v6, v9) {pure}
+    v10: any = record_new Holder[v5](v6, v9) {pure}
     ret v10
 ```

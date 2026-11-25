@@ -125,8 +125,8 @@ fn run(v0: int) -> int:
   bb8:
     br bb9
   bb9 [unwind: Throwable -> bb10]:
-    v13: any = opaque.NameRead() {impure}
-    v14: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(discard) {read:shared,throws}
+    v14: any = opaque.NameRead(bump) {read:shared}
     v15: int = call bump() {impure}
     v16: any = opaque.DynamicCall(v13, v15) {impure}
     br bb11
@@ -136,8 +136,8 @@ fn run(v0: int) -> int:
   bb11:
     rethrow v12
   bb12:
-    v18: any = opaque.NameRead() {impure}
-    v19: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(discard) {read:shared,throws}
+    v19: any = opaque.NameRead(bump) {read:shared}
     v20: int = call bump() {impure}
     v21: any = opaque.DynamicCall(v18, v20) {impure}
     br bb13
@@ -156,8 +156,8 @@ fn run(v0: int) -> int:
     v2: int = add v0, v1 {pure}
     br bb1
   bb1:
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(discard) {read:shared,throws}
+    v4: any = opaque.NameRead(bump) {read:shared}
     v5: int = call bump() {impure}
     v6: any = opaque.DynamicCall(v3, v5) {impure}
     br bb2
@@ -539,8 +539,8 @@ fn run(v0: int, v1: any) -> int:
     br bb1(v29, v28, v26)
   bb8:
     v30: int = for_next v18, v23
-    v31: any = opaque.NameRead() {impure}
-    v32: any = opaque.NameRead() {impure}
+    v31: any = opaque.NameRead(discard) {read:shared,throws}
+    v32: any = opaque.NameRead(bump) {read:shared}
     v33: int = call bump() {impure}
     v34: any = opaque.DynamicCall(v31, v33) {impure}
     br bb9
@@ -591,8 +591,8 @@ fn run(v0: int, v1: any) -> int:
     br bb1(v17, v16)
   bb8:
     v18: int = for_next v12, v14
-    v19: any = opaque.NameRead() {impure}
-    v20: any = opaque.NameRead() {impure}
+    v19: any = opaque.NameRead(discard) {read:shared,throws}
+    v20: any = opaque.NameRead(bump) {read:shared}
     v21: int = call bump() {impure}
     v22: any = opaque.DynamicCall(v19, v21) {impure}
     br bb9

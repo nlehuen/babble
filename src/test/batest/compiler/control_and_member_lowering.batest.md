@@ -633,12 +633,12 @@ fn run(v0: int) -> int:
     v6: any = new_java IOException(v5) {pure!}
     rethrow v6
   bb4 [unwind: ThrownException -> bb8, IOException -> bb6]:
-    v7: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(TopErrB) {read:shared}
     v8: int = const 22
     v9: any = opaque.DynamicCall(v7, v8) {impure}
     throw v9
   bb5 [unwind: ThrownException -> bb8, IOException -> bb6]:
-    v10: any = opaque.NameRead() {impure}
+    v10: any = opaque.NameRead(TopErrA) {read:shared}
     v11: int = const 11
     v12: any = opaque.DynamicCall(v10, v11) {impure}
     throw v12
@@ -712,8 +712,8 @@ fn run (flag:bool) -> obj {pure}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: bool) -> any:
   bb0:
-    v1: any = opaque.ClassExpr() {impure}
-    v2: any = opaque.ClassExpr() {impure}
+    v1: any = opaque.ClassExpr(LocalA) {impure}
+    v2: any = opaque.ClassExpr(LocalB) {impure}
     br bb1
   bb1 [unwind: ThrownException -> bb4]:
     br_if v0, bb3, bb2

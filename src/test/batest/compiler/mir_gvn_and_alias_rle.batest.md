@@ -261,7 +261,7 @@ fn disjointUnique(v0: any [unique], v1: any [unique]) -> int:
   bb0:
     v2: int = load_field v0.v {read:unique#0,throws}
     v3: int = const 99
-    v4: any = opaque.DynamicFieldAssign(v1, v3) {write:unique#1,throws}
+    v4: any = opaque.DynamicFieldAssign(v1.v, v3) {write:unique#1,throws}
     v5: int = load_field v0.v {read:unique#0,throws}
     v6: int = add v2, v5 {pure}
     v7: int = load_field v1.v {read:unique#1,throws}
@@ -275,7 +275,7 @@ fn disjointUnique(v0: any [unique], v1: any [unique]) -> int:
   bb0:
     v2: int = load_field v0.v {read:unique#0,throws}
     v3: int = const 99
-    v4: any = opaque.DynamicFieldAssign(v1, v3) {write:unique#1,throws}
+    v4: any = opaque.DynamicFieldAssign(v1.v, v3) {write:unique#1,throws}
     v5: int = add v2, v2 {pure}
     v6: int = load_field v1.v {read:unique#1,throws}
     v7: int = add v5, v6 {pure}
@@ -512,7 +512,7 @@ fn condWrite(v0: bool, v1: any [unique]) -> int:
     br bb3(v3)
   bb2:
     v4: int = const 10
-    v5: any = opaque.DynamicFieldAssign(v1, v4) {write:unique#1,throws}
+    v5: any = opaque.DynamicFieldAssign(v1.v, v4) {write:unique#1,throws}
     br bb3(v5)
   bb3(v6: any):
     v7: int = load_field v1.v {read:shared,throws}
@@ -528,7 +528,7 @@ fn condWrite(v0: bool, v1: any [unique]) -> int:
     br_if v0, bb1, bb2
   bb1:
     v3: int = const 10
-    v4: any = opaque.DynamicFieldAssign(v1, v3) {write:unique#1,throws}
+    v4: any = opaque.DynamicFieldAssign(v1.v, v3) {write:unique#1,throws}
     br bb2
   bb2:
     v5: int = load_field v1.v {read:shared,throws}

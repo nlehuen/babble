@@ -182,14 +182,14 @@ fn run () -> double {pure unique}
 ;; mir -O2 fn=run stage=before,final
 fn run() -> double:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(Vec3) {read:shared}
     v1: double = const 2.0
     v2: double = const 3.0
     v3: double = const 4.0
-    v4: any = record_new Vec3(v1, v2, v3) {pure}
+    v4: any = record_new Vec3[v0](v1, v2, v3) {pure}
     v5: double = const 6.0
     v6: double = const 7.0
-    v7: any = opaque.CoreCollectionCall(v4) {impure}
+    v7: any = opaque.CoreCollectionCall(list, v4) {impure}
     v8: int = const 0
     v9: any = call_java v7.get(v8) {impure}
     v10: any = checkcast v9 <babble|Vec3>
@@ -275,16 +275,16 @@ fn run (n:int) -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int) -> double:
   bb0:
-    v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.ModuleExportGet(v1) {impure}
+    v1: any = opaque.NameRead(m) {read:shared,throws}
+    v2: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
     v3: double = const 3.0
     v4: double = const 4.0
-    v5: any = record_new vec_mod$ba$C0$ExtVec(v3, v4) {pure}
-    v6: any = opaque.NameRead() {impure}
-    v7: any = opaque.ModuleExportGet(v6) {impure}
+    v5: any = record_new vec_mod$ba$C0$ExtVec[v2](v3, v4) {pure}
+    v6: any = opaque.NameRead(m) {read:shared,throws}
+    v7: any = opaque.ModuleExportGet(v6.ExtVec) {impure}
     v8: double = const 1.0
     v9: double = const 2.0
-    v10: any = record_new vec_mod$ba$C0$ExtVec(v8, v9) {pure}
+    v10: any = record_new vec_mod$ba$C0$ExtVec[v7](v8, v9) {pure}
     v11: any = call_method v10.neg() {impure}
     v12: any = call_method v5.plus(v11) {impure}
     v13: double = load_field v12.x {read:frozen}
@@ -292,7 +292,7 @@ fn run(v0: int) -> double:
     v15: double = add v13, v14 {pure}
     v16: double = call_method v12.mag2() {pure}
     v17: double = add v15, v16 {pure}
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(double) {read:shared,throws}
     v19: double = opaque.DynamicCall(v18, v0) {impure}
     v20: double = add v17, v19 {pure}
     ret v20
@@ -412,7 +412,7 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v9: double = load_field v0.z {read:frozen}
     v10: int = const 1
     v11: int = const 2
-    v12: any = opaque.CoreCollectionCall(v10, v11) {impure}
+    v12: any = opaque.CoreCollectionCall(list, v10, v11) {impure}
     v13: any = for_init.java_iterable v12
     v14: any = const null
     br bb1(v14, v2)
@@ -429,7 +429,7 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v20: any = const null
     br bb6(v20)
   bb5 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v21: any = opaque.NameRead() {impure}
+    v21: any = opaque.NameRead(assert) {read:shared,throws}
     v22: bool = const false
     v23: bool = opaque.DynamicCall(v21, v22) {impure}
     v24: any = convert.any v23
@@ -456,10 +456,10 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v38: any = for_next v13
     v39: any = checkcast v38 <int|int|>
     v40: int = convert.int v39
-    v41: any = opaque.NameRead() {impure}
+    v41: any = opaque.NameRead(double) {read:shared,throws}
     v42: double = opaque.DynamicCall(v41, v40) {impure}
     v43: double = add v3, v42 {pure}
-    v44: any = opaque.NameRead() {impure}
+    v44: any = opaque.NameRead(double) {read:shared,throws}
     v45: double = opaque.DynamicCall(v44, v1) {impure}
     v46: double = mul v43, v45 {pure}
     v47: double = add v46, v6 {pure}
@@ -482,7 +482,7 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v6: double = mul v4, v5 {pure}
     v7: int = const 1
     v8: int = const 2
-    v9: any = opaque.CoreCollectionCall(v7, v8) {impure}
+    v9: any = opaque.CoreCollectionCall(list, v7, v8) {impure}
     v10: any = for_init.java_iterable v9
     br bb1(v2)
   bb1(v11: double):
@@ -493,7 +493,7 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v14: bool = lt v1, v13 {pure}
     br_if v14, bb3, bb4
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(assert) {read:shared,throws}
     v16: bool = const false
     v17: bool = opaque.DynamicCall(v15, v16) {impure}
     br bb4
@@ -514,10 +514,10 @@ fn heavyLoop(v0: any, v1: int) -> double:
     v24: any = for_next v10
     v25: any = checkcast v24 <int|int|>
     v26: int = convert.int v25
-    v27: any = opaque.NameRead() {impure}
+    v27: any = opaque.NameRead(double) {read:shared,throws}
     v28: double = opaque.DynamicCall(v27, v26) {impure}
     v29: double = add v3, v28 {pure}
-    v30: any = opaque.NameRead() {impure}
+    v30: any = opaque.NameRead(double) {read:shared,throws}
     v31: double = opaque.DynamicCall(v30, v1) {impure}
     v32: double = mul v29, v31 {pure}
     v33: double = add v32, v6 {pure}
@@ -560,10 +560,10 @@ fn run () -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run() -> double:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(C) {read:shared}
     v1: int = const 10
     v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(double) {read:shared,throws}
     v4: int = const 3
     v5: int = const 2
     v6: int = call_method v2.add(v4, v5) {pure!}
@@ -574,12 +574,12 @@ fn run() -> double:
     v11: int = add v9, v10 {pure}
     v12: int = add v6, v11 {pure}
     v13: double = opaque.DynamicCall(v3, v12) {impure}
-    v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(rec) {read:shared}
+    v15: any = opaque.NameRead(Vec3) {read:shared}
     v16: double = const 1.0
     v17: double = const 2.0
     v18: double = const 0.0
-    v19: any = record_new Vec3(v16, v17, v18) {pure}
+    v19: any = record_new Vec3[v15](v16, v17, v18) {pure}
     v20: int = const 3
     v21: double = call rec(v19, v20) {pure!}
     v22: double = add v13, v21 {pure}
@@ -590,10 +590,10 @@ fn run() -> double:
 ;; mir -O2 fn=run
 fn run() -> double:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(C) {read:shared}
     v1: int = const 10
     v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(double) {read:shared,throws}
     v4: int = const 3
     v5: int = const 2
     v6: int = call_method v2.add(v4, v5) {pure!}
@@ -603,12 +603,12 @@ fn run() -> double:
     v10: int = add v9, v5 {pure}
     v11: int = add v6, v10 {pure}
     v12: double = opaque.DynamicCall(v3, v11) {impure}
-    v13: any = opaque.NameRead() {impure}
-    v14: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(rec) {read:shared}
+    v14: any = opaque.NameRead(Vec3) {read:shared}
     v15: double = const 1.0
     v16: double = const 2.0
     v17: double = const 0.0
-    v18: any = record_new Vec3(v15, v16, v17) {pure}
+    v18: any = record_new Vec3[v14](v15, v16, v17) {pure}
     v19: double = call rec(v18, v4) {pure!}
     v20: double = add v12, v19 {pure}
     ret v20
@@ -647,11 +647,11 @@ fn r () -> int {nothrow unique}
 ;; mir -O2 fn=r stage=before,final
 fn r() -> int:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(Safe) {read:shared}
     v1: int = const 4
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: int = load_field v2.y {read:shared,throws}
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(Leak) {read:shared}
     v5: int = const 5
     v6: any = opaque.DynamicCall(v4, v5) {impure}
     v7: int = call_method v6.get() {pure}
@@ -707,7 +707,7 @@ fn r() -> double:
     v1: int = const 0
     v2: int = const 1
     v3: int = const 2
-    v4: any = opaque.CoreCollectionCall(v2, v3) {impure}
+    v4: any = opaque.CoreCollectionCall(list, v2, v3) {impure}
     v5: any = for_init.java_iterable v4
     v6: any = const null
     br bb1(v6, v1)
@@ -723,7 +723,7 @@ fn r() -> double:
     v15: int = const 0
     v16: int = const 1
     v17: int = const 2
-    v18: any = opaque.CoreCollectionCall(v16, v17) {impure}
+    v18: any = opaque.CoreCollectionCall(list, v16, v17) {impure}
     v19: any = for_init.java_iterable v18
     v20: any = const null
     br bb3(v20, v15)
@@ -761,7 +761,7 @@ fn r() -> double:
     v1: int = const 0
     v2: int = const 1
     v3: int = const 2
-    v4: any = opaque.CoreCollectionCall(v2, v3) {impure}
+    v4: any = opaque.CoreCollectionCall(list, v2, v3) {impure}
     v5: any = for_init.java_iterable v4
     br bb1(v1)
   bb1(v6: int):
@@ -772,7 +772,7 @@ fn r() -> double:
     v9: double = convert.double v8
     v10: double = const 0.5
     v11: double = add v9, v10 {pure}
-    v12: any = opaque.CoreCollectionCall(v2, v3) {impure}
+    v12: any = opaque.CoreCollectionCall(list, v2, v3) {impure}
     v13: any = for_init.java_iterable v12
     br bb3(v1)
   bb3(v14: int):
@@ -842,12 +842,12 @@ fn r () -> int {nothrow unique}
 ;; mir -O2 fn=r stage=before,final
 fn r() -> int:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(Box) {read:shared}
     v1: int = const 10
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: int = const 5
     slot_init k, v3 {write:shared}
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(Box) {read:shared}
     v5: int = const 20
     v6: any = opaque.DynamicCall(v4, v5) {impure}
     v7: int = const 1
@@ -855,7 +855,7 @@ fn r() -> int:
     v9: int = add v8, v7 {pure}
     v10: int = load_field v6.v {read:shared,throws}
     v11: int = add v9, v10 {pure}
-    v12: any = opaque.FunctionRef() {read:shared}
+    v12: any = opaque.FunctionRef(<anon>) {read:shared}
     v13: int = const 3
     v14: int = const 2
     v15: int = opaque.DynamicCall(v12, v13, v14) {impure}

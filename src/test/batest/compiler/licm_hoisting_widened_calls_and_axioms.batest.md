@@ -441,7 +441,7 @@ fn run(v0: int) -> double:
     v5: double = convert.double v4
     v6: double = convert.double v0
     v7: double = div v5, v6 {pure}
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(double) {read:shared,throws}
     v9: double = opaque.DynamicCall(v8, v7) {impure}
     v10: any = const null
     br bb1(v10, v3, v1, v2)
@@ -452,7 +452,7 @@ fn run(v0: int) -> double:
   bb2:
     ret v13
   bb3:
-    v17: any = opaque.NameRead() {impure}
+    v17: any = opaque.NameRead(double) {read:shared,throws}
     v18: int = const 2
     v19: double = opaque.DynamicCall(v17, v18) {impure}
     v20: double = call_java Math.sin(v14) {pure}
@@ -477,7 +477,7 @@ fn run(v0: int) -> double:
     v4: double = const 10.0
     v5: double = convert.double v0
     v6: double = div v4, v5 {pure}
-    v7: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(double) {read:shared,throws}
     v8: double = opaque.DynamicCall(v7, v6) {impure}
     br bb1(v3, v1, v2)
   bb1(v9: int, v10: double, v11: double):
@@ -487,7 +487,7 @@ fn run(v0: int) -> double:
   bb2:
     ret v10
   bb3:
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(double) {read:shared,throws}
     v15: double = opaque.DynamicCall(v14, v12) {impure}
     v16: double = call_java Math.sin(v11) {pure}
     v17: double = add v15, v16 {pure}
@@ -553,7 +553,7 @@ fn run() -> int:
     v0: int = const 0
     v1: int = const 2
     slot_init cap, v1 {write:shared}
-    v2: any = opaque.FunctionRef() {read:shared}
+    v2: any = opaque.FunctionRef(bump) {read:shared}
     v3: int = const 0
     v4: any = const null
     br bb1(v4, v3, v0)

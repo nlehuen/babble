@@ -71,7 +71,7 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
     v4: int = const 0
     v5: int = const 1
     slot_init c, v5 {write:shared}
-    v6: any = opaque.FunctionRef() {read:shared}
+    v6: any = opaque.FunctionRef(bump) {read:shared}
     v7: any = const null
     br bb1(v7, v4, v3)
   bb1(v8: any, v9: int, v10: double):
@@ -80,17 +80,17 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
   bb2:
     ret v10
   bb3:
-    v12: any = opaque.NameRead() {impure}
+    v12: any = opaque.NameRead(byte) {read:shared,throws}
     v13: int = const 2
     v14: byte = opaque.DynamicCall(v12, v13) {impure}
     v15: any = convert.any v14
     v16: any = checkcast v15 <double|double|>
     v17: double = convert.double v16
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(int) {read:shared,throws}
     v19: int = opaque.DynamicCall(v18, v1) {impure}
     v20: int = const 1
     v21: int = add v19, v20 {pure}
-    v22: any = opaque.NameRead() {impure}
+    v22: any = opaque.NameRead(double) {read:shared,throws}
     v23: double = opaque.DynamicCall(v22, v21) {impure}
     v24: double = add v17, v23 {pure}
     v25: double = add v10, v24 {pure}
@@ -105,7 +105,7 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
     v29: any = const null
     br bb8(v29, v25)
   bb7:
-    v30: any = opaque.NameRead() {impure}
+    v30: any = opaque.NameRead(double) {read:shared,throws}
     v31: int = call bump() {impure}
     v32: double = opaque.DynamicCall(v30, v31) {impure}
     v33: double = add v25, v32 {pure}
@@ -133,16 +133,16 @@ fn run(v0: int, v1: byte, v2: bool) -> double:
   bb2:
     ret v7
   bb3:
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(byte) {read:shared,throws}
     v10: int = const 2
     v11: byte = opaque.DynamicCall(v9, v10) {impure}
     v12: any = convert.any v11
     v13: any = checkcast v12 <double|double|>
     v14: double = convert.double v13
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(int) {read:shared,throws}
     v16: int = opaque.DynamicCall(v15, v1) {impure}
     v17: int = add v16, v5 {pure}
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(double) {read:shared,throws}
     v19: double = opaque.DynamicCall(v18, v17) {impure}
     v20: double = add v14, v19 {pure}
     v21: double = add v7, v20 {pure}
@@ -237,9 +237,9 @@ fn RV.run(v0: int) -> long:
     v15: int = convert.int v6
     v16: long = convert.long v8
     v17: any = convert.any v12
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(long) {read:shared,throws}
     v19: long = opaque.DynamicCall(v18, v14) {impure}
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(long) {read:shared,throws}
     v21: long = opaque.DynamicCall(v20, v15) {impure}
     v22: long = add v19, v21 {pure}
     v23: long = add v22, v16 {pure}
@@ -272,9 +272,9 @@ fn RV.run(v0: int) -> long:
     ret v10
   bb3:
     v12: any = convert.any v10
-    v13: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(long) {read:shared,throws}
     v14: long = opaque.DynamicCall(v13, v6) {impure}
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(long) {read:shared,throws}
     v16: long = opaque.DynamicCall(v15, v7) {impure}
     v17: long = add v14, v16 {pure}
     v18: long = add v17, v8 {pure}
@@ -359,7 +359,7 @@ fn RV.run(v0: int) -> double:
   bb3:
     v12: float = convert.float v4
     v13: double = convert.double v6
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(double) {read:shared,throws}
     v15: double = opaque.DynamicCall(v14, v12) {impure}
     v16: double = add v15, v13 {pure}
     v17: double = add v10, v16 {pure}
@@ -387,7 +387,7 @@ fn RV.run(v0: int) -> double:
   bb2:
     ret v9
   bb3:
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(double) {read:shared,throws}
     v12: double = opaque.DynamicCall(v11, v6) {impure}
     v13: double = add v12, v7 {pure}
     v14: double = add v9, v13 {pure}
@@ -442,7 +442,7 @@ fn RV.run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
-    v3: any = opaque.FunctionRef() {pure}
+    v3: any = opaque.FunctionRef(fnD) {pure}
     v4: any = const null
     br bb1(v4, v2, v1)
   bb1(v5: any, v6: int, v7: double):
@@ -579,7 +579,7 @@ fn RV.run() -> double:
     ret v12
   bb3:
     v14: int = for_next v6, v11
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(double) {read:shared,throws}
     v16: double = opaque.DynamicCall(v15, v14) {impure}
     v17: double = add v3, v16 {pure}
     v18: double = add v12, v17 {pure}
@@ -611,7 +611,7 @@ fn RV.run() -> double:
     ret v9
   bb3:
     v11: int = for_next v5, v8
-    v12: any = opaque.NameRead() {impure}
+    v12: any = opaque.NameRead(double) {read:shared,throws}
     v13: double = opaque.DynamicCall(v12, v11) {impure}
     v14: double = add v3, v13 {pure}
     v15: double = add v9, v14 {pure}

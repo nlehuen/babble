@@ -130,13 +130,13 @@ fn run (arr:obj) -> int {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.ModuleExportGet(v1) {impure}
+    v1: any = opaque.NameRead(mod) {read:shared,throws}
+    v2: any = opaque.ModuleExportGet(v1.val) {impure}
     v3: int = convert.int v2
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(sumV) {read:shared,throws}
     v5: int = call sumV(v0) {impure}
     v6: int = add v3, v5 {pure}
-    v7: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(idG) {read:shared,throws}
     v8: int = const 3
     v9: int = opaque.DynamicCall(v7, v8) {impure}
     v10: int = add v6, v9 {pure}
@@ -269,7 +269,7 @@ fn run(v0: any, v1: int) -> int:
     br_if v3, bb1, bb2(v2)
   bb1:
     v4: any = narrow.nonnull v0 <non-null>
-    v5: any = opaque.SafeCall(v4) {impure}
+    v5: any = opaque.SafeCall(v4?.length) {impure}
     br bb2(v5)
   bb2(v6: any):
     v7: any = const null
@@ -278,7 +278,7 @@ fn run(v0: any, v1: int) -> int:
   bb3:
     v9: any = narrow.nonnull v0 <non-null>
     v10: int = const 1
-    v11: any = opaque.SafeCall(v9, v10) {impure}
+    v11: any = opaque.SafeCall(v9?.substring, v10) {impure}
     br bb4(v11)
   bb4(v12: any):
     v13: any = const null
@@ -286,11 +286,11 @@ fn run(v0: any, v1: int) -> int:
     br_if v14, bb5, bb6(v13)
   bb5:
     v15: any = narrow.nonnull v12 <non-null>
-    v16: any = opaque.SafeCall(v15) {impure}
+    v16: any = opaque.SafeCall(v15?.length) {impure}
     br bb6(v16)
   bb6(v17: any):
-    v18: any = opaque.FunctionRef() {pure}
-    v19: any = opaque.FunctionRef() {pure}
+    v18: any = opaque.FunctionRef(<anon>) {pure}
+    v19: any = opaque.FunctionRef(ov) {pure}
     v20: any = opaque.MakeOverloadSet(v18, v19) {pure}
     v21: any = const null
     v22: any = neq v6, v21 {pure,throws}
@@ -330,21 +330,21 @@ fn run(v0: any, v1: int) -> int:
     br_if v3, bb1, bb2(v2)
   bb1:
     v4: any = narrow.nonnull v0 <non-null>
-    v5: any = opaque.SafeCall(v4) {impure}
+    v5: any = opaque.SafeCall(v4?.length) {impure}
     br bb2(v5)
   bb2(v6: any):
     br_if v3, bb3, bb4(v2)
   bb3:
     v7: any = narrow.nonnull v0 <non-null>
     v8: int = const 1
-    v9: any = opaque.SafeCall(v7, v8) {impure}
+    v9: any = opaque.SafeCall(v7?.substring, v8) {impure}
     br bb4(v9)
   bb4(v10: any):
     v11: bool = neq v10, v2 {pure}
     br_if v11, bb5, bb6(v2)
   bb5:
     v12: any = narrow.nonnull v10 <non-null>
-    v13: any = opaque.SafeCall(v12) {impure}
+    v13: any = opaque.SafeCall(v12?.length) {impure}
     br bb6(v13)
   bb6(v14: any):
     v15: any = neq v6, v2 {pure,throws}
@@ -409,12 +409,12 @@ fn run (n:int) -> int {pure unique}
 ```
 
 ```mir
-;; mir -O2 fn=run stage=before,final
+;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Pair) {read:shared}
     v2: int = const 2
-    v3: any = opaque.CoreCollectionCall(v0) {impure}
+    v3: any = opaque.CoreCollectionCall(list, v0) {impure}
     v4: any = move v3
     v5: int = add v0, v2 {pure}
     v6: int = const 0
@@ -423,4 +423,20 @@ fn run(v0: int) -> int:
     v9: int = convert.int v8
     v10: int = add v5, v9 {pure}
     ret v10
+```
+
+```mir
+;; mir -O2 fn=run
+fn run(v0: int) -> int:
+  bb0:
+    v1: int = const 2
+    v2: any = opaque.CoreCollectionCall(list, v0) {impure}
+    v3: any = move v2
+    v4: int = add v0, v1 {pure}
+    v5: int = const 0
+    v6: any = call_java v3.get(v5) {impure}
+    v7: any = checkcast v6 <int|int|>
+    v8: int = convert.int v7
+    v9: int = add v4, v8 {pure}
+    ret v9
 ```

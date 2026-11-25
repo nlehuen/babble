@@ -43,11 +43,11 @@ fn pickRoot(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(C2) {read:shared}
     v2: any = opaque.DynamicCall(v1) {impure}
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(C1) {read:shared}
     v4: any = opaque.DynamicCall(v3) {impure}
     br bb3(v4)
   bb3(v5: any):
@@ -82,11 +82,11 @@ fn joinD(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(D2) {read:shared}
     v2: any = opaque.DynamicCall(v1) {impure}
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(D1) {read:shared}
     v4: any = opaque.DynamicCall(v3) {impure}
     br bb3(v4)
   bb3(v5: any):
@@ -128,7 +128,7 @@ fn joinIface(v0: bool, v1: any, v2: any) -> any:
   bb2:
     br bb3(v1)
   bb3(v3: any):
-    v4: any = opaque.DynamicSelect(v3) {impure}
+    v4: any = opaque.DynamicSelect(v3.tag) {impure}
     v5: any = opaque.DynamicCall(v4) {impure}
     ret v5
 ```
@@ -211,7 +211,7 @@ fn joinBuf(v0: bool) -> int:
     v4: any = new_java StringBuilder(v3) {impure}
     br bb3(v4)
   bb3(v5: any):
-    v6: any = opaque.DynamicSelect(v5) {impure}
+    v6: any = opaque.DynamicSelect(v5.length) {impure}
     v7: any = opaque.DynamicCall(v6) {impure}
     v8: int = convert.int v7
     ret v8
@@ -369,11 +369,11 @@ fn pickCls(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(B) {read:shared}
     v2: any = opaque.DynamicCall(v1) {impure}
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(A) {read:shared}
     v4: any = opaque.DynamicCall(v3) {impure}
     br bb3(v4)
   bb3(v5: any):
@@ -408,10 +408,10 @@ fn pickFn(v0: bool) -> any:
   bb0:
     br_if v0, bb2, bb1
   bb1:
-    v1: any = opaque.FunctionRef() {pure}
+    v1: any = opaque.FunctionRef(<anon>) {pure}
     br bb3(v1)
   bb2:
-    v2: any = opaque.FunctionRef() {pure}
+    v2: any = opaque.FunctionRef(<anon>) {pure}
     br bb3(v2)
   bb3(v3: any):
     ret v3

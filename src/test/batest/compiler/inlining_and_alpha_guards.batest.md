@@ -313,7 +313,7 @@ fn run(v0: int) -> int:
     v8: int = const 2
     v9: int = mul v7, v8 {pure}
     v10: int = add v4, v9 {pure}
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(selfByName) {read:shared}
     v12: int = call selfByName(v0) {pure}
     v13: int = add v10, v12 {pure}
     ret v13
@@ -329,7 +329,7 @@ fn run(v0: int) -> int:
     v4: int = mul v2, v3 {pure}
     v5: int = const 10
     v6: int = add v4, v5 {pure}
-    v7: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(selfByName) {read:shared}
     v8: int = call selfByName(v0) {pure}
     v9: int = add v6, v8 {pure}
     ret v9
@@ -368,18 +368,18 @@ fn run (b:byte, i:int, f:float) -> bool {pure unique}
 fn run(v0: byte, v1: int, v2: float) -> bool:
   bb0:
     v3: short = convert.short v0
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(short) {read:shared,throws}
     v5: int = const 2
     v6: short = opaque.DynamicCall(v4, v5) {impure}
     v7: bool = eq v3, v6 {pure}
     v8: bool = const false
     br_if v7, bb1, bb2(v8)
   bb1:
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(byte) {read:shared,throws}
     v10: int = const 3
     v11: byte = opaque.DynamicCall(v9, v10) {impure}
     v12: short = convert.short v11
-    v13: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(short) {read:shared,throws}
     v14: int = const 3
     v15: short = opaque.DynamicCall(v13, v14) {impure}
     v16: bool = eq v12, v15 {pure}
@@ -441,18 +441,18 @@ fn run(v0: byte, v1: int, v2: float) -> bool:
 fn run(v0: byte, v1: int, v2: float) -> bool:
   bb0:
     v3: short = convert.short v0
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(short) {read:shared,throws}
     v5: int = const 2
     v6: short = opaque.DynamicCall(v4, v5) {impure}
     v7: bool = eq v3, v6 {pure}
     v8: bool = const false
     br_if v7, bb1, bb2(v8)
   bb1:
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(byte) {read:shared,throws}
     v10: int = const 3
     v11: byte = opaque.DynamicCall(v9, v10) {impure}
     v12: short = convert.short v11
-    v13: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(short) {read:shared,throws}
     v14: short = opaque.DynamicCall(v13, v10) {impure}
     v15: bool = eq v12, v14 {pure}
     br bb2(v15)
@@ -533,7 +533,7 @@ fn run (p:int) -> double {nothrow monotone unique}
 fn run(v0: int) -> double:
   bb0:
     v1: double = convert.double v0
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(double) {read:shared,throws}
     v3: double = opaque.DynamicCall(v2, v0) {impure}
     v4: double = add v1, v3 {pure}
     ret v4

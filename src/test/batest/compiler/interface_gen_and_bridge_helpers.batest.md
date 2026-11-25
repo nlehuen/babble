@@ -285,7 +285,7 @@ class COpt
 class COpt:
   fn COpt.f(v0: int, v1: int) -> int:
     bb0:
-      v2: any = opaque.SuperCall(v0) {impure}
+      v2: any = opaque.SuperCall(f, v0) {impure}
       v3: int = convert.int v2
       v4: int = add v3, v1 {pure}
       ret v4

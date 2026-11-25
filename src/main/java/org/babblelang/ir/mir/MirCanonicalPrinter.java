@@ -452,7 +452,8 @@ public final class MirCanonicalPrinter {
             case MirInst.RecordNew rn -> {
                 HirClass cls = rn.classId() >= 0 ? hir.clazz(rn.classId()) : null;
                 String clsName = cls != null ? cls.shape().name() : shortJvmType(rn.classJvmName());
-                sb.append("record_new ").append(clsName).append('(');
+                sb.append("record_new ").append(clsName)
+                        .append('[').append(val(vals, rn.classRef())).append("](");
                 appendVals(sb, rn.args(), vals);
                 sb.append(") {").append(rn.effect().canonicalTag()).append('}');
             }
@@ -494,9 +495,85 @@ public final class MirCanonicalPrinter {
                     .append(", ").append(val(vals, as.secondary()));
             case MirInst.OpaqueExpr op -> {
                 sb.append("opaque.").append(op.template().getClass().getSimpleName()).append('(');
-                appendVals(sb, op.operands(), vals);
+                formatOpaqueOperands(sb, hir, op, vals);
                 sb.append(") {").append(op.effect().canonicalTag()).append('}');
             }
+        }
+    }
+
+    private static void formatOpaqueOperands(StringBuilder sb, HirModule hir, MirInst.OpaqueExpr op,
+                                             Map<Integer, String> vals) {
+        List<MirVal> ops = op.operands();
+        switch (op.template()) {
+            case HirExpr.NameRead nr -> sb.append(nr.name());
+            case HirExpr.NameAssign na -> {
+                sb.append(na.name());
+                if (na.operator() != null) {
+                    sb.append(' ').append(na.operator()).append('=');
+                }
+                if (!ops.isEmpty()) {
+                    sb.append(", ").append(val(vals, ops.get(0)));
+                }
+            }
+            case HirExpr.ModuleExportGet mg -> {
+                if (!ops.isEmpty()) {
+                    sb.append(val(vals, ops.get(0))).append('.');
+                }
+                sb.append(mg.target() != null ? mg.target().name() : "?");
+            }
+            case HirExpr.DynamicSelect ds -> {
+                if (!ops.isEmpty()) {
+                    sb.append(val(vals, ops.get(0))).append(ds.safe() ? "?." : ".");
+                }
+                sb.append(ds.memberName());
+            }
+            case HirExpr.DynamicFieldAssign dfa -> {
+                if (!ops.isEmpty()) {
+                    sb.append(val(vals, ops.get(0))).append('.');
+                }
+                sb.append(dfa.memberName());
+                if (dfa.operator() != null) {
+                    sb.append(' ').append(dfa.operator()).append('=');
+                }
+                if (ops.size() > 1) {
+                    sb.append(", ").append(val(vals, ops.get(1)));
+                }
+            }
+            case HirExpr.SafeCall sc -> {
+                if (!ops.isEmpty()) {
+                    sb.append(val(vals, ops.get(0))).append("?.");
+                }
+                sb.append(sc.memberName());
+                for (int i = 1; i < ops.size(); i++) {
+                    sb.append(", ").append(val(vals, ops.get(i)));
+                }
+            }
+            case HirExpr.SuperCall sc -> {
+                sb.append(sc.memberName());
+                for (MirVal v : ops) {
+                    sb.append(", ").append(val(vals, v));
+                }
+            }
+            case HirExpr.CoreCollectionRef cc -> sb.append(cc.collectionKind());
+            case HirExpr.CoreCollectionCall cc -> {
+                sb.append(cc.collectionKind());
+                for (MirVal v : ops) {
+                    sb.append(", ").append(val(vals, v));
+                }
+            }
+            case HirExpr.FunctionRef fr -> {
+                HirFunction target = hir.function(fr.functionId());
+                sb.append(target != null && target.name() != null ? target.name() : "<anon>");
+            }
+            case HirExpr.ClassExpr ce -> {
+                HirClass cls = hir.clazz(ce.classId());
+                sb.append(cls != null && cls.shape().name() != null ? cls.shape().name() : "<class>");
+            }
+            case HirExpr.InterfaceExpr ie -> {
+                var iface = hir.iface(ie.interfaceId());
+                sb.append(iface != null && iface.shape().name() != null ? iface.shape().name() : "<interface>");
+            }
+            default -> appendVals(sb, ops, vals);
         }
     }
 

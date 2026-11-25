@@ -66,7 +66,7 @@ fn run(v0: int, v1: int) -> double:
     v5: double = add v3, v4 {pure}
     v6: any = convert.any v0
     v7: double = add v2, v5 {pure}
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(double) {read:shared,throws}
     v9: any = checkcast v6 <int|int|>
     v10: double = opaque.DynamicCall(v8, v9) {impure}
     v11: double = add v7, v10 {pure}
@@ -83,7 +83,7 @@ fn run(v0: int, v1: int) -> double:
     v5: double = add v3, v4 {pure}
     v6: any = convert.any v0
     v7: double = add v2, v5 {pure}
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(double) {read:shared,throws}
     v9: double = opaque.DynamicCall(v8, v6) {impure}
     v10: double = add v7, v9 {pure}
     ret v10
@@ -145,23 +145,23 @@ fn run() -> double:
     v1: any = const "C"
     v2: any = call_java v0.append(v1) {impure}
     v3: any = checkcast v2 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(Vec3) {read:shared}
     v5: double = const 2.0
     v6: any = const "S"
     v7: any = call_java v0.append(v6) {impure}
     v8: any = checkcast v7 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(Vec3) {read:shared}
     v10: double = const 4.0
     v11: double = const 6.0
-    v12: any = opaque.ClassExpr() {impure}
-    v13: any = opaque.NameRead() {impure}
+    v12: any = opaque.ClassExpr(R) {impure}
+    v13: any = opaque.NameRead(assert) {read:shared,throws}
     v14: any = call_java v0.toString() {impure}
     v15: any = checkcast v14 <string|string|>
     v16: any = const "CS"
     v17: any = eq v15, v16 {pure}
     v18: bool = opaque.DynamicCall(v13, v17) {impure}
     v19: double = add v5, v10 {pure}
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(double) {read:shared,throws}
     v21: int = const 13
     v22: double = opaque.DynamicCall(v20, v21) {impure}
     v23: double = add v19, v22 {pure}
@@ -176,24 +176,22 @@ fn run() -> double:
     v1: any = const "C"
     v2: any = call_java v0.append(v1) {impure}
     v3: any = checkcast v2 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v4: any = opaque.NameRead() {impure}
-    v5: any = const "S"
-    v6: any = call_java v0.append(v5) {impure}
-    v7: any = checkcast v6 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v8: any = opaque.NameRead() {impure}
-    v9: double = const 6.0
-    v10: any = opaque.ClassExpr() {impure}
-    v11: any = opaque.NameRead() {impure}
-    v12: any = call_java v0.toString() {impure}
-    v13: any = checkcast v12 <string|string|>
-    v14: any = const "CS"
-    v15: any = eq v13, v14 {pure}
-    v16: bool = opaque.DynamicCall(v11, v15) {impure}
-    v17: any = opaque.NameRead() {impure}
-    v18: int = const 13
-    v19: double = opaque.DynamicCall(v17, v18) {impure}
-    v20: double = add v9, v19 {pure}
-    ret v20
+    v4: any = const "S"
+    v5: any = call_java v0.append(v4) {impure}
+    v6: any = checkcast v5 <java|java.lang.StringBuilder|java.lang.StringBuilder>
+    v7: double = const 6.0
+    v8: any = opaque.ClassExpr(R) {impure}
+    v9: any = opaque.NameRead(assert) {read:shared,throws}
+    v10: any = call_java v0.toString() {impure}
+    v11: any = checkcast v10 <string|string|>
+    v12: any = const "CS"
+    v13: any = eq v11, v12 {pure}
+    v14: bool = opaque.DynamicCall(v9, v13) {impure}
+    v15: any = opaque.NameRead(double) {read:shared,throws}
+    v16: int = const 13
+    v17: double = opaque.DynamicCall(v15, v16) {impure}
+    v18: double = add v7, v17 {pure}
+    ret v18
 ```
 
 ## Projection beta-reduction on cross-module record via local and impure module receivers
@@ -242,14 +240,14 @@ fn run () -> double {io}
 fn run() -> double:
   bb0:
     v0: any = new_java StringBuilder() {impure}
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(m) {read:shared,throws}
     v2: any = const "M"
     v3: any = call_java v0.append(v2) {impure}
     v4: any = checkcast v3 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v5: any = opaque.NameRead() {impure}
-    v6: any = opaque.ModuleExportGet(v5) {impure}
+    v5: any = opaque.NameRead(m) {read:shared,throws}
+    v6: any = opaque.ModuleExportGet(v5.ExtVec) {impure}
     v7: double = const 5.0
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(assert) {read:shared,throws}
     v9: any = call_java v0.toString() {impure}
     v10: any = checkcast v9 <string|string|>
     v11: any = const "M"
@@ -265,13 +263,13 @@ fn run() -> double:
 fn run() -> double:
   bb0:
     v0: any = new_java StringBuilder() {impure}
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(m) {read:shared,throws}
     v2: any = const "M"
     v3: any = call_java v0.append(v2) {impure}
     v4: any = checkcast v3 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v5: any = opaque.NameRead() {impure}
-    v6: any = opaque.ModuleExportGet(v5) {impure}
-    v7: any = opaque.NameRead() {impure}
+    v5: any = opaque.NameRead(m) {read:shared,throws}
+    v6: any = opaque.ModuleExportGet(v5.ExtVec) {impure}
+    v7: any = opaque.NameRead(assert) {read:shared,throws}
     v8: any = call_java v0.toString() {impure}
     v9: any = checkcast v8 <string|string|>
     v10: any = eq v9, v2 {pure}
@@ -315,16 +313,16 @@ fn run () -> int {pure}
 ```
 
 ```mir
-;; mir -O2 fn=run stage=before,final
+;; mir -O2 fn=run stage=before
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead() {impure}
-    v1: any = record_new Empty() {pure}
-    v2: any = opaque.NameRead() {impure}
-    v3: any = record_new Empty() {pure}
+    v0: any = opaque.NameRead(Empty) {read:shared}
+    v1: any = record_new Empty[v0]() {pure}
+    v2: any = opaque.NameRead(Empty) {read:shared}
+    v3: any = record_new Empty[v2]() {pure}
     v4: any = load_field v3.one {read:frozen,throws}
-    v5: any = opaque.NameRead() {impure}
-    v6: any = record_new Empty() {pure}
+    v5: any = opaque.NameRead(Empty) {read:shared}
+    v6: any = record_new Empty[v5]() {pure}
     v7: any = eq v1, v6 {pure,throws}
     br_if v7, bb2, bb1
   bb1:
@@ -335,6 +333,27 @@ fn run() -> int:
     br bb3(v9)
   bb3(v10: int):
     ret v10
+```
+
+```mir
+;; mir -O2 fn=run
+fn run() -> int:
+  bb0:
+    v0: any = opaque.NameRead(Empty) {read:shared}
+    v1: any = record_new Empty[v0]() {pure}
+    v2: any = record_new Empty[v0]() {pure}
+    v3: any = load_field v2.one {read:frozen,throws}
+    v4: any = record_new Empty[v0]() {pure}
+    v5: any = eq v1, v4 {pure,throws}
+    br_if v5, bb2, bb1
+  bb1:
+    v6: int = const 0
+    br bb3(v6)
+  bb2:
+    v7: int = opaque.DynamicCall(v3) {impure}
+    br bb3(v7)
+  bb3(v8: int):
+    ret v8
 ```
 
 ## Inlined method-value projection on fast record disqualifies SROA and borrow unboxing
@@ -375,18 +394,18 @@ fn run () -> int {pure unique}
 ;; mir -O2 fn=run stage=before,final
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(Box) {read:shared}
     v1: int = const 5
-    v2: any = record_new Box(v1) {pure}
+    v2: any = record_new Box[v0](v1) {pure}
     v3: any = load_field v2.inc {read:frozen,throws}
     v4: int = opaque.DynamicCall(v3) {impure}
-    v5: any = opaque.NameRead() {impure}
+    v5: any = opaque.NameRead(Box) {read:shared}
     v6: int = const 3
-    v7: any = record_new Box(v6) {pure}
+    v7: any = record_new Box[v5](v6) {pure}
     v8: any = load_field v7.inc {read:frozen,throws}
     v9: int = opaque.DynamicCall(v8) {impure}
     v10: int = add v4, v9 {pure}
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(useB) {read:shared}
     v12: int = const 2
     v13: int = call useB$unboxed(v2, v12) {pure,throws}
     v14: int = add v10, v13 {pure}
@@ -429,8 +448,8 @@ fn run (a:obj, b:obj) -> double {io}
 fn run(v0: any, v1: any) -> double:
   bb0:
     v2: any = new_java StringBuilder() {impure}
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(id) {read:shared}
+    v4: any = opaque.NameRead(heavy) {read:shared}
     v5: double = load_field v0.x {read:frozen}
     v6: double = load_field v0.y {read:frozen}
     v7: double = load_field v0.z {read:frozen}
@@ -439,29 +458,29 @@ fn run(v0: any, v1: any) -> double:
     v10: double = load_field v1.z {read:frozen}
     v11: double = call heavy$unboxed(v5, v6, v7, v8, v9, v10) {pure}
     v12: double = call id(v11) {pure}
-    v13: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(heavy) {read:shared}
     v14: double = call heavy(v1, v0) {pure}
     v15: double = add v12, v14 {pure}
-    v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.NameRead() {impure}
+    v16: any = opaque.NameRead(heavy) {read:shared}
+    v17: any = opaque.NameRead(Vec3) {read:shared}
     v18: double = const 3.0
     v19: double = const 1.0
     v20: double = const 2.0
-    v21: any = record_new Vec3(v18, v19, v20) {pure}
+    v21: any = record_new Vec3[v17](v18, v19, v20) {pure}
     v22: double = call heavy(v21, v1) {pure}
     v23: double = add v15, v22 {pure}
-    v24: any = opaque.NameRead() {impure}
+    v24: any = opaque.NameRead(heavy) {read:shared}
     v25: any = const "U"
     v26: any = call_java v2.append(v25) {impure}
     v27: any = checkcast v26 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v28: any = opaque.NameRead() {impure}
+    v28: any = opaque.NameRead(Vec3) {read:shared}
     v29: double = const 1.0
     v30: double = const 2.0
     v31: double = const 3.0
-    v32: any = record_new Vec3(v29, v30, v31) {pure}
+    v32: any = record_new Vec3[v28](v29, v30, v31) {pure}
     v33: double = call heavy(v32, v1) {impure}
     v34: double = add v23, v33 {pure}
-    v35: any = opaque.NameRead() {impure}
+    v35: any = opaque.NameRead(assert) {read:shared,throws}
     v36: any = call_java v2.toString() {impure}
     v37: any = checkcast v36 <string|string|>
     v38: any = const "U"
@@ -475,8 +494,8 @@ fn run(v0: any, v1: any) -> double:
 fn run(v0: any, v1: any) -> double:
   bb0:
     v2: any = new_java StringBuilder() {impure}
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(id) {read:shared}
+    v4: any = opaque.NameRead(heavy) {read:shared}
     v5: double = load_field v0.x {read:frozen}
     v6: double = load_field v0.y {read:frozen}
     v7: double = load_field v0.z {read:frozen}
@@ -485,31 +504,28 @@ fn run(v0: any, v1: any) -> double:
     v10: double = load_field v1.z {read:frozen}
     v11: double = call heavy$unboxed(v5, v6, v7, v8, v9, v10) {pure}
     v12: double = call id(v11) {pure}
-    v13: any = opaque.NameRead() {impure}
-    v14: double = call heavy(v1, v0) {pure}
-    v15: double = add v12, v14 {pure}
-    v16: any = opaque.NameRead() {impure}
-    v17: any = opaque.NameRead() {impure}
-    v18: double = const 3.0
-    v19: double = const 1.0
-    v20: double = const 2.0
-    v21: any = record_new Vec3(v18, v19, v20) {pure}
-    v22: double = call heavy(v21, v1) {pure}
-    v23: double = add v15, v22 {pure}
-    v24: any = opaque.NameRead() {impure}
-    v25: any = const "U"
-    v26: any = call_java v2.append(v25) {impure}
-    v27: any = checkcast v26 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v28: any = opaque.NameRead() {impure}
-    v29: any = record_new Vec3(v19, v20, v18) {pure}
-    v30: double = call heavy(v29, v1) {impure}
-    v31: double = add v23, v30 {pure}
-    v32: any = opaque.NameRead() {impure}
-    v33: any = call_java v2.toString() {impure}
-    v34: any = checkcast v33 <string|string|>
-    v35: any = eq v34, v25 {pure}
-    v36: bool = opaque.DynamicCall(v32, v35) {impure}
-    ret v31
+    v13: double = call heavy(v1, v0) {pure}
+    v14: double = add v12, v13 {pure}
+    v15: any = opaque.NameRead(Vec3) {read:shared}
+    v16: double = const 3.0
+    v17: double = const 1.0
+    v18: double = const 2.0
+    v19: any = record_new Vec3[v15](v16, v17, v18) {pure}
+    v20: double = call heavy(v19, v1) {pure}
+    v21: double = add v14, v20 {pure}
+    v22: any = const "U"
+    v23: any = call_java v2.append(v22) {impure}
+    v24: any = checkcast v23 <java|java.lang.StringBuilder|java.lang.StringBuilder>
+    v25: any = opaque.NameRead(Vec3) {read:shared}
+    v26: any = record_new Vec3[v25](v17, v18, v16) {pure}
+    v27: double = call heavy(v26, v1) {impure}
+    v28: double = add v21, v27 {pure}
+    v29: any = opaque.NameRead(assert) {read:shared,throws}
+    v30: any = call_java v2.toString() {impure}
+    v31: any = checkcast v30 <string|string|>
+    v32: any = eq v31, v22 {pure}
+    v33: bool = opaque.DynamicCall(v29, v32) {impure}
+    ret v28
 ```
 
 ## Unboxed borrow call bailouts for captured cell and conditionally initialized record locals
@@ -552,36 +568,36 @@ fn run (fl:bool) -> double {nothrow}
 ;; mir -O2 fn=run stage=before
 fn run(v0: bool) -> double:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Vec3) {read:shared}
     v2: double = const 1.0
     v3: double = const 2.0
     v4: double = const 3.0
-    v5: any = record_new Vec3(v2, v3, v4) {pure}
+    v5: any = record_new Vec3[v1](v2, v3, v4) {pure}
     slot_init a, v5 {write:shared}
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(Vec3) {read:shared}
     v7: double = const 1.0
     v8: double = const 0.0
     v9: double = const 0.0
-    v10: any = record_new Vec3(v7, v8, v9) {pure}
-    v11: any = opaque.FunctionRef() {read:shared}
-    v12: any = opaque.NameRead() {impure}
+    v10: any = record_new Vec3[v6](v7, v8, v9) {pure}
+    v11: any = opaque.FunctionRef(cap) {read:shared}
+    v12: any = opaque.NameRead(heavy) {read:shared}
     v13: any = slot_read a {read:shared}
     v14: double = call heavy(v13, v10) {pure}
     v15: double = call cap() {impure}
     v16: double = add v14, v15 {pure}
     v17: double = const 0.0
     v18: double = add v16, v17 {pure}
-    v19: any = opaque.NameRead() {impure}
+    v19: any = opaque.NameRead(Vec3) {read:shared}
     v20: double = const 2.0
     v21: double = const 0.0
     v22: double = const 0.0
-    v23: any = record_new Vec3(v20, v21, v22) {pure}
+    v23: any = record_new Vec3[v19](v20, v21, v22) {pure}
     slot_init c, v23 {write:shared,throws}
     br_if v0, bb2, bb1
   bb1:
     br bb3(v18)
   bb2:
-    v24: any = opaque.NameRead() {impure}
+    v24: any = opaque.NameRead(heavy) {read:shared}
     v25: any = slot_read c {read:shared,throws}
     v26: double = call heavy(v25, v10) {pure}
     v27: double = add v18, v26 {pure}
@@ -594,30 +610,30 @@ fn run(v0: bool) -> double:
 ;; mir -O2 fn=run
 fn run(v0: bool) -> double:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Vec3) {read:shared}
     v2: double = const 1.0
     v3: double = const 2.0
     v4: double = const 3.0
-    v5: any = record_new Vec3(v2, v3, v4) {pure}
+    v5: any = record_new Vec3[v1](v2, v3, v4) {pure}
     slot_init a, v5 {write:shared}
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(Vec3) {read:shared}
     v7: double = const 0.0
-    v8: any = record_new Vec3(v2, v7, v7) {pure}
-    v9: any = opaque.FunctionRef() {read:shared}
-    v10: any = opaque.NameRead() {impure}
+    v8: any = record_new Vec3[v6](v2, v7, v7) {pure}
+    v9: any = opaque.FunctionRef(cap) {read:shared}
+    v10: any = opaque.NameRead(heavy) {read:shared}
     v11: any = slot_read a {read:shared}
     v12: double = call heavy(v11, v8) {pure}
     v13: double = call cap() {impure}
     v14: double = add v12, v13 {pure}
     v15: double = add v14, v7 {pure}
-    v16: any = opaque.NameRead() {impure}
-    v17: any = record_new Vec3(v3, v7, v7) {pure}
+    v16: any = opaque.NameRead(Vec3) {read:shared}
+    v17: any = record_new Vec3[v16](v3, v7, v7) {pure}
     slot_init c, v17 {write:shared,throws}
     br_if v0, bb2, bb1
   bb1:
     br bb3(v15)
   bb2:
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(heavy) {read:shared}
     v19: any = slot_read c {read:shared,throws}
     v20: double = call heavy(v19, v8) {pure}
     v21: double = add v15, v20 {pure}
@@ -686,11 +702,11 @@ fn reas(v0: any, v1: any) -> double:
     v5: any = const null
     br bb2
   bb2:
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(Vec3) {read:shared}
     v7: double = const 0.0
     v8: double = const 0.0
     v9: double = const 0.0
-    v10: any = record_new Vec3(v7, v8, v9) {pure}
+    v10: any = record_new Vec3[v6](v7, v8, v9) {pure}
     v11: double = load_field v10.x {read:frozen}
     v12: double = load_field v1.y {read:frozen}
     v13: double = add v11, v12 {pure}
@@ -709,9 +725,9 @@ fn reas(v0: any, v1: any) -> double:
     v4: bool = lt v2, v3 {pure}
     br_if v4, bb2, bb1
   bb1:
-    v5: any = opaque.NameRead() {impure}
+    v5: any = opaque.NameRead(Vec3) {read:shared}
     v6: double = const 0.0
-    v7: any = record_new Vec3(v6, v6, v6) {pure}
+    v7: any = record_new Vec3[v5](v6, v6, v6) {pure}
     v8: double = load_field v7.x {read:frozen}
     v9: double = load_field v1.y {read:frozen}
     v10: double = add v8, v9 {pure}
@@ -838,14 +854,14 @@ fn work(v0: any, v1: any) -> double:
     br bb2
   bb2:
     v6: any = const null
-    v7: any = opaque.CoreCollectionCall(v0) {impure}
+    v7: any = opaque.CoreCollectionCall(list, v0) {impure}
     v8: int = const 1
-    v9: any = opaque.CoreCollectionCall(v8) {impure}
+    v9: any = opaque.CoreCollectionCall(list, v8) {impure}
     v10: int = const 2
     v11: double = load_field v0.x {read:frozen}
     v12: double = load_field v1.y {read:frozen}
     v13: double = add v11, v12 {pure}
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(double) {read:shared,throws}
     v15: int = call_java v7.size() {pure,throws}
     v16: int = add v10, v15 {pure}
     v17: double = opaque.DynamicCall(v14, v16) {impure}
@@ -861,7 +877,7 @@ fn work(v0: any, v1: any) -> double:
     v23: any = const null
     br bb6(v23)
   bb5 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v24: any = opaque.NameRead() {impure}
+    v24: any = opaque.NameRead(assert) {read:shared,throws}
     v25: bool = const false
     v26: bool = opaque.DynamicCall(v24, v25) {impure}
     v27: any = convert.any v26
@@ -893,13 +909,13 @@ fn work(v0: any, v1: any) -> double:
     v4: bool = lt v2, v3 {pure}
     br_if v4, bb9, bb1
   bb1:
-    v5: any = opaque.CoreCollectionCall(v0) {impure}
+    v5: any = opaque.CoreCollectionCall(list, v0) {impure}
     v6: int = const 1
-    v7: any = opaque.CoreCollectionCall(v6) {impure}
+    v7: any = opaque.CoreCollectionCall(list, v6) {impure}
     v8: int = const 2
     v9: double = load_field v1.y {read:frozen}
     v10: double = add v2, v9 {pure}
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(double) {read:shared,throws}
     v12: int = call_java v5.size() {pure,throws}
     v13: int = add v8, v12 {pure}
     v14: double = opaque.DynamicCall(v11, v13) {impure}
@@ -912,7 +928,7 @@ fn work(v0: any, v1: any) -> double:
     v19: bool = lt v17, v18 {pure}
     br_if v19, bb3, bb4
   bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(assert) {read:shared,throws}
     v21: bool = const false
     v22: bool = opaque.DynamicCall(v20, v21) {impure}
     br bb4

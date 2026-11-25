@@ -56,9 +56,9 @@ fn run (n:int, mc:obj, fmc:obj) -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int, v1: any, v2: any) -> double:
   bb0:
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.DynamicSelect(v3) {impure}
-    v5: any = opaque.DynamicSelect(v4) {impure}
+    v3: any = opaque.NameRead(java) {read:shared,throws}
+    v4: any = opaque.DynamicSelect(v3.lang) {impure}
+    v5: any = opaque.DynamicSelect(v4.Math) {impure}
     v6: double = const 0.0
     v7: int = const 0
     v8: int = const 2
@@ -74,7 +74,7 @@ fn run(v0: int, v1: any, v2: any) -> double:
   bb2:
     ret v16
   bb3:
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(double) {read:shared,throws}
     v19: double = opaque.DynamicCall(v18, v12) {impure}
     v20: double = const 0.0
     v21: double = add v19, v20 {pure}
@@ -89,9 +89,9 @@ fn run(v0: int, v1: any, v2: any) -> double:
 ;; mir -O2 fn=run
 fn run(v0: int, v1: any, v2: any) -> double:
   bb0:
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.DynamicSelect(v3) {impure}
-    v5: any = opaque.DynamicSelect(v4) {impure}
+    v3: any = opaque.NameRead(java) {read:shared,throws}
+    v4: any = opaque.DynamicSelect(v3.lang) {impure}
+    v5: any = opaque.DynamicSelect(v4.Math) {impure}
     v6: double = const 0.0
     v7: int = const 0
     v8: int = const 2
@@ -104,7 +104,7 @@ fn run(v0: int, v1: any, v2: any) -> double:
   bb2:
     ret v12
   bb3:
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(double) {read:shared,throws}
     v15: double = opaque.DynamicCall(v14, v10) {impure}
     v16: double = add v15, v6 {pure}
     v17: double = add v12, v16 {pure}
@@ -169,7 +169,7 @@ fn run(v0: int, v1: any, v2: any, v3: any) -> int:
   bb3:
     v12: int = call_iface v1.m(v0) {pure!}
     v13: int = add v12, v6 {pure}
-    v14: any = opaque.DynamicSelect(v3) {impure}
+    v14: any = opaque.DynamicSelect(v3.m) {impure}
     v15: int = opaque.DynamicCall(v14, v0) {impure}
     v16: int = add v13, v15 {pure}
     v17: int = add v10, v16 {pure}
@@ -194,7 +194,7 @@ fn run(v0: int, v1: any, v2: any, v3: any) -> int:
   bb3:
     v9: int = call_iface v1.m(v0) {pure!}
     v10: int = add v9, v5 {pure}
-    v11: any = opaque.DynamicSelect(v3) {impure}
+    v11: any = opaque.DynamicSelect(v3.m) {impure}
     v12: int = opaque.DynamicCall(v11, v0) {impure}
     v13: int = add v10, v12 {pure}
     v14: int = add v7, v13 {pure}
@@ -273,11 +273,11 @@ fn run(v0: int, v1: int) -> double:
     ret v10
   bb3:
     v12: int = const 1
-    v13: any = opaque.CoreCollectionCall(v12) {impure}
+    v13: any = opaque.CoreCollectionCall(list, v12) {impure}
     v14: int = const 1
     v15: int = const 2
     v16: any = opaque.ArrayCreate(v14, v15) {impure}
-    v17: any = opaque.NameRead() {impure}
+    v17: any = opaque.NameRead(double) {read:shared,throws}
     v18: any = move v13
     v19: int = call_java v18.size() {pure,throws}
     v20: any = freeze v16
@@ -308,10 +308,10 @@ fn run(v0: int, v1: int) -> double:
   bb2:
     ret v8
   bb3:
-    v10: any = opaque.CoreCollectionCall(v4) {impure}
+    v10: any = opaque.CoreCollectionCall(list, v4) {impure}
     v11: int = const 2
     v12: any = opaque.ArrayCreate(v4, v11) {impure}
-    v13: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(double) {read:shared,throws}
     v14: any = move v10
     v15: int = call_java v14.size() {pure,throws}
     v16: any = freeze v12
@@ -371,7 +371,7 @@ fn run(v0: int, v1: int) -> int:
   bb0:
     v2: int = const 0
     v3: int = const 0
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(bigAny) {read:shared}
     v5: int = call bigAny(v1) {pure}
     v6: any = const null
     br bb1(v6, v3, v2)
@@ -393,7 +393,7 @@ fn run(v0: int, v1: int) -> int:
 fn run(v0: int, v1: int) -> int:
   bb0:
     v2: int = const 0
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(bigAny) {read:shared}
     v4: int = call bigAny(v1) {pure}
     br bb1(v2, v2)
   bb1(v5: int, v6: int):

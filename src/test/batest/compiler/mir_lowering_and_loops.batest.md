@@ -443,7 +443,7 @@ fn narrowLen(v0: any, v1: any) -> int:
     br_if v15, bb7, bb8(v14)
   bb7:
     v16: any = narrow.nonnull v8 <non-null>
-    v17: any = opaque.SafeCall(v16) {impure}
+    v17: any = opaque.SafeCall(v16?.length) {impure}
     br bb8(v17)
   bb8(v18: any):
     v19: int = add v7, v13 {pure}
@@ -491,7 +491,7 @@ fn narrowLen(v0: any, v1: any) -> int:
     br_if v14, bb7, bb8(v2)
   bb7:
     v15: any = narrow.nonnull v8 <non-null>
-    v16: any = opaque.SafeCall(v15) {impure}
+    v16: any = opaque.SafeCall(v15?.length) {impure}
     br bb8(v16)
   bb8(v17: any):
     v18: int = add v7, v13 {pure}

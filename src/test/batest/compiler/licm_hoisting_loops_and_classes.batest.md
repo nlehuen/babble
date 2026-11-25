@@ -216,7 +216,7 @@ fn run(v0: any, v1: any) -> double:
     ret v18
   bb3:
     v19: int = for_next v7, v12
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(double) {read:shared,throws}
     v21: double = opaque.DynamicCall(v20, v19) {impure}
     v22: double = add v4, v21 {pure}
     v23: int = const 0
@@ -260,7 +260,7 @@ fn run(v0: any, v1: any) -> double:
     ret v14
   bb3:
     v15: int = for_next v7, v10
-    v16: any = opaque.NameRead() {impure}
+    v16: any = opaque.NameRead(double) {read:shared,throws}
     v17: double = opaque.DynamicCall(v16, v15) {impure}
     v18: double = add v4, v17 {pure}
     v19: bool = lt v15, v9 {pure}
@@ -385,28 +385,28 @@ fn Box.run(v0: int, v1: byte) -> double:
     ret v7
   bb3:
     v9: short = convert.short v1
-    v10: any = opaque.NameRead() {impure}
+    v10: any = opaque.NameRead(short) {read:shared,throws}
     v11: int = const 4
     v12: short = opaque.DynamicCall(v10, v11) {impure}
     v13: int = convert.int v12
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(int) {read:shared,throws}
     v15: int = opaque.DynamicCall(v14, v1) {impure}
     v16: int = add v13, v15 {pure}
-    v17: any = opaque.NameRead() {impure}
+    v17: any = opaque.NameRead(int) {read:shared,throws}
     v18: int = const 5
     v19: int = opaque.DynamicCall(v17, v18) {impure}
     v20: int = const 1
     v21: int = add v19, v20 {pure}
     v22: long = convert.long v21
-    v23: any = opaque.NameRead() {impure}
+    v23: any = opaque.NameRead(double) {read:shared,throws}
     v24: double = opaque.DynamicCall(v23, v9) {impure}
-    v25: any = opaque.NameRead() {impure}
+    v25: any = opaque.NameRead(double) {read:shared,throws}
     v26: double = opaque.DynamicCall(v25, v16) {impure}
     v27: double = add v24, v26 {pure}
-    v28: any = opaque.NameRead() {impure}
+    v28: any = opaque.NameRead(double) {read:shared,throws}
     v29: double = opaque.DynamicCall(v28, v22) {impure}
     v30: double = add v27, v29 {pure}
-    v31: any = opaque.NameRead() {impure}
+    v31: any = opaque.NameRead(double) {read:shared,throws}
     v32: float = const 4.0f
     v33: double = opaque.DynamicCall(v31, v32) {impure}
     v34: double = add v30, v33 {pure}
@@ -431,28 +431,28 @@ fn Box.run(v0: int, v1: byte) -> double:
   bb2:
     ret v6
   bb3:
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(short) {read:shared,throws}
     v9: int = const 4
     v10: short = opaque.DynamicCall(v8, v9) {impure}
     v11: int = convert.int v10
-    v12: any = opaque.NameRead() {impure}
+    v12: any = opaque.NameRead(int) {read:shared,throws}
     v13: int = opaque.DynamicCall(v12, v1) {impure}
     v14: int = add v11, v13 {pure}
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(int) {read:shared,throws}
     v16: int = const 5
     v17: int = opaque.DynamicCall(v15, v16) {impure}
     v18: int = const 1
     v19: int = add v17, v18 {pure}
     v20: long = convert.long v19
-    v21: any = opaque.NameRead() {impure}
+    v21: any = opaque.NameRead(double) {read:shared,throws}
     v22: double = opaque.DynamicCall(v21, v4) {impure}
-    v23: any = opaque.NameRead() {impure}
+    v23: any = opaque.NameRead(double) {read:shared,throws}
     v24: double = opaque.DynamicCall(v23, v14) {impure}
     v25: double = add v22, v24 {pure}
-    v26: any = opaque.NameRead() {impure}
+    v26: any = opaque.NameRead(double) {read:shared,throws}
     v27: double = opaque.DynamicCall(v26, v20) {impure}
     v28: double = add v25, v27 {pure}
-    v29: any = opaque.NameRead() {impure}
+    v29: any = opaque.NameRead(double) {read:shared,throws}
     v30: float = const 4.0f
     v31: double = opaque.DynamicCall(v29, v30) {impure}
     v32: double = add v28, v31 {pure}
@@ -510,7 +510,7 @@ fn Box.run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
-    v3: any = opaque.FunctionRef() {pure}
+    v3: any = opaque.FunctionRef(fv) {pure}
     v4: any = const null
     br bb1(v4, v2, v1)
   bb1(v5: any, v6: int, v7: double):

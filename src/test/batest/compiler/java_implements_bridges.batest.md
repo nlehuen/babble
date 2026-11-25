@@ -240,11 +240,11 @@ interface W
 interface W:
   fn forEachRemaining(v0: any) -> any:
     bb0:
-      v1: any = opaque.NameRead() {impure}
+      v1: any = opaque.NameRead(print) {read:shared,throws}
       v2: any = const "<"
       v3: any = opaque.DynamicCall(v1, v2) {impure}
-      v4: any = opaque.SuperCall(v0) {impure}
-      v5: any = opaque.NameRead() {impure}
+      v4: any = opaque.SuperCall(forEachRemaining, v0) {impure}
+      v5: any = opaque.NameRead(print) {read:shared,throws}
       v6: any = const ">"
       v7: any = opaque.DynamicCall(v5, v6) {impure}
       ret v7
@@ -411,7 +411,7 @@ class LongInc (d:int)
 class LongInc:
   fn LongInc.applyAsLong(v0: any) -> int:
     bb0:
-      v1: any = opaque.NameRead() {impure}
+      v1: any = opaque.NameRead(int) {read:shared,throws}
       v2: any = checkcast v0 <long|long|>
       v3: int = opaque.DynamicCall(v1, v2) {impure}
       v4: int = slot_read d {read:shared,throws}

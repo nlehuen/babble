@@ -51,8 +51,8 @@ fn run (a:int, b:int, flag:bool, xs:obj) -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int, v1: int, v2: bool, v3: any) -> double:
   bb0:
-    v4: any = opaque.FunctionRef() {pure}
-    v5: any = opaque.FunctionRef() {pure}
+    v4: any = opaque.FunctionRef(unusedOv) {pure}
+    v5: any = opaque.FunctionRef(unusedOv) {pure}
     v6: any = opaque.MakeOverloadSet(v4, v5) {pure}
     v7: double = const 0.0
     v8: double = convert.double v0
@@ -277,13 +277,13 @@ fn run(v0: byte) -> bool:
     v2: short = convert.short v0
     br bb3(v2)
   bb2:
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(byte) {read:shared,throws}
     v4: int = const 3
     v5: byte = opaque.DynamicCall(v3, v4) {impure}
     v6: short = convert.short v5
     br bb3(v6)
   bb3(v7: short):
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(short) {read:shared,throws}
     v9: int = const 3
     v10: short = opaque.DynamicCall(v8, v9) {impure}
     v11: bool = eq v7, v10 {pure}
@@ -309,13 +309,13 @@ fn run(v0: byte) -> bool:
     v1: bool = const true
     br bb1
   bb1:
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(byte) {read:shared,throws}
     v3: int = const 3
     v4: byte = opaque.DynamicCall(v2, v3) {impure}
     v5: short = convert.short v4
     br bb2(v5)
   bb2(v6: short):
-    v7: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(short) {read:shared,throws}
     v8: short = opaque.DynamicCall(v7, v3) {impure}
     v9: bool = eq v6, v8 {pure}
     v10: bool = const false
@@ -551,7 +551,7 @@ fn CR.run (n:int) -> int {nothrow unique}
 ;; mir -O2 fn=CR.run stage=before
 fn CR.run(v0: int) -> int:
   bb0:
-    v1: any = opaque.FunctionRef() {read:shared}
+    v1: any = opaque.FunctionRef(cap) {read:shared}
     v2: int = const 0
     v3: int = const 0
     v4: any = const null
@@ -580,7 +580,7 @@ fn CR.run(v0: int) -> int:
 ;; mir -O2 fn=CR.run
 fn CR.run(v0: int) -> int:
   bb0:
-    v1: any = opaque.FunctionRef() {read:shared}
+    v1: any = opaque.FunctionRef(cap) {read:shared}
     v2: int = const 0
     v3: int = const 1
     v4: int = add v0, v3 {pure}

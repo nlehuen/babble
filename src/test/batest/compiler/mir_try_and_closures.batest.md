@@ -98,9 +98,9 @@ fn handle(v0: int) -> int:
     v14: any = new_java Error(v13) {pure!}
     rethrow v14
   bb8 [unwind: ThrownException -> bb12, Error -> bb9, * -> bb15]:
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(E) {read:shared}
     v16: any = const "bad"
-    v17: any = record_new E(v16) {pure}
+    v17: any = record_new E[v15](v16) {pure}
     throw v17
   bb9(v18: any) [handler]:
     br bb10
@@ -174,9 +174,9 @@ fn handle(v0: int) -> int:
     v10: any = new_java Error(v9) {pure!}
     rethrow v10
   bb6 [unwind: ThrownException -> bb10, Error -> bb7, * -> bb13]:
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(E) {read:shared}
     v12: any = const "bad"
-    v13: any = record_new E(v12) {pure}
+    v13: any = record_new E[v11](v12) {pure}
     throw v13
   bb7(v14: any) [handler]:
     br bb8
@@ -379,7 +379,7 @@ fn cellCap (xs:obj) -> int {pure unique}
 ;; mir -O2 fn=cellCap stage=before
 fn cellCap(v0: any) -> int:
   bb0:
-    v1: any = opaque.CoreCollectionRef() {pure}
+    v1: any = opaque.CoreCollectionRef(list) {pure}
     v2: any = opaque.DynamicCall(v1) {impure}
     v3: any = for_init.java_iterable v0
     v4: any = const null
@@ -406,7 +406,7 @@ fn cellCap(v0: any) -> int:
     v19: int = const 1
     v20: int = add v18, v19 {pure}
     slot_init c, v20 {write:shared}
-    v21: any = opaque.FunctionRef() {read:shared}
+    v21: any = opaque.FunctionRef(<anon>) {read:shared}
     v22: bool = call_java v2.add(v21) {impure}
     v23: any = convert.any v22
     br bb1(v23)
@@ -416,7 +416,7 @@ fn cellCap(v0: any) -> int:
 ;; mir -O2 fn=cellCap
 fn cellCap(v0: any) -> int:
   bb0:
-    v1: any = opaque.CoreCollectionRef() {pure}
+    v1: any = opaque.CoreCollectionRef(list) {pure}
     v2: any = opaque.DynamicCall(v1) {impure}
     v3: any = for_init.java_iterable v0
     br bb1
@@ -442,7 +442,7 @@ fn cellCap(v0: any) -> int:
     v17: int = const 1
     v18: int = add v16, v17 {pure}
     slot_init c, v18 {write:shared}
-    v19: any = opaque.FunctionRef() {read:shared}
+    v19: any = opaque.FunctionRef(<anon>) {read:shared}
     v20: bool = call_java v2.add(v19) {impure}
     br bb1
 ```

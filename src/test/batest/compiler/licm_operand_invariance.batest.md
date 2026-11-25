@@ -363,11 +363,11 @@ fn run(v0: byte, v1: any) -> double:
     v11: any = checkcast v10 <double|double|>
     v12: any = widen#5 v11
     v13: double = convert.double v12
-    v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(double) {read:shared,throws}
+    v15: any = opaque.NameRead(topRO) {read:shared}
     v16: any = widen#2 v15
     v17: int = convert.int v16
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(int) {read:shared,throws}
     v19: int = opaque.DynamicCall(v18, v0) {impure}
     v20: int = add v17, v19 {pure}
     v21: any = checkcast v1 <int|int|>
@@ -402,11 +402,11 @@ fn run(v0: byte, v1: any) -> double:
   bb3:
     v9: any = checkcast v4 <double|double|>
     v10: double = convert.double v9
-    v11: any = opaque.NameRead() {impure}
-    v12: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(double) {read:shared,throws}
+    v12: any = opaque.NameRead(topRO) {read:shared}
     v13: any = widen#2 v12
     v14: int = convert.int v13
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(int) {read:shared,throws}
     v16: int = opaque.DynamicCall(v15, v0) {impure}
     v17: int = add v14, v16 {pure}
     v18: any = checkcast v1 <int|int|>
@@ -466,7 +466,7 @@ fn C.run (n:int) -> int {nothrow unique}
 ;; mir -O2 fn=C.run stage=before
 fn C.run(v0: int) -> int:
   bb0:
-    v1: any = opaque.FunctionRef() {pure}
+    v1: any = opaque.FunctionRef(loc) {pure}
     v2: int = const 0
     v3: int = const 0
     v4: int = const 1
@@ -568,17 +568,17 @@ fn run(v0: any, v1: any) -> int:
   bb3:
     v10: any = checkcast v0 <int|int|>
     v11: int = convert.int v10
-    v12: any = opaque.NameRead() {impure}
+    v12: any = opaque.NameRead(id) {read:shared}
     v13: any = checkcast v0 <int|int|>
     v14: int = opaque.DynamicCall(v12, v13) {impure}
     v15: int = add v11, v14 {pure}
     v16: int = array_len v1 {read:frozen,throws}
     v17: int = add v15, v16 {pure}
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(ov) {read:shared,throws}
     v19: any = opaque.OverloadSelect(v18) {pure}
     v20: int = const 3
     v21: int = add v17, v20 {pure}
-    v22: any = opaque.NameRead() {impure}
+    v22: any = opaque.NameRead(ov) {read:shared,throws}
     v23: any = opaque.OverloadSelect(v22) {pure}
     v24: int = const 3
     v25: int = add v21, v24 {pure}
@@ -604,16 +604,16 @@ fn run(v0: any, v1: any) -> int:
   bb3:
     v7: any = checkcast v0 <int|int|>
     v8: int = convert.int v7
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(id) {read:shared}
     v10: any = checkcast v0 <int|int|>
     v11: int = opaque.DynamicCall(v9, v10) {impure}
     v12: int = add v8, v11 {pure}
     v13: int = array_len v1 {read:frozen,throws}
     v14: int = add v12, v13 {pure}
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(ov) {read:shared,throws}
     v16: int = const 3
     v17: int = add v14, v16 {pure}
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(ov) {read:shared,throws}
     v19: int = add v17, v16 {pure}
     v20: int = add v4, v19 {pure}
     v21: int = const 1

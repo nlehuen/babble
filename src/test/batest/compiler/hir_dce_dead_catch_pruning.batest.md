@@ -75,7 +75,7 @@ fn run(v0: any, v1: bool, v2: int) -> double:
   bb2:
     ret v8
   bb3:
-    v10: any = opaque.NameRead() {impure}
+    v10: any = opaque.NameRead(double) {read:shared,throws}
     v11: int = array_len v0 {read:frozen,throws}
     v12: double = opaque.DynamicCall(v10, v11) {impure}
     v13: bool = const false
@@ -89,7 +89,7 @@ fn run(v0: any, v1: bool, v2: int) -> double:
     v16: double = const 0.0
     br bb8(v16)
   bb7:
-    v17: any = opaque.NameRead() {impure}
+    v17: any = opaque.NameRead(idT) {read:shared}
     v18: double = const 1.0
     v19: double = opaque.DynamicCall(v17, v18) {impure}
     br bb8(v19)
@@ -120,7 +120,7 @@ fn run(v0: any, v1: bool, v2: int) -> double:
   bb2:
     ret v6
   bb3:
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(double) {read:shared,throws}
     v9: int = array_len v0 {read:frozen,throws}
     v10: double = opaque.DynamicCall(v8, v9) {impure}
     v11: bool = const false
@@ -133,7 +133,7 @@ fn run(v0: any, v1: bool, v2: int) -> double:
   bb6:
     br bb8(v4)
   bb7:
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(idT) {read:shared}
     v15: double = const 1.0
     v16: double = opaque.DynamicCall(v14, v15) {impure}
     br bb8(v16)
@@ -237,7 +237,7 @@ fn keepFinally(v0: int) -> int:
   bb3:
     br bb4
   bb4 [unwind: Throwable -> bb5]:
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(log) {read:shared,throws}
     v5: any = const "F"
     v6: any = call_java v4.append(v5) {impure}
     v7: any = checkcast v6 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -248,7 +248,7 @@ fn keepFinally(v0: int) -> int:
   bb6:
     rethrow v3
   bb7:
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(log) {read:shared,throws}
     v10: any = const "F"
     v11: any = call_java v9.append(v10) {impure}
     v12: any = checkcast v11 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -269,7 +269,7 @@ fn keepFinally(v0: int) -> int:
   bb2(v3: any) [handler]:
     br bb3
   bb3 [unwind: Throwable -> bb4]:
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(log) {read:shared,throws}
     v5: any = const "F"
     v6: any = call_java v4.append(v5) {impure}
     v7: any = checkcast v6 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -280,7 +280,7 @@ fn keepFinally(v0: int) -> int:
   bb5:
     rethrow v3
   bb6:
-    v9: any = opaque.NameRead() {impure}
+    v9: any = opaque.NameRead(log) {read:shared,throws}
     v10: any = const "F"
     v11: any = call_java v9.append(v10) {impure}
     v12: any = checkcast v11 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -391,7 +391,7 @@ fn twoCatches(v0: any) -> int:
     v3: int = const -2
     br bb4
   bb4:
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(log) {read:shared,throws}
     v5: any = const "X"
     v6: any = call_java v4.append(v5) {impure}
     v7: any = checkcast v6 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -406,7 +406,7 @@ fn twoCatches(v0: any) -> int:
   bb8:
     br bb9
   bb9 [unwind: Throwable -> bb10]:
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(log) {read:shared,throws}
     v12: any = const "X"
     v13: any = call_java v11.append(v12) {impure}
     v14: any = checkcast v13 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -417,13 +417,13 @@ fn twoCatches(v0: any) -> int:
   bb11:
     rethrow v10
   bb12:
-    v16: any = opaque.NameRead() {impure}
+    v16: any = opaque.NameRead(log) {read:shared,throws}
     v17: any = const "X"
     v18: any = call_java v16.append(v17) {impure}
     v19: any = checkcast v18 <java|java.lang.StringBuilder|java.lang.StringBuilder>
     br bb14(v9)
   bb13:
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(log) {read:shared,throws}
     v21: any = const "X"
     v22: any = call_java v20.append(v21) {impure}
     v23: any = checkcast v22 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -446,7 +446,7 @@ fn twoCatches(v0: any) -> int:
     v3: int = const -2
     br bb4
   bb4:
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(log) {read:shared,throws}
     v5: any = const "X"
     v6: any = call_java v4.append(v5) {impure}
     v7: any = checkcast v6 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -459,7 +459,7 @@ fn twoCatches(v0: any) -> int:
   bb7(v10: any) [handler]:
     br bb8
   bb8 [unwind: Throwable -> bb9]:
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(log) {read:shared,throws}
     v12: any = const "X"
     v13: any = call_java v11.append(v12) {impure}
     v14: any = checkcast v13 <java|java.lang.StringBuilder|java.lang.StringBuilder>
@@ -470,13 +470,13 @@ fn twoCatches(v0: any) -> int:
   bb10:
     rethrow v10
   bb11:
-    v16: any = opaque.NameRead() {impure}
+    v16: any = opaque.NameRead(log) {read:shared,throws}
     v17: any = const "X"
     v18: any = call_java v16.append(v17) {impure}
     v19: any = checkcast v18 <java|java.lang.StringBuilder|java.lang.StringBuilder>
     br bb13(v9)
   bb12:
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(log) {read:shared,throws}
     v21: any = const "X"
     v22: any = call_java v20.append(v21) {impure}
     v23: any = checkcast v22 <java|java.lang.StringBuilder|java.lang.StringBuilder>
