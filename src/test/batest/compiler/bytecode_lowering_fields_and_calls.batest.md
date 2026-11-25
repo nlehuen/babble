@@ -300,10 +300,10 @@ fn fwd () -> int {nothrow unique}
 ;; mir -O2 fn=fwd stage=before,final
 fn fwd() -> int:
   bb0:
-    v0: any = opaque.FunctionRef() {read:shared}
-    v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.DynamicSelect(v1) {impure}
-    v3: any = opaque.DynamicSelect(v2) {impure}
+    v0: any = opaque.FunctionRef(g) {read:shared}
+    v1: any = opaque.NameRead(java) {read:shared,throws}
+    v2: any = opaque.DynamicSelect(v1.lang) {impure}
+    v3: any = opaque.DynamicSelect(v2.Math) {impure}
     slot_init M, v3 {write:shared,throws}
     v4: int = call g() {impure}
     ret v4
@@ -335,7 +335,7 @@ fn run () -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before,final
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(Box) {read:shared}
     v1: int = const 4
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: any = move v2
@@ -369,7 +369,7 @@ fn mkLocal () -> int {pure unique}
 ;; mir -O2 fn=mkLocal stage=before,final
 fn mkLocal() -> int:
   bb0:
-    v0: any = opaque.ClassExpr() {impure}
+    v0: any = opaque.ClassExpr(L) {impure}
     v1: int = const 3
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: int = const 4
@@ -610,7 +610,7 @@ fn f (x:int, d:obj=1:int) -> double {nothrow unique}
 ;; mir -O2 fn=f stage=before,final
 fn f(v0: int, v1: any) -> double:
   bb0:
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(double) {read:shared,throws}
     v3: double = opaque.DynamicCall(v2, v0) {impure}
     v4: any = is v1 <double>
     br_if v4, bb2, bb1

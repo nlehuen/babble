@@ -53,8 +53,8 @@ fn checkIntIdem (x:int, ec:int, ea:int) -> bool {pure unique}
 ;; mir -O2 fn=checkIntIdem stage=before
 fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
   bb0:
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(bigClamp) {read:shared}
+    v4: any = opaque.NameRead(assert) {read:shared,throws}
     v5: int = const 0
     v6: bool = lt v0, v5 {pure}
     br_if v6, bb2, bb1
@@ -89,7 +89,7 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
     br bb10(v20)
   bb10(v21: bool):
     v22: bool = opaque.DynamicCall(v4, v21) {impure}
-    v23: any = opaque.NameRead() {impure}
+    v23: any = opaque.NameRead(assert) {read:shared,throws}
     v24: int = call_java Math.abs(v0) {pure}
     v25: bool = eq v24, v2 {pure}
     v26: bool = opaque.DynamicCall(v23, v25) {impure}
@@ -100,8 +100,8 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
 ;; mir -O2 fn=checkIntIdem
 fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
   bb0:
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(bigClamp) {read:shared}
+    v4: any = opaque.NameRead(assert) {read:shared,throws}
     v5: int = const 0
     v6: bool = lt v0, v5 {pure}
     br_if v6, bb2, bb1
@@ -131,7 +131,7 @@ fn checkIntIdem(v0: int, v1: int, v2: int) -> bool:
     br bb10(v15)
   bb10(v16: bool):
     v17: bool = opaque.DynamicCall(v4, v16) {impure}
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(assert) {read:shared,throws}
     v19: int = call_java Math.abs(v0) {pure}
     v20: bool = eq v19, v2 {pure}
     v21: bool = opaque.DynamicCall(v18, v20) {impure}
@@ -169,7 +169,7 @@ fn checkFloor (d:double) -> bool {pure unique}
 fn checkFloor(v0: double) -> bool:
   bb0:
     v1: double = call_java Math.floor(v0) {pure}
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(assert) {read:shared,throws}
     v3: bool = call_java Double.isNaN(v0) {pure}
     br_if v3, bb2, bb1
   bb1:
@@ -215,20 +215,20 @@ fn checkStrIdem (s:obj, ch:char, es:obj, ech:char) -> bool {pure unique}
 ;; mir -O2 fn=checkStrIdem stage=before,final
 fn checkStrIdem(v0: any, v1: char, v2: any, v3: char) -> bool:
   bb0:
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(assert) {read:shared,throws}
     v5: any = call_java v0.trim() {impure}
     v6: any = checkcast v5 <string|string|>
     v7: any = eq v6, v2 {pure}
     v8: bool = opaque.DynamicCall(v4, v7) {impure}
-    v9: any = opaque.NameRead() {impure}
-    v10: any = opaque.NameRead() {impure}
-    v11: any = opaque.DynamicSelect(v10) {impure}
-    v12: any = opaque.DynamicSelect(v11) {impure}
-    v13: any = opaque.DynamicSelect(v12) {impure}
-    v14: any = opaque.NameRead() {impure}
-    v15: any = opaque.DynamicSelect(v14) {impure}
-    v16: any = opaque.DynamicSelect(v15) {impure}
-    v17: any = opaque.DynamicSelect(v16) {impure}
+    v9: any = opaque.NameRead(assert) {read:shared,throws}
+    v10: any = opaque.NameRead(java) {read:shared,throws}
+    v11: any = opaque.DynamicSelect(v10.lang) {impure}
+    v12: any = opaque.DynamicSelect(v11.Character) {impure}
+    v13: any = opaque.DynamicSelect(v12.toLowerCase) {impure}
+    v14: any = opaque.NameRead(java) {read:shared,throws}
+    v15: any = opaque.DynamicSelect(v14.lang) {impure}
+    v16: any = opaque.DynamicSelect(v15.Character) {impure}
+    v17: any = opaque.DynamicSelect(v16.toLowerCase) {impure}
     v18: any = opaque.DynamicCall(v17, v1) {impure}
     v19: any = opaque.DynamicCall(v13, v18) {impure}
     v20: char = convert.char v19
@@ -275,14 +275,14 @@ fn checkGuard(v0: int) -> bool:
   bb0:
     v1: int = call_java Math.abs(v0) {pure}
     v2: double = convert.double v1
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(assert) {read:shared,throws}
     v4: double = const 5.0
     v5: bool = eq v2, v4 {pure}
     v6: bool = const false
     br_if v5, bb1, bb8(v6)
   bb1:
-    v7: any = opaque.NameRead() {impure}
-    v8: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(lateClamp) {read:shared,throws}
+    v8: any = opaque.NameRead(lateClamp) {read:shared,throws}
     v9: int = const 0
     v10: bool = lt v0, v9 {pure}
     br_if v10, bb3, bb2
@@ -315,14 +315,14 @@ fn checkGuard(v0: int) -> bool:
   bb0:
     v1: int = call_java Math.abs(v0) {pure}
     v2: double = convert.double v1
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(assert) {read:shared,throws}
     v4: double = const 5.0
     v5: bool = eq v2, v4 {pure}
     v6: bool = const false
     br_if v5, bb1, bb8(v6)
   bb1:
-    v7: any = opaque.NameRead() {impure}
-    v8: any = opaque.NameRead() {impure}
+    v7: any = opaque.NameRead(lateClamp) {read:shared,throws}
+    v8: any = opaque.NameRead(lateClamp) {read:shared,throws}
     v9: int = const 0
     v10: bool = lt v0, v9 {pure}
     br_if v10, bb3, bb2
@@ -436,7 +436,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb2(v5: bool):
     br_if v5, bb4, bb3
   bb3:
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(idT) {read:shared}
     v7: int = const 1
     v8: int = opaque.DynamicCall(v6, v7) {impure}
     br bb5(v8)
@@ -455,7 +455,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
     v15: int = const 0
     br bb8(v15)
   bb8(v16: int):
-    v17: any = opaque.NameRead() {impure}
+    v17: any = opaque.NameRead(int) {read:shared,throws}
     v18: int = array_len v0 {read:frozen,throws}
     v19: any = convert.any v18
     v20: any = checkcast v19 <double|double|>
@@ -477,7 +477,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb2(v5: bool):
     br_if v5, bb4, bb3
   bb3:
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(idT) {read:shared}
     v7: int = const 1
     v8: int = opaque.DynamicCall(v6, v7) {impure}
     br bb5(v8)
@@ -495,7 +495,7 @@ fn checkDet(v0: any, v1: any, v2: bool) -> int:
   bb7:
     br bb8(v13)
   bb8(v15: int):
-    v16: any = opaque.NameRead() {impure}
+    v16: any = opaque.NameRead(int) {read:shared,throws}
     v17: int = array_len v0 {read:frozen,throws}
     v18: any = convert.any v17
     v19: any = checkcast v18 <double|double|>

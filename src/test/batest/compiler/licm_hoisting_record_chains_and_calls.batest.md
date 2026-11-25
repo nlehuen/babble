@@ -83,7 +83,7 @@ fn RV.run(v0: int) -> double:
   bb2:
     ret v18
   bb3:
-    v20: any = opaque.NameRead() {impure}
+    v20: any = opaque.NameRead(double) {read:shared,throws}
     v21: any = call_java v8.trim() {impure}
     v22: any = checkcast v21 <string|string|>
     v23: int = call_java v22.length() {pure,throws}
@@ -127,7 +127,7 @@ fn RV.run(v0: int) -> double:
   bb2:
     ret v16
   bb3:
-    v18: any = opaque.NameRead() {impure}
+    v18: any = opaque.NameRead(double) {read:shared,throws}
     v19: any = call_java v7.trim() {impure}
     v20: any = checkcast v19 <string|string|>
     v21: int = call_java v20.length() {pure,throws}
@@ -337,7 +337,7 @@ fn run (d:double, f:bool) -> double {nothrow unique}
 fn run(v0: double, v1: bool) -> double:
   bb0:
     v2: double = const 0.0
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(bigSink) {read:shared}
     v4: int = const 0
     v5: double = call_java Math.sin(v0) {pure}
     v6: any = const null
@@ -395,7 +395,7 @@ fn run(v0: double, v1: bool) -> double:
 fn run(v0: double, v1: bool) -> double:
   bb0:
     v2: double = const 0.0
-    v3: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(bigSink) {read:shared}
     v4: int = const 0
     v5: double = call_java Math.sin(v0) {pure}
     v6: any = const null
@@ -513,7 +513,7 @@ fn run(v0: byte) -> int:
     v13: int = const 0
     br bb6(v13)
   bb5:
-    v14: any = opaque.NameRead() {impure}
+    v14: any = opaque.NameRead(int) {read:shared,throws}
     v15: int = opaque.DynamicCall(v14, v4) {impure}
     br bb6(v15)
   bb6(v16: int):
@@ -553,7 +553,7 @@ fn run(v0: byte) -> int:
   bb4:
     br bb6(v1)
   bb5:
-    v10: any = opaque.NameRead() {impure}
+    v10: any = opaque.NameRead(int) {read:shared,throws}
     v11: int = opaque.DynamicCall(v10, v3) {impure}
     br bb6(v11)
   bb6(v12: int):

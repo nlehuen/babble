@@ -41,7 +41,7 @@ fn fold (x:int) -> bool {pure unique}
 ;; mir -O2 fn=fold stage=before
 fn fold(v0: int) -> bool:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(assert) {read:shared,throws}
     v2: int = const 5
     v3: bool = eq v0, v2 {pure}
     v4: bool = const false
@@ -59,7 +59,7 @@ fn fold(v0: int) -> bool:
     br bb4(v10)
   bb4(v11: bool):
     v12: bool = opaque.DynamicCall(v1, v11) {impure}
-    v13: any = opaque.NameRead() {impure}
+    v13: any = opaque.NameRead(assert) {read:shared,throws}
     v14: int = const 5
     v15: bool = eq v0, v14 {pure}
     v16: bool = const false
@@ -70,7 +70,7 @@ fn fold(v0: int) -> bool:
     br bb6(v18)
   bb6(v19: bool):
     v20: bool = opaque.DynamicCall(v13, v19) {impure}
-    v21: any = opaque.NameRead() {impure}
+    v21: any = opaque.NameRead(assert) {read:shared,throws}
     v22: bool = const true
     v23: bool = opaque.DynamicCall(v21, v22) {impure}
     ret v23
@@ -80,7 +80,7 @@ fn fold(v0: int) -> bool:
 ;; mir -O2 fn=fold
 fn fold(v0: int) -> bool:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(assert) {read:shared,throws}
     v2: int = const 5
     v3: bool = eq v0, v2 {pure}
     v4: bool = const false
@@ -93,13 +93,13 @@ fn fold(v0: int) -> bool:
     br bb4(v3)
   bb4(v6: bool):
     v7: bool = opaque.DynamicCall(v1, v6) {impure}
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(assert) {read:shared,throws}
     br_if v3, bb5, bb6(v4)
   bb5:
     br bb6(v3)
   bb6(v9: bool):
     v10: bool = opaque.DynamicCall(v8, v9) {impure}
-    v11: any = opaque.NameRead() {impure}
+    v11: any = opaque.NameRead(assert) {read:shared,throws}
     v12: bool = const true
     v13: bool = opaque.DynamicCall(v11, v12) {impure}
     ret v13

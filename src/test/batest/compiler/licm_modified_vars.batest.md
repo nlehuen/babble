@@ -52,7 +52,7 @@ fn run () -> int {io}
 fn run() -> int:
   bb0:
     v0: int = const 0
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Sub) {read:shared}
     v2: int = const 4
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: int = const 2
@@ -76,7 +76,7 @@ fn run() -> int:
     array_set v15[v16] = v18 {write:shared,throws}
     v19: any = const null
     v20: int = const 5
-    v21: any = opaque.DynamicFieldAssign(v3, v20) {write:shared,throws}
+    v21: any = opaque.DynamicFieldAssign(v3.f, v20) {write:shared,throws}
     v22: int = const 7
     store_jfield v6.x, v22 {write:shared,throws}
     v23: any = for_init.array v15
@@ -112,7 +112,7 @@ fn run() -> int:
 fn run() -> int:
   bb0:
     v0: int = const 0
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Sub) {read:shared}
     v2: int = const 4
     v3: any = opaque.DynamicCall(v1, v2) {impure}
     v4: int = const 2
@@ -130,7 +130,7 @@ fn run() -> int:
     v12: int = add v7, v11 {pure}
     array_set v10[v0] = v12 {write:shared,throws}
     v13: int = const 5
-    v14: any = opaque.DynamicFieldAssign(v3, v13) {write:shared,throws}
+    v14: any = opaque.DynamicFieldAssign(v3.f, v13) {write:shared,throws}
     v15: int = const 7
     store_jfield v6.x, v15 {write:shared,throws}
     v16: any = for_init.array v10
@@ -205,7 +205,7 @@ fn S.s(v0: int) -> int:
   bb2:
     ret v6
   bb3:
-    v9: any = opaque.SuperCall(v0) {impure}
+    v9: any = opaque.SuperCall(g, v0) {impure}
     v10: int = convert.int v9
     v11: any = slot_read this {pure}
     v12: int = load_field v11.f {read:shared,throws}
@@ -231,7 +231,7 @@ fn S.s(v0: int) -> int:
   bb2:
     ret v3
   bb3:
-    v6: any = opaque.SuperCall(v0) {impure}
+    v6: any = opaque.SuperCall(g, v0) {impure}
     v7: int = convert.int v6
     v8: any = slot_read this {pure}
     v9: int = load_field v8.f {read:shared,throws}
@@ -310,7 +310,7 @@ fn run(v0: any, v1: any, v2: any) -> int:
   bb5:
     v21: any = narrow.nonnull v1 <non-null>
     v22: int = const 1
-    v23: any = opaque.SafeCall(v21, v22) {impure}
+    v23: any = opaque.SafeCall(v21?.m, v22) {impure}
     br bb6(v23)
   bb6(v24: any):
     v25: any = const null
@@ -362,7 +362,7 @@ fn run(v0: any, v1: any, v2: any) -> int:
     br_if v5, bb5, bb6(v4)
   bb5:
     v18: any = narrow.nonnull v1 <non-null>
-    v19: any = opaque.SafeCall(v18, v13) {impure}
+    v19: any = opaque.SafeCall(v18?.m, v13) {impure}
     br bb6(v19)
   bb6(v20: any):
     v21: any = neq v20, v4 {pure,throws}
@@ -440,13 +440,13 @@ fn MC.run(v0: int) -> int:
     v7: bool = lt v5, v0 {pure}
     br_if v7, bb3, bb2
   bb2:
-    v8: any = opaque.NameRead() {impure}
+    v8: any = opaque.NameRead(topM) {read:shared,throws}
     v9: int = convert.int v8
     v10: int = add v6, v9 {pure}
     ret v10
   bb3:
     v11: int = const 1
-    v12: any = opaque.NameAssign(v11) {impure}
+    v12: any = opaque.NameAssign(topM +=, v11) {impure}
     v13: any = slot_read this {pure}
     v14: int = load_field v13.mf {read:shared,throws}
     v15: int = const 1
@@ -458,7 +458,7 @@ fn MC.run(v0: int) -> int:
     v20: any = nonnull v19
     v21: int = call_java v20.length() {pure,throws}
     v22: int = add v18, v21 {pure}
-    v23: any = opaque.NameRead() {impure}
+    v23: any = opaque.NameRead(bigId) {read:shared,throws}
     v24: int = const 4
     v25: int = opaque.DynamicCall(v23, v24) {impure}
     v26: int = add v22, v25 {pure}
@@ -479,13 +479,13 @@ fn MC.run(v0: int) -> int:
     v4: bool = lt v2, v0 {pure}
     br_if v4, bb3, bb2
   bb2:
-    v5: any = opaque.NameRead() {impure}
+    v5: any = opaque.NameRead(topM) {read:shared,throws}
     v6: int = convert.int v5
     v7: int = add v3, v6 {pure}
     ret v7
   bb3:
     v8: int = const 1
-    v9: any = opaque.NameAssign(v8) {impure}
+    v9: any = opaque.NameAssign(topM +=, v8) {impure}
     v10: any = slot_read this {pure}
     v11: int = load_field v10.mf {read:shared,throws}
     v12: int = add v11, v8 {pure}
@@ -494,7 +494,7 @@ fn MC.run(v0: int) -> int:
     v14: any = nonnull v13
     v15: int = call_java v14.length() {pure,throws}
     v16: int = add v12, v15 {pure}
-    v17: any = opaque.NameRead() {impure}
+    v17: any = opaque.NameRead(bigId) {read:shared,throws}
     v18: int = const 4
     v19: int = opaque.DynamicCall(v17, v18) {impure}
     v20: int = add v16, v19 {pure}
@@ -568,13 +568,13 @@ fn run() -> int:
   bb3:
     v8: any = const "x"
     v9: any = new_java StringBuilder(v8) {impure}
-    v10: any = opaque.FunctionRef() {pure}
-    v11: any = opaque.ClassExpr() {impure}
-    v12: any = opaque.InterfaceExpr() {impure}
+    v10: any = opaque.FunctionRef(fnL) {pure}
+    v11: any = opaque.ClassExpr(ClsL) {impure}
+    v12: any = opaque.InterfaceExpr(IfcL) {impure}
     v13: int = call_java v9.length() {pure,throws}
     v14: int = const 1
     v15: int = const 2
-    v16: any = opaque.CoreCollectionCall(v14, v15) {impure}
+    v16: any = opaque.CoreCollectionCall(list, v14, v15) {impure}
     v17: int = call_java v16.size() {pure,throws}
     v18: int = add v13, v17 {pure}
     v19: int = const 2
@@ -616,11 +616,11 @@ fn run() -> int:
   bb3:
     v5: any = const "x"
     v6: any = new_java StringBuilder(v5) {impure}
-    v7: any = opaque.ClassExpr() {impure}
-    v8: any = opaque.InterfaceExpr() {impure}
+    v7: any = opaque.ClassExpr(ClsL) {impure}
+    v8: any = opaque.InterfaceExpr(IfcL) {impure}
     v9: int = call_java v6.length() {pure,throws}
     v10: int = const 1
-    v11: any = opaque.CoreCollectionCall(v10, v3) {impure}
+    v11: any = opaque.CoreCollectionCall(list, v10, v3) {impure}
     v12: int = call_java v11.size() {pure,throws}
     v13: int = add v9, v12 {pure}
     v14: int = add v13, v3 {pure}

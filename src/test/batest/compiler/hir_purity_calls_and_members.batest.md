@@ -233,17 +233,17 @@ fn run () -> int {io}
 ;; mir -O2 fn=run stage=before
 fn run() -> int:
   bb0:
-    v0: any = opaque.FunctionRef() {pure}
-    v1: any = opaque.FunctionRef() {pure}
+    v0: any = opaque.FunctionRef(ov) {pure}
+    v1: any = opaque.FunctionRef(ov) {pure}
     v2: any = opaque.MakeOverloadSet(v0, v1) {pure}
-    v3: any = opaque.NameRead() {impure}
-    v4: any = opaque.DynamicSelect(v3) {impure}
-    v5: any = opaque.DynamicSelect(v4) {impure}
-    v6: any = opaque.NameRead() {impure}
+    v3: any = opaque.NameRead(java) {read:shared,throws}
+    v4: any = opaque.DynamicSelect(v3.lang) {impure}
+    v5: any = opaque.DynamicSelect(v4.Math) {impure}
+    v6: any = opaque.NameRead(bump) {read:shared}
     v7: int = call bump() {impure}
-    v8: any = opaque.NameRead() {impure}
-    v9: any = opaque.DynamicSelect(v8) {impure}
-    v10: any = opaque.DynamicSelect(v9) {impure}
+    v8: any = opaque.NameRead(java) {read:shared,throws}
+    v9: any = opaque.DynamicSelect(v8.lang) {impure}
+    v10: any = opaque.DynamicSelect(v9.Math) {impure}
     v11: int = const -5
     v12: int = call_java v10.abs(v11) {impure}
     v13: int = const 1
@@ -254,14 +254,14 @@ fn run() -> int:
 ;; mir -O2 fn=run
 fn run() -> int:
   bb0:
-    v0: any = opaque.NameRead() {impure}
-    v1: any = opaque.DynamicSelect(v0) {impure}
-    v2: any = opaque.DynamicSelect(v1) {impure}
-    v3: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(java) {read:shared,throws}
+    v1: any = opaque.DynamicSelect(v0.lang) {impure}
+    v2: any = opaque.DynamicSelect(v1.Math) {impure}
+    v3: any = opaque.NameRead(bump) {read:shared}
     v4: int = call bump() {impure}
-    v5: any = opaque.NameRead() {impure}
-    v6: any = opaque.DynamicSelect(v5) {impure}
-    v7: any = opaque.DynamicSelect(v6) {impure}
+    v5: any = opaque.NameRead(java) {read:shared,throws}
+    v6: any = opaque.DynamicSelect(v5.lang) {impure}
+    v7: any = opaque.DynamicSelect(v6.Math) {impure}
     v8: int = const -5
     v9: int = call_java v7.abs(v8) {impure}
     v10: int = const 1
@@ -395,10 +395,10 @@ fn run (vi:obj) -> int {io}
 ;; mir -O2 fn=run stage=before
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(R) {read:shared}
     v2: int = const 1
-    v3: any = record_new R(v2) {pure}
-    v4: any = opaque.DynamicSelect(v3) {impure}
+    v3: any = record_new R[v1](v2) {pure}
+    v4: any = opaque.DynamicSelect(v3.b) {impure}
     v5: int = opaque.DynamicCall(v4) {impure}
     v6: int = call_iface v0.imp() {impure}
     v7: int = const 1
@@ -409,10 +409,10 @@ fn run(v0: any) -> int:
 ;; mir -O2 fn=run
 fn run(v0: any) -> int:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(R) {read:shared}
     v2: int = const 1
-    v3: any = record_new R(v2) {pure}
-    v4: any = opaque.DynamicSelect(v3) {impure}
+    v3: any = record_new R[v1](v2) {pure}
+    v4: any = opaque.DynamicSelect(v3.b) {impure}
     v5: int = opaque.DynamicCall(v4) {impure}
     v6: int = call_iface v0.imp() {impure}
     ret v2
@@ -458,13 +458,13 @@ fn run () -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run() -> int:
   bb0:
-    v0: any = opaque.ClassExpr() {impure}
+    v0: any = opaque.ClassExpr(LR) {impure}
     v1: int = const 1
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(R) {read:shared}
     v3: int = const 3
     v4: any = opaque.DynamicCall(v2, v3) {impure}
     v5: int = load_field v4.x {read:frozen}
-    v6: any = opaque.NameRead() {impure}
+    v6: any = opaque.NameRead(R) {read:shared}
     v7: int = const 3
     v8: any = opaque.DynamicCall(v6, v7) {impure}
     v9: int = load_field v8.y {read:frozen,throws}
@@ -477,12 +477,12 @@ fn run() -> int:
 ;; mir -O2 fn=run
 fn run() -> int:
   bb0:
-    v0: any = opaque.ClassExpr() {impure}
+    v0: any = opaque.ClassExpr(LR) {impure}
     v1: int = const 1
-    v2: any = opaque.NameRead() {impure}
+    v2: any = opaque.NameRead(R) {read:shared}
     v3: int = const 3
     v4: any = opaque.DynamicCall(v2, v3) {impure}
-    v5: any = opaque.NameRead() {impure}
+    v5: any = opaque.NameRead(R) {read:shared}
     v6: any = opaque.DynamicCall(v5, v3) {impure}
     v7: int = load_field v6.y {read:frozen,throws}
     ret v1
@@ -550,10 +550,10 @@ fn run (k:int) -> int {io}
 fn run(v0: int) -> int:
   bb0:
     slot_init outer, v0 {write:shared}
-    v1: any = opaque.FunctionRef() {read:shared}
-    v2: any = opaque.NameRead() {impure}
+    v1: any = opaque.FunctionRef(cl) {read:shared}
+    v2: any = opaque.NameRead(LateR) {read:shared,throws}
     v3: int = const 1
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(fUninit) {read:shared,throws}
     v5: any = const null
     v6: int = const 1
     v7: int = add v0, v6 {pure}
@@ -563,10 +563,10 @@ fn run(v0: int) -> int:
     slot_decl cap
     v11: int = const 1
     slot_init cap, v11 {write:shared}
-    v12: any = opaque.FunctionRef() {read:shared}
+    v12: any = opaque.FunctionRef(c2) {read:shared}
     v13: int = call c2() {impure}
     v14: int = const 2
-    v15: any = opaque.CoreCollectionCall(v14) {impure}
+    v15: any = opaque.CoreCollectionCall(list, v14) {impure}
     ret v10
 ```
 
@@ -575,19 +575,19 @@ fn run(v0: int) -> int:
 fn run(v0: int) -> int:
   bb0:
     slot_init outer, v0 {write:shared}
-    v1: any = opaque.FunctionRef() {read:shared}
-    v2: any = opaque.NameRead() {impure}
+    v1: any = opaque.FunctionRef(cl) {read:shared}
+    v2: any = opaque.NameRead(LateR) {read:shared,throws}
     v3: int = const 1
-    v4: any = opaque.NameRead() {impure}
+    v4: any = opaque.NameRead(fUninit) {read:shared,throws}
     v5: int = add v0, v3 {pure}
     v6: any = convert.any v5
     v7: int = nonnull v6
     v8: int = call cl() {impure}
     slot_decl cap
     slot_init cap, v3 {write:shared}
-    v9: any = opaque.FunctionRef() {read:shared}
+    v9: any = opaque.FunctionRef(c2) {read:shared}
     v10: int = call c2() {impure}
     v11: int = const 2
-    v12: any = opaque.CoreCollectionCall(v11) {impure}
+    v12: any = opaque.CoreCollectionCall(list, v11) {impure}
     ret v8
 ```

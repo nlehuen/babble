@@ -39,7 +39,7 @@ class GG
 class GG:
   fn GG.deep() -> any:
     bb0:
-      v0: any = opaque.SuperCall() {impure}
+      v0: any = opaque.SuperCall(deep) {impure}
       v1: any = const ":gg"
       v2: any = strcat v0, v1 {pure}
       ret v2
@@ -182,13 +182,13 @@ fn C2.run (x:int) -> int {nothrow unique}
 ;; mir -O2 fn=C2.run stage=before,final
 fn C2.run() -> int:
   bb0:
-    v0: any = opaque.FunctionRef() {read:shared}
+    v0: any = opaque.FunctionRef(inner) {read:shared}
     v1: int = call inner() {impure}
     v2: int = slot_read x {read:shared,throws}
     v3: int = const 1
     v4: int = add v2, v3 {pure}
     slot_write x, v4 {write:shared,throws}
-    v5: any = opaque.SuperCall(v4) {impure}
+    v5: any = opaque.SuperCall(calc, v4) {impure}
     v6: int = convert.int v5
     v7: int = add v1, v6 {pure}
     ret v7
@@ -217,7 +217,7 @@ class C (v:int)
 class C:
   fn C.greet(v0: int) -> int:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(greet, v0) {impure}
       v2: int = convert.int v1
       v3: any = slot_read this {pure}
       v4: int = load_field v3.v {read:shared,throws}
@@ -388,12 +388,12 @@ class C
 class C:
   fn C.dir(v0: int) -> int:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(add, v0) {impure}
       v2: int = convert.int v1
       ret v2
   fn C.lam() -> int:
     bb0:
-      v0: any = opaque.FunctionRef() {read:shared}
+      v0: any = opaque.FunctionRef(<anon>) {read:shared}
       v1: int = call <anon>() {impure}
       ret v1
 ```
@@ -427,12 +427,12 @@ class C
 class C:
   fn C.pos(v0: any) -> int:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(calc, v0) {impure}
       v2: int = convert.int v1
       ret v2
   fn C.nam(v0: any) -> int:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(calc, v0) {impure}
       v2: int = convert.int v1
       ret v2
 ```

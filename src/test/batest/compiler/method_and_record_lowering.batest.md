@@ -43,7 +43,7 @@ fn C.run () -> bool {pure unique}
 ;; mir -O2 fn=C.run stage=before
 fn C.run() -> bool:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(assert) {read:shared,throws}
     v1: any = slot_read this {pure}
     v2: int = const 2
     v3: int = call_method v1.optM(v2) {pure}
@@ -67,7 +67,7 @@ fn C.run() -> bool:
 ;; mir -O2 fn=C.run
 fn C.run() -> bool:
   bb0:
-    v0: any = opaque.NameRead() {impure}
+    v0: any = opaque.NameRead(assert) {read:shared,throws}
     v1: any = slot_read this {pure}
     v2: int = const 2
     v3: int = call_method v1.optM(v2) {pure}
@@ -133,7 +133,7 @@ fn C.run() -> bool:
     v13: int = call_method v11.optM(v12) {pure}
     v14: double = convert.double v13
     store_field v10.d, v14 {write:shared,throws}
-    v15: any = opaque.NameRead() {impure}
+    v15: any = opaque.NameRead(assert) {read:shared,throws}
     v16: any = slot_read this {pure}
     v17: double = load_field v16.d {read:shared,throws}
     v18: double = const 11.0
@@ -180,29 +180,28 @@ fn C.run() -> bool:
     v8: int = call_method v0.optM(v7) {pure}
     v9: double = convert.double v8
     store_field v0.d, v9 {write:shared,throws}
-    v10: any = opaque.NameRead() {impure}
-    v11: double = load_field v0.d {read:shared,throws}
-    v12: double = const 11.0
-    v13: bool = eq v11, v12 {pure}
-    v14: bool = const false
-    br_if v13, bb1, bb2(v14)
+    v10: any = opaque.NameRead(assert) {read:shared,throws}
+    v11: double = const 11.0
+    v12: bool = eq v9, v11 {pure}
+    v13: bool = const false
+    br_if v12, bb1, bb2(v13)
   bb1:
-    v15: any = load_field v0.label {read:shared,throws}
-    v16: any = const "abc!"
-    v17: any = eq v15, v16 {pure}
+    v14: any = load_field v0.label {read:shared,throws}
+    v15: any = const "abc!"
+    v16: any = eq v14, v15 {pure}
+    v17: bool = not v16 {pure}
     v18: bool = not v17 {pure}
-    v19: bool = not v18 {pure}
-    br bb2(v19)
-  bb2(v20: bool):
-    br_if v20, bb3, bb4(v14)
+    br bb2(v18)
+  bb2(v19: bool):
+    br_if v19, bb3, bb4(v13)
   bb3:
-    v21: int = load_field v0.n {read:shared,throws}
-    v22: int = const 15
-    v23: bool = eq v21, v22 {pure}
-    br bb4(v23)
-  bb4(v24: bool):
-    v25: bool = opaque.DynamicCall(v10, v24) {impure}
-    ret v25
+    v20: int = load_field v0.n {read:shared,throws}
+    v21: int = const 15
+    v22: bool = eq v20, v21 {pure}
+    br bb4(v22)
+  bb4(v23: bool):
+    v24: bool = opaque.DynamicCall(v10, v23) {impure}
+    ret v24
 ```
 
 ## recurse with omitted optional arg inside class method and top-level function, plus enclosing captured cell
@@ -710,7 +709,7 @@ record CellRec:
     bb0:
       v0: any = slot_read this {pure}
       v1: int = load_field v0.x {read:frozen}
-      v2: any = opaque.NameRead() {impure}
+      v2: any = opaque.NameRead(k) {read:shared}
       v3: int = convert.int v2
       v4: int = add v1, v3 {pure}
       ret v4

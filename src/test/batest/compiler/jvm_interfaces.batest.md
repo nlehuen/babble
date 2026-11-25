@@ -127,7 +127,7 @@ class C (m:int)
 class C:
   fn C.run(v0: int) -> int:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(add, v0) {impure}
       v2: int = convert.int v1
       v3: int = slot_read m {read:shared,throws}
       v4: int = mul v2, v3 {pure}
@@ -421,7 +421,7 @@ class NsImpl (d:int)
 class NsImpl:
   fn NsImpl.run(v0: int) -> int:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(base, v0) {impure}
       v2: int = convert.int v1
       v3: int = slot_read d {read:shared,throws}
       v4: int = add v2, v3 {pure}
@@ -462,7 +462,7 @@ class CC (b:int)
 class CC:
   fn CC.sc() -> int:
     bb0:
-      v0: any = opaque.FunctionRef() {read:shared}
+      v0: any = opaque.FunctionRef(<anon>) {read:shared}
       v1: int = const 1
       v2: int = call <anon>(v1) {impure}
       ret v2
@@ -551,7 +551,7 @@ class Rect:
       ret v2
   fn Rect.scale(v0: double) -> double:
     bb0:
-      v1: any = opaque.SuperCall(v0) {impure}
+      v1: any = opaque.SuperCall(scale, v0) {impure}
       v2: double = convert.double v1
       v3: double = const 1.0
       v4: double = add v2, v3 {pure}

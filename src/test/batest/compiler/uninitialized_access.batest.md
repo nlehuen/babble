@@ -491,7 +491,7 @@ class UA (early:bool)
 class UA:
   fn UA.peek(v0: any) -> int:
     bb0:
-      v1: any = opaque.DynamicSelect(v0) {impure}
+      v1: any = opaque.DynamicSelect(v0.late) {impure}
       v2: int = convert.int v1
       ret v2
 ```

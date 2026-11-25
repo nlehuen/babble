@@ -185,4 +185,55 @@ public class MirCanonicalPrinterTestCase {
         Assertions.assertTrue(mirAfter.wants(IrTier.MIR, 2, "after:SccpPass"));
         Assertions.assertFalse(mirAfter.wants(IrTier.MIR, 2, IrSnapshot.STAGE_BEFORE));
     }
+
+    @Test
+    public void testNamedOpaqueExprsAndNameReadEffects() throws Exception {
+        String src = ""
+                + "def Pair = record (def a: int, def b: int) ()\n"
+                + "def counter = 1\n"
+                + "def useBoth = fn volatile (n: int): Pair -> (\n"
+                + "    def p = Pair(n, counter)\n"
+                + "    def i = 0\n"
+                + "    while i < n then (\n"
+                + "        p = Pair(p.a + 1, p.b)\n"
+                + "        i += 1\n"
+                + "    )\n"
+                + "    p\n"
+                + ")\n"
+                + "def bump = fn io (): int -> ( counter = counter + 1 ; counter )\n"
+                + "assert(bump() == 2)\n"
+                + "def lateConst = 7\n"
+                + "def readLate = fn (): int -> ( lateConst )\n"
+                + "assert(useBoth(3).a == 6 and readLate() == 7)\n";
+
+        MirModule before = lowerFromSource(src, 1);
+        String useBothBefore = before.printCanonical(IrTarget.parse("fn=useBoth"));
+        Assertions.assertTrue(useBothBefore.contains("opaque.NameRead(Pair) {read:shared}"), useBothBefore);
+        Assertions.assertTrue(useBothBefore.contains("opaque.NameRead(counter) {read:shared,throws}"), useBothBefore);
+        Assertions.assertTrue(useBothBefore.contains("record_new Pair["), useBothBefore);
+
+        String bumpBefore = before.printCanonical(IrTarget.parse("fn=bump"));
+        Assertions.assertTrue(bumpBefore.contains("opaque.NameAssign(counter,"), bumpBefore);
+
+        String lateBefore = before.printCanonical(IrTarget.parse("fn=readLate"));
+        Assertions.assertTrue(lateBefore.contains("opaque.NameRead(lateConst) {read:shared,throws}"), lateBefore);
+
+        // Optimize at -O2: GVN + LICM should hoist and deduplicate the two Pair reads into one in bb0.
+        MirModule after = org.babblelang.opt.mir.MirPassManager.defaultFor(2)
+                .optimize(before, org.babblelang.opt.PassContext.of(2, true, null), null, "test");
+        String useBothAfter = after.printCanonical(IrTarget.parse("fn=useBoth"));
+        int pairReads = useBothAfter.split("opaque\\.NameRead\\(Pair\\)", -1).length - 1;
+        Assertions.assertEquals(1, pairReads, "Expected GVN/LICM to leave a single NameRead(Pair):\n" + useBothAfter);
+
+        // A class with a static block can run user code during declaration, so bindings after it
+        // must remain {read:shared,throws}.
+        String staticBlockSrc = ""
+                + "def f = fn (): int -> ( afterStatic )\n"
+                + "def WithStatic = class () () static ( def x = 1 )\n"
+                + "def afterStatic = 42\n"
+                + "assert(f() == 42 and WithStatic.x == 1)\n";
+        MirModule staticMir = lowerFromSource(staticBlockSrc, 1);
+        String fDump = staticMir.printCanonical(IrTarget.parse("fn=f"));
+        Assertions.assertTrue(fDump.contains("opaque.NameRead(afterStatic) {read:shared,throws}"), fDump);
+    }
 }

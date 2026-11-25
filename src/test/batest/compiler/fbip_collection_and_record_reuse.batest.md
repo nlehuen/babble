@@ -69,7 +69,7 @@ fn addS (s:obj) -> obj {pure unique}
 fn addS(v0: any [unique]) -> any:
   bb0:
     v1: any = move v0
-    v2: any = opaque.CoreCollectionCall(v1) {impure}
+    v2: any = opaque.CoreCollectionCall(set$reuse, v1) {impure}
     v3: int = const 9
     v4: bool = call_java v2.add(v3) {impure}
     ret v2
@@ -110,7 +110,7 @@ fn addM (m:obj) -> obj {pure unique}
 fn addM(v0: any [unique]) -> any:
   bb0:
     v1: any = move v0
-    v2: any = opaque.CoreCollectionCall(v1) {impure}
+    v2: any = opaque.CoreCollectionCall(map$reuse, v1) {impure}
     v3: any = const "b"
     v4: int = const 2
     v5: any = call_java v2.put(v3, v4) {impure}
@@ -147,7 +147,7 @@ fn copyL (xs:obj) -> obj {pure unique}
 fn copyL(v0: any [unique]) -> any:
   bb0:
     v1: any = move v0
-    v2: any = opaque.CoreCollectionCall(v1) {impure}
+    v2: any = opaque.CoreCollectionCall(list$reuse, v1) {impure}
     v3: int = const 4
     v4: bool = call_java v2.add(v3) {impure}
     ret v2
@@ -190,13 +190,13 @@ fn bumpV (v:obj) -> obj {nothrow unique}
 ;; mir -O2 fn=bumpV stage=before,final
 fn bumpV(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Vec3) {read:shared}
     v2: double = load_field v0.x {read:frozen}
     v3: double = const 1.0
     v4: double = add v2, v3 {pure}
     v5: double = load_field v0.y {read:frozen}
     v6: double = load_field v0.z {read:frozen}
-    v7: any = record_new Vec3(v4, v5, v6) {pure}
+    v7: any = record_new Vec3[v1](v4, v5, v6) {pure}
     ret v7
 ```
 
@@ -264,8 +264,8 @@ fn esc (h:obj) -> obj {pure}
 ;; mir -O2 fn=esc stage=before,final
 fn esc(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.CoreCollectionCall(v0) {impure}
-    v2: any = opaque.NameRead() {impure}
+    v1: any = opaque.CoreCollectionCall(list, v0) {impure}
+    v2: any = opaque.NameRead(Holder) {read:shared}
     v3: int = const 0
     v4: any = call_java v1.get(v3) {impure}
     v5: any = checkcast v4 <babble|Holder>
@@ -273,7 +273,7 @@ fn esc(v0: any [unique]) -> any:
     v7: int = load_field v0.count {read:frozen}
     v8: int = const 1
     v9: int = add v7, v8 {pure}
-    v10: any = record_new Holder(v6, v9) {pure}
+    v10: any = record_new Holder[v2](v6, v9) {pure}
     ret v10
 ```
 
@@ -302,12 +302,12 @@ fn f2 (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=f2 stage=before,final
 fn f2(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(Holder) {read:shared}
     v2: int = load_field v0.count {read:frozen}
     v3: int = const 1
     v4: int = add v2, v3 {pure}
     v5: any = load_field v0.items {read:frozen}
-    v6: any = record_new Holder(v4, v5) {pure}
+    v6: any = record_new Holder[v1](v4, v5) {pure}
     ret v6
 ```
 
@@ -330,12 +330,12 @@ fn f2 (h:obj) -> obj {nothrow}
 ;; mir -O2 fn=f2 stage=before,final
 fn f2(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
+    v1: any = opaque.NameRead(O) {read:shared}
     v2: any = load_field v0.items {read:frozen}
     v3: int = load_field v0.count {read:frozen}
     v4: int = const 1
     v5: int = add v3, v4 {pure}
-    v6: any = record_new O(v2, v5) {pure}
+    v6: any = record_new O[v1](v2, v5) {pure}
     ret v6
 ```
 
@@ -357,12 +357,12 @@ fn f (v:obj) -> obj {nothrow unique}
 ;; mir -O2 fn=f stage=before,final
 fn f(v0: any [unique]) -> any:
   bb0:
-    v1: any = opaque.NameRead() {impure}
-    v2: any = opaque.ModuleExportGet(v1) {impure}
+    v1: any = opaque.NameRead(m) {read:shared,throws}
+    v2: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
     v3: double = load_field v0.x {read:frozen}
     v4: double = const 1.0
     v5: double = add v3, v4 {pure}
     v6: double = load_field v0.y {read:frozen}
-    v7: any = record_new vec_mod$ba$C0$ExtVec(v5, v6) {pure}
+    v7: any = record_new vec_mod$ba$C0$ExtVec[v2](v5, v6) {pure}
     ret v7
 ```

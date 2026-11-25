@@ -37,7 +37,7 @@ fn make() -> any:
     slot_init s, v1 {write:shared}
     v2: char = const 'a'
     slot_init c, v2 {write:shared}
-    v3: any = opaque.FunctionRef() {read:shared}
+    v3: any = opaque.FunctionRef(<anon>) {read:shared}
     ret v3
 ```
 
@@ -71,7 +71,7 @@ fn make() -> any:
     slot_init l, v0 {write:shared}
     v1: float = const 1.5f
     slot_init f, v1 {write:shared}
-    v2: any = opaque.FunctionRef() {read:shared}
+    v2: any = opaque.FunctionRef(<anon>) {read:shared}
     ret v2
 ```
 
