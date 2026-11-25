@@ -778,9 +778,6 @@ final class EffectBodyWalker {
                 LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
                         ? ec.pass.analysis.lowering().defTarget(d).kind() : null;
                 if (isOwnedScopeLocal(decl, declScope, dKind)) {
-                    if (ec.escapedCapturedLocals.contains(decl) && ec.checker.isReassigned(decl)) {
-                        deterministic = false;
-                    }
                     Reachability.Origin orig = env.getOrDefault(decl, Reachability.Origin.ofExternal(decl, imm));
                     if (orig.moved) {
                         reportOnce("Use of moved variable " + sel.ID().getText(), sel);
@@ -843,7 +840,7 @@ final class EffectBodyWalker {
         }
         if (recvType instanceof Type.ClassValue cv) {
             TypeNode.Member sm = cv.node().statics.get(fieldName);
-            if (sm != null && sm.declaration != null && (ec.checker.isReassigned(sm.declaration) || !ec.javaResolver.isImmutableConstantValue(resType))) {
+            if (sm != null && (sm.isMutable() || !ec.javaResolver.isImmutableConstantValue(resType))) {
                 deterministic = false;
             }
             return Reachability.Origin.ofExternal(null, immRes);
@@ -857,21 +854,42 @@ final class EffectBodyWalker {
         if (ec.checker.hasCallCheck(sel)) {
             nothrow = false;
         }
-        if (resType instanceof Type.Function) {
+        boolean isFunctionType = resType instanceof Type.Function;
+        if (isFunctionType) {
             boundMethodReceivers.put(sel, recvOrig);
-        } else if (readsMutableBabbleMember(recvType)) {
+        }
+        if (readsMutableBabbleMember(recvType, fieldName, isFunctionType)) {
             recordTargetRead(recvOrig, recvType);
         }
         return recvOrig.deriveMember(fieldName, immRes);
     }
 
-    boolean readsMutableBabbleMember(Type recvType) {
+    boolean readsMutableBabbleMember(Type recvType, String fieldName, boolean isFunctionType) {
         if (recvType == null || containsFrozen(recvType) || ec.javaResolver.isDeeplyImmutable(recvType)) {
             return false;
         }
         for (Type m : Type.membersOf(Type.withoutNull(recvType))) {
-            if (m instanceof Type.Instance inst && inst.node().kind != ClassShape.Kind.VALUE_CLASS) {
-                return true;
+            if (m instanceof Type.Instance inst) {
+                ClassShape.Kind kind = inst.node().kind;
+                if (kind == ClassShape.Kind.VALUE_CLASS) {
+                    continue;
+                }
+                if (kind == ClassShape.Kind.INTERFACE) {
+                    if (!isFunctionType) {
+                        return true;
+                    }
+                    continue;
+                }
+                TypeNode.Member member = inst.node().members.get(fieldName);
+                if (member == null || member.isMutable()) {
+                    return true;
+                }
+            } else if (m instanceof Type.Intersection inter) {
+                for (Type part : inter.members()) {
+                    if (readsMutableBabbleMember(part, fieldName, isFunctionType)) {
+                        return true;
+                    }
+                }
             }
         }
         return false;
