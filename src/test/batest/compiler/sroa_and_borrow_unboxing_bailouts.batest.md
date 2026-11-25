@@ -57,7 +57,7 @@ fn run (n:int, k:int) -> double {pure unique}
 ```
 
 ```mir
-;; mir -O2 fn=run stage=before,final
+;; mir -O2 fn=run stage=before
 fn run(v0: int, v1: int) -> double:
   bb0:
     v2: double = convert.double v1
@@ -71,6 +71,22 @@ fn run(v0: int, v1: int) -> double:
     v10: double = opaque.DynamicCall(v8, v9) {impure}
     v11: double = add v7, v10 {pure}
     ret v11
+```
+
+```mir
+;; mir -O2 fn=run
+fn run(v0: int, v1: int) -> double:
+  bb0:
+    v2: double = convert.double v1
+    v3: double = convert.double v0
+    v4: double = const 1.5
+    v5: double = add v3, v4 {pure}
+    v6: any = convert.any v0
+    v7: double = add v2, v5 {pure}
+    v8: any = opaque.NameRead() {impure}
+    v9: double = opaque.DynamicCall(v8, v6) {impure}
+    v10: double = add v7, v9 {pure}
+    ret v10
 ```
 
 ## Projection beta-reduction and SROA with impure, local, and anonymous record class refs

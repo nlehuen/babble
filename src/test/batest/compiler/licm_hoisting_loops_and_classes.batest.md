@@ -681,51 +681,48 @@ fn Box.run(v0: int, v1: bool, v2: any) -> int:
   bb0:
     v3: int = const 0
     v4: int = const 1
-    v5: any = const 1
-    v6: bool = not v1 {pure}
+    v5: bool = not v1 {pure}
     br bb1(v3, v3)
-  bb1(v7: int, v8: int):
-    v9: bool = lt v7, v0 {pure}
-    br_if v9, bb3, bb2
+  bb1(v6: int, v7: int):
+    v8: bool = lt v6, v0 {pure}
+    br_if v8, bb3, bb2
   bb2:
-    ret v8
+    ret v7
   bb3:
-    v10: bool = const true
-    br_if v1, bb7(v10), bb4
+    v9: bool = const true
+    br_if v1, bb7(v9), bb4
   bb4:
-    v11: bool = const false
-    br_if v6, bb5, bb6(v11)
+    v10: bool = const false
+    br_if v5, bb5, bb6(v10)
   bb5:
-    v12: int = array_len v2 {read:frozen,throws}
-    v13: bool = gt v12, v3 {pure}
-    br bb6(v13)
-  bb6(v14: bool):
-    br bb7(v14)
-  bb7(v15: bool):
-    br_if v15, bb9, bb8
+    v11: int = array_len v2 {read:frozen,throws}
+    v12: bool = gt v11, v3 {pure}
+    br bb6(v12)
+  bb6(v13: bool):
+    br bb7(v13)
+  bb7(v14: bool):
+    br_if v14, bb9, bb8
   bb8:
-    v16: int = const 2
-    br bb10(v16)
+    v15: int = const 2
+    br bb10(v15)
   bb9:
     br bb10(v4)
-  bb10(v17: int):
-    v18: any = slot_read this {pure}
-    v19: any = load_field v18.nm {read:shared,throws}
-    v20: any = call_java v19.trim() {impure}
-    v21: any = checkcast v20 <string|string|>
-    v22: int = call_java v21.length() {pure,throws}
-    v23: int = add v17, v22 {pure}
-    v24: bool = eq v7, v3 {pure}
-    br_if v24, bb12, bb11
+  bb10(v16: int):
+    v17: any = slot_read this {pure}
+    v18: any = load_field v17.nm {read:shared,throws}
+    v19: any = call_java v18.trim() {impure}
+    v20: any = checkcast v19 <string|string|>
+    v21: int = call_java v20.length() {pure,throws}
+    v22: int = add v16, v21 {pure}
+    v23: bool = eq v6, v3 {pure}
+    br_if v23, bb12, bb11
   bb11:
     br bb13(v3)
   bb12:
-    v25: any = checkcast v5 <int|int|>
-    v26: int = convert.int v25
-    br bb13(v26)
-  bb13(v27: int):
-    v28: int = add v23, v27 {pure}
-    v29: int = add v8, v28 {pure}
-    v30: int = add v7, v4 {pure}
-    br bb1(v30, v29)
+    br bb13(v4)
+  bb13(v24: int):
+    v25: int = add v22, v24 {pure}
+    v26: int = add v7, v25 {pure}
+    v27: int = add v6, v4 {pure}
+    br bb1(v27, v26)
 ```

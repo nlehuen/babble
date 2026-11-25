@@ -25,8 +25,11 @@ import java.util.Map;
  * {@code O3}) over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  *
  * <p>Eliminates redundant pure computations, commutative binary expressions/calls, idempotent
- * call chains ({@code f(f(x)) -> f(x)}), {@code ArrayLen}, and alias-epoch-protected
- * {@code LoadField}/{@code LoadJavaField} reads while keeping {@link MirInst.Narrow} anchors intact.
+ * call chains ({@code f(f(x)) -> f(x)}), inverse and chained representation conversions
+ * ({@code unbox(box(a)) -> a}, sound {@code box(unbox(a)) -> a} and {@code box(nonnull(a)) -> a},
+ * lossless primitive widening chains, redundant exact-primitive {@code CheckCast}/{@code Widen}),
+ * {@code ArrayLen}, and alias-epoch-protected {@code LoadField}/{@code LoadJavaField} reads while
+ * keeping {@link MirInst.Narrow} anchors intact.
  */
 public final class GvnCsePass implements MirPass {
     @Override
@@ -96,10 +99,11 @@ public final class GvnCsePass implements MirPass {
         Map<Integer, MirVal> subst = new HashMap<>();
         Map<Integer, List<MirInst>> rewrittenInsts = new HashMap<>();
         Map<Integer, MirInst> defInst = new HashMap<>();
+        boolean[] guaranteedLive = computeGuaranteedLiveUses(fn);
         int[] rewrites = {0};
 
         visitDom(fn.entryBlockId(), cfg, blockMap, new HashMap<>(), new EpochState(),
-                subst, rewrittenInsts, defInst, rewrites);
+                subst, rewrittenInsts, defInst, guaranteedLive, rewrites);
 
         if (rewrites[0] == 0) {
             return new FnResult(fn, 0);
@@ -113,10 +117,41 @@ public final class GvnCsePass implements MirPass {
         return new FnResult(fn.withBlocks(out, fn.nextValId(), fn.nextBlockId()), rewrites[0]);
     }
 
+    /**
+     * Marks SSA values that are directly consumed by an unremovable (side-effecting/throwing)
+     * instruction or a function-exiting terminator ({@code Ret}/{@code Throw}/{@code TailCall}).
+     * Such values remain executed regardless of any {@code box(unbox(a)) -> a} rewrite.
+     */
+    private static boolean[] computeGuaranteedLiveUses(MirFunction fn) {
+        int n = Math.max(0, fn.nextValId());
+        boolean[] live = new boolean[n];
+        for (MirBlock b : fn.blocks()) {
+            for (MirInst inst : b.insts()) {
+                if (!inst.effect().isRemovableIfUnused()) {
+                    for (MirVal u : inst.usedValues()) {
+                        if (u.id() >= 0 && u.id() < n) {
+                            live[u.id()] = true;
+                        }
+                    }
+                }
+            }
+            MirTerminator t = b.terminator();
+            if (t instanceof MirTerminator.Ret || t instanceof MirTerminator.Throw
+                    || t instanceof MirTerminator.TailCall) {
+                for (MirVal u : t.usedValues()) {
+                    if (u.id() >= 0 && u.id() < n) {
+                        live[u.id()] = true;
+                    }
+                }
+            }
+        }
+        return live;
+    }
+
     private static void visitDom(int blockId, MirCfg cfg, Map<Integer, MirBlock> blockMap,
                                  Map<Object, MirVal> parentTable, EpochState parentEpochs,
                                  Map<Integer, MirVal> subst, Map<Integer, List<MirInst>> outInsts,
-                                 Map<Integer, MirInst> defInst, int[] rewrites) {
+                                 Map<Integer, MirInst> defInst, boolean[] guaranteedLive, int[] rewrites) {
         MirBlock b = blockMap.get(blockId);
         if (b == null) return;
         Map<Object, MirVal> table = new HashMap<>(parentTable);
@@ -137,6 +172,20 @@ public final class GvnCsePass implements MirPass {
                 subst.put(res.id(), idemTarget);
                 rewrites[0]++;
                 continue;
+            }
+
+            // Simplify representation conversions: unbox(box(a)) -> a, sound box(unbox(a)) -> a,
+            // box(nonnull(a)) -> a, redundant exact-primitive CheckCast/Widen, and widening chains.
+            MirVal simplifiedVal = trySimplifyToVal(inst, defInst, guaranteedLive);
+            if (simplifiedVal != null && res != null && simplifiedVal.kind() == res.kind()) {
+                subst.put(res.id(), simplifiedVal);
+                rewrites[0]++;
+                continue;
+            }
+            MirInst rewritten = trySimplifyConvertChain(inst, defInst);
+            if (rewritten != inst) {
+                inst = rewritten;
+                rewrites[0]++;
             }
 
             Object key = valueKey(inst, epochs);
@@ -165,8 +214,281 @@ public final class GvnCsePass implements MirPass {
             visitDom(childId, cfg, blockMap,
                     normalSinglePred ? table : parentTable,
                     normalSinglePred ? epochs : parentEpochs,
-                    subst, outInsts, defInst, rewrites);
+                    subst, outInsts, defInst, guaranteedLive, rewrites);
         }
+    }
+
+    private static MirVal trySimplifyToVal(MirInst inst, Map<Integer, MirInst> defInst, boolean[] guaranteedLive) {
+        if (inst instanceof MirInst.Convert c) {
+            MirVal op = c.operand();
+            PrimitiveKind target = c.targetKind();
+            if (op.kind() == target) {
+                return op;
+            }
+            if (target.isPrimitive() && op.kind() == PrimitiveKind.NONE) {
+                // unbox_T(box_T(a)) -> a (safe through zero-cost aliases and Narrow anchors,
+                // because box_T(a) is guaranteed non-null exact Box(T) and a is already a primitive).
+                MirVal unwrapped = unwrapAlias(op, defInst, true);
+                MirInst inner = defInst.get(unwrapped.id());
+                if (inner instanceof MirInst.Convert ic
+                        && ic.targetKind() == PrimitiveKind.NONE
+                        && ic.operand().kind() == target) {
+                    return ic.operand();
+                }
+                // unbox_T(widen#R(box_T(a))) -> a when rank R targets T and a is numeric T.
+                if (inner instanceof MirInst.Widen w && targetKindForRank(w.wideningRank()) == target) {
+                    MirVal wOp = unwrapAlias(w.operand(), defInst, true);
+                    MirInst wInner = defInst.get(wOp.id());
+                    if (wInner instanceof MirInst.Convert ic
+                            && ic.targetKind() == PrimitiveKind.NONE
+                            && ic.operand().kind() == target
+                            && isNumericKind(target)) {
+                        return ic.operand();
+                    }
+                }
+            } else if (target == PrimitiveKind.NONE && op.kind().isPrimitive()) {
+                PrimitiveKind prim = op.kind();
+                // Do not skip Narrow here so downstream uses keep their Narrow guard anchor.
+                MirVal innerVal = unwrapAlias(op, defInst, false);
+                MirInst inner = defInst.get(innerVal.id());
+                if (inner instanceof MirInst.Convert ic
+                        && ic.operand().kind() == PrimitiveKind.NONE
+                        && ic.targetKind() == prim) {
+                    MirVal a = ic.operand();
+                    boolean safeToBypassUnbox = isGuaranteedNonNullBox(a, prim, defInst, true)
+                            || (innerVal.id() >= 0 && innerVal.id() < guaranteedLive.length && guaranteedLive[innerVal.id()]);
+                    if (safeToBypassUnbox) {
+                        return a;
+                    }
+                }
+                // box_T(nonnull_T(a)) -> a (NonNull is PURE_MAY_THROW, so it remains executed
+                // and validates a != null && a instanceof Box(T)).
+                if (inner instanceof MirInst.NonNull nn
+                        && nn.result().kind() == prim
+                        && nn.operand().kind() == PrimitiveKind.NONE) {
+                    return nn.operand();
+                }
+            }
+            return null;
+        }
+        if (inst instanceof MirInst.CheckCast cc
+                && cc.samTarget() == null
+                && cc.descriptor() != null
+                && cc.result().kind() == PrimitiveKind.NONE) {
+            PrimitiveKind exact = primitiveForExactDescriptor(cc.descriptor());
+            if (exact != null && isGuaranteedNonNullBox(cc.operand(), exact, defInst, false)) {
+                return cc.operand();
+            }
+            return null;
+        }
+        if (inst instanceof MirInst.Widen w
+                && w.result().kind() == PrimitiveKind.NONE
+                && w.operand().kind() == PrimitiveKind.NONE) {
+            PrimitiveKind target = targetKindForRank(w.wideningRank());
+            if (target != PrimitiveKind.NONE && isGuaranteedNonNullBox(w.operand(), target, defInst, false)) {
+                return w.operand();
+            }
+        }
+        return null;
+    }
+
+    private static MirInst trySimplifyConvertChain(MirInst inst, Map<Integer, MirInst> defInst) {
+        if (!(inst instanceof MirInst.Convert c) || !c.targetKind().isPrimitive()) {
+            return inst;
+        }
+        PrimitiveKind target = c.targetKind();
+        if (c.operand().kind().isPrimitive()) {
+            MirVal innerVal = unwrapAlias(c.operand(), defInst, false);
+            MirInst inner = defInst.get(innerVal.id());
+            if (inner instanceof MirInst.Convert ic
+                    && isLosslessPrimitiveWiden(ic.operand().kind(), ic.targetKind())
+                    && isPrimitiveWiden(ic.targetKind(), target)) {
+                return new MirInst.Convert(c.result(), ic.operand(), target, c.line());
+            }
+        } else if (c.operand().kind() == PrimitiveKind.NONE) {
+            // unbox_T(widen#R(box_S(a))) -> Convert(T, a) when S -> T is a numeric widening.
+            MirVal innerVal = unwrapAlias(c.operand(), defInst, true);
+            MirInst inner = defInst.get(innerVal.id());
+            if (inner instanceof MirInst.Widen w && targetKindForRank(w.wideningRank()) == target) {
+                MirVal wOp = unwrapAlias(w.operand(), defInst, true);
+                MirInst wInner = defInst.get(wOp.id());
+                if (wInner instanceof MirInst.Convert ic
+                        && ic.targetKind() == PrimitiveKind.NONE
+                        && isNumericKind(ic.operand().kind())
+                        && isPrimitiveWiden(ic.operand().kind(), target)) {
+                    return new MirInst.Convert(c.result(), ic.operand(), target, c.line());
+                }
+            }
+        }
+        return inst;
+    }
+
+    private static MirVal unwrapAlias(MirVal v, Map<Integer, MirInst> defInst, boolean throughNarrow) {
+        MirVal cur = v;
+        for (int hops = 0; hops < 16; hops++) {
+            MirInst d = defInst.get(cur.id());
+            if (d instanceof MirInst.Copy cp) {
+                cur = cp.source();
+            } else if (d instanceof MirInst.Move mv) {
+                cur = mv.operand();
+            } else if (d instanceof MirInst.Freeze fr) {
+                cur = fr.operand();
+            } else if (throughNarrow && d instanceof MirInst.Narrow nr) {
+                cur = nr.operand();
+            } else {
+                break;
+            }
+        }
+        return cur;
+    }
+
+    /**
+     * Returns true when {@code val} (of kind {@link PrimitiveKind#NONE}) is statically proven
+     * to hold a non-null instance of the exact wrapper class for {@code expected}.
+     *
+     * <p>{@code allowNonNullNarrow} is only true when called from {@code box_T(unbox_T(a))},
+     * where {@code TypeChecker} already guaranteed the unboxed variable's static type was
+     * strictly {@code T?} before the {@code != null} guard (never {@code any?}).
+     */
+    private static boolean isGuaranteedNonNullBox(MirVal val, PrimitiveKind expected,
+                                                  Map<Integer, MirInst> defInst, boolean allowNonNullNarrow) {
+        if (expected == null || !expected.isPrimitive() || val.kind() != PrimitiveKind.NONE) {
+            return false;
+        }
+        MirVal cur = unwrapAlias(val, defInst, false);
+        MirInst def = defInst.get(cur.id());
+        if (def instanceof MirInst.Convert ic) {
+            return ic.targetKind() == PrimitiveKind.NONE && ic.operand().kind() == expected;
+        }
+        if (def instanceof MirInst.Const cn) {
+            return isBoxedInstanceOf(cn.value(), expected);
+        }
+        if (def instanceof MirInst.CheckCast cc) {
+            return cc.samTarget() == null && exactPrimitiveDescriptor(expected).equals(cc.descriptor());
+        }
+        if (def instanceof MirInst.Narrow nr) {
+            if (nr.narrowKind() == MirInst.NarrowKind.IS_TYPE) {
+                return matchesExactPrimitiveNarrow(expected, nr.targetDesc());
+            }
+            return allowNonNullNarrow && nr.narrowKind() == MirInst.NarrowKind.NON_NULL;
+        }
+        return false;
+    }
+
+    private static String exactPrimitiveDescriptor(PrimitiveKind kind) {
+        return switch (kind) {
+            case BYTE -> "byte|byte|";
+            case SHORT -> "short|short|";
+            case INT -> "int|int|";
+            case LONG -> "long|long|";
+            case FLOAT -> "float|float|";
+            case DOUBLE -> "double|double|";
+            case BOOL -> "bool|bool|";
+            case CHAR -> "char|char|";
+            case NONE -> "";
+        };
+    }
+
+    private static PrimitiveKind primitiveForExactDescriptor(String desc) {
+        return switch (desc) {
+            case "byte|byte|" -> PrimitiveKind.BYTE;
+            case "short|short|" -> PrimitiveKind.SHORT;
+            case "int|int|" -> PrimitiveKind.INT;
+            case "long|long|" -> PrimitiveKind.LONG;
+            case "float|float|" -> PrimitiveKind.FLOAT;
+            case "double|double|" -> PrimitiveKind.DOUBLE;
+            case "bool|bool|" -> PrimitiveKind.BOOL;
+            case "char|char|" -> PrimitiveKind.CHAR;
+            default -> null;
+        };
+    }
+
+    private static boolean matchesExactPrimitiveNarrow(PrimitiveKind expected, String desc) {
+        if (desc == null) return false;
+        if (exactPrimitiveDescriptor(expected).equals(desc)) return true;
+        return switch (expected) {
+            case BYTE -> "byte".equals(desc);
+            case SHORT -> "short".equals(desc);
+            case INT -> "int".equals(desc);
+            case LONG -> "long".equals(desc);
+            case FLOAT -> "float".equals(desc);
+            case DOUBLE -> "double".equals(desc);
+            case BOOL -> "bool".equals(desc);
+            case CHAR -> "char".equals(desc);
+            case NONE -> false;
+        };
+    }
+
+    private static boolean isBoxedInstanceOf(Object v, PrimitiveKind expected) {
+        if (v == null) return false;
+        return switch (expected) {
+            case BYTE -> v instanceof Byte;
+            case SHORT -> v instanceof Short;
+            case INT -> v instanceof Integer;
+            case LONG -> v instanceof Long;
+            case FLOAT -> v instanceof Float;
+            case DOUBLE -> v instanceof Double;
+            case BOOL -> v instanceof Boolean;
+            case CHAR -> v instanceof Character;
+            case NONE -> false;
+        };
+    }
+
+    private static PrimitiveKind targetKindForRank(int rank) {
+        return switch (rank) {
+            case 1 -> PrimitiveKind.SHORT;
+            case 2 -> PrimitiveKind.INT;
+            case 3 -> PrimitiveKind.LONG;
+            case 4 -> PrimitiveKind.FLOAT;
+            case 5 -> PrimitiveKind.DOUBLE;
+            default -> PrimitiveKind.NONE;
+        };
+    }
+
+    private static boolean isNumericKind(PrimitiveKind kind) {
+        return switch (kind) {
+            case BYTE, SHORT, INT, LONG, FLOAT, DOUBLE -> true;
+            default -> false;
+        };
+    }
+
+    private static int numericOrder(PrimitiveKind kind) {
+        return switch (kind) {
+            case BYTE -> 0;
+            case SHORT -> 1;
+            case INT -> 2;
+            case LONG -> 3;
+            case FLOAT -> 4;
+            case DOUBLE -> 5;
+            default -> -1;
+        };
+    }
+
+    private static boolean isPrimitiveWiden(PrimitiveKind from, PrimitiveKind to) {
+        if (!from.isPrimitive() || !to.isPrimitive() || from == to) {
+            return false;
+        }
+        if (from == PrimitiveKind.CHAR) {
+            return numericOrder(to) >= 2;
+        }
+        int f = numericOrder(from);
+        int t = numericOrder(to);
+        return f >= 0 && t >= 0 && f < t;
+    }
+
+    /** True when {@code from -> to} is a bit-exact (zero-rounding) primitive widening. */
+    private static boolean isLosslessPrimitiveWiden(PrimitiveKind from, PrimitiveKind to) {
+        if (!from.isPrimitive() || !to.isPrimitive() || from == to) {
+            return false;
+        }
+        return switch (from) {
+            case BYTE -> to == PrimitiveKind.SHORT || to == PrimitiveKind.INT || to == PrimitiveKind.LONG
+                    || to == PrimitiveKind.FLOAT || to == PrimitiveKind.DOUBLE;
+            case SHORT, CHAR -> to == PrimitiveKind.INT || to == PrimitiveKind.LONG
+                    || to == PrimitiveKind.FLOAT || to == PrimitiveKind.DOUBLE;
+            case INT -> to == PrimitiveKind.LONG || to == PrimitiveKind.DOUBLE;
+            default -> false;
+        };
     }
 
     private static MirVal tryCollapseIdempotent(MirInst inst, Map<Integer, MirInst> defInst) {

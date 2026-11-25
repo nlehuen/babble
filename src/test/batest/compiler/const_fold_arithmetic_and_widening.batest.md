@@ -219,7 +219,7 @@ fn f () -> bool {pure unique}
 ```
 
 ```mir
-;; mir -O2 fn=f stage=before,final
+;; mir -O2 fn=f stage=before
 fn f() -> bool:
   bb0:
     v0: any = opaque.NameRead() {impure}
@@ -237,6 +237,25 @@ fn f() -> bool:
     br bb2(v9)
   bb2(v10: bool):
     ret v10
+```
+
+```mir
+;; mir -O2 fn=f
+fn f() -> bool:
+  bb0:
+    v0: any = opaque.NameRead() {impure}
+    v1: int = const 3
+    v2: byte = opaque.DynamicCall(v0, v1) {impure}
+    v3: long = convert.long v2
+    v4: long = const 3L
+    v5: bool = eq v3, v4 {pure}
+    v6: bool = const false
+    br_if v5, bb1, bb2(v6)
+  bb1:
+    v7: bool = const true
+    br bb2(v7)
+  bb2(v8: bool):
+    ret v8
 ```
 
 ## Direct literal widening conversions, string, and null constants

@@ -397,7 +397,7 @@ fn run (p:int) -> int {pure unique}
 ```
 
 ```mir
-;; mir -O2 fn=run stage=before,final
+;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
     v1: any = opaque.NameRead() {impure}
@@ -409,6 +409,18 @@ fn run(v0: int) -> int:
     v7: int = convert.int v6
     v8: int = add v2, v7 {pure}
     ret v8
+```
+
+```mir
+;; mir -O2 fn=run
+fn run(v0: int) -> int:
+  bb0:
+    v1: any = opaque.NameRead() {impure}
+    v2: int = opaque.DynamicCall(v1, v0) {impure}
+    v3: int = const 1
+    v4: int = add v0, v3 {pure}
+    v5: int = add v2, v4 {pure}
+    ret v5
 ```
 
 ## InlinePass.performInline : cell receiver spill, arg mutated in later arg, and conditional local
