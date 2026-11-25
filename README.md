@@ -713,8 +713,8 @@ java -jar argon.jar > scene.ppm
 `argon.jar` is 300 KB for its 15 modules and the runtime, and renders the same image, byte for
 byte, in about the same minute as through the engine : a jar saves the start-up, not the work.
 Because `raytracer-argon` uses no Java APIs, it also compiles directly to **WebAssembly 3.0** (`WasmGC`)
-and renders the exact same `scene.ppm` byte for byte in Node.js (or live to an HTML `<canvas>` in
-[examples/raytracer-argon-wasm/](examples/raytracer-argon-wasm/README.md)) :
+and renders the exact same `scene.ppm` byte for byte in Node.js (or live to an HTML `<canvas>` via
+[examples/raytracer-argon/wasm_canvas.html](examples/raytracer-argon/wasm_canvas.html)) :
 
 ```
 java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer-argon/raytracer.ba -o argon.wasm

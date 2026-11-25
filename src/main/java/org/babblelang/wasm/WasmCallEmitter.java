@@ -369,6 +369,66 @@ public final class WasmCallEmitter {
             }
             return;
         }
+        // 1b-bis. Overloaded collection .remove(arg) lowered as DynamicCall (e.g. list.remove(byte(0)) vs list.remove(obj))
+        if (call.callee() instanceof HirExpr.DynamicSelect ds && !ds.safe()
+                && "remove".equals(ds.memberName()) && call.args().size() == 1 && call.args().get(0).name() == null) {
+            WasmCodeBuilder c = ctx.code;
+            int line = call.meta().line();
+            WasmCollectionOpsGen cols = linker.collections();
+            fe.emitBoxed(ds.receiver());
+            int r = ctx.newLocal("$remR", ts.anyRef());
+            c.localTee(r).refTest(ts.listType).if_(ts.anyRef());
+            ctx.pushBlock("rem_list");
+            fe.emitBoxed(call.args().get(0).value());
+            int a0 = ctx.newLocal("$remA0", ts.anyRef());
+            c.localTee(a0).refTest(ts.boxIntType).if_(ts.anyRef())
+                    .localGet(r).refCast(ts.listType)
+                    .localGet(a0).refCast(ts.boxIntType).structGet(ts.boxIntType, 0)
+                    .i32Const(line).call(cols.fnListRemoveAt)
+                    .else_()
+                    .localGet(a0).refTest(ts.boxByteType).if_(ts.anyRef())
+                    .localGet(r).refCast(ts.listType)
+                    .localGet(a0).refCast(ts.boxByteType).structGet(ts.boxByteType, 0)
+                    .i32Const(line).call(cols.fnListRemoveAt)
+                    .else_()
+                    .localGet(a0).refTest(ts.boxShortType).if_(ts.anyRef())
+                    .localGet(r).refCast(ts.listType)
+                    .localGet(a0).refCast(ts.boxShortType).structGet(ts.boxShortType, 0)
+                    .i32Const(line).call(cols.fnListRemoveAt)
+                    .else_()
+                    .localGet(r).refCast(ts.listType).localGet(a0)
+                    .call(cols.fnListRemoveVal).call(rt.fnBoxBool)
+                    .end().end().end()
+                    .else_()
+                    .localGet(r).refTest(ts.setType).if_(ts.anyRef());
+            ctx.pushBlock("rem_set");
+            fe.emitBoxed(call.args().get(0).value());
+            int s0 = ctx.newLocal("$remS0", ts.anyRef());
+            c.localSet(s0)
+                    .localGet(r).refCast(ts.setType).localGet(s0)
+                    .call(cols.fnSetRemove).call(rt.fnBoxBool)
+                    .else_()
+                    .localGet(r).refTest(ts.mapType).if_(ts.anyRef());
+            ctx.pushBlock("rem_map");
+            fe.emitBoxed(call.args().get(0).value());
+            int m0 = ctx.newLocal("$remM0", ts.anyRef());
+            c.localSet(m0)
+                    .localGet(r).refCast(ts.mapType).localGet(m0)
+                    .call(cols.fnMapRemove)
+                    .else_();
+            emitDynamicMethodOnReceiverLocal(r, "remove", call.args(), call.binding(), line);
+            ctx.popBlock();
+            c.end();
+            ctx.popBlock();
+            c.end();
+            ctx.popBlock();
+            c.end();
+            ctx.stackKind = PrimitiveKind.NONE;
+            if (call.meta().kind().isPrimitive()) {
+                fe.convertStack(PrimitiveKind.NONE, call.meta().kind(), line);
+            }
+            return;
+        }
         // 1c. Direct static dispatch for immutable cross-module functions (`mod.fn(...)`),
         //     immutable class static methods (`Cls.create(...)`), and imported top-level functions.
         WasmProgramLinker.FuncInfo staticTarget = resolveDirectStaticCallee(call);

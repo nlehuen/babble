@@ -215,4 +215,22 @@ public class ArchitectureBoundaryTestCase {
         }
         Assertions.assertEquals(List.of(), violations);
     }
+
+    @Test
+    public void wasmBackendFreeOfAsm() throws Exception {
+        Path root = classesDirectory();
+        List<String> classes = compiledClassesUnder(root, "org/babblelang/wasm");
+        Assertions.assertFalse(classes.isEmpty());
+        List<String> violations = new ArrayList<>();
+        for (String name : classes) {
+            try (InputStream in = Files.newInputStream(root.resolve(name + ".class"))) {
+                for (String ref : RuntimeBoundaryTestCase.referencedClasses(in)) {
+                    if (ref.startsWith("org/objectweb/asm/")) {
+                        violations.add(name + " -> " + ref);
+                    }
+                }
+            }
+        }
+        Assertions.assertEquals(List.of(), violations);
+    }
 }
