@@ -950,3 +950,11 @@ order of how much each would improve that code :
   closure cells, class fields, arithmetic, comparisons, `$spec` calls, and statically resolved Java calls
   directly to primitive/direct bytecode (`argon` drops from 59.3 s to 46.1 s; cross-object `obj.x` unboxing
   and scalarized `value class` allocation remain for later optimizations).
+
+License
+-------
+
+Babble is licensed under the [Apache License v2.0 with LLVM Exceptions](LICENSE)
+(SPDX : `Apache-2.0 WITH LLVM-exception`). The exceptions mean that the copy of the Babble runtime
+that `babblec` embeds into a compiled program's jar can be redistributed with that program without
+the attribution and notice requirements of sections 4(a), 4(b) and 4(d) of the Apache License.
