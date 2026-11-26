@@ -1,0 +1,14 @@
+# CI-parity container image matching .github/workflows/maven.yml:
+#   - JDK 21 (Eclipse Temurin) + Maven 3.9
+#   - Node.js 22 (for WebAssembly 3.0 WasmGC / exnref tests)
+#   - Python 3 (for src/tools and file-size audit scripts)
+
+FROM docker.io/library/node:22-bookworm-slim AS node22
+
+FROM docker.io/library/maven:3.9-eclipse-temurin-21
+
+COPY --from=node22 /usr/local/bin/node /usr/local/bin/node
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 \
+    && rm -rf /var/lib/apt/lists/*
