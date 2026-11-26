@@ -743,7 +743,10 @@ public final class HirCanonicalPrinter {
                 sb.append(')');
             }
             case HirExpr.DirectBabbleCall c -> {
-                sb.append("(call-fn ").append(norm.fnRef(c.targetFunctionId()));
+                String targetName = c.externalTarget() != null
+                        ? c.externalTarget().moduleName() + "#" + c.externalTarget().exportName()
+                        : norm.fnRef(c.targetFunctionId());
+                sb.append("(call-fn ").append(targetName);
                 printArgs(sb, c.args(), norm, indent + 1);
                 sb.append(')');
             }

@@ -40,10 +40,6 @@ public final class BabbleCompiler {
     public static final String DUMP_IR = "babble.dumpIr";
     /** Per-engine {@link org.babblelang.ir.IrObserver} binding key for parallel-safe IR capture (BIP029-I1). */
     public static final String IR_OBSERVER = "babble.irObserver";
-    /** Internal engine attribute enabling cross-module small-export inlining in {@code babblec} AOT only (BIP014-D2). */
-    static final String AOT_CROSS_MODULE = "babble.aotCrossModule";
-    /** Internal engine attribute holding small exported HIR functions compiled so far during a {@code babblec} run. */
-    static final String AOT_INLINE_CACHE = "babble.aotInlineCache";
     /** Default optimization level in compile mode (BIP014-D1). */
     public static final int DEFAULT_OPT_LEVEL = 1;
 
@@ -108,17 +104,24 @@ public final class BabbleCompiler {
      */
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
                                                String moduleKey) {
-        return compile(engine, file, scopes, sourceName, moduleKey, List.of(), Map.of(), Map.of());
+        return compile(engine, file, scopes, sourceName, moduleKey, List.of(), Map.of(), Map.of(), Map.of());
     }
 
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
                                                String moduleKey, List<ClassLoader> dependencyLoaders, Map<String, String> knownInterfaceJvmNames) {
-        return compile(engine, file, scopes, sourceName, moduleKey, dependencyLoaders, knownInterfaceJvmNames, Map.of());
+        return compile(engine, file, scopes, sourceName, moduleKey, dependencyLoaders, knownInterfaceJvmNames, Map.of(), Map.of());
     }
 
     public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
                                                String moduleKey, List<ClassLoader> dependencyLoaders, Map<String, String> knownInterfaceJvmNames,
                                                Map<String, String> knownClassJvmNames) {
+        return compile(engine, file, scopes, sourceName, moduleKey, dependencyLoaders, knownInterfaceJvmNames, knownClassJvmNames, Map.of());
+    }
+
+    public static CompiledBabbleScript compile(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName,
+                                               String moduleKey, List<ClassLoader> dependencyLoaders, Map<String, String> knownInterfaceJvmNames,
+                                               Map<String, String> knownClassJvmNames,
+                                               Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
         String internalName = moduleKey != null ? className(moduleKey) : PACKAGE + "Script$" + COUNTER.incrementAndGet();
         ClassLoader runtimeLoader = BabbleCompiler.class.getClassLoader();
         ClassLoader tccl = Thread.currentThread().getContextClassLoader();
@@ -136,7 +139,8 @@ public final class BabbleCompiler {
         ClassLoader parentLoader = delegates.isEmpty() ? runtimeLoader : new CompositeClassLoader(runtimeLoader, delegates);
         HirPipelineResult hirRes = buildAndOptimizeHirInternal(
                 engine, file, scopes, sourceName, internalName, moduleKey,
-                knownInterfaceJvmNames, knownClassJvmNames, org.babblelang.analysis.CompilationTarget.JVM);
+                knownInterfaceJvmNames, knownClassJvmNames, crossModuleInlineExports,
+                org.babblelang.analysis.CompilationTarget.JVM);
         org.babblelang.ir.hir.HirModule hir = hirRes.hir();
         org.babblelang.ir.mir.MirModule mir = null;
         if (hirRes.passCtx().optLevel() >= 2) {
@@ -183,8 +187,11 @@ public final class BabbleCompiler {
         } catch (ReflectiveOperationException e) {
             throw new BabbleException("Cannot load the compiled script", e);
         }
+        Map<String, org.babblelang.ir.hir.HirFunction> ownInlineExports = moduleKey != null
+                ? org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir, moduleKey)
+                : Map.of();
         return new CompiledBabbleScript(engine, scriptClass, classes, run, sourceName, hir.startLine(), hir.exports(),
-                hir.ownInterfaceJvmNames(), hir.ownClassJvmNames());
+                hir.ownInterfaceJvmNames(), hir.ownClassJvmNames(), hir.ownExportedFunctions(), ownInlineExports);
     }
 
     private record HirPipelineResult(
@@ -210,8 +217,24 @@ public final class BabbleCompiler {
             Map<String, String> knownClassJvmNames,
             org.babblelang.analysis.CompilationTarget target
     ) {
+        return buildAndOptimizeHir(engine, file, scopes, sourceName, internalName, moduleKey,
+                knownInterfaceJvmNames, knownClassJvmNames, Map.of(), target);
+    }
+
+    public static org.babblelang.ir.hir.HirModule buildAndOptimizeHir(
+            BabbleScriptEngine engine,
+            BabbleParser.FileContext file,
+            ScopeAnalysis scopes,
+            String sourceName,
+            String internalName,
+            String moduleKey,
+            Map<String, String> knownInterfaceJvmNames,
+            Map<String, String> knownClassJvmNames,
+            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports,
+            org.babblelang.analysis.CompilationTarget target
+    ) {
         return buildAndOptimizeHirInternal(engine, file, scopes, sourceName, internalName, moduleKey,
-                knownInterfaceJvmNames, knownClassJvmNames, target).hir();
+                knownInterfaceJvmNames, knownClassJvmNames, crossModuleInlineExports, target).hir();
     }
 
     private static HirPipelineResult buildAndOptimizeHirInternal(
@@ -223,6 +246,7 @@ public final class BabbleCompiler {
             String moduleKey,
             Map<String, String> knownInterfaceJvmNames,
             Map<String, String> knownClassJvmNames,
+            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports,
             org.babblelang.analysis.CompilationTarget target
     ) {
         org.babblelang.ir.hir.HirModule hir = org.babblelang.ir.hir.HirBuilder.build(
@@ -239,21 +263,14 @@ public final class BabbleCompiler {
                     new java.io.PrintWriter(System.err, true));
         }
         org.babblelang.ir.IrObserver observer = resolveIrObserver(engine, dumpIr, internalName, optLevel);
-        boolean aotCrossModule = optLevel > 0 && engine != null && Boolean.TRUE.equals(engine.get(AOT_CROSS_MODULE));
-        @SuppressWarnings("unchecked")
-        Map<String, org.babblelang.ir.hir.HirFunction> aotInlineCache = aotCrossModule
-                ? (Map<String, org.babblelang.ir.hir.HirFunction>) engine.get(AOT_INLINE_CACHE)
-                : null;
+        Map<String, org.babblelang.ir.hir.HirFunction> inlineMap =
+                (optLevel > 0 && crossModuleInlineExports != null) ? crossModuleInlineExports : Map.of();
         org.babblelang.opt.PassContext passCtx = new org.babblelang.opt.PassContext(
-                optLevel, verify, dumpIr, aotCrossModule,
-                aotInlineCache != null ? aotInlineCache : Map.of(), target);
+                optLevel, verify, dumpIr, !inlineMap.isEmpty(), inlineMap, target);
         org.babblelang.ir.hir.HirModule unoptimized = hir;
         hir = org.babblelang.analysis.BuiltinAxioms.withCurrent(activeAxioms,
                 () -> org.babblelang.opt.PassManager.defaultFor(optLevel).optimize(
                         unoptimized, passCtx, observer, moduleKey));
-        if (aotCrossModule && aotInlineCache != null && moduleKey != null) {
-            aotInlineCache.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir));
-        }
         return new HirPipelineResult(hir, passCtx, observer, activeAxioms);
     }
 

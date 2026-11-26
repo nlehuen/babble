@@ -49,6 +49,7 @@ public final class LoweringMetadata {
     private final Map<BabbleParser.CallContext, LoweringTargets.RecordNewTarget> recordNewTargets = new IdentityHashMap<>();
     private final Map<ParserRuleContext, LoweringTargets.DirectMethodTarget> directMethodTargets = new IdentityHashMap<>();
     private final Map<ParserRuleContext, BabbleParser.FunctionLiteralContext> directMethodFunctions = new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, LoweringTargets.ExportedFunctionTarget> externalFunctionTargets = new IdentityHashMap<>();
     private final Map<ParserRuleContext, LoweringTargets.ParamOwnership> paramOwnerships = new IdentityHashMap<>();
     private final Set<ParserRuleContext> expressionFrozen = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Set<ParserRuleContext> expressionUnique = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -361,6 +362,14 @@ public final class LoweringMetadata {
 
     public BabbleParser.FunctionLiteralContext directMethodFunction(ParserRuleContext ctx) {
         return directMethodFunctions.get(ctx);
+    }
+
+    void setExternalFunctionTarget(BabbleParser.CallContext ctx, LoweringTargets.ExportedFunctionTarget target) {
+        externalFunctionTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.ExportedFunctionTarget externalFunctionTarget(BabbleParser.CallContext ctx) {
+        return externalFunctionTargets.get(ctx);
     }
 
     void setParamOwnership(ParserRuleContext decl, LoweringTargets.ParamOwnership ownership) {

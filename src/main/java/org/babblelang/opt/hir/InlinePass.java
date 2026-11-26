@@ -75,7 +75,7 @@ public final class InlinePass implements HirPass {
                 inlineableMethods.put(fn.id(), fn);
             }
         }
-        Map<String, HirFunction> crossModule = context.aotCrossModule() ? context.exportedInlineFunctions() : Map.of();
+        Map<String, HirFunction> crossModule = context.exportedInlineFunctions();
         if (inlineableFns.isEmpty() && inlineableMethods.isEmpty() && crossModule.isEmpty()) {
             return Result.unchanged(module);
         }
@@ -92,29 +92,60 @@ public final class InlinePass implements HirPass {
 
     /**
      * Collects self-contained small exported functions and {@code fastRecord} methods
-     * ({@code <= 25} HIR nodes) from {@code module} for {@code babblec} AOT cross-module inlining
+     * ({@code <= 25} HIR nodes) from {@code module} for cross-module inlining
      * ({@code BIP014-D2}, {@code BIP014-I4}).
      */
     public static Map<String, HirFunction> collectCrossModuleExports(HirModule module) {
+        return collectCrossModuleExports(module, module.sourceName());
+    }
+
+    public static Map<String, HirFunction> collectCrossModuleExports(HirModule module, String moduleKey) {
         Set<String> exports = Set.of(module.exports());
         if (exports.isEmpty()) {
             return Map.of();
         }
+        String keyPrefix = moduleKey != null ? moduleKey : module.sourceName();
+        Set<String> immutableTopDefs = new HashSet<>();
+        String[] topNames = module.topLevelDeclaredNames();
+        boolean[] topFinals = module.topLevelDeclaredFinals();
+        for (int i = 0; i < topNames.length && i < topFinals.length; i++) {
+            if (topFinals[i]) {
+                immutableTopDefs.add(topNames[i]);
+            }
+        }
+        Map<String, HirFunction> localFns = new LinkedHashMap<>();
+        Map<String, String> localAliases = new LinkedHashMap<>();
         Map<String, HirFunction> result = new LinkedHashMap<>();
         for (HirExpr stmt : module.topLevelStatements()) {
-            if (stmt instanceof HirExpr.Def d && d.var() == null && exports.contains(d.name())) {
+            if (stmt instanceof HirExpr.Def d && d.var() == null && immutableTopDefs.contains(d.name())) {
                 HirExpr val = HirRewriter.unwrapTransparent(d.value());
                 if (val instanceof HirExpr.FunctionRef ref) {
                     HirFunction fn = module.function(ref.functionId());
                     if (isCrossModuleInlineCandidate(fn, module)) {
-                        result.put(module.sourceName() + "#" + d.name(), fn);
+                        localFns.put(d.name(), fn);
                     }
-                } else if (val instanceof HirExpr.ClassExpr ce) {
+                } else if (val instanceof HirExpr.NameRead nr && immutableTopDefs.contains(nr.name())) {
+                    localAliases.put(d.name(), nr.name());
+                } else if (exports.contains(d.name()) && val instanceof HirExpr.ClassExpr ce) {
                     HirClass cls = module.clazz(ce.classId());
                     if (cls != null && cls.fastRecord() && cls.jvmName() != null) {
                         collectCrossModuleRecordMethods(cls, module, result);
                     }
                 }
+            }
+        }
+        for (String exp : exports) {
+            HirFunction fn = localFns.get(exp);
+            if (fn == null && localAliases.containsKey(exp)) {
+                String cur = localAliases.get(exp);
+                int steps = 0;
+                while (cur != null && !localFns.containsKey(cur) && localAliases.containsKey(cur) && steps++ < 16) {
+                    cur = localAliases.get(cur);
+                }
+                fn = cur != null ? localFns.get(cur) : null;
+            }
+            if (fn != null) {
+                result.put(keyPrefix + "#" + exp, fn);
             }
         }
         return result;
@@ -471,11 +502,16 @@ public final class InlinePass implements HirPass {
             return cur;
         }
         if (cur instanceof HirExpr.DirectBabbleCall call) {
-            int targetId = call.targetFunctionId();
-            if (targetId == currentFnId) {
-                return cur;
+            HirFunction calleeFn;
+            if (call.externalTarget() != null) {
+                calleeFn = crossModule.get(call.externalTarget().canonicalKey());
+            } else {
+                int targetId = call.targetFunctionId();
+                if (targetId == currentFnId) {
+                    return cur;
+                }
+                calleeFn = inlineableFns.get(targetId);
             }
-            HirFunction calleeFn = inlineableFns.get(targetId);
             if (calleeFn == null || call.args().size() != calleeFn.params().size()
                     || (call.binding() != null && !call.binding().isIdentityPositional())
                     || !canInlineReturnKind(calleeFn, call.meta())) {
@@ -524,8 +560,9 @@ public final class InlinePass implements HirPass {
         }
         if (!crossModule.isEmpty() && cur instanceof HirExpr.DynamicCall call
                 && call.callee() instanceof HirExpr.ModuleExportGet exp
-                && exp.target().moduleName() != null) {
-            HirFunction calleeFn = crossModule.get(exp.target().moduleName() + "#" + exp.target().name());
+                && (exp.target().moduleKey() != null || exp.target().moduleName() != null)) {
+            String keyPrefix = exp.target().moduleKey() != null ? exp.target().moduleKey() : exp.target().moduleName();
+            HirFunction calleeFn = crossModule.get(keyPrefix + "#" + exp.target().name());
             if (calleeFn == null || call.args().size() != calleeFn.params().size()
                     || (call.binding() != null && !call.binding().isIdentityPositional())
                     || !canInlineReturnKind(calleeFn, call.meta())) {
@@ -540,7 +577,8 @@ public final class InlinePass implements HirPass {
             }
             budget[0]--;
             rewrites[0]++;
-            return performInline(exp, true, null, null, null, posArgs, call.meta(),
+            boolean keepCallee = !isDefinitelyDefinedPureCallee(exp, defInitTopFns);
+            return performInline(exp, keepCallee, null, null, null, posArgs, call.meta(),
                     calleeFn, module, ownerMethodId, nextVarId);
         }
         return cur;
@@ -913,7 +951,11 @@ public final class InlinePass implements HirPass {
             return !v.var().mayBeUndefined() || v.var().definitelyDefined();
         }
         if (u instanceof HirExpr.NameRead n) {
-            return defInitTopFns.contains(n.name());
+            return (n.finalBinding() && n.definitelyDefined()) || defInitTopFns.contains(n.name());
+        }
+        if (u instanceof HirExpr.ModuleExportGet g) {
+            return g.target().definitelyInitialized()
+                    && isDefinitelyDefinedPureCallee(g.receiver(), defInitTopFns);
         }
         return false;
     }

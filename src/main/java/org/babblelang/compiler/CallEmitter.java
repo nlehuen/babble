@@ -419,11 +419,39 @@ final class CallEmitter {
     void emitDirectBabbleCall(HirExpr.DirectBabbleCall c) {
         MethodEmitContext mc = ctx();
         MethodVisitor mv = mc.mv;
+        int ln = c.meta().line();
+        LoweringTargets.ArgumentBinding binding = c.binding();
+        if (c.externalTarget() != null) {
+            LoweringTargets.ExportedFunctionTarget ext = c.externalTarget();
+            LoweringTargets.FunctionSignature sig = ext.signature();
+            int count = sig.parameterKinds().length;
+            emitter.emitBoxed(c.callee());
+            mv.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
+            mv.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNBOUND", "L" + RUNTIME + "Undefined;");
+            mv.visitVarInsn(ALOAD, mc.rtLocal);
+            if (sig.hasSpec()) {
+                emitBoundTypedArgs(c.args(), binding, sig.parameterKinds());
+                if (sig.hasOptionalMask()) {
+                    ConstantPool.pushInt(mv, binding != null ? binding.specMaskFor(sig.optionalParamBits(), count) : 0);
+                }
+                mc.line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, ext.ownerJvmName(), ext.jvmMethodName() + "$spec",
+                        functionSpecDescriptor(sig), false);
+                mc.stackKind = sig.returnKind();
+            } else {
+                mv.visitInsn(ACONST_NULL);
+                emitBoundBoxedArgs(c.args(), binding, count);
+                mc.line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, ext.ownerJvmName(), ext.jvmMethodName(),
+                        functionDirectDescriptor(sig), false);
+                mc.stackKind = PrimitiveKind.NONE;
+            }
+            finishCallCheck(c.meta());
+            return;
+        }
         HirFunction fn = emitter.module.function(c.targetFunctionId());
         emitter.ensureFunctionScheduled(fn);
         int count = fn.params().size();
-        int ln = c.meta().line();
-        LoweringTargets.ArgumentBinding binding = c.binding();
         emitter.emitBoxed(c.callee());
         mv.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
         mv.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNBOUND", "L" + RUNTIME + "Undefined;");

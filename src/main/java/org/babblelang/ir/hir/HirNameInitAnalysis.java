@@ -563,7 +563,7 @@ final class HirNameInitAnalysis {
                     HirExpr nc = fn.apply(c.callee());
                     List<HirExpr> na = rewriteList(c.args(), guaranteed);
                     yield (nc == c.callee() && na == c.args()) ? c
-                            : new HirExpr.DirectBabbleCall(nc, c.targetFunctionId(), na, c.binding(), c.meta());
+                            : new HirExpr.DirectBabbleCall(nc, c.targetFunctionId(), c.externalTarget(), na, c.binding(), c.meta());
                 }
                 case HirExpr.DirectThisMethodCall c -> {
                     HirExpr nr = fn.apply(c.receiver());

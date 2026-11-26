@@ -131,7 +131,7 @@ fn run (arr:obj) -> int {io}
 fn run(v0: any) -> int:
   bb0:
     v1: any = name_read mod {pure}
-    v2: any = opaque.ModuleExportGet(v1.val) {impure}
+    v2: any = export_get v1.val {pure}
     v3: int = convert.int v2
     v4: any = name_read sumV {pure}
     v5: int = call sumV(v0) {impure}

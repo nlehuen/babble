@@ -21,12 +21,15 @@ public final class ModuleInterface {
     private final Set<String> exports;
     private final Map<String, Integer> exportIndices;
     private final Set<ModuleInterface> dependencies = new LinkedHashSet<>();
+    private final String moduleKey;
     private String name = "<module>";
     private TypeChecks checks;
     private TypedModuleSummary summary;
+    private volatile boolean hasDynamicImport;
     private volatile ClassLoader compiledClassLoader;
     private volatile Map<String, String> interfaceJvmNames = Map.of();
     private volatile Map<String, String> classJvmNames = Map.of();
+    private volatile Map<String, LoweringTargets.ExportedFunctionTarget> exportedFunctions = Map.of();
     private volatile Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies = Map.of();
 
     ModuleInterface(BlockScopes pass) {
@@ -37,10 +40,12 @@ public final class ModuleInterface {
             indices.put(ordered[i], i);
         }
         this.exportIndices = Map.copyOf(indices);
+        this.moduleKey = pass.moduleKey();
     }
 
     private ModuleInterface(String name, Map<String, Type> members) {
         this.name = name;
+        this.moduleKey = name;
         this.exports = Set.copyOf(members.keySet());
         this.exportIndices = Map.of(); // -1 exportIndex so LoweringAnalyzer emits DynamicSelect, not ModuleExportGet
         this.summary = new TypedModuleSummary(
@@ -58,8 +63,40 @@ public final class ModuleInterface {
         return name;
     }
 
+    /** The canonical module key from {@link ModuleLoader#moduleKey()}, or null if unavailable. */
+    public String moduleKey() {
+        return moduleKey;
+    }
+
     public void setName(String name) {
         this.name = name;
+    }
+
+    void markDynamicImport() {
+        this.hasDynamicImport = true;
+    }
+
+    /** Whether this module or any transitive static dependency uses a non-static {@code import} reference. */
+    public boolean transitivelyHasDynamicImport() {
+        if (hasDynamicImport) {
+            return true;
+        }
+        java.util.ArrayDeque<ModuleInterface> work = new java.util.ArrayDeque<>();
+        Set<ModuleInterface> visited = Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        work.add(this);
+        visited.add(this);
+        while (!work.isEmpty()) {
+            ModuleInterface cur = work.poll();
+            if (cur.hasDynamicImport) {
+                return true;
+            }
+            for (ModuleInterface dep : cur.dependencies()) {
+                if (dep != null && visited.add(dep)) {
+                    work.add(dep);
+                }
+            }
+        }
+        return false;
     }
 
     public Set<String> exports() {
@@ -86,13 +123,20 @@ public final class ModuleInterface {
     }
 
     public void setCompilation(ClassLoader classLoader, Map<String, String> interfaceJvmNames) {
-        setCompilation(classLoader, interfaceJvmNames, Map.of());
+        setCompilation(classLoader, interfaceJvmNames, Map.of(), Map.of());
     }
 
     public void setCompilation(ClassLoader classLoader, Map<String, String> interfaceJvmNames, Map<String, String> classJvmNames) {
+        setCompilation(classLoader, interfaceJvmNames, classJvmNames, Map.of());
+    }
+
+    public void setCompilation(ClassLoader classLoader, Map<String, String> interfaceJvmNames,
+                               Map<String, String> classJvmNames,
+                               Map<String, LoweringTargets.ExportedFunctionTarget> exportedFunctions) {
         this.compiledClassLoader = classLoader;
         this.interfaceJvmNames = interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
         this.classJvmNames = classJvmNames != null ? Map.copyOf(classJvmNames) : Map.of();
+        this.exportedFunctions = exportedFunctions != null ? Map.copyOf(exportedFunctions) : Map.of();
     }
 
     public ClassLoader compiledClassLoader() {
@@ -105,6 +149,14 @@ public final class ModuleInterface {
 
     public Map<String, String> classJvmNames() {
         return classJvmNames;
+    }
+
+    public Map<String, LoweringTargets.ExportedFunctionTarget> exportedFunctions() {
+        return exportedFunctions;
+    }
+
+    public LoweringTargets.ExportedFunctionTarget exportedFunction(String exportName) {
+        return exportName != null ? exportedFunctions.get(exportName) : null;
     }
 
     void setTypeHierarchies(Map<String, LoweringTargets.TypeHierarchyInfo> hierarchies) {

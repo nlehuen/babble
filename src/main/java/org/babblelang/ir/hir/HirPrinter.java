@@ -348,7 +348,11 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirExpr.DirectBabbleCall c -> {
-                sb.append("(call-fn #").append(c.targetFunctionId());
+                if (c.externalTarget() != null) {
+                    sb.append("(call-fn ").append(c.externalTarget().moduleName()).append('#').append(c.externalTarget().exportName());
+                } else {
+                    sb.append("(call-fn #").append(c.targetFunctionId());
+                }
                 printArgs(sb, c.args(), depth + 1);
                 sb.append(')');
             }

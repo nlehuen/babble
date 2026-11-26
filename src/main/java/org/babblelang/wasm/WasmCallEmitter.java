@@ -37,7 +37,19 @@ public final class WasmCallEmitter {
     public void emitDirectBabbleCall(HirExpr.DirectBabbleCall call) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
-        WasmProgramLinker.FuncInfo fi = ctx.modInfo.functions.get(call.targetFunctionId());
+        WasmProgramLinker.FuncInfo fi = null;
+        if (call.externalTarget() != null) {
+            LoweringTargets.ExportedFunctionTarget ext = call.externalTarget();
+            WasmProgramLinker.ModuleLinkInfo extMod = ext.moduleKey() != null ? linker.moduleByKey(ext.moduleKey()) : null;
+            if (extMod == null && ext.ownerJvmName() != null) {
+                extMod = linker.moduleByKey(ext.ownerJvmName());
+            }
+            if (extMod != null) {
+                fi = extMod.immutableTopLevelFuncs.get(ext.exportName());
+            }
+        } else {
+            fi = ctx.modInfo.functions.get(call.targetFunctionId());
+        }
         if (fi == null) {
             // Fallback to dynamic call if target function is not in this module
             emitGenericCallExpr(call.callee(), call.args(), call.meta().kind(), call.meta().line());
@@ -73,6 +85,9 @@ public final class WasmCallEmitter {
             }
             Integer defIdx = ctx.modInfo.topLevelDefIndex.get(nr.name());
             return defIdx != null && ctx.currentTopLevelStmtIdx >= 0 && defIdx < ctx.currentTopLevelStmtIdx;
+        }
+        if (expr instanceof HirExpr.ModuleExportGet meg) {
+            return meg.target().definitelyInitialized() && isGuaranteedDefinedPureRef(meg.receiver());
         }
         return false;
     }

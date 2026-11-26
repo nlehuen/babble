@@ -531,6 +531,16 @@ public final class ScopeAnalysis {
         return false;
     }
 
+    boolean isNonCyclicModule(ModuleInterface imported) {
+        return imported != null
+                && imported.summary() != null
+                && !transitivelyDependsOn(imported, moduleInterface);
+    }
+
+    boolean isNonCyclicNonDynamicTarget(ModuleInterface imported) {
+        return isNonCyclicModule(imported) && !imported.transitivelyHasDynamicImport();
+    }
+
     /**
      * Whether {@code call} is a static {@code import("...")} that cannot transitively depend on
      * (and therefore cannot invoke or observe callables of) the current module ({@code BIP034-D6}).

@@ -344,7 +344,9 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 }
             }
             if (expr instanceof HirExpr.DirectBabbleCall c && isIdempotentBabbleEligible(c, module)) {
-                String sym = "babble#" + c.targetFunctionId();
+                String sym = c.externalTarget() != null
+                        ? "babble-ext#" + c.externalTarget().canonicalKey()
+                        : "babble#" + c.targetFunctionId();
                 callTemplates.putIfAbsent(sym, c);
                 graph.registerCallProps(sym, new EGraph.CallProps(true, false, false, false));
                 int id = graph.add(ENode.call(sym, c.meta().kind(), lower(c.args().get(0))));
@@ -449,7 +451,8 @@ public final class HirEGraphSimplifyPass implements HirPass {
                     HirExpr tmpl = callTemplates.get(n.symbol());
                     HirExpr arg = rebuild(tree.children().get(0), rootMeta);
                     if (tmpl instanceof HirExpr.DirectBabbleCall dc) {
-                        yield new HirExpr.DirectBabbleCall(dc.callee(), dc.targetFunctionId(), List.of(arg), dc.binding(), dc.meta());
+                        yield new HirExpr.DirectBabbleCall(dc.callee(), dc.targetFunctionId(), dc.externalTarget(),
+                                List.of(arg), dc.binding(), dc.meta());
                     }
                     HirExpr.JavaMethodCall jc = (HirExpr.JavaMethodCall) tmpl;
                     if (jc.target().isStatic()) {
@@ -505,6 +508,14 @@ public final class HirEGraphSimplifyPass implements HirPass {
         return HirPurity.isPureNothrowTerminating(c.callee(), module)
                 || (c.callee() instanceof HirExpr.NameRead nr
                 && HirPurity.isDefinitelyInitializedTopLevelFn(nr.name(), module));
+    }
+
+    private static boolean sameDirectCallTarget(HirExpr.DirectBabbleCall a, HirExpr.DirectBabbleCall b) {
+        if (a.externalTarget() != null || b.externalTarget() != null) {
+            return a.externalTarget() != null && b.externalTarget() != null
+                    && a.externalTarget().canonicalKey().equals(b.externalTarget().canonicalKey());
+        }
+        return a.targetFunctionId() == b.targetFunctionId();
     }
 
     private static boolean isIdempotentJavaEligible(HirExpr.JavaMethodCall c, HirModule module) {
@@ -569,7 +580,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
         if (cur instanceof HirExpr.DirectBabbleCall outer && isIdempotentBabbleEligible(outer, module)) {
             HirExpr arg = HirRewriter.unwrapTransparent(outer.args().get(0));
             if (arg instanceof HirExpr.DirectBabbleCall inner
-                    && inner.targetFunctionId() == outer.targetFunctionId()
+                    && sameDirectCallTarget(inner, outer)
                     && isIdempotentBabbleEligible(inner, module)) {
                 return inner;
             }

@@ -49,9 +49,33 @@ public final class LoweringTargets {
     public record JavaFieldTarget(java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {
     }
 
-    public record ModuleExportTarget(int index, String name, String moduleName) {
+    public record ModuleExportTarget(int index, String name, String moduleName, String moduleKey, boolean definitelyInitialized) {
+        public ModuleExportTarget(int index, String name, String moduleName) {
+            this(index, name, moduleName, moduleName, false);
+        }
+
         public ModuleExportTarget(int index, String name) {
-            this(index, name, null);
+            this(index, name, null, null, false);
+        }
+    }
+
+    /** Direct static JVM target of a compiled top-level exported Babble function. */
+    public record ExportedFunctionTarget(
+            String moduleKey,
+            String moduleName,
+            String exportName,
+            String ownerJvmName,
+            String jvmMethodName,
+            FunctionSignature signature,
+            boolean hasMutParam,
+            EffectSet effects
+    ) {
+        public ExportedFunctionTarget {
+            effects = effects != null ? effects : EffectSet.EMPTY;
+        }
+
+        public String canonicalKey() {
+            return (moduleKey != null ? moduleKey : moduleName) + "#" + exportName;
         }
     }
 

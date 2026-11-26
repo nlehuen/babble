@@ -256,6 +256,7 @@ public final class PredicateReorderPass implements MirPass {
                 case MirInst.CallJava ignored -> 10;
                 case MirInst.LoadField ignored -> 4;
                 case MirInst.LoadJavaField ignored -> 4;
+                case MirInst.LoadExport ignored -> 3;
                 case MirInst.ArrayGet ignored -> 4;
                 default -> 1;
             };

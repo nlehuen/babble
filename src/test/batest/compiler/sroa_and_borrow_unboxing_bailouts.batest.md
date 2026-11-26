@@ -243,7 +243,7 @@ fn run() -> double:
     v2: any = call_java v0.append(v1) {impure}
     v3: any = checkcast v2 <java|java.lang.StringBuilder|java.lang.StringBuilder>
     v4: any = name_read m {pure}
-    v5: any = opaque.ModuleExportGet(v4.ExtVec) {impure}
+    v5: any = export_get v4.ExtVec {pure}
     v6: double = const 5.0
     v7: any = name_read assert {pure}
     v8: any = call_java v0.toString() {impure}
@@ -264,15 +264,13 @@ fn run() -> double:
     v1: any = const "M"
     v2: any = call_java v0.append(v1) {impure}
     v3: any = checkcast v2 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v4: any = name_read m {pure}
-    v5: any = opaque.ModuleExportGet(v4.ExtVec) {impure}
-    v6: any = name_read assert {pure}
-    v7: any = call_java v0.toString() {impure}
-    v8: any = checkcast v7 <string|string|>
-    v9: any = eq v8, v1 {pure}
-    v10: bool = opaque.DynamicCall(v6, v9) {impure}
-    v11: double = const 7.0
-    ret v11
+    v4: any = name_read assert {pure}
+    v5: any = call_java v0.toString() {impure}
+    v6: any = checkcast v5 <string|string|>
+    v7: any = eq v6, v1 {pure}
+    v8: bool = opaque.DynamicCall(v4, v7) {impure}
+    v9: double = const 7.0
+    ret v9
 ```
 
 ## Zero-parameter fast record skips SROA layout and projection reduction

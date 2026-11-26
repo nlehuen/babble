@@ -64,8 +64,6 @@ public final class Babblec {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setContext(context);
         engine.put(BabbleScriptEngine.MODE, "compile");
-        engine.put(BabbleCompiler.AOT_CROSS_MODULE, Boolean.TRUE);
-        engine.put(BabbleCompiler.AOT_INLINE_CACHE, new LinkedHashMap<String, org.babblelang.ir.hir.HirFunction>());
         if (optLevel != null) {
             engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         }
@@ -105,8 +103,6 @@ public final class Babblec {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setContext(context);
         engine.put(BabbleScriptEngine.MODE, "compile");
-        engine.put(BabbleCompiler.AOT_CROSS_MODULE, Boolean.TRUE);
-        engine.put(BabbleCompiler.AOT_INLINE_CACHE, new LinkedHashMap<String, org.babblelang.ir.hir.HirFunction>());
         if (optLevel != null) {
             engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         }

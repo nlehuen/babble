@@ -148,6 +148,17 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                 }
             }
         }
+        for (Occurrence occ : pass.occurrences) {
+            if ("import".equals(occ.name()) && TypeChecks.resolveName("import", occ.scope()) == null) {
+                if (occ.ctx().getParent() instanceof BabbleParser.CallContext call
+                        && call.expression() == occ.ctx()
+                        && (pass.modules.containsKey(call) || isStaticJavaPackageImport(call))) {
+                    continue;
+                }
+                self.markDynamicImport();
+                break;
+            }
+        }
         pass.analysis.setImportedModules(pass.modules.values());
         TypeChecks checks = new TypeChecks(pass);
         checks.run();
@@ -848,6 +859,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return visitChildren(ctx);
     }
 
+    String moduleKey() {
+        return moduleKey;
+    }
+
     /** The file a call imports statically : {@code import("….ba")} with a string literal, or null. */
     static String staticImport(BabbleParser.CallContext call) {
         if (call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
@@ -859,6 +874,18 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             return name.endsWith(".ba") ? name : null;
         }
         return null;
+    }
+
+    private static boolean isStaticJavaPackageImport(BabbleParser.CallContext call) {
+        if (call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+                && callee.ID().getText().equals("import")
+                && call.callParameters().callParameter().size() == 1
+                && ScopeAnalysis.callParamName(call.callParameters().callParameter(0)) == null
+                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
+            String name = org.babblelang.parser.StringLiterals.decode(string);
+            return !name.endsWith(".ba");
+        }
+        return false;
     }
 
     @Override

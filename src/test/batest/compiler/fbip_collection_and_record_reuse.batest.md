@@ -358,7 +358,7 @@ fn f (v:obj) -> obj {nothrow unique}
 fn f(v0: any [unique]) -> any:
   bb0:
     v1: any = name_read m {pure}
-    v2: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
+    v2: any = export_get v1.ExtVec {pure}
     v3: double = load_field v0.x {read:frozen}
     v4: double = const 1.0
     v5: double = add v3, v4 {pure}

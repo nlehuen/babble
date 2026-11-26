@@ -128,7 +128,7 @@ final class HirEmitter {
     /** Generates the script class, JVM interfaces, and compiled Babble classes from {@link #module}. */
     Map<String, byte[]> generate() {
         prepareTypes();
-        classWriter.visit(V21, ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, className, null, OBJECT, null);
+        classWriter.visit(V21, ACC_PUBLIC | ACC_FINAL | ACC_SUPER | ACC_SYNTHETIC, className, null, OBJECT, null);
         classWriter.visitSource(sourceName, null);
 
         generateRun();
@@ -413,13 +413,13 @@ final class HirEmitter {
         if (fn.isSpread()) {
             int count = fn.params().size();
             String direct = functionDirectDescriptor(fn);
-            callAdapter(classWriter, ACC_STATIC | ACC_SYNTHETIC, method + "$call", BODY_DESCRIPTOR, paramsField, count, fn.keywordOnlyStart(), fn.restIndex(),
+            callAdapter(classWriter, ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC, method + "$call", BODY_DESCRIPTOR, paramsField, count, fn.keywordOnlyStart(), fn.restIndex(),
                     m -> m.visitMethodInsn(INVOKESTATIC, className, method, direct, false));
-            beginMethod(classWriter, fn.id(), ACC_STATIC | ACC_SYNTHETIC, method, direct,
+            beginMethod(classWriter, fn.id(), ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC, method, direct,
                     FIRST_PARAMETER + count + 1, FN_RT, FIRST_PARAMETER + count, fn.capturedVars());
             ctx.parameterBase = FIRST_PARAMETER;
         } else {
-            beginMethod(classWriter, fn.id(), ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR,
+            beginMethod(classWriter, fn.id(), ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC, method, BODY_DESCRIPTOR,
                     FN_NS + 1, FN_RT, FN_NS, fn.capturedVars());
         }
         loadCapturedCells(COMPILED_FUNCTION);
@@ -439,7 +439,7 @@ final class HirEmitter {
         }
         int maskSlot = fn.hasOptionalMask() ? nextParam++ : -1;
         int nsSlot = nextParam;
-        beginMethod(classWriter, fn.id(), ACC_STATIC | ACC_SYNTHETIC, method + "$spec",
+        beginMethod(classWriter, fn.id(), ACC_PUBLIC | ACC_STATIC | ACC_SYNTHETIC, method + "$spec",
                 functionSpecDescriptor(fn), nsSlot + 1, FN_RT, nsSlot, fn.capturedVars());
         ctx.methodReturnKind = fn.returnKind();
         loadCapturedCells(COMPILED_FUNCTION);

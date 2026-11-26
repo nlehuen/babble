@@ -592,12 +592,23 @@ public sealed interface HirExpr permits
     record DirectBabbleCall(
             HirExpr callee,
             int targetFunctionId,
+            LoweringTargets.ExportedFunctionTarget externalTarget,
             List<HirExpr> args,
             LoweringTargets.ArgumentBinding binding,
             ExprMeta meta
     ) implements HirExpr {
         public DirectBabbleCall {
             args = List.copyOf(args);
+        }
+
+        public DirectBabbleCall(
+                HirExpr callee,
+                int targetFunctionId,
+                List<HirExpr> args,
+                LoweringTargets.ArgumentBinding binding,
+                ExprMeta meta
+        ) {
+            this(callee, targetFunctionId, null, args, binding, meta);
         }
     }
 

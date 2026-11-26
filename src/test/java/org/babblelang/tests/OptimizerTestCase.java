@@ -186,14 +186,16 @@ public class OptimizerTestCase {
     }
 
     @Test
-    public void testCrossModuleSmallExportInliningOnlyInBabblecAot(@TempDir Path dir) throws Exception {
+    public void testCrossModuleDirectCallsAndSmallExportInlining(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("math.ba"),
-                "export def sq = fn (x : int) : int -> ( x * x )\n",
+                "export def sq = fn (x : int) : int -> ( x * x )\n"
+                        + "export def bigSq = fn (x : int) : int -> ( if x < 0 then ( return x * x ) ; x * x )\n",
                 StandardCharsets.UTF_8);
         Files.writeString(dir.resolve("main.ba"),
                 "def m = import(\"math.ba\")\n"
                         + "def calc = fn (n : int) : int -> ( m.sq(n) + 1 )\n"
-                        + "println(calc(7))\n",
+                        + "def calcBig = fn (n : int) : int -> ( m.bigSq(n) + 1 )\n"
+                        + "println(calc(7) + calcBig(7))\n",
                 StandardCharsets.UTF_8);
 
         Path jarO0 = dir.resolve("app-o0.jar");
@@ -201,14 +203,38 @@ public class OptimizerTestCase {
         Babblec.compile(dir.resolve("main.ba"), dir, jarO0, new javax.script.SimpleScriptContext(), 0);
         Babblec.compile(dir.resolve("main.ba"), dir, jarO1, new javax.script.SimpleScriptContext(), 1);
 
-        // Both jars must print 50.
-        Assertions.assertEquals("50", runJar(jarO0));
-        Assertions.assertEquals("50", runJar(jarO1));
+        // Both jars must print 100.
+        Assertions.assertEquals("100", runJar(jarO0));
+        Assertions.assertEquals("100", runJar(jarO1));
 
-        // Inspect main class bytecode in jarO1: calc's body should inline m.sq(n) (no invoke call to sq).
+        // At -O0, both calls emit direct INVOKESTATIC to math$ba's $spec entry points (no Bootstrap indy).
+        List<String> o0Calls = findCallsInMethod(jarO0, "fn$0$calc$spec");
+        Assertions.assertTrue(o0Calls.stream().anyMatch(c -> c.endsWith(".fn$0$sq$spec")),
+                "m.sq(n) should lower to direct INVOKESTATIC at -O0, found calls: " + o0Calls);
+
+        // At -O1, small m.sq(n) is inlined (no call to sq or Module.exportAt), while non-inlineable m.bigSq(n)
+        // stays a direct INVOKESTATIC to fn$1$bigSq$spec.
         List<String> o1Calls = findCallsInMethod(jarO1, "fn$0$calc$spec");
-        Assertions.assertTrue(o1Calls.stream().noneMatch(c -> c.contains("sq") || c.contains("apply")),
-                "m.sq(n) should be inlined in AOT -O1 jar, found calls: " + o1Calls);
+        Assertions.assertTrue(o1Calls.stream().noneMatch(c -> c.contains("sq") || c.contains("exportAt") || c.contains("apply")),
+                "m.sq(n) should be inlined cleanly at -O1, found calls: " + o1Calls);
+        List<String> o1BigCalls = findCallsInMethod(jarO1, "fn$1$calcBig$spec");
+        Assertions.assertTrue(o1BigCalls.stream().anyMatch(c -> c.endsWith(".fn$1$bigSq$spec")),
+                "non-inlineable m.bigSq(n) should use direct INVOKESTATIC at -O1, found calls: " + o1BigCalls);
+
+        // Regular BabbleScriptEngine (not just babblec) also inlines m.sq(n) and emits direct INVOKESTATIC for m.bigSq(n).
+        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 1);
+        engine.put(BabbleScriptEngine.MODULE_SOURCE, org.babblelang.engine.FileModuleSource.rooted(dir));
+        org.babblelang.compiler.CompiledBabbleScript compiled =
+                (org.babblelang.compiler.CompiledBabbleScript) engine.compile(Files.readString(dir.resolve("main.ba")));
+        byte[] mainBytes = compiled.getClassBytes();
+        List<String> jitSqCalls = findCallsInClassBytes(mainBytes, "fn$0$calc$spec");
+        Assertions.assertTrue(jitSqCalls.stream().noneMatch(c -> c.contains("sq") || c.contains("exportAt") || c.contains("apply")),
+                "m.sq(n) should inline in BabbleScriptEngine -O1 too, found calls: " + jitSqCalls);
+        List<String> jitBigCalls = findCallsInClassBytes(mainBytes, "fn$1$calcBig$spec");
+        Assertions.assertTrue(jitBigCalls.stream().anyMatch(c -> c.endsWith(".fn$1$bigSq$spec")),
+                "m.bigSq(n) should lower to direct INVOKESTATIC in BabbleScriptEngine -O1, found calls: " + jitBigCalls);
     }
 
     // ------------------------------------------------------------------ O4 : HirDcePass
@@ -821,19 +847,25 @@ public class OptimizerTestCase {
             var entries = jf.entries();
             while (entries.hasMoreElements()) {
                 JarEntry e = entries.nextElement();
-                if (!e.getName().endsWith(".class") || !e.getName().startsWith("org/babblelang/generated/")) {
+                if (!e.getName().endsWith(".class")
+                        || (!e.getName().startsWith("babble/") && !e.getName().startsWith("org/babblelang/generated/"))) {
                     continue;
                 }
-                byte[] bytes = jf.getInputStream(e).readAllBytes();
-                ClassNode cn = new ClassNode();
-                new ClassReader(bytes).accept(cn, 0);
-                for (MethodNode mn : cn.methods) {
-                    if (mn.name.equals(methodName)) {
-                        for (var insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-                            if (insn instanceof MethodInsnNode mi) {
-                                calls.add(mi.owner + "." + mi.name);
-                            }
-                        }
+                calls.addAll(findCallsInClassBytes(jf.getInputStream(e).readAllBytes(), methodName));
+            }
+        }
+        return calls;
+    }
+
+    private static List<String> findCallsInClassBytes(byte[] bytes, String methodName) {
+        List<String> calls = new ArrayList<>();
+        ClassNode cn = new ClassNode();
+        new ClassReader(bytes).accept(cn, 0);
+        for (MethodNode mn : cn.methods) {
+            if (mn.name.equals(methodName)) {
+                for (var insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                    if (insn instanceof MethodInsnNode mi) {
+                        calls.add(mi.owner + "." + mi.name);
                     }
                 }
             }
