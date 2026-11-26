@@ -559,6 +559,9 @@ final class MirEmitter {
             }
             return cond;
         }
+        if (term instanceof MirTerminator.Switch sw) {
+            return sw.key();
+        }
         return null;
     }
 
@@ -1004,6 +1007,13 @@ final class MirEmitter {
                         .add(new InEdge(b, bi.thenArgs(), true));
                 incoming.computeIfAbsent(bi.elseBlock(), k -> new ArrayList<>())
                         .add(new InEdge(b, bi.elseArgs(), false));
+            } else if (b.terminator() instanceof MirTerminator.Switch sw) {
+                for (int i = 0; i < sw.keys().length; i++) {
+                    incoming.computeIfAbsent(sw.targetBlocks()[i], k -> new ArrayList<>())
+                            .add(new InEdge(b, sw.targetArgs().get(i), false));
+                }
+                incoming.computeIfAbsent(sw.defaultBlock(), k -> new ArrayList<>())
+                        .add(new InEdge(b, sw.defaultArgs(), false));
             }
         }
         for (MirBlock b : rpo) {
@@ -1795,6 +1805,45 @@ final class MirEmitter {
                         });
                     }
                 }
+                return true;
+            }
+            case MirTerminator.Switch sw -> {
+                loadVal(sw.key());
+                emitter.convertStack(ctx.stackKind, PrimitiveKind.INT);
+                int n = sw.keys().length;
+                Label[] targetLabels = new Label[n];
+                for (int i = 0; i < n; i++) {
+                    int tb = sw.targetBlocks()[i];
+                    MirBlock target = blockById.get(tb);
+                    List<MirVal> args = sw.targetArgs().get(i);
+                    if (hasNonTrivialCopies(args, target.params())) {
+                        Label tramp = new Label();
+                        targetLabels[i] = tramp;
+                        edgeTrampolines.add(() -> {
+                            mv.visitLabel(tramp);
+                            emitParallelCopy(args, target.params());
+                            mv.visitJumpInsn(GOTO, blockLabels.get(tb));
+                        });
+                    } else {
+                        targetLabels[i] = blockLabels.get(tb);
+                    }
+                }
+                int db = sw.defaultBlock();
+                MirBlock defTarget = blockById.get(db);
+                Label defLabel;
+                if (hasNonTrivialCopies(sw.defaultArgs(), defTarget.params())) {
+                    Label tramp = new Label();
+                    defLabel = tramp;
+                    edgeTrampolines.add(() -> {
+                        mv.visitLabel(tramp);
+                        emitParallelCopy(sw.defaultArgs(), defTarget.params());
+                        mv.visitJumpInsn(GOTO, blockLabels.get(db));
+                    });
+                } else {
+                    defLabel = blockLabels.get(db);
+                }
+                ctx.line(sw.line());
+                MatchEmitter.emitIntSwitch(mv, sw.keys(), targetLabels, defLabel);
                 return true;
             }
             case MirTerminator.Ret ret -> {

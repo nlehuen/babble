@@ -13,7 +13,11 @@ import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
+import org.babblelang.runtime.MatchSupport;
+import org.babblelang.runtime.Operators;
+import org.babblelang.runtime.Range;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -177,6 +181,10 @@ public final class MirLowerer {
 
             record BrIf(MirVal cond, BlockBuilder thenTarget, EdgeRef thenEdge,
                         BlockBuilder elseTarget, EdgeRef elseEdge, int line) implements PendingTerm {
+            }
+
+            record Switch(MirVal key, int[] keys, BlockBuilder[] targets, EdgeRef[] edges,
+                          BlockBuilder defaultTarget, EdgeRef defaultEdge, int line) implements PendingTerm {
             }
 
             record Fixed(MirTerminator term) implements PendingTerm {
@@ -409,6 +417,32 @@ public final class MirLowerer {
                     scanExpr(i.cond(), visibleVars, tryOuterVars);
                     scanExpr(i.thenBranch(), visibleVars, tryOuterVars);
                     scanExpr(i.elseBranch(), visibleVars, tryOuterVars);
+                }
+                case HirExpr.Match m -> {
+                    if (m.scrutineeVar() != null) {
+                        registerVar(m.scrutineeVar());
+                        if (mustAlwaysPin(m.scrutineeVar())) pin(m.scrutineeVar());
+                    }
+                    scanExpr(m.scrutinee(), visibleVars, tryOuterVars);
+                    for (HirExpr.MatchArm arm : m.arms()) {
+                        Set<Integer> armVis = addDeclared(visibleVars, arm.boundVars());
+                        for (HirVar bv : arm.boundVars()) {
+                            registerVar(bv);
+                            if (mustAlwaysPin(bv)) pin(bv);
+                        }
+                        scanPattern(arm.pattern(), armVis, tryOuterVars);
+                        scanExpr(arm.guard(), armVis, tryOuterVars);
+                        scanExpr(arm.body(), armVis, tryOuterVars);
+                    }
+                    if (m.elseArm() != null) {
+                        Set<Integer> elseVis = visibleVars;
+                        if (m.elseArm().var() != null) {
+                            registerVar(m.elseArm().var());
+                            if (mustAlwaysPin(m.elseArm().var())) pin(m.elseArm().var());
+                            elseVis = addDeclared(visibleVars, List.of(m.elseArm().var()));
+                        }
+                        scanExpr(m.elseArm().body(), elseVis, tryOuterVars);
+                    }
                 }
                 case HirExpr.While w -> {
                     scanExpr(w.cond(), visibleVars, tryOuterVars);
@@ -647,6 +681,19 @@ public final class MirLowerer {
             EdgeRef thenEdge = createEdge(cur, thenTarget, thenArgs);
             EdgeRef elseEdge = createEdge(cur, elseTarget, elseArgs);
             cur.term = new PendingTerm.BrIf(cond, thenTarget, thenEdge, elseTarget, elseEdge, line);
+        }
+
+        private void terminateSwitch(MirVal key, int[] keys, BlockBuilder[] targets,
+                                     BlockBuilder defaultTarget, int line) {
+            if (cur.isTerminated()) {
+                return;
+            }
+            EdgeRef[] edges = new EdgeRef[targets.length];
+            for (int i = 0; i < targets.length; i++) {
+                edges[i] = createEdge(cur, targets[i], List.of());
+            }
+            EdgeRef defEdge = createEdge(cur, defaultTarget, List.of());
+            cur.term = new PendingTerm.Switch(key, keys, targets, edges, defaultTarget, defEdge, line);
         }
 
         private void terminateFixed(MirTerminator term) {
@@ -938,6 +985,7 @@ public final class MirLowerer {
                 case HirExpr.Freeze f -> lowerFreeze(f);
                 case HirExpr.Block b -> lowerBlock(b);
                 case HirExpr.If i -> lowerIf(i);
+                case HirExpr.Match m -> lowerMatch(m);
                 case HirExpr.While w -> lowerWhile(w);
                 case HirExpr.For f -> lowerFor(f);
                 case HirExpr.Try t -> lowerTry(t);
@@ -1615,6 +1663,590 @@ public final class MirLowerer {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
             return mergeParam;
+        }
+
+        private static final LoweringTargets.JavaCallTarget MATCH_IN_CONTAINER;
+        private static final LoweringTargets.JavaCallTarget MATCH_RELATIONAL;
+        private static final LoweringTargets.JavaCallTarget MATCH_RANGE;
+        private static final LoweringTargets.JavaCallTarget MATCH_NO_CASE;
+        private static final LoweringTargets.JavaCallTarget STRING_HASH_CODE;
+        private static final LoweringTargets.JavaCallTarget STRING_EQUALS;
+        private static final LoweringTargets.JavaCallTarget OPERATORS_EQUAL;
+        private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_INT;
+        private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_LONG;
+        private static final LoweringTargets.JavaCallTarget MATH_FLOOR_MOD_INT;
+        private static final LoweringTargets.JavaCallTarget MATH_FLOOR_MOD_LONG;
+
+        static {
+            try {
+                MATCH_IN_CONTAINER = new LoweringTargets.JavaCallTarget(
+                        MatchSupport.class.getMethod("inContainer", Object.class, Object.class), true, false, false);
+                MATCH_RELATIONAL = new LoweringTargets.JavaCallTarget(
+                        MatchSupport.class.getMethod("relational", Object.class, Object.class, int.class), true, false, false);
+                MATCH_RANGE = new LoweringTargets.JavaCallTarget(
+                        MatchSupport.class.getMethod("rangeMatch", Object.class, Object.class, Object.class, boolean.class, Object.class), true, false, false);
+                MATCH_NO_CASE = new LoweringTargets.JavaCallTarget(
+                        MatchSupport.class.getMethod("noMatchingCase", Object.class), true, false, false);
+                STRING_HASH_CODE = new LoweringTargets.JavaCallTarget(
+                        String.class.getMethod("hashCode"), false, false, false);
+                STRING_EQUALS = new LoweringTargets.JavaCallTarget(
+                        String.class.getMethod("equals", Object.class), false, false, false);
+                OPERATORS_EQUAL = new LoweringTargets.JavaCallTarget(
+                        Operators.class.getMethod("equal", Object.class, Object.class), true, false, false);
+                RANGE_VALIDATE_INT = new LoweringTargets.JavaCallTarget(
+                        Range.class.getMethod("validateStep", int.class), true, false, false);
+                RANGE_VALIDATE_LONG = new LoweringTargets.JavaCallTarget(
+                        Range.class.getMethod("validateStep", long.class), true, false, false);
+                MATH_FLOOR_MOD_INT = new LoweringTargets.JavaCallTarget(
+                        Math.class.getMethod("floorMod", int.class, int.class), true, false, false);
+                MATH_FLOOR_MOD_LONG = new LoweringTargets.JavaCallTarget(
+                        Math.class.getMethod("floorMod", long.class, long.class), true, false, false);
+            } catch (NoSuchMethodException e) {
+                throw new ExceptionInInitializerError(e);
+            }
+        }
+
+        private void scanPattern(HirPattern p, Set<Integer> visibleVars, Set<Integer> tryOuterVars) {
+            if (p == null) return;
+            switch (p) {
+                case HirPattern.Const ignored -> {}
+                case HirPattern.Wildcard ignored -> {}
+                case HirPattern.TypeTest ignored -> {}
+                case HirPattern.ValueExpr v -> scanExpr(v.expr(), visibleVars, tryOuterVars);
+                case HirPattern.Bind b -> {
+                    if (b.var() != null) {
+                        registerVar(b.var());
+                        if (mustAlwaysPin(b.var())) pin(b.var());
+                    }
+                    scanPattern(b.inner(), visibleVars, tryOuterVars);
+                }
+                case HirPattern.Or o -> {
+                    for (HirPattern alt : o.alternatives()) {
+                        scanPattern(alt, visibleVars, tryOuterVars);
+                    }
+                }
+                case HirPattern.Relational r -> scanExpr(r.rhs(), visibleVars, tryOuterVars);
+                case HirPattern.RangeTest r -> {
+                    scanExpr(r.lo(), visibleVars, tryOuterVars);
+                    scanExpr(r.hi(), visibleVars, tryOuterVars);
+                    scanExpr(r.step(), visibleVars, tryOuterVars);
+                }
+                case HirPattern.Membership m -> scanExpr(m.container(), visibleVars, tryOuterVars);
+            }
+        }
+
+        private MirVal lowerMatch(HirExpr.Match m) {
+            int ln = m.meta().line();
+            PrimitiveKind targetKind = m.meta().kind();
+            PrimitiveKind scrutKind = m.scrutineeVar().primitiveKind();
+            MirVal scrutVal = lowerAs(m.scrutinee(), scrutKind);
+            if (cur.isTerminated()) return scrutVal;
+            writeVar(m.scrutineeVar(), scrutVal, ln);
+
+            MirVal mergeParam = newVal(targetKind, null);
+            BlockBuilder bbMerge = newBlock(List.of(mergeParam), false, false);
+
+            List<HirExpr.MatchArm> arms = m.arms();
+            int i = 0;
+            while (i < arms.size()) {
+                int intRunEnd = scanMirIntSwitchRun(arms, i, scrutKind);
+                if (intRunEnd > i) {
+                    emitMirIntSwitchRun(arms, i, intRunEnd, scrutVal, targetKind, bbMerge, ln);
+                    i = intRunEnd;
+                    continue;
+                }
+                int strRunEnd = scanMirStringSwitchRun(arms, i, scrutKind);
+                if (strRunEnd > i) {
+                    emitMirStringSwitchRun(arms, i, strRunEnd, scrutVal, false, targetKind, bbMerge, ln);
+                    i = strRunEnd;
+                    continue;
+                }
+                HirExpr.MatchArm arm = arms.get(i);
+                BlockBuilder bbNext = newBlock(List.of(), false, false);
+                lowerMatchPattern(arm.pattern(), scrutVal, bbNext);
+                if (!cur.isTerminated() && arm.guard() != null) {
+                    MirVal gVal = lowerExpr(arm.guard());
+                    if (!cur.isTerminated()) {
+                        BlockBuilder bbBody = newBlock(List.of(), false, false);
+                        terminateBrIf(gVal, bbBody, List.of(), bbNext, List.of(), arm.guard().meta().line());
+                        sealBlock(bbBody);
+                        cur = bbBody;
+                    }
+                }
+                if (!cur.isTerminated()) {
+                    lowerMatchArmBody(arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
+                }
+                sealBlock(bbNext);
+                cur = bbNext;
+                i++;
+            }
+
+            if (!cur.isTerminated()) {
+                if (m.elseArm() != null) {
+                    HirExpr.MatchElse elseArm = m.elseArm();
+                    if (elseArm.var() != null) {
+                        writeVar(elseArm.var(), scrutVal, elseArm.line());
+                    }
+                    lowerMatchArmBody(elseArm.body(), elseArm.bodyWideningRank(), targetKind, bbMerge, elseArm.line());
+                } else {
+                    MirVal boxed = convertVal(scrutVal, PrimitiveKind.NONE, ln);
+                    MirVal exn = newVal(PrimitiveKind.NONE, null);
+                    emit(new MirInst.CallJava(exn, null, "MatchSupport", ln, true, MATCH_NO_CASE,
+                            List.of(boxed), false, false, ln, MirEffect.PURE_NOTHROW));
+                    terminateFixed(new MirTerminator.Throw(exn, true, ln));
+                }
+            }
+
+            sealBlock(bbMerge);
+            cur = bbMerge;
+            if (bbMerge.incomingEdges.isEmpty()) {
+                terminateFixed(new MirTerminator.Unreachable(ln));
+            }
+            return mergeParam;
+        }
+
+        private void lowerMatchArmBody(HirExpr body, int wideningRank, PrimitiveKind targetKind,
+                                       BlockBuilder bbMerge, int ln) {
+            MirVal v;
+            if (wideningRank >= 0) {
+                v = lowerExpr(body);
+                if (!cur.isTerminated()) {
+                    v = applyWideningRank(v, wideningRank, ln);
+                    v = convertVal(v, targetKind, ln);
+                }
+            } else {
+                v = lowerAs(body, targetKind);
+            }
+            if (!cur.isTerminated()) {
+                terminateBr(bbMerge, List.of(v), ln);
+            }
+        }
+
+        private static List<HirPattern.Const> collectMirPureConsts(HirPattern p) {
+            if (p instanceof HirPattern.Const c) return List.of(c);
+            if (p instanceof HirPattern.Or o) {
+                List<HirPattern.Const> out = new ArrayList<>();
+                for (HirPattern alt : o.alternatives()) {
+                    List<HirPattern.Const> sub = collectMirPureConsts(alt);
+                    if (sub == null) return null;
+                    out.addAll(sub);
+                }
+                return out;
+            }
+            return null;
+        }
+
+        private static int scanMirIntSwitchRun(List<HirExpr.MatchArm> arms, int start, PrimitiveKind scrutKind) {
+            if (scrutKind != PrimitiveKind.BYTE && scrutKind != PrimitiveKind.SHORT
+                    && scrutKind != PrimitiveKind.INT && scrutKind != PrimitiveKind.CHAR) {
+                return start;
+            }
+            Set<Integer> keys = new HashSet<>();
+            int end = start;
+            while (end < arms.size()) {
+                HirExpr.MatchArm arm = arms.get(end);
+                if (arm.guard() != null || !arm.boundVars().isEmpty()) break;
+                List<HirPattern.Const> cs = collectMirPureConsts(arm.pattern());
+                if (cs == null || cs.isEmpty()) break;
+                boolean ok = true;
+                for (HirPattern.Const c : cs) {
+                    Object v = c.value();
+                    if (!(v instanceof Byte || v instanceof Short || v instanceof Integer || v instanceof Character)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) break;
+                for (HirPattern.Const c : cs) {
+                    keys.add(c.value() instanceof Character ch ? (int) ch : ((Number) c.value()).intValue());
+                }
+                end++;
+            }
+            return keys.size() >= 3 ? end : start;
+        }
+
+        private void emitMirIntSwitchRun(List<HirExpr.MatchArm> arms, int start, int end,
+                                         MirVal scrutVal, PrimitiveKind targetKind, BlockBuilder bbMerge, int ln) {
+            int armCount = end - start;
+            BlockBuilder[] armBlocks = new BlockBuilder[armCount];
+            for (int k = 0; k < armCount; k++) {
+                armBlocks[k] = newBlock(List.of(), false, false);
+            }
+            BlockBuilder bbAfter = newBlock(List.of(), false, false);
+            java.util.TreeMap<Integer, BlockBuilder> keyMap = new java.util.TreeMap<>();
+            for (int k = 0; k < armCount; k++) {
+                for (HirPattern.Const c : collectMirPureConsts(arms.get(start + k).pattern())) {
+                    int kv = c.value() instanceof Character ch ? (int) ch : ((Number) c.value()).intValue();
+                    keyMap.putIfAbsent(kv, armBlocks[k]);
+                }
+            }
+            int[] keys = new int[keyMap.size()];
+            BlockBuilder[] targets = new BlockBuilder[keyMap.size()];
+            int idx = 0;
+            for (Map.Entry<Integer, BlockBuilder> e : keyMap.entrySet()) {
+                keys[idx] = e.getKey();
+                targets[idx] = e.getValue();
+                idx++;
+            }
+            MirVal keyInt = convertVal(scrutVal, PrimitiveKind.INT, ln);
+            terminateSwitch(keyInt, keys, targets, bbAfter, ln);
+            for (int k = 0; k < armCount; k++) {
+                sealBlock(armBlocks[k]);
+                cur = armBlocks[k];
+                HirExpr.MatchArm arm = arms.get(start + k);
+                lowerMatchArmBody(arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
+            }
+            sealBlock(bbAfter);
+            cur = bbAfter;
+        }
+
+        private static int scanMirStringSwitchRun(List<HirExpr.MatchArm> arms, int start, PrimitiveKind scrutKind) {
+            if (scrutKind != PrimitiveKind.NONE) return start;
+            Set<String> strs = new HashSet<>();
+            int end = start;
+            while (end < arms.size()) {
+                HirExpr.MatchArm arm = arms.get(end);
+                if (arm.guard() != null || !arm.boundVars().isEmpty()) break;
+                List<HirPattern.Const> cs = collectMirPureConsts(arm.pattern());
+                if (cs == null || cs.isEmpty()) break;
+                boolean ok = true;
+                for (HirPattern.Const c : cs) {
+                    if (!c.isNull() && !(c.value() instanceof String)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) break;
+                for (HirPattern.Const c : cs) {
+                    if (c.value() instanceof String s) {
+                        strs.add(s);
+                    }
+                }
+                end++;
+            }
+            return strs.size() >= 3 ? end : start;
+        }
+
+        private void emitMirStringSwitchRun(List<HirExpr.MatchArm> arms, int start, int end,
+                                            MirVal scrutVal, boolean guaranteedString,
+                                            PrimitiveKind targetKind, BlockBuilder bbMerge, int ln) {
+            int armCount = end - start;
+            BlockBuilder[] armBlocks = new BlockBuilder[armCount];
+            for (int k = 0; k < armCount; k++) {
+                armBlocks[k] = newBlock(List.of(), false, false);
+            }
+            BlockBuilder bbAfter = newBlock(List.of(), false, false);
+
+            LinkedHashMap<String, Integer> strToArm = new LinkedHashMap<>();
+            int nullArm = -1;
+            for (int k = 0; k < armCount; k++) {
+                for (HirPattern.Const c : collectMirPureConsts(arms.get(start + k).pattern())) {
+                    if (c.isNull()) {
+                        if (nullArm < 0) nullArm = k;
+                    } else {
+                        strToArm.putIfAbsent((String) c.value(), k);
+                    }
+                }
+            }
+            BlockBuilder bbNonNull = newBlock(List.of(), false, false);
+            MirVal nullVal = emitConst(null, PrimitiveKind.NONE, ln);
+            MirVal isNull = newVal(PrimitiveKind.BOOL, null);
+            emit(new MirInst.Binary(isNull, HirExpr.BinaryOp.EQ, scrutVal, nullVal, "match", "null", false, ln, MirEffect.PURE_NOTHROW));
+            terminateBrIf(isNull, nullArm >= 0 ? armBlocks[nullArm] : bbAfter, List.of(), bbNonNull, List.of(), ln);
+            sealBlock(bbNonNull);
+            cur = bbNonNull;
+
+            if (!guaranteedString) {
+                BlockBuilder bbIsStr = newBlock(List.of(), false, false);
+                MirVal isStr = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.IsCheck(isStr, scrutVal, null, null, List.of(), "string|string|", ln));
+                terminateBrIf(isStr, bbIsStr, List.of(), bbAfter, List.of(), ln);
+                sealBlock(bbIsStr);
+                cur = bbIsStr;
+            }
+
+            java.util.TreeMap<Integer, List<Map.Entry<String, Integer>>> buckets = new java.util.TreeMap<>();
+            for (Map.Entry<String, Integer> e : strToArm.entrySet()) {
+                buckets.computeIfAbsent(e.getKey().hashCode(), h -> new ArrayList<>()).add(e);
+            }
+            int bCount = buckets.size();
+            int[] hashes = new int[bCount];
+            BlockBuilder[] bucketBlocks = new BlockBuilder[bCount];
+            List<List<Map.Entry<String, Integer>>> bucketEntries = new ArrayList<>(bCount);
+            int idx = 0;
+            for (Map.Entry<Integer, List<Map.Entry<String, Integer>>> b : buckets.entrySet()) {
+                hashes[idx] = b.getKey();
+                bucketBlocks[idx] = newBlock(List.of(), false, false);
+                bucketEntries.add(b.getValue());
+                idx++;
+            }
+            MirVal hashVal = newVal(PrimitiveKind.INT, null);
+            emit(new MirInst.CallJava(hashVal, scrutVal, "match", ln, false, STRING_HASH_CODE,
+                    List.of(), false, true, ln, MirEffect.PURE_NOTHROW));
+            terminateSwitch(hashVal, hashes, bucketBlocks, bbAfter, ln);
+
+            for (int b = 0; b < bCount; b++) {
+                sealBlock(bucketBlocks[b]);
+                cur = bucketBlocks[b];
+                List<Map.Entry<String, Integer>> entries = bucketEntries.get(b);
+                for (int j = 0; j < entries.size(); j++) {
+                    Map.Entry<String, Integer> e = entries.get(j);
+                    MirVal strConst = emitConst(e.getKey(), PrimitiveKind.NONE, ln);
+                    MirVal eq = newVal(PrimitiveKind.BOOL, null);
+                    emit(new MirInst.CallJava(eq, strConst, "pattern", ln, false, STRING_EQUALS,
+                            List.of(scrutVal), false, true, ln, MirEffect.PURE_NOTHROW));
+                    BlockBuilder bbFail = (j == entries.size() - 1) ? bbAfter : newBlock(List.of(), false, false);
+                    terminateBrIf(eq, armBlocks[e.getValue()], List.of(), bbFail, List.of(), ln);
+                    if (bbFail != bbAfter) {
+                        sealBlock(bbFail);
+                        cur = bbFail;
+                    }
+                }
+            }
+
+            for (int k = 0; k < armCount; k++) {
+                sealBlock(armBlocks[k]);
+                cur = armBlocks[k];
+                HirExpr.MatchArm arm = arms.get(start + k);
+                lowerMatchArmBody(arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
+            }
+            sealBlock(bbAfter);
+            cur = bbAfter;
+        }
+
+        private void lowerMatchPattern(HirPattern p, MirVal val, BlockBuilder bbFail) {
+            if (cur.isTerminated()) return;
+            int ln = p.line();
+            switch (p) {
+                case HirPattern.Wildcard ignored -> {
+                }
+                case HirPattern.Const pc -> {
+                    MirVal cond = emitMirConstMatch(pc, val, ln);
+                    branchOnPatternCond(cond, bbFail, ln);
+                }
+                case HirPattern.ValueExpr ve -> {
+                    MirVal rhs = lowerExpr(ve.expr());
+                    if (cur.isTerminated()) return;
+                    MirVal cond = emitMirEquality(val, rhs, false, ln);
+                    branchOnPatternCond(cond, bbFail, ln);
+                }
+                case HirPattern.TypeTest tt -> {
+                    MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+                    PrimitiveKind outKind = tt.builtin() != null ? PrimitiveKind.NONE : PrimitiveKind.BOOL;
+                    MirVal res = newVal(outKind, null);
+                    emit(new MirInst.IsCheck(res, boxed, tt.builtin(), tt.target(), tt.intersectionTargets(), tt.descriptor(), ln));
+                    branchOnPatternCond(res, bbFail, ln);
+                }
+                case HirPattern.Bind b -> {
+                    if (b.inner() != null) {
+                        lowerMatchPattern(b.inner(), val, bbFail);
+                        if (cur.isTerminated()) return;
+                    }
+                    MirVal bound = convertVal(val, b.var().primitiveKind(), ln);
+                    writeVar(b.var(), bound, ln);
+                }
+                case HirPattern.Or o -> {
+                    List<HirPattern> alts = o.alternatives();
+                    BlockBuilder bbMatched = newBlock(List.of(), false, false);
+                    for (int k = 0; k < alts.size(); k++) {
+                        BlockBuilder altFail = (k == alts.size() - 1) ? bbFail : newBlock(List.of(), false, false);
+                        lowerMatchPattern(alts.get(k), val, altFail);
+                        if (!cur.isTerminated()) {
+                            terminateBr(bbMatched, List.of(), ln);
+                        }
+                        if (altFail != bbFail) {
+                            sealBlock(altFail);
+                            cur = altFail;
+                        }
+                    }
+                    sealBlock(bbMatched);
+                    cur = bbMatched;
+                }
+                case HirPattern.Relational rel -> {
+                    MirVal rhs = lowerExpr(rel.rhs());
+                    if (cur.isTerminated()) return;
+                    MirVal cond = emitMirRelational(val, rhs, rel.op(), ln);
+                    branchOnPatternCond(cond, bbFail, ln);
+                }
+                case HirPattern.RangeTest rt -> {
+                    lowerMirRangePattern(rt, val, bbFail);
+                }
+                case HirPattern.Membership mp -> {
+                    MirVal container = lowerBoxed(mp.container());
+                    if (cur.isTerminated()) return;
+                    MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+                    MirVal res = newVal(PrimitiveKind.BOOL, null);
+                    emit(new MirInst.CallJava(res, null, "MatchSupport", ln, true, MATCH_IN_CONTAINER,
+                            List.of(boxed, container), false, false, ln, MirEffect.IMPURE_THROW));
+                    branchOnPatternCond(res, bbFail, ln);
+                }
+            }
+        }
+
+        private void branchOnPatternCond(MirVal cond, BlockBuilder bbFail, int ln) {
+            BlockBuilder bbPass = newBlock(List.of(), false, false);
+            terminateBrIf(cond, bbPass, List.of(), bbFail, List.of(), ln);
+            sealBlock(bbPass);
+            cur = bbPass;
+        }
+
+        private MirVal emitMirConstMatch(HirPattern.Const pc, MirVal val, int ln) {
+            if (pc.isNull()) {
+                if (val.kind().isPrimitive()) {
+                    return emitConst(Boolean.FALSE, PrimitiveKind.BOOL, ln);
+                }
+                MirVal nullVal = emitConst(null, PrimitiveKind.NONE, ln);
+                MirVal res = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(res, HirExpr.BinaryOp.EQ, val, nullVal, "match", "null", false, ln, MirEffect.PURE_NOTHROW));
+                return res;
+            }
+            if (pc.isEnum()) {
+                try {
+                    java.lang.reflect.Field field = pc.enumClass().getField(pc.enumConstantName());
+                    LoweringTargets.JavaFieldTarget ft = new LoweringTargets.JavaFieldTarget(field, true, false);
+                    MirVal enumVal = newVal(PrimitiveKind.NONE, pc.enumConstantName());
+                    emit(new MirInst.LoadJavaField(enumVal, null, pc.enumClass().getName(), true, ft, ln,
+                            MirEffect.read(MirEffect.AliasClass.FROZEN, true, true, true)));
+                    return emitMirEquality(val, enumVal, false, ln);
+                } catch (NoSuchFieldException e) {
+                    return emitConst(Boolean.FALSE, PrimitiveKind.BOOL, ln);
+                }
+            }
+            MirVal constVal = emitConst(pc.value(), pc.kind(), ln);
+            return emitMirEquality(val, constVal, false, ln);
+        }
+
+        private MirVal emitMirEquality(MirVal left, MirVal right, boolean invert, int ln) {
+            PrimitiveKind lk = left.kind();
+            PrimitiveKind rk = right.kind();
+            HirExpr.BinaryOp op = invert ? HirExpr.BinaryOp.NEQ : HirExpr.BinaryOp.EQ;
+            if ((lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
+                    || (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR)) {
+                MirVal res = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(res, op, left, right, "match", "pattern", false, ln, MirEffect.PURE_NOTHROW));
+                return res;
+            }
+            if (lk.numericRank() >= 0 && rk.numericRank() >= 0) {
+                PrimitiveKind common = promoteMirNumeric(lk, rk);
+                MirVal cl = convertVal(left, common, ln);
+                MirVal cr = convertVal(right, common, ln);
+                MirVal res = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(res, op, cl, cr, "match", "pattern", false, ln, MirEffect.PURE_NOTHROW));
+                return res;
+            }
+            MirVal bl = convertVal(left, PrimitiveKind.NONE, ln);
+            MirVal br = convertVal(right, PrimitiveKind.NONE, ln);
+            MirVal eq = newVal(PrimitiveKind.BOOL, null);
+            emit(new MirInst.CallJava(eq, null, "Operators", ln, true, OPERATORS_EQUAL,
+                    List.of(bl, br), true, true, ln, MirEffect.PURE_NOTHROW));
+            if (invert) {
+                MirVal neg = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Unary(neg, HirExpr.UnaryOp.NOT, eq, "pattern", ln, MirEffect.PURE_NOTHROW));
+                return neg;
+            }
+            return eq;
+        }
+
+        private MirVal emitMirRelational(MirVal left, MirVal right, HirExpr.BinaryOp op, int ln) {
+            if (op == HirExpr.BinaryOp.EQ || op == HirExpr.BinaryOp.NEQ) {
+                return emitMirEquality(left, right, op == HirExpr.BinaryOp.NEQ, ln);
+            }
+            PrimitiveKind lk = left.kind();
+            PrimitiveKind rk = right.kind();
+            if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR) {
+                MirVal res = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(res, op, left, right, "match", "pattern", false, ln, MirEffect.PURE_NOTHROW));
+                return res;
+            }
+            if (lk.numericRank() >= 0 && rk.numericRank() >= 0) {
+                PrimitiveKind common = promoteMirNumeric(lk, rk);
+                MirVal cl = convertVal(left, common, ln);
+                MirVal cr = convertVal(right, common, ln);
+                MirVal res = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(res, op, cl, cr, "match", "pattern", false, ln, MirEffect.PURE_NOTHROW));
+                return res;
+            }
+            int opCode = switch (op) {
+                case LT -> MatchSupport.OP_LT;
+                case LTE -> MatchSupport.OP_LTE;
+                case GT -> MatchSupport.OP_GT;
+                case GTE -> MatchSupport.OP_GTE;
+                default -> throw new IllegalStateException();
+            };
+            MirVal bl = convertVal(left, PrimitiveKind.NONE, ln);
+            MirVal br = convertVal(right, PrimitiveKind.NONE, ln);
+            MirVal opVal = emitConst(opCode, PrimitiveKind.INT, ln);
+            MirVal res = newVal(PrimitiveKind.BOOL, null);
+            emit(new MirInst.CallJava(res, null, "MatchSupport", ln, true, MATCH_RELATIONAL,
+                    List.of(bl, br, opVal), false, true, ln, MirEffect.IMPURE_THROW));
+            return res;
+        }
+
+        private void lowerMirRangePattern(HirPattern.RangeTest rt, MirVal val, BlockBuilder bbFail) {
+            int ln = rt.line();
+            PrimitiveKind vk = val.kind();
+            PrimitiveKind ek = rt.elemKind();
+            if (vk.isPrimitive() && ek.isPrimitive() && ek != PrimitiveKind.BOOL) {
+                PrimitiveKind cmpKind = ek == PrimitiveKind.CHAR ? PrimitiveKind.CHAR : promoteMirNumeric(vk, ek);
+                MirVal lo = lowerAs(rt.lo(), cmpKind);
+                if (cur.isTerminated()) return;
+                MirVal hi = lowerAs(rt.hi(), cmpKind);
+                if (cur.isTerminated()) return;
+                MirVal stepVal = null;
+                PrimitiveKind stepKind = cmpKind == PrimitiveKind.LONG ? PrimitiveKind.LONG : PrimitiveKind.INT;
+                if (rt.step() != null) {
+                    MirVal rawStep = lowerAs(rt.step(), stepKind);
+                    if (cur.isTerminated()) return;
+                    stepVal = newVal(stepKind, null);
+                    emit(new MirInst.CallJava(stepVal, null, "Range", ln, true,
+                            stepKind == PrimitiveKind.LONG ? RANGE_VALIDATE_LONG : RANGE_VALIDATE_INT,
+                            List.of(rawStep), false, true, ln, MirEffect.PURE_MAY_THROW));
+                }
+                MirVal v = convertVal(val, cmpKind, ln);
+                MirVal geLo = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(geLo, HirExpr.BinaryOp.GTE, v, lo, "match", "lo", false, ln, MirEffect.PURE_NOTHROW));
+                branchOnPatternCond(geLo, bbFail, ln);
+
+                MirVal leHi = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(leHi, rt.inclusive() ? HirExpr.BinaryOp.LTE : HirExpr.BinaryOp.LT,
+                        v, hi, "match", "hi", false, ln, MirEffect.PURE_NOTHROW));
+                branchOnPatternCond(leHi, bbFail, ln);
+
+                if (stepVal != null) {
+                    MirVal diff = newVal(stepKind, null);
+                    MirVal vs = convertVal(v, stepKind, ln);
+                    MirVal ls = convertVal(lo, stepKind, ln);
+                    emit(new MirInst.Binary(diff, HirExpr.BinaryOp.SUB, vs, ls, "match", "lo", false, ln, MirEffect.PURE_NOTHROW));
+                    MirVal rem = newVal(stepKind, null);
+                    emit(new MirInst.CallJava(rem, null, "Math", ln, true,
+                            stepKind == PrimitiveKind.LONG ? MATH_FLOOR_MOD_LONG : MATH_FLOOR_MOD_INT,
+                            List.of(diff, stepVal), false, true, ln, MirEffect.PURE_MAY_THROW));
+                    MirVal zero = emitConst(stepKind == PrimitiveKind.LONG ? 0L : 0, stepKind, ln);
+                    MirVal onStep = newVal(PrimitiveKind.BOOL, null);
+                    emit(new MirInst.Binary(onStep, HirExpr.BinaryOp.EQ, rem, zero, "mod", "0", false, ln, MirEffect.PURE_NOTHROW));
+                    branchOnPatternCond(onStep, bbFail, ln);
+                }
+                return;
+            }
+            MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+            MirVal lo = lowerBoxed(rt.lo());
+            if (cur.isTerminated()) return;
+            MirVal hi = lowerBoxed(rt.hi());
+            if (cur.isTerminated()) return;
+            MirVal inc = emitConst(rt.inclusive(), PrimitiveKind.BOOL, ln);
+            MirVal step = rt.step() != null ? lowerBoxed(rt.step()) : emitConst(null, PrimitiveKind.NONE, ln);
+            if (cur.isTerminated()) return;
+            MirVal res = newVal(PrimitiveKind.BOOL, null);
+            emit(new MirInst.CallJava(res, null, "MatchSupport", ln, true, MATCH_RANGE,
+                    List.of(boxed, lo, hi, inc, step), false, true, ln, MirEffect.IMPURE_THROW));
+            branchOnPatternCond(res, bbFail, ln);
+        }
+
+        private static PrimitiveKind promoteMirNumeric(PrimitiveKind a, PrimitiveKind b) {
+            if (a == PrimitiveKind.DOUBLE || b == PrimitiveKind.DOUBLE) return PrimitiveKind.DOUBLE;
+            if (a == PrimitiveKind.FLOAT || b == PrimitiveKind.FLOAT) return PrimitiveKind.FLOAT;
+            if (a == PrimitiveKind.LONG || b == PrimitiveKind.LONG) return PrimitiveKind.LONG;
+            return PrimitiveKind.INT;
         }
 
         private MirVal lowerWhile(HirExpr.While w) {
@@ -2892,6 +3524,17 @@ public final class MirLowerer {
                         case PendingTerm.BrIf bi -> new MirTerminator.BrIf(
                                 bi.cond, bi.thenTarget.id, bi.thenEdge.args,
                                 bi.elseTarget.id, bi.elseEdge.args, bi.line);
+                        case PendingTerm.Switch sw -> {
+                            int n = sw.keys.length;
+                            int[] tIds = new int[n];
+                            List<List<MirVal>> tArgs = new ArrayList<>(n);
+                            for (int k = 0; k < n; k++) {
+                                tIds[k] = sw.targets[k].id;
+                                tArgs.add(sw.edges[k].args);
+                            }
+                            yield new MirTerminator.Switch(sw.key, sw.keys, tIds, tArgs,
+                                    sw.defaultTarget.id, sw.defaultEdge.args, sw.line);
+                        }
                         case PendingTerm.Fixed fx -> fx.term;
                     };
                 }
@@ -2920,6 +3563,11 @@ public final class MirLowerer {
                     } else if (b.terminator() instanceof MirTerminator.BrIf bi) {
                         incoming.get(bi.thenBlock()).add(bi.thenArgs());
                         incoming.get(bi.elseBlock()).add(bi.elseArgs());
+                    } else if (b.terminator() instanceof MirTerminator.Switch sw) {
+                        for (int k = 0; k < sw.keys().length; k++) {
+                            incoming.get(sw.targetBlocks()[k]).add(sw.targetArgs().get(k));
+                        }
+                        incoming.get(sw.defaultBlock()).add(sw.defaultArgs());
                     }
                 }
                 Map<Integer, MirVal> subst = new HashMap<>();
@@ -2991,6 +3639,27 @@ public final class MirLowerer {
                                     bi.thenBlock(), td.isEmpty() ? bi.thenArgs() : filterOut(bi.thenArgs(), td),
                                     bi.elseBlock(), ed.isEmpty() ? bi.elseArgs() : filterOut(bi.elseArgs(), ed),
                                     bi.line());
+                        }
+                    } else if (term instanceof MirTerminator.Switch sw) {
+                        boolean swChanged = false;
+                        List<List<MirVal>> nta = new ArrayList<>(sw.keys().length);
+                        for (int k = 0; k < sw.keys().length; k++) {
+                            Set<Integer> td = removeIndices.getOrDefault(sw.targetBlocks()[k], Set.of());
+                            if (!td.isEmpty()) {
+                                nta.add(filterOut(sw.targetArgs().get(k), td));
+                                swChanged = true;
+                            } else {
+                                nta.add(sw.targetArgs().get(k));
+                            }
+                        }
+                        Set<Integer> dd = removeIndices.getOrDefault(sw.defaultBlock(), Set.of());
+                        List<MirVal> nda = dd.isEmpty() ? sw.defaultArgs() : filterOut(sw.defaultArgs(), dd);
+                        if (!dd.isEmpty()) {
+                            swChanged = true;
+                        }
+                        if (swChanged) {
+                            term = new MirTerminator.Switch(sw.key(), sw.keys(), sw.targetBlocks(), nta,
+                                    sw.defaultBlock(), nda, sw.line());
                         }
                     }
                     next.add(new MirBlock(b.id(), newParams, newInsts, term, b.handlers(), b.handlerEntry()));

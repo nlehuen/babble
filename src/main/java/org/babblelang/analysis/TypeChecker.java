@@ -204,7 +204,12 @@ final class TypeChecker {
     private final MemberTypes members = new MemberTypes(this);
     private final OperatorTypes operators = new OperatorTypes(this);
     private final Narrowing narrowing = new Narrowing(this);
+    private final MatchTyper matchTyper = new MatchTyper(this);
     private ImportedSummaries imported;
+
+    MatchTyper matchTyper() {
+        return matchTyper;
+    }
 
     CallSolver callSolver() {
         return callSolver;
@@ -396,6 +401,10 @@ final class TypeChecker {
         return env;
     }
 
+    void setEnv(TypeEnv next) {
+        this.env = next;
+    }
+
     Set<ParserRuleContext> capturedReassigned() {
         return capturedReassigned;
     }
@@ -549,6 +558,7 @@ final class TypeChecker {
         forElemSamTargets.clear();
         asSamTargets.clear();
         callSolver.reset();
+        matchTyper.reset();
     }
 
     private final class ReturnFinder extends BabbleBaseVisitor<Void> {
@@ -1184,7 +1194,7 @@ final class TypeChecker {
         return type(ctx, null, Role.STATEMENT);
     }
 
-    private Type type(ParserRuleContext ctx, Type expected, Role role) {
+    Type type(ParserRuleContext ctx, Type expected, Role role) {
         if (ctx == null || !isLocal(ctx)) {
             return Type.ERROR;
         }
@@ -1627,6 +1637,12 @@ final class TypeChecker {
                 catchTargetTypes.remove(cc);
                 declarationTypes.remove(cc);
             }
+            if (ctx instanceof BabbleParser.BindingPatternContext
+                    || ctx instanceof BabbleParser.RestPatternContext
+                    || ctx instanceof BabbleParser.ElseClauseContext) {
+                declarationTypes.remove(ctx);
+            }
+            matchTyper.clearSubtree(ctx);
             if (ctx instanceof BabbleParser.DefExpressionContext || ScopeAnalysis.isParamDecl(ctx)) {
                 declarationTypes.remove(ctx);
             }
@@ -2218,6 +2234,7 @@ final class TypeChecker {
             return switch (ctx) {
                 case BabbleParser.IfExpressionContext c -> type(c.ifExpr(), expected, role);
                 case BabbleParser.IfExprContext c -> visitIfExpr(c, expected, role);
+                case BabbleParser.MatchExpressionContext c -> matchTyper.typeMatch(c, expected, role);
                 case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
                 case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
                 case BabbleParser.TypeAliasExpressionContext c -> visitTypeAlias(c);

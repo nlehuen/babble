@@ -733,6 +733,147 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return null;
     }
 
+    private record PatternBinding(Token name, ParserRuleContext decl) {
+    }
+
+    @Override
+    public Void visitMatchExpression(BabbleParser.MatchExpressionContext ctx) {
+        visit(ctx.scrutinee);
+        for (BabbleParser.CaseClauseContext clause : ctx.caseClause()) {
+            List<PatternBinding> bindings = new ArrayList<>();
+            collectPattern(clause.pattern(), true, clause.guard != null, false, bindings);
+            inScope(ScopeNode.Kind.BLOCK, clause, null, () -> {
+                for (PatternBinding b : bindings) {
+                    if (current().names.containsKey(b.name().getText())) {
+                        throw error("Duplicate pattern variable : " + b.name().getText(), b.name());
+                    }
+                    declare(b.name(), b.decl(), false);
+                }
+                if (clause.guard != null) {
+                    visit(clause.guard);
+                }
+                visit(clause.armBlock);
+            });
+        }
+        if (ctx.elseClause() != null) {
+            BabbleParser.ElseClauseContext ec = ctx.elseClause();
+            if (ec.name != null) {
+                inScope(ScopeNode.Kind.BLOCK, ec, null, () -> {
+                    declare(ec.name, ec, false);
+                    visit(ec.elseBlock);
+                });
+            } else {
+                visit(ec.elseBlock);
+            }
+        }
+        return null;
+    }
+
+    private void collectPattern(BabbleParser.PatternContext pat, boolean topLevel, boolean hasGuard,
+                                boolean inOr, List<PatternBinding> bindings) {
+        List<BabbleParser.AtomicPatternContext> atoms = pat.atomicPattern();
+        boolean isOr = inOr || atoms.size() > 1;
+        for (BabbleParser.AtomicPatternContext atom : atoms) {
+            collectAtomicPattern(atom, topLevel, hasGuard, isOr, bindings);
+        }
+    }
+
+    private void collectAtomicPattern(BabbleParser.AtomicPatternContext atom, boolean topLevel, boolean hasGuard,
+                                      boolean inOr, List<PatternBinding> bindings) {
+        switch (atom) {
+            case BabbleParser.BindingPatternContext bp -> {
+                if (inOr) {
+                    throw error("Pattern binding not allowed in OR-pattern : " + bp.name.getText(), bp.name);
+                }
+                if (topLevel && bp.patternBindingType() == null && !hasGuard) {
+                    throw error("Unconditional binding in case : use else def " + bp.name.getText()
+                            + " then (...) or add a type or guard", bp);
+                }
+                if (bp.patternBindingType() != null) {
+                    visit(bp.patternBindingType());
+                }
+                bindings.add(new PatternBinding(bp.name, bp));
+                if (bp.patternArgs() != null) {
+                    collectPatternArgs(bp.patternArgs(), inOr, bindings);
+                }
+            }
+            case BabbleParser.TypeOrDestructurePatternContext tp -> {
+                visit(tp.patternType());
+                if (tp.patternArgs() != null) {
+                    collectPatternArgs(tp.patternArgs(), inOr, bindings);
+                }
+            }
+            case BabbleParser.RelationalPatternContext rp -> {
+                checkValuePatternExpression(rp.rhs);
+                visit(rp.rhs);
+            }
+            case BabbleParser.MembershipPatternContext mp -> {
+                checkValuePatternExpression(mp.container);
+                visit(mp.container);
+            }
+            case BabbleParser.ValuePatternContext vp -> {
+                if (isWildcardExpr(vp.expr)) {
+                    if (topLevel) {
+                        throw error("Wildcard _ is not allowed as a top-level case : use else (...)", vp);
+                    }
+                    return;
+                }
+                checkValuePatternExpression(vp.expr);
+                visit(vp.expr);
+            }
+            default -> {
+            }
+        }
+    }
+
+    private void collectPatternArgs(BabbleParser.PatternArgsContext args, boolean inOr, List<PatternBinding> bindings) {
+        for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+            collectPattern(arg.pattern(), false, false, inOr, bindings);
+        }
+        if (args.restPattern() != null && args.restPattern().name != null) {
+            Token name = args.restPattern().name;
+            if (inOr) {
+                throw error("Pattern binding not allowed in OR-pattern : " + name.getText(), name);
+            }
+            bindings.add(new PatternBinding(name, args.restPattern()));
+        }
+    }
+
+    static boolean isWildcardExpr(BabbleParser.ExpressionContext expr) {
+        return expr instanceof BabbleParser.SelectorContext sel
+                && sel.expression() == null
+                && "_".equals(sel.ID().getText());
+    }
+
+    private static void checkValuePatternExpression(BabbleParser.ExpressionContext expr) {
+        String form = disallowedValuePatternForm(expr);
+        if (form != null) {
+            throw error("Not a value pattern : " + form + ". Parenthesize it or bind it with def first", expr);
+        }
+    }
+
+    private static String disallowedValuePatternForm(BabbleParser.ExpressionContext expr) {
+        return switch (expr) {
+            case BabbleParser.DefExpressionContext def -> def.VAR() != null ? "var" : "def";
+            case BabbleParser.IfExpressionContext ignored -> "if";
+            case BabbleParser.MatchExpressionContext ignored -> "match";
+            case BabbleParser.WhileExpressionContext ignored -> "while";
+            case BabbleParser.ForExpressionContext ignored -> "for";
+            case BabbleParser.TryExpressionContext ignored -> "try";
+            case BabbleParser.ReturnExpressionContext ignored -> "return";
+            case BabbleParser.BreakExpressionContext ignored -> "break";
+            case BabbleParser.ContinueExpressionContext ignored -> "continue";
+            case BabbleParser.ThrowExpressionContext ignored -> "throw";
+            case BabbleParser.FunctionLiteralContext ignored -> "fn";
+            case BabbleParser.ClassExpressionContext cls -> cls.RECORD() != null ? "record" : "class";
+            case BabbleParser.InterfaceExpressionContext ignored -> "interface";
+            case BabbleParser.ObjectExpressionContext ignored -> "object";
+            case BabbleParser.TypeAliasExpressionContext ignored -> "type";
+            case BabbleParser.AxiomExpressionContext ignored -> "axiom";
+            default -> null;
+        };
+    }
+
     @Override
     public Void visitReturnExpression(BabbleParser.ReturnExpressionContext ctx) {
         switch (returnTarget) {

@@ -256,7 +256,7 @@ final class TypeAnnotations {
     }
 
     /** One operand of a union : a single type, or the intersection of several (BIP022-D1). */
-    private Type groupAnnotation(List<BabbleParser.NullableTypeContext> group, ScopeNode scope, boolean allowRaw) {
+    Type groupAnnotation(List<BabbleParser.NullableTypeContext> group, ScopeNode scope, boolean allowRaw) {
         List<Type> operands = new ArrayList<>(group.size());
         for (BabbleParser.NullableTypeContext part : group) {
             Type operand = nullableAnnotation(part, scope, allowRaw);

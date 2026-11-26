@@ -79,6 +79,13 @@ public final class MirDcePass implements MirPass {
                 if (tl != null) tl.add(bi.thenArgs());
                 List<List<MirVal>> el = incomingEdgeArgs.get(bi.elseBlock());
                 if (el != null) el.add(bi.elseArgs());
+            } else if (b.terminator() instanceof MirTerminator.Switch sw) {
+                for (int i = 0; i < sw.keys().length; i++) {
+                    List<List<MirVal>> cl = incomingEdgeArgs.get(sw.targetBlocks()[i]);
+                    if (cl != null) cl.add(sw.targetArgs().get(i));
+                }
+                List<List<MirVal>> dl = incomingEdgeArgs.get(sw.defaultBlock());
+                if (dl != null) dl.add(sw.defaultArgs());
             }
         }
 
@@ -102,6 +109,8 @@ public final class MirDcePass implements MirPass {
             MirTerminator t = b.terminator();
             if (t instanceof MirTerminator.BrIf bi) {
                 markLive(bi.cond().id(), liveVals, work);
+            } else if (t instanceof MirTerminator.Switch sw) {
+                markLive(sw.key().id(), liveVals, work);
             } else if (!(t instanceof MirTerminator.Br)) {
                 for (MirVal u : t.usedValues()) {
                     markLive(u.id(), liveVals, work);
@@ -174,6 +183,27 @@ public final class MirDcePass implements MirPass {
                 } else if (!td.isEmpty() || !ed.isEmpty()) {
                     term = new MirTerminator.BrIf(bi.cond(), bi.thenBlock(), tArgs, bi.elseBlock(), eArgs, bi.line());
                 }
+            } else if (term instanceof MirTerminator.Switch sw) {
+                boolean changed = false;
+                List<List<MirVal>> newTargetArgs = new ArrayList<>(sw.keys().length);
+                for (int i = 0; i < sw.keys().length; i++) {
+                    Set<Integer> td = deadParamIndices.getOrDefault(sw.targetBlocks()[i], Set.of());
+                    if (!td.isEmpty()) {
+                        newTargetArgs.add(filterOut(sw.targetArgs().get(i), td));
+                        changed = true;
+                    } else {
+                        newTargetArgs.add(sw.targetArgs().get(i));
+                    }
+                }
+                Set<Integer> dd = deadParamIndices.getOrDefault(sw.defaultBlock(), Set.of());
+                List<MirVal> newDefArgs = dd.isEmpty() ? sw.defaultArgs() : filterOut(sw.defaultArgs(), dd);
+                if (!dd.isEmpty()) {
+                    changed = true;
+                }
+                if (changed) {
+                    term = new MirTerminator.Switch(sw.key(), sw.keys(), sw.targetBlocks(), newTargetArgs,
+                            sw.defaultBlock(), newDefArgs, sw.line());
+                }
             }
             swept.add(new MirBlock(b.id(), newParams, newInsts, term, b.handlers(), b.handlerEntry()));
         }
@@ -205,6 +235,28 @@ public final class MirDcePass implements MirPass {
                     int et = bi.elseArgs().isEmpty() ? followRedirect(redirect, bi.elseBlock()) : bi.elseBlock();
                     if (tt != bi.thenBlock() || et != bi.elseBlock()) {
                         term = new MirTerminator.BrIf(bi.cond(), tt, bi.thenArgs(), et, bi.elseArgs(), bi.line());
+                        anyThreaded = true;
+                        rewrites++;
+                    }
+                } else if (term instanceof MirTerminator.Switch sw) {
+                    int[] newTargets = sw.targetBlocks().clone();
+                    boolean changed = false;
+                    for (int i = 0; i < newTargets.length; i++) {
+                        if (sw.targetArgs().get(i).isEmpty()) {
+                            int nt = followRedirect(redirect, newTargets[i]);
+                            if (nt != newTargets[i]) {
+                                newTargets[i] = nt;
+                                changed = true;
+                            }
+                        }
+                    }
+                    int nd = sw.defaultArgs().isEmpty() ? followRedirect(redirect, sw.defaultBlock()) : sw.defaultBlock();
+                    if (nd != sw.defaultBlock()) {
+                        changed = true;
+                    }
+                    if (changed) {
+                        term = new MirTerminator.Switch(sw.key(), sw.keys(), newTargets, sw.targetArgs(),
+                                nd, sw.defaultArgs(), sw.line());
                         anyThreaded = true;
                         rewrites++;
                     }

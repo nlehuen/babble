@@ -441,6 +441,7 @@ public final class HirTryNormalize {
             case HirExpr.TypeApply t -> containsTry(t.inner());
             case HirExpr.Block b -> anyContainsTry(b.statements());
             case HirExpr.If i -> containsTry(i.cond()) || containsTry(i.thenBranch()) || containsTry(i.elseBranch());
+            case HirExpr.Match m -> matchContainsTry(m);
             case HirExpr.While w -> containsTry(w.cond()) || containsTry(w.body());
             case HirExpr.For f -> (f.countedRange() != null
                     ? (containsTry(f.countedRange().start()) || containsTry(f.countedRange().end())
@@ -470,6 +471,43 @@ public final class HirTryNormalize {
             case HirExpr.RecordReuse r -> containsTry(r.target()) || anyContainsTry(r.args());
             case HirExpr.Move m -> containsTry(m.operand());
             case HirExpr.Freeze f -> containsTry(f.operand());
+        };
+    }
+
+    private static boolean matchContainsTry(HirExpr.Match m) {
+        if (containsTry(m.scrutinee())) {
+            return true;
+        }
+        for (HirExpr.MatchArm arm : m.arms()) {
+            if (patternContainsTry(arm.pattern()) || containsTry(arm.guard()) || containsTry(arm.body())) {
+                return true;
+            }
+        }
+        return m.elseArm() != null && containsTry(m.elseArm().body());
+    }
+
+    private static boolean patternContainsTry(org.babblelang.ir.hir.HirPattern p) {
+        if (p == null) {
+            return false;
+        }
+        return switch (p) {
+            case org.babblelang.ir.hir.HirPattern.Const ignored -> false;
+            case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> false;
+            case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> false;
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> containsTry(v.expr());
+            case org.babblelang.ir.hir.HirPattern.Bind b -> patternContainsTry(b.inner());
+            case org.babblelang.ir.hir.HirPattern.Or o -> {
+                for (org.babblelang.ir.hir.HirPattern alt : o.alternatives()) {
+                    if (patternContainsTry(alt)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case org.babblelang.ir.hir.HirPattern.Relational r -> containsTry(r.rhs());
+            case org.babblelang.ir.hir.HirPattern.RangeTest r ->
+                    containsTry(r.lo()) || containsTry(r.hi()) || containsTry(r.step());
+            case org.babblelang.ir.hir.HirPattern.Membership m -> containsTry(m.container());
         };
     }
 

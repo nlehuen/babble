@@ -101,6 +101,7 @@ public final class WasmFuncEmitter {
     private final WasmCallEmitter calls;
     private final WasmMemberEmitter members;
     private final WasmCoreEmitter core;
+    private final WasmMatchEmitter matchEmitter;
     private EmitCtx ctx;
 
     public WasmFuncEmitter(WasmProgramLinker linker, WasmCallEmitter calls) {
@@ -114,6 +115,7 @@ public final class WasmFuncEmitter {
         this.members = new WasmMemberEmitter(linker, this, calls);
         this.core = new WasmCoreEmitter(linker);
         this.core.setFuncEmitter(this);
+        this.matchEmitter = new WasmMatchEmitter(linker, this);
     }
 
     public EmitCtx ctx() {
@@ -457,6 +459,7 @@ public final class WasmFuncEmitter {
             case HirExpr.NonNull n -> emitNonNull(n);
             case HirExpr.Block b -> emitBlock(b);
             case HirExpr.If i -> emitIf(i);
+            case HirExpr.Match m -> matchEmitter.emitMatch(m);
             case HirExpr.While w -> emitWhile(w);
             case HirExpr.For f -> core.emitFor(f);
             case HirExpr.Try t -> emitTry(t);
@@ -592,7 +595,7 @@ public final class WasmFuncEmitter {
         return true;
     }
 
-    private void widenStackRank(int rank, int line) {
+    public void widenStackRank(int rank, int line) {
         if (rank < 0) {
             return;
         }

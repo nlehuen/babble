@@ -161,6 +161,99 @@ public final class ArraySupport {
         return Array.getLength(Values.unwrap(array));
     }
 
+    /** Returns {@code true} when {@code array} contains an element equal to {@code value} under Babble {@code ==}. */
+    public static boolean contains(Object array, Object value) {
+        Object raw = Values.unwrap(array);
+        if (raw == null) {
+            return false;
+        }
+        if (raw instanceof int[] a) {
+            if (!(value instanceof Number)) return false;
+            for (int e : a) {
+                if (Operators.equal(e, value)) return true;
+            }
+            return false;
+        }
+        if (raw instanceof double[] a) {
+            if (!(value instanceof Number)) return false;
+            for (double e : a) {
+                if (Operators.equal(e, value)) return true;
+            }
+            return false;
+        }
+        if (raw instanceof long[] a) {
+            if (!(value instanceof Number)) return false;
+            for (long e : a) {
+                if (Operators.equal(e, value)) return true;
+            }
+            return false;
+        }
+        if (raw instanceof boolean[] a) {
+            if (!(value instanceof Boolean b)) return false;
+            boolean bv = b;
+            for (boolean e : a) {
+                if (e == bv) return true;
+            }
+            return false;
+        }
+        if (raw instanceof byte[] a) {
+            if (!(value instanceof Number)) return false;
+            for (byte e : a) {
+                if (Operators.equal(e, value)) return true;
+            }
+            return false;
+        }
+        if (raw instanceof short[] a) {
+            if (!(value instanceof Number)) return false;
+            for (short e : a) {
+                if (Operators.equal(e, value)) return true;
+            }
+            return false;
+        }
+        if (raw instanceof float[] a) {
+            if (!(value instanceof Number)) return false;
+            for (float e : a) {
+                if (Operators.equal(e, value)) return true;
+            }
+            return false;
+        }
+        if (raw instanceof char[] a) {
+            if (!(value instanceof Character c)) return false;
+            char cv = c;
+            for (char e : a) {
+                if (e == cv) return true;
+            }
+            return false;
+        }
+        Object[] oa = (Object[]) raw;
+        for (Object e : oa) {
+            if (Operators.equal(Values.fromJava(e), value)) return true;
+        }
+        return false;
+    }
+
+    /** Returns a fresh tail copy of {@code array} starting at {@code start} ({@code BIP038-D7}). */
+    public static Object slice(Object array, int start) {
+        Object raw = Values.unwrap(array);
+        if (raw instanceof int[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof double[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof long[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof boolean[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof byte[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof short[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof float[] a) return Arrays.copyOfRange(a, start, a.length);
+        if (raw instanceof char[] a) return Arrays.copyOfRange(a, start, a.length);
+        Object[] oa = (Object[]) raw;
+        Object[] copy = Arrays.copyOfRange(oa, start, oa.length);
+        synchronized (ELEMENT_TAGS) {
+            BabbleElementTag tag = ELEMENT_TAGS.get(oa);
+            if (tag != null) {
+                ELEMENT_TAGS.put(copy, tag);
+            }
+        }
+        return copy;
+    }
+
     public static Object get(Object array, int index) {
         Object raw = Values.unwrap(array);
         if (raw instanceof int[] a) return a[index];

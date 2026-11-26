@@ -73,6 +73,12 @@ final class TypeChecks {
                 throw new AnalysisException("Cannot assign to catch parameter : " + assignment.name(),
                         assignment.ctx().lhs.getStart().getLine());
             }
+            if (definition instanceof BabbleParser.BindingPatternContext
+                    || definition instanceof BabbleParser.RestPatternContext
+                    || definition instanceof BabbleParser.ElseClauseContext) {
+                throw new AnalysisException("Cannot assign to pattern variable : " + assignment.name(),
+                        assignment.ctx().lhs.getStart().getLine());
+            }
             if (definition instanceof BabbleParser.DefExpressionContext def && def.VAR() == null) {
                 throw new AnalysisException("Cannot assign to def : " + assignment.name(),
                         assignment.ctx().lhs.getStart().getLine());

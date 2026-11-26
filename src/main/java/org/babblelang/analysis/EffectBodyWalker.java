@@ -522,6 +522,9 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.IfExprContext ifCtx) {
             return evalIf(ifCtx);
         }
+        if (ctx instanceof BabbleParser.MatchExpressionContext matchCtx) {
+            return evalMatch(matchCtx);
+        }
         if (ctx instanceof BabbleParser.WhileExpressionContext whileCtx) {
             return evalWhile(whileCtx);
         }
@@ -1190,6 +1193,96 @@ final class EffectBodyWalker {
 
         env = mergeEnvs(afterThen, afterElse);
         return thenOrig.join(elseOrig);
+    }
+
+    Reachability.Origin evalMatch(BabbleParser.MatchExpressionContext ctx) {
+        Reachability.Origin scrutOrig = eval(ctx.scrutinee);
+        Map<ParserRuleContext, Reachability.Origin> fallthroughEnv = new IdentityHashMap<>(env);
+        List<Map<ParserRuleContext, Reachability.Origin>> armEnvs = new ArrayList<>();
+        Reachability.Origin resultOrig = null;
+
+        for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
+            env = new IdentityHashMap<>(fallthroughEnv);
+            evalPatternEffects(cc.pattern(), scrutOrig);
+            if (cc.guard != null) {
+                eval(cc.guard);
+                // Any moves/effects in pattern or guard apply to later arms too.
+                fallthroughEnv = new IdentityHashMap<>(env);
+            } else {
+                fallthroughEnv = new IdentityHashMap<>(env);
+            }
+            Reachability.Origin armOrig = eval(cc.armBlock);
+            armEnvs.add(env);
+            resultOrig = resultOrig == null ? armOrig : resultOrig.join(armOrig);
+        }
+        if (ctx.elseClause() != null) {
+            env = new IdentityHashMap<>(fallthroughEnv);
+            BabbleParser.ElseClauseContext ec = ctx.elseClause();
+            if (ec.name != null) {
+                env.put(ec, bindPatternOrigin(ec, scrutOrig));
+            }
+            Reachability.Origin elseOrig = eval(ec.elseBlock);
+            armEnvs.add(env);
+            resultOrig = resultOrig == null ? elseOrig : resultOrig.join(elseOrig);
+        } else {
+            armEnvs.add(fallthroughEnv);
+        }
+        Map<ParserRuleContext, Reachability.Origin> merged = armEnvs.get(0);
+        for (int i = 1; i < armEnvs.size(); i++) {
+            merged = mergeEnvs(merged, armEnvs.get(i));
+        }
+        env = merged;
+        return resultOrig != null ? resultOrig : Reachability.Origin.IMMUTABLE;
+    }
+
+    private Reachability.Origin bindPatternOrigin(ParserRuleContext decl, Reachability.Origin sourceOrig) {
+        Type boundType = ec.checker.typeOfDeclarationForEffects(decl);
+        if (boundType == null || ec.javaResolver.isDeeplyImmutable(boundType)) {
+            return Reachability.Origin.IMMUTABLE;
+        }
+        if (sourceOrig.unique) {
+            return new Reachability.Origin(sourceOrig.params, sourceOrig.aliasesThis, sourceOrig.external,
+                    true, null, false, decl, Set.of(decl), new Reachability.PathKey(decl, List.of()));
+        }
+        return sourceOrig;
+    }
+
+    private void evalPatternEffects(BabbleParser.PatternContext pat, Reachability.Origin scrutOrig) {
+        for (BabbleParser.AtomicPatternContext atom : pat.atomicPattern()) {
+            switch (atom) {
+                case BabbleParser.ValuePatternContext vp -> {
+                    if (!BlockScopes.isWildcardExpr(vp.expr)) {
+                        eval(vp.expr);
+                    }
+                }
+                case BabbleParser.RelationalPatternContext rp -> eval(rp.rhs);
+                case BabbleParser.MembershipPatternContext mp -> eval(mp.container);
+                case BabbleParser.BindingPatternContext bp -> {
+                    env.put(bp, bindPatternOrigin(bp, scrutOrig));
+                    if (bp.patternArgs() != null) {
+                        evalPatternArgsEffects(bp.patternArgs(), scrutOrig);
+                    }
+                }
+                case BabbleParser.TypeOrDestructurePatternContext tp -> {
+                    if (tp.patternArgs() != null) {
+                        evalPatternArgsEffects(tp.patternArgs(), scrutOrig);
+                    }
+                }
+                default -> {
+                }
+            }
+        }
+    }
+
+    private void evalPatternArgsEffects(BabbleParser.PatternArgsContext args, Reachability.Origin scrutOrig) {
+        for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+            evalPatternEffects(arg.pattern(), scrutOrig);
+        }
+        if (args.restPattern() != null && args.restPattern().name != null) {
+            BabbleParser.RestPatternContext rp = args.restPattern();
+            env.put(rp, new Reachability.Origin(Reachability.Origin.EMPTY_BITS, false, false, true,
+                    Reachability.Provenance.EMPTY, false, rp, Set.of(rp), new Reachability.PathKey(rp, List.of())));
+        }
     }
 
     Reachability.Origin evalWhile(BabbleParser.WhileExpressionContext ctx) {

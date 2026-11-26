@@ -666,7 +666,35 @@ public final class WasmObjectSystem {
             case HirExpr.JavaMethodCall c -> exprEscapesThis(c.receiver()) || anyEscapesThis(c.args());
             case HirExpr.JavaConstructorCall c -> anyEscapesThis(c.args());
             case HirExpr.JavaFieldGet f -> exprEscapesThis(f.receiver());
+            case HirExpr.Match m -> {
+                if (exprEscapesThis(m.scrutinee())) yield true;
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    if (patternEscapesThis(arm.pattern()) || exprEscapesThis(arm.guard()) || exprEscapesThis(arm.body())) {
+                        yield true;
+                    }
+                }
+                yield m.elseArm() != null && exprEscapesThis(m.elseArm().body());
+            }
             default -> true;
+        };
+    }
+
+    private static boolean patternEscapesThis(org.babblelang.ir.hir.HirPattern p) {
+        if (p == null) return false;
+        return switch (p) {
+            case org.babblelang.ir.hir.HirPattern.Const ignored -> false;
+            case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> false;
+            case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> false;
+            case org.babblelang.ir.hir.HirPattern.Bind b -> patternEscapesThis(b.inner());
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> exprEscapesThis(v.expr());
+            case org.babblelang.ir.hir.HirPattern.Or o -> {
+                for (var alt : o.alternatives()) if (patternEscapesThis(alt)) yield true;
+                yield false;
+            }
+            case org.babblelang.ir.hir.HirPattern.Relational r -> exprEscapesThis(r.rhs());
+            case org.babblelang.ir.hir.HirPattern.RangeTest rt ->
+                    exprEscapesThis(rt.lo()) || exprEscapesThis(rt.hi()) || exprEscapesThis(rt.step());
+            case org.babblelang.ir.hir.HirPattern.Membership m -> exprEscapesThis(m.container());
         };
     }
 

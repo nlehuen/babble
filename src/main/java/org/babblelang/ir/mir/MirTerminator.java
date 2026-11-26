@@ -17,6 +17,7 @@ import java.util.function.UnaryOperator;
 public sealed interface MirTerminator permits
         MirTerminator.Br,
         MirTerminator.BrIf,
+        MirTerminator.Switch,
         MirTerminator.Ret,
         MirTerminator.Throw,
         MirTerminator.TailCall,
@@ -107,6 +108,77 @@ public sealed interface MirTerminator permits
             List<MirVal> ne = remapList(elseArgs, fn);
             return (nc == cond && nt == thenArgs && ne == elseArgs) ? this
                     : new BrIf(nc, thenBlock, nt, elseBlock, ne, line);
+        }
+    }
+
+    /** Multi-way integer switch {@code switch key [k0 -> bb0(args...), ...] default -> bbD(defaultArgs...)} ({@code BIP038-D10}). */
+    record Switch(
+            MirVal key,
+            int[] keys,
+            int[] targetBlocks,
+            List<List<MirVal>> targetArgs,
+            int defaultBlock,
+            List<MirVal> defaultArgs,
+            int line
+    ) implements MirTerminator {
+        public Switch {
+            Objects.requireNonNull(key, "key");
+            keys = keys.clone();
+            targetBlocks = targetBlocks.clone();
+            if (keys.length != targetBlocks.length || keys.length != targetArgs.size()) {
+                throw new IllegalArgumentException("Switch keys/targets/args length mismatch");
+            }
+            List<List<MirVal>> copy = new ArrayList<>(targetArgs.size());
+            for (List<MirVal> a : targetArgs) {
+                copy.add(List.copyOf(a));
+            }
+            targetArgs = List.copyOf(copy);
+            defaultArgs = List.copyOf(defaultArgs);
+        }
+
+        @Override
+        public List<MirVal> usedValues() {
+            List<MirVal> out = new ArrayList<>(1 + defaultArgs.size() + keys.length);
+            out.add(key);
+            for (List<MirVal> args : targetArgs) {
+                out.addAll(args);
+            }
+            out.addAll(defaultArgs);
+            return out;
+        }
+
+        @Override
+        public int[] successorIds() {
+            java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>(targetBlocks.length + 1);
+            for (int tb : targetBlocks) {
+                uniq.add(tb);
+            }
+            uniq.add(defaultBlock);
+            int[] res = new int[uniq.size()];
+            int i = 0;
+            for (int id : uniq) {
+                res[i++] = id;
+            }
+            return res;
+        }
+
+        @Override
+        public MirTerminator remapUses(UnaryOperator<MirVal> fn) {
+            MirVal nk = fn.apply(key);
+            List<List<MirVal>> nta = null;
+            for (int i = 0; i < targetArgs.size(); i++) {
+                List<MirVal> orig = targetArgs.get(i);
+                List<MirVal> mapped = remapList(orig, fn);
+                if (mapped != orig) {
+                    if (nta == null) {
+                        nta = new ArrayList<>(targetArgs);
+                    }
+                    nta.set(i, mapped);
+                }
+            }
+            List<MirVal> nda = remapList(defaultArgs, fn);
+            return (nk == key && nta == null && nda == defaultArgs) ? this
+                    : new Switch(nk, keys, targetBlocks, nta != null ? nta : targetArgs, defaultBlock, nda, line);
         }
     }
 

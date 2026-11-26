@@ -158,6 +158,22 @@ public final class HirVerifier {
                     verifyExpr(module, i.elseBranch(), inFunction, loopDepth);
                 }
             }
+            case HirExpr.Match m -> {
+                if (m.scrutineeVar() == null) {
+                    throw new IllegalStateException("HirVerifier : null Match scrutineeVar at line " + meta.line());
+                }
+                verifyExpr(module, m.scrutinee(), inFunction, loopDepth);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    verifyPattern(module, arm.pattern(), inFunction, loopDepth);
+                    if (arm.guard() != null) {
+                        verifyExpr(module, arm.guard(), inFunction, loopDepth);
+                    }
+                    verifyExpr(module, arm.body(), inFunction, loopDepth);
+                }
+                if (m.elseArm() != null) {
+                    verifyExpr(module, m.elseArm().body(), inFunction, loopDepth);
+                }
+            }
             case HirExpr.While w -> {
                 verifyExpr(module, w.cond(), inFunction, loopDepth);
                 verifyExpr(module, w.body(), inFunction, loopDepth + 1);
@@ -318,6 +334,37 @@ public final class HirVerifier {
             }
             case HirExpr.Move m -> verifyExpr(module, m.operand(), inFunction, loopDepth);
             case HirExpr.Freeze f -> verifyExpr(module, f.operand(), inFunction, loopDepth);
+        }
+    }
+
+    private static void verifyPattern(HirModule module, HirPattern pattern, boolean inFunction, int loopDepth) {
+        if (pattern == null) {
+            throw new IllegalStateException("HirVerifier : null HirPattern");
+        }
+        switch (pattern) {
+            case HirPattern.Const ignored -> {}
+            case HirPattern.Wildcard ignored -> {}
+            case HirPattern.TypeTest ignored -> {}
+            case HirPattern.ValueExpr v -> verifyExpr(module, v.expr(), inFunction, loopDepth);
+            case HirPattern.Bind b -> {
+                if (b.inner() != null) {
+                    verifyPattern(module, b.inner(), inFunction, loopDepth);
+                }
+            }
+            case HirPattern.Or o -> {
+                for (HirPattern alt : o.alternatives()) {
+                    verifyPattern(module, alt, inFunction, loopDepth);
+                }
+            }
+            case HirPattern.Relational r -> verifyExpr(module, r.rhs(), inFunction, loopDepth);
+            case HirPattern.RangeTest r -> {
+                verifyExpr(module, r.lo(), inFunction, loopDepth);
+                verifyExpr(module, r.hi(), inFunction, loopDepth);
+                if (r.step() != null) {
+                    verifyExpr(module, r.step(), inFunction, loopDepth);
+                }
+            }
+            case HirPattern.Membership m -> verifyExpr(module, m.container(), inFunction, loopDepth);
         }
     }
 

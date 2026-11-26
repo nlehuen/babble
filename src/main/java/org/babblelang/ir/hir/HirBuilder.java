@@ -1072,6 +1072,9 @@ public final class HirBuilder {
         if (ctx instanceof BabbleParser.IfExpressionContext ifWrap) {
             return lowerIfExpr(ifWrap.ifExpr(), ifWrap);
         }
+        if (ctx instanceof BabbleParser.MatchExpressionContext m) {
+            return lowerMatch(m);
+        }
         if (ctx instanceof BabbleParser.WhileExpressionContext w) {
             return new HirExpr.While(lowerExpr(w.test), lowerBlock(w.whileBlock, null), metaOf(w));
         }
@@ -1327,6 +1330,123 @@ public final class HirBuilder {
         );
         HirExpr.If ifNode = new HirExpr.If(cond, thenBr, elseBr, meta);
         return outer == null ? wrapJavaSam(ifNode, ctx) : ifNode;
+    }
+
+    private HirExpr lowerMatch(BabbleParser.MatchExpressionContext ctx) {
+        HirExpr scrutinee = lowerExpr(ctx.scrutinee);
+        int ownerId = currentFunction != null ? ownerIdOf(currentFunction) : 0;
+        HirVar scrutineeVar = new HirVar(
+                nextVarId++,
+                "$match",
+                Resolution.Variable.Kind.DEFINITION,
+                ownerId,
+                scrutinee.meta().kind(),
+                false,
+                true,
+                false,
+                true,
+                false,
+                false
+        );
+        List<HirExpr.MatchArm> arms = new ArrayList<>(ctx.caseClause().size());
+        for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
+            HirPattern pattern = lowerPattern(cc.pattern());
+            List<HirVar> boundVars = hirVars(resolution.declared(cc));
+            HirExpr guard = cc.guard != null ? lowerExpr(cc.guard) : null;
+            HirExpr body = lowerBlock(cc.armBlock, null);
+            int bodyWiden = scopes.lowering().numericWideningRank(cc.armBlock);
+            arms.add(new HirExpr.MatchArm(pattern, boundVars, guard, body, bodyWiden, cc.getStart().getLine()));
+        }
+        HirExpr.MatchElse elseArm = null;
+        if (ctx.elseClause() != null) {
+            BabbleParser.ElseClauseContext ec = ctx.elseClause();
+            HirVar elseVar = ec.name != null ? hirVar(resolution.variable(ec)) : null;
+            HirExpr elseBody = lowerBlock(ec.elseBlock, null);
+            int elseWiden = scopes.lowering().numericWideningRank(ec.elseBlock);
+            elseArm = new HirExpr.MatchElse(elseVar, elseBody, elseWiden, ec.getStart().getLine());
+        }
+        boolean exhaustive = scopes.lowering().isMatchExhaustive(ctx);
+        return new HirExpr.Match(scrutinee, scrutineeVar, arms, elseArm, exhaustive, metaOf(ctx));
+    }
+
+    private HirPattern lowerPattern(BabbleParser.PatternContext pat) {
+        List<BabbleParser.AtomicPatternContext> atoms = pat.atomicPattern();
+        if (atoms.size() == 1) {
+            return lowerAtomicPattern(atoms.get(0));
+        }
+        List<HirPattern> alts = new ArrayList<>(atoms.size());
+        for (BabbleParser.AtomicPatternContext atom : atoms) {
+            alts.add(lowerAtomicPattern(atom));
+        }
+        return new HirPattern.Or(alts, pat.getStart().getLine());
+    }
+
+    private HirPattern lowerAtomicPattern(BabbleParser.AtomicPatternContext atom) {
+        int line = atom.getStart().getLine();
+        return switch (atom) {
+            case BabbleParser.ValuePatternContext vp -> {
+                if (vp.expr instanceof BabbleParser.SelectorContext sel
+                        && sel.expression() == null && "_".equals(sel.ID().getText())) {
+                    yield new HirPattern.Wildcard(line);
+                }
+                var rangeSrc = scopes.lowering().rangePatternSource(vp);
+                if (rangeSrc != null) {
+                    HirExpr lo = lowerExpr(rangeSrc.lo());
+                    HirExpr hi = lowerExpr(rangeSrc.hi());
+                    HirExpr step = rangeSrc.step() != null ? lowerExpr(rangeSrc.step()) : null;
+                    yield new HirPattern.RangeTest(lo, hi, step, rangeSrc.inclusive(),
+                            rangeSrc.elemKind(), rangeSrc.stringElement(), line);
+                }
+                LoweringTargets.PatternConst pc = scopes.lowering().patternConst(vp);
+                if (pc != null) {
+                    yield new HirPattern.Const(pc.value(), pc.enumClass(), pc.enumConstantName(), pc.kind(), line);
+                }
+                yield new HirPattern.ValueExpr(lowerExpr(vp.expr), line);
+            }
+            case BabbleParser.RelationalPatternContext rp -> {
+                HirExpr.BinaryOp op = switch (rp.op.getType()) {
+                    case BabbleLexer.LT -> HirExpr.BinaryOp.LT;
+                    case BabbleLexer.LTE -> HirExpr.BinaryOp.LTE;
+                    case BabbleLexer.GT -> HirExpr.BinaryOp.GT;
+                    case BabbleLexer.GTE -> HirExpr.BinaryOp.GTE;
+                    case BabbleLexer.EQ -> HirExpr.BinaryOp.EQ;
+                    case BabbleLexer.NEQ -> HirExpr.BinaryOp.NEQ;
+                    default -> throw new IllegalStateException("Unexpected relational op : " + rp.op.getText());
+                };
+                yield new HirPattern.Relational(op, lowerExpr(rp.rhs),
+                        scopes.lowering().relationalScrutineeKind(rp), line);
+            }
+            case BabbleParser.MembershipPatternContext mp -> {
+                LoweringTargets.MembershipTarget mt = scopes.lowering().membershipTarget(mp);
+                LoweringTargets.MembershipKind kind = mt != null ? mt.kind() : LoweringTargets.MembershipKind.DYNAMIC;
+                PrimitiveKind elemKind = mt != null ? mt.elemKind() : PrimitiveKind.NONE;
+                yield new HirPattern.Membership(lowerExpr(mp.container), kind, elemKind, line);
+            }
+            case BabbleParser.TypeOrDestructurePatternContext tp -> {
+                LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(tp);
+                yield new HirPattern.TypeTest(
+                        target != null ? target.builtin() : null,
+                        target != null ? target.target() : null,
+                        target != null ? target.intersectionTargets() : List.of(),
+                        target != null ? target.descriptor() : null,
+                        line);
+            }
+            case BabbleParser.BindingPatternContext bp -> {
+                HirVar var = hirVar(resolution.variable(bp));
+                HirPattern inner = null;
+                if (bp.patternBindingType() != null) {
+                    LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(bp);
+                    inner = new HirPattern.TypeTest(
+                            target != null ? target.builtin() : null,
+                            target != null ? target.target() : null,
+                            target != null ? target.intersectionTargets() : List.of(),
+                            target != null ? target.descriptor() : null,
+                            line);
+                }
+                yield new HirPattern.Bind(var, inner, line);
+            }
+            default -> new HirPattern.Wildcard(line);
+        };
     }
 
     private HirExpr.NameRead makeNameRead(ParserRuleContext ctx, String name) {

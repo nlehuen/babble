@@ -447,6 +447,48 @@ public final class WasmPortabilityChecker {
             case HirExpr.RecordReuse r -> { checkExpr(r.target(), target, topLevelDefined, out); checkList(r.args(), target, topLevelDefined, out); }
             case HirExpr.Move m -> checkExpr(m.operand(), target, topLevelDefined, out);
             case HirExpr.Freeze f -> checkExpr(f.operand(), target, topLevelDefined, out);
+            case HirExpr.Match m -> {
+                checkExpr(m.scrutinee(), target, topLevelDefined, out);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    checkPattern(arm.pattern(), target, topLevelDefined, out);
+                    checkExpr(arm.guard(), target, topLevelDefined, out);
+                    checkExpr(arm.body(), target, topLevelDefined, out);
+                }
+                if (m.elseArm() != null) {
+                    checkExpr(m.elseArm().body(), target, topLevelDefined, out);
+                }
+            }
+        }
+    }
+
+    private static void checkPattern(org.babblelang.ir.hir.HirPattern pat, CompilationTarget target,
+                                     Set<String> topLevelDefined, List<Diagnostic> out) {
+        if (pat == null) return;
+        switch (pat) {
+            case org.babblelang.ir.hir.HirPattern.Const c -> {
+                if (c.isEnum()) {
+                    out.add(new Diagnostic(c.line(), c.enumClass().getName()));
+                }
+            }
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> checkExpr(v.expr(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.TypeTest tt -> checkDescriptorPortable(tt.descriptor(), tt.line(), out);
+            case org.babblelang.ir.hir.HirPattern.Bind b -> checkPattern(b.inner(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.Wildcard w -> {}
+            case org.babblelang.ir.hir.HirPattern.Or o -> {
+                for (org.babblelang.ir.hir.HirPattern alt : o.alternatives()) {
+                    checkPattern(alt, target, topLevelDefined, out);
+                }
+            }
+            case org.babblelang.ir.hir.HirPattern.Relational r -> checkExpr(r.rhs(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.RangeTest rt -> {
+                if (!rt.elemKind().isPrimitive() && !rt.stringElement()) {
+                    out.add(new Diagnostic(rt.line(), "range of Comparable"));
+                }
+                checkExpr(rt.lo(), target, topLevelDefined, out);
+                checkExpr(rt.hi(), target, topLevelDefined, out);
+                checkExpr(rt.step(), target, topLevelDefined, out);
+            }
+            case org.babblelang.ir.hir.HirPattern.Membership m -> checkExpr(m.container(), target, topLevelDefined, out);
         }
     }
 

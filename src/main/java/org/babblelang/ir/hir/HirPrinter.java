@@ -268,6 +268,30 @@ public final class HirPrinter {
                 }
                 sb.append(')');
             }
+            case HirExpr.Match m -> {
+                sb.append("(match ");
+                printExpr(sb, m.scrutinee(), depth + 1);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    sb.append(" (case ");
+                    printPattern(sb, arm.pattern(), depth + 1);
+                    if (arm.guard() != null) {
+                        sb.append(" if ");
+                        printExpr(sb, arm.guard(), depth + 1);
+                    }
+                    sb.append(' ');
+                    printExpr(sb, arm.body(), depth + 1);
+                    sb.append(')');
+                }
+                if (m.elseArm() != null) {
+                    sb.append(" (else ");
+                    if (m.elseArm().var() != null) {
+                        sb.append(m.elseArm().var().name()).append('#').append(m.elseArm().var().id()).append(' ');
+                    }
+                    printExpr(sb, m.elseArm().body(), depth + 1);
+                    sb.append(')');
+                }
+                sb.append(')');
+            }
             case HirExpr.While w -> {
                 sb.append("(while ");
                 printExpr(sb, w.cond(), depth + 1);
@@ -470,6 +494,60 @@ public final class HirPrinter {
             case HirExpr.Freeze f -> {
                 sb.append("(freeze ");
                 printExpr(sb, f.operand(), depth + 1);
+                sb.append(')');
+            }
+        }
+    }
+
+    private static void printPattern(StringBuilder sb, HirPattern pattern, int depth) {
+        switch (pattern) {
+            case HirPattern.Const c -> {
+                if (c.isEnum()) {
+                    sb.append(c.enumClass().getSimpleName()).append('.').append(c.enumConstantName());
+                } else if (c.value() instanceof String s) {
+                    sb.append('"').append(s).append('"');
+                } else {
+                    sb.append(c.value());
+                }
+            }
+            case HirPattern.Wildcard ignored -> sb.append('_');
+            case HirPattern.ValueExpr v -> printExpr(sb, v.expr(), depth + 1);
+            case HirPattern.TypeTest t -> sb.append("(is ").append(t.builtin() != null ? t.builtin() : t.descriptor()).append(')');
+            case HirPattern.Bind b -> {
+                sb.append("(bind ").append(b.var() != null ? b.var().name() + "#" + b.var().id() : "_");
+                if (b.inner() != null) {
+                    sb.append(' ');
+                    printPattern(sb, b.inner(), depth + 1);
+                }
+                sb.append(')');
+            }
+            case HirPattern.Or o -> {
+                sb.append("(or");
+                for (HirPattern alt : o.alternatives()) {
+                    sb.append(' ');
+                    printPattern(sb, alt, depth + 1);
+                }
+                sb.append(')');
+            }
+            case HirPattern.Relational r -> {
+                sb.append('(').append(r.op().symbol()).append(' ');
+                printExpr(sb, r.rhs(), depth + 1);
+                sb.append(')');
+            }
+            case HirPattern.RangeTest r -> {
+                sb.append(r.inclusive() ? "(range-pat .. " : "(range-pat ..< ");
+                printExpr(sb, r.lo(), depth + 1);
+                sb.append(' ');
+                printExpr(sb, r.hi(), depth + 1);
+                if (r.step() != null) {
+                    sb.append(" step ");
+                    printExpr(sb, r.step(), depth + 1);
+                }
+                sb.append(')');
+            }
+            case HirPattern.Membership m -> {
+                sb.append("(in ");
+                printExpr(sb, m.container(), depth + 1);
                 sb.append(')');
             }
         }

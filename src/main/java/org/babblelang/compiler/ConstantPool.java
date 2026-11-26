@@ -172,6 +172,15 @@ final class ConstantPool {
         }));
     }
 
+    String enumSwitchMapField(Class<?> enumClass, String[] constantNames) {
+        return add("ENUM_MAP", "[I", 24 + estimateSize(constantNames), m -> {
+            m.visitLdcInsn(org.objectweb.asm.Type.getType(enumClass));
+            pushStringArray(m, constantNames);
+            m.visitMethodInsn(INVOKESTATIC, RUNTIME + "MatchSupport", "buildEnumSwitchMap",
+                    "(Ljava/lang/Class;[Ljava/lang/String;)[I", false);
+        });
+    }
+
     /**
      * Declares a static field per constant, set in {@code <clinit>} by helper methods of
      * a bounded size, so that any number of constants fits. The JVM only lets

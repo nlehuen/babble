@@ -25,6 +25,8 @@ public final class WasmArrayOpsGen {
     public final int fnArrayDeepEquals;
     public final int fnArrayDeepHash;
     public final int fnArrayFormat;
+    public final int fnArrayContains;
+    public final int fnArraySlice;
     public final int fnCheckBounds;
     public final int fnCheckNegSize;
     public final int fnCheckRefStore;
@@ -110,6 +112,10 @@ public final class WasmArrayOpsGen {
                 ts.internFuncType(List.of(refArrBase), List.of(WasmValType.I32)), List.of("a"));
         WasmModule.FuncDef dFmt = mod.addFunction("arr_format",
                 ts.internFuncType(List.of(refArrBase), List.of(refStr)), List.of("a"));
+        WasmModule.FuncDef dContains = mod.addFunction("arr_contains",
+                ts.internFuncType(List.of(refArrBase, refAnyNull), List.of(WasmValType.I32)), List.of("a", "v"));
+        WasmModule.FuncDef dSlice = mod.addFunction("arr_slice",
+                ts.internFuncType(List.of(refArrBase, WasmValType.I32), List.of(refArrBase)), List.of("a", "from"));
 
         this.fnCheckNegSize = dNeg.funcIndex();
         this.fnCheckBounds = dBounds.funcIndex();
@@ -122,6 +128,8 @@ public final class WasmArrayOpsGen {
         this.fnArrayDeepEquals = dEq.funcIndex();
         this.fnArrayDeepHash = dHash.funcIndex();
         this.fnArrayFormat = dFmt.funcIndex();
+        this.fnArrayContains = dContains.funcIndex();
+        this.fnArraySlice = dSlice.funcIndex();
 
         emitCheckNeg(dNeg);
         emitCheckBounds(dBounds);
@@ -132,6 +140,8 @@ public final class WasmArrayOpsGen {
         emitArrayDeepEquals(dEq);
         emitArrayDeepHash(dHash);
         emitArrayFormat(dFmt);
+        emitArrayContains(dContains);
+        emitArraySlice(dSlice);
     }
 
     private void emitInitArrayTypes() {
@@ -597,6 +607,54 @@ public final class WasmArrayOpsGen {
         c.localGet(acc).refAsNonNull();
         rt.emitStringLit(c, "]");
         c.call(rt.fnStrConcat);
+    }
+
+    private void emitArrayContains(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        int len = fn.addLocal("len", WasmValType.I32, 2);
+        int i = fn.addLocal("i", WasmValType.I32, 2);
+        c.localGet(0).call(fnArraySize).localSet(len);
+        c.loop()
+                .localGet(i).localGet(len).op(WasmInstr.SimpleOp.I32_LT_S)
+                .if_()
+                .localGet(0).localGet(i).i32Const(0).call(fnArrayGetBoxed)
+                .localGet(1).call(rt.fnEquals)
+                .if_().i32Const(1).return_().end()
+                .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
+                .br(1)
+                .end()
+                .end();
+        c.i32Const(0);
+    }
+
+    private void emitArraySlice(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        int len = fn.addLocal("len", WasmValType.I32, 2);
+        int n = fn.addLocal("n", WasmValType.I32, 2);
+        c.localGet(0).call(fnArraySize).localTee(len)
+                .localGet(1).op(WasmInstr.SimpleOp.I32_SUB).localTee(n)
+                .i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                .i32Const(0).localSet(n)
+                .end();
+        PrimitiveKind[] kinds = {
+                PrimitiveKind.NONE, PrimitiveKind.INT, PrimitiveKind.DOUBLE, PrimitiveKind.LONG,
+                PrimitiveKind.FLOAT, PrimitiveKind.BOOL, PrimitiveKind.BYTE, PrimitiveKind.SHORT, PrimitiveKind.CHAR
+        };
+        for (PrimitiveKind k : kinds) {
+            int wt = wrapperTypeFor(k);
+            int bt = backingArrTypeFor(k);
+            int dst = fn.addLocal("dst_" + k.name(), WasmValType.refNull(bt), 2);
+            c.localGet(0).refTest(wt).if_()
+                    .localGet(n).arrayNewDefault(bt).localTee(dst)
+                    .i32Const(0)
+                    .localGet(0).refCast(wt).structGet(wt, 1)
+                    .localGet(1).localGet(n).arrayCopy(bt, bt)
+                    .localGet(0).structGet(ts.arrayBaseType, 0)
+                    .localGet(dst).refAsNonNull()
+                    .structNew(wt).return_()
+                    .end();
+        }
+        c.localGet(0);
     }
 
     // ---------------------------------------------------------------- HIR emission: ArrayCreate & ArrayOp

@@ -142,10 +142,13 @@ final class Narrowing {
         }
         if (expr instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
             Object resolved = TypeChecker.resolveName(selector, selector.ID().getText(), checker.occurrenceScope(selector));
-            // A for loop's variable or catch clause variable is a fresh read-only binding : narrowable too.
+            // A for loop's variable, catch clause variable, or match pattern variable is a fresh read-only binding : narrowable too.
             if (resolved instanceof BabbleParser.DefExpressionContext
                     || resolved instanceof BabbleParser.ForExpressionContext
                     || resolved instanceof BabbleParser.CatchClauseContext
+                    || resolved instanceof BabbleParser.BindingPatternContext
+                    || resolved instanceof BabbleParser.RestPatternContext
+                    || resolved instanceof BabbleParser.ElseClauseContext
                     || (resolved instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc))) {
                 ParserRuleContext decl = (ParserRuleContext) resolved;
                 if (!checker.isCapturedReassigned(decl)

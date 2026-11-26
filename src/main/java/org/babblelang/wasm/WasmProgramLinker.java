@@ -750,7 +750,39 @@ public final class WasmProgramLinker {
             case HirExpr.Freeze f -> walkExpr(f.operand(), visitor);
             case HirExpr.JavaMethodCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
             case HirExpr.JavaConstructorCall c -> { for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.Match m -> {
+                walkExpr(m.scrutinee(), visitor);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    walkPattern(arm.pattern(), visitor);
+                    walkExpr(arm.guard(), visitor);
+                    walkExpr(arm.body(), visitor);
+                }
+                if (m.elseArm() != null) {
+                    walkExpr(m.elseArm().body(), visitor);
+                }
+            }
             default -> {}
+        }
+    }
+
+    private static void walkPattern(org.babblelang.ir.hir.HirPattern pat, java.util.function.Consumer<HirExpr> visitor) {
+        if (pat == null) return;
+        switch (pat) {
+            case org.babblelang.ir.hir.HirPattern.Const ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.Bind b -> walkPattern(b.inner(), visitor);
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> walkExpr(v.expr(), visitor);
+            case org.babblelang.ir.hir.HirPattern.Or o -> {
+                for (var alt : o.alternatives()) walkPattern(alt, visitor);
+            }
+            case org.babblelang.ir.hir.HirPattern.Relational r -> walkExpr(r.rhs(), visitor);
+            case org.babblelang.ir.hir.HirPattern.RangeTest rt -> {
+                walkExpr(rt.lo(), visitor);
+                walkExpr(rt.hi(), visitor);
+                walkExpr(rt.step(), visitor);
+            }
+            case org.babblelang.ir.hir.HirPattern.Membership m -> walkExpr(m.container(), visitor);
         }
     }
 
@@ -1018,7 +1050,40 @@ public final class WasmProgramLinker {
             case HirExpr.Freeze f -> collectOverloadMetas(f.operand(), out);
             case HirExpr.JavaMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
             case HirExpr.JavaConstructorCall c -> { for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.Match m -> {
+                collectOverloadMetas(m.scrutinee(), out);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    collectPatternOverloadMetas(arm.pattern(), out);
+                    collectOverloadMetas(arm.guard(), out);
+                    collectOverloadMetas(arm.body(), out);
+                }
+                if (m.elseArm() != null) {
+                    collectOverloadMetas(m.elseArm().body(), out);
+                }
+            }
             default -> {}
+        }
+    }
+
+    private static void collectPatternOverloadMetas(org.babblelang.ir.hir.HirPattern pat,
+                                                    List<org.babblelang.runtime.OverloadSet.AltMeta> out) {
+        if (pat == null) return;
+        switch (pat) {
+            case org.babblelang.ir.hir.HirPattern.Const ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.Bind b -> collectPatternOverloadMetas(b.inner(), out);
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> collectOverloadMetas(v.expr(), out);
+            case org.babblelang.ir.hir.HirPattern.Or o -> {
+                for (var alt : o.alternatives()) collectPatternOverloadMetas(alt, out);
+            }
+            case org.babblelang.ir.hir.HirPattern.Relational r -> collectOverloadMetas(r.rhs(), out);
+            case org.babblelang.ir.hir.HirPattern.RangeTest rt -> {
+                collectOverloadMetas(rt.lo(), out);
+                collectOverloadMetas(rt.hi(), out);
+                collectOverloadMetas(rt.step(), out);
+            }
+            case org.babblelang.ir.hir.HirPattern.Membership m -> collectOverloadMetas(m.container(), out);
         }
     }
 

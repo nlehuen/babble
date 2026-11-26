@@ -99,6 +99,7 @@ final class TailCalls {
                 yield last != null && alwaysRecurses(last);
             }
             case BabbleParser.IfExpressionContext i -> alwaysRecurses(i.ifExpr());
+            case BabbleParser.MatchExpressionContext m -> alwaysRecurses(m);
             case BabbleParser.ReturnExpressionContext r -> alwaysRecurses(r.expression());
             case BabbleParser.ForeverExpressionContext f -> alwaysRecurses(f.expression());
             default -> false;
@@ -117,6 +118,20 @@ final class TailCalls {
         return otherwise != null && alwaysRecurses(otherwise);
     }
 
+    private boolean alwaysRecurses(BabbleParser.MatchExpressionContext match) {
+        for (BabbleParser.CaseClauseContext cc : match.caseClause()) {
+            BabbleParser.ExpressionContext arm = lastExpression(cc.armBlock);
+            if (arm == null || !alwaysRecurses(arm)) {
+                return false;
+            }
+        }
+        if (match.elseClause() != null) {
+            BabbleParser.ExpressionContext otherwise = lastExpression(match.elseClause().elseBlock);
+            return otherwise != null && alwaysRecurses(otherwise);
+        }
+        return !match.caseClause().isEmpty();
+    }
+
     /** Whether {@code forever} wraps an expression on the tail paths of an expression. */
     private static boolean acknowledged(BabbleParser.ExpressionContext expression) {
         return switch (expression) {
@@ -126,6 +141,7 @@ final class TailCalls {
                 yield last != null && acknowledged(last);
             }
             case BabbleParser.IfExpressionContext i -> acknowledged(i.ifExpr());
+            case BabbleParser.MatchExpressionContext m -> acknowledged(m);
             case BabbleParser.ReturnExpressionContext r -> acknowledged(r.expression());
             default -> false;
         };
@@ -141,6 +157,20 @@ final class TailCalls {
         }
         BabbleParser.ExpressionContext otherwise = ifExpr.elseBlock != null ? lastExpression(ifExpr.elseBlock) : null;
         return otherwise != null && acknowledged(otherwise);
+    }
+
+    private static boolean acknowledged(BabbleParser.MatchExpressionContext match) {
+        for (BabbleParser.CaseClauseContext cc : match.caseClause()) {
+            BabbleParser.ExpressionContext arm = lastExpression(cc.armBlock);
+            if (arm != null && acknowledged(arm)) {
+                return true;
+            }
+        }
+        if (match.elseClause() != null) {
+            BabbleParser.ExpressionContext otherwise = lastExpression(match.elseClause().elseBlock);
+            return otherwise != null && acknowledged(otherwise);
+        }
+        return false;
     }
 
     /** Whether a {@code return} of the function's own body acknowledges its value with {@code forever}. */
@@ -249,6 +279,14 @@ final class TailCalls {
         switch (expression) {
             case BabbleParser.BlockExpressionContext b -> block(function, b.block(), tail, inHandler);
             case BabbleParser.IfExpressionContext i -> ifExpr(function, i.ifExpr(), tail, inHandler);
+            case BabbleParser.MatchExpressionContext m -> {
+                for (BabbleParser.CaseClauseContext cc : m.caseClause()) {
+                    block(function, cc.armBlock, tail, inHandler);
+                }
+                if (m.elseClause() != null) {
+                    block(function, m.elseClause().elseBlock, tail, inHandler);
+                }
+            }
             case BabbleParser.WhileExpressionContext w -> block(function, w.whileBlock, false, inHandler);
             case BabbleParser.ForExpressionContext f -> block(function, f.forBlock, false, inHandler);
             case BabbleParser.TryExpressionContext t -> {
