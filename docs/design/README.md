@@ -11,7 +11,7 @@ Items inside a proposal carry stable identifiers prefixed by its number:
 - **`BIP###-P#`**: a **planned** feature or implementation phase (sub-phases take a letter: `BIP###-P0a`).
 - **`BIP###-I#`**: an **implemented** one.
 
-Always write identifiers in full (`BIP031-P2`, not `P2`) so they stay searchable. When a planned phase lands, rewrite every reference to it across the repository, from `BIP###-P#` to `BIP###-I#`, with the script:
+Always write identifiers in full (`BIP031-I2`, not `P2`) so they stay searchable. When a planned phase lands, rewrite every reference to it across the repository, from `BIP###-P#` to `BIP###-I#`, with the script:
 
 ```bash
 python3 src/tools/mark_bip_implemented.py --dry-run --diff BIPNNN-P1..P3   # preview
@@ -27,7 +27,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 
 - **Execution:** a tree-walking interpreter (the reference implementation) and a compiler to JVM bytecode through a typed `HIR` (`-O0`, the `-O1` default) and an SSA `MIR` tier (`-O2`), ahead-of-time jars (`babblec`), and WebAssembly 3.0, all over a `java.base`-only runtime.
 - **Language:** classes, `record`s, objects and interfaces with two-way Java interop; modules; `for` loops with `break` and `continue`; `try`/`catch`/`finally`; optional, named, variadic and overloaded arguments; self tail calls; immutable `def` and mutable `var`; multiline and raw strings.
-- **Types:** mandatory static typing with nullables (`T?`, `T!`), unions, intersections, generics, aliases and flow-sensitive narrowing, over nine core scalars, five core collections and `array of T`.
+- **Types:** mandatory static typing with nullables (`T?`, `T!`), unions, intersections, generics, aliases and flow-sensitive narrowing, over nine core scalars, five core collections, `array of T` and covariant `range of T` (`lo..hi`, `lo..<hi`, floored `mod` and `//`).
 - **Effects:** inferred, pure-by-default effects and algebraic properties, ownership (`unique`, `frozen`), termination checking, and curated or bytecode-inferred axioms for Java code.
 - **Tooling:** an interactive mode, a formatter, and `.batest.md` specifications run in every mode, with IR goldens and a coverage gate of at least 80% of lines and branches.
 
@@ -63,6 +63,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP028** | [Exception handling (`try`, `catch`, `finally`)](bip028_exception-handling.md) | 2026-11-23 | — | Expression-oriented `try`/`catch`/`finally`/`throw`, a core `exception` type, and direct JVM exception propagation. |
 | **BIP029** | [`.batest.md` v2 format and unified HIR/MIR golden testing](bip029_batest-v2-and-ir-goldens.md) | 2026-11-23 | — | The Markdown-based test format, with canonical `HIR`, `MIR` and `wat` golden assertions. |
 | **BIP030** | [Axiom nullability and inferred effects](bip030_axiom-nullability-and-inferred-effects.md) | 2026-11-23 | — | `class notnull` and `T!` in axioms, so curated nullness no longer hides inferred effects. |
+| **BIP031** | [First-class ranges (`range`), modulo (`mod`) and integer division (`//`)](bip031_ranges.md) | 2026-11-24 | `RM019` | Covariant `range of T` (`lo..hi`, `lo..<hi`), stepped/reversed progressions, floored `mod` and `//`/`//=`, `@TERMINATING` certification, allocation-free counted `for` loops, E-graph laws, and `-O1`/`-O2`/Wasm 3.0 lowering. |
 | **BIP034** | [Immutable `def` and mutable `var` bindings](bip034_immutable-def-and-mutable-var.md) | 2026-11-25 | — | Non-reassignable `def` and explicit `var`, which make top-level reads pure, let closures capture by value, and allow `ACC_FINAL` fields. |
 
 ### In progress
@@ -73,7 +74,6 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP015** | [Down with the ants](bip015_down-with-the-ants.md) | 2026-11-19 | Draft (`BIP015-Q1`–`Q8` open) | Whether to keep ANTLR4, put a Babble-owned AST behind it, or replace it, for example with a hand-written parser. Decided first in `RM014`. |
 | **BIP018** | [Tracking Java improvements](bip018_tracking-java-improvements.md) | 2026-11-20 | Decided (`BIP018-P0`–`P4` planned) | Babble editions that track JDK LTS releases, a multi-module split, a Class-File API backend and `babblec -target N`. Starts once `BIP014` is complete (`RM016`, `RM017`). |
 | **BIP026** | [Multiline strings and string templates](bip026_multiline-strings-and-string-templates.md) | 2026-11-22 | Partially implemented | Multiline and raw strings landed (`BIP026-I1`). String templates (`t"..."`, lazy placeholders, evaluation policies) are open (`BIP026-Q4`–`Q10` → `BIP026-P2`–`P5`, `RM014`). |
-| **BIP031** | [First-class ranges (`range`), modulo (`mod`) and integer division (`//`)](bip031_ranges.md) | 2026-11-24 | Decided (`BIP031-P1`–`P3` planned) | `range of T` (`lo..hi`, `lo..<hi`), floored `mod` and `//`, and allocation-free counted loops (`RM019`). |
 | **BIP032** | [The Great Escape — adversarial search for inconsistencies in Babble types and effects](bip032_the-great-escape.md) | 2026-11-24 | Decided (`BIP032-P1`–`P4` planned) | Red-team probes, white-box property tests, runtime canary oracles and a delta-minimizing soundness fuzzer across types, effects, ownership, optimizer/Wasm parity, axioms and verifiers (`RM021`). |
 | **BIP033** | [Tensors as core types with dimensional safety](bip033_tensors.md) | 2026-11-25 | Decided (`BIP033-P1`–`P6` planned) | Core `float16`/`bfloat16` scalars and immutable `tensor of (DType, ...)` types with static/symbolic/dynamic/labeled shapes, E-graph algebraic dim solving, scalar + labeled-subset broadcasting, `matmul`/`einsum`, `unique` FBIP reuse, and a `java.base` strided runtime behind `TensorBackend` SPI (with a compiled-region hook for optional StableHLO/XLA PJRT backends) (`RM023`). |
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
@@ -167,9 +167,15 @@ Whole-program compilation from `HIR` to WebAssembly 3.0 (`BIP025-I0`–`I5`), wi
 
 - Spans: `BIP025`, `BIP009`, `BIP014`, `BIP019`, `BIP020`, `BIP022`, `BIP024`, `BIP028`, `BIP029`, `BIP030`, `BIP034`
 
+#### RM019 — Ranges (`range`, `mod`, `//`)
+
+First-class immutable covariant `range of T` (`lo..hi`, `lo..<hi`), stepped and reversed discrete progressions, floored `mod` and `//`/`//=`, sealed-interface + Java `record` `Range` runtime & axioms, `@TERMINATING` certification, allocation-free counted `for` loops, E-graph algebraic laws, `.contains()` deforestation, power-of-two / non-negative strength reduction, and `-O1`/`-O2`/Wasm 3.0 lowering (`BIP031-I1`–`I3`).
+
+- Spans: `BIP031`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP019`, `BIP025`, `BIP027`, `BIP029`, `BIP034`
+
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP031-P1`–`P3`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
 
@@ -180,7 +186,7 @@ The order follows constraints recorded in the BIPs:
 - **Measure, then optimize.** Only `BIP014-P5` Half B remains, and it needs a standard library to rewrite.
 - **Choose the parser before the largest grammar change.** `BIP026-P2` splits `Babble.g4` into lexer modes, and `BIP015-Q3` asks whether a parser change should come first.
 - **`BIP018` after `BIP014`** (`BIP018-D4`).
-- **Ranges, tensors and `babblebabble` are independent.** `BIP031` (`RM019`) is a predicate-free grammar addition that gives the standard library ranges if it lands before `RM015`; `BIP033` (`RM023`) is likewise predicate-free and independent of `BIP015` and `BIP018` (plugging into `BIP018` SIMD/FFM and optional StableHLO/XLA PJRT region backends later via its `TensorBackend` SPI); `BIP035` (`RM022`) builds on the landed `BIP025` Wasm backend and `BIP034` bindings as an independent differential oracle and symbolic benchmark.
+- **Tensors and `babblebabble` are independent.** `BIP033` (`RM023`) is a predicate-free grammar addition independent of `BIP015` and `BIP018` (plugging into `BIP018` SIMD/FFM and optional StableHLO/XLA PJRT region backends later via its `TensorBackend` SPI); `BIP035` (`RM022`) builds on the landed `BIP025` Wasm backend and `BIP034` bindings as an independent differential oracle and symbolic benchmark.
 
 | Milestone | Slice | Remaining BIP work | Prerequisites | Notes |
 |---|---|---|---|---|
@@ -188,7 +194,6 @@ The order follows constraints recorded in the BIPs:
 | **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`; a standard library BIP | Completes `BIP014`, which opens `BIP018`. |
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P0`–`P2` | `RM015` | See the note on `BIP018-P0`. |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
-| **RM019** | Ranges (`range`, `mod`, `//`) | `BIP031-P1`–`P3` | `RM013` | Can run now, alongside the others. |
 | **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2). |
 | **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others; hardens soundness ahead of `RM015` and `RM017`. |
 | **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
@@ -242,15 +247,6 @@ Make Babble safe on several threads in both backends, add effect-verified parall
   - `BIP018-P4`: `babble-28-preview` with `record`s as value classes (JEP 401).
 - **Exit criteria:** multi-threaded differential tests, race-freedom checks on the combinators, and Argon allocation and throughput benchmarks on each edition.
 
-### RM019 — Ranges (`range`, `mod`, `//`)
-
-Deliver [BIP031](bip031_ranges.md) on top of the implemented `BIP034` bindings.
-
-- **Spans:** `BIP031`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP019`, `BIP025`, `BIP027`, `BIP029`, `BIP034`
-- **Depends on:** `RM013`. Independent of `BIP015` and `BIP018`.
-- **Deliverables:** `BIP031-P1`–`P3`: `range of T`, stepped and reversed progressions, floored `mod` and `//`, the `Range` runtime and axioms, and allocation-free counted loops in `HIR`, `MIR` and Wasm.
-- **Exit criteria:** range and division specifications in every mode, with `HIR`, `MIR` and `wat` goldens.
-
 ### RM020 — Compiler simplification & god-class splits
 
 Deliver [BIP036](bip036_compiler-simplification-and-god-class-splits.md) with zero behavioral change, dismantling every remaining compiler god class and tightening the repository-wide file ceiling to 1,500 lines ahead of `BIP015` Option 2.
@@ -298,7 +294,6 @@ Deliver [BIP033](bip033_tensors.md), adding ML-first core `float16`/`bfloat16` s
   - `BIP033-P2`–`P4`: predicate-free pure-`SLL` `tensor` grammar & unified `of (...)` type/shape application, `DimAlgebra` (polynomial + `org.babblelang.ir.egraph` solver with `D == H * K` constraints), directional label-preserving axis labels, `dyn` narrowing / `withDims`, `java.base`-only strided runtime & `TensorBackend` SPI (including its optional compiled-region hook), strict linear `unique` tracking on immutable tensors, scalar + labeled-subset broadcasting, reductions, `matmul`/`matmulAccum`, and compile-time checked `einsum`/`contract`.
   - `BIP033-P5`–`P6`: structured `HIR` tensor nodes, `-O1`/`-O2` elementwise loop fusion, E-graph view simplification, small-tensor SROA (`O9`), FBIP `TensorReuse` (`O10`), pure-region lowering readiness for optional StableHLO/XLA backends, and a dimensionally-safe micro-Transformer forward-pass milestone in `examples/`.
 - **Exit criteria:** 100% pure-`SLL` parsing, `.batest.md` differential & `HIR`/`MIR` goldens across all modes, `RuntimeBoundaryTestCase` (`java.base`-only), and byte-identical micro-Transformer output across `interpret`, `-O0`, `-O1`, `-O2`, and `babblec` AOT jar.
-
 ### Backlog awaiting a BIP
 
 Planned work no BIP specifies yet, gathered from decisions of implemented BIPs, the [README](../../README.md)'s planned features and ray-tracer lessons, and [AGENTS.md](../../AGENTS.md)'s known issues. An item a milestone needs gets its BIP when that milestone starts; the others can be proposed at any time.

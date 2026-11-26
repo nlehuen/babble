@@ -143,7 +143,7 @@ interface IBase
 interface IBase:
   fn calc(v0: int) -> any:
     bb0:
-      v1: long = const 0L
+      v1: int = const 0
       v2: any = convert.any v1
       ret v2
 ```
@@ -153,7 +153,7 @@ interface IBase:
 interface IBase:
   fn calc(v0: int) -> any:
     bb0:
-      v1: any = const 0L
+      v1: any = const 0
       ret v1
 ```
 

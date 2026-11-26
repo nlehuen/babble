@@ -124,7 +124,7 @@ public final class HirPurity {
             case HirExpr.Logic l -> isPureNothrowTerminating(l.left(), module, visitingFns)
                     && isPureNothrowTerminating(l.right(), module, visitingFns);
             case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, Set.of(), module, visitingFns);
-            case HirExpr.For f -> isPureForWithLocals(f, Set.of(), module, visitingFns);
+            case HirExpr.For f -> f.countedRange() != null && isPureForWithLocals(f, Set.of(), module, visitingFns);
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));

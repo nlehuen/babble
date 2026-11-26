@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 /**
- * Direct unit tests for {@code BIP031-P1} runtime classes ({@link Range}, {@link IntRange},
+ * Direct unit tests for {@code BIP031-I1} runtime classes ({@link Range}, {@link IntRange},
  * {@link LongRange}, {@link CharRange}, {@link DoubleRange}, {@link ComparableRange}) and
  * {@link Operators#mod} / {@link Operators#floorDiv}.
  */

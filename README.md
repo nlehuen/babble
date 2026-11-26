@@ -209,28 +209,49 @@ assert(2147483647 + 1 == -2147483648)
 
 `int(x)` and `double(x)` convert : `int` truncates a `double` towards zero, and fails on one
 out of the `int` range, an infinity or `NaN` ; `double` widens an `int`. Both parse a string.
-There is no integer division operator : `int(a / b)` truncates the quotient, and
-`java.lang.Math.floorDiv(a, b)` and `floorMod` round it down.
+`//` and `mod` perform floored integer division and modulo (`Math.floorDiv` and `Math.floorMod`
+semantics, so `a == b * (a // b) + a mod b` and `a mod b` takes the divisor's sign) on integral
+scalars (`byte`/`short`/`int` → `int`, `long` → `long`), and `//=` is the compound assignment.
 
 ```
 assert(int(2.7) == 2 and int(-2.7) == -2)
-assert(int(7 / 2) == 3)
+assert(7 // 2 == 3 and -7 // 2 == -4)
+assert(10 mod 3 == 1 and -1 mod 5 == 4)
 assert(int("42") + double("0.5") == 42.5)
 ```
 
 Compound assignment applies an operator to a variable or a member : `x += v` is `x = x + v`,
-and so are `-=`, `*=` and `/=`. The target is read before `v` is evaluated, and the receiver of
+and so are `-=`, `*=`, `/=` and `//=`. The target is read before `v` is evaluated, and the receiver of
 `obj.x += v` is evaluated once. Its value is the value assigned, checked against the target's
-declared type as any assignment's is : `def n : int = 1 ; n /= 2` is a type error.
+declared type as any assignment's is : `var n : int = 1 ; n /= 2` is a type error.
 
 ```
-def total = 0
-def i = 0
+var total = 0
+var i = 0
 while i < 4 then (
     i += 1
     total += i
 )
 assert(total == 10)
+```
+
+### Ranges
+
+`lo..hi` (inclusive) and `lo..<hi` (half-open) create first-class immutable covariant `range of T`
+values for any ordered type (`.contains(x)`, `.start()`, `.end()`, `.inclusive()`, `.isEmpty()`).
+Discrete ranges (`byte`, `short`, `int`, `long`, `char`) are `Iterable` progressions supporting
+`(lo..hi).step(k)` and `.reversed()`, and `for i in lo..hi` / `lo..<hi` / `(lo..<hi).step(k).reversed()`
+compiles to an allocation-free counted primitive loop on both the JVM and WebAssembly 3.0
+(see [BIP031](docs/design/bip031_ranges.md)).
+
+```
+var sum = 0
+for i in 0..<10 then (
+    sum += i
+)
+assert(sum == 45)
+assert((3..<10).step(5).contains(8) and not (3..<10).step(5).contains(5))
+assert((0.0..<1.0).contains(0.5) and ("alpha".."omega").contains("beta"))
 ```
 
 ### Block scope
@@ -824,7 +845,7 @@ def fac=fn(n:int):int->(          def fac = fn (n: int): int -> (
 - multiline `"""..."""` and `r"""..."""` blocks re-indent uniformly to one indent level past their
   opening line (`(line.indent + 1) * 4` spaces), preserving intentional extra indentation and their
   dedented string value ;
-- one space around binary operators, `=` (and `+=`, `-=`, `*=`, `/=`) and `->`, after `,` and `:`, none inside parentheses
+- one space around binary operators (`+`, `-`, `*`, `/`, `//`, `mod`, ...), `=` (and `+=`, `-=`, `*=`, `/=`, `//=`) and `->`, after `,` and `:`, none around `..`/`..<` or inside parentheses
   nor before a call's ;
 - a block's `(` comes back on the line of its `if`, `while`, function, class..., as do `else` and
   `static` ;
@@ -909,12 +930,13 @@ Language features :
 - [x] immutable `def` and mutable `var` bindings ([BIP034](docs/design/bip034_immutable-def-and-mutable-var.md)) : `def` bindings (including `export`s, `interface` members, public `static` members, `record` fields, and function parameters by default) cannot be reassigned, while `var` explicitly opts into reassignment on locals, module-private top-level bindings, `class`/`object` fields, `private var` static fields, and optional `fn (var ...)` parameters ; enables pure function/class `NameRead`s (`name_read Pair {pure}`), per-field `def` immutability (`READ_FROZEN` and `ACC_FINAL` typed `<init>` constructors), value-capture without `Cell` allocation, and constant-folding inline caches in `Bootstrap.NameCache`/`SelectCache`.
 - [x] exception handling : expression-oriented `try (...) catch [e] [: A | B] then (...) finally (...)`, `throw` (`Type.NOTHING`), lowercase core `exception` type (`BabbleException`), direct JVM `Throwable` propagation, open nominal Babble exceptions via `ThrownException` isolated from Java `Exception`/`RuntimeException` catches, untyped non-`Error` catch-all, forbidden escaping `return`/`break`/`continue` in `finally` with automatic `addSuppressed`, `nothrow` restoration & dead-catch warnings, intra-procedural local-catch `@BORROWED` provenance, JVM `exception_table` + inline `finally` duplication with `try`-range splitting, and `-O1` dead-catch elimination (see [BIP028](docs/design/bip028_exception-handling.md)).
 - [x] first-class iterators, `for ... in ... then (...)` loops, and uniform `break [expr]` / `continue` across `while` and `for` loops, plus parameterized static factories `(list of int).of(...)` / `list.of(...)` (`RM009`, see [BIP013](docs/design/bip013_iterators.md)).
+- [x] first-class ranges, modulo and integer division (`RM019`, see [BIP031](docs/design/bip031_ranges.md)) : immutable covariant `range of T` (`lo..hi`, `lo..<hi`), discrete progressions with `(lo..hi).step(k)` and `.reversed()`, floored `mod`, `//`, and `//=` (`-1 mod 5 == 4`, `-7 // 2 == -4`, `def mod`/`def floorDiv` operator methods), `@TERMINATING` certification, allocation-free counted `for` loops and `.contains()` deforestation across JVM HIR/`-O2` MIR and WebAssembly 3.0, power-of-two bitmask/shift and non-negative-dividend `IREM`/`IDIV` lowering, and E-graph algebraic laws.
 - [x] functions (`fn (...) -> (...)`), supporting recursion (`recurse`) and closures.
 - [x] self tail calls (`recurse(...)`, a function's own `def`, `this.m(...)`) run in constant stack space in every mode, and code that never ends must say so with `forever` (`docs/design/bip024_tail-calls.md`).
 - [x] first-class function objects, functions are stored in variables and can be passed around as parameters.
 - [x] positional, statically bound named, optional (`= ...` in function types & interfaces, with `$spec` missing-argument masks), keyword-only (`...`), and variadic rest (`xs: T...`, a generic `Iterable of T` backed by `ArgumentsView` and primitive variants) parameters, plus `...e` spread arguments into any sequence parameter (`BIP021-I1`, `BIP021-I4`, see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
 - [x] closed overload sets (`overload (f, g, ...)`) and set types (`overload (fn ..., fn ...)`): static ambiguity checking with witnesses where sets are built, most-specific resolution with numeric widening ranks, union/nullable runtime splits, overloaded class/record/object/static/interface methods, Java interface overload bridges, and overloaded operator methods (`BIP021-I5`–`I6`, see [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
-- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, `array of T` over plain JVM arrays (`(array of int)(100)`, `.of(...)`, `from:`, `size()`/`get`/`set`, content equality and printing, [BIP020](docs/design/bip020_array-types.md)), core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`) and polymorphic function types (`fn of T (...) : R`), overload set types (`overload (fn ..., fn ...)`), union types (`A | B`), intersection types of interfaces (`A & B`), type aliases (`def T = type A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types with upper bounds (`Box of (T: B)`, `list of int`, `java.util.List of string`).
+- [x] basic types : `byte`, `short`, `int`, `long`, `float`, `double`, `bool`, `char`, `string`, `null`, `array of T` over plain JVM arrays (`(array of int)(100)`, `.of(...)`, `from:`, `size()`/`get`/`set`, content equality and printing, [BIP020](docs/design/bip020_array-types.md)), covariant `range of T` ([BIP031](docs/design/bip031_ranges.md)), core collections (`list`, `set`, `sortedset`, `map`, `sortedmap`, `entry` mapped to `java.util`), functions (`fn (...) : R`) and polymorphic function types (`fn of T (...) : R`), overload set types (`overload (fn ..., fn ...)`), union types (`A | B`), intersection types of interfaces (`A & B`), type aliases (`def T = type A | B`), nullable types (`T?`, postfix `e!`), `any` / `any?`, and generic/parameterized types with upper bounds (`Box of (T: B)`, `list of int`, `java.util.List of string`).
 - [x] multiline & raw string literals : strictly single-line `"..."`, strict JEP 378 `"""..."""` with compile-time closing-delimiter dedenting (`\s`, `\<newline>`, no mixed tabs/spaces, uniform trailing-space stripping), and minimal raw `r"..."` / `r"""..."""` (`BIP026-I1`, see [BIP026](docs/design/bip026_multiline-strings-and-string-templates.md)).
 - [x] modules : a file exports some of its definitions with `export`, and another gets them with `import("file.ba")`.
 - [x] object model : classes, object literals, interfaces with default methods, overloaded members, and generic interface methods, records (`record`), private and static members, `is`, `same` and `classof` (see [BIP002](docs/design/bip002_object-model.md), [BIP012](docs/design/bip012_grammar-improvements.md), and [BIP021](docs/design/bip021_optional-variadic-overloaded-arguments.md)).
@@ -944,9 +966,6 @@ Language features :
 
 - [ ] better, more user-friendly error reports.
 - [ ] structural object types.
-- [ ] ranges, modulo and integer division : a first-class immutable `range of T` (`lo..hi`, `lo..<hi`),
-  stepped (`(3..<10).step(5)`) and reversed progressions, allocation-free counted `for` loops, and floored
-  integer `mod` and `//` (`-1 mod 5 == 4`, `-7 // 2 == -4`) (see [BIP031](docs/design/bip031_ranges.md)).
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module or an object, instead of one `def` per name.
 - [ ] `yield` keyword : transform functions/method into iterators.
