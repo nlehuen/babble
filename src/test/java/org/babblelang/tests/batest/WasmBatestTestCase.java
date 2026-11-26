@@ -57,6 +57,7 @@ public class WasmBatestTestCase {
 
         String filterRaw = System.getProperty("batest.filter");
         BatestFilter filter = BatestFilter.parse(filterRaw);
+        BatestShard shard = BatestShard.parse(System.getProperty("batest.shard"));
         Path root = BatestTestCase.BATEST_ROOT;
         if (!Files.isDirectory(root)) {
             return Stream.empty();
@@ -76,7 +77,7 @@ public class WasmBatestTestCase {
         List<DynamicNode> containers = new ArrayList<>();
         for (Path path : files) {
             String rel = root.relativize(path).toString().replace('\\', '/');
-            if (!filter.matchesFile(rel)) {
+            if (!shard.matchesFile(rel) || !filter.matchesFile(rel)) {
                 continue;
             }
             BatestFile batestFile = BatestParser.parse(path, rel);

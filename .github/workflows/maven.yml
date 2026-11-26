@@ -1,7 +1,7 @@
 # Build Once, Fan Out, Then Gate CI workflow for Babble:
 #   1. build      (1 runner)  : compiles src/main + src/test and packages jars once, uploads target/
 #   2. unit-tests (1 runner)  : downloads target/ and runs src/test/java (excluding batest runners) across interpret, -O1, -O0
-#   3. batest     (6 runners) : downloads target/ and runs modulo-sharded src/test/batest/*.batest.md across interpret, -O1 (+ Wasm 3.0), -O0
+#   3. batest     (6 runners) : downloads target/ and runs -Dbatest.shard=<N>/6 across interpret, -O1 (+ Wasm 3.0), -O0
 #   4. ci         (1 runner)  : single required status-check gate aggregating build, unit-tests, and all batest shards
 
 name: Java CI with Maven
@@ -91,31 +91,14 @@ jobs:
       with:
         name: maven-target
         path: target
-    - name: Run batest shard ${{ matrix.shard }} (interpret, -O1 + Wasm, -O0)
-      env:
-        SHARD: ${{ matrix.shard }}
-        TOTAL_SHARDS: 6
+    - name: Run batest shard ${{ matrix.shard }}/6 (interpret, -O1 + Wasm, -O0)
       run: |
-        set -euo pipefail
-        FILES=$(
-          find src/test/batest -type f -name '*.batest.md' \
-            | sed 's|^src/test/batest/||' \
-            | LC_ALL=C sort \
-            | awk -v shard="$SHARD" -v total="$TOTAL_SHARDS" '(NR - 1) % total == shard' \
-            | paste -sd ',' -
-        )
-        if [ -z "$FILES" ]; then
-          echo "Shard $SHARD/$TOTAL_SHARDS has no matching .batest.md files; skipping."
-          exit 0
-        fi
-        COUNT=$(printf '%s\n' "$FILES" | tr ',' '\n' | wc -l)
-        echo "Running shard $SHARD/$TOTAL_SHARDS ($COUNT files)"
         mvn -B --file pom.xml \
           surefire:test@default-test \
           surefire:test@compiled-tests \
           surefire:test@compiled-tests-O0 \
           -Dtest=BatestTestCase,WasmBatestTestCase \
-          -Dbatest.filter="$FILES"
+          -Dbatest.shard="${{ matrix.shard }}/6"
 
   ci:
     name: CI Gate

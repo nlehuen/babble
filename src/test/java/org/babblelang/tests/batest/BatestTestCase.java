@@ -37,6 +37,7 @@ public class BatestTestCase {
     public Stream<DynamicNode> batestSuite() throws IOException {
         String filterRaw = System.getProperty("batest.filter");
         BatestFilter filter = BatestFilter.parse(filterRaw);
+        BatestShard shard = BatestShard.parse(System.getProperty("batest.shard"));
         String recordDir = System.getProperty("batest.record");
 
         BabbleScriptEngine engine =
@@ -82,7 +83,7 @@ public class BatestTestCase {
 
         for (Path path : files) {
             String rel = BATEST_ROOT.relativize(path).toString().replace('\\', '/');
-            if (!filter.matchesFile(rel)) {
+            if (!shard.matchesFile(rel) || !filter.matchesFile(rel)) {
                 continue;
             }
             BatestFile batestFile = BatestParser.parse(path, rel);
