@@ -68,7 +68,7 @@ public class ArchitectureBoundaryTestCase {
      */
     private static final Map<String, Integer> GRANDFATHERED_CEILINGS =
             Map.ofEntries(
-                    Map.entry("src/main/java/org/babblelang/analysis/TypeChecker.java", 4_142),
+                    Map.entry("src/main/java/org/babblelang/analysis/TypeChecker.java", 3_752),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmRuntimeGen.java", 3_002),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmCollectionOpsGen.java", 2_888),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmFuncEmitter.java", 2_814),
