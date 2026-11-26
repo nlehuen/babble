@@ -945,7 +945,7 @@ Language features :
 - [ ] better, more user-friendly error reports.
 - [ ] structural object types.
 - [ ] ranges, modulo and integer division : a first-class immutable `range of T` (`lo..hi`, `lo..<hi`),
-  stepped (`3..<10 mod 5`) and reversed progressions, allocation-free counted `for` loops, and floored
+  stepped (`(3..<10).step(5)`) and reversed progressions, allocation-free counted `for` loops, and floored
   integer `mod` and `//` (`-1 mod 5 == 4`, `-7 // 2 == -4`) (see [BIP031](docs/design/bip031_ranges.md)).
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module or an object, instead of one `def` per name.
