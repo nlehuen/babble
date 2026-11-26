@@ -1745,7 +1745,7 @@ final class HirEmitter {
             // Already on the operand stack, left there by the immediately preceding MIR
             // instruction.
         } else if (op.isConstant()) {
-            MirEmitter.pushConstant(ctx.mv, op.constant());
+            JvmOpEmitter.pushConstant(ctx.mv, op.constant());
         } else {
             loadKindOn(ctx.mv, op.kind(), op.slot());
         }
@@ -1835,41 +1835,7 @@ final class HirEmitter {
     // ---------------------------------------------------------------- literals
 
     private void emitConst(HirExpr.Const c) {
-        MethodVisitor mv = ctx.mv;
-        Object v = c.value();
-        if (v == null) {
-            mv.visitInsn(ACONST_NULL);
-            ctx.stackKind = PrimitiveKind.NONE;
-        } else if (v instanceof Boolean b) {
-            mv.visitInsn(b ? ICONST_1 : ICONST_0);
-            ctx.stackKind = PrimitiveKind.BOOL;
-        } else if (v instanceof Byte b) {
-            ConstantPool.pushInt(mv, b);
-            ctx.stackKind = PrimitiveKind.BYTE;
-        } else if (v instanceof Short s) {
-            ConstantPool.pushInt(mv, s);
-            ctx.stackKind = PrimitiveKind.SHORT;
-        } else if (v instanceof Integer i) {
-            ConstantPool.pushInt(mv, i);
-            ctx.stackKind = PrimitiveKind.INT;
-        } else if (v instanceof Long l) {
-            mv.visitLdcInsn(l);
-            ctx.stackKind = PrimitiveKind.LONG;
-        } else if (v instanceof Float f) {
-            mv.visitLdcInsn(f);
-            ctx.stackKind = PrimitiveKind.FLOAT;
-        } else if (v instanceof Double d) {
-            mv.visitLdcInsn(d);
-            ctx.stackKind = PrimitiveKind.DOUBLE;
-        } else if (v instanceof Character ch) {
-            ConstantPool.pushInt(mv, ch);
-            ctx.stackKind = PrimitiveKind.CHAR;
-        } else if (v instanceof String s) {
-            ConstantPool.pushString(mv, s);
-            ctx.stackKind = PrimitiveKind.NONE;
-        } else {
-            throw new IllegalStateException("Unsupported HIR constant : " + v.getClass());
-        }
+        ctx.stackKind = JvmOpEmitter.pushConstant(ctx.mv, c.value());
     }
 
     private void emitIntParseFallback(HirExpr.IntParseFallback f) {

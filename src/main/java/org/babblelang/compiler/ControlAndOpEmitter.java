@@ -38,41 +38,16 @@ final class ControlAndOpEmitter {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         if (u.op() == HirExpr.UnaryOp.NOT) {
-            Label isTrue = new Label();
-            Label end = new Label();
-            emitCondition(u.operand(), false, isTrue);
-            mv.visitInsn(ICONST_0);
-            mv.visitJumpInsn(GOTO, end);
-            mv.visitLabel(isTrue);
-            mv.visitInsn(ICONST_1);
-            mv.visitLabel(end);
-            c.stackKind = PrimitiveKind.BOOL;
+            JvmOpEmitter.emitBoolFromJump(
+                    mv, c, isTrue -> emitCondition(u.operand(), false, isTrue));
             return;
         }
-        PrimitiveKind ok = u.operand().meta().kind();
-        PrimitiveKind rk = u.meta().kind();
-        if (rk == PrimitiveKind.INT && isNumericKind(ok) && numericOrder(ok) <= 2) {
-            emitter.emitAs(u.operand(), PrimitiveKind.INT);
-            mv.visitInsn(INEG);
-            c.stackKind = PrimitiveKind.INT;
-            return;
-        }
-        if (rk == PrimitiveKind.LONG && isNumericKind(ok) && numericOrder(ok) <= 3) {
-            emitter.emitAs(u.operand(), PrimitiveKind.LONG);
-            mv.visitInsn(LNEG);
-            c.stackKind = PrimitiveKind.LONG;
-            return;
-        }
-        if (rk == PrimitiveKind.FLOAT && isNumericKind(ok) && numericOrder(ok) <= 4) {
-            emitter.emitAs(u.operand(), PrimitiveKind.FLOAT);
-            mv.visitInsn(FNEG);
-            c.stackKind = PrimitiveKind.FLOAT;
-            return;
-        }
-        if (rk == PrimitiveKind.DOUBLE && isNumericKind(ok)) {
-            emitter.emitAs(u.operand(), PrimitiveKind.DOUBLE);
-            mv.visitInsn(DNEG);
-            c.stackKind = PrimitiveKind.DOUBLE;
+        if (JvmOpEmitter.emitPrimitiveNegate(
+                mv,
+                c,
+                u.operand().meta().kind(),
+                u.meta().kind(),
+                target -> emitter.emitAs(u.operand(), target))) {
             return;
         }
         int operand = c.newLocal();
@@ -104,158 +79,37 @@ final class ControlAndOpEmitter {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         if (b.op().isComparison() && canLowerComparison(b)) {
-            Label isTrue = new Label();
-            Label end = new Label();
-            emitComparison(b, true, isTrue);
-            mv.visitInsn(ICONST_0);
-            mv.visitJumpInsn(GOTO, end);
-            mv.visitLabel(isTrue);
-            mv.visitInsn(ICONST_1);
-            mv.visitLabel(end);
-            c.stackKind = PrimitiveKind.BOOL;
+            JvmOpEmitter.emitBoolFromJump(mv, c, isTrue -> emitComparison(b, true, isTrue));
             return;
         }
 
         PrimitiveKind resultKind = b.meta().kind();
         PrimitiveKind lk = b.left().meta().kind();
         PrimitiveKind rk = b.right().meta().kind();
-        if (isNumericKind(lk)
-                && isNumericKind(rk)
-                && (b.op() == HirExpr.BinaryOp.ADD
-                        || b.op() == HirExpr.BinaryOp.SUB
-                        || b.op() == HirExpr.BinaryOp.MUL)) {
-            if (resultKind == PrimitiveKind.INT) {
-                emitter.emitAs(b.left(), PrimitiveKind.INT);
-                emitter.emitAs(b.right(), PrimitiveKind.INT);
-                mv.visitInsn(
-                        switch (b.op()) {
-                            case ADD -> IADD;
-                            case SUB -> ISUB;
-                            case MUL -> IMUL;
-                            default -> throw new IllegalStateException();
-                        });
-                c.stackKind = PrimitiveKind.INT;
-                return;
-            }
-            if (resultKind == PrimitiveKind.LONG) {
-                emitter.emitAs(b.left(), PrimitiveKind.LONG);
-                emitter.emitAs(b.right(), PrimitiveKind.LONG);
-                mv.visitInsn(
-                        switch (b.op()) {
-                            case ADD -> LADD;
-                            case SUB -> LSUB;
-                            case MUL -> LMUL;
-                            default -> throw new IllegalStateException();
-                        });
-                c.stackKind = PrimitiveKind.LONG;
-                return;
+        long positiveRightConst = 0L;
+        if ((b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)
+                && (resultKind == PrimitiveKind.INT || resultKind == PrimitiveKind.LONG)
+                && b.right() instanceof HirExpr.Const rc
+                && rc.value() instanceof Number n) {
+            long d = resultKind == PrimitiveKind.LONG ? n.longValue() : n.intValue();
+            if (d > 0L) {
+                positiveRightConst = d;
             }
         }
-
-        if (isNumericKind(lk)
-                && isNumericKind(rk)
-                && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
-            if (resultKind == PrimitiveKind.INT) {
-                emitter.emitAs(b.left(), PrimitiveKind.INT);
-                if (b.right() instanceof HirExpr.Const rc && rc.value() instanceof Number n) {
-                    int d = n.intValue();
-                    if (d > 0 && (d & (d - 1)) == 0) {
-                        if (b.op() == HirExpr.BinaryOp.MOD) {
-                            ConstantPool.pushInt(mv, d - 1);
-                            mv.visitInsn(IAND);
-                        } else if (d > 1) {
-                            ConstantPool.pushInt(mv, Integer.numberOfTrailingZeros(d));
-                            mv.visitInsn(ISHR);
-                        }
-                        c.stackKind = PrimitiveKind.INT;
-                        return;
-                    }
-                    if (d > 0 && isStaticallyNonNegative(b.left())) {
-                        ConstantPool.pushInt(mv, d);
-                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? IREM : IDIV);
-                        c.stackKind = PrimitiveKind.INT;
-                        return;
-                    }
-                }
-                emitter.emitAs(b.right(), PrimitiveKind.INT);
-                c.line(b.meta().line());
-                mv.visitMethodInsn(
-                        INVOKESTATIC,
-                        "java/lang/Math",
-                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv",
-                        "(II)I",
-                        false);
-                c.stackKind = PrimitiveKind.INT;
-                return;
-            }
-            if (resultKind == PrimitiveKind.LONG) {
-                emitter.emitAs(b.left(), PrimitiveKind.LONG);
-                if (b.right() instanceof HirExpr.Const rc && rc.value() instanceof Number n) {
-                    long d = n.longValue();
-                    if (d > 0L && (d & (d - 1L)) == 0L) {
-                        if (b.op() == HirExpr.BinaryOp.MOD) {
-                            mv.visitLdcInsn(d - 1L);
-                            mv.visitInsn(LAND);
-                        } else if (d > 1L) {
-                            ConstantPool.pushInt(mv, Long.numberOfTrailingZeros(d));
-                            mv.visitInsn(LSHR);
-                        }
-                        c.stackKind = PrimitiveKind.LONG;
-                        return;
-                    }
-                    if (d > 0L && isStaticallyNonNegative(b.left())) {
-                        mv.visitLdcInsn(d);
-                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? LREM : LDIV);
-                        c.stackKind = PrimitiveKind.LONG;
-                        return;
-                    }
-                }
-                emitter.emitAs(b.right(), PrimitiveKind.LONG);
-                c.line(b.meta().line());
-                mv.visitMethodInsn(
-                        INVOKESTATIC,
-                        "java/lang/Math",
-                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv",
-                        "(JJ)J",
-                        false);
-                c.stackKind = PrimitiveKind.LONG;
-                return;
-            }
-        }
-
-        if (resultKind == PrimitiveKind.FLOAT
-                && isNumericKind(lk)
-                && isNumericKind(rk)
-                && b.op().isArithmetic()) {
-            emitter.emitAs(b.left(), PrimitiveKind.FLOAT);
-            emitter.emitAs(b.right(), PrimitiveKind.FLOAT);
-            mv.visitInsn(
-                    switch (b.op()) {
-                        case ADD -> FADD;
-                        case SUB -> FSUB;
-                        case MUL -> FMUL;
-                        case DIV -> FDIV;
-                        default -> throw new IllegalStateException();
-                    });
-            c.stackKind = PrimitiveKind.FLOAT;
-            return;
-        }
-
-        if (resultKind == PrimitiveKind.DOUBLE
-                && isNumericKind(lk)
-                && isNumericKind(rk)
-                && b.op().isArithmetic()) {
-            emitter.emitAs(b.left(), PrimitiveKind.DOUBLE);
-            emitter.emitAs(b.right(), PrimitiveKind.DOUBLE);
-            mv.visitInsn(
-                    switch (b.op()) {
-                        case ADD -> DADD;
-                        case SUB -> DSUB;
-                        case MUL -> DMUL;
-                        case DIV -> DDIV;
-                        default -> throw new IllegalStateException();
-                    });
-            c.stackKind = PrimitiveKind.DOUBLE;
+        if (JvmOpEmitter.emitPrimitiveBinaryArith(
+                mv,
+                c,
+                b.op(),
+                lk,
+                rk,
+                resultKind,
+                positiveRightConst,
+                positiveRightConst > 0L
+                        && (positiveRightConst & (positiveRightConst - 1L)) != 0L
+                        && isStaticallyNonNegative(b.left()),
+                b.meta().line(),
+                target -> emitter.emitAs(b.left(), target),
+                target -> emitter.emitAs(b.right(), target))) {
             return;
         }
 
@@ -575,56 +429,15 @@ final class ControlAndOpEmitter {
     }
 
     private void emitComparison(HirExpr.Binary b, boolean branchIfTrue, Label target) {
-        MethodEmitContext c = ctx();
-        MethodVisitor mv = c.mv;
-        PrimitiveKind lk = b.left().meta().kind();
-        PrimitiveKind rk = b.right().meta().kind();
-        if ((lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
-                || (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR)) {
-            emitter.emitAs(b.left(), lk);
-            emitter.emitAs(b.right(), rk);
-            mv.visitJumpInsn(icmpJump(b.op(), branchIfTrue), target);
-            return;
-        }
-        PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
-        if (numericOrder(common) <= 2) {
-            emitter.emitAs(b.left(), common);
-            emitter.emitAs(b.right(), common);
-            mv.visitJumpInsn(icmpJump(b.op(), branchIfTrue), target);
-            return;
-        }
-        emitter.emitAs(b.left(), common);
-        emitter.emitAs(b.right(), common);
-        if (common == PrimitiveKind.LONG) {
-            mv.visitInsn(LCMP);
-        } else if (common == PrimitiveKind.FLOAT) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "compare", "(FF)I", false);
-        } else {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
-        }
-        int jump =
-                switch (b.op()) {
-                    case LT -> branchIfTrue ? IFLT : IFGE;
-                    case LTE -> branchIfTrue ? IFLE : IFGT;
-                    case EQ -> branchIfTrue ? IFEQ : IFNE;
-                    case NEQ -> branchIfTrue ? IFNE : IFEQ;
-                    case GTE -> branchIfTrue ? IFGE : IFLT;
-                    case GT -> branchIfTrue ? IFGT : IFLE;
-                    default -> throw new IllegalStateException();
-                };
-        mv.visitJumpInsn(jump, target);
-    }
-
-    private static int icmpJump(HirExpr.BinaryOp op, boolean branchIfTrue) {
-        return switch (op) {
-            case LT -> branchIfTrue ? IF_ICMPLT : IF_ICMPGE;
-            case LTE -> branchIfTrue ? IF_ICMPLE : IF_ICMPGT;
-            case EQ -> branchIfTrue ? IF_ICMPEQ : IF_ICMPNE;
-            case NEQ -> branchIfTrue ? IF_ICMPNE : IF_ICMPEQ;
-            case GTE -> branchIfTrue ? IF_ICMPGE : IF_ICMPLT;
-            case GT -> branchIfTrue ? IF_ICMPGT : IF_ICMPLE;
-            default -> throw new IllegalStateException();
-        };
+        JvmOpEmitter.emitPrimitiveComparisonJump(
+                ctx().mv,
+                b.op(),
+                b.left().meta().kind(),
+                b.right().meta().kind(),
+                branchIfTrue,
+                target,
+                kind -> emitter.emitAs(b.left(), kind),
+                kind -> emitter.emitAs(b.right(), kind));
     }
 
     // ---------------------------------------------------------------- type operations
