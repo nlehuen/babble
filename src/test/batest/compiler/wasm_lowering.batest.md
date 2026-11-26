@@ -337,3 +337,146 @@ fn safeFinally(v0: bool) -> int:
 contains try_table
 !contains $add_suppressed
 ```
+
+## Power-of-two mod and floorDiv lower to bitmask and shift (BIP031)
+
+```babble
+def pow2DivMod = fn (x: int): int -> ( (x // 8) + (x mod 8) )
+assert(pow2DivMod(-7) == 0 and pow2DivMod(19) == 5)
+```
+
+```hir
+;; hir -O0 fn=pow2DivMod
+fn pow2DivMod (x:int) -> int {nothrow unique}
+  (+:int (block (//:int var(x) 8:int)) (block (mod:int var(x) 8:int)))
+```
+
+```hir
+;; hir -O1 fn=pow2DivMod
+fn pow2DivMod (x:int) -> int {nothrow unique}
+  (+:int (//:int var(x) 8:int) (mod:int var(x) 8:int))
+```
+
+```mir
+;; mir -O2 fn=pow2DivMod stage=before
+fn pow2DivMod(v0: int) -> int:
+  bb0:
+    v1: int = const 8
+    v2: int = floordiv v0, v1 {pure}
+    v3: int = const 8
+    v4: int = mod v0, v3 {pure}
+    v5: int = add v2, v4 {pure}
+    ret v5
+```
+
+```mir
+;; mir -O2 fn=pow2DivMod
+fn pow2DivMod(v0: int) -> int:
+  bb0:
+    v1: int = const 8
+    v2: int = floordiv v0, v1 {pure}
+    v3: int = mod v0, v1 {pure}
+    v4: int = add v2, v3 {pure}
+    ret v4
+```
+
+```wat
+;; wat -O1 check fn=pow2DivMod
+contains i32.shr_s
+contains i32.and
+!contains $floor_div_i32
+!contains $floor_mod_i32
+```
+
+## Counted range loop lowers to unboxed Wasm loop without range allocation (BIP031)
+
+```babble
+def sumCounted = fn (n: int): int -> (
+    var acc = 0
+    for i in 0..<n then ( acc += i )
+    acc
+)
+assert(sumCounted(6) == 15 and sumCounted(0) == 0)
+```
+
+```hir
+;; hir -O0 fn=sumCounted
+fn sumCounted (n:int) -> int {nothrow unique}
+  (def acc 0:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set acc += var(i))))
+  var(acc)
+```
+
+```hir
+;; hir -O1 fn=sumCounted
+fn sumCounted (n:int) -> int {nothrow unique}
+  (def acc 0:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set acc += var(i))))
+  var(acc)
+```
+
+```mir
+;; mir -O2 fn=sumCounted stage=before
+fn sumCounted(v0: int) -> int:
+  bb0:
+    v1: int = const 0
+    v2: int = const 0
+    v3: any = const null
+    v4: bool = lt v2, v0 {pure}
+    br_if v4, bb1, bb5(v3, v1)
+  bb1:
+    v5: int = const 1
+    v6: int = sub v0, v5 {pure}
+    br bb2(v3, v2, v1)
+  bb2(v7: any, v8: int, v9: int):
+    v10: int = add v9, v8 {pure}
+    v11: any = convert.any v10
+    br bb3
+  bb3:
+    v12: bool = eq v8, v6 {pure}
+    br_if v12, bb5(v11, v10), bb4
+  bb4:
+    v13: int = const 1
+    v14: int = add v8, v13 {pure}
+    br bb2(v11, v14, v10)
+  bb5(v15: any, v16: int):
+    ret v16
+```
+
+```mir
+;; mir -O2 fn=sumCounted
+fn sumCounted(v0: int) -> int:
+  bb0:
+    v1: int = const 0
+    v2: bool = lt v1, v0 {pure}
+    br_if v2, bb1, bb5(v1)
+  bb1:
+    v3: int = const 1
+    v4: int = sub v0, v3 {pure}
+    br bb2(v1, v1)
+  bb2(v5: int, v6: int):
+    v7: int = add v6, v5 {pure}
+    br bb3
+  bb3:
+    v8: bool = eq v5, v4 {pure}
+    br_if v8, bb5(v7), bb4
+  bb4:
+    v9: int = add v5, v3 {pure}
+    br bb2(v9, v7)
+  bb5(v10: int):
+    ret v10
+```
+
+```wat
+;; wat -O1 check fn=sumCounted
+contains loop
+contains i32.ne
+contains br 1
+!contains $range_int
+!contains $range_iter
+```
+

@@ -124,6 +124,7 @@ public final class HirPurity {
             case HirExpr.Logic l -> isPureNothrowTerminating(l.left(), module, visitingFns)
                     && isPureNothrowTerminating(l.right(), module, visitingFns);
             case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, Set.of(), module, visitingFns);
+            case HirExpr.For f -> isPureForWithLocals(f, Set.of(), module, visitingFns);
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
@@ -305,32 +306,36 @@ public final class HirPurity {
             return isPureLocalBlock(inner, localIds, module, visitingFns);
         }
         if (s instanceof HirExpr.For f) {
-            EffectSet fx = f.meta().effects();
-            if (!fx.isPure() || !fx.isNothrow() || !fx.terminating()) {
-                return false;
-            }
-            if (f.countedRange() != null) {
-                HirExpr.CountedRangeLoop cr = f.countedRange();
-                if (!isPureNothrowTerminating(cr.start(), module, visitingFns)
-                        || !isPureNothrowTerminating(cr.end(), module, visitingFns)) {
-                    return false;
-                }
-                if (cr.step() != null
-                        && !(cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L)) {
-                    return false;
-                }
-            } else if (!isPureNothrowTerminating(f.iterable(), module, visitingFns)) {
-                return false;
-            }
-            Set<Integer> extended = new HashSet<>(localIds);
-            for (HirVar v : f.bodyDeclaredVars()) {
-                if (!v.isCaptured()) {
-                    extended.add(v.id());
-                }
-            }
-            return allPureWithLocals(f.body(), extended, module, visitingFns);
+            return isPureForWithLocals(f, localIds, module, visitingFns);
         }
         return isPureNothrowTerminating(s, module, visitingFns);
+    }
+
+    private static boolean isPureForWithLocals(HirExpr.For f, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
+        EffectSet fx = f.meta().effects();
+        if (!fx.isPure() || !fx.isNothrow() || !fx.terminating()) {
+            return false;
+        }
+        if (f.countedRange() != null) {
+            HirExpr.CountedRangeLoop cr = f.countedRange();
+            if (!isPureNothrowTerminating(cr.start(), module, visitingFns)
+                    || !isPureNothrowTerminating(cr.end(), module, visitingFns)) {
+                return false;
+            }
+            if (cr.step() != null
+                    && !(cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L)) {
+                return false;
+            }
+        } else if (!isPureNothrowTerminating(f.iterable(), module, visitingFns)) {
+            return false;
+        }
+        Set<Integer> extended = new HashSet<>(localIds);
+        for (HirVar v : f.bodyDeclaredVars()) {
+            if (!v.isCaptured()) {
+                extended.add(v.id());
+            }
+        }
+        return allPureWithLocals(f.body(), extended, module, visitingFns);
     }
 
     private static boolean allArgsPrimitiveOrImmutable(List<HirExpr> args) {

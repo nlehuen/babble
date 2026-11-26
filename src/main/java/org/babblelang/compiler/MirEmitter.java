@@ -66,6 +66,10 @@ final class MirEmitter {
     private final Set<Integer> discarded = new HashSet<>();
     /** Instructions not emitted where they stand : rematerialized constants and fused conditions. */
     private final Set<MirInst> deferred = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+    /** Defining instruction per SSA value id (for emission-time non-negative strength reduction). */
+    private final Map<Integer, MirInst> defByValId = new HashMap<>();
+    /** Counted-range loop block-parameter value ids proven non-negative. */
+    private final Set<Integer> nonNegativeBlockParams = new HashSet<>();
     private final List<Runnable> edgeTrampolines = new ArrayList<>();
 
     MirEmitter(HirEmitter emitter, MirFunction fn, HirFunction hirFn, PrimitiveKind methodReturnKind) {
@@ -84,6 +88,7 @@ final class MirEmitter {
         ctx.cacheNameReads = true;
         ensurePinnedSlots();
         resolveAliasesAndAllocateSlots();
+        analyzeNonNegative();
         for (MirBlock b : rpo) {
             blockLabels.put(b.id(), new Label());
         }
@@ -898,29 +903,37 @@ final class MirEmitter {
             }
             if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
                     && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
-                MirInst.Const rConst = rematerialized.get(resolveRoot(b.right()).id());
-                long posPow2 = 0L;
+                MirInst.Const rConst = constOf(b.right());
+                long posConst = 0L;
                 if (rConst != null && rConst.value() instanceof Number rn) {
                     long v = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
-                    if (v > 0L && (v & (v - 1L)) == 0L) {
-                        posPow2 = v;
+                    if (v > 0L) {
+                        posConst = v;
                     }
                 }
                 loadVal(b.left());
                 emitter.convertStack(lk, out);
-                if (posPow2 > 0L) {
+                if (posConst > 0L && (posConst & (posConst - 1L)) == 0L) {
                     if (b.op() == HirExpr.BinaryOp.MOD) {
                         if (out == PrimitiveKind.LONG) {
-                            mv.visitLdcInsn(posPow2 - 1L);
+                            mv.visitLdcInsn(posConst - 1L);
                             mv.visitInsn(LAND);
                         } else {
-                            ConstantPool.pushInt(mv, (int) (posPow2 - 1L));
+                            ConstantPool.pushInt(mv, (int) (posConst - 1L));
                             mv.visitInsn(IAND);
                         }
-                    } else {
-                        int shift = Long.numberOfTrailingZeros(posPow2);
+                    } else if (posConst > 1L) {
+                        int shift = Long.numberOfTrailingZeros(posConst);
                         ConstantPool.pushInt(mv, shift);
                         mv.visitInsn(out == PrimitiveKind.LONG ? LSHR : ISHR);
+                    }
+                } else if (posConst > 0L && isStaticallyNonNegative(b.left(), 0)) {
+                    if (out == PrimitiveKind.LONG) {
+                        mv.visitLdcInsn(posConst);
+                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? LREM : LDIV);
+                    } else {
+                        ConstantPool.pushInt(mv, (int) posConst);
+                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? IREM : IDIV);
                     }
                 } else {
                     loadVal(b.right());
@@ -969,6 +982,252 @@ final class MirEmitter {
         withOverrides(ov, () -> emitter.controlOps.emitRange(
                 new HirExpr.Range(sPh, ePh, rn.inclusive(), rn.elemKind(), false, ExprMeta.of(rn.line(), PrimitiveKind.NONE))));
         storeResult(rn.result());
+    }
+
+    private void analyzeNonNegative() {
+        for (MirBlock b : rpo) {
+            for (MirInst inst : b.insts()) {
+                if (inst.result() != null) {
+                    defByValId.put(inst.result().id(), inst);
+                }
+            }
+        }
+        // Collect incoming edges per block for counted-range loop induction recognition.
+        record InEdge(MirBlock from, List<MirVal> args, boolean isThenEdge) {}
+        Map<Integer, List<InEdge>> incoming = new HashMap<>();
+        for (MirBlock b : rpo) {
+            if (b.terminator() instanceof MirTerminator.Br br) {
+                incoming.computeIfAbsent(br.targetBlock(), k -> new ArrayList<>())
+                        .add(new InEdge(b, br.args(), false));
+            } else if (b.terminator() instanceof MirTerminator.BrIf bi) {
+                incoming.computeIfAbsent(bi.thenBlock(), k -> new ArrayList<>())
+                        .add(new InEdge(b, bi.thenArgs(), true));
+                incoming.computeIfAbsent(bi.elseBlock(), k -> new ArrayList<>())
+                        .add(new InEdge(b, bi.elseArgs(), false));
+            }
+        }
+        for (MirBlock b : rpo) {
+            if (b.handlerEntry() || b.params().isEmpty()) {
+                continue;
+            }
+            List<InEdge> edges = incoming.get(b.id());
+            if (edges == null || edges.size() != 2) {
+                continue;
+            }
+            for (int k = 0; k < b.params().size(); k++) {
+                MirVal param = b.params().get(k);
+                if (param.kind() != PrimitiveKind.INT && param.kind() != PrimitiveKind.LONG) {
+                    continue;
+                }
+                MirVal a0 = edges.get(0).args().get(k);
+                MirVal a1 = edges.get(1).args().get(k);
+                // Identify which incoming edge is the step back-edge (param +/- posConst) and which is init.
+                InEdge initEdge;
+                InEdge backEdge;
+                MirVal initVal;
+                MirVal backVal;
+                if (isStepOf(a1, param)) {
+                    initEdge = edges.get(0);
+                    backEdge = edges.get(1);
+                    initVal = a0;
+                    backVal = a1;
+                } else if (isStepOf(a0, param)) {
+                    initEdge = edges.get(1);
+                    backEdge = edges.get(0);
+                    initVal = a1;
+                    backVal = a0;
+                } else {
+                    continue;
+                }
+                MirInst.Binary stepBin = (MirInst.Binary) defByValId.get(resolveRoot(backVal).id());
+                boolean ascending = stepBin.op() == HirExpr.BinaryOp.ADD;
+                // Back-edge block must be guarded by sole predecessor checking param == stopVal.
+                List<InEdge> backPreds = incoming.get(backEdge.from().id());
+                if (backPreds == null || backPreds.size() != 1) {
+                    continue;
+                }
+                MirBlock stepGuardBlock = backPreds.get(0).from();
+                if (!(stepGuardBlock.terminator() instanceof MirTerminator.BrIf guardBr)
+                        || guardBr.elseBlock() != backEdge.from().id()) {
+                    continue;
+                }
+                MirVal stopVal = matchEqWith(guardBr.cond(), param);
+                if (stopVal == null) {
+                    continue;
+                }
+                if (ascending) {
+                    if (!isStaticallyNonNegative(initVal, 0)) {
+                        continue;
+                    }
+                    if (isCountedAscendingBounded(initEdge.from(), initEdge.isThenEdge(), initVal, stopVal, incoming)) {
+                        nonNegativeBlockParams.add(resolveRoot(param).id());
+                    }
+                } else {
+                    if (isStaticallyNonNegative(stopVal, 0)
+                            && isRangeLastCall(initVal, stopVal)) {
+                        nonNegativeBlockParams.add(resolveRoot(param).id());
+                    }
+                }
+            }
+        }
+    }
+
+    private boolean isStepOf(MirVal candidate, MirVal param) {
+        MirInst def = defByValId.get(resolveRoot(candidate).id());
+        if (!(def instanceof MirInst.Binary bin)) {
+            return false;
+        }
+        if (bin.op() != HirExpr.BinaryOp.ADD && bin.op() != HirExpr.BinaryOp.SUB) {
+            return false;
+        }
+        if (resolveRoot(bin.left()).id() != resolveRoot(param).id()) {
+            return false;
+        }
+        MirInst.Const c = constOf(bin.right());
+        if (c != null && c.value() instanceof Number n) {
+            long v = bin.result().kind() == PrimitiveKind.LONG ? n.longValue() : n.intValue();
+            return v > 0L;
+        }
+        return false;
+    }
+
+    private MirVal matchEqWith(MirVal cond, MirVal param) {
+        MirInst def = defByValId.get(resolveRoot(cond).id());
+        if (!(def instanceof MirInst.Binary bin) || bin.op() != HirExpr.BinaryOp.EQ) {
+            return null;
+        }
+        int pid = resolveRoot(param).id();
+        if (resolveRoot(bin.left()).id() == pid) {
+            return bin.right();
+        }
+        if (resolveRoot(bin.right()).id() == pid) {
+            return bin.left();
+        }
+        return null;
+    }
+
+    private boolean isRangeLastCall(MirVal val, MirVal expectedStart) {
+        MirInst def = defByValId.get(resolveRoot(val).id());
+        if (def instanceof MirInst.Convert cv) {
+            def = defByValId.get(resolveRoot(cv.operand()).id());
+        }
+        if (!(def instanceof MirInst.CallJava cj) || !cj.target().isStatic()) {
+            return false;
+        }
+        java.lang.reflect.Method m = cj.target().method();
+        if (m.getDeclaringClass() != org.babblelang.runtime.Range.class) {
+            return false;
+        }
+        String name = m.getName();
+        if (!"lastIntElement".equals(name) && !"lastLongElement".equals(name) && !"lastCharElement".equals(name)) {
+            return false;
+        }
+        return !cj.args().isEmpty()
+                && resolveRoot(cj.args().get(0)).id() == resolveRoot(expectedStart).id();
+    }
+
+    private <T> boolean isCountedAscendingBounded(MirBlock initFrom, boolean initIsThenEdge,
+                                                  MirVal startVal, MirVal stopVal,
+                                                  Map<Integer, ?> incoming) {
+        // Case 1: direct BrIf(LTE(startVal, stopVal), bbHead, bbExit) (inclusive step 1, CfgSimplify-merged)
+        if (initIsThenEdge && initFrom.terminator() instanceof MirTerminator.BrIf bi) {
+            MirInst cmpDef = defByValId.get(resolveRoot(bi.cond()).id());
+            if (cmpDef instanceof MirInst.Binary cmp && cmp.op() == HirExpr.BinaryOp.LTE
+                    && resolveRoot(cmp.left()).id() == resolveRoot(startVal).id()
+                    && resolveRoot(cmp.right()).id() == resolveRoot(stopVal).id()) {
+                return true;
+            }
+        }
+        // Case 2: bbNonEmpty entered via BrIf(LT/LTE(startVal, endVal), bbNonEmpty, bbExit)
+        Object predsObj = incoming.get(initFrom.id());
+        if (!(predsObj instanceof List<?> preds) || preds.size() != 1) {
+            return false;
+        }
+        MirBlock guardBlock = null;
+        for (MirBlock b : rpo) {
+            if (b.terminator() instanceof MirTerminator.BrIf bi && bi.thenBlock() == initFrom.id()) {
+                guardBlock = b;
+                break;
+            }
+        }
+        if (guardBlock == null || !(guardBlock.terminator() instanceof MirTerminator.BrIf bi)) {
+            return false;
+        }
+        MirInst cmpDef = defByValId.get(resolveRoot(bi.cond()).id());
+        if (!(cmpDef instanceof MirInst.Binary cmp)
+                || resolveRoot(cmp.left()).id() != resolveRoot(startVal).id()) {
+            return false;
+        }
+        MirVal endVal = cmp.right();
+        if (cmp.op() == HirExpr.BinaryOp.LTE
+                && resolveRoot(endVal).id() == resolveRoot(stopVal).id()) {
+            return true;
+        }
+        if (cmp.op() == HirExpr.BinaryOp.LT) {
+            MirInst stopDef = defByValId.get(resolveRoot(stopVal).id());
+            if (stopDef instanceof MirInst.Binary sub && sub.op() == HirExpr.BinaryOp.SUB
+                    && resolveRoot(sub.left()).id() == resolveRoot(endVal).id()) {
+                MirInst.Const one = constOf(sub.right());
+                if (one != null && one.value() instanceof Number n && n.longValue() == 1L) {
+                    return true;
+                }
+            }
+        }
+        return (cmp.op() == HirExpr.BinaryOp.LT || cmp.op() == HirExpr.BinaryOp.LTE)
+                && isRangeLastCall(stopVal, startVal);
+    }
+
+    private MirInst.Const constOf(MirVal v) {
+        int id = resolveRoot(v).id();
+        MirInst.Const c = rematerialized.get(id);
+        if (c != null) {
+            return c;
+        }
+        return defByValId.get(id) instanceof MirInst.Const mc ? mc : null;
+    }
+
+    private boolean isStaticallyNonNegative(MirVal val, int depth) {
+        if (val == null || depth > 8) {
+            return false;
+        }
+        MirVal root = resolveRoot(val);
+        if (root.kind() == PrimitiveKind.CHAR || nonNegativeBlockParams.contains(root.id())) {
+            return true;
+        }
+        MirInst.Const c = constOf(root);
+        if (c != null) {
+            return (c.value() instanceof Number n && n.longValue() >= 0L) || c.value() instanceof Character;
+        }
+        MirInst def = defByValId.get(root.id());
+        if (def == null) {
+            return false;
+        }
+        return switch (def) {
+            case MirInst.Copy cp -> isStaticallyNonNegative(cp.source(), depth + 1);
+            case MirInst.Convert cv -> cv.operand().kind() == PrimitiveKind.CHAR
+                    || ((cv.operand().kind() == PrimitiveKind.BYTE || cv.operand().kind() == PrimitiveKind.SHORT
+                    || cv.operand().kind() == PrimitiveKind.INT)
+                    && (cv.targetKind() == PrimitiveKind.INT || cv.targetKind() == PrimitiveKind.LONG)
+                    && isStaticallyNonNegative(cv.operand(), depth + 1));
+            case MirInst.ArrayLen ignored -> true;
+            case MirInst.CallJava cj -> {
+                java.lang.reflect.Method m = cj.target().method();
+                yield ("length".equals(m.getName()) && m.getDeclaringClass() == String.class)
+                        || ("size".equals(m.getName())
+                        && (java.util.Collection.class.isAssignableFrom(m.getDeclaringClass())
+                        || java.util.Map.class.isAssignableFrom(m.getDeclaringClass())));
+            }
+            case MirInst.Binary b -> {
+                if (b.op() != HirExpr.BinaryOp.MOD
+                        || (b.result().kind() != PrimitiveKind.INT && b.result().kind() != PrimitiveKind.LONG)) {
+                    yield false;
+                }
+                MirInst.Const rc = constOf(b.right());
+                yield rc != null && rc.value() instanceof Number rn
+                        && (b.result().kind() == PrimitiveKind.LONG ? rn.longValue() > 0L : rn.intValue() > 0);
+            }
+            default -> false;
+        };
     }
 
     private static boolean canEmitPrimitiveCmp(HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk) {

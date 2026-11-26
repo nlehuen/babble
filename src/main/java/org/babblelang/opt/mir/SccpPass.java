@@ -1,9 +1,11 @@
 package org.babblelang.opt.mir;
 
 import org.babblelang.analysis.BuiltinAxioms;
+import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.mir.MirBlock;
+import org.babblelang.ir.mir.MirEffect;
 import org.babblelang.ir.mir.MirFunction;
 import org.babblelang.ir.mir.MirHandler;
 import org.babblelang.ir.mir.MirInst;
@@ -35,6 +37,17 @@ import java.util.Set;
  * while dropping unreachable blocks.
  */
 public final class SccpPass implements MirPass {
+    private static final LoweringTargets.JavaConstructorTarget ARITH_EXN_CTOR = resolveArithExnCtor();
+
+    private static LoweringTargets.JavaConstructorTarget resolveArithExnCtor() {
+        try {
+            return new LoweringTargets.JavaConstructorTarget(
+                    ArithmeticException.class.getConstructor(String.class), false);
+        } catch (NoSuchMethodException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
+
     @Override
     public String name() {
         return "SccpPass";
@@ -86,6 +99,19 @@ public final class SccpPass implements MirPass {
     }
 
     private record EdgeKey(int fromBlock, int toBlock, boolean isElseEdge) {
+    }
+
+    private static boolean isIntegralDivOrMod(MirInst.Binary b) {
+        PrimitiveKind out = b.result().kind();
+        return (out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
+                && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV);
+    }
+
+    private static boolean isZeroDivisor(PrimitiveKind out, Lattice rl) {
+        if (rl == null || rl.state != State.CONST || !(rl.value instanceof Number rn)) {
+            return false;
+        }
+        return (out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue()) == 0L;
     }
 
     private static FnResult runOnFunction(MirFunction fn) {
@@ -154,11 +180,22 @@ public final class SccpPass implements MirPass {
             }
 
             // 2. Evaluate instructions.
+            boolean guaranteedThrow = false;
             for (MirInst inst : b.insts()) {
+                if (inst instanceof MirInst.Binary bin && isIntegralDivOrMod(bin)) {
+                    Lattice rl = lattice.getOrDefault(bin.right().id(), Lattice.TOP);
+                    if (isZeroDivisor(bin.result().kind(), rl)) {
+                        guaranteedThrow = true;
+                        break;
+                    }
+                }
                 MirVal res = inst.result();
                 if (res == null) continue;
                 Lattice val = evalInst(inst, lattice);
                 updateLattice(res.id(), val, lattice, execBlocks, valUseBlocks, blockWorklist);
+            }
+            if (guaranteedThrow) {
+                continue;
             }
 
             // 3. Evaluate terminator & propagate executable edges.
@@ -181,8 +218,10 @@ public final class SccpPass implements MirPass {
             }
         }
 
-        // Rewrite blocks: keep only executable blocks, fold constant pure instructions and constant BrIfs.
+        // Rewrite blocks: keep only executable blocks, fold constant pure instructions, zero-divisor
+        // throws, non-zero mod/floorDiv identities, and constant BrIfs.
         int rewrites = 0;
+        int nextValId = fn.nextValId();
         List<MirBlock> outBlocks = new ArrayList<>(execBlocks.size());
         for (MirBlock b : fn.blocks()) {
             if (!execBlocks.contains(b.id())) {
@@ -190,7 +229,51 @@ public final class SccpPass implements MirPass {
                 continue;
             }
             List<MirInst> newInsts = new ArrayList<>(b.insts().size());
+            MirTerminator term = b.terminator();
+            boolean truncatedByThrow = false;
             for (MirInst inst : b.insts()) {
+                if (inst instanceof MirInst.Binary bin && isIntegralDivOrMod(bin)) {
+                    PrimitiveKind out = bin.result().kind();
+                    Lattice rl = lattice.getOrDefault(bin.right().id(), Lattice.BOTTOM);
+                    if (isZeroDivisor(out, rl)) {
+                        MirVal msgVal = new MirVal(nextValId++, PrimitiveKind.NONE, null);
+                        newInsts.add(new MirInst.Const(msgVal, "/ by zero", bin.line()));
+                        MirVal exnVal = new MirVal(nextValId++, PrimitiveKind.NONE, null);
+                        newInsts.add(new MirInst.CallJavaCtor(exnVal, null, "java.lang.ArithmeticException", true,
+                                ARITH_EXN_CTOR, List.of(msgVal), bin.line(), MirEffect.PURE_NOTHROW));
+                        term = new MirTerminator.Throw(exnVal, true, bin.line());
+                        rewrites++;
+                        truncatedByThrow = true;
+                        break;
+                    }
+                    if (rl.state == State.CONST && rl.value instanceof Number rn) {
+                        long rv = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
+                        Lattice resLat = lattice.get(bin.result().id());
+                        if (resLat != null && resLat.state == State.CONST && isCompatibleConst(resLat.value, out)) {
+                            newInsts.add(new MirInst.Const(bin.result(), resLat.value, bin.line()));
+                            rewrites++;
+                            continue;
+                        }
+                        if (bin.op() == HirExpr.BinaryOp.FLOOR_DIV && rv == 1L && bin.left().kind() == out) {
+                            newInsts.add(new MirInst.Copy(bin.result(), bin.left(), bin.line()));
+                            rewrites++;
+                            continue;
+                        }
+                        if (bin.op() == HirExpr.BinaryOp.FLOOR_DIV && rv == -1L && bin.left().kind() == out) {
+                            newInsts.add(new MirInst.Unary(bin.result(), HirExpr.UnaryOp.NEGATE, bin.left(),
+                                    bin.leftText(), bin.line(), MirEffect.PURE_NOTHROW));
+                            rewrites++;
+                            continue;
+                        }
+                        if (!bin.effect().nothrow()) {
+                            newInsts.add(new MirInst.Binary(bin.result(), bin.op(), bin.left(), bin.right(),
+                                    bin.leftText(), bin.rightText(), bin.stringConcat(), bin.line(),
+                                    MirEffect.PURE_NOTHROW));
+                            rewrites++;
+                            continue;
+                        }
+                    }
+                }
                 MirVal res = inst.result();
                 if (res != null && !(inst instanceof MirInst.Const) && !(inst instanceof MirInst.Narrow)
                         && inst.effect().isRemovableIfUnused()) {
@@ -203,8 +286,7 @@ public final class SccpPass implements MirPass {
                 }
                 newInsts.add(inst);
             }
-            MirTerminator term = b.terminator();
-            if (term instanceof MirTerminator.BrIf bi) {
+            if (!truncatedByThrow && term instanceof MirTerminator.BrIf bi) {
                 Lattice cl = lattice.getOrDefault(bi.cond().id(), Lattice.BOTTOM);
                 if (cl.state == State.CONST) {
                     boolean truthy = isTruthy(cl.value);
@@ -217,7 +299,7 @@ public final class SccpPass implements MirPass {
             outBlocks.add(new MirBlock(b.id(), b.params(), newInsts, term, b.handlers(), b.handlerEntry()));
         }
         return rewrites == 0 ? new FnResult(fn, 0)
-                : new FnResult(fn.withBlocks(outBlocks, fn.nextValId(), fn.nextBlockId()), rewrites);
+                : new FnResult(fn.withBlocks(outBlocks, nextValId, fn.nextBlockId()), rewrites);
     }
 
     private record EdgeInfo(EdgeKey key, List<MirVal> args) {
@@ -323,6 +405,14 @@ public final class SccpPass implements MirPass {
     private static Lattice evalBinary(MirInst.Binary b, Map<Integer, Lattice> lat) {
         Lattice ll = lat.getOrDefault(b.left().id(), Lattice.TOP);
         Lattice rl = lat.getOrDefault(b.right().id(), Lattice.TOP);
+        PrimitiveKind out = b.result().kind();
+        if (b.op() == HirExpr.BinaryOp.MOD && (out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
+                && rl.state == State.CONST && rl.value instanceof Number rn && ll.state != State.TOP) {
+            long rv = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
+            if (rv == 1L || rv == -1L) {
+                return Lattice.constant(out == PrimitiveKind.LONG ? (Object) 0L : Integer.valueOf(0));
+            }
+        }
         if (ll.state == State.BOTTOM || rl.state == State.BOTTOM) return Lattice.BOTTOM;
         if (ll.state == State.TOP || rl.state == State.TOP) return Lattice.TOP;
 
@@ -331,7 +421,6 @@ public final class SccpPass implements MirPass {
         if (b.stringConcat() && lv instanceof String ls && rv instanceof String rs) {
             return Lattice.constant(ls + rs);
         }
-        PrimitiveKind out = b.result().kind();
         if (b.op().isComparison() && out == PrimitiveKind.BOOL) {
             return evalComparison(b.op(), b.left().kind(), b.right().kind(), lv, rv);
         }

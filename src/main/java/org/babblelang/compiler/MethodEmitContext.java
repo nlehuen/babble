@@ -101,6 +101,7 @@ final class MethodEmitContext {
     int parameterBase = -1;
     final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
     final Deque<ActiveFinally> activeFinallies = new ArrayDeque<>();
+    final java.util.Set<Integer> nonNegativeVars = new java.util.HashSet<>();
     Map<org.babblelang.ir.hir.HirExpr, MirOperand> mirOverrides;
     /** Whether name reads go through caching {@code Bootstrap.name} sites ({@link MirEmitter}, at {@code -O2}). */
     boolean cacheNameReads;
@@ -130,6 +131,7 @@ final class MethodEmitContext {
         this.typedThisLocal = -1;
         this.loopTargets.clear();
         this.activeFinallies.clear();
+        this.nonNegativeVars.clear();
         this.mirOverrides = null;
         this.cacheNameReads = false;
     }

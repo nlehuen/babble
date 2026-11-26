@@ -326,4 +326,81 @@ public class EGraphTestCase {
         Assertions.assertEquals(ENode.Op.NEQ, g.extract(notEq, EGraph::defaultCost).node().op());
         Assertions.assertEquals(ENode.Op.GTE, g.extract(notLt, EGraph::defaultCost).node().op());
     }
+
+    @Test
+    public void testIntegralModAndFloorDivAlgebraicRules() {
+        // 1. Optimizer rules: unit divisors, idempotent mod, non-zero zero/self, overflow-guarded factor cancel
+        {
+            EGraph g = new EGraph();
+            int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+            int b = g.add(ENode.opaque("b", PrimitiveKind.INT));
+            int shortX = g.add(ENode.opaque("sx", PrimitiveKind.SHORT));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int one = g.add(ENode.constVal(1, PrimitiveKind.INT));
+            int negOne = g.add(ENode.constVal(-1, PrimitiveKind.INT));
+            int three = g.add(ENode.constVal(3, PrimitiveKind.INT));
+            int four = g.add(ENode.constVal(4, PrimitiveKind.INT));
+            int five = g.add(ENode.constVal(5, PrimitiveKind.INT));
+
+            int aMod1 = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, a, one));
+            int aModNeg1 = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, a, negOne));
+            int aModB = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, a, b));
+            int aModBModB = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, aModB, b));
+            int zeroMod5 = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, zero, five));
+            int fiveMod5 = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, five, five));
+            int aDiv1 = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, a, one));
+            int aDivNeg1 = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, a, negOne));
+            int negA = g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, a));
+            int zeroDiv5 = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, zero, five));
+            int fiveDiv5 = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, five, five));
+
+            // Overflow-guarded factor cancellation: (shortX * 3) // 3 == shortX, but (a * 4) // 4 is NOT cancelled
+            int sxMul3 = g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, shortX, three));
+            int sxCancel = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, sxMul3, three));
+            int aMul4 = g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, a, four));
+            int aNoCancel = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, aMul4, four));
+
+            // Non-zero guard negative tests: unknown b could be 0
+            int zeroModB = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, zero, b));
+            int bDivB = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, b, b));
+
+            // Division identity must NOT fire under optimizerRules when b is unknown (could throw on b == 0)
+            int aDivB = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, a, b));
+            int bTimesQ = g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, b, aDivB));
+            int recon = g.add(ENode.binary(ENode.Op.ADD, PrimitiveKind.INT, bTimesQ, aModB));
+
+            g.saturate(AlgebraicRules.optimizerRules(), 6, 256);
+
+            Assertions.assertTrue(g.areEquivalent(aMod1, zero));
+            Assertions.assertTrue(g.areEquivalent(aModNeg1, zero));
+            Assertions.assertTrue(g.areEquivalent(aModBModB, aModB));
+            Assertions.assertTrue(g.areEquivalent(zeroMod5, zero));
+            Assertions.assertTrue(g.areEquivalent(fiveMod5, zero));
+            Assertions.assertTrue(g.areEquivalent(aDiv1, a));
+            Assertions.assertTrue(g.areEquivalent(aDivNeg1, negA));
+            Assertions.assertTrue(g.areEquivalent(zeroDiv5, zero));
+            Assertions.assertTrue(g.areEquivalent(fiveDiv5, one));
+            Assertions.assertTrue(g.areEquivalent(sxCancel, shortX));
+
+            Assertions.assertFalse(g.areEquivalent(aNoCancel, a), "int * 4 may overflow; must not cancel // 4");
+            Assertions.assertFalse(g.areEquivalent(zeroModB, zero), "0 mod b may throw when b == 0");
+            Assertions.assertFalse(g.areEquivalent(bDivB, one), "b // b may throw when b == 0");
+            Assertions.assertFalse(g.areEquivalent(recon, a), "division identity is verifier-only");
+        }
+
+        // 2. Verifier rules: division identity b * (a // b) + (a mod b) == a
+        {
+            EGraph g = new EGraph();
+            int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+            int b = g.add(ENode.constVal(5, PrimitiveKind.INT));
+            int q = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, a, b));
+            int r = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, a, b));
+            int recon = g.add(ENode.binary(ENode.Op.ADD, PrimitiveKind.INT,
+                    g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, b, q)), r));
+
+            g.saturate(AlgebraicRules.verifierRules(), 6, 256);
+
+            Assertions.assertTrue(g.areEquivalent(recon, a));
+        }
+    }
 }

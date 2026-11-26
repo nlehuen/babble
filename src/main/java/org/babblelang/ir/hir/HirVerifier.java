@@ -251,7 +251,9 @@ public final class HirVerifier {
                 verifyStatements(module, c.args(), inFunction, loopDepth);
             }
             case HirExpr.JavaConstructorCall c -> {
-                verifyExpr(module, c.callee(), inFunction, loopDepth);
+                if (!c.pureStaticCallee() || c.callee() != null) {
+                    verifyExpr(module, c.callee(), inFunction, loopDepth);
+                }
                 verifyStatements(module, c.args(), inFunction, loopDepth);
             }
             case HirExpr.JavaMethodCall c -> {
