@@ -1671,6 +1671,7 @@ public final class MirLowerer {
         private static final LoweringTargets.JavaCallTarget MATCH_NO_CASE;
         private static final LoweringTargets.JavaCallTarget STRING_HASH_CODE;
         private static final LoweringTargets.JavaCallTarget STRING_EQUALS;
+        private static final LoweringTargets.JavaCallTarget ENUM_ORDINAL;
         private static final LoweringTargets.JavaCallTarget OPERATORS_EQUAL;
         private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_INT;
         private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_LONG;
@@ -1699,6 +1700,8 @@ public final class MirLowerer {
                         String.class.getMethod("hashCode"), false, false, false);
                 STRING_EQUALS = new LoweringTargets.JavaCallTarget(
                         String.class.getMethod("equals", Object.class), false, false, false);
+                ENUM_ORDINAL = new LoweringTargets.JavaCallTarget(
+                        Enum.class.getMethod("ordinal"), false, false, false);
                 OPERATORS_EQUAL = new LoweringTargets.JavaCallTarget(
                         Operators.class.getMethod("equal", Object.class, Object.class), true, false, false);
                 RANGE_VALIDATE_INT = new LoweringTargets.JavaCallTarget(
@@ -1797,6 +1800,12 @@ public final class MirLowerer {
                 if (strRunEnd > i) {
                     emitMirStringSwitchRun(arms, i, strRunEnd, scrutVal, false, targetKind, bbMerge, ln);
                     i = strRunEnd;
+                    continue;
+                }
+                int enumRunEnd = scanMirEnumSwitchRun(arms, i, scrutKind);
+                if (enumRunEnd > i) {
+                    emitMirEnumSwitchRun(arms, i, enumRunEnd, scrutVal, targetKind, bbMerge, ln);
+                    i = enumRunEnd;
                     continue;
                 }
                 HirExpr.MatchArm arm = arms.get(i);
@@ -2041,6 +2050,103 @@ public final class MirLowerer {
                     }
                 }
             }
+
+            for (int k = 0; k < armCount; k++) {
+                sealBlock(armBlocks[k]);
+                cur = armBlocks[k];
+                HirExpr.MatchArm arm = arms.get(start + k);
+                lowerMatchArmBody(arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
+            }
+            sealBlock(bbAfter);
+            cur = bbAfter;
+        }
+
+        private static int scanMirEnumSwitchRun(List<HirExpr.MatchArm> arms, int start, PrimitiveKind scrutKind) {
+            if (scrutKind != PrimitiveKind.NONE) return start;
+            Class<?> enumCls = null;
+            Set<String> names = new HashSet<>();
+            int end = start;
+            while (end < arms.size()) {
+                HirExpr.MatchArm arm = arms.get(end);
+                if (arm.guard() != null || !arm.boundVars().isEmpty()) break;
+                List<HirPattern.Const> cs = collectMirPureConsts(arm.pattern());
+                if (cs == null || cs.isEmpty()) break;
+                boolean ok = true;
+                for (HirPattern.Const c : cs) {
+                    if (c.isNull()) continue;
+                    if (!c.isEnum() || !(c.value() instanceof Enum<?>)) {
+                        ok = false;
+                        break;
+                    }
+                    if (enumCls == null) {
+                        enumCls = c.enumClass();
+                    } else if (enumCls != c.enumClass()) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) break;
+                for (HirPattern.Const c : cs) {
+                    if (c.isEnum()) {
+                        names.add(c.enumConstantName());
+                    }
+                }
+                end++;
+            }
+            return (enumCls != null && names.size() >= 3) ? end : start;
+        }
+
+        private void emitMirEnumSwitchRun(List<HirExpr.MatchArm> arms, int start, int end,
+                                          MirVal scrutVal, PrimitiveKind targetKind, BlockBuilder bbMerge, int ln) {
+            int armCount = end - start;
+            BlockBuilder[] armBlocks = new BlockBuilder[armCount];
+            for (int k = 0; k < armCount; k++) {
+                armBlocks[k] = newBlock(List.of(), false, false);
+            }
+            BlockBuilder bbAfter = newBlock(List.of(), false, false);
+
+            Class<?> enumCls = null;
+            java.util.TreeMap<Integer, BlockBuilder> ordMap = new java.util.TreeMap<>();
+            int nullArm = -1;
+            for (int k = 0; k < armCount; k++) {
+                for (HirPattern.Const c : collectMirPureConsts(arms.get(start + k).pattern())) {
+                    if (c.isNull()) {
+                        if (nullArm < 0) nullArm = k;
+                    } else if (c.isEnum() && c.value() instanceof Enum<?> ev) {
+                        enumCls = c.enumClass();
+                        ordMap.putIfAbsent(ev.ordinal(), armBlocks[k]);
+                    }
+                }
+            }
+            BlockBuilder bbNonNull = newBlock(List.of(), false, false);
+            MirVal nullVal = emitConst(null, PrimitiveKind.NONE, ln);
+            MirVal isNull = newVal(PrimitiveKind.BOOL, null);
+            emit(new MirInst.Binary(isNull, HirExpr.BinaryOp.EQ, scrutVal, nullVal, "match", "null", false, ln, MirEffect.PURE_NOTHROW));
+            terminateBrIf(isNull, nullArm >= 0 ? armBlocks[nullArm] : bbAfter, List.of(), bbNonNull, List.of(), ln);
+            sealBlock(bbNonNull);
+            cur = bbNonNull;
+
+            BlockBuilder bbIsEnum = newBlock(List.of(), false, false);
+            MirVal isEnum = newVal(PrimitiveKind.BOOL, null);
+            String enumInternal = enumCls.getName().replace('.', '/');
+            emit(new MirInst.IsCheck(isEnum, scrutVal, null, new LoweringTargets.IsTarget(null, null, enumInternal),
+                    List.of(), "java|" + enumCls.getName() + "|", ln));
+            terminateBrIf(isEnum, bbIsEnum, List.of(), bbAfter, List.of(), ln);
+            sealBlock(bbIsEnum);
+            cur = bbIsEnum;
+
+            int[] keys = new int[ordMap.size()];
+            BlockBuilder[] targets = new BlockBuilder[ordMap.size()];
+            int idx = 0;
+            for (Map.Entry<Integer, BlockBuilder> e : ordMap.entrySet()) {
+                keys[idx] = e.getKey();
+                targets[idx] = e.getValue();
+                idx++;
+            }
+            MirVal ordVal = newVal(PrimitiveKind.INT, null);
+            emit(new MirInst.CallJava(ordVal, scrutVal, "match", ln, false, ENUM_ORDINAL,
+                    List.of(), false, true, ln, MirEffect.PURE_NOTHROW));
+            terminateSwitch(ordVal, keys, targets, bbAfter, ln);
 
             for (int k = 0; k < armCount; k++) {
                 sealBlock(armBlocks[k]);

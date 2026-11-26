@@ -335,6 +335,21 @@ public final class HirDcePass implements HirPass {
                     return c;
                 });
             }
+            case HirExpr.Match m -> {
+                if (m.scrutineeVar() != null) out.add(m.scrutineeVar().id());
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    for (HirVar bv : arm.boundVars()) {
+                        out.add(bv.id());
+                    }
+                }
+                if (m.elseArm() != null && m.elseArm().var() != null) {
+                    out.add(m.elseArm().var().id());
+                }
+                HirRewriter.rewriteChildren(expr, c -> {
+                    collectAllVarRefs(c, out);
+                    return c;
+                });
+            }
             default -> HirRewriter.rewriteChildren(expr, c -> {
                 collectAllVarRefs(c, out);
                 return c;

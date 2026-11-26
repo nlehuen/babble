@@ -10,6 +10,7 @@ import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
 import org.babblelang.opt.HirPass;
 import org.babblelang.opt.HirRewriter;
@@ -290,6 +291,14 @@ public final class InlinePass implements HirPass {
                     return;
                 }
             }
+            case HirExpr.Match m -> {
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    if (!isPatternCrossModuleSelfContained(arm.pattern())) {
+                        ok[0] = false;
+                        return;
+                    }
+                }
+            }
             default -> {
             }
         }
@@ -446,6 +455,29 @@ public final class InlinePass implements HirPass {
             }
             case HirExpr.DirectThisMethodCall c -> {
                 if (c.targetFunctionId() == fnId) {
+                    ok[0] = false;
+                    return;
+                }
+            }
+            case HirExpr.Match m -> {
+                if (m.scrutineeVar() != null && m.scrutineeVar().isCaptured()) {
+                    ok[0] = false;
+                    return;
+                }
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    for (HirVar bv : arm.boundVars()) {
+                        if (bv.isCaptured()) {
+                            ok[0] = false;
+                            return;
+                        }
+                    }
+                    nodes[0] += patternNodeCost(arm.pattern());
+                    if (nodes[0] > maxNodes) {
+                        ok[0] = false;
+                        return;
+                    }
+                }
+                if (m.elseArm() != null && m.elseArm().var() != null && m.elseArm().var().isCaptured()) {
                     ok[0] = false;
                     return;
                 }
@@ -887,8 +919,185 @@ public final class InlinePass implements HirPass {
                 yield new HirExpr.For(ni, f.target(), freshLoop, freshDecls, nb, f.bodyWideningRank(),
                         f.elemSamTarget(), cr, f.meta());
             }
+            case HirExpr.Match m -> {
+                HirExpr ns = alphaRename(m.scrutinee(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                        calleeOwnerClsId, module, ownerMethodId, nextVarId);
+                HirVar freshScrut = m.scrutineeVar() != null
+                        ? m.scrutineeVar().withIdAndOwner(nextVarId[0]++, ownerMethodId) : null;
+                List<HirExpr.MatchArm> narms = new ArrayList<>(m.arms().size());
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    Map<Integer, HirVar> armMap = new HashMap<>(varMap);
+                    List<HirVar> freshBound = new ArrayList<>(arm.boundVars().size());
+                    for (HirVar bv : arm.boundVars()) {
+                        HirVar fb = bv.withIdAndOwner(nextVarId[0]++, ownerMethodId);
+                        armMap.put(bv.id(), fb);
+                        freshBound.add(fb);
+                    }
+                    HirPattern np = alphaRenamePattern(arm.pattern(), armMap, substExprs, thisSubst, receiverText,
+                            receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId);
+                    HirExpr ng = arm.guard() != null
+                            ? alphaRename(arm.guard(), armMap, substExprs, thisSubst, receiverText, receiverCls,
+                                    calleeOwnerClsId, module, ownerMethodId, nextVarId)
+                            : null;
+                    HirExpr nb = alphaRename(arm.body(), armMap, substExprs, thisSubst, receiverText, receiverCls,
+                            calleeOwnerClsId, module, ownerMethodId, nextVarId);
+                    narms.add(new HirExpr.MatchArm(np, freshBound, ng, nb, arm.bodyWideningRank(), arm.line()));
+                }
+                HirExpr.MatchElse ne = null;
+                if (m.elseArm() != null) {
+                    Map<Integer, HirVar> elseMap = new HashMap<>(varMap);
+                    HirVar freshElse = m.elseArm().var() != null
+                            ? m.elseArm().var().withIdAndOwner(nextVarId[0]++, ownerMethodId) : null;
+                    if (freshElse != null) {
+                        elseMap.put(m.elseArm().var().id(), freshElse);
+                    }
+                    HirExpr neb = alphaRename(m.elseArm().body(), elseMap, substExprs, thisSubst, receiverText,
+                            receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId);
+                    ne = new HirExpr.MatchElse(freshElse, neb, m.elseArm().bodyWideningRank(), m.elseArm().line());
+                }
+                yield new HirExpr.Match(ns, freshScrut, narms, ne, m.exhaustive(), m.meta());
+            }
             default -> HirRewriter.rewriteChildren(expr, child -> alphaRename(child, varMap, substExprs,
                     thisSubst, receiverText, receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId));
+        };
+    }
+
+    private static HirPattern alphaRenamePattern(HirPattern pat, Map<Integer, HirVar> varMap,
+                                                 Map<Integer, HirExpr> substExprs, HirExpr thisSubst,
+                                                 String receiverText, HirClass receiverCls, int calleeOwnerClsId,
+                                                 HirModule module, int ownerMethodId, int[] nextVarId) {
+        if (pat == null) {
+            return null;
+        }
+        return switch (pat) {
+            case HirPattern.Const c -> c;
+            case HirPattern.Wildcard w -> w;
+            case HirPattern.TypeTest t -> t;
+            case HirPattern.ValueExpr v -> new HirPattern.ValueExpr(
+                    alphaRename(v.expr(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                            calleeOwnerClsId, module, ownerMethodId, nextVarId), v.line());
+            case HirPattern.Bind b -> {
+                HirVar mapped = varMap.getOrDefault(b.var().id(), b.var());
+                HirPattern ni = alphaRenamePattern(b.inner(), varMap, substExprs, thisSubst, receiverText,
+                        receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId);
+                yield new HirPattern.Bind(mapped, ni, b.line());
+            }
+            case HirPattern.Or o -> {
+                List<HirPattern> nalts = new ArrayList<>(o.alternatives().size());
+                for (HirPattern a : o.alternatives()) {
+                    nalts.add(alphaRenamePattern(a, varMap, substExprs, thisSubst, receiverText,
+                            receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId));
+                }
+                yield new HirPattern.Or(nalts, o.line());
+            }
+            case HirPattern.Relational r -> new HirPattern.Relational(r.op(),
+                    alphaRename(r.rhs(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                            calleeOwnerClsId, module, ownerMethodId, nextVarId), r.scrutineeKind(), r.line());
+            case HirPattern.RangeTest r -> new HirPattern.RangeTest(
+                    alphaRename(r.lo(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                            calleeOwnerClsId, module, ownerMethodId, nextVarId),
+                    alphaRename(r.hi(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                            calleeOwnerClsId, module, ownerMethodId, nextVarId),
+                    r.step() != null ? alphaRename(r.step(), varMap, substExprs, thisSubst, receiverText,
+                            receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId) : null,
+                    r.inclusive(), r.elemKind(), r.stringElement(), r.line());
+            case HirPattern.Membership m -> new HirPattern.Membership(
+                    alphaRename(m.container(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                            calleeOwnerClsId, module, ownerMethodId, nextVarId), m.kind(), m.elemKind(), m.line());
+            case HirPattern.RecordDestructure rd -> {
+                List<HirPattern> nfps = new ArrayList<>(rd.fieldPatterns().size());
+                for (HirPattern fp : rd.fieldPatterns()) {
+                    nfps.add(alphaRenamePattern(fp, varMap, substExprs, thisSubst, receiverText,
+                            receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId));
+                }
+                yield new HirPattern.RecordDestructure(rd.typeTest(), rd.isJavaRecord(), rd.babbleClassId(),
+                        rd.babbleTypeId(), rd.babbleJvmName(), rd.javaRecordClass(), rd.fieldNames(),
+                        rd.babbleMemberIndices(), rd.fieldKinds(), rd.javaAccessors(), nfps, rd.line());
+            }
+            case HirPattern.SequenceDestructure sd -> {
+                List<HirPattern> neps = new ArrayList<>(sd.elemPatterns().size());
+                for (HirPattern ep : sd.elemPatterns()) {
+                    neps.add(alphaRenamePattern(ep, varMap, substExprs, thisSubst, receiverText,
+                            receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId));
+                }
+                HirVar mappedRest = sd.restVar() != null ? varMap.getOrDefault(sd.restVar().id(), sd.restVar()) : null;
+                yield new HirPattern.SequenceDestructure(sd.typeTest(), sd.isArray(), sd.arrayClass(),
+                        sd.elemKind(), neps, sd.hasRest(), mappedRest, sd.line());
+            }
+        };
+    }
+
+    private static boolean isPatternCrossModuleSelfContained(HirPattern pat) {
+        if (pat == null) {
+            return true;
+        }
+        return switch (pat) {
+            case HirPattern.Const ignored -> true;
+            case HirPattern.Wildcard ignored -> true;
+            case HirPattern.ValueExpr ignored -> true;
+            case HirPattern.Relational ignored -> true;
+            case HirPattern.RangeTest ignored -> true;
+            case HirPattern.Membership ignored -> true;
+            case HirPattern.TypeTest t -> t.builtin() != null
+                    || (t.target() == null && t.intersectionTargets().isEmpty());
+            case HirPattern.Bind b -> isPatternCrossModuleSelfContained(b.inner());
+            case HirPattern.Or o -> {
+                for (HirPattern a : o.alternatives()) {
+                    if (!isPatternCrossModuleSelfContained(a)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            case HirPattern.RecordDestructure rd -> false;
+            case HirPattern.SequenceDestructure sd -> {
+                if (sd.typeTest() != null && sd.typeTest().target() != null) {
+                    yield false;
+                }
+                for (HirPattern ep : sd.elemPatterns()) {
+                    if (!isPatternCrossModuleSelfContained(ep)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+        };
+    }
+
+    private static int patternNodeCost(HirPattern pat) {
+        if (pat == null) {
+            return 0;
+        }
+        return switch (pat) {
+            case HirPattern.Const ignored -> 1;
+            case HirPattern.Wildcard ignored -> 0;
+            case HirPattern.TypeTest ignored -> 1;
+            case HirPattern.ValueExpr ignored -> 1;
+            case HirPattern.Bind b -> 1 + patternNodeCost(b.inner());
+            case HirPattern.Or o -> {
+                int sum = 0;
+                for (HirPattern a : o.alternatives()) {
+                    sum += patternNodeCost(a);
+                }
+                yield sum;
+            }
+            case HirPattern.Relational ignored -> 1;
+            case HirPattern.RangeTest ignored -> 2;
+            case HirPattern.Membership ignored -> 2;
+            case HirPattern.RecordDestructure rd -> {
+                int sum = 1;
+                for (HirPattern fp : rd.fieldPatterns()) {
+                    sum += patternNodeCost(fp);
+                }
+                yield sum;
+            }
+            case HirPattern.SequenceDestructure sd -> {
+                int sum = 2;
+                for (HirPattern ep : sd.elemPatterns()) {
+                    sum += patternNodeCost(ep);
+                }
+                yield sum;
+            }
         };
     }
 

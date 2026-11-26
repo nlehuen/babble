@@ -700,7 +700,8 @@ final class TypeChecker {
         if (tree instanceof BabbleParser.TypeContext type) {
             // Only annotations are walked to : implements lists, super qualifiers, and is/as targets are handled elsewhere.
             if (type.getParent() instanceof BabbleParser.AsExpressionContext asCtx && asCtx.right == type
-                    || type.getParent() instanceof BabbleParser.IsExpressionContext isCtx && isCtx.right == type) {
+                    || type.getParent() instanceof BabbleParser.IsExpressionContext isCtx && isCtx.right == type
+                    || type.getParent() instanceof BabbleParser.PatternBindingTypeContext) {
                 return;
             }
             annotator.annotation(type, scopeOf(type));

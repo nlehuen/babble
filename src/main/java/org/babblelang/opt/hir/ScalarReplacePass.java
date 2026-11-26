@@ -11,11 +11,13 @@ import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
 import org.babblelang.opt.HirPass;
 import org.babblelang.opt.HirPurity;
 import org.babblelang.opt.HirRewriter;
 import org.babblelang.opt.PassContext;
+import org.babblelang.runtime.ClassShape;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -216,6 +218,15 @@ public final class ScalarReplacePass implements HirPass {
                                    int[] nextVarId, int[] rewrites, boolean[] changed) {
         HirExpr cur = HirRewriter.rewriteChildren(expr,
                 c -> betaReduceExpr(c, ownerFnId, module, localLayouts, initBindings, nextVarId, rewrites, changed));
+        if (cur instanceof HirExpr.Match m && m.meta().checkedType() == null) {
+            HirExpr reducedMatch = tryBetaReduceMatch(m, ownerFnId, module, localLayouts, initBindings);
+            if (reducedMatch != null) {
+                rewrites[0]++;
+                changed[0] = true;
+                return reducedMatch;
+            }
+            return cur;
+        }
         if (!(cur instanceof HirExpr.ThisFieldGet g) || g.meta().checkedType() != null) {
             return cur;
         }
@@ -336,6 +347,175 @@ public final class ScalarReplacePass implements HirPass {
                 arg.meta().effects(), getMeta.deeplyImmutable(), getMeta.stringType(),
                 arg.meta().frozen(), arg.meta().unique());
         return new HirExpr.Block(List.of(arg), false, new String[0], List.of(), -1, wrapMeta);
+    }
+
+    // ---------------------------------------------------------------- BIP038 match RecordNew SROA
+
+    private record StaticMatchResult(HirExpr.MatchArm arm, boolean isElse) {
+    }
+
+    private static StaticMatchResult findStaticMatchArm(HirExpr.Match m, RecordLayout layout, HirModule module) {
+        for (HirExpr.MatchArm arm : m.arms()) {
+            if (arm.guard() == null && patternDefinitelyMatchesLayout(arm.pattern(), layout, arm.boundVars())) {
+                return new StaticMatchResult(arm, false);
+            }
+            if (patternDefinitelyRejectsLayout(arm.pattern(), layout)
+                    && HirPurity.isPatternPureNothrowTerminating(arm.pattern(), module)) {
+                continue;
+            }
+            return null;
+        }
+        if (m.elseArm() != null && m.elseArm().var() == null) {
+            return new StaticMatchResult(null, true);
+        }
+        return null;
+    }
+
+    private static boolean patternDefinitelyMatchesLayout(HirPattern pat, RecordLayout layout, List<HirVar> boundVars) {
+        if (pat instanceof HirPattern.RecordDestructure rd) {
+            if (rd.isJavaRecord() || !layout.classTypeId().equals(rd.babbleTypeId())) {
+                return false;
+            }
+            int[] memberIndices = rd.babbleMemberIndices();
+            if (memberIndices.length != rd.fieldPatterns().size()) {
+                return false;
+            }
+            int boundCount = 0;
+            for (int k = 0; k < rd.fieldPatterns().size(); k++) {
+                HirPattern fp = rd.fieldPatterns().get(k);
+                int p = layout.paramIndexForMember(memberIndices[k]);
+                if (p < 0) {
+                    return false;
+                }
+                if (fp instanceof HirPattern.Wildcard) {
+                    continue;
+                }
+                if (fp instanceof HirPattern.Bind b && b.inner() == null && !b.var().isCaptured()
+                        && b.var().primitiveKind() == layout.paramKinds()[p]) {
+                    boundCount++;
+                    continue;
+                }
+                return false;
+            }
+            return boundCount == boundVars.size();
+        }
+        if (pat instanceof HirPattern.TypeTest tt && boundVars.isEmpty()) {
+            return tt.target() != null
+                    && layout.classTypeId().equals(tt.target().typeId());
+        }
+        return false;
+    }
+
+    private static boolean patternDefinitelyRejectsLayout(HirPattern pat, RecordLayout layout) {
+        return switch (pat) {
+            case HirPattern.Const c -> c.isNull() || c.isEnum() || c.value() != null;
+            case HirPattern.TypeTest tt -> {
+                if (tt.builtin() != null) {
+                    yield true;
+                }
+                if (tt.target() != null
+                        && tt.target().kind() != ClassShape.Kind.INTERFACE
+                        && !layout.classTypeId().equals(tt.target().typeId())) {
+                    yield true;
+                }
+                yield false;
+            }
+            case HirPattern.RecordDestructure rd ->
+                    rd.isJavaRecord() || !layout.classTypeId().equals(rd.babbleTypeId());
+            case HirPattern.SequenceDestructure ignored -> true;
+            case HirPattern.Bind b -> b.inner() != null && patternDefinitelyRejectsLayout(b.inner(), layout);
+            case HirPattern.Or o -> {
+                for (HirPattern alt : o.alternatives()) {
+                    if (!patternDefinitelyRejectsLayout(alt, layout)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            default -> false;
+        };
+    }
+
+    private HirExpr tryBetaReduceMatch(HirExpr.Match m, int ownerFnId, HirModule module,
+                                       Map<String, RecordLayout> localLayouts, Set<String> initBindings) {
+        HirExpr scrut = unwrapOwnership(m.scrutinee());
+        HirExpr.Block prefixBlock = null;
+        HirExpr.RecordNew r = null;
+        if (scrut instanceof HirExpr.RecordNew rn) {
+            r = rn;
+        } else if (scrut instanceof HirExpr.Block b && !b.opensNamespaceScope() && !b.statements().isEmpty()
+                && b.innerWideningRank() < 0 && b.meta().wideningRank() < 0 && b.meta().checkedType() == null) {
+            HirExpr tail = unwrapOwnership(b.statements().get(b.statements().size() - 1));
+            if (tail instanceof HirExpr.RecordNew rn) {
+                prefixBlock = b;
+                r = rn;
+            }
+        }
+        if (r == null) {
+            return null;
+        }
+        RecordLayout layout = layoutOf(r, localLayouts, module);
+        int[] argMap = layout != null ? resolveArgMapping(r) : null;
+        if (layout == null || argMap == null) {
+            return null;
+        }
+        StaticMatchResult res = findStaticMatchArm(m, layout, module);
+        if (res == null) {
+            return null;
+        }
+        boolean classRefPure = isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings);
+        if (!classRefPure && ownerFnId < 0) {
+            return null;
+        }
+
+        HirVar[] boundByArgIdx = new HirVar[r.args().size()];
+        PrimitiveKind[] kindByArgIdx = new PrimitiveKind[r.args().size()];
+        List<HirVar> declared = new ArrayList<>();
+        if (!res.isElse() && res.arm().pattern() instanceof HirPattern.RecordDestructure rd) {
+            int[] memberIndices = rd.babbleMemberIndices();
+            for (int k = 0; k < rd.fieldPatterns().size(); k++) {
+                if (rd.fieldPatterns().get(k) instanceof HirPattern.Bind b) {
+                    int p = layout.paramIndexForMember(memberIndices[k]);
+                    int argIdx = argMap[p];
+                    if (boundByArgIdx[argIdx] != null) {
+                        return null;
+                    }
+                    boundByArgIdx[argIdx] = b.var();
+                    kindByArgIdx[argIdx] = layout.paramKinds()[p];
+                }
+            }
+            declared.addAll(res.arm().boundVars());
+        }
+
+        List<HirExpr> stmts = new ArrayList<>();
+        if (!classRefPure) {
+            stmts.add(r.classRef());
+        }
+        for (int aIdx = 0; aIdx < r.args().size(); aIdx++) {
+            HirExpr arg = r.args().get(aIdx);
+            HirVar bv = boundByArgIdx[aIdx];
+            if (bv != null) {
+                PrimitiveKind fk = kindByArgIdx[aIdx];
+                ExprMeta defMeta = new ExprMeta(arg.meta().line(), fk,
+                        arg.meta().kind() != fk && fk.numericRank() >= 1 ? fk.numericRank() : arg.meta().wideningRank(),
+                        null, arg.meta().effects(), fk.isPrimitive(), arg.meta().stringType());
+                stmts.add(new HirExpr.Def(bv.name(), new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
+                        bv, arg, defMeta));
+            } else if (!HirPurity.isPureNothrowTerminating(arg, module)) {
+                stmts.add(arg);
+            }
+        }
+        HirExpr body = res.isElse() ? m.elseArm().body() : res.arm().body();
+        int bodyWiden = res.isElse() ? m.elseArm().bodyWideningRank() : res.arm().bodyWideningRank();
+        stmts.add(body);
+
+        HirExpr reduced = new HirExpr.Block(stmts, false, new String[0], declared, bodyWiden, m.meta());
+        if (prefixBlock != null) {
+            List<HirExpr> combined = new ArrayList<>(prefixBlock.statements());
+            combined.set(combined.size() - 1, reduced);
+            return new HirExpr.Block(combined, false, new String[0], prefixBlock.declaredVars(), -1, m.meta());
+        }
+        return reduced;
     }
 
     // ---------------------------------------------------------------- Sub-pass 2: flattened $unboxed borrow entry points
@@ -1073,6 +1253,15 @@ public final class ScalarReplacePass implements HirPass {
                 }
             }
             case HirExpr.Match m -> {
+                if (m.meta().checkedType() == null && m.scrutinee() instanceof HirExpr.VarRead vr
+                        && candidates.containsKey(vr.var().id())) {
+                    StaticMatchResult res = findStaticMatchArm(m, candidates.get(vr.var().id()), module);
+                    if (res != null) {
+                        verifyExpr(res.isElse() ? m.elseArm().body() : res.arm().body(),
+                                valueUsed, candidates, localLayouts, module, bad);
+                        return;
+                    }
+                }
                 verifyExpr(m.scrutinee(), true, candidates, localLayouts, module, bad);
                 for (HirExpr.MatchArm arm : m.arms()) {
                     verifyPattern(arm.pattern(), candidates, localLayouts, module, bad);
@@ -1270,6 +1459,35 @@ public final class ScalarReplacePass implements HirPass {
                 RecordLayout layout = candidates.get(vr.var().id());
                 int p = matchingParamIndex(g, layout);
                 return new HirExpr.VarRead(scalars[p], g.meta());
+            }
+        }
+        if (expr instanceof HirExpr.Match m && m.meta().checkedType() == null
+                && m.scrutinee() instanceof HirExpr.VarRead vr) {
+            HirVar[] scalars = scalarVars.get(vr.var().id());
+            if (scalars != null) {
+                RecordLayout layout = candidates.get(vr.var().id());
+                StaticMatchResult res = findStaticMatchArm(m, layout, module);
+                if (res != null) {
+                    List<HirExpr> stmts = new ArrayList<>();
+                    List<HirVar> decls = List.of();
+                    if (!res.isElse() && res.arm().pattern() instanceof HirPattern.RecordDestructure rd) {
+                        int[] memberIndices = rd.babbleMemberIndices();
+                        for (int k = 0; k < rd.fieldPatterns().size(); k++) {
+                            if (rd.fieldPatterns().get(k) instanceof HirPattern.Bind b) {
+                                int p = layout.paramIndexForMember(memberIndices[k]);
+                                PrimitiveKind fk = layout.paramKinds()[p];
+                                ExprMeta rm = new ExprMeta(b.line(), fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
+                                stmts.add(makeScalarStore(b.var(), new HirExpr.VarRead(scalars[p], rm), true, b.line(), fk));
+                            }
+                        }
+                        decls = res.arm().boundVars();
+                    }
+                    HirExpr body = rewriteScalarizedExpr(res.isElse() ? m.elseArm().body() : res.arm().body(),
+                            ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
+                    int bodyWiden = res.isElse() ? m.elseArm().bodyWideningRank() : res.arm().bodyWideningRank();
+                    stmts.add(body);
+                    return new HirExpr.Block(stmts, false, new String[0], decls, bodyWiden, m.meta());
+                }
             }
         }
         if (expr instanceof HirExpr.Def d && d.var() != null && scalarVars.containsKey(d.var().id())) {

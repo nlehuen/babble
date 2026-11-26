@@ -901,6 +901,91 @@ public class OptimizerTestCase {
         }
     }
 
+    @Test
+    public void testBip038MatchBytecodeLoweringAndSroa() throws Exception {
+        String code = ""
+                + "def Circle = record (r : int) ()\n"
+                + "def Rect = record (w : int, h : int) ()\n"
+                + "def dense = fn (n : int) : int -> (\n"
+                + "  match n\n"
+                + "  case 0 then (10)\n"
+                + "  case 1 then (20)\n"
+                + "  case 2 then (30)\n"
+                + "  case 3 then (40)\n"
+                + "  else (0)\n"
+                + ")\n"
+                + "def sparse = fn (n : int) : int -> (\n"
+                + "  match n\n"
+                + "  case 100 then (1)\n"
+                + "  case 2000 then (2)\n"
+                + "  case 30000 then (3)\n"
+                + "  else (0)\n"
+                + ")\n"
+                + "def byName = fn (s : string) : int -> (\n"
+                + "  match s\n"
+                + "  case \"alpha\" then (1)\n"
+                + "  case \"beta\" then (2)\n"
+                + "  case \"gamma\" then (3)\n"
+                + "  else (0)\n"
+                + ")\n"
+                + "def AM = java.nio.file.AccessMode\n"
+                + "def byEnum = fn (m : java.nio.file.AccessMode) : int -> (\n"
+                + "  match m\n"
+                + "  case AM.READ then (1)\n"
+                + "  case AM.WRITE then (2)\n"
+                + "  case AM.EXECUTE then (4)\n"
+                + ")\n"
+                + "def area = fn (s : Circle | Rect) : int -> (\n"
+                + "  match s\n"
+                + "  case is Circle(def r) then (r * r * 3)\n"
+                + "  case is Rect(def w, def h) then (w * h)\n"
+                + ")\n"
+                + "def circleArea = fn (r : int) : int -> ( area(Circle(r)) )\n"
+                + "dense(2) + sparse(2000) + byName(\"gamma\") + byEnum(AM.EXECUTE) + circleArea(4)\n";
+
+        int expected = ((Number) evalInMode(code, "interpret", 0)).intValue();
+        Assertions.assertEquals(87, expected);
+
+        for (int opt : new int[]{1, 2}) {
+            BabbleScriptEngine engine = newEngine();
+            engine.put(BabbleScriptEngine.MODE, "compile");
+            engine.put(BabbleCompiler.OPT_LEVEL, opt);
+            CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
+            Assertions.assertEquals(expected, ((Number) cs.eval()).intValue(), "Mismatch at -O" + opt);
+
+            ClassNode cn = new ClassNode();
+            new ClassReader(cs.getClassBytes()).accept(cn, 0);
+
+            String denseM = findMethod(cn, "$dense$spec");
+            Assertions.assertTrue(methodOpcodes(cn, denseM).contains(Opcodes.TABLESWITCH),
+                    "-O" + opt + " dense match must emit TABLESWITCH");
+
+            String sparseM = findMethod(cn, "$sparse$spec");
+            Assertions.assertTrue(methodOpcodes(cn, sparseM).contains(Opcodes.LOOKUPSWITCH),
+                    "-O" + opt + " sparse match must emit LOOKUPSWITCH");
+
+            String byNameM = findMethod(cn, "$byName$spec");
+            Assertions.assertTrue(methodOpcodes(cn, byNameM).contains(Opcodes.LOOKUPSWITCH),
+                    "-O" + opt + " string match must emit hashCode LOOKUPSWITCH");
+            Assertions.assertTrue(methodCalls(cn, byNameM).contains("java/lang/String.hashCode"),
+                    "-O" + opt + " string match must call String.hashCode");
+
+            String byEnumM = findMethod(cn, "$byEnum$spec");
+            Assertions.assertTrue(methodOpcodes(cn, byEnumM).contains(Opcodes.TABLESWITCH),
+                    "-O" + opt + " Java enum match must emit TABLESWITCH");
+            Assertions.assertTrue(methodCalls(cn, byEnumM).contains("java/nio/file/AccessMode.ordinal")
+                            || methodCalls(cn, byEnumM).contains("java/lang/Enum.ordinal"),
+                    "-O" + opt + " Java enum match must dispatch on ordinal()");
+
+            String circleAreaM = findMethod(cn, "$circleArea$spec");
+            List<Integer> caOps = methodOpcodes(cn, circleAreaM);
+            Assertions.assertFalse(caOps.contains(Opcodes.NEW),
+                    "-O" + opt + " circleArea must eliminate Circle record allocation via SROA");
+            Assertions.assertFalse(caOps.contains(Opcodes.INSTANCEOF),
+                    "-O" + opt + " circleArea must eliminate INSTANCEOF dispatch via SROA");
+        }
+    }
+
     private static String findMethod(ClassNode cn, String suffix) {
         return cn.methods.stream().map(m -> m.name).filter(n -> n.endsWith(suffix)).findFirst()
                 .orElseThrow(() -> new AssertionError("Missing method ending with " + suffix + " in "

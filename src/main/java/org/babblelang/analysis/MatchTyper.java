@@ -197,7 +197,7 @@ final class MatchTyper {
             branchEnvs.add(checker.env());
         }
 
-        // Exhaustiveness, reachability, and redundant-else checks (BIP038-P4)
+        // Exhaustiveness, reachability, and redundant-else checks (BIP038-I4)
         boolean exhaustive = hasElse;
         if (scrutineeType != Type.ERROR && !TypeChecker.isUnresolved(scrutineeType)) {
             List<MatchExhaustiveness.Arm> exArms = new ArrayList<>(clauses.size());
@@ -605,7 +605,7 @@ final class MatchTyper {
         return new PatternTyping(matched, subtracted);
     }
 
-    // ---------------------------------------------------------------- record & sequence destructuring (BIP038-P3)
+    // ---------------------------------------------------------------- record & sequence destructuring (BIP038-I3)
 
     private static boolean isRawArrayPatternType(List<BabbleParser.NullableTypeContext> parts, ScopeNode scope) {
         if (parts.size() != 1) {
@@ -1035,7 +1035,11 @@ final class MatchTyper {
                 }
             }
             List<Type> chosen = !remArrMembers.isEmpty() ? remArrMembers : arrMembers;
-            matched = !chosen.isEmpty() ? Type.union(chosen) : new Type.Array(Type.NULLABLE_ANY);
+            if (!chosen.isEmpty()) {
+                matched = Type.union(chosen);
+            } else {
+                matched = active instanceof Type.Frozen ? Type.frozen(Type.ANY) : Type.ANY;
+            }
             target = chosen.size() == 1 ? TypeAlgebra.unwrapFrozen(chosen.get(0)) : null;
             if (target != null) {
                 patternTargetTypes.put(owner, target);
@@ -1081,7 +1085,19 @@ final class MatchTyper {
         }
         boolean hasRest = args.restPattern() != null;
         if (hasRest && args.restPattern().name != null) {
-            checker.declarationTypes().put(args.restPattern(), new Type.Array(elemType));
+            Type restType;
+            if (concreteArrCount == 1) {
+                restType = new Type.Array(elemType);
+            } else if (concreteArrCount > 1) {
+                List<Type> restParts = new ArrayList<>();
+                for (Type e : elemTypes) {
+                    restParts.add(new Type.Array(isFrozen ? Type.frozen(e) : e));
+                }
+                restType = Type.union(restParts);
+            } else {
+                restType = Type.ANY;
+            }
+            checker.declarationTypes().put(args.restPattern(), restType);
         }
         int fixedCount = args.patternArg().size();
         sequenceDestructures.put(owner, new SequenceDestructureInfo(
@@ -1302,7 +1318,7 @@ final class MatchTyper {
         return null;
     }
 
-    // ---------------------------------------------------------------- exhaustiveness pattern translation (BIP038-P4)
+    // ---------------------------------------------------------------- exhaustiveness pattern translation (BIP038-I4)
 
     private List<Type> recordFieldTypesForExhaustiveness(Type recordType) {
         boolean isFrozen = recordType instanceof Type.Frozen;
