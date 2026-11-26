@@ -48,7 +48,8 @@ public class ArchitectureBoundaryTestCase {
             "org/babblelang/analysis/Purity",
             "org/babblelang/analysis/HostEffects",
             "org/babblelang/analysis/AlgebraicVerifier",
-            "org/babblelang/analysis/SizeChangeTermination"
+            "org/babblelang/analysis/SizeChangeTermination",
+            "org/babblelang/analysis/MatchExhaustiveness"
     );
 
     /**

@@ -142,10 +142,18 @@ final class MatchTyper {
         List<Type> branchTypes = new ArrayList<>();
         List<ParserRuleContext> branchNodes = new ArrayList<>();
         List<TypeEnv> branchEnvs = new ArrayList<>();
+        List<BabbleParser.CaseClauseContext> clauses = ctx.caseClause();
+        boolean[] armHadError = new boolean[clauses.size()];
+        boolean anyPatternError = false;
 
-        for (BabbleParser.CaseClauseContext clause : ctx.caseClause()) {
+        for (int ci = 0; ci < clauses.size(); ci++) {
+            BabbleParser.CaseClauseContext clause = clauses.get(ci);
             checker.setEnv(fallthroughEnv);
-            PatternTyping pt = typePattern(clause.pattern(), remaining);
+            PatternTyping pt = typePattern(clause.pattern(), scrutineeType, remaining);
+            if (pt.matchedType() == Type.ERROR) {
+                armHadError[ci] = true;
+                anyPatternError = true;
+            }
 
             TypeEnv armEnv = fallthroughEnv;
             if (scrutineeDecl != null && pt.matchedType() != Type.ERROR && pt.matchedType() != Type.NOTHING
@@ -174,7 +182,8 @@ final class MatchTyper {
             }
         }
 
-        if (ctx.elseClause() != null) {
+        boolean hasElse = ctx.elseClause() != null;
+        if (hasElse) {
             BabbleParser.ElseClauseContext ec = ctx.elseClause();
             if (ec.name != null) {
                 Type elseBindingType = (remaining == Type.NOTHING || remaining == Type.ERROR)
@@ -186,10 +195,39 @@ final class MatchTyper {
             branchTypes.add(elseType);
             branchNodes.add(ec.elseBlock);
             branchEnvs.add(checker.env());
-            matchExhaustive.put(ctx, true);
-        } else {
-            matchExhaustive.put(ctx, remaining == Type.NOTHING);
         }
+
+        // Exhaustiveness, reachability, and redundant-else checks (BIP038-P4)
+        boolean exhaustive = hasElse;
+        if (scrutineeType != Type.ERROR && !TypeChecker.isUnresolved(scrutineeType)) {
+            List<MatchExhaustiveness.Arm> exArms = new ArrayList<>(clauses.size());
+            for (int ci = 0; ci < clauses.size(); ci++) {
+                BabbleParser.CaseClauseContext clause = clauses.get(ci);
+                MatchExhaustiveness.Pat pat = armHadError[ci]
+                        ? MatchExhaustiveness.Pat.Opaque.INSTANCE
+                        : toExhaustivenessPat(clause.pattern());
+                exArms.add(new MatchExhaustiveness.Arm(pat, clause.guard != null));
+            }
+            MatchExhaustiveness.Result res = MatchExhaustiveness.check(
+                    scrutineeType, exArms, hasElse, checker.algebra(), this::recordFieldTypesForExhaustiveness);
+            for (int idx : res.unreachableArms()) {
+                if (!armHadError[idx]) {
+                    checker.warn("Unreachable case : already matched by earlier case", clauses.get(idx));
+                }
+            }
+            if (!anyPatternError) {
+                if (!res.exhaustive() && !hasElse) {
+                    String msg = res.missingWitness() != null
+                            ? "Non-exhaustive match : missing " + res.missingWitness()
+                            : "Non-exhaustive match : add an else branch";
+                    checker.warn(msg, ctx);
+                } else if (res.redundantElse()) {
+                    checker.analysisWarn("Redundant else : match is already exhaustive", ctx.elseClause());
+                }
+            }
+            exhaustive = res.exhaustive() || hasElse;
+        }
+        matchExhaustive.put(ctx, exhaustive);
 
         TypeEnv joinedEnv = null;
         for (int i = 0; i < branchTypes.size(); i++) {
@@ -248,54 +286,60 @@ final class MatchTyper {
         return joined;
     }
 
-    private PatternTyping typePattern(BabbleParser.PatternContext pat, Type remaining) {
+    private PatternTyping typePattern(BabbleParser.PatternContext pat, Type domain, Type remaining) {
         List<BabbleParser.AtomicPatternContext> atoms = pat.atomicPattern();
         if (atoms.size() == 1) {
-            return typeAtomicPattern(atoms.get(0), remaining);
+            return typeAtomicPattern(atoms.get(0), domain, remaining);
         }
         List<Type> matched = new ArrayList<>(atoms.size());
         Type curRem = remaining;
+        boolean hadError = false;
         for (BabbleParser.AtomicPatternContext atom : atoms) {
-            PatternTyping pt = typeAtomicPattern(atom, curRem);
-            if (pt.matchedType() != Type.ERROR && pt.matchedType() != Type.NOTHING) {
+            PatternTyping pt = typeAtomicPattern(atom, domain, curRem);
+            if (pt.matchedType() == Type.ERROR) {
+                hadError = true;
+            } else if (pt.matchedType() != Type.NOTHING) {
                 matched.add(pt.matchedType());
             }
             if (pt.subtractedType() != null) {
                 curRem = pt.subtractedType();
             }
         }
+        if (hadError) {
+            return new PatternTyping(Type.ERROR, curRem);
+        }
         Type unionMatched = matched.isEmpty() ? remaining : Type.union(matched);
         return new PatternTyping(unionMatched, curRem);
     }
 
-    private PatternTyping typeAtomicPattern(BabbleParser.AtomicPatternContext atom, Type remaining) {
+    private PatternTyping typeAtomicPattern(BabbleParser.AtomicPatternContext atom, Type domain, Type remaining) {
         return switch (atom) {
-            case BabbleParser.ValuePatternContext vp -> typeValuePattern(vp, remaining);
-            case BabbleParser.RelationalPatternContext rp -> typeRelationalPattern(rp, remaining);
-            case BabbleParser.MembershipPatternContext mp -> typeMembershipPattern(mp, remaining);
-            case BabbleParser.TypeOrDestructurePatternContext tp -> typeIsPattern(tp, remaining);
-            case BabbleParser.BindingPatternContext bp -> typeBindingPattern(bp, remaining);
+            case BabbleParser.ValuePatternContext vp -> typeValuePattern(vp, domain, remaining);
+            case BabbleParser.RelationalPatternContext rp -> typeRelationalPattern(rp, domain, remaining);
+            case BabbleParser.MembershipPatternContext mp -> typeMembershipPattern(mp, domain, remaining);
+            case BabbleParser.TypeOrDestructurePatternContext tp -> typeIsPattern(tp, domain, remaining);
+            case BabbleParser.BindingPatternContext bp -> typeBindingPattern(bp, domain, remaining);
             default -> new PatternTyping(remaining, remaining);
         };
     }
 
     // ---------------------------------------------------------------- value & range patterns
 
-    private PatternTyping typeValuePattern(BabbleParser.ValuePatternContext vp, Type remaining) {
+    private PatternTyping typeValuePattern(BabbleParser.ValuePatternContext vp, Type domain, Type remaining) {
         if (BlockScopes.isWildcardExpr(vp.expr)) {
             return new PatternTyping(remaining, Type.NOTHING);
         }
         SteppedRange extracted = extractRangePattern(vp.expr);
         if (extracted != null) {
-            return typeRangeOrRangeEqPattern(vp, extracted, remaining);
+            return typeRangeOrRangeEqPattern(vp, extracted, domain, remaining);
         }
-        Type valueExpected = expectedForValuePattern(remaining);
+        Type valueExpected = expectedForValuePattern(remaining != Type.NOTHING ? remaining : domain);
         Type patType = valueExpected != null ? checker.check(vp.expr, valueExpected) : checker.synth(vp.expr);
-        if (patType == Type.ERROR || TypeChecker.isUnresolved(remaining) || remaining == Type.ERROR) {
+        if (patType == Type.ERROR || TypeChecker.isUnresolved(domain) || domain == Type.ERROR) {
             return new PatternTyping(remaining, remaining);
         }
-        if (!overlapsValue(remaining, patType)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match " + vp.getText(), vp);
+        if (!overlapsValue(domain, patType)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match " + vp.getText(), vp);
             return new PatternTyping(Type.ERROR, remaining);
         }
         LoweringTargets.PatternConst constant = resolvePatternConst(vp.expr, patType);
@@ -306,8 +350,9 @@ final class MatchTyper {
                 return new PatternTyping(Type.NULL, subtracted);
             }
         }
+        Type narrowBase = remaining != Type.NOTHING ? remaining : domain;
         Type matched = patType == Type.NULL ? Type.NULL
-                : (Type.isNumericScalar(patType) ? remaining : checker.algebra().narrowTarget(remaining, patType));
+                : (Type.isNumericScalar(patType) ? narrowBase : checker.algebra().narrowTarget(narrowBase, patType));
         return new PatternTyping(matched, remaining);
     }
 
@@ -341,12 +386,13 @@ final class MatchTyper {
     }
 
     private PatternTyping typeRangeOrRangeEqPattern(BabbleParser.ValuePatternContext vp,
-                                                    SteppedRange extracted, Type remaining) {
-        if (remaining == Type.ERROR || remaining == Type.NOTHING) {
+                                                    SteppedRange extracted, Type domain, Type remaining) {
+        Type active = remaining != Type.NOTHING ? remaining : domain;
+        if (active == Type.ERROR || active == Type.NOTHING) {
             checker.synth(vp.expr);
             return new PatternTyping(remaining, remaining);
         }
-        Type nonNullRem = Type.withoutNull(remaining);
+        Type nonNullRem = Type.withoutNull(active);
         boolean isAnyOrVar = nonNullRem == Type.ANY || nonNullRem instanceof Type.TypeVar;
         boolean hasRange = false;
         boolean hasNonRange = false;
@@ -358,15 +404,15 @@ final class MatchTyper {
             }
         }
         if (isAnyOrVar || (hasRange && hasNonRange)) {
-            checker.warn("Ambiguous range pattern : " + remaining + ". Use case in lo..hi or case == (lo..hi)", vp);
+            checker.warn("Ambiguous range pattern : " + active + ". Use case in lo..hi or case == (lo..hi)", vp);
             checker.synth(vp.expr);
             return new PatternTyping(Type.ERROR, remaining);
         }
         if (hasRange) {
             // Pure range scrutinee: bare range pattern is range equality `v == (lo..hi)`.
             Type patType = checker.synth(vp.expr);
-            if (!overlapsValue(remaining, patType)) {
-                checker.warn("Impossible pattern : " + remaining + " cannot match " + vp.getText(), vp);
+            if (!overlapsValue(domain, patType)) {
+                checker.warn("Impossible pattern : " + domain + " cannot match " + vp.getText(), vp);
             }
             return new PatternTyping(nonNullRem, remaining);
         }
@@ -391,7 +437,7 @@ final class MatchTyper {
         if (nonNullRem == Type.NOTHING
                 || !OperatorTypes.comparable(nonNullRem, loType)
                 || !OperatorTypes.comparable(nonNullRem, hiType)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match " + vp.getText(), vp);
+            checker.warn("Impossible pattern : " + active + " cannot match " + vp.getText(), vp);
             return new PatternTyping(Type.ERROR, remaining);
         }
         if (extracted.step() != null) {
@@ -426,33 +472,34 @@ final class MatchTyper {
 
     // ---------------------------------------------------------------- relational patterns
 
-    private PatternTyping typeRelationalPattern(BabbleParser.RelationalPatternContext rp, Type remaining) {
+    private PatternTyping typeRelationalPattern(BabbleParser.RelationalPatternContext rp, Type domain, Type remaining) {
+        Type active = remaining != Type.NOTHING ? remaining : domain;
         int opType = rp.op.getType();
-        Type expectedRhs = expectedForValuePattern(remaining);
+        Type expectedRhs = expectedForValuePattern(active);
         Type rhsType = expectedRhs != null ? checker.check(rp.rhs, expectedRhs) : checker.synth(rp.rhs);
-        if (rhsType == Type.ERROR || TypeChecker.isUnresolved(remaining) || remaining == Type.ERROR) {
+        if (rhsType == Type.ERROR || TypeChecker.isUnresolved(domain) || domain == Type.ERROR) {
             return new PatternTyping(remaining, remaining);
         }
         if (opType == BabbleLexer.EQ || opType == BabbleLexer.NEQ) {
-            if (!overlapsValue(remaining, rhsType)) {
-                checker.warn("Impossible pattern : " + remaining + " cannot match " + rp.getText(), rp);
+            if (!overlapsValue(domain, rhsType)) {
+                checker.warn("Impossible pattern : " + domain + " cannot match " + rp.getText(), rp);
                 return new PatternTyping(Type.ERROR, remaining);
             }
-            relationalKinds.put(rp, PrimitiveKind.of(remaining));
-            return new PatternTyping(remaining, remaining);
+            relationalKinds.put(rp, PrimitiveKind.of(active));
+            return new PatternTyping(active, remaining);
         }
-        Type nonNullRem = Type.withoutNull(remaining);
-        if (nonNullRem == Type.NOTHING || Type.containsNull(rhsType) || !OperatorTypes.comparable(nonNullRem, rhsType)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match " + rp.getText(), rp);
+        Type nonNullActive = Type.withoutNull(active);
+        if (nonNullActive == Type.NOTHING || Type.containsNull(rhsType) || !OperatorTypes.comparable(nonNullActive, rhsType)) {
+            checker.warn("Impossible pattern : " + active + " cannot match " + rp.getText(), rp);
             return new PatternTyping(Type.ERROR, remaining);
         }
-        relationalKinds.put(rp, PrimitiveKind.of(remaining));
-        return new PatternTyping(nonNullRem, remaining);
+        relationalKinds.put(rp, PrimitiveKind.of(active));
+        return new PatternTyping(nonNullActive, remaining);
     }
 
     // ---------------------------------------------------------------- membership (`in`) patterns
 
-    private PatternTyping typeMembershipPattern(BabbleParser.MembershipPatternContext mp, Type remaining) {
+    private PatternTyping typeMembershipPattern(BabbleParser.MembershipPatternContext mp, Type domain, Type remaining) {
         Type containerType = checker.synth(mp.container);
         if (containerType == Type.ERROR || TypeChecker.isUnresolved(containerType)) {
             return new PatternTyping(remaining, remaining);
@@ -488,49 +535,51 @@ final class MatchTyper {
             return new PatternTyping(Type.ERROR, remaining);
         }
         membershipTargets.put(mp, new LoweringTargets.MembershipTarget(kind, elemKind));
-        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR && !overlapsValue(remaining, elemType)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match " + mp.getText(), mp);
+        if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR && !overlapsValue(domain, elemType)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match " + mp.getText(), mp);
             return new PatternTyping(Type.ERROR, remaining);
         }
-        return new PatternTyping(remaining, remaining);
+        return new PatternTyping(remaining != Type.NOTHING ? remaining : domain, remaining);
     }
 
     // ---------------------------------------------------------------- type & binding patterns
 
-    private PatternTyping typeIsPattern(BabbleParser.TypeOrDestructurePatternContext tp, Type remaining) {
+    private PatternTyping typeIsPattern(BabbleParser.TypeOrDestructurePatternContext tp, Type domain, Type remaining) {
         ScopeNode scope = checker.scopeOf(tp);
         if (tp.patternArgs() != null && isRawArrayPatternType(tp.patternType().nullableType(), scope)) {
-            return typeArrayDestructure(tp, null, tp.patternArgs(), remaining, null);
+            return typeArrayDestructure(tp, null, tp.patternArgs(), domain, remaining, null);
         }
         Type target = resolvePatternType(tp.patternType().nullableType(), tp.patternType(), scope, tp.patternArgs() != null, tp);
         if (target == Type.ERROR) {
             return new PatternTyping(Type.ERROR, remaining);
         }
         if (tp.patternArgs() != null) {
-            return typeDestructurePattern(tp, target, tp.patternArgs(), remaining, null);
+            return typeDestructurePattern(tp, target, tp.patternArgs(), domain, remaining, null);
         }
-        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                && !checker.algebra().overlapsErased(remaining, target)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, tp);
+        if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR
+                && !checker.algebra().overlapsErased(domain, target)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match is " + target, tp);
             return new PatternTyping(Type.ERROR, remaining);
         }
-        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                ? checker.algebra().narrowTarget(remaining, target) : target;
+        Type narrowBase = (remaining != Type.NOTHING && checker.algebra().overlapsErased(remaining, target)) ? remaining : domain;
+        Type matched = !TypeChecker.isUnresolved(narrowBase) && narrowBase != Type.ERROR
+                ? checker.algebra().narrowTarget(narrowBase, target) : target;
         Type subtracted = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
                 ? checker.algebra().subtractType(remaining, target) : remaining;
         patternTargetTypes.put(tp, target);
         return new PatternTyping(matched, subtracted);
     }
 
-    private PatternTyping typeBindingPattern(BabbleParser.BindingPatternContext bp, Type remaining) {
+    private PatternTyping typeBindingPattern(BabbleParser.BindingPatternContext bp, Type domain, Type remaining) {
         if (bp.patternBindingType() == null) {
-            checker.declarationTypes().put(bp, remaining);
-            return new PatternTyping(remaining, Type.NOTHING);
+            Type bindType = remaining != Type.NOTHING ? remaining : domain;
+            checker.declarationTypes().put(bp, bindType);
+            return new PatternTyping(bindType, Type.NOTHING);
         }
         ScopeNode scope = checker.scopeOf(bp);
         BabbleParser.TypeContext typeCtx = bp.patternBindingType().type();
         if (bp.patternArgs() != null && isRawArrayPatternType(typeCtx.nullableType(), scope)) {
-            return typeArrayDestructure(bp, null, bp.patternArgs(), remaining, bp);
+            return typeArrayDestructure(bp, null, bp.patternArgs(), domain, remaining, bp);
         }
         Type target = resolveBindingType(typeCtx, scope, bp.patternArgs() != null, bp);
         if (target == Type.ERROR) {
@@ -538,16 +587,17 @@ final class MatchTyper {
             return new PatternTyping(Type.ERROR, remaining);
         }
         if (bp.patternArgs() != null) {
-            return typeDestructurePattern(bp, target, bp.patternArgs(), remaining, bp);
+            return typeDestructurePattern(bp, target, bp.patternArgs(), domain, remaining, bp);
         }
-        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                && !checker.algebra().overlapsErased(remaining, target)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match def " + bp.name.getText() + ": " + target, bp);
+        if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR
+                && !checker.algebra().overlapsErased(domain, target)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match def " + bp.name.getText() + ": " + target, bp);
             checker.declarationTypes().put(bp, Type.ERROR);
             return new PatternTyping(Type.ERROR, remaining);
         }
-        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                ? checker.algebra().narrowTarget(remaining, target) : target;
+        Type narrowBase = (remaining != Type.NOTHING && checker.algebra().overlapsErased(remaining, target)) ? remaining : domain;
+        Type matched = !TypeChecker.isUnresolved(narrowBase) && narrowBase != Type.ERROR
+                ? checker.algebra().narrowTarget(narrowBase, target) : target;
         Type subtracted = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
                 ? checker.algebra().subtractType(remaining, target) : remaining;
         checker.declarationTypes().put(bp, matched);
@@ -573,20 +623,20 @@ final class MatchTyper {
     }
 
     private PatternTyping typeDestructurePattern(ParserRuleContext owner, Type target,
-                                                 BabbleParser.PatternArgsContext args, Type remaining,
+                                                 BabbleParser.PatternArgsContext args, Type domain, Type remaining,
                                                  BabbleParser.BindingPatternContext bindCtx) {
         Type baseTarget = TypeAlgebra.unwrapFrozen(target);
         if (baseTarget instanceof Type.Array arr) {
-            return typeArrayDestructure(owner, arr, args, remaining, bindCtx);
+            return typeArrayDestructure(owner, arr, args, domain, remaining, bindCtx);
         }
         if (baseTarget instanceof Type.JavaInstance ji && ji.type() == java.util.List.class) {
-            return typeListDestructure(owner, target, args, remaining, bindCtx);
+            return typeListDestructure(owner, target, args, domain, remaining, bindCtx);
         }
         if (baseTarget instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
-            return typeBabbleRecordDestructure(owner, target, inst, args, remaining, bindCtx);
+            return typeBabbleRecordDestructure(owner, target, inst, args, domain, remaining, bindCtx);
         }
         if (baseTarget instanceof Type.JavaInstance ji && ji.type().isRecord()) {
-            return typeJavaRecordDestructure(owner, target, ji, args, remaining, bindCtx);
+            return typeJavaRecordDestructure(owner, target, ji, args, domain, remaining, bindCtx);
         }
         checker.warn("Not a record type : " + baseTarget, owner);
         if (bindCtx != null) {
@@ -596,18 +646,19 @@ final class MatchTyper {
     }
 
     private PatternTyping typeBabbleRecordDestructure(ParserRuleContext owner, Type target, Type.Instance inst,
-                                                      BabbleParser.PatternArgsContext args, Type remaining,
+                                                      BabbleParser.PatternArgsContext args, Type domain, Type remaining,
                                                       BabbleParser.BindingPatternContext bindCtx) {
-        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                && !checker.algebra().overlapsErased(remaining, target)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+        if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR
+                && !checker.algebra().overlapsErased(domain, target)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match is " + target, owner);
             if (bindCtx != null) {
                 checker.declarationTypes().put(bindCtx, Type.ERROR);
             }
             return new PatternTyping(Type.ERROR, remaining);
         }
-        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                ? checker.algebra().narrowTarget(remaining, target) : target;
+        Type narrowBase = (remaining != Type.NOTHING && checker.algebra().overlapsErased(remaining, target)) ? remaining : domain;
+        Type matched = !TypeChecker.isUnresolved(narrowBase) && narrowBase != Type.ERROR
+                ? checker.algebra().narrowTarget(narrowBase, target) : target;
         if (bindCtx != null) {
             checker.declarationTypes().put(bindCtx, matched);
         }
@@ -679,7 +730,10 @@ final class MatchTyper {
             fieldNames.add(fieldName);
             memberIndices.add(memberIdx);
             fieldTypes.add(fieldType);
-            PatternTyping sub = typePattern(arg.pattern(), fieldType);
+            PatternTyping sub = typePattern(arg.pattern(), fieldType, fieldType);
+            if (sub.matchedType() == Type.ERROR) {
+                hadError = true;
+            }
             if (sub.subtractedType() != Type.NOTHING) {
                 allIrrefutable = false;
             }
@@ -736,18 +790,19 @@ final class MatchTyper {
     }
 
     private PatternTyping typeJavaRecordDestructure(ParserRuleContext owner, Type target, Type.JavaInstance ji,
-                                                    BabbleParser.PatternArgsContext args, Type remaining,
+                                                    BabbleParser.PatternArgsContext args, Type domain, Type remaining,
                                                     BabbleParser.BindingPatternContext bindCtx) {
-        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                && !checker.algebra().overlapsErased(remaining, target)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+        if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR
+                && !checker.algebra().overlapsErased(domain, target)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match is " + target, owner);
             if (bindCtx != null) {
                 checker.declarationTypes().put(bindCtx, Type.ERROR);
             }
             return new PatternTyping(Type.ERROR, remaining);
         }
-        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                ? checker.algebra().narrowTarget(remaining, target) : target;
+        Type narrowBase = (remaining != Type.NOTHING && checker.algebra().overlapsErased(remaining, target)) ? remaining : domain;
+        Type matched = !TypeChecker.isUnresolved(narrowBase) && narrowBase != Type.ERROR
+                ? checker.algebra().narrowTarget(narrowBase, target) : target;
         if (bindCtx != null) {
             checker.declarationTypes().put(bindCtx, matched);
         }
@@ -817,7 +872,10 @@ final class MatchTyper {
             fieldNames.add(comp.getName());
             fieldTypes.add(compType);
             accessors.add(acc);
-            PatternTyping sub = typePattern(arg.pattern(), compType);
+            PatternTyping sub = typePattern(arg.pattern(), compType, compType);
+            if (sub.matchedType() == Type.ERROR) {
+                hadError = true;
+            }
             if (sub.subtractedType() != Type.NOTHING) {
                 allIrrefutable = false;
             }
@@ -868,18 +926,19 @@ final class MatchTyper {
     }
 
     private PatternTyping typeListDestructure(ParserRuleContext owner, Type target,
-                                              BabbleParser.PatternArgsContext args, Type remaining,
+                                              BabbleParser.PatternArgsContext args, Type domain, Type remaining,
                                               BabbleParser.BindingPatternContext bindCtx) {
-        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                && !checker.algebra().overlapsErased(remaining, target)) {
-            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+        if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR
+                && !checker.algebra().overlapsErased(domain, target)) {
+            checker.warn("Impossible pattern : " + domain + " cannot match is " + target, owner);
             if (bindCtx != null) {
                 checker.declarationTypes().put(bindCtx, Type.ERROR);
             }
             return new PatternTyping(Type.ERROR, remaining);
         }
-        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                ? checker.algebra().narrowTarget(remaining, target) : target;
+        Type narrowBase = (remaining != Type.NOTHING && checker.algebra().overlapsErased(remaining, target)) ? remaining : domain;
+        Type matched = !TypeChecker.isUnresolved(narrowBase) && narrowBase != Type.ERROR
+                ? checker.algebra().narrowTarget(narrowBase, target) : target;
         if (bindCtx != null) {
             checker.declarationTypes().put(bindCtx, matched);
         }
@@ -898,7 +957,9 @@ final class MatchTyper {
                 hadError = true;
                 continue;
             }
-            typePattern(arg.pattern(), elemType);
+            if (typePattern(arg.pattern(), elemType, elemType).matchedType() == Type.ERROR) {
+                hadError = true;
+            }
         }
         boolean hasRest = args.restPattern() != null;
         if (hasRest && args.restPattern().name != null) {
@@ -929,28 +990,30 @@ final class MatchTyper {
     }
 
     private PatternTyping typeArrayDestructure(ParserRuleContext owner, Type.Array explicitArr,
-                                               BabbleParser.PatternArgsContext args, Type remaining,
+                                               BabbleParser.PatternArgsContext args, Type domain, Type remaining,
                                                BabbleParser.BindingPatternContext bindCtx) {
         Type matched;
         Type target;
         if (explicitArr != null) {
             target = explicitArr;
-            if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                    && !checker.algebra().overlapsErased(remaining, target)) {
-                checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+            if (!TypeChecker.isUnresolved(domain) && domain != Type.ERROR
+                    && !checker.algebra().overlapsErased(domain, target)) {
+                checker.warn("Impossible pattern : " + domain + " cannot match is " + target, owner);
                 if (bindCtx != null) {
                     checker.declarationTypes().put(bindCtx, Type.ERROR);
                 }
                 return new PatternTyping(Type.ERROR, remaining);
             }
-            matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
-                    ? checker.algebra().narrowTarget(remaining, target) : target;
+            Type narrowBase = (remaining != Type.NOTHING && checker.algebra().overlapsErased(remaining, target)) ? remaining : domain;
+            matched = !TypeChecker.isUnresolved(narrowBase) && narrowBase != Type.ERROR
+                    ? checker.algebra().narrowTarget(narrowBase, target) : target;
             patternTargetTypes.put(owner, target);
         } else {
-            // Bare `is array(...)`: narrow `remaining` to all Type.Array members.
+            // Bare `is array(...)`: narrow `remaining` (or `domain`) to all Type.Array members.
+            Type active = remaining != Type.NOTHING ? remaining : domain;
             List<Type> arrMembers = new ArrayList<>();
             boolean hasAny = false;
-            for (Type m : Type.membersOf(remaining)) {
+            for (Type m : Type.membersOf(domain)) {
                 Type um = TypeAlgebra.unwrapFrozen(m);
                 if (um instanceof Type.Array) {
                     arrMembers.add(m);
@@ -958,15 +1021,22 @@ final class MatchTyper {
                     hasAny = true;
                 }
             }
-            if (arrMembers.isEmpty() && !hasAny && !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR) {
-                checker.warn("Impossible pattern : " + remaining + " cannot match is array", owner);
+            if (arrMembers.isEmpty() && !hasAny && !TypeChecker.isUnresolved(domain) && domain != Type.ERROR) {
+                checker.warn("Impossible pattern : " + domain + " cannot match is array", owner);
                 if (bindCtx != null) {
                     checker.declarationTypes().put(bindCtx, Type.ERROR);
                 }
                 return new PatternTyping(Type.ERROR, remaining);
             }
-            matched = !arrMembers.isEmpty() ? Type.union(arrMembers) : new Type.Array(Type.NULLABLE_ANY);
-            target = arrMembers.size() == 1 ? TypeAlgebra.unwrapFrozen(arrMembers.get(0)) : null;
+            List<Type> remArrMembers = new ArrayList<>();
+            for (Type m : Type.membersOf(active)) {
+                if (TypeAlgebra.unwrapFrozen(m) instanceof Type.Array) {
+                    remArrMembers.add(m);
+                }
+            }
+            List<Type> chosen = !remArrMembers.isEmpty() ? remArrMembers : arrMembers;
+            matched = !chosen.isEmpty() ? Type.union(chosen) : new Type.Array(Type.NULLABLE_ANY);
+            target = chosen.size() == 1 ? TypeAlgebra.unwrapFrozen(chosen.get(0)) : null;
             if (target != null) {
                 patternTargetTypes.put(owner, target);
             }
@@ -1005,7 +1075,9 @@ final class MatchTyper {
                 hadError = true;
                 continue;
             }
-            typePattern(arg.pattern(), elemType);
+            if (typePattern(arg.pattern(), elemType, elemType).matchedType() == Type.ERROR) {
+                hadError = true;
+            }
         }
         boolean hasRest = args.restPattern() != null;
         if (hasRest && args.restPattern().name != null) {
@@ -1228,5 +1300,170 @@ final class MatchTyper {
             }
         }
         return null;
+    }
+
+    // ---------------------------------------------------------------- exhaustiveness pattern translation (BIP038-P4)
+
+    private List<Type> recordFieldTypesForExhaustiveness(Type recordType) {
+        boolean isFrozen = recordType instanceof Type.Frozen;
+        Type base = TypeAlgebra.unwrapFrozen(recordType);
+        if (base instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+            TypeNode node = inst.node();
+            Map<Type.TypeVar, Type> subst = inferBabbleRecordSubst(node, inst, recordType);
+            List<Type> out = new ArrayList<>(node.parameters.size());
+            for (String p : node.parameters) {
+                TypeNode.Member m = node.members.get(p);
+                Type raw = m != null ? checker.memberType(node, m) : Type.NULLABLE_ANY;
+                if (raw == Type.ERROR) {
+                    raw = Type.NULLABLE_ANY;
+                }
+                Type ft = subst.isEmpty() ? raw : checker.algebra().substitute(raw, subst);
+                out.add(isFrozen ? Type.frozen(ft) : ft);
+            }
+            return out;
+        }
+        if (base instanceof Type.JavaInstance ji && ji.type().isRecord()) {
+            Map<TypeVariable<?>, Type> jenv = inferJavaRecordEnv(ji.type(), ji, recordType);
+            RecordComponent[] comps = ji.type().getRecordComponents();
+            List<Type> out = new ArrayList<>(comps.length);
+            for (RecordComponent rc : comps) {
+                Type ft = JavaTypeBridge.fromJavaType(rc.getGenericType(), rc.getAnnotatedType(), jenv,
+                        true, false, JavaNullability.Nullness.UNSPECIFIED, false);
+                out.add(isFrozen ? Type.frozen(ft) : ft);
+            }
+            return out;
+        }
+        return List.of();
+    }
+
+    private MatchExhaustiveness.Pat toExhaustivenessPat(BabbleParser.PatternContext pat) {
+        List<BabbleParser.AtomicPatternContext> atoms = pat.atomicPattern();
+        if (atoms.size() == 1) {
+            return toExhaustivenessAtom(atoms.get(0));
+        }
+        List<MatchExhaustiveness.Pat> alts = new ArrayList<>(atoms.size());
+        for (BabbleParser.AtomicPatternContext a : atoms) {
+            alts.add(toExhaustivenessAtom(a));
+        }
+        return new MatchExhaustiveness.Pat.Or(List.copyOf(alts));
+    }
+
+    private MatchExhaustiveness.Pat toExhaustivenessAtom(BabbleParser.AtomicPatternContext atom) {
+        return switch (atom) {
+            case BabbleParser.ValuePatternContext vp -> {
+                if (BlockScopes.isWildcardExpr(vp.expr)) {
+                    yield MatchExhaustiveness.Pat.Wildcard.INSTANCE;
+                }
+                LoweringMetadata.RangePatternSource rps = rangePatterns.get(vp);
+                if (rps != null) {
+                    yield toExhaustivenessRange(rps);
+                }
+                LoweringTargets.PatternConst c = patternConsts.get(vp);
+                if (c != null) {
+                    if (c.isNull()) {
+                        yield MatchExhaustiveness.Pat.NullConst.INSTANCE;
+                    }
+                    if (c.isEnum()) {
+                        yield new MatchExhaustiveness.Pat.EnumConst(c.enumClass(), c.enumConstantName());
+                    }
+                    if (c.value() instanceof Boolean b) {
+                        yield b ? MatchExhaustiveness.Pat.BoolConst.TRUE : MatchExhaustiveness.Pat.BoolConst.FALSE;
+                    }
+                    yield new MatchExhaustiveness.Pat.ScalarConst(c.value(), c.kind());
+                }
+                yield MatchExhaustiveness.Pat.Opaque.INSTANCE;
+            }
+            case BabbleParser.RelationalPatternContext ignored -> MatchExhaustiveness.Pat.Opaque.INSTANCE;
+            case BabbleParser.MembershipPatternContext ignored -> MatchExhaustiveness.Pat.Opaque.INSTANCE;
+            case BabbleParser.TypeOrDestructurePatternContext tp ->
+                    toExhaustivenessTypedOrDestructure(tp, tp.patternArgs());
+            case BabbleParser.BindingPatternContext bp -> {
+                if (bp.patternBindingType() == null) {
+                    yield MatchExhaustiveness.Pat.Wildcard.INSTANCE;
+                }
+                yield toExhaustivenessTypedOrDestructure(bp, bp.patternArgs());
+            }
+            default -> MatchExhaustiveness.Pat.Opaque.INSTANCE;
+        };
+    }
+
+    private MatchExhaustiveness.Pat toExhaustivenessTypedOrDestructure(ParserRuleContext owner,
+                                                                       BabbleParser.PatternArgsContext args) {
+        RecordDestructureInfo rec = recordDestructures.get(owner);
+        if (rec != null && args != null) {
+            int arity = rec.isJavaRecord()
+                    ? rec.javaRecordClass().getRecordComponents().length
+                    : rec.babbleNode().parameters.size();
+            MatchExhaustiveness.Pat[] canonical = new MatchExhaustiveness.Pat[arity];
+            java.util.Arrays.fill(canonical, MatchExhaustiveness.Pat.Wildcard.INSTANCE);
+            List<BabbleParser.PatternArgContext> argList = args.patternArg();
+            if (argList.size() == rec.fieldNames().size()) {
+                for (int i = 0; i < argList.size(); i++) {
+                    String fn = rec.fieldNames().get(i);
+                    int canonicalIdx = -1;
+                    if (rec.isJavaRecord()) {
+                        RecordComponent[] comps = rec.javaRecordClass().getRecordComponents();
+                        for (int k = 0; k < comps.length; k++) {
+                            if (comps[k].getName().equals(fn)) {
+                                canonicalIdx = k;
+                                break;
+                            }
+                        }
+                    } else {
+                        canonicalIdx = rec.babbleNode().parameters.indexOf(fn);
+                    }
+                    if (canonicalIdx >= 0 && canonicalIdx < arity) {
+                        canonical[canonicalIdx] = toExhaustivenessPat(argList.get(i).pattern());
+                    }
+                }
+            }
+            return new MatchExhaustiveness.Pat.RecordPat(
+                    rec.targetType(), rec.isJavaRecord(), rec.babbleNode(), rec.javaRecordClass(), List.of(canonical));
+        }
+        SequenceDestructureInfo seq = sequenceDestructures.get(owner);
+        if (seq != null && args != null) {
+            List<MatchExhaustiveness.Pat> elems = new ArrayList<>(args.patternArg().size());
+            for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+                elems.add(toExhaustivenessPat(arg.pattern()));
+            }
+            return new MatchExhaustiveness.Pat.SeqPat(seq.isArray(), seq.targetType(), List.copyOf(elems), seq.hasRest());
+        }
+        Type target = patternTargetTypes.get(owner);
+        return target != null ? new MatchExhaustiveness.Pat.TypePat(target) : MatchExhaustiveness.Pat.Opaque.INSTANCE;
+    }
+
+    private MatchExhaustiveness.Pat toExhaustivenessRange(LoweringMetadata.RangePatternSource rps) {
+        if (rps.stringElement()) {
+            return MatchExhaustiveness.Pat.Opaque.INSTANCE;
+        }
+        Type loType = checker.types().get(rps.lo());
+        Type hiType = checker.types().get(rps.hi());
+        LoweringTargets.PatternConst loC = loType != null ? resolvePatternConst(rps.lo(), loType) : null;
+        LoweringTargets.PatternConst hiC = hiType != null ? resolvePatternConst(rps.hi(), hiType) : null;
+        if (loC == null || hiC == null || loC.value() == null || hiC.value() == null) {
+            return MatchExhaustiveness.Pat.Opaque.INSTANCE;
+        }
+        long step = 1L;
+        if (rps.step() != null) {
+            Type st = checker.types().get(rps.step());
+            LoweringTargets.PatternConst stC = st != null ? resolvePatternConst(rps.step(), st) : null;
+            if (stC == null || !(stC.value() instanceof Number sn)) {
+                return MatchExhaustiveness.Pat.Opaque.INSTANCE;
+            }
+            step = sn.longValue();
+        }
+        if (loC.value() instanceof Character lc && hiC.value() instanceof Character hc) {
+            return new MatchExhaustiveness.Pat.ConstRange(lc, hc, rps.inclusive(), step, true, false, 0, 0);
+        }
+        if (loC.value() instanceof Number ln && hiC.value() instanceof Number hn) {
+            if (rps.elemKind() == PrimitiveKind.FLOAT || rps.elemKind() == PrimitiveKind.DOUBLE
+                    || ln instanceof Float || ln instanceof Double || hn instanceof Float || hn instanceof Double) {
+                return new MatchExhaustiveness.Pat.ConstRange(0, 0, rps.inclusive(), 1L, false, true,
+                        ln.doubleValue(), hn.doubleValue());
+            }
+            return new MatchExhaustiveness.Pat.ConstRange(ln.longValue(), hn.longValue(), rps.inclusive(), step,
+                    false, false, 0, 0);
+        }
+        return MatchExhaustiveness.Pat.Opaque.INSTANCE;
     }
 }

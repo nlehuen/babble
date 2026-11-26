@@ -1785,6 +1785,50 @@ public class TypeCheckerTestCase {
                 "1:44 Division by zero : always throws java.lang.ArithmeticException");
     }
 
+    @Test
+    public void testBip038ExhaustivenessAndRedundantElseWarning() {
+        // Redundant else on exhaustive bool, union, and Java enum emits a non-fatal warning
+        assertWarnings("""
+                def f = fn (b: bool): int -> (
+                    match b
+                    case true then (1)
+                    case false then (0)
+                    else (-1)
+                )
+                """,
+                "5:5 Redundant else : match is already exhaustive");
+        assertDiagnostics("""
+                def f = fn (b: bool): int -> (
+                    match b
+                    case true then (1)
+                    case false then (0)
+                    else (-1)
+                )
+                """);
+
+        // Guarded arm does NOT trigger redundant else
+        assertWarnings("""
+                def f = fn (b: bool): int -> (
+                    match b
+                    case true if b then (1)
+                    case false then (0)
+                    else (-1)
+                )
+                """);
+
+        // Nested record + union missing witness & unreachable case diagnostics
+        assertDiagnostics("""
+                def A = record (x: bool) ()
+                def B = record (y: int) ()
+                def f = fn (v: A | B): int -> (
+                    match v
+                    case is A(true) then (1)
+                    case is B(_) then (2)
+                )
+                """,
+                "4:5 Non-exhaustive match : missing A(false)");
+    }
+
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);

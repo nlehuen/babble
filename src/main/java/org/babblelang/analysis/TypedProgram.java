@@ -117,6 +117,22 @@ final class TypedProgram {
         return checker.forIterableInfo(ctx);
     }
 
+    MatchTyper.RecordDestructureInfo matchRecordDestructure(ParserRuleContext owner) {
+        return checker.matchTyper().recordDestructures().get(owner);
+    }
+
+    MatchTyper.SequenceDestructureInfo matchSequenceDestructure(ParserRuleContext owner) {
+        return checker.matchTyper().sequenceDestructures().get(owner);
+    }
+
+    LoweringMetadata.RangePatternSource matchRangePattern(BabbleParser.ValuePatternContext vp) {
+        return checker.matchTyper().rangePatterns().get(vp);
+    }
+
+    LoweringTargets.MembershipTarget matchMembershipTarget(BabbleParser.MembershipPatternContext mp) {
+        return checker.matchTyper().membershipTargets().get(mp);
+    }
+
     boolean isModuleExportImmutable(ModuleInterface mod, String name, Type resType) {
         return checker.effectChecker != null && checker.effectChecker.isImmutableConstantValue(resType);
     }

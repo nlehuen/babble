@@ -884,6 +884,171 @@ final class EffectAstExtractors {
             return true;
         }
 
+        private boolean walkMatch(BabbleParser.MatchExpressionContext m, ScpPathEnv env) {
+            if (!walkExpr(m.scrutinee, env)) {
+                return false;
+            }
+            ParamDesc scrutDesc = describeArg(m.scrutinee, env);
+            ScpPathEnv fallthroughEnv = env;
+            for (BabbleParser.CaseClauseContext cc : m.caseClause()) {
+                if (!walkPatternExprs(cc.pattern(), fallthroughEnv)) {
+                    return false;
+                }
+                ScpPathEnv armEnv = fallthroughEnv.copy();
+                armEnv = bindPatternScp(cc.pattern(), scrutDesc, armEnv);
+                if (cc.guard != null) {
+                    if (!walkExpr(cc.guard, armEnv)) {
+                        return false;
+                    }
+                    armEnv = assume(cc.guard, true, armEnv);
+                }
+                if (!walkBlock(cc.armBlock, armEnv)) {
+                    return false;
+                }
+                if (cc.guard == null && scrutDesc != null && scrutDesc.isInt()
+                        && scrutDesc.rel() == SizeChangeTermination.Relation.SAME) {
+                    fallthroughEnv = refineFallthroughFromPattern(cc.pattern(), scrutDesc.paramIdx(), fallthroughEnv);
+                }
+            }
+            if (m.elseClause() != null) {
+                ScpPathEnv elseEnv = fallthroughEnv.copy();
+                if (m.elseClause().name != null && scrutDesc != null) {
+                    elseEnv.locals().put(m.elseClause(), scrutDesc);
+                }
+                if (!walkBlock(m.elseClause().elseBlock, elseEnv)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private boolean walkPatternExprs(BabbleParser.PatternContext pat, ScpPathEnv env) {
+            for (BabbleParser.AtomicPatternContext atom : pat.atomicPattern()) {
+                switch (atom) {
+                    case BabbleParser.ValuePatternContext vp -> {
+                        if (!BlockScopes.isWildcardExpr(vp.expr) && !walkExpr(vp.expr, env)) {
+                            return false;
+                        }
+                    }
+                    case BabbleParser.RelationalPatternContext rp -> {
+                        if (!walkExpr(rp.rhs, env)) {
+                            return false;
+                        }
+                    }
+                    case BabbleParser.MembershipPatternContext mp -> {
+                        if (!walkExpr(mp.container, env)) {
+                            return false;
+                        }
+                    }
+                    case BabbleParser.TypeOrDestructurePatternContext tp -> {
+                        if (tp.patternArgs() != null) {
+                            for (BabbleParser.PatternArgContext arg : tp.patternArgs().patternArg()) {
+                                if (!walkPatternExprs(arg.pattern(), env)) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    case BabbleParser.BindingPatternContext bp -> {
+                        if (bp.patternArgs() != null) {
+                            for (BabbleParser.PatternArgContext arg : bp.patternArgs().patternArg()) {
+                                if (!walkPatternExprs(arg.pattern(), env)) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    default -> {
+                    }
+                }
+            }
+            return true;
+        }
+
+        private ScpPathEnv bindPatternScp(BabbleParser.PatternContext pat, ParamDesc targetDesc, ScpPathEnv env) {
+            if (pat.atomicPattern().size() != 1) {
+                return env;
+            }
+            BabbleParser.AtomicPatternContext atom = pat.atomicPattern(0);
+            if (atom instanceof BabbleParser.BindingPatternContext bp) {
+                if (targetDesc != null) {
+                    env.locals().put(bp, targetDesc);
+                }
+                if (bp.patternArgs() != null) {
+                    env = bindPatternArgsScp(bp, bp.patternArgs(), targetDesc, env);
+                }
+                return env;
+            }
+            if (atom instanceof BabbleParser.TypeOrDestructurePatternContext tp) {
+                if (tp.patternArgs() != null) {
+                    env = bindPatternArgsScp(tp, tp.patternArgs(), targetDesc, env);
+                }
+                return env;
+            }
+            if (atom instanceof BabbleParser.RelationalPatternContext rp
+                    && targetDesc != null && targetDesc.isInt()
+                    && targetDesc.rel() == SizeChangeTermination.Relation.SAME) {
+                Long c = evalIntConst(rp.rhs);
+                if (c != null) {
+                    return refineBound(env, targetDesc.paramIdx(), rp.op.getText(), c);
+                }
+            }
+            if (atom instanceof BabbleParser.ValuePatternContext vp
+                    && targetDesc != null && targetDesc.isInt()
+                    && targetDesc.rel() == SizeChangeTermination.Relation.SAME) {
+                LoweringMetadata.RangePatternSource rps = ec.checker.matchRangePattern(vp);
+                if (rps != null) {
+                    Long lo = evalIntConst(rps.lo());
+                    if (lo != null) {
+                        return refineBound(env, targetDesc.paramIdx(), ">=", lo);
+                    }
+                } else {
+                    Long c = evalIntConst(vp.expr);
+                    if (c != null) {
+                        return refineBound(env, targetDesc.paramIdx(), "==", c);
+                    }
+                }
+            }
+            return env;
+        }
+
+        private ScpPathEnv bindPatternArgsScp(ParserRuleContext owner, BabbleParser.PatternArgsContext args,
+                                              ParamDesc parentDesc, ScpPathEnv env) {
+            MatchTyper.RecordDestructureInfo recInfo = ec.checker.matchRecordDestructure(owner);
+            if (recInfo == null || recInfo.isJavaRecord() || parentDesc == null || !parentDesc.isRecord()) {
+                return env;
+            }
+            List<BabbleParser.PatternArgContext> argList = args.patternArg();
+            for (int i = 0; i < argList.size() && i < recInfo.fieldTypes().size(); i++) {
+                Type ft = recInfo.fieldTypes().get(i);
+                ParamDesc fieldDesc = new ParamDesc(parentDesc.paramIdx(), SizeChangeTermination.Relation.DOWN,
+                        isIntegerType(ft), isRecordType(ft));
+                env = bindPatternScp(argList.get(i).pattern(), fieldDesc, env);
+            }
+            return env;
+        }
+
+        private ScpPathEnv refineFallthroughFromPattern(BabbleParser.PatternContext pat, int paramIdx, ScpPathEnv env) {
+            if (pat.atomicPattern().size() != 1) {
+                return env;
+            }
+            BabbleParser.AtomicPatternContext atom = pat.atomicPattern(0);
+            if (atom instanceof BabbleParser.RelationalPatternContext rp) {
+                Long c = evalIntConst(rp.rhs);
+                String neg = negateComparisonOp(rp.op.getText());
+                if (c != null && neg != null) {
+                    return refineBound(env, paramIdx, neg, c);
+                }
+            } else if (atom instanceof BabbleParser.ValuePatternContext vp
+                    && ec.checker.matchRangePattern(vp) == null) {
+                Long c = evalIntConst(vp.expr);
+                if (c != null) {
+                    return refineBound(env, paramIdx, "!=", c);
+                }
+            }
+            return env;
+        }
+
         private boolean walkExpr(ParserRuleContext raw, ScpPathEnv env) {
             if (raw == null) {
                 return true;
@@ -911,6 +1076,9 @@ final class EffectAstExtractors {
             }
             if (ctx instanceof BabbleParser.IfExpressionContext ie) {
                 return walkIf(ie.ifExpr(), env);
+            }
+            if (ctx instanceof BabbleParser.MatchExpressionContext m) {
+                return walkMatch(m, env);
             }
             if (ctx instanceof BabbleParser.BooleanOpContext bo) {
                 if (!walkExpr(bo.left, env)) {
@@ -1298,11 +1466,23 @@ final class EffectAstExtractors {
     }
 
     private static boolean isRecordType(Type t) {
-        if (t == null) {
+        if (t == null || t == Type.ERROR || t == Type.NOTHING) {
             return false;
         }
         Type unwrapped = TypeAlgebra.unwrapFrozen(Type.withoutNull(t));
-        return unwrapped instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS;
+        if (unwrapped == Type.NOTHING) {
+            return false;
+        }
+        boolean hasRecord = false;
+        for (Type m : Type.membersOf(unwrapped)) {
+            Type um = TypeAlgebra.unwrapFrozen(m);
+            if (um instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+                hasRecord = true;
+            } else if (!Type.isCoreScalar(um) && um != Type.STRING) {
+                return false;
+            }
+        }
+        return hasRecord;
     }
 
     private static boolean isRecordFieldAccess(Type recvType, String fieldName) {
@@ -1329,6 +1509,18 @@ final class EffectAstExtractors {
             if (u instanceof BabbleParser.IfExpressionContext ie) {
                 BabbleParser.IfExprContext ifCtx = ie.ifExpr();
                 if (ifCtx.elseBlock != null && alwaysExitsBlock(ifCtx.thenBlock) && alwaysExitsBlock(ifCtx.elseBlock)) {
+                    return true;
+                }
+            }
+            if (u instanceof BabbleParser.MatchExpressionContext m && m.elseClause() != null) {
+                boolean allExit = alwaysExitsBlock(m.elseClause().elseBlock);
+                for (BabbleParser.CaseClauseContext cc : m.caseClause()) {
+                    if (!alwaysExitsBlock(cc.armBlock)) {
+                        allExit = false;
+                        break;
+                    }
+                }
+                if (allExit) {
                     return true;
                 }
             }

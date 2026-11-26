@@ -51,3 +51,65 @@ def f = fn (r: T): string -> (
 )
 assert(f(RT(PK.INT, false)) == "i" and f(RT(PK.NONE, true)) == "s")
 ```
+
+## Exhaustive Java enum without else
+
+```babble
+def AM = java.nio.file.AccessMode
+def code = fn (m: java.nio.file.AccessMode): int -> (
+    match m
+    case AM.READ then (1)
+    case AM.WRITE then (2)
+    case AM.EXECUTE then (4)
+)
+assert(code(AM.READ) == 1 and code(AM.WRITE) == 2 and code(AM.EXECUTE) == 4)
+```
+
+## Error : non-exhaustive Java enum names missing constant
+
+```babble
+def AM = java.nio.file.AccessMode
+def code = fn (m: java.nio.file.AccessMode): int -> (
+    match m
+    case AM.READ then (1)
+    case AM.WRITE then (2)
+)
+```
+
+```error
+# error regex
+.*Non-exhaustive match : missing AccessMode\.EXECUTE.*
+```
+
+## Exhaustive Java sealed hierarchy with Java records
+
+```babble
+def pkg = import("org.babblelang.tests")
+def E = type pkg.EffectsTestCase.SealedExpr
+def N = type pkg.EffectsTestCase.SealedNum
+def A = type pkg.EffectsTestCase.SealedAdd
+def eval = fn (e: E): int -> (
+    match e
+    case is N(def v) then (v)
+    case is A(def l, def r) then (l + r)
+)
+assert(eval(pkg.EffectsTestCase.SealedNum(7)) == 7)
+assert(eval(pkg.EffectsTestCase.SealedAdd(3, 9)) == 12)
+```
+
+## Error : non-exhaustive Java sealed hierarchy names missing subtype
+
+```babble
+def pkg = import("org.babblelang.tests")
+def E = type pkg.EffectsTestCase.SealedExpr
+def N = type pkg.EffectsTestCase.SealedNum
+def eval = fn (e: E): int -> (
+    match e
+    case is N(def v) then (v)
+)
+```
+
+```error
+# error regex
+.*Non-exhaustive match : missing SealedAdd.*
+```
