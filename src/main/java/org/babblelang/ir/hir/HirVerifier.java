@@ -365,6 +365,16 @@ public final class HirVerifier {
                 }
             }
             case HirPattern.Membership m -> verifyExpr(module, m.container(), inFunction, loopDepth);
+            case HirPattern.RecordDestructure rd -> {
+                for (HirPattern fp : rd.fieldPatterns()) {
+                    verifyPattern(module, fp, inFunction, loopDepth);
+                }
+            }
+            case HirPattern.SequenceDestructure sd -> {
+                for (HirPattern ep : sd.elemPatterns()) {
+                    verifyPattern(module, ep, inFunction, loopDepth);
+                }
+            }
         }
     }
 

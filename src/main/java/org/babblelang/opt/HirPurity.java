@@ -550,6 +550,25 @@ public final class HirPurity {
                     && isPureNothrowTerminating(r.lo(), module, visitingFns)
                     && isPureNothrowTerminating(r.hi(), module, visitingFns);
             case HirPattern.Membership m -> false;
+            case HirPattern.RecordDestructure rd -> {
+                if (rd.isJavaRecord()) {
+                    yield false;
+                }
+                for (HirPattern fp : rd.fieldPatterns()) {
+                    if (!isPatternPureNothrowTerminating(fp, module, visitingFns)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            case HirPattern.SequenceDestructure sd -> {
+                for (HirPattern ep : sd.elemPatterns()) {
+                    if (!isPatternPureNothrowTerminating(ep, module, visitingFns)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
         };
     }
 

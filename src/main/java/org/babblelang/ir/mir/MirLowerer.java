@@ -1676,6 +1676,14 @@ public final class MirLowerer {
         private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_LONG;
         private static final LoweringTargets.JavaCallTarget MATH_FLOOR_MOD_INT;
         private static final LoweringTargets.JavaCallTarget MATH_FLOOR_MOD_LONG;
+        private static final LoweringTargets.JavaCallTarget MEMBERS_SELECT;
+        private static final LoweringTargets.JavaCallTarget LIST_SIZE;
+        private static final LoweringTargets.JavaCallTarget LIST_GET;
+        private static final LoweringTargets.JavaCallTarget LIST_SLICE;
+        private static final LoweringTargets.JavaCallTarget ARR_IS_ARRAY;
+        private static final LoweringTargets.JavaCallTarget ARR_SIZE;
+        private static final LoweringTargets.JavaCallTarget ARR_GET;
+        private static final LoweringTargets.JavaCallTarget ARR_SLICE;
 
         static {
             try {
@@ -1701,6 +1709,22 @@ public final class MirLowerer {
                         Math.class.getMethod("floorMod", int.class, int.class), true, false, false);
                 MATH_FLOOR_MOD_LONG = new LoweringTargets.JavaCallTarget(
                         Math.class.getMethod("floorMod", long.class, long.class), true, false, false);
+                MEMBERS_SELECT = new LoweringTargets.JavaCallTarget(
+                        org.babblelang.runtime.Members.class.getMethod("select", Object.class, String.class, String.class), true, false, false);
+                LIST_SIZE = new LoweringTargets.JavaCallTarget(
+                        java.util.List.class.getMethod("size"), false, false, false);
+                LIST_GET = new LoweringTargets.JavaCallTarget(
+                        java.util.List.class.getMethod("get", int.class), false, false, false);
+                LIST_SLICE = new LoweringTargets.JavaCallTarget(
+                        org.babblelang.runtime.CoreCollections.class.getMethod("listSlice", java.util.List.class, int.class), true, false, false);
+                ARR_IS_ARRAY = new LoweringTargets.JavaCallTarget(
+                        org.babblelang.runtime.ArraySupport.class.getMethod("isArray", Object.class), true, false, false);
+                ARR_SIZE = new LoweringTargets.JavaCallTarget(
+                        org.babblelang.runtime.ArraySupport.class.getMethod("size", Object.class), true, false, false);
+                ARR_GET = new LoweringTargets.JavaCallTarget(
+                        org.babblelang.runtime.ArraySupport.class.getMethod("get", Object.class, int.class), true, false, false);
+                ARR_SLICE = new LoweringTargets.JavaCallTarget(
+                        org.babblelang.runtime.ArraySupport.class.getMethod("slice", Object.class, int.class), true, false, false);
             } catch (NoSuchMethodException e) {
                 throw new ExceptionInInitializerError(e);
             }
@@ -1732,6 +1756,20 @@ public final class MirLowerer {
                     scanExpr(r.step(), visibleVars, tryOuterVars);
                 }
                 case HirPattern.Membership m -> scanExpr(m.container(), visibleVars, tryOuterVars);
+                case HirPattern.RecordDestructure rd -> {
+                    for (HirPattern fp : rd.fieldPatterns()) {
+                        scanPattern(fp, visibleVars, tryOuterVars);
+                    }
+                }
+                case HirPattern.SequenceDestructure sd -> {
+                    for (HirPattern ep : sd.elemPatterns()) {
+                        scanPattern(ep, visibleVars, tryOuterVars);
+                    }
+                    if (sd.restVar() != null) {
+                        registerVar(sd.restVar());
+                        if (mustAlwaysPin(sd.restVar())) pin(sd.restVar());
+                    }
+                }
             }
         }
 
@@ -2080,6 +2118,123 @@ public final class MirLowerer {
                             List.of(boxed, container), false, false, ln, MirEffect.IMPURE_THROW));
                     branchOnPatternCond(res, bbFail, ln);
                 }
+                case HirPattern.RecordDestructure rd -> lowerMirRecordDestructure(rd, val, bbFail);
+                case HirPattern.SequenceDestructure sd -> lowerMirSequenceDestructure(sd, val, bbFail);
+            }
+        }
+
+        private void lowerMirRecordDestructure(HirPattern.RecordDestructure rd, MirVal val, BlockBuilder bbFail) {
+            int ln = rd.line();
+            lowerMatchPattern(rd.typeTest(), val, bbFail);
+            if (cur.isTerminated()) return;
+            MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+            if (!rd.isJavaRecord()) {
+                boolean direct = rd.babbleClassId() >= 0 || rd.babbleJvmName() != null;
+                for (int i = 0; i < rd.fieldPatterns().size(); i++) {
+                    String fn = rd.fieldNames().get(i);
+                    PrimitiveKind fk = rd.fieldKinds().get(i);
+                    MirVal fv;
+                    if (direct) {
+                        fv = newVal(fk, fn);
+                        String extJvm = rd.babbleClassId() >= 0 ? null : rd.babbleJvmName();
+                        emit(new MirInst.LoadField(fv, boxed, "match", rd.babbleClassId(), extJvm,
+                                rd.babbleMemberIndices()[i], fn, fk, true, true, ln, MirEffect.READ_FROZEN));
+                    } else {
+                        MirVal fnVal = emitConst(fn, PrimitiveKind.NONE, ln);
+                        fv = newVal(PrimitiveKind.NONE, fn);
+                        emit(new MirInst.CallJava(fv, null, "Members", ln, true, MEMBERS_SELECT,
+                                List.of(boxed, fnVal, fnVal), false, false, ln, MirEffect.READ_SHARED));
+                    }
+                    lowerMatchPattern(rd.fieldPatterns().get(i), fv, bbFail);
+                    if (cur.isTerminated()) return;
+                }
+                return;
+            }
+            for (int i = 0; i < rd.fieldPatterns().size(); i++) {
+                java.lang.reflect.Method acc = rd.javaAccessors().get(i);
+                PrimitiveKind fk = rd.fieldKinds().get(i);
+                LoweringTargets.JavaCallTarget accTarget = new LoweringTargets.JavaCallTarget(acc, false, false, false);
+                MirVal fv = newVal(fk, rd.fieldNames().get(i));
+                emit(new MirInst.CallJava(fv, boxed, rd.javaRecordClass().getSimpleName(), ln, false,
+                        accTarget, List.of(), false, false, ln, MirEffect.IMPURE_THROW));
+                lowerMatchPattern(rd.fieldPatterns().get(i), fv, bbFail);
+                if (cur.isTerminated()) return;
+            }
+        }
+
+        private void lowerMirSequenceDestructure(HirPattern.SequenceDestructure sd, MirVal val, BlockBuilder bbFail) {
+            int ln = sd.line();
+            if (sd.typeTest() != null) {
+                lowerMatchPattern(sd.typeTest(), val, bbFail);
+                if (cur.isTerminated()) return;
+            } else if (sd.isArray()) {
+                MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+                MirVal isArr = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.CallJava(isArr, null, "ArraySupport", ln, true, ARR_IS_ARRAY,
+                        List.of(boxed), false, true, ln, MirEffect.PURE_NOTHROW));
+                branchOnPatternCond(isArr, bbFail, ln);
+            }
+            MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
+            int fixed = sd.elemPatterns().size();
+            MirVal fixedConst = emitConst(fixed, PrimitiveKind.INT, ln);
+            if (!sd.isArray()) {
+                MirVal len = newVal(PrimitiveKind.INT, "$len");
+                emit(new MirInst.CallJava(len, boxed, "list", ln, false, LIST_SIZE,
+                        List.of(), false, false, ln, MirEffect.READ_SHARED));
+                MirVal lenOk = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(lenOk, sd.hasRest() ? HirExpr.BinaryOp.GTE : HirExpr.BinaryOp.EQ,
+                        len, fixedConst, "len", "fixed", false, ln, MirEffect.PURE_NOTHROW));
+                branchOnPatternCond(lenOk, bbFail, ln);
+
+                for (int i = 0; i < fixed; i++) {
+                    MirVal idx = emitConst(i, PrimitiveKind.INT, ln);
+                    MirVal elem = newVal(PrimitiveKind.NONE, null);
+                    emit(new MirInst.CallJava(elem, boxed, "list", ln, false, LIST_GET,
+                            List.of(idx), false, false, ln, MirEffect.READ_SHARED));
+                    lowerMatchPattern(sd.elemPatterns().get(i), elem, bbFail);
+                    if (cur.isTerminated()) return;
+                }
+                if (sd.restVar() != null) {
+                    MirVal tail = newVal(PrimitiveKind.NONE, sd.restVar().name());
+                    emit(new MirInst.CallJava(tail, null, "CoreCollections", ln, true, LIST_SLICE,
+                            List.of(boxed, fixedConst), false, false, ln, MirEffect.READ_SHARED));
+                    writeVar(sd.restVar(), tail, ln);
+                }
+                return;
+            }
+            Class<?> arrCls = sd.arrayClass();
+            PrimitiveKind ek = sd.elemKind();
+            MirVal len = newVal(PrimitiveKind.INT, "$len");
+            if (arrCls != null) {
+                emit(new MirInst.ArrayLen(len, boxed, "array", ek, arrCls, arrCls.getComponentType(), ln, MirEffect.PURE_NOTHROW));
+            } else {
+                emit(new MirInst.CallJava(len, null, "ArraySupport", ln, true, ARR_SIZE,
+                        List.of(boxed), false, false, ln, MirEffect.PURE_NOTHROW));
+            }
+            MirVal lenOk = newVal(PrimitiveKind.BOOL, null);
+            emit(new MirInst.Binary(lenOk, sd.hasRest() ? HirExpr.BinaryOp.GTE : HirExpr.BinaryOp.EQ,
+                    len, fixedConst, "len", "fixed", false, ln, MirEffect.PURE_NOTHROW));
+            branchOnPatternCond(lenOk, bbFail, ln);
+
+            for (int i = 0; i < fixed; i++) {
+                MirVal idx = emitConst(i, PrimitiveKind.INT, ln);
+                MirVal elem;
+                if (arrCls != null) {
+                    elem = newVal(ek, null);
+                    emit(new MirInst.ArrayGet(elem, boxed, idx, "array", ek, arrCls, arrCls.getComponentType(), ln, MirEffect.READ_SHARED));
+                } else {
+                    elem = newVal(PrimitiveKind.NONE, null);
+                    emit(new MirInst.CallJava(elem, null, "ArraySupport", ln, true, ARR_GET,
+                            List.of(boxed, idx), false, false, ln, MirEffect.READ_SHARED));
+                }
+                lowerMatchPattern(sd.elemPatterns().get(i), elem, bbFail);
+                if (cur.isTerminated()) return;
+            }
+            if (sd.restVar() != null) {
+                MirVal tail = newVal(PrimitiveKind.NONE, sd.restVar().name());
+                emit(new MirInst.CallJava(tail, null, "ArraySupport", ln, true, ARR_SLICE,
+                        List.of(boxed, fixedConst), false, false, ln, MirEffect.READ_SHARED));
+                writeVar(sd.restVar(), tail, ln);
             }
         }
 

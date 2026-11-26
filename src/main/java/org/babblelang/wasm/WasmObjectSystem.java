@@ -695,6 +695,14 @@ public final class WasmObjectSystem {
             case org.babblelang.ir.hir.HirPattern.RangeTest rt ->
                     exprEscapesThis(rt.lo()) || exprEscapesThis(rt.hi()) || exprEscapesThis(rt.step());
             case org.babblelang.ir.hir.HirPattern.Membership m -> exprEscapesThis(m.container());
+            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
+                for (var fp : rd.fieldPatterns()) if (patternEscapesThis(fp)) yield true;
+                yield false;
+            }
+            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
+                for (var ep : sd.elemPatterns()) if (patternEscapesThis(ep)) yield true;
+                yield false;
+            }
         };
     }
 

@@ -373,7 +373,35 @@ final class HirNameInitAnalysis {
                     HirExpr nc = fn.apply(m.container());
                     yield nc == m.container() ? m : new HirPattern.Membership(nc, m.kind(), m.elemKind(), m.line());
                 }
+                case HirPattern.RecordDestructure rd -> {
+                    List<HirPattern> nfps = rewritePatternList(rd.fieldPatterns(), fn);
+                    yield nfps == rd.fieldPatterns() ? rd
+                            : new HirPattern.RecordDestructure(rd.typeTest(), rd.isJavaRecord(), rd.babbleClassId(),
+                                    rd.babbleTypeId(), rd.babbleJvmName(), rd.javaRecordClass(), rd.fieldNames(),
+                                    rd.babbleMemberIndices(), rd.fieldKinds(), rd.javaAccessors(), nfps, rd.line());
+                }
+                case HirPattern.SequenceDestructure sd -> {
+                    List<HirPattern> neps = rewritePatternList(sd.elemPatterns(), fn);
+                    yield neps == sd.elemPatterns() ? sd
+                            : new HirPattern.SequenceDestructure(sd.typeTest(), sd.isArray(), sd.arrayClass(),
+                                    sd.elemKind(), neps, sd.hasRest(), sd.restVar(), sd.line());
+                }
             };
+        }
+
+        private List<HirPattern> rewritePatternList(List<HirPattern> list, java.util.function.UnaryOperator<HirExpr> fn) {
+            List<HirPattern> out = null;
+            for (int i = 0; i < list.size(); i++) {
+                HirPattern orig = list.get(i);
+                HirPattern next = rewritePattern(orig, fn);
+                if (next != orig) {
+                    if (out == null) {
+                        out = new ArrayList<>(list);
+                    }
+                    out.set(i, next);
+                }
+            }
+            return out != null ? out : list;
         }
 
         private List<HirExpr> rewriteList(List<HirExpr> list, Set<String> guaranteed) {

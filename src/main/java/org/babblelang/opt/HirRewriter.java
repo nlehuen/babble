@@ -393,7 +393,35 @@ public final class HirRewriter {
                 HirExpr nc = transform.apply(m.container());
                 yield nc == m.container() ? m : new HirPattern.Membership(nc, m.kind(), m.elemKind(), m.line());
             }
+            case HirPattern.RecordDestructure rd -> {
+                List<HirPattern> nfps = rewritePatternList(rd.fieldPatterns(), transform);
+                yield nfps == rd.fieldPatterns() ? rd
+                        : new HirPattern.RecordDestructure(rd.typeTest(), rd.isJavaRecord(), rd.babbleClassId(),
+                                rd.babbleTypeId(), rd.babbleJvmName(), rd.javaRecordClass(), rd.fieldNames(),
+                                rd.babbleMemberIndices(), rd.fieldKinds(), rd.javaAccessors(), nfps, rd.line());
+            }
+            case HirPattern.SequenceDestructure sd -> {
+                List<HirPattern> neps = rewritePatternList(sd.elemPatterns(), transform);
+                yield neps == sd.elemPatterns() ? sd
+                        : new HirPattern.SequenceDestructure(sd.typeTest(), sd.isArray(), sd.arrayClass(),
+                                sd.elemKind(), neps, sd.hasRest(), sd.restVar(), sd.line());
+            }
         };
+    }
+
+    private static List<HirPattern> rewritePatternList(List<HirPattern> list, UnaryOperator<HirExpr> transform) {
+        List<HirPattern> copy = null;
+        for (int i = 0; i < list.size(); i++) {
+            HirPattern orig = list.get(i);
+            HirPattern next = rewritePattern(orig, transform);
+            if (next != orig) {
+                if (copy == null) {
+                    copy = new ArrayList<>(list);
+                }
+                copy.set(i, next);
+            }
+        }
+        return copy != null ? copy : list;
     }
 
     public static List<HirExpr> rewriteList(List<HirExpr> list, UnaryOperator<HirExpr> transform) {

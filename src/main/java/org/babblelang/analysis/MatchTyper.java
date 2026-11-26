@@ -4,19 +4,48 @@ import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.parser.StringLiterals;
+import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.Range;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.RecordComponent;
+import java.lang.reflect.TypeVariable;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Type-checking, narrowing, and lowering fact collection for {@code match} expressions
  * ({@code BIP038}). Collaborator of {@link TypeChecker}.
  */
 final class MatchTyper {
+    record RecordDestructureInfo(
+            boolean isJavaRecord,
+            TypeNode babbleNode,
+            Class<?> javaRecordClass,
+            List<String> fieldNames,
+            int[] babbleMemberIndices,
+            List<Type> fieldTypes,
+            List<Method> javaAccessors,
+            Type targetType
+    ) {
+    }
+
+    record SequenceDestructureInfo(
+            boolean isArray,
+            Class<?> arrayClass,
+            Type elemType,
+            int fixedCount,
+            boolean hasRest,
+            Type targetType
+    ) {
+    }
+
     private final TypeChecker checker;
     private final Map<ParserRuleContext, Type> patternTargetTypes = new IdentityHashMap<>();
     private final Map<ParserRuleContext, String> patternBuiltins = new IdentityHashMap<>();
@@ -25,6 +54,8 @@ final class MatchTyper {
     private final Map<BabbleParser.MembershipPatternContext, LoweringTargets.MembershipTarget> membershipTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.RelationalPatternContext, PrimitiveKind> relationalKinds = new IdentityHashMap<>();
     private final Map<BabbleParser.MatchExpressionContext, Boolean> matchExhaustive = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, RecordDestructureInfo> recordDestructures = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, SequenceDestructureInfo> sequenceDestructures = new IdentityHashMap<>();
 
     MatchTyper(TypeChecker checker) {
         this.checker = checker;
@@ -38,12 +69,16 @@ final class MatchTyper {
         membershipTargets.clear();
         relationalKinds.clear();
         matchExhaustive.clear();
+        recordDestructures.clear();
+        sequenceDestructures.clear();
     }
 
     void clearSubtree(ParserRuleContext ctx) {
         patternTargetTypes.remove(ctx);
         patternBuiltins.remove(ctx);
         patternConsts.remove(ctx);
+        recordDestructures.remove(ctx);
+        sequenceDestructures.remove(ctx);
         if (ctx instanceof BabbleParser.ValuePatternContext vp) {
             rangePatterns.remove(vp);
         }
@@ -84,6 +119,14 @@ final class MatchTyper {
 
     Map<BabbleParser.MatchExpressionContext, Boolean> matchExhaustive() {
         return matchExhaustive;
+    }
+
+    Map<ParserRuleContext, RecordDestructureInfo> recordDestructures() {
+        return recordDestructures;
+    }
+
+    Map<ParserRuleContext, SequenceDestructureInfo> sequenceDestructures() {
+        return sequenceDestructures;
     }
 
     private record PatternTyping(Type matchedType, Type subtractedType) {
@@ -456,14 +499,15 @@ final class MatchTyper {
 
     private PatternTyping typeIsPattern(BabbleParser.TypeOrDestructurePatternContext tp, Type remaining) {
         ScopeNode scope = checker.scopeOf(tp);
+        if (tp.patternArgs() != null && isRawArrayPatternType(tp.patternType().nullableType(), scope)) {
+            return typeArrayDestructure(tp, null, tp.patternArgs(), remaining, null);
+        }
         Type target = resolvePatternType(tp.patternType().nullableType(), tp.patternType(), scope, tp.patternArgs() != null, tp);
         if (target == Type.ERROR) {
             return new PatternTyping(Type.ERROR, remaining);
         }
         if (tp.patternArgs() != null) {
-            // Destructuring support lands in P3; report clearly if invoked before P3.
-            checker.warn("Destructuring pattern not yet supported : " + tp.getText(), tp);
-            return new PatternTyping(Type.ERROR, remaining);
+            return typeDestructurePattern(tp, target, tp.patternArgs(), remaining, null);
         }
         if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
                 && !checker.algebra().overlapsErased(remaining, target)) {
@@ -481,19 +525,20 @@ final class MatchTyper {
     private PatternTyping typeBindingPattern(BabbleParser.BindingPatternContext bp, Type remaining) {
         if (bp.patternBindingType() == null) {
             checker.declarationTypes().put(bp, remaining);
-            return new PatternTyping(remaining, remaining);
+            return new PatternTyping(remaining, Type.NOTHING);
         }
         ScopeNode scope = checker.scopeOf(bp);
         BabbleParser.TypeContext typeCtx = bp.patternBindingType().type();
+        if (bp.patternArgs() != null && isRawArrayPatternType(typeCtx.nullableType(), scope)) {
+            return typeArrayDestructure(bp, null, bp.patternArgs(), remaining, bp);
+        }
         Type target = resolveBindingType(typeCtx, scope, bp.patternArgs() != null, bp);
         if (target == Type.ERROR) {
             checker.declarationTypes().put(bp, Type.ERROR);
             return new PatternTyping(Type.ERROR, remaining);
         }
         if (bp.patternArgs() != null) {
-            checker.warn("Destructuring pattern not yet supported : " + bp.getText(), bp);
-            checker.declarationTypes().put(bp, Type.ERROR);
-            return new PatternTyping(Type.ERROR, remaining);
+            return typeDestructurePattern(bp, target, bp.patternArgs(), remaining, bp);
         }
         if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
                 && !checker.algebra().overlapsErased(remaining, target)) {
@@ -507,6 +552,485 @@ final class MatchTyper {
                 ? checker.algebra().subtractType(remaining, target) : remaining;
         checker.declarationTypes().put(bp, matched);
         patternTargetTypes.put(bp, target);
+        return new PatternTyping(matched, subtracted);
+    }
+
+    // ---------------------------------------------------------------- record & sequence destructuring (BIP038-P3)
+
+    private static boolean isRawArrayPatternType(List<BabbleParser.NullableTypeContext> parts, ScopeNode scope) {
+        if (parts.size() != 1) {
+            return false;
+        }
+        if (!(parts.get(0) instanceof BabbleParser.NonParenTypeContext nonParen)
+                || !(nonParen.nonParenNullableType() instanceof BabbleParser.SimpleTypeContext simple)) {
+            return false;
+        }
+        if (simple.OF() != null || simple.frozen != null || simple.nullMod != null) {
+            return false;
+        }
+        List<String> path = ScopeAnalysis.simpleTypePath(simple);
+        return path.size() == 1 && "array".equals(path.get(0)) && TypeChecker.resolveName(null, "array", scope) == null;
+    }
+
+    private PatternTyping typeDestructurePattern(ParserRuleContext owner, Type target,
+                                                 BabbleParser.PatternArgsContext args, Type remaining,
+                                                 BabbleParser.BindingPatternContext bindCtx) {
+        Type baseTarget = TypeAlgebra.unwrapFrozen(target);
+        if (baseTarget instanceof Type.Array arr) {
+            return typeArrayDestructure(owner, arr, args, remaining, bindCtx);
+        }
+        if (baseTarget instanceof Type.JavaInstance ji && ji.type() == java.util.List.class) {
+            return typeListDestructure(owner, target, args, remaining, bindCtx);
+        }
+        if (baseTarget instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+            return typeBabbleRecordDestructure(owner, target, inst, args, remaining, bindCtx);
+        }
+        if (baseTarget instanceof Type.JavaInstance ji && ji.type().isRecord()) {
+            return typeJavaRecordDestructure(owner, target, ji, args, remaining, bindCtx);
+        }
+        checker.warn("Not a record type : " + baseTarget, owner);
+        if (bindCtx != null) {
+            checker.declarationTypes().put(bindCtx, Type.ERROR);
+        }
+        return new PatternTyping(Type.ERROR, remaining);
+    }
+
+    private PatternTyping typeBabbleRecordDestructure(ParserRuleContext owner, Type target, Type.Instance inst,
+                                                      BabbleParser.PatternArgsContext args, Type remaining,
+                                                      BabbleParser.BindingPatternContext bindCtx) {
+        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                && !checker.algebra().overlapsErased(remaining, target)) {
+            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+            if (bindCtx != null) {
+                checker.declarationTypes().put(bindCtx, Type.ERROR);
+            }
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                ? checker.algebra().narrowTarget(remaining, target) : target;
+        if (bindCtx != null) {
+            checker.declarationTypes().put(bindCtx, matched);
+        }
+        patternTargetTypes.put(owner, target);
+
+        TypeNode node = inst.node();
+        boolean isFrozen = matched instanceof Type.Frozen;
+        Map<Type.TypeVar, Type> genericSubst = inferBabbleRecordSubst(node, inst, matched);
+
+        if (args.restPattern() != null && args.restPattern().name != null) {
+            checker.warn("Rest binding is not allowed in record pattern : use ... without def", args.restPattern());
+            checker.declarationTypes().put(args.restPattern(), Type.ERROR);
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+
+        List<String> params = node.parameters;
+        Set<String> seenFields = new LinkedHashSet<>();
+        List<String> fieldNames = new ArrayList<>();
+        List<Integer> memberIndices = new ArrayList<>();
+        List<Type> fieldTypes = new ArrayList<>();
+        boolean sawNamed = false;
+        int posIdx = 0;
+        boolean allIrrefutable = true;
+        boolean hadError = false;
+
+        for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+            String fieldName;
+            int memberIdx;
+            if (arg.memberName() != null) {
+                sawNamed = true;
+                fieldName = arg.memberName().getText();
+                int paramPos = params.indexOf(fieldName);
+                if (paramPos < 0) {
+                    checker.warn("Unknown record field : " + fieldName + " on " + node.name, arg);
+                    hadError = true;
+                    continue;
+                }
+                if (!seenFields.add(fieldName)) {
+                    checker.warn("Duplicate record field : " + fieldName, arg);
+                    hadError = true;
+                    continue;
+                }
+                memberIdx = node.parameterMembers.get(paramPos);
+            } else {
+                if (sawNamed) {
+                    checker.warn("Positional argument after named argument", arg);
+                    hadError = true;
+                    continue;
+                }
+                if (posIdx >= params.size()) {
+                    checker.warn("Too many fields in record pattern : " + node.name + " has " + params.size(), arg);
+                    hadError = true;
+                    continue;
+                }
+                fieldName = params.get(posIdx);
+                memberIdx = node.parameterMembers.get(posIdx);
+                seenFields.add(fieldName);
+                posIdx++;
+            }
+            TypeNode.Member member = node.members.get(fieldName);
+            Type rawFieldType = member != null ? checker.memberType(node, member) : Type.NULLABLE_ANY;
+            if (rawFieldType == Type.ERROR) {
+                rawFieldType = Type.NULLABLE_ANY;
+            }
+            Type fieldType = genericSubst.isEmpty() ? rawFieldType : checker.algebra().substitute(rawFieldType, genericSubst);
+            if (isFrozen) {
+                fieldType = Type.frozen(fieldType);
+            }
+            fieldNames.add(fieldName);
+            memberIndices.add(memberIdx);
+            fieldTypes.add(fieldType);
+            PatternTyping sub = typePattern(arg.pattern(), fieldType);
+            if (sub.subtractedType() != Type.NOTHING) {
+                allIrrefutable = false;
+            }
+        }
+        if (!sawNamed && args.restPattern() == null && !hadError && posIdx != params.size()) {
+            checker.warn("Wrong number of fields in record pattern : " + node.name
+                    + " expects " + params.size() + ", got " + posIdx, args);
+            hadError = true;
+        }
+        int[] indicesArr = new int[memberIndices.size()];
+        for (int i = 0; i < memberIndices.size(); i++) {
+            indicesArr[i] = memberIndices.get(i);
+        }
+        recordDestructures.put(owner, new RecordDestructureInfo(
+                false, node, null, List.copyOf(fieldNames), indicesArr, List.copyOf(fieldTypes), List.of(), target));
+        if (hadError) {
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type subtracted = (allIrrefutable && !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR)
+                ? checker.algebra().subtractType(remaining, target) : remaining;
+        return new PatternTyping(matched, subtracted);
+    }
+
+    private Map<Type.TypeVar, Type> inferBabbleRecordSubst(TypeNode node, Type.Instance explicitInst, Type matched) {
+        List<Type.TypeVar> tVars = checker.annotator().typeVarsOf(node);
+        if (tVars.isEmpty()) {
+            return Map.of();
+        }
+        Map<Type.TypeVar, Type> subst = new HashMap<>();
+        List<Type.Instance> matchingInsts = new ArrayList<>();
+        for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(matched))) {
+            Type um = TypeAlgebra.unwrapFrozen(m);
+            if (um instanceof Type.Instance mi && mi.node() == node && mi.typeArguments().size() == tVars.size()) {
+                matchingInsts.add(mi);
+            }
+        }
+        if (matchingInsts.isEmpty() && explicitInst.typeArguments().size() == tVars.size()) {
+            matchingInsts.add(explicitInst);
+        }
+        for (int i = 0; i < tVars.size(); i++) {
+            Type arg;
+            if (matchingInsts.isEmpty()) {
+                arg = tVars.get(i).effectiveBound();
+            } else {
+                List<Type> parts = new ArrayList<>(matchingInsts.size());
+                for (Type.Instance mi : matchingInsts) {
+                    parts.add(mi.typeArguments().get(i));
+                }
+                arg = Type.union(parts);
+            }
+            subst.put(tVars.get(i), arg);
+        }
+        return subst;
+    }
+
+    private PatternTyping typeJavaRecordDestructure(ParserRuleContext owner, Type target, Type.JavaInstance ji,
+                                                    BabbleParser.PatternArgsContext args, Type remaining,
+                                                    BabbleParser.BindingPatternContext bindCtx) {
+        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                && !checker.algebra().overlapsErased(remaining, target)) {
+            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+            if (bindCtx != null) {
+                checker.declarationTypes().put(bindCtx, Type.ERROR);
+            }
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                ? checker.algebra().narrowTarget(remaining, target) : target;
+        if (bindCtx != null) {
+            checker.declarationTypes().put(bindCtx, matched);
+        }
+        patternTargetTypes.put(owner, target);
+
+        Class<?> recClass = ji.type();
+        boolean isFrozen = matched instanceof Type.Frozen;
+        Map<TypeVariable<?>, Type> javaEnv = inferJavaRecordEnv(recClass, ji, matched);
+
+        if (args.restPattern() != null && args.restPattern().name != null) {
+            checker.warn("Rest binding is not allowed in record pattern : use ... without def", args.restPattern());
+            checker.declarationTypes().put(args.restPattern(), Type.ERROR);
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+
+        RecordComponent[] comps = recClass.getRecordComponents();
+        Map<String, RecordComponent> byName = new HashMap<>();
+        for (RecordComponent rc : comps) {
+            byName.put(rc.getName(), rc);
+        }
+
+        Set<String> seenFields = new LinkedHashSet<>();
+        List<String> fieldNames = new ArrayList<>();
+        List<Type> fieldTypes = new ArrayList<>();
+        List<Method> accessors = new ArrayList<>();
+        boolean sawNamed = false;
+        int posIdx = 0;
+        boolean allIrrefutable = true;
+        boolean hadError = false;
+
+        for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+            RecordComponent comp;
+            if (arg.memberName() != null) {
+                sawNamed = true;
+                String fn = arg.memberName().getText();
+                comp = byName.get(fn);
+                if (comp == null) {
+                    checker.warn("Unknown record field : " + fn + " on " + recClass.getSimpleName(), arg);
+                    hadError = true;
+                    continue;
+                }
+                if (!seenFields.add(fn)) {
+                    checker.warn("Duplicate record field : " + fn, arg);
+                    hadError = true;
+                    continue;
+                }
+            } else {
+                if (sawNamed) {
+                    checker.warn("Positional argument after named argument", arg);
+                    hadError = true;
+                    continue;
+                }
+                if (posIdx >= comps.length) {
+                    checker.warn("Too many fields in record pattern : " + recClass.getSimpleName() + " has " + comps.length, arg);
+                    hadError = true;
+                    continue;
+                }
+                comp = comps[posIdx++];
+                seenFields.add(comp.getName());
+            }
+            Method acc = comp.getAccessor();
+            Type compType = JavaTypeBridge.fromJavaType(comp.getGenericType(), comp.getAnnotatedType(), javaEnv,
+                    true, false, JavaNullability.Nullness.UNSPECIFIED, false);
+            if (isFrozen) {
+                compType = Type.frozen(compType);
+            }
+            fieldNames.add(comp.getName());
+            fieldTypes.add(compType);
+            accessors.add(acc);
+            PatternTyping sub = typePattern(arg.pattern(), compType);
+            if (sub.subtractedType() != Type.NOTHING) {
+                allIrrefutable = false;
+            }
+        }
+        if (!sawNamed && args.restPattern() == null && !hadError && posIdx != comps.length) {
+            checker.warn("Wrong number of fields in record pattern : " + recClass.getSimpleName()
+                    + " expects " + comps.length + ", got " + posIdx, args);
+            hadError = true;
+        }
+        recordDestructures.put(owner, new RecordDestructureInfo(
+                true, null, recClass, List.copyOf(fieldNames), new int[0], List.copyOf(fieldTypes), List.copyOf(accessors), target));
+        if (hadError) {
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type subtracted = (allIrrefutable && !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR)
+                ? checker.algebra().subtractType(remaining, target) : remaining;
+        return new PatternTyping(matched, subtracted);
+    }
+
+    private Map<TypeVariable<?>, Type> inferJavaRecordEnv(Class<?> recClass, Type.JavaInstance explicitJi, Type matched) {
+        TypeVariable<?>[] tps = recClass.getTypeParameters();
+        if (tps.length == 0) {
+            return Map.of();
+        }
+        Map<TypeVariable<?>, Type> env = new HashMap<>();
+        List<Type.JavaInstance> matchingJis = new ArrayList<>();
+        for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(matched))) {
+            Type um = TypeAlgebra.unwrapFrozen(m);
+            if (um instanceof Type.JavaInstance mji && mji.type() == recClass && mji.typeArguments().size() == tps.length) {
+                matchingJis.add(mji);
+            }
+        }
+        if (matchingJis.isEmpty() && explicitJi.typeArguments().size() == tps.length) {
+            matchingJis.add(explicitJi);
+        }
+        for (int i = 0; i < tps.length; i++) {
+            if (matchingJis.isEmpty()) {
+                env.put(tps[i], Type.NULLABLE_ANY);
+            } else {
+                List<Type> parts = new ArrayList<>(matchingJis.size());
+                for (Type.JavaInstance mji : matchingJis) {
+                    parts.add(mji.typeArguments().get(i));
+                }
+                env.put(tps[i], Type.union(parts));
+            }
+        }
+        return env;
+    }
+
+    private PatternTyping typeListDestructure(ParserRuleContext owner, Type target,
+                                              BabbleParser.PatternArgsContext args, Type remaining,
+                                              BabbleParser.BindingPatternContext bindCtx) {
+        if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                && !checker.algebra().overlapsErased(remaining, target)) {
+            checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+            if (bindCtx != null) {
+                checker.declarationTypes().put(bindCtx, Type.ERROR);
+            }
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                ? checker.algebra().narrowTarget(remaining, target) : target;
+        if (bindCtx != null) {
+            checker.declarationTypes().put(bindCtx, matched);
+        }
+        patternTargetTypes.put(owner, target);
+
+        boolean isFrozen = matched instanceof Type.Frozen;
+        Type elemType = inferListElementType(matched);
+        if (isFrozen) {
+            elemType = Type.frozen(elemType);
+        }
+
+        boolean hadError = false;
+        for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+            if (arg.memberName() != null) {
+                checker.warn("Named argument not allowed in sequence pattern", arg);
+                hadError = true;
+                continue;
+            }
+            typePattern(arg.pattern(), elemType);
+        }
+        boolean hasRest = args.restPattern() != null;
+        if (hasRest && args.restPattern().name != null) {
+            checker.declarationTypes().put(args.restPattern(),
+                    new Type.JavaInstance(java.util.List.class, List.of(elemType)));
+        }
+        int fixedCount = args.patternArg().size();
+        sequenceDestructures.put(owner, new SequenceDestructureInfo(
+                false, null, elemType, fixedCount, hasRest, target));
+        if (hadError) {
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type subtracted = (fixedCount == 0 && hasRest && !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR)
+                ? checker.algebra().subtractType(remaining, target) : remaining;
+        return new PatternTyping(matched, subtracted);
+    }
+
+    private Type inferListElementType(Type matched) {
+        List<Type> elems = new ArrayList<>();
+        for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(matched))) {
+            Type um = TypeAlgebra.unwrapFrozen(m);
+            Type projected = checker.algebra().projectToJava(um, java.util.List.class);
+            if (projected instanceof Type.JavaInstance ji && !ji.typeArguments().isEmpty()) {
+                elems.add(ji.typeArguments().get(0));
+            }
+        }
+        return elems.isEmpty() ? Type.NULLABLE_ANY : Type.union(elems);
+    }
+
+    private PatternTyping typeArrayDestructure(ParserRuleContext owner, Type.Array explicitArr,
+                                               BabbleParser.PatternArgsContext args, Type remaining,
+                                               BabbleParser.BindingPatternContext bindCtx) {
+        Type matched;
+        Type target;
+        if (explicitArr != null) {
+            target = explicitArr;
+            if (!TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                    && !checker.algebra().overlapsErased(remaining, target)) {
+                checker.warn("Impossible pattern : " + remaining + " cannot match is " + target, owner);
+                if (bindCtx != null) {
+                    checker.declarationTypes().put(bindCtx, Type.ERROR);
+                }
+                return new PatternTyping(Type.ERROR, remaining);
+            }
+            matched = !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR
+                    ? checker.algebra().narrowTarget(remaining, target) : target;
+            patternTargetTypes.put(owner, target);
+        } else {
+            // Bare `is array(...)`: narrow `remaining` to all Type.Array members.
+            List<Type> arrMembers = new ArrayList<>();
+            boolean hasAny = false;
+            for (Type m : Type.membersOf(remaining)) {
+                Type um = TypeAlgebra.unwrapFrozen(m);
+                if (um instanceof Type.Array) {
+                    arrMembers.add(m);
+                } else if (um == Type.ANY || um instanceof Type.TypeVar) {
+                    hasAny = true;
+                }
+            }
+            if (arrMembers.isEmpty() && !hasAny && !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR) {
+                checker.warn("Impossible pattern : " + remaining + " cannot match is array", owner);
+                if (bindCtx != null) {
+                    checker.declarationTypes().put(bindCtx, Type.ERROR);
+                }
+                return new PatternTyping(Type.ERROR, remaining);
+            }
+            matched = !arrMembers.isEmpty() ? Type.union(arrMembers) : new Type.Array(Type.NULLABLE_ANY);
+            target = arrMembers.size() == 1 ? TypeAlgebra.unwrapFrozen(arrMembers.get(0)) : null;
+            if (target != null) {
+                patternTargetTypes.put(owner, target);
+            }
+        }
+        if (bindCtx != null) {
+            checker.declarationTypes().put(bindCtx, matched);
+        }
+
+        boolean isFrozen = matched instanceof Type.Frozen;
+        List<Type> elemTypes = new ArrayList<>();
+        Class<?> arrayClass = null;
+        int concreteArrCount = 0;
+        for (Type m : Type.membersOf(TypeAlgebra.unwrapFrozen(matched))) {
+            Type um = TypeAlgebra.unwrapFrozen(m);
+            if (um instanceof Type.Array a) {
+                elemTypes.add(a.element());
+                Class<?> checked = JavaTypeBridge.checkedArrayClass(a);
+                if (JavaTypeBridge.isBytecodeAccessible(checked)) {
+                    arrayClass = checked;
+                }
+                concreteArrCount++;
+            }
+        }
+        if (concreteArrCount != 1) {
+            arrayClass = null;
+        }
+        Type elemType = elemTypes.isEmpty() ? Type.NULLABLE_ANY : Type.union(elemTypes);
+        if (isFrozen) {
+            elemType = Type.frozen(elemType);
+        }
+
+        boolean hadError = false;
+        for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+            if (arg.memberName() != null) {
+                checker.warn("Named argument not allowed in sequence pattern", arg);
+                hadError = true;
+                continue;
+            }
+            typePattern(arg.pattern(), elemType);
+        }
+        boolean hasRest = args.restPattern() != null;
+        if (hasRest && args.restPattern().name != null) {
+            checker.declarationTypes().put(args.restPattern(), new Type.Array(elemType));
+        }
+        int fixedCount = args.patternArg().size();
+        sequenceDestructures.put(owner, new SequenceDestructureInfo(
+                true, arrayClass, elemType, fixedCount, hasRest, target));
+        if (hadError) {
+            return new PatternTyping(Type.ERROR, remaining);
+        }
+        Type subtracted = remaining;
+        if (fixedCount == 0 && hasRest && !TypeChecker.isUnresolved(remaining) && remaining != Type.ERROR) {
+            if (target != null) {
+                subtracted = checker.algebra().subtractType(remaining, target);
+            } else {
+                List<Type> remList = new ArrayList<>();
+                for (Type m : Type.membersOf(remaining)) {
+                    if (!(TypeAlgebra.unwrapFrozen(m) instanceof Type.Array)) {
+                        remList.add(m);
+                    }
+                }
+                subtracted = remList.isEmpty() ? Type.NOTHING : Type.union(remList);
+            }
+        }
         return new PatternTyping(matched, subtracted);
     }
 

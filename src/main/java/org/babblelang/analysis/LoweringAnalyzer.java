@@ -166,7 +166,6 @@ final class LoweringAnalyzer {
                 }
             }
         }
-        publishMatchTargets();
         for (TypeNode typeNode : pass.types) {
             if (!checker.inFile(typeNode.ctx)) {
                 continue;
@@ -189,6 +188,7 @@ final class LoweringAnalyzer {
                 }
             }
         }
+        publishMatchTargets();
         for (Map.Entry<ParserRuleContext, TypeChecker.ResolvedOverloadCall> ovEntry : checker.resolvedOverloadCalls().entrySet()) {
             ParserRuleContext site = ovEntry.getKey();
             if (!(site instanceof BabbleParser.CallContext) && checker.inFile(site)) {
@@ -1890,23 +1890,86 @@ final class LoweringAnalyzer {
             if (target == null || target == Type.ERROR) {
                 continue;
             }
-            String builtin = mt.patternBuiltins().get(owner);
-            LoweringTargets.IsTarget isTarget = null;
-            List<LoweringTargets.IsTarget> intersectionTargets = List.of();
-            if (target instanceof Type.Instance inst
-                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
-                isTarget = new LoweringTargets.IsTarget(inst.node().id, inst.node().kind);
-            } else if (target instanceof Type.Array array) {
-                Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
-                if (JavaTypeBridge.isBytecodeAccessible(checked)) {
-                    isTarget = new LoweringTargets.IsTarget(null, null, checked.getName().replace('.', '/'));
-                }
-            } else if (target instanceof Type.Intersection inter) {
-                intersectionTargets = intersectionIsTargets(inter);
-            }
-            pass.analysis.lowering().setPatternTypeTarget(owner,
-                    new LoweringTargets.PatternTypeTarget(builtin, isTarget, intersectionTargets, descriptor(target)));
+            pass.analysis.lowering().setPatternTypeTarget(owner, buildPatternTypeTarget(owner, target, mt));
         }
+        for (Map.Entry<ParserRuleContext, MatchTyper.RecordDestructureInfo> e : mt.recordDestructures().entrySet()) {
+            ParserRuleContext owner = e.getKey();
+            if (!checker.inFile(owner)) {
+                continue;
+            }
+            MatchTyper.RecordDestructureInfo info = e.getValue();
+            LoweringTargets.PatternTypeTarget typeTest = buildPatternTypeTarget(owner, info.targetType(), mt);
+            PrimitiveKind[] fieldKinds = new PrimitiveKind[info.fieldNames().size()];
+            if (!info.isJavaRecord()) {
+                TypeNode node = info.babbleNode();
+                for (int i = 0; i < fieldKinds.length; i++) {
+                    String fn = info.fieldNames().get(i);
+                    PrimitiveKind mk = node.memberKinds.get(fn);
+                    if (mk == null) {
+                        TypeNode.Member member = node.members.get(fn);
+                        if (member != null && member.declaration != null) {
+                            mk = pass.analysis.lowering().declarationKind(member.declaration);
+                        }
+                    }
+                    fieldKinds[i] = mk != null ? mk : PrimitiveKind.NONE;
+                }
+            } else {
+                for (int i = 0; i < fieldKinds.length; i++) {
+                    fieldKinds[i] = PrimitiveKind.of(JavaTypeBridge.fromJava(info.javaAccessors().get(i).getReturnType()));
+                }
+            }
+            pass.analysis.lowering().setRecordDestructureTarget(owner, new LoweringTargets.RecordDestructureTarget(
+                    info.isJavaRecord(),
+                    info.babbleNode() != null ? info.babbleNode().id : null,
+                    info.javaRecordClass(),
+                    info.fieldNames().toArray(new String[0]),
+                    info.babbleMemberIndices(),
+                    fieldKinds,
+                    info.javaAccessors().toArray(new java.lang.reflect.Method[0]),
+                    typeTest
+            ));
+        }
+        for (Map.Entry<ParserRuleContext, MatchTyper.SequenceDestructureInfo> e : mt.sequenceDestructures().entrySet()) {
+            ParserRuleContext owner = e.getKey();
+            if (!checker.inFile(owner)) {
+                continue;
+            }
+            MatchTyper.SequenceDestructureInfo info = e.getValue();
+            LoweringTargets.PatternTypeTarget typeTest = info.targetType() != null
+                    ? buildPatternTypeTarget(owner, info.targetType(), mt) : null;
+            PrimitiveKind elemKind = (info.isArray() && info.arrayClass() != null
+                    && info.arrayClass().getComponentType().isPrimitive())
+                    ? PrimitiveKind.of(JavaTypeBridge.fromJava(info.arrayClass().getComponentType()))
+                    : PrimitiveKind.NONE;
+            pass.analysis.lowering().setSequenceDestructureTarget(owner, new LoweringTargets.SequenceDestructureTarget(
+                    info.isArray(),
+                    info.arrayClass(),
+                    elemKind,
+                    info.fixedCount(),
+                    info.hasRest(),
+                    typeTest
+            ));
+        }
+    }
+
+    private LoweringTargets.PatternTypeTarget buildPatternTypeTarget(ParserRuleContext owner, Type target, MatchTyper mt) {
+        String builtin = mt.patternBuiltins().get(owner);
+        LoweringTargets.IsTarget isTarget = null;
+        List<LoweringTargets.IsTarget> intersectionTargets = List.of();
+        if (target instanceof Type.Instance inst
+                && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+            isTarget = new LoweringTargets.IsTarget(inst.node().id, inst.node().kind);
+        } else if (target instanceof Type.JavaInstance ji && JavaTypeBridge.isBytecodeAccessible(ji.type())) {
+            isTarget = new LoweringTargets.IsTarget(null, null, ji.type().getName().replace('.', '/'));
+        } else if (target instanceof Type.Array array) {
+            Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
+            if (JavaTypeBridge.isBytecodeAccessible(checked)) {
+                isTarget = new LoweringTargets.IsTarget(null, null, checked.getName().replace('.', '/'));
+            }
+        } else if (target instanceof Type.Intersection inter) {
+            intersectionTargets = intersectionIsTargets(inter);
+        }
+        return new LoweringTargets.PatternTypeTarget(builtin, isTarget, intersectionTargets, descriptor(target));
     }
 
     private LoweringTargets.CatchTarget buildCatchTarget(BabbleParser.CatchClauseContext cc) {

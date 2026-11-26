@@ -489,6 +489,24 @@ public final class WasmPortabilityChecker {
                 checkExpr(rt.step(), target, topLevelDefined, out);
             }
             case org.babblelang.ir.hir.HirPattern.Membership m -> checkExpr(m.container(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
+                if (rd.isJavaRecord()) {
+                    out.add(new Diagnostic(rd.line(), rd.javaRecordClass().getName()));
+                } else if (rd.typeTest() != null) {
+                    checkDescriptorPortable(rd.typeTest().descriptor(), rd.line(), out);
+                }
+                for (org.babblelang.ir.hir.HirPattern fp : rd.fieldPatterns()) {
+                    checkPattern(fp, target, topLevelDefined, out);
+                }
+            }
+            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
+                if (sd.typeTest() != null) {
+                    checkDescriptorPortable(sd.typeTest().descriptor(), sd.line(), out);
+                }
+                for (org.babblelang.ir.hir.HirPattern ep : sd.elemPatterns()) {
+                    checkPattern(ep, target, topLevelDefined, out);
+                }
+            }
         }
     }
 

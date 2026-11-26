@@ -35,3 +35,19 @@ assert(name(null) == "none")
 assert(name(D.MONDAY) == "mon")
 assert(name(D.FRIDAY) == "rest")
 ```
+
+## Java record destructuring (positional and named)
+
+```babble
+def an = import("org.babblelang.analysis")
+def T = type an.LoweringTargets.RangeTarget
+def RT = an.LoweringTargets.RangeTarget
+def PK = an.PrimitiveKind
+def f = fn (r: T): string -> (
+    match r
+    case is T(PK.INT, false) then ("i")
+    case is T(stringElement: true) then ("s")
+    else ("o")
+)
+assert(f(RT(PK.INT, false)) == "i" and f(RT(PK.NONE, true)) == "s")
+```
