@@ -61,7 +61,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP025** | [Compiling Babble to WebAssembly](bip025_compile-to-wasm.md) | 2026-11-22 | `RM018` | Whole-program compilation to WebAssembly 3.0 (WasmGC) for Node.js and browsers, passing every portable `.batest.md` case and rendering Argon byte for byte. |
 | **BIP027** | [Tackling complexity in the compiler](bip027_tackling-complexity-in-the-compiler.md) | 2026-11-22 | `RM012` | Broke up the compiler's monoliths under 2,000-line ceilings and rebuilt effect, algebraic and termination analysis on a shared e-graph. |
 | **BIP028** | [Exception handling (`try`, `catch`, `finally`)](bip028_exception-handling.md) | 2026-11-23 | — | Expression-oriented `try`/`catch`/`finally`/`throw`, a core `exception` type, and direct JVM exception propagation. |
-| **BIP029** | [`.batest.md` v2 format and unified HIR/MIR golden testing](bip029_batest-v2-and-ir-goldens.md) | 2026-11-23 | — | The Markdown-based test format, with canonical `HIR` and `MIR` golden assertions. |
+| **BIP029** | [`.batest.md` v2 format and unified HIR/MIR golden testing](bip029_batest-v2-and-ir-goldens.md) | 2026-11-23 | — | The Markdown-based test format, with canonical `HIR`, `MIR` and `wat` golden assertions. |
 | **BIP030** | [Axiom nullability and inferred effects](bip030_axiom-nullability-and-inferred-effects.md) | 2026-11-23 | — | `class notnull` and `T!` in axioms, so curated nullness no longer hides inferred effects. |
 | **BIP034** | [Immutable `def` and mutable `var` bindings](bip034_immutable-def-and-mutable-var.md) | 2026-11-25 | — | Non-reassignable `def` and explicit `var`, which make top-level reads pure, let closures capture by value, and allow `ACC_FINAL` fields. |
 
@@ -74,8 +74,9 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP018** | [Tracking Java improvements](bip018_tracking-java-improvements.md) | 2026-11-20 | Decided (`BIP018-P0`–`P4` planned) | Babble editions that track JDK LTS releases, a multi-module split, a Class-File API backend and `babblec -target N`. Starts once `BIP014` is complete (`RM016`, `RM017`). |
 | **BIP026** | [Multiline strings and string templates](bip026_multiline-strings-and-string-templates.md) | 2026-11-22 | Partially implemented | Multiline and raw strings landed (`BIP026-I1`). String templates (`t"..."`, lazy placeholders, evaluation policies) are open (`BIP026-Q4`–`Q10` → `BIP026-P2`–`P5`, `RM014`). |
 | **BIP031** | [First-class ranges (`range`), modulo (`mod`) and integer division (`//`)](bip031_ranges.md) | 2026-11-24 | Decided (`BIP031-P1`–`P3` planned) | `range of T` (`lo..hi`, `lo..<hi`), floored `mod` and `//`, and allocation-free counted loops (`RM019`). |
-| **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation. |
-| **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`–`P9` planned) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of every monolith and god class (JVM and Wasm backends included), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2. |
+| **BIP032** | [The Great Escape — adversarial search for inconsistencies in Babble types and effects](bip032_the-great-escape.md) | 2026-11-24 | Decided (`BIP032-P1`–`P4` planned) | Red-team probes, white-box property tests, runtime canary oracles and a delta-minimizing soundness fuzzer across types, effects, ownership, optimizer/Wasm parity, axioms and verifiers (`RM021`). |
+| **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
+| **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`–`P9` planned) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of every monolith and god class (JVM and Wasm backends included), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
 
 ## Milestones done
 
@@ -163,35 +164,40 @@ Scalar replacement and reuse of `record`s at `-O1` (`BIP014-I4`), and the per-fu
 
 Whole-program compilation from `HIR` to WebAssembly 3.0 (`BIP025-I0`–`I5`), with every portable `.batest.md` case passing on Node.js and Argon rendered byte for byte.
 
-- Spans: `BIP025`, `BIP009`, `BIP014`, `BIP019`, `BIP020`, `BIP022`, `BIP024`, `BIP028`, `BIP029`, `BIP030`
+- Spans: `BIP025`, `BIP009`, `BIP014`, `BIP019`, `BIP020`, `BIP022`, `BIP024`, `BIP028`, `BIP029`, `BIP030`, `BIP034`
 
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5` and `BIP031-P1`–`P3`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP031-P1`–`P3`, `BIP032-P1`–`P4`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
 
 The order follows constraints recorded in the BIPs:
 
+- **Simplify before replacing the AST.** `BIP036` (`RM020`) retires `TypeChecker`'s mutable blackboard and splits every god class under 1,500 lines, giving `BIP015` Option 2 clean seams.
+- **Harden soundness early.** `BIP032` (`RM021`) can run now, catching type, effect, ownership, optimizer and Wasm escapes before `BIP014-P5` pipeline rewrites and `RM017` parallelism rely on stronger static guarantees.
 - **Measure, then optimize.** Only `BIP014-P5` Half B remains, and it needs a standard library to rewrite.
 - **Choose the parser before the largest grammar change.** `BIP026-P2` splits `Babble.g4` into lexer modes, and `BIP015-Q3` asks whether a parser change should come first.
 - **`BIP018` after `BIP014`** (`BIP018-D4`).
-- **Ranges can start now.** `BIP031` is a predicate-free grammar addition that waits for nothing; landing it before `RM015` gives the standard library ranges.
+- **Ranges and `babblebabble` are independent.** `BIP031` (`RM019`) is a predicate-free grammar addition that gives the standard library ranges if it lands before `RM015`; `BIP035` (`RM022`) builds on the landed `BIP025` Wasm backend and `BIP034` bindings as an independent differential oracle and symbolic benchmark.
 
 | Milestone | Slice | Remaining BIP work | Prerequisites | Notes |
 |---|---|---|---|---|
-| **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` | A parser migration, if chosen, lands before `BIP026-P2`. |
+| **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` (`RM020` recommended ahead of `BIP015` Option 2) | A parser migration, if chosen, lands before `BIP026-P2`. |
 | **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`; a standard library BIP | Completes `BIP014`, which opens `BIP018`. |
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P0`–`P2` | `RM015` | See the note on `BIP018-P0`. |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
 | **RM019** | Ranges (`range`, `mod`, `//`) | `BIP031-P1`–`P3` | `RM013` | Can run now, alongside the others. |
+| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2). |
+| **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others; hardens soundness ahead of `RM015` and `RM017`. |
+| **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
 
 ### RM014 — Front-end decision & string templates
 
 Settle [BIP015](bip015_down-with-the-ants.md) before the largest grammar change, then build string templates on the chosen front end.
 
 - **Spans:** `BIP015`, `BIP026`, `BIP012`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP029`
-- **Decision first:** settle `BIP015-Q1`–`Q8`: keep ANTLR4, put a Babble-owned AST behind it, or replace it. A migration, if chosen, lands first, with identical parses and `BabbleSession.classify` results on every source, so `BIP026-P2` is written once.
+- **Decision first:** settle `BIP015-Q1`–`Q8`: keep ANTLR4, put a Babble-owned AST behind it (building on `RM020`'s `BIP036` seams), or replace it. A migration, if chosen, lands first, with identical parses and `BabbleSession.classify` results on every source, so `BIP026-P2` is written once.
 - **Deliverables:**
   - `BIP026-P2`: template syntax (`t"..."`, `t"""..."""`, `rt"..."`, `t$$"""..."""`, `$(expr)`) through lexer modes, with formatter and `classify` support.
   - `BIP026-P3`–`P4`: `java.base`-only `Template` and `Placeholder` with lazy memoization, `template`/`placeholder` core types, evaluation policies (`tmpl.eval(policy)`) and effect tracking.
@@ -217,7 +223,7 @@ Start [BIP018](bip018_tracking-java-improvements.md) once `BIP014` is complete: 
 - **Deliverables:**
   - `BIP018-P0`: JDK 25 and JDK 27 CI legs, and axioms for `java.lang.IO`, `Gatherer`s and `java.lang.foreign`.
   - `BIP018-P1`: the `babble-runtime` / `babble-core` / `babble-backend-asm` / `babble-21` split behind SPIs, with no change in behavior, and `babblec -target N`.
-  - `BIP018-P2`: a Class-File API backend, `ScopedValue`, `lazy def`, `scoped def`, target-gated `std/foreign`, and `ACC_FINAL` on immutable fields.
+  - `BIP018-P2`: a Class-File API backend, `ScopedValue`, `lazy def`, `scoped def`, target-gated `std/foreign`, and JEP 500 trusted-final `ACC_FINAL` on immutable fields (building on `BIP034-I5`).
 - **Note on `BIP018-P0`:** JDK 27 already changed what the bytecode analyzer infers: since JDK 22, `Throwable` constructors read a Flight Recorder field, which made every exception constructor `io` until curated axioms restored the JDK 21 effects. A JDK 25/27 CI leg would have caught this at once, which argues for pulling `BIP018-P0` ahead of `RM015`.
 - **Exit criteria:** identical results across `interpret`, `babble-21`, `babble-25` and `babble-25 -target 21`, and a boundary test per module.
 
@@ -242,6 +248,42 @@ Deliver [BIP031](bip031_ranges.md) on top of the implemented `BIP034` bindings.
 - **Depends on:** `RM013`. Independent of `BIP015` and `BIP018`.
 - **Deliverables:** `BIP031-P1`–`P3`: `range of T`, stepped and reversed progressions, floored `mod` and `//`, the `Range` runtime and axioms, and allocation-free counted loops in `HIR`, `MIR` and Wasm.
 - **Exit criteria:** range and division specifications in every mode, with `HIR`, `MIR` and `wat` goldens.
+
+### RM020 — Compiler simplification & god-class splits
+
+Deliver [BIP036](bip036_compiler-simplification-and-god-class-splits.md) with zero behavioral change, dismantling every remaining compiler god class and tightening the repository-wide file ceiling to 1,500 lines ahead of `BIP015` Option 2.
+
+- **Spans:** `BIP036`, `BIP010`, `BIP014`, `BIP015`, `BIP019`, `BIP025`, `BIP027`
+- **Depends on:** `RM013`, `RM018`.
+- **Deliverables:**
+  - `BIP036-P1`: lifetime-separated `TypeChecker` data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) retiring `TypeChecker.resetPass()`.
+  - `BIP036-P2`–`P7`: pure structural splits of `MirLowerer`, `HirBuilder`, `MirEmitter`, `LoweringAnalyzer`, `EffectBodyWalker`/`CallEffectAnalyzer`/`EffectAstExtractors`, and `CallEmitter`/`HirEmitter`.
+  - `BIP036-P8`–`P9`: Wasm backend splits (`WasmFuncEmitter`, `WasmCallEmitter`, `WasmObjectSystem`, `WasmRuntimeGen`), `AxiomParser`/`AxiomData` AST isolation, `ScalarReplacePass` split, and repository-wide `<= 1,500`-line lock-in.
+- **Exit criteria:** `ArchitectureBoundaryTestCase` enforcing `<= 1,500` LOC on every `.java` file in `src/main/java` and `AxiomData` in `ANTLR_FREE_ANALYSIS_CORES`, with zero semantic regressions.
+
+### RM021 — Adversarial soundness (*The Great Escape*)
+
+Deliver [BIP032](bip032_the-great-escape.md), turning ad-hoc bug hunting into a permanent adversarial defense layer across types, effects, ownership, optimizer/Wasm parity, Java axioms and algebraic/termination verifiers.
+
+- **Spans:** `BIP032`, `BIP007`, `BIP008`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP025`, `BIP027`, `BIP028`, `BIP029`, `BIP030`, `BIP034`
+- **Depends on:** `RM013`, `RM018`. Independent of `RM014` and `RM020`; can run in parallel.
+- **Deliverables:**
+  - `BIP032-P1`: Wave 1 red-team probes (including the 5 static-audit candidate escapes), package-private white-box property tests (`TypeAlgebra`, `EffectSet`, `Reachability.Origin`, axiom monotonicity), and permanent `src/test/batest/soundness/` `.batest.md` regressions.
+  - `BIP032-P2`–`P3`: per-engine `BabbleCompiler.resolveVerify(engine)`, Tier 1 runtime canary oracles, parallel-safe Tier 2 multi-mode differential/verifier oracle, layered combinatorial-matrix + AST + corpus/EMI generators, parse-tree-guided `.batest.md`-emitting delta-minimizer, `<= 5s` `EscapeSmokeTestCase`, and opt-in `-Pescape` soak profile.
+  - `BIP032-P4`: deep `-Pescape` soak campaigns across all 6 surfaces (including `BIP034` `def`/`var` and portable Wasm parity) and full remediation of confirmed escapes (`BIP032-D7`).
+- **Exit criteria:** `EscapeSmokeTestCase` (`<= 5s` deterministic single-leg smoke in `mvn test`), `0` untriaged `S0`/`S1` escapes from `-Pescape` soak, and every confirmed escape locked in `src/test/batest/soundness/*.batest.md`.
+
+### RM022 — `babblebabble` pure-Babble interpreter
+
+Settle [BIP035](bip035_babblebabble.md) (`BIP035-Q1`–`Q11`) and build a first-class pure-Babble interpreter under `src/main/babble/babblebabble/` as a symbolic compiler stress test, independent differential oracle and browser Wasm playground.
+
+- **Spans:** `BIP035`, `BIP012`, `BIP013`, `BIP015`, `BIP020`, `BIP021`, `BIP024`, `BIP025`, `BIP026`, `BIP028`, `BIP029`, `BIP034`
+- **Depends on:** `RM018` (`BIP025` Wasm portability & backend). Independent of `RM014` and `RM016`.
+- **Deliverables:**
+  - `BIP035-P1`–`P3`: zero-`java.*` hand-written lexer, JEP 378 string decoder, LL(1)/LL(2) recursive-descent + Pratt parser, pre-evaluation scope/tail-call pass, and evaluator covering Babble's full pure-Babble runtime semantics (`BIP002`–`BIP034`).
+  - `BIP035-P4`–`P5`: modules, sessions, `BabbleScriptEngine.Mode.BABBLEBABBLE` host adapter (keeping `babble-runtime.jar` untouched), `DifferentialTestCase`/`BatestTestCase` integration, byte-identical Argon rendered by `babblebabble`, meta-circular "`babblebabblebabble`" self-hosting, and `babblec -target wasm-js` playground compilation.
+  - `BIP035-P6` *(optional)*: self-hosted static type checker (`typechecker.ba`).
+- **Exit criteria:** `BabbleBabblePortabilityTestCase` (0 `java.*` imports, `WasmPortabilityChecker` clean), 100% parse parity across all `.ba` and `.batest.md` sources, `0` divergences on portable specs, byte-identical Argon via `babblebabble`, and verified meta-circular & Wasm playground runs.
 
 ### Backlog awaiting a BIP
 
