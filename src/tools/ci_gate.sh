@@ -16,7 +16,7 @@
 #   --rebuild-image      Force rebuilding the CI container image (implies --container).
 #   --fast               Skip JaCoCo instrumentation/coverage report (still runs all 3 unit modes,
 #                        4 JVM batest modes at -PO2, and Wasm 3.0 batest in parallel).
-#   --filter <pattern>   Run only 4-mode JVM + Wasm batest matching <pattern> (no coverage gate).
+#   --batest-filter <pat> Run only 4-mode JVM + Wasm batest matching <pat> (no coverage gate).
 #   --unit-only          Run only the 3 Java unit-test modes in parallel (skip batest).
 #   --batest-only        Run only the 4-mode JVM + Wasm batest and coverage gate (skip unit tests).
 #   --skip-wasm          Skip WasmBatestTestCase and WasmCompilerTestCase (useful on host Node != 22).
@@ -76,9 +76,9 @@ while [[ $# -gt 0 ]]; do
             FORWARD_ARGS+=("$1")
             shift
             ;;
-        --filter)
+        --batest-filter)
             if [[ $# -lt 2 ]]; then
-                echo "Error : --filter requires a pattern argument" >&2
+                echo "Error : --batest-filter requires a pattern argument" >&2
                 exit 2
             fi
             BATEST_FILTER="$2"
