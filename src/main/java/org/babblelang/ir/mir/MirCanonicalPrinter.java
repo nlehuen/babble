@@ -10,8 +10,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.ir.IrCanonicalSupport;
 import org.babblelang.ir.IrTarget;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
@@ -34,11 +34,6 @@ import org.babblelang.ir.hir.HirModule;
  * </ul>
  */
 public final class MirCanonicalPrinter {
-    private static final Pattern SCRIPT_PREFIX = Pattern.compile("(?:babble/)?Script\\$\\d+\\$");
-    private static final Pattern SCRIPT_SELF = Pattern.compile("(?:babble/)?Script\\$\\d+");
-    private static final Pattern BABBLE_TYPE_ID =
-            Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
-
     private MirCanonicalPrinter() {}
 
     public static String print(MirModule mirModule, IrTarget target) {
@@ -46,12 +41,13 @@ public final class MirCanonicalPrinter {
         StringBuilder sb = new StringBuilder();
         switch (target) {
             case IrTarget.Fn fnTarget -> {
-                HirFunction hirFn = resolveFunction(hir, fnTarget.name());
+                HirFunction hirFn = IrCanonicalSupport.resolveFunction(hir, fnTarget.name(), "MIR");
                 printFunctionTarget(sb, mirModule, hirFn, 0);
             }
             case IrTarget.Method methodTarget -> {
                 List<HirFunction> methods =
-                        resolveMethods(hir, methodTarget.ownerName(), methodTarget.methodName());
+                        IrCanonicalSupport.resolveMethods(
+                                hir, methodTarget.ownerName(), methodTarget.methodName(), "MIR");
                 for (int i = 0; i < methods.size(); i++) {
                     if (i > 0) sb.append('\n');
                     printFunctionTarget(sb, mirModule, methods.get(i), 0);
@@ -64,136 +60,11 @@ public final class MirCanonicalPrinter {
         return sb.toString().stripTrailing();
     }
 
-    // ------------------------------------------------------------------ target resolution
-
-    private static HirFunction resolveFunction(HirModule module, String name) {
-        List<HirFunction> matches = new ArrayList<>();
-        for (HirFunction fn : module.functions().values()) {
-            if (fn.ownerClassId() < 0 && name.equals(fn.name())) {
-                matches.add(fn);
-            }
-        }
-        if (matches.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "No MIR function named '"
-                            + name
-                            + "' (available: "
-                            + availableTargets(module)
-                            + ")");
-        }
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException(
-                    "Ambiguous MIR function '"
-                            + name
-                            + "' ("
-                            + matches.size()
-                            + " matches; use a unique name in the case)");
-        }
-        return matches.get(0);
-    }
-
-    private static List<HirFunction> resolveMethods(
-            HirModule module, String ownerName, String methodName) {
-        HirClass cls = findClassByName(module, ownerName);
-        if (cls != null) {
-            Set<Integer> ids = new LinkedHashSet<>();
-            Integer single = cls.methodFunctionIds().get(methodName);
-            if (single != null) ids.add(single);
-            List<Integer> ovs = cls.overloadMethodFunctionIds().get(methodName);
-            if (ovs != null) ids.addAll(ovs);
-            for (HirFunction fn : module.functions().values()) {
-                if (fn.ownerClassId() == cls.id()
-                        && (methodName.equals(fn.memberName()) || methodName.equals(fn.name()))) {
-                    ids.add(fn.id());
-                }
-            }
-            List<HirFunction> result = new ArrayList<>();
-            for (int id : ids) {
-                HirFunction fn = module.function(id);
-                if (fn != null) result.add(fn);
-            }
-            if (result.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "No MIR method '" + ownerName + "." + methodName + "'");
-            }
-            return result;
-        }
-        HirInterface iface = findInterfaceByName(module, ownerName);
-        if (iface != null) {
-            Set<Integer> ids = new LinkedHashSet<>();
-            Integer single = iface.defaultFunctionIds().get(methodName);
-            if (single != null) ids.add(single);
-            List<Integer> ovs = iface.defaultOverloadFunctionIds().get(methodName);
-            if (ovs != null) ids.addAll(ovs);
-            List<HirFunction> result = new ArrayList<>();
-            for (int id : ids) {
-                HirFunction fn = module.function(id);
-                if (fn != null) result.add(fn);
-            }
-            if (result.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "No MIR default method '" + ownerName + "." + methodName + "'");
-            }
-            return result;
-        }
-        throw new IllegalArgumentException(
-                "No MIR type named '"
-                        + ownerName
-                        + "' for method '"
-                        + methodName
-                        + "' (available: "
-                        + availableTargets(module)
-                        + ")");
-    }
-
-    private static HirClass findClassByName(HirModule module, String name) {
-        for (HirClass cls : module.classes().values()) {
-            if (name.equals(cls.shape().name())) {
-                return cls;
-            }
-        }
-        return null;
-    }
-
-    private static HirInterface findInterfaceByName(HirModule module, String name) {
-        for (HirInterface iface : module.interfaces().values()) {
-            if (name.equals(iface.shape().name())) {
-                return iface;
-            }
-        }
-        return null;
-    }
-
-    private static String availableTargets(HirModule module) {
-        List<String> names = new ArrayList<>();
-        for (HirFunction fn : module.functions().values()) {
-            if (fn.ownerClassId() < 0 && fn.name() != null && !fn.name().isEmpty()) {
-                names.add("fn=" + fn.name());
-            }
-        }
-        for (HirClass cls : module.classes().values()) {
-            names.add((cls.shape().isValue() ? "record=" : "class=") + cls.shape().name());
-            for (String m : cls.methodFunctionIds().keySet()) {
-                names.add("fn=" + cls.shape().name() + "." + m);
-            }
-        }
-        return names.isEmpty() ? "<none>" : String.join(", ", names);
-    }
-
     // ------------------------------------------------------------------ module & typedef printers
 
     private static void printModule(StringBuilder sb, MirModule mirModule) {
         HirModule hir = mirModule.hir();
-        String label = hir.sourceName();
-        if (label == null
-                || label.isBlank()
-                || "<unknown>".equals(label)
-                || "<script>".equals(label)
-                || "<input>".equals(label)
-                || SCRIPT_SELF.matcher(label).matches()) {
-            label = "<main>";
-        }
-        sb.append("module ").append(label).append('\n');
+        sb.append("module ").append(IrCanonicalSupport.moduleLabel(hir)).append('\n');
         for (HirFunction fn : hir.functions().values()) {
             printFunctionTarget(sb, mirModule, fn, 1);
             sb.append('\n');
@@ -203,10 +74,10 @@ public final class MirCanonicalPrinter {
     private static void printTypeDef(
             StringBuilder sb, MirModule mirModule, IrTarget.TypeDef target, int indent) {
         HirModule hir = mirModule.hir();
-        HirClass cls = findClassByName(hir, target.name());
+        HirClass cls = IrCanonicalSupport.findClassByName(hir, target.name(), "MIR");
         if (cls != null) {
-            indent(sb, indent);
-            String kind = cls.isObject() ? "object" : (cls.shape().isValue() ? "record" : "class");
+            IrCanonicalSupport.indent(sb, indent);
+            String kind = IrCanonicalSupport.typeKindLabel(cls);
             sb.append(kind).append(' ').append(cls.shape().name()).append(":\n");
             boolean any = false;
             Set<Integer> ids = new LinkedHashSet<>(cls.methodFunctionIds().values());
@@ -222,14 +93,14 @@ public final class MirCanonicalPrinter {
                 }
             }
             if (!any) {
-                indent(sb, indent + 1);
+                IrCanonicalSupport.indent(sb, indent + 1);
                 sb.append("(no methods)");
             }
             return;
         }
-        HirInterface iface = findInterfaceByName(hir, target.name());
+        HirInterface iface = IrCanonicalSupport.findInterfaceByName(hir, target.name(), "MIR");
         if (iface != null) {
-            indent(sb, indent);
+            IrCanonicalSupport.indent(sb, indent);
             sb.append("interface ").append(iface.shape().name()).append(":\n");
             boolean any = false;
             Set<Integer> ids = new LinkedHashSet<>(iface.defaultFunctionIds().values());
@@ -245,7 +116,7 @@ public final class MirCanonicalPrinter {
                 }
             }
             if (!any) {
-                indent(sb, indent + 1);
+                IrCanonicalSupport.indent(sb, indent + 1);
                 sb.append("(no default methods)");
             }
             return;
@@ -836,45 +707,20 @@ public final class MirCanonicalPrinter {
 
     private static String formatConst(Object v) {
         if (v == null) return "null";
-        if (v instanceof String s) return "\"" + escapeString(s) + "\"";
-        if (v instanceof Character ch) return "'" + escapeString(String.valueOf(ch)) + "'";
+        if (v instanceof String s) return "\"" + IrCanonicalSupport.escapeString(s) + "\"";
+        if (v instanceof Character ch)
+            return "'" + IrCanonicalSupport.escapeString(String.valueOf(ch)) + "'";
         if (v instanceof Long l) return l + "L";
         if (v instanceof Float f) return f + "f";
         return String.valueOf(v);
     }
 
-    private static String escapeString(String s) {
-        StringBuilder out = new StringBuilder(s.length());
-        for (int i = 0; i < s.length(); i++) {
-            char c = s.charAt(i);
-            switch (c) {
-                case '\n' -> out.append("\\n");
-                case '\r' -> out.append("\\r");
-                case '\t' -> out.append("\\t");
-                case '\\' -> out.append("\\\\");
-                case '"' -> out.append("\\\"");
-                default -> out.append(c);
-            }
-        }
-        return out.toString();
-    }
-
     private static String shortJvmType(String jvmType) {
-        if (jvmType == null) {
-            return "*";
-        }
-        String cleaned = SCRIPT_PREFIX.matcher(jvmType).replaceAll("");
-        int slash = cleaned.lastIndexOf('/');
-        return slash >= 0 ? cleaned.substring(slash + 1) : cleaned;
+        return IrCanonicalSupport.shortJvmType(jvmType);
     }
 
     private static String sanitizeDescriptor(String desc) {
-        if (desc == null) {
-            return "any";
-        }
-        String s = SCRIPT_PREFIX.matcher(desc).replaceAll("");
-        s = BABBLE_TYPE_ID.matcher(s).replaceAll("$1");
-        return s;
+        return IrCanonicalSupport.sanitizeDescriptor(desc);
     }
 
     private static String formatCatchTarget(LoweringTargets.CatchTarget ct) {
@@ -896,8 +742,6 @@ public final class MirCanonicalPrinter {
     }
 
     private static void indent(StringBuilder sb, int level) {
-        for (int i = 0; i < level; i++) {
-            sb.append("  ");
-        }
+        IrCanonicalSupport.indent(sb, level);
     }
 }

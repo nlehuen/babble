@@ -10,6 +10,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.ir.IrCanonicalSupport;
 import org.babblelang.ir.IrTarget;
 
 /**
@@ -35,10 +36,6 @@ import org.babblelang.ir.IrTarget;
 public final class HirCanonicalPrinter {
     private static final Pattern SYNTH_TEMP =
             Pattern.compile("^(\\$[a-zA-Z][a-zA-Z_]*[a-zA-Z])(\\d+)$");
-    private static final Pattern SCRIPT_PREFIX = Pattern.compile("(?:babble/)?Script\\$\\d+\\$");
-    private static final Pattern SCRIPT_SELF = Pattern.compile("(?:babble/)?Script\\$\\d+");
-    private static final Pattern BABBLE_TYPE_ID =
-            Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
 
     private HirCanonicalPrinter() {}
 
@@ -47,12 +44,13 @@ public final class HirCanonicalPrinter {
         StringBuilder sb = new StringBuilder();
         switch (target) {
             case IrTarget.Fn fnTarget -> {
-                HirFunction fn = resolveFunction(module, fnTarget.name());
+                HirFunction fn = IrCanonicalSupport.resolveFunction(module, fnTarget.name(), "HIR");
                 printFunction(sb, module, fn, typeNames, 0);
             }
             case IrTarget.Method methodTarget -> {
                 List<HirFunction> methods =
-                        resolveMethods(module, methodTarget.ownerName(), methodTarget.methodName());
+                        IrCanonicalSupport.resolveMethods(
+                                module, methodTarget.ownerName(), methodTarget.methodName(), "HIR");
                 for (int i = 0; i < methods.size(); i++) {
                     if (i > 0) {
                         sb.append('\n');
@@ -67,175 +65,11 @@ public final class HirCanonicalPrinter {
         return sb.toString().stripTrailing();
     }
 
-    // ------------------------------------------------------------------ target resolution
-
-    private static HirFunction resolveFunction(HirModule module, String name) {
-        List<HirFunction> matches = new ArrayList<>();
-        for (HirFunction fn : module.functions().values()) {
-            if (fn.ownerClassId() < 0 && name.equals(fn.name())) {
-                matches.add(fn);
-            }
-        }
-        if (matches.isEmpty()) {
-            throw new IllegalArgumentException(
-                    "No HIR function named '"
-                            + name
-                            + "' (available: "
-                            + availableTargets(module)
-                            + ")");
-        }
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException(
-                    "Ambiguous HIR function '"
-                            + name
-                            + "' ("
-                            + matches.size()
-                            + " matches; use a unique name in the case)");
-        }
-        return matches.get(0);
-    }
-
-    private static List<HirFunction> resolveMethods(
-            HirModule module, String ownerName, String methodName) {
-        HirClass cls = findClassByName(module, ownerName);
-        if (cls != null) {
-            Set<Integer> ids = new LinkedHashSet<>();
-            Integer single = cls.methodFunctionIds().get(methodName);
-            if (single != null) {
-                ids.add(single);
-            }
-            List<Integer> ovs = cls.overloadMethodFunctionIds().get(methodName);
-            if (ovs != null) {
-                ids.addAll(ovs);
-            }
-            for (HirFunction fn : module.functions().values()) {
-                if (fn.ownerClassId() == cls.id()
-                        && (methodName.equals(fn.memberName()) || methodName.equals(fn.name()))) {
-                    ids.add(fn.id());
-                }
-            }
-            List<HirFunction> result = new ArrayList<>();
-            for (int id : ids) {
-                HirFunction fn = module.function(id);
-                if (fn != null) {
-                    result.add(fn);
-                }
-            }
-            if (result.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "No HIR method '"
-                                + ownerName
-                                + "."
-                                + methodName
-                                + "' on "
-                                + typeKindLabel(cls)
-                                + " '"
-                                + ownerName
-                                + "'");
-            }
-            return result;
-        }
-        HirInterface iface = findInterfaceByName(module, ownerName);
-        if (iface != null) {
-            Set<Integer> ids = new LinkedHashSet<>();
-            Integer single = iface.defaultFunctionIds().get(methodName);
-            if (single != null) {
-                ids.add(single);
-            }
-            List<Integer> ovs = iface.defaultOverloadFunctionIds().get(methodName);
-            if (ovs != null) {
-                ids.addAll(ovs);
-            }
-            List<HirFunction> result = new ArrayList<>();
-            for (int id : ids) {
-                HirFunction fn = module.function(id);
-                if (fn != null) {
-                    result.add(fn);
-                }
-            }
-            if (result.isEmpty()) {
-                throw new IllegalArgumentException(
-                        "No HIR default method '"
-                                + ownerName
-                                + "."
-                                + methodName
-                                + "' on interface '"
-                                + ownerName
-                                + "'");
-            }
-            return result;
-        }
-        throw new IllegalArgumentException(
-                "No HIR type named '"
-                        + ownerName
-                        + "' for method '"
-                        + methodName
-                        + "' (available: "
-                        + availableTargets(module)
-                        + ")");
-    }
-
-    private static HirClass findClassByName(HirModule module, String name) {
-        List<HirClass> matches = new ArrayList<>();
-        for (HirClass cls : module.classes().values()) {
-            if (name.equals(cls.shape().name())) {
-                matches.add(cls);
-            }
-        }
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException(
-                    "Ambiguous HIR class/record '" + name + "' (" + matches.size() + " matches)");
-        }
-        return matches.isEmpty() ? null : matches.get(0);
-    }
-
-    private static HirInterface findInterfaceByName(HirModule module, String name) {
-        List<HirInterface> matches = new ArrayList<>();
-        for (HirInterface iface : module.interfaces().values()) {
-            if (name.equals(iface.shape().name())) {
-                matches.add(iface);
-            }
-        }
-        if (matches.size() > 1) {
-            throw new IllegalArgumentException(
-                    "Ambiguous HIR interface '" + name + "' (" + matches.size() + " matches)");
-        }
-        return matches.isEmpty() ? null : matches.get(0);
-    }
-
-    private static String availableTargets(HirModule module) {
-        List<String> names = new ArrayList<>();
-        for (HirFunction fn : module.functions().values()) {
-            if (fn.ownerClassId() < 0 && fn.name() != null && !fn.name().isEmpty()) {
-                names.add("fn=" + fn.name());
-            }
-        }
-        for (HirClass cls : module.classes().values()) {
-            names.add(typeKindLabel(cls) + "=" + cls.shape().name());
-            for (String m : cls.methodFunctionIds().keySet()) {
-                names.add("fn=" + cls.shape().name() + "." + m);
-            }
-        }
-        for (HirInterface iface : module.interfaces().values()) {
-            names.add("interface=" + iface.shape().name());
-        }
-        return names.isEmpty() ? "<none>" : String.join(", ", names);
-    }
-
     // ------------------------------------------------------------------ structural printers
 
     private static void printModule(
             StringBuilder sb, HirModule module, Map<String, String> typeNames) {
-        String label = module.sourceName();
-        if (label == null
-                || label.isBlank()
-                || "<unknown>".equals(label)
-                || "<script>".equals(label)
-                || "<input>".equals(label)
-                || SCRIPT_SELF.matcher(label).matches()) {
-            label = "<main>";
-        }
-        sb.append("module ").append(label).append('\n');
+        sb.append("module ").append(IrCanonicalSupport.moduleLabel(module)).append('\n');
         if (!module.topLevelStatements().isEmpty()) {
             printTopLevel(sb, module, typeNames, 1);
             sb.append('\n');
@@ -286,37 +120,38 @@ public final class HirCanonicalPrinter {
             int indent) {
         switch (target.kind()) {
             case CLASS -> {
-                HirClass cls = findClassByName(module, target.name());
+                HirClass cls = IrCanonicalSupport.findClassByName(module, target.name(), "HIR");
                 if (cls == null || (cls.shape().isValue() && !cls.isObject())) {
                     throw new IllegalArgumentException(
                             "No HIR class named '"
                                     + target.name()
                                     + "' (available: "
-                                    + availableTargets(module)
+                                    + IrCanonicalSupport.availableTargets(module)
                                     + ")");
                 }
                 printClass(sb, module, cls, typeNames, indent);
             }
             case RECORD -> {
-                HirClass cls = findClassByName(module, target.name());
+                HirClass cls = IrCanonicalSupport.findClassByName(module, target.name(), "HIR");
                 if (cls == null || !cls.shape().isValue() || cls.isObject()) {
                     throw new IllegalArgumentException(
                             "No HIR record named '"
                                     + target.name()
                                     + "' (available: "
-                                    + availableTargets(module)
+                                    + IrCanonicalSupport.availableTargets(module)
                                     + ")");
                 }
                 printClass(sb, module, cls, typeNames, indent);
             }
             case INTERFACE -> {
-                HirInterface iface = findInterfaceByName(module, target.name());
+                HirInterface iface =
+                        IrCanonicalSupport.findInterfaceByName(module, target.name(), "HIR");
                 if (iface == null) {
                     throw new IllegalArgumentException(
                             "No HIR interface named '"
                                     + target.name()
                                     + "' (available: "
-                                    + availableTargets(module)
+                                    + IrCanonicalSupport.availableTargets(module)
                                     + ")");
                 }
                 printInterface(sb, module, iface, typeNames, indent);
@@ -1511,9 +1346,9 @@ public final class HirCanonicalPrinter {
             if (direct != null) {
                 return direct;
             }
-            String cleaned = SCRIPT_PREFIX.matcher(raw).replaceAll("");
-            cleaned = SCRIPT_SELF.matcher(cleaned).replaceAll("<script>");
-            cleaned = BABBLE_TYPE_ID.matcher(cleaned).replaceAll("$1");
+            String cleaned = IrCanonicalSupport.SCRIPT_PREFIX.matcher(raw).replaceAll("");
+            cleaned = IrCanonicalSupport.SCRIPT_SELF.matcher(cleaned).replaceAll("<script>");
+            cleaned = IrCanonicalSupport.BABBLE_TYPE_ID.matcher(cleaned).replaceAll("$1");
             return cleaned;
         }
     }
@@ -1540,18 +1375,14 @@ public final class HirCanonicalPrinter {
         }
         for (Map.Entry<String, String> e : module.allClassJvmNames().entrySet()) {
             if (!map.containsKey(e.getKey())) {
-                String cleaned = SCRIPT_PREFIX.matcher(e.getValue()).replaceAll("");
-                int slash = cleaned.lastIndexOf('/');
-                String simple = slash >= 0 ? cleaned.substring(slash + 1) : cleaned;
+                String simple = IrCanonicalSupport.shortJvmType(e.getValue());
                 map.put(e.getKey(), simple);
                 map.put(e.getValue(), simple);
             }
         }
         for (Map.Entry<String, String> e : module.allInterfaceJvmNames().entrySet()) {
             if (!map.containsKey(e.getKey())) {
-                String cleaned = SCRIPT_PREFIX.matcher(e.getValue()).replaceAll("");
-                int slash = cleaned.lastIndexOf('/');
-                String simple = slash >= 0 ? cleaned.substring(slash + 1) : cleaned;
+                String simple = IrCanonicalSupport.shortJvmType(e.getValue());
                 map.put(e.getKey(), simple);
                 map.put(e.getValue(), simple);
             }
@@ -1560,16 +1391,11 @@ public final class HirCanonicalPrinter {
     }
 
     private static String typeKindLabel(HirClass cls) {
-        if (cls.isObject()) {
-            return "object";
-        }
-        return cls.shape().isValue() ? "record" : "class";
+        return IrCanonicalSupport.typeKindLabel(cls);
     }
 
     private static void indent(StringBuilder sb, int level) {
-        for (int i = 0; i < level; i++) {
-            sb.append("  ");
-        }
+        IrCanonicalSupport.indent(sb, level);
     }
 
     private static String kindTag(PrimitiveKind kind) {
@@ -1587,10 +1413,6 @@ public final class HirCanonicalPrinter {
     }
 
     private static String escape(String s) {
-        return s.replace("\\", "\\\\")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t")
-                .replace("\"", "\\\"");
+        return IrCanonicalSupport.escapeString(s);
     }
 }
