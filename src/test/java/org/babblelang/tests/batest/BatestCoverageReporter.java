@@ -149,7 +149,20 @@ public final class BatestCoverageReporter {
             String text,
             boolean passed,
             String crash,
-            String irError) {
+            String irError,
+            double durationMs) {
+        public RecordedOutcome(
+                CaseKey key,
+                String name,
+                String expected,
+                String kind,
+                String text,
+                boolean passed,
+                String crash,
+                String irError) {
+            this(key, name, expected, kind, text, passed, crash, irError, 0.0);
+        }
+
         public RecordedOutcome(
                 CaseKey key,
                 String expected,
@@ -157,9 +170,18 @@ public final class BatestCoverageReporter {
                 String text,
                 boolean passed,
                 String crash) {
-            this(key, "", expected, kind, text, passed, crash, null);
+            this(key, "", expected, kind, text, passed, crash, null, 0.0);
         }
     }
+
+    public record FileTiming(
+            String file,
+            int cases,
+            double totalMs,
+            double interpretMs,
+            double compileO0Ms,
+            double compileO1Ms,
+            double compileO2Ms) {}
 
     record Counter(int missed, int covered) {
         int total() {
@@ -998,6 +1020,14 @@ public final class BatestCoverageReporter {
                 hotspotsByScope,
                 sortMode);
 
+        List<FileTiming> slowestFiles =
+                computeFileTimings(
+                        sortedKeys,
+                        interpretOutcomes,
+                        compileO0Outcomes,
+                        compileOutcomes,
+                        compileO2Outcomes);
+
         printConsoleSummary(
                 out,
                 filter,
@@ -1023,6 +1053,7 @@ public final class BatestCoverageReporter {
                 sharedCompileBranches[0],
                 scopeClassCounts,
                 hotspotsByScope,
+                slowestFiles,
                 topPerScope,
                 sortMode,
                 enforceGate,
@@ -1368,6 +1399,7 @@ public final class BatestCoverageReporter {
             Counter shCompB,
             EnumMap<Scope, Integer> scopeClassCounts,
             EnumMap<Scope, List<FileCoverage>> hotspotsByScope,
+            List<FileTiming> slowestFiles,
             int topPerScope,
             SortMode sortMode,
             boolean enforceGate,
@@ -1639,6 +1671,8 @@ public final class BatestCoverageReporter {
             }
         }
 
+        printSlowestFiles(out, slowestFiles, hasCompileO0Outcomes, hasCompileO2Outcomes);
+
         out.println();
         out.println("Full uncovered line/branch map : " + reportDir.resolve("uncovered.txt"));
         out.println(
@@ -1647,6 +1681,105 @@ public final class BatestCoverageReporter {
         if (!inspect.isEmpty()) {
             printInspect(out, inspect, canonicalClasses, sortMode, sourceRoot);
         }
+    }
+
+    static List<FileTiming> computeFileTimings(
+            List<CaseKey> sortedKeys,
+            Map<CaseKey, RecordedOutcome> interpretOutcomes,
+            Map<CaseKey, RecordedOutcome> compileO0Outcomes,
+            Map<CaseKey, RecordedOutcome> compileO1Outcomes,
+            Map<CaseKey, RecordedOutcome> compileO2Outcomes) {
+        Map<String, double[]> sums = new LinkedHashMap<>();
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (CaseKey key : sortedKeys) {
+            String file = key.file();
+            counts.merge(file, 1, Integer::sum);
+            double[] arr = sums.computeIfAbsent(file, k -> new double[4]);
+            RecordedOutcome interp = interpretOutcomes.get(key);
+            RecordedOutcome compO0 = compileO0Outcomes.get(key);
+            RecordedOutcome compO1 = compileO1Outcomes.get(key);
+            RecordedOutcome compO2 = compileO2Outcomes.get(key);
+            if (interp != null) {
+                arr[0] += interp.durationMs();
+            }
+            if (compO0 != null) {
+                arr[1] += compO0.durationMs();
+            }
+            if (compO1 != null) {
+                arr[2] += compO1.durationMs();
+            }
+            if (compO2 != null) {
+                arr[3] += compO2.durationMs();
+            }
+        }
+        List<FileTiming> list = new ArrayList<>(sums.size());
+        for (Map.Entry<String, double[]> e : sums.entrySet()) {
+            double[] arr = e.getValue();
+            double total = arr[0] + arr[1] + arr[2] + arr[3];
+            list.add(
+                    new FileTiming(
+                            e.getKey(),
+                            counts.getOrDefault(e.getKey(), 0),
+                            total,
+                            arr[0],
+                            arr[1],
+                            arr[2],
+                            arr[3]));
+        }
+        list.sort(
+                Comparator.comparingDouble(FileTiming::totalMs)
+                        .reversed()
+                        .thenComparing(FileTiming::file));
+        return list;
+    }
+
+    private static void printSlowestFiles(
+            PrintStream out,
+            List<FileTiming> slowestFiles,
+            boolean hasCompileO0,
+            boolean hasCompileO2) {
+        if (slowestFiles.isEmpty() || slowestFiles.get(0).totalMs() <= 0.0) {
+            return;
+        }
+        int limit = Math.min(DEFAULT_TOP_PER_SCOPE, slowestFiles.size());
+        int nameWidth = 30;
+        for (int i = 0; i < limit; i++) {
+            nameWidth = Math.max(nameWidth, slowestFiles.get(i).file().length());
+        }
+        nameWidth = Math.min(nameWidth, 56);
+        out.println();
+        out.printf(
+                Locale.ROOT,
+                "=== SLOWEST .batest.md FILES (top %d by wall-clock time) ========================%n",
+                limit);
+        for (int i = 0; i < limit; i++) {
+            FileTiming ft = slowestFiles.get(i);
+            StringBuilder breakdown = new StringBuilder();
+            breakdown.append(
+                    String.format(Locale.ROOT, "interp %s", formatSeconds(ft.interpretMs())));
+            if (hasCompileO0) {
+                breakdown.append(
+                        String.format(Locale.ROOT, " | -O0 %s", formatSeconds(ft.compileO0Ms())));
+            }
+            breakdown.append(
+                    String.format(Locale.ROOT, " | -O1 %s", formatSeconds(ft.compileO1Ms())));
+            if (hasCompileO2) {
+                breakdown.append(
+                        String.format(Locale.ROOT, " | -O2 %s", formatSeconds(ft.compileO2Ms())));
+            }
+            breakdown.append(String.format(Locale.ROOT, " | %d cases", ft.cases()));
+            out.printf(
+                    Locale.ROOT,
+                    "  %2d. %-" + nameWidth + "s %7s  (%s)%n",
+                    i + 1,
+                    ft.file(),
+                    formatSeconds(ft.totalMs()),
+                    breakdown);
+        }
+    }
+
+    private static String formatSeconds(double ms) {
+        return String.format(Locale.ROOT, "%.2fs", ms / 1000.0);
     }
 
     private static String formatGateHeader(double minLinePct, double minBranchPct) {
@@ -2203,6 +2336,11 @@ public final class BatestCoverageReporter {
                             fields.get("file"),
                             Integer.parseInt(fields.get("index")),
                             Integer.parseInt(fields.get("line")));
+            double durationMs = 0.0;
+            String rawDuration = fields.get("durationMs");
+            if (rawDuration != null && !rawDuration.isBlank()) {
+                durationMs = Double.parseDouble(rawDuration);
+            }
             map.put(
                     key,
                     new RecordedOutcome(
@@ -2213,7 +2351,8 @@ public final class BatestCoverageReporter {
                             fields.getOrDefault("text", ""),
                             Boolean.parseBoolean(fields.getOrDefault("passed", "false")),
                             fields.get("crash"),
-                            fields.get("irError")));
+                            fields.get("irError"),
+                            durationMs));
         }
         return map;
     }
