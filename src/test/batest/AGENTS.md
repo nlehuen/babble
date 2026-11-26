@@ -1,10 +1,10 @@
 # Authoring and reviewing `.batest.md` files
 
-This guide applies to all `.batest.md` specification files under `src/test/batest/` (defined in [BIP009](../../../docs/design/bip009_test-coverage.md) and redesigned in [BIP029](../../../docs/design/bip029_batest-v2-and-ir-goldens.md), executed by [`BatestTestCase`](../java/org/babblelang/tests/batest/BatestTestCase.java)).
+This guide applies to all `.batest.md` specification files under `src/test/batest/` (defined in [BIP009](../../../docs/design/bip009_test-coverage.md) and redesigned in [BIP029](../../../docs/design/bip029_batest-v2-and-ir-goldens.md), executed by [`BatestTestCase`](../java/org/babblelang/tests/batest/BatestTestCase.java) and [`WasmBatestTestCase`](../java/org/babblelang/tests/batest/WasmBatestTestCase.java)). For overall test-suite policy (when to write `.batest.md` vs Java JUnit tests, legacy-suite rules, and test layout), see [`../AGENTS.md`](../AGENTS.md).
 
-## Why small, readable cases matter : four levels of verification
+## Why small, readable cases matter : multi-backend oracle plus manual review
 
-Every `.batest.md` case is checked automatically by a **3-way execution oracle** — `interpret`, `compile -O0`, and `compile -O1` (with `HirVerifier` and ASM's `CheckClassAdapter` in compiled modes, plus any opt-in `hir`/`mir` IR golden blocks matching the active optimization level) — and matched against its expected `stdout`, `stderr`, and `error` blocks.
+Every `.batest.md` case is checked automatically by a **multi-backend execution oracle** — `interpret`, `compile -O0`, `compile -O1`, `compile -O2` (under `-PO2` and `-Pbatest`, with `HirVerifier`, `MirVerifier`, and ASM's `CheckClassAdapter`, plus any `hir`/`mir` IR golden blocks matching the active optimization level), and **WebAssembly 3.0** (`WasmBatestTestCase`, `wasm-js -O1`, plus `wat` blocks for portable cases) — matched against its expected `stdout`, `stderr`, and `error` blocks, and checked for pure-`SLL` parsing (`ParserGrammarTestCase`) and idempotent formatting (`FormatterTestCase`).
 
 That automated oracle catches regressions and disagreements *between* backends, **not** shared bugs where the interpreter and compiler make the same mistake, or tests whose expectations were silently wrong from the start. We therefore require a **4th level of verification : manual validation by a human or an LLM reviewer**.
 
@@ -158,7 +158,7 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
 - **Error normalization and `Kind`** ([`BatestRunner`](../java/org/babblelang/tests/batest/BatestRunner.java)) :
   - Wrapper prefixes (`BabbleException:`, `ScriptException:`), trailing `in <src> at line number N`, embedded line coordinates, dynamic type IDs (`expected T#, got T#`), OS-locale `FileNotFoundException` reasons (`(<OS error>)`), JDK 22+ reflective receiver wording, and `InvocationTargetException` wrappers are normalized; `StackOverflowError` becomes `Stack overflow`.
   - `INTERNAL_CRASH` (`VerifyError`, uncaught internal NPE/ISE) fails unconditionally.
-- **SLL grammar check** : `ParserGrammarTestCase` parses every valid `.batest.md` file with pure `PredictionMode.SLL`.
+- **SLL grammar & formatter checks** : `ParserGrammarTestCase` parses every valid `.batest.md` snippet with pure `PredictionMode.SLL`, and `FormatterTestCase` verifies idempotent formatting across every valid `.batest.md` snippet.
 - **Determinism** : never rely on default `ClassName@<identityHash>`, timestamps, unordered `HashMap`/`HashSet` iteration order, host paths, or multiple threads.
 - **Watch `-O1` constant folding** : if a case aims to test runtime execution rather than constant folding, feed inputs through a function parameter or mutable variable.
 - **Repo conventions** : put a space before colons in Babble-style messages (`Feature : detail`), and never mention unimplemented `RM###` identifiers in prose or filenames (use `BIP###` instead).
