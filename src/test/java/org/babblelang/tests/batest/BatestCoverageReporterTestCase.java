@@ -1623,4 +1623,84 @@ public class BatestCoverageReporterTestCase {
                 + "  </package>\n"
                 + "</report>\n";
     }
+
+    @Test
+    public void testSlowestFilesWallClockRanking(@TempDir Path tmp) throws Exception {
+        Path reportDir = tmp.resolve("report");
+        Files.createDirectories(reportDir);
+
+        StringBuilder interp = new StringBuilder();
+        StringBuilder comp = new StringBuilder();
+        for (int i = 1; i <= 12; i++) {
+            String file = String.format("dir/file_%02d.batest.md", i);
+            double msInterp = i * 100.0;
+            double msComp = i * 250.0;
+            interp.append("{\"file\":\"")
+                    .append(file)
+                    .append(
+                            "\",\"index\":1,\"line\":10,\"expected\":\"ok\",\"kind\":\"OK\",\"text\":\"ok\",\"passed\":true,\"durationMs\":")
+                    .append(msInterp)
+                    .append("}\n");
+            comp.append("{\"file\":\"")
+                    .append(file)
+                    .append(
+                            "\",\"index\":1,\"line\":10,\"expected\":\"ok\",\"kind\":\"OK\",\"text\":\"ok\",\"passed\":true,\"durationMs\":")
+                    .append(msComp)
+                    .append("}\n");
+        }
+        Files.writeString(
+                reportDir.resolve("outcomes-interpret.jsonl"),
+                interp.toString(),
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                reportDir.resolve("outcomes-compile.jsonl"),
+                comp.toString(),
+                StandardCharsets.UTF_8);
+
+        Path interpXml = tmp.resolve("interp.xml");
+        Path compXml = tmp.resolve("comp.xml");
+        Path optXml = tmp.resolve("opt.xml");
+        Files.writeString(
+                interpXml,
+                xmlWithSingleClass(
+                        "interpret", "org/babblelang/engine/impl", "Interpreter", 0, 10, 0, 4),
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                compXml,
+                xmlWithSingleClass(
+                        "compile", "org/babblelang/compiler", "CodeGenerator", 0, 10, 0, 4),
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                optXml,
+                xmlWithSingleClass("opt", "org/babblelang/opt", "PassManager", 0, 10, 0, 4),
+                StandardCharsets.UTF_8);
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        BatestCoverageReporter.run(
+                reportDir,
+                interpXml,
+                compXml,
+                null,
+                optXml,
+                null,
+                tmp.resolve("src"),
+                "",
+                "",
+                0.0,
+                0.0,
+                10,
+                BatestCoverageReporter.SortMode.SCORE,
+                new PrintStream(baos, true, StandardCharsets.UTF_8));
+        String console = baos.toString(StandardCharsets.UTF_8);
+
+        Assertions.assertTrue(
+                console.contains("SLOWEST .batest.md FILES (top 10 by wall-clock time)"), console);
+        int pos12 = console.indexOf("dir/file_12.batest.md");
+        int pos11 = console.indexOf("dir/file_11.batest.md");
+        int pos03 = console.indexOf("dir/file_03.batest.md");
+        Assertions.assertTrue(pos12 > 0 && pos11 > pos12 && pos03 > pos11, console);
+        Assertions.assertTrue(console.contains("4.20s"), console);
+        Assertions.assertFalse(console.contains("dir/file_02.batest.md"), console);
+        Assertions.assertFalse(console.contains("dir/file_01.batest.md"), console);
+    }
 }

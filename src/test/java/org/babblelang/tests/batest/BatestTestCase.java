@@ -142,6 +142,7 @@ public class BatestTestCase {
 
     private static void executeCase(
             Path filePath, BatestFile file, BatestFile.BatestCase testCase, Path recordFile) {
+        long startNanos = System.nanoTime();
         BatestRunner.RunResult runResult = BatestRunner.runWithIr(file, testCase);
         BatestRunner.CaseOutcome outcome = runResult.outcome();
         String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
@@ -174,8 +175,9 @@ public class BatestTestCase {
         }
 
         boolean passed = behavioralPassed && irError == null;
+        double durationMs = (System.nanoTime() - startNanos) / 1_000_000.0;
         if (recordFile != null) {
-            appendRecord(recordFile, file, testCase, outcome, passed, irError);
+            appendRecord(recordFile, file, testCase, outcome, passed, irError, durationMs);
         }
         if (outcome.kind() == BatestRunner.Kind.INTERNAL_CRASH) {
             Assertions.fail(
@@ -221,7 +223,8 @@ public class BatestTestCase {
             BatestFile.BatestCase testCase,
             BatestRunner.CaseOutcome outcome,
             boolean passed,
-            String irError) {
+            String irError,
+            double durationMs) {
         StringBuilder json = new StringBuilder();
         json.append('{');
         json.append("\"file\":\"").append(escapeJson(file.relativePath())).append("\",");
@@ -234,6 +237,7 @@ public class BatestTestCase {
         json.append("\"kind\":\"").append(outcome.kind().name()).append("\",");
         json.append("\"text\":\"").append(escapeJson(outcome.text())).append("\",");
         json.append("\"passed\":").append(passed);
+        json.append(",\"durationMs\":").append(String.format(Locale.ROOT, "%.3f", durationMs));
         if (outcome.crash() != null) {
             json.append(",\"crash\":\"")
                     .append(escapeJson(stackTrace(outcome.crash())))
