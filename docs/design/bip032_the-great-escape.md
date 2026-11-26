@@ -214,9 +214,9 @@ Below is the structured red-team catalog across all 6 surfaces that drives `BIP0
 | `A2` | **Partial-derivative sign & bijectivity (`AlgebraicVerifier` `Sign`/`RelVal`)** | `monotone` on `double`/`float` (`x * 0.0`, `x * (-0.0)`, `x + Infinity`, `min`/`max` with `NaN`), `int`/`long` overflow, `char`/narrowing casts; `injective` on lossy widening (`int -> float`, `long -> double`), `STR_ADD` with ambiguous multi-param concatenation, triangular `record` recovery with non-injective components | Function accepted as `monotone` or `injective`, falsified by explicit `x1 < x2` or `f(x1) == f(x2)` counterexample |
 | `A3` | **Termination (`SizeChangeTermination` & `for`-loop certification)** | Guarded integer decreases around `Integer.MIN_VALUE` / `Long.MIN_VALUE` (`-n`, `abs(n)`, `n - k` underflow, `floorDiv`/`floorMod`), mutual recursion with subtle parameter swaps, recursive calls hidden in closures/interfaces/fields, `for` loops over custom/mutated `Collection` iterators falsely certified `@TERMINATING` | Non-terminating function certified `@TERMINATING` (and potentially deleted by `HirDcePass`/`MirDcePass`!) |
 
-### 5.7 Forward compatibility with `BIP034` (`def` vs. `var`)
+### 5.7 Surface coverage for `BIP034` (`def` vs. `var`)
 
-Once [BIP034](bip034_immutable-def-and-mutable-var.md) (`BIP034-P1`–`P5`, splitting non-reassignable `def` from mutable `var`) lands, the attack catalog and Layer 1/2 mutators extend directly without structural changes to probe: per-field `def` `READ_FROZEN` immutability vs. mutable nested containers on regular `class`es, value-capture of `def` locals vs. cell-capture of `var` locals, sequential TDZ / pure `name_read {pure}` MIR hoisting (`R5`), `private var` static field purity, and `fn (var ...)` local parameters.
+With [BIP034](bip034_immutable-def-and-mutable-var.md) (`BIP034-I1`–`I5`, splitting non-reassignable `def` from mutable `var`) implemented, the attack catalog and Layer 1/2 mutators directly probe: per-field `def` `READ_FROZEN` immutability vs. mutable nested containers on regular `class`es, value-capture of `def` locals vs. cell-capture of `var` locals, sequential TDZ / pure `name_read {pure}` MIR hoisting (`R5`), `private var` static field purity, `ACC_FINAL` header `def` constructors, and `fn (var ...)` local parameters.
 
 ---
 
@@ -277,7 +277,7 @@ Every program accepted by the front end (single-file script, multi-module `MapMo
 * `compile -O0` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 0`, `VERIFY = true`)
 * `compile -O1` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 1`, `VERIFY = true`)
 * `compile -O2` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 2`, `VERIFY = true`, SSA `MIR` via `BIP014-I3`)
-* *(Extensible to `wasm` under `BIP025`.)*
+* Plus portable-program parity against `wasm-js -O1` (`BIP025-I0`–`I5`, `RM018`, with `WasmVerifier` and `NodeWasmRunner` when Node.js is available)
 
 *(Implementation note for `BIP032-P2`: [`BabbleCompiler.java`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java) `#L140` currently reads `Boolean.getBoolean(VERIFY)` directly; `BIP032-P2` adds a tiny `BabbleCompiler.resolveVerify(engine)` helper matching `resolveOptLevel(engine)` (`#L57`) and `IR_OBSERVER` (`#L42`), so per-engine verification runs `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter` in any Surefire leg without mutating `System` properties.)*
 
@@ -394,7 +394,7 @@ Because `BatestTestCase` automatically discovers every `.batest.md` file under `
 
 * `mvn package` (Surefire legs: `interpret`, `compile -O1`, `compile -O0`, plus `compile -O2` under `-PO2`, with `HirVerifier`, `MirVerifier`, and `CheckClassAdapter`)
 * `mvn -q verify -Pbatest` (4-JVM 6-scope JaCoCo coverage report: `Interpreter`, `Compiler (-O0)`, `Optimizer (-O1)`, `SSA MIR (-O2)`, `Shared Front-End`, and `Shared Runtime`)
-* Future Wasm (`BIP025`) legs with zero extra wiring.
+* `WasmBatestTestCase` (`BIP025-I0`–`I5`, `RM018`) for all portable cases, with zero extra wiring.
 
 ### 8.2 Standard `mvn test` vs. opt-in `-Pescape` profile (`BIP032-D6`)
 
