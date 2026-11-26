@@ -106,12 +106,21 @@ public final class HirPurity {
                             || ((b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ)
                             && b.left().meta().stringType() && b.right().meta().stringType());
                 }
+                if (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV) {
+                    yield b.meta().kind().isPrimitive()
+                            && isNumericKind(b.left().meta().kind()) && isNumericKind(b.right().meta().kind())
+                            && b.right() instanceof HirExpr.Const rc
+                            && rc.value() instanceof Number n && n.longValue() != 0L;
+                }
                 if (b.meta().kind().isPrimitive()
                         && isNumericKind(b.left().meta().kind()) && isNumericKind(b.right().meta().kind())) {
                     yield true;
                 }
                 yield b.op() == HirExpr.BinaryOp.ADD && b.left().meta().stringType() && b.right().meta().stringType();
             }
+            case HirExpr.Range r -> (r.elemKind().isPrimitive() || r.stringElement())
+                    && isPureNothrowTerminating(r.start(), module, visitingFns)
+                    && isPureNothrowTerminating(r.end(), module, visitingFns);
             case HirExpr.Logic l -> isPureNothrowTerminating(l.left(), module, visitingFns)
                     && isPureNothrowTerminating(l.right(), module, visitingFns);
             case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, Set.of(), module, visitingFns);
@@ -297,8 +306,20 @@ public final class HirPurity {
         }
         if (s instanceof HirExpr.For f) {
             EffectSet fx = f.meta().effects();
-            if (!fx.isPure() || !fx.isNothrow() || !fx.terminating()
-                    || !isPureNothrowTerminating(f.iterable(), module, visitingFns)) {
+            if (!fx.isPure() || !fx.isNothrow() || !fx.terminating()) {
+                return false;
+            }
+            if (f.countedRange() != null) {
+                HirExpr.CountedRangeLoop cr = f.countedRange();
+                if (!isPureNothrowTerminating(cr.start(), module, visitingFns)
+                        || !isPureNothrowTerminating(cr.end(), module, visitingFns)) {
+                    return false;
+                }
+                if (cr.step() != null
+                        && !(cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L)) {
+                    return false;
+                }
+            } else if (!isPureNothrowTerminating(f.iterable(), module, visitingFns)) {
                 return false;
             }
             Set<Integer> extended = new HashSet<>(localIds);

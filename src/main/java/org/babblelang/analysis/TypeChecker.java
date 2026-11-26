@@ -2248,6 +2248,7 @@ final class TypeChecker {
                 case BabbleParser.NegateContext c -> visitNegate(c, expected, role);
                 case BabbleParser.BooleanNotContext c -> visitBooleanNot(c, expected, role);
                 case BabbleParser.BinaryOpContext c -> visitBinaryOp(c, expected, role);
+                case BabbleParser.RangeExpressionContext c -> visitRangeExpression(c, expected, role);
                 case BabbleParser.IsExpressionContext c -> visitIsExpression(c, expected, role);
                 case BabbleParser.AsExpressionContext c -> visitAsExpression(c, expected, role);
                 case BabbleParser.BooleanOpContext c -> visitBooleanOp(c, expected, role);
@@ -2486,7 +2487,11 @@ final class TypeChecker {
             }
             ForIterableInfo resolved = members.resolveNonNullIterable(iterType);
             if (resolved == null) {
-                warn("Not iterable : " + iterType, ctx.iterable);
+                if (Type.rangeElement(iterType) != null) {
+                    warn("Not iterable : " + TypeDisplay.display(TypeAlgebra.unwrapFrozen(iterType)) + " is not discrete", ctx.iterable);
+                } else {
+                    warn("Not iterable : " + iterType, ctx.iterable);
+                }
             }
             return resolved;
         }
@@ -2753,6 +2758,100 @@ final class TypeChecker {
 
         private Type visitBinaryOp(BabbleParser.BinaryOpContext ctx, Type expected, Role role) {
             return operators.binaryOp(ctx, synth(ctx.left), synth(ctx.right));
+        }
+
+        private Type visitRangeExpression(BabbleParser.RangeExpressionContext ctx, Type expected, Role role) {
+            Type expectedElem = null;
+            if (expected != null && expected != Type.ERROR && expected != Type.NOTHING) {
+                expectedElem = Type.rangeElement(Type.withoutNull(expected));
+            }
+            Type left = expectedElem != null ? check(ctx.left, expectedElem) : synth(ctx.left);
+            // §3.4 : `1..10.step(5)` / `0..<n.reversed()` parses as `1..(10.step(5))` because member
+            // access binds tighter than `..`/`..<`. When the bound's receiver lacks the member and
+            // `range of T` has it, suggest parenthesizing the range.
+            BabbleParser.SelectorContext unparenSel = findUnparenthesizedRangeSelector(ctx.right);
+            if (unparenSel != null) {
+                String mName = ScopeAnalysis.selectorName(unparenSel);
+                if (MemberTypes.RANGE_MEMBER_NAMES.contains(mName)) {
+                    Type recvType = synth(unparenSel.expression());
+                    if (recvType != Type.ERROR && !isUnresolved(recvType) && !members.hasMember(recvType, mName)) {
+                        String recvText = unparenSel.expression().getText();
+                        String rightText = ctx.right.getText();
+                        int dotIdx = unparenSel.getChild(1).getText().equals(".")
+                                ? recvText.length()
+                                : rightText.indexOf("." + mName);
+                        String suffix = dotIdx >= 0 && dotIdx < rightText.length()
+                                ? rightText.substring(dotIdx)
+                                : "." + mName;
+                        String suggestion = "(" + ctx.left.getText() + ctx.op.getText() + recvText + ")" + suffix;
+                        warn("No such member : " + mName + ". Parenthesize the range : " + suggestion, ctx.right);
+                        BabbleParser.ExpressionContext mark = ctx.right;
+                        while (mark != null) {
+                            types.put(mark, Type.ERROR);
+                            if (mark == unparenSel) break;
+                            if (mark instanceof BabbleParser.CallContext c) mark = c.expression();
+                            else if (mark instanceof BabbleParser.SelectorContext s) mark = s.expression();
+                            else break;
+                        }
+                        return Type.ERROR;
+                    }
+                }
+            }
+            Type right = expectedElem != null ? check(ctx.right, expectedElem) : synth(ctx.right);
+            if (left == Type.ERROR || right == Type.ERROR || isUnresolved(left) || isUnresolved(right)) {
+                return Type.ERROR;
+            }
+            if (Type.containsNull(left)) {
+                warn("Range bound cannot be null : " + left, ctx.left);
+                return Type.ERROR;
+            }
+            if (Type.containsNull(right)) {
+                warn("Range bound cannot be null : " + right, ctx.right);
+                return Type.ERROR;
+            }
+            if (Type.isNumericScalar(left) && Type.isNumericScalar(right)) {
+                int rank = Math.max(Type.numericRank(left), Type.numericRank(right));
+                Type elem = Type.numericOfRank(rank);
+                coerce(ctx.left, left, elem);
+                coerce(ctx.right, right, elem);
+                return new Type.JavaInstance(org.babblelang.runtime.Range.class, List.of(elem));
+            }
+            if (left == Type.CHAR && right == Type.CHAR) {
+                return new Type.JavaInstance(org.babblelang.runtime.Range.class, List.of(Type.CHAR));
+            }
+            if (OperatorTypes.comparable(left, right)) {
+                Type elem;
+                if (left.equals(right)) {
+                    elem = left;
+                } else if (algebra.assignable(left, right)) {
+                    elem = right;
+                } else if (algebra.assignable(right, left)) {
+                    elem = left;
+                } else {
+                    elem = algebra.join(left, right);
+                }
+                if (elem != null && elem != Type.ERROR) {
+                    return new Type.JavaInstance(org.babblelang.runtime.Range.class, List.of(elem));
+                }
+            }
+            warn("Not comparable : " + left + " and " + right, ctx);
+            return Type.ERROR;
+        }
+
+        private static BabbleParser.SelectorContext findUnparenthesizedRangeSelector(BabbleParser.ExpressionContext expr) {
+            BabbleParser.ExpressionContext cur = expr;
+            BabbleParser.SelectorContext innermost = null;
+            while (true) {
+                if (cur instanceof BabbleParser.CallContext call) {
+                    cur = call.expression();
+                } else if (cur instanceof BabbleParser.SelectorContext sel && sel.expression() != null && sel.safe == null) {
+                    innermost = sel;
+                    cur = sel.expression();
+                } else {
+                    break;
+                }
+            }
+            return innermost;
         }
 
         private Type visitIsExpression(BabbleParser.IsExpressionContext ctx, Type expected, Role role) {

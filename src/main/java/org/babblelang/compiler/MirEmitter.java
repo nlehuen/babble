@@ -517,6 +517,7 @@ final class MirEmitter {
             case MirInst.CallInterface ci -> ci.receiver();
             case MirInst.RecordNew rn -> rn.classRef();
             case MirInst.RecordReuse rr -> rr.target();
+            case MirInst.RangeNew rn -> rn.start();
             case MirInst.CheckCast cc -> cc.operand();
             case MirInst.NonNull nn -> nn.operand();
             case MirInst.IsCheck ic -> ic.operand();
@@ -772,6 +773,7 @@ final class MirEmitter {
             case MirInst.CallJavaCtor cc -> emitCallJavaCtor(cc);
             case MirInst.RecordNew rn -> emitRecordNew(rn);
             case MirInst.RecordReuse rr -> emitRecordReuse(rr);
+            case MirInst.RangeNew rn -> emitRangeNew(rn);
             case MirInst.SlotDecl sd -> emitSlotDecl(sd);
             case MirInst.SlotRead sr -> {
                 emitter.loadVariable(sr.var(), sr.line());
@@ -894,6 +896,44 @@ final class MirEmitter {
                 storeResult(b.result());
                 return;
             }
+            if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
+                    && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
+                MirInst.Const rConst = rematerialized.get(resolveRoot(b.right()).id());
+                long posPow2 = 0L;
+                if (rConst != null && rConst.value() instanceof Number rn) {
+                    long v = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
+                    if (v > 0L && (v & (v - 1L)) == 0L) {
+                        posPow2 = v;
+                    }
+                }
+                loadVal(b.left());
+                emitter.convertStack(lk, out);
+                if (posPow2 > 0L) {
+                    if (b.op() == HirExpr.BinaryOp.MOD) {
+                        if (out == PrimitiveKind.LONG) {
+                            mv.visitLdcInsn(posPow2 - 1L);
+                            mv.visitInsn(LAND);
+                        } else {
+                            ConstantPool.pushInt(mv, (int) (posPow2 - 1L));
+                            mv.visitInsn(IAND);
+                        }
+                    } else {
+                        int shift = Long.numberOfTrailingZeros(posPow2);
+                        ConstantPool.pushInt(mv, shift);
+                        mv.visitInsn(out == PrimitiveKind.LONG ? LSHR : ISHR);
+                    }
+                } else {
+                    loadVal(b.right());
+                    emitter.convertStack(rk, out);
+                    ctx.line(b.line());
+                    String mathMethod = b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv";
+                    String desc = out == PrimitiveKind.LONG ? "(JJ)J" : "(II)I";
+                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", mathMethod, desc, false);
+                }
+                ctx.stackKind = out;
+                storeResult(b.result());
+                return;
+            }
             if (out == PrimitiveKind.FLOAT || out == PrimitiveKind.DOUBLE) {
                 loadVal(b.left());
                 emitter.convertStack(lk, out);
@@ -918,6 +958,17 @@ final class MirEmitter {
         withOverrides(ov, () -> emitter.controlOps.emitBinary(
                 new HirExpr.Binary(b.op(), lPh, rPh, b.leftText(), b.rightText(), ExprMeta.of(b.line(), out))));
         storeResult(b.result());
+    }
+
+    private void emitRangeNew(MirInst.RangeNew rn) {
+        HirExpr sPh = placeholder(rn.start(), rn.line());
+        HirExpr ePh = placeholder(rn.end(), rn.line());
+        Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(2);
+        ov.put(sPh, operandOf(rn.start()));
+        ov.put(ePh, operandOf(rn.end()));
+        withOverrides(ov, () -> emitter.controlOps.emitRange(
+                new HirExpr.Range(sPh, ePh, rn.inclusive(), rn.elemKind(), false, ExprMeta.of(rn.line(), PrimitiveKind.NONE))));
+        storeResult(rn.result());
     }
 
     private static boolean canEmitPrimitiveCmp(HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk) {

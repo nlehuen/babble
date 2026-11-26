@@ -129,6 +129,7 @@ public sealed interface HirArrayElementType permits
         if (cls == java.util.SortedMap.class || cls == java.util.TreeMap.class) return "sortedmap";
         if (cls == java.util.Map.class || cls == java.util.LinkedHashMap.class) return "map";
         if (cls == java.util.Map.Entry.class) return "entry";
+        if (cls == org.babblelang.runtime.Range.class) return "range";
         return null;
     }
 }

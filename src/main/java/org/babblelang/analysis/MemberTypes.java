@@ -163,6 +163,9 @@ final class MemberTypes {
             return member;
         }
         if (receiver instanceof Type.JavaInstance instance) {
+            if (instance.type() == org.babblelang.runtime.Range.class) {
+                return rangeMember(instance, name, at);
+            }
             return javaMember(instance.type(), instance.typeArguments(), name, false, at);
         }
         if (receiver == Type.STRING) {
@@ -205,6 +208,64 @@ final class MemberTypes {
         // The 8 primitives, null, functions, any : memberless.
         checker.warn("Not a scope : " + receiverText, at);
         return Type.ERROR;
+    }
+
+    static final Set<String> RANGE_MEMBER_NAMES = Set.of(
+            "start", "end", "inclusive", "isEmpty", "contains", "step", "reversed");
+
+    private Type rangeMember(Type.JavaInstance range, String name, ParserRuleContext at) {
+        Type elem = range.typeArguments().isEmpty() ? Type.ANY : range.typeArguments().get(0);
+        boolean scalar = Type.isNumericScalar(elem) || elem == Type.CHAR;
+        boolean discrete = Type.isDiscreteRangeElement(elem);
+        boolean nothrowElem = scalar || elem == Type.STRING;
+        EffectSet pureNothrow = OperatorTypes.PURE_DET_NOTHROW;
+        EffectSet pureMayThrow = EffectSet.ofInferred(
+                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false, false, true);
+        EffectSet elemEffect = nothrowElem ? pureNothrow : pureMayThrow;
+        switch (name) {
+            case "start", "end":
+                return new Type.Function(List.of(), elem, pureNothrow);
+            case "inclusive":
+                return new Type.Function(List.of(), Type.BOOL, pureNothrow);
+            case "isEmpty":
+                return new Type.Function(List.of(), Type.BOOL, elemEffect);
+            case "contains":
+                return new Type.Function(
+                        List.of(new Type.Parameter("value", elem, false, false, true, false)),
+                        Type.BOOL, elemEffect);
+            case "step":
+                if (!discrete) {
+                    checker.warn("Not iterable : " + TypeDisplay.display(range) + " is not discrete", at);
+                    return Type.ERROR;
+                }
+                Type stepParam = elem == Type.LONG ? Type.LONG : Type.INT;
+                return new Type.Function(
+                        List.of(new Type.Parameter("k", stepParam, false, false, true, false)),
+                        range, pureMayThrow);
+            case "reversed":
+                if (!discrete) {
+                    checker.warn("Not iterable : " + TypeDisplay.display(range) + " is not discrete", at);
+                    return Type.ERROR;
+                }
+                return new Type.Function(List.of(), range, pureNothrow);
+            case "iterator":
+                if (!discrete) {
+                    checker.warn("Not iterable : " + TypeDisplay.display(range) + " is not discrete", at);
+                    return Type.ERROR;
+                }
+                return new Type.Function(List.of(), new Type.JavaInstance(java.util.Iterator.class, List.of(elem)), pureNothrow);
+            case "equals":
+                return new Type.Function(
+                        List.of(new Type.Parameter("other", OperatorTypes.ANY_OR_FROZEN, false, false, true, false)),
+                        Type.BOOL, elemEffect);
+            case "hashCode":
+                return new Type.Function(List.of(), Type.INT, elemEffect);
+            case "toString":
+                return new Type.Function(List.of(), Type.STRING, elemEffect);
+            default:
+                checker.warn("No such member : " + name, at);
+                return Type.ERROR;
+        }
     }
 
     /**
@@ -290,12 +351,36 @@ final class MemberTypes {
         return fns.size() == 1 ? fns.get(0) : new Type.Overloaded(fns);
     }
 
-    /** Whether an operand of an intersection has a member, without reporting anything. */
-    private boolean hasMember(Type operand, String name) {
+    /** Whether a receiver type has a member, without reporting anything. */
+    boolean hasMember(Type operand, String name) {
+        if (operand instanceof Type.Frozen f) {
+            return hasMember(f.of(), name);
+        }
+        if (operand instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+            return hasMember(tv.bound(), name);
+        }
         if (operand instanceof Type.Instance instance) {
             return findMember(instance, name) != null || inheritedMember(instance, name) != null;
         }
+        if (operand instanceof Type.ClassValue cv) {
+            return cv.node().statics.containsKey(name);
+        }
+        if (operand instanceof Type.Module mod) {
+            return mod.module().exports().contains(name);
+        }
+        if (operand == Type.STRING) {
+            return JavaTypeBridge.hasJavaMethod(String.class, name);
+        }
+        if (operand instanceof Type.Array) {
+            return "size".equals(name) || "get".equals(name) || "set".equals(name)
+                    || "equals".equals(name) || "hashCode".equals(name) || "toString".equals(name)
+                    || JavaTypeBridge.hasJavaMethod(Object.class, name);
+        }
         if (operand instanceof Type.JavaInstance java) {
+            if (java.type() == org.babblelang.runtime.Range.class) {
+                return RANGE_MEMBER_NAMES.contains(name) || "iterator".equals(name)
+                        || "equals".equals(name) || "hashCode".equals(name) || "toString".equals(name);
+            }
             if (JavaTypeBridge.hasJavaMethod(java.type(), name)) {
                 return true;
             }
@@ -719,6 +804,15 @@ final class MemberTypes {
                     null, null, null, null, null);
         }
         if (unwrapped instanceof Type.JavaInstance ji) {
+            if (ji.type() == org.babblelang.runtime.Range.class) {
+                Type elem = ji.typeArguments().isEmpty() ? Type.NULLABLE_ANY : ji.typeArguments().get(0);
+                if (Type.isDiscreteRangeElement(elem)) {
+                    return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERABLE, null,
+                            frozenIterable ? Type.frozen(elem) : elem,
+                            null, null, null, null, null);
+                }
+                return null;
+            }
             if (java.lang.Iterable.class.isAssignableFrom(ji.type())) {
                 Type elem = javaIteratorElement(ji, java.lang.Iterable.class, frozenIterable);
                 return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERABLE, null, elem,

@@ -450,6 +450,7 @@ public final class WasmFuncEmitter {
             case HirExpr.JavaFieldGet fg -> core.emitJavaFieldGet(fg);
             case HirExpr.Unary u -> emitUnary(u);
             case HirExpr.Binary b -> emitBinary(b);
+            case HirExpr.Range r -> core.emitRange(r);
             case HirExpr.Logic l -> emitLogic(l);
             case HirExpr.Is i -> emitIs(i);
             case HirExpr.As a -> emitAsExpr(a);
@@ -1158,25 +1159,28 @@ public final class WasmFuncEmitter {
             case "-", "-=" -> HirExpr.BinaryOp.SUB;
             case "*", "*=" -> HirExpr.BinaryOp.MUL;
             case "/", "/=" -> HirExpr.BinaryOp.DIV;
+            case "//", "//=" -> HirExpr.BinaryOp.FLOOR_DIV;
             default -> throw new IllegalArgumentException("Unknown compound operator : " + assignOp);
         };
         PrimitiveKind rk = rhs.meta().kind();
         if (lhsKind.numericRank() >= 0 && rk.numericRank() >= 0) {
-            PrimitiveKind target = binOp == HirExpr.BinaryOp.DIV
-                    ? ((lhsKind == PrimitiveKind.FLOAT || rk == PrimitiveKind.FLOAT)
-                        && lhsKind != PrimitiveKind.DOUBLE && rk != PrimitiveKind.DOUBLE
-                        && lhsKind != PrimitiveKind.LONG && rk != PrimitiveKind.LONG
-                        ? PrimitiveKind.FLOAT : PrimitiveKind.DOUBLE)
-                    : (lhsKind.numericRank() >= rk.numericRank() ? lhsKind : rk);
-            if (binOp != HirExpr.BinaryOp.DIV && target.numericRank() < 2) {
-                target = PrimitiveKind.INT;
+            boolean integralDiv = binOp == HirExpr.BinaryOp.FLOOR_DIV;
+            if (!integralDiv || (lhsKind.numericRank() <= 3 && rk.numericRank() <= 3)) {
+                PrimitiveKind target = binOp == HirExpr.BinaryOp.DIV
+                        ? ((lhsKind == PrimitiveKind.FLOAT || rk == PrimitiveKind.FLOAT)
+                            && lhsKind != PrimitiveKind.DOUBLE && rk != PrimitiveKind.DOUBLE
+                            && lhsKind != PrimitiveKind.LONG && rk != PrimitiveKind.LONG
+                            ? PrimitiveKind.FLOAT : PrimitiveKind.DOUBLE)
+                        : (lhsKind.numericRank() >= rk.numericRank() ? lhsKind : rk);
+                if (binOp != HirExpr.BinaryOp.DIV && target.numericRank() < 2) {
+                    target = PrimitiveKind.INT;
+                }
+                emitLhs.run();
+                convertStack(ctx.stackKind, target, line);
+                emitPrimBinaryRhsAndOp(binOp, target, rhs, line);
+                ctx.stackKind = target;
+                return;
             }
-            emitLhs.run();
-            convertStack(ctx.stackKind, target, line);
-            emitAs(rhs, target);
-            emitPrimArithmeticOp(binOp, target);
-            ctx.stackKind = target;
-            return;
         }
         emitLhs.run();
         convertStack(ctx.stackKind, PrimitiveKind.NONE, line);
@@ -1242,8 +1246,7 @@ public final class WasmFuncEmitter {
             PrimitiveKind target = b.meta().kind();
             if (target.numericRank() >= 0) {
                 emitAs(b.left(), target);
-                emitAs(b.right(), target);
-                emitPrimArithmeticOp(b.op(), target);
+                emitPrimBinaryRhsAndOp(b.op(), target, b.right(), b.meta().line());
                 ctx.stackKind = target;
                 return;
             }
@@ -1266,6 +1269,43 @@ public final class WasmFuncEmitter {
         rt.emitStringLit(c, b.rightText() != null ? b.rightText() : "");
         c.i32Const(b.meta().line()).call(dynBinOpFunc(b.op()));
         ctx.stackKind = PrimitiveKind.NONE;
+    }
+
+    private void emitPrimBinaryRhsAndOp(HirExpr.BinaryOp op, PrimitiveKind target, HirExpr rhs, int line) {
+        WasmCodeBuilder c = ctx.code;
+        if ((op == HirExpr.BinaryOp.MOD || op == HirExpr.BinaryOp.FLOOR_DIV)
+                && (target == PrimitiveKind.INT || target == PrimitiveKind.LONG)) {
+            if (rhs instanceof HirExpr.Const cst && cst.value() instanceof Number n) {
+                long v = target == PrimitiveKind.LONG ? n.longValue() : n.intValue();
+                if (v > 0L && (v & (v - 1L)) == 0L) {
+                    if (op == HirExpr.BinaryOp.MOD) {
+                        if (target == PrimitiveKind.LONG) {
+                            c.i64Const(v - 1L).op(WasmInstr.SimpleOp.I64_AND);
+                        } else {
+                            c.i32Const((int) (v - 1L)).op(WasmInstr.SimpleOp.I32_AND);
+                        }
+                    } else {
+                        int shift = Long.numberOfTrailingZeros(v);
+                        if (target == PrimitiveKind.LONG) {
+                            c.i64Const(shift).op(WasmInstr.SimpleOp.I64_SHR_S);
+                        } else {
+                            c.i32Const(shift).op(WasmInstr.SimpleOp.I32_SHR_S);
+                        }
+                    }
+                    return;
+                }
+            }
+            emitAs(rhs, target);
+            c.i32Const(line);
+            if (target == PrimitiveKind.LONG) {
+                c.call(op == HirExpr.BinaryOp.MOD ? ops.fnFloorModLong : ops.fnFloorDivLong);
+            } else {
+                c.call(op == HirExpr.BinaryOp.MOD ? ops.fnFloorModInt : ops.fnFloorDivInt);
+            }
+            return;
+        }
+        emitAs(rhs, target);
+        emitPrimArithmeticOp(op, target);
     }
 
     private void emitPrimArithmeticOp(HirExpr.BinaryOp op, PrimitiveKind target) {
@@ -1307,6 +1347,8 @@ public final class WasmFuncEmitter {
             case SUB -> ops.fnDynSub;
             case MUL -> ops.fnDynMul;
             case DIV -> ops.fnDynDiv;
+            case FLOOR_DIV -> ops.fnDynFloorDiv;
+            case MOD -> ops.fnDynMod;
             default -> throw new IllegalStateException("Not arithmetic : " + op);
         };
     }
@@ -1546,14 +1588,23 @@ public final class WasmFuncEmitter {
                             .localGet(valLocal).refCast(ts.mapType).structGet(ts.mapType, 3)
                             .else_().i32Const(0).end();
                     case "java.util.Map$Entry" -> c.localGet(valLocal).refTest(ts.entryType);
+                    case "org.babblelang.runtime.Range" -> c.localGet(valLocal).refTest(ts.rangeBaseType);
+                    case "org.babblelang.runtime.IntRange", "org.babblelang.runtime.CharRange" ->
+                            c.localGet(valLocal).refTest(ts.intRangeType);
+                    case "org.babblelang.runtime.LongRange" -> c.localGet(valLocal).refTest(ts.longRangeType);
+                    case "org.babblelang.runtime.DoubleRange" -> c.localGet(valLocal).refTest(ts.doubleRangeType);
+                    case "org.babblelang.runtime.ComparableRange" -> c.localGet(valLocal).refTest(ts.stringRangeType);
                     case "org.babblelang.runtime.BabbleException", "java.lang.Throwable",
                             "java.lang.Exception", "java.lang.RuntimeException" ->
                             c.localGet(valLocal).refTest(ts.babbleExnType);
                     case "java.lang.Iterable" -> {
                         c.localGet(valLocal).refTest(ts.listType)
-                                .localGet(valLocal).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR);
+                                .localGet(valLocal).refTest(ts.setType).op(WasmInstr.SimpleOp.I32_OR)
+                                .localGet(valLocal).refTest(ts.intRangeType).op(WasmInstr.SimpleOp.I32_OR)
+                                .localGet(valLocal).refTest(ts.longRangeType).op(WasmInstr.SimpleOp.I32_OR);
                     }
-                    case "java.util.Iterator" -> c.localGet(valLocal).refTest(ts.collectionIterType);
+                    case "java.util.Iterator" -> c.localGet(valLocal).refTest(ts.collectionIterType)
+                            .localGet(valLocal).refTest(ts.rangeIterType).op(WasmInstr.SimpleOp.I32_OR);
                     case "java.lang.Appendable" -> {
                         c.localGet(valLocal).refTest(ts.hostStreamType);
                         for (WasmObjectSystem.ClassInfo ci : objects.allClasses()) {

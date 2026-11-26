@@ -313,6 +313,7 @@ final class HirEmitter {
             case HirExpr.DynamicSelect s -> 1 + countNodes(s.receiver());
             case HirExpr.Unary u -> 1 + countNodes(u.operand());
             case HirExpr.Binary b -> 1 + countNodes(b.left()) + countNodes(b.right());
+            case HirExpr.Range r -> 1 + countNodes(r.start()) + countNodes(r.end());
             case HirExpr.Logic l -> 1 + countNodes(l.left()) + countNodes(l.right());
             case HirExpr.Is i -> 1 + countNodes(i.left());
             case HirExpr.As a -> 1 + countNodes(a.left());
@@ -326,7 +327,9 @@ final class HirEmitter {
             case HirExpr.Block b -> 1 + countList(b.statements());
             case HirExpr.If i -> 1 + countNodes(i.cond()) + countNodes(i.thenBranch()) + countNodes(i.elseBranch());
             case HirExpr.While w -> 1 + countNodes(w.cond()) + countNodes(w.body());
-            case HirExpr.For f -> 2 + countNodes(f.iterable()) + countList(f.body());
+            case HirExpr.For f -> 2 + (f.countedRange() != null
+                    ? countNodes(f.countedRange().start()) + countNodes(f.countedRange().end()) + countNodes(f.countedRange().step())
+                    : countNodes(f.iterable())) + countList(f.body());
             case HirExpr.Try t -> {
                 int sum = 3 + countList(t.tryBody());
                 for (HirExpr.HirCatch cc : t.catches()) {
@@ -1326,6 +1329,7 @@ final class HirEmitter {
             case HirExpr.DynamicSelect s -> assigns.emitDynamicSelect(s);
             case HirExpr.Unary u -> controlOps.emitUnary(u);
             case HirExpr.Binary b -> controlOps.emitBinary(b);
+            case HirExpr.Range r -> controlOps.emitRange(r);
             case HirExpr.Logic l -> controlOps.emitLogic(l);
             case HirExpr.Is i -> controlOps.emitIs(i);
             case HirExpr.As a -> controlOps.emitAsExpr(a);
@@ -1741,9 +1745,10 @@ final class HirEmitter {
 
     int emitJavaArgToLocal(HirExpr argExpr, Class<?> paramType, int lineAt) {
         MethodVisitor mv = ctx.mv;
-        if (paramType == int.class) {
-            emitAs(argExpr, PrimitiveKind.INT);
-            int slot = ctx.newLocal(PrimitiveKind.INT);
+        if (paramType == int.class || paramType == byte.class || paramType == short.class || paramType == char.class) {
+            PrimitiveKind pk = javaPrimitiveKind(paramType);
+            emitAs(argExpr, pk);
+            int slot = ctx.newLocal(pk);
             mv.visitVarInsn(ISTORE, slot);
             return slot;
         }
@@ -1760,28 +1765,14 @@ final class HirEmitter {
             return slot;
         }
         if (paramType == long.class) {
-            emitExpr(argExpr);
-            if (ctx.stackKind == PrimitiveKind.INT) {
-                mv.visitInsn(I2L);
-            } else {
-                boxOn(mv, ctx.stackKind);
-                mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "longValue", "()J", false);
-            }
+            emitAs(argExpr, PrimitiveKind.LONG);
             int slot = ctx.newLocal(PrimitiveKind.LONG);
             mv.visitVarInsn(LSTORE, slot);
             return slot;
         }
         if (paramType == float.class) {
-            emitExpr(argExpr);
-            if (ctx.stackKind == PrimitiveKind.INT) {
-                mv.visitInsn(I2F);
-            } else {
-                boxOn(mv, ctx.stackKind);
-                mv.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
-            }
-            int slot = ctx.newLocal();
+            emitAs(argExpr, PrimitiveKind.FLOAT);
+            int slot = ctx.newLocal(PrimitiveKind.FLOAT);
             mv.visitVarInsn(FSTORE, slot);
             return slot;
         }
@@ -1803,7 +1794,8 @@ final class HirEmitter {
 
     void loadJavaLocal(Class<?> paramType, int slot) {
         MethodVisitor mv = ctx.mv;
-        if (paramType == int.class || paramType == boolean.class) {
+        if (paramType == int.class || paramType == boolean.class
+                || paramType == byte.class || paramType == short.class || paramType == char.class) {
             mv.visitVarInsn(ILOAD, slot);
         } else if (paramType == double.class) {
             mv.visitVarInsn(DLOAD, slot);

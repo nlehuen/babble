@@ -143,11 +143,21 @@ public final class HirEGraphSimplifyPass implements HirPass {
             return (nc == w.cond() && nb == w.body()) ? w : new HirExpr.While(nc, nb, w.meta());
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr ni = simplifyExpr(f.iterable(), env, assigned, module, rewrites);
+            HirExpr ni = f.iterable() != null ? simplifyExpr(f.iterable(), env, assigned, module, rewrites) : null;
+            HirExpr.CountedRangeLoop cr = f.countedRange();
+            HirExpr.CountedRangeLoop ncr = cr;
+            if (cr != null) {
+                HirExpr ns = simplifyExpr(cr.start(), env, assigned, module, rewrites);
+                HirExpr ne = simplifyExpr(cr.end(), env, assigned, module, rewrites);
+                HirExpr nk = cr.step() != null ? simplifyExpr(cr.step(), env, assigned, module, rewrites) : null;
+                if (ns != cr.start() || ne != cr.end() || nk != cr.step()) {
+                    ncr = new HirExpr.CountedRangeLoop(ns, ne, nk, cr.inclusive(), cr.descending(), cr.elemKind());
+                }
+            }
             List<HirExpr> nb = simplifyStatements(f.body(), new HashMap<>(env), assigned, module, rewrites);
-            return (ni == f.iterable() && nb == f.body()) ? f
+            return (ni == f.iterable() && ncr == cr && nb == f.body()) ? f
                     : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
-                            f.bodyWideningRank(), f.elemSamTarget(), f.meta());
+                            f.bodyWideningRank(), f.elemSamTarget(), ncr, f.meta());
         }
 
         // Propagate known non-reassigned constant local variables

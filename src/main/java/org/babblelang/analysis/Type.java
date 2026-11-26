@@ -67,6 +67,22 @@ sealed interface Type {
         return numericRank(type) >= 0;
     }
 
+    static boolean isIntegralScalar(Type type) {
+        return type == BYTE || type == SHORT || type == INT || type == LONG;
+    }
+
+    static boolean isDiscreteRangeElement(Type type) {
+        return type == BYTE || type == SHORT || type == INT || type == LONG || type == CHAR;
+    }
+
+    static Type rangeElement(Type type) {
+        Type unwrapped = type instanceof Frozen f ? f.of() : type;
+        if (unwrapped instanceof JavaInstance ji && ji.type() == org.babblelang.runtime.Range.class) {
+            return ji.typeArguments().isEmpty() ? ANY : ji.typeArguments().get(0);
+        }
+        return null;
+    }
+
     static boolean isPrimitiveScalar(Type type) {
         return isNumericScalar(type) || type == BOOL || type == CHAR;
     }
@@ -699,6 +715,9 @@ sealed interface Type {
             }
             if (type == java.util.Map.Entry.class) {
                 return "entry";
+            }
+            if (type == org.babblelang.runtime.Range.class) {
+                return "range";
             }
             if (type == org.babblelang.runtime.BabbleException.class) {
                 return "exception";

@@ -44,7 +44,7 @@ axiomMember: DEF (memberName | '*') ':' axiomType;
 
 expression:
           ifExpr                                              # ifExpression
-          | (EXPORT | PRIVATE)? (DEF | VAR) name=ID (OF typeParameters)? (':' type)?
+          | (EXPORT | PRIVATE)? (DEF | VAR) name=(ID | MOD) (OF typeParameters)? (':' type)?
                      ('=' NL* value=expression)?   # defExpression
           | EXPORT? AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType   # axiomExpression
           | TYPE NL* aliased=type                             # typeAliasExpression

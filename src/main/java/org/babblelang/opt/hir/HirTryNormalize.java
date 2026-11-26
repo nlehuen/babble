@@ -106,6 +106,15 @@ public final class HirTryNormalize {
                 }
                 yield b;
             }
+            case HirExpr.Range r -> {
+                if (containsTry(r.end())) {
+                    Spill s = new Spill(ownerId, nextVarId);
+                    HirExpr sRef = s.hoist(r.start());
+                    HirExpr eRef = s.hoist(r.end());
+                    yield s.wrap(new HirExpr.Range(sRef, eRef, r.inclusive(), r.elemKind(), r.stringElement(), r.meta()), r.meta());
+                }
+                yield r;
+            }
             case HirExpr.ArrayCreate c -> {
                 int lastTry = lastTryIndex(c.args());
                 if (lastTry >= 0) {
@@ -422,6 +431,7 @@ public final class HirTryNormalize {
             case HirExpr.DynamicSelect s -> containsTry(s.receiver());
             case HirExpr.Unary u -> containsTry(u.operand());
             case HirExpr.Binary b -> containsTry(b.left()) || containsTry(b.right());
+            case HirExpr.Range r -> containsTry(r.start()) || containsTry(r.end());
             case HirExpr.Logic l -> containsTry(l.left()) || containsTry(l.right());
             case HirExpr.Is i -> containsTry(i.left());
             case HirExpr.As a -> containsTry(a.left());
@@ -432,7 +442,10 @@ public final class HirTryNormalize {
             case HirExpr.Block b -> anyContainsTry(b.statements());
             case HirExpr.If i -> containsTry(i.cond()) || containsTry(i.thenBranch()) || containsTry(i.elseBranch());
             case HirExpr.While w -> containsTry(w.cond()) || containsTry(w.body());
-            case HirExpr.For f -> containsTry(f.iterable()) || anyContainsTry(f.body());
+            case HirExpr.For f -> (f.countedRange() != null
+                    ? (containsTry(f.countedRange().start()) || containsTry(f.countedRange().end())
+                            || containsTry(f.countedRange().step()))
+                    : containsTry(f.iterable())) || anyContainsTry(f.body());
             case HirExpr.Break b -> containsTry(b.value());
             case HirExpr.Return r -> containsTry(r.value());
             case HirExpr.Throw th -> containsTry(th.value());

@@ -965,4 +965,54 @@ public class EffectsTestCase {
                 )
                 """, "violates deterministic guarantee");
     }
+
+    @Test
+    public void testBip031RangeAndFlooredDivisionEffects() {
+        // Scalar ranges, non-zero constant mod/floorDiv, positive constant step, and counted/range for loops
+        // are pure, nothrow, and @TERMINATING.
+        assertClean("""
+                def sumRange = fn nothrow (n: int): int -> (
+                    var acc = 0
+                    for i in 0..<n then ( acc += i )
+                    acc
+                )
+                def sumStepped = fn nothrow (n: int): int -> (
+                    var acc = 0
+                    for i in (0..<n).step(2).reversed() then ( acc += i )
+                    acc
+                )
+                def sumStored = fn nothrow (r: range of int): int -> (
+                    var acc = 0
+                    for i in r then ( acc += i )
+                    acc
+                )
+                def divMod = fn nothrow (x: int): int -> ( (x // 4) + (x mod 4) )
+                def mkStep = fn nothrow (a: int, b: int): range of int -> ( (a..b).step(3).reversed() )
+                assert(sumRange(5) == 10 and sumStepped(6) == 6 and sumStored(1..4) == 10)
+                assert(divMod(-7) == -1 and mkStep(1, 10).contains(4))
+                """);
+
+        // Variable divisor in mod or // may throw ArithmeticException -> violates nothrow
+        assertHasError("""
+                def bad = fn nothrow (x: int, d: int): int -> ( x mod d )
+                """, "violates nothrow guarantee");
+        assertHasError("""
+                def bad = fn nothrow (x: int, d: int): int -> ( x // d )
+                """, "violates nothrow guarantee");
+        // Zero constant divisor may throw -> violates nothrow
+        assertHasError("""
+                def bad = fn nothrow (x: int): int -> ( x mod 0 )
+                """, "violates nothrow guarantee");
+        // Variable step may throw -> violates nothrow
+        assertHasError("""
+                def bad = fn nothrow (k: int): range of int -> ( (1..10).step(k) )
+                """, "violates nothrow guarantee");
+        assertHasError("""
+                def bad = fn nothrow (k: int): int -> (
+                    var acc = 0
+                    for i in (1..10).step(k) then ( acc += i )
+                    acc
+                )
+                """, "violates nothrow guarantee");
+    }
 }

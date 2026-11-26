@@ -29,6 +29,7 @@ public final class WasmRuntimeOpsGen {
     public static final int BUILTIN_MAP = 14;
     public static final int BUILTIN_SORTEDMAP = 15;
     public static final int BUILTIN_ENTRY = 16;
+    public static final int BUILTIN_RANGE = 17;
 
     private final WasmModule mod;
     private final WasmTypeSystem ts;
@@ -39,7 +40,13 @@ public final class WasmRuntimeOpsGen {
     public final int fnDynSub;
     public final int fnDynMul;
     public final int fnDynDiv;
+    public final int fnDynFloorDiv;
+    public final int fnDynMod;
     public final int fnDynNeg;
+    public final int fnFloorDivInt;
+    public final int fnFloorModInt;
+    public final int fnFloorDivLong;
+    public final int fnFloorModLong;
 
     public final int fnConvByte;
     public final int fnConvShort;
@@ -72,6 +79,8 @@ public final class WasmRuntimeOpsGen {
         WasmValType refStr = WasmValType.ref(ts.stringType);
         int tBinOp = ts.internFuncType(List.of(refAnyNull, refAnyNull, refStr, refStr, WasmValType.I32), List.of(refAnyNull));
         int tUnOp = ts.internFuncType(List.of(refAnyNull, refStr, WasmValType.I32), List.of(refAnyNull));
+        int tIntDiv = ts.internFuncType(List.of(WasmValType.I32, WasmValType.I32, WasmValType.I32), List.of(WasmValType.I32));
+        int tLongDiv = ts.internFuncType(List.of(WasmValType.I64, WasmValType.I64, WasmValType.I32), List.of(WasmValType.I64));
         int tConvI32 = ts.internFuncType(List.of(refAnyNull, refStr, WasmValType.I32), List.of(WasmValType.I32));
         int tConvI64 = ts.internFuncType(List.of(refAnyNull, refStr, WasmValType.I32), List.of(WasmValType.I64));
         int tConvF32 = ts.internFuncType(List.of(refAnyNull, refStr, WasmValType.I32), List.of(WasmValType.F32));
@@ -81,7 +90,13 @@ public final class WasmRuntimeOpsGen {
         WasmModule.FuncDef dSub = mod.addFunction("dyn_sub", tBinOp, List.of("a", "b", "lt", "rt", "line"));
         WasmModule.FuncDef dMul = mod.addFunction("dyn_mul", tBinOp, List.of("a", "b", "lt", "rt", "line"));
         WasmModule.FuncDef dDiv = mod.addFunction("dyn_div", tBinOp, List.of("a", "b", "lt", "rt", "line"));
+        WasmModule.FuncDef dFloorDiv = mod.addFunction("dyn_floor_div", tBinOp, List.of("a", "b", "lt", "rt", "line"));
+        WasmModule.FuncDef dMod = mod.addFunction("dyn_mod", tBinOp, List.of("a", "b", "lt", "rt", "line"));
         WasmModule.FuncDef dNeg = mod.addFunction("dyn_neg", tUnOp, List.of("a", "t", "line"));
+        WasmModule.FuncDef dFloorDivI = mod.addFunction("floor_div_i", tIntDiv, List.of("a", "b", "line"));
+        WasmModule.FuncDef dFloorModI = mod.addFunction("floor_mod_i", tIntDiv, List.of("a", "b", "line"));
+        WasmModule.FuncDef dFloorDivL = mod.addFunction("floor_div_l", tLongDiv, List.of("a", "b", "line"));
+        WasmModule.FuncDef dFloorModL = mod.addFunction("floor_mod_l", tLongDiv, List.of("a", "b", "line"));
 
         WasmModule.FuncDef dCByte = mod.addFunction("conv_byte", tConvI32, List.of("v", "t", "line"));
         WasmModule.FuncDef dCShort = mod.addFunction("conv_short", tConvI32, List.of("v", "t", "line"));
@@ -103,7 +118,13 @@ public final class WasmRuntimeOpsGen {
         this.fnDynSub = dSub.funcIndex();
         this.fnDynMul = dMul.funcIndex();
         this.fnDynDiv = dDiv.funcIndex();
+        this.fnDynFloorDiv = dFloorDiv.funcIndex();
+        this.fnDynMod = dMod.funcIndex();
         this.fnDynNeg = dNeg.funcIndex();
+        this.fnFloorDivInt = dFloorDivI.funcIndex();
+        this.fnFloorModInt = dFloorModI.funcIndex();
+        this.fnFloorDivLong = dFloorDivL.funcIndex();
+        this.fnFloorModLong = dFloorModL.funcIndex();
 
         this.fnConvByte = dCByte.funcIndex();
         this.fnConvShort = dCShort.funcIndex();
@@ -122,10 +143,16 @@ public final class WasmRuntimeOpsGen {
         this.fnInitBuiltinsDef = mod.addFunction("init_builtins", ts.internFuncType(List.of(), List.of()));
         this.fnInitBuiltins = fnInitBuiltinsDef.funcIndex();
 
+        emitFloorDivInt(dFloorDivI);
+        emitFloorModInt(dFloorModI);
+        emitFloorDivLong(dFloorDivL);
+        emitFloorModLong(dFloorModL);
         emitDynBinary(dAdd, "+", "plus");
         emitDynBinary(dSub, "-", "minus");
         emitDynBinary(dMul, "*", "times");
         emitDynBinary(dDiv, "/", "div");
+        emitDynIntegralBinary(dFloorDiv, "floorDiv", fnFloorDivInt, fnFloorDivLong);
+        emitDynIntegralBinary(dMod, "mod", fnFloorModInt, fnFloorModLong);
         emitDynNeg(dNeg);
         emitDescribeType(dDescType);
 
@@ -168,6 +195,7 @@ public final class WasmRuntimeOpsGen {
             case "map" -> BUILTIN_MAP;
             case "sortedmap" -> BUILTIN_SORTEDMAP;
             case "entry" -> BUILTIN_ENTRY;
+            case "range" -> BUILTIN_RANGE;
             default -> -1;
         };
     }
@@ -280,6 +308,120 @@ public final class WasmRuntimeOpsGen {
         c.localGet(0).refAsNonNull().call(rt.fnNumAsDouble)
                 .localGet(1).refAsNonNull().call(rt.fnNumAsDouble)
                 .op(f64Op).call(rt.fnBoxDouble);
+    }
+
+    private void emitFloorDivInt(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        int q = fn.addLocal("q", WasmValType.I32, 3);
+        c.localGet(1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+        rt.emitStringLit(c, "java.lang.ArithmeticException : / by zero");
+        c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
+        c.localGet(0).i32Const(Integer.MIN_VALUE).op(WasmInstr.SimpleOp.I32_EQ)
+                .localGet(1).i32Const(-1).op(WasmInstr.SimpleOp.I32_EQ).op(WasmInstr.SimpleOp.I32_AND)
+                .if_().i32Const(Integer.MIN_VALUE).return_().end();
+        c.localGet(0).localGet(1).op(WasmInstr.SimpleOp.I32_DIV_S).localSet(q);
+        c.localGet(0).localGet(1).op(WasmInstr.SimpleOp.I32_XOR).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
+                .localGet(q).localGet(1).op(WasmInstr.SimpleOp.I32_MUL).localGet(0).op(WasmInstr.SimpleOp.I32_NE)
+                .op(WasmInstr.SimpleOp.I32_AND)
+                .if_(WasmValType.I32)
+                .localGet(q).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB)
+                .else_()
+                .localGet(q)
+                .end();
+    }
+
+    private void emitFloorModInt(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        int r = fn.addLocal("r", WasmValType.I32, 3);
+        c.localGet(1).op(WasmInstr.SimpleOp.I32_EQZ).if_();
+        rt.emitStringLit(c, "java.lang.ArithmeticException : / by zero");
+        c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
+        c.localGet(0).localGet(1).op(WasmInstr.SimpleOp.I32_REM_S).localSet(r);
+        c.localGet(r).i32Const(0).op(WasmInstr.SimpleOp.I32_NE)
+                .localGet(0).localGet(1).op(WasmInstr.SimpleOp.I32_XOR).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
+                .op(WasmInstr.SimpleOp.I32_AND)
+                .if_(WasmValType.I32)
+                .localGet(r).localGet(1).op(WasmInstr.SimpleOp.I32_ADD)
+                .else_()
+                .localGet(r)
+                .end();
+    }
+
+    private void emitFloorDivLong(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        int q = fn.addLocal("q", WasmValType.I64, 3);
+        c.localGet(1).op(WasmInstr.SimpleOp.I64_EQZ).if_();
+        rt.emitStringLit(c, "java.lang.ArithmeticException : / by zero");
+        c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
+        c.localGet(0).i64Const(Long.MIN_VALUE).op(WasmInstr.SimpleOp.I64_EQ)
+                .localGet(1).i64Const(-1L).op(WasmInstr.SimpleOp.I64_EQ).op(WasmInstr.SimpleOp.I32_AND)
+                .if_().i64Const(Long.MIN_VALUE).return_().end();
+        c.localGet(0).localGet(1).op(WasmInstr.SimpleOp.I64_DIV_S).localSet(q);
+        c.localGet(0).localGet(1).op(WasmInstr.SimpleOp.I64_XOR).i64Const(0L).op(WasmInstr.SimpleOp.I64_LT_S)
+                .localGet(q).localGet(1).op(WasmInstr.SimpleOp.I64_MUL).localGet(0).op(WasmInstr.SimpleOp.I64_NE)
+                .op(WasmInstr.SimpleOp.I32_AND)
+                .if_(WasmValType.I64)
+                .localGet(q).i64Const(1L).op(WasmInstr.SimpleOp.I64_SUB)
+                .else_()
+                .localGet(q)
+                .end();
+    }
+
+    private void emitFloorModLong(WasmModule.FuncDef fn) {
+        WasmCodeBuilder c = fn.code();
+        int r = fn.addLocal("r", WasmValType.I64, 3);
+        c.localGet(1).op(WasmInstr.SimpleOp.I64_EQZ).if_();
+        rt.emitStringLit(c, "java.lang.ArithmeticException : / by zero");
+        c.localGet(2).call(rt.fnThrowMsg).unreachable().end();
+        c.localGet(0).localGet(1).op(WasmInstr.SimpleOp.I64_REM_S).localSet(r);
+        c.localGet(r).i64Const(0L).op(WasmInstr.SimpleOp.I64_NE)
+                .localGet(0).localGet(1).op(WasmInstr.SimpleOp.I64_XOR).i64Const(0L).op(WasmInstr.SimpleOp.I64_LT_S)
+                .op(WasmInstr.SimpleOp.I32_AND)
+                .if_(WasmValType.I64)
+                .localGet(r).localGet(1).op(WasmInstr.SimpleOp.I64_ADD)
+                .else_()
+                .localGet(r)
+                .end();
+    }
+
+    private void emitDynIntegralBinary(WasmModule.FuncDef fn, String opMethod, int intFn, int longFn) {
+        WasmCodeBuilder c = fn.code();
+        int ra = fn.addLocal("ra", WasmValType.I32, 5);
+        int rb = fn.addLocal("rb", WasmValType.I32, 5);
+        int opFn = fn.addLocal("opFn", WasmValType.refNull(ts.opFnSigType), 5);
+
+        c.localGet(0).refTest(ts.objectType).if_()
+                .localGet(0).refCast(ts.objectType).structGet(ts.objectType, 0)
+                .structGet(ts.vtableType, 11).localTee(opFn)
+                .refIsNull().op(WasmInstr.SimpleOp.I32_EQZ).if_()
+                .localGet(0).refCast(ts.objectType);
+        rt.emitStringLit(c, opMethod);
+        c.localGet(1).localGet(opFn).refAsNonNull().callRef(ts.opFnSigType).return_()
+                .end().end();
+
+        c.localGet(0).call(rt.fnNumRank).localSet(ra);
+        c.localGet(ra).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
+                .localGet(ra).i32Const(3).op(WasmInstr.SimpleOp.I32_GT_S).op(WasmInstr.SimpleOp.I32_OR).if_();
+        rt.emitStringLit(c, "Not an integer : ");
+        c.localGet(2).call(rt.fnStrConcat).localGet(4).call(rt.fnThrowMsg).unreachable().end();
+
+        c.localGet(1).call(rt.fnNumRank).localSet(rb);
+        c.localGet(rb).i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S)
+                .localGet(rb).i32Const(3).op(WasmInstr.SimpleOp.I32_GT_S).op(WasmInstr.SimpleOp.I32_OR).if_();
+        rt.emitStringLit(c, "Not an integer : ");
+        c.localGet(3).call(rt.fnStrConcat).localGet(4).call(rt.fnThrowMsg).unreachable().end();
+
+        c.localGet(ra).i32Const(2).op(WasmInstr.SimpleOp.I32_LE_S)
+                .localGet(rb).i32Const(2).op(WasmInstr.SimpleOp.I32_LE_S).op(WasmInstr.SimpleOp.I32_AND)
+                .if_()
+                .localGet(0).refAsNonNull().call(rt.fnNumAsLong).op(WasmInstr.SimpleOp.I32_WRAP_I64)
+                .localGet(1).refAsNonNull().call(rt.fnNumAsLong).op(WasmInstr.SimpleOp.I32_WRAP_I64)
+                .localGet(4).call(intFn).call(rt.fnBoxInt).return_()
+                .end();
+
+        c.localGet(0).refAsNonNull().call(rt.fnNumAsLong)
+                .localGet(1).refAsNonNull().call(rt.fnNumAsLong)
+                .localGet(4).call(longFn).call(rt.fnBoxLong);
     }
 
     private void emitDynNeg(WasmModule.FuncDef fn) {
@@ -589,7 +731,8 @@ public final class WasmRuntimeOpsGen {
                 BUILTIN_STRING, ts.stringType,
                 BUILTIN_EXCEPTION, ts.babbleExnType,
                 BUILTIN_LIST, ts.listType,
-                BUILTIN_ENTRY, ts.entryType
+                BUILTIN_ENTRY, ts.entryType,
+                BUILTIN_RANGE, ts.rangeBaseType
         };
         for (int i = 0; i < boxMap.length; i += 2) {
             c.localGet(1).i32Const(boxMap[i]).op(WasmInstr.SimpleOp.I32_EQ).if_()
@@ -802,6 +945,7 @@ public final class WasmRuntimeOpsGen {
         emitTypeNameCase(c, ts.setType, "set");
         emitTypeNameCase(c, ts.mapType, "map");
         emitTypeNameCase(c, ts.entryType, "entry");
+        emitTypeNameCase(c, ts.rangeBaseType, "range");
         c.localGet(0).refTest(ts.arrayBaseType).if_()
                 .localGet(0).refCast(ts.arrayBaseType).structGet(ts.arrayBaseType, 0).structGet(ts.typeDescType, 3)
                 .return_().end();

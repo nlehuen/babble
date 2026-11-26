@@ -531,6 +531,8 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return switch (ctx.op.getType()) {
             case BabbleLexer.MUL -> Operators.mul(a, b, site);
             case BabbleLexer.DIV -> Operators.div(a, b, site);
+            case BabbleLexer.FLOOR_DIV -> Operators.floorDiv(a, b, site);
+            case BabbleLexer.MOD -> Operators.mod(a, b, site);
             case BabbleLexer.PLUS -> Operators.add(a, b, site);
             case BabbleLexer.MINUS -> Operators.sub(a, b, site);
             case BabbleLexer.LT -> Operators.lt(a, b, site);
@@ -541,6 +543,30 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             case BabbleLexer.GT -> Operators.gt(a, b, site);
             default -> throw new IllegalStateException("Bad op : " + ctx.op.getText());
         };
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public Object visitRangeExpression(BabbleParser.RangeExpressionContext ctx) {
+        last = ctx;
+        Object left = widen(ctx.left, visit(ctx.left));
+        Object right = widen(ctx.right, visit(ctx.right));
+        last = ctx;
+        boolean inclusive = ctx.op.getType() == BabbleLexer.RANGE;
+        LoweringTargets.RangeTarget target = scopes.lowering().rangeTarget(ctx);
+        if (target != null && left != null && right != null) {
+            return switch (target.elemKind()) {
+                case BYTE -> org.babblelang.runtime.Range.ofByte(((Number) left).byteValue(), ((Number) right).byteValue(), inclusive);
+                case SHORT -> org.babblelang.runtime.Range.ofShort(((Number) left).shortValue(), ((Number) right).shortValue(), inclusive);
+                case INT -> org.babblelang.runtime.Range.ofInt(((Number) left).intValue(), ((Number) right).intValue(), inclusive);
+                case LONG -> org.babblelang.runtime.Range.ofLong(((Number) left).longValue(), ((Number) right).longValue(), inclusive);
+                case CHAR -> org.babblelang.runtime.Range.ofChar((Character) left, (Character) right, inclusive);
+                case FLOAT -> org.babblelang.runtime.Range.ofFloat(((Number) left).floatValue(), ((Number) right).floatValue(), inclusive);
+                case DOUBLE -> org.babblelang.runtime.Range.ofDouble(((Number) left).doubleValue(), ((Number) right).doubleValue(), inclusive);
+                default -> org.babblelang.runtime.Range.ofComparable((Comparable<Object>) left, (Comparable<Object>) right, inclusive);
+            };
+        }
+        return org.babblelang.runtime.Range.of(left, right, inclusive, ctx.left.getText(), ctx.right.getText());
     }
 
     @Override

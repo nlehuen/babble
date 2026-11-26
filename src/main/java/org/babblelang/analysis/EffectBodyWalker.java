@@ -545,6 +545,9 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.BinaryOpContext bin) {
             return evalBinaryOp(bin);
         }
+        if (ctx instanceof BabbleParser.RangeExpressionContext range) {
+            return evalRange(range);
+        }
         if (ctx instanceof BabbleParser.IsExpressionContext isCtx) {
             eval(isCtx.left);
             return Reachability.Origin.IMMUTABLE;
@@ -752,6 +755,8 @@ final class EffectBodyWalker {
     void checkCompoundArithmeticEffects(String op, Type resType, BabbleParser.AssignExpressionContext assign) {
         if ("+".equals(op) && resType == Type.STRING) {
             applyEffects(ec.javaResolver.toStringProfile(effectiveType(assign.value)));
+        } else if ("//".equals(op) && !(resType instanceof Type.Instance) && !isNonZeroIntegerConstant(assign.value)) {
+            nothrow = false;
         }
     }
 
@@ -1248,24 +1253,29 @@ final class EffectBodyWalker {
         if (info != null) {
             recordTargetRead(iterOrig, iterType);
             switch (info.kind()) {
-                case ARRAY -> {
-                    // Indexed array loop : @HERMETIC @NOTHROW, terminates; mutable read recorded above.
+                case ARRAY, COUNTED_RANGE -> {
+                    // Indexed array or counted discrete range loop : @HERMETIC @NOTHROW, terminates.
                     isArrayLoop = true;
                 }
                 case JAVA_ITERABLE -> {
                     boolean curatedNothrow = false;
                     Type unwrapped = iterType instanceof Type.Frozen f ? f.of() : iterType;
                     if (unwrapped instanceof Type.JavaInstance ji) {
-                        EffectChecker.JavaCallProfile iterProf = ec.javaResolver.resolveJavaMethodProfile(ji.type(), "iterator", JavaEffectResolver.lookupPublicMethod(ji.type(), "iterator"));
-                        applyEffects(iterProf.effects());
-                        if (iterProf.mutReceiver()) {
-                            recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
-                        }
-                        if (iterProf.view()) {
-                            trackConcurrentMut = true;
-                            if (iterProf.effects().isHermetic() && iterProf.effects().terminating()) {
-                                curatedFinite = true;
-                                curatedNothrow = iterProf.effects().isNothrow();
+                        if (ji.type() == org.babblelang.runtime.Range.class) {
+                            curatedFinite = true;
+                            curatedNothrow = true;
+                        } else {
+                            EffectChecker.JavaCallProfile iterProf = ec.javaResolver.resolveJavaMethodProfile(ji.type(), "iterator", JavaEffectResolver.lookupPublicMethod(ji.type(), "iterator"));
+                            applyEffects(iterProf.effects());
+                            if (iterProf.mutReceiver()) {
+                                recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            }
+                            if (iterProf.view()) {
+                                trackConcurrentMut = true;
+                                if (iterProf.effects().isHermetic() && iterProf.effects().terminating()) {
+                                    curatedFinite = true;
+                                    curatedNothrow = iterProf.effects().isNothrow();
+                                }
                             }
                         }
                     }
@@ -1627,11 +1637,68 @@ final class EffectBodyWalker {
                 }
             }
             case "<", "<=", ">", ">=" -> applyEffects(ec.javaResolver.comparisonProfile(lt, rt));
+            case "mod", "//" -> {
+                if (!(lt instanceof Type.Instance) && !isNonZeroIntegerConstant(bin.right)) {
+                    nothrow = false;
+                }
+            }
             default -> {
                 // -, *, / on numbers are pure deterministic nothrow (1 / 0 == Infinity).
             }
         }
         return Reachability.Origin.IMMUTABLE;
+    }
+
+    Reachability.Origin evalRange(BabbleParser.RangeExpressionContext range) {
+        eval(range.left);
+        eval(range.right);
+        Type res = ec.checker.rawTypeOf(range);
+        if (res == Type.ERROR || hasPriorDiagnostic(range)) {
+            return Reachability.Origin.IMMUTABLE;
+        }
+        Type elem = Type.rangeElement(res);
+        if (elem != null && !Type.isNumericScalar(elem) && elem != Type.CHAR && elem != Type.STRING) {
+            applyEffects(ec.javaResolver.comparisonProfile(elem, elem));
+        }
+        return ec.javaResolver.isDeeplyImmutable(res)
+                ? Reachability.Origin.IMMUTABLE
+                : Reachability.Origin.ofUnique(range, null, false);
+    }
+
+    static Long tryEvalIntegerConstant(BabbleParser.ExpressionContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+            expr = b.block().expression(0);
+        }
+        if (expr instanceof BabbleParser.IntegerContext lit) {
+            try {
+                return Long.parseLong(lit.getText());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        if (expr instanceof BabbleParser.LongLiteralContext lit) {
+            String text = lit.getText();
+            try {
+                return Long.parseLong(text.substring(0, text.length() - 1));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        if (expr instanceof BabbleParser.NegateContext neg) {
+            Long inner = tryEvalIntegerConstant(neg.operand);
+            return inner != null && inner != Long.MIN_VALUE ? -inner : null;
+        }
+        return null;
+    }
+
+    static boolean isNonZeroIntegerConstant(BabbleParser.ExpressionContext expr) {
+        Long v = tryEvalIntegerConstant(expr);
+        return v != null && v != 0L;
+    }
+
+    static boolean isPositiveIntegerConstant(BabbleParser.ExpressionContext expr) {
+        Long v = tryEvalIntegerConstant(expr);
+        return v != null && v > 0L;
     }
 
     Map<ParserRuleContext, Reachability.Origin> mergeEnvs(Map<ParserRuleContext, Reachability.Origin> a, Map<ParserRuleContext, Reachability.Origin> b) {

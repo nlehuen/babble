@@ -859,8 +859,16 @@ public final class InlinePass implements HirPass {
                 yield new HirExpr.Block(ns, b.opensNamespaceScope(), b.declaredNames(), freshDecls, b.innerWideningRank(), b.meta());
             }
             case HirExpr.For f -> {
-                HirExpr ni = alphaRename(f.iterable(), varMap, substExprs, thisSubst, receiverText, receiverCls,
-                        calleeOwnerClsId, module, ownerMethodId, nextVarId);
+                HirExpr ni = f.iterable() != null ? alphaRename(f.iterable(), varMap, substExprs, thisSubst, receiverText, receiverCls,
+                        calleeOwnerClsId, module, ownerMethodId, nextVarId) : null;
+                HirExpr.CountedRangeLoop cr = f.countedRange();
+                if (cr != null) {
+                    cr = new HirExpr.CountedRangeLoop(
+                            alphaRename(cr.start(), varMap, substExprs, thisSubst, receiverText, receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId),
+                            alphaRename(cr.end(), varMap, substExprs, thisSubst, receiverText, receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId),
+                            cr.step() != null ? alphaRename(cr.step(), varMap, substExprs, thisSubst, receiverText, receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId) : null,
+                            cr.inclusive(), cr.descending(), cr.elemKind());
+                }
                 Map<Integer, HirVar> innerMap = new HashMap<>(varMap);
                 HirVar freshLoop = f.loopVar() != null ? f.loopVar().withIdAndOwner(nextVarId[0]++, ownerMethodId) : null;
                 if (freshLoop != null) {
@@ -877,7 +885,7 @@ public final class InlinePass implements HirPass {
                             calleeOwnerClsId, module, ownerMethodId, nextVarId));
                 }
                 yield new HirExpr.For(ni, f.target(), freshLoop, freshDecls, nb, f.bodyWideningRank(),
-                        f.elemSamTarget(), f.meta());
+                        f.elemSamTarget(), cr, f.meta());
             }
             default -> HirRewriter.rewriteChildren(expr, child -> alphaRename(child, varMap, substExprs,
                     thisSubst, receiverText, receiverCls, calleeOwnerClsId, module, ownerMethodId, nextVarId));

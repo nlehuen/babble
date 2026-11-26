@@ -551,7 +551,9 @@ final class TypeAlgebra {
 
     private static boolean isMutableParameterized(Type type) {
         if (type instanceof Type.JavaInstance java) {
-            return java.type() != java.util.Optional.class && java.type() != java.util.Map.Entry.class;
+            return java.type() != java.util.Optional.class
+                    && java.type() != java.util.Map.Entry.class
+                    && java.type() != org.babblelang.runtime.Range.class;
         }
         if (type instanceof Type.Instance inst) {
             return inst.node().kind != org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS;
@@ -1282,6 +1284,10 @@ final class TypeAlgebra {
         if (source instanceof Type.JavaInstance ji) {
             if (ji.type() == targetClass) {
                 return ji;
+            }
+            if (ji.type() == org.babblelang.runtime.Range.class && targetClass == Iterable.class
+                    && !ji.typeArguments().isEmpty() && Type.isDiscreteRangeElement(ji.typeArguments().get(0))) {
+                return new Type.JavaInstance(Iterable.class, List.of(ji.typeArguments().get(0)));
             }
             if (!targetClass.isAssignableFrom(ji.type())) {
                 return null;

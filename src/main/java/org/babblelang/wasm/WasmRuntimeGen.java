@@ -385,12 +385,13 @@ public final class WasmRuntimeGen {
         emitPrint(dPrint);
     }
 
-    /** Emits {@code equals}, {@code hashCode}, and {@code format} with {@code $ArrayBase} and collection hooks ({@code BIP025-I2}, {@code BIP025-I3}). */
+    /** Emits {@code equals}, {@code hashCode}, and {@code format} with {@code $ArrayBase}, collection, and range hooks ({@code BIP025-I2}, {@code BIP025-I3}, {@code BIP031}). */
     public void emitPolymorphicHelpers(int fnArrEq, int fnArrHash, int fnArrFmt,
-                                       int fnColEq, int fnColHash, int fnColFmt) {
-        emitEquals(dEqualsDef, fnArrEq, fnColEq);
-        emitHashCode(dHashCodeDef, fnArrHash, fnColHash);
-        emitFormat(dFormatDef, fnArrFmt, fnColFmt);
+                                       int fnColEq, int fnColHash, int fnColFmt,
+                                       int fnRangeEq, int fnRangeHash, int fnRangeFmt) {
+        emitEquals(dEqualsDef, fnArrEq, fnColEq, fnRangeEq);
+        emitHashCode(dHashCodeDef, fnArrHash, fnColHash, fnRangeHash);
+        emitFormat(dFormatDef, fnArrFmt, fnColFmt, fnRangeFmt);
     }
 
     private void emitInitArgs(WasmModule.FuncDef fn) {
@@ -1155,7 +1156,7 @@ public final class WasmRuntimeGen {
 
     // ---------------------------------------------------------------- equals / same / hash / compare / format
 
-    private void emitEquals(WasmModule.FuncDef fn, int fnArrEq, int fnColEq) {
+    private void emitEquals(WasmModule.FuncDef fn, int fnArrEq, int fnColEq, int fnRangeEq) {
         WasmCodeBuilder c = fn.code();
         int ra = fn.addLocal("ra", WasmValType.I32, 2);
         int rb = fn.addLocal("rb", WasmValType.I32, 2);
@@ -1237,6 +1238,11 @@ public final class WasmRuntimeGen {
                     .localGet(0).localGet(1).call(fnColEq).return_()
                     .end();
         }
+        if (fnRangeEq >= 0) {
+            c.localGet(0).refTest(ts.rangeBaseType).if_()
+                    .localGet(0).refCast(ts.rangeBaseType).localGet(1).call(fnRangeEq).return_()
+                    .end();
+        }
 
         // Babble $Object custom/record equalsFn
         c.localGet(0).refTest(ts.objectType).if_()
@@ -1274,7 +1280,7 @@ public final class WasmRuntimeGen {
         c.i32Const(0);
     }
 
-    private void emitHashCode(WasmModule.FuncDef fn, int fnArrHash, int fnColHash) {
+    private void emitHashCode(WasmModule.FuncDef fn, int fnArrHash, int fnColHash, int fnRangeHash) {
         WasmCodeBuilder c = fn.code();
         int r = fn.addLocal("r", WasmValType.I32, 1);
         int l = fn.addLocal("l", WasmValType.I64, 1);
@@ -1318,6 +1324,11 @@ public final class WasmRuntimeGen {
                     .localGet(0).refTest(ts.mapType).op(WasmInstr.SimpleOp.I32_OR)
                     .if_()
                     .localGet(0).call(fnColHash).return_()
+                    .end();
+        }
+        if (fnRangeHash >= 0) {
+            c.localGet(0).refTest(ts.rangeBaseType).if_()
+                    .localGet(0).refCast(ts.rangeBaseType).call(fnRangeHash).return_()
                     .end();
         }
         c.localGet(0).refTest(ts.objectType).if_()
@@ -1383,7 +1394,7 @@ public final class WasmRuntimeGen {
                 .localGet(4).call(fnThrowMsg).unreachable();
     }
 
-    private void emitFormat(WasmModule.FuncDef fn, int fnArrFmt, int fnColFmt) {
+    private void emitFormat(WasmModule.FuncDef fn, int fnArrFmt, int fnColFmt, int fnRangeFmt) {
         WasmCodeBuilder c = fn.code();
         int toStrFn = fn.addLocal("toStrFn", WasmValType.refNull(ts.toStrFnSigType), 1);
 
@@ -1434,6 +1445,11 @@ public final class WasmRuntimeGen {
                     .localGet(0).refTest(ts.mapType).op(WasmInstr.SimpleOp.I32_OR)
                     .if_()
                     .localGet(0).call(fnColFmt).return_()
+                    .end();
+        }
+        if (fnRangeFmt >= 0) {
+            c.localGet(0).refTest(ts.rangeBaseType).if_()
+                    .localGet(0).refCast(ts.rangeBaseType).call(fnRangeFmt).return_()
                     .end();
         }
 

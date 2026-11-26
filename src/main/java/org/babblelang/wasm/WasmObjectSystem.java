@@ -642,6 +642,7 @@ public final class WasmObjectSystem {
             case HirExpr.Def d -> exprEscapesThis(d.value());
             case HirExpr.Unary u -> exprEscapesThis(u.operand());
             case HirExpr.Binary b -> exprEscapesThis(b.left()) || exprEscapesThis(b.right());
+            case HirExpr.Range r -> exprEscapesThis(r.start()) || exprEscapesThis(r.end());
             case HirExpr.Logic l -> exprEscapesThis(l.left()) || exprEscapesThis(l.right());
             case HirExpr.ModuleExportGet g -> exprEscapesThis(g.receiver());
             case HirExpr.DynamicSelect s -> exprEscapesThis(s.receiver());
@@ -1097,7 +1098,7 @@ public final class WasmObjectSystem {
 
     private void emitOpHook(ClassInfo ci) {
         WasmCodeBuilder c = ci.opDef.code();
-        String[] opsList = {"plus", "minus", "times", "div", "neg"};
+        String[] opsList = {"plus", "minus", "times", "div", "floorDiv", "mod", "neg"};
         for (String opName : opsList) {
             Integer mId = ci.hir.methodFunctionIds().get(opName);
             List<Integer> ovIds = ci.hir.overloadMethodFunctionIds().get(opName);

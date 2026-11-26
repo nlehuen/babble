@@ -88,6 +88,12 @@ public final class WasmTypeSystem {
     public final int entryType;
     public final int mapType;
     public final int collectionIterType;
+    public final int rangeBaseType;
+    public final int intRangeType;
+    public final int longRangeType;
+    public final int doubleRangeType;
+    public final int stringRangeType;
+    public final int rangeIterType;
 
     // ---- Exception & multi-value control block helper types ----
     public final int exnTagType;
@@ -174,6 +180,12 @@ public final class WasmTypeSystem {
         this.entryType = module.reserveTypeIndex();
         this.mapType = module.reserveTypeIndex();
         this.collectionIterType = module.reserveTypeIndex();
+        this.rangeBaseType = module.reserveTypeIndex();
+        this.intRangeType = module.reserveTypeIndex();
+        this.longRangeType = module.reserveTypeIndex();
+        this.doubleRangeType = module.reserveTypeIndex();
+        this.stringRangeType = module.reserveTypeIndex();
+        this.rangeIterType = module.reserveTypeIndex();
 
         WasmValType refAnyNull = WasmValType.refNull(anyType);
         WasmValType refAnyArr = WasmValType.ref(anyArrType);
@@ -349,6 +361,47 @@ public final class WasmTypeSystem {
                 field("arr", refAnyArr, false),
                 field("size", WasmValType.I32, false),
                 field("pos", WasmValType.I32, true)
+        ))));
+        // Portable core ranges (BIP031)
+        rec.add(new WasmTypeDef.SubType(rangeBaseType, "RangeBase", false, anyType, new WasmTypeDef.StructType(List.of(
+                field("kind", WasmValType.I32, false),
+                field("inclusive", WasmValType.I32, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(intRangeType, "IntRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
+                field("kind", WasmValType.I32, false),
+                field("inclusive", WasmValType.I32, false),
+                field("start", WasmValType.I32, false),
+                field("end", WasmValType.I32, false),
+                field("step", WasmValType.I32, false),
+                field("descending", WasmValType.I32, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(longRangeType, "LongRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
+                field("kind", WasmValType.I32, false),
+                field("inclusive", WasmValType.I32, false),
+                field("start", WasmValType.I64, false),
+                field("end", WasmValType.I64, false),
+                field("step", WasmValType.I64, false),
+                field("descending", WasmValType.I32, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(doubleRangeType, "DoubleRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
+                field("kind", WasmValType.I32, false),
+                field("inclusive", WasmValType.I32, false),
+                field("start", WasmValType.F64, false),
+                field("end", WasmValType.F64, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(stringRangeType, "StringRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
+                field("kind", WasmValType.I32, false),
+                field("inclusive", WasmValType.I32, false),
+                field("start", refStr, false),
+                field("end", refStr, false)
+        ))));
+        rec.add(new WasmTypeDef.SubType(rangeIterType, "RangeIter", true, anyType, new WasmTypeDef.StructType(List.of(
+                field("kind", WasmValType.I32, false),
+                field("current", WasmValType.I64, true),
+                field("stop", WasmValType.I64, false),
+                field("step", WasmValType.I64, false),
+                field("descending", WasmValType.I32, false),
+                field("hasMore", WasmValType.I32, true)
         ))));
 
         module.commitRecGroup(rec);

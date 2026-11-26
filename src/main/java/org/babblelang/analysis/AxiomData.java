@@ -1096,6 +1096,7 @@ final class AxiomData {
                 case "map" -> "Ljava/util/Map;";
                 case "sortedmap" -> "Ljava/util/SortedMap;";
                 case "entry" -> "Ljava/util/Map$Entry;";
+                case "range" -> "Lorg/babblelang/runtime/Range;";
                 case "exception" -> "Lorg/babblelang/runtime/BabbleException;";
                 default -> null;
             };

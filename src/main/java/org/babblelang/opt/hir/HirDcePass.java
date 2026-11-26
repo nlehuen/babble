@@ -170,11 +170,21 @@ public final class HirDcePass implements HirPass {
             return nb;
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr ni = dceExpr(f.iterable(), usedVars, module, rewrites);
+            HirExpr ni = f.iterable() != null ? dceExpr(f.iterable(), usedVars, module, rewrites) : null;
+            HirExpr.CountedRangeLoop cr = f.countedRange();
+            HirExpr.CountedRangeLoop ncr = cr;
+            if (cr != null) {
+                HirExpr ns = dceExpr(cr.start(), usedVars, module, rewrites);
+                HirExpr ne = dceExpr(cr.end(), usedVars, module, rewrites);
+                HirExpr nk = cr.step() != null ? dceExpr(cr.step(), usedVars, module, rewrites) : null;
+                if (ns != cr.start() || ne != cr.end() || nk != cr.step()) {
+                    ncr = new HirExpr.CountedRangeLoop(ns, ne, nk, cr.inclusive(), cr.descending(), cr.elemKind());
+                }
+            }
             List<HirExpr> nb = dceStatements(f.body(), usedVars, module, rewrites);
-            return (ni == f.iterable() && nb == f.body()) ? f
+            return (ni == f.iterable() && ncr == cr && nb == f.body()) ? f
                     : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
-                            f.bodyWideningRank(), f.elemSamTarget(), f.meta());
+                            f.bodyWideningRank(), f.elemSamTarget(), ncr, f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
             List<HirExpr> ntb = dceStatements(t.tryBody(), usedVars, module, rewrites);

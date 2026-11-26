@@ -1759,6 +1759,57 @@ public class TypeCheckerTestCase {
         Assertions.assertEquals(interpVal, compVal);
     }
 
+    @Test
+    public void testRangesAndFlooredDivision() {
+        // Valid range typing, covariance, Iterable projection, and mod / // / //=
+        assertDiagnostics("""
+                def r1: range of int = 1..10
+                def r2: range of any = r1
+                def it: java.lang.Iterable of int = r1
+                def r3: range of byte = 1..10
+                def r4: range of double = 0.0..<1.0
+                def r5: range of string = "a".."z"
+                def q: int = -7 // 3
+                def m: int = -7 mod 3
+                def ql: long = -7l // 3
+                def ml: long = -7 mod 3l
+                var v: int = 17
+                v //= 4
+                """);
+
+        // Error diagnostics: non-discrete iteration/step/reversed, nullable bounds, non-comparable bounds,
+        // non-integer mod/floorDiv, arithmetic on range hint, and unparenthesized range method hint.
+        assertDiagnostics("""
+                def x: int? = null
+                def rBadNull = x..5
+                def C = class () ()
+                def rBadCmp = C()..C()
+                for d in 0.0..1.0 then ( d )
+                def s1 = (0.0..1.0).step(2)
+                def s2 = ("a".."z").reversed()
+                def f1 = 1.5 mod 2
+                def f2 = 1.5 // 2
+                def f3 = (1..5) + 1
+                def f4 = 1..10.step(5)
+                """,
+                "2:16 Range bound cannot be null : int?",
+                "4:15 Not comparable : C and C",
+                "5:10 Not iterable : range of double is not discrete",
+                "6:10 Not iterable : range of double is not discrete",
+                "7:10 Not iterable : range of string is not discrete",
+                "8:10 Not an integer : 1.5",
+                "9:10 Not an integer : 1.5",
+                "10:10 Operator + : range of int and int. Parenthesize arithmetic range bounds",
+                "11:13 No such member : step. Parenthesize the range : (1..10).step(5)");
+
+        // Literal-zero divisor warnings
+        assertWarnings("""
+                def f = fn (x: int): int -> ( (x mod 0) + (x // 0) )
+                """,
+                "1:32 Modulo by zero : always throws java.lang.ArithmeticException",
+                "1:44 Division by zero : always throws java.lang.ArithmeticException");
+    }
+
     private static Object run(String script, String mode, StringWriter errors) throws ScriptException {
         ScriptEngine engine = BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);

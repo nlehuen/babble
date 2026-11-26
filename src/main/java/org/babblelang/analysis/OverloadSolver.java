@@ -685,7 +685,8 @@ final class OverloadSolver {
     }
 
     private static boolean isCovariantJavaClass(Class<?> cls) {
-        return cls == java.util.Map.Entry.class || cls == Iterable.class || cls == java.util.Iterator.class;
+        return cls == java.util.Map.Entry.class || cls == Iterable.class || cls == java.util.Iterator.class
+                || cls == org.babblelang.runtime.Range.class;
     }
 
     private static boolean typeArgsOverlap(TypeAlgebra algebra, boolean covariant,

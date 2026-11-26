@@ -116,10 +116,15 @@ final class AssignAndMemberEmitter {
      */
     private static boolean canLowerPrimitiveCompound(PrimitiveKind targetKind, PrimitiveKind rhsKind, String op) {
         if (targetKind == PrimitiveKind.INT) {
-            return rhsKind == PrimitiveKind.INT && !"/".equals(op);
+            return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.BYTE || rhsKind == PrimitiveKind.SHORT)
+                    && !"/".equals(op);
+        }
+        if (targetKind == PrimitiveKind.LONG && "//".equals(op)) {
+            return rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.LONG
+                    || rhsKind == PrimitiveKind.BYTE || rhsKind == PrimitiveKind.SHORT;
         }
         if (targetKind == PrimitiveKind.DOUBLE) {
-            return rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE;
+            return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE) && !"//".equals(op);
         }
         return false;
     }
@@ -139,6 +144,13 @@ final class AssignAndMemberEmitter {
         storeKindOn(mv, kind, rhs);
         loadKindOn(mv, kind, cur);
         loadKindOn(mv, kind, rhs);
+        if ("//".equals(op)) {
+            c.line(rhsExpr.meta().line());
+            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "floorDiv",
+                    kind == PrimitiveKind.LONG ? "(JJ)J" : "(II)I", false);
+            c.stackKind = kind;
+            return;
+        }
         int opcode = kind == PrimitiveKind.INT
                 ? switch (op) {
                     case "+" -> IADD;

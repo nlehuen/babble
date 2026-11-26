@@ -343,12 +343,16 @@ public final class SccpPass implements MirPass {
                 case ADD -> Lattice.constant(ln.intValue() + rn.intValue());
                 case SUB -> Lattice.constant(ln.intValue() - rn.intValue());
                 case MUL -> Lattice.constant(ln.intValue() * rn.intValue());
+                case FLOOR_DIV -> rn.intValue() != 0 ? Lattice.constant(Math.floorDiv(ln.intValue(), rn.intValue())) : Lattice.BOTTOM;
+                case MOD -> rn.intValue() != 0 ? Lattice.constant(Math.floorMod(ln.intValue(), rn.intValue())) : Lattice.BOTTOM;
                 default -> Lattice.BOTTOM;
             };
             case LONG -> switch (b.op()) {
                 case ADD -> Lattice.constant(ln.longValue() + rn.longValue());
                 case SUB -> Lattice.constant(ln.longValue() - rn.longValue());
                 case MUL -> Lattice.constant(ln.longValue() * rn.longValue());
+                case FLOOR_DIV -> rn.longValue() != 0L ? Lattice.constant(Math.floorDiv(ln.longValue(), rn.longValue())) : Lattice.BOTTOM;
+                case MOD -> rn.longValue() != 0L ? Lattice.constant(Math.floorMod(ln.longValue(), rn.longValue())) : Lattice.BOTTOM;
                 default -> Lattice.BOTTOM;
             };
             case FLOAT -> switch (b.op()) {

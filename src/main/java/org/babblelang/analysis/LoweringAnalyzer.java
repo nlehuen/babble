@@ -141,7 +141,13 @@ final class LoweringAnalyzer {
             }
         }
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
-            if (entry.getKey() instanceof BabbleParser.ForExpressionContext forExpr && checker.inFile(forExpr)) {
+            if (entry.getKey() instanceof BabbleParser.RangeExpressionContext rangeExpr && checker.inFile(rangeExpr)) {
+                Type elem = Type.rangeElement(entry.getValue());
+                if (elem != null) {
+                    pass.analysis.lowering().setRangeTarget(rangeExpr,
+                            new LoweringTargets.RangeTarget(PrimitiveKind.of(elem), elem == Type.STRING));
+                }
+            } else if (entry.getKey() instanceof BabbleParser.ForExpressionContext forExpr && checker.inFile(forExpr)) {
                 publishForLoopTarget(forExpr, declarationTypes, widened);
             } else if (entry.getKey() instanceof BabbleParser.ThrowExpressionContext throwExpr && checker.inFile(throwExpr)) {
                 Type thrownType = types.get(throwExpr.expression());
@@ -527,6 +533,9 @@ final class LoweringAnalyzer {
             return;
         }
         if (!safe && deriveArrayOp(arguments, call)) {
+            return;
+        }
+        if (!safe && deriveRangeCall(arguments, call)) {
             return;
         }
         Method method = checker.callSolver().resolvedMethod(call);
@@ -1113,6 +1122,15 @@ final class LoweringAnalyzer {
         PrimitiveKind elemKind = loopVarType != null
                 ? PrimitiveKind.of(loopVarType) : PrimitiveKind.NONE;
         int elemWidenRank = widened.getOrDefault(forExpr, 0);
+        LoweringMetadata.CountedRangeSource counted = info.kind() == LoweringTargets.ForKind.JAVA_ITERABLE
+                ? matchCountedRange(forExpr.iterable) : null;
+        if (counted != null) {
+            pass.analysis.lowering().setCountedRangeSource(forExpr, counted);
+            pass.analysis.lowering().setForLoopTarget(forExpr, new LoweringTargets.ForLoopTarget(
+                    LoweringTargets.ForKind.COUNTED_RANGE, null, elemKind, null, elemWidenRank,
+                    null, null, null, null, null));
+            return;
+        }
         String elemCheck = null;
         if (info.kind() == LoweringTargets.ForKind.JAVA_ITERABLE
                 || info.kind() == LoweringTargets.ForKind.JAVA_ITERATOR
@@ -1136,6 +1154,132 @@ final class LoweringAnalyzer {
         pass.analysis.lowering().setForLoopTarget(forExpr, new LoweringTargets.ForLoopTarget(
                 info.kind(), info.arrayClass(), elemKind, elemCheck, elemWidenRank,
                 iterIface, hasNextSig, hasNextIface, nextSig, nextIface));
+    }
+
+    private LoweringMetadata.CountedRangeSource matchCountedRange(BabbleParser.ExpressionContext expr) {
+        boolean descending = false;
+        BabbleParser.ExpressionContext stepExpr = null;
+        BabbleParser.ExpressionContext cur = expr;
+        while (true) {
+            while (cur instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+                cur = b.block().expression(0);
+            }
+            if (cur instanceof BabbleParser.CallContext call
+                    && call.expression() instanceof BabbleParser.SelectorContext sel
+                    && sel.expression() != null && sel.safe == null) {
+                String name = ScopeAnalysis.selectorName(sel);
+                List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
+                if ("reversed".equals(name) && args.isEmpty()) {
+                    descending = !descending;
+                    cur = sel.expression();
+                    continue;
+                }
+                if ("step".equals(name) && stepExpr == null && args.size() == 1 && args.get(0).spread == null) {
+                    stepExpr = args.get(0).expression();
+                    cur = sel.expression();
+                    continue;
+                }
+            }
+            break;
+        }
+        if (!(cur instanceof BabbleParser.RangeExpressionContext range)) {
+            return null;
+        }
+        Type elem = Type.rangeElement(types.get(range));
+        if (elem == null || !Type.isDiscreteRangeElement(elem)) {
+            return null;
+        }
+        boolean inclusive = range.op.getType() == BabbleParser.RANGE;
+        return new LoweringMetadata.CountedRangeSource(
+                range.left, range.right, stepExpr, inclusive, descending, PrimitiveKind.of(elem));
+    }
+
+    private boolean deriveRangeCall(List<BabbleParser.CallParameterContext> arguments, BabbleParser.CallContext call) {
+        if (!(call.expression() instanceof BabbleParser.SelectorContext sel)
+                || sel.expression() == null || sel.safe != null) {
+            return false;
+        }
+        Type recv = types.get(sel.expression());
+        Type elem = Type.rangeElement(recv);
+        if (elem == null) {
+            return false;
+        }
+        for (BabbleParser.CallParameterContext p : arguments) {
+            if (p.spread != null) {
+                return false;
+            }
+        }
+        String name = ScopeAnalysis.selectorName(sel);
+        Method target = resolveRangeJavaMethod(elem, name, arguments.size());
+        if (target == null) {
+            return false;
+        }
+        pass.analysis.lowering().setJavaCallTarget(call, new LoweringTargets.JavaCallTarget(target, false, false));
+        return true;
+    }
+
+    private static Method resolveRangeJavaMethod(Type elem, String name, int argCount) {
+        try {
+            boolean isIntFamily = elem == Type.BYTE || elem == Type.SHORT || elem == Type.INT;
+            boolean isLong = elem == Type.LONG;
+            boolean isChar = elem == Type.CHAR;
+            boolean isFloatFamily = elem == Type.FLOAT || elem == Type.DOUBLE;
+            return switch (name) {
+                case "start" -> {
+                    if (argCount != 0) yield null;
+                    if (elem == Type.INT) yield org.babblelang.runtime.IntRange.class.getMethod("startInt");
+                    if (isLong) yield org.babblelang.runtime.LongRange.class.getMethod("startLong");
+                    if (isChar) yield org.babblelang.runtime.CharRange.class.getMethod("startChar");
+                    if (elem == Type.DOUBLE) yield org.babblelang.runtime.DoubleRange.class.getMethod("startDouble");
+                    yield org.babblelang.runtime.Range.class.getMethod("start");
+                }
+                case "end" -> {
+                    if (argCount != 0) yield null;
+                    if (elem == Type.INT) yield org.babblelang.runtime.IntRange.class.getMethod("endInt");
+                    if (isLong) yield org.babblelang.runtime.LongRange.class.getMethod("endLong");
+                    if (isChar) yield org.babblelang.runtime.CharRange.class.getMethod("endChar");
+                    if (elem == Type.DOUBLE) yield org.babblelang.runtime.DoubleRange.class.getMethod("endDouble");
+                    yield org.babblelang.runtime.Range.class.getMethod("end");
+                }
+                case "inclusive" -> argCount == 0 ? org.babblelang.runtime.Range.class.getMethod("inclusive") : null;
+                case "isEmpty" -> argCount == 0 ? org.babblelang.runtime.Range.class.getMethod("isEmpty") : null;
+                case "contains" -> {
+                    if (argCount != 1) yield null;
+                    if (isIntFamily) yield org.babblelang.runtime.IntRange.class.getMethod("containsInt", int.class);
+                    if (isLong) yield org.babblelang.runtime.LongRange.class.getMethod("containsLong", long.class);
+                    if (isChar) yield org.babblelang.runtime.CharRange.class.getMethod("containsChar", char.class);
+                    if (isFloatFamily) yield org.babblelang.runtime.DoubleRange.class.getMethod("containsDouble", double.class);
+                    yield org.babblelang.runtime.Range.class.getMethod("contains", Object.class);
+                }
+                case "step" -> {
+                    if (argCount != 1) yield null;
+                    if (isIntFamily) yield org.babblelang.runtime.IntRange.class.getMethod("step", int.class);
+                    if (isLong) yield org.babblelang.runtime.LongRange.class.getMethod("step", long.class);
+                    if (isChar) yield org.babblelang.runtime.CharRange.class.getMethod("step", int.class);
+                    yield null;
+                }
+                case "reversed" -> {
+                    if (argCount != 0) yield null;
+                    if (isIntFamily) yield org.babblelang.runtime.IntRange.class.getMethod("reversed");
+                    if (isLong) yield org.babblelang.runtime.LongRange.class.getMethod("reversed");
+                    if (isChar) yield org.babblelang.runtime.CharRange.class.getMethod("reversed");
+                    yield null;
+                }
+                case "iterator" -> {
+                    if (argCount != 0) yield null;
+                    if (isIntFamily) yield org.babblelang.runtime.IntRange.class.getMethod("iterator");
+                    if (isLong) yield org.babblelang.runtime.LongRange.class.getMethod("iterator");
+                    if (isChar) yield org.babblelang.runtime.CharRange.class.getMethod("iterator");
+                    yield null;
+                }
+                case "equals" -> argCount == 1 ? Object.class.getMethod("equals", Object.class) : null;
+                case "hashCode" -> argCount == 0 ? Object.class.getMethod("hashCode") : null;
+                case "toString" -> argCount == 0 ? Object.class.getMethod("toString") : null;
+                default -> null;
+            };
+        } catch (NoSuchMethodException e) {
+            return null;
+        }
     }
 
     private LoweringTargets.InterfaceCallTarget deriveZeroArgInterfaceTarget(Type.Instance inst, String memberName) {

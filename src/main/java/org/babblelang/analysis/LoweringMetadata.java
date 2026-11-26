@@ -56,8 +56,37 @@ public final class LoweringMetadata {
     private final Set<BabbleParser.BooleanOpContext> logicRightNarrowed = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.CallContext, String> builtinOwnershipCalls = new IdentityHashMap<>();
     private final Set<BabbleParser.SelectorContext> publicStaticDefSelects = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<BabbleParser.RangeExpressionContext, LoweringTargets.RangeTarget> rangeTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.ForExpressionContext, CountedRangeSource> countedRangeSources = new IdentityHashMap<>();
+
+    /** AST-level counted-range decomposition computed once by {@link LoweringAnalyzer} and consumed by {@code HirBuilder}. */
+    public record CountedRangeSource(
+            BabbleParser.ExpressionContext start,
+            BabbleParser.ExpressionContext end,
+            BabbleParser.ExpressionContext step,
+            boolean inclusive,
+            boolean descending,
+            PrimitiveKind elemKind
+    ) {
+    }
 
     LoweringMetadata() {
+    }
+
+    void setRangeTarget(BabbleParser.RangeExpressionContext ctx, LoweringTargets.RangeTarget target) {
+        rangeTargets.put(ctx, target);
+    }
+
+    public LoweringTargets.RangeTarget rangeTarget(BabbleParser.RangeExpressionContext ctx) {
+        return rangeTargets.get(ctx);
+    }
+
+    void setCountedRangeSource(BabbleParser.ForExpressionContext ctx, CountedRangeSource source) {
+        countedRangeSources.put(ctx, source);
+    }
+
+    public CountedRangeSource countedRangeSource(BabbleParser.ForExpressionContext ctx) {
+        return countedRangeSources.get(ctx);
     }
 
     void setDefTarget(BabbleParser.DefExpressionContext def, LoweringTargets.DefTarget target) {

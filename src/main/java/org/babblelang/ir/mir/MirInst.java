@@ -43,6 +43,7 @@ public sealed interface MirInst permits
         MirInst.CallJavaCtor,
         MirInst.RecordNew,
         MirInst.RecordReuse,
+        MirInst.RangeNew,
         MirInst.Move,
         MirInst.Freeze,
         MirInst.SlotDecl,
@@ -1341,6 +1342,38 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nm = fn.apply(module);
             return nm == module ? this : new LoadExport(result, nm, target, line, effect);
+        }
+    }
+
+    /** First-class range allocation ({@code lo..hi} or {@code lo..<hi}, {@code BIP031}). */
+    record RangeNew(
+            MirVal result,
+            MirVal start,
+            MirVal end,
+            boolean inclusive,
+            PrimitiveKind elemKind,
+            int line,
+            MirEffect effect
+    ) implements MirInst {
+        public RangeNew {
+            Objects.requireNonNull(result, "result");
+            Objects.requireNonNull(start, "start");
+            Objects.requireNonNull(end, "end");
+            Objects.requireNonNull(elemKind, "elemKind");
+            Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public List<MirVal> usedValues() {
+            return List.of(start, end);
+        }
+
+        @Override
+        public MirInst remapUses(UnaryOperator<MirVal> fn) {
+            MirVal ns = fn.apply(start);
+            MirVal ne = fn.apply(end);
+            return (ns == start && ne == end) ? this
+                    : new RangeNew(result, ns, ne, inclusive, elemKind, line, effect);
         }
     }
 

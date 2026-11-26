@@ -555,6 +555,13 @@ public final class HirCanonicalPrinter {
                 printExpr(sb, b.right(), norm, indent + 1);
                 sb.append(')');
             }
+            case HirExpr.Range r -> {
+                sb.append("(range ").append(r.inclusive() ? ".. " : "..< ");
+                printExpr(sb, r.start(), norm, indent + 1);
+                sb.append(' ');
+                printExpr(sb, r.end(), norm, indent + 1);
+                sb.append(')');
+            }
             case HirExpr.Logic l -> {
                 sb.append('(').append(l.op() == HirExpr.LogicOp.AND ? "and " : "or ");
                 printExpr(sb, l.left(), norm, indent + 1);
@@ -651,9 +658,26 @@ public final class HirCanonicalPrinter {
                 sb.append(')');
             }
             case HirExpr.For f -> {
-                sb.append("(for ");
-                sb.append(f.loopVar() != null ? norm.varName(f.loopVar()) : "_").append(" in ");
-                printExpr(sb, f.iterable(), norm, indent + 1);
+                if (f.countedRange() != null) {
+                    HirExpr.CountedRangeLoop cr = f.countedRange();
+                    sb.append("(for-range ");
+                    sb.append(f.loopVar() != null ? norm.varName(f.loopVar()) : "_");
+                    sb.append(cr.inclusive() ? " .. " : " ..< ");
+                    printExpr(sb, cr.start(), norm, indent + 1);
+                    sb.append(' ');
+                    printExpr(sb, cr.end(), norm, indent + 1);
+                    if (cr.step() != null) {
+                        sb.append(" step ");
+                        printExpr(sb, cr.step(), norm, indent + 1);
+                    }
+                    if (cr.descending()) {
+                        sb.append(" reversed");
+                    }
+                } else {
+                    sb.append("(for ");
+                    sb.append(f.loopVar() != null ? norm.varName(f.loopVar()) : "_").append(" in ");
+                    printExpr(sb, f.iterable(), norm, indent + 1);
+                }
                 sb.append('\n');
                 indent(sb, indent + 1);
                 sb.append("(block");
@@ -977,6 +1001,10 @@ public final class HirCanonicalPrinter {
                     scanExpr(b.left());
                     scanExpr(b.right());
                 }
+                case HirExpr.Range r -> {
+                    scanExpr(r.start());
+                    scanExpr(r.end());
+                }
                 case HirExpr.Logic l -> {
                     scanExpr(l.left());
                     scanExpr(l.right());
@@ -1001,7 +1029,13 @@ public final class HirCanonicalPrinter {
                 }
                 case HirExpr.For f -> {
                     recordVar(f.loopVar());
-                    scanExpr(f.iterable());
+                    if (f.countedRange() != null) {
+                        scanExpr(f.countedRange().start());
+                        scanExpr(f.countedRange().end());
+                        scanExpr(f.countedRange().step());
+                    } else {
+                        scanExpr(f.iterable());
+                    }
                     scanList(f.body());
                 }
                 case HirExpr.Try t -> {

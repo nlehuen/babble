@@ -149,6 +149,7 @@ public final class WasmProgramLinker {
     private final WasmArrayOpsGen arrOps;
     private final WasmStringOpsGen strOps;
     private final WasmCollectionOpsGen colOps;
+    private final WasmRangeOpsGen rangeOps;
     private final WasmObjectSystem objects;
     private final List<ModuleLinkInfo> linkedModules = new ArrayList<>();
     private final Map<String, ModuleLinkInfo> modulesByKey = new LinkedHashMap<>();
@@ -166,10 +167,12 @@ public final class WasmProgramLinker {
         this.arrOps = new WasmArrayOpsGen(mod, ts, rt, ops);
         this.strOps = new WasmStringOpsGen(mod, ts, rt, arrOps);
         this.colOps = new WasmCollectionOpsGen(mod, ts, rt);
+        this.rangeOps = new WasmRangeOpsGen(mod, ts, rt);
         this.ops.setCollections(colOps);
         this.rt.emitPolymorphicHelpers(
                 arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat,
-                colOps.fnColEq, colOps.fnColHash, colOps.fnColFmt);
+                colOps.fnColEq, colOps.fnColHash, colOps.fnColFmt,
+                rangeOps.fnRangeEq, rangeOps.fnRangeHash, rangeOps.fnRangeFmt);
         this.objects = new WasmObjectSystem(this);
         this.arrOps.emitTdSubtypeBody(objects);
         this.ops.emitClassofWithTable(objects.gClassVals);
@@ -254,6 +257,10 @@ public final class WasmProgramLinker {
 
     public WasmCollectionOpsGen collections() {
         return colOps;
+    }
+
+    public WasmRangeOpsGen ranges() {
+        return rangeOps;
     }
 
     public WasmObjectSystem objects() {
@@ -695,10 +702,20 @@ public final class WasmProgramLinker {
             case HirExpr.DynamicSelect s -> walkExpr(s.receiver(), visitor);
             case HirExpr.Unary u -> walkExpr(u.operand(), visitor);
             case HirExpr.Binary b -> { walkExpr(b.left(), visitor); walkExpr(b.right(), visitor); }
+            case HirExpr.Range r -> { walkExpr(r.start(), visitor); walkExpr(r.end(), visitor); }
             case HirExpr.Logic l -> { walkExpr(l.left(), visitor); walkExpr(l.right(), visitor); }
             case HirExpr.If i -> { walkExpr(i.cond(), visitor); walkExpr(i.thenBranch(), visitor); walkExpr(i.elseBranch(), visitor); }
             case HirExpr.While w -> { walkExpr(w.cond(), visitor); walkExpr(w.body(), visitor); }
-            case HirExpr.For f -> { walkExpr(f.iterable(), visitor); for (HirExpr s : f.body()) walkExpr(s, visitor); }
+            case HirExpr.For f -> {
+                if (f.countedRange() != null) {
+                    walkExpr(f.countedRange().start(), visitor);
+                    walkExpr(f.countedRange().end(), visitor);
+                    walkExpr(f.countedRange().step(), visitor);
+                } else {
+                    walkExpr(f.iterable(), visitor);
+                }
+                for (HirExpr s : f.body()) walkExpr(s, visitor);
+            }
             case HirExpr.Return r -> walkExpr(r.value(), visitor);
             case HirExpr.Break b -> walkExpr(b.value(), visitor);
             case HirExpr.Throw t -> walkExpr(t.value(), visitor);
@@ -954,10 +971,20 @@ public final class WasmProgramLinker {
             case HirExpr.DynamicSelect s -> collectOverloadMetas(s.receiver(), out);
             case HirExpr.Unary u -> collectOverloadMetas(u.operand(), out);
             case HirExpr.Binary b -> { collectOverloadMetas(b.left(), out); collectOverloadMetas(b.right(), out); }
+            case HirExpr.Range r -> { collectOverloadMetas(r.start(), out); collectOverloadMetas(r.end(), out); }
             case HirExpr.Logic l -> { collectOverloadMetas(l.left(), out); collectOverloadMetas(l.right(), out); }
             case HirExpr.If i -> { collectOverloadMetas(i.cond(), out); collectOverloadMetas(i.thenBranch(), out); collectOverloadMetas(i.elseBranch(), out); }
             case HirExpr.While w -> { collectOverloadMetas(w.cond(), out); collectOverloadMetas(w.body(), out); }
-            case HirExpr.For f -> { collectOverloadMetas(f.iterable(), out); for (HirExpr s : f.body()) collectOverloadMetas(s, out); }
+            case HirExpr.For f -> {
+                if (f.countedRange() != null) {
+                    collectOverloadMetas(f.countedRange().start(), out);
+                    collectOverloadMetas(f.countedRange().end(), out);
+                    collectOverloadMetas(f.countedRange().step(), out);
+                } else {
+                    collectOverloadMetas(f.iterable(), out);
+                }
+                for (HirExpr s : f.body()) collectOverloadMetas(s, out);
+            }
             case HirExpr.Return r -> collectOverloadMetas(r.value(), out);
             case HirExpr.Break b -> collectOverloadMetas(b.value(), out);
             case HirExpr.Throw t -> collectOverloadMetas(t.value(), out);

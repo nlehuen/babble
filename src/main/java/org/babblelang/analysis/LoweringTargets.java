@@ -334,12 +334,16 @@ public final class LoweringTargets {
 
     public enum ForKind {
         ARRAY,
+        COUNTED_RANGE,
         JAVA_ITERABLE,
         JAVA_ITERATOR,
         BABBLE_TO_JAVA_ITERABLE,
         BABBLE_ITERABLE,
         BABBLE_ITERATOR,
         DYNAMIC_UNION
+    }
+
+    public record RangeTarget(PrimitiveKind elemKind, boolean stringElement) {
     }
 
     public record ForLoopTarget(
