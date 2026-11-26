@@ -390,7 +390,7 @@
                                         <exclude>org/babblelang/engine/impl/*</exclude>
                                         <exclude>org/babblelang/ir/mir/**</exclude>
                                         <exclude>org/babblelang/opt/mir/**</exclude>
-                                        <exclude>org/babblelang/compiler/MirEmitter*</exclude>
+                                        <exclude>org/babblelang/compiler/Mir*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -426,7 +426,7 @@
                                         <exclude>org/babblelang/engine/impl/*</exclude>
                                         <exclude>org/babblelang/opt/**</exclude>
                                         <exclude>org/babblelang/ir/mir/**</exclude>
-                                        <exclude>org/babblelang/compiler/MirEmitter*</exclude>
+                                        <exclude>org/babblelang/compiler/Mir*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -442,7 +442,7 @@
                                     <includes>
                                         <include>org/babblelang/ir/mir/**</include>
                                         <include>org/babblelang/opt/mir/**</include>
-                                        <include>org/babblelang/compiler/MirEmitter*</include>
+                                        <include>org/babblelang/compiler/Mir*</include>
                                     </includes>
                                 </configuration>
                             </execution>
