@@ -14,12 +14,12 @@ coreCollectionKeyword: LIST | SET | SORTEDSET | MAP | SORTEDMAP | ENTRY | ARRAY;
 
 coreScalarKeyword: BYTE | SHORT | INT_KW | LONG_KW | FLOAT_KW | DOUBLE_KW | BOOL_KW | CHAR_KW | STRING_KW;
 
-coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | EXCEPTION | ANY | VOID;
+coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | RANGE_KW | EXCEPTION | ANY | VOID;
 
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR | MOD;
 
 effectPrefix: effectWord+ callingClause?
             | callingClause;
@@ -77,7 +77,8 @@ expression:
           // newline before it separates : "a" then "-b" on the next line are two expressions.
           | '-' operand=expression                            # negate
           | left=expression AS NL* right=type                     # asExpression
-          | left=expression op=('*' | '/') NL* right=expression   # binaryOp
+          | left=expression op=(RANGE | RANGE_EXCL) NL* right=expression # rangeExpression
+          | left=expression op=('*' | '/' | FLOOR_DIV | MOD) NL* right=expression # binaryOp
           | left=expression op=('+' | '-') NL* right=expression   # binaryOp
           | left=expression IS NL* right=type                     # isExpression
           | left=expression op=('<' | '<=' | '==' | NEQ
@@ -85,9 +86,9 @@ expression:
           | NOT expression                                    # booleanNot
           | left=expression op=AND NL* right=expression           # booleanOp
           | left=expression op=OR NL* right=expression            # booleanOp
-          // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=), with the target's
+          // Compound assignment : "x += v" is "x = x + v" (and -=, *=, /=, //=), with the target's
           // receiver evaluated once.
-          | <assoc=right> lhs=expression op=('=' | '+=' | '-=' | '*=' | '/=') NL* value=expression # assignExpression
+          | <assoc=right> lhs=expression op=('=' | '+=' | '-=' | '*=' | '/=' | FLOOR_DIV_ASSIGN) NL* value=expression # assignExpression
           | NULL                                              # null
           | BOOLEAN                                           # boolean
           | RECURSE                                           # recurse
@@ -219,6 +220,8 @@ UNTERMINATED_RAW_MULTILINE_STRING
 PLUS: '+';
 MINUS: '-';
 MUL: '*';
+FLOOR_DIV_ASSIGN: '//=';
+FLOOR_DIV: '//';
 DIV: '/';
 LT: '<';
 LTE: '<=';
@@ -236,6 +239,8 @@ MUL_ASSIGN: '*=';
 DIV_ASSIGN: '/=';
 Q_ELLIPSIS: '?...';
 ELLIPSIS: '...';
+RANGE_EXCL: '..<';
+RANGE: '..';
 DOT: '.';
 SAFE_DOT: '?.';
 ARROW: '->';
@@ -261,6 +266,7 @@ THROW: 'throw';
 WHILE: 'while';
 FOR: 'for';
 IN: 'in';
+MOD: 'mod';
 AND: 'and';
 OR: 'or';
 NULL: 'null';
@@ -315,6 +321,7 @@ MAP: 'map';
 SORTEDMAP: 'sortedmap';
 ENTRY: 'entry';
 ARRAY: 'array';
+RANGE_KW: 'range';
 EXCEPTION: 'exception';
 ANY: 'any';
 VOID: 'void';

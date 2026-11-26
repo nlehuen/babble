@@ -560,4 +560,22 @@ public class ReplTestCase {
         ScriptException tdz = Assertions.assertThrows(ScriptException.class, () -> session.eval("readBroken()"));
         Assertions.assertTrue(tdz.getMessage().contains("Name used before definition : broken"), tdz.getMessage());
     }
+
+    @Test
+    public void testBip031ReplClassifyAndCompletions() {
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("1.."));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("1..<"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("10 mod"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("7 //"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("n //="));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("1..10"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("0..<10"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("10 mod 3"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("7 // 2"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("n //= 5"));
+
+        BabbleSession session = session();
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "ra", 2).candidates().contains("range"));
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "mo", 2).candidates().contains("mod"));
+    }
 }

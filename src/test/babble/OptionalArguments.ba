@@ -94,11 +94,11 @@ assert(tag(name: "k") == "k=1")
 assert(tag(value: "v", name: "k") == "k=v")
 
 ;; Optional positional before ..., required keyword-only after ...
-def range = fn (start: int = 0, ..., stop: int, step: int = 1): int -> (
+def span = fn (start: int = 0, ..., stop: int, step: int = 1): int -> (
     int((stop - start) / step)
 )
-assert(range(stop: 10) == 10)
-assert(range(2, stop: 10, step: 2) == 4)
+assert(span(stop: 10) == 10)
+assert(span(2, stop: 10, step: 2) == 4)
 
 ;; Function type with keyword-only parameters satisfied by positional or keyword-only callee
 def kwType: fn (x: int, ..., y: int = ...): int = fn (a: int, b: int = 7): int -> (
