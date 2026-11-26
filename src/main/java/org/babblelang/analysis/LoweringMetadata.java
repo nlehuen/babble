@@ -64,6 +64,8 @@ public final class LoweringMetadata {
     private final Map<BabbleParser.ValuePatternContext, RangePatternSource> rangePatternSources = new IdentityHashMap<>();
     private final Map<BabbleParser.MembershipPatternContext, LoweringTargets.MembershipTarget> membershipTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.RelationalPatternContext, PrimitiveKind> relationalScrutineeKinds = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.RecordDestructureTarget> recordDestructureTargets = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.SequenceDestructureTarget> sequenceDestructureTargets = new IdentityHashMap<>();
 
     /** AST-level range-membership pattern decomposition for {@code case lo..hi} / {@code (lo..<hi).step(k)} ({@code BIP038}). */
     public record RangePatternSource(
@@ -163,6 +165,26 @@ public final class LoweringMetadata {
     public PrimitiveKind relationalScrutineeKind(BabbleParser.RelationalPatternContext ctx) {
         PrimitiveKind kind = relationalScrutineeKinds.get(ctx);
         return kind != null ? kind : PrimitiveKind.NONE;
+    }
+
+    void setRecordDestructureTarget(ParserRuleContext ctx, LoweringTargets.RecordDestructureTarget target) {
+        if (target != null) {
+            recordDestructureTargets.put(ctx, target);
+        }
+    }
+
+    public LoweringTargets.RecordDestructureTarget recordDestructureTarget(ParserRuleContext ctx) {
+        return recordDestructureTargets.get(ctx);
+    }
+
+    void setSequenceDestructureTarget(ParserRuleContext ctx, LoweringTargets.SequenceDestructureTarget target) {
+        if (target != null) {
+            sequenceDestructureTargets.put(ctx, target);
+        }
+    }
+
+    public LoweringTargets.SequenceDestructureTarget sequenceDestructureTarget(ParserRuleContext ctx) {
+        return sequenceDestructureTargets.get(ctx);
     }
 
     void setDefTarget(BabbleParser.DefExpressionContext def, LoweringTargets.DefTarget target) {

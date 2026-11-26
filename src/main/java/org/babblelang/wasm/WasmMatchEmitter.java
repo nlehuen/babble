@@ -432,7 +432,161 @@ final class WasmMatchEmitter {
             case HirPattern.Relational rel -> emitRelationalPattern(rel, valLocal, valKind);
             case HirPattern.RangeTest rangePat -> emitRangeTestPattern(rangePat, valLocal, valKind);
             case HirPattern.Membership mem -> emitMembershipPattern(mem, valLocal, valKind);
+            case HirPattern.RecordDestructure rd -> emitRecordDestructure(rd, valLocal, valKind);
+            case HirPattern.SequenceDestructure sd -> emitSequenceDestructure(sd, valLocal, valKind);
         }
+    }
+
+    private void emitRecordDestructure(HirPattern.RecordDestructure rd, int valLocal, PrimitiveKind valKind) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        if (valKind.isPrimitive() || rd.isJavaRecord()) {
+            c.i32Const(0);
+            return;
+        }
+        WasmObjectSystem.ClassInfo ci = rd.babbleTypeId() != null ? objects.classByTypeId(rd.babbleTypeId()) : null;
+        if (ci == null) {
+            c.i32Const(0);
+            return;
+        }
+        int recLocal = ctx.newLocal("$mRec", WasmValType.refNull(ci.structTypeIdx));
+        c.localGet(valLocal).refTest(ci.structTypeIdx).if_(WasmValType.I32);
+        ctx.pushBlock("rec_pat");
+        c.localGet(valLocal).refCast(ci.structTypeIdx).localSet(recLocal);
+        emitRecordFieldMatches(rd, ci, recLocal, 0);
+        c.else_().i32Const(0);
+        ctx.popBlock();
+        c.end();
+    }
+
+    private void emitRecordFieldMatches(HirPattern.RecordDestructure rd, WasmObjectSystem.ClassInfo ci,
+                                        int recLocal, int idx) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        if (idx >= rd.fieldPatterns().size()) {
+            c.i32Const(1);
+            return;
+        }
+        int memberIdx = rd.babbleMemberIndices()[idx];
+        int structField = ci.memberToStructField[memberIdx];
+        PrimitiveKind fk = ci.memberKinds[memberIdx];
+        int fLocal = ctx.newLocal("$mFld", ts.valTypeFor(fk));
+        c.localGet(recLocal).refAsNonNull().structGet(ci.structTypeIdx, structField).localSet(fLocal);
+        emitPatternMatch(rd.fieldPatterns().get(idx), fLocal, fk);
+        if (idx == rd.fieldPatterns().size() - 1) {
+            return;
+        }
+        c.if_(WasmValType.I32);
+        ctx.pushBlock("rec_fld");
+        emitRecordFieldMatches(rd, ci, recLocal, idx + 1);
+        c.else_().i32Const(0);
+        ctx.popBlock();
+        c.end();
+    }
+
+    private void emitSequenceDestructure(HirPattern.SequenceDestructure sd, int valLocal, PrimitiveKind valKind) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        if (valKind.isPrimitive()) {
+            c.i32Const(0);
+            return;
+        }
+        int boxLocal = toBoxedLocal(valLocal, valKind);
+        if (sd.typeTest() != null) {
+            emitTypeTestPattern(sd.typeTest(), boxLocal, PrimitiveKind.NONE);
+        } else if (sd.isArray()) {
+            c.localGet(boxLocal).refTest(ts.arrayBaseType);
+        } else {
+            c.localGet(boxLocal).refTest(ts.listType);
+        }
+        c.if_(WasmValType.I32);
+        ctx.pushBlock("seq_pat");
+        int fixed = sd.elemPatterns().size();
+        if (!sd.isArray()) {
+            int listLocal = ctx.newLocal("$mList", WasmValType.refNull(ts.listType));
+            c.localGet(boxLocal).refCast(ts.listType).localTee(listLocal)
+                    .structGet(ts.listType, 1)
+                    .i32Const(fixed)
+                    .op(sd.hasRest() ? WasmInstr.SimpleOp.I32_GE_S : WasmInstr.SimpleOp.I32_EQ)
+                    .if_(WasmValType.I32);
+            ctx.pushBlock("seq_len");
+            emitListElemMatches(sd, listLocal, 0);
+            c.else_().i32Const(0);
+            ctx.popBlock();
+            c.end();
+        } else {
+            int arrLocal = ctx.newLocal("$mArr", WasmValType.refNull(ts.arrayBaseType));
+            c.localGet(boxLocal).refCast(ts.arrayBaseType).localTee(arrLocal)
+                    .call(arrOps.fnArraySize)
+                    .i32Const(fixed)
+                    .op(sd.hasRest() ? WasmInstr.SimpleOp.I32_GE_S : WasmInstr.SimpleOp.I32_EQ)
+                    .if_(WasmValType.I32);
+            ctx.pushBlock("seq_len");
+            emitArrayElemMatches(sd, arrLocal, 0);
+            c.else_().i32Const(0);
+            ctx.popBlock();
+            c.end();
+        }
+        c.else_().i32Const(0);
+        ctx.popBlock();
+        c.end();
+    }
+
+    private void emitListElemMatches(HirPattern.SequenceDestructure sd, int listLocal, int idx) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        if (idx >= sd.elemPatterns().size()) {
+            if (sd.restVar() != null) {
+                int tailLocal = ctx.newLocal("$mTail", ts.anyRef());
+                c.localGet(listLocal).refAsNonNull()
+                        .i32Const(sd.elemPatterns().size())
+                        .call(cols.fnListSlice)
+                        .localSet(tailLocal);
+                bindVar(sd.restVar(), tailLocal, PrimitiveKind.NONE, sd.line());
+            }
+            c.i32Const(1);
+            return;
+        }
+        int eLocal = ctx.newLocal("$mElem", ts.anyRef());
+        c.localGet(listLocal).refAsNonNull().structGet(ts.listType, 0)
+                .i32Const(idx).arrayGet(ts.anyArrType)
+                .localSet(eLocal);
+        emitPatternMatch(sd.elemPatterns().get(idx), eLocal, PrimitiveKind.NONE);
+        c.if_(WasmValType.I32);
+        ctx.pushBlock("list_el");
+        emitListElemMatches(sd, listLocal, idx + 1);
+        c.else_().i32Const(0);
+        ctx.popBlock();
+        c.end();
+    }
+
+    private void emitArrayElemMatches(HirPattern.SequenceDestructure sd, int arrLocal, int idx) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        if (idx >= sd.elemPatterns().size()) {
+            if (sd.restVar() != null) {
+                int tailLocal = ctx.newLocal("$mTail", ts.anyRef());
+                c.localGet(arrLocal).refAsNonNull()
+                        .i32Const(sd.elemPatterns().size())
+                        .call(arrOps.fnArraySlice)
+                        .localSet(tailLocal);
+                bindVar(sd.restVar(), tailLocal, PrimitiveKind.NONE, sd.line());
+            }
+            c.i32Const(1);
+            return;
+        }
+        int eLocal = ctx.newLocal("$mElem", ts.anyRef());
+        c.localGet(arrLocal).refAsNonNull()
+                .i32Const(idx).i32Const(sd.line())
+                .call(arrOps.fnArrayGetBoxed)
+                .localSet(eLocal);
+        emitPatternMatch(sd.elemPatterns().get(idx), eLocal, PrimitiveKind.NONE);
+        c.if_(WasmValType.I32);
+        ctx.pushBlock("arr_el");
+        emitArrayElemMatches(sd, arrLocal, idx + 1);
+        c.else_().i32Const(0);
+        ctx.popBlock();
+        c.end();
     }
 
     private void bindVar(HirVar v, int valLocal, PrimitiveKind valKind, int line) {

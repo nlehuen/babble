@@ -987,6 +987,33 @@ public final class HirCanonicalPrinter {
                 printExpr(sb, m.container(), norm, indent);
                 sb.append(')');
             }
+            case HirPattern.RecordDestructure rd -> {
+                sb.append("(record-pat ");
+                if (rd.isJavaRecord()) {
+                    sb.append(rd.javaRecordClass().getSimpleName());
+                } else {
+                    sb.append(norm.normalizeType(rd.babbleTypeId()));
+                }
+                for (int i = 0; i < rd.fieldPatterns().size(); i++) {
+                    sb.append(' ').append(rd.fieldNames().get(i)).append('=');
+                    printPattern(sb, rd.fieldPatterns().get(i), norm, indent);
+                }
+                sb.append(')');
+            }
+            case HirPattern.SequenceDestructure sd -> {
+                sb.append(sd.isArray() ? "(array-pat" : "(list-pat");
+                for (HirPattern ep : sd.elemPatterns()) {
+                    sb.append(' ');
+                    printPattern(sb, ep, norm, indent);
+                }
+                if (sd.hasRest()) {
+                    sb.append(" ...");
+                    if (sd.restVar() != null) {
+                        sb.append(norm.varName(sd.restVar()));
+                    }
+                }
+                sb.append(')');
+            }
         }
     }
 
@@ -1079,6 +1106,17 @@ public final class HirCanonicalPrinter {
                     scanExpr(r.step());
                 }
                 case HirPattern.Membership m -> scanExpr(m.container());
+                case HirPattern.RecordDestructure rd -> {
+                    for (HirPattern fp : rd.fieldPatterns()) {
+                        scanPattern(fp);
+                    }
+                }
+                case HirPattern.SequenceDestructure sd -> {
+                    for (HirPattern ep : sd.elemPatterns()) {
+                        scanPattern(ep);
+                    }
+                    recordVar(sd.restVar());
+                }
             }
         }
 

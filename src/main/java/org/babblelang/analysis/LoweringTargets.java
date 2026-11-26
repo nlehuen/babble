@@ -393,6 +393,39 @@ public final class LoweringTargets {
         }
     }
 
+    /** Record destructuring lowering target for Babble and Java {@code record} patterns ({@code BIP038-D6}). */
+    public record RecordDestructureTarget(
+            boolean isJavaRecord,
+            String babbleTypeId,
+            Class<?> javaRecordClass,
+            String[] fieldNames,
+            int[] babbleMemberIndices,
+            PrimitiveKind[] fieldKinds,
+            java.lang.reflect.Method[] javaAccessors,
+            PatternTypeTarget typeTest
+    ) {
+        public RecordDestructureTarget {
+            fieldNames = fieldNames != null ? fieldNames.clone() : new String[0];
+            babbleMemberIndices = babbleMemberIndices != null ? babbleMemberIndices.clone() : new int[0];
+            fieldKinds = fieldKinds != null ? fieldKinds.clone() : new PrimitiveKind[0];
+            javaAccessors = javaAccessors != null ? javaAccessors.clone() : new java.lang.reflect.Method[0];
+        }
+    }
+
+    /** Sequence destructuring lowering target for {@code list} and {@code array} patterns ({@code BIP038-D7}). */
+    public record SequenceDestructureTarget(
+            boolean isArray,
+            Class<?> arrayClass,
+            PrimitiveKind elemKind,
+            int fixedCount,
+            boolean hasRest,
+            PatternTypeTarget typeTest
+    ) {
+        public SequenceDestructureTarget {
+            elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
+        }
+    }
+
     public record ForLoopTarget(
             ForKind kind,
             Class<?> arrayClass,

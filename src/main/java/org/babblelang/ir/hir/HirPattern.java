@@ -18,7 +18,9 @@ public sealed interface HirPattern permits
         HirPattern.Or,
         HirPattern.Relational,
         HirPattern.RangeTest,
-        HirPattern.Membership {
+        HirPattern.Membership,
+        HirPattern.RecordDestructure,
+        HirPattern.SequenceDestructure {
 
     int line();
 
@@ -112,6 +114,47 @@ public sealed interface HirPattern permits
         public Membership {
             kind = kind != null ? kind : LoweringTargets.MembershipKind.DYNAMIC;
             elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
+        }
+    }
+
+    /** Babble or Java {@code record} destructuring pattern ({@code BIP038-D6}). */
+    record RecordDestructure(
+            TypeTest typeTest,
+            boolean isJavaRecord,
+            int babbleClassId,
+            String babbleTypeId,
+            String babbleJvmName,
+            Class<?> javaRecordClass,
+            List<String> fieldNames,
+            int[] babbleMemberIndices,
+            List<PrimitiveKind> fieldKinds,
+            List<java.lang.reflect.Method> javaAccessors,
+            List<HirPattern> fieldPatterns,
+            int line
+    ) implements HirPattern {
+        public RecordDestructure {
+            fieldNames = List.copyOf(fieldNames);
+            babbleMemberIndices = babbleMemberIndices != null ? babbleMemberIndices.clone() : new int[0];
+            fieldKinds = List.copyOf(fieldKinds);
+            javaAccessors = javaAccessors != null ? List.copyOf(javaAccessors) : List.of();
+            fieldPatterns = List.copyOf(fieldPatterns);
+        }
+    }
+
+    /** Sequence destructuring pattern for {@code list} and {@code array} ({@code BIP038-D7}). */
+    record SequenceDestructure(
+            TypeTest typeTest,
+            boolean isArray,
+            Class<?> arrayClass,
+            PrimitiveKind elemKind,
+            List<HirPattern> elemPatterns,
+            boolean hasRest,
+            HirVar restVar,
+            int line
+    ) implements HirPattern {
+        public SequenceDestructure {
+            elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
+            elemPatterns = List.copyOf(elemPatterns);
         }
     }
 }

@@ -1201,6 +1201,16 @@ public final class ScalarReplacePass implements HirPass {
             }
             case org.babblelang.ir.hir.HirPattern.Membership m ->
                     verifyExpr(m.container(), true, candidates, localLayouts, module, bad);
+            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
+                for (org.babblelang.ir.hir.HirPattern fp : rd.fieldPatterns()) {
+                    verifyPattern(fp, candidates, localLayouts, module, bad);
+                }
+            }
+            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
+                for (org.babblelang.ir.hir.HirPattern ep : sd.elemPatterns()) {
+                    verifyPattern(ep, candidates, localLayouts, module, bad);
+                }
+            }
         }
     }
 

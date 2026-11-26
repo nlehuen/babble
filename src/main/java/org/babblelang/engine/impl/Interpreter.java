@@ -513,11 +513,18 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 yield org.babblelang.runtime.MatchSupport.inContainer(value, container);
             }
             case BabbleParser.TypeOrDestructurePatternContext tp -> {
+                if (tp.patternArgs() != null) {
+                    yield matchDestructure(value, tp, tp.patternArgs(), bindings);
+                }
                 LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(tp);
                 yield matchesPatternType(value, target);
             }
             case BabbleParser.BindingPatternContext bp -> {
-                if (bp.patternBindingType() != null) {
+                if (bp.patternArgs() != null) {
+                    if (!matchDestructure(value, bp, bp.patternArgs(), bindings)) {
+                        yield false;
+                    }
+                } else if (bp.patternBindingType() != null) {
                     LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(bp);
                     if (!matchesPatternType(value, target)) {
                         yield false;
@@ -528,6 +535,92 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
             }
             default -> false;
         };
+    }
+
+    private boolean matchDestructure(Object value, ParserRuleContext owner, BabbleParser.PatternArgsContext args,
+                                     java.util.LinkedHashMap<String, Object> bindings) {
+        LoweringTargets.RecordDestructureTarget rd = scopes.lowering().recordDestructureTarget(owner);
+        if (rd != null) {
+            if (!matchesPatternType(value, rd.typeTest())) {
+                return false;
+            }
+            List<BabbleParser.PatternArgContext> argList = args.patternArg();
+            if (!rd.isJavaRecord()) {
+                for (int i = 0; i < argList.size(); i++) {
+                    String fn = rd.fieldNames()[i];
+                    Object fv = Members.select(value, fn, fn);
+                    if (!matchPattern(fv, argList.get(i).pattern(), bindings)) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+            Object raw = Values.unwrap(value);
+            for (int i = 0; i < argList.size(); i++) {
+                Object fv;
+                try {
+                    fv = Values.fromJava(rd.javaAccessors()[i].invoke(raw));
+                } catch (java.lang.reflect.InvocationTargetException ite) {
+                    Throwable cause = ite.getCause();
+                    if (cause instanceof RuntimeException re) throw re;
+                    throw new BabbleException(cause != null ? cause.toString() : ite.toString());
+                } catch (ReflectiveOperationException roe) {
+                    throw new BabbleException(roe.toString());
+                }
+                if (!matchPattern(fv, argList.get(i).pattern(), bindings)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        LoweringTargets.SequenceDestructureTarget sd = scopes.lowering().sequenceDestructureTarget(owner);
+        if (sd != null) {
+            if (sd.typeTest() != null) {
+                if (!matchesPatternType(value, sd.typeTest())) {
+                    return false;
+                }
+            } else if (sd.isArray()) {
+                if (!ArraySupport.isArray(value)) {
+                    return false;
+                }
+            }
+            List<BabbleParser.PatternArgContext> argList = args.patternArg();
+            int fixed = sd.fixedCount();
+            if (!sd.isArray()) {
+                Object raw = Values.unwrap(value);
+                if (!(raw instanceof List<?> list)) {
+                    return false;
+                }
+                int len = list.size();
+                if (sd.hasRest() ? len < fixed : len != fixed) {
+                    return false;
+                }
+                for (int i = 0; i < fixed; i++) {
+                    if (!matchPattern(list.get(i), argList.get(i).pattern(), bindings)) {
+                        return false;
+                    }
+                }
+                if (args.restPattern() != null && args.restPattern().name != null) {
+                    bindings.put(args.restPattern().name.getText(), org.babblelang.runtime.CoreCollections.listSlice(list, fixed));
+                }
+                return true;
+            }
+            Object rawArr = Values.unwrap(value);
+            int len = ArraySupport.size(rawArr);
+            if (sd.hasRest() ? len < fixed : len != fixed) {
+                return false;
+            }
+            for (int i = 0; i < fixed; i++) {
+                if (!matchPattern(ArraySupport.get(rawArr, i), argList.get(i).pattern(), bindings)) {
+                    return false;
+                }
+            }
+            if (args.restPattern() != null && args.restPattern().name != null) {
+                bindings.put(args.restPattern().name.getText(), ArraySupport.slice(rawArr, fixed));
+            }
+            return true;
+        }
+        return matchesPatternType(value, scopes.lowering().patternTypeTarget(owner));
     }
 
     private static boolean matchesPatternType(Object value, LoweringTargets.PatternTypeTarget target) {

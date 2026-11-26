@@ -508,6 +508,22 @@ public final class HirTryNormalize {
             case org.babblelang.ir.hir.HirPattern.RangeTest r ->
                     containsTry(r.lo()) || containsTry(r.hi()) || containsTry(r.step());
             case org.babblelang.ir.hir.HirPattern.Membership m -> containsTry(m.container());
+            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
+                for (org.babblelang.ir.hir.HirPattern fp : rd.fieldPatterns()) {
+                    if (patternContainsTry(fp)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
+            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
+                for (org.babblelang.ir.hir.HirPattern ep : sd.elemPatterns()) {
+                    if (patternContainsTry(ep)) {
+                        yield true;
+                    }
+                }
+                yield false;
+            }
         };
     }
 

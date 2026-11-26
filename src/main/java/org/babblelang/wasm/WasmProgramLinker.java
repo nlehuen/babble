@@ -783,6 +783,12 @@ public final class WasmProgramLinker {
                 walkExpr(rt.step(), visitor);
             }
             case org.babblelang.ir.hir.HirPattern.Membership m -> walkExpr(m.container(), visitor);
+            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
+                for (var fp : rd.fieldPatterns()) walkPattern(fp, visitor);
+            }
+            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
+                for (var ep : sd.elemPatterns()) walkPattern(ep, visitor);
+            }
         }
     }
 
@@ -1084,6 +1090,12 @@ public final class WasmProgramLinker {
                 collectOverloadMetas(rt.step(), out);
             }
             case org.babblelang.ir.hir.HirPattern.Membership m -> collectOverloadMetas(m.container(), out);
+            case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
+                for (var fp : rd.fieldPatterns()) collectPatternOverloadMetas(fp, out);
+            }
+            case org.babblelang.ir.hir.HirPattern.SequenceDestructure sd -> {
+                for (var ep : sd.elemPatterns()) collectPatternOverloadMetas(ep, out);
+            }
         }
     }
 

@@ -461,7 +461,188 @@ final class MatchEmitter {
                         "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
                 mv.visitJumpInsn(IFEQ, failLabel);
             }
+            case HirPattern.RecordDestructure rd -> emitRecordDestructure(rd, valSlot, valKind, failLabel);
+            case HirPattern.SequenceDestructure sd -> emitSequenceDestructure(sd, valSlot, valKind, failLabel);
         }
+    }
+
+    private void emitRecordDestructure(HirPattern.RecordDestructure rd, int valSlot, PrimitiveKind valKind, Label failLabel) {
+        MethodEmitContext c = ctx();
+        MethodVisitor mv = c.mv;
+        int ln = rd.line();
+        emitTypeTest(rd.typeTest(), valSlot, valKind, failLabel);
+        if (!rd.isJavaRecord()) {
+            String jvmName = rd.babbleJvmName();
+            ClassGen gen = rd.babbleClassId() >= 0 ? emitter.classGen(rd.babbleClassId()) : null;
+            if (gen != null) {
+                jvmName = gen.name;
+            }
+            if (jvmName != null) {
+                int recSlot = c.newLocal();
+                loadBoxed(valSlot, valKind);
+                mv.visitTypeInsn(CHECKCAST, jvmName);
+                mv.visitVarInsn(ASTORE, recSlot);
+                for (int i = 0; i < rd.fieldPatterns().size(); i++) {
+                    String fn = rd.fieldNames().get(i);
+                    PrimitiveKind fk = rd.fieldKinds().get(i);
+                    int fSlot = c.newLocal(fk);
+                    mv.visitVarInsn(ALOAD, recSlot);
+                    c.line(ln);
+                    mv.visitFieldInsn(GETFIELD, jvmName, fn, jvmDescriptor(fk));
+                    storeKindOn(mv, fk, fSlot);
+                    emitPatternTest(rd.fieldPatterns().get(i), fSlot, fk, failLabel);
+                }
+                return;
+            }
+            for (int i = 0; i < rd.fieldPatterns().size(); i++) {
+                String fn = rd.fieldNames().get(i);
+                int fSlot = c.newLocal();
+                loadBoxed(valSlot, valKind);
+                mv.visitLdcInsn(fn);
+                mv.visitLdcInsn(fn);
+                c.line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select",
+                        "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+                mv.visitVarInsn(ASTORE, fSlot);
+                emitPatternTest(rd.fieldPatterns().get(i), fSlot, PrimitiveKind.NONE, failLabel);
+            }
+            return;
+        }
+        String recInternal = org.objectweb.asm.Type.getInternalName(rd.javaRecordClass());
+        int recSlot = c.newLocal();
+        loadBoxed(valSlot, valKind);
+        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitTypeInsn(CHECKCAST, recInternal);
+        mv.visitVarInsn(ASTORE, recSlot);
+        for (int i = 0; i < rd.fieldPatterns().size(); i++) {
+            java.lang.reflect.Method acc = rd.javaAccessors().get(i);
+            PrimitiveKind fk = rd.fieldKinds().get(i);
+            int fSlot = c.newLocal(fk);
+            mv.visitVarInsn(ALOAD, recSlot);
+            c.line(ln);
+            mv.visitMethodInsn(INVOKEVIRTUAL, recInternal, acc.getName(),
+                    org.objectweb.asm.Type.getMethodDescriptor(acc), false);
+            if (!fk.isPrimitive()) {
+                mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            }
+            storeKindOn(mv, fk, fSlot);
+            emitPatternTest(rd.fieldPatterns().get(i), fSlot, fk, failLabel);
+        }
+    }
+
+    private void emitSequenceDestructure(HirPattern.SequenceDestructure sd, int valSlot, PrimitiveKind valKind, Label failLabel) {
+        MethodEmitContext c = ctx();
+        MethodVisitor mv = c.mv;
+        int ln = sd.line();
+        if (sd.typeTest() != null) {
+            emitTypeTest(sd.typeTest(), valSlot, valKind, failLabel);
+        } else if (sd.isArray()) {
+            loadBoxed(valSlot, valKind);
+            c.line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "isArray", "(Ljava/lang/Object;)Z", false);
+            mv.visitJumpInsn(IFEQ, failLabel);
+        }
+        int fixed = sd.elemPatterns().size();
+        if (!sd.isArray()) {
+            int listSlot = c.newLocal();
+            loadBoxed(valSlot, valKind);
+            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitTypeInsn(CHECKCAST, "java/util/List");
+            mv.visitVarInsn(ASTORE, listSlot);
+
+            mv.visitVarInsn(ALOAD, listSlot);
+            c.line(ln);
+            mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "size", "()I", true);
+            ConstantPool.pushInt(mv, fixed);
+            mv.visitJumpInsn(sd.hasRest() ? IF_ICMPLT : IF_ICMPNE, failLabel);
+
+            for (int i = 0; i < fixed; i++) {
+                int eSlot = c.newLocal();
+                mv.visitVarInsn(ALOAD, listSlot);
+                ConstantPool.pushInt(mv, i);
+                c.line(ln);
+                mv.visitMethodInsn(INVOKEINTERFACE, "java/util/List", "get", "(I)Ljava/lang/Object;", true);
+                mv.visitVarInsn(ASTORE, eSlot);
+                emitPatternTest(sd.elemPatterns().get(i), eSlot, PrimitiveKind.NONE, failLabel);
+            }
+            if (sd.restVar() != null) {
+                int tailSlot = c.newLocal();
+                mv.visitVarInsn(ALOAD, listSlot);
+                ConstantPool.pushInt(mv, fixed);
+                c.line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "CoreCollections", "listSlice",
+                        "(Ljava/util/List;I)Ljava/util/List;", false);
+                mv.visitVarInsn(ASTORE, tailSlot);
+                bindVarFromSlot(sd.restVar(), tailSlot, PrimitiveKind.NONE);
+            }
+            return;
+        }
+        int arrSlot = c.newLocal();
+        loadBoxed(valSlot, valKind);
+        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        Class<?> arrCls = sd.arrayClass();
+        PrimitiveKind ek = sd.elemKind();
+        if (arrCls != null) {
+            String arrInternal = org.objectweb.asm.Type.getInternalName(arrCls);
+            mv.visitTypeInsn(CHECKCAST, arrInternal);
+            mv.visitVarInsn(ASTORE, arrSlot);
+
+            mv.visitVarInsn(ALOAD, arrSlot);
+            mv.visitInsn(ARRAYLENGTH);
+            ConstantPool.pushInt(mv, fixed);
+            mv.visitJumpInsn(sd.hasRest() ? IF_ICMPLT : IF_ICMPNE, failLabel);
+
+            int loadOp = arrayLoadOpcode(ek);
+            for (int i = 0; i < fixed; i++) {
+                int eSlot = c.newLocal(ek);
+                mv.visitVarInsn(ALOAD, arrSlot);
+                ConstantPool.pushInt(mv, i);
+                mv.visitInsn(loadOp);
+                storeKindOn(mv, ek, eSlot);
+                emitPatternTest(sd.elemPatterns().get(i), eSlot, ek, failLabel);
+            }
+        } else {
+            mv.visitVarInsn(ASTORE, arrSlot);
+            mv.visitVarInsn(ALOAD, arrSlot);
+            c.line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "size", "(Ljava/lang/Object;)I", false);
+            ConstantPool.pushInt(mv, fixed);
+            mv.visitJumpInsn(sd.hasRest() ? IF_ICMPLT : IF_ICMPNE, failLabel);
+
+            for (int i = 0; i < fixed; i++) {
+                int eSlot = c.newLocal();
+                mv.visitVarInsn(ALOAD, arrSlot);
+                ConstantPool.pushInt(mv, i);
+                c.line(ln);
+                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "get",
+                        "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
+                mv.visitVarInsn(ASTORE, eSlot);
+                emitPatternTest(sd.elemPatterns().get(i), eSlot, PrimitiveKind.NONE, failLabel);
+            }
+        }
+        if (sd.restVar() != null) {
+            int tailSlot = c.newLocal();
+            mv.visitVarInsn(ALOAD, arrSlot);
+            ConstantPool.pushInt(mv, fixed);
+            c.line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "slice",
+                    "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
+            mv.visitVarInsn(ASTORE, tailSlot);
+            bindVarFromSlot(sd.restVar(), tailSlot, PrimitiveKind.NONE);
+        }
+    }
+
+    private static int arrayLoadOpcode(PrimitiveKind ek) {
+        return switch (ek) {
+            case BYTE, BOOL -> BALOAD;
+            case SHORT -> SALOAD;
+            case INT -> IALOAD;
+            case LONG -> LALOAD;
+            case FLOAT -> FALOAD;
+            case DOUBLE -> DALOAD;
+            case CHAR -> CALOAD;
+            case NONE -> AALOAD;
+        };
     }
 
     private void emitConstTest(HirPattern.Const pc, int valSlot, PrimitiveKind valKind, Label failLabel) {

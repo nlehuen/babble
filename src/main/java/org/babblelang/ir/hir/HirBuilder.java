@@ -1423,30 +1423,81 @@ public final class HirBuilder {
                 yield new HirPattern.Membership(lowerExpr(mp.container), kind, elemKind, line);
             }
             case BabbleParser.TypeOrDestructurePatternContext tp -> {
-                LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(tp);
-                yield new HirPattern.TypeTest(
-                        target != null ? target.builtin() : null,
-                        target != null ? target.target() : null,
-                        target != null ? target.intersectionTargets() : List.of(),
-                        target != null ? target.descriptor() : null,
-                        line);
+                if (tp.patternArgs() != null) {
+                    yield lowerDestructurePattern(tp, tp.patternArgs(), line);
+                }
+                yield lowerTypeTest(scopes.lowering().patternTypeTarget(tp), line);
             }
             case BabbleParser.BindingPatternContext bp -> {
                 HirVar var = hirVar(resolution.variable(bp));
                 HirPattern inner = null;
-                if (bp.patternBindingType() != null) {
-                    LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(bp);
-                    inner = new HirPattern.TypeTest(
-                            target != null ? target.builtin() : null,
-                            target != null ? target.target() : null,
-                            target != null ? target.intersectionTargets() : List.of(),
-                            target != null ? target.descriptor() : null,
-                            line);
+                if (bp.patternArgs() != null) {
+                    inner = lowerDestructurePattern(bp, bp.patternArgs(), line);
+                } else if (bp.patternBindingType() != null) {
+                    inner = lowerTypeTest(scopes.lowering().patternTypeTarget(bp), line);
                 }
                 yield new HirPattern.Bind(var, inner, line);
             }
             default -> new HirPattern.Wildcard(line);
         };
+    }
+
+    private HirPattern.TypeTest lowerTypeTest(LoweringTargets.PatternTypeTarget target, int line) {
+        return new HirPattern.TypeTest(
+                target != null ? target.builtin() : null,
+                target != null ? target.target() : null,
+                target != null ? target.intersectionTargets() : List.of(),
+                target != null ? target.descriptor() : null,
+                line);
+    }
+
+    private HirPattern lowerDestructurePattern(ParserRuleContext owner, BabbleParser.PatternArgsContext args, int line) {
+        LoweringTargets.RecordDestructureTarget rd = scopes.lowering().recordDestructureTarget(owner);
+        if (rd != null) {
+            List<HirPattern> subPats = new ArrayList<>(args.patternArg().size());
+            for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+                subPats.add(lowerPattern(arg.pattern()));
+            }
+            int classId = -1;
+            String jvmName = null;
+            if (!rd.isJavaRecord() && rd.babbleTypeId() != null) {
+                classId = localClassIdsByShapeId.getOrDefault(rd.babbleTypeId(), -1);
+                jvmName = localClassJvmNamesById.getOrDefault(rd.babbleTypeId(), allClassJvmNames.get(rd.babbleTypeId()));
+            }
+            return new HirPattern.RecordDestructure(
+                    lowerTypeTest(rd.typeTest(), line),
+                    rd.isJavaRecord(),
+                    classId,
+                    rd.babbleTypeId(),
+                    jvmName,
+                    rd.javaRecordClass(),
+                    Arrays.asList(rd.fieldNames()),
+                    rd.babbleMemberIndices(),
+                    Arrays.asList(rd.fieldKinds()),
+                    Arrays.asList(rd.javaAccessors()),
+                    subPats,
+                    line);
+        }
+        LoweringTargets.SequenceDestructureTarget sd = scopes.lowering().sequenceDestructureTarget(owner);
+        if (sd != null) {
+            List<HirPattern> elemPats = new ArrayList<>(args.patternArg().size());
+            for (BabbleParser.PatternArgContext arg : args.patternArg()) {
+                elemPats.add(lowerPattern(arg.pattern()));
+            }
+            HirVar restVar = (args.restPattern() != null && args.restPattern().name != null)
+                    ? hirVar(resolution.variable(args.restPattern())) : null;
+            HirPattern.TypeTest tt = sd.typeTest() != null ? lowerTypeTest(sd.typeTest(), line) : null;
+            return new HirPattern.SequenceDestructure(
+                    tt,
+                    sd.isArray(),
+                    sd.arrayClass(),
+                    sd.elemKind(),
+                    elemPats,
+                    sd.hasRest(),
+                    restVar,
+                    line);
+        }
+        return lowerTypeTest(scopes.lowering().patternTypeTarget(owner), line);
     }
 
     private HirExpr.NameRead makeNameRead(ParserRuleContext ctx, String name) {

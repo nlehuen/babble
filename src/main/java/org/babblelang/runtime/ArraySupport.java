@@ -35,6 +35,12 @@ public final class ArraySupport {
 
     // ---------------------------------------------------------------- creation
 
+    /** Returns whether {@code value} (after unwrapping Java wrappers) is a JVM array. */
+    public static boolean isArray(Object value) {
+        Object raw = Values.unwrap(value);
+        return raw != null && raw.getClass().isArray();
+    }
+
     /** Creates an array of {@code length} default elements for {@code componentType}. */
     public static Object newArray(Class<?> componentType, int length) {
         if (componentType == byte.class) return new byte[length];
