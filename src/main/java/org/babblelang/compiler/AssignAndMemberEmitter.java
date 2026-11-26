@@ -126,30 +126,10 @@ final class AssignAndMemberEmitter {
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    /**
-     * Checks whether a compound assignment of {@code targetKind} with {@code rhsKind} and {@code
-     * op} can lower directly to primitive JVM arithmetic ({@code IADD/ISUB/IMUL} or {@code
-     * DADD/DSUB/DMUL/DDIV}).
-     */
     private static boolean canLowerPrimitiveCompound(
             PrimitiveKind targetKind, PrimitiveKind rhsKind, String op) {
-        if (targetKind == PrimitiveKind.INT) {
-            return (rhsKind == PrimitiveKind.INT
-                            || rhsKind == PrimitiveKind.BYTE
-                            || rhsKind == PrimitiveKind.SHORT)
-                    && !"/".equals(op);
-        }
-        if (targetKind == PrimitiveKind.LONG && "//".equals(op)) {
-            return rhsKind == PrimitiveKind.INT
-                    || rhsKind == PrimitiveKind.LONG
-                    || rhsKind == PrimitiveKind.BYTE
-                    || rhsKind == PrimitiveKind.SHORT;
-        }
-        if (targetKind == PrimitiveKind.DOUBLE) {
-            return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE)
-                    && !"//".equals(op);
-        }
-        return false;
+        return org.babblelang.ir.hir.HirLoweringRules.canLowerPrimitiveCompound(
+                targetKind, rhsKind, op);
     }
 
     /**

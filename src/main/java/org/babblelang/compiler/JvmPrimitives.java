@@ -453,22 +453,11 @@ final class JvmPrimitives {
     }
 
     static boolean isNumericKind(PrimitiveKind kind) {
-        return switch (kind) {
-            case BYTE, SHORT, INT, LONG, FLOAT, DOUBLE -> true;
-            default -> false;
-        };
+        return kind.isNumeric();
     }
 
     static int numericOrder(PrimitiveKind kind) {
-        return switch (kind) {
-            case BYTE -> 0;
-            case SHORT -> 1;
-            case INT -> 2;
-            case LONG -> 3;
-            case FLOAT -> 4;
-            case DOUBLE -> 5;
-            default -> -1;
-        };
+        return kind.numericRank();
     }
 
     static boolean emitPrimitiveWidening(MethodVisitor m, PrimitiveKind from, PrimitiveKind to) {

@@ -23,6 +23,10 @@ public enum PrimitiveKind {
         return (this == LONG || this == DOUBLE) ? 2 : 1;
     }
 
+    public boolean isNumeric() {
+        return numericRank() >= 0;
+    }
+
     public int numericRank() {
         return switch (this) {
             case BYTE -> 0;
@@ -32,6 +36,28 @@ public enum PrimitiveKind {
             case FLOAT -> 4;
             case DOUBLE -> 5;
             default -> -1;
+        };
+    }
+
+    public static PrimitiveKind ofNumericRank(int rank) {
+        return switch (rank) {
+            case 0 -> BYTE;
+            case 1 -> SHORT;
+            case 2 -> INT;
+            case 3 -> LONG;
+            case 4 -> FLOAT;
+            case 5 -> DOUBLE;
+            default -> NONE;
+        };
+    }
+
+    public static PrimitiveKind promoteNumeric(PrimitiveKind a, PrimitiveKind b) {
+        int max = Math.max(a.numericRank(), b.numericRank());
+        return switch (max) {
+            case 0, 1, 2 -> INT;
+            case 3 -> LONG;
+            case 4 -> FLOAT;
+            default -> DOUBLE;
         };
     }
 
