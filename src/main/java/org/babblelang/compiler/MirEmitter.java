@@ -474,7 +474,8 @@ final class MirEmitter {
                 if (def instanceof MirInst.Binary bin
                         && bin.op().isComparison()
                         && bin.result().kind() == PrimitiveKind.BOOL
-                        && canEmitPrimitiveCmp(bin.op(), bin.left().kind(), bin.right().kind())) {
+                        && JvmOpEmitter.canEmitPrimitiveCmp(
+                                bin.op(), bin.left().kind(), bin.right().kind())) {
                     // ends the chain
                 } else if (def instanceof MirInst.Unary un
                         && un.op() == HirExpr.UnaryOp.NOT
@@ -655,78 +656,8 @@ final class MirEmitter {
         if (v == null || v instanceof String) {
             return c.result().kind() == PrimitiveKind.NONE;
         }
-        PrimitiveKind pushed = constantKind(v);
+        PrimitiveKind pushed = JvmOpEmitter.constantKind(v);
         return pushed != null && pushed.isPrimitive() && pushed == c.result().kind();
-    }
-
-    /**
-     * The kind of what {@link #pushConstant} leaves on the stack for {@code v}, or null for no
-     * constant.
-     */
-    private static PrimitiveKind constantKind(Object v) {
-        if (v == null || v instanceof String) {
-            return PrimitiveKind.NONE;
-        }
-        return switch (v) {
-            case Boolean ignored -> PrimitiveKind.BOOL;
-            case Byte ignored -> PrimitiveKind.BYTE;
-            case Short ignored -> PrimitiveKind.SHORT;
-            case Integer ignored -> PrimitiveKind.INT;
-            case Long ignored -> PrimitiveKind.LONG;
-            case Float ignored -> PrimitiveKind.FLOAT;
-            case Double ignored -> PrimitiveKind.DOUBLE;
-            case Character ignored -> PrimitiveKind.CHAR;
-            default -> null;
-        };
-    }
-
-    /** Pushes a MIR constant, and returns the kind now on the stack. */
-    static PrimitiveKind pushConstant(MethodVisitor mv, Object v) {
-        if (v == null) {
-            mv.visitInsn(ACONST_NULL);
-        } else if (v instanceof Boolean b) {
-            mv.visitInsn(b ? ICONST_1 : ICONST_0);
-        } else if (v instanceof Byte b) {
-            ConstantPool.pushInt(mv, b);
-        } else if (v instanceof Short sh) {
-            ConstantPool.pushInt(mv, sh);
-        } else if (v instanceof Integer i) {
-            ConstantPool.pushInt(mv, i);
-        } else if (v instanceof Long l) {
-            if (l == 0L) {
-                mv.visitInsn(LCONST_0);
-            } else if (l == 1L) {
-                mv.visitInsn(LCONST_1);
-            } else {
-                mv.visitLdcInsn(l);
-            }
-        } else if (v instanceof Float f) {
-            if (Float.floatToRawIntBits(f) == 0) {
-                mv.visitInsn(FCONST_0);
-            } else if (f == 1.0f) {
-                mv.visitInsn(FCONST_1);
-            } else if (f == 2.0f) {
-                mv.visitInsn(FCONST_2);
-            } else {
-                mv.visitLdcInsn(f);
-            }
-        } else if (v instanceof Double d) {
-            if (Double.doubleToRawLongBits(d) == 0L) {
-                mv.visitInsn(DCONST_0);
-            } else if (d == 1.0d) {
-                mv.visitInsn(DCONST_1);
-            } else {
-                mv.visitLdcInsn(d);
-            }
-        } else if (v instanceof Character ch) {
-            ConstantPool.pushInt(mv, ch);
-        } else if (v instanceof String str) {
-            ConstantPool.pushString(mv, str);
-        } else {
-            throw new IllegalStateException("Unsupported MIR constant : " + v.getClass());
-        }
-        PrimitiveKind kind = constantKind(v);
-        return kind;
     }
 
     /** The largest value id the function defines or uses (ids are dense, from 0). */
@@ -785,7 +716,7 @@ final class MirEmitter {
         if (stacked.contains(resolveRoot(v).id())) {
             // Already on the stack : its definition was the previous instruction.
         } else if (c != null) {
-            pushConstant(mv, c.value());
+            JvmOpEmitter.pushConstant(mv, c.value());
         } else {
             loadKindOn(mv, v.kind(), slotOf(v));
         }
@@ -915,7 +846,7 @@ final class MirEmitter {
     }
 
     private void emitConst(MirInst.Const c) {
-        ctx.stackKind = pushConstant(mv, c.value());
+        ctx.stackKind = JvmOpEmitter.pushConstant(mv, c.value());
         storeResult(c.result());
     }
 
@@ -929,34 +860,14 @@ final class MirEmitter {
                 storeResult(u.result());
                 return;
             }
-            Label isTrue = new Label();
-            Label end = new Label();
-            emitBranchOnTruth(u.operand(), false, isTrue);
-            mv.visitInsn(ICONST_0);
-            mv.visitJumpInsn(GOTO, end);
-            mv.visitLabel(isTrue);
-            mv.visitInsn(ICONST_1);
-            mv.visitLabel(end);
-            ctx.stackKind = PrimitiveKind.BOOL;
+            JvmOpEmitter.emitBoolFromJump(
+                    mv, ctx, isTrue -> emitBranchOnTruth(u.operand(), false, isTrue));
             storeResult(u.result());
             return;
         }
         PrimitiveKind rk = u.result().kind();
-        if (rk == PrimitiveKind.INT
-                || rk == PrimitiveKind.LONG
-                || rk == PrimitiveKind.FLOAT
-                || rk == PrimitiveKind.DOUBLE) {
-            loadVal(u.operand());
-            emitter.convertStack(u.operand().kind(), rk);
-            mv.visitInsn(
-                    switch (rk) {
-                        case INT -> INEG;
-                        case LONG -> LNEG;
-                        case FLOAT -> FNEG;
-                        case DOUBLE -> DNEG;
-                        default -> throw new IllegalStateException();
-                    });
-            ctx.stackKind = rk;
+        if (JvmOpEmitter.emitPrimitiveNegate(
+                mv, ctx, u.operand().kind(), rk, target -> loadValAs(u.operand(), target))) {
             storeResult(u.result());
             return;
         }
@@ -970,6 +881,11 @@ final class MirEmitter {
         storeResult(u.result());
     }
 
+    private void loadValAs(MirVal v, PrimitiveKind target) {
+        loadVal(v);
+        emitter.convertStack(v.kind(), target);
+    }
+
     private void emitBinary(MirInst.Binary b) {
         PrimitiveKind lk = b.left().kind();
         PrimitiveKind rk = b.right().kind();
@@ -977,111 +893,38 @@ final class MirEmitter {
 
         if (b.op().isComparison()
                 && out == PrimitiveKind.BOOL
-                && canEmitPrimitiveCmp(b.op(), lk, rk)) {
+                && JvmOpEmitter.canEmitPrimitiveCmp(b.op(), lk, rk)) {
             emitPrimitiveComparison(b.op(), b.left(), b.right());
             storeResult(b.result());
             return;
         }
-        if (b.op().isArithmetic() && isNumericKind(lk) && isNumericKind(rk)) {
-            if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
-                    && (b.op() == HirExpr.BinaryOp.ADD
-                            || b.op() == HirExpr.BinaryOp.SUB
-                            || b.op() == HirExpr.BinaryOp.MUL)) {
-                loadVal(b.left());
-                emitter.convertStack(lk, out);
-                loadVal(b.right());
-                emitter.convertStack(rk, out);
-                int insn =
-                        out == PrimitiveKind.INT
-                                ? switch (b.op()) {
-                                    case ADD -> IADD;
-                                    case SUB -> ISUB;
-                                    case MUL -> IMUL;
-                                    default -> throw new IllegalStateException();
-                                }
-                                : switch (b.op()) {
-                                    case ADD -> LADD;
-                                    case SUB -> LSUB;
-                                    case MUL -> LMUL;
-                                    default -> throw new IllegalStateException();
-                                };
-                mv.visitInsn(insn);
-                ctx.stackKind = out;
-                storeResult(b.result());
-                return;
-            }
-            if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
-                    && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
-                MirInst.Const rConst = constOf(b.right());
-                long posConst = 0L;
-                if (rConst != null && rConst.value() instanceof Number rn) {
-                    long v = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
-                    if (v > 0L) {
-                        posConst = v;
-                    }
+        long posConst = 0L;
+        if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
+                && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
+            MirInst.Const rConst = constOf(b.right());
+            if (rConst != null && rConst.value() instanceof Number rn) {
+                long v = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
+                if (v > 0L) {
+                    posConst = v;
                 }
-                loadVal(b.left());
-                emitter.convertStack(lk, out);
-                if (posConst > 0L && (posConst & (posConst - 1L)) == 0L) {
-                    if (b.op() == HirExpr.BinaryOp.MOD) {
-                        if (out == PrimitiveKind.LONG) {
-                            mv.visitLdcInsn(posConst - 1L);
-                            mv.visitInsn(LAND);
-                        } else {
-                            ConstantPool.pushInt(mv, (int) (posConst - 1L));
-                            mv.visitInsn(IAND);
-                        }
-                    } else if (posConst > 1L) {
-                        int shift = Long.numberOfTrailingZeros(posConst);
-                        ConstantPool.pushInt(mv, shift);
-                        mv.visitInsn(out == PrimitiveKind.LONG ? LSHR : ISHR);
-                    }
-                } else if (posConst > 0L && isStaticallyNonNegative(b.left(), 0)) {
-                    if (out == PrimitiveKind.LONG) {
-                        mv.visitLdcInsn(posConst);
-                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? LREM : LDIV);
-                    } else {
-                        ConstantPool.pushInt(mv, (int) posConst);
-                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? IREM : IDIV);
-                    }
-                } else {
-                    loadVal(b.right());
-                    emitter.convertStack(rk, out);
-                    ctx.line(b.line());
-                    String mathMethod = b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv";
-                    String desc = out == PrimitiveKind.LONG ? "(JJ)J" : "(II)I";
-                    mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", mathMethod, desc, false);
-                }
-                ctx.stackKind = out;
-                storeResult(b.result());
-                return;
             }
-            if (out == PrimitiveKind.FLOAT || out == PrimitiveKind.DOUBLE) {
-                loadVal(b.left());
-                emitter.convertStack(lk, out);
-                loadVal(b.right());
-                emitter.convertStack(rk, out);
-                int insn =
-                        out == PrimitiveKind.FLOAT
-                                ? switch (b.op()) {
-                                    case ADD -> FADD;
-                                    case SUB -> FSUB;
-                                    case MUL -> FMUL;
-                                    case DIV -> FDIV;
-                                    default -> throw new IllegalStateException();
-                                }
-                                : switch (b.op()) {
-                                    case ADD -> DADD;
-                                    case SUB -> DSUB;
-                                    case MUL -> DMUL;
-                                    case DIV -> DDIV;
-                                    default -> throw new IllegalStateException();
-                                };
-                mv.visitInsn(insn);
-                ctx.stackKind = out;
-                storeResult(b.result());
-                return;
-            }
+        }
+        if (JvmOpEmitter.emitPrimitiveBinaryArith(
+                mv,
+                ctx,
+                b.op(),
+                lk,
+                rk,
+                out,
+                posConst,
+                posConst > 0L
+                        && (posConst & (posConst - 1L)) != 0L
+                        && isStaticallyNonNegative(b.left(), 0),
+                b.line(),
+                target -> loadValAs(b.left(), target),
+                target -> loadValAs(b.right(), target))) {
+            storeResult(b.result());
+            return;
         }
 
         // Dynamic / string / operator-method binary op delegated cleanly to ControlAndOpEmitter.
@@ -1397,27 +1240,9 @@ final class MirEmitter {
         };
     }
 
-    private static boolean canEmitPrimitiveCmp(
-            HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk) {
-        if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL) {
-            return op == HirExpr.BinaryOp.EQ || op == HirExpr.BinaryOp.NEQ;
-        }
-        if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR) {
-            return true;
-        }
-        return isNumericKind(lk) && isNumericKind(rk);
-    }
-
     private void emitPrimitiveComparison(HirExpr.BinaryOp op, MirVal left, MirVal right) {
-        Label isTrue = new Label();
-        Label end = new Label();
-        emitComparisonJump(op, left, right, true, isTrue);
-        mv.visitInsn(ICONST_0);
-        mv.visitJumpInsn(GOTO, end);
-        mv.visitLabel(isTrue);
-        mv.visitInsn(ICONST_1);
-        mv.visitLabel(end);
-        ctx.stackKind = PrimitiveKind.BOOL;
+        JvmOpEmitter.emitBoolFromJump(
+                mv, ctx, isTrue -> emitComparisonJump(op, left, right, true, isTrue));
     }
 
     /**
@@ -1426,68 +1251,15 @@ final class MirEmitter {
      */
     private void emitComparisonJump(
             HirExpr.BinaryOp op, MirVal left, MirVal right, boolean branchIfTrue, Label target) {
-        HirExpr.BinaryOp jumpOp = branchIfTrue ? op : negate(op);
-        PrimitiveKind lk = left.kind();
-        PrimitiveKind rk = right.kind();
-        if ((lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
-                || (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR)) {
-            loadVal(left);
-            loadVal(right);
-            mv.visitJumpInsn(icmpJump(jumpOp), target);
-            return;
-        }
-        PrimitiveKind common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
-        loadVal(left);
-        emitter.convertStack(lk, common);
-        loadVal(right);
-        emitter.convertStack(rk, common);
-        if (numericOrder(common) <= 2) {
-            mv.visitJumpInsn(icmpJump(jumpOp), target);
-            return;
-        }
-        if (common == PrimitiveKind.LONG) {
-            mv.visitInsn(LCMP);
-        } else if (common == PrimitiveKind.FLOAT) {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "compare", "(FF)I", false);
-        } else {
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
-        }
-        // A three-way result : its integer negation is exact, NaN included.
-        mv.visitJumpInsn(
-                switch (jumpOp) {
-                    case LT -> IFLT;
-                    case LTE -> IFLE;
-                    case EQ -> IFEQ;
-                    case NEQ -> IFNE;
-                    case GTE -> IFGE;
-                    case GT -> IFGT;
-                    default -> throw new IllegalStateException();
-                },
-                target);
-    }
-
-    private static HirExpr.BinaryOp negate(HirExpr.BinaryOp op) {
-        return switch (op) {
-            case LT -> HirExpr.BinaryOp.GTE;
-            case LTE -> HirExpr.BinaryOp.GT;
-            case EQ -> HirExpr.BinaryOp.NEQ;
-            case NEQ -> HirExpr.BinaryOp.EQ;
-            case GTE -> HirExpr.BinaryOp.LT;
-            case GT -> HirExpr.BinaryOp.LTE;
-            default -> throw new IllegalStateException();
-        };
-    }
-
-    private static int icmpJump(HirExpr.BinaryOp op) {
-        return switch (op) {
-            case LT -> IF_ICMPLT;
-            case LTE -> IF_ICMPLE;
-            case EQ -> IF_ICMPEQ;
-            case NEQ -> IF_ICMPNE;
-            case GTE -> IF_ICMPGE;
-            case GT -> IF_ICMPGT;
-            default -> throw new IllegalStateException();
-        };
+        JvmOpEmitter.emitPrimitiveComparisonJump(
+                mv,
+                op,
+                left.kind(),
+                right.kind(),
+                branchIfTrue,
+                target,
+                kind -> loadValAs(left, kind),
+                kind -> loadValAs(right, kind));
     }
 
     private void emitSlotDecl(MirInst.SlotDecl sd) {
