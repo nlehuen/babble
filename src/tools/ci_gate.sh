@@ -11,9 +11,11 @@
 #   ./src/tools/ci_gate.sh [options]
 #
 # Options:
-#   --container          Run inside a CI-parity container (JDK 21 + Maven 3.9 + Node 22)
-#                        using podman (preferred) or docker, building/caching babble-ci:jdk21-node22.
-#   --rebuild-image      Force rebuilding the CI container image (implies --container).
+#   --container          Run inside the CI-parity container (JDK 21 + Maven 3.9 + Node 22)
+#                        using podman (preferred) or docker, building/caching babble-ci:jdk21-node22
+#                        [default].
+#   --host               Bypass the container and run natively on the host toolchain (--no-container).
+#   --rebuild-image      Force rebuilding the CI container image.
 #   --fast               Skip JaCoCo instrumentation/coverage report (still runs all 3 unit modes,
 #                        4 JVM batest modes at -PO2, and Wasm 3.0 batest in parallel).
 #   --batest-filter <pat> Run only 4-mode JVM + Wasm batest matching <pat> (no coverage gate).
@@ -37,7 +39,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${REPO_ROOT}"
 
 # ------------------------------------------------------------------ defaults
-USE_CONTAINER=0
+USE_CONTAINER=1
 REBUILD_IMAGE=0
 FAST_MODE=0
 BATEST_FILTER=""
@@ -57,13 +59,17 @@ IN_CONTAINER="${BABBLE_CI_IN_CONTAINER:-0}"
 FORWARD_ARGS=()
 
 usage() {
-    sed -n '2,31p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --container|--podman|--docker)
             USE_CONTAINER=1
+            shift
+            ;;
+        --host|--no-container)
+            USE_CONTAINER=0
             shift
             ;;
         --rebuild-image)
@@ -332,7 +338,7 @@ echo "  Runtime  : ${JAVA_VER_LINE} | node ${NODE_VERSION}"
 echo "  Jobs (${TOTAL_JOBS}) : ${PLANNED_JOBS[*]}"
 
 if [[ "${SKIP_WASM}" -eq 0 && "${NODE_VERSION}" != v22.* ]]; then
-    echo "${C_YELLOW}  Note     : GitHub CI runs Node 22 for Wasm 3.0 (current: ${NODE_VERSION}). Use --container for exact JDK 21 + Node 22 parity, or --skip-wasm.${C_RESET}"
+    echo "${C_YELLOW}  Note     : GitHub CI runs Node 22 for Wasm 3.0 (current: ${NODE_VERSION}). Omit --host for exact JDK 21 + Node 22 container parity, or pass --skip-wasm.${C_RESET}"
 fi
 
 # ------------------------------------------------------------------ trap cleanup
