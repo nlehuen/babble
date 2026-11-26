@@ -76,7 +76,7 @@ final class TypeChecker {
     private final Map<ParserRuleContext, ScopeNode> occurrenceScopes = new HashMap<>();
     private final Set<ParserRuleContext> capturedReassigned = new HashSet<>();
     private final Map<ParserRuleContext, Type> types = new HashMap<>();
-    private final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
+    final Map<ParserRuleContext, Type> declarationTypes = new HashMap<>();
     private final Set<ParserRuleContext> inProgress = new HashSet<>();
     private final Set<BabbleParser.FunctionLiteralContext> functions = new LinkedHashSet<>();
     private final Set<Diagnostic> diagnostics = new TreeSet<>(ORDER);
@@ -130,14 +130,13 @@ final class TypeChecker {
             Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.FunctionLiteralContext, Type> provisionalResults =
             new IdentityHashMap<>();
-    private TypeEnv env = TypeEnv.EMPTY;
+    TypeEnv env = TypeEnv.EMPTY;
     private final Map<ParserRuleContext, Type> inferredDefs = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredMembers = new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type> inferredParams = new IdentityHashMap<>();
     private final Map<BabbleParser.IsExpressionContext, Type> isTargetTypes =
             new IdentityHashMap<>();
-    private final Map<BabbleParser.CatchClauseContext, Type> catchTargetTypes =
-            new IdentityHashMap<>();
+    final Map<BabbleParser.CatchClauseContext, Type> catchTargetTypes = new IdentityHashMap<>();
 
     Type catchTargetType(BabbleParser.CatchClauseContext ctx) {
         return catchTargetTypes.get(ctx);
@@ -224,13 +223,14 @@ final class TypeChecker {
         resolvedOverloadCalls.put(ctx, call);
     }
 
-    private final CallSolver callSolver = new CallSolver(this);
-    private final SlotInference slots = new SlotInference(this);
-    private final TypeAnnotations annotator = new TypeAnnotations(this);
-    private final MemberTypes members = new MemberTypes(this);
-    private final OperatorTypes operators = new OperatorTypes(this);
-    private final Narrowing narrowing = new Narrowing(this);
-    private final MatchTyper matchTyper = new MatchTyper(this);
+    final CallSolver callSolver = new CallSolver(this);
+    final SlotInference slots = new SlotInference(this);
+    final TypeAnnotations annotator = new TypeAnnotations(this);
+    final MemberTypes members = new MemberTypes(this);
+    final OperatorTypes operators = new OperatorTypes(this);
+    final Narrowing narrowing = new Narrowing(this);
+    final MatchTyper matchTyper = new MatchTyper(this);
+    final ExceptionTyper exceptionTyper = new ExceptionTyper(this);
     private ImportedSummaries imported;
 
     MatchTyper matchTyper() {
@@ -245,7 +245,7 @@ final class TypeChecker {
     private boolean checkingEffects;
     private BabbleParser.FileContext file;
     private TypedModuleSummary builtSummary;
-    private final TypeAlgebra algebra =
+    final TypeAlgebra algebra =
             new TypeAlgebra(
                     new TypeAlgebra.Env() {
                         @Override
@@ -3925,486 +3925,29 @@ final class TypeChecker {
 
         private Type visitThrowExpression(
                 BabbleParser.ThrowExpressionContext ctx, Type expected, Role role) {
-            Type valueType = synth(ctx.expression());
-            if (valueType != Type.ERROR
-                    && valueType != Type.NOTHING
-                    && !isThrowableType(valueType)
-                    && !isUntypedCatchVar(ctx.expression())) {
-                warn("Type error : cannot throw " + valueType, ctx.expression());
-            }
-            return Type.NOTHING;
+            return exceptionTyper.typeThrow(ctx, expected, role);
         }
 
         private Type visitTryExpression(
                 BabbleParser.TryExpressionContext ctx, Type expected, Role role) {
-            TypeEnv beforeTry = env;
-            Type tryType = type(ctx.tryBlock, expected, role);
-            TypeEnv afterTry = env;
-            TypeEnv catchEntryEnv = beforeTry.evictAll(narrowing.assignedLocals(ctx.tryBlock));
-
-            boolean caughtAllThrowable = false;
-            String caughtAllThrowableDisplay = null;
-            boolean caughtAllNonError = false;
-            List<Type> priorCaughtMembers = new ArrayList<>();
-
-            List<Type> branchTypes = new ArrayList<>();
-            List<ParserRuleContext> branchNodes = new ArrayList<>();
-            List<TypeEnv> branchEnvs = new ArrayList<>();
-            branchTypes.add(tryType);
-            branchNodes.add(ctx.tryBlock);
-            branchEnvs.add(afterTry);
-            Set<ParserRuleContext> allCatchAssigned =
-                    Collections.newSetFromMap(new IdentityHashMap<>());
-
-            for (BabbleParser.CatchClauseContext clause : ctx.catchClause()) {
-                Type boundType;
-                if (clause.type() == null) {
-                    if (caughtAllThrowable) {
-                        warn(
-                                "Unreachable catch clause : catch-all is already caught by "
-                                        + caughtAllThrowableDisplay,
-                                clause);
-                    } else if (caughtAllNonError) {
-                        warn(
-                                "Unreachable catch clause : catch-all is already caught by earlier catch",
-                                clause);
-                    }
-                    caughtAllNonError = true;
-                    catchTargetTypes.put(clause, null);
-                    boundType = Type.ANY;
-                } else {
-                    Type target = resolveCatchTarget(clause);
-                    catchTargetTypes.put(clause, target);
-                    boundType = target;
-                    if (target != Type.ERROR) {
-                        List<Type> members = flattenCatchUnion(target);
-                        // Check reachability against earlier catch clauses in source order.
-                        int subsumedCount = 0;
-                        String firstSubsumer = null;
-                        List<Type> subsumedMembers = new ArrayList<>();
-                        List<String> subsumerNames = new ArrayList<>();
-                        for (Type m : members) {
-                            String subsumer =
-                                    catchSubsumedBy(
-                                            m,
-                                            caughtAllThrowable,
-                                            caughtAllThrowableDisplay,
-                                            caughtAllNonError,
-                                            priorCaughtMembers);
-                            if (subsumer != null) {
-                                subsumedCount++;
-                                if (firstSubsumer == null) {
-                                    firstSubsumer = subsumer;
-                                }
-                                subsumedMembers.add(m);
-                                subsumerNames.add(subsumer);
-                            }
-                        }
-                        if (subsumedCount == members.size() && !members.isEmpty()) {
-                            warn(
-                                    "Unreachable catch clause : "
-                                            + target
-                                            + " is already caught by "
-                                            + firstSubsumer,
-                                    clause);
-                        } else {
-                            for (int i = 0; i < subsumedMembers.size(); i++) {
-                                warn(
-                                        "Unreachable catch type : "
-                                                + subsumedMembers.get(i)
-                                                + " is already caught by "
-                                                + subsumerNames.get(i),
-                                        clause.type());
-                            }
-                        }
-                        for (Type m : members) {
-                            if (m instanceof Type.JavaInstance ji && ji.type() == Throwable.class) {
-                                caughtAllThrowable = true;
-                                caughtAllThrowableDisplay = m.toString();
-                            }
-                            priorCaughtMembers.add(m);
-                        }
-                    }
-                }
-                declarationTypes.put(clause, boundType);
-                env = catchEntryEnv;
-                Type catchType = type(clause.catchBlock, expected, role);
-                branchTypes.add(catchType);
-                branchNodes.add(clause.catchBlock);
-                branchEnvs.add(env);
-                allCatchAssigned.addAll(narrowing.assignedLocals(clause.catchBlock));
-            }
-
-            Type finallyType = null;
-            if (ctx.finallyBlock != null) {
-                env = catchEntryEnv.evictAll(allCatchAssigned);
-                finallyType = stmt(ctx.finallyBlock);
-            }
-
-            TypeEnv joinedEnv = null;
-            for (int i = 0; i < branchTypes.size(); i++) {
-                if (branchTypes.get(i) != Type.NOTHING) {
-                    joinedEnv =
-                            joinedEnv == null
-                                    ? branchEnvs.get(i)
-                                    : TypeEnv.joinBranches(beforeTry, joinedEnv, branchEnvs.get(i));
-                }
-            }
-            if (joinedEnv == null) {
-                joinedEnv = beforeTry;
-            }
-            if (ctx.finallyBlock != null) {
-                joinedEnv = joinedEnv.evictAll(narrowing.assignedLocals(ctx.finallyBlock));
-            }
-            env = joinedEnv;
-
-            if (finallyType == Type.NOTHING) {
-                return Type.NOTHING;
-            }
-
-            boolean used = role.isUsed();
-            boolean allNothing = true;
-            for (Type bt : branchTypes) {
-                if (bt != Type.NOTHING) {
-                    allNothing = false;
-                    break;
-                }
-            }
-            if (allNothing) {
-                return Type.NOTHING;
-            }
-            if (expected != null && expected != Type.ERROR && used) {
-                for (int i = 0; i < branchTypes.size(); i++) {
-                    if (branchTypes.get(i) != Type.NOTHING) {
-                        subsumes(branchNodes.get(i), branchTypes.get(i), expected);
-                    }
-                }
-                return expected;
-            }
-            Type joined = Type.NOTHING;
-            for (Type bt : branchTypes) {
-                if (bt == Type.NOTHING) {
-                    continue;
-                }
-                if (joined == Type.NOTHING) {
-                    joined = bt;
-                } else {
-                    Type next = algebra.join(joined, bt);
-                    if (next == null) {
-                        if (!used) {
-                            return Type.NULL;
-                        }
-                        if (!isUnresolved(joined) && !isUnresolved(bt)) {
-                            warn(
-                                    "Type error : the branches of try have different types : "
-                                            + joined
-                                            + " and "
-                                            + bt,
-                                    ctx);
-                        }
-                        return Type.ERROR;
-                    }
-                    joined = next;
-                }
-            }
-            if (joined != Type.NOTHING && joined != Type.ERROR) {
-                for (int i = 0; i < branchTypes.size(); i++) {
-                    if (branchTypes.get(i) != Type.NOTHING) {
-                        coerce(branchNodes.get(i), branchTypes.get(i), joined);
-                    }
-                }
-            }
-            return joined;
+            return exceptionTyper.typeTry(ctx, expected, role);
         }
-    }
-
-    // ---------------------------------------------------------------- throw / catch type
-    // validation (BIP028)
-
-    private boolean isUntypedCatchVar(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext b
-                && b.block().expression().size() == 1) {
-            expr = b.block().expression(0);
-        }
-        if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object resolved = resolveName(sel, sel.ID().getText(), occurrenceScope(sel));
-            return resolved instanceof BabbleParser.CatchClauseContext cc && cc.type() == null;
-        }
-        return false;
     }
 
     static boolean isThrowableType(Type type) {
-        if (type == null || type == Type.ERROR || type == Type.NOTHING) {
-            return false;
-        }
-        if (type instanceof Type.Frozen f) {
-            return isThrowableType(f.of());
-        }
-        if (type instanceof Type.TypeVar tv) {
-            return tv.bound() != null && isThrowableType(tv.bound());
-        }
-        if (type instanceof Type.JavaInstance ji) {
-            return Throwable.class.isAssignableFrom(ji.type());
-        }
-        if (type instanceof Type.Instance) {
-            return true;
-        }
-        if (type instanceof Type.Union u) {
-            if (u.members().isEmpty()) {
-                return false;
-            }
-            for (Type m : u.members()) {
-                if (!isThrowableType(m)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (type instanceof Type.Intersection inter) {
-            boolean hasThrowableOrNominal = false;
-            for (Type m : inter.members()) {
-                if (m == Type.NULL) {
-                    return false;
-                }
-                if (isThrowableType(m)) {
-                    hasThrowableOrNominal = true;
-                }
-            }
-            return hasThrowableOrNominal;
-        }
-        return false;
-    }
-
-    private Type resolveCatchTarget(BabbleParser.CatchClauseContext clause) {
-        ScopeNode scope = scopeOf(clause);
-        if (!validateCatchTypeAst(clause.type(), scope)) {
-            return Type.ERROR;
-        }
-        Type target = annotator.annotation(clause.type(), scope, true);
-        if (target == Type.ERROR) {
-            return Type.ERROR;
-        }
-        if (target.anyMatch(Type.Frozen.class::isInstance)) {
-            warn("Cannot catch 'frozen' type : " + target, clause.type());
-            return Type.ERROR;
-        }
-        if (target.hasTypeVar()) {
-            warn("Cannot catch type parameter : " + target, clause.type());
-            return Type.ERROR;
-        }
-        if (Type.containsNull(target)) {
-            warn("Cannot catch nullable type : " + target, clause.type());
-            return Type.ERROR;
-        }
-        List<Type> members = flattenCatchUnion(target);
-        for (Type m : members) {
-            if (m instanceof Type.JavaInstance ji) {
-                if (!Throwable.class.isAssignableFrom(ji.type())) {
-                    warn("Type error : " + m + " is not a Throwable", clause.type());
-                    return Type.ERROR;
-                }
-            } else if (m instanceof Type.Instance) {
-                // Valid Babble nominal exception (class/record/object/interface).
-            } else if (m instanceof Type.Intersection inter) {
-                if (!isValidCatchIntersection(inter)) {
-                    warn("Cannot catch non-exception type : " + m, clause.type());
-                    return Type.ERROR;
-                }
-            } else {
-                warn("Cannot catch non-exception type : " + m, clause.type());
-                return Type.ERROR;
-            }
-        }
-        // Check redundant union members within this catch clause (e.g. Exception | IOException).
-        for (int i = 0; i < members.size(); i++) {
-            for (int j = 0; j < members.size(); j++) {
-                if (i != j && isCatchSubtype(members.get(i), members.get(j))) {
-                    warn(
-                            "Redundant catch type : "
-                                    + members.get(i)
-                                    + " is already a subtype of "
-                                    + members.get(j),
-                            clause.type());
-                    break;
-                }
-            }
-        }
-        return target;
-    }
-
-    private boolean validateCatchTypeAst(BabbleParser.TypeContext typeCtx, ScopeNode scope) {
-        for (BabbleParser.NullableTypeContext nt : typeCtx.nullableType()) {
-            if (!validateCatchNullableAst(nt, scope)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean validateCatchNullableAst(BabbleParser.NullableTypeContext nt, ScopeNode scope) {
-        if (nt instanceof BabbleParser.ParenTypeContext pt) {
-            if (pt.frozen != null) {
-                Type inner = annotator.annotation(pt.type(), scope);
-                String label =
-                        inner != Type.ERROR
-                                ? Type.frozen(inner).toString()
-                                : "frozen (" + pt.type().getText() + ")";
-                warn("Cannot catch 'frozen' type : " + label, pt);
-                return false;
-            }
-            return validateCatchTypeAst(pt.type(), scope);
-        }
-        if (nt instanceof BabbleParser.NonParenTypeContext npt
-                && npt.nonParenNullableType() instanceof BabbleParser.SimpleTypeContext simple) {
-            if ("void".equals(simple.typeName().getText())) {
-                warn("Cannot catch non-exception type : void", simple);
-                return false;
-            }
-            if (simple.frozen != null) {
-                Type resolved = annotator.nonParenAnnotation(simple, scope, false);
-                String label =
-                        resolved != Type.ERROR
-                                ? resolved.toString()
-                                : "frozen " + simple.typeName().getText();
-                warn("Cannot catch 'frozen' type : " + label, simple);
-                return false;
-            }
-            if (simple.OF() != null
-                    && !"array".equals(simple.typeName().getText())
-                    && !annotator.resolvesToArrayAlias(simple, scope)) {
-                warn(
-                        "Cannot catch erased type arguments : use " + simple.typeName().getText(),
-                        simple);
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isValidCatchIntersection(Type.Intersection inter) {
-        boolean hasNominalOrThrowable = false;
-        for (Type m : inter.members()) {
-            if (m instanceof Type.Instance) {
-                hasNominalOrThrowable = true;
-            } else if (m instanceof Type.JavaInstance ji) {
-                if (Throwable.class.isAssignableFrom(ji.type())) {
-                    hasNominalOrThrowable = true;
-                } else if (!ji.type().isInterface()) {
-                    return false;
-                }
-            } else {
-                return false;
-            }
-        }
-        return hasNominalOrThrowable;
-    }
-
-    static List<Type> flattenCatchUnion(Type target) {
-        if (target instanceof Type.Union u) {
-            List<Type> out = new ArrayList<>();
-            for (Type m : u.members()) {
-                out.addAll(flattenCatchUnion(m));
-            }
-            return out;
-        }
-        return List.of(target);
+        return ExceptionTyper.isThrowableType(type);
     }
 
     static boolean mayBeJavaError(Type type) {
-        if (type instanceof Type.JavaInstance ji) {
-            return Error.class.isAssignableFrom(ji.type())
-                    || ji.type().isAssignableFrom(Error.class);
-        }
-        if (type instanceof Type.Union u) {
-            for (Type m : u.members()) {
-                if (mayBeJavaError(m)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        return ExceptionTyper.mayBeJavaError(type);
+    }
+
+    static List<Type> flattenCatchUnion(Type type) {
+        return ExceptionTyper.flattenCatchUnion(type);
     }
 
     boolean isCatchSubtype(Type a, Type b) {
-        if (a == Type.ERROR || b == Type.ERROR || a == Type.NOTHING) {
-            return false;
-        }
-        if (a instanceof Type.Frozen f) {
-            return isCatchSubtype(f.of(), b);
-        }
-        if (a instanceof Type.Union ua) {
-            if (ua.members().isEmpty()) {
-                return false;
-            }
-            for (Type m : ua.members()) {
-                if (!isCatchSubtype(m, b)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        if (b instanceof Type.Union ub) {
-            for (Type m : ub.members()) {
-                if (isCatchSubtype(a, m)) {
-                    return true;
-                }
-            }
-            return false;
-        }
-        if (b instanceof Type.JavaInstance jb) {
-            if (jb.type() == Throwable.class) {
-                return a instanceof Type.JavaInstance ja
-                                && Throwable.class.isAssignableFrom(ja.type())
-                        || a instanceof Type.Instance
-                        || a instanceof Type.Intersection;
-            }
-            if (a instanceof Type.JavaInstance ja) {
-                return jb.type().isAssignableFrom(ja.type());
-            }
-            return false;
-        }
-        if (b instanceof Type.Instance ib) {
-            if (a instanceof Type.Instance ia) {
-                return algebra.runtimeSubtype(ia, ib);
-            }
-            if (a instanceof Type.Intersection inter) {
-                for (Type m : inter.members()) {
-                    if (isCatchSubtype(m, ib)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-        if (b instanceof Type.Intersection interB) {
-            for (Type mb : interB.members()) {
-                if (!isCatchSubtype(a, mb)) {
-                    return false;
-                }
-            }
-            return true;
-        }
-        return false;
-    }
-
-    private String catchSubsumedBy(
-            Type member,
-            boolean caughtAllThrowable,
-            String caughtAllThrowableDisplay,
-            boolean caughtAllNonError,
-            List<Type> priorMembers) {
-        if (caughtAllThrowable) {
-            return caughtAllThrowableDisplay;
-        }
-        if (caughtAllNonError && !mayBeJavaError(member)) {
-            return "earlier catch";
-        }
-        for (Type prior : priorMembers) {
-            if (isCatchSubtype(member, prior)) {
-                return prior.toString();
-            }
-        }
-        return null;
+        return exceptionTyper.isCatchSubtype(a, b);
     }
 
     // ---------------------------------------------------------------- members
