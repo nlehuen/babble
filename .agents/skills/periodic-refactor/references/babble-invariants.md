@@ -63,8 +63,8 @@ git status -- src/test/batest
 
 ### Milestone / PR gate (end of weekly session)
 ```bash
-# One-command local parallel CI gate (add --container for JDK 21 + Node 22 parity, --argon for raytracer check)
-./src/tools/ci_gate.sh --protect-batest --container
+# One-command local parallel CI gate (uses cached JDK 21 + Node 22 container by default; add --argon for raytracer check)
+./src/tools/ci_gate.sh --protect-batest
 
 # Or individual steps:
 # Hard-limit & net-LOC audit

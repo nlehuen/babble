@@ -76,7 +76,7 @@ Estimate the expected per-file LOC and **net `src/main` LOC** impact for each pr
    - Run `mvn spotless:apply` (Spotless + `google-java-format` AOSP is gated in `validate` on all Java files), then check `audit_file_sizes.py --check-hard-limit` and tighten/remove any `ArchitectureBoundaryTestCase.GRANDFATHERED_CEILINGS` entry for shrunk files in the same commit.
    - Review your diff to confirm reductions came from real factoring—not removed blank lines or stripped comments.
    - Commit each green step with a clear message (space before colon, e.g., `Refactor : decompose MirLowerer control-flow lowering`).
-3. Before opening a PR / finishing the session, run the full verification gate (either via the single parallel CI gate script `./src/tools/ci_gate.sh --protect-batest` — adding `--container` for JDK 21 + Node 22 CI parity and `--argon` when compiler/IR/runtime hot paths were touched — or manually):
+3. Before opening a PR / finishing the session, run the full verification gate (either via the single parallel CI gate script `./src/tools/ci_gate.sh --protect-batest` — which runs inside the cached JDK 21 + Node 22 CI container by default; add `--argon` when compiler/IR/runtime hot paths were touched — or manually):
    - `python3 .agents/skills/periodic-refactor/scripts/audit_file_sizes.py --check-hard-limit` (and report before/after per-file and **net `src/main` LOC**).
    - `git status -- src/test/batest` (must be empty).
    - `mvn -B package -PO2` (full 4-mode JVM + Wasm suite with verifiers).
