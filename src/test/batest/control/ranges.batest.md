@@ -182,7 +182,8 @@ expectEq("" + (3..<10).step(5).reversed(), "(3..<10).step(5).reversed()")
 ```babble
 def r1 = 1..5
 def wide: range of any = r1
-assert(wide is range and wide.contains(3) and not wide.contains("3"))
+def asNum: range of java.lang.Number = r1
+assert(wide is range and asNum is range and wide.contains(3) and not wide.contains("3"))
 def boxed: any = r1
 def back = boxed as range
 expectEq(back.end(), 5)
@@ -235,4 +236,122 @@ for i in (1..10).step(k) then (
 
 ```error
 Range step must be positive : -2
+```
+
+## Negative constant step throws at runtime
+
+```babble
+def r = (1..10).step(-2)
+```
+
+```error
+Range step must be positive : -2
+```
+
+## Dynamic zero step in counted for throws at runtime
+
+```babble
+var s = 0
+for i in (1..10).step(s) then (
+    assert(false)
+)
+```
+
+```error
+Range step must be positive : 0
+```
+
+## Unparenthesized range with .step hints to parenthesize the range
+
+```babble
+def r = 1..10.step(5)
+```
+
+```error
+No such member : step. Parenthesize the range : (1..10).step(5)
+```
+
+## Iterating over a non-discrete double range is a static error
+
+```babble
+for x in 0.0..1.0 then ( assert(x >= 0.0) )
+```
+
+```error
+Not iterable : range of double is not discrete
+```
+
+## Calling .step on a non-discrete double range is a static error
+
+```babble
+def r = (0.0..1.0).step(2)
+```
+
+```error
+Not iterable : range of double is not discrete
+```
+
+## Calling .reversed on a non-discrete string range is a static error
+
+```babble
+def r = ("a".."z").reversed()
+```
+
+```error
+Not iterable : range of string is not discrete
+```
+
+## Function-local counted int loops with non-negative and signed starts
+
+```babble
+def sumMod = fn (n: int, k: int): int -> (
+    var s = 0
+    for i in 0..<n then ( s += (i mod 3) + (i // 3) )
+    for i in 0..n then ( s += i mod 5 )
+    for i in (0..<n).step(3) then ( s += i // 3 )
+    for i in (0..n).step(k) then ( s += i mod 3 )
+    for i in (-2)..n then ( s += i mod 3 )
+    s
+)
+assert(sumMod(6, 2) == 33)
+```
+
+## Function-local counted long loops with constant and dynamic steps
+
+```babble
+def sumLong = fn (n: long, k: long): long -> (
+    var s = 0l
+    for i in 0l..<n then ( s += (i mod 3l) + (i // 3l) + (i mod 8l) + (i // 8l) )
+    for i in 0l..n then ( s += i mod 5l )
+    for i in (0l..<n).step(3l) then ( s += i // 3l )
+    for i in (0l..n).step(k) then ( s += i mod 3l )
+    s
+)
+assert(sumLong(6l, 2l) == 39l)
+```
+
+## Function-local counted char loops with constant and dynamic steps
+
+```babble
+def sumChar = fn (hi: char, k: int): int -> (
+    var s = 0
+    for ch in ('a'..hi).step(2) then ( s += int(ch) mod 5 )
+    for ch in ('a'..<hi).step(k) then ( s += int(ch) // 5 )
+    s
+)
+assert(sumChar('f', 2) == 65)
+```
+
+## Function-local reversed counted loops with non-negative mod and floor division
+
+```babble
+;; QUESTIONABLE : non-inlined -O2 fn with stepped char counted loop throws ClassCastException (Integer to Character) in MirLowerer/MirEmitter
+def sumRev = fn (n: int, m: long): long -> (
+    var s = 0l
+    for i in (0..n).step(2).reversed() then ( s += long(i mod 3) )
+    for j in (0l..m).step(2l).reversed() then ( s += j mod 3l )
+    s
+)
+var f = sumRev
+assert(f(6, 6l) == 6l)
 ```

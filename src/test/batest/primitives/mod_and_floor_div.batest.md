@@ -135,3 +135,120 @@ def x = 10l mod d
 ```error
 java.lang.ArithmeticException : / by zero
 ```
+
+## Int modulo by zero throws ArithmeticException
+
+```babble
+var d = 0
+def x = 10 mod d
+```
+
+```error
+java.lang.ArithmeticException : / by zero
+```
+
+## Long floor division by zero throws ArithmeticException
+
+```babble
+var d = 0l
+def x = 10l // d
+```
+
+```error
+java.lang.ArithmeticException : / by zero
+```
+
+## Floating-point operand rejected by mod
+
+```babble
+def x = 1.5 mod 2
+```
+
+```error
+Not an integer : 1.5
+```
+
+## Floating-point operand rejected by floor division
+
+```babble
+def x = 1.5 // 2
+```
+
+```error
+Not an integer : 1.5
+```
+
+## Function-local int power-of-two and non-negative dividend lowering
+
+```babble
+def fastInt = fn (x: int, s: string, xs: list of int, m: map of (string, int), arr: array of int): int -> (
+    (x // 4) + (x mod 4) + (s.length() mod 3) + (xs.size() // 3) + (m.size() mod 3) + (arr.size() // 3) + ((x mod 7) // 3) + (int('z') mod 5)
+)
+assert(fastInt(-7, "hello", list(1, 2, 3, 4), (map of (string, int)).of("a", 1, "b", 2), array of int(4)) == 7)
+```
+
+## Function-local long power-of-two and non-negative dividend lowering
+
+```babble
+def fastLong = fn (y: long, arr: array of int): long -> (
+    (y // 8l) + (y mod 8l) + (long(arr.size()) mod 3l) + ((y mod 7l) // 3l)
+)
+var fl = fastLong
+assert(fl(-17l, array of int(4)) == 6l)
+```
+
+## Function-local branch-merged int divisors and constant folding
+
+```babble
+def sccpI = fn (x: int, fl: bool): int -> (
+    var a = 0 ; var b = 0 ; var d = 0 ; var m = 0 ; var t = 0
+    if fl then ( a = -7 ; b = 3 ; d = 1 ; m = -1 ; t = 3 ) else ( a = -7 ; b = 3 ; d = 1 ; m = -1 ; t = 3 )
+    (a // b) + (a mod b) + (x // d) + (x // m) + (x mod d) + (x mod m) + (x // t) + (x mod t)
+)
+var fi = sccpI
+assert(fi(10, true) == 3 and fi(10, false) == 3)
+```
+
+## Function-local branch-merged long divisors and constant folding
+
+```babble
+def sccpL = fn (x: long, fl: bool): long -> (
+    var a = 0l ; var b = 0l ; var d = 0l ; var m = 0l ; var t = 0l
+    if fl then ( a = -7l ; b = 3l ; d = 1l ; m = -1l ; t = 3l ) else ( a = -7l ; b = 3l ; d = 1l ; m = -1l ; t = 3l )
+    (a // b) + (a mod b) + (x // d) + (x // m) + (x mod d) + (x mod m) + (x // t) + (x mod t)
+)
+var fl2 = sccpL
+assert(fl2(10l, true) == 3l and fl2(10l, false) == 3l)
+```
+
+## Function-local branch-merged int zero divisor throws ArithmeticException
+
+```babble
+def gzI = fn (x: int, fl: bool): int -> (
+    var z = 1
+    if fl then ( z = 0 ) else ( z = 0 )
+    x // z
+)
+var fg = gzI
+fg(5, true)
+```
+
+```error
+java.lang.ArithmeticException : / by zero
+```
+
+## Function-local branch-merged long zero divisor throws ArithmeticException
+
+```babble
+def gzL = fn (y: long, fl: bool): long -> (
+    var z = 1l
+    if fl then ( z = 0l ) else ( z = 0l )
+    y mod z
+)
+var fg = gzL
+fg(5l, false)
+```
+
+```error
+java.lang.ArithmeticException : / by zero
+```
