@@ -26,7 +26,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 ## Where Babble stands
 
 - **Execution:** a tree-walking interpreter (the reference implementation) and a compiler to JVM bytecode through a typed `HIR` (`-O0`, the `-O1` default) and an SSA `MIR` tier (`-O2`), ahead-of-time jars (`babblec`), and WebAssembly 3.0, all over a `java.base`-only runtime.
-- **Language:** classes, `record`s, objects and interfaces with two-way Java interop; modules; `for` loops with `break` and `continue`; `try`/`catch`/`finally`; optional, named, variadic and overloaded arguments; self tail calls; immutable `def` and mutable `var`; multiline and raw strings.
+- **Language:** classes, `record`s, objects and interfaces with two-way Java interop; modules; `for` loops with `break` and `continue`; `try`/`catch`/`finally`; expression-oriented `match` pattern matching with exhaustiveness and destructuring; optional, named, variadic and overloaded arguments; self tail calls; immutable `def` and mutable `var`; multiline and raw strings.
 - **Types:** mandatory static typing with nullables (`T?`, `T!`), unions, intersections, generics, aliases and flow-sensitive narrowing, over nine core scalars, five core collections, `array of T` and covariant `range of T` (`lo..hi`, `lo..<hi`, floored `mod` and `//`).
 - **Effects:** inferred, pure-by-default effects and algebraic properties, ownership (`unique`, `frozen`), termination checking, and curated or bytecode-inferred axioms for Java code.
 - **Tooling:** an interactive mode, a formatter, and `.batest.md` specifications run in every mode, with IR goldens and a coverage gate of at least 80% of lines and branches.
@@ -66,6 +66,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP031** | [First-class ranges (`range`), modulo (`mod`) and integer division (`//`)](bip031_ranges.md) | 2026-11-24 | `RM019` | Covariant `range of T` (`lo..hi`, `lo..<hi`), stepped/reversed progressions, floored `mod` and `//`/`//=`, `@TERMINATING` certification, allocation-free counted `for` loops, E-graph laws, and `-O1`/`-O2`/Wasm 3.0 lowering. |
 | **BIP034** | [Immutable `def` and mutable `var` bindings](bip034_immutable-def-and-mutable-var.md) | 2026-11-25 | — | Non-reassignable `def` and explicit `var`, which make top-level reads pure, let closures capture by value, and allow `ACC_FINAL` fields. |
 | **BIP037** | [Babble test hygiene](bip037_babble-test-hygiene.md) | 2026-11-26 | — | Consolidates testing guidelines into `src/test/AGENTS.md`, retires `src/test/babble/` and `ScriptTestCase` in favor of `.batest.md`, consolidates `org.babblelang.compiler` tests into 2 JVM-internal classes with behavioral/IR coverage in `src/test/batest/`, and extends `FormatterTestCase` to `.batest.md`. |
+| **BIP038** | [Pattern matching (`match`)](bip038_pattern-matching.md) | 2026-11-25 | `RM024` | Expression-oriented `match x case <pattern> [if <guard>] then (...) else (...)` with explicit `def` bindings, value/relational/range/`in` patterns, Babble & Java `record` and `list`/`array` destructuring, Maranget compile-time exhaustiveness & reachability, effect/ownership/`SCP` integration, JVM jump tables, `-O1` folding/SROA, `-O2` `MirTerminator.Switch`, and Wasm `br_table`. |
 
 ### In progress
 
@@ -79,7 +80,6 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP033** | [Tensors as core types with dimensional safety](bip033_tensors.md) | 2026-11-25 | Decided (`BIP033-P1`–`P6` planned) | Core `float16`/`bfloat16` scalars and immutable `tensor of (DType, ...)` types with static/symbolic/dynamic/labeled shapes, E-graph algebraic dim solving, scalar + labeled-subset broadcasting, `matmul`/`einsum`, `unique` FBIP reuse, and a `java.base` strided runtime behind `TensorBackend` SPI (with a compiled-region hook for optional StableHLO/XLA PJRT backends) (`RM023`). |
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
 | **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`–`P9` planned) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of every monolith and god class (JVM and Wasm backends included), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
-| **BIP038** | [Pattern matching (`match`)](bip038_pattern-matching.md) | 2026-11-25 | Decided (`BIP038-P1`–`P5` planned) | `match x case <pattern> [if <guard>] then (...) else (...)` with explicit `def` bindings, value, relational, range and `in` patterns, `record` and `list`/`array` destructuring, and compile-time exhaustiveness (`RM024`). |
 
 ## Milestones done
 
@@ -175,33 +175,37 @@ First-class immutable covariant `range of T` (`lo..hi`, `lo..<hi`), stepped and 
 
 - Spans: `BIP031`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP019`, `BIP025`, `BIP027`, `BIP029`, `BIP034`
 
+#### RM024 — Pattern matching (`match`)
+
+Expression-oriented `match x case <pattern> [if <guard>] then (...) else (...)` (`BIP038-I1`–`I5`) across `Babble.g4` (pure `SLL`), `Formatter`, `BabbleSession.classify`, `MatchTyper` + ANTLR-free Maranget `MatchExhaustiveness` (`bool`, `T?`, unions, Java `enum`/`sealed`, nested records, `list`/`array` lengths, counterexample witnesses, reachability, redundant `else` warning), `EffectBodyWalker` (`@BORROWED`/`@UNIQUE`/`frozen`/`nothrow`) & `SizeChangeTermination` structural descent through record destructuring, `Interpreter`, `HirExpr.Match` / `HirPattern`, JVM `MatchEmitter` (`TABLESWITCH`/`LOOKUPSWITCH`/string hash-switch/AOT enum switch-map), `-O1` constant folding & `ScalarReplacePass` SROA on `match RecordNew(...)`, `-O2` `MirTerminator.Switch` + `SccpPass` constant `Switch` folding, and WebAssembly 3.0 `WasmMatchEmitter` (`br_table`, `ref.test`, `struct.get`).
+
+- Spans: `BIP038`, `BIP002`, `BIP008`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP019`, `BIP024`, `BIP025`, `BIP027`, `BIP029`, `BIP031`, `BIP034`, `BIP037`
+
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, `BIP036-P1`–`P9`, and `BIP038-P1`–`P5`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
 
 The order follows constraints recorded in the BIPs:
 
-- **Simplify before large front-end work.** `BIP036` (`RM020`) retires `TypeChecker`'s mutable blackboard and splits every god class under 1,500 lines, giving `BIP015` Option 2 and large front-end additions (`BIP038`, `BIP033`) clean seams.
-- **Pattern matching builds directly on landed ranges (`RM019`).** `BIP038` (`RM024`) is decided and waits for nothing: it is a pure-`SLL` addition to the current ANTLR4 grammar (answering `BIP015-Q3` for it — a later parser migration ports it with the rest of the grammar), and landing it ahead of `RM015` gives the standard library both ranges and `match`.
+- **Simplify before large front-end work.** `BIP036` (`RM020`) retires `TypeChecker`'s mutable blackboard and splits every god class under 1,500 lines, giving `BIP015` Option 2 and large front-end additions (`BIP033`) clean seams.
 - **Harden soundness early.** `BIP032` (`RM021`) can run now, catching type, effect, ownership, optimizer and Wasm escapes before `BIP014-P5` pipeline rewrites (`RM015`) and `RM017` parallelism rely on stronger static guarantees.
 - **Safety nets at any time.** The JDK 25 and 27 CI legs (`BIP018-P0`, `RM025`, exempt from `BIP018-D4`) and a thread-safe `Interpreter` depend on nothing.
-- **The standard library is on the critical path.** `RM015` gives `BIP014-P5` Half B something to rewrite, completing `BIP014`, which opens `BIP018-P1` onward (`RM016`, `BIP018-D4`), on which `RM017` parallelism builds. Written in Babble, `std/...` wants ranges (`RM019`) and `match` (`RM024`) first.
+- **The standard library is on the critical path.** `RM015` gives `BIP014-P5` Half B something to rewrite, completing `BIP014`, which opens `BIP018-P1` onward (`RM016`, `BIP018-D4`), on which `RM017` parallelism builds. Written in Babble, `std/...` builds on landed ranges (`RM019`) and `match` (`RM024`).
 - **Choose the parser before string templates.** `BIP026-P2` splits `Babble.g4` into lexer modes, so `BIP015` is settled first (`RM014`). Neither is on the critical path to `BIP018`, so `RM014` can run alongside `RM015`.
 - **Tensors and `babblebabble` are independent.** `BIP033` (`RM023`) is a predicate-free grammar addition independent of `BIP015` and `BIP018` (plugging into `BIP018` SIMD/FFM and optional StableHLO/XLA PJRT region backends later via its `TensorBackend` SPI); `BIP035` (`RM022`) builds on the landed `BIP025` Wasm backend and `BIP034` bindings as an independent differential oracle and symbolic benchmark.
 
 | Milestone | Slice | Remaining BIP work | Prerequisites | Notes |
 |---|---|---|---|---|
 | **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` (`RM020` recommended ahead of `BIP015` Option 2) | Can run alongside `RM015`. A parser migration, if chosen, lands before `BIP026-P2`. |
-| **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`, `RM019` (`RM024` recommended so `std/...` uses `match`); a standard library BIP | Completes `BIP014`, which opens `BIP018-P1` (`RM016`). |
+| **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`, `RM019`, `RM024`; a standard library BIP | Completes `BIP014`, which opens `BIP018-P1` (`RM016`). |
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P1`–`P2` | `RM015`, `RM025` | |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
-| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2), `RM023` and `RM024`. |
+| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2) and `RM023`. |
 | **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others; hardens soundness ahead of `RM015` and `RM017`. |
 | **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
 | **RM023** | Tensors with dimensional safety | `BIP033-P1`–`P6` | `RM013`, `RM018` | Independent of `BIP015` and `BIP018` (`RM020` recommended ahead of large front-end additions). |
-| **RM024** | Pattern matching (`match`) | `BIP038-P1`–`P5` | `RM013`, `RM019` | Can run now (`RM020` recommended ahead of large front-end additions); pure-`SLL` addition ahead of `RM015`. |
 | **RM025** | JDK 25 & 27 CI legs | `BIP018-P0` | — | Any time (exempt from `BIP018-D4`). |
 
 ### RM014 — Front-end decision & string templates
@@ -298,17 +302,6 @@ Deliver [BIP033](bip033_tensors.md), adding ML-first core `float16`/`bfloat16` s
   - `BIP033-P2`–`P4`: predicate-free pure-`SLL` `tensor` grammar & unified `of (...)` type/shape application, `DimAlgebra` (polynomial + `org.babblelang.ir.egraph` solver with `D == H * K` constraints), directional label-preserving axis labels, `dyn` narrowing / `withDims`, `java.base`-only strided runtime & `TensorBackend` SPI (including its optional compiled-region hook), strict linear `unique` tracking on immutable tensors, scalar + labeled-subset broadcasting, reductions, `matmul`/`matmulAccum`, and compile-time checked `einsum`/`contract`.
   - `BIP033-P5`–`P6`: structured `HIR` tensor nodes, `-O1`/`-O2` elementwise loop fusion, E-graph view simplification, small-tensor SROA (`O9`), FBIP `TensorReuse` (`O10`), pure-region lowering readiness for optional StableHLO/XLA backends, and a dimensionally-safe micro-Transformer forward-pass milestone in `examples/`.
 - **Exit criteria:** 100% pure-`SLL` parsing, `.batest.md` differential & `HIR`/`MIR` goldens across all modes, `RuntimeBoundaryTestCase` (`java.base`-only), and byte-identical micro-Transformer output across `interpret`, `-O0`, `-O1`, `-O2`, and `babblec` AOT jar.
-
-### RM024 — Pattern matching (`match`)
-
-Deliver [BIP038](bip038_pattern-matching.md) on top of landed ranges ([BIP031](bip031_ranges.md), `RM019`) and immutable `def` bindings ([BIP034](bip034_immutable-def-and-mutable-var.md)).
-
-- **Spans:** `BIP038`, `BIP002`, `BIP008`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP019`, `BIP024`, `BIP025`, `BIP027`, `BIP029`, `BIP031`, `BIP034`, `BIP037`
-- **Depends on:** `RM013`, `RM019` (`RM020` recommended ahead of large front-end additions). Independent of `BIP015` (a later parser migration ports this grammar) and of `BIP018`.
-- **Deliverables:**
-  - `BIP038-P1`–`P3`: the `match` grammar, formatter and REPL `classify`, typing and narrowing, `record` and `list`/`array` destructuring, `HirExpr.Match` with jump tables, `MirTerminator.Switch`, and Wasm `br_table`.
-  - `BIP038-P4`–`P5`: Maranget exhaustiveness and reachability checking, effect/ownership/`SizeChangeTermination` integration, `-O1`/`-O2` optimizations (`ScalarReplacePass` SROA, `SccpPass` constant `Switch` folding), and `.batest.md` specs with `HIR`, `MIR` and `wat` goldens.
-- **Exit criteria:** `match` specifications in every mode, exhaustiveness diagnostics, and `HIR`, `MIR` and `wat` goldens.
 
 ### RM025 — JDK 25 & 27 CI legs
 

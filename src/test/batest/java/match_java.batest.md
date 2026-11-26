@@ -113,3 +113,12 @@ def eval = fn (e: E): int -> (
 # error regex
 .*Non-exhaustive match : missing SealedAdd.*
 ```
+
+## Nullable Java enum switch and mixed enum values on any
+
+```babble
+def t = import("java.time")
+def d = fn (x: t.DayOfWeek?): int -> (match x case null then (0) case t.DayOfWeek.MONDAY then (1) case t.DayOfWeek.TUESDAY then (2) case t.DayOfWeek.WEDNESDAY then (3) else (4))
+def m = fn (x: any): int -> (match x case t.DayOfWeek.MONDAY then (1) case t.Month.JANUARY then (2) else (0))
+assert(d(null) == 0 and d(t.DayOfWeek.TUESDAY) == 2 and m(t.Month.JANUARY) == 2)
+```

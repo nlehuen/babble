@@ -529,6 +529,10 @@ public final class HirPurity {
         return m.elseArm() == null || isPureNothrowTerminating(m.elseArm().body(), module, visitingFns);
     }
 
+    public static boolean isPatternPureNothrowTerminating(HirPattern pattern, HirModule module) {
+        return isPatternPureNothrowTerminating(pattern, module, new HashSet<>());
+    }
+
     private static boolean isPatternPureNothrowTerminating(HirPattern pattern, HirModule module, Set<Integer> visitingFns) {
         return switch (pattern) {
             case HirPattern.Const ignored -> true;
@@ -546,7 +550,9 @@ public final class HirPurity {
             }
             case HirPattern.Relational r -> (r.op() == HirExpr.BinaryOp.EQ || r.op() == HirExpr.BinaryOp.NEQ
                     || r.scrutineeKind().isPrimitive()) && isPureNothrowTerminating(r.rhs(), module, visitingFns);
-            case HirPattern.RangeTest r -> r.step() == null && (r.elemKind().isPrimitive() || r.stringElement())
+            case HirPattern.RangeTest r -> (r.step() == null
+                    || (r.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L))
+                    && (r.elemKind().isPrimitive() || r.stringElement())
                     && isPureNothrowTerminating(r.lo(), module, visitingFns)
                     && isPureNothrowTerminating(r.hi(), module, visitingFns);
             case HirPattern.Membership m -> false;
@@ -600,6 +606,18 @@ public final class HirPurity {
             }
             for (HirVar v : f.bodyDeclaredVars()) {
                 out.add(v.id());
+            }
+        } else if (expr instanceof HirExpr.Match m) {
+            if (m.scrutineeVar() != null) {
+                out.add(m.scrutineeVar().id());
+            }
+            for (HirExpr.MatchArm arm : m.arms()) {
+                for (HirVar bv : arm.boundVars()) {
+                    out.add(bv.id());
+                }
+            }
+            if (m.elseArm() != null && m.elseArm().var() != null) {
+                out.add(m.elseArm().var().id());
             }
         } else if (expr instanceof HirExpr.Try t) {
             for (HirVar v : t.tryDeclaredVars()) {
