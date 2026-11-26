@@ -378,9 +378,9 @@ assert(capDefault(10) == 15)
 def tag = fn (..., name: string, value: string = "1"): string -> ( name + "=" + value )
 assert(tag(name: "k") == "k=1" and tag(value: "v", name: "k") == "k=v")
 
-def range = fn (start: int = 0, ..., stop: int, step: int = 1): int -> (
+def span = fn (start: int = 0, ..., stop: int, step: int = 1): int -> (
     int((stop - start) / step)
 )
-assert(range(stop: 10) == 10 and range(2, stop: 10, step: 2) == 4)
+assert(span(stop: 10) == 10 and span(2, stop: 10, step: 2) == 4)
 ```
 

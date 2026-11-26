@@ -103,3 +103,27 @@ assert(dyn(1))
 ```error
 Type error : expected bool, got any
 ```
+
+## Branch-merged boolean equality and inequality
+
+```babble
+def cmpBool = fn (p: bool): bool -> (
+    def a = if p then (true) else (true)
+    def b = if p then (false) else (false)
+    (a == a) and not (a == b) and (a != b) and not (b != b)
+)
+var f = cmpBool
+assert(f(true) and f(false))
+```
+
+## Branch-merged nullable equality and inequality
+
+```babble
+def cmpNull = fn (p: bool): bool -> (
+    def a: string? = if p then (null) else (null)
+    def b: string? = if p then ("ok") else ("ok")
+    (a == null) and not (a != null) and (b != null) and not (b == null) and (a != b)
+)
+var f = cmpNull
+assert(f(true) and f(false))
+```

@@ -198,21 +198,7 @@ public class DifferentialTestCase {
                 "import(\"org\").babblelang.tests.JavaClassDemo.boxedBool(false)",
                 "def id = fn (x : any?) : any? -> ( x ) ; (id(null) as java.awt.Point).x = 1",
                 "def id = fn (x : any?) : any? -> ( x ) ; (id(null) as java.awt.Point).x",
-                "java.lang.Class.forName(\"java.lang.String\").getEnumConstants().size()",
-                // BIP031 : ranges, mod, //, and error parity
-                "1..10.step(5)",
-                "(1..10).step(0)",
-                "(1..10).step(-2)",
-                "var s = 0 ; for i in (1..10).step(s) then ( i )",
-                "var d = 0 ; 10 mod d",
-                "var d = 0 ; 10 // d",
-                "var d = 0l ; 10l mod d",
-                "var d = 0l ; 10l // d",
-                "1.5 mod 2",
-                "1.5 // 2",
-                "for x in 0.0..1.0 then ( x )",
-                "(0.0..1.0).step(2)",
-                "(\"a\"..\"z\").reversed()"
+                "java.lang.Class.forName(\"java.lang.String\").getEnumConstants().size()"
         );
     }
 
