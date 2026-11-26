@@ -450,6 +450,12 @@ final class HirNameInitAnalysis {
                     yield (nl == b.left() && nr == b.right()) ? b
                             : new HirExpr.Binary(b.op(), nl, nr, b.leftText(), b.rightText(), b.meta());
                 }
+                case HirExpr.Range r -> {
+                    HirExpr ns = fn.apply(r.start());
+                    HirExpr ne = fn.apply(r.end());
+                    yield (ns == r.start() && ne == r.end()) ? r
+                            : new HirExpr.Range(ns, ne, r.inclusive(), r.elemKind(), r.stringElement(), r.meta());
+                }
                 case HirExpr.Logic l -> {
                     HirExpr nl = fn.apply(l.left());
                     HirExpr nr = fn.apply(l.right());
@@ -497,11 +503,21 @@ final class HirNameInitAnalysis {
                     yield (nc == w.cond() && nb == w.body()) ? w : new HirExpr.While(nc, nb, w.meta());
                 }
                 case HirExpr.For f -> {
-                    HirExpr ni = fn.apply(f.iterable());
+                    HirExpr ni = f.iterable() != null ? fn.apply(f.iterable()) : null;
+                    HirExpr.CountedRangeLoop cr = f.countedRange();
+                    HirExpr.CountedRangeLoop ncr = cr;
+                    if (cr != null) {
+                        HirExpr ns = fn.apply(cr.start());
+                        HirExpr ne = fn.apply(cr.end());
+                        HirExpr nk = cr.step() != null ? fn.apply(cr.step()) : null;
+                        if (ns != cr.start() || ne != cr.end() || nk != cr.step()) {
+                            ncr = new HirExpr.CountedRangeLoop(ns, ne, nk, cr.inclusive(), cr.descending(), cr.elemKind());
+                        }
+                    }
                     List<HirExpr> nb = rewriteList(f.body(), guaranteed);
-                    yield (ni == f.iterable() && nb == f.body()) ? f
+                    yield (ni == f.iterable() && ncr == cr && nb == f.body()) ? f
                             : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
-                            f.bodyWideningRank(), f.elemSamTarget(), f.meta());
+                            f.bodyWideningRank(), f.elemSamTarget(), ncr, f.meta());
                 }
                 case HirExpr.Try t -> {
                     List<HirExpr> ntb = rewriteList(t.tryBody(), guaranteed);

@@ -21,6 +21,7 @@ public final class WasmCoreEmitter {
     private final WasmArrayOpsGen arrays;
     private final WasmStringOpsGen strings;
     private final WasmCollectionOpsGen cols;
+    private final WasmRangeOpsGen ranges;
     private final WasmObjectSystem objects;
     private WasmFuncEmitter fe;
 
@@ -31,11 +32,79 @@ public final class WasmCoreEmitter {
         this.arrays = linker.arrays();
         this.strings = linker.strings();
         this.cols = linker.collections();
+        this.ranges = linker.ranges();
         this.objects = linker.objects();
     }
 
     public void setFuncEmitter(WasmFuncEmitter fe) {
         this.fe = fe;
+    }
+
+    // ---------------------------------------------------------------- BIP031 First-class ranges
+
+    public void emitRange(HirExpr.Range r) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        int incl = r.inclusive() ? 1 : 0;
+        switch (r.elemKind()) {
+            case BYTE -> {
+                c.i32Const(WasmRangeOpsGen.KIND_BYTE).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.BYTE);
+                fe.emitAs(r.end(), PrimitiveKind.BYTE);
+                c.i32Const(1).i32Const(0).structNew(ts.intRangeType);
+            }
+            case SHORT -> {
+                c.i32Const(WasmRangeOpsGen.KIND_SHORT).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.SHORT);
+                fe.emitAs(r.end(), PrimitiveKind.SHORT);
+                c.i32Const(1).i32Const(0).structNew(ts.intRangeType);
+            }
+            case INT -> {
+                c.i32Const(WasmRangeOpsGen.KIND_INT).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.INT);
+                fe.emitAs(r.end(), PrimitiveKind.INT);
+                c.i32Const(1).i32Const(0).structNew(ts.intRangeType);
+            }
+            case CHAR -> {
+                c.i32Const(WasmRangeOpsGen.KIND_CHAR).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.CHAR);
+                fe.emitAs(r.end(), PrimitiveKind.CHAR);
+                c.i32Const(1).i32Const(0).structNew(ts.intRangeType);
+            }
+            case LONG -> {
+                c.i32Const(WasmRangeOpsGen.KIND_LONG).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.LONG);
+                fe.emitAs(r.end(), PrimitiveKind.LONG);
+                c.i64Const(1L).i32Const(0).structNew(ts.longRangeType);
+            }
+            case FLOAT -> {
+                c.i32Const(WasmRangeOpsGen.KIND_FLOAT).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.FLOAT);
+                c.op(WasmInstr.SimpleOp.F64_PROMOTE_F32);
+                fe.emitAs(r.end(), PrimitiveKind.FLOAT);
+                c.op(WasmInstr.SimpleOp.F64_PROMOTE_F32);
+                c.structNew(ts.doubleRangeType);
+            }
+            case DOUBLE -> {
+                c.i32Const(WasmRangeOpsGen.KIND_DOUBLE).i32Const(incl);
+                fe.emitAs(r.start(), PrimitiveKind.DOUBLE);
+                fe.emitAs(r.end(), PrimitiveKind.DOUBLE);
+                c.structNew(ts.doubleRangeType);
+            }
+            default -> {
+                int s = ctx.newLocal("$rs", WasmValType.refNull(ts.stringType));
+                int e = ctx.newLocal("$re", WasmValType.refNull(ts.stringType));
+                fe.emitBoxed(r.start());
+                c.refCast(ts.stringType).localSet(s);
+                fe.emitBoxed(r.end());
+                c.refCast(ts.stringType).localSet(e);
+                c.i32Const(WasmRangeOpsGen.KIND_STRING).i32Const(incl)
+                        .localGet(s).refAsNonNull()
+                        .localGet(e).refAsNonNull()
+                        .structNew(ts.stringRangeType);
+            }
+        }
+        ctx.stackKind = PrimitiveKind.NONE;
     }
 
     // ---------------------------------------------------------------- BIP013 For loops
@@ -46,6 +115,11 @@ public final class WasmCoreEmitter {
         PrimitiveKind resKind = f.meta().kind();
         int line = f.meta().line();
         LoweringTargets.ForKind kind = f.target() != null ? f.target().kind() : LoweringTargets.ForKind.DYNAMIC_UNION;
+
+        if (kind == LoweringTargets.ForKind.COUNTED_RANGE && f.countedRange() != null) {
+            emitCountedRangeFor(f, resKind, line);
+            return;
+        }
 
         // Evaluate iterable once
         fe.emitBoxed(f.iterable());
@@ -70,7 +144,7 @@ public final class WasmCoreEmitter {
             emitForOverIterator(f, srcLocal, breakDepth, resKind, resLocal, line, true);
         } else {
             // JAVA_ITERABLE, BABBLE_ITERABLE, BABBLE_TO_JAVA_ITERABLE, DYNAMIC_UNION:
-            // Fast path for $List, $Set, $ArrayBase, else call src.iterator() and iterate!
+            // Fast path for $List, $Set, $RangeBase, $CollectionIter, $RangeIter, $ArrayBase, else call src.iterator()
             int itLocal = ctx.newLocal("$forIt", ts.anyRef());
             c.localGet(srcLocal).refTest(ts.listType).if_();
             ctx.pushBlock("for_is_list");
@@ -80,7 +154,12 @@ public final class WasmCoreEmitter {
             ctx.pushBlock("for_is_set");
             c.localGet(srcLocal).refCast(ts.setType).call(cols.fnSetIter).localSet(itLocal);
             c.else_();
-            c.localGet(srcLocal).refTest(ts.collectionIterType).if_();
+            c.localGet(srcLocal).refTest(ts.rangeBaseType).if_();
+            ctx.pushBlock("for_is_range");
+            c.localGet(srcLocal).refCast(ts.rangeBaseType).i32Const(line).call(ranges.fnRangeIter).localSet(itLocal);
+            c.else_();
+            c.localGet(srcLocal).refTest(ts.collectionIterType)
+                    .localGet(srcLocal).refTest(ts.rangeIterType).op(WasmInstr.SimpleOp.I32_OR).if_();
             ctx.pushBlock("for_is_iter");
             c.localGet(srcLocal).localSet(itLocal);
             c.else_();
@@ -99,9 +178,137 @@ public final class WasmCoreEmitter {
             ctx.popBlock(); c.end();
             ctx.popBlock(); c.end();
             ctx.popBlock(); c.end();
+            ctx.popBlock(); c.end();
 
             emitForOverIterator(f, itLocal, breakDepth, resKind, resLocal, line, kind == LoweringTargets.ForKind.BABBLE_ITERABLE);
         }
+
+        c.localGet(resLocal);
+        ctx.popBlock();
+        c.end(); // end for_brk
+        ctx.stackKind = resKind;
+    }
+
+    private void emitCountedRangeFor(HirExpr.For f, PrimitiveKind resKind, int line) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        HirExpr.CountedRangeLoop cr = f.countedRange();
+        PrimitiveKind rk = cr.elemKind();
+        boolean isLong = rk == PrimitiveKind.LONG;
+        WasmValType loopType = isLong ? WasmValType.I64 : WasmValType.I32;
+        PrimitiveKind loopKind = isLong ? PrimitiveKind.LONG : PrimitiveKind.INT;
+
+        int startLocal = ctx.newLocal("$rStart", loopType);
+        int endLocal = ctx.newLocal("$rEnd", loopType);
+        fe.emitAs(cr.start(), rk);
+        c.localSet(startLocal);
+        fe.emitAs(cr.end(), rk);
+        c.localSet(endLocal);
+
+        long constStep = -1L;
+        int stepLocal = -1;
+        if (cr.step() == null) {
+            constStep = 1L;
+        } else if (cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L) {
+            constStep = isLong ? sn.longValue() : sn.intValue();
+        } else {
+            stepLocal = ctx.newLocal("$rStep", loopType);
+            fe.emitAs(cr.step(), loopKind);
+            c.i32Const(line).call(isLong ? ranges.fnValidateStepLong : ranges.fnValidateStepInt)
+                    .localSet(stepLocal);
+        }
+
+        int resLocal = ctx.newLocal("$forRes", ts.valTypeFor(resKind));
+        ts.emitDefaultValue(c, ts.valTypeFor(resKind));
+        c.localSet(resLocal);
+
+        int breakDepth = ctx.pushBlock("for_brk");
+        c.block(ts.valTypeFor(resKind));
+
+        // Empty range guard
+        c.localGet(startLocal).localGet(endLocal);
+        if (isLong) {
+            c.op(cr.inclusive() ? WasmInstr.SimpleOp.I64_LE_S : WasmInstr.SimpleOp.I64_LT_S);
+        } else {
+            c.op(cr.inclusive() ? WasmInstr.SimpleOp.I32_LE_S : WasmInstr.SimpleOp.I32_LT_S);
+        }
+        c.if_();
+        ctx.pushBlock("for_rng_nonempty");
+
+        int lastLocal = ctx.newLocal("$rLast", loopType);
+        if (constStep == 1L) {
+            if (cr.inclusive()) {
+                c.localGet(endLocal).localSet(lastLocal);
+            } else if (isLong) {
+                c.localGet(endLocal).i64Const(1L).op(WasmInstr.SimpleOp.I64_SUB).localSet(lastLocal);
+            } else {
+                c.localGet(endLocal).i32Const(1).op(WasmInstr.SimpleOp.I32_SUB).localSet(lastLocal);
+            }
+        } else {
+            c.localGet(startLocal).localGet(endLocal).i32Const(cr.inclusive() ? 1 : 0);
+            if (stepLocal >= 0) {
+                c.localGet(stepLocal);
+            } else if (isLong) {
+                c.i64Const(constStep);
+            } else {
+                c.i32Const((int) constStep);
+            }
+            c.call(isLong ? ranges.fnLastLong : ranges.fnLastInt).localSet(lastLocal);
+        }
+
+        int idxLocal = ctx.newLocal("$rIdx", loopType);
+        int stopLocal = cr.descending() ? startLocal : lastLocal;
+        c.localGet(cr.descending() ? lastLocal : startLocal).localSet(idxLocal);
+
+        int loopDepth = ctx.pushBlock("for_rng_loop");
+        c.loop();
+
+        int contStepDepth = ctx.pushBlock("for_rng_cont");
+        c.block();
+
+        emitBindForLoopVar(f, () -> {
+            c.localGet(idxLocal);
+            ctx.stackKind = rk;
+        }, line);
+
+        ctx.loops.push(new WasmFuncEmitter.LoopFrame(breakDepth, contStepDepth, resKind));
+        try {
+            emitForBody(f, resLocal, resKind);
+        } finally {
+            ctx.loops.pop();
+        }
+
+        ctx.popBlock();
+        c.end(); // end for_rng_cont
+
+        // Exit if idx == stop (overflow-safe)
+        c.localGet(idxLocal).localGet(stopLocal)
+                .op(isLong ? WasmInstr.SimpleOp.I64_NE : WasmInstr.SimpleOp.I32_NE)
+                .if_();
+        ctx.pushBlock("for_rng_step");
+        c.localGet(idxLocal);
+        if (stepLocal >= 0) {
+            c.localGet(stepLocal);
+        } else if (isLong) {
+            c.i64Const(constStep);
+        } else {
+            c.i32Const((int) constStep);
+        }
+        if (isLong) {
+            c.op(cr.descending() ? WasmInstr.SimpleOp.I64_SUB : WasmInstr.SimpleOp.I64_ADD);
+        } else {
+            c.op(cr.descending() ? WasmInstr.SimpleOp.I32_SUB : WasmInstr.SimpleOp.I32_ADD);
+        }
+        c.localSet(idxLocal);
+        c.br(ctx.relDepth(loopDepth));
+        ctx.popBlock();
+        c.end(); // end step if
+
+        ctx.popBlock();
+        c.end(); // end loop
+
+        ctx.popBlock();
+        c.end(); // end nonempty if
 
         c.localGet(resLocal);
         ctx.popBlock();
@@ -181,13 +388,16 @@ public final class WasmCoreEmitter {
         int loopDepth = ctx.pushBlock("for_it_loop");
         c.loop();
 
-        // Check hasNext() — handle both $CollectionIter and Babble $Object iterator!
+        // Check hasNext() — handle $CollectionIter, $RangeIter, and Babble $Object iterator!
         c.localGet(itLocal).refTest(ts.collectionIterType).if_(WasmValType.I32)
                 .localGet(itLocal).refCast(ts.collectionIterType).call(cols.fnIterHasNext)
+                .else_()
+                .localGet(itLocal).refTest(ts.rangeIterType).if_(WasmValType.I32)
+                .localGet(itLocal).refCast(ts.rangeIterType).call(ranges.fnRangeIterHasNext)
                 .else_();
         emitCallZeroArgMember(itLocal, "hasNext", line);
         c.call(rt.fnTruth);
-        c.end();
+        c.end().end();
 
         c.if_();
         ctx.pushBlock("for_it_if");
@@ -196,9 +406,12 @@ public final class WasmCoreEmitter {
         emitBindForLoopVar(f, () -> {
             c.localGet(itLocal).refTest(ts.collectionIterType).if_(ts.anyRef())
                     .localGet(itLocal).refCast(ts.collectionIterType).i32Const(line).call(cols.fnIterNext)
+                    .else_()
+                    .localGet(itLocal).refTest(ts.rangeIterType).if_(ts.anyRef())
+                    .localGet(itLocal).refCast(ts.rangeIterType).i32Const(line).call(ranges.fnRangeIterNext)
                     .else_();
             emitCallZeroArgMember(itLocal, "next", line);
-            c.end();
+            c.end().end();
             ctx.stackKind = PrimitiveKind.NONE;
         }, line);
 
@@ -612,6 +825,12 @@ public final class WasmCoreEmitter {
             case "java.util.Map$Entry", "java.util.AbstractMap$SimpleImmutableEntry" -> "entry";
             case "java.util.Iterator" -> "iterator";
             case "java.lang.Appendable", "java.io.Writer", "java.io.PrintWriter" -> "appendable";
+            case "org.babblelang.runtime.Range",
+                 "org.babblelang.runtime.IntRange",
+                 "org.babblelang.runtime.LongRange",
+                 "org.babblelang.runtime.CharRange",
+                 "org.babblelang.runtime.DoubleRange",
+                 "org.babblelang.runtime.ComparableRange" -> "range";
             default -> null;
         };
     }
@@ -628,8 +847,98 @@ public final class WasmCoreEmitter {
             case "entry" -> emitEntryMethod(name, recv, args, line);
             case "iterator" -> emitIteratorMethod(name, recv, line);
             case "appendable" -> emitAppendableMethod(name, recv, args, line);
+            case "range" -> emitRangeMethod(name, recv, args, line);
             default -> false;
         };
+    }
+
+    private boolean emitRangeMethod(String name, HirExpr recv, List<HirExpr> args, int line) {
+        WasmFuncEmitter.EmitCtx ctx = fe.ctx();
+        WasmCodeBuilder c = ctx.code;
+        fe.emitBoxed(recv);
+        switch (name) {
+            case "start" -> { c.refCast(ts.rangeBaseType).call(ranges.fnRangeStart); ctx.stackKind = PrimitiveKind.NONE; return true; }
+            case "end" -> { c.refCast(ts.rangeBaseType).call(ranges.fnRangeEnd); ctx.stackKind = PrimitiveKind.NONE; return true; }
+            case "startInt" -> { c.refCast(ts.intRangeType).structGet(ts.intRangeType, 2); ctx.stackKind = PrimitiveKind.INT; return true; }
+            case "endInt" -> { c.refCast(ts.intRangeType).structGet(ts.intRangeType, 3); ctx.stackKind = PrimitiveKind.INT; return true; }
+            case "startChar" -> { c.refCast(ts.intRangeType).structGet(ts.intRangeType, 2); ctx.stackKind = PrimitiveKind.CHAR; return true; }
+            case "endChar" -> { c.refCast(ts.intRangeType).structGet(ts.intRangeType, 3); ctx.stackKind = PrimitiveKind.CHAR; return true; }
+            case "startLong" -> { c.refCast(ts.longRangeType).structGet(ts.longRangeType, 2); ctx.stackKind = PrimitiveKind.LONG; return true; }
+            case "endLong" -> { c.refCast(ts.longRangeType).structGet(ts.longRangeType, 3); ctx.stackKind = PrimitiveKind.LONG; return true; }
+            case "startDouble" -> { c.refCast(ts.doubleRangeType).structGet(ts.doubleRangeType, 2); ctx.stackKind = PrimitiveKind.DOUBLE; return true; }
+            case "endDouble" -> { c.refCast(ts.doubleRangeType).structGet(ts.doubleRangeType, 3); ctx.stackKind = PrimitiveKind.DOUBLE; return true; }
+            case "inclusive" -> { c.refCast(ts.rangeBaseType).structGet(ts.rangeBaseType, 1); ctx.stackKind = PrimitiveKind.BOOL; return true; }
+            case "isEmpty" -> { c.refCast(ts.rangeBaseType).call(ranges.fnRangeIsEmpty); ctx.stackKind = PrimitiveKind.BOOL; return true; }
+            case "containsInt" -> {
+                c.refCast(ts.intRangeType);
+                fe.emitAs(args.get(0), PrimitiveKind.INT);
+                c.call(ranges.fnRangeContainsInt);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "containsChar" -> {
+                c.refCast(ts.intRangeType);
+                fe.emitAs(args.get(0), PrimitiveKind.CHAR);
+                c.call(ranges.fnRangeContainsInt);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "containsLong" -> {
+                c.refCast(ts.longRangeType);
+                fe.emitAs(args.get(0), PrimitiveKind.LONG);
+                c.call(ranges.fnRangeContainsLong);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "containsDouble" -> {
+                c.refCast(ts.doubleRangeType);
+                fe.emitAs(args.get(0), PrimitiveKind.DOUBLE);
+                c.call(ranges.fnRangeContainsDouble);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "contains" -> {
+                c.refCast(ts.rangeBaseType);
+                fe.emitBoxed(args.get(0));
+                c.call(ranges.fnRangeContainsBoxed);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "step" -> {
+                c.refCast(ts.rangeBaseType);
+                fe.emitBoxed(args.get(0));
+                c.i32Const(line).call(ranges.fnRangeStep);
+                ctx.stackKind = PrimitiveKind.NONE;
+                return true;
+            }
+            case "reversed" -> {
+                c.refCast(ts.rangeBaseType).i32Const(line).call(ranges.fnRangeReversed);
+                ctx.stackKind = PrimitiveKind.NONE;
+                return true;
+            }
+            case "iterator" -> {
+                c.refCast(ts.rangeBaseType).i32Const(line).call(ranges.fnRangeIter);
+                ctx.stackKind = PrimitiveKind.NONE;
+                return true;
+            }
+            case "equals" -> {
+                fe.emitBoxed(args.get(0));
+                c.call(rt.fnEquals);
+                ctx.stackKind = PrimitiveKind.BOOL;
+                return true;
+            }
+            case "hashCode" -> {
+                c.call(rt.fnHashCode);
+                ctx.stackKind = PrimitiveKind.INT;
+                return true;
+            }
+            case "toString" -> {
+                c.call(rt.fnFormat);
+                ctx.stackKind = PrimitiveKind.NONE;
+                return true;
+            }
+            default -> { c.drop(); return false; }
+        }
     }
 
     private boolean emitExceptionMethod(String name, HirExpr recv, List<HirExpr> args) {
@@ -990,9 +1299,12 @@ public final class WasmCoreEmitter {
                         .else_()
                         .localGet(col).refTest(ts.setType).if_(ts.anyRef())
                         .localGet(col).refCast(ts.setType).call(cols.fnSetIter)
+                        .else_()
+                        .localGet(col).refTest(ts.rangeBaseType).if_(ts.anyRef())
+                        .localGet(col).refCast(ts.rangeBaseType).i32Const(line).call(ranges.fnRangeIter)
                         .else_();
                 emitCallZeroArgMember(col, "iterator", line);
-                c.end().end();
+                c.end().end().end();
                 ctx.stackKind = PrimitiveKind.NONE;
                 return true;
             }
@@ -1058,18 +1370,24 @@ public final class WasmCoreEmitter {
         if ("hasNext".equals(name)) {
             c.localGet(it).refTest(ts.collectionIterType).if_(WasmValType.I32)
                     .localGet(it).refCast(ts.collectionIterType).call(cols.fnIterHasNext)
+                    .else_()
+                    .localGet(it).refTest(ts.rangeIterType).if_(WasmValType.I32)
+                    .localGet(it).refCast(ts.rangeIterType).call(ranges.fnRangeIterHasNext)
                     .else_();
             emitCallZeroArgMember(it, "hasNext", line);
-            c.call(rt.fnTruth).end();
+            c.call(rt.fnTruth).end().end();
             ctx.stackKind = PrimitiveKind.BOOL;
             return true;
         }
         if ("next".equals(name)) {
             c.localGet(it).refTest(ts.collectionIterType).if_(ts.anyRef())
                     .localGet(it).refCast(ts.collectionIterType).i32Const(line).call(cols.fnIterNext)
+                    .else_()
+                    .localGet(it).refTest(ts.rangeIterType).if_(ts.anyRef())
+                    .localGet(it).refCast(ts.rangeIterType).i32Const(line).call(ranges.fnRangeIterNext)
                     .else_();
             emitCallZeroArgMember(it, "next", line);
-            c.end();
+            c.end().end();
             ctx.stackKind = PrimitiveKind.NONE;
             return true;
         }

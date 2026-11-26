@@ -997,6 +997,8 @@ public final class HirBuilder {
                 case BabbleLexer.MINUS -> HirExpr.BinaryOp.SUB;
                 case BabbleLexer.MUL -> HirExpr.BinaryOp.MUL;
                 case BabbleLexer.DIV -> HirExpr.BinaryOp.DIV;
+                case BabbleLexer.FLOOR_DIV -> HirExpr.BinaryOp.FLOOR_DIV;
+                case BabbleLexer.MOD -> HirExpr.BinaryOp.MOD;
                 case BabbleLexer.LT -> HirExpr.BinaryOp.LT;
                 case BabbleLexer.LTE -> HirExpr.BinaryOp.LTE;
                 case BabbleLexer.EQ -> HirExpr.BinaryOp.EQ;
@@ -1007,6 +1009,14 @@ public final class HirBuilder {
             };
             return new HirExpr.Binary(op, lowerExpr(bin.left), lowerExpr(bin.right),
                     bin.left.getText(), bin.right.getText(), metaOf(bin));
+        }
+        if (ctx instanceof BabbleParser.RangeExpressionContext range) {
+            boolean inclusive = range.op.getType() == BabbleLexer.RANGE;
+            LoweringTargets.RangeTarget rt = scopes.lowering().rangeTarget(range);
+            PrimitiveKind elemKind = rt != null ? rt.elemKind() : PrimitiveKind.NONE;
+            boolean stringElem = rt != null && rt.stringElement();
+            return new HirExpr.Range(lowerExpr(range.left), lowerExpr(range.right),
+                    inclusive, elemKind, stringElem, metaOf(range));
         }
         if (ctx instanceof BabbleParser.BooleanOpContext boolOp) {
             HirExpr.LogicOp op = boolOp.op.getType() == BabbleLexer.OR ? HirExpr.LogicOp.OR : HirExpr.LogicOp.AND;
@@ -1074,9 +1084,32 @@ public final class HirBuilder {
                 int last = body.size() - 1;
                 body.set(last, wrapJavaSam(body.get(last), f.forBlock));
             }
+            LoweringTargets.ForLoopTarget target = scopes.lowering().forLoopTarget(f);
+            org.babblelang.analysis.LoweringMetadata.CountedRangeSource crs = scopes.lowering().countedRangeSource(f);
+            if (target != null && target.kind() == LoweringTargets.ForKind.COUNTED_RANGE && crs != null) {
+                HirExpr.CountedRangeLoop cr = new HirExpr.CountedRangeLoop(
+                        lowerExpr(crs.start()),
+                        lowerExpr(crs.end()),
+                        crs.step() != null ? lowerExpr(crs.step()) : null,
+                        crs.inclusive(),
+                        crs.descending(),
+                        crs.elemKind()
+                );
+                return new HirExpr.For(
+                        null,
+                        target,
+                        hirVar(resolution.variable(f)),
+                        hirVars(resolution.declared(f.forBlock)),
+                        body,
+                        scopes.lowering().numericWideningRank(f.forBlock),
+                        scopes.lowering().forElemSamTarget(f),
+                        cr,
+                        metaOf(f, scopes.effects().forEffects(f))
+                );
+            }
             return new HirExpr.For(
                     lowerExpr(f.iterable),
-                    scopes.lowering().forLoopTarget(f),
+                    target,
                     hirVar(resolution.variable(f)),
                     hirVars(resolution.declared(f.forBlock)),
                     body,

@@ -717,11 +717,19 @@ public final class ScalarReplacePass implements HirPass {
             return new HirExpr.Block(ns, b.opensNamespaceScope(), b.declaredNames(), newDecls, b.innerWideningRank(), b.meta());
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr iter = rewriteUnboxedExpr(f.iterable(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
+            HirExpr iter = f.iterable() != null ? rewriteUnboxedExpr(f.iterable(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId) : null;
+            HirExpr.CountedRangeLoop cr = f.countedRange();
+            if (cr != null) {
+                cr = new HirExpr.CountedRangeLoop(
+                        rewriteUnboxedExpr(cr.start(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId),
+                        rewriteUnboxedExpr(cr.end(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId),
+                        cr.step() != null ? rewriteUnboxedExpr(cr.step(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId) : null,
+                        cr.inclusive(), cr.descending(), cr.elemKind());
+            }
             HirVar loopVar = f.loopVar() != null ? remapVarList(List.of(f.loopVar()), newOwnerId, varRemap, nextVarId).get(0) : null;
             List<HirVar> decls = remapVarList(f.bodyDeclaredVars(), newOwnerId, varRemap, nextVarId);
             List<HirExpr> nb = rewriteUnboxedBody(f.body(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
-            return new HirExpr.For(iter, f.target(), loopVar, decls, nb, f.bodyWideningRank(), f.elemSamTarget(), f.meta());
+            return new HirExpr.For(iter, f.target(), loopVar, decls, nb, f.bodyWideningRank(), f.elemSamTarget(), cr, f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
             List<HirVar> td = remapVarList(t.tryDeclaredVars(), newOwnerId, varRemap, nextVarId);
@@ -1069,7 +1077,15 @@ public final class ScalarReplacePass implements HirPass {
                 verifyExpr(w.body(), false, candidates, localLayouts, module, bad);
             }
             case HirExpr.For f -> {
-                verifyExpr(f.iterable(), true, candidates, localLayouts, module, bad);
+                if (f.countedRange() != null) {
+                    verifyExpr(f.countedRange().start(), true, candidates, localLayouts, module, bad);
+                    verifyExpr(f.countedRange().end(), true, candidates, localLayouts, module, bad);
+                    if (f.countedRange().step() != null) {
+                        verifyExpr(f.countedRange().step(), true, candidates, localLayouts, module, bad);
+                    }
+                } else {
+                    verifyExpr(f.iterable(), true, candidates, localLayouts, module, bad);
+                }
                 verifyBodyStatements(f.body(), false, candidates, localLayouts, module, bad);
             }
             case HirExpr.Try t -> {
@@ -1214,12 +1230,20 @@ public final class ScalarReplacePass implements HirPass {
             return new HirExpr.Block(newStmts, b.opensNamespaceScope(), b.declaredNames(), newDecls, b.innerWideningRank(), b.meta());
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr iter = rewriteScalarizedExpr(f.iterable(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId);
+            HirExpr iter = f.iterable() != null ? rewriteScalarizedExpr(f.iterable(), ownerFnId, candidates, scalarVars,
+                    localLayouts, module, initBindings, nextVarId) : null;
+            HirExpr.CountedRangeLoop cr = f.countedRange();
+            if (cr != null) {
+                cr = new HirExpr.CountedRangeLoop(
+                        rewriteScalarizedExpr(cr.start(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId),
+                        rewriteScalarizedExpr(cr.end(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId),
+                        cr.step() != null ? rewriteScalarizedExpr(cr.step(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId) : null,
+                        cr.inclusive(), cr.descending(), cr.elemKind());
+            }
             List<HirVar> newDecls = expandDeclaredVars(f.bodyDeclaredVars(), scalarVars);
             List<HirExpr> newBody = rewriteScalarizedStmts(f.body(), ownerFnId, candidates, scalarVars,
                     localLayouts, module, initBindings, nextVarId);
-            return new HirExpr.For(iter, f.target(), f.loopVar(), newDecls, newBody, f.bodyWideningRank(), f.elemSamTarget(), f.meta());
+            return new HirExpr.For(iter, f.target(), f.loopVar(), newDecls, newBody, f.bodyWideningRank(), f.elemSamTarget(), cr, f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
             List<HirVar> newTryDecls = expandDeclaredVars(t.tryDeclaredVars(), scalarVars);

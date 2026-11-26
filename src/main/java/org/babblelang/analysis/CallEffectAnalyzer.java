@@ -52,6 +52,8 @@ final class CallEffectAnalyzer {
         Type arrayRecvType = null;
         Type.Array arrayRecv = null;
         String arrayMethodName = null;
+        Type rangeElemType = null;
+        String rangeMethodName = null;
         if (unwrappedCallee instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
             receiverExpr = sel.expression();
             Type recvType = w.effectiveType(receiverExpr);
@@ -63,6 +65,9 @@ final class CallEffectAnalyzer {
                     arrayRecv = arr;
                     arrayMethodName = mName;
                 }
+            } else if (Type.rangeElement(unwrappedRecv) != null) {
+                rangeElemType = Type.rangeElement(unwrappedRecv);
+                rangeMethodName = ScopeAnalysis.selectorName(sel);
             }
             if (!(recvType instanceof Type.JavaPackage || recvType instanceof Type.Module)) {
                 boolean preserveSizeDet = "size".equals(arrayMethodName) && isNonReassignedBareBinding(receiverExpr);
@@ -97,6 +102,9 @@ final class CallEffectAnalyzer {
         if (arrayMethodName != null) {
             return evalArrayMethodCall(call, receiverExpr, recvOrig, arrayRecvType, arrayRecv,
                     arrayMethodName, args, argExprs, argOrigins, resType);
+        }
+        if (rangeMethodName != null) {
+            return evalRangeMethodCall(call, rangeElemType, rangeMethodName, argExprs, resType);
         }
         Type calleeType = resolveCalleeType(calleeExpr);
 
@@ -572,6 +580,78 @@ final class CallEffectAnalyzer {
             }
             default -> Reachability.Origin.IMMUTABLE;
         };
+    }
+
+    private Reachability.Origin evalRangeMethodCall(ParserRuleContext call,
+                                                    Type elemType,
+                                                    String methodName,
+                                                    BabbleParser.ExpressionContext[] argExprs,
+                                                    Type resType) {
+        if (resType == Type.ERROR) {
+            return Reachability.Origin.IMMUTABLE;
+        }
+        Class<?> ownerClass = rangeRuntimeClass(elemType);
+        Class<?>[] paramTypes = switch (methodName) {
+            case "contains" -> new Class<?>[]{Object.class};
+            case "step" -> new Class<?>[]{elemType == Type.LONG ? long.class : int.class};
+            case "equals" -> new Class<?>[]{Object.class};
+            default -> new Class<?>[0];
+        };
+        java.lang.reflect.Method m = null;
+        try {
+            m = ownerClass.getMethod(methodName, paramTypes);
+        } catch (NoSuchMethodException ignored) {
+            // Fall through to name-based lookup below.
+        }
+        if (m == null) {
+            m = JavaEffectResolver.lookupPublicMethod(ownerClass, methodName);
+        }
+        EffectChecker.JavaCallProfile prof = ec.javaResolver.resolveJavaMethodProfile(ownerClass, methodName, m);
+        EffectSet eff = prof.effects();
+        if ("step".equals(methodName) && argExprs.length == 1
+                && EffectBodyWalker.isPositiveIntegerConstant(argExprs[0])
+                && eff.isPure() && eff.isHermetic() && eff.isDeterministic()) {
+            eff = EffectSet.ofInferred(
+                    java.util.EnumSet.of(org.babblelang.effects.Effect.PURE,
+                            org.babblelang.effects.Effect.HERMETIC,
+                            org.babblelang.effects.Effect.DETERMINISTIC,
+                            org.babblelang.effects.Effect.NOTHROW),
+                    false, false, false, true);
+        } else if (elemType == Type.STRING
+                && ("contains".equals(methodName) || "isEmpty".equals(methodName)
+                        || "equals".equals(methodName) || "hashCode".equals(methodName) || "toString".equals(methodName))
+                && eff.isPure() && eff.isHermetic() && eff.isDeterministic()) {
+            // String.compareTo / equals / hashCode / toString are pure nothrow in java/lang/curated.ba.
+            EffectSet cmpEff = ec.javaResolver.comparisonProfile(Type.STRING, Type.STRING);
+            if (cmpEff.isNothrow()) {
+                eff = EffectSet.ofInferred(
+                        java.util.EnumSet.of(org.babblelang.effects.Effect.PURE,
+                                org.babblelang.effects.Effect.HERMETIC,
+                                org.babblelang.effects.Effect.DETERMINISTIC,
+                                org.babblelang.effects.Effect.NOTHROW),
+                        false, false, false, true);
+            }
+        }
+        w.applyEffects(eff);
+        return ec.javaResolver.isDeeplyImmutable(resType)
+                ? Reachability.Origin.IMMUTABLE
+                : Reachability.Origin.ofUnique(call, null, false);
+    }
+
+    private static Class<?> rangeRuntimeClass(Type elemType) {
+        if (elemType == Type.BYTE || elemType == Type.SHORT || elemType == Type.INT) {
+            return org.babblelang.runtime.IntRange.class;
+        }
+        if (elemType == Type.LONG) {
+            return org.babblelang.runtime.LongRange.class;
+        }
+        if (elemType == Type.CHAR) {
+            return org.babblelang.runtime.CharRange.class;
+        }
+        if (elemType == Type.FLOAT || elemType == Type.DOUBLE) {
+            return org.babblelang.runtime.DoubleRange.class;
+        }
+        return org.babblelang.runtime.Range.class;
     }
 
     private Type resolveCalleeType(BabbleParser.ExpressionContext calleeExpr) {

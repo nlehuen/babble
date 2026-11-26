@@ -42,6 +42,25 @@ import java.util.Set;
  */
 public final class MirLowerer {
     private static final String THROWN_EXCEPTION_JVM = "org/babblelang/runtime/ThrownException";
+    private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_INT_STEP =
+            rangeTarget("validateStep", int.class);
+    private static final LoweringTargets.JavaCallTarget RANGE_VALIDATE_LONG_STEP =
+            rangeTarget("validateStep", long.class);
+    private static final LoweringTargets.JavaCallTarget RANGE_LAST_INT =
+            rangeTarget("lastIntElement", int.class, int.class, boolean.class, int.class);
+    private static final LoweringTargets.JavaCallTarget RANGE_LAST_LONG =
+            rangeTarget("lastLongElement", long.class, long.class, boolean.class, long.class);
+    private static final LoweringTargets.JavaCallTarget RANGE_LAST_CHAR =
+            rangeTarget("lastCharElement", char.class, char.class, boolean.class, int.class);
+
+    private static LoweringTargets.JavaCallTarget rangeTarget(String name, Class<?>... params) {
+        try {
+            return new LoweringTargets.JavaCallTarget(
+                    org.babblelang.runtime.Range.class.getMethod(name, params), true, false);
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException("Missing Range helper : " + name, e);
+        }
+    }
 
     private MirLowerer() {
     }
@@ -396,7 +415,13 @@ public final class MirLowerer {
                     scanExpr(w.body(), visibleVars, tryOuterVars);
                 }
                 case HirExpr.For f -> {
-                    scanExpr(f.iterable(), visibleVars, tryOuterVars);
+                    if (f.countedRange() != null) {
+                        scanExpr(f.countedRange().start(), visibleVars, tryOuterVars);
+                        scanExpr(f.countedRange().end(), visibleVars, tryOuterVars);
+                        scanExpr(f.countedRange().step(), visibleVars, tryOuterVars);
+                    } else {
+                        scanExpr(f.iterable(), visibleVars, tryOuterVars);
+                    }
                     if (f.loopVar() != null) {
                         registerVar(f.loopVar());
                         if (mustAlwaysPin(f.loopVar())) pin(f.loopVar());
@@ -439,6 +464,10 @@ public final class MirLowerer {
                 case HirExpr.Binary b -> {
                     scanExpr(b.left(), visibleVars, tryOuterVars);
                     scanExpr(b.right(), visibleVars, tryOuterVars);
+                }
+                case HirExpr.Range r -> {
+                    scanExpr(r.start(), visibleVars, tryOuterVars);
+                    scanExpr(r.end(), visibleVars, tryOuterVars);
                 }
                 case HirExpr.Logic l -> {
                     scanExpr(l.left(), visibleVars, tryOuterVars);
@@ -899,6 +928,7 @@ public final class MirLowerer {
                 case HirExpr.ArrayOp op -> lowerArrayOp(op);
                 case HirExpr.Unary u -> lowerUnary(u);
                 case HirExpr.Binary b -> lowerBinary(b);
+                case HirExpr.Range r -> lowerRange(r);
                 case HirExpr.Logic l -> lowerLogic(l);
                 case HirExpr.Is i -> lowerIs(i);
                 case HirExpr.As a -> lowerAsExpr(a);
@@ -970,7 +1000,9 @@ public final class MirLowerer {
                 MirVal rhs = lowerAs(a.value(), vk);
                 if (cur.isTerminated()) return rhs;
                 MirVal res = newVal(vk, null);
-                emit(new MirInst.Binary(res, bop, curVal, rhs, a.targetText(), a.valueText(), false, ln, MirEffect.PURE_NOTHROW));
+                MirEffect bopFx = (bop == HirExpr.BinaryOp.FLOOR_DIV && !isNonZeroIntegerConst(a.value()))
+                        ? MirEffect.PURE_MAY_THROW : MirEffect.PURE_NOTHROW;
+                emit(new MirInst.Binary(res, bop, curVal, rhs, a.targetText(), a.valueText(), false, ln, bopFx));
                 writeVar(v, res, ln);
                 return res;
             }
@@ -1095,7 +1127,9 @@ public final class MirLowerer {
                 MirVal rhs = lowerAs(a.value(), mk);
                 if (cur.isTerminated()) return rhs;
                 nextVal = newVal(mk, null);
-                emit(new MirInst.Binary(nextVal, bop, oldVal, rhs, a.targetText(), a.valueText(), false, ln, MirEffect.PURE_NOTHROW));
+                MirEffect bopFx = (bop == HirExpr.BinaryOp.FLOOR_DIV && !isNonZeroIntegerConst(a.value()))
+                        ? MirEffect.PURE_MAY_THROW : MirEffect.PURE_NOTHROW;
+                emit(new MirInst.Binary(nextVal, bop, oldVal, rhs, a.targetText(), a.valueText(), false, ln, bopFx));
             } else {
                 MirVal oldBox = convertVal(oldVal, PrimitiveKind.NONE, ln);
                 MirVal rhsBox = lowerBoxed(a.value());
@@ -1165,7 +1199,9 @@ public final class MirLowerer {
                 MirVal rhs = lowerAs(a.value(), fk);
                 if (cur.isTerminated()) return rhs;
                 nextVal = newVal(fk, null);
-                emit(new MirInst.Binary(nextVal, bop, oldVal, rhs, a.targetText(), a.valueText(), false, ln, MirEffect.PURE_NOTHROW));
+                MirEffect bopFx = (bop == HirExpr.BinaryOp.FLOOR_DIV && !isNonZeroIntegerConst(a.value()))
+                        ? MirEffect.PURE_MAY_THROW : MirEffect.PURE_NOTHROW;
+                emit(new MirInst.Binary(nextVal, bop, oldVal, rhs, a.targetText(), a.valueText(), false, ln, bopFx));
             } else {
                 MirVal oldBox = convertVal(oldVal, PrimitiveKind.NONE, ln);
                 MirVal rhsBox = lowerBoxed(a.value());
@@ -1305,6 +1341,17 @@ public final class MirLowerer {
                     emit(new MirInst.Binary(res, b.op(), lhs, rhs, b.leftText(), b.rightText(), false, ln, MirEffect.PURE_NOTHROW));
                     return res;
                 }
+                if ((resultKind == PrimitiveKind.INT || resultKind == PrimitiveKind.LONG)
+                        && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
+                    MirVal lhs = lowerAs(b.left(), resultKind);
+                    if (cur.isTerminated()) return lhs;
+                    MirVal rhs = lowerAs(b.right(), resultKind);
+                    if (cur.isTerminated()) return rhs;
+                    MirVal res = newVal(resultKind, null);
+                    MirEffect fx = isNonZeroIntegerConst(b.right()) ? MirEffect.PURE_NOTHROW : MirEffect.PURE_MAY_THROW;
+                    emit(new MirInst.Binary(res, b.op(), lhs, rhs, b.leftText(), b.rightText(), false, ln, fx));
+                    return res;
+                }
                 if ((resultKind == PrimitiveKind.FLOAT || resultKind == PrimitiveKind.DOUBLE) && b.op().isArithmetic()) {
                     MirVal lhs = lowerAs(b.left(), resultKind);
                     if (cur.isTerminated()) return lhs;
@@ -1326,6 +1373,19 @@ public final class MirLowerer {
             MirEffect fx = (stringConcat || pureStringEq) ? MirEffect.PURE_NOTHROW : dynamicBinaryEffect(b.op(), b.meta());
             MirVal res = newVal(PrimitiveKind.NONE, null);
             emit(new MirInst.Binary(res, b.op(), lhs, rhs, b.leftText(), b.rightText(), stringConcat, ln, fx));
+            return res;
+        }
+
+        private MirVal lowerRange(HirExpr.Range r) {
+            int ln = r.meta().line();
+            PrimitiveKind ek = r.elemKind();
+            MirVal s = ek.isPrimitive() ? lowerAs(r.start(), ek) : lowerBoxed(r.start());
+            if (cur.isTerminated()) return s;
+            MirVal e = ek.isPrimitive() ? lowerAs(r.end(), ek) : lowerBoxed(r.end());
+            if (cur.isTerminated()) return e;
+            MirVal res = newVal(PrimitiveKind.NONE, null);
+            MirEffect fx = ek.isPrimitive() ? MirEffect.PURE_NOTHROW : MirEffect.PURE_MAY_THROW;
+            emit(new MirInst.RangeNew(res, s, e, r.inclusive(), ek, ln, fx));
             return res;
         }
 
@@ -1601,6 +1661,9 @@ public final class MirLowerer {
             int ln = f.meta().line();
             LoweringTargets.ForLoopTarget target = f.target();
             LoweringTargets.ForKind kind = target != null ? target.kind() : LoweringTargets.ForKind.DYNAMIC_UNION;
+            if (kind == LoweringTargets.ForKind.COUNTED_RANGE && f.countedRange() != null) {
+                return lowerCountedRangeFor(f, ln);
+            }
             boolean isArray = kind == LoweringTargets.ForKind.ARRAY && target.arrayClass() != null;
 
             MirVal iterableVal = lowerBoxed(f.iterable());
@@ -1689,6 +1752,125 @@ public final class MirLowerer {
                 }
                 sealBlock(bbHead);
             }
+
+            sealBlock(bbExit);
+            cur = bbExit;
+            if (bbExit.incomingEdges.isEmpty()) {
+                terminateFixed(new MirTerminator.Unreachable(ln));
+            }
+            return exitRes;
+        }
+
+        private MirVal lowerCountedRangeFor(HirExpr.For f, int ln) {
+            HirExpr.CountedRangeLoop cr = f.countedRange();
+            PrimitiveKind rk = cr.elemKind();
+            boolean isLong = rk == PrimitiveKind.LONG;
+            PrimitiveKind loopKind = isLong ? PrimitiveKind.LONG : PrimitiveKind.INT;
+
+            MirVal startRaw = lowerAs(cr.start(), rk);
+            if (cur.isTerminated()) return startRaw;
+            MirVal startVal = convertVal(startRaw, loopKind, ln);
+            MirVal endRaw = lowerAs(cr.end(), rk);
+            if (cur.isTerminated()) return endRaw;
+            MirVal endVal = convertVal(endRaw, loopKind, ln);
+
+            boolean hasConstStep = false;
+            long constStep = 1L;
+            MirVal stepVal = null;
+            if (cr.step() == null) {
+                hasConstStep = true;
+                constStep = 1L;
+            } else if (cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L) {
+                hasConstStep = true;
+                constStep = isLong ? sn.longValue() : sn.intValue();
+            } else {
+                MirVal rawStep = lowerAs(cr.step(), loopKind);
+                if (cur.isTerminated()) return rawStep;
+                stepVal = newVal(loopKind, "$step");
+                emit(new MirInst.CallJava(stepVal, null, null, ln, true,
+                        isLong ? RANGE_VALIDATE_LONG_STEP : RANGE_VALIDATE_INT_STEP,
+                        List.of(rawStep), false, false, ln, MirEffect.PURE_MAY_THROW));
+            }
+
+            MirVal initRes = emitConst(null, PrimitiveKind.NONE, ln);
+            MirVal exitRes = newVal(PrimitiveKind.NONE, "$forOut");
+            BlockBuilder bbExit = newBlock(List.of(exitRes), false, false);
+
+            MirVal isNonEmpty = newVal(PrimitiveKind.BOOL, null);
+            HirExpr.BinaryOp cmpOp = cr.inclusive() ? HirExpr.BinaryOp.LTE : HirExpr.BinaryOp.LT;
+            emit(new MirInst.Binary(isNonEmpty, cmpOp, startVal, endVal, null, null, false, ln, MirEffect.PURE_NOTHROW));
+            BlockBuilder bbNonEmpty = newBlock(List.of(), false, false);
+            terminateBrIf(isNonEmpty, bbNonEmpty, List.of(), bbExit, List.of(initRes), ln);
+            sealBlock(bbNonEmpty);
+
+            cur = bbNonEmpty;
+            MirVal lastVal;
+            if (hasConstStep && constStep == 1L) {
+                if (cr.inclusive()) {
+                    lastVal = endVal;
+                } else {
+                    MirVal one = emitConst(isLong ? 1L : 1, loopKind, ln);
+                    lastVal = newVal(loopKind, "$last");
+                    emit(new MirInst.Binary(lastVal, HirExpr.BinaryOp.SUB, endVal, one, null, null, false, ln, MirEffect.PURE_NOTHROW));
+                }
+            } else {
+                MirVal stepArg = stepVal != null ? stepVal : emitConst(isLong ? constStep : (int) constStep, loopKind, ln);
+                MirVal inclVal = emitConst(cr.inclusive(), PrimitiveKind.BOOL, ln);
+                if (isLong) {
+                    lastVal = newVal(PrimitiveKind.LONG, "$last");
+                    emit(new MirInst.CallJava(lastVal, null, null, ln, true, RANGE_LAST_LONG,
+                            List.of(startVal, endVal, inclVal, stepArg), false, false, ln, MirEffect.PURE_NOTHROW));
+                } else if (rk == PrimitiveKind.CHAR) {
+                    MirVal sChar = convertVal(startVal, PrimitiveKind.CHAR, ln);
+                    MirVal eChar = convertVal(endVal, PrimitiveKind.CHAR, ln);
+                    MirVal lastChar = newVal(PrimitiveKind.CHAR, "$last");
+                    emit(new MirInst.CallJava(lastChar, null, null, ln, true, RANGE_LAST_CHAR,
+                            List.of(sChar, eChar, inclVal, stepArg), false, false, ln, MirEffect.PURE_NOTHROW));
+                    lastVal = convertVal(lastChar, PrimitiveKind.INT, ln);
+                } else {
+                    lastVal = newVal(PrimitiveKind.INT, "$last");
+                    emit(new MirInst.CallJava(lastVal, null, null, ln, true, RANGE_LAST_INT,
+                            List.of(startVal, endVal, inclVal, stepArg), false, false, ln, MirEffect.PURE_NOTHROW));
+                }
+            }
+
+            MirVal firstIdx = cr.descending() ? lastVal : startVal;
+            MirVal stopVal = cr.descending() ? startVal : lastVal;
+
+            MirVal headRes = newVal(PrimitiveKind.NONE, "$forRes");
+            MirVal headIdx = newVal(loopKind, "$idx");
+            BlockBuilder bbHead = newBlock(List.of(headRes, headIdx), false, false);
+            MirVal stepRes = newVal(PrimitiveKind.NONE, "$stepRes");
+            BlockBuilder bbStep = newBlock(List.of(stepRes), false, false);
+            BlockBuilder bbNext = newBlock(List.of(), false, false);
+
+            terminateBr(bbHead, List.of(initRes, firstIdx), ln);
+
+            cur = bbHead;
+            MirVal rawElem = rk == loopKind ? headIdx : convertVal(headIdx, rk, ln);
+            MirVal bodyRes = lowerForBody(f, rawElem, bbExit, bbStep, headRes, ln);
+            if (!cur.isTerminated()) {
+                terminateBr(bbStep, List.of(bodyRes), ln);
+            }
+            sealBlock(bbStep);
+
+            cur = bbStep;
+            if (bbStep.incomingEdges.isEmpty()) {
+                terminateFixed(new MirTerminator.Unreachable(ln));
+            } else {
+                MirVal done = newVal(PrimitiveKind.BOOL, null);
+                emit(new MirInst.Binary(done, HirExpr.BinaryOp.EQ, headIdx, stopVal, null, null, false, ln, MirEffect.PURE_NOTHROW));
+                terminateBrIf(done, bbExit, List.of(stepRes), bbNext, List.of(), ln);
+                sealBlock(bbNext);
+
+                cur = bbNext;
+                MirVal delta = stepVal != null ? stepVal : emitConst(isLong ? constStep : (int) constStep, loopKind, ln);
+                MirVal nextIdx = newVal(loopKind, null);
+                emit(new MirInst.Binary(nextIdx, cr.descending() ? HirExpr.BinaryOp.SUB : HirExpr.BinaryOp.ADD,
+                        headIdx, delta, null, null, false, ln, MirEffect.PURE_NOTHROW));
+                terminateBr(bbHead, List.of(stepRes, nextIdx), ln);
+            }
+            sealBlock(bbHead);
 
             sealBlock(bbExit);
             cur = bbExit;
@@ -2653,10 +2835,26 @@ public final class MirLowerer {
 
         private static boolean canLowerPrimitiveCompound(PrimitiveKind targetKind, PrimitiveKind rhsKind, String op) {
             if (targetKind == PrimitiveKind.INT) {
-                return rhsKind == PrimitiveKind.INT && !"/".equals(op);
+                return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.BYTE || rhsKind == PrimitiveKind.SHORT)
+                        && !"/".equals(op);
+            }
+            if (targetKind == PrimitiveKind.LONG && "//".equals(op)) {
+                return rhsKind == PrimitiveKind.BYTE || rhsKind == PrimitiveKind.SHORT
+                        || rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.LONG;
             }
             if (targetKind == PrimitiveKind.DOUBLE) {
-                return rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE;
+                return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE) && !"//".equals(op);
+            }
+            return false;
+        }
+
+        private static boolean isNonZeroIntegerConst(HirExpr expr) {
+            if (expr instanceof HirExpr.Const c && c.value() instanceof Number n) {
+                return n.longValue() != 0L;
+            }
+            if (expr instanceof HirExpr.Unary u && u.op() == HirExpr.UnaryOp.NEGATE
+                    && u.operand() instanceof HirExpr.Const c && c.value() instanceof Number n) {
+                return n.longValue() != 0L;
             }
             return false;
         }
@@ -2667,6 +2865,7 @@ public final class MirLowerer {
                 case "-" -> HirExpr.BinaryOp.SUB;
                 case "*" -> HirExpr.BinaryOp.MUL;
                 case "/" -> HirExpr.BinaryOp.DIV;
+                case "//" -> HirExpr.BinaryOp.FLOOR_DIV;
                 default -> throw new IllegalStateException("Unexpected compound operator : " + op);
             };
         }

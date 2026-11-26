@@ -611,6 +611,7 @@ final class TypeAnnotations {
                 case "map" -> java.util.Map.class;
                 case "sortedmap" -> java.util.SortedMap.class;
                 case "entry" -> java.util.Map.Entry.class;
+                case "range" -> org.babblelang.runtime.Range.class;
                 default -> null;
             };
             if (coreCollection != null) {

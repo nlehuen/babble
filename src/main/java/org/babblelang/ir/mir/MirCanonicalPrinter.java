@@ -348,7 +348,8 @@ public final class MirCanonicalPrinter {
                 sb.append(op).append(' ').append(val(vals, u.operand())).append(" {").append(u.effect().canonicalTag()).append('}');
             }
             case MirInst.Binary b -> {
-                String op = b.stringConcat() ? "strcat" : b.op().name().toLowerCase(Locale.ROOT);
+                String op = b.stringConcat() ? "strcat"
+                        : (b.op() == HirExpr.BinaryOp.FLOOR_DIV ? "floordiv" : b.op().name().toLowerCase(Locale.ROOT));
                 sb.append(op).append(' ').append(val(vals, b.left())).append(", ").append(val(vals, b.right()))
                         .append(" {").append(b.effect().canonicalTag()).append('}');
             }
@@ -469,6 +470,10 @@ public final class MirCanonicalPrinter {
                 appendVals(sb, rr.args(), vals);
                 sb.append(") {").append(rr.effect().canonicalTag()).append('}');
             }
+            case MirInst.RangeNew rn -> sb.append("range_new ")
+                    .append(rn.inclusive() ? ".." : "..<").append(' ')
+                    .append(val(vals, rn.start())).append(", ").append(val(vals, rn.end()))
+                    .append(" {").append(rn.effect().canonicalTag()).append('}');
             case MirInst.Move m -> sb.append("move ").append(val(vals, m.operand()));
             case MirInst.Freeze f -> sb.append("freeze ").append(val(vals, f.operand()));
             case MirInst.SlotDecl sd -> sb.append("slot_decl ").append(sd.var().name());

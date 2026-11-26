@@ -70,6 +70,10 @@ final class OperatorTypes {
                     // Already failed : suppress cascading operator errors.
                     return Type.ERROR;
                 }
+                if (isRangeType(left) || isRangeType(right)) {
+                    reportRangeArithmeticHint(operator, ctx, leftAt, left, rightAt, right);
+                    return Type.ERROR;
+                }
                 boolean numbers = number(left, leftText, leftAt) & number(right, rightText, rightAt);
                 if (op == BabbleLexer.DIV) {
                     if (!numbers || TypeChecker.isUnresolved(left) || TypeChecker.isUnresolved(right)) {
@@ -89,12 +93,112 @@ final class OperatorTypes {
                     return Type.ERROR;
                 }
                 return arithmeticResult(left, right);
+            case BabbleLexer.MOD:
+            case BabbleLexer.FLOOR_DIV:
+                if (left == Type.ERROR) {
+                    return Type.ERROR;
+                }
+                if (isRangeType(left) || isRangeType(right)) {
+                    reportRangeArithmeticHint(operator, ctx, leftAt, left, rightAt, right);
+                    return Type.ERROR;
+                }
+                boolean ints = integer(left, leftText, leftAt) & integer(right, rightText, rightAt);
+                if (seeding && ints) {
+                    if (left == Type.NOTHING && isIntegral(right)) {
+                        return integralDivisionResult(Type.INT, right);
+                    }
+                    if (right == Type.NOTHING && isIntegral(left)) {
+                        return integralDivisionResult(left, Type.INT);
+                    }
+                }
+                if (!ints || TypeChecker.isUnresolved(left) || TypeChecker.isUnresolved(right)) {
+                    return Type.ERROR;
+                }
+                if (isLiteralZero(rightAt)) {
+                    checker.analysisWarn((op == BabbleLexer.MOD ? "Modulo" : "Division")
+                            + " by zero : always throws java.lang.ArithmeticException", ctx);
+                }
+                return integralDivisionResult(left, right);
             default:
                 if (!comparable(left, right)) {
                     checker.warn("Not comparable : " + leftText + " and " + rightText, ctx);
                 }
                 return Type.BOOL;
         }
+    }
+
+    private static boolean isRangeType(Type type) {
+        return Type.rangeElement(type) != null;
+    }
+
+    private void reportRangeArithmeticHint(String operator, ParserRuleContext ctx,
+                                           ParserRuleContext leftAt, Type left,
+                                           ParserRuleContext rightAt, Type right) {
+        String base = "Operator " + operator + " : " + TypeDisplay.display(left) + " and " + TypeDisplay.display(right);
+        String suggestion = buildRangeBoundSuggestion(operator, ctx, leftAt, rightAt);
+        if (suggestion != null) {
+            checker.warn(base + ". Parenthesize arithmetic range bounds : " + suggestion, ctx);
+        } else {
+            checker.warn(base + ". Parenthesize arithmetic range bounds", ctx);
+        }
+    }
+
+    private static String buildRangeBoundSuggestion(String operator, ParserRuleContext ctx,
+                                                    ParserRuleContext leftAt, ParserRuleContext rightAt) {
+        if (rightAt instanceof BabbleParser.RangeExpressionContext r) {
+            String leftBound = "(" + leftAt.getText() + " " + operator + " " + r.left.getText() + ")";
+            String rightBound = r.right.getText();
+            if (ctx.getParent() instanceof BabbleParser.BinaryOpContext parent && parent.left == ctx) {
+                String pOp = parent.op.getText();
+                if ("+".equals(pOp) || "-".equals(pOp) || "*".equals(pOp) || "/".equals(pOp)
+                        || "//".equals(pOp) || "mod".equals(pOp)) {
+                    rightBound = "(" + rightBound + " " + pOp + " " + parent.right.getText() + ")";
+                }
+            }
+            return leftBound + r.op.getText() + rightBound;
+        }
+        if (leftAt instanceof BabbleParser.RangeExpressionContext r) {
+            return r.left.getText() + r.op.getText() + "(" + r.right.getText() + " " + operator + " " + rightAt.getText() + ")";
+        }
+        return null;
+    }
+
+    static boolean isLiteralZero(ParserRuleContext expr) {
+        while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+            expr = b.block().expression(0);
+        }
+        if (expr instanceof BabbleParser.NegateContext neg) {
+            return isLiteralZero(neg.operand);
+        }
+        if (expr instanceof BabbleParser.IntegerContext lit) {
+            try {
+                return Long.parseLong(lit.getText()) == 0L;
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        if (expr instanceof BabbleParser.LongLiteralContext lit) {
+            String text = lit.getText();
+            try {
+                return Long.parseLong(text.substring(0, text.length() - 1)) == 0L;
+            } catch (NumberFormatException ignored) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    static Type integralDivisionResult(Type left, Type right) {
+        List<Type> results = new ArrayList<>();
+        for (Type l : Type.membersOf(left)) {
+            for (Type r : Type.membersOf(right)) {
+                boolean isLong = l == Type.LONG || r == Type.LONG
+                        || (l instanceof Type.JavaInstance jl && jl.type() == Long.class)
+                        || (r instanceof Type.JavaInstance jr && jr.type() == Long.class);
+                results.add(isLong ? Type.LONG : Type.INT);
+            }
+        }
+        return Type.union(results);
     }
 
     static Type arithmeticResult(Type left, Type right) {
@@ -201,6 +305,8 @@ final class OperatorTypes {
             case "-" -> BabbleLexer.MINUS;
             case "*" -> BabbleLexer.MUL;
             case "/" -> BabbleLexer.DIV;
+            case "//" -> BabbleLexer.FLOOR_DIV;
+            case "mod" -> BabbleLexer.MOD;
             default -> throw new IllegalArgumentException(operator);
         };
     }
@@ -230,6 +336,28 @@ final class OperatorTypes {
             return true;
         }
         checker.warn("Not a number : " + text, at);
+        return false;
+    }
+
+    static boolean isIntegral(Type type) {
+        if (type instanceof Type.Union union) {
+            return union.members().stream().allMatch(OperatorTypes::isIntegral);
+        }
+        if (Type.isIntegralScalar(type)) {
+            return true;
+        }
+        if (type instanceof Type.JavaInstance instance) {
+            Class<?> c = instance.type();
+            return c == Byte.class || c == Short.class || c == Integer.class || c == Long.class;
+        }
+        return false;
+    }
+
+    boolean integer(Type type, String text, ParserRuleContext at) {
+        if (TypeChecker.isUnresolved(type) || isIntegral(type)) {
+            return true;
+        }
+        checker.warn("Not an integer : " + text, at);
         return false;
     }
 

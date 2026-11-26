@@ -114,7 +114,7 @@ public final class HirLicmPass implements HirPass {
         List<HirExpr> blockStmts = new ArrayList<>(hoistedDefs.size() + 1);
         blockStmts.addAll(hoistedDefs);
         blockStmts.add(new HirExpr.For(f.iterable(), f.target(), f.loopVar(), f.bodyDeclaredVars(),
-                newBody, f.bodyWideningRank(), f.elemSamTarget(), f.meta()));
+                newBody, f.bodyWideningRank(), f.elemSamTarget(), f.countedRange(), f.meta()));
         return new HirExpr.Block(blockStmts, false, new String[0], hoistedVars, -1, f.meta());
     }
 

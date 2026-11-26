@@ -142,6 +142,56 @@ final class ControlAndOpEmitter {
             }
         }
 
+        if (isNumericKind(lk) && isNumericKind(rk)
+                && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
+            if (resultKind == PrimitiveKind.INT) {
+                emitter.emitAs(b.left(), PrimitiveKind.INT);
+                if (b.right() instanceof HirExpr.Const rc && rc.value() instanceof Number n) {
+                    int d = n.intValue();
+                    if (d > 0 && (d & (d - 1)) == 0) {
+                        if (b.op() == HirExpr.BinaryOp.MOD) {
+                            ConstantPool.pushInt(mv, d - 1);
+                            mv.visitInsn(IAND);
+                        } else if (d > 1) {
+                            ConstantPool.pushInt(mv, Integer.numberOfTrailingZeros(d));
+                            mv.visitInsn(ISHR);
+                        }
+                        c.stackKind = PrimitiveKind.INT;
+                        return;
+                    }
+                }
+                emitter.emitAs(b.right(), PrimitiveKind.INT);
+                c.line(b.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math",
+                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv", "(II)I", false);
+                c.stackKind = PrimitiveKind.INT;
+                return;
+            }
+            if (resultKind == PrimitiveKind.LONG) {
+                emitter.emitAs(b.left(), PrimitiveKind.LONG);
+                if (b.right() instanceof HirExpr.Const rc && rc.value() instanceof Number n) {
+                    long d = n.longValue();
+                    if (d > 0L && (d & (d - 1L)) == 0L) {
+                        if (b.op() == HirExpr.BinaryOp.MOD) {
+                            mv.visitLdcInsn(d - 1L);
+                            mv.visitInsn(LAND);
+                        } else if (d > 1L) {
+                            ConstantPool.pushInt(mv, Long.numberOfTrailingZeros(d));
+                            mv.visitInsn(LSHR);
+                        }
+                        c.stackKind = PrimitiveKind.LONG;
+                        return;
+                    }
+                }
+                emitter.emitAs(b.right(), PrimitiveKind.LONG);
+                c.line(b.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math",
+                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv", "(JJ)J", false);
+                c.stackKind = PrimitiveKind.LONG;
+                return;
+            }
+        }
+
         if (resultKind == PrimitiveKind.FLOAT && isNumericKind(lk) && isNumericKind(rk) && b.op().isArithmetic()) {
             emitter.emitAs(b.left(), PrimitiveKind.FLOAT);
             emitter.emitAs(b.right(), PrimitiveKind.FLOAT);
@@ -173,6 +223,8 @@ final class ControlAndOpEmitter {
         String method = switch (b.op()) {
             case MUL -> "mul";
             case DIV -> "div";
+            case FLOOR_DIV -> "floorDiv";
+            case MOD -> "mod";
             case ADD -> "add";
             case SUB -> "sub";
             case LT -> "lt";
@@ -202,12 +254,83 @@ final class ControlAndOpEmitter {
         c.stackKind = PrimitiveKind.NONE;
     }
 
+    void emitRange(HirExpr.Range r) {
+        MethodEmitContext c = ctx();
+        MethodVisitor mv = c.mv;
+        PrimitiveKind ek = r.elemKind();
+        String rangeOwner = RUNTIME + "Range";
+        switch (ek) {
+            case BYTE -> {
+                emitter.emitAs(r.start(), PrimitiveKind.BYTE);
+                emitter.emitAs(r.end(), PrimitiveKind.BYTE);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofByte", "(BBZ)L" + RUNTIME + "IntRange;", true);
+            }
+            case SHORT -> {
+                emitter.emitAs(r.start(), PrimitiveKind.SHORT);
+                emitter.emitAs(r.end(), PrimitiveKind.SHORT);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofShort", "(SSZ)L" + RUNTIME + "IntRange;", true);
+            }
+            case INT -> {
+                emitter.emitAs(r.start(), PrimitiveKind.INT);
+                emitter.emitAs(r.end(), PrimitiveKind.INT);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofInt", "(IIZ)L" + RUNTIME + "IntRange;", true);
+            }
+            case LONG -> {
+                emitter.emitAs(r.start(), PrimitiveKind.LONG);
+                emitter.emitAs(r.end(), PrimitiveKind.LONG);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofLong", "(JJZ)L" + RUNTIME + "LongRange;", true);
+            }
+            case CHAR -> {
+                emitter.emitAs(r.start(), PrimitiveKind.CHAR);
+                emitter.emitAs(r.end(), PrimitiveKind.CHAR);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofChar", "(CCZ)L" + RUNTIME + "CharRange;", true);
+            }
+            case FLOAT -> {
+                emitter.emitAs(r.start(), PrimitiveKind.FLOAT);
+                emitter.emitAs(r.end(), PrimitiveKind.FLOAT);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofFloat", "(FFZ)L" + RUNTIME + "DoubleRange;", true);
+            }
+            case DOUBLE -> {
+                emitter.emitAs(r.start(), PrimitiveKind.DOUBLE);
+                emitter.emitAs(r.end(), PrimitiveKind.DOUBLE);
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofDouble", "(DDZ)L" + RUNTIME + "DoubleRange;", true);
+            }
+            default -> {
+                emitter.emitBoxed(r.start());
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
+                emitter.emitBoxed(r.end());
+                mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
+                mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
+                c.line(r.meta().line());
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofComparable",
+                        "(Ljava/lang/Comparable;Ljava/lang/Comparable;Z)L" + RUNTIME + "ComparableRange;", true);
+            }
+        }
+        c.stackKind = PrimitiveKind.NONE;
+    }
+
     void emitDynamicArithmetic(int lineNumber, String operator, String leftText, String rightText, int left, int right) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         String method = switch (operator) {
             case "*" -> "mul";
             case "/" -> "div";
+            case "//" -> "floorDiv";
+            case "mod" -> "mod";
             case "+" -> "add";
             case "-" -> "sub";
             default -> throw new IllegalStateException("Bad op : " + operator);
@@ -668,6 +791,10 @@ final class ControlAndOpEmitter {
         mv.visitInsn(ACONST_NULL);
         mv.visitVarInsn(ASTORE, result);
 
+        if (kind == LoweringTargets.ForKind.COUNTED_RANGE && f.countedRange() != null) {
+            emitCountedRangeFor(f, result, head, end, ln);
+            return;
+        }
         if (kind == LoweringTargets.ForKind.ARRAY && target.arrayClass() != null) {
             emitArrayFor(f, target.arrayClass(), result, head, end);
             return;
@@ -682,6 +809,133 @@ final class ControlAndOpEmitter {
             return;
         }
         emitDynamicUnionFor(f, result, end);
+    }
+
+    private void emitCountedRangeFor(HirExpr.For f, int result, Label head, Label end, int ln) {
+        MethodEmitContext c = ctx();
+        MethodVisitor mv = c.mv;
+        HirExpr.CountedRangeLoop cr = f.countedRange();
+        PrimitiveKind rk = cr.elemKind();
+        boolean isLong = rk == PrimitiveKind.LONG;
+        PrimitiveKind loopKind = isLong ? PrimitiveKind.LONG : PrimitiveKind.INT;
+        String rangeOwner = RUNTIME + "Range";
+
+        // Evaluate start, end, and optional step once, left to right.
+        int startLocal = c.newLocal(loopKind);
+        int endLocal = c.newLocal(loopKind);
+        emitter.emitAs(cr.start(), rk);
+        storeKindOn(mv, loopKind, startLocal);
+        emitter.emitAs(cr.end(), rk);
+        storeKindOn(mv, loopKind, endLocal);
+
+        long constStep = -1L;
+        int stepLocal = -1;
+        if (cr.step() == null) {
+            constStep = 1L;
+        } else if (cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L) {
+            constStep = isLong ? sn.longValue() : sn.intValue();
+        } else {
+            stepLocal = c.newLocal(loopKind);
+            emitter.emitAs(cr.step(), loopKind);
+            c.line(ln);
+            mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "validateStep", isLong ? "(J)J" : "(I)I", true);
+            storeKindOn(mv, loopKind, stepLocal);
+        }
+
+        // Exit immediately if range is empty.
+        if (isLong) {
+            mv.visitVarInsn(LLOAD, startLocal);
+            mv.visitVarInsn(LLOAD, endLocal);
+            mv.visitInsn(LCMP);
+            mv.visitJumpInsn(cr.inclusive() ? IFGT : IFGE, end);
+        } else {
+            mv.visitVarInsn(ILOAD, startLocal);
+            mv.visitVarInsn(ILOAD, endLocal);
+            mv.visitJumpInsn(cr.inclusive() ? IF_ICMPGT : IF_ICMPGE, end);
+        }
+
+        // Precompute overflow-safe last included element.
+        int lastLocal = c.newLocal(loopKind);
+        if (constStep == 1L) {
+            if (cr.inclusive()) {
+                loadKindOn(mv, loopKind, endLocal);
+                storeKindOn(mv, loopKind, lastLocal);
+            } else if (isLong) {
+                mv.visitVarInsn(LLOAD, endLocal);
+                mv.visitInsn(LCONST_1);
+                mv.visitInsn(LSUB);
+                mv.visitVarInsn(LSTORE, lastLocal);
+            } else {
+                mv.visitVarInsn(ILOAD, endLocal);
+                mv.visitInsn(ICONST_1);
+                mv.visitInsn(ISUB);
+                mv.visitVarInsn(ISTORE, lastLocal);
+            }
+        } else {
+            loadKindOn(mv, loopKind, startLocal);
+            loadKindOn(mv, loopKind, endLocal);
+            mv.visitInsn(cr.inclusive() ? ICONST_1 : ICONST_0);
+            if (stepLocal >= 0) {
+                loadKindOn(mv, loopKind, stepLocal);
+            } else if (isLong) {
+                mv.visitLdcInsn(constStep);
+            } else {
+                ConstantPool.pushInt(mv, (int) constStep);
+            }
+            if (isLong) {
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "lastLongElement", "(JJZJ)J", true);
+            } else if (rk == PrimitiveKind.CHAR) {
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "lastCharElement", "(CCZI)C", true);
+            } else {
+                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "lastIntElement", "(IIZI)I", true);
+            }
+            storeKindOn(mv, loopKind, lastLocal);
+        }
+
+        int idxLocal = cr.descending() ? lastLocal : startLocal;
+        int stopLocal = cr.descending() ? startLocal : lastLocal;
+        Label stepLabel = new Label();
+
+        mv.visitLabel(head);
+        loadKindOn(mv, loopKind, idxLocal);
+        emitForIterationBody(f, result, end, stepLabel, rk);
+
+        mv.visitLabel(stepLabel);
+        if (isLong) {
+            mv.visitVarInsn(LLOAD, idxLocal);
+            mv.visitVarInsn(LLOAD, stopLocal);
+            mv.visitInsn(LCMP);
+            mv.visitJumpInsn(IFEQ, end);
+            mv.visitVarInsn(LLOAD, idxLocal);
+            if (stepLocal >= 0) {
+                mv.visitVarInsn(LLOAD, stepLocal);
+            } else {
+                mv.visitLdcInsn(constStep);
+            }
+            mv.visitInsn(cr.descending() ? LSUB : LADD);
+            mv.visitVarInsn(LSTORE, idxLocal);
+        } else {
+            mv.visitVarInsn(ILOAD, idxLocal);
+            mv.visitVarInsn(ILOAD, stopLocal);
+            mv.visitJumpInsn(IF_ICMPEQ, end);
+            if (stepLocal < 0 && constStep <= Short.MAX_VALUE) {
+                mv.visitIincInsn(idxLocal, cr.descending() ? -(int) constStep : (int) constStep);
+            } else {
+                mv.visitVarInsn(ILOAD, idxLocal);
+                if (stepLocal >= 0) {
+                    mv.visitVarInsn(ILOAD, stepLocal);
+                } else {
+                    ConstantPool.pushInt(mv, (int) constStep);
+                }
+                mv.visitInsn(cr.descending() ? ISUB : IADD);
+                mv.visitVarInsn(ISTORE, idxLocal);
+            }
+        }
+        mv.visitJumpInsn(GOTO, head);
+
+        mv.visitLabel(end);
+        mv.visitVarInsn(ALOAD, result);
+        c.stackKind = PrimitiveKind.NONE;
     }
 
     private void emitArrayFor(HirExpr.For f, Class<?> arrClass, int result, Label head, Label end) {

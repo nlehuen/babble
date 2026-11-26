@@ -194,6 +194,13 @@ public final class HirPrinter {
                 printExpr(sb, b.right(), depth + 1);
                 sb.append(')');
             }
+            case HirExpr.Range r -> {
+                sb.append("(range ").append(r.inclusive() ? ".. " : "..< ");
+                printExpr(sb, r.start(), depth + 1);
+                sb.append(' ');
+                printExpr(sb, r.end(), depth + 1);
+                sb.append(')');
+            }
             case HirExpr.Logic l -> {
                 sb.append('(').append(l.op() == HirExpr.LogicOp.AND ? "and " : "or ");
                 printExpr(sb, l.left(), depth + 1);
@@ -269,9 +276,26 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirExpr.For f -> {
-                sb.append("(for ");
-                sb.append(f.loopVar() != null ? f.loopVar().name() + "#" + f.loopVar().id() : "_").append(" in ");
-                printExpr(sb, f.iterable(), depth + 1);
+                if (f.countedRange() != null) {
+                    HirExpr.CountedRangeLoop cr = f.countedRange();
+                    sb.append("(for-range ");
+                    sb.append(f.loopVar() != null ? f.loopVar().name() + "#" + f.loopVar().id() : "_");
+                    sb.append(cr.inclusive() ? " .. " : " ..< ");
+                    printExpr(sb, cr.start(), depth + 1);
+                    sb.append(' ');
+                    printExpr(sb, cr.end(), depth + 1);
+                    if (cr.step() != null) {
+                        sb.append(" step ");
+                        printExpr(sb, cr.step(), depth + 1);
+                    }
+                    if (cr.descending()) {
+                        sb.append(" reversed");
+                    }
+                } else {
+                    sb.append("(for ");
+                    sb.append(f.loopVar() != null ? f.loopVar().name() + "#" + f.loopVar().id() : "_").append(" in ");
+                    printExpr(sb, f.iterable(), depth + 1);
+                }
                 sb.append(" (block");
                 for (HirExpr s : f.body()) {
                     sb.append(' ');

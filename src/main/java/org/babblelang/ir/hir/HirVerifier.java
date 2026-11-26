@@ -137,6 +137,10 @@ public final class HirVerifier {
                 verifyExpr(module, b.left(), inFunction, loopDepth);
                 verifyExpr(module, b.right(), inFunction, loopDepth);
             }
+            case HirExpr.Range r -> {
+                verifyExpr(module, r.start(), inFunction, loopDepth);
+                verifyExpr(module, r.end(), inFunction, loopDepth);
+            }
             case HirExpr.Logic l -> {
                 verifyExpr(module, l.left(), inFunction, loopDepth);
                 verifyExpr(module, l.right(), inFunction, loopDepth);
@@ -159,7 +163,15 @@ public final class HirVerifier {
                 verifyExpr(module, w.body(), inFunction, loopDepth + 1);
             }
             case HirExpr.For f -> {
-                verifyExpr(module, f.iterable(), inFunction, loopDepth);
+                if (f.countedRange() != null) {
+                    verifyExpr(module, f.countedRange().start(), inFunction, loopDepth);
+                    verifyExpr(module, f.countedRange().end(), inFunction, loopDepth);
+                    if (f.countedRange().step() != null) {
+                        verifyExpr(module, f.countedRange().step(), inFunction, loopDepth);
+                    }
+                } else {
+                    verifyExpr(module, f.iterable(), inFunction, loopDepth);
+                }
                 verifyStatements(module, f.body(), inFunction, loopDepth + 1);
             }
             case HirExpr.Try t -> {

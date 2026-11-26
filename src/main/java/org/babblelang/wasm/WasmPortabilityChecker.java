@@ -57,6 +57,13 @@ public final class WasmPortabilityChecker {
             "append"
     );
 
+    private static final Set<String> PORTABLE_RANGE_METHODS = Set.of(
+            "start", "end", "startInt", "endInt", "startLong", "endLong", "startChar", "endChar",
+            "startDouble", "endDouble", "inclusive", "isEmpty",
+            "contains", "containsInt", "containsLong", "containsChar", "containsDouble",
+            "step", "reversed", "iterator", "equals", "hashCode", "toString"
+    );
+
     private static final Set<String> WASM_BARE_FORBIDDEN_NAMES = Set.of(
             "print", "println", "affiche", "afficherc", "STDOUT", "STDERR", "STDIN", "args", "wasm"
     );
@@ -155,6 +162,14 @@ public final class WasmPortabilityChecker {
         }
         if (owner == Appendable.class || owner == java.io.Writer.class || owner == java.io.PrintWriter.class) {
             return PORTABLE_APPENDABLE_METHODS.contains(name) && arity == 1 ? "appendable" : null;
+        }
+        if (owner == org.babblelang.runtime.Range.class
+                || owner == org.babblelang.runtime.IntRange.class
+                || owner == org.babblelang.runtime.LongRange.class
+                || owner == org.babblelang.runtime.CharRange.class
+                || owner == org.babblelang.runtime.DoubleRange.class
+                || owner == org.babblelang.runtime.ComparableRange.class) {
+            return PORTABLE_RANGE_METHODS.contains(name) ? "range" : null;
         }
         if (owner == Object.class && (name.equals("equals") || name.equals("hashCode") || name.equals("toString"))) {
             return "any";
@@ -375,6 +390,13 @@ public final class WasmPortabilityChecker {
             case HirExpr.DynamicSelect s -> checkExpr(s.receiver(), target, topLevelDefined, out);
             case HirExpr.Unary u -> checkExpr(u.operand(), target, topLevelDefined, out);
             case HirExpr.Binary b -> { checkExpr(b.left(), target, topLevelDefined, out); checkExpr(b.right(), target, topLevelDefined, out); }
+            case HirExpr.Range r -> {
+                if (!r.elemKind().isPrimitive() && !r.stringElement()) {
+                    out.add(new Diagnostic(line, "range of Comparable"));
+                }
+                checkExpr(r.start(), target, topLevelDefined, out);
+                checkExpr(r.end(), target, topLevelDefined, out);
+            }
             case HirExpr.Logic l -> { checkExpr(l.left(), target, topLevelDefined, out); checkExpr(l.right(), target, topLevelDefined, out); }
             case HirExpr.NonNull n -> checkExpr(n.operand(), target, topLevelDefined, out);
             case HirExpr.SpreadAdapt s -> {
@@ -386,7 +408,16 @@ public final class WasmPortabilityChecker {
             case HirExpr.Block b -> checkList(b.statements(), target, topLevelDefined, out);
             case HirExpr.If i -> { checkExpr(i.cond(), target, topLevelDefined, out); checkExpr(i.thenBranch(), target, topLevelDefined, out); checkExpr(i.elseBranch(), target, topLevelDefined, out); }
             case HirExpr.While w -> { checkExpr(w.cond(), target, topLevelDefined, out); checkExpr(w.body(), target, topLevelDefined, out); }
-            case HirExpr.For f -> { checkExpr(f.iterable(), target, topLevelDefined, out); checkList(f.body(), target, topLevelDefined, out); }
+            case HirExpr.For f -> {
+                if (f.countedRange() != null) {
+                    checkExpr(f.countedRange().start(), target, topLevelDefined, out);
+                    checkExpr(f.countedRange().end(), target, topLevelDefined, out);
+                    checkExpr(f.countedRange().step(), target, topLevelDefined, out);
+                } else {
+                    checkExpr(f.iterable(), target, topLevelDefined, out);
+                }
+                checkList(f.body(), target, topLevelDefined, out);
+            }
             case HirExpr.Break b -> checkExpr(b.value(), target, topLevelDefined, out);
             case HirExpr.Return r -> checkExpr(r.value(), target, topLevelDefined, out);
             case HirExpr.Throw t -> checkExpr(t.value(), target, topLevelDefined, out);
@@ -474,7 +505,13 @@ public final class WasmPortabilityChecker {
                 || fqcn.equals("java.lang.Throwable")
                 || fqcn.equals("java.lang.Exception")
                 || fqcn.equals("java.lang.RuntimeException")
-                || fqcn.equals("org.babblelang.runtime.BabbleException");
+                || fqcn.equals("org.babblelang.runtime.BabbleException")
+                || fqcn.equals("org.babblelang.runtime.Range")
+                || fqcn.equals("org.babblelang.runtime.IntRange")
+                || fqcn.equals("org.babblelang.runtime.LongRange")
+                || fqcn.equals("org.babblelang.runtime.CharRange")
+                || fqcn.equals("org.babblelang.runtime.DoubleRange")
+                || fqcn.equals("org.babblelang.runtime.ComparableRange");
     }
 
     private static boolean containsNonPortableJava(HirArrayElementType type) {

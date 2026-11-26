@@ -36,6 +36,7 @@ public sealed interface HirExpr permits
         HirExpr.DynamicSelect,
         HirExpr.Unary,
         HirExpr.Binary,
+        HirExpr.Range,
         HirExpr.Logic,
         HirExpr.Is,
         HirExpr.As,
@@ -87,6 +88,8 @@ public sealed interface HirExpr permits
         SUB("-"),
         MUL("*"),
         DIV("/"),
+        FLOOR_DIV("//"),
+        MOD("mod"),
         LT("<"),
         LTE("<="),
         EQ("=="),
@@ -463,6 +466,32 @@ public sealed interface HirExpr permits
     ) implements HirExpr {
     }
 
+    record Range(
+            HirExpr start,
+            HirExpr end,
+            boolean inclusive,
+            PrimitiveKind elemKind,
+            boolean stringElement,
+            ExprMeta meta
+    ) implements HirExpr {
+        public Range {
+            elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
+        }
+    }
+
+    record CountedRangeLoop(
+            HirExpr start,
+            HirExpr end,
+            HirExpr step,
+            boolean inclusive,
+            boolean descending,
+            PrimitiveKind elemKind
+    ) {
+        public CountedRangeLoop {
+            elemKind = elemKind != null ? elemKind : PrimitiveKind.INT;
+        }
+    }
+
     record For(
             HirExpr iterable,
             LoweringTargets.ForLoopTarget target,
@@ -471,11 +500,25 @@ public sealed interface HirExpr permits
             List<HirExpr> body,
             int bodyWideningRank,
             LoweringTargets.JavaSamTarget elemSamTarget,
+            CountedRangeLoop countedRange,
             ExprMeta meta
     ) implements HirExpr {
         public For {
             bodyDeclaredVars = List.copyOf(bodyDeclaredVars);
             body = List.copyOf(body);
+        }
+
+        public For(
+                HirExpr iterable,
+                LoweringTargets.ForLoopTarget target,
+                HirVar loopVar,
+                List<HirVar> bodyDeclaredVars,
+                List<HirExpr> body,
+                int bodyWideningRank,
+                LoweringTargets.JavaSamTarget elemSamTarget,
+                ExprMeta meta
+        ) {
+            this(iterable, target, loopVar, bodyDeclaredVars, body, bodyWideningRank, elemSamTarget, null, meta);
         }
     }
 
