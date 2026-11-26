@@ -77,13 +77,15 @@ public class WasmBatestTestCase {
         List<DynamicNode> containers = new ArrayList<>();
         for (Path path : files) {
             String rel = root.relativize(path).toString().replace('\\', '/');
-            if (!shard.matchesFile(rel) || !filter.matchesFile(rel)) {
+            if (!filter.matchesFile(rel)) {
                 continue;
             }
             BatestFile batestFile = BatestParser.parse(path, rel);
             List<DynamicTest> caseTests = new ArrayList<>();
             for (BatestFile.BatestCase testCase : batestFile.cases()) {
-                if (!filter.matches(batestFile, testCase) || testCase.session()) {
+                if (!shard.matchesCase(rel, testCase.index())
+                        || !filter.matches(batestFile, testCase)
+                        || testCase.session()) {
                     continue;
                 }
                 caseTests.add(

@@ -83,13 +83,14 @@ public class BatestTestCase {
 
         for (Path path : files) {
             String rel = BATEST_ROOT.relativize(path).toString().replace('\\', '/');
-            if (!shard.matchesFile(rel) || !filter.matchesFile(rel)) {
+            if (!filter.matchesFile(rel)) {
                 continue;
             }
             BatestFile batestFile = BatestParser.parse(path, rel);
             List<DynamicTest> caseTests = new ArrayList<>();
             for (BatestFile.BatestCase testCase : batestFile.cases()) {
-                if (!filter.matches(batestFile, testCase)) {
+                if (!shard.matchesCase(rel, testCase.index())
+                        || !filter.matches(batestFile, testCase)) {
                     continue;
                 }
                 matchedCases++;
