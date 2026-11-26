@@ -867,6 +867,35 @@ session.eval("def double = fn (n: int): int -> ( n * 2 )");
 session.eval("double(21)");    // 42
 ```
 
+### System properties
+
+Babble reads these system properties, given to the JVM as `-Dname=value` (`java -Dbabble.mode=interpret -jar
+target/babble-1.0-SNAPSHOT.jar script.ba`). Those marked *engine* can also be set on a script engine,
+`engine.put(name, value)`, which wins over the property.
+
+| Property | Values | What it does |
+|---|---|---|
+| `babble.mode` (*engine*) | `compile` (default), `interpret` | Compiles scripts to JVM bytecode, or runs them in the interpreter. |
+| `babble.opt` (*engine*) | `0`, `1` (default), `2` | The optimization level in compiled mode, as `-O0`/`-O1`/`-O2` on the command line ([BIP014](docs/design/bip014_optimization-passes.md)). |
+| `babble.inlineNodes` | a size in HIR nodes, `35` by default | The largest function `-O1` and `-O2` inline, `0` to inline nothing ; cross-module inlining in `babblec` gets the same proportion (`25` by default). Read once per JVM. |
+| `babble.verify` | `true` | Checks what the compiler builds : `HirVerifier`, `MirVerifier` at `-O2`, ASM's `CheckClassAdapter` on every generated class, and the WebAssembly validator. The test suite runs with it. |
+| `babble.dumpIr` (*engine*) | `true` (or `all`, `stderr`), `hir`, `mir`, then optionally `:before` or `:after:<Pass>`, then optionally `:canonical` ; or a directory | Prints the IR before and after optimization to the error stream, or of one stage, in the canonical form of the IR goldens with `:canonical` ([BIP029](docs/design/bip029_batest-v2-and-ir-goldens.md)) ; a directory gets one file per module and stage instead. The passes are `HirEGraphSimplify`, `Inline`, `ScalarReplace`, `FbipReuse`, `HirDce`, `HirLicm` in HIR, and `SccpPass`, `GvnCsePass`, `AliasRlePass`, `LicmPass`, `MirDcePass`, `PredicateReorderPass` in MIR (`-O2`). |
+| `babble.dumpClasses` | a directory | Writes the generated `.class` files there, for `javap -c -p`. |
+| `babble.trace` | `true` | Prints an ASM listing of every generated class to the error stream. |
+| `babble.dumpWasm` | `wat` or `true` | Prints the WebAssembly text of a `-target wasm-js` / `wasm-bare` compilation to the error stream. |
+| `babble.wasmDebugNames` | `true` | Writes the full debug name section into `.wasm` modules. |
+| `babble.dumpAxioms` | Java classes or packages, comma-separated | Prints what the compiler assumes about them (curated or inferred from bytecode) to the error stream, like `-axioms`. |
+| `babble.axioms.report` | `true` | Reports curated axioms that bytecode analysis already infers as strong or stronger. |
+| `babble.checkAxioms` (*engine*) | `true` | Fuzzes the script's `axiom`-declared functions against their declared properties when it runs ([BIP007](docs/design/bip007_effects.md)). |
+| `babble.root` | a directory | The root a `babblec` jar compiles the modules it lacks from, when Babble is on its class path (default : the one its index gives, relative to the jar). |
+| `babble.history` | a file | Where the interactive mode keeps its inputs (default : `~/.babble_history`). |
+| `babble.lineEditing` | `false` | Reads plain lines in the interactive mode instead of editing them with JLine. |
+
+Hosts embedding the engine also have attributes that are not system properties :
+`babble.moduleSource` (where imports come from, a `ModuleSource`), `babble.irObserver` (an
+`IrObserver` receiving IR snapshots), and `babble.aotCrossModule` / `babble.aotInlineCache`, which
+`babblec` sets for cross-module inlining.
+
 Implemented Features
 --------------------
 

@@ -690,6 +690,21 @@ Measured on JDK 21 (4 cores), before (`d1e7ebd`) and after, medians ; every run 
 
 The render is `35%` faster at `-O1` and `30%` at `-O2` ; `-O2` keeps a smaller lead, since `-O1` now shares the name sites, and the cost of compiling `MIR` weighs more on a shorter run.
 
+#### Inlining threshold
+
+`InlinePass` inlines functions of up to `35` HIR nodes (`MAX_INLINE_NODES`, `25` across modules in `babblec`). Since HotSpot's C2 inlines hot calls itself, with profiles, a smaller limit could leave it more room. Measured on `argon` with `-Dbabble.inlineNodes=<n>` (cross-module limit in the same `25:35` proportion), medians, every render byte-identical :
+
+| limit (HIR nodes) | `0` | `10` | `35` | `60` |
+|---|---:|---:|---:|---:|
+| bytecode, all classes, `-O1` (instructions) | 34,874 | 35,041 | 39,738 | 41,640 |
+| full render through the engine, `-O1` / `-O2` | 4.86 / 5.11 s | 4.99 / 4.97 s | **4.75 / 4.86 s** | 4.88 / 4.95 s |
+| full render, `babblec` jar, `-O1` / `-O2` | 3.57 / 3.56 s | 3.59 / 3.55 s | **3.47 / 3.36 s** | 3.52 / 3.36 s |
+| `Benchmarks` render row, `-O1` / `-O2` | 20.7 / 21.1 ms | 21.0 / 20.5 ms | **20.5 / 20.4 ms** | 22.4 / 21.2 ms |
+
+`35` stays the default : smaller limits shrink the bytecode by `~12%` and run `3-5%` slower, `60` grows callers past C2's own limits and the steady-state render is `~9%` slower at `-O1`. The hot callees of `argon` are too big to inline statically anyway ; what inlining buys is what C2 cannot do on its own, such as scalar replacement of the small `Vec3` records.
+
+Disabling inlining exposed a miscompilation : `HirPurity` judged a direct call by the callee's own effects, which for a higher-order callee (`fn calling f`, `BIP017`) are only conditional on the callbacks passed. A frame-local callback reassigning a `var` of the caller (`BIP016` §4.5) is no effect of the caller as a whole, but makes that call impure, and `HirDcePass` deleted `this.forEach(fn (x) -> (count += 1))` whenever its result was unused and the callee too big to inline. A callee that uses a function-typed parameter now also needs the call site's own effects to be pure (`src/test/babble/Effects.ba`).
+
 ---
 
 ## 10. Bibliography
