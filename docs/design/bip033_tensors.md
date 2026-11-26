@@ -116,13 +116,132 @@ def sgdStep of (S: shape) = fn (
 
 * **Automatic differentiation (`grad`, `valueAndGrad`, `vjp`, `jvp`):** lives in a dedicated follow-up BIP (`BIP033-D13`); this proposal guarantees the core `Tensor` representation and `HIR` nodes are AD-ready with zero mutable `.grad` baggage.
 * **High-level neural network library (`std/nn`):** activations (`relu`, `gelu`, `softmax`), normalizations (`layerNorm`, `rmsNorm`), layers (`Conv2d`, `MultiHeadAttention`), losses, and optimizers (`AdamW`) live in `std/nn` on top of BIP033's core primitives (`BIP033-D10`).
-* **Sub-byte / quantized packed storage dtypes (`uint8`, `int4`, `fp8`) and sparse/ragged tensors:** deferred as clean extensions once the core dense tensor model lands (§11).
+* **Sub-byte / quantized packed storage dtypes (`uint8`, `int4`, `fp8`) and sparse/ragged tensors:** deferred as clean extensions once the core dense tensor model lands (§12).
 * **Static device placement types (`on gpu`):** execution placement stays inside the `TensorBackend` SPI, not in static tensor types (`BIP033-D11`).
-* **General inequality / Presburger SMT proving (`0 <= i < N`):** index bounds and non-constant slice validity remain runtime checks (§5.2).
+* **General inequality / Presburger SMT proving (`0 <= i < N`):** index bounds and non-constant slice validity remain runtime checks (§6.2).
 
 ---
 
-## 2. Settled Design Decisions
+## 2. State of the Art
+
+Before settling Babble's tensor design (§3), we survey how mainstream ML frameworks, tensor compiler IRs, systems languages, and statically typed functional array languages handle tensors. Hardware targets, accelerator microarchitectures, and raw benchmark numbers are deliberately **out of scope**; our focus is strictly on **language and API design** along two questions:
+
+1. **Developer ergonomics & dimensional correctness:** Does the language or API let developers express tensor computations concisely while preventing rank/shape mismatches, equal-size axis swaps, silent broadcasting bugs, dtype mismatches, and view-aliasing errors — ideally at compile time — without semantic surprises between eager and compiled execution?
+2. **Compiler optimization opportunities & preconditions:** Under what exact language/API conditions can a compiler legally perform **kernel/loop fusion**, **intermediate-buffer elimination**, **algebraic view simplification**, and **in-place buffer reuse** — and what language features break those optimizations?
+
+### 2.1 The core tension in existing tensor ecosystems
+
+Across the literature and production systems, tensor tooling splits along an acute ergonomics-versus-optimizability fault line:
+
+* **Dynamic host-language frameworks** (TensorFlow, PyTorch, JAX) embed tensor APIs inside Python, gaining familiar imperative or NumPy-like ergonomics at the cost of **no static dimensional typing** in the host language. To recover cross-operator fusion and memory planning, they bolt on **staging or tracing compilers** (`@tf.function` / AutoGraph, `jax.jit` → `jaxpr`, `torch.compile` / TorchDynamo → FX → AOTAutograd → TorchInductor), which introduce graph breaks, trace-time side-effect pitfalls, recompilation guards, or functionalization overhead.
+* **Tensor compiler IRs** (XLA / StableHLO) demonstrate that a **pure, value-semantic, statically shaped tensor IR** makes fusion and buffer reuse systematic — but provide no human-facing source language or nominal axis safety.
+* **Compiled systems languages with MLIR integration** (Mojo + MAX) embed compile-time shape/layout parameters and ownership checking directly into the language, eliminating Python tracing overhead within kernels — yet split low-level layout-typed kernels from a separate high-level graph compiler for cross-operator fusion.
+* **Statically typed functional array languages** (Dex, Futhark) prove that language-integrated static shape/index typing, enforced purity, and uniqueness/effect systems yield **both** compile-time dimensional safety and unconditional fusion/in-place reuse — though as specialized array DSLs rather than general-purpose OO/interop languages.
+
+```mermaid
+flowchart LR
+    subgraph Dyn["Python-Hosted Frameworks"]
+        TF["TensorFlow\n(@tf.function + AutoGraph)"]
+        PT["PyTorch 2\n(TorchDynamo + AOTAutograd + Inductor)"]
+        JAX["JAX\n(jax.jit -> jaxpr)"]
+    end
+    subgraph IR["Compiler IR Layer"]
+        XLA["StableHLO / XLA\n(pure static HLO fusion)"]
+    end
+    subgraph Compiled["Compiled Static Languages"]
+        MOJO["Mojo + MAX\n(TileTensor kernels + MAX Graph)"]
+        DF["Dex & Futhark\n(static shapes/indices + pure fusion)"]
+        BAB["Babble (BIP033)\n(static dims/labels + unique + HIR fusion)"]
+    end
+
+    TF -. "jit_compile=True\n(must infer shapes)" .-> XLA
+    JAX -- "pure static jaxpr" --> XLA
+    PT -- "bytecode guards +\nfunctionalization" --> PT
+    MOJO -- "graph/kernel split" --> MOJO
+```
+
+### 2.2 Production ML frameworks, compiler IRs, and tensor languages
+
+#### TensorFlow (`tf.Tensor`, `@tf.function`, `AutoGraph`)
+
+* **Ergonomics & dimensional correctness (`[TF16]`, `[AG19]`, `[TFG]`):** TensorFlow 2 defaults to eager execution over dynamically typed `tf.Tensor` values with positional NumPy-style broadcasting. Partial static shape metadata can be attached via `tf.TensorSpec` / `input_signature`, but shape, rank, axis-swap, and broadcasting mistakes remain runtime (or trace-time) errors with no host-language dimensional type checker. To bridge eager ergonomics and whole-graph optimization, `@tf.function` combines tracing with **AutoGraph** (`[AG19]`), which rewrites Python AST control flow (`if`, `for`, `while`) into TensorFlow graph ops (`StatelessIf`, `tf.while_loop`). However, this dual execution model creates subtle semantic divergences documented in TensorFlow's own guide (`[TFG]`):
+  * **Trace-time side effects:** Pure Python statements (prints, list mutations, counter increments) execute only when tracing a new `ConcreteFunction` and silently vanish on subsequent calls with matching signatures.
+  * **Non-strict execution:** Graph execution prunes unused subgraphs, so an out-of-bounds operation (e.g., an unused `tf.gather`) that raises an error eagerly can silently disappear inside `@tf.function` (`[TFG]`).
+  * **Polymorphic retracing:** Calling a `@tf.function` with varying Python arguments or tensor shapes triggers repeated tracing unless shapes are widened with `None` in `TensorSpec`.
+* **Optimization & fusion conditions (`[TFG]`, `[XLA]`):** Inside `tf.Graph`, `Grappler` performs graph-level constant folding, layout, and arithmetic rewrites, while true **producer-consumer kernel fusion** requires lowering to XLA via `@tf.function(jit_compile=True)` or auto-clustering (`[XLA]`). XLA compilation succeeds **only** when every intermediate tensor's dimensions are statically inferrable without executing the computation (`jit_compile=True` enforces must-compile semantics and rejects data-dependent output shapes such as `tf.unique(x)`), and varying input shapes trigger recompilation on launch (`[XLA]`).
+
+#### JAX (`jax.Array`, `jax.jit`, `jaxpr`, `jax.export`)
+
+* **Ergonomics & dimensional correctness (`[JAX18]`, `[JAXD]`):** JAX pairs a NumPy-like API with **immutable** `jax.Array` values (functional indexed updates via `x.at[i].set(v)`) and composable function transformations (`jit`, `grad`, `vmap`). Immutability completely eliminates PyTorch-style view-aliasing and autograd-invalidation bugs. Yet because JAX is embedded in Python:
+  * **No static dimensional or axis-label checking:** Rank, shape, and axis-swap errors surface only when tracing or executing. Developers routinely layer third-party runtime/trace-time annotation checkers such as `jaxtyping` (`[JXT]`) on top.
+  * **Unenforced purity ("Sharp Bits", `[JAXD]`):** `jax.jit` assumes functions are referentially transparent, but Python cannot enforce purity; mutating global state or performing I/O inside a jitted function runs once at trace time and silently produces stale or dropped effects afterward.
+  * **Structured control flow required:** Branching on a traced tensor value (`if x > 0:`) raises `TracerBoolConversionError`, requiring explicit `jax.lax.cond`, `jax.lax.scan`, or `jax.lax.while_loop` (`[JAXD]`).
+  * **Shape polymorphism caveats (`[JAXD]`):** `jax.export` introduces symbolic dimension expressions (`export.symbolic_shape("a, b")`) to avoid re-tracing serialized functions, but exported functions still **recompile on demand for every concrete shape**, require every dimension variable to be linearly solvable from input array shapes (passing a standalone symbolic scalar `k` fails with `UnexpectedDimVar`, requiring dummy empty arrays like `i32[0, k]`), and define symbolic equality as total (`a == b` evaluates to `False` rather than inconclusive) — an explicitly documented unsoundness for conditionals like `if x.shape[0] != 1: return 1` (`[JAXD]`).
+* **Optimization & fusion conditions (`[JAX18]`, `[JAXD]`, `[XLA]`):** Tracing a pure function with abstract `ShapedArray` tracers produces a first-order, statically typed, statically shaped A-normal form (**`jaxpr`**) lowered to StableHLO/XLA. Because the entire jitted region is pure, alias-free, and concretely shaped, **XLA systematically fuses elementwise/reduction chains and eliminates intermediate buffers** — *provided* shapes and `static_argnums` remain fixed (each new shape/dtype triggers a fresh trace and compile) and control flow stays inside `jax.lax`. In-place buffer reuse is opt-in via `donate_argnums` / `donate_argnames` (`[JAXD]`), which maps to XLA buffer aliasing, **but** ownership is checked only at runtime: reusing a donated array in caller Python code raises a runtime error instead of a compile-time error.
+
+#### XLA / OpenXLA and StableHLO
+
+* **Role & design (`[XLA]`, `[SHLO]`):** XLA is not an end-user programming language, but it defines the canonical compiler IR design point that TensorFlow, JAX, and PyTorch/XLA all target via **StableHLO** (`[SHLO]`). StableHLO is a formally specified, MLIR-based portability opset (~100 pure, value-semantic tensor operations with verifiers, type/shape inference, and multi-year compatibility guarantees) that XLA ingests and lowers to its internal HLO dialect (`[XLA]`).
+* **Optimization & fusion conditions (`[XLA]`):** OpenXLA explicitly states that *"Fusion is XLA's single most important optimization"* (`[XLA]`): streaming producer-consumer operations (`tf.reduce_sum(x + y * z)`) without materializing intermediate tensors to memory, paired with algebraic simplification, CSE, reshape movement, dead-code elimination, and whole-program buffer assignment (`[XLA]`). Two IR invariants make this systematic:
+  1. **Pure value semantics:** HLO operations never mutate inputs in place and carry no view-aliasing ambiguity inside the computation graph. Input-output buffer reuse is expressed explicitly at module boundaries (`SetUpAlias` / `ExecutionInput` ownership donation, with automatic copy-protection if the caller does not donate ownership at runtime, `[XLA]`).
+  2. **Statically inferrable shapes:** XLA's fusion and static buffer-planning passes rely on statically known shapes; although StableHLO supports dynamic-shape representations, XLA must refine or specialize shapes before emitting fused code (`[XLA]`, `[JAXD]`).
+* **Takeaway:** XLA proves that a **pure, value-semantic, statically shaped IR** is the ideal substrate for fusion and buffer planning — while leaving all ergonomics, static axis safety, purity enforcement, and ownership checking to the front-end language.
+
+#### PyTorch (`torch.Tensor`, `torch.compile`, TorchDynamo, AOTAutograd, TorchInductor)
+
+* **Ergonomics & dimensional correctness (`[PT24]`, `[PTD]`):** PyTorch popularized eager, define-by-run Python execution over **mutable** `torch.Tensor` objects with zero-copy strided views (`view`, `transpose`, `slice`, `expand`) sharing underlying storage. Arbitrary Python control flow, debugging, and dynamic shapes work seamlessly in eager mode, but at three correctness costs:
+  * **Runtime-only positional shapes & silent broadcasting:** Shape errors fail only when executed; silent NumPy-style broadcasting (e.g., `(B, 1) + (B,) -> (B, B)`) and equal-size axis swaps go unchecked.
+  * **Mutable view aliasing & autograd hazards:** Because views alias storage and operations like `add_()` mutate in place, mutating a view silently mutates every alias and can invalidate tensors saved for backward propagation (requiring runtime version-counter checks and manual `ctx.mark_dirty()` contracts in custom functions, `[PTD]`).
+  * **Named Tensors ecosystem friction:** PyTorch introduced runtime Named Tensors (`refine_names`, inspired by `[RUSH19]`), but the feature remained at *Prototype* status (`[PTD]`) with incomplete operator coverage because retrofitting axis names onto thousands of existing positional operators creates pervasive boundary mismatches.
+* **Optimization & fusion conditions (`[PT24]`, `[PTD]`):** Eager PyTorch dispatches one operator at a time with no cross-op fusion. PyTorch 2's **`torch.compile`** (`[PT24]`) recovers fusion without forcing users out of imperative Python via a three-stage stack:
+  1. **TorchDynamo** hooks CPython's Frame Evaluation API to trace Python bytecode into **FX graphs** guarded by runtime checks (`TENSOR_MATCH` on type, dtype, device, shape, and contiguity) plus residual Python bytecode (`[PTD]`). **What breaks fusion:** Any **graph break** — data-dependent control flow, unsupported Python features, external C calls, or side effects — terminates the current FX graph and resumes in Python, splitting the computation into separate subgraphs across which **no fusion can occur** (`[PTD]`). Guard failures trigger recompilation.
+  2. **AOTAutograd** traces forward and backward graphs via `FakeTensor` metadata, decomposes operators into a core ATen set, and runs **functionalization** (`torch.func.functionalize`, `[PTD]`): rewriting every in-place mutation (`add_`) and aliasing view (`view`) into functional, non-aliasing equivalents (`add`, `view_copy`) while tracking aliases out-of-line. Crucially, PyTorch must *synthetically reconstruct* functional purity before downstream fusion is even legal.
+  3. **TorchInductor** lowers the functionalized graph into a loop-level IR with SymPy symbolic indexing (`SymInt`), fusing pointwise and reduction loops and planning in-place buffer reuse. Dynamic shapes are supported via automatic dynamic tracing or explicit `mark_dynamic` / `maybe_mark_dynamic` (`[PTD]`), though sizes `0` and `1` still specialize and guard violations recompile.
+
+#### Mojo and Modular MAX (`TileTensor`, `comptime`, MAX Graph)
+
+* **Ergonomics & dimensional correctness (`[MOJO]`):** Mojo is a compiled, MLIR-native systems language designed to eliminate Python's two-world split. Two language features directly address tensor ergonomics and safety:
+  * **Syntactic separation of compile-time parameters `[...]` and runtime arguments `(...)`:** Structs and functions can be parameterized by element types (`dtype: DType`), `comptime` integer dimensions (including variadic `*dimensions: Int`), and structured layouts, enabling compile-time shape/dtype checks and `comptime for` specialization without runtime tracing (`[MOJO]`).
+  * **Ownership and borrow origins (`Origin[mut]`, `mut`, `var`, `^`):** Single-owner value semantics with explicit move transfer (`^`) and tracked mutable/immutable references eliminate use-after-free and silent aliasing bugs (`[MOJO]`).
+  * **Kernel-level tensor types (`TileTensor` / `OwnedTensor`):** Mojo's `TileTensor[mut, //, dtype, LayoutType, origin]` (replacing legacy `LayoutTensor`) couples a `DType`, a mixed compile-time/runtime `Layout` (`ComptimeInt` vs. runtime `Scalar` coordinates), and a borrowed storage origin (`origin_of(owned)`), supporting zero-copy `.tile()` views whose lifetimes cannot outlive their owner (`[MOJO]`).
+  * **Gaps for high-level dimensional safety:** Mojo's core type system focuses on low-level coordinate-to-memory layouts rather than high-level ML dimensional invariants — it does not build in nominal axis labels, labeled-subset broadcasting, compile-time `einsum` checking, or automatic algebraic dimension equivalence (`D == H * K`, convolution output identities).
+* **Optimization & fusion conditions (`[MOJO]`):** Within a single kernel, Mojo's `comptime` parameters and explicit layouts allow full static specialization and manual/tiled fusion with zero abstraction overhead. However, **automatic cross-operator fusion** across high-level neural-network layers lives in a separate layer — **Modular's MAX Graph compiler** (`max.graph` / `GraphCompiler`, `[MOJO]`), where models are built as graphs (typically via Python `max.graph` / `Module` APIs) with symbolic dimensions so `GraphCompiler` can fuse ops, select kernels, and invoke custom Mojo ops. Developers thus still navigate a **two-layer boundary** between high-level model graphs (where automatic cross-op fusion happens) and low-level Mojo kernels (where static layout/ownership typing lives).
+
+### 2.3 Language-integrated dimensional safety and fusion: Dex, Futhark, and Python ergonomics libraries
+
+Research array languages and Python ergonomics libraries illuminate the remaining halves of the design space:
+
+* **Dex (`[DEX21]`):** Treats arrays as eagerly memoized functions over **typed index sets** (`n => a`), where distinct index types cannot be interchanged even when their runtime sizes coincide — statically eliminating both out-of-bounds indexing and equal-length axis swaps. Explicit pointful `for i. ...` comprehensions make **loop fusion a straightforward inlining pass** rather than a fragile graph-tracing problem, while a fine-grained typed `Accum` effect supports safe in-place updates and parallelism-preserving reverse-mode AD.
+* **Futhark (`[FUT17]`, `[FUT21]`):** A purely functional, statically typed array language combining Hindley-Milner **size-dependent types** (`[n][m]f32`, verifying array-size compatibility statically across function boundaries, `[FUT21]`) with **uniqueness types** (`*[]f32`, statically guaranteeing a single live reference so in-place array updates remain referentially transparent, `[FUT17]`). Because all second-order array combinators (`map`, `reduce`, `scan`) are statically pure and size-checked, Futhark's compiler performs aggressive producer-consumer **SOAC loop fusion** and in-place reuse unconditionally — with zero graph breaks, zero tracing divergence, and zero runtime buffer-donation crashes.
+* **NamedTensor (`[RUSH19]`), Einops (`[EIN22]`), and `jaxtyping` (`[JXT]`):** Three widely adopted ergonomics proposals inside Python highlight exactly what developers want — and where host-language limits bite:
+  * Rush's *Tensor Considered Harmful* (`[RUSH19]`) diagnosed the core pathologies of positional tensors (implicit axis conventions, silent positional broadcasting, index-by-comment) and proposed human-readable dimension names with name-matched broadcasting; its subsequent prototype in PyTorch showed that retrofitting names onto an untyped positional ecosystem stalls unless labels are lightweight, zero-cost, and seamlessly interoperable with unlabeled generic ops.
+  * **Einops** (`[EIN22]`) popularized self-documenting, structure-checked Einstein-like rearrangements and contractions across PyTorch, JAX, and TensorFlow — catching rank and split errors clearly, though still only at **runtime**.
+  * **`jaxtyping`** (`[JXT]`) brought concise symbolic-dimension annotations (`Float32[Array, "batch seq d"]`) to Python, while explicitly documenting why Python's static type checkers (`mypy`, `pyright`, PEP 646 variadic generics) cannot practically verify shape arithmetic (`concat`, `stack`, broadcasting, `reshape`) statically, confining verification to runtime or trace-time checks.
+
+### 2.4 Comparative summary matrix
+
+| System | Shape & rank checking | Axis identity / swap safety | Broadcasting rules | Mutability, views & aliasing | Eager vs. compiled fidelity | Kernel / loop fusion & what breaks it | In-place buffer reuse safety |
+|---|---|---|---|---|---|---|---|
+| **TensorFlow** (`[TF16]`, `[AG19]`, `[TFG]`) | Runtime / trace-time (`TensorSpec` hints) | Positional only | Implicit positional (NumPy-style) | Immutable `Tensor` + mutable `Variable` | Divergent (trace-only side effects, non-strict pruning) | XLA via `jit_compile=True` / auto-clustering; breaks on uninferrable shapes (`tf.unique`) | XLA buffer assignment inside compiled cluster |
+| **JAX** (`[JAX18]`, `[JAXD]`) | Runtime / trace-time (optional `jaxtyping` `[JXT]`) | Positional only | Implicit positional (NumPy-style) | Immutable `jax.Array` (alias-free) | Divergent if impure (unenforced purity; `lax` control flow) | `jaxpr` → XLA fusion; breaks outside `jit`, on host callbacks, or shape changes (recompiles) | `donate_argnums` (opt-in, **runtime error** if reused) |
+| **XLA / StableHLO** (`[XLA]`, `[SHLO]`) | Static IR verifier (no user language) | Positional only | Explicit `broadcast_in_dim` in IR | Pure value-semantic IR (zero internal aliasing) | N/A (compiler IR) | Whole-graph HLO fusion; requires statically inferrable shapes | Explicit `SetUpAlias` + runtime copy-protection fallback |
+| **PyTorch 2** (`[PT24]`, `[PTD]`) | Runtime (`SymInt` guards under `compile`) | Positional (`NamedTensor` prototype, partial op coverage) | Implicit positional (NumPy-style) | Mutable `Tensor` + aliased zero-copy views | Guarded bytecode trace (preserves Python semantics via fallback) | TorchDynamo + AOTAutograd **functionalization** + Inductor; **breaks at every graph break** | Inductor buffer planning post-functionalization |
+| **Mojo + MAX** (`[MOJO]`) | Static `[comptime]` dims/layouts in Mojo; symbolic dims in MAX Graph | Positional / layout-indexed (no nominal labels) | Explicit kernel indexing; graph-level ops in MAX | Owned values + borrow-checked `Origin[mut]` views (`TileTensor`) | Compiled AOT (no Python tracing in Mojo) | Manual/tiled in Mojo kernels; automatic cross-op fusion in separate **MAX Graph** layer | Compile-time ownership & mutable references (`mut` / `var` / `^`) |
+| **Dex / Futhark** (`[DEX21]`, `[FUT17]`, `[FUT21]`) | **Static** (typed index sets / size-dependent types) | **Static** in Dex (typed index sets); positional in Futhark | Explicit / indexed (no silent outer-broadcast) | Pure immutable + typed `Accum` (Dex) / uniqueness `*[]T` (Futhark) | Single compiled semantics (100% pure) | Unconditional loop/SOAC fusion (inlining / pure combinators); zero graph breaks | **Compile-time verified** (uniqueness types / `Accum` effect) |
+| **Babble (`BIP033`)** | **Static** (`dim`, `...Shape`, E-graph algebra, strict `dyn`) | **Static optional nominal labels** (erased at runtime, preserved by generics) | Scalar + **labeled-subset** implicit; unlabeled mismatches rejected statically | **Immutable value semantics** + zero-copy views + strict linear `unique` | **100% eager parity** across Interpreter, `-O0`/`-O1`/`-O2`, Wasm | Direct **`HIR` fusion** (`TensorFusionPass`) + E-graph view rewrites; zero tracing or graph breaks | **Compile-time verified** linear `unique` + `FbipReusePass` (`O10`) |
+
+### 2.5 Synthesis: lessons applied directly to `BIP033`
+
+Babble's existing compiler architecture — static typing, pure-by-default effects (`BIP016`), linear `unique` ownership (`BIP007`/`BIP016`), `FbipReusePass` (`BIP014-I4`), ANTLR-free `HIR` (`BIP014-I1`), and the zero-dependency `org.babblelang.ir.egraph` core (`BIP027-I2`) — lets `BIP033` synthesize the strongest lessons from every system above without inheriting their host-language compromises:
+
+1. **Compile-time dimensional safety without library-stub ceilings (`BIP033-D2`, `D3`, `D4`):** Combining Futhark's size-dependent types (`[FUT21]`) with `org.babblelang.ir.egraph` equality saturation solves the exact shape-arithmetic gap (`concat`, `reshape` product checks, `D == H * K`, convolution output formulas) that `jaxtyping` (`[JXT]`) and JAX `export` (`[JAXD]`) cannot check statically, while strict one-way `dyn` subtyping + `withDims` cleanly bridges runtime-sized batches without unsound symbolic equality.
+2. **Zero-cost nominal axis labels without PyTorch's ecosystem fragmentation (`BIP033-D6`, `D9`):** Applying Rush's named-axis and name-matched broadcasting insights (`[RUSH19]`) and Einops's structural clarity (`[EIN22]`) at **compile time** — with covariant erasure to unlabeled parameters and automatic label preservation through polymorphic `dim`/`shape` variables — prevents equal-size axis swaps (`batch: 32` vs. `heads: 32`) and silent `(B, 1) + (B,)` outer broadcasts while keeping every generic helper 100% reusable and incurring zero runtime overhead.
+3. **Pure immutable values + statically checked `unique` ownership (`BIP033-D8`):** Adopting JAX/XLA/Futhark's immutable value semantics eliminates PyTorch's mutable view-aliasing bugs and AOTAutograd's functionalization machinery (`[PT24]`). Unlike JAX, Babble's `EffectChecker` **enforces purity statically** and tracks **linear `unique` tensor ownership at compile time**, turning JAX/XLA's runtime-checked `donate_argnums` (`[JAXD]`, `[XLA]`) into Futhark-style compile-time-verified FBIP in-place buffer reuse (`BIP014-I4`).
+4. **Direct `HIR` fusion with single-language eager semantics (`BIP033-D12`, `D13`):** Because tensors, shapes, and purity are first-class in `HIR`, elementwise loop fusion (`TensorFusionPass`), E-graph view simplification, static shape-check elimination, and future functional reverse-mode AD operate directly on compiled Babble code — avoiding TensorFlow's non-strict trace divergence (`[TFG]`), PyTorch's bytecode graph breaks (`[PTD]`), and Mojo+MAX's graph-vs-kernel language split (`[MOJO]`).
+
+---
+
+## 3. Settled Design Decisions
 
 | ID | Topic | Decision |
 |---|---|---|
@@ -142,11 +261,11 @@ def sgdStep of (S: shape) = fn (
 
 ---
 
-## 3. New Core Scalar Types: `float16` and `bfloat16` (`BIP033-D7`)
+## 4. New Core Scalar Types: `float16` and `bfloat16` (`BIP033-D7`)
 
 ML training and inference rely heavily on 16-bit floating-point formats: IEEE-754 binary16 (`float16`, high 10-bit precision for inference/graphics) and Google Brain float16 (`bfloat16`, full `float32` exponent range for stable deep-learning training). Promoting both to full core scalar types expands Babble's scalar roster from 9 (`BIP011`) to 11 (`byte`, `short`, `int`, `long`, `float16`, `bfloat16`, `float`, `double`, `bool`, `char`, `string`), making scalar math, tensor element extraction (`t.get(...)`), constants, and user-defined ML helpers completely uniform.
 
-### 3.1 Bit formats and exact arithmetic
+### 4.1 Bit formats and exact arithmetic
 
 | Type | Format | Sign / Exp / Mantissa | Range | JDK 21 `java.base` Conversion |
 |---|---|---|---|---|
@@ -155,7 +274,7 @@ ML training and inference rely heavily on 16-bit floating-point formats: IEEE-75
 
 **Exact single-rounding arithmetic property:** For both `float16` (11-bit significand) and `bfloat16` (8-bit significand), binary32 (`float`, 24-bit significand) satisfies $24 > 2p + 1$ ($24 > 23$ and $24 > 17$). Consequently, widening both operands to `float`, computing `+`, `-`, `*`, `/`, or `sqrt` in `float`, and rounding back once to `float16` / `bfloat16` produces the **bit-exact** IEEE-754 / bfloat16 rounded result with zero double-rounding error across every hardware platform (`Interpreter`, JVM bytecode, and Wasm).
 
-### 3.2 Literals, conversions, and numeric promotion DAG
+### 4.2 Literals, conversions, and numeric promotion DAG
 
 * **Suffix literals:** `1.5f16` / `1.5F16` (`FLOAT16_LIT`) and `1.5bf16` / `1.5BF16` (`BFLOAT16_LIT`), placed ahead of `FLOAT_LIT` and `DOUBLE_LIT` in `Babble.g4` so longest-match lexing resolves them unambiguously with zero predicates.
 * **Contextual numeric literals (`BIP011-D3`):** Just as `def b: byte = 10` adapts integer literals to `byte`, `def x: bfloat16 = 1.5`, `def y: float16 = 0`, and `t * 0.5` (where `t: tensor of (bfloat16, ...)`) adapt numeric literals directly to `bfloat16` / `float16` at compile time, reporting an overflow error if a constant literal exceeds `float16`'s finite range ($\pm 65504$).
@@ -184,7 +303,7 @@ def s: bfloat16 = 2.0bf16
 def e = a * s                  ;; OK : matching scalar -> tensor of (bfloat16, 4, 8)
 ```
 
-### 3.3 JVM representation, `PrimitiveKind` & `Bootstrap` disambiguation
+### 4.3 JVM representation, `PrimitiveKind` & `Bootstrap` disambiguation
 
 * **Boxed wrappers (`java.base` only):** `org.babblelang.runtime.Float16` and `org.babblelang.runtime.BFloat16` (`public final class ... extends Number implements Comparable<...>`) hold `private final short bits` and provide `fromBits(short)`, `rawBits()`, `floatValue()`, `doubleValue()`, and Babble total-order `==`/`compareTo` (`Float.compare` parity). Extending `java.lang.Number` integrates automatically with `Values.hash`, `Values.same` (`isPlain`), `Values.toDouble`, and `Values.isBuiltin` (`"float16"` / `"bfloat16"`), while remaining fully compatible with JEP 401 Valhalla value classes (`BIP018-P4`).
 * **Unboxed storage (`RM001` / `BIP011-D13`):** `PrimitiveKind` gains `FLOAT16` and `BFLOAT16` (10 unboxed JVM kinds total), both carried unboxed in JVM `short` (`S`) locals, compiled class/record fields, direct/static/`$spec`/interface `bm$<name>$spec` calls, `SelfTailCall`s, and `Float16Cell` / `BFloat16Cell` closure cells in `org.babblelang.runtime`.
@@ -199,11 +318,11 @@ def e = a * s                  ;; OK : matching scalar -> tensor of (bfloat16, 4
 
 ---
 
-## 4. Grammar & Surface Syntax (`BIP033-D5`)
+## 5. Grammar & Surface Syntax (`BIP033-D5`)
 
 Babble's grammar invariants (`BIP012`) are non-negotiable: **zero `@parser::members`, zero semantic predicates, single bracket type `()`, and pure `PredictionMode.SLL`** across every `.ba` and `.batest.md` file (`ParserGrammarTestCase`).
 
-### 4.1 Keyword budget and corpus compatibility
+### 5.1 Keyword budget and corpus compatibility
 
 Scanning the entire repository (`src/test/babble/`, `src/test/batest/`, `examples/`, `src/main/java/org/babblelang/axioms/`) confirms that `dyn` is heavily used as a test helper (`def dyn = fn (v: any): any -> (v)`) and `shape` is used as a local variable (`src/test/babble/AnyAndCasts.ba`), whereas `tensor`, `float16`, and `bfloat16` have **zero** collisions.
 
@@ -213,7 +332,7 @@ Therefore:
 * **Zero breakage from `dim`, `shape`, `dyn`:** `dim`, `shape`, and `dyn` are **NOT** reserved lexer keywords. They remain ordinary `ID` tokens recognized contextually by `TypeAnnotations` inside kind annotations (`B: dim`, `Batch: shape`) and `dimExpr` positions (`tensor of (float, dyn, 768)`, `...dyn`). Existing `def dyn = ...`, `def shape: Shape = ...`, `t.shape()`, and `t.dim(0)` work untouched.
 * **Zero new operator tokens:** matrix multiplication uses `x.matmul(w)` (`BIP033-D9`); no `@` token is added.
 
-### 4.2 Exact `Babble.g4` additions and `SLL` disjointness proof
+### 5.2 Exact `Babble.g4` additions and `SLL` disjointness proof
 
 ```antlr
 // 1. Core keywords (all exempted in memberName via coreTypeKeyword)
@@ -297,18 +416,18 @@ nonParenNullableType: frozen=FROZEN? typeName
    * `typeOrDimRefArg` (`type`) parses all types AND bare `ID` / `(ID)` atoms (`B`, `dyn`, `float`), which `TypeAnnotations` classifies as `Type` vs. `DimExpr` using the target parameter's kind (`type` vs. `dim`).
 3. **Uniform `of` application:** Because `nonParenNullableType` and `typeArguments` share `typeArg`, both type annotations (`Vec of (float, 3)`, `Mat of (bfloat16, H * K, Out)`, `Linear of (768, 3072)`, `SquareMatrix of 4`) and expression-level type/shape applications (`(tensor of (float, B, T + 1)).zeros()`, `x.reshape of (batch: B, seq: T, d: D) ()`, `b.broadcast of (...Batch, Out) ()`, `x.relabel of (batch: B, seq: T, d: 768) ()`, `masked.cast of float ()`, `makeCausalMask of 64 ()`) parse through one unified rule with zero expression-grammar hacks.
 
-### 4.3 Formatting and REPL `classify`
+### 5.3 Formatting and REPL `classify`
 
 * **Formatter:** `tensor of (float, B, T, D)`, `tensor of (float, batch: B, seq: T + 1)`, `tensor of (float, ...Batch, In)`, `of (B: dim, H: dim, K: dim, D: dim == H * K)`, `x.reshape of (batch: B, seq: T) ()`, `masked.cast of float ()` — single space around `of`, binary dim ops (`+`, `-`, `*`, `/`, `==`), and after `:` and `,`; no space between `...` and `Batch`.
 * **REPL `classify`:** No new unmatched delimiters are introduced (`()` only), so `BabbleSession.classify` works unchanged.
 
 ---
 
-## 5. Dimensional Type System & Algebraic Solver (`BIP033-D2`, `D3`, `D4`, `D6`)
+## 6. Dimensional Type System & Algebraic Solver (`BIP033-D2`, `D3`, `D4`, `D6`)
 
 All dimensional type structures live in `org.babblelang.analysis` (ANTLR-free, respecting `BIP027-D3` and the 2,000-LOC ceiling of `BIP027-D9` via dedicated collaborators `DimAlgebra`, `TensorTypes`, and `EinsumChecker`).
 
-### 5.1 Type representation
+### 6.1 Type representation
 
 ```java
 // Inside org.babblelang.analysis (ANTLR-free):
@@ -346,7 +465,7 @@ sealed interface DimExpr {
   * `Type.Frozen(Type.Tensor(...))` simplifies directly to `Type.Tensor(...)` (`BIP033-D8`, `BIP007-D7`).
   * **Intersections (`BIP022`):** `tensor of ...` is a concrete final value type (not an interface), so it cannot be an operand of `&` (`Only interfaces intersect`).
 
-### 5.2 Algebraic dimension canonicalizer & E-graph solver (`BIP033-D3`)
+### 6.2 Algebraic dimension canonicalizer & E-graph solver (`BIP033-D3`)
 
 Dimension equivalence (`d1 == d2`) is checked by a deterministic two-layer solver in `DimAlgebra` with **zero external dependencies**:
 
@@ -365,7 +484,7 @@ Dimension equivalence (`d1 == d2`) is checked by a deterministic two-layer solve
    * Matching `(...Batch, In)` against `(B, T, 768)` aligns from the right (suffix `In = 768`, prefix `Batch = (B, T)`); prefix-spread + suffix-axis matching is unique because at most one `Spread` is allowed per `Shape`.
    * Side constraints (`D == H * K`) are verified at every call site once type/dim arguments are solved (`Dimension constraint failed : expected D == H * K, got 768 == 12 * 32`).
 
-### 5.3 Optional nominal axis labels (`BIP033-D6`)
+### 6.3 Optional nominal axis labels (`BIP033-D6`)
 
 Nominal axis labels give NamedTensor-level protection against axis swaps while keeping positional layout explicit:
 
@@ -378,7 +497,7 @@ Nominal axis labels give NamedTensor-level protection against axis swaps while k
 
 **Label preservation through generics:** When `def relu of (T, S: shape) = fn (x: tensor of (T, ...S)): tensor of (T, ...S)` is called with `tensor of (float, batch: B, seq: T, d: 768)`, `S` captures `(batch: B, seq: T, d: 768)` *with its labels*, so the return type is `tensor of (float, batch: B, seq: T, d: 768)`. Similarly, `def linear of (Batch: shape, In: dim, Out: dim)` preserves all labels inside `Batch`. Explicit `x.relabel of (batch: B, seq: T, d: 768) ()` (zero-copy, pure `nothrow`, compile-time no-op at runtime!) attaches, renames, or strips labels (`x.relabel of (B, T, 768) ()`).
 
-### 5.4 Dynamic dimensions, narrowing, overloads & existential bridging (`BIP033-D4`)
+### 6.4 Dynamic dimensions, narrowing, overloads & existential bridging (`BIP033-D4`)
 
 Because `tensor` is immutable (`BIP033-D8`), shape widening is sound in **all** positions (fields, returns, parameters, collections):
 
@@ -388,7 +507,7 @@ Because `tensor` is immutable (`BIP033-D8`), shape widening is sound in **all** 
   * **`dyn` is NEVER a subtype of any static constant `768` or in-scope symbolic `B`.** Passing `tensor of (float, dyn, 768)` to `fn (x: tensor of (float, 32, 768))` is a compile error (`Dimension mismatch : expected 32, got dyn — narrow with 'is' or 'as'`).
 * **Runtime narrowing (`is` and `as`) and `BIP020-D9` unchecked-cast parity:**
   * `x is tensor of (float, 32, 768)` checks runtime dtype, rank (`== 2`), and exact dimensions (`shape[0] == 32 && shape[1] == 768`), narrowing `x` flow-sensitively in the `then` branch (`Narrowing`) with **zero** unchecked warning.
-  * `x as tensor of (float, B, dyn, 768)` checks runtime dtype, rank (`== 3`), `shape[0] == B` (using the reified runtime `int` value of in-scope `B`, §8.3), and `shape[2] == 768`, throwing `TensorShapeException` (a subclass of `BabbleException`, catchable via `catch e: exception` per `BIP028-D2`) on mismatch.
+  * `x as tensor of (float, B, dyn, 768)` checks runtime dtype, rank (`== 3`), `shape[0] == B` (using the reified runtime `int` value of in-scope `B`, §9.3), and `shape[2] == 768`, throwing `TensorShapeException` (a subclass of `BabbleException`, catchable via `catch e: exception` per `BIP028-D2`) on mismatch.
   * Because axis labels are erased at runtime (zero runtime overhead), `x is tensor of (float, batch: 32, d: 768)` and `x as tensor of (float, batch: 32, d: 768)` check dtype, rank, and numeric dims at runtime and emit an `Unchecked cast` warning for the erased labels (matching `BIP020-D9` for erased array nullness/generics), unless `x`'s static type already carries those labels; prefer narrowing unlabeled `x as tensor of (float, B, 768)` followed by `.relabel of (batch: B, d: 768) ()` for warning-free code.
 * **Overload sets (`BIP021-D10`, `D11`):**
   * Tensors with differing dtypes, ranks, or statically unequal concrete dims (`(float, 3, 4)` vs. `(float, 4, 3)`) are statically disjoint; `(float, dyn, 4)` overlaps `(float, 3, 4)`.
@@ -401,33 +520,33 @@ Because `tensor` is immutable (`BIP033-D8`), shape widening is sound in **all** 
   * Any symbolic dim introduced by `withDims` that would escape the callback's return type widens cleanly back to `dyn`.
 * **Runtime-checked dynamic ops:** When both operands of `+`, `matmul`, `concat`, etc. have `dyn` on a checked axis (e.g., `tensor of (float, dyn, dyn).matmul(tensor of (float, dyn, dyn))`), the operation compiles cleanly and emits a runtime shape check throwing `TensorShapeException` on mismatch.
 
-### 5.5 In-scope `dim` parameters as read-only `int` expressions
+### 6.5 In-scope `dim` parameters as read-only `int` expressions
 
 In ML code, functions frequently need the numeric value of a symbolic `dim` parameter inside expressions (e.g., `double(K)` for attention scaling $1/\sqrt{K}$, `T - 1` for causal slicing, or `tensor.arange(0, T)`):
 
 * Every in-scope `dim` parameter `K` is bound in `BlockScopes` / `Resolver` as a **read-only `int` value** in expression positions (as well as a `DimVar` in type/dim positions).
 * Reassigning a `dim` parameter (`K = 4`) is a compile error (`Cannot reassign dim parameter : K`), matching `for`-loop variables (`BIP013`).
-* Reading `K` in a value expression marks `K` as **runtime-needed** in `LoweringAnalyzer` (§8.3).
+* Reading `K` in a value expression marks `K` as **runtime-needed** in `LoweringAnalyzer` (§9.3).
 * In `slice(axis, start, end, step)` and `tensor.arange(start, end, step)`, arguments built purely from `INT` literals, in-scope `dim` parameters, and `+`, `-`, `*`, `/` are extracted directly as static `DimExpr`s by `TensorTypes` (so `x.slice(1, 0, T - 1)` statically has dim `T - 1` and `tensor.arange(0, T)` statically has dim `T`), falling back cleanly to `dyn` for arbitrary runtime `int` expressions.
-* By contrast, a `shape` parameter (`Batch: shape`) is NOT an `int` expression; its runtime dims are accessed via a tensor carrying it (`x.shape()`, `x.rank()`) or reified automatically inside `of (...Batch, ...)` factories and `.broadcast of (...Batch, ...) ()` (§8.3).
+* By contrast, a `shape` parameter (`Batch: shape`) is NOT an `int` expression; its runtime dims are accessed via a tensor carrying it (`x.shape()`, `x.rank()`) or reified automatically inside `of (...Batch, ...)` factories and `.broadcast of (...Batch, ...) ()` (§9.3).
 
-### 5.6 Cross-module & interactive session persistence (`BIP004`, `BIP005`, `BIP010-D3`)
+### 6.6 Cross-module & interactive session persistence (`BIP004`, `BIP005`, `BIP010-D3`)
 
 `DimVar` and `ShapeVar` are keyed by `Type.SymbolId` (identical to `Type.TypeVar` in `BIP010-D3`). `TypedModuleSummary` and `AnalysisSession` persist `DimVar`/`ShapeVar` parameter lists, `List<DimConstraint>`, and `LoweringAnalyzer`'s runtime-needed `reifiedDimMask` / `reifiedShapeMask` alongside function, class, record, interface, and `BIP023` type-alias summaries — completely AST-detached and lock-free.
 
 ---
 
-## 6. Immutability, Ownership, Views & `BIP016` Effects (`BIP033-D8`)
+## 7. Immutability, Ownership, Views & `BIP016` Effects (`BIP033-D8`)
 
-### 6.1 Immutable value semantics
+### 7.1 Immutable value semantics
 
 `tensor of (T, ...)` is an **immutable value type**, just like `string` and immutable `record`s:
 
-* **Equality, `same`, & hashing:** `a == b` (and `!=`) compares dtype, shape, and elements by value (using Babble's `==` on each scalar, matching `BIP020-D17` NaN / signed-zero semantics). `a.equals(b)` and `a.hashCode()` match `==`, so tensors work safely as `map` keys, `set` elements, and `record` fields. `same(a, b)` checks object identity (as for records); because FBIP reuse (§6.3) only mutates a buffer when zero aliases can exist, `same` remains completely sound.
+* **Equality, `same`, & hashing:** `a == b` (and `!=`) compares dtype, shape, and elements by value (using Babble's `==` on each scalar, matching `BIP020-D17` NaN / signed-zero semantics). `a.equals(b)` and `a.hashCode()` match `==`, so tensors work safely as `map` keys, `set` elements, and `record` fields. `same(a, b)` checks object identity (as for records); because FBIP reuse (§7.3) only mutates a buffer when zero aliases can exist, `same` remains completely sound.
 * **Printing:** `print`/`println`/`toString()` render dtype, shape, and formatted nested slices (truncating cleanly with `...` for large tensors > 1,000 elements so REPL/debugging never floods stdout).
 * **`frozen` simplification:** `frozen tensor of (T, ...)` simplifies to `tensor of (T, ...)`. A tensor can always be shared freely across threads (`BIP007` §10) and captured by `pure` closures.
 
-### 6.2 Zero-copy strided views
+### 7.2 Zero-copy strided views
 
 Because the underlying buffer of an immutable `Tensor` is never mutated while any alias exists, structural operations return **O(1) zero-copy views** sharing the same `TensorStorage` with adjusted `offset`, `shape`, and `strides`:
 
@@ -435,7 +554,7 @@ Because the underlying buffer of an immutable `Tensor` is never mutated while an
 * Every view operation is **`pure deterministic`** (`nothrow` whenever static dimensions guarantee validity, such as `transpose`, `permute`, `relabel`, `unsqueeze`, `squeeze` on static `1`, and `broadcast` on static dims).
 * Unlike PyTorch, views can **never** silently corrupt another tensor or invalidate a tensor saved for backpropagation.
 
-### 6.3 Strict linear `unique` tracking on immutable tensors & FBIP reuse
+### 7.3 Strict linear `unique` tracking on immutable tensors & FBIP reuse
 
 Immutable semantics do **not** mean copying 100 MB weight tensors on every SGD/Adam update or intermediate activation. Babble already has `unique`/`MOVED` ownership (`BIP007-I2`, `BIP016`) and `FbipReusePass` (`BIP014-I4`, `O10`), with one critical precision refinement in `EffectChecker`:
 
@@ -457,7 +576,7 @@ Immutable semantics do **not** mean copying 100 MB weight tensors on every SGD/A
   * **`(tensor of (float, 3, 4)).fromUnique(move(arr))`** (or 1-D `tensor.fromUnique(move(arr))` returning `unique tensor of (T, dyn)`): transfers a `unique array of T` (`BIP020`) directly into a `unique tensor` with **zero array copy** (`move(arr)` statically invalidates `arr` in `EffectChecker`, guaranteeing no mutable alias survives; checks `arr.size() == prod(dims)` at runtime).
   * **`(tensor of (float, 3, 4)).builder()`:** returns a `unique` mutable `TensorBuilder` (`mut .set(...)`, `mut .fill(...)`, consuming `unique .build(): unique tensor of (float, 3, 4)`) for imperative construction inside `pure` functions (just like local `unique list` mutation in `BIP007-D6`), transferring the backing primitive array with zero copy on `.build()` and introducing zero new reserved keywords.
 
-### 6.4 Effect and algebraic-property profile (`BIP016` / `BIP019`)
+### 7.4 Effect and algebraic-property profile (`BIP016` / `BIP019`)
 
 | Operation category | `BIP016` Effects | Return ownership | Notes |
 |---|---|---|---|
@@ -472,9 +591,9 @@ Immutable semantics do **not** mean copying 100 MB weight tensors on every SGD/A
 
 ---
 
-## 7. Operations, Broadcasting, Contractions & `std/nn` Boundary (`BIP033-D9`, `D10`)
+## 8. Operations, Broadcasting, Contractions & `std/nn` Boundary (`BIP033-D9`, `D10`)
 
-### 7.1 Factories and creation
+### 8.1 Factories and creation
 
 Consistent with `BIP011` collections and `BIP020` arrays (`CoreCollection` + `HasMembers`), tensor factories support both explicit `of` type/shape application and expected-type inference:
 
@@ -494,11 +613,11 @@ def t3 = tensor.fromUnique(move(arr))                          ;; 1-D zero-copy 
 def bld = (tensor of (float, 2, 3)).builder()                  ;; mutable TensorBuilder -> .build()
 ```
 
-*(Note on symbolic dims & shapes at runtime: whenever a factory like `(tensor of (float, B, D)).zeros()` or `(tensor of (float, ...Batch, D)).ones()` uses in-scope symbolic `dim`/`shape` variables, the compiler passes their reified runtime `int`/`int[]` values automatically — see §8.3.)*
+*(Note on symbolic dims & shapes at runtime: whenever a factory like `(tensor of (float, B, D)).zeros()` or `(tensor of (float, ...Batch, D)).ones()` uses in-scope symbolic `dim`/`shape` variables, the compiler passes their reified runtime `int`/`int[]` values automatically — see §9.3.)*
 
-### 7.2 Structural, view & iteration operations
+### 8.2 Structural, view & iteration operations
 
-Axis arguments accept either a **compile-time constant `int` index** (`0`, `1`, `-1` for last axis) OR a **compile-time constant `string` axis label** (`"seqK"`, `"batch"`) when the tensor carries that label (a non-constant `string` variable is a compile error; an unknown label is a compile error `Unknown axis label : nope in ...`). Shape/label-transforming methods use Babble's standard `of (...) ()` type-argument syntax (§4.2).
+Axis arguments accept either a **compile-time constant `int` index** (`0`, `1`, `-1` for last axis) OR a **compile-time constant `string` axis label** (`"seqK"`, `"batch"`) when the tensor carries that label (a non-constant `string` variable is a compile error; an unknown label is a compile error `Unknown axis label : nope in ...`). Shape/label-transforming methods use Babble's standard `of (...) ()` type-argument syntax (§5.2).
 
 | Operation | Signature / Shape transformation | Zero-copy? |
 |---|---|---|
@@ -518,7 +637,7 @@ Axis arguments accept either a **compile-time constant `int` index** (`0`, `1`, 
 | `t.contiguous()` | Returns `t` unchanged if already C-contiguous, else a contiguous copy | If already contiguous |
 | `for x in t then (...)` (`BIP013`) | Iterates slices along axis `0` (yielding `tensor of (T, ...Rest)` for rank $\ge 2$, or scalar `T` for 1-D; 0-D rejected statically as non-iterable) | Zero-copy slice views |
 
-### 7.3 Broadcasting rules (`BIP033-D9`)
+### 8.3 Broadcasting rules (`BIP033-D9`)
 
 Elementwise binary operations (`+`, `-`, `*`, `/`, `.eq`, `.ne`, `.lt`, `.le`, `.gt`, `.ge`, `.max`, `.min`, `.pow`) follow a strict, bug-preventing broadcasting decision rule:
 
@@ -539,7 +658,7 @@ flowchart TD
 * `(batch: B, seq: T, d: D) + (d: D)` (bias addition), `(batch: B, heads: H, seqQ: T, seqK: T) + (seqQ: T, seqK: T)` (causal attention mask), `logits - logits.max(axis: "seqK")` (missing reduced label), AND `logits - logits.max(axis: "seqK", keepDims: true)` (same label `seqK: 1` → `seqK: T`) all work **implicitly and unambiguously** because every axis identity is explicit.
 * `(B, 1) + (B,)` (unlabeled!) is a **compile error**, completely eliminating the infamous silent `(B, B)` outer-product bug; if an outer product is genuinely intended, the programmer writes `a.broadcast of (B, B) () + b.unsqueeze(0).broadcast of (B, B) ()` or uses `tensor.einsum("i,j->ij", a, b)`.
 
-### 7.4 Contractions (`matmul`, `matmulAccum`, `dot`, and compile-time checked `einsum` / `contract`)
+### 8.4 Contractions (`matmul`, `matmulAccum`, `dot`, and compile-time checked `einsum` / `contract`)
 
 * **`.matmul(other)`** (and **`.matmulAccum of Acc (other)`** for explicit mixed-precision accumulation, e.g. `a.matmulAccum of float (b)` accumulating inner products in `float32` while returning `a`'s dtype `bfloat16`/`float16`):
   * 2-D: `(M, K) × (K, N) → (M, N)`.
@@ -552,7 +671,7 @@ flowchart TD
   * `EinsumChecker` parses `spec` during type checking, verifies that each input term's letter count matches its tensor's rank (supporting `...` ellipsis for rank-polymorphic batch prefixes), unifies every repeated subscript letter across all inputs via `DimAlgebra` (checking both dim equality and label compatibility — catching e.g. `q` having `headDim: 64` and `k` having `headDim: 32` at compile time!), and synthesizes the exact output `Shape` (preserving axis labels when uniquely determined).
   * **Named-axis contraction shorthand:** When inputs have nominal axis labels, `tensor.contract(q, k, "headDim")` (or variadic `tensor.contract(q, k, "heads", "headDim")`) contracts matching labeled axes directly without needing a letter string.
 
-### 7.5 Reductions, indexing, selection, and `cast`
+### 8.5 Reductions, indexing, selection, and `cast`
 
 * **Reductions:** `.sum(axis, keepDims = false)`, `.mean(...)`, `.max(...)`, `.min(...)`, `.prod(...)`, `.argmax(axis)` (returns `tensor of (int, ...)`). Omitting `axis` (e.g., `t.sum()`) reduces over all elements to a 0-D scalar tensor `tensor of T` (or `tensor of int` for `argmax`). When `keepDims: true`, the reduced axis stays in place with static dim `1` (preserving its label).
 * **Conditional & indexing ops:**
@@ -560,7 +679,7 @@ flowchart TD
   * `t.gather(axis, indices: tensor of (int | long, ...))` (embedding lookup & sparse selection, checking non-axis dims statically).
   * `t.cast of U ()`: converts dtype `T` → `U` while preserving exact `Shape` and all axis labels.
 
-### 7.6 Clean boundary with `std/nn` (`BIP033-D10`)
+### 8.6 Clean boundary with `std/nn` (`BIP033-D10`)
 
 The core `tensor` type stays lean and composable. Higher-level ML building blocks live in Babble `std/nn` modules (once `std/` lands), written in pure Babble with full dimensional safety:
 
@@ -573,9 +692,9 @@ Where performance matters (e.g., fused `softmax`, `flashAttention`, or im2col-fr
 
 ---
 
-## 8. Runtime Representation, `TensorBackend` SPI & Acceleration (`BIP033-D11`)
+## 9. Runtime Representation, `TensorBackend` SPI & Acceleration (`BIP033-D11`)
 
-### 8.1 Architecture overview
+### 9.1 Architecture overview
 
 ```mermaid
 flowchart TB
@@ -592,7 +711,7 @@ flowchart TB
     SPI -. "Optional BIP018 target-gated" .-> Ffm["PanamaFfmTensorBackend\n(OpenBLAS / cuBLAS / Metal / ONNX)"]
 ```
 
-### 8.2 `java.base`-only runtime representation (`org.babblelang.runtime.tensor`)
+### 9.2 `java.base`-only runtime representation (`org.babblelang.runtime.tensor`)
 
 To satisfy `RuntimeBoundaryTestCase` (zero external dependencies, runs inside standalone `babblec` AOT jars on JDK 21) and guarantee 100% deterministic parity across `Interpreter`, `-O0`, `-O1`, and `-O2`:
 
@@ -629,7 +748,7 @@ public final class Tensor {
   * Enables `BIP018` editions (`babble-25`, `babble-28`, `babble-29+`) to drop in a `Vector API` SIMD backend or a `java.lang.foreign` (Panama FFM) BLAS / Metal / CUDA backend without altering a single line of Babble syntax or static types.
 * **WebAssembly 3.0 portability (`BIP025`):** Because `Tensor` is a plain immutable struct over flat primitive arrays (`$FloatArray`, `$ShortArray`, `$IntArray`, etc.) and `JvmCpuTensorBackend` uses zero reflection or native code, `BIP025` can lower `Tensor` directly to WasmGC structs + primitive arrays (and leverage Wasm Relaxed SIMD when enabled).
 
-### 8.3 Reified runtime `dim` and `shape` parameters
+### 9.3 Reified runtime `dim` and `shape` parameters
 
 Polymorphic functions such as:
 
@@ -648,7 +767,7 @@ need the runtime `int` value of `D` and `int[]` values of `Batch` inside their b
 * **Hidden leading parameters when not parameter-derivable:** For remaining runtime-needed `dim` / `shape` parameters (e.g., `H` and `K` in `selfAttention` or `T` in `makeCausalMask of (T: dim) = fn (): ...`), `HirBuilder` emits hidden leading unboxed `int` (for `dim`) and `int[]` (for `shape`) parameters on `$spec` / `$direct` (and stores `final int` / `final int[]` fields on compiled generic classes/records), supplied automatically at every call site from compile-time constants (`BIPUSH`/`SIPUSH`/`LDC`), enclosing `dim`/`shape` parameters, or `arg.dim(axis)`!
 * Functions whose `dim`/`shape` parameters are never needed at runtime (`def add of (S: shape) = fn (a, b) -> (a + b)`) pass **zero** hidden arguments.
 
-### 8.4 Java interoperability & axioms (`BIP019`, `BIP030`)
+### 9.4 Java interoperability & axioms (`BIP019`, `BIP030`)
 
 * `Tensor` exposes clean `java.base` conversion helpers (`toFloatArray()`, `toDoubleArray()`, `toFloatBuffer()`, `fromFloatArray(float[], int...)`) so Java libraries can exchange buffers cleanly.
 * On JDK 25+ (`BIP018`), `std/foreign` can bridge `TensorStorage` with `java.lang.foreign.MemorySegment` for zero-copy C/BLAS/ONNX/GPU handoff.
@@ -659,9 +778,9 @@ need the runtime `int` value of `D` and `int[]` values of `Batch` inside their b
 
 ---
 
-## 9. Compiler Lowering, Optimizations & Autograd Readiness (`BIP033-D12`, `D13`)
+## 10. Compiler Lowering, Optimizations & Autograd Readiness (`BIP033-D12`, `D13`)
 
-### 9.1 `HIR` representation
+### 10.1 `HIR` representation
 
 `org.babblelang.ir.hir.HirExpr` gains compact, target-neutral nodes (following `BIP014-I1` and `BIP025-I0` target neutrality):
 
@@ -676,7 +795,7 @@ need the runtime `int` value of `D` and `int[]` values of `Batch` inside their b
 
 All nodes integrate with `HirVerifier`, `HirCanonicalPrinter` (`.batest.md` `-O0`/`-O1` HIR goldens, `BIP029`), and `HirRewriter`.
 
-### 9.2 `-O1` and `-O2` compiler optimizations
+### 10.2 `-O1` and `-O2` compiler optimizations
 
 1. **Elementwise loop fusion (`TensorFusionPass`, `-O1`):**
    * Chains of pure `TensorElemOp` nodes with single-use `unique` intermediates (e.g., `((x * scale) + bias).exp()`) fuse into a **single `HirExpr.TensorFusedKernel`** (lowering to one tight contiguous primitive loop with zero intermediate array allocations — turning 3 full memory round-trips into 1).
@@ -697,16 +816,16 @@ All nodes integrate with `HirVerifier`, `HirCanonicalPrinter` (`.batest.md` `-O0
 5. **Small fixed-shape SROA (`ScalarReplacePass` `O9`, `-O1`/`-O2`):**
    * Non-escaping small fixed-shape tensors (e.g., `Vec of (double, 3)` or `Mat of (float, 4, 4)` with $\le 16$ static elements) can be scalar-replaced into unboxed primitive locals — giving ray-tracer/physics code `record Vec3`-level performance (`BIP014-I4`) directly with `tensor`.
 
-### 9.3 Functional automatic differentiation readiness (`BIP033-D13`)
+### 10.3 Functional automatic differentiation readiness (`BIP033-D13`)
 
 Automatic differentiation is intentionally left to a dedicated follow-up BIP, and BIP033's design ensures it slots in with zero breaking changes to `Tensor`:
 
 * **No mutable `.grad` or `requiresGrad` fields on `Tensor`:** Core `Tensor` stays a lean, pure, immutable value object.
-* **Functional JAX-style AD (`grad(f)`, `valueAndGrad(f)`, `vjp(f, x)`, `jvp(f, x, v)`):** Because Babble functions are pure by default (`BIP016`), tensors are immutable (`BIP033-D8`), and every core tensor primitive has a clean, structured `HIR` node (§9.1) with well-defined vector-Jacobian product (VJP) rules (including `matmul`, `einsum`, `reshape`, `transpose`, `slice`, `concat`, `unfold`, `sum`, `where`, `gather`), a future AD BIP can implement **compile-time source-to-source reverse-mode AD directly on `HIR`** (or a lightweight VJP tracing pass) that preserves 100% static dimensional safety on gradients (`grad` of `fn (x: tensor of (T, ...S)): tensor of T` is statically typed as returning `tensor of (T, ...S)`) and automatically feeds the generated backward pass through `-O1` fusion and FBIP reuse.
+* **Functional JAX-style AD (`grad(f)`, `valueAndGrad(f)`, `vjp(f, x)`, `jvp(f, x, v)`):** Because Babble functions are pure by default (`BIP016`), tensors are immutable (`BIP033-D8`), and every core tensor primitive has a clean, structured `HIR` node (§10.1) with well-defined vector-Jacobian product (VJP) rules (including `matmul`, `einsum`, `reshape`, `transpose`, `slice`, `concat`, `unfold`, `sum`, `where`, `gather`), a future AD BIP can implement **compile-time source-to-source reverse-mode AD directly on `HIR`** (or a lightweight VJP tracing pass) that preserves 100% static dimensional safety on gradients (`grad` of `fn (x: tensor of (T, ...S)): tensor of T` is statically typed as returning `tensor of (T, ...S)`) and automatically feeds the generated backward pass through `-O1` fusion and FBIP reuse.
 
 ---
 
-## 10. Phased Implementation Plan & Verification
+## 11. Phased Implementation Plan & Verification
 
 Each phase keeps `mvn -B package -PO2` green across all execution modes (`interpret`, `compile -O1`, `compile -O0`, `compile -O2`, and `wasm-js -O1`), `ParserGrammarTestCase` (pure `SLL`), `RuntimeBoundaryTestCase` (`java.base`-only), `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, and `-Pbatest` (`>= 80%` line and branch coverage across all 6 JaCoCo scopes).
 
@@ -721,10 +840,35 @@ Each phase keeps `mvn -B package -PO2` green across all execution modes (`interp
 
 ---
 
-## 11. Deferred Follow-Ups
+## 12. Deferred Follow-Ups
 
 * **Functional Automatic Differentiation BIP:** Compile-time `HIR` reverse-mode / forward-mode AD (`grad`, `valueAndGrad`, `vjp`, `jvp`, `stopGradient`) leveraging `BIP033`'s immutable pure tensors and structured `HIR` ops.
 * **Quantized & Packed Storage Dtypes:** Adding sub-byte / unsigned storage formats (`uint8`, `int4`, `fp8_e4m3`, `fp8_e5m2`) as tensor dtypes with dequantizing `matmul` kernels for LLM inference.
 * **Accelerated `TensorBackend` Implementations (`BIP018`):** Target-gated `jdk.incubator.vector` SIMD backend (once Vector API graduates post-Valhalla) and `java.lang.foreign` Panama FFM backends (OpenBLAS / Apple Accelerate / cuBLAS / Metal / WebGPU) plugged into `BIP033`'s `TensorBackend` SPI.
 * **`std/nn` Standard Library Module:** High-level neural network layers, activations, normalizations, `Conv2d`, losses, and optimizers built in pure Babble on top of `BIP033` once the module search path & `std/` BIP lands.
 * **Indexing & Slicing Sugar (`BIP008` §5.1):** If Babble later adopts concise indexing syntax for `array`, `list`, `map`, and `string`, it lowers uniformly to `tensor.get(...)` / `tensor.slice(...)`.
+
+---
+
+## 13. References
+
+All external references below were verified against publicly available documentation and peer-reviewed publications:
+
+| Tag | System / Topic | Source |
+|---|---|---|
+| **`[TF16]`** | TensorFlow dataflow model | Abadi et al., *TensorFlow: A System for Large-Scale Machine Learning* (OSDI 2016) — [USENIX](https://www.usenix.org/conference/osdi16/technical-sessions/presentation/abadi), [PDF](https://files.usenix.org/s3fs-public/cdn/osdi16-abadi.pdf) |
+| **`[AG19]`** | TensorFlow AutoGraph | Moldovan et al., *AutoGraph: Imperative-style Coding with Graph-based Performance* (MLSys 2019) — [PDF](https://mlsys.org/Conferences/2019/doc/2019/194.pdf) |
+| **`[TFG]`** | `tf.function` & graph semantics | TensorFlow Core Guides — [Introduction to graphs and `tf.function`](https://www.tensorflow.org/guide/intro_to_graphs), [Better performance with `tf.function`](https://www.tensorflow.org/guide/function) |
+| **`[JAX18]`** | JAX tracing JIT design | Frostig, Johnson & Leary, *Compiling machine learning programs via high-level tracing* (SysML 2018) — [PDF](https://cs.stanford.edu/~rfrostig/pubs/jax-mlsys2018.pdf) |
+| **`[JAXD]`** | JAX JIT, `jaxpr`, sharp bits & export | JAX Documentation — [Just-in-time compilation](https://docs.jax.dev/en/latest/201/jit.html), [The Sharp Bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html), [The jaxpr language](https://docs.jax.dev/en/latest/601/jaxpr.html), [Shape polymorphism](https://docs.jax.dev/en/latest/export/shape_poly.html) |
+| **`[XLA]`** | XLA fusion, passes & aliasing | OpenXLA Documentation — [XLA architecture](https://openxla.org/xla/architecture), [XLA overview & `jit_compile`](https://openxla.org/xla/tf2xla), [HLO Passes](https://openxla.org/xla/hlo_passes), [Aliasing in XLA](https://openxla.org/xla/aliasing) |
+| **`[SHLO]`** | StableHLO portability opset | OpenXLA — [StableHLO Specification](https://openxla.org/stablehlo/spec), [openxla/stablehlo](https://github.com/openxla/stablehlo) |
+| **`[PT24]`** | PyTorch 2 compiler stack | Ansel et al., *PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation* (ASPLOS 2024) — [PDF](https://docs.pytorch.org/assets/pytorch2-2.pdf) |
+| **`[PTD]`** | TorchDynamo, functionalization, dynamic shapes & Named Tensors | PyTorch Documentation — [Dynamo Core Concepts](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.dynamo_core_concepts.html), [Common Graph Breaks](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.common_graph_breaks.html), [Dynamic Shapes](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/torch.compiler_dynamic_shapes.html), [`torch.func.functionalize`](https://docs.pytorch.org/docs/stable/generated/torch.func.functionalize.html), [Feature classification (Named Tensors Prototype)](https://pytorch.org/blog/pytorch-feature-classification-changes/) |
+| **`[MOJO]`** | Mojo parameterization, ownership, `TileTensor` & MAX Graph | Modular Documentation — [Parameterization](https://docs.modular.com/mojo/manual/parameters/), [Ownership](https://mojolang.org/docs/manual/values/ownership/), [Using TileTensor](https://max.modular.com/tile-tensor/tensors/), [TileTensor layouts](https://max.modular.com/tile-tensor/layouts/), [Build a model graph with Module](https://max.modular.com/develop/modules/), [Build custom ops](https://max.modular.com/develop/build-custom-ops/) |
+| **`[DEX21]`** | Dex typed index sets & fusion | Paszke et al., *Getting to the Point: Index Sets and Parallelism-Preserving Autodiff for Pointful Array Programming* (ICFP 2021) — [arXiv](https://arxiv.org/abs/2104.05372) |
+| **`[FUT17]`** | Futhark uniqueness & SOAC fusion | Henriksen et al., *Futhark: Purely Functional GPU-Programming with Nested Parallelism and In-Place Array Updates* (PLDI 2017) — [PDF](https://elsman.com/pdf/pldi17.pdf) |
+| **`[FUT21]`** | Futhark size-dependent types | Henriksen & Elsman, *Towards Size-Dependent Types for Array Programming* (ARRAY@PLDI 2021) — [PDF](https://futhark-lang.org/publications/array21.pdf) |
+| **`[RUSH19]`** | NamedTensor motivation | Rush, *Tensor Considered Harmful* (Harvard NLP, 2019) — [Blog post](https://nlp.seas.harvard.edu/NamedTensor) |
+| **`[EIN22]`** | Einops notation | Rogozhnikov, *Einops: Clear and Reliable Tensor Manipulations with Einstein-like Notation* (ICLR 2022 Oral) — [OpenReview](https://openreview.net/forum?id=oapKSVM2bcj) |
+| **`[JXT]`** | `jaxtyping` & Python typing limits | Kidger, *`jaxtyping`* — [Documentation](https://docs.kidger.site/jaxtyping/), [FAQ (static typing & PEP 646)](https://docs.kidger.site/jaxtyping/faq/) |
