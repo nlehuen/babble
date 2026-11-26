@@ -178,13 +178,15 @@ public final class Formatter {
             } else if (token.getType() == BabbleLexer.ELLIPSIS || token.getType() == BabbleLexer.Q_ELLIPSIS) {
                 restEllipsis[index] = (parent instanceof BabbleParser.FnParamContext fp && fp.rest == token)
                         || (parent instanceof BabbleParser.FnTypeParamContext ftp && ftp.rest == token);
-                spreadEllipsis[index] = parent instanceof BabbleParser.CallParameterContext cp && cp.spread == token;
+                spreadEllipsis[index] = (parent instanceof BabbleParser.CallParameterContext cp && cp.spread == token)
+                        || parent instanceof BabbleParser.RestPatternContext;
             } else if (token.getType() == OPEN) {
                 boolean isTypeApplyCall = parent instanceof BabbleParser.CallParametersContext
                         && parent.getParent() instanceof BabbleParser.CallContext call
                         && call.expression() instanceof BabbleParser.TypeApplyContext;
                 callParentheses[index] = (parent instanceof BabbleParser.CallParametersContext && !isTypeApplyCall)
-                        || parent instanceof BabbleParser.SuperExpressionContext;
+                        || parent instanceof BabbleParser.SuperExpressionContext
+                        || parent instanceof BabbleParser.PatternArgsContext;
                 // What a block of an "if", a function, a class, a try/catch/finally... encloses is indented from
                 // the line where that expression starts, wherever its parenthesis is.
                 anchors[index] = parent instanceof BabbleParser.BlockContext block
@@ -228,13 +230,15 @@ public final class Formatter {
                 || parent instanceof BabbleParser.TypeParametersContext || parent instanceof BabbleParser.TypeArgumentsContext
                 || parent instanceof BabbleParser.CallingClauseContext
                 || parent instanceof BabbleParser.OverloadExpressionContext
-                || parent instanceof BabbleParser.OverloadTypeContext) {
+                || parent instanceof BabbleParser.OverloadTypeContext
+                || parent instanceof BabbleParser.PatternArgsContext) {
             return IN_LIST;
         }
         // In these, a newline can only come before a block, "else", "static", "catch" or "finally".
         if (parent instanceof BabbleParser.IfExprContext
                 || parent instanceof BabbleParser.WhileExpressionContext || parent instanceof BabbleParser.ForExpressionContext
                 || parent instanceof BabbleParser.TryExpressionContext || parent instanceof BabbleParser.CatchClauseContext
+                || parent instanceof BabbleParser.CaseClauseContext || parent instanceof BabbleParser.ElseClauseContext
                 || parent instanceof BabbleParser.ClassExpressionContext
                 || parent instanceof BabbleParser.InterfaceExpressionContext || parent instanceof BabbleParser.ObjectExpressionContext
                 || parent instanceof BabbleParser.FunctionLiteralContext
