@@ -1,5 +1,11 @@
 package org.babblelang.analysis;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
@@ -7,26 +13,22 @@ import org.antlr.v4.runtime.tree.TerminalNode;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
  * Type annotations : what a {@code type} of the grammar denotes (builtins, nullables, unions,
  * function types, classes and interfaces with their type arguments, Java classes, and classes
- * reached through modules and packages), the type variables generic defs and classes declare,
- * and the annotation a def or parameter carries. Resolved once per walk and cached.
+ * reached through modules and packages), the type variables generic defs and classes declare, and
+ * the annotation a def or parameter carries. Resolved once per walk and cached.
  */
 final class TypeAnnotations {
     private final TypeChecker checker;
     private final Map<BabbleParser.TypeContext, Type> annotations = new HashMap<>();
-    private final Map<ParserRuleContext, List<Type.TypeVar>> ownerTypeVars = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, List<Type.TypeVar>> ownerTypeVars =
+            new IdentityHashMap<>();
     private final Map<ParserRuleContext, Type.SymbolId> ownerSymbolIds = new IdentityHashMap<>();
-    private final java.util.Set<ParserRuleContext> boundsResolved = Collections.newSetFromMap(new IdentityHashMap<>());
-    private final java.util.Set<TypeNode> activeArrayChecks = Collections.newSetFromMap(new IdentityHashMap<>());
+    private final java.util.Set<ParserRuleContext> boundsResolved =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+    private final java.util.Set<TypeNode> activeArrayChecks =
+            Collections.newSetFromMap(new IdentityHashMap<>());
 
     TypeAnnotations(TypeChecker checker) {
         this.checker = checker;
@@ -64,41 +66,59 @@ final class TypeAnnotations {
             Type declared = annotation(def.type(), checker.scopeOf(def));
             if (def.typeParameters() != null && declared instanceof Type.Function fn) {
                 if (!fn.typeParameters().isEmpty()) {
-                    checker.warn("Type parameters declared twice : " + def.name.getText(), def.type());
+                    checker.warn(
+                            "Type parameters declared twice : " + def.name.getText(), def.type());
                     return Type.ERROR;
                 }
-                return new Type.Function(typeVarsOf(def), fn.parameters(), fn.result(), fn.effects(),
-                        fn.forwardedEffectParams(), fn.capturedCallings());
+                return new Type.Function(
+                        typeVarsOf(def),
+                        fn.parameters(),
+                        fn.result(),
+                        fn.effects(),
+                        fn.forwardedEffectParams(),
+                        fn.capturedCallings());
             }
             return declared;
         }
-        if (ScopeAnalysis.isParamDecl(declaration) && ScopeAnalysis.paramType(declaration) != null) {
+        if (ScopeAnalysis.isParamDecl(declaration)
+                && ScopeAnalysis.paramType(declaration) != null) {
             return annotation(ScopeAnalysis.paramType(declaration), checker.scopeOf(declaration));
         }
         return null;
     }
 
-    private List<Type.TypeVar> typeVarsFor(ParserRuleContext owner, String label,
-                                           BabbleParser.TypeParametersContext tpCtx, ScopeNode scope) {
+    private List<Type.TypeVar> typeVarsFor(
+            ParserRuleContext owner,
+            String label,
+            BabbleParser.TypeParametersContext tpCtx,
+            ScopeNode scope) {
         if (owner == null || tpCtx == null) {
             return List.of();
         }
-        List<Type.TypeVar> vars = ownerTypeVars.computeIfAbsent(owner, k -> {
-            Type.SymbolId id = ownerSymbolIds.computeIfAbsent(k, ignored -> new Type.SymbolId(label));
-            List<TerminalNode> ids = ScopeAnalysis.typeParamIds(tpCtx);
-            List<Type.TypeVar> list = new ArrayList<>(ids.size());
-            for (int i = 0; i < ids.size(); i++) {
-                list.add(new Type.TypeVar(id, ids.get(i).getText(), i));
-            }
-            return List.copyOf(list);
-        });
+        List<Type.TypeVar> vars =
+                ownerTypeVars.computeIfAbsent(
+                        owner,
+                        k -> {
+                            Type.SymbolId id =
+                                    ownerSymbolIds.computeIfAbsent(
+                                            k, ignored -> new Type.SymbolId(label));
+                            List<TerminalNode> ids = ScopeAnalysis.typeParamIds(tpCtx);
+                            List<Type.TypeVar> list = new ArrayList<>(ids.size());
+                            for (int i = 0; i < ids.size(); i++) {
+                                list.add(new Type.TypeVar(id, ids.get(i).getText(), i));
+                            }
+                            return List.copyOf(list);
+                        });
         if (boundsResolved.add(owner)) {
             for (int i = 0; i < vars.size(); i++) {
                 BabbleParser.TypeContext boundCtx = ScopeAnalysis.typeParamBound(tpCtx, i);
                 if (boundCtx != null) {
                     Type bound = annotation(boundCtx, scope);
                     if (bound.equals(vars.get(i))) {
-                        checker.warn("Type error : cyclic bound for type parameter " + vars.get(i).name(), boundCtx);
+                        checker.warn(
+                                "Type error : cyclic bound for type parameter "
+                                        + vars.get(i).name(),
+                                boundCtx);
                         vars.get(i).setBound(Type.ERROR);
                     } else {
                         vars.get(i).setBound(bound);
@@ -131,7 +151,8 @@ final class TypeAnnotations {
             child = block;
         }
         if (child.getParent() instanceof BabbleParser.DefExpressionContext def
-                && def.value == child && def.typeParameters() != null) {
+                && def.value == child
+                && def.typeParameters() != null) {
             return typeVarsOf(def);
         }
         return List.of();
@@ -152,7 +173,8 @@ final class TypeAnnotations {
             List<Type.TypeVar> imported = checker.imported().typeVars(node);
             return imported != null ? imported : List.of();
         }
-        if (node.ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == node.ctx) {
+        if (node.ctx.getParent() instanceof BabbleParser.DefExpressionContext def
+                && def.value == node.ctx) {
             return typeVarsOf(def);
         }
         return List.of();
@@ -161,21 +183,26 @@ final class TypeAnnotations {
     Type.TypeVar resolveTypeVar(String name, ParserRuleContext at, ScopeNode scope) {
         if (at != null) {
             for (ParserRuleContext p = at; p != null; p = p.getParent()) {
-                if (p instanceof BabbleParser.FunctionTypeContext fnType && fnType.typeParameters() != null) {
+                if (p instanceof BabbleParser.FunctionTypeContext fnType
+                        && fnType.typeParameters() != null) {
                     for (Type.TypeVar tv : typeVarsOf(fnType, scope)) {
                         if (tv.name().equals(name)) {
                             return tv;
                         }
                     }
-                } else if (p instanceof BabbleParser.FunctionLiteralContext lit && lit.typeParameters() != null) {
+                } else if (p instanceof BabbleParser.FunctionLiteralContext lit
+                        && lit.typeParameters() != null) {
                     for (Type.TypeVar tv : typeVarsOf(lit)) {
                         if (tv.name().equals(name)) {
                             return tv;
                         }
                     }
-                } else if (p.getParent() instanceof BabbleParser.DefExpressionContext def && def.typeParameters() != null
-                        && (def.type() == p || def.typeParameters() == p
-                        || p instanceof BabbleParser.TypeAliasExpressionContext && def.value == p)) {
+                } else if (p.getParent() instanceof BabbleParser.DefExpressionContext def
+                        && def.typeParameters() != null
+                        && (def.type() == p
+                                || def.typeParameters() == p
+                                || p instanceof BabbleParser.TypeAliasExpressionContext
+                                        && def.value == p)) {
                     for (Type.TypeVar tv : typeVarsOf(def)) {
                         if (tv.name().equals(name)) {
                             return tv;
@@ -186,13 +213,15 @@ final class TypeAnnotations {
             }
         }
         for (ScopeNode s = scope; s != null; s = s.parent) {
-            if ((s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY) && s.type != null) {
+            if ((s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY)
+                    && s.type != null) {
                 for (Type.TypeVar tv : typeVarsOf(s.type)) {
                     if (tv.name().equals(name)) {
                         return tv;
                     }
                 }
-            } else if (s.kind == ScopeNode.Kind.FUNCTION && s.owner instanceof BabbleParser.FunctionLiteralContext lit) {
+            } else if (s.kind == ScopeNode.Kind.FUNCTION
+                    && s.owner instanceof BabbleParser.FunctionLiteralContext lit) {
                 for (Type.TypeVar tv : typeVarsOf(lit)) {
                     if (tv.name().equals(name)) {
                         return tv;
@@ -229,14 +258,16 @@ final class TypeAnnotations {
                 return cached;
             }
         }
-        // '&' binds tighter than '|' : the operands between two '|' form one intersection (BIP022-D2).
+        // '&' binds tighter than '|' : the operands between two '|' form one intersection
+        // (BIP022-D2).
         List<Type> members = new ArrayList<>();
         List<BabbleParser.NullableTypeContext> group = new ArrayList<>();
         for (int i = 0; i < type.getChildCount(); i++) {
             ParseTree child = type.getChild(i);
             if (child instanceof BabbleParser.NullableTypeContext part) {
                 group.add(part);
-            } else if (child instanceof TerminalNode terminal && terminal.getSymbol().getType() == BabbleLexer.PIPE) {
+            } else if (child instanceof TerminalNode terminal
+                    && terminal.getSymbol().getType() == BabbleLexer.PIPE) {
                 members.add(groupAnnotation(group, scope, allowRaw));
                 group = new ArrayList<>();
             }
@@ -256,7 +287,8 @@ final class TypeAnnotations {
     }
 
     /** One operand of a union : a single type, or the intersection of several (BIP022-D1). */
-    Type groupAnnotation(List<BabbleParser.NullableTypeContext> group, ScopeNode scope, boolean allowRaw) {
+    Type groupAnnotation(
+            List<BabbleParser.NullableTypeContext> group, ScopeNode scope, boolean allowRaw) {
         List<Type> operands = new ArrayList<>(group.size());
         for (BabbleParser.NullableTypeContext part : group) {
             Type operand = nullableAnnotation(part, scope, allowRaw);
@@ -272,8 +304,13 @@ final class TypeAnnotations {
         for (int i = 0; i < operands.size(); i++) {
             Type operand = operands.get(i);
             if (Type.containsNull(operand)) {
-                checker.warn("Nullable inside an intersection : " + group.get(i).getText()
-                        + " (write (" + text + ")?)", group.get(i));
+                checker.warn(
+                        "Nullable inside an intersection : "
+                                + group.get(i).getText()
+                                + " (write ("
+                                + text
+                                + ")?)",
+                        group.get(i));
                 return Type.ERROR;
             }
             if (!isIntersectable(operand)) {
@@ -298,7 +335,10 @@ final class TypeAnnotations {
         return text.toString();
     }
 
-    /** Interfaces (Babble or Java, generic or not), unions of them, and {@code any} / {@code Object}, which drop out. */
+    /**
+     * Interfaces (Babble or Java, generic or not), unions of them, and {@code any} / {@code
+     * Object}, which drop out.
+     */
     private static boolean isIntersectable(Type type) {
         if (type == Type.ANY) {
             return true;
@@ -318,7 +358,8 @@ final class TypeAnnotations {
         return false;
     }
 
-    private Type nullableAnnotation(BabbleParser.NullableTypeContext nullable, ScopeNode scope, boolean allowRaw) {
+    private Type nullableAnnotation(
+            BabbleParser.NullableTypeContext nullable, ScopeNode scope, boolean allowRaw) {
         if (nullable instanceof BabbleParser.NonParenTypeContext nonParen) {
             return nonParenAnnotation(nonParen.nonParenNullableType(), scope, allowRaw);
         }
@@ -348,18 +389,31 @@ final class TypeAnnotations {
         return nonNull;
     }
 
-    Type nonParenAnnotation(BabbleParser.NonParenNullableTypeContext primary, ScopeNode scope, boolean allowRaw) {
+    Type nonParenAnnotation(
+            BabbleParser.NonParenNullableTypeContext primary, ScopeNode scope, boolean allowRaw) {
         if (primary instanceof BabbleParser.FunctionTypeContext function) {
             List<Type.TypeVar> tparams = typeVarsOf(function, scope);
             boolean interfaceMethod = isDirectInterfaceMethodType(function, scope);
-            EffectSet effs = checker.effectChecker != null
-                    ? checker.effectChecker.parseFunctionTypePrefix(function, interfaceMethod, checker.checkingEffects()).toEffectSet()
-                    : EffectSet.EMPTY;
-            List<Type.Parameter> fnParams = functionTypeParameters(function.fnTypeParameters(), scope);
-            java.util.Set<Integer> forwarded = resolveForwardedParams(function.effectPrefix(), fnParams);
-            return new Type.Function(tparams, fnParams,
-                    function.type() != null ? annotation(function.type(), scope) : Type.NULLABLE_ANY,
-                    effs, forwarded, resolveCapturedCallings(function.effectPrefix(), fnParams).keySet());
+            EffectSet effs =
+                    checker.effectChecker != null
+                            ? checker.effectChecker
+                                    .parseFunctionTypePrefix(
+                                            function, interfaceMethod, checker.checkingEffects())
+                                    .toEffectSet()
+                            : EffectSet.EMPTY;
+            List<Type.Parameter> fnParams =
+                    functionTypeParameters(function.fnTypeParameters(), scope);
+            java.util.Set<Integer> forwarded =
+                    resolveForwardedParams(function.effectPrefix(), fnParams);
+            return new Type.Function(
+                    tparams,
+                    fnParams,
+                    function.type() != null
+                            ? annotation(function.type(), scope)
+                            : Type.NULLABLE_ANY,
+                    effs,
+                    forwarded,
+                    resolveCapturedCallings(function.effectPrefix(), fnParams).keySet());
         }
         if (primary instanceof BabbleParser.OverloadTypeContext overload) {
             List<Type.Function> alts = new ArrayList<>();
@@ -408,10 +462,10 @@ final class TypeAnnotations {
 
     /**
      * The names of a {@code calling} clause that aren't parameters of its own function but of an
-     * enclosing function literal or function type, mapped to that parameter (a {@code FnParamContext}
-     * or a {@code FnTypeParamContext}, BIP017-D5) : the clause of a function type in the enclosing
-     * function's result type, or of a function type or literal in its body, may name the callbacks
-     * it captures. Not its parameter types : a callback can't forward a sibling.
+     * enclosing function literal or function type, mapped to that parameter (a {@code
+     * FnParamContext} or a {@code FnTypeParamContext}, BIP017-D5) : the clause of a function type
+     * in the enclosing function's result type, or of a function type or literal in its body, may
+     * name the callbacks it captures. Not its parameter types : a callback can't forward a sibling.
      */
     static java.util.Map<String, ParserRuleContext> resolveCapturedCallings(
             BabbleParser.EffectPrefixContext prefix, List<Type.Parameter> ownParams) {
@@ -436,11 +490,13 @@ final class TypeAnnotations {
      * The parameter {@code name} of the innermost function literal or function type enclosing
      * {@code prefix} that has one (see above), or null.
      */
-    static ParserRuleContext enclosingParameter(BabbleParser.EffectPrefixContext prefix, String name) {
+    static ParserRuleContext enclosingParameter(
+            BabbleParser.EffectPrefixContext prefix, String name) {
         org.antlr.v4.runtime.tree.ParseTree child = prefix;
         org.antlr.v4.runtime.tree.ParseTree parent = prefix.getParent();
         while (parent != null) {
-            if (parent instanceof BabbleParser.FunctionLiteralContext enclosing && child != enclosing.effectPrefix()) {
+            if (parent instanceof BabbleParser.FunctionLiteralContext enclosing
+                    && child != enclosing.effectPrefix()) {
                 if (child == enclosing.fnParameters()) {
                     return null;
                 }
@@ -450,11 +506,13 @@ final class TypeAnnotations {
                     }
                 }
             }
-            if (parent instanceof BabbleParser.FunctionTypeContext enclosing && child != enclosing.effectPrefix()) {
+            if (parent instanceof BabbleParser.FunctionTypeContext enclosing
+                    && child != enclosing.effectPrefix()) {
                 if (child == enclosing.fnTypeParameters()) {
                     return null;
                 }
-                for (BabbleParser.FnTypeParamContext param : enclosing.fnTypeParameters().fnTypeParam()) {
+                for (BabbleParser.FnTypeParamContext param :
+                        enclosing.fnTypeParameters().fnTypeParam()) {
                     if (param.ID() != null && name.equals(param.ID().getText())) {
                         return param;
                     }
@@ -466,9 +524,12 @@ final class TypeAnnotations {
         return null;
     }
 
-    /** Resolves {@code calling f} / {@code calling (f, g)} parameter names to 0-based parameter indices (BIP017). */
-    static java.util.Set<Integer> resolveForwardedParams(BabbleParser.EffectPrefixContext prefix,
-                                                         List<Type.Parameter> params) {
+    /**
+     * Resolves {@code calling f} / {@code calling (f, g)} parameter names to 0-based parameter
+     * indices (BIP017).
+     */
+    static java.util.Set<Integer> resolveForwardedParams(
+            BabbleParser.EffectPrefixContext prefix, List<Type.Parameter> params) {
         if (prefix == null || prefix.callingClause() == null) {
             return java.util.Set.of();
         }
@@ -485,7 +546,10 @@ final class TypeAnnotations {
         return indices.isEmpty() ? java.util.Set.of() : java.util.Set.copyOf(indices);
     }
 
-    /** Resolves {@code typeArguments} ({@code T} or {@code (T1, T2)}) in {@code expr of typeArguments}. */
+    /**
+     * Resolves {@code typeArguments} ({@code T} or {@code (T1, T2)}) in {@code expr of
+     * typeArguments}.
+     */
     List<Type> resolveTypeArguments(BabbleParser.TypeArgumentsContext ta, ScopeNode scope) {
         if (ta.nonParenNullableType() != null) {
             return List.of(nonParenAnnotation(ta.nonParenNullableType(), scope, false));
@@ -497,7 +561,9 @@ final class TypeAnnotations {
         return args;
     }
 
-    /** Parser rule node for the i-th type argument in {@code typeArguments} (for error locations). */
+    /**
+     * Parser rule node for the i-th type argument in {@code typeArguments} (for error locations).
+     */
     static ParserRuleContext typeArgumentNode(BabbleParser.TypeArgumentsContext ta, int index) {
         return ta.nonParenNullableType() != null ? ta.nonParenNullableType() : ta.type(index);
     }
@@ -509,11 +575,15 @@ final class TypeAnnotations {
         return simple.nonParenNullableType() != null ? 1 : simple.type().size();
     }
 
-    private static ParserRuleContext simpleTypeArgNode(BabbleParser.SimpleTypeContext simple, int index) {
-        return simple.nonParenNullableType() != null ? simple.nonParenNullableType() : simple.type(index);
+    private static ParserRuleContext simpleTypeArgNode(
+            BabbleParser.SimpleTypeContext simple, int index) {
+        return simple.nonParenNullableType() != null
+                ? simple.nonParenNullableType()
+                : simple.type(index);
     }
 
-    private static boolean isDirectInterfaceMethodType(BabbleParser.FunctionTypeContext fn, ScopeNode scope) {
+    private static boolean isDirectInterfaceMethodType(
+            BabbleParser.FunctionTypeContext fn, ScopeNode scope) {
         if (scope == null || scope.kind != ScopeNode.Kind.INTERFACE_BODY) {
             return false;
         }
@@ -559,7 +629,8 @@ final class TypeAnnotations {
         return "overload";
     }
 
-    private List<Type.Parameter> functionTypeParameters(BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
+    private List<Type.Parameter> functionTypeParameters(
+            BabbleParser.FnTypeParametersContext declaration, ScopeNode scope) {
         List<Type.Parameter> result = new ArrayList<>();
         int kwStart = ScopeAnalysis.keywordOnlyStart(declaration);
         int index = 0;
@@ -569,31 +640,46 @@ final class TypeAnnotations {
             if (rest && ScopeAnalysis.isParamRestNullable(parameter) && type != Type.ERROR) {
                 type = Type.nullable(type);
             }
-            EffectChecker.ParamMods pm = checker.effectChecker != null
-                    ? checker.effectChecker.parseParamMods(parameter, checker.checkingEffects())
-                    : EffectChecker.ParamMods.NONE;
+            EffectChecker.ParamMods pm =
+                    checker.effectChecker != null
+                            ? checker.effectChecker.parseParamMods(
+                                    parameter, checker.checkingEffects())
+                            : EffectChecker.ParamMods.NONE;
             String name = parameter.ID() != null ? parameter.ID().getText() : "p" + index;
             boolean optional = parameter.optional != null;
             boolean keywordOnly = index >= kwStart;
             boolean borrow = checker.effectChecker != null && !pm.shared() && !pm.unique();
-            result.add(new Type.Parameter(name, type, optional, keywordOnly, rest,
-                    pm.mut(), borrow, pm.shared(), pm.unique()));
+            result.add(
+                    new Type.Parameter(
+                            name,
+                            type,
+                            optional,
+                            keywordOnly,
+                            rest,
+                            pm.mut(),
+                            borrow,
+                            pm.shared(),
+                            pm.unique()));
             index++;
         }
         return result;
     }
 
     /**
-     * T1 : the built-in names, generic type parameters, a class or interface literal bound to
-     * a def (possibly reached through packages or modules), or a Java class. Null when unknown.
+     * T1 : the built-in names, generic type parameters, a class or interface literal bound to a def
+     * (possibly reached through packages or modules), or a Java class. Null when unknown.
      */
-    private Type simpleType(BabbleParser.SimpleTypeContext type, ScopeNode scope, boolean allowRaw) {
+    private Type simpleType(
+            BabbleParser.SimpleTypeContext type, ScopeNode scope, boolean allowRaw) {
         List<String> path = ScopeAnalysis.simpleTypePath(type);
         if (path.size() == 1) {
             Type.TypeVar tv = resolveTypeVar(path.get(0), type, scope);
             if (tv != null) {
                 if (type.OF() != null) {
-                    checker.warn("Wrong number of type arguments : expected 0, got " + simpleTypeArgCount(type), type);
+                    checker.warn(
+                            "Wrong number of type arguments : expected 0, got "
+                                    + simpleTypeArgCount(type),
+                            type);
                     return Type.ERROR;
                 }
                 return tv;
@@ -604,39 +690,45 @@ final class TypeAnnotations {
             if ("array".equals(path.get(0))) {
                 return instantiateArrayType(type, scope);
             }
-            Class<?> coreCollection = switch (path.get(0)) {
-                case "list" -> java.util.List.class;
-                case "set" -> java.util.Set.class;
-                case "sortedset" -> java.util.SortedSet.class;
-                case "map" -> java.util.Map.class;
-                case "sortedmap" -> java.util.SortedMap.class;
-                case "entry" -> java.util.Map.Entry.class;
-                case "range" -> org.babblelang.runtime.Range.class;
-                default -> null;
-            };
+            Class<?> coreCollection =
+                    switch (path.get(0)) {
+                        case "list" -> java.util.List.class;
+                        case "set" -> java.util.Set.class;
+                        case "sortedset" -> java.util.SortedSet.class;
+                        case "map" -> java.util.Map.class;
+                        case "sortedmap" -> java.util.SortedMap.class;
+                        case "entry" -> java.util.Map.Entry.class;
+                        case "range" -> org.babblelang.runtime.Range.class;
+                        default -> null;
+                    };
             if (coreCollection != null) {
                 return instantiateJavaType(coreCollection, type, scope, allowRaw);
             }
-            Type builtin = switch (path.get(0)) {
-                case "byte" -> Type.BYTE;
-                case "short" -> Type.SHORT;
-                case "int" -> Type.INT;
-                case "long" -> Type.LONG;
-                case "float" -> Type.FLOAT;
-                case "double" -> Type.DOUBLE;
-                case "bool" -> Type.BOOL;
-                case "char" -> Type.CHAR;
-                case "string" -> Type.STRING;
-                case "exception" -> new Type.JavaInstance(org.babblelang.runtime.BabbleException.class);
-                case "any" -> Type.ANY;
-                case "void" -> Type.NULL;
-                default -> null;
-            };
+            Type builtin =
+                    switch (path.get(0)) {
+                        case "byte" -> Type.BYTE;
+                        case "short" -> Type.SHORT;
+                        case "int" -> Type.INT;
+                        case "long" -> Type.LONG;
+                        case "float" -> Type.FLOAT;
+                        case "double" -> Type.DOUBLE;
+                        case "bool" -> Type.BOOL;
+                        case "char" -> Type.CHAR;
+                        case "string" -> Type.STRING;
+                        case "exception" ->
+                                new Type.JavaInstance(org.babblelang.runtime.BabbleException.class);
+                        case "any" -> Type.ANY;
+                        case "void" -> Type.NULL;
+                        default -> null;
+                    };
             if (builtin == null) {
                 return null;
             }
             if (type.OF() != null) {
-                checker.warn("Wrong number of type arguments : expected 0, got " + simpleTypeArgCount(type), type);
+                checker.warn(
+                        "Wrong number of type arguments : expected 0, got "
+                                + simpleTypeArgCount(type),
+                        type);
                 return Type.ERROR;
             }
             return builtin;
@@ -644,7 +736,9 @@ final class TypeAnnotations {
         if (resolved instanceof BabbleParser.DefExpressionContext def) {
             if (path.size() == 1 && def.value instanceof BabbleParser.TypeAliasExpressionContext) {
                 Type alias = aliasOf(def);
-                return alias instanceof Type.TypeAlias typeAlias ? instantiateAlias(typeAlias, type, scope, allowRaw) : alias;
+                return alias instanceof Type.TypeAlias typeAlias
+                        ? instantiateAlias(typeAlias, type, scope, allowRaw)
+                        : alias;
             }
             if (path.size() == 1) {
                 if (!checker.isReassigned(def)) {
@@ -656,7 +750,11 @@ final class TypeAnnotations {
             } else {
                 String imported = importedPackage(def.value);
                 if (imported != null) {
-                    Class<?> java = JavaTypeBridge.loadClass(imported + "." + String.join(".", path.subList(1, path.size())));
+                    Class<?> java =
+                            JavaTypeBridge.loadClass(
+                                    imported
+                                            + "."
+                                            + String.join(".", path.subList(1, path.size())));
                     return java != null ? instantiateJavaType(java, type, scope, allowRaw) : null;
                 }
             }
@@ -702,8 +800,11 @@ final class TypeAnnotations {
     }
 
     private static String sourceText(ParserRuleContext ctx) {
-        return ctx.getStart().getInputStream().getText(
-                org.antlr.v4.runtime.misc.Interval.of(ctx.getStart().getStartIndex(), ctx.getStop().getStopIndex()));
+        return ctx.getStart()
+                .getInputStream()
+                .getText(
+                        org.antlr.v4.runtime.misc.Interval.of(
+                                ctx.getStart().getStartIndex(), ctx.getStop().getStopIndex()));
     }
 
     private Type instantiateArrayType(BabbleParser.SimpleTypeContext simple, ScopeNode scope) {
@@ -722,7 +823,10 @@ final class TypeAnnotations {
         return new Type.Array(args.get(0));
     }
 
-    /** Whether {@code simple} resolves to a type alias whose target type (ignoring nullability) is an array. */
+    /**
+     * Whether {@code simple} resolves to a type alias whose target type (ignoring nullability) is
+     * an array.
+     */
     boolean resolvesToArrayAlias(BabbleParser.SimpleTypeContext simple, ScopeNode scope) {
         List<String> path = ScopeAnalysis.simpleTypePath(simple);
         Object resolved = TypeChecker.resolveName(null, path.get(0), scope);
@@ -745,11 +849,14 @@ final class TypeAnnotations {
     }
 
     /**
-     * Resolves and validates arity of explicit {@code of ...} type arguments.
-     * Returns {@code null} on diagnostic failure (caller returns {@link Type#ERROR}).
+     * Resolves and validates arity of explicit {@code of ...} type arguments. Returns {@code null}
+     * on diagnostic failure (caller returns {@link Type#ERROR}).
      */
-    private List<Type> resolveValidatedTypeArguments(BabbleParser.SimpleTypeContext simple, ScopeNode scope,
-                                                     int expected, boolean forbidParameterized) {
+    private List<Type> resolveValidatedTypeArguments(
+            BabbleParser.SimpleTypeContext simple,
+            ScopeNode scope,
+            int expected,
+            boolean forbidParameterized) {
         if (forbidParameterized) {
             checker.warn("Cannot cast to parameterized type : " + sourceText(simple), simple);
             return null;
@@ -759,13 +866,22 @@ final class TypeAnnotations {
             return null;
         }
         if (args.size() != expected) {
-            checker.warn("Wrong number of type arguments : expected " + expected + ", got " + args.size(), simple);
+            checker.warn(
+                    "Wrong number of type arguments : expected "
+                            + expected
+                            + ", got "
+                            + args.size(),
+                    simple);
             return null;
         }
         return args;
     }
 
-    private Type instantiateBabbleType(TypeNode node, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
+    private Type instantiateBabbleType(
+            TypeNode node,
+            BabbleParser.SimpleTypeContext simple,
+            ScopeNode scope,
+            boolean allowRaw) {
         int expected = node.typeParameters.size();
         if (simple.OF() == null) {
             if (expected == 0) {
@@ -790,7 +906,8 @@ final class TypeAnnotations {
     }
 
     /** Verifies every upper bound on {@code vars} against {@code args} (BIP021-D19). */
-    private boolean checkTypeParamBounds(List<Type.TypeVar> vars, List<Type> args, BabbleParser.SimpleTypeContext simple) {
+    private boolean checkTypeParamBounds(
+            List<Type.TypeVar> vars, List<Type> args, BabbleParser.SimpleTypeContext simple) {
         if (vars.size() != args.size()) {
             return true;
         }
@@ -813,8 +930,14 @@ final class TypeAnnotations {
             if (tv.bound() != null && tv.bound() != Type.ERROR) {
                 Type arg = args.get(i);
                 Type subBound = checker.algebra().substitute(tv.bound(), env);
-                if (!TypeChecker.isUnresolved(arg) && subBound != Type.ERROR && !checker.algebra().assignable(arg, subBound)) {
-                    checker.warn("Type error : type argument " + arg + " does not satisfy bound " + subBound,
+                if (!TypeChecker.isUnresolved(arg)
+                        && subBound != Type.ERROR
+                        && !checker.algebra().assignable(arg, subBound)) {
+                    checker.warn(
+                            "Type error : type argument "
+                                    + arg
+                                    + " does not satisfy bound "
+                                    + subBound,
                             simpleTypeArgNode(simple, i));
                     return false;
                 }
@@ -828,8 +951,11 @@ final class TypeAnnotations {
      * primitive scalar type arguments when a class/interface type parameter becomes a primitive
      * array element in constructor parameters, members, or parent interfaces.
      */
-    JavaTypeBridge.BadJavaArrayTypeArg checkBabbleNodeArrayTypeArgs(TypeNode node, List<Type> args) {
-        if (node == null || args.isEmpty() || args.stream().noneMatch(Type::isPrimitiveScalar)
+    JavaTypeBridge.BadJavaArrayTypeArg checkBabbleNodeArrayTypeArgs(
+            TypeNode node, List<Type> args) {
+        if (node == null
+                || args.isEmpty()
+                || args.stream().noneMatch(Type::isPrimitiveScalar)
                 || !activeArrayChecks.add(node)) {
             return null;
         }
@@ -847,17 +973,23 @@ final class TypeAnnotations {
                     List<Type.Parameter> importedCtor = checker.imported().constructorParams(node);
                     if (importedCtor != null) {
                         for (Type.Parameter p : importedCtor) {
-                            TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(p.type(), env);
+                            TypeAlgebra.BadArraySubstitution bad =
+                                    checker.algebra().findPrimitiveArraySubstitution(p.type(), env);
                             if (bad != null) {
                                 return toBadArg(vars, bad);
                             }
                         }
                     }
-                } else if (node.ctx instanceof BabbleParser.ClassExpressionContext cls && cls.classParameters() != null) {
+                } else if (node.ctx instanceof BabbleParser.ClassExpressionContext cls
+                        && cls.classParameters() != null) {
                     ScopeNode clsScope = checker.scopeOf(cls);
                     for (BabbleParser.ClassParamContext p : cls.classParameters().classParam()) {
-                        Type pt = p.type() != null ? annotation(p.type(), clsScope) : checker.inferredParams().get(p);
-                        TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(pt, env);
+                        Type pt =
+                                p.type() != null
+                                        ? annotation(p.type(), clsScope)
+                                        : checker.inferredParams().get(p);
+                        TypeAlgebra.BadArraySubstitution bad =
+                                checker.algebra().findPrimitiveArraySubstitution(pt, env);
                         if (bad != null) {
                             return toBadArg(vars, bad);
                         }
@@ -866,29 +998,39 @@ final class TypeAnnotations {
             }
             for (TypeNode.Member member : node.members.values()) {
                 Type mt = memberPatternForArrayCheck(node, member);
-                TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(mt, env);
+                TypeAlgebra.BadArraySubstitution bad =
+                        checker.algebra().findPrimitiveArraySubstitution(mt, env);
                 if (bad != null) {
                     return toBadArg(vars, bad);
                 }
             }
             for (int i = 0; i < node.parents.size(); i++) {
                 Type pt = parentAnnotation(node, i);
-                TypeAlgebra.BadArraySubstitution bad = checker.algebra().findPrimitiveArraySubstitution(pt, env);
+                TypeAlgebra.BadArraySubstitution bad =
+                        checker.algebra().findPrimitiveArraySubstitution(pt, env);
                 if (bad != null) {
                     return toBadArg(vars, bad);
                 }
-                if (pt instanceof Type.Instance parentInst && !parentInst.typeArguments().isEmpty()) {
-                    List<Type> subParentArgs = parentInst.typeArguments().stream()
-                            .map(a -> checker.algebra().substitute(a, env)).toList();
-                    JavaTypeBridge.BadJavaArrayTypeArg parentBad = checkBabbleNodeArrayTypeArgs(parentInst.node(), subParentArgs);
+                if (pt instanceof Type.Instance parentInst
+                        && !parentInst.typeArguments().isEmpty()) {
+                    List<Type> subParentArgs =
+                            parentInst.typeArguments().stream()
+                                    .map(a -> checker.algebra().substitute(a, env))
+                                    .toList();
+                    JavaTypeBridge.BadJavaArrayTypeArg parentBad =
+                            checkBabbleNodeArrayTypeArgs(parentInst.node(), subParentArgs);
                     if (parentBad != null) {
                         return parentBad;
                     }
-                } else if (pt instanceof Type.JavaInstance javaParent && !javaParent.typeArguments().isEmpty()) {
-                    List<Type> subParentArgs = javaParent.typeArguments().stream()
-                            .map(a -> checker.algebra().substitute(a, env)).toList();
-                    JavaTypeBridge.BadJavaArrayTypeArg parentBad = JavaTypeBridge.checkJavaClassArrayTypeArgs(
-                            javaParent.type(), subParentArgs, checker.algebra());
+                } else if (pt instanceof Type.JavaInstance javaParent
+                        && !javaParent.typeArguments().isEmpty()) {
+                    List<Type> subParentArgs =
+                            javaParent.typeArguments().stream()
+                                    .map(a -> checker.algebra().substitute(a, env))
+                                    .toList();
+                    JavaTypeBridge.BadJavaArrayTypeArg parentBad =
+                            JavaTypeBridge.checkJavaClassArrayTypeArgs(
+                                    javaParent.type(), subParentArgs, checker.algebra());
                     if (parentBad != null) {
                         return parentBad;
                     }
@@ -912,25 +1054,34 @@ final class TypeAnnotations {
             ScopeNode fnScope = checker.scopeOf(member.function);
             List<Type.Parameter> params = new ArrayList<>();
             for (BabbleParser.FnParamContext fp : member.function.fnParameters().fnParam()) {
-                Type pt = fp.type() != null ? annotation(fp.type(), fnScope) : checker.inferredParams().get(fp);
+                Type pt =
+                        fp.type() != null
+                                ? annotation(fp.type(), fnScope)
+                                : checker.inferredParams().get(fp);
                 if (pt != null) {
                     params.add(new Type.Parameter(fp.ID().getText(), pt, fp.defaultValue != null));
                 }
             }
-            Type ret = member.function.type() != null
-                    ? annotation(member.function.type(), fnScope)
-                    : Type.NULLABLE_ANY;
+            Type ret =
+                    member.function.type() != null
+                            ? annotation(member.function.type(), fnScope)
+                            : Type.NULLABLE_ANY;
             return new Type.Function(params, ret);
         }
         return checker.inferredMembers().get(member.declaration);
     }
 
-    private static JavaTypeBridge.BadJavaArrayTypeArg toBadArg(List<Type.TypeVar> vars, TypeAlgebra.BadArraySubstitution bad) {
+    private static JavaTypeBridge.BadJavaArrayTypeArg toBadArg(
+            List<Type.TypeVar> vars, TypeAlgebra.BadArraySubstitution bad) {
         int idx = bad.cause() != null ? vars.indexOf(bad.cause()) : 0;
         return new JavaTypeBridge.BadJavaArrayTypeArg(Math.max(0, idx), bad.message());
     }
 
-    private Type instantiateJavaType(Class<?> java, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
+    private Type instantiateJavaType(
+            Class<?> java,
+            BabbleParser.SimpleTypeContext simple,
+            ScopeNode scope,
+            boolean allowRaw) {
         int expected = JavaTypeBridge.typeParameterCount(java);
         if (simple.OF() == null) {
             if (expected == 0) {
@@ -948,12 +1099,18 @@ final class TypeAnnotations {
         }
         int badArg = JavaTypeBridge.checkJavaTypeArguments(java, args, checker.algebra());
         if (badArg >= 0) {
-            checker.warn("Type error : type argument " + args.get(badArg) + " does not satisfy bound "
-                    + JavaTypeBridge.typeParameterName(java, badArg) + " of " + java.getName(),
+            checker.warn(
+                    "Type error : type argument "
+                            + args.get(badArg)
+                            + " does not satisfy bound "
+                            + JavaTypeBridge.typeParameterName(java, badArg)
+                            + " of "
+                            + java.getName(),
                     simpleTypeArgNode(simple, badArg));
             return Type.ERROR;
         }
-        JavaTypeBridge.BadJavaArrayTypeArg badArr = JavaTypeBridge.checkJavaClassArrayTypeArgs(java, args, checker.algebra());
+        JavaTypeBridge.BadJavaArrayTypeArg badArr =
+                JavaTypeBridge.checkJavaClassArrayTypeArgs(java, args, checker.algebra());
         if (badArr != null) {
             checker.warn(badArr.message(), simpleTypeArgNode(simple, badArr.index()));
             return Type.ERROR;
@@ -965,45 +1122,56 @@ final class TypeAnnotations {
         if (node.typeParameters.isEmpty()) {
             return new Type.Instance(node);
         }
-        return new Type.Instance(node, Collections.nCopies(node.typeParameters.size(), Type.NULLABLE_ANY));
+        return new Type.Instance(
+                node, Collections.nCopies(node.typeParameters.size(), Type.NULLABLE_ANY));
     }
 
     /**
-     * Whether a value is {@code import("file.ba")}, or selected from a def of such a value :
-     * {@code def shapes = import("shapes.ba") ; def Circle = shapes.Circle}.
+     * Whether a value is {@code import("file.ba")}, or selected from a def of such a value : {@code
+     * def shapes = import("shapes.ba") ; def Circle = shapes.Circle}.
      */
     private boolean fromModule(BabbleParser.ExpressionContext value, ScopeNode scope, int depth) {
         if (value == null || depth > 16) {
             return false;
         }
         if (value instanceof BabbleParser.CallContext call) {
-            return call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+            return call.expression() instanceof BabbleParser.SelectorContext callee
+                    && callee.expression() == null
                     && callee.ID().getText().equals("import")
                     && call.callParameters().callParameter().size() == 1
-                    && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string
+                    && call.callParameters().callParameter(0).expression()
+                            instanceof BabbleParser.StringContext string
                     && org.babblelang.parser.StringLiterals.decode(string).endsWith(".ba");
         }
         if (value instanceof BabbleParser.SelectorContext selector) {
             if (selector.expression() != null) {
                 return fromModule(selector.expression(), scope, depth + 1);
             }
-            return TypeChecker.resolveName(null, selector.ID().getText(), scope) instanceof BabbleParser.DefExpressionContext def
+            return TypeChecker.resolveName(null, selector.ID().getText(), scope)
+                            instanceof BabbleParser.DefExpressionContext def
                     && fromModule(def.value, checker.scopeOf(def), depth + 1);
         }
         return false;
     }
 
     /**
-     * A type named through a module : {@code shapes.Circle}, {@code lib.geo.Point}, or
-     * {@code Circle} after {@code def Circle = shapes.Circle}. The class or interface the path
-     * ends on, as its own file types it ; error when a file on the way can't be typed (a cycle) ;
-     * null when the path names no class or interface.
+     * A type named through a module : {@code shapes.Circle}, {@code lib.geo.Point}, or {@code
+     * Circle} after {@code def Circle = shapes.Circle}. The class or interface the path ends on, as
+     * its own file types it ; error when a file on the way can't be typed (a cycle) ; null when the
+     * path names no class or interface.
      */
     private Type typeThroughModule(Type type, List<String> path, ParserRuleContext at) {
         for (int i = 1; i < path.size() && type != null && type != Type.ERROR; i++) {
             if (type instanceof Type.Module module) {
-                if (module.module().summary() == null && module.module().exports().contains(path.get(i))) {
-                    checker.warn("Missing type : " + path.get(i) + " (import cycle with " + module.module().name() + ")", at);
+                if (module.module().summary() == null
+                        && module.module().exports().contains(path.get(i))) {
+                    checker.warn(
+                            "Missing type : "
+                                    + path.get(i)
+                                    + " (import cycle with "
+                                    + module.module().name()
+                                    + ")",
+                            at);
                     return Type.ERROR;
                 }
                 type = MemberTypes.exportType(module.module(), path.get(i));
@@ -1034,7 +1202,8 @@ final class TypeAnnotations {
         if (cached != null) {
             return cached;
         }
-        BabbleParser.TypeAliasExpressionContext alias = (BabbleParser.TypeAliasExpressionContext) def.value;
+        BabbleParser.TypeAliasExpressionContext alias =
+                (BabbleParser.TypeAliasExpressionContext) def.value;
         if (!resolvingAliases.add(def)) {
             checker.warn("Recursive type alias : " + def.name.getText(), alias.aliased);
             return Type.ERROR;
@@ -1042,8 +1211,10 @@ final class TypeAnnotations {
         Type result;
         try {
             Type aliased = annotation(alias.aliased, checker.scopeOf(def));
-            result = aliased == Type.ERROR ? Type.ERROR
-                    : new Type.TypeAlias(def.name.getText(), typeVarsOf(def), aliased);
+            result =
+                    aliased == Type.ERROR
+                            ? Type.ERROR
+                            : new Type.TypeAlias(def.name.getText(), typeVarsOf(def), aliased);
         } finally {
             resolvingAliases.remove(def);
         }
@@ -1051,8 +1222,15 @@ final class TypeAnnotations {
         return result;
     }
 
-    /** An annotation naming an alias : its type, with the alias's type parameters bound to the annotation's arguments. */
-    private Type instantiateAlias(Type.TypeAlias alias, BabbleParser.SimpleTypeContext simple, ScopeNode scope, boolean allowRaw) {
+    /**
+     * An annotation naming an alias : its type, with the alias's type parameters bound to the
+     * annotation's arguments.
+     */
+    private Type instantiateAlias(
+            Type.TypeAlias alias,
+            BabbleParser.SimpleTypeContext simple,
+            ScopeNode scope,
+            boolean allowRaw) {
         int expected = alias.typeParameters().size();
         if (simple.OF() == null) {
             if (expected == 0) {
@@ -1083,12 +1261,17 @@ final class TypeAnnotations {
         if (value == null || depth > 16) {
             return null;
         }
-        if (value instanceof BabbleParser.ClassExpressionContext || value instanceof BabbleParser.InterfaceExpressionContext) {
+        if (value instanceof BabbleParser.ClassExpressionContext
+                || value instanceof BabbleParser.InterfaceExpressionContext) {
             return checker.pass().typeNodes.get(value);
         }
-        if (value instanceof BabbleParser.SelectorContext selector && selector.expression() == null && scope != null) {
+        if (value instanceof BabbleParser.SelectorContext selector
+                && selector.expression() == null
+                && scope != null) {
             Object resolved = TypeChecker.resolveName(null, selector.ID().getText(), scope);
-            if (resolved instanceof BabbleParser.DefExpressionContext def && !checker.isReassigned(def) && def.value != null) {
+            if (resolved instanceof BabbleParser.DefExpressionContext def
+                    && !checker.isReassigned(def)
+                    && def.value != null) {
                 return classNode(def.value, checker.scopeOf(def), depth + 1);
             }
         }
@@ -1097,15 +1280,18 @@ final class TypeAnnotations {
 
     /** The literal argument of {@code import("…")}, or a subpackage selected from it, or null. */
     private static String importedPackage(BabbleParser.ExpressionContext value) {
-        if (value instanceof BabbleParser.SelectorContext selector && selector.expression() != null) {
+        if (value instanceof BabbleParser.SelectorContext selector
+                && selector.expression() != null) {
             String base = importedPackage(selector.expression());
             return base != null ? base + "." + ScopeAnalysis.selectorName(selector) : null;
         }
         if (value instanceof BabbleParser.CallContext call
-                && call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+                && call.expression() instanceof BabbleParser.SelectorContext callee
+                && callee.expression() == null
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
-                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
+                && call.callParameters().callParameter(0).expression()
+                        instanceof BabbleParser.StringContext string) {
             String name = org.babblelang.parser.StringLiterals.decode(string);
             // A file name imports a Babble module, whose members are not known statically.
             return name.endsWith(".ba") ? null : name;

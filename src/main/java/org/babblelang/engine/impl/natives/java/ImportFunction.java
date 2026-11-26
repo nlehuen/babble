@@ -1,17 +1,16 @@
 package org.babblelang.engine.impl.natives.java;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.Module;
 import org.babblelang.runtime.ScriptRuntime;
 
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
-
 /**
- * {@code import("org")} is a root Java package ; {@code import("lib/shapes.ba")}, a name
- * ending in {@code .ba}, is the module of a Babble file.
+ * {@code import("org")} is a root Java package ; {@code import("lib/shapes.ba")}, a name ending in
+ * {@code .ba}, is the module of a Babble file.
  */
 public class ImportFunction implements Callable {
     private final Map<String, JavaPackage> packages = new ConcurrentHashMap<>();
@@ -23,7 +22,8 @@ public class ImportFunction implements Callable {
         }
         if (name.endsWith(Module.EXTENSION)) {
             if (rt.modules() == null) {
-                throw new BabbleException("Cannot import " + name + " : this runtime has no modules");
+                throw new BabbleException(
+                        "Cannot import " + name + " : this runtime has no modules");
             }
             return rt.modules().load(name, site != null ? site.sourceName() : null, rt);
         }

@@ -1,16 +1,15 @@
 package org.babblelang.ir.egraph;
 
-import org.babblelang.analysis.PrimitiveKind;
-
 import java.util.Arrays;
 import java.util.Objects;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
- * Immutable pure-expression E-node in the shared equality saturation engine
- * ({@code BIP027-D1}, anticipating Half A of {@code BIP014-P5}).
+ * Immutable pure-expression E-node in the shared equality saturation engine ({@code BIP027-D1},
+ * anticipating Half A of {@code BIP014-P5}).
  *
- * <p>Zero ANTLR dependencies; shared by the HIR optimizer ({@code HirEGraphSimplifyPass})
- * and the effect checker's algebraic law verifier ({@code AlgebraicVerifier}).
+ * <p>Zero ANTLR dependencies; shared by the HIR optimizer ({@code HirEGraphSimplifyPass}) and the
+ * effect checker's algebraic law verifier ({@code AlgebraicVerifier}).
  */
 public final class ENode {
     public enum Op {
@@ -55,7 +54,8 @@ public final class ENode {
         this.hash = computeHash(this.op, this.symbol, this.literal, this.kind, this.children);
     }
 
-    private static int computeHash(Op op, String symbol, Object literal, PrimitiveKind kind, int[] children) {
+    private static int computeHash(
+            Op op, String symbol, Object literal, PrimitiveKind kind, int[] children) {
         int h = op.hashCode();
         h = 31 * h + Objects.hashCode(symbol);
         h = 31 * h + literalHash(literal);
@@ -99,15 +99,15 @@ public final class ENode {
     }
 
     public static ENode unary(Op op, PrimitiveKind kind, int child) {
-        return new ENode(op, null, null, kind, new int[]{child});
+        return new ENode(op, null, null, kind, new int[] {child});
     }
 
     public static ENode binary(Op op, PrimitiveKind kind, int left, int right) {
-        return new ENode(op, null, null, kind, new int[]{left, right});
+        return new ENode(op, null, null, kind, new int[] {left, right});
     }
 
     public static ENode ite(PrimitiveKind kind, int cond, int thenBranch, int elseBranch) {
-        return new ENode(Op.ITE, null, null, kind, new int[]{cond, thenBranch, elseBranch});
+        return new ENode(Op.ITE, null, null, kind, new int[] {cond, thenBranch, elseBranch});
     }
 
     public static ENode call(String symbol, PrimitiveKind kind, int... args) {
@@ -154,18 +154,20 @@ public final class ENode {
     }
 
     public boolean isExactOrdered() {
-        return kind == PrimitiveKind.BYTE || kind == PrimitiveKind.SHORT
-                || kind == PrimitiveKind.INT || kind == PrimitiveKind.LONG
+        return kind == PrimitiveKind.BYTE
+                || kind == PrimitiveKind.SHORT
+                || kind == PrimitiveKind.INT
+                || kind == PrimitiveKind.LONG
                 || kind == PrimitiveKind.CHAR;
     }
 
     /**
      * True when {@code ==} / {@code !=} on this node's type is guaranteed reflexive: all 8 Babble
-     * primitive kinds (Babble's {@code ==}/{@code !=} uses {@code Float.compare}/{@code Double.compare}
-     * total order, so {@code NaN == NaN} is {@code true} and {@code NaN != NaN} is {@code false})
-     * and guaranteed {@code string} nodes ({@link Op#STR_ADD} or {@code String} constants).
-     * Excludes arbitrary {@code any}/{@code Object} references whose {@code equals} may throw or
-     * violate reflexivity.
+     * primitive kinds (Babble's {@code ==}/{@code !=} uses {@code Float.compare}/{@code
+     * Double.compare} total order, so {@code NaN == NaN} is {@code true} and {@code NaN != NaN} is
+     * {@code false}) and guaranteed {@code string} nodes ({@link Op#STR_ADD} or {@code String}
+     * constants). Excludes arbitrary {@code any}/{@code Object} references whose {@code equals} may
+     * throw or violate reflexivity.
      */
     public boolean isReflexiveEq() {
         return kind.isPrimitive()

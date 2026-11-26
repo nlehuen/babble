@@ -3,9 +3,9 @@ package org.babblelang.runtime;
 import java.util.Arrays;
 
 /**
- * A class or interface value. Both can have static members, declared in a
- * {@code static ( … )} block : they belong to the value, so two evaluations of the same
- * class expression have separate statics.
+ * A class or interface value. Both can have static members, declared in a {@code static ( … )}
+ * block : they belong to the value, so two evaluations of the same class expression have separate
+ * statics.
  */
 public abstract class BabbleType implements HasMembers {
     protected final ClassShape shape;

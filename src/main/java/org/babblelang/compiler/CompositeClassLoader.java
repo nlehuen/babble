@@ -7,10 +7,10 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Parent-first class loader delegating unknown classes to an ordered list of dependency
- * loaders (such as the thread context class loader and dependency modules'
- * {@link ScriptClassLoader}s). Nested {@code CompositeClassLoader}s are flattened on
- * construction while preserving delegation order and deduplicating by identity.
+ * Parent-first class loader delegating unknown classes to an ordered list of dependency loaders
+ * (such as the thread context class loader and dependency modules' {@link ScriptClassLoader}s).
+ * Nested {@code CompositeClassLoader}s are flattened on construction while preserving delegation
+ * order and deduplicating by identity.
  */
 final class CompositeClassLoader extends ClassLoader {
     static {
@@ -35,7 +35,8 @@ final class CompositeClassLoader extends ClassLoader {
         this.delegates = List.copyOf(flat);
     }
 
-    private static void addFlattened(ClassLoader loader, Set<ClassLoader> seen, List<ClassLoader> flat) {
+    private static void addFlattened(
+            ClassLoader loader, Set<ClassLoader> seen, List<ClassLoader> flat) {
         if (loader == null) {
             return;
         }

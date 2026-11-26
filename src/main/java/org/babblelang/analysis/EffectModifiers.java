@@ -1,20 +1,19 @@
 package org.babblelang.analysis;
 
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTree;
 import org.babblelang.effects.Effect;
 import org.babblelang.parser.BabbleParser;
 
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 /**
- * ANTLR syntax adapter for effect prefixes, parameter modifiers, {@code calling(...)} clauses,
- * and {@code axiom} function words extracted from {@link EffectChecker} ({@code BIP027-I3}).
+ * ANTLR syntax adapter for effect prefixes, parameter modifiers, {@code calling(...)} clauses, and
+ * {@code axiom} function words extracted from {@link EffectChecker} ({@code BIP027-I3}).
  */
 final class EffectModifiers {
     enum ParseContext {
@@ -44,8 +43,10 @@ final class EffectModifiers {
                 return false;
             }
         }
-        // A named `def f = fn () -> (...)` has zero untyped parameters (it simply omits the void/null return type);
-        // treat it as a normal typed function (pure by default per BIP016-D3), while anonymous inline lambdas and
+        // A named `def f = fn () -> (...)` has zero untyped parameters (it simply omits the
+        // void/null return type);
+        // treat it as a normal typed function (pure by default per BIP016-D3), while anonymous
+        // inline lambdas and
         // functions with untyped parameters infer effects.
         if (params.isEmpty() && isNamedDefRhs(fn)) {
             return false;
@@ -56,7 +57,7 @@ final class EffectModifiers {
     static boolean isNamedDefRhs(BabbleParser.FunctionLiteralContext fn) {
         ParserRuleContext cur = fn;
         while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
-                && blk.block().expression().size() == 1)
+                        && blk.block().expression().size() == 1)
                 || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
             cur = cur.getParent();
         }
@@ -66,7 +67,7 @@ final class EffectModifiers {
     boolean isInterfaceDefault(BabbleParser.FunctionLiteralContext fn) {
         ParserRuleContext cur = fn;
         while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
-                && blk.block().expression().size() == 1)
+                        && blk.block().expression().size() == 1)
                 || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
             cur = cur.getParent();
         }
@@ -83,15 +84,17 @@ final class EffectModifiers {
         }
         ParserRuleContext cur = fn;
         while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
-                && blk.block().expression().size() == 1)
+                        && blk.block().expression().size() == 1)
                 || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
             cur = cur.getParent();
         }
-        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def
+                && def.value == cur
                 && ec.checker.isExportedDef(def);
     }
 
-    EffectChecker.ParsedPrefix parseFunctionPrefix(BabbleParser.FunctionLiteralContext ctx, boolean reportErrors) {
+    EffectChecker.ParsedPrefix parseFunctionPrefix(
+            BabbleParser.FunctionLiteralContext ctx, boolean reportErrors) {
         if (!reportErrors) {
             EffectChecker.ParsedPrefix cached = ec.fnPrefixes.get(ctx);
             if (cached != null) {
@@ -113,10 +116,18 @@ final class EffectModifiers {
             }
             return EffectChecker.ParsedPrefix.EMPTY;
         }
-        EffectChecker.ParsedPrefix parsed = parseWords(
-                ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of(),
-                ParseContext.FUNCTION_LITERAL, hasThis, hasMutParam, hasAnyParamMod,
-                ctx.uniqueReturn != null, ctx, reportErrors);
+        EffectChecker.ParsedPrefix parsed =
+                parseWords(
+                        ctx.effectPrefix() != null
+                                ? effectPrefixTokens(ctx.effectPrefix())
+                                : List.of(),
+                        ParseContext.FUNCTION_LITERAL,
+                        hasThis,
+                        hasMutParam,
+                        hasAnyParamMod,
+                        ctx.uniqueReturn != null,
+                        ctx,
+                        reportErrors);
         if (reportErrors) {
             if (parsed.axiom() && !ec.pass.hostEffects.allowAxioms()) {
                 ec.checker.effectDiagnostic("axiom declarations are disabled on this engine", ctx);
@@ -132,13 +143,16 @@ final class EffectModifiers {
         return prefix.effectWord().stream().map(ParserRuleContext::getStart).toList();
     }
 
-    EffectChecker.ParsedPrefix parseFunctionTypePrefix(BabbleParser.FunctionTypeContext ctx, boolean reportErrors) {
+    EffectChecker.ParsedPrefix parseFunctionTypePrefix(
+            BabbleParser.FunctionTypeContext ctx, boolean reportErrors) {
         return parseFunctionTypePrefix(ctx, false, reportErrors);
     }
 
-    EffectChecker.ParsedPrefix parseFunctionTypePrefix(BabbleParser.FunctionTypeContext ctx, boolean interfaceMethod, boolean reportErrors) {
+    EffectChecker.ParsedPrefix parseFunctionTypePrefix(
+            BabbleParser.FunctionTypeContext ctx, boolean interfaceMethod, boolean reportErrors) {
         boolean report = reportErrors && ec.validatedTypeTrees.add(ctx);
-        List<Token> words = ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of();
+        List<Token> words =
+                ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of();
         boolean hasMutParam = false;
         boolean hasAnyParamMod = false;
         for (BabbleParser.FnTypeParamContext param : ctx.fnTypeParameters().fnTypeParam()) {
@@ -146,9 +160,15 @@ final class EffectModifiers {
             hasMutParam |= pm.mut();
             hasAnyParamMod |= pm.mut() || pm.shared() || pm.unique();
         }
-        return parseWords(words,
+        return parseWords(
+                words,
                 interfaceMethod ? ParseContext.INTERFACE_METHOD : ParseContext.FUNCTION_TYPE,
-                interfaceMethod, hasMutParam, hasAnyParamMod, ctx.uniqueReturn != null, ctx, report);
+                interfaceMethod,
+                hasMutParam,
+                hasAnyParamMod,
+                ctx.uniqueReturn != null,
+                ctx,
+                report);
     }
 
     EffectChecker.ParamMods parseParamMods(ParserRuleContext param, boolean reportErrors) {
@@ -172,19 +192,22 @@ final class EffectModifiers {
                 }
                 case "shared" -> {
                     if (shared && reportErrors) {
-                        ec.checker.effectDiagnostic("Duplicate parameter modifier : shared", modCtx);
+                        ec.checker.effectDiagnostic(
+                                "Duplicate parameter modifier : shared", modCtx);
                     }
                     shared = true;
                 }
                 case "unique" -> {
                     if (unique && reportErrors) {
-                        ec.checker.effectDiagnostic("Duplicate parameter modifier : unique", modCtx);
+                        ec.checker.effectDiagnostic(
+                                "Duplicate parameter modifier : unique", modCtx);
                     }
                     unique = true;
                 }
                 default -> {
                     if (reportErrors) {
-                        ec.checker.effectDiagnostic("Unknown parameter modifier : " + tok.getText(), modCtx);
+                        ec.checker.effectDiagnostic(
+                                "Unknown parameter modifier : " + tok.getText(), modCtx);
                     }
                 }
             }
@@ -194,29 +217,36 @@ final class EffectModifiers {
                 ec.checker.effectDiagnostic("unique and shared are mutually exclusive", param);
             }
             if (unique && mut) {
-                ec.checker.effectDiagnostic("unique and mut are mutually exclusive : consuming unique parameters already allow private mutation", param);
+                ec.checker.effectDiagnostic(
+                        "unique and mut are mutually exclusive : consuming unique parameters already allow private mutation",
+                        param);
             }
         }
         if (unique) {
             shared = false;
             mut = false;
         }
-        EffectChecker.ParamMods mods = (mut || shared || unique) ? new EffectChecker.ParamMods(mut, shared, unique) : EffectChecker.ParamMods.NONE;
+        EffectChecker.ParamMods mods =
+                (mut || shared || unique)
+                        ? new EffectChecker.ParamMods(mut, shared, unique)
+                        : EffectChecker.ParamMods.NONE;
         if (ec.checker.inFile(param)) {
             ec.paramModsMap.put(param, mods);
         }
         return mods;
     }
 
-    private EffectChecker.ParsedPrefix parseWords(List<Token> tokens,
-                                    ParseContext kind,
-                                    boolean hasThis,
-                                    boolean hasMutParam,
-                                    boolean hasAnyParamMod,
-                                    boolean hasUniqueReturnType,
-                                    ParserRuleContext owner,
-                                    boolean reportErrors) {
-        boolean inFunctionType = kind == ParseContext.FUNCTION_TYPE || kind == ParseContext.INTERFACE_METHOD;
+    private EffectChecker.ParsedPrefix parseWords(
+            List<Token> tokens,
+            ParseContext kind,
+            boolean hasThis,
+            boolean hasMutParam,
+            boolean hasAnyParamMod,
+            boolean hasUniqueReturnType,
+            ParserRuleContext owner,
+            boolean reportErrors) {
+        boolean inFunctionType =
+                kind == ParseContext.FUNCTION_TYPE || kind == ParseContext.INTERFACE_METHOD;
         EnumSet<Effect> explicitEffects = EnumSet.noneOf(Effect.class);
         boolean explicitPure = false;
         boolean explicitVolatile = false;
@@ -236,10 +266,12 @@ final class EffectModifiers {
                 case "axiom" -> {
                     if (inFunctionType) {
                         if (reportErrors) {
-                            ec.checker.effectDiagnostic("axiom is not allowed in a function type", owner);
+                            ec.checker.effectDiagnostic(
+                                    "axiom is not allowed in a function type", owner);
                         }
                     } else if (i > 0 && reportErrors) {
-                        ec.checker.effectDiagnostic("axiom must appear first before effect modifiers", owner);
+                        ec.checker.effectDiagnostic(
+                                "axiom must appear first before effect modifiers", owner);
                     }
                     axiom = true;
                 }
@@ -255,13 +287,17 @@ final class EffectModifiers {
                 case "unique" -> uniqueReturn = true;
                 case "mut" -> {
                     if (!hasThis && kind == ParseContext.FUNCTION_LITERAL && reportErrors) {
-                        ec.checker.effectDiagnostic("mut on a function requires a receiver (this) : mark mutated parameters with mut", owner);
+                        ec.checker.effectDiagnostic(
+                                "mut on a function requires a receiver (this) : mark mutated parameters with mut",
+                                owner);
                     }
                     mutThis = true;
                 }
                 case "shared" -> {
                     if (!hasThis && kind == ParseContext.FUNCTION_LITERAL && reportErrors) {
-                        ec.checker.effectDiagnostic("shared on a function requires a receiver (this) : mark escaping parameters with shared", owner);
+                        ec.checker.effectDiagnostic(
+                                "shared on a function requires a receiver (this) : mark escaping parameters with shared",
+                                owner);
                     }
                     explicitSharedThis = true;
                 }
@@ -274,7 +310,8 @@ final class EffectModifiers {
         }
         if (reportErrors) {
             if (explicitPure && !axiom) {
-                ec.checker.effectDiagnostic("pure is the default on functions : only use pure with axiom", owner);
+                ec.checker.effectDiagnostic(
+                        "pure is the default on functions : only use pure with axiom", owner);
             }
             if (axiom && io) {
                 ec.checker.effectDiagnostic("axiom and io cannot be combined", owner);
@@ -289,10 +326,17 @@ final class EffectModifiers {
                 ec.checker.effectDiagnostic("pure and volatile cannot be combined", owner);
             }
             if (explicitPure && (mutThis || hasMutParam)) {
-                ec.checker.effectDiagnostic("pure and mut are mutually exclusive : use mut (or volatile mut)", owner);
+                ec.checker.effectDiagnostic(
+                        "pure and mut are mutually exclusive : use mut (or volatile mut)", owner);
             }
-            if (axiom && !explicitPure && !explicitVolatile && explicitEffects.isEmpty()
-                    && !mutThis && !explicitSharedThis && !uniqueReturn && !hasAnyParamMod) {
+            if (axiom
+                    && !explicitPure
+                    && !explicitVolatile
+                    && explicitEffects.isEmpty()
+                    && !mutThis
+                    && !explicitSharedThis
+                    && !uniqueReturn
+                    && !hasAnyParamMod) {
                 ec.checker.effectDiagnostic("axiom requires at least one effect modifier", owner);
             }
         }
@@ -315,10 +359,20 @@ final class EffectModifiers {
                 effects.add(Effect.DETERMINISTIC);
             }
             boolean borrowThis = !explicitSharedThis;
-            return new EffectChecker.ParsedPrefix(effects, mutThis, borrowThis, explicitSharedThis, uniqueReturn, true, false, explicitVolatile, true);
+            return new EffectChecker.ParsedPrefix(
+                    effects,
+                    mutThis,
+                    borrowThis,
+                    explicitSharedThis,
+                    uniqueReturn,
+                    true,
+                    false,
+                    explicitVolatile,
+                    true);
         }
 
-        // Typed function literal, function type, or interface method: pure & deterministic & @BORROWED by default (BIP016-D3, D4)!
+        // Typed function literal, function type, or interface method: pure & deterministic &
+        // @BORROWED by default (BIP016-D3, D4)!
         if (io) {
             effects.remove(Effect.PURE);
             effects.remove(Effect.HERMETIC);
@@ -337,8 +391,16 @@ final class EffectModifiers {
             }
         }
         boolean borrowThis = !explicitSharedThis;
-        return new EffectChecker.ParsedPrefix(effects, mutThis, borrowThis, explicitSharedThis, uniqueReturn,
-                false, io, !io && explicitVolatile, hasExplicitWords);
+        return new EffectChecker.ParsedPrefix(
+                effects,
+                mutThis,
+                borrowThis,
+                explicitSharedThis,
+                uniqueReturn,
+                false,
+                io,
+                !io && explicitVolatile,
+                hasExplicitWords);
     }
 
     static boolean canReferenceThis(ScopeNode scope) {
@@ -356,8 +418,8 @@ final class EffectModifiers {
         return false;
     }
 
-
-    // ================================================================ 3. Pre-pass : Axiom & IO Collection
+    // ================================================================ 3. Pre-pass : Axiom & IO
+    // Collection
 
     void collectAxiomExpressions() {
         if (ec.pass.axiomExpressions.isEmpty()) {
@@ -366,7 +428,8 @@ final class EffectModifiers {
         AxiomData.Builder localBuilder = new AxiomData.Builder();
         AxiomData.Builder committedBuilder = new AxiomData.Builder();
         AxiomData.Builder exportedBuilder = new AxiomData.Builder();
-        AxiomData.ErrorSink sink = (msg, at) -> ec.pendingAxiomDiags.add(new EffectChecker.PendingAxiomDiag(msg, at));
+        AxiomData.ErrorSink sink =
+                (msg, at) -> ec.pendingAxiomDiags.add(new EffectChecker.PendingAxiomDiag(msg, at));
 
         for (BlockScopes.PendingAxiomExpr pending : ec.pass.axiomExpressions) {
             BabbleParser.AxiomExpressionContext ctx = pending.ctx();
@@ -385,14 +448,22 @@ final class EffectModifiers {
             }
             if (parsed.classAxiom() != null) {
                 if (localBuilder.hasClassAxiom(parsed.classAxiom().targetClass())) {
-                    sink.report("Duplicate axiom for class : " + parsed.classAxiom().targetClass().getName(), ctx);
+                    sink.report(
+                            "Duplicate axiom for class : "
+                                    + parsed.classAxiom().targetClass().getName(),
+                            ctx);
                     continue;
                 }
                 boolean conflict = false;
                 AxiomData.Builder selfCheck = new AxiomData.Builder();
                 for (AxiomData.MemberAxiom m : parsed.classAxiom().members()) {
                     if (localBuilder.hasMemberConflict(m) || selfCheck.hasMemberConflict(m)) {
-                        sink.report("Duplicate axiom for member : " + m.ownerClass().getName() + "." + m.name(), ctx);
+                        sink.report(
+                                "Duplicate axiom for member : "
+                                        + m.ownerClass().getName()
+                                        + "."
+                                        + m.name(),
+                                ctx);
                         conflict = true;
                     } else {
                         selfCheck.addMemberAxiom(m);
@@ -411,7 +482,12 @@ final class EffectModifiers {
             } else if (parsed.memberAxiom() != null) {
                 AxiomData.MemberAxiom m = parsed.memberAxiom();
                 if (localBuilder.hasMemberConflict(m)) {
-                    sink.report("Duplicate axiom for member : " + m.ownerClass().getName() + "." + m.name(), ctx);
+                    sink.report(
+                            "Duplicate axiom for member : "
+                                    + m.ownerClass().getName()
+                                    + "."
+                                    + m.name(),
+                            ctx);
                     continue;
                 }
                 localBuilder.addMemberAxiom(m);
@@ -440,7 +516,10 @@ final class EffectModifiers {
         if (resolved instanceof BabbleParser.DefExpressionContext def && def.value != null) {
             String pkg = importedJavaPackageName(def.value);
             if (pkg != null) {
-                String joined = path.size() == 1 ? pkg : pkg + "." + String.join(".", path.subList(1, path.size()));
+                String joined =
+                        path.size() == 1
+                                ? pkg
+                                : pkg + "." + String.join(".", path.subList(1, path.size()));
                 return JavaTypeBridge.loadClass(joined);
             }
             List<String> selectorPath = staticSelectorPath(def.value);
@@ -455,10 +534,12 @@ final class EffectModifiers {
 
     private static String importedJavaPackageName(BabbleParser.ExpressionContext expr) {
         if (expr instanceof BabbleParser.CallContext call
-                && call.expression() instanceof BabbleParser.SelectorContext sel && sel.expression() == null
+                && call.expression() instanceof BabbleParser.SelectorContext sel
+                && sel.expression() == null
                 && ("import".equals(sel.ID().getText()) || "importe".equals(sel.ID().getText()))
                 && call.callParameters().callParameter().size() == 1
-                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext str) {
+                && call.callParameters().callParameter(0).expression()
+                        instanceof BabbleParser.StringContext str) {
             String name = org.babblelang.parser.StringLiterals.decode(str);
             return name.endsWith(".ba") ? null : name;
         }
@@ -499,12 +580,17 @@ final class EffectModifiers {
 
     private void checkDeclarationPlacement(ScopeNode scope, ParserRuleContext ctx) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
-            if (s.kind == ScopeNode.Kind.FUNCTION && s.owner instanceof BabbleParser.FunctionLiteralContext fn) {
+            if (s.kind == ScopeNode.Kind.FUNCTION
+                    && s.owner instanceof BabbleParser.FunctionLiteralContext fn) {
                 EffectChecker.ParsedPrefix p = parseFunctionPrefix(fn, false);
-                if (!p.axiom() && !p.io() && (p.effects().contains(Effect.PURE)
-                        || p.effects().contains(Effect.HERMETIC)
-                        || p.effects().contains(Effect.DETERMINISTIC))) {
-                    ec.checker.effectDiagnostic("axiom declaration is not allowed inside a verified constrained function", ctx);
+                if (!p.axiom()
+                        && !p.io()
+                        && (p.effects().contains(Effect.PURE)
+                                || p.effects().contains(Effect.HERMETIC)
+                                || p.effects().contains(Effect.DETERMINISTIC))) {
+                    ec.checker.effectDiagnostic(
+                            "axiom declaration is not allowed inside a verified constrained function",
+                            ctx);
                     return;
                 }
             }
@@ -518,9 +604,18 @@ final class EffectModifiers {
         if (tree instanceof BabbleParser.FunctionTypeContext ft) {
             Type t = ec.checker.annotationTypeOf(ft);
             if (t instanceof Type.Function fn) {
-                EffectChecker.ParsedPrefix prefix = parseFunctionTypePrefix(ft, fn.effects().borrowThis() || fn.effects().explicitSharedThis(), false);
-                ec.algebraic.validateAlgebraicSignature(prefix.effects(), fn.parameters(), fn.result(),
-                        prefix.mutThis(), false, ft);
+                EffectChecker.ParsedPrefix prefix =
+                        parseFunctionTypePrefix(
+                                ft,
+                                fn.effects().borrowThis() || fn.effects().explicitSharedThis(),
+                                false);
+                ec.algebraic.validateAlgebraicSignature(
+                        prefix.effects(),
+                        fn.parameters(),
+                        fn.result(),
+                        prefix.mutThis(),
+                        false,
+                        ft);
                 validateCallingClause(ft.effectPrefix(), fn.parameters());
             }
         }
@@ -529,8 +624,8 @@ final class EffectModifiers {
         }
     }
 
-    void validateCallingClause(BabbleParser.EffectPrefixContext effectPrefix,
-                                       List<Type.Parameter> params) {
+    void validateCallingClause(
+            BabbleParser.EffectPrefixContext effectPrefix, List<Type.Parameter> params) {
         if (effectPrefix == null || effectPrefix.callingClause() == null) {
             return;
         }
@@ -538,7 +633,9 @@ final class EffectModifiers {
         for (org.antlr.v4.runtime.tree.TerminalNode id : effectPrefix.callingClause().ID()) {
             String name = id.getText();
             if (!seen.add(name)) {
-                ec.checker.effectDiagnostic("Duplicate parameter in calling clause : " + name, effectPrefix.callingClause());
+                ec.checker.effectDiagnostic(
+                        "Duplicate parameter in calling clause : " + name,
+                        effectPrefix.callingClause());
                 continue;
             }
             Type.Parameter matched = null;
@@ -553,22 +650,31 @@ final class EffectModifiers {
                 // requirement, since capturing it is what the clause is for.
                 ParserRuleContext captured = TypeAnnotations.enclosingParameter(effectPrefix, name);
                 if (captured == null) {
-                    ec.checker.effectDiagnostic("Unknown parameter in calling clause : " + name, effectPrefix.callingClause());
+                    ec.checker.effectDiagnostic(
+                            "Unknown parameter in calling clause : " + name,
+                            effectPrefix.callingClause());
                 } else {
                     Type capturedType = capturedParameterType(captured);
-                    if (capturedType != null && capturedType != Type.ERROR && !(capturedType instanceof Type.Function)) {
-                        ec.checker.effectDiagnostic("Parameter in calling clause must be a function : " + name,
+                    if (capturedType != null
+                            && capturedType != Type.ERROR
+                            && !(capturedType instanceof Type.Function)) {
+                        ec.checker.effectDiagnostic(
+                                "Parameter in calling clause must be a function : " + name,
                                 effectPrefix.callingClause());
                     }
                 }
                 continue;
             }
             if (matched.type() != Type.ERROR && !(matched.type() instanceof Type.Function)) {
-                ec.checker.effectDiagnostic("Parameter in calling clause must be a function : " + name, effectPrefix.callingClause());
+                ec.checker.effectDiagnostic(
+                        "Parameter in calling clause must be a function : " + name,
+                        effectPrefix.callingClause());
                 continue;
             }
             if (!matched.borrow()) {
-                ec.checker.effectDiagnostic("Parameter in calling clause must be borrowed : " + name, effectPrefix.callingClause());
+                ec.checker.effectDiagnostic(
+                        "Parameter in calling clause must be borrowed : " + name,
+                        effectPrefix.callingClause());
             }
         }
     }
@@ -578,8 +684,8 @@ final class EffectModifiers {
      * {@code unique}) rather than as inferred, so that a callback of a {@code calling} clause that
      * escapes is reported once, as escaping, and not also as not borrowed.
      */
-    List<Type.Parameter> declaredBorrows(BabbleParser.FunctionLiteralContext fn,
-                                                 List<Type.Parameter> params) {
+    List<Type.Parameter> declaredBorrows(
+            BabbleParser.FunctionLiteralContext fn, List<Type.Parameter> params) {
         List<BabbleParser.FnParamContext> decls = fn.fnParameters().fnParam();
         if (decls.size() != params.size()) {
             return params;
@@ -589,8 +695,16 @@ final class EffectModifiers {
             Type.Parameter p = params.get(i);
             EffectChecker.ParamMods declared = parseParamMods(decls.get(i), false);
             boolean borrow = !declared.shared() && !declared.unique();
-            result.add(new Type.Parameter(p.name(), p.type(), p.optional(), p.keywordOnly(), p.mut(), borrow,
-                    p.explicitShared(), p.unique()));
+            result.add(
+                    new Type.Parameter(
+                            p.name(),
+                            p.type(),
+                            p.optional(),
+                            p.keywordOnly(),
+                            p.mut(),
+                            borrow,
+                            p.explicitShared(),
+                            p.unique()));
         }
         return result;
     }
@@ -602,14 +716,22 @@ final class EffectModifiers {
                 && list.getParent() instanceof BabbleParser.FunctionTypeContext ft
                 && ec.checker.annotationTypeOf(ft) instanceof Type.Function fn) {
             int index = list.fnTypeParam().indexOf(typeParam);
-            return index >= 0 && index < fn.parameters().size() ? fn.parameters().get(index).type() : Type.ERROR;
+            return index >= 0 && index < fn.parameters().size()
+                    ? fn.parameters().get(index).type()
+                    : Type.ERROR;
         }
         return ec.checker.typeOfDeclarationForEffects(param);
     }
 
-    /** Whether {@code fn}'s calling clause names {@code param}, a callback of an enclosing function (BIP017-D5). */
-    static boolean capturesCallback(BabbleParser.FunctionLiteralContext fn, BabbleParser.FnParamContext param) {
-        if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null || param.ID() == null) {
+    /**
+     * Whether {@code fn}'s calling clause names {@code param}, a callback of an enclosing function
+     * (BIP017-D5).
+     */
+    static boolean capturesCallback(
+            BabbleParser.FunctionLiteralContext fn, BabbleParser.FnParamContext param) {
+        if (fn.effectPrefix() == null
+                || fn.effectPrefix().callingClause() == null
+                || param.ID() == null) {
             return false;
         }
         String name = param.ID().getText();
@@ -618,15 +740,18 @@ final class EffectModifiers {
                 && TypeAnnotations.enclosingParameter(fn.effectPrefix(), name) == param;
     }
 
-    /** Whether {@code fn}'s calling clause names a callback of an enclosing function (BIP017-D5). */
+    /**
+     * Whether {@code fn}'s calling clause names a callback of an enclosing function (BIP017-D5).
+     */
     static boolean capturesCallbacks(BabbleParser.FunctionLiteralContext fn) {
         if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
             return false;
         }
         for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
             String name = id.getText();
-            boolean own = fn.fnParameters().fnParam().stream()
-                    .anyMatch(p -> p.ID() != null && name.equals(p.ID().getText()));
+            boolean own =
+                    fn.fnParameters().fnParam().stream()
+                            .anyMatch(p -> p.ID() != null && name.equals(p.ID().getText()));
             if (!own && TypeAnnotations.enclosingParameter(fn.effectPrefix(), name) != null) {
                 return true;
             }

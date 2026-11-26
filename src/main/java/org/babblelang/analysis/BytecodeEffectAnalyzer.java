@@ -1,25 +1,5 @@
 package org.babblelang.analysis;
 
-import org.babblelang.effects.Effect;
-import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.InvokeDynamicInsnNode;
-import org.objectweb.asm.tree.JumpInsnNode;
-import org.objectweb.asm.tree.LabelNode;
-import org.objectweb.asm.tree.LdcInsnNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.TypeInsnNode;
-import org.objectweb.asm.tree.analysis.Analyzer;
-import org.objectweb.asm.tree.analysis.AnalyzerException;
-import org.objectweb.asm.tree.analysis.Frame;
-import org.objectweb.asm.tree.analysis.Interpreter;
-import org.objectweb.asm.tree.analysis.Value;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.Constructor;
@@ -45,20 +25,39 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
+import org.babblelang.effects.Effect;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.InvokeDynamicInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.analysis.Analyzer;
+import org.objectweb.asm.tree.analysis.AnalyzerException;
+import org.objectweb.asm.tree.analysis.Frame;
+import org.objectweb.asm.tree.analysis.Interpreter;
+import org.objectweb.asm.tree.analysis.Value;
 
 /**
  * ASM bytecode static effect, alias, reads, and nullness analyzer for Java methods and constructors
  * ({@code docs/design/bip019_refactoring-axioms.md} §5).
  *
- * <p>Runs lazily on demand as tier 7 (below curated axioms, on by default), uses an ASM
- * {@link Analyzer} provenance + nullness value lattice over a budget-bounded Tarjan SCC call-graph
- * fixed point, applies curated axioms to open/native calls it encounters, and caches converged
- * results in memory per {@code (BuiltinAxioms, ClassLoader)}.
+ * <p>Runs lazily on demand as tier 7 (below curated axioms, on by default), uses an ASM {@link
+ * Analyzer} provenance + nullness value lattice over a budget-bounded Tarjan SCC call-graph fixed
+ * point, applies curated axioms to open/native calls it encounters, and caches converged results in
+ * memory per {@code (BuiltinAxioms, ClassLoader)}.
  */
 public final class BytecodeEffectAnalyzer {
 
     /** Provenance bit flags on a JVM value. */
     private static final long PROV_THIS = 1L << 0;
+
     private static final long PROV_FRESH = 1L << 1;
     private static final long PROV_EXTERNAL = 1L << 2;
     private static final long PROV_CONST = 1L << 3;
@@ -85,20 +84,53 @@ public final class BytecodeEffectAnalyzer {
             boolean shallow,
             List<String> reasons) {
 
-        public static final Result UNCONSTRAINED = new Result(
-                EffectSet.EMPTY, false, false, new boolean[0], new boolean[0],
-                true, new boolean[0], false, false, false, false, List.of("unconstrained"));
+        public static final Result UNCONSTRAINED =
+                new Result(
+                        EffectSet.EMPTY,
+                        false,
+                        false,
+                        new boolean[0],
+                        new boolean[0],
+                        true,
+                        new boolean[0],
+                        false,
+                        false,
+                        false,
+                        false,
+                        List.of("unconstrained"));
 
         public Result(EffectSet effects, List<String> reasons) {
-            this(effects, false, effects.isPure(), new boolean[0], new boolean[0],
-                    true, new boolean[0], false, effects.uniqueResult(), false, false, reasons);
+            this(
+                    effects,
+                    false,
+                    effects.isPure(),
+                    new boolean[0],
+                    new boolean[0],
+                    true,
+                    new boolean[0],
+                    false,
+                    effects.uniqueResult(),
+                    false,
+                    false,
+                    reasons);
         }
 
         static Result unconstrained(int paramCount, boolean isStatic, List<String> reasons) {
             boolean[] rp = new boolean[paramCount];
             Arrays.fill(rp, true);
-            return new Result(EffectSet.EMPTY, false, false, new boolean[paramCount], new boolean[paramCount],
-                    !isStatic, rp, false, false, false, false, List.copyOf(reasons));
+            return new Result(
+                    EffectSet.EMPTY,
+                    false,
+                    false,
+                    new boolean[paramCount],
+                    new boolean[paramCount],
+                    !isStatic,
+                    rp,
+                    false,
+                    false,
+                    false,
+                    false,
+                    List.copyOf(reasons));
         }
 
         EffectChecker.JavaCallProfile toProfile(Executable exec) {
@@ -106,16 +138,21 @@ public final class BytecodeEffectAnalyzer {
             boolean isCtor = exec instanceof Constructor<?>;
             boolean isStatic = isCtor || (exec != null && Modifier.isStatic(exec.getModifiers()));
             boolean[] mp = padOrCopy(mutParams, pCount, false);
-            boolean[] bp = padOrCopy(borrowParams, pCount, !effects.isUnconstrained() && effects.isPure());
+            boolean[] bp =
+                    padOrCopy(borrowParams, pCount, !effects.isUnconstrained() && effects.isPure());
             boolean[] rp = padOrCopy(readParams, pCount, true);
             boolean[] up = new boolean[pCount];
             return new EffectChecker.JavaCallProfile(
                     effects,
                     !isStatic && mutReceiver,
                     !isStatic && borrowReceiver,
-                    mp, bp, up,
+                    mp,
+                    bp,
+                    up,
                     effects.isNothrow(),
-                    view, shallow, fresh,
+                    view,
+                    shallow,
+                    fresh,
                     !isStatic && readsReceiver,
                     rp);
         }
@@ -146,7 +183,8 @@ public final class BytecodeEffectAnalyzer {
         }
     }
 
-    private record MethodKey(String ownerInternalName, String name, String descriptor) implements Comparable<MethodKey> {
+    private record MethodKey(String ownerInternalName, String name, String descriptor)
+            implements Comparable<MethodKey> {
         @Override
         public int compareTo(MethodKey o) {
             int c = ownerInternalName.compareTo(o.ownerInternalName);
@@ -159,18 +197,23 @@ public final class BytecodeEffectAnalyzer {
     /** Per-(BuiltinAxioms, ClassLoader) cache for converged bytecode analysis results. */
     private static final Map<BuiltinAxioms, Map<ClassLoader, Map<MethodKey, Result>>> CACHES =
             Collections.synchronizedMap(new IdentityHashMap<>());
+
     /** Lock-free fast-path cache for standard axioms + bootstrap class loader (java.base). */
-    private static final ConcurrentHashMap<MethodKey, Result> STANDARD_BOOTSTRAP_CACHE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<MethodKey, Result> STANDARD_BOOTSTRAP_CACHE =
+            new ConcurrentHashMap<>();
+
     /** ClassNode cache per ClassLoader so each class file is parsed with ASM only once. */
     private static final Map<ClassLoader, Map<String, ClassNode>> CLASS_NODE_CACHES =
             Collections.synchronizedMap(new WeakHashMap<>());
+
     /** Lock-free fast-path ClassNode cache for bootstrap class loader (java.base). */
-    private static final ConcurrentHashMap<String, ClassNode> BOOTSTRAP_CLASS_NODES = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, ClassNode> BOOTSTRAP_CLASS_NODES =
+            new ConcurrentHashMap<>();
+
     private static final ClassLoader NULL_LOADER_SENTINEL = new ClassLoader(null) {};
     private static final ClassNode MISSING_CLASS_NODE = new ClassNode();
 
-    private BytecodeEffectAnalyzer() {
-    }
+    private BytecodeEffectAnalyzer() {}
 
     private static Map<MethodKey, Result> cacheFor(BuiltinAxioms axioms, ClassLoader loader) {
         BuiltinAxioms keyAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
@@ -180,7 +223,9 @@ public final class BytecodeEffectAnalyzer {
         ClassLoader keyLoader = loader != null ? loader : NULL_LOADER_SENTINEL;
         Map<ClassLoader, Map<MethodKey, Result>> byLoader;
         synchronized (CACHES) {
-            byLoader = CACHES.computeIfAbsent(keyAxioms, k -> Collections.synchronizedMap(new WeakHashMap<>()));
+            byLoader =
+                    CACHES.computeIfAbsent(
+                            keyAxioms, k -> Collections.synchronizedMap(new WeakHashMap<>()));
         }
         synchronized (byLoader) {
             return byLoader.computeIfAbsent(keyLoader, k -> new ConcurrentHashMap<>());
@@ -200,7 +245,10 @@ public final class BytecodeEffectAnalyzer {
         Class<?> owner = exec.getDeclaringClass();
         String ownerInternal = Type.getInternalName(owner);
         String name = exec instanceof Constructor<?> ? "<init>" : exec.getName();
-        String desc = exec instanceof Constructor<?> c ? Type.getConstructorDescriptor(c) : Type.getMethodDescriptor((Method) exec);
+        String desc =
+                exec instanceof Constructor<?> c
+                        ? Type.getConstructorDescriptor(c)
+                        : Type.getMethodDescriptor((Method) exec);
         MethodKey root = new MethodKey(ownerInternal, name, desc);
         BuiltinAxioms effectiveAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
         Map<MethodKey, Result> cache = cacheFor(effectiveAxioms, owner.getClassLoader());
@@ -214,8 +262,8 @@ public final class BytecodeEffectAnalyzer {
 
     /**
      * Analyzes {@code exec}'s own bytecode directly (ignoring any curated axiom on {@code exec}
-     * itself, while still applying curated axioms to callees), for {@code babble.axioms.report}
-     * and {@code -axioms} dumps (§5.1).
+     * itself, while still applying curated axioms to callees), for {@code babble.axioms.report} and
+     * {@code -axioms} dumps (§5.1).
      */
     public static Result analyzeRaw(Executable exec, BuiltinAxioms axioms) {
         if (exec == null) {
@@ -224,7 +272,10 @@ public final class BytecodeEffectAnalyzer {
         Class<?> owner = exec.getDeclaringClass();
         String ownerInternal = Type.getInternalName(owner);
         String name = exec instanceof Constructor<?> ? "<init>" : exec.getName();
-        String desc = exec instanceof Constructor<?> c ? Type.getConstructorDescriptor(c) : Type.getMethodDescriptor((Method) exec);
+        String desc =
+                exec instanceof Constructor<?> c
+                        ? Type.getConstructorDescriptor(c)
+                        : Type.getMethodDescriptor((Method) exec);
         MethodKey root = new MethodKey(ownerInternal, name, desc);
         BuiltinAxioms effectiveAxioms = axioms != null ? axioms : BuiltinAxioms.standard();
         Map<MethodKey, Result> cache = cacheFor(effectiveAxioms, owner.getClassLoader());
@@ -245,26 +296,34 @@ public final class BytecodeEffectAnalyzer {
 
     /**
      * Whether {@code inferred} is at least as strong as {@code curated} on effects, mutation,
-     * borrowing, and return nullness (for {@code babble.axioms.report} and {@code ;; curated, inferred the same}).
+     * borrowing, and return nullness (for {@code babble.axioms.report} and {@code ;; curated,
+     * inferred the same}).
      */
-    static boolean isAtLeastAsStrongAs(Result inferred, AxiomData.MemberAxiom curated, Executable exec) {
+    static boolean isAtLeastAsStrongAs(
+            Result inferred, AxiomData.MemberAxiom curated, Executable exec) {
         if (inferred == null || curated == null) {
             return false;
         }
-        // Check curated nullness for every curated axiom (including io and ... inferred effects, BIP030-D6).
+        // Check curated nullness for every curated axiom (including io and ... inferred effects,
+        // BIP030-D6).
         if (curated.returnNullness() == JavaNullability.Nullness.NON_NULL
-                && exec instanceof Method m && !m.getReturnType().isPrimitive() && !inferred.returnNonNull()) {
+                && exec instanceof Method m
+                && !m.getReturnType().isPrimitive()
+                && !inferred.returnNonNull()) {
             return false;
         }
         if (curated.returnNullness() == JavaNullability.Nullness.PARAMETRIC
-                && exec instanceof Method m && m.getGenericReturnType() instanceof java.lang.reflect.TypeVariable<?>) {
+                && exec instanceof Method m
+                && m.getGenericReturnType() instanceof java.lang.reflect.TypeVariable<?>) {
             return false;
         }
         if (curated.hasSignature() && exec != null) {
             Class<?>[] pts = exec.getParameterTypes();
             JavaNullability.Nullness[] pNulls = curated.paramNullness();
             for (int i = 0; i < Math.min(pts.length, pNulls.length); i++) {
-                if (!pts[i].isPrimitive() && pNulls[i] != null && pNulls[i] != JavaNullability.Nullness.UNSPECIFIED) {
+                if (!pts[i].isPrimitive()
+                        && pNulls[i] != null
+                        && pNulls[i] != JavaNullability.Nullness.UNSPECIFIED) {
                     return false;
                 }
             }
@@ -278,8 +337,11 @@ public final class BytecodeEffectAnalyzer {
             return false;
         }
         for (Effect e : req.effects()) {
-            if (e == Effect.IDEMPOTENT || e == Effect.COMMUTATIVE || e == Effect.ASSOCIATIVE
-                    || e == Effect.MONOTONE || e == Effect.INJECTIVE) {
+            if (e == Effect.IDEMPOTENT
+                    || e == Effect.COMMUTATIVE
+                    || e == Effect.ASSOCIATIVE
+                    || e == Effect.MONOTONE
+                    || e == Effect.INJECTIVE) {
                 return false;
             }
         }
@@ -288,20 +350,27 @@ public final class BytecodeEffectAnalyzer {
         if (req.isPure() && !inf.isPure()) return false;
         if (req.isDeterministic() && !inf.isDeterministic()) return false;
         if (req.isNothrow() && !inf.isNothrow()) return false;
-        if ((curated.fresh() || req.uniqueResult()) && !(inferred.fresh() || inf.uniqueResult())) return false;
+        if ((curated.fresh() || req.uniqueResult()) && !(inferred.fresh() || inf.uniqueResult()))
+            return false;
         if (curated.view() && !inferred.view()) return false;
         if (curated.shallow() && !inferred.shallow()) return false;
-        boolean isStatic = exec instanceof Constructor<?> || (exec != null && Modifier.isStatic(exec.getModifiers()));
+        boolean isStatic =
+                exec instanceof Constructor<?>
+                        || (exec != null && Modifier.isStatic(exec.getModifiers()));
         if (!isStatic) {
             if (!curated.mutReceiver() && inferred.mutReceiver()) return false;
             if (curated.borrowReceiver() && !inferred.borrowReceiver()) return false;
         }
         int pCount = exec != null ? exec.getParameterCount() : curated.paramDescriptors().size();
         for (int i = 0; i < pCount; i++) {
-            boolean cMut = curated.hasSignature() && i < curated.mutParams().length && curated.mutParams()[i];
-            boolean cBorrow = curated.hasSignature()
-                    ? (i < curated.borrowParams().length && curated.borrowParams()[i])
-                    : !curated.sharedReceiver();
+            boolean cMut =
+                    curated.hasSignature()
+                            && i < curated.mutParams().length
+                            && curated.mutParams()[i];
+            boolean cBorrow =
+                    curated.hasSignature()
+                            ? (i < curated.borrowParams().length && curated.borrowParams()[i])
+                            : !curated.sharedReceiver();
             boolean iMut = i < inferred.mutParams().length && inferred.mutParams()[i];
             boolean iBorrow = i < inferred.borrowParams().length && inferred.borrowParams()[i];
             if (!cMut && iMut) return false;
@@ -310,7 +379,10 @@ public final class BytecodeEffectAnalyzer {
         return true;
     }
 
-    /** Formats a ready-to-paste Babble {@code axiom Class.method: fn ...} suggestion, or {@code null} if unconstrained. */
+    /**
+     * Formats a ready-to-paste Babble {@code axiom Class.method: fn ...} suggestion, or {@code
+     * null} if unconstrained.
+     */
     public static String suggestAxiom(Method method) {
         Result r = analyze(method);
         EffectSet eff = r.effects();
@@ -345,7 +417,12 @@ public final class BytecodeEffectAnalyzer {
         if (prefix.isEmpty()) {
             return null;
         }
-        return "axiom " + method.getDeclaringClass().getName() + "." + method.getName() + ": fn " + prefix;
+        return "axiom "
+                + method.getDeclaringClass().getName()
+                + "."
+                + method.getName()
+                + ": fn "
+                + prefix;
     }
 
     // ================================================================ Value Lattice (§5.2)
@@ -375,7 +452,8 @@ public final class BytecodeEffectAnalyzer {
             if (size == 1 && provBits == PROV_CONST && !mayBeNull) return CONST_1;
             if (size == 1 && provBits == PROV_THIS && !mayBeNull) return THIS_VAL;
             if (size == 1 && provBits == PROV_FRESH && !mayBeNull) return FRESH_VAL;
-            if (size == 1 && provBits == PROV_EXTERNAL) return mayBeNull ? EXTERNAL_NULLABLE : EXTERNAL_NONNULL;
+            if (size == 1 && provBits == PROV_EXTERNAL)
+                return mayBeNull ? EXTERNAL_NULLABLE : EXTERNAL_NONNULL;
             return new ProvValue(size, provBits, mayBeNull);
         }
 
@@ -384,7 +462,10 @@ public final class BytecodeEffectAnalyzer {
             if (isPrimitive(type)) {
                 return sz == 2 ? CONST_2 : CONST_1;
             }
-            long bit = paramIndex < MAX_TRACKED_PARAMS ? (1L << (PROV_PARAM_SHIFT + paramIndex)) : PROV_EXTERNAL;
+            long bit =
+                    paramIndex < MAX_TRACKED_PARAMS
+                            ? (1L << (PROV_PARAM_SHIFT + paramIndex))
+                            : PROV_EXTERNAL;
             return new ProvValue(1, bit, true);
         }
 
@@ -427,7 +508,16 @@ public final class BytecodeEffectAnalyzer {
 
     private static boolean isPrimitive(Type t) {
         return switch (t.getSort()) {
-            case Type.BOOLEAN, Type.CHAR, Type.BYTE, Type.SHORT, Type.INT, Type.FLOAT, Type.LONG, Type.DOUBLE, Type.VOID -> true;
+            case Type.BOOLEAN,
+                    Type.CHAR,
+                    Type.BYTE,
+                    Type.SHORT,
+                    Type.INT,
+                    Type.FLOAT,
+                    Type.LONG,
+                    Type.DOUBLE,
+                    Type.VOID ->
+                    true;
             default -> false;
         };
     }
@@ -445,7 +535,11 @@ public final class BytecodeEffectAnalyzer {
         final Map<MethodKey, Result> localResults = new HashMap<>();
         boolean budgetExceeded = false;
 
-        Session(BuiltinAxioms axioms, ClassLoader loader, Map<MethodKey, Result> globalCache, boolean ignoreRootCurated) {
+        Session(
+                BuiltinAxioms axioms,
+                ClassLoader loader,
+                Map<MethodKey, Result> globalCache,
+                boolean ignoreRootCurated) {
             this.axioms = axioms;
             this.loader = loader;
             this.globalCache = globalCache;
@@ -487,21 +581,32 @@ public final class BytecodeEffectAnalyzer {
             if (depth > MAX_CALL_DEPTH || methodNodes.size() >= MAX_CALL_GRAPH_NODES) {
                 budgetExceeded = true;
                 Type[] args = Type.getArgumentTypes(key.descriptor());
-                localResults.put(key, Result.unconstrained(args.length, false, List.of("analysis budget exceeded")));
+                localResults.put(
+                        key,
+                        Result.unconstrained(
+                                args.length, false, List.of("analysis budget exceeded")));
                 callGraph.put(key, Set.of());
                 return;
             }
             MethodNode mn = findMethodNode(key);
             if (mn == null) {
                 Type[] args = Type.getArgumentTypes(key.descriptor());
-                localResults.put(key, Result.unconstrained(args.length, false, List.of("bytecode unavailable for " + key.ownerInternalName)));
+                localResults.put(
+                        key,
+                        Result.unconstrained(
+                                args.length,
+                                false,
+                                List.of("bytecode unavailable for " + key.ownerInternalName)));
                 callGraph.put(key, Set.of());
                 return;
             }
             methodNodes.put(key, mn);
             Set<MethodKey> callees = new TreeSet<>();
-            if ((mn.access & (Opcodes.ACC_NATIVE | Opcodes.ACC_ABSTRACT)) == 0 && mn.instructions != null) {
-                for (AbstractInsnNode insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if ((mn.access & (Opcodes.ACC_NATIVE | Opcodes.ACC_ABSTRACT)) == 0
+                    && mn.instructions != null) {
+                for (AbstractInsnNode insn = mn.instructions.getFirst();
+                        insn != null;
+                        insn = insn.getNext()) {
                     if (insn instanceof MethodInsnNode mi) {
                         if ("<init>".equals(mi.name) && "java/lang/Object".equals(mi.owner)) {
                             continue;
@@ -566,7 +671,9 @@ public final class BytecodeEffectAnalyzer {
             if (scc.size() == 1 && localResults.containsKey(scc.get(0))) {
                 return;
             }
-            boolean cyclic = scc.size() > 1 || callGraph.getOrDefault(scc.get(0), Set.of()).contains(scc.get(0));
+            boolean cyclic =
+                    scc.size() > 1
+                            || callGraph.getOrDefault(scc.get(0), Set.of()).contains(scc.get(0));
             for (MethodKey k : scc) {
                 if (localResults.containsKey(k)) continue;
                 MethodNode mn = methodNodes.get(k);
@@ -575,11 +682,32 @@ public final class BytecodeEffectAnalyzer {
                 boolean isStatic = (mn.access & Opcodes.ACC_STATIC) != 0;
                 boolean[] bp = new boolean[pCount];
                 Arrays.fill(bp, true);
-                EffectSet opt = EffectSet.ofInferred(
-                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
-                        false, !isStatic, false, !cyclic);
-                localResults.put(k, new Result(opt, false, !isStatic, new boolean[pCount], bp,
-                        false, new boolean[pCount], true, true, false, true, List.of()));
+                EffectSet opt =
+                        EffectSet.ofInferred(
+                                EnumSet.of(
+                                        Effect.PURE,
+                                        Effect.HERMETIC,
+                                        Effect.DETERMINISTIC,
+                                        Effect.NOTHROW),
+                                false,
+                                !isStatic,
+                                false,
+                                !cyclic);
+                localResults.put(
+                        k,
+                        new Result(
+                                opt,
+                                false,
+                                !isStatic,
+                                new boolean[pCount],
+                                bp,
+                                false,
+                                new boolean[pCount],
+                                true,
+                                true,
+                                false,
+                                true,
+                                List.of()));
             }
             for (int iter = 0; iter < MAX_SCC_ITERATIONS; iter++) {
                 boolean changed = false;
@@ -587,7 +715,8 @@ public final class BytecodeEffectAnalyzer {
                     MethodNode mn = methodNodes.get(k);
                     if (mn == null) continue;
                     Result prev = localResults.get(k);
-                    Result next = analyzeSingleMethod(k, mn, cyclic, k.equals(root) && ignoreRootCurated);
+                    Result next =
+                            analyzeSingleMethod(k, mn, cyclic, k.equals(root) && ignoreRootCurated);
                     if (!next.sameSummary(prev)) {
                         localResults.put(k, next);
                         changed = true;
@@ -599,19 +728,28 @@ public final class BytecodeEffectAnalyzer {
             }
         }
 
-        private Result analyzeSingleMethod(MethodKey key, MethodNode mn, boolean cyclic, boolean skipSelfCurated) {
+        private Result analyzeSingleMethod(
+                MethodKey key, MethodNode mn, boolean cyclic, boolean skipSelfCurated) {
             boolean isStatic = (mn.access & Opcodes.ACC_STATIC) != 0;
             boolean isCtor = "<init>".equals(key.name());
             Type[] argTypes = Type.getArgumentTypes(key.descriptor());
             int pCount = argTypes.length;
             Type retType = Type.getReturnType(key.descriptor());
-            boolean overlayNonNull = !skipSelfCurated && !isCtor && !isPrimitive(retType) && curatedReturnNonNull(key, true);
+            boolean overlayNonNull =
+                    !skipSelfCurated
+                            && !isCtor
+                            && !isPrimitive(retType)
+                            && curatedReturnNonNull(key, true);
 
             if ((mn.access & Opcodes.ACC_NATIVE) != 0) {
-                return unconstrainedWithNonNull(pCount, isStatic || isCtor, overlayNonNull, List.of("native method"));
+                return unconstrainedWithNonNull(
+                        pCount, isStatic || isCtor, overlayNonNull, List.of("native method"));
             }
-            if ((mn.access & Opcodes.ACC_ABSTRACT) != 0 || mn.instructions == null || mn.instructions.size() == 0) {
-                return unconstrainedWithNonNull(pCount, isStatic || isCtor, overlayNonNull, List.of("abstract method"));
+            if ((mn.access & Opcodes.ACC_ABSTRACT) != 0
+                    || mn.instructions == null
+                    || mn.instructions.size() == 0) {
+                return unconstrainedWithNonNull(
+                        pCount, isStatic || isCtor, overlayNonNull, List.of("abstract method"));
             }
 
             if (!skipSelfCurated) {
@@ -628,7 +766,8 @@ public final class BytecodeEffectAnalyzer {
                 Analyzer<ProvValue> analyzer = new Analyzer<>(interp);
                 frames = analyzer.analyze(key.ownerInternalName(), mn);
             } catch (AnalyzerException | RuntimeException e) {
-                return Result.unconstrained(pCount, isStatic || isCtor, List.of("bytecode verification failed"));
+                return Result.unconstrained(
+                        pCount, isStatic || isCtor, List.of("bytecode verification failed"));
             }
 
             // Initialize summary state from analyzed frames.
@@ -718,7 +857,8 @@ public final class BytecodeEffectAnalyzer {
                                 reasons.add("writes external field " + fi.owner + "." + fi.name);
                             }
                             // Escape of stored value:
-                            if (val.hasThis() && !(obj.hasThis() && (obj.provBits & ~PROV_THIS) == 0)) {
+                            if (val.hasThis()
+                                    && !(obj.hasThis() && (obj.provBits & ~PROV_THIS) == 0)) {
                                 borrowReceiver = false;
                             }
                             clearParamBits(val.provBits, borrowParams);
@@ -741,8 +881,14 @@ public final class BytecodeEffectAnalyzer {
                             }
                         }
                     }
-                    case Opcodes.IASTORE, Opcodes.LASTORE, Opcodes.FASTORE, Opcodes.DASTORE,
-                         Opcodes.AASTORE, Opcodes.BASTORE, Opcodes.CASTORE, Opcodes.SASTORE -> {
+                    case Opcodes.IASTORE,
+                            Opcodes.LASTORE,
+                            Opcodes.FASTORE,
+                            Opcodes.DASTORE,
+                            Opcodes.AASTORE,
+                            Opcodes.BASTORE,
+                            Opcodes.CASTORE,
+                            Opcodes.SASTORE -> {
                         nothrow = false;
                         int top = frame.getStackSize();
                         ProvValue arr = frame.getStack(top - 3);
@@ -757,15 +903,22 @@ public final class BytecodeEffectAnalyzer {
                                 reasons.add("writes external array");
                             }
                             if (op == Opcodes.AASTORE) {
-                                if (val.hasThis() && !(arr.hasThis() && (arr.provBits & ~PROV_THIS) == 0)) {
+                                if (val.hasThis()
+                                        && !(arr.hasThis() && (arr.provBits & ~PROV_THIS) == 0)) {
                                     borrowReceiver = false;
                                 }
                                 clearParamBits(val.provBits, borrowParams);
                             }
                         }
                     }
-                    case Opcodes.IALOAD, Opcodes.LALOAD, Opcodes.FALOAD, Opcodes.DALOAD,
-                         Opcodes.AALOAD, Opcodes.BALOAD, Opcodes.CALOAD, Opcodes.SALOAD -> {
+                    case Opcodes.IALOAD,
+                            Opcodes.LALOAD,
+                            Opcodes.FALOAD,
+                            Opcodes.DALOAD,
+                            Opcodes.AALOAD,
+                            Opcodes.BALOAD,
+                            Opcodes.CALOAD,
+                            Opcodes.SALOAD -> {
                         nothrow = false;
                         ProvValue arr = frame.getStack(frame.getStackSize() - 2);
                         if (!arr.isPurelyFresh()) {
@@ -807,7 +960,10 @@ public final class BytecodeEffectAnalyzer {
                             allReturnsAliasThis = false;
                         }
                     }
-                    case Opcodes.INVOKESTATIC, Opcodes.INVOKESPECIAL, Opcodes.INVOKEVIRTUAL, Opcodes.INVOKEINTERFACE -> {
+                    case Opcodes.INVOKESTATIC,
+                            Opcodes.INVOKESPECIAL,
+                            Opcodes.INVOKEVIRTUAL,
+                            Opcodes.INVOKEINTERFACE -> {
                         MethodInsnNode mi = (MethodInsnNode) insn;
                         if ("<init>".equals(mi.name) && "java/lang/Object".equals(mi.owner)) {
                             break;
@@ -845,7 +1001,8 @@ public final class BytecodeEffectAnalyzer {
 
                         if (cRecv != null) {
                             if (calleeRes.mutReceiver() && !cRecv.isPurelyFresh()) {
-                                if (cRecv.hasThis() && !(isCtor && (cRecv.provBits & ~PROV_THIS) == 0)) {
+                                if (cRecv.hasThis()
+                                        && !(isCtor && (cRecv.provBits & ~PROV_THIS) == 0)) {
                                     mutReceiver = true;
                                 }
                                 markParamBits(cRecv.provBits, mutParams);
@@ -874,9 +1031,13 @@ public final class BytecodeEffectAnalyzer {
                         }
                         for (int a = 0; a < cArgVals.length; a++) {
                             ProvValue av = cArgVals[a];
-                            boolean cMutP = a < calleeRes.mutParams().length && calleeRes.mutParams()[a];
-                            boolean cReadP = a < calleeRes.readParams().length && calleeRes.readParams()[a];
-                            boolean cBorrowP = a < calleeRes.borrowParams().length && calleeRes.borrowParams()[a];
+                            boolean cMutP =
+                                    a < calleeRes.mutParams().length && calleeRes.mutParams()[a];
+                            boolean cReadP =
+                                    a < calleeRes.readParams().length && calleeRes.readParams()[a];
+                            boolean cBorrowP =
+                                    a < calleeRes.borrowParams().length
+                                            && calleeRes.borrowParams()[a];
                             if (cMutP && !av.isPurelyFresh()) {
                                 if (av.hasThis() && !(isCtor && (av.provBits & ~PROV_THIS) == 0)) {
                                     mutReceiver = true;
@@ -905,7 +1066,8 @@ public final class BytecodeEffectAnalyzer {
                                 touchedStoredElemCall = true;
                             }
                         }
-                        if (!calleeRes.reasons().isEmpty() && (!ce.isHermetic() || !ce.isDeterministic())) {
+                        if (!calleeRes.reasons().isEmpty()
+                                && (!ce.isHermetic() || !ce.isDeterministic())) {
                             reasons.addAll(calleeRes.reasons());
                         }
                     }
@@ -915,7 +1077,8 @@ public final class BytecodeEffectAnalyzer {
                         if ("java/lang/invoke/StringConcatFactory".equals(bsmOwner)) {
                             // Pure, deterministic, nothrow string concatenation!
                         } else if ("java/lang/invoke/LambdaMetafactory".equals(bsmOwner)) {
-                            // Creating a lambda captures its arguments (shared) without running the body.
+                            // Creating a lambda captures its arguments (shared) without running the
+                            // body.
                             Type[] cArgs = Type.getArgumentTypes(indy.desc);
                             int base = frame.getStackSize() - cArgs.length;
                             for (int a = 0; a < cArgs.length; a++) {
@@ -931,8 +1094,7 @@ public final class BytecodeEffectAnalyzer {
                             reasons.add("invokedynamic " + indy.name);
                         }
                     }
-                    default -> {
-                    }
+                    default -> {}
                 }
             }
 
@@ -940,8 +1102,19 @@ public final class BytecodeEffectAnalyzer {
             if (!hermetic) {
                 boolean[] allReads = new boolean[pCount];
                 Arrays.fill(allReads, true);
-                return new Result(EffectSet.EMPTY, false, false, new boolean[pCount], new boolean[pCount],
-                        !(isStatic || isCtor), allReads, nonNullRet, false, false, false, List.copyOf(reasons));
+                return new Result(
+                        EffectSet.EMPTY,
+                        false,
+                        false,
+                        new boolean[pCount],
+                        new boolean[pCount],
+                        !(isStatic || isCtor),
+                        allReads,
+                        nonNullRet,
+                        false,
+                        false,
+                        false,
+                        List.copyOf(reasons));
             }
             boolean anyMutParam = false;
             for (boolean mp : mutParams) {
@@ -967,28 +1140,74 @@ public final class BytecodeEffectAnalyzer {
                 readsReceiver = false;
                 isFresh = allParamsBorrowed(borrowParams);
             }
-            EffectSet effectSet = EffectSet.ofInferred(effs, mutReceiver, borrowReceiver, isFresh, terminating);
-            return new Result(effectSet, mutReceiver, borrowReceiver, mutParams, borrowParams,
-                    readsReceiver, readParams, nonNullRet, isFresh, isView, isShallow, List.copyOf(reasons));
+            EffectSet effectSet =
+                    EffectSet.ofInferred(effs, mutReceiver, borrowReceiver, isFresh, terminating);
+            return new Result(
+                    effectSet,
+                    mutReceiver,
+                    borrowReceiver,
+                    mutParams,
+                    borrowParams,
+                    readsReceiver,
+                    readParams,
+                    nonNullRet,
+                    isFresh,
+                    isView,
+                    isShallow,
+                    List.copyOf(reasons));
         }
 
-        private Result unconstrainedWithNonNull(int pCount, boolean isStaticOrCtor, boolean nonNullRet, List<String> reasons) {
+        private Result unconstrainedWithNonNull(
+                int pCount, boolean isStaticOrCtor, boolean nonNullRet, List<String> reasons) {
             if (!nonNullRet) {
                 return Result.unconstrained(pCount, isStaticOrCtor, reasons);
             }
             boolean[] rp = new boolean[pCount];
             Arrays.fill(rp, true);
-            return new Result(EffectSet.EMPTY, false, false, new boolean[pCount], new boolean[pCount],
-                    !isStaticOrCtor, rp, true, false, false, false, List.copyOf(reasons));
+            return new Result(
+                    EffectSet.EMPTY,
+                    false,
+                    false,
+                    new boolean[pCount],
+                    new boolean[pCount],
+                    !isStaticOrCtor,
+                    rp,
+                    true,
+                    false,
+                    false,
+                    false,
+                    List.copyOf(reasons));
         }
 
-        Result resolveCalleeResult(int opcode, MethodInsnNode mi, MethodKey calleeKey, Set<String> reasons) {
-            if (mi.owner.startsWith("[") && "clone".equals(mi.name) && "()Ljava/lang/Object;".equals(mi.desc)) {
-                EffectSet es = EffectSet.ofInferred(
-                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
-                        false, true, true, true);
-                return new Result(es, false, true, new boolean[0], new boolean[0],
-                        true, new boolean[0], true, true, false, false, List.of());
+        Result resolveCalleeResult(
+                int opcode, MethodInsnNode mi, MethodKey calleeKey, Set<String> reasons) {
+            if (mi.owner.startsWith("[")
+                    && "clone".equals(mi.name)
+                    && "()Ljava/lang/Object;".equals(mi.desc)) {
+                EffectSet es =
+                        EffectSet.ofInferred(
+                                EnumSet.of(
+                                        Effect.PURE,
+                                        Effect.HERMETIC,
+                                        Effect.DETERMINISTIC,
+                                        Effect.NOTHROW),
+                                false,
+                                true,
+                                true,
+                                true);
+                return new Result(
+                        es,
+                        false,
+                        true,
+                        new boolean[0],
+                        new boolean[0],
+                        true,
+                        new boolean[0],
+                        true,
+                        true,
+                        false,
+                        false,
+                        List.of());
             }
             Result curated = lookupCuratedOrSeeded(calleeKey);
             if (curated != null) {
@@ -1012,13 +1231,19 @@ public final class BytecodeEffectAnalyzer {
                         Constructor<?> ctor = findReflectedConstructor(cls, key.descriptor());
                         AxiomData.MemberAxiom ax = axioms.constructorAxiom(cls, ctor);
                         if (ax != null && !ax.inferredEffects()) {
-                            return resultFromAxiom(ax, ctor, "curated " + ax.ownerClass().getSimpleName() + ".new");
+                            return resultFromAxiom(
+                                    ax,
+                                    ctor,
+                                    "curated " + ax.ownerClass().getSimpleName() + ".new");
                         }
                     } else {
                         Method m = findReflectedMethod(cls, key.name(), key.descriptor());
                         AxiomData.MemberAxiom ax = axioms.methodAxiom(cls, key.name(), m);
                         if (ax != null && !ax.inferredEffects()) {
-                            return resultFromAxiom(ax, m, "curated " + ax.ownerClass().getSimpleName() + "." + ax.name());
+                            return resultFromAxiom(
+                                    ax,
+                                    m,
+                                    "curated " + ax.ownerClass().getSimpleName() + "." + ax.name());
                         }
                     }
                 }
@@ -1036,21 +1261,33 @@ public final class BytecodeEffectAnalyzer {
             }
             Method m = findReflectedMethod(cls, key.name(), key.descriptor());
             AxiomData.MemberAxiom ax = axioms.methodAxiom(cls, key.name(), m);
-            return ax != null && (allowExact || !ax.exact())
+            return ax != null
+                    && (allowExact || !ax.exact())
                     && ax.returnNullness() == JavaNullability.Nullness.NON_NULL;
         }
 
         private Result resultFromAxiom(AxiomData.MemberAxiom ax, Executable exec, String reason) {
             EffectChecker.JavaCallProfile prof = ax.toProfile(exec);
-            boolean retNonNull = exec instanceof Constructor<?>
-                    || ax.returnNullness() == JavaNullability.Nullness.NON_NULL;
-            return new Result(prof.effects(), prof.mutReceiver(), prof.borrowReceiver(),
-                    prof.mutParams(), prof.borrowParams(),
-                    prof.readsReceiver(), prof.readParams(),
-                    retNonNull, prof.fresh(), prof.view(), prof.shallow(), List.of(reason));
+            boolean retNonNull =
+                    exec instanceof Constructor<?>
+                            || ax.returnNullness() == JavaNullability.Nullness.NON_NULL;
+            return new Result(
+                    prof.effects(),
+                    prof.mutReceiver(),
+                    prof.borrowReceiver(),
+                    prof.mutParams(),
+                    prof.borrowParams(),
+                    prof.readsReceiver(),
+                    prof.readParams(),
+                    retNonNull,
+                    prof.fresh(),
+                    prof.view(),
+                    prof.shallow(),
+                    List.of(reason));
         }
 
-        private boolean isClosedCall(int opcode, String ownerInternal, String methodName, String methodDesc) {
+        private boolean isClosedCall(
+                int opcode, String ownerInternal, String methodName, String methodDesc) {
             if (opcode == Opcodes.INVOKESTATIC || opcode == Opcodes.INVOKESPECIAL) {
                 return true;
             }
@@ -1063,7 +1300,9 @@ public final class BytecodeEffectAnalyzer {
                     return true;
                 }
                 Method m = findReflectedMethod(cls, methodName, methodDesc);
-                if (m != null && (Modifier.isFinal(m.getModifiers()) || Modifier.isPrivate(m.getModifiers()))) {
+                if (m != null
+                        && (Modifier.isFinal(m.getModifiers())
+                                || Modifier.isPrivate(m.getModifiers()))) {
                     return true;
                 }
             }
@@ -1080,7 +1319,8 @@ public final class BytecodeEffectAnalyzer {
                     return mn;
                 }
             }
-            // Method may be inherited from superclass (e.g. ArrayList.isEmpty inherited or superclass helper).
+            // Method may be inherited from superclass (e.g. ArrayList.isEmpty inherited or
+            // superclass helper).
             if (cn.superName != null && !"<init>".equals(key.name())) {
                 return findMethodNode(new MethodKey(cn.superName, key.name(), key.descriptor()));
             }
@@ -1094,7 +1334,8 @@ public final class BytecodeEffectAnalyzer {
                 for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
                     try {
                         Field f = c.getDeclaredField(fieldName);
-                        return Modifier.isFinal(f.getModifiers()) && Modifier.isStatic(f.getModifiers());
+                        return Modifier.isFinal(f.getModifiers())
+                                && Modifier.isStatic(f.getModifiers());
                     } catch (NoSuchFieldException ignored) {
                     }
                 }
@@ -1111,7 +1352,8 @@ public final class BytecodeEffectAnalyzer {
                 for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
                     try {
                         Field f = c.getDeclaredField(fieldName);
-                        return Modifier.isFinal(f.getModifiers()) && !Modifier.isStatic(f.getModifiers());
+                        return Modifier.isFinal(f.getModifiers())
+                                && !Modifier.isStatic(f.getModifiers());
                     } catch (NoSuchFieldException ignored) {
                     }
                 }
@@ -1122,7 +1364,8 @@ public final class BytecodeEffectAnalyzer {
         }
     }
 
-    // ================================================================ ASM Interpreter for ProvValue
+    // ================================================================ ASM Interpreter for
+    // ProvValue
 
     private static final class ProvInterpreter extends Interpreter<ProvValue> {
         private final Session session;
@@ -1185,7 +1428,8 @@ public final class BytecodeEffectAnalyzer {
         public ProvValue newOperation(AbstractInsnNode insn) {
             return switch (insn.getOpcode()) {
                 case Opcodes.ACONST_NULL -> ProvValue.NULL_VAL;
-                case Opcodes.LCONST_0, Opcodes.LCONST_1, Opcodes.DCONST_0, Opcodes.DCONST_1 -> ProvValue.CONST_2;
+                case Opcodes.LCONST_0, Opcodes.LCONST_1, Opcodes.DCONST_0, Opcodes.DCONST_1 ->
+                        ProvValue.CONST_2;
                 case Opcodes.LDC -> {
                     Object cst = ((LdcInsnNode) insn).cst;
                     if (cst instanceof Long || cst instanceof Double) yield ProvValue.CONST_2;
@@ -1194,7 +1438,8 @@ public final class BytecodeEffectAnalyzer {
                 case Opcodes.GETSTATIC -> {
                     FieldInsnNode fi = (FieldInsnNode) insn;
                     Type ft = Type.getType(fi.desc);
-                    if (isPrimitive(ft)) yield ft.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+                    if (isPrimitive(ft))
+                        yield ft.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
                     boolean nonNull = isNonNullFinalStatic(fi.owner, fi.name);
                     yield nonNull ? ProvValue.EXTERNAL_NONNULL : ProvValue.EXTERNAL_NULLABLE;
                 }
@@ -1208,7 +1453,9 @@ public final class BytecodeEffectAnalyzer {
                 Class<?> cls = loadClass(ownerInternal, session.loader);
                 if (cls == null) return false;
                 Field f = cls.getDeclaredField(name);
-                if (Modifier.isStatic(f.getModifiers()) && Modifier.isFinal(f.getModifiers()) && Modifier.isPublic(f.getModifiers())) {
+                if (Modifier.isStatic(f.getModifiers())
+                        && Modifier.isFinal(f.getModifiers())
+                        && Modifier.isPublic(f.getModifiers())) {
                     return f.get(null) != null;
                 }
             } catch (Throwable ignored) {
@@ -1224,14 +1471,22 @@ public final class BytecodeEffectAnalyzer {
         @Override
         public ProvValue unaryOperation(AbstractInsnNode insn, ProvValue value) {
             return switch (insn.getOpcode()) {
-                case Opcodes.LNEG, Opcodes.DNEG, Opcodes.I2L, Opcodes.I2D, Opcodes.F2L, Opcodes.F2D,
-                     Opcodes.L2D, Opcodes.D2L -> ProvValue.CONST_2;
+                case Opcodes.LNEG,
+                        Opcodes.DNEG,
+                        Opcodes.I2L,
+                        Opcodes.I2D,
+                        Opcodes.F2L,
+                        Opcodes.F2D,
+                        Opcodes.L2D,
+                        Opcodes.D2L ->
+                        ProvValue.CONST_2;
                 case Opcodes.NEWARRAY, Opcodes.ANEWARRAY -> ProvValue.FRESH_VAL;
                 case Opcodes.CHECKCAST -> value; // preserves provenance and nullness
                 case Opcodes.GETFIELD -> {
                     FieldInsnNode fi = (FieldInsnNode) insn;
                     Type ft = Type.getType(fi.desc);
-                    if (isPrimitive(ft)) yield ft.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+                    if (isPrimitive(ft))
+                        yield ft.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
                     // Field loaded from `this` carries PROV_THIS | PROV_STORED_ELEM.
                     long bits = value.provBits;
                     if ((bits & PROV_THIS) != 0) {
@@ -1244,11 +1499,28 @@ public final class BytecodeEffectAnalyzer {
         }
 
         @Override
-        public ProvValue binaryOperation(AbstractInsnNode insn, ProvValue value1, ProvValue value2) {
+        public ProvValue binaryOperation(
+                AbstractInsnNode insn, ProvValue value1, ProvValue value2) {
             return switch (insn.getOpcode()) {
-                case Opcodes.LALOAD, Opcodes.DALOAD, Opcodes.LADD, Opcodes.DADD, Opcodes.LSUB, Opcodes.DSUB,
-                     Opcodes.LMUL, Opcodes.DMUL, Opcodes.LDIV, Opcodes.DDIV, Opcodes.LREM, Opcodes.DREM,
-                     Opcodes.LSHL, Opcodes.LSHR, Opcodes.LUSHR, Opcodes.LAND, Opcodes.LOR, Opcodes.LXOR -> ProvValue.CONST_2;
+                case Opcodes.LALOAD,
+                        Opcodes.DALOAD,
+                        Opcodes.LADD,
+                        Opcodes.DADD,
+                        Opcodes.LSUB,
+                        Opcodes.DSUB,
+                        Opcodes.LMUL,
+                        Opcodes.DMUL,
+                        Opcodes.LDIV,
+                        Opcodes.DDIV,
+                        Opcodes.LREM,
+                        Opcodes.DREM,
+                        Opcodes.LSHL,
+                        Opcodes.LSHR,
+                        Opcodes.LUSHR,
+                        Opcodes.LAND,
+                        Opcodes.LOR,
+                        Opcodes.LXOR ->
+                        ProvValue.CONST_2;
                 case Opcodes.AALOAD -> {
                     long bits = value1.provBits;
                     if ((bits & PROV_THIS) != 0) {
@@ -1262,7 +1534,8 @@ public final class BytecodeEffectAnalyzer {
         }
 
         @Override
-        public ProvValue ternaryOperation(AbstractInsnNode insn, ProvValue value1, ProvValue value2, ProvValue value3) {
+        public ProvValue ternaryOperation(
+                AbstractInsnNode insn, ProvValue value1, ProvValue value2, ProvValue value3) {
             return null;
         }
 
@@ -1276,7 +1549,8 @@ public final class BytecodeEffectAnalyzer {
                 InvokeDynamicInsnNode indy = (InvokeDynamicInsnNode) insn;
                 Type ret = Type.getReturnType(indy.desc);
                 if (ret == Type.VOID_TYPE) return null;
-                if (isPrimitive(ret)) return ret.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
+                if (isPrimitive(ret))
+                    return ret.getSize() == 2 ? ProvValue.CONST_2 : ProvValue.CONST_1;
                 String bsmOwner = indy.bsm != null ? indy.bsm.getOwner() : "";
                 if ("java/lang/invoke/StringConcatFactory".equals(bsmOwner)
                         || "java/lang/invoke/LambdaMetafactory".equals(bsmOwner)) {
@@ -1314,8 +1588,7 @@ public final class BytecodeEffectAnalyzer {
         }
 
         @Override
-        public void returnOperation(AbstractInsnNode insn, ProvValue value, ProvValue expected) {
-        }
+        public void returnOperation(AbstractInsnNode insn, ProvValue value, ProvValue expected) {}
 
         @Override
         public ProvValue merge(ProvValue v1, ProvValue v2) {
@@ -1385,7 +1658,10 @@ public final class BytecodeEffectAnalyzer {
     private static byte[] loadClassBytes(String ownerInternal, ClassLoader loader) {
         String resource = ownerInternal + ".class";
         ClassLoader cl = loader != null ? loader : BytecodeEffectAnalyzer.class.getClassLoader();
-        try (InputStream in = cl != null ? cl.getResourceAsStream(resource) : ClassLoader.getSystemResourceAsStream(resource)) {
+        try (InputStream in =
+                cl != null
+                        ? cl.getResourceAsStream(resource)
+                        : ClassLoader.getSystemResourceAsStream(resource)) {
             if (in == null) {
                 return null;
             }

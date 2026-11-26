@@ -1,31 +1,32 @@
 package org.babblelang.compiler;
 
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.ir.hir.HirVar;
-import org.objectweb.asm.Label;
-import org.objectweb.asm.MethodVisitor;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.ir.hir.HirVar;
+import org.objectweb.asm.Label;
+import org.objectweb.asm.MethodVisitor;
 
 /**
- * Per-method bytecode emission state passed across {@link HirEmitter} and its
- * specialized sub-emitters, replacing the 23 mutable per-method cursor fields
- * formerly stored directly on {@link HirEmitter} (BIP027-I2).
+ * Per-method bytecode emission state passed across {@link HirEmitter} and its specialized
+ * sub-emitters, replacing the 23 mutable per-method cursor fields formerly stored directly on
+ * {@link HirEmitter} (BIP027-I2).
  */
 final class MethodEmitContext {
-    record LoopTarget(Label breakLabel, Label continueLabel, int resultSlot) {
-    }
+    record LoopTarget(Label breakLabel, Label continueLabel, int resultSlot) {}
 
-    record TailLoop(Label head, int[] paramSlots, int maskSlot) {
-    }
+    record TailLoop(Label head, int[] paramSlots, int maskSlot) {}
 
-    /** Pre-evaluated SSA operand slot injected by {@link MirEmitter} when delegating ABI emission to {@link HirEmitter}. */
-    record MirOperand(int slot, PrimitiveKind kind, boolean isConstant, Object constant, boolean isStacked) {
+    /**
+     * Pre-evaluated SSA operand slot injected by {@link MirEmitter} when delegating ABI emission to
+     * {@link HirEmitter}.
+     */
+    record MirOperand(
+            int slot, PrimitiveKind kind, boolean isConstant, Object constant, boolean isStacked) {
         MirOperand(int slot, PrimitiveKind kind) {
             this(slot, kind, false, null, false);
         }
@@ -35,7 +36,10 @@ final class MethodEmitContext {
             return new MirOperand(-1, kind, true, value, false);
         }
 
-        /** A single-use value left on the operand stack by the immediately preceding MIR instruction. */
+        /**
+         * A single-use value left on the operand stack by the immediately preceding MIR
+         * instruction.
+         */
         static MirOperand stacked(PrimitiveKind kind) {
             return new MirOperand(-1, kind, false, null, true);
         }
@@ -49,7 +53,11 @@ final class MethodEmitContext {
         final List<Label> rangeEnds = new ArrayList<>();
         Label currentStart;
 
-        ActiveFinally(org.babblelang.ir.hir.HirExpr.Try tryNode, int loopDepthAtEntry, Label start, boolean hasFinally) {
+        ActiveFinally(
+                org.babblelang.ir.hir.HirExpr.Try tryNode,
+                int loopDepthAtEntry,
+                Label start,
+                boolean hasFinally) {
             this.tryNode = tryNode;
             this.loopDepthAtEntry = loopDepthAtEntry;
             this.currentStart = start;
@@ -94,8 +102,10 @@ final class MethodEmitContext {
     int thizLocal = -1;
     ClassGen methodClass;
     ClassGen constructorClass;
+
     /** The loop head of the function body being emitted, for its self tail calls (BIP024). */
     TailLoop tailLoop;
+
     int typedThisLocal = -1;
     int frameNs = -1;
     int parameterBase = -1;
@@ -103,10 +113,20 @@ final class MethodEmitContext {
     final Deque<ActiveFinally> activeFinallies = new ArrayDeque<>();
     final java.util.Set<Integer> nonNegativeVars = new java.util.HashSet<>();
     Map<org.babblelang.ir.hir.HirExpr, MirOperand> mirOverrides;
-    /** Whether name reads go through caching {@code Bootstrap.name} sites ({@link MirEmitter}, at {@code -O2}). */
+
+    /**
+     * Whether name reads go through caching {@code Bootstrap.name} sites ({@link MirEmitter}, at
+     * {@code -O2}).
+     */
     boolean cacheNameReads;
 
-    void reset(MethodVisitor mv, int ownerId, int firstFreeLocal, int rt, int ns, List<HirVar> captured) {
+    void reset(
+            MethodVisitor mv,
+            int ownerId,
+            int firstFreeLocal,
+            int rt,
+            int ns,
+            List<HirVar> captured) {
         this.mv = mv;
         this.methodOwnerId = ownerId;
         this.rtLocal = rt;

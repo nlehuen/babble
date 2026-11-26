@@ -22,10 +22,11 @@ import java.util.concurrent.atomic.AtomicInteger;
  * {@code { builtins: ["js-string"] }} in ~1-3 ms per case with zero Maven dependencies.
  */
 public final class NodeWasmRunner {
-    public record RunOutcome(boolean ok, String stdout, String stderr, String error, String resultJson) {
-    }
+    public record RunOutcome(
+            boolean ok, String stdout, String stderr, String error, String resultJson) {}
 
-    private static final String WORKER_JS = """
+    private static final String WORKER_JS =
+            """
             const readline = require('readline');
             const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
             const textDecoder = new TextDecoder('utf-16le');
@@ -138,19 +139,22 @@ public final class NodeWasmRunner {
             })();
             """;
 
-    private static final int MAX_WORKERS = Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
+    private static final int MAX_WORKERS =
+            Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
     private static final ArrayBlockingQueue<Worker> POOL = new ArrayBlockingQueue<>(MAX_WORKERS);
     private static final AtomicInteger CREATED_WORKERS = new AtomicInteger();
     private static final Set<Process> LIVE_PROCESSES = ConcurrentHashMap.newKeySet();
 
     static {
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            for (Process p : LIVE_PROCESSES) {
-                if (p.isAlive()) {
-                    p.destroyForcibly();
-                }
-            }
-        }));
+        Runtime.getRuntime()
+                .addShutdownHook(
+                        new Thread(() -> {
+                            for (Process p : LIVE_PROCESSES) {
+                                if (p.isAlive()) {
+                                    p.destroyForcibly();
+                                }
+                            }
+                        }));
     }
 
     private static volatile Boolean nodeAvailable;
@@ -165,8 +169,14 @@ public final class NodeWasmRunner {
             pb.redirectError(ProcessBuilder.Redirect.INHERIT);
             this.process = pb.start();
             LIVE_PROCESSES.add(this.process);
-            this.in = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-            this.out = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+            this.in =
+                    new BufferedWriter(
+                            new OutputStreamWriter(
+                                    process.getOutputStream(), StandardCharsets.UTF_8));
+            this.out =
+                    new BufferedReader(
+                            new InputStreamReader(
+                                    process.getInputStream(), StandardCharsets.UTF_8));
         }
 
         boolean isAlive() {
@@ -181,8 +191,7 @@ public final class NodeWasmRunner {
         }
     }
 
-    private NodeWasmRunner() {
-    }
+    private NodeWasmRunner() {}
 
     public static boolean isNodeAvailable() {
         Boolean cached = nodeAvailable;
@@ -208,9 +217,12 @@ public final class NodeWasmRunner {
         return runBare(wasmBytes, exportName, callArgs, false);
     }
 
-    public static RunOutcome runBare(byte[] wasmBytes, String exportName, List<Object> callArgs, boolean jsStringBuiltins) {
+    public static RunOutcome runBare(
+            byte[] wasmBytes, String exportName, List<Object> callArgs, boolean jsStringBuiltins) {
         StringBuilder json = new StringBuilder(256);
-        json.append("{\"wasmBase64\":\"").append(Base64.getEncoder().encodeToString(wasmBytes)).append('"');
+        json.append("{\"wasmBase64\":\"")
+                .append(Base64.getEncoder().encodeToString(wasmBytes))
+                .append('"');
         json.append(",\"exportName\":\"").append(escapeJson(exportName)).append('"');
         json.append(",\"jsStringBuiltins\":").append(jsStringBuiltins);
         json.append(",\"callArgs\":[");
@@ -229,15 +241,23 @@ public final class NodeWasmRunner {
         return send(json.toString());
     }
 
-    /** Executes a Babble-compiled {@code wasm-bare} module (zero imports) via {@code _babble_run}. */
+    /**
+     * Executes a Babble-compiled {@code wasm-bare} module (zero imports) via {@code _babble_run}.
+     */
     public static RunOutcome runBabbleBare(byte[] wasmBytes) {
-        String json = "{\"wasmBase64\":\"" + Base64.getEncoder().encodeToString(wasmBytes) + "\",\"babbleBare\":true}";
+        String json =
+                "{\"wasmBase64\":\""
+                        + Base64.getEncoder().encodeToString(wasmBytes)
+                        + "\",\"babbleBare\":true}";
         return send(json);
     }
 
-    public static RunOutcome runJs(byte[] wasmBytes, String mjsSource, List<String> args, String hostEvalJs) {
+    public static RunOutcome runJs(
+            byte[] wasmBytes, String mjsSource, List<String> args, String hostEvalJs) {
         StringBuilder json = new StringBuilder(512);
-        json.append("{\"wasmBase64\":\"").append(Base64.getEncoder().encodeToString(wasmBytes)).append('"');
+        json.append("{\"wasmBase64\":\"")
+                .append(Base64.getEncoder().encodeToString(wasmBytes))
+                .append('"');
         json.append(",\"mjsSource\":\"").append(escapeJson(mjsSource)).append('"');
         if (hostEvalJs != null) {
             json.append(",\"hostEval\":\"").append(escapeJson(hostEvalJs)).append('"');
@@ -399,9 +419,18 @@ public final class NodeWasmRunner {
         private Object readValue() {
             char c = peek();
             if (c == '"') return readString();
-            if (c == 't') { pos += 4; return Boolean.TRUE; }
-            if (c == 'f') { pos += 5; return Boolean.FALSE; }
-            if (c == 'n') { pos += 4; return null; }
+            if (c == 't') {
+                pos += 4;
+                return Boolean.TRUE;
+            }
+            if (c == 'f') {
+                pos += 5;
+                return Boolean.FALSE;
+            }
+            if (c == 'n') {
+                pos += 4;
+                return null;
+            }
             int start = pos;
             while (pos < s.length() && "0123456789eE+-.".indexOf(s.charAt(pos)) >= 0) {
                 pos++;

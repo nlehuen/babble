@@ -10,30 +10,50 @@ import java.util.concurrent.ConcurrentHashMap;
  * Runtime representation of a Babble {@code overload (...)} set (BIP021-D9, BIP021-D16).
  *
  * <p>Holds the flattened array of {@link Callable} alternatives along with per-alternative
- * signature metadata so compiled code can reach statically resolved alternatives via
- * {@link #member(int)}, calls through set types can select by signature via {@link #select(String)},
- * and untyped/reflective calls can fall back to {@link #call(Object...)}.</p>
+ * signature metadata so compiled code can reach statically resolved alternatives via {@link
+ * #member(int)}, calls through set types can select by signature via {@link #select(String)}, and
+ * untyped/reflective calls can fall back to {@link #call(Object...)}.
  */
 public final class OverloadSet implements Callable {
 
-    private static final Map<Class<?>, String> JAVA_SCALAR_DESCS = Map.ofEntries(
-            Map.entry(byte.class, "byte|byte|"), Map.entry(Byte.class, "byte|byte|"),
-            Map.entry(short.class, "short|short|"), Map.entry(Short.class, "short|short|"),
-            Map.entry(int.class, "int|int|"), Map.entry(Integer.class, "int|int|"),
-            Map.entry(long.class, "long|long|"), Map.entry(Long.class, "long|long|"),
-            Map.entry(float.class, "float|float|"), Map.entry(Float.class, "float|float|"),
-            Map.entry(double.class, "double|double|"), Map.entry(Double.class, "double|double|"),
-            Map.entry(boolean.class, "bool|bool|"), Map.entry(Boolean.class, "bool|bool|"),
-            Map.entry(char.class, "char|char|"), Map.entry(Character.class, "char|char|"),
-            Map.entry(String.class, "string|string|"),
-            Map.entry(Object.class, ""));
+    private static final Map<Class<?>, String> JAVA_SCALAR_DESCS =
+            Map.ofEntries(
+                    Map.entry(byte.class, "byte|byte|"),
+                    Map.entry(Byte.class, "byte|byte|"),
+                    Map.entry(short.class, "short|short|"),
+                    Map.entry(Short.class, "short|short|"),
+                    Map.entry(int.class, "int|int|"),
+                    Map.entry(Integer.class, "int|int|"),
+                    Map.entry(long.class, "long|long|"),
+                    Map.entry(Long.class, "long|long|"),
+                    Map.entry(float.class, "float|float|"),
+                    Map.entry(Float.class, "float|float|"),
+                    Map.entry(double.class, "double|double|"),
+                    Map.entry(Double.class, "double|double|"),
+                    Map.entry(boolean.class, "bool|bool|"),
+                    Map.entry(Boolean.class, "bool|bool|"),
+                    Map.entry(char.class, "char|char|"),
+                    Map.entry(Character.class, "char|char|"),
+                    Map.entry(String.class, "string|string|"),
+                    Map.entry(Object.class, ""));
 
-    private static final Map<Class<?>, Integer> RUNTIME_NUMERIC_RANKS = Map.of(
-            Byte.class, 0, Short.class, 1, Integer.class, 2,
-            Long.class, 3, Float.class, 4, Double.class, 5);
+    private static final Map<Class<?>, Integer> RUNTIME_NUMERIC_RANKS =
+            Map.of(
+                    Byte.class,
+                    0,
+                    Short.class,
+                    1,
+                    Integer.class,
+                    2,
+                    Long.class,
+                    3,
+                    Float.class,
+                    4,
+                    Double.class,
+                    5);
 
-    private static final Map<String, Integer> DESC_NUMERIC_RANKS = Map.of(
-            "byte", 0, "short", 1, "int", 2, "long", 3, "float", 4, "double", 5);
+    private static final Map<String, Integer> DESC_NUMERIC_RANKS =
+            Map.of("byte", 0, "short", 1, "int", 2, "long", 3, "float", 4, "double", 5);
 
     /** Metadata for one alternative in an {@link OverloadSet}. */
     public static final class AltMeta {
@@ -44,8 +64,13 @@ public final class OverloadSet implements Callable {
         public final int restIndex;
         public final String[] paramDescriptors;
 
-        public AltMeta(String signatureKey, String display, int minArity, int maxArity,
-                       int restIndex, String[] paramDescriptors) {
+        public AltMeta(
+                String signatureKey,
+                String display,
+                int minArity,
+                int maxArity,
+                int restIndex,
+                String[] paramDescriptors) {
             this.signatureKey = signatureKey;
             this.display = display;
             this.minArity = minArity;
@@ -68,13 +93,24 @@ public final class OverloadSet implements Callable {
      * Builds an {@link OverloadSet} by flattening any nested {@link OverloadSet} operands and
      * pairing each alternative with its {@link AltMeta}.
      */
-    public static OverloadSet create(Object[] operands, String[] sigKeys, String[] displays,
-                                     int[] minArities, int[] maxArities, int[] restIndices,
-                                     String[][] paramDescriptors) {
+    public static OverloadSet create(
+            Object[] operands,
+            String[] sigKeys,
+            String[] displays,
+            int[] minArities,
+            int[] maxArities,
+            int[] restIndices,
+            String[][] paramDescriptors) {
         AltMeta[] metas = new AltMeta[sigKeys.length];
         for (int i = 0; i < sigKeys.length; i++) {
-            metas[i] = new AltMeta(sigKeys[i], displays[i], minArities[i], maxArities[i],
-                    restIndices[i], paramDescriptors[i]);
+            metas[i] =
+                    new AltMeta(
+                            sigKeys[i],
+                            displays[i],
+                            minArities[i],
+                            maxArities[i],
+                            restIndices[i],
+                            paramDescriptors[i]);
         }
         return of(operands, metas);
     }
@@ -97,8 +133,7 @@ public final class OverloadSet implements Callable {
             }
         }
         return new OverloadSet(
-                flatCallables.toArray(Callable[]::new),
-                flatMetas.toArray(AltMeta[]::new));
+                flatCallables.toArray(Callable[]::new), flatMetas.toArray(AltMeta[]::new));
     }
 
     /** Indexed access to a statically resolved alternative (BIP021-D14, BIP021-D16). */
@@ -128,7 +163,10 @@ public final class OverloadSet implements Callable {
         return (Callable) target;
     }
 
-    /** Returns a new {@link OverloadSet} whose {@link BabbleFunction} alternatives are bound to {@code receiver}. */
+    /**
+     * Returns a new {@link OverloadSet} whose {@link BabbleFunction} alternatives are bound to
+     * {@code receiver}.
+     */
     public OverloadSet bind(Object receiver) {
         Callable[] bound = new Callable[alternatives.length];
         for (int i = 0; i < alternatives.length; i++) {
@@ -139,8 +177,8 @@ public final class OverloadSet implements Callable {
     }
 
     /**
-     * Selects the most specific alternative matching a Java interface method's parameter types,
-     * or {@code null} if none matches (used by {@link Faces} for interpreted Java interface proxies).
+     * Selects the most specific alternative matching a Java interface method's parameter types, or
+     * {@code null} if none matches (used by {@link Faces} for interpreted Java interface proxies).
      */
     public Callable selectForJavaMethod(java.lang.reflect.Method jm) {
         Class<?>[] params = jm.getParameterTypes();
@@ -152,9 +190,12 @@ public final class OverloadSet implements Callable {
         for (int i = 0; i < metas.length; i++) {
             AltMeta m = metas[i];
             boolean matches;
-            if (jm.isVarArgs() && m.restIndex == params.length - 1 && params[params.length - 1].isArray()) {
+            if (jm.isVarArgs()
+                    && m.restIndex == params.length - 1
+                    && params[params.length - 1].isArray()) {
                 String[] expanded = Arrays.copyOf(descs, params.length);
-                expanded[params.length - 1] = javaClassToDescriptor(params[params.length - 1].getComponentType());
+                expanded[params.length - 1] =
+                        javaClassToDescriptor(params[params.length - 1].getComponentType());
                 matches = acceptsDescriptors(m, expanded);
             } else {
                 matches = acceptsDescriptors(m, descs);
@@ -173,8 +214,8 @@ public final class OverloadSet implements Callable {
 
     /**
      * Selects the runtime alternative matching {@code signatureKey} (exact match first, then
-     * most-specific alternative accepting the target signature's parameter descriptors), cached
-     * per signature key (BIP021-D12, BIP021-D16).
+     * most-specific alternative accepting the target signature's parameter descriptors), cached per
+     * signature key (BIP021-D12, BIP021-D16).
      */
     public Callable select(String signatureKey) {
         return selectionCache.computeIfAbsent(signatureKey, this::findBySignature);
@@ -202,16 +243,20 @@ public final class OverloadSet implements Callable {
         if (best >= 0) {
             return alternatives[best];
         }
-        throw new BabbleException("No applicable overload for (" + String.join(", ", targetDescs)
-                + ") : candidates are " + candidatesSummary());
+        throw new BabbleException(
+                "No applicable overload for ("
+                        + String.join(", ", targetDescs)
+                        + ") : candidates are "
+                        + candidatesSummary());
     }
 
     /**
-     * Returns all candidate signature keys from {@code candidates} that accept {@code signatureKey},
-     * ordered from most specific to least specific (exact match first), for closed-world Wasm
-     * {@code OverloadSelect} lowering ({@code BIP025-I5}).
+     * Returns all candidate signature keys from {@code candidates} that accept {@code
+     * signatureKey}, ordered from most specific to least specific (exact match first), for
+     * closed-world Wasm {@code OverloadSelect} lowering ({@code BIP025-I5}).
      */
-    public static List<String> matchingKeysBySpecificity(java.util.Collection<AltMeta> candidates, String signatureKey) {
+    public static List<String> matchingKeysBySpecificity(
+            java.util.Collection<AltMeta> candidates, String signatureKey) {
         if (signatureKey == null) {
             return List.of();
         }
@@ -242,7 +287,8 @@ public final class OverloadSet implements Callable {
         while (!remaining.isEmpty()) {
             int bestIdx = 0;
             for (int i = 1; i < remaining.size(); i++) {
-                if (isMoreSpecificMeta(remaining.get(i), remaining.get(bestIdx), targetDescs.length)) {
+                if (isMoreSpecificMeta(
+                        remaining.get(i), remaining.get(bestIdx), targetDescs.length)) {
                     bestIdx = i;
                 }
             }
@@ -287,23 +333,30 @@ public final class OverloadSet implements Callable {
             }
         }
         if (best < 0) {
-            throw new BabbleException("No applicable overload for (" + runtimeArgNames(arguments)
-                    + ") : candidates are " + candidatesSummary());
+            throw new BabbleException(
+                    "No applicable overload for ("
+                            + runtimeArgNames(arguments)
+                            + ") : candidates are "
+                            + candidatesSummary());
         }
         Callable target = alternatives[best];
         AltMeta meta = metas[best];
         if (meta.restIndex >= 0 && !isPackedRestCall(meta, arguments)) {
             Object[] packed = new Object[meta.restIndex + 1];
             System.arraycopy(arguments, 0, packed, 0, meta.restIndex);
-            packed[meta.restIndex] = Spreads.packedRest(
-                    ArgumentsView.of(Arrays.copyOfRange(arguments, meta.restIndex, arguments.length)));
+            packed[meta.restIndex] =
+                    Spreads.packedRest(
+                            ArgumentsView.of(
+                                    Arrays.copyOfRange(
+                                            arguments, meta.restIndex, arguments.length)));
             return target.call(runtime, packed, null, site);
         }
         return target.call(runtime, arguments, names, site);
     }
 
     private static boolean isPackedRestCall(AltMeta m, Object[] arguments) {
-        return m.restIndex >= 0 && arguments.length == m.restIndex + 1
+        return m.restIndex >= 0
+                && arguments.length == m.restIndex + 1
                 && arguments[m.restIndex] instanceof ArgumentsView.PackedRest;
     }
 
@@ -371,18 +424,24 @@ public final class OverloadSet implements Callable {
         }
         if ("java".equals(pTag)) {
             Class<?> pc = resolveClass(descriptorPayload(paramDesc));
-            Class<?> ac = "string".equals(aTag) ? String.class
-                    : ("java".equals(aTag) ? resolveClass(descriptorPayload(argDesc)) : null);
+            Class<?> ac =
+                    "string".equals(aTag)
+                            ? String.class
+                            : ("java".equals(aTag)
+                                    ? resolveClass(descriptorPayload(argDesc))
+                                    : null);
             return pc != null && ac != null && pc.isAssignableFrom(ac);
         }
         return false;
     }
 
-    private static boolean matchComponents(String compound, String other, boolean all, boolean compoundIsArg) {
+    private static boolean matchComponents(
+            String compound, String other, boolean all, boolean compoundIsArg) {
         String payload = descriptorPayload(compound);
         for (String enc : payload.split(",", -1)) {
             String comp = Types.decodeComponent(enc);
-            boolean ok = compoundIsArg ? descriptorAccepts(other, comp) : descriptorAccepts(comp, other);
+            boolean ok =
+                    compoundIsArg ? descriptorAccepts(other, comp) : descriptorAccepts(comp, other);
             if (ok != all) {
                 return ok;
             }

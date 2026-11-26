@@ -3,10 +3,10 @@ package org.babblelang.compiler;
 import java.util.Map;
 
 /**
- * Loads the classes of one compiled script : the script class, and the class of each
- * class or object expression. There is one loader per compilation, so they can be
- * unloaded once their CompiledScript is unreachable. Classes are defined on first use,
- * when the JVM resolves a reference to them.
+ * Loads the classes of one compiled script : the script class, and the class of each class or
+ * object expression. There is one loader per compilation, so they can be unloaded once their
+ * CompiledScript is unreachable. Classes are defined on first use, when the JVM resolves a
+ * reference to them.
  */
 final class ScriptClassLoader extends ClassLoader {
     static {

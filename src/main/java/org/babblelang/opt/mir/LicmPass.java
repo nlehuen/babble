@@ -1,5 +1,12 @@
 package org.babblelang.opt.mir;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.babblelang.ir.mir.MirBlock;
 import org.babblelang.ir.mir.MirCfg;
 import org.babblelang.ir.mir.MirEffect;
@@ -10,16 +17,9 @@ import org.babblelang.ir.mir.MirTerminator;
 import org.babblelang.ir.mir.MirVal;
 import org.babblelang.opt.PassContext;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
- * Natural-loop Invariant Code Motion ({@code O6}) over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
+ * Natural-loop Invariant Code Motion ({@code O6}) over SSA {@link MirModule} ({@code BIP014-I3}
+ * §6.4).
  *
  * <p>Hoists loop-invariant {@code PURE} (nothrow, terminating, deterministic) and un-clobbered
  * {@code READ} ({@code FROZEN}, or disjoint {@code UNIQUE_PARAM(k)}) instructions into the loop
@@ -42,11 +42,12 @@ public final class LicmPass implements MirPass {
             updated.put(e.getKey(), r.fn);
             total += r.rewrites;
         }
-        return total == 0 ? Result.unchanged(module) : new Result(module.withFunctions(updated), total);
+        return total == 0
+                ? Result.unchanged(module)
+                : new Result(module.withFunctions(updated), total);
     }
 
-    private record FnResult(MirFunction fn, int rewrites) {
-    }
+    private record FnResult(MirFunction fn, int rewrites) {}
 
     private static FnResult runOnFunction(MirFunction fn) {
         MirFunction current = fn;
@@ -89,7 +90,8 @@ public final class LicmPass implements MirPass {
                             loopConsts.put(c.result().id(), c);
                         }
                     }
-                    if (inst.effect().kind() == MirEffect.Kind.WRITE || inst.effect().kind() == MirEffect.Kind.IMPURE) {
+                    if (inst.effect().kind() == MirEffect.Kind.WRITE
+                            || inst.effect().kind() == MirEffect.Kind.IMPURE) {
                         loopBarriers.add(inst.effect());
                     }
                 }
@@ -106,7 +108,9 @@ public final class LicmPass implements MirPass {
                     if (!loop.bodyIds().contains(b.id())) continue;
                     for (MirInst inst : b.insts()) {
                         MirVal res = inst.result();
-                        if (res == null || hoistedIds.contains(res.id()) || inst instanceof MirInst.Const) {
+                        if (res == null
+                                || hoistedIds.contains(res.id())
+                                || inst instanceof MirInst.Const) {
                             continue;
                         }
                         if (!isHoistable(inst, loopBarriers)) {
@@ -136,7 +140,8 @@ public final class LicmPass implements MirPass {
                 continue;
             }
 
-            // Place hoisted instructions in pred (if unconditional Br to header) or a new preheader block.
+            // Place hoisted instructions in pred (if unconditional Br to header) or a new preheader
+            // block.
             int nextBlockId = current.nextBlockId();
             List<MirBlock> newBlocks = new ArrayList<>(current.blocks().size() + 1);
             MirBlock insertedPreheader = null;
@@ -150,22 +155,42 @@ public final class LicmPass implements MirPass {
                     }
                     newBlocks.add(b.withInsts(kept));
                 } else if (b.id() == predId) {
-                    if (b.terminator() instanceof MirTerminator.Br br && br.targetBlock() == loop.headerId()) {
+                    if (b.terminator() instanceof MirTerminator.Br br
+                            && br.targetBlock() == loop.headerId()) {
                         List<MirInst> combined = new ArrayList<>(b.insts().size() + toHoist.size());
                         combined.addAll(b.insts());
                         combined.addAll(toHoist);
                         newBlocks.add(b.withInsts(combined));
                     } else if (b.terminator() instanceof MirTerminator.BrIf bi
-                            && (bi.thenBlock() == loop.headerId() ^ bi.elseBlock() == loop.headerId())) {
+                            && (bi.thenBlock() == loop.headerId()
+                                    ^ bi.elseBlock() == loop.headerId())) {
                         int preId = nextBlockId++;
                         boolean onThen = bi.thenBlock() == loop.headerId();
                         List<MirVal> edgeArgs = onThen ? bi.thenArgs() : bi.elseArgs();
-                        insertedPreheader = new MirBlock(preId, List.of(), toHoist,
-                                new MirTerminator.Br(loop.headerId(), edgeArgs, bi.line()),
-                                b.handlers(), false);
-                        MirTerminator newTerm = onThen
-                                ? new MirTerminator.BrIf(bi.cond(), preId, List.of(), bi.elseBlock(), bi.elseArgs(), bi.line())
-                                : new MirTerminator.BrIf(bi.cond(), bi.thenBlock(), bi.thenArgs(), preId, List.of(), bi.line());
+                        insertedPreheader =
+                                new MirBlock(
+                                        preId,
+                                        List.of(),
+                                        toHoist,
+                                        new MirTerminator.Br(loop.headerId(), edgeArgs, bi.line()),
+                                        b.handlers(),
+                                        false);
+                        MirTerminator newTerm =
+                                onThen
+                                        ? new MirTerminator.BrIf(
+                                                bi.cond(),
+                                                preId,
+                                                List.of(),
+                                                bi.elseBlock(),
+                                                bi.elseArgs(),
+                                                bi.line())
+                                        : new MirTerminator.BrIf(
+                                                bi.cond(),
+                                                bi.thenBlock(),
+                                                bi.thenArgs(),
+                                                preId,
+                                                List.of(),
+                                                bi.line());
                         newBlocks.add(b.withTerminator(newTerm));
                     } else {
                         // Fallback: skip hoisting for this loop shape.
@@ -188,9 +213,12 @@ public final class LicmPass implements MirPass {
     }
 
     private static boolean isHoistable(MirInst inst, List<MirEffect> loopBarriers) {
-        if (inst instanceof MirInst.Narrow || inst instanceof MirInst.SlotRead
-                || inst instanceof MirInst.ForIterHasNext || inst instanceof MirInst.ForIterNext
-                || inst instanceof MirInst.UnwrapThrown || inst instanceof MirInst.CatchMatch) {
+        if (inst instanceof MirInst.Narrow
+                || inst instanceof MirInst.SlotRead
+                || inst instanceof MirInst.ForIterHasNext
+                || inst instanceof MirInst.ForIterNext
+                || inst instanceof MirInst.UnwrapThrown
+                || inst instanceof MirInst.CatchMatch) {
             return false;
         }
         MirEffect fx = inst.effect();
@@ -208,10 +236,15 @@ public final class LicmPass implements MirPass {
         return false;
     }
 
-    private static boolean operandsInvariant(MirInst inst, Set<Integer> loopDefs, Set<Integer> hoistedValIds,
-                                             Map<Integer, MirInst.Const> loopConsts) {
+    private static boolean operandsInvariant(
+            MirInst inst,
+            Set<Integer> loopDefs,
+            Set<Integer> hoistedValIds,
+            Map<Integer, MirInst.Const> loopConsts) {
         for (MirVal u : inst.usedValues()) {
-            if (loopDefs.contains(u.id()) && !hoistedValIds.contains(u.id()) && !loopConsts.containsKey(u.id())) {
+            if (loopDefs.contains(u.id())
+                    && !hoistedValIds.contains(u.id())
+                    && !loopConsts.containsKey(u.id())) {
                 return false;
             }
         }

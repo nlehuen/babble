@@ -1,8 +1,6 @@
 package org.babblelang.runtime;
 
-/**
- * An unboxed {@code short} cell for captured lexical variables (BIP011).
- */
+/** An unboxed {@code short} cell for captured lexical variables (BIP011). */
 public final class ShortCell {
     public short value;
     private boolean defined;

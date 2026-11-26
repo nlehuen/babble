@@ -1,5 +1,13 @@
 package org.babblelang.tests;
 
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Stream;
 import org.babblelang.analysis.AxiomDumper;
 import org.babblelang.analysis.BuiltinAxioms;
 import org.babblelang.engine.BabbleScriptEngine;
@@ -9,28 +17,20 @@ import org.babblelang.format.Formatter;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.lang.reflect.Method;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-import java.util.TreeSet;
-import java.util.stream.Stream;
-
 /**
  * Enforcement tests for BIP019 ({@code docs/design/bip019_refactoring-axioms.md} §7).
  *
  * <p>Verifies:
+ *
  * <ol>
  *   <li>Every curated axiom matches a real public Java executable, belongs to its file's package,
- *       has no duplicates, obeys canonical §3.4 order, and is formatter-clean.</li>
+ *       has no duplicates, obeys canonical §3.4 order, and is formatter-clean.
  *   <li>With {@link BuiltinAxioms#EMPTY} and bytecode analysis disabled, the analysis knows nothing
  *       about {@code String}, {@code List}, {@code Math}, {@code Map}, {@code Map.Entry}, or
- *       ordinary built-ins ({@code int}, {@code assert}, {@code same}, {@code classof}).</li>
+ *       ordinary built-ins ({@code int}, {@code assert}, {@code same}, {@code classof}).
  *   <li>{@code src/main/java/org/babblelang/axioms/README.md} lists every axiom file and every
- *       {@code QUESTIONABLE} axiom.</li>
- *   <li>Legacy {@code axiom ... on ...} syntax emits a deprecation warning while still working.</li>
+ *       {@code QUESTIONABLE} axiom.
+ *   <li>Legacy {@code axiom ... on ...} syntax emits a deprecation warning while still working.
  * </ol>
  */
 public class AxiomsTestCase {
@@ -45,12 +45,15 @@ public class AxiomsTestCase {
 
         for (String pkg : packages) {
             Path file = AXIOMS_ROOT.resolve(pkg.replace('.', '/')).resolve("curated.ba");
-            Assertions.assertTrue(Files.isRegularFile(file), "Missing source file for package : " + pkg);
+            Assertions.assertTrue(
+                    Files.isRegularFile(file), "Missing source file for package : " + pkg);
             String source = Files.readString(file);
 
             // 1. Canonical §3.4 order & package membership:
-            List<String> orderViolations = AxiomDumper.checkCanonicalOrder(source, file.toString(), pkg);
-            Assertions.assertEquals(List.of(), orderViolations, "Canonical order violation in " + file);
+            List<String> orderViolations =
+                    AxiomDumper.checkCanonicalOrder(source, file.toString(), pkg);
+            Assertions.assertEquals(
+                    List.of(), orderViolations, "Canonical order violation in " + file);
 
             // 2. Every member axiom matches a real public Java method or constructor:
             List<String> memberErrors = AxiomDumper.validateCuratedPackage(std, pkg);
@@ -58,16 +61,20 @@ public class AxiomsTestCase {
 
             // 3. Formatter-clean:
             String formatted = Formatter.format(source, file.toString());
-            Assertions.assertEquals(source, formatted, "Axiom file is not formatter-clean : " + file);
+            Assertions.assertEquals(
+                    source, formatted, "Axiom file is not formatter-clean : " + file);
         }
 
         // builtins.ba must also parse cleanly and be formatter-clean:
         Path builtins = AXIOMS_ROOT.resolve("builtins.ba");
         Assertions.assertTrue(Files.isRegularFile(builtins), "Missing builtins.ba");
         String builtinsSrc = Files.readString(builtins);
-        Assertions.assertEquals(builtinsSrc, Formatter.format(builtinsSrc, builtins.toString()),
+        Assertions.assertEquals(
+                builtinsSrc,
+                Formatter.format(builtinsSrc, builtins.toString()),
                 "builtins.ba is not formatter-clean");
-        Assertions.assertFalse(std.builtins().isEmpty(), "builtins.ba must declare ordinary built-ins");
+        Assertions.assertFalse(
+                std.builtins().isEmpty(), "builtins.ba must declare ordinary built-ins");
     }
 
     @Test
@@ -87,27 +94,36 @@ public class AxiomsTestCase {
         Assertions.assertFalse(empty.isFoldable(strTrim));
         Assertions.assertFalse(empty.isIdempotent(strTrim));
 
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setBuiltinAxioms(BuiltinAxioms.EMPTY);
         engine.enableBytecodeEffectAnalysis(false);
 
         // String.length, List.add, Math.sqrt, Map.get are unconstrained (rejected in pure fn):
-        Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(
-                "def f = fn (s: string): int -> (s.length())"));
-        Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(
-                "def f = fn (mut xs: list of int): bool -> (xs.add(1))"));
-        Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(
-                "def f = fn (x: double): double -> (java.lang.Math.sqrt(x))"));
-        Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(
-                "def f = fn (m: map of (string, int)): int? -> (m.get(\"a\"))"));
+        Assertions.assertThrows(
+                TypeCheckException.class,
+                () -> engine.eval("def f = fn (s: string): int -> (s.length())"));
+        Assertions.assertThrows(
+                TypeCheckException.class,
+                () -> engine.eval("def f = fn (mut xs: list of int): bool -> (xs.add(1))"));
+        Assertions.assertThrows(
+                TypeCheckException.class,
+                () -> engine.eval("def f = fn (x: double): double -> (java.lang.Math.sqrt(x))"));
+        Assertions.assertThrows(
+                TypeCheckException.class,
+                () -> engine.eval("def f = fn (m: map of (string, int)): int? -> (m.get(\"a\"))"));
 
         // Nullness is unspecified (String.trim returns string?, not string):
-        Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(
-                "def f = fn io (s: string): string -> (s.trim())"));
+        Assertions.assertThrows(
+                TypeCheckException.class,
+                () -> engine.eval("def f = fn io (s: string): string -> (s.trim())"));
 
         // Map.Entry is not deeply immutable:
-        Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(
-                "def f = fn (e: entry of (string, int)): string -> (e.getKey())"));
+        Assertions.assertThrows(
+                TypeCheckException.class,
+                () ->
+                        engine.eval(
+                                "def f = fn (e: entry of (string, int)): string -> (e.getKey())"));
 
         // Ordinary built-ins (int, assert, same, classof) are unknown:
         Assertions.assertThrows(TypeCheckException.class, () -> engine.eval("int(3.5)"));
@@ -132,19 +148,27 @@ public class AxiomsTestCase {
                     }
                 } else if (relStr.endsWith("Axioms.java") && !relStr.equals("Axioms.java")) {
                     String fileName = p.getFileName().toString();
-                    String dirPrefix = rel.getParent() != null ? rel.getParent().toString().replace('\\', '/') : "";
-                    if (!readme.contains(relStr) && !(readme.contains(dirPrefix + "/") && readme.contains(fileName))) {
+                    String dirPrefix =
+                            rel.getParent() != null
+                                    ? rel.getParent().toString().replace('\\', '/')
+                                    : "";
+                    if (!readme.contains(relStr)
+                            && !(readme.contains(dirPrefix + "/") && readme.contains(fileName))) {
                         missingFiles.add(relStr);
                     }
                 }
             }
         }
-        Assertions.assertEquals(List.of(), missingFiles, "Axiom files missing from axioms/README.md");
+        Assertions.assertEquals(
+                List.of(), missingFiles, "Axiom files missing from axioms/README.md");
 
         // 2. Every target tagged `;; QUESTIONABLE` in any curated.ba must be indexed in README.md:
         Set<String> missingQuestionable = new TreeSet<>();
         try (Stream<Path> walk = Files.walk(AXIOMS_ROOT)) {
-            for (Path p : walk.filter(f -> f.getFileName().toString().equals("curated.ba")).sorted().toList()) {
+            for (Path p :
+                    walk.filter(f -> f.getFileName().toString().equals("curated.ba"))
+                            .sorted()
+                            .toList()) {
                 List<String> lines = Files.readAllLines(p);
                 for (int i = 0; i < lines.size(); i++) {
                     if (lines.get(i).contains("QUESTIONABLE")) {
@@ -155,7 +179,8 @@ public class AxiomsTestCase {
                                 String after = next.substring("axiom ".length());
                                 String target = after.split("[ :]+")[0];
                                 if (!readme.contains(target)) {
-                                    missingQuestionable.add(AXIOMS_ROOT.relativize(p) + " : " + target);
+                                    missingQuestionable.add(
+                                            AXIOMS_ROOT.relativize(p) + " : " + target);
                                 }
                                 break;
                             }
@@ -164,7 +189,9 @@ public class AxiomsTestCase {
                 }
             }
         }
-        Assertions.assertEquals(List.of(), new ArrayList<>(missingQuestionable),
+        Assertions.assertEquals(
+                List.of(),
+                new ArrayList<>(missingQuestionable),
                 "QUESTIONABLE axioms missing from axioms/README.md");
     }
 
@@ -172,22 +199,32 @@ public class AxiomsTestCase {
     public void testGoldenDumpsMatchCanonicalFormat() {
         String mathDump = AxiomDumper.dumpClass(Math.class, BuiltinAxioms.standard());
         Assertions.assertEquals(List.of(), AxiomDumper.checkCanonicalOrder(mathDump, "Math"));
-        Assertions.assertTrue(mathDump.contains("def abs: fn nothrow idempotent foldable (p0: double): double"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def sqrt: fn nothrow foldable (p0: double): double"), mathDump);
+        Assertions.assertTrue(
+                mathDump.contains("def abs: fn nothrow idempotent foldable (p0: double): double"),
+                mathDump);
+        Assertions.assertTrue(
+                mathDump.contains("def sqrt: fn nothrow foldable (p0: double): double"), mathDump);
 
-        String listDump = AxiomDumper.dumpClass(java.util.ArrayList.class, BuiltinAxioms.standard());
+        String listDump =
+                AxiomDumper.dumpClass(java.util.ArrayList.class, BuiltinAxioms.standard());
         Assertions.assertEquals(List.of(), AxiomDumper.checkCanonicalOrder(listDump, "ArrayList"));
-        Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class notnull (\n"), listDump);
-        Assertions.assertTrue(listDump.contains("def add: fn mut shared shallow (shared p0: any!): bool"), listDump);
+        Assertions.assertTrue(
+                listDump.startsWith("axiom java.util.ArrayList of E: class notnull (\n"), listDump);
+        Assertions.assertTrue(
+                listDump.contains("def add: fn mut shared shallow (shared p0: any!): bool"),
+                listDump);
     }
 
     @Test
     public void testValidateCuratedPackageCatchesReturnOnlyMismatch() {
-        BuiltinAxioms bad = BuiltinAxioms.fromSource("""
-                axiom java.io.StringWriter: class (
-                    def getBuffer: fn ... : string!
-                )
-                """, "bad.ba");
+        BuiltinAxioms bad =
+                BuiltinAxioms.fromSource(
+                        """
+                        axiom java.io.StringWriter: class (
+                            def getBuffer: fn ... : string!
+                        )
+                        """,
+                        "bad.ba");
         List<String> errors = AxiomDumper.validateCuratedPackage(bad, "java.io");
         Assertions.assertFalse(errors.isEmpty(), "Expected return-type mismatch error");
         Assertions.assertTrue(errors.get(0).contains("getBuffer"), errors.toString());

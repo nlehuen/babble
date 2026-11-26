@@ -1,20 +1,16 @@
 package org.babblelang.analysis;
 
+import java.util.HashMap;
+import java.util.Map;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.parser.BabbleParser;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
- * Static singletons ({@code RM003}) : what an expression names when it can only ever be one
- * class or interface, or module — a top-level class or interface expression, through
- * defs that are never reassigned and module exports. {@code LoweringAnalyzer} turns
- * {@code x is C} into {@code INSTANCEOF} with them ; module and session summaries keep them
- * detached from the parse tree ({@link #freeze}).
+ * Static singletons ({@code RM003}) : what an expression names when it can only ever be one class
+ * or interface, or module — a top-level class or interface expression, through defs that are never
+ * reassigned and module exports. {@code LoweringAnalyzer} turns {@code x is C} into {@code
+ * INSTANCEOF} with them ; module and session summaries keep them detached from the parse tree
+ * ({@link #freeze}).
  */
 final class StaticRefs {
     private final BlockScopes pass;
@@ -40,7 +36,8 @@ final class StaticRefs {
                 && !pass.analysis.opensScope(blockExpr.block())) {
             current = blockExpr.block().expression(0);
         }
-        if (current instanceof BabbleParser.ClassExpressionContext || current instanceof BabbleParser.InterfaceExpressionContext) {
+        if (current instanceof BabbleParser.ClassExpressionContext
+                || current instanceof BabbleParser.InterfaceExpressionContext) {
             if (!isStaticTopLevelTypeExpr(current)) {
                 return null;
             }
@@ -55,7 +52,8 @@ final class StaticRefs {
             }
             String name = ScopeAnalysis.selectorName(sel);
             if (sel.expression() == null) {
-                Object resolved = TypeChecker.resolveName(sel, name, checker.occurrenceScopeOf(sel));
+                Object resolved =
+                        TypeChecker.resolveName(sel, name, checker.occurrenceScopeOf(sel));
                 if (resolved instanceof BabbleParser.DefExpressionContext def) {
                     if (checker.isReassigned(def)) {
                         return null;
@@ -102,11 +100,16 @@ final class StaticRefs {
         return null;
     }
 
-    /** The static singleton each top-level def of this input names, detached from the parse tree, for the session. */
+    /**
+     * The static singleton each top-level def of this input names, detached from the parse tree,
+     * for the session.
+     */
     Map<ParserRuleContext, Object> frozenSingletons() {
         Map<ParserRuleContext, Object> frozen = new HashMap<>();
         for (ParserRuleContext decl : pass.definitionScopes.keySet()) {
-            if (checker.inFile(decl) && decl instanceof BabbleParser.DefExpressionContext def && !checker.isReassigned(def)) {
+            if (checker.inFile(decl)
+                    && decl instanceof BabbleParser.DefExpressionContext def
+                    && !checker.isReassigned(def)) {
                 Object ref = freeze(resolve(def.value, 0));
                 if (ref != null) {
                     frozen.put(def, ref);

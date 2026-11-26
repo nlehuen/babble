@@ -6,6 +6,5 @@ import org.babblelang.axioms.MeansNullable;
 @Axioms(targetName = "org.jspecify.annotations.Nullable")
 @MeansNullable
 public final class NullableAxioms {
-    private NullableAxioms() {
-    }
+    private NullableAxioms() {}
 }

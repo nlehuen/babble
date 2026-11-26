@@ -10,12 +10,11 @@ import java.util.List;
 import java.util.RandomAccess;
 
 /**
- * Runtime adaptation helpers for spread arguments ({@code ...e}) and variadic rest packing
- * ({@code BIP021-D6}, {@code BIP021-D7}). Shared by the interpreter and compiled bytecode.
+ * Runtime adaptation helpers for spread arguments ({@code ...e}) and variadic rest packing ({@code
+ * BIP021-D6}, {@code BIP021-D7}). Shared by the interpreter and compiled bytecode.
  */
 public final class Spreads {
-    private Spreads() {
-    }
+    private Spreads() {}
 
     /** Adapts an {@link Iterable} or JVM array to a read-only {@link Iterable} without copying. */
     public static Iterable<?> asIterable(Object source) {
@@ -23,7 +22,8 @@ public final class Spreads {
         if (BabbleObjects.isInstance(unwrapped)) {
             unwrapped = BabbleObjects.face(unwrapped);
         }
-        if (unwrapped instanceof ArgumentsView || unwrapped instanceof UnmodifiableIterable
+        if (unwrapped instanceof ArgumentsView
+                || unwrapped instanceof UnmodifiableIterable
                 || unwrapped instanceof SamAdaptingIterable) {
             return (Iterable<?>) unwrapped;
         }
@@ -36,14 +36,24 @@ public final class Spreads {
         return ArgumentsView.fromArray(unwrapped);
     }
 
-    /** Adapts an {@link Iterable} or JVM array to a read-only {@link Iterable}, converting Babble callables via SAM+markers. */
-    public static Iterable<?> asIterable(Object source, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+    /**
+     * Adapts an {@link Iterable} or JVM array to a read-only {@link Iterable}, converting Babble
+     * callables via SAM+markers.
+     */
+    public static Iterable<?> asIterable(
+            Object source, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
         Iterable<?> base = asIterable(source);
-        return samInterface == null ? base : new SamAdaptingIterable(base, samInterface, markers, rt);
+        return samInterface == null
+                ? base
+                : new SamAdaptingIterable(base, samInterface, markers, rt);
     }
 
-    /** Name-based {@link #asIterable(Object, Class, Class[], ScriptRuntime)} for non-public Java interfaces. */
-    public static Iterable<?> asIterableByName(Object source, String samName, String[] markerNames, ScriptRuntime rt) {
+    /**
+     * Name-based {@link #asIterable(Object, Class, Class[], ScriptRuntime)} for non-public Java
+     * interfaces.
+     */
+    public static Iterable<?> asIterableByName(
+            Object source, String samName, String[] markerNames, ScriptRuntime rt) {
         Class<?> sam = loadClass(samName);
         Class<?>[] markers = loadClasses(markerNames);
         return asIterable(source, sam, markers, rt);
@@ -62,8 +72,12 @@ public final class Spreads {
      * Adapts an {@link Iterable} or JVM array to a {@link List}, eagerly adapting callable elements
      * to {@code samInterface} (+ optional {@code markers}) when {@code samInterface != null}.
      */
-    public static List<?> asList(Object source, boolean borrowed,
-                                 Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+    public static List<?> asList(
+            Object source,
+            boolean borrowed,
+            Class<?> samInterface,
+            Class<?>[] markers,
+            ScriptRuntime rt) {
         Object unwrapped = Values.unwrap(source);
         if (BabbleObjects.isInstance(unwrapped)) {
             unwrapped = BabbleObjects.face(unwrapped);
@@ -77,17 +91,28 @@ public final class Spreads {
             }
         }
         Iterable<?> it = asIterable(unwrapped);
-        ArrayList<Object> copy = it instanceof Collection<?> c ? new ArrayList<>(c.size())
-                : it instanceof ArgumentsView v ? new ArrayList<>(v.size()) : new ArrayList<>();
+        ArrayList<Object> copy =
+                it instanceof Collection<?> c
+                        ? new ArrayList<>(c.size())
+                        : it instanceof ArgumentsView v
+                                ? new ArrayList<>(v.size())
+                                : new ArrayList<>();
         for (Object elem : it) {
             copy.add(samInterface != null ? adaptSamElem(elem, samInterface, markers, rt) : elem);
         }
         return copy;
     }
 
-    /** Name-based {@link #asList(Object, boolean, Class, Class[], ScriptRuntime)} for non-public Java interfaces. */
-    public static List<?> asListByName(Object source, boolean borrowed,
-                                       String samName, String[] markerNames, ScriptRuntime rt) {
+    /**
+     * Name-based {@link #asList(Object, boolean, Class, Class[], ScriptRuntime)} for non-public
+     * Java interfaces.
+     */
+    public static List<?> asListByName(
+            Object source,
+            boolean borrowed,
+            String samName,
+            String[] markerNames,
+            ScriptRuntime rt) {
         return asList(source, borrowed, loadClass(samName), loadClasses(markerNames), rt);
     }
 
@@ -113,8 +138,12 @@ public final class Spreads {
      * Adapts an {@link Iterable} or JVM array to a fresh JVM array of {@code componentType},
      * optionally adapting Babble callables to {@code samInterface} (+ {@code markers}).
      */
-    public static Object asArray(Object source, Class<?> componentType,
-                                 Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+    public static Object asArray(
+            Object source,
+            Class<?> componentType,
+            Class<?> samInterface,
+            Class<?>[] markers,
+            ScriptRuntime rt) {
         Object unwrapped = Values.unwrap(source);
         if (BabbleObjects.isInstance(unwrapped)) {
             unwrapped = BabbleObjects.face(unwrapped);
@@ -133,8 +162,12 @@ public final class Spreads {
         if (it instanceof List<?> list) {
             elems = (List<Object>) list;
         } else {
-            elems = it instanceof Collection<?> c ? new ArrayList<>(c.size())
-                    : it instanceof ArgumentsView v ? new ArrayList<>(v.size()) : new ArrayList<>();
+            elems =
+                    it instanceof Collection<?> c
+                            ? new ArrayList<>(c.size())
+                            : it instanceof ArgumentsView v
+                                    ? new ArrayList<>(v.size())
+                                    : new ArrayList<>();
             for (Object elem : it) {
                 elems.add(elem);
             }
@@ -157,19 +190,32 @@ public final class Spreads {
         return result;
     }
 
-    /** Name-based {@link #asArray(Object, Class, Class, Class[], ScriptRuntime)} for non-public Java interfaces. */
-    public static Object asArrayByName(Object source, Class<?> componentType,
-                                       String samName, String[] markerNames, ScriptRuntime rt) {
+    /**
+     * Name-based {@link #asArray(Object, Class, Class, Class[], ScriptRuntime)} for non-public Java
+     * interfaces.
+     */
+    public static Object asArrayByName(
+            Object source,
+            Class<?> componentType,
+            String samName,
+            String[] markerNames,
+            ScriptRuntime rt) {
         return asArray(source, componentType, loadClass(samName), loadClasses(markerNames), rt);
     }
 
     /** Name-based {@link #asArrayByName} when {@code componentType} itself is non-public. */
-    public static Object asArrayByNames(Object source, String componentName,
-                                        String samName, String[] markerNames, ScriptRuntime rt) {
-        return asArray(source, loadClass(componentName), loadClass(samName), loadClasses(markerNames), rt);
+    public static Object asArrayByNames(
+            Object source,
+            String componentName,
+            String samName,
+            String[] markerNames,
+            ScriptRuntime rt) {
+        return asArray(
+                source, loadClass(componentName), loadClass(samName), loadClasses(markerNames), rt);
     }
 
-    private static Object adaptSamElem(Object elem, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+    private static Object adaptSamElem(
+            Object elem, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
         Object unwrapped = Values.unwrap(elem);
         if (BabbleObjects.isInstance(unwrapped)) {
             unwrapped = BabbleObjects.face(unwrapped);
@@ -200,8 +246,8 @@ public final class Spreads {
     }
 
     /**
-     * Packs variadic rest arguments where each entry in {@code parts} is either a plain element
-     * or a spread sequence ({@code isSpread[i] == true}). Avoids copying whenever possible.
+     * Packs variadic rest arguments where each entry in {@code parts} is either a plain element or
+     * a spread sequence ({@code isSpread[i] == true}). Avoids copying whenever possible.
      */
     public static Iterable<?> packRest(Object[] parts, boolean[] isSpread) {
         int n = parts.length;
@@ -236,7 +282,9 @@ public final class Spreads {
                 segments.add(ArgumentsView.of(slice));
             }
         }
-        return segments.size() == 1 ? segments.get(0) : ArgumentsView.concat(segments.toArray(new Iterable<?>[0]));
+        return segments.size() == 1
+                ? segments.get(0)
+                : ArgumentsView.concat(segments.toArray(new Iterable<?>[0]));
     }
 
     /**
@@ -287,7 +335,10 @@ public final class Spreads {
         return packRest(parts, isSpread);
     }
 
-    /** Wraps a packed rest {@link Iterable} in {@link ArgumentsView.PackedRest} for {@link Callable#call}. */
+    /**
+     * Wraps a packed rest {@link Iterable} in {@link ArgumentsView.PackedRest} for {@link
+     * Callable#call}.
+     */
     public static Object packedRest(Iterable<?> iterable) {
         return new ArgumentsView.PackedRest(iterable);
     }
@@ -322,7 +373,8 @@ public final class Spreads {
         private final Class<?>[] markers;
         private final ScriptRuntime rt;
 
-        SamAdaptingIterable(Iterable<?> delegate, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+        SamAdaptingIterable(
+                Iterable<?> delegate, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
             this.delegate = delegate;
             this.samInterface = samInterface;
             this.markers = markers;

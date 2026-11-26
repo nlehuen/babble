@@ -1,53 +1,51 @@
 package org.babblelang.analysis;
 
-import org.babblelang.runtime.ClassShape;
-
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import org.babblelang.runtime.ClassShape;
 
 /**
- * AST-detached Maranget-style pattern-match exhaustiveness and reachability analyzer
- * ({@code BIP038-D3}, {@code BIP038-D8}).
+ * AST-detached Maranget-style pattern-match exhaustiveness and reachability analyzer ({@code
+ * BIP038-D3}, {@code BIP038-D8}).
  *
- * <p>Decomposes closed domains ({@link Type.Union}, {@code T?}, {@link Type#BOOL},
- * {@link Type#NULL}, Java {@code enum}s, Java {@code sealed} classes/interfaces, Babble
- * and Java {@code record}s, and {@code list}/{@code array} sequence lengths), detects
- * unreachable arms including open-domain constant/range shadowing, produces minimal
- * counterexample witnesses, and exposes {@link #permittedSubtypes(Type)} as the extension
- * hook for future Babble {@code sealed}/{@code enum} declarations.
+ * <p>Decomposes closed domains ({@link Type.Union}, {@code T?}, {@link Type#BOOL}, {@link
+ * Type#NULL}, Java {@code enum}s, Java {@code sealed} classes/interfaces, Babble and Java {@code
+ * record}s, and {@code list}/{@code array} sequence lengths), detects unreachable arms including
+ * open-domain constant/range shadowing, produces minimal counterexample witnesses, and exposes
+ * {@link #permittedSubtypes(Type)} as the extension hook for future Babble {@code sealed}/{@code
+ * enum} declarations.
  */
 final class MatchExhaustiveness {
 
     /**
-     * Sentinel witness indicating an open (infinite) domain is uncovered without a single
-     * concrete value constructor. At top level ({@code depth == 0}) this renders as
-     * {@code null} witness ("add an else branch"); inside compound patterns it renders as {@code "_"}.
+     * Sentinel witness indicating an open (infinite) domain is uncovered without a single concrete
+     * value constructor. At top level ({@code depth == 0}) this renders as {@code null} witness
+     * ("add an else branch"); inside compound patterns it renders as {@code "_"}.
      */
     private static final String OPEN_SENTINEL = "";
 
-    sealed interface Pat permits
-            Pat.Wildcard,
-            Pat.Or,
-            Pat.BoolConst,
-            Pat.NullConst,
-            Pat.EnumConst,
-            Pat.ScalarConst,
-            Pat.ConstRange,
-            Pat.TypePat,
-            Pat.RecordPat,
-            Pat.SeqPat,
-            Pat.Opaque {
+    sealed interface Pat
+            permits Pat.Wildcard,
+                    Pat.Or,
+                    Pat.BoolConst,
+                    Pat.NullConst,
+                    Pat.EnumConst,
+                    Pat.ScalarConst,
+                    Pat.ConstRange,
+                    Pat.TypePat,
+                    Pat.RecordPat,
+                    Pat.SeqPat,
+                    Pat.Opaque {
 
         record Wildcard() implements Pat {
             static final Wildcard INSTANCE = new Wildcard();
         }
 
-        record Or(List<Pat> alts) implements Pat {
-        }
+        record Or(List<Pat> alts) implements Pat {}
 
         record BoolConst(boolean value) implements Pat {
             static final BoolConst TRUE = new BoolConst(true);
@@ -58,37 +56,49 @@ final class MatchExhaustiveness {
             static final NullConst INSTANCE = new NullConst();
         }
 
-        record EnumConst(Class<?> enumClass, String name) implements Pat {
-        }
+        record EnumConst(Class<?> enumClass, String name) implements Pat {}
 
-        record ScalarConst(Object value, PrimitiveKind kind) implements Pat {
-        }
+        record ScalarConst(Object value, PrimitiveKind kind) implements Pat {}
 
-        record ConstRange(long lo, long hi, boolean inclusive, long step,
-                          boolean isChar, boolean isDouble, double dLo, double dHi) implements Pat {
-        }
+        record ConstRange(
+                long lo,
+                long hi,
+                boolean inclusive,
+                long step,
+                boolean isChar,
+                boolean isDouble,
+                double dLo,
+                double dHi)
+                implements Pat {}
 
-        record TypePat(Type target) implements Pat {
-        }
+        record TypePat(Type target) implements Pat {}
 
-        record RecordPat(Type recordType, boolean isJavaRecord, TypeNode babbleNode,
-                         Class<?> javaRecordClass, List<Pat> fields) implements Pat {
-        }
+        record RecordPat(
+                Type recordType,
+                boolean isJavaRecord,
+                TypeNode babbleNode,
+                Class<?> javaRecordClass,
+                List<Pat> fields)
+                implements Pat {}
 
-        record SeqPat(boolean isArray, Type targetType, List<Pat> elems, boolean hasRest) implements Pat {
-        }
+        record SeqPat(boolean isArray, Type targetType, List<Pat> elems, boolean hasRest)
+                implements Pat {}
 
-        /** Runtime expression, relational comparison, {@code in} membership, or non-constant range. */
+        /**
+         * Runtime expression, relational comparison, {@code in} membership, or non-constant range.
+         */
         record Opaque() implements Pat {
             static final Opaque INSTANCE = new Opaque();
         }
     }
 
-    record Arm(Pat pattern, boolean guarded) {
-    }
+    record Arm(Pat pattern, boolean guarded) {}
 
-    record Result(boolean exhaustive, String missingWitness, List<Integer> unreachableArms, boolean redundantElse) {
-    }
+    record Result(
+            boolean exhaustive,
+            String missingWitness,
+            List<Integer> unreachableArms,
+            boolean redundantElse) {}
 
     interface FieldResolver {
         /** Returns canonical constructor-order field types for a Babble or Java record type. */
@@ -103,8 +113,12 @@ final class MatchExhaustiveness {
         this.fieldResolver = fieldResolver;
     }
 
-    static Result check(Type scrutineeType, List<Arm> arms, boolean hasElse,
-                        TypeAlgebra algebra, FieldResolver fieldResolver) {
+    static Result check(
+            Type scrutineeType,
+            List<Arm> arms,
+            boolean hasElse,
+            TypeAlgebra algebra,
+            FieldResolver fieldResolver) {
         if (scrutineeType == null || scrutineeType == Type.ERROR || scrutineeType == Type.NOTHING) {
             return new Result(true, null, List.of(), false);
         }
@@ -129,13 +143,14 @@ final class MatchExhaustiveness {
             String top = witness.get(0);
             missingWitness = OPEN_SENTINEL.equals(top) ? null : top;
         }
-        return new Result(exhaustive, missingWitness, List.copyOf(unreachable), exhaustive && hasElse);
+        return new Result(
+                exhaustive, missingWitness, List.copyOf(unreachable), exhaustive && hasElse);
     }
 
     /**
      * Extension hook ({@code BIP038-D3}): returns the closed direct subtypes of {@code type} when
-     * {@code type} is a statically closed sum ({@link Type.Union}, distributed intersection of unions,
-     * or Java {@code sealed} class/interface), or an empty list otherwise.
+     * {@code type} is a statically closed sum ({@link Type.Union}, distributed intersection of
+     * unions, or Java {@code sealed} class/interface), or an empty list otherwise.
      */
     static List<Type> permittedSubtypes(Type type) {
         if (type == null || type == Type.ERROR || type == Type.NOTHING) {
@@ -189,7 +204,8 @@ final class MatchExhaustiveness {
         return new ArrayList<>(leaves);
     }
 
-    private static void collectSumLeaves(List<Type> members, Set<Class<?>> seenSealed, Set<Type> out) {
+    private static void collectSumLeaves(
+            List<Type> members, Set<Class<?>> seenSealed, Set<Type> out) {
         for (Type m : members) {
             Type base = TypeAlgebra.unwrapFrozen(m);
             if (base instanceof Type.JavaInstance ji && ji.type().isSealed()) {
@@ -207,14 +223,18 @@ final class MatchExhaustiveness {
         }
     }
 
-    /** Whether a Java {@code enum} or {@code sealed} type appears in {@code type} (drives runtime fallback check). */
+    /**
+     * Whether a Java {@code enum} or {@code sealed} type appears in {@code type} (drives runtime
+     * fallback check).
+     */
     static boolean containsExternalClosedJavaType(Type type) {
         if (type == null || type == Type.ERROR || type == Type.NOTHING) {
             return false;
         }
         for (Type m : TypeAlgebra.alternatives(TypeAlgebra.unwrapFrozen(type))) {
             Type base = TypeAlgebra.unwrapFrozen(m);
-            if (base instanceof Type.JavaInstance ji && (ji.type().isEnum() || ji.type().isSealed())) {
+            if (base instanceof Type.JavaInstance ji
+                    && (ji.type().isEnum() || ji.type().isSealed())) {
                 return true;
             }
         }
@@ -277,7 +297,8 @@ final class MatchExhaustiveness {
             if (q0 instanceof Pat.BoolConst bc) {
                 return isUseful(specializeBool(expandedP, bc.value()), restQ, restTypes);
             }
-            if (q0 instanceof Pat.Wildcard || q0 instanceof Pat.Opaque
+            if (q0 instanceof Pat.Wildcard
+                    || q0 instanceof Pat.Opaque
                     || (q0 instanceof Pat.TypePat tp && typeCovers(tp.target(), Type.BOOL))) {
                 return isUseful(specializeBool(expandedP, true), restQ, restTypes)
                         || isUseful(specializeBool(expandedP, false), restQ, restTypes);
@@ -297,7 +318,8 @@ final class MatchExhaustiveness {
                 }
                 return isUseful(specializeEnum(expandedP, ji.type(), ec.name()), restQ, restTypes);
             }
-            if (q0 instanceof Pat.Wildcard || q0 instanceof Pat.Opaque
+            if (q0 instanceof Pat.Wildcard
+                    || q0 instanceof Pat.Opaque
                     || (q0 instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
                 for (Object c : constants) {
                     String name = ((Enum<?>) c).name();
@@ -311,7 +333,8 @@ final class MatchExhaustiveness {
         }
 
         // 5. Babble or Java record
-        if (isRecordType(base0) && (q0 instanceof Pat.RecordPat || hasRecordPatInCol0(expandedP, base0))) {
+        if (isRecordType(base0)
+                && (q0 instanceof Pat.RecordPat || hasRecordPatInCol0(expandedP, base0))) {
             List<Type> fieldTypes = fieldResolver.recordFieldTypes(col0);
             int arity = fieldTypes.size();
             List<Pat> qFields = specializeRecordPat(q0, base0, arity);
@@ -324,7 +347,8 @@ final class MatchExhaustiveness {
         }
 
         // 6. List / array sequence length decomposition
-        if (isSequenceType(base0) && (q0 instanceof Pat.SeqPat || hasSeqPatInCol0(expandedP, base0))) {
+        if (isSequenceType(base0)
+                && (q0 instanceof Pat.SeqPat || hasSeqPatInCol0(expandedP, base0))) {
             boolean isArray = base0 instanceof Type.Array;
             Type elemType = sequenceElementType(col0);
             int splitM = computeSequenceSplitThreshold(expandedP, q0, isArray, base0);
@@ -335,37 +359,55 @@ final class MatchExhaustiveness {
                     continue;
                 }
                 List<List<Pat>> pSeq = specializeSeqExactMatrix(expandedP, isArray, base0, k);
-                if (isUseful(pSeq, concatPats(qElems, restQ), prependRepeatedType(elemType, k, restTypes))) {
+                if (isUseful(
+                        pSeq,
+                        concatPats(qElems, restQ),
+                        prependRepeatedType(elemType, k, restTypes))) {
                     return true;
                 }
             }
             // Tail lengths >= splitM
             List<Pat> qTail = specializeSeqAtLeastPat(q0, isArray, base0, splitM);
             if (qTail != null) {
-                List<List<Pat>> pTail = specializeSeqAtLeastMatrix(expandedP, isArray, base0, splitM);
-                if (isUseful(pTail, concatPats(qTail, restQ), prependRepeatedType(elemType, splitM, restTypes))) {
+                List<List<Pat>> pTail =
+                        specializeSeqAtLeastMatrix(expandedP, isArray, base0, splitM);
+                if (isUseful(
+                        pTail,
+                        concatPats(qTail, restQ),
+                        prependRepeatedType(elemType, splitM, restTypes))) {
                     return true;
                 }
             }
             return false;
         }
 
-        // 7. Open domain (int, long, double, char, string, open class/interface, any, un-destructured record/seq)
+        // 7. Open domain (int, long, double, char, string, open class/interface, any,
+        // un-destructured record/seq)
         return isUsefulOpen(expandedP, q0, restQ, col0, base0, restTypes);
     }
 
-    private boolean isUsefulOpen(List<List<Pat>> expandedP, Pat q0, List<Pat> restQ,
-                                 Type col0, Type base0, List<Type> restTypes) {
-        if (q0 instanceof Pat.Wildcard || q0 instanceof Pat.Opaque
+    private boolean isUsefulOpen(
+            List<List<Pat>> expandedP,
+            Pat q0,
+            List<Pat> restQ,
+            Type col0,
+            Type base0,
+            List<Type> restTypes) {
+        if (q0 instanceof Pat.Wildcard
+                || q0 instanceof Pat.Opaque
                 || (q0 instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
             return isUseful(defaultMatrix(expandedP, base0), restQ, restTypes);
         }
         if (q0 instanceof Pat.TypePat tp) {
-            // Narrower type pattern on an open/supertype column (e.g. `is int` or `is bool` on `any` or `Object`):
+            // Narrower type pattern on an open/supertype column (e.g. `is int` or `is bool` on
+            // `any` or `Object`):
             Type narrowed = narrowColType(col0, tp.target());
             if (narrowed != null && !narrowed.equals(col0)) {
                 List<List<Pat>> pSub = filterMatrixForSubtype(expandedP, narrowed);
-                return isUseful(pSub, prepend(Pat.Wildcard.INSTANCE, restQ), prependType(narrowed, restTypes));
+                return isUseful(
+                        pSub,
+                        prepend(Pat.Wildcard.INSTANCE, restQ),
+                        prependType(narrowed, restTypes));
             }
             return isUseful(defaultMatrixCovering(expandedP, tp.target()), restQ, restTypes);
         }
@@ -378,8 +420,12 @@ final class MatchExhaustiveness {
             return isUseful(defaultMatrix(expandedP, base0), restQ, restTypes);
         }
         if (q0 instanceof Pat.SeqPat sp) {
-            Type target = sp.targetType() != null ? sp.targetType()
-                    : (sp.isArray() ? new Type.Array(Type.NULLABLE_ANY) : new Type.JavaInstance(List.class, List.of()));
+            Type target =
+                    sp.targetType() != null
+                            ? sp.targetType()
+                            : (sp.isArray()
+                                    ? new Type.Array(Type.NULLABLE_ANY)
+                                    : new Type.JavaInstance(List.class, List.of()));
             Type narrowed = narrowColType(col0, target);
             if (narrowed != null && !narrowed.equals(col0)) {
                 List<List<Pat>> pSub = filterMatrixForSubtype(expandedP, narrowed);
@@ -406,8 +452,12 @@ final class MatchExhaustiveness {
             if (!isUseful(matching, restQ, restTypes)) {
                 return false;
             }
-            // Single-column step-1 discrete interval union check (e.g. `0..5` + `6..10` covers `3..8`)
-            if (restQ.isEmpty() && !qr.isDouble() && qr.step() == 1 && isCoveredByDiscreteUnion(expandedP, qr)) {
+            // Single-column step-1 discrete interval union check (e.g. `0..5` + `6..10` covers
+            // `3..8`)
+            if (restQ.isEmpty()
+                    && !qr.isDouble()
+                    && qr.step() == 1
+                    && isCoveredByDiscreteUnion(expandedP, qr)) {
                 return false;
             }
             return true;
@@ -429,7 +479,8 @@ final class MatchExhaustiveness {
         return isUseful(defaultMatrix(expandedP, base0), restQ, restTypes);
     }
 
-    // ---------------------------------------------------------------- counterexample witness search
+    // ---------------------------------------------------------------- counterexample witness
+    // search
 
     /**
      * Returns {@code null} if {@code matrix} covers every value of {@code types}, otherwise a
@@ -473,7 +524,8 @@ final class MatchExhaustiveness {
             if (wt != null) {
                 return prependStr("true", wt);
             }
-            List<String> wf = findMissingWitness(specializeBool(expandedP, false), restTypes, depth);
+            List<String> wf =
+                    findMissingWitness(specializeBool(expandedP, false), restTypes, depth);
             if (wf != null) {
                 return prependStr("false", wf);
             }
@@ -488,7 +540,9 @@ final class MatchExhaustiveness {
             }
             for (Object c : constants) {
                 String name = ((Enum<?>) c).name();
-                List<String> w = findMissingWitness(specializeEnum(expandedP, ji.type(), name), restTypes, depth);
+                List<String> w =
+                        findMissingWitness(
+                                specializeEnum(expandedP, ji.type(), name), restTypes, depth);
                 if (w != null) {
                     return prependStr(ji.type().getSimpleName() + "." + name, w);
                 }
@@ -501,7 +555,8 @@ final class MatchExhaustiveness {
             List<Type> fieldTypes = fieldResolver.recordFieldTypes(col0);
             int arity = fieldTypes.size();
             List<List<Pat>> pRec = specializeRecordMatrix(expandedP, base0, arity);
-            List<String> w = findMissingWitness(pRec, concatTypes(fieldTypes, restTypes), depth + 1);
+            List<String> w =
+                    findMissingWitness(pRec, concatTypes(fieldTypes, restTypes), depth + 1);
             if (w == null) {
                 return null;
             }
@@ -510,7 +565,8 @@ final class MatchExhaustiveness {
                 String fw = w.get(i);
                 fieldWitnesses.add(OPEN_SENTINEL.equals(fw) ? "_" : fw);
             }
-            String formatted = recordSimpleName(base0) + "(" + String.join(", ", fieldWitnesses) + ")";
+            String formatted =
+                    recordSimpleName(base0) + "(" + String.join(", ", fieldWitnesses) + ")";
             return prependStr(formatted, w.subList(arity, w.size()));
         }
 
@@ -523,16 +579,21 @@ final class MatchExhaustiveness {
             // Shortest uncovered exact length 0 .. splitM - 1
             for (int k = 0; k < splitM; k++) {
                 List<List<Pat>> pSeq = specializeSeqExactMatrix(expandedP, isArray, base0, k);
-                List<String> w = findMissingWitness(pSeq, prependRepeatedType(elemType, k, restTypes), depth + 1);
+                List<String> w =
+                        findMissingWitness(
+                                pSeq, prependRepeatedType(elemType, k, restTypes), depth + 1);
                 if (w != null) {
                     return prependStr(formatSeqWitness(seqName, w, k), w.subList(k, w.size()));
                 }
             }
             // Uncovered tail length >= splitM (witnessed at length splitM)
             List<List<Pat>> pTail = specializeSeqAtLeastMatrix(expandedP, isArray, base0, splitM);
-            List<String> w = findMissingWitness(pTail, prependRepeatedType(elemType, splitM, restTypes), depth + 1);
+            List<String> w =
+                    findMissingWitness(
+                            pTail, prependRepeatedType(elemType, splitM, restTypes), depth + 1);
             if (w != null) {
-                return prependStr(formatSeqWitness(seqName, w, splitM), w.subList(splitM, w.size()));
+                return prependStr(
+                        formatSeqWitness(seqName, w, splitM), w.subList(splitM, w.size()));
             }
             return null;
         }
@@ -546,7 +607,8 @@ final class MatchExhaustiveness {
         return prependStr(head, w);
     }
 
-    // ---------------------------------------------------------------- matrix specialization helpers
+    // ---------------------------------------------------------------- matrix specialization
+    // helpers
 
     private static List<List<Pat>> expandOrInCol0(List<List<Pat>> matrix) {
         List<List<Pat>> out = new ArrayList<>(matrix.size());
@@ -566,7 +628,10 @@ final class MatchExhaustiveness {
         }
     }
 
-    /** Adapts a single pattern in {@code q} or {@code P} to a specific subtype {@code leaf} of a sum. */
+    /**
+     * Adapts a single pattern in {@code q} or {@code P} to a specific subtype {@code leaf} of a
+     * sum.
+     */
     private Pat adaptPatForSubtype(Pat pat, Type leaf) {
         Type leafBase = TypeAlgebra.unwrapFrozen(leaf);
         return switch (pat) {
@@ -574,9 +639,12 @@ final class MatchExhaustiveness {
             case Pat.Opaque o -> o;
             case Pat.NullConst nc -> leafBase == Type.NULL ? Pat.Wildcard.INSTANCE : null;
             case Pat.BoolConst bc -> (leafBase == Type.BOOL || leafBase == Type.ANY) ? bc : null;
-            case Pat.EnumConst ec -> (leafBase == Type.ANY
-                    || (leafBase instanceof Type.JavaInstance ji && ji.type().isAssignableFrom(ec.enumClass())))
-                    ? ec : null;
+            case Pat.EnumConst ec ->
+                    (leafBase == Type.ANY
+                                    || (leafBase instanceof Type.JavaInstance ji
+                                            && ji.type().isAssignableFrom(ec.enumClass())))
+                            ? ec
+                            : null;
             case Pat.ScalarConst sc -> scalarOverlapsType(sc, leafBase) ? sc : null;
             case Pat.ConstRange cr -> rangeOverlapsType(cr, leafBase) ? cr : null;
             case Pat.TypePat tp -> {
@@ -619,7 +687,9 @@ final class MatchExhaustiveness {
     }
 
     private boolean matchesNull(Pat p) {
-        return p instanceof Pat.Wildcard || p instanceof Pat.NullConst || p instanceof Pat.Opaque
+        return p instanceof Pat.Wildcard
+                || p instanceof Pat.NullConst
+                || p instanceof Pat.Opaque
                 || (p instanceof Pat.TypePat tp && Type.containsNull(tp.target()));
     }
 
@@ -627,7 +697,8 @@ final class MatchExhaustiveness {
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
-            if (h instanceof Pat.Wildcard || h instanceof Pat.NullConst
+            if (h instanceof Pat.Wildcard
+                    || h instanceof Pat.NullConst
                     || (h instanceof Pat.TypePat tp && Type.containsNull(tp.target()))) {
                 out.add(row.subList(1, row.size()));
             }
@@ -648,13 +719,16 @@ final class MatchExhaustiveness {
         return out;
     }
 
-    private List<List<Pat>> specializeEnum(List<List<Pat>> expandedP, Class<?> enumClass, String name) {
+    private List<List<Pat>> specializeEnum(
+            List<List<Pat>> expandedP, Class<?> enumClass, String name) {
         Type enumType = new Type.JavaInstance(enumClass, List.of());
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
             if (h instanceof Pat.Wildcard
-                    || (h instanceof Pat.EnumConst ec && ec.enumClass() == enumClass && ec.name().equals(name))
+                    || (h instanceof Pat.EnumConst ec
+                            && ec.enumClass() == enumClass
+                            && ec.name().equals(name))
                     || (h instanceof Pat.TypePat tp && typeCovers(tp.target(), enumType))) {
                 out.add(row.subList(1, row.size()));
             }
@@ -672,7 +746,8 @@ final class MatchExhaustiveness {
     }
 
     private List<Pat> specializeRecordPat(Pat pat, Type base0, int arity) {
-        if (pat instanceof Pat.Wildcard || pat instanceof Pat.Opaque
+        if (pat instanceof Pat.Wildcard
+                || pat instanceof Pat.Opaque
                 || (pat instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
             return nWildcards(arity);
         }
@@ -689,7 +764,8 @@ final class MatchExhaustiveness {
         return null;
     }
 
-    private List<List<Pat>> specializeRecordMatrix(List<List<Pat>> expandedP, Type base0, int arity) {
+    private List<List<Pat>> specializeRecordMatrix(
+            List<List<Pat>> expandedP, Type base0, int arity) {
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
@@ -713,11 +789,14 @@ final class MatchExhaustiveness {
         return false;
     }
 
-    private int computeSequenceSplitThreshold(List<List<Pat>> expandedP, Pat q0, boolean isArray, Type base0) {
+    private int computeSequenceSplitThreshold(
+            List<List<Pat>> expandedP, Pat q0, boolean isArray, Type base0) {
         int maxExact = -1;
         int maxRest = 0;
         for (List<Pat> row : expandedP) {
-            if (row.get(0) instanceof Pat.SeqPat sp && sp.isArray() == isArray && seqMatchesType(sp, base0)) {
+            if (row.get(0) instanceof Pat.SeqPat sp
+                    && sp.isArray() == isArray
+                    && seqMatchesType(sp, base0)) {
                 if (sp.hasRest()) {
                     maxRest = Math.max(maxRest, sp.elems().size());
                 } else {
@@ -736,7 +815,8 @@ final class MatchExhaustiveness {
     }
 
     private List<Pat> specializeSeqExactPat(Pat pat, boolean isArray, Type base0, int k) {
-        if (pat instanceof Pat.Wildcard || pat instanceof Pat.Opaque
+        if (pat instanceof Pat.Wildcard
+                || pat instanceof Pat.Opaque
                 || (pat instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
             return nWildcards(k);
         }
@@ -751,7 +831,8 @@ final class MatchExhaustiveness {
         return null;
     }
 
-    private List<List<Pat>> specializeSeqExactMatrix(List<List<Pat>> expandedP, boolean isArray, Type base0, int k) {
+    private List<List<Pat>> specializeSeqExactMatrix(
+            List<List<Pat>> expandedP, boolean isArray, Type base0, int k) {
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
@@ -767,18 +848,23 @@ final class MatchExhaustiveness {
     }
 
     private List<Pat> specializeSeqAtLeastPat(Pat pat, boolean isArray, Type base0, int minLen) {
-        if (pat instanceof Pat.Wildcard || pat instanceof Pat.Opaque
+        if (pat instanceof Pat.Wildcard
+                || pat instanceof Pat.Opaque
                 || (pat instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
             return nWildcards(minLen);
         }
-        if (pat instanceof Pat.SeqPat sp && sp.isArray() == isArray && seqMatchesType(sp, base0)
-                && sp.hasRest() && sp.elems().size() <= minLen) {
+        if (pat instanceof Pat.SeqPat sp
+                && sp.isArray() == isArray
+                && seqMatchesType(sp, base0)
+                && sp.hasRest()
+                && sp.elems().size() <= minLen) {
             return padWithWildcards(sp.elems(), minLen);
         }
         return null;
     }
 
-    private List<List<Pat>> specializeSeqAtLeastMatrix(List<List<Pat>> expandedP, boolean isArray, Type base0, int minLen) {
+    private List<List<Pat>> specializeSeqAtLeastMatrix(
+            List<List<Pat>> expandedP, boolean isArray, Type base0, int minLen) {
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
@@ -797,7 +883,8 @@ final class MatchExhaustiveness {
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
-            if (h instanceof Pat.Wildcard || (h instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
+            if (h instanceof Pat.Wildcard
+                    || (h instanceof Pat.TypePat tp && typeCovers(tp.target(), base0))) {
                 out.add(row.subList(1, row.size()));
             }
         }
@@ -808,14 +895,16 @@ final class MatchExhaustiveness {
         List<List<Pat>> out = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
-            if (h instanceof Pat.Wildcard || (h instanceof Pat.TypePat tp && typeCovers(tp.target(), target))) {
+            if (h instanceof Pat.Wildcard
+                    || (h instanceof Pat.TypePat tp && typeCovers(tp.target(), target))) {
                 out.add(row.subList(1, row.size()));
             }
         }
         return out;
     }
 
-    // ---------------------------------------------------------------- open-domain constant & range shadowing
+    // ---------------------------------------------------------------- open-domain constant & range
+    // shadowing
 
     private boolean rowCoversScalar(Pat p, Pat.ScalarConst q, Type base0) {
         if (p instanceof Pat.Wildcard) {
@@ -852,7 +941,10 @@ final class MatchExhaustiveness {
             return a == b;
         }
         if (a instanceof Number na && b instanceof Number nb) {
-            if (na instanceof Double || na instanceof Float || nb instanceof Double || nb instanceof Float) {
+            if (na instanceof Double
+                    || na instanceof Float
+                    || nb instanceof Double
+                    || nb instanceof Float) {
                 return Double.compare(na.doubleValue(), nb.doubleValue()) == 0;
             }
             return na.longValue() == nb.longValue();
@@ -877,7 +969,9 @@ final class MatchExhaustiveness {
                 return false;
             }
             return Double.compare(v, r.dLo()) >= 0
-                    && (r.inclusive() ? Double.compare(v, r.dHi()) <= 0 : Double.compare(v, r.dHi()) < 0);
+                    && (r.inclusive()
+                            ? Double.compare(v, r.dHi()) <= 0
+                            : Double.compare(v, r.dHi()) < 0);
         }
         if (!(s.value() instanceof Number n)) {
             return false;
@@ -930,7 +1024,8 @@ final class MatchExhaustiveness {
             }
             return Double.compare(oLo, iLo) <= 0
                     && (Double.compare(iHi, oHi) < 0
-                        || (Double.compare(iHi, oHi) == 0 && (outer.inclusive() || !inner.inclusive())));
+                            || (Double.compare(iHi, oHi) == 0
+                                    && (outer.inclusive() || !inner.inclusive())));
         }
         if (outer.step() <= 0 || inner.step() <= 0) {
             return false;
@@ -946,10 +1041,14 @@ final class MatchExhaustiveness {
         if (outer.step() == 1) {
             return true;
         }
-        return ((inner.lo() - outer.lo()) % outer.step() == 0) && (inner.step() % outer.step() == 0);
+        return ((inner.lo() - outer.lo()) % outer.step() == 0)
+                && (inner.step() % outer.step() == 0);
     }
 
-    /** Checks whether step-1 discrete ranges + scalar constants in column 0 cover all integers in {@code q}. */
+    /**
+     * Checks whether step-1 discrete ranges + scalar constants in column 0 cover all integers in
+     * {@code q}.
+     */
     private static boolean isCoveredByDiscreteUnion(List<List<Pat>> expandedP, Pat.ConstRange q) {
         long qLo = q.lo();
         long qHi = effectiveDiscreteHi(q);
@@ -959,16 +1058,19 @@ final class MatchExhaustiveness {
         List<long[]> intervals = new ArrayList<>();
         for (List<Pat> row : expandedP) {
             Pat h = row.get(0);
-            if (h instanceof Pat.ConstRange pr && pr.isChar() == q.isChar() && !pr.isDouble() && pr.step() == 1) {
+            if (h instanceof Pat.ConstRange pr
+                    && pr.isChar() == q.isChar()
+                    && !pr.isDouble()
+                    && pr.step() == 1) {
                 long lo = pr.lo();
                 long hi = effectiveDiscreteHi(pr);
                 if (lo <= hi && hi >= qLo && lo <= qHi) {
-                    intervals.add(new long[]{Math.max(lo, qLo), Math.min(hi, qHi)});
+                    intervals.add(new long[] {Math.max(lo, qLo), Math.min(hi, qHi)});
                 }
             } else if (h instanceof Pat.ScalarConst sc) {
                 Long v = discreteScalarVal(sc, q.isChar());
                 if (v != null && v >= qLo && v <= qHi) {
-                    intervals.add(new long[]{v, v});
+                    intervals.add(new long[] {v, v});
                 }
             }
         }
@@ -995,8 +1097,10 @@ final class MatchExhaustiveness {
         if (isChar) {
             return sc.value() instanceof Character c ? (long) c : null;
         }
-        if (sc.value() instanceof Byte || sc.value() instanceof Short
-                || sc.value() instanceof Integer || sc.value() instanceof Long) {
+        if (sc.value() instanceof Byte
+                || sc.value() instanceof Short
+                || sc.value() instanceof Integer
+                || sc.value() instanceof Long) {
             return ((Number) sc.value()).longValue();
         }
         return null;
@@ -1027,7 +1131,8 @@ final class MatchExhaustiveness {
         if (algebra.runtimeSubtype(subBase, tgtBase)) {
             return true;
         }
-        // `is` on non-array classes/interfaces erases generic type arguments (`is Box` covers `Box of int`,
+        // `is` on non-array classes/interfaces erases generic type arguments (`is Box` covers `Box
+        // of int`,
         // `is list` covers `list of int`).
         if (subBase instanceof Type.Instance si && tgtBase instanceof Type.Instance ti) {
             return algebra.projectToBabble(si, ti.node()) != null;
@@ -1056,7 +1161,8 @@ final class MatchExhaustiveness {
     }
 
     private static boolean isRecordType(Type base) {
-        return (base instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS)
+        return (base instanceof Type.Instance inst
+                        && inst.node().kind == ClassShape.Kind.VALUE_CLASS)
                 || (base instanceof Type.JavaInstance ji && ji.type().isRecord());
     }
 
@@ -1077,12 +1183,15 @@ final class MatchExhaustiveness {
         if (!rp.isJavaRecord()) {
             if (base instanceof Type.Instance inst) {
                 return inst.node() == rp.babbleNode()
-                        || algebra.projectToBabble(new Type.Instance(rp.babbleNode(), List.of()), inst.node()) != null;
+                        || algebra.projectToBabble(
+                                        new Type.Instance(rp.babbleNode(), List.of()), inst.node())
+                                != null;
             }
             return algebra.overlapsErased(base, rp.recordType());
         }
         if (base instanceof Type.JavaInstance ji) {
-            return ji.type() == rp.javaRecordClass() || ji.type().isAssignableFrom(rp.javaRecordClass());
+            return ji.type() == rp.javaRecordClass()
+                    || ji.type().isAssignableFrom(rp.javaRecordClass());
         }
         return algebra.overlapsErased(base, rp.recordType());
     }
@@ -1118,7 +1227,8 @@ final class MatchExhaustiveness {
             return sp.targetType() == null || algebra.overlapsErased(base, sp.targetType());
         }
         return base instanceof Type.JavaInstance ji
-                && (List.class.isAssignableFrom(ji.type()) || ji.type().isAssignableFrom(List.class));
+                && (List.class.isAssignableFrom(ji.type())
+                        || ji.type().isAssignableFrom(List.class));
     }
 
     private static Type scalarType(Pat.ScalarConst sc) {

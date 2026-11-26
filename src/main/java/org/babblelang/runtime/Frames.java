@@ -1,21 +1,24 @@
 package org.babblelang.runtime;
 
-
 public final class Frames {
-    private Frames() {
-    }
+    private Frames() {}
 
     /**
-     * The namespace of a function call, a child of its closure. It defines
-     * {@code $recurse}, {@code this} when the function is called as a method, and
-     * pre-declares the names the body defines (block scope hoisting). Parameters are
-     * defined afterwards, while they are bound.
+     * The namespace of a function call, a child of its closure. It defines {@code $recurse}, {@code
+     * this} when the function is called as a method, and pre-declares the names the body defines
+     * (block scope hoisting). Parameters are defined afterwards, while they are bound.
      */
-    public static Namespace enter(Namespace closure, Callable recurseTarget, Object thiz, String[] declared) {
+    public static Namespace enter(
+            Namespace closure, Callable recurseTarget, Object thiz, String[] declared) {
         return enter(closure, recurseTarget, thiz, declared, null);
     }
 
-    public static Namespace enter(Namespace closure, Callable recurseTarget, Object thiz, String[] declared, boolean[] finals) {
+    public static Namespace enter(
+            Namespace closure,
+            Callable recurseTarget,
+            Object thiz,
+            String[] declared,
+            boolean[] finals) {
         Namespace namespace = closure.enter();
         namespace.define("$recurse", true).set(recurseTarget);
         if (thiz != Undefined.UNBOUND) {
@@ -26,8 +29,8 @@ public final class Frames {
     }
 
     /**
-     * Reads a JVM local or a cell holding a hoisted definition : using it before its def
-     * has run is an error, as reading an unset namespace slot is.
+     * Reads a JVM local or a cell holding a hoisted definition : using it before its def has run is
+     * an error, as reading an unset namespace slot is.
      */
     public static Object defined(Object value, String name) {
         if (value == Undefined.UNDEFINED) {

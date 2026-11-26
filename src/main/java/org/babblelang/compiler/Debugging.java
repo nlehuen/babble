@@ -1,20 +1,18 @@
 package org.babblelang.compiler;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import org.babblelang.runtime.BabbleException;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.CheckClassAdapter;
 import org.objectweb.asm.util.TraceClassVisitor;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-
 /**
- * The debugging switches that need {@code asm-util}, an optional dependency. This class
- * is only loaded when one of them is on.
+ * The debugging switches that need {@code asm-util}, an optional dependency. This class is only
+ * loaded when one of them is on.
  */
 final class Debugging {
-    private Debugging() {
-    }
+    private Debugging() {}
 
     static void trace(byte[] bytes) {
         PrintWriter err = new PrintWriter(System.err, true);

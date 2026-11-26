@@ -5,8 +5,8 @@ import java.io.IOException;
 import java.io.PrintWriter;
 
 /**
- * Plain lines, as from a pipe or a test : no editing, no history. The prompts are printed
- * only when asked, not when the input is piped in.
+ * Plain lines, as from a pipe or a test : no editing, no history. The prompts are printed only when
+ * asked, not when the input is piped in.
  */
 public final class PlainInput implements LineSource {
     private final BufferedReader in;

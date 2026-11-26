@@ -1,5 +1,7 @@
 package org.babblelang.tests;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.babblelang.analysis.BlockScopes;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.ScopeAnalysis;
@@ -10,9 +12,6 @@ import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.parser.BabbleParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Tests for RM007 (BIP007-I2) : deep ownership ({@code unique}, {@code move}, {@code freeze},
@@ -50,17 +49,28 @@ public class OwnershipTestCase {
 
     private static void assertClean(String source) {
         ScopeAnalysis analysis = analyze(source);
-        Assertions.assertEquals(List.of(), analysis.typeDiagnostics(),
-                "Expected clean analysis for:\n" + source + "\nbut got: " + analysis.typeDiagnostics());
+        Assertions.assertEquals(
+                List.of(),
+                analysis.typeDiagnostics(),
+                "Expected clean analysis for:\n"
+                        + source
+                        + "\nbut got: "
+                        + analysis.typeDiagnostics());
     }
 
     private static void assertHasError(String source, String expectedSubstring) {
         ScopeAnalysis analysis = analyze(source);
-        boolean found = analysis.typeDiagnostics().stream()
-                .anyMatch(w -> w.message().contains(expectedSubstring));
-        Assertions.assertTrue(found,
-                "Expected diagnostic containing '" + expectedSubstring + "' for:\n" + source
-                        + "\nbut got: " + analysis.typeDiagnostics());
+        boolean found =
+                analysis.typeDiagnostics().stream()
+                        .anyMatch(w -> w.message().contains(expectedSubstring));
+        Assertions.assertTrue(
+                found,
+                "Expected diagnostic containing '"
+                        + expectedSubstring
+                        + "' for:\n"
+                        + source
+                        + "\nbut got: "
+                        + analysis.typeDiagnostics());
     }
 
     private static Object evalBothModes(String source) throws Exception {
@@ -70,17 +80,21 @@ public class OwnershipTestCase {
         BabbleScriptEngine comp = (BabbleScriptEngine) factory.getScriptEngine();
         comp.put("babble.mode", "compile");
         Object rComp = comp.eval(source);
-        Assertions.assertEquals(rInterp, rComp, "Interpret vs Compile parity mismatch for:\n" + source);
+        Assertions.assertEquals(
+                rInterp, rComp, "Interpret vs Compile parity mismatch for:\n" + source);
         return rInterp;
     }
 
-    private static BabbleParser.FunctionLiteralContext findFn(BabbleParser.FileContext file, String name) {
+    private static BabbleParser.FunctionLiteralContext findFn(
+            BabbleParser.FileContext file, String name) {
         return findFnInTree(file, name);
     }
 
-    private static BabbleParser.FunctionLiteralContext findFnInTree(org.antlr.v4.runtime.tree.ParseTree tree, String name) {
+    private static BabbleParser.FunctionLiteralContext findFnInTree(
+            org.antlr.v4.runtime.tree.ParseTree tree, String name) {
         if (tree instanceof BabbleParser.DefExpressionContext def
-                && def.name != null && name.equals(def.name.getText())
+                && def.name != null
+                && name.equals(def.name.getText())
                 && def.value instanceof BabbleParser.FunctionLiteralContext fn) {
             return fn;
         }
@@ -95,15 +109,20 @@ public class OwnershipTestCase {
 
     @Test
     public void testFrozenNarrowingPreservesFrozenOnRecord() throws Exception {
-        // User-requested mandatory negative case: narrowing `frozen any` via `is MyRecord` MUST NOT lose `frozen`!
-        assertHasError("""
+        // User-requested mandatory negative case: narrowing `frozen any` via `is MyRecord` MUST NOT
+        // lose `frozen`!
+        assertHasError(
+                """
                 def MyRecord = record (a: int) ()
                 def a: frozen any = MyRecord(5)
                 def b: MyRecord? = if a is MyRecord then ( a ) else ( null )
-                """, "Type error : expected MyRecord?, got frozen MyRecord");
+                """,
+                "Type error : expected MyRecord?, got frozen MyRecord");
 
-        // User-requested mandatory positive case: narrowing `frozen any` via `is MyRecord` produces `frozen MyRecord`!
-        String ok = """
+        // User-requested mandatory positive case: narrowing `frozen any` via `is MyRecord` produces
+        // `frozen MyRecord`!
+        String ok =
+                """
                 def MyRecord = record (a: int) ()
                 def a: frozen any = MyRecord(5)
                 def c: frozen MyRecord? = if a is MyRecord then ( a ) else ( null )
@@ -113,23 +132,28 @@ public class OwnershipTestCase {
         Assertions.assertEquals(5, evalBothModes(ok));
 
         // Direct `frozen MyRecord` cannot unwrap back to plain `MyRecord` either!
-        assertHasError("""
+        assertHasError(
+                """
                 def MyRecord = record (a: int) ()
                 def a: frozen MyRecord = MyRecord(5)
                 def b: MyRecord = a
-                """, "Type error : expected MyRecord, got frozen MyRecord");
+                """,
+                "Type error : expected MyRecord, got frozen MyRecord");
 
         // `is frozen T` is rejected statically (BIP007-D7)
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (x: any): bool -> ( x is frozen Box )
-                """, "frozen");
+                """,
+                "frozen");
     }
 
     @Test
     public void testFrozenCovarianceAndTransitiveImmutability() throws Exception {
         // Covariance on frozen generic Babble classes and core collections (BIP007-D7)
-        String cov = """
+        String cov =
+                """
                 def Animal = interface ( def sound: fn (): string )
                 def Dog = class (def name: string) implements Animal (
                     def sound = fn (): string -> ( "woof:" + this.name )
@@ -149,35 +173,44 @@ public class OwnershipTestCase {
         Assertions.assertEquals("woof:rex|woof:fido", evalBothModes(cov));
 
         // Field write on frozen value is rejected
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (b: frozen Box) -> ( b.x = 2 )
-                """, "frozen");
+                """,
+                "frozen");
 
         // Transitive field read: field of frozen Outer is frozen Inner (cannot mutate inner.v!)
-        assertHasError("""
+        assertHasError(
+                """
                 def Inner = class (var v: int) ()
                 def Outer = class (def inner: Inner) ()
                 def f = fn (o: frozen Outer) -> (
                     def i = o.inner
                     i.v = 9
                 )
-                """, "frozen");
+                """,
+                "frozen");
 
         // Calling mut method on frozen value is rejected
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (var x: int) (
                     def update = fn mut (v: int) -> ( this.x = v )
                 )
                 def f = fn (b: frozen Box) -> ( b.update(3) )
-                """, "Cannot call mut method on frozen value");
-        assertHasError("""
+                """,
+                "Cannot call mut method on frozen value");
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (xs: frozen list of int) -> ( xs.add(1) )
-                """, "Cannot call mut method add on frozen value");
+                """,
+                "Cannot call mut method add on frozen value");
 
         // Built-ins `same`, `classof`, `discard` accept `frozen` (BIP007-D9)
-        String builtins = """
+        String builtins =
+                """
                 def Box = class (def x: int) ()
                 def f = fn (): bool -> (
                     def b = freeze(Box(1))
@@ -193,8 +226,10 @@ public class OwnershipTestCase {
 
     @Test
     public void testUniqueLocalsMoveFreezeAndDefiniteUnassignment() throws Exception {
-        // Fresh local mutation inside pure function + inferred unique return + @TERMINATING (bip007 §5.2)
-        String stats = """
+        // Fresh local mutation inside pure function + inferred unique return + @TERMINATING (bip007
+        // §5.2)
+        String stats =
+                """
                 def Stats = class (var count: int = 0, var total: int = 0) (
                     def add = fn mut nothrow (v: int) -> (
                         this.count = this.count + 1
@@ -222,27 +257,32 @@ public class OwnershipTestCase {
         Assertions.assertEquals(4, evalBothModes(stats));
 
         // Explicit `move(x)` + use-after-move rejected
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (): int -> (
                     def b = Box(1)
                     def c = move(b)
                     b.x + c.x
                 )
-                """, "Use of moved variable b");
+                """,
+                "Use of moved variable b");
 
         // `freeze(x)` consumes `x` -> use-after-freeze rejected
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (): int -> (
                     def b = Box(1)
                     def fb = freeze(b)
                     b.x + fb.x
                 )
-                """, "Use of moved variable b");
+                """,
+                "Use of moved variable b");
 
         // Move on one branch of `if` makes variable @MOVED after merge until reassigned!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (flag: bool): int -> (
                     def b = Box(1)
@@ -252,10 +292,12 @@ public class OwnershipTestCase {
                     )
                     b.x
                 )
-                """, "Use of moved variable b");
+                """,
+                "Use of moved variable b");
 
         // Reassigning after move restores usability!
-        String reassign = """
+        String reassign =
+                """
                 def Box = class (var x: int) ()
                 def f = fn (flag: bool): int -> (
                     var b = Box(1)
@@ -274,7 +316,8 @@ public class OwnershipTestCase {
         Assertions.assertEquals(11, evalBothModes(reassign));
 
         // Aliasing `def alias = b` without `move` demotes both to @EXTERNAL
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def f = fn (): int -> (
                     def b = Box(1)
@@ -282,19 +325,23 @@ public class OwnershipTestCase {
                     b.x = 2
                     alias.x
                 )
-                """, "Cannot mutate external object in pure function");
+                """,
+                "Cannot mutate external object in pure function");
 
         // Freezing a non-unique parameter is rejected
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def f = fn (b: Box): frozen Box -> ( freeze(b) )
-                """, "Cannot freeze expression");
+                """,
+                "Cannot freeze expression");
     }
 
     @Test
     public void testUniqueParamsReturnsCoreCollectionsAndJavaAnnotation() throws Exception {
         // Consuming `unique` param vs default `@BORROWED` param
-        String uniqueParams = """
+        String uniqueParams =
+                """
                 def Box = class (var x: int) ()
                 def consume = fn (unique b: Box): unique Box -> (
                     b.x = b.x + 1
@@ -313,7 +360,8 @@ public class OwnershipTestCase {
         Assertions.assertEquals(21, evalBothModes(uniqueParams));
 
         // Consuming `unique` param moves caller's variable -> use after call rejected!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def consume = fn (unique b: Box): int -> ( b.x )
                 def run = fn (): int -> (
@@ -321,26 +369,32 @@ public class OwnershipTestCase {
                     def v = consume(b)
                     v + b.x
                 )
-                """, "Use of moved variable b");
+                """,
+                "Use of moved variable b");
 
         // `mut` param enforces exclusivity (aliasing two args rejected)
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def both = fn (mut a: Box, b: Box): int -> ( a.x = a.x + b.x; a.x )
                 def run = fn (): int -> (
                     def b = Box(10)
                     both(b, b)
                 )
-                """, "Exclusivity error");
+                """,
+                "Exclusivity error");
 
         // `: unique T` rejects returning non-unique param
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def bad = fn (b: Box): unique Box -> ( b )
-                """, "declared unique return violates unique guarantee");
+                """,
+                "declared unique return violates unique guarantee");
 
         // RM005 core collection `unique` constructors & mutators (BIP007-D6)
-        String collections = """
+        String collections =
+                """
                 def Box = class (def x: int) ()
                 def build = fn (): frozen list of Box -> (
                     def xs = list(Box(1))
@@ -361,26 +415,31 @@ public class OwnershipTestCase {
         Assertions.assertEquals(23, evalBothModes(collections));
 
         // `list(from: boxes)` where elements are mutable `Box` is NOT `unique` -> cannot freeze!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def bad = fn (src: list of Box): frozen list of Box -> (
                     def cp = list(from: src)
                     freeze(cp)
                 )
-                """, "Cannot freeze expression");
+                """,
+                "Cannot freeze expression");
 
         // Storing a shared param into a unique list demotes the list -> cannot freeze!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def bad = fn (shared s: Box): frozen list of Box -> (
                     def xs = list(Box(1))
                     xs.add(s)
                     freeze(xs)
                 )
-                """, "Cannot freeze expression");
+                """,
+                "Cannot freeze expression");
 
         // `@Unique` Java method annotation produces a `unique` list usable in pure `fn` & `freeze`!
-        String javaUnique = """
+        String javaUnique =
+                """
                 def UF = import("org.babblelang.tests").OwnershipTestCase.UniqueFactory
                 def make = fn (): frozen java.util.List of int? -> (
                     def xs = UF.freshList()!
@@ -393,7 +452,8 @@ public class OwnershipTestCase {
         Assertions.assertEquals(42, evalBothModes(javaUnique));
 
         // `axiom ...: fn pure unique` also produces a `unique` list!
-        String axiomUnique = """
+        String axiomUnique =
+                """
                 def UF = import("org.babblelang.tests").OwnershipTestCase.UniqueFactory
                 axiom org.babblelang.tests.OwnershipTestCase.UniqueFactory.unannotatedList: fn pure unique
                 def make = fn (): frozen java.util.List of int? -> (
@@ -409,8 +469,10 @@ public class OwnershipTestCase {
 
     @Test
     public void testBip016FrozenSubtypingAndIoOrthogonality() throws Exception {
-        // BIP016-D5 / §4.1: `frozen T <: @CONST @BORROWED T` — frozen values pass directly to default read-only borrowed params
-        String frozenBorrow = """
+        // BIP016-D5 / §4.1: `frozen T <: @CONST @BORROWED T` — frozen values pass directly to
+        // default read-only borrowed params
+        String frozenBorrow =
+                """
                 def Box = class (def x: int) ()
                 def read = fn (b: Box): int -> ( b.x * 2 )
                 def run = fn (): int -> (
@@ -423,24 +485,31 @@ public class OwnershipTestCase {
         Assertions.assertEquals(42, evalBothModes(frozenBorrow));
 
         // `frozen T` CANNOT be passed to `shared`, `mut`, or `unique` parameters!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def keep = fn (shared b: Box): Box -> ( b )
                 def run = fn (): Box -> ( keep(freeze(Box(1))) )
-                """, "Type error : expected Box, got frozen Box");
-        assertHasError("""
+                """,
+                "Type error : expected Box, got frozen Box");
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def inc = fn (mut b: Box) -> ( b.x = b.x + 1 )
                 def run = fn () -> ( inc(freeze(Box(1))) )
-                """, "Type error : expected Box, got frozen Box");
-        assertHasError("""
+                """,
+                "Type error : expected Box, got frozen Box");
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def take = fn (unique b: Box): int -> ( b.x )
                 def run = fn (): int -> ( take(freeze(Box(1))) )
-                """, "Type error : expected Box, got frozen Box");
+                """,
+                "Type error : expected Box, got frozen Box");
 
         // BIP016-D5: `io` is orthogonal to `unique`, `@BORROWED`, and `frozen`
-        String ioOrtho = """
+        String ioOrtho =
+                """
                 def Box = class (var x: int) ()
                 def logAndFreeze = fn io (): frozen Box -> (
                     def b = Box(7)
@@ -456,27 +525,35 @@ public class OwnershipTestCase {
         Assertions.assertEquals(8, evalBothModes(ioOrtho));
 
         // `io` still enforces `@BORROWED` store-escape on default parameters!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 var sink: Box? = null
                 def bad = fn io (b: Box) -> ( println(b.x); sink = b )
-                """, "Borrowed parameter b escapes");
+                """,
+                "Borrowed parameter b escapes");
 
         // `unique` is mutually exclusive with `shared` and `mut`
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def bad = fn (unique shared b: Box): int -> ( b.x )
-                """, "mutually exclusive");
-        assertHasError("""
+                """,
+                "mutually exclusive");
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def bad = fn (unique mut b: Box): int -> ( b.x )
-                """, "mutually exclusive");
+                """,
+                "mutually exclusive");
     }
 
     @Test
     public void testBip016D10ReturnThroughBorrowIdMinAndSoundness() throws Exception {
-        // BIP016-D10: `id` and `min` require ZERO `shared` keywords and do NOT virally infect callers!
-        String idAndMin = """
+        // BIP016-D10: `id` and `min` require ZERO `shared` keywords and do NOT virally infect
+        // callers!
+        String idAndMin =
+                """
                 def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def min of T = fn (a: T, b: T, cmp: fn (x: T, y: T): int): T -> (
@@ -505,22 +582,29 @@ public class OwnershipTestCase {
         Assertions.assertEquals(2 * 100 + 12 * 10 + 3, evalBothModes(idAndMin));
 
         // Soundness #1: mutating returned reference from borrowed params is rejected!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def bad = fn (b: Box) -> ( id(b).x = 99 )
-                """, "Cannot mutate parameter b");
+                """,
+                "Cannot mutate parameter b");
 
-        // Soundness #2: storing returned reference from borrowed params into global/field is rejected!
-        assertHasError("""
+        // Soundness #2: storing returned reference from borrowed params into global/field is
+        // rejected!
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 var sink: Box? = null
                 def bad = fn io (b: Box) -> ( sink = id(b) )
-                """, "Borrowed parameter b escapes");
+                """,
+                "Borrowed parameter b escapes");
 
-        // Soundness #3 (Hole 1): `def alias = id(u)` demotes `u` from @UNIQUE so `freeze(u)` is rejected!
-        assertHasError("""
+        // Soundness #3 (Hole 1): `def alias = id(u)` demotes `u` from @UNIQUE so `freeze(u)` is
+        // rejected!
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def exploit = fn (): frozen Box -> (
@@ -530,10 +614,12 @@ public class OwnershipTestCase {
                     alias.x = 99
                     fu
                 )
-                """, "Cannot freeze expression");
+                """,
+                "Cannot freeze expression");
 
         // Soundness #4 (Hole 1): `def alias = id(u); swap(u, alias)` is rejected by exclusivity!
-        assertHasError("""
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def swap = fn (mut a: Box, mut b: Box) -> (
@@ -546,10 +632,13 @@ public class OwnershipTestCase {
                     def alias = id(u)
                     swap(u, alias)
                 )
-                """, "Exclusivity error");
+                """,
+                "Exclusivity error");
 
-        // Soundness #5 (Hole 2): `unwrap(fb)` and `id<Box>(fb)` CANNOT unfreeze `frozen Box` into mutable `Box`!
-        assertHasError("""
+        // Soundness #5 (Hole 2): `unwrap(fb)` and `id<Box>(fb)` CANNOT unfreeze `frozen Box` into
+        // mutable `Box`!
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def unwrap = fn (b: Box): Box -> ( b )
                 def exploit = fn (): int -> (
@@ -558,23 +647,30 @@ public class OwnershipTestCase {
                     m.x = 99
                     fb.x
                 )
-                """, "Type error : expected Box, got frozen Box");
-        assertHasError("""
+                """,
+                "Type error : expected Box, got frozen Box");
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def id of T = fn (x: T): T -> ( x )
                 def exploit = fn (): Box -> (
                     def fb: frozen Box = freeze(Box(1))
                     id of Box (fb)
                 )
-                """, "Type error : expected Box, got frozen Box");
-        assertHasError("""
+                """,
+                "Type error : expected Box, got frozen Box");
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def Mapper = interface ( def transform: fn (b: Box): Box )
                 def bad = fn (m: Mapper, fb: frozen Box): Box -> ( m.transform(fb) )
-                """, "Type error : expected Box, got frozen Box");
+                """,
+                "Type error : expected Box, got frozen Box");
 
-        // Positive counterpart: `clone` (inferred `uniqueResult`) and `: unique Box` interface ACCEPT `frozen Box`!
-        String cloneFrozen = """
+        // Positive counterpart: `clone` (inferred `uniqueResult`) and `: unique Box` interface
+        // ACCEPT `frozen Box`!
+        String cloneFrozen =
+                """
                 def Box = class (def x: int) ()
                 def clone = fn (b: Box): Box -> ( Box(b.x + 1) )
                 def Cloner = interface ( def clone: fn (b: Box): unique Box )
@@ -592,7 +688,8 @@ public class OwnershipTestCase {
     @Test
     public void testBip016D9StatelessObjectsAndLocalContainerPrecision() throws Exception {
         // BIP016-D9 Fix #1: Stateless object singletons are deeply immutable (no `volatile` needed)
-        String stateless = """
+        String stateless =
+                """
                 def Hit = interface ( def score: fn (): int )
                 def EmptyHit = object implements Hit (
                     def score = fn (): int -> ( 0 )
@@ -606,15 +703,19 @@ public class OwnershipTestCase {
         Assertions.assertEquals(0, evalBothModes(stateless));
 
         // Stateful object singleton (has a mutable field) still requires `volatile`!
-        assertHasError("""
+        assertHasError(
+                """
                 def Stateful = object (
                     var count: int = 1
                 )
                 def bad = fn (): int -> ( Stateful.count )
-                """, "volatile");
+                """,
+                "volatile");
 
-        // BIP016-D9 Fix #2 + D10: Pure local container holding borrowed elements stays pure & deterministic with 0 `mut`/`shared`!
-        String localContainer = """
+        // BIP016-D9 Fix #2 + D10: Pure local container holding borrowed elements stays pure &
+        // deterministic with 0 `mut`/`shared`!
+        String localContainer =
+                """
                 def Box = class (def x: int) ()
                 def Bag = class (
                     var first: Box? = null,
@@ -636,17 +737,22 @@ public class OwnershipTestCase {
         assertClean(localContainer);
         Assertions.assertEquals(9, evalBothModes(localContainer));
 
-        // Soundness check #1: Local container that absorbed shared elements is NOT unique -> cannot freeze!
-        assertHasError("""
+        // Soundness check #1: Local container that absorbed shared elements is NOT unique -> cannot
+        // freeze!
+        assertHasError(
+                """
                 def Box = class (def x: int) ()
                 def bad = fn (shared a: Box): frozen list of Box -> (
                     def xs = list(a)
                     freeze(xs)
                 )
-                """, "Cannot freeze expression");
+                """,
+                "Cannot freeze expression");
 
-        // Soundness check #2: Mutating an element read back from a local container is rejected in pure fn!
-        assertHasError("""
+        // Soundness check #2: Mutating an element read back from a local container is rejected in
+        // pure fn!
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def Bag = class (var first: Box? = null) (
                     def add = fn mut (shared b: Box) -> ( this.first = b )
@@ -657,10 +763,13 @@ public class OwnershipTestCase {
                     bag.first!.x = 99
                     bag.first!.x
                 )
-                """, "Cannot mutate parameter a");
+                """,
+                "Cannot mutate parameter a");
 
-        // Soundness check #3: Calling a deep-mutating method (`deepMutThis`) on a local container holding `a` is rejected!
-        assertHasError("""
+        // Soundness check #3: Calling a deep-mutating method (`deepMutThis`) on a local container
+        // holding `a` is rejected!
+        assertHasError(
+                """
                 def Box = class (var x: int) ()
                 def Holder = class (def inner: Box) (
                     def poke = fn mut () -> ( this.inner.x = 99 )
@@ -670,87 +779,111 @@ public class OwnershipTestCase {
                     h.poke()
                     a.x
                 )
-                """, "Cannot mutate parameter a");
+                """,
+                "Cannot mutate parameter a");
     }
 
     @Test
     public void testTerminatingAndUnusedPureExpressions() throws Exception {
-        Analyzed analyzed = analyzeFull("""
-                def Node = record (v: int, next: Node?) ()
-                def straight = fn (x: int): int -> ( x + 1 )
-                def loopy = fn (n: int): int -> (
-                    var i = 0
-                    while i < n then ( i += 1 )
-                    i
-                )
-                def rec = fn (n: int): int -> (
-                    if n <= 0 then ( 0 ) else ( recurse(n - 1) )
-                )
-                def fib = fn (n: int): int -> (
-                    if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) )
-                )
-                def gcdSub = fn (a: int, b: int): int -> (
-                    if a <= 0 or b <= 0 then ( a + b )
-                    else if a > b then ( gcdSub(a - b, b) )
-                    else ( gcdSub(a, b - a) )
-                )
-                def log2 = fn (n: int): int -> (
-                    if n <= 1 then ( 0 ) else ( 1 + log2(int(n / 2)) )
-                )
-                def len = fn (xs: Node?): int -> (
-                    if xs == null then ( 0 ) else ( 1 + len(xs.next) )
-                )
-                def sumList = fn (xs: list of int): int -> (
-                    var s = 0
-                    for x in xs then ( s += x )
-                    s
-                )
-                def mutFor = fn io (mut xs: list of int): int -> (
-                    var s = 0
-                    for x in xs then ( xs.add(x) ; s += x )
-                    s
-                )
-                def evenGuarded = fn (n: int): bool -> ( if n <= 0 then ( true ) else ( oddGuarded(n - 1) ) )
-                def oddGuarded = fn (n: int): bool -> ( if n <= 0 then ( false ) else ( evenGuarded(n - 1) ) )
-                def even = fn (n: int): bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )
-                def odd = fn (n: int): bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )
-                def callsLoopy = fn (n: int): int -> ( loopy(n) )
-                """);
+        Analyzed analyzed =
+                analyzeFull(
+                        """
+                        def Node = record (v: int, next: Node?) ()
+                        def straight = fn (x: int): int -> ( x + 1 )
+                        def loopy = fn (n: int): int -> (
+                            var i = 0
+                            while i < n then ( i += 1 )
+                            i
+                        )
+                        def rec = fn (n: int): int -> (
+                            if n <= 0 then ( 0 ) else ( recurse(n - 1) )
+                        )
+                        def fib = fn (n: int): int -> (
+                            if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) )
+                        )
+                        def gcdSub = fn (a: int, b: int): int -> (
+                            if a <= 0 or b <= 0 then ( a + b )
+                            else if a > b then ( gcdSub(a - b, b) )
+                            else ( gcdSub(a, b - a) )
+                        )
+                        def log2 = fn (n: int): int -> (
+                            if n <= 1 then ( 0 ) else ( 1 + log2(int(n / 2)) )
+                        )
+                        def len = fn (xs: Node?): int -> (
+                            if xs == null then ( 0 ) else ( 1 + len(xs.next) )
+                        )
+                        def sumList = fn (xs: list of int): int -> (
+                            var s = 0
+                            for x in xs then ( s += x )
+                            s
+                        )
+                        def mutFor = fn io (mut xs: list of int): int -> (
+                            var s = 0
+                            for x in xs then ( xs.add(x) ; s += x )
+                            s
+                        )
+                        def evenGuarded = fn (n: int): bool -> ( if n <= 0 then ( true ) else ( oddGuarded(n - 1) ) )
+                        def oddGuarded = fn (n: int): bool -> ( if n <= 0 then ( false ) else ( evenGuarded(n - 1) ) )
+                        def even = fn (n: int): bool -> ( if n == 0 then ( true ) else ( odd(n - 1) ) )
+                        def odd = fn (n: int): bool -> ( if n == 0 then ( false ) else ( even(n - 1) ) )
+                        def callsLoopy = fn (n: int): int -> ( loopy(n) )
+                        """);
         ScopeAnalysis analysis = analyzed.analysis();
         Assertions.assertEquals(List.of(), analysis.typeDiagnostics());
         BabbleParser.FileContext file = analyzed.file();
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "straight")).terminating());
-        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "loopy")).terminating());
-        // BIP027-I6 : polynomial SCP certifies guarded integer & acyclic record recursion and curated finite for-loops!
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "rec")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "fib")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "gcdSub")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "log2")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "len")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "sumList")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "evenGuarded")).terminating());
-        Assertions.assertTrue(analysis.effects().callableEffects(findFn(file, "oddGuarded")).terminating());
-        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "mutFor")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "straight")).terminating());
+        Assertions.assertFalse(
+                analysis.effects().callableEffects(findFn(file, "loopy")).terminating());
+        // BIP027-I6 : polynomial SCP certifies guarded integer & acyclic record recursion and
+        // curated finite for-loops!
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "rec")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "fib")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "gcdSub")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "log2")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "len")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "sumList")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "evenGuarded")).terminating());
+        Assertions.assertTrue(
+                analysis.effects().callableEffects(findFn(file, "oddGuarded")).terminating());
+        Assertions.assertFalse(
+                analysis.effects().callableEffects(findFn(file, "mutFor")).terminating());
         // Unguarded `n == 0` diverges on negative `n`, so SCP stays conservatively false:
-        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "even")).terminating());
-        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "odd")).terminating());
-        Assertions.assertFalse(analysis.effects().callableEffects(findFn(file, "callsLoopy")).terminating());
+        Assertions.assertFalse(
+                analysis.effects().callableEffects(findFn(file, "even")).terminating());
+        Assertions.assertFalse(
+                analysis.effects().callableEffects(findFn(file, "odd")).terminating());
+        Assertions.assertFalse(
+                analysis.effects().callableEffects(findFn(file, "callsLoopy")).terminating());
 
-        // Unused pure nothrow @TERMINATING expression rejected; discard(...) accepted (BIP007-D8, BIP027-D8)
-        assertHasError("""
+        // Unused pure nothrow @TERMINATING expression rejected; discard(...) accepted (BIP007-D8,
+        // BIP027-D8)
+        assertHasError(
+                """
                 def f = fn (s: string): string -> (
                     s.trim()
                     s
                 )
-                """, "Unused pure expression");
-        assertHasError("""
+                """,
+                "Unused pure expression");
+        assertHasError(
+                """
                 def fib = fn (n: int): int -> ( if n <= 1 then ( n ) else ( fib(n - 1) + fib(n - 2) ) )
                 def f = fn (n: int): int -> (
                     fib(n)
                     n
                 )
-                """, "Unused pure expression");
-        assertHasError("""
+                """,
+                "Unused pure expression");
+        assertHasError(
+                """
                 def sumList = fn (xs: list of int): int -> (
                     var s = 0
                     for x in xs then ( s += x )
@@ -760,8 +893,10 @@ public class OwnershipTestCase {
                     sumList(xs)
                     0
                 )
-                """, "Unused pure expression");
-        String withDiscard = """
+                """,
+                "Unused pure expression");
+        String withDiscard =
+                """
                 def f = fn nothrow (s: string): string -> (
                     discard(s.trim())
                     s
@@ -772,7 +907,8 @@ public class OwnershipTestCase {
         Assertions.assertEquals("hi", evalBothModes(withDiscard));
 
         // `assert` is NOT nothrow so it remains valid in statement position!
-        assertClean("""
+        assertClean(
+                """
                 def f = fn (x: int): int -> (
                     assert(x > 0)
                     x
@@ -782,8 +918,10 @@ public class OwnershipTestCase {
 
     @Test
     public void testSpreadAndCallReturnOwnershipSoundness() throws Exception {
-        // TO_LIST_COPY / TO_ARRAY spread of mutable elements must demote uniqueOwner on escape/return.
-        assertHasError("""
+        // TO_LIST_COPY / TO_ARRAY spread of mutable elements must demote uniqueOwner on
+        // escape/return.
+        assertHasError(
+                """
                 def MutA = class (var v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
                 def idM = fn (xs: list of MutA): list of MutA -> ( xs )
                 def exploit2 = fn io (): frozen array of MutA -> (
@@ -793,8 +931,10 @@ public class OwnershipTestCase {
                     l.get(0).inc()
                     fma
                 )
-                """, "Cannot freeze expression");
-        assertHasError("""
+                """,
+                "Cannot freeze expression");
+        assertHasError(
+                """
                 def MutA = class (var v: int) ( def inc = fn mut () -> ( this.v += 1 ) )
                 var sink: (list of MutA)? = null
                 def leak = fn io (shared xs: list of MutA) -> ( sink = xs )
@@ -803,10 +943,13 @@ public class OwnershipTestCase {
                     leak(...ma)
                     freeze(ma)
                 )
-                """, "Cannot freeze expression");
+                """,
+                "Cannot freeze expression");
 
-        // Positive counterparts: deeply immutable copied spreads and union-split spreads still pass!
-        String ok = """
+        // Positive counterparts: deeply immutable copied spreads and union-split spreads still
+        // pass!
+        String ok =
+                """
                 def idL = fn (xs: list of int): list of int -> ( xs )
                 def takeU = fn (unique xs: list of int): int -> ( xs.set(0, 77); xs.get(0) )
                 def Shape = interface ( def area: fn (): int )

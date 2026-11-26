@@ -1,5 +1,8 @@
 package org.babblelang.runtime;
 
+import java.io.PrintWriter;
+import java.io.Writer;
+import java.util.Set;
 import org.babblelang.engine.impl.natives.AssertFunction;
 import org.babblelang.engine.impl.natives.ClassofFunction;
 import org.babblelang.engine.impl.natives.ConvertFunction;
@@ -9,28 +12,46 @@ import org.babblelang.engine.impl.natives.PrintFunction;
 import org.babblelang.engine.impl.natives.SameFunction;
 import org.babblelang.engine.impl.natives.java.ImportFunction;
 
-import java.io.PrintWriter;
-import java.io.Writer;
-import java.util.Set;
-
 /**
- * The names every script sees without defining them : {@code print}, {@code assert},
- * {@code import}, {@code int} and {@code double}, the {@code java} and {@code javax} packages, … (several with French
- * aliases). The engine and a compiled program's launcher build them the same way.
+ * The names every script sees without defining them : {@code print}, {@code assert}, {@code
+ * import}, {@code int} and {@code double}, the {@code java} and {@code javax} packages, … (several
+ * with French aliases). The engine and a compiled program's launcher build them the same way.
  */
 public final class Implicits {
-    private static final Set<String> IMPLICIT_NAMES = Set.of(
-            "java", "javax", "import", "importe",
-            "print", "println", "affiche", "afficherc",
-            "assert", "suppose", "same", "classof", "move", "freeze", "discard",
-            "byte", "short", "int", "long", "float", "double", "bool", "char", "string",
-            "STDOUT"
-    );
+    private static final Set<String> IMPLICIT_NAMES =
+            Set.of(
+                    "java",
+                    "javax",
+                    "import",
+                    "importe",
+                    "print",
+                    "println",
+                    "affiche",
+                    "afficherc",
+                    "assert",
+                    "suppose",
+                    "same",
+                    "classof",
+                    "move",
+                    "freeze",
+                    "discard",
+                    "byte",
+                    "short",
+                    "int",
+                    "long",
+                    "float",
+                    "double",
+                    "bool",
+                    "char",
+                    "string",
+                    "STDOUT");
 
-    private Implicits() {
-    }
+    private Implicits() {}
 
-    /** Whether {@code name} is a final root prelude implicit always initialized before any script runs. */
+    /**
+     * Whether {@code name} is a final root prelude implicit always initialized before any script
+     * runs.
+     */
     public static boolean isImplicit(String name) {
         return name != null && IMPLICIT_NAMES.contains(name);
     }
@@ -72,7 +93,11 @@ public final class Implicits {
      */
     public static Namespace withOutput(Namespace implicits, Writer writer) {
         Namespace output = implicits.enter();
-        output.define("STDOUT", true).set(writer == null || writer instanceof PrintWriter ? writer : new PrintWriter(writer));
+        output.define("STDOUT", true)
+                .set(
+                        writer == null || writer instanceof PrintWriter
+                                ? writer
+                                : new PrintWriter(writer));
         return output;
     }
 }

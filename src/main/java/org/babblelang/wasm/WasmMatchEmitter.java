@@ -1,22 +1,20 @@
 package org.babblelang.wasm;
 
-import org.babblelang.analysis.LoweringTargets;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
 
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
  * Emits structured WebAssembly 3.0 bytecode for {@link HirExpr.Match} ({@code BIP038-D7}).
  *
- * <p>Uses dense {@code br_table} dispatch for contiguous integer/{@code char} constant runs,
- * {@code str_hash} + {@code str_eq} dispatch for {@code String} constant runs, and structured
- * conditional chains for general patterns (values, type tests, bindings, OR-patterns, relational,
+ * <p>Uses dense {@code br_table} dispatch for contiguous integer/{@code char} constant runs, {@code
+ * str_hash} + {@code str_eq} dispatch for {@code String} constant runs, and structured conditional
+ * chains for general patterns (values, type tests, bindings, OR-patterns, relational,
  * zero-allocation {@code BIP031} ranges, and {@code in} membership).
  */
 final class WasmMatchEmitter {
@@ -119,8 +117,11 @@ final class WasmMatchEmitter {
             if (sk.isPrimitive()) {
                 c.call(rt.boxFuncFor(sk));
             }
-            c.call(rt.fnFormat).call(rt.fnStrConcat)
-                    .i32Const(line).call(rt.fnThrowMsg).unreachable();
+            c.call(rt.fnFormat)
+                    .call(rt.fnStrConcat)
+                    .i32Const(line)
+                    .call(rt.fnThrowMsg)
+                    .unreachable();
         }
 
         ctx.popBlock();
@@ -134,8 +135,12 @@ final class WasmMatchEmitter {
         fe.convertStack(fe.ctx().stackKind, resKind, line);
     }
 
-    private void emitSequentialArm(HirExpr.MatchArm arm, int scrLocal, PrimitiveKind sk,
-                                   PrimitiveKind resKind, int doneDepth) {
+    private void emitSequentialArm(
+            HirExpr.MatchArm arm,
+            int scrLocal,
+            PrimitiveKind sk,
+            PrimitiveKind resKind,
+            int doneDepth) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         emitPatternMatch(arm.pattern(), scrLocal, sk);
@@ -159,12 +164,14 @@ final class WasmMatchEmitter {
 
     // ---------------------------------------------------------------- dense integer/char br_table
 
-    private record IntRun(int armCount, int min, int max, Map<Integer, Integer> keyToArmOffset) {
-    }
+    private record IntRun(int armCount, int min, int max, Map<Integer, Integer> keyToArmOffset) {}
 
-    private static IntRun tryCollectIntRun(List<HirExpr.MatchArm> arms, int start, PrimitiveKind sk) {
-        if (sk != PrimitiveKind.BYTE && sk != PrimitiveKind.SHORT
-                && sk != PrimitiveKind.INT && sk != PrimitiveKind.CHAR) {
+    private static IntRun tryCollectIntRun(
+            List<HirExpr.MatchArm> arms, int start, PrimitiveKind sk) {
+        if (sk != PrimitiveKind.BYTE
+                && sk != PrimitiveKind.SHORT
+                && sk != PrimitiveKind.INT
+                && sk != PrimitiveKind.CHAR) {
             return null;
         }
         Map<Integer, Integer> keyToOffset = new LinkedHashMap<>();
@@ -225,7 +232,8 @@ final class WasmMatchEmitter {
         return out;
     }
 
-    private static boolean collectIntKeys(HirPattern pat, boolean charScrutinee, List<Integer> out) {
+    private static boolean collectIntKeys(
+            HirPattern pat, boolean charScrutinee, List<Integer> out) {
         if (pat instanceof HirPattern.Const c) {
             if (c.isNull() || c.isEnum()) return false;
             Object v = c.value();
@@ -259,8 +267,13 @@ final class WasmMatchEmitter {
         return false;
     }
 
-    private void emitIntBrTableRun(List<HirExpr.MatchArm> arms, int start, IntRun run,
-                                   int scrLocal, PrimitiveKind resKind, int doneDepth) {
+    private void emitIntBrTableRun(
+            List<HirExpr.MatchArm> arms,
+            int start,
+            IntRun run,
+            int scrLocal,
+            PrimitiveKind resKind,
+            int doneDepth) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         int k = run.armCount;
@@ -301,13 +314,12 @@ final class WasmMatchEmitter {
 
     // ---------------------------------------------------------------- String hash-switch run
 
-    private record StringRun(int armCount, Map<Integer, List<StringBucketEntry>> buckets) {
-    }
+    private record StringRun(int armCount, Map<Integer, List<StringBucketEntry>> buckets) {}
 
-    private record StringBucketEntry(String literal, int armOffset) {
-    }
+    private record StringBucketEntry(String literal, int armOffset) {}
 
-    private static StringRun tryCollectStringRun(List<HirExpr.MatchArm> arms, int start, PrimitiveKind sk) {
+    private static StringRun tryCollectStringRun(
+            List<HirExpr.MatchArm> arms, int start, PrimitiveKind sk) {
         if (sk != PrimitiveKind.NONE) {
             return null;
         }
@@ -368,8 +380,13 @@ final class WasmMatchEmitter {
         return false;
     }
 
-    private void emitStringHashRun(List<HirExpr.MatchArm> arms, int start, StringRun run,
-                                   int scrLocal, PrimitiveKind resKind, int doneDepth) {
+    private void emitStringHashRun(
+            List<HirExpr.MatchArm> arms,
+            int start,
+            StringRun run,
+            int scrLocal,
+            PrimitiveKind resKind,
+            int doneDepth) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         int strLocal = ctx.newLocal("$mStr", WasmValType.refNull(ts.stringType));
@@ -377,8 +394,12 @@ final class WasmMatchEmitter {
 
         c.localGet(scrLocal).refTest(ts.stringType).if_();
         ctx.pushBlock("mstr_is");
-        c.localGet(scrLocal).refCast(ts.stringType).localTee(strLocal)
-                .refAsNonNull().call(rt.fnStrHash).localSet(hashLocal);
+        c.localGet(scrLocal)
+                .refCast(ts.stringType)
+                .localTee(strLocal)
+                .refAsNonNull()
+                .call(rt.fnStrHash)
+                .localSet(hashLocal);
 
         for (Map.Entry<Integer, List<StringBucketEntry>> bucket : run.buckets.entrySet()) {
             c.localGet(hashLocal).i32Const(bucket.getKey()).op(WasmInstr.SimpleOp.I32_EQ).if_();
@@ -403,7 +424,10 @@ final class WasmMatchEmitter {
 
     // ---------------------------------------------------------------- general pattern matching
 
-    /** Emits code testing {@code pat} against {@code valLocal} (of {@code valKind}), leaving i32 0/1 on stack. */
+    /**
+     * Emits code testing {@code pat} against {@code valLocal} (of {@code valKind}), leaving i32 0/1
+     * on stack.
+     */
     private void emitPatternMatch(HirPattern pat, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
@@ -433,18 +457,21 @@ final class WasmMatchEmitter {
             case HirPattern.RangeTest rangePat -> emitRangeTestPattern(rangePat, valLocal, valKind);
             case HirPattern.Membership mem -> emitMembershipPattern(mem, valLocal, valKind);
             case HirPattern.RecordDestructure rd -> emitRecordDestructure(rd, valLocal, valKind);
-            case HirPattern.SequenceDestructure sd -> emitSequenceDestructure(sd, valLocal, valKind);
+            case HirPattern.SequenceDestructure sd ->
+                    emitSequenceDestructure(sd, valLocal, valKind);
         }
     }
 
-    private void emitRecordDestructure(HirPattern.RecordDestructure rd, int valLocal, PrimitiveKind valKind) {
+    private void emitRecordDestructure(
+            HirPattern.RecordDestructure rd, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         if (valKind.isPrimitive() || rd.isJavaRecord()) {
             c.i32Const(0);
             return;
         }
-        WasmObjectSystem.ClassInfo ci = rd.babbleTypeId() != null ? objects.classByTypeId(rd.babbleTypeId()) : null;
+        WasmObjectSystem.ClassInfo ci =
+                rd.babbleTypeId() != null ? objects.classByTypeId(rd.babbleTypeId()) : null;
         if (ci == null) {
             c.i32Const(0);
             return;
@@ -459,8 +486,8 @@ final class WasmMatchEmitter {
         c.end();
     }
 
-    private void emitRecordFieldMatches(HirPattern.RecordDestructure rd, WasmObjectSystem.ClassInfo ci,
-                                        int recLocal, int idx) {
+    private void emitRecordFieldMatches(
+            HirPattern.RecordDestructure rd, WasmObjectSystem.ClassInfo ci, int recLocal, int idx) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         if (idx >= rd.fieldPatterns().size()) {
@@ -471,7 +498,10 @@ final class WasmMatchEmitter {
         int structField = ci.memberToStructField[memberIdx];
         PrimitiveKind fk = ci.memberKinds[memberIdx];
         int fLocal = ctx.newLocal("$mFld", ts.valTypeFor(fk));
-        c.localGet(recLocal).refAsNonNull().structGet(ci.structTypeIdx, structField).localSet(fLocal);
+        c.localGet(recLocal)
+                .refAsNonNull()
+                .structGet(ci.structTypeIdx, structField)
+                .localSet(fLocal);
         emitPatternMatch(rd.fieldPatterns().get(idx), fLocal, fk);
         if (idx == rd.fieldPatterns().size() - 1) {
             return;
@@ -484,7 +514,8 @@ final class WasmMatchEmitter {
         c.end();
     }
 
-    private void emitSequenceDestructure(HirPattern.SequenceDestructure sd, int valLocal, PrimitiveKind valKind) {
+    private void emitSequenceDestructure(
+            HirPattern.SequenceDestructure sd, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         if (valKind.isPrimitive()) {
@@ -504,8 +535,11 @@ final class WasmMatchEmitter {
         int fixed = sd.elemPatterns().size();
         if (!sd.isArray()) {
             int listLocal = ctx.newLocal("$mList", WasmValType.refNull(ts.listType));
-            c.localGet(boxLocal).refCast(ts.listType).localTee(listLocal)
-                    .refAsNonNull().structGet(ts.listType, 1)
+            c.localGet(boxLocal)
+                    .refCast(ts.listType)
+                    .localTee(listLocal)
+                    .refAsNonNull()
+                    .structGet(ts.listType, 1)
                     .i32Const(fixed)
                     .op(sd.hasRest() ? WasmInstr.SimpleOp.I32_GE_S : WasmInstr.SimpleOp.I32_EQ)
                     .if_(WasmValType.I32);
@@ -516,8 +550,11 @@ final class WasmMatchEmitter {
             c.end();
         } else {
             int arrLocal = ctx.newLocal("$mArr", WasmValType.refNull(ts.arrayBaseType));
-            c.localGet(boxLocal).refCast(ts.arrayBaseType).localTee(arrLocal)
-                    .refAsNonNull().call(arrOps.fnArraySize)
+            c.localGet(boxLocal)
+                    .refCast(ts.arrayBaseType)
+                    .localTee(arrLocal)
+                    .refAsNonNull()
+                    .call(arrOps.fnArraySize)
                     .i32Const(fixed)
                     .op(sd.hasRest() ? WasmInstr.SimpleOp.I32_GE_S : WasmInstr.SimpleOp.I32_EQ)
                     .if_(WasmValType.I32);
@@ -538,7 +575,8 @@ final class WasmMatchEmitter {
         if (idx >= sd.elemPatterns().size()) {
             if (sd.restVar() != null) {
                 int tailLocal = ctx.newLocal("$mTail", ts.anyRef());
-                c.localGet(listLocal).refAsNonNull()
+                c.localGet(listLocal)
+                        .refAsNonNull()
                         .i32Const(sd.elemPatterns().size())
                         .call(cols.fnListSlice)
                         .localSet(tailLocal);
@@ -548,8 +586,11 @@ final class WasmMatchEmitter {
             return;
         }
         int eLocal = ctx.newLocal("$mElem", ts.anyRef());
-        c.localGet(listLocal).refAsNonNull().structGet(ts.listType, 0)
-                .i32Const(idx).arrayGet(ts.anyArrType)
+        c.localGet(listLocal)
+                .refAsNonNull()
+                .structGet(ts.listType, 0)
+                .i32Const(idx)
+                .arrayGet(ts.anyArrType)
                 .localSet(eLocal);
         emitPatternMatch(sd.elemPatterns().get(idx), eLocal, PrimitiveKind.NONE);
         c.if_(WasmValType.I32);
@@ -566,7 +607,8 @@ final class WasmMatchEmitter {
         if (idx >= sd.elemPatterns().size()) {
             if (sd.restVar() != null) {
                 int tailLocal = ctx.newLocal("$mTail", ts.anyRef());
-                c.localGet(arrLocal).refAsNonNull()
+                c.localGet(arrLocal)
+                        .refAsNonNull()
                         .i32Const(sd.elemPatterns().size())
                         .call(arrOps.fnArraySlice)
                         .localSet(tailLocal);
@@ -576,8 +618,10 @@ final class WasmMatchEmitter {
             return;
         }
         int eLocal = ctx.newLocal("$mElem", ts.anyRef());
-        c.localGet(arrLocal).refAsNonNull()
-                .i32Const(idx).i32Const(sd.line())
+        c.localGet(arrLocal)
+                .refAsNonNull()
+                .i32Const(idx)
+                .i32Const(sd.line())
                 .call(arrOps.fnArrayGetBoxed)
                 .localSet(eLocal);
         emitPatternMatch(sd.elemPatterns().get(idx), eLocal, PrimitiveKind.NONE);
@@ -599,7 +643,8 @@ final class WasmMatchEmitter {
         ctx.code.drop();
     }
 
-    private void emitOrPattern(List<HirPattern> alts, int idx, int valLocal, PrimitiveKind valKind) {
+    private void emitOrPattern(
+            List<HirPattern> alts, int idx, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         if (idx >= alts.size()) {
@@ -654,11 +699,17 @@ final class WasmMatchEmitter {
             } else if (common == PrimitiveKind.FLOAT) {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.FLOAT, cst.line());
-                c.f32Const(num.floatValue()).call(rt.fnF32Compare).i32Const(0).op(WasmInstr.SimpleOp.I32_EQ);
+                c.f32Const(num.floatValue())
+                        .call(rt.fnF32Compare)
+                        .i32Const(0)
+                        .op(WasmInstr.SimpleOp.I32_EQ);
             } else {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.DOUBLE, cst.line());
-                c.f64Const(num.doubleValue()).call(rt.fnF64Compare).i32Const(0).op(WasmInstr.SimpleOp.I32_EQ);
+                c.f64Const(num.doubleValue())
+                        .call(rt.fnF64Compare)
+                        .i32Const(0)
+                        .op(WasmInstr.SimpleOp.I32_EQ);
             }
             return;
         } else if (v instanceof String s) {
@@ -666,11 +717,13 @@ final class WasmMatchEmitter {
                 c.i32Const(0);
                 return;
             }
-            c.localGet(valLocal).refTest(ts.stringType).if_(WasmValType.I32)
-                    .localGet(valLocal).refCast(ts.stringType);
+            c.localGet(valLocal)
+                    .refTest(ts.stringType)
+                    .if_(WasmValType.I32)
+                    .localGet(valLocal)
+                    .refCast(ts.stringType);
             rt.emitStringLit(c, s);
-            c.call(rt.fnStrEq)
-                    .else_().i32Const(0).end();
+            c.call(rt.fnStrEq).else_().i32Const(0).end();
             return;
         }
         // Fallback: boxed equality
@@ -680,11 +733,13 @@ final class WasmMatchEmitter {
         c.call(rt.fnEquals);
     }
 
-    private void emitValueExprPattern(HirPattern.ValueExpr ve, int valLocal, PrimitiveKind valKind) {
+    private void emitValueExprPattern(
+            HirPattern.ValueExpr ve, int valLocal, PrimitiveKind valKind) {
         emitEqualityCheck(valLocal, valKind, ve.expr(), ve.line(), false);
     }
 
-    private void emitEqualityCheck(int valLocal, PrimitiveKind valKind, HirExpr rhs, int line, boolean negate) {
+    private void emitEqualityCheck(
+            int valLocal, PrimitiveKind valKind, HirExpr rhs, int line, boolean negate) {
         WasmCodeBuilder c = fe.ctx().code;
         PrimitiveKind rk = rhs.meta().kind();
         if ((valKind == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
@@ -710,12 +765,16 @@ final class WasmMatchEmitter {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.FLOAT, line);
                 fe.emitAs(rhs, PrimitiveKind.FLOAT);
-                c.call(rt.fnF32Compare).i32Const(0).op(negate ? WasmInstr.SimpleOp.I32_NE : WasmInstr.SimpleOp.I32_EQ);
+                c.call(rt.fnF32Compare)
+                        .i32Const(0)
+                        .op(negate ? WasmInstr.SimpleOp.I32_NE : WasmInstr.SimpleOp.I32_EQ);
             } else {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.DOUBLE, line);
                 fe.emitAs(rhs, PrimitiveKind.DOUBLE);
-                c.call(rt.fnF64Compare).i32Const(0).op(negate ? WasmInstr.SimpleOp.I32_NE : WasmInstr.SimpleOp.I32_EQ);
+                c.call(rt.fnF64Compare)
+                        .i32Const(0)
+                        .op(negate ? WasmInstr.SimpleOp.I32_NE : WasmInstr.SimpleOp.I32_EQ);
             }
             return;
         }
@@ -748,7 +807,8 @@ final class WasmMatchEmitter {
         c.i32Const(1);
     }
 
-    private void emitRelationalPattern(HirPattern.Relational rel, int valLocal, PrimitiveKind valKind) {
+    private void emitRelationalPattern(
+            HirPattern.Relational rel, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         HirExpr.BinaryOp op = rel.op();
@@ -793,24 +853,31 @@ final class WasmMatchEmitter {
         fe.emitBoxed(rel.rhs());
         c.localSet(rhsLocal);
         int valBox = toBoxedLocal(valLocal, valKind);
-        c.localGet(valBox).refIsNull().localGet(rhsLocal).refIsNull().op(WasmInstr.SimpleOp.I32_OR)
+        c.localGet(valBox)
+                .refIsNull()
+                .localGet(rhsLocal)
+                .refIsNull()
+                .op(WasmInstr.SimpleOp.I32_OR)
                 .if_(WasmValType.I32)
                 .i32Const(0)
                 .else_()
-                .localGet(valBox).localGet(rhsLocal);
+                .localGet(valBox)
+                .localGet(rhsLocal);
         rt.emitStringLit(c, "match");
         rt.emitStringLit(c, "pattern");
-        c.i32Const(rel.line()).call(rt.fnCompare).i32Const(0).op(i32CmpOp(op))
-                .end();
+        c.i32Const(rel.line()).call(rt.fnCompare).i32Const(0).op(i32CmpOp(op)).end();
     }
 
-    private void emitRangeTestPattern(HirPattern.RangeTest rp, int valLocal, PrimitiveKind valKind) {
+    private void emitRangeTestPattern(
+            HirPattern.RangeTest rp, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         int line = rp.line();
         PrimitiveKind ek = rp.elemKind();
-        if (ek == PrimitiveKind.BYTE || ek == PrimitiveKind.SHORT
-                || ek == PrimitiveKind.INT || ek == PrimitiveKind.CHAR) {
+        if (ek == PrimitiveKind.BYTE
+                || ek == PrimitiveKind.SHORT
+                || ek == PrimitiveKind.INT
+                || ek == PrimitiveKind.CHAR) {
             int lo = ctx.newLocal("$rLo", WasmValType.I32);
             int hi = ctx.newLocal("$rHi", WasmValType.I32);
             int step = -1;
@@ -824,7 +891,9 @@ final class WasmMatchEmitter {
                 c.i32Const(line).call(ranges.fnValidateStepInt).localSet(step);
             }
             if ((ek == PrimitiveKind.CHAR && valKind == PrimitiveKind.CHAR)
-                    || (ek != PrimitiveKind.CHAR && valKind.numericRank() >= 0 && valKind.numericRank() <= 2)) {
+                    || (ek != PrimitiveKind.CHAR
+                            && valKind.numericRank() >= 0
+                            && valKind.numericRank() <= 2)) {
                 emitIntRangeCheck(valLocal, lo, hi, step, rp.inclusive());
                 return;
             }
@@ -833,7 +902,10 @@ final class WasmMatchEmitter {
             if (ek == PrimitiveKind.CHAR) {
                 int ch = ctx.newLocal("$rCh", WasmValType.I32);
                 c.localGet(valBox).refTest(ts.boxCharType).if_(WasmValType.I32);
-                c.localGet(valBox).refCast(ts.boxCharType).structGet(ts.boxCharType, 0).localSet(ch);
+                c.localGet(valBox)
+                        .refCast(ts.boxCharType)
+                        .structGet(ts.boxCharType, 0)
+                        .localSet(ch);
                 emitIntRangeCheck(ch, lo, hi, step, rp.inclusive());
                 c.else_().i32Const(0).end();
             } else {
@@ -848,9 +920,14 @@ final class WasmMatchEmitter {
                     c.localGet(step).op(WasmInstr.SimpleOp.I64_EXTEND_I32_S).localSet(stL);
                 }
                 int rnk = ctx.newLocal("$rRnk", WasmValType.I32);
-                c.localGet(valBox).call(rt.fnNumRank).localTee(rnk)
-                        .i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
-                        .localGet(rnk).i32Const(3).op(WasmInstr.SimpleOp.I32_LE_S)
+                c.localGet(valBox)
+                        .call(rt.fnNumRank)
+                        .localTee(rnk)
+                        .i32Const(0)
+                        .op(WasmInstr.SimpleOp.I32_GE_S)
+                        .localGet(rnk)
+                        .i32Const(3)
+                        .op(WasmInstr.SimpleOp.I32_LE_S)
                         .op(WasmInstr.SimpleOp.I32_AND)
                         .if_(WasmValType.I32);
                 c.localGet(valBox).call(rt.fnNumAsLong).localSet(vL);
@@ -883,9 +960,14 @@ final class WasmMatchEmitter {
             int valBox = toBoxedLocal(valLocal, valKind);
             int rnk = ctx.newLocal("$rRnk", WasmValType.I32);
             int vL = ctx.newLocal("$rValL", WasmValType.I64);
-            c.localGet(valBox).call(rt.fnNumRank).localTee(rnk)
-                    .i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
-                    .localGet(rnk).i32Const(3).op(WasmInstr.SimpleOp.I32_LE_S)
+            c.localGet(valBox)
+                    .call(rt.fnNumRank)
+                    .localTee(rnk)
+                    .i32Const(0)
+                    .op(WasmInstr.SimpleOp.I32_GE_S)
+                    .localGet(rnk)
+                    .i32Const(3)
+                    .op(WasmInstr.SimpleOp.I32_LE_S)
                     .op(WasmInstr.SimpleOp.I32_AND)
                     .if_(WasmValType.I32);
             c.localGet(valBox).call(rt.fnNumAsLong).localSet(vL);
@@ -905,18 +987,29 @@ final class WasmMatchEmitter {
                 c.localGet(valLocal);
                 fe.convertRawValue(valKind, PrimitiveKind.DOUBLE, line);
                 c.localSet(vD);
-                c.localGet(vD).localGet(lo).op(WasmInstr.SimpleOp.F64_GE)
-                        .localGet(vD).localGet(hi).op(rp.inclusive() ? WasmInstr.SimpleOp.F64_LE : WasmInstr.SimpleOp.F64_LT)
+                c.localGet(vD)
+                        .localGet(lo)
+                        .op(WasmInstr.SimpleOp.F64_GE)
+                        .localGet(vD)
+                        .localGet(hi)
+                        .op(rp.inclusive() ? WasmInstr.SimpleOp.F64_LE : WasmInstr.SimpleOp.F64_LT)
                         .op(WasmInstr.SimpleOp.I32_AND);
                 return;
             }
             int valBox = toBoxedLocal(valLocal, valKind);
             int vD = ctx.newLocal("$rValD", WasmValType.F64);
-            c.localGet(valBox).call(rt.fnNumRank).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
+            c.localGet(valBox)
+                    .call(rt.fnNumRank)
+                    .i32Const(0)
+                    .op(WasmInstr.SimpleOp.I32_GE_S)
                     .if_(WasmValType.I32);
             c.localGet(valBox).call(rt.fnNumAsDouble).localSet(vD);
-            c.localGet(vD).localGet(lo).op(WasmInstr.SimpleOp.F64_GE)
-                    .localGet(vD).localGet(hi).op(rp.inclusive() ? WasmInstr.SimpleOp.F64_LE : WasmInstr.SimpleOp.F64_LT)
+            c.localGet(vD)
+                    .localGet(lo)
+                    .op(WasmInstr.SimpleOp.F64_GE)
+                    .localGet(vD)
+                    .localGet(hi)
+                    .op(rp.inclusive() ? WasmInstr.SimpleOp.F64_LE : WasmInstr.SimpleOp.F64_LT)
                     .op(WasmInstr.SimpleOp.I32_AND);
             c.else_().i32Const(0).end();
             return;
@@ -933,53 +1026,87 @@ final class WasmMatchEmitter {
         rt.emitStringLit(c, "Range bound cannot be null");
         c.i32Const(line).call(rt.fnThrowMsg).unreachable().end();
         int valBox = toBoxedLocal(valLocal, valKind);
-        c.localGet(valBox).refTest(ts.stringType).if_(WasmValType.I32)
-                .localGet(valBox).refCast(ts.stringType)
-                .localGet(loS).refCast(ts.stringType)
-                .call(rt.fnStrCmp).i32Const(0).op(WasmInstr.SimpleOp.I32_GE_S)
+        c.localGet(valBox)
+                .refTest(ts.stringType)
                 .if_(WasmValType.I32)
-                .localGet(valBox).refCast(ts.stringType)
-                .localGet(hiS).refCast(ts.stringType)
-                .call(rt.fnStrCmp).i32Const(0)
+                .localGet(valBox)
+                .refCast(ts.stringType)
+                .localGet(loS)
+                .refCast(ts.stringType)
+                .call(rt.fnStrCmp)
+                .i32Const(0)
+                .op(WasmInstr.SimpleOp.I32_GE_S)
+                .if_(WasmValType.I32)
+                .localGet(valBox)
+                .refCast(ts.stringType)
+                .localGet(hiS)
+                .refCast(ts.stringType)
+                .call(rt.fnStrCmp)
+                .i32Const(0)
                 .op(rp.inclusive() ? WasmInstr.SimpleOp.I32_LE_S : WasmInstr.SimpleOp.I32_LT_S)
-                .else_().i32Const(0).end()
-                .else_().i32Const(0).end();
+                .else_()
+                .i32Const(0)
+                .end()
+                .else_()
+                .i32Const(0)
+                .end();
     }
 
-    private void emitIntRangeCheck(int vLocal, int loLocal, int hiLocal, int stepLocal, boolean inclusive) {
+    private void emitIntRangeCheck(
+            int vLocal, int loLocal, int hiLocal, int stepLocal, boolean inclusive) {
         WasmCodeBuilder c = fe.ctx().code;
-        c.localGet(vLocal).localGet(loLocal).op(WasmInstr.SimpleOp.I32_GE_S)
-                .localGet(vLocal).localGet(hiLocal)
+        c.localGet(vLocal)
+                .localGet(loLocal)
+                .op(WasmInstr.SimpleOp.I32_GE_S)
+                .localGet(vLocal)
+                .localGet(hiLocal)
                 .op(inclusive ? WasmInstr.SimpleOp.I32_LE_S : WasmInstr.SimpleOp.I32_LT_S)
                 .op(WasmInstr.SimpleOp.I32_AND);
         if (stepLocal >= 0) {
             c.if_(WasmValType.I32)
-                    .localGet(vLocal).op(WasmInstr.SimpleOp.I64_EXTEND_I32_S)
-                    .localGet(loLocal).op(WasmInstr.SimpleOp.I64_EXTEND_I32_S)
+                    .localGet(vLocal)
+                    .op(WasmInstr.SimpleOp.I64_EXTEND_I32_S)
+                    .localGet(loLocal)
+                    .op(WasmInstr.SimpleOp.I64_EXTEND_I32_S)
                     .op(WasmInstr.SimpleOp.I64_SUB)
-                    .localGet(stepLocal).op(WasmInstr.SimpleOp.I64_EXTEND_I32_S)
+                    .localGet(stepLocal)
+                    .op(WasmInstr.SimpleOp.I64_EXTEND_I32_S)
                     .op(WasmInstr.SimpleOp.I64_REM_S)
-                    .i64Const(0L).op(WasmInstr.SimpleOp.I64_EQ)
-                    .else_().i32Const(0).end();
+                    .i64Const(0L)
+                    .op(WasmInstr.SimpleOp.I64_EQ)
+                    .else_()
+                    .i32Const(0)
+                    .end();
         }
     }
 
-    private void emitLongRangeCheck(int vLocal, int loLocal, int hiLocal, int stepLocal, boolean inclusive) {
+    private void emitLongRangeCheck(
+            int vLocal, int loLocal, int hiLocal, int stepLocal, boolean inclusive) {
         WasmCodeBuilder c = fe.ctx().code;
-        c.localGet(vLocal).localGet(loLocal).op(WasmInstr.SimpleOp.I64_GE_S)
-                .localGet(vLocal).localGet(hiLocal)
+        c.localGet(vLocal)
+                .localGet(loLocal)
+                .op(WasmInstr.SimpleOp.I64_GE_S)
+                .localGet(vLocal)
+                .localGet(hiLocal)
                 .op(inclusive ? WasmInstr.SimpleOp.I64_LE_S : WasmInstr.SimpleOp.I64_LT_S)
                 .op(WasmInstr.SimpleOp.I32_AND);
         if (stepLocal >= 0) {
             c.if_(WasmValType.I32)
-                    .localGet(vLocal).localGet(loLocal).op(WasmInstr.SimpleOp.I64_SUB)
-                    .localGet(stepLocal).op(WasmInstr.SimpleOp.I64_REM_U)
-                    .i64Const(0L).op(WasmInstr.SimpleOp.I64_EQ)
-                    .else_().i32Const(0).end();
+                    .localGet(vLocal)
+                    .localGet(loLocal)
+                    .op(WasmInstr.SimpleOp.I64_SUB)
+                    .localGet(stepLocal)
+                    .op(WasmInstr.SimpleOp.I64_REM_U)
+                    .i64Const(0L)
+                    .op(WasmInstr.SimpleOp.I64_EQ)
+                    .else_()
+                    .i32Const(0)
+                    .end();
         }
     }
 
-    private void emitMembershipPattern(HirPattern.Membership mem, int valLocal, PrimitiveKind valKind) {
+    private void emitMembershipPattern(
+            HirPattern.Membership mem, int valLocal, PrimitiveKind valKind) {
         WasmFuncEmitter.EmitCtx ctx = fe.ctx();
         WasmCodeBuilder c = ctx.code;
         int contLocal = ctx.newLocal("$mCont", ts.anyRef());
@@ -987,43 +1114,96 @@ final class WasmMatchEmitter {
         c.localSet(contLocal);
         int valBox = toBoxedLocal(valLocal, valKind);
 
-        c.localGet(contLocal).refIsNull().if_(WasmValType.I32)
-                .i32Const(0)
-                .else_();
+        c.localGet(contLocal).refIsNull().if_(WasmValType.I32).i32Const(0).else_();
         switch (mem.kind()) {
-            case RANGE -> c.localGet(contLocal).refCast(ts.rangeBaseType)
-                    .localGet(valBox).call(ranges.fnRangeContainsBoxed);
-            case COLLECTION -> c.localGet(contLocal).refTest(ts.listType).if_(WasmValType.I32)
-                    .localGet(contLocal).refCast(ts.listType).localGet(valBox).call(cols.fnListContains)
-                    .else_()
-                    .localGet(contLocal).refTest(ts.setType).if_(WasmValType.I32)
-                    .localGet(contLocal).refCast(ts.setType).localGet(valBox).call(cols.fnSetContains)
-                    .else_().i32Const(0).end()
-                    .end();
-            case MAP -> c.localGet(contLocal).refCast(ts.mapType)
-                    .localGet(valBox).call(cols.fnMapContainsKey);
-            case ARRAY -> c.localGet(contLocal).refCast(ts.arrayBaseType)
-                    .localGet(valBox).call(arrOps.fnArrayContains);
+            case RANGE ->
+                    c.localGet(contLocal)
+                            .refCast(ts.rangeBaseType)
+                            .localGet(valBox)
+                            .call(ranges.fnRangeContainsBoxed);
+            case COLLECTION ->
+                    c.localGet(contLocal)
+                            .refTest(ts.listType)
+                            .if_(WasmValType.I32)
+                            .localGet(contLocal)
+                            .refCast(ts.listType)
+                            .localGet(valBox)
+                            .call(cols.fnListContains)
+                            .else_()
+                            .localGet(contLocal)
+                            .refTest(ts.setType)
+                            .if_(WasmValType.I32)
+                            .localGet(contLocal)
+                            .refCast(ts.setType)
+                            .localGet(valBox)
+                            .call(cols.fnSetContains)
+                            .else_()
+                            .i32Const(0)
+                            .end()
+                            .end();
+            case MAP ->
+                    c.localGet(contLocal)
+                            .refCast(ts.mapType)
+                            .localGet(valBox)
+                            .call(cols.fnMapContainsKey);
+            case ARRAY ->
+                    c.localGet(contLocal)
+                            .refCast(ts.arrayBaseType)
+                            .localGet(valBox)
+                            .call(arrOps.fnArrayContains);
             case DYNAMIC -> {
-                c.localGet(contLocal).refTest(ts.rangeBaseType).if_(WasmValType.I32)
-                        .localGet(contLocal).refCast(ts.rangeBaseType).localGet(valBox).call(ranges.fnRangeContainsBoxed)
+                c.localGet(contLocal)
+                        .refTest(ts.rangeBaseType)
+                        .if_(WasmValType.I32)
+                        .localGet(contLocal)
+                        .refCast(ts.rangeBaseType)
+                        .localGet(valBox)
+                        .call(ranges.fnRangeContainsBoxed)
                         .else_()
-                        .localGet(contLocal).refTest(ts.listType).if_(WasmValType.I32)
-                        .localGet(contLocal).refCast(ts.listType).localGet(valBox).call(cols.fnListContains)
+                        .localGet(contLocal)
+                        .refTest(ts.listType)
+                        .if_(WasmValType.I32)
+                        .localGet(contLocal)
+                        .refCast(ts.listType)
+                        .localGet(valBox)
+                        .call(cols.fnListContains)
                         .else_()
-                        .localGet(contLocal).refTest(ts.setType).if_(WasmValType.I32)
-                        .localGet(contLocal).refCast(ts.setType).localGet(valBox).call(cols.fnSetContains)
+                        .localGet(contLocal)
+                        .refTest(ts.setType)
+                        .if_(WasmValType.I32)
+                        .localGet(contLocal)
+                        .refCast(ts.setType)
+                        .localGet(valBox)
+                        .call(cols.fnSetContains)
                         .else_()
-                        .localGet(contLocal).refTest(ts.mapType).if_(WasmValType.I32)
-                        .localGet(contLocal).refCast(ts.mapType).localGet(valBox).call(cols.fnMapContainsKey)
+                        .localGet(contLocal)
+                        .refTest(ts.mapType)
+                        .if_(WasmValType.I32)
+                        .localGet(contLocal)
+                        .refCast(ts.mapType)
+                        .localGet(valBox)
+                        .call(cols.fnMapContainsKey)
                         .else_()
-                        .localGet(contLocal).refTest(ts.arrayBaseType).if_(WasmValType.I32)
-                        .localGet(contLocal).refCast(ts.arrayBaseType).localGet(valBox).call(arrOps.fnArrayContains)
+                        .localGet(contLocal)
+                        .refTest(ts.arrayBaseType)
+                        .if_(WasmValType.I32)
+                        .localGet(contLocal)
+                        .refCast(ts.arrayBaseType)
+                        .localGet(valBox)
+                        .call(arrOps.fnArrayContains)
                         .else_();
                 rt.emitStringLit(c, "Cannot test membership with 'in' on ");
-                c.localGet(contLocal).call(ops.fnDescribeType).call(rt.fnStrConcat)
-                        .i32Const(mem.line()).call(rt.fnThrowMsg).unreachable()
-                        .end().end().end().end().end();
+                c.localGet(contLocal)
+                        .call(ops.fnDescribeType)
+                        .call(rt.fnStrConcat)
+                        .i32Const(mem.line())
+                        .call(rt.fnThrowMsg)
+                        .unreachable()
+                        .end()
+                        .end()
+                        .end()
+                        .end()
+                        .end();
             }
         }
         c.end();

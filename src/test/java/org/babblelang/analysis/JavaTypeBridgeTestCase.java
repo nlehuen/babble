@@ -1,8 +1,5 @@
 package org.babblelang.analysis;
 
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 import java.io.Serializable;
 import java.lang.reflect.Method;
 import java.lang.reflect.TypeVariable;
@@ -10,6 +7,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link JavaTypeBridge} multi-bound {@code TypeVariable} translation and F-bound
@@ -37,13 +36,13 @@ public class JavaTypeBridgeTestCase {
         TypeVariable<Method> tv = max.getTypeParameters()[0];
         Type translated = JavaTypeBridge.fromJavaType(tv, Map.of(), false, false);
         Assertions.assertEquals(
-                new Type.JavaInstance(Comparable.class, List.of(Type.NULLABLE_ANY)),
-                translated);
+                new Type.JavaInstance(Comparable.class, List.of(Type.NULLABLE_ANY)), translated);
     }
 
     @Test
     public void keepsLeadingNonObjectClassAlone() throws NoSuchMethodException {
-        Method m = JavaTypeBridgeTestCase.class.getDeclaredMethod("numberAndComparable", Number.class);
+        Method m =
+                JavaTypeBridgeTestCase.class.getDeclaredMethod("numberAndComparable", Number.class);
         TypeVariable<Method> tv = m.getTypeParameters()[0];
         Type translated = JavaTypeBridge.fromJavaType(tv, Map.of(), false, false);
         Assertions.assertEquals(new Type.JavaInstance(Number.class), translated);
@@ -51,21 +50,25 @@ public class JavaTypeBridgeTestCase {
 
     @Test
     public void intersectsMultiInterfaceBounds() throws NoSuchMethodException {
-        Method m = JavaTypeBridgeTestCase.class.getDeclaredMethod("runnableAndSerializable", Runnable.class);
+        Method m =
+                JavaTypeBridgeTestCase.class.getDeclaredMethod(
+                        "runnableAndSerializable", Runnable.class);
         TypeVariable<Method> tv = m.getTypeParameters()[0];
         Type translated = JavaTypeBridge.fromJavaType(tv, Map.of(), false, false);
         Assertions.assertEquals(
-                Type.intersection(new Type.JavaInstance(Runnable.class), new Type.JavaInstance(Serializable.class)),
+                Type.intersection(
+                        new Type.JavaInstance(Runnable.class),
+                        new Type.JavaInstance(Serializable.class)),
                 translated);
     }
 
     @Test
     public void guardsRecursiveFBoundCycle() throws NoSuchMethodException {
-        Method m = JavaTypeBridgeTestCase.class.getDeclaredMethod("selfComparable", Comparable.class);
+        Method m =
+                JavaTypeBridgeTestCase.class.getDeclaredMethod("selfComparable", Comparable.class);
         TypeVariable<Method> tv = m.getTypeParameters()[0];
         Type translated = JavaTypeBridge.fromJavaType(tv, Map.of(), false, false);
         Assertions.assertEquals(
-                new Type.JavaInstance(Comparable.class, List.of(Type.NULLABLE_ANY)),
-                translated);
+                new Type.JavaInstance(Comparable.class, List.of(Type.NULLABLE_ANY)), translated);
     }
 }

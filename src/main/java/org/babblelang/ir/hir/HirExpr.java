@@ -1,81 +1,80 @@
 package org.babblelang.ir.hir;
 
+import java.util.List;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.runtime.CallSite;
 
-import java.util.List;
-
 /**
  * Sealed hierarchy of High-Level Typed IR ({@code HIR}) expressions (BIP014-I1).
  *
- * <p>Every node is an immutable Java 21 {@code record} detached from ANTLR4 {@code ParserRuleContext},
- * carrying its resolved {@link ExprMeta} so Nanopass rewriters and {@code HirEmitter} can pattern-match
- * exhaustively without consulting parse-tree side tables.
+ * <p>Every node is an immutable Java 21 {@code record} detached from ANTLR4 {@code
+ * ParserRuleContext}, carrying its resolved {@link ExprMeta} so Nanopass rewriters and {@code
+ * HirEmitter} can pattern-match exhaustively without consulting parse-tree side tables.
  */
-public sealed interface HirExpr permits
-        HirExpr.Const,
-        HirExpr.IntParseFallback,
-        HirExpr.CoreCollectionRef,
-        HirExpr.CoreExceptionRef,
-        HirExpr.VarRead,
-        HirExpr.NameRead,
-        HirExpr.ThisRef,
-        HirExpr.RecurseRef,
-        HirExpr.Def,
-        HirExpr.VarAssign,
-        HirExpr.NameAssign,
-        HirExpr.ThisFieldAssign,
-        HirExpr.JavaFieldAssign,
-        HirExpr.DynamicFieldAssign,
-        HirExpr.ThisFieldGet,
-        HirExpr.JavaFieldGet,
-        HirExpr.ArrayCreate,
-        HirExpr.ArrayOp,
-        HirExpr.ModuleExportGet,
-        HirExpr.DynamicSelect,
-        HirExpr.Unary,
-        HirExpr.Binary,
-        HirExpr.Range,
-        HirExpr.Logic,
-        HirExpr.Is,
-        HirExpr.As,
-        HirExpr.NonNull,
-        HirExpr.SpreadAdapt,
-        HirExpr.JavaSamAdapt,
-        HirExpr.Block,
-        HirExpr.If,
-        HirExpr.Match,
-        HirExpr.While,
-        HirExpr.For,
-        HirExpr.Try,
-        HirExpr.Break,
-        HirExpr.Continue,
-        HirExpr.Return,
-        HirExpr.Throw,
-        HirExpr.CoreCollectionCall,
-        HirExpr.SuperCall,
-        HirExpr.SelfRecurseCall,
-        HirExpr.SelfTailCall,
-        HirExpr.DirectBabbleCall,
-        HirExpr.DirectThisMethodCall,
-        HirExpr.InterfaceCall,
-        HirExpr.JavaConstructorCall,
-        HirExpr.JavaMethodCall,
-        HirExpr.CoreMethodCall,
-        HirExpr.SafeCall,
-        HirExpr.DynamicCall,
-        HirExpr.MakeOverloadSet,
-        HirExpr.OverloadSelect,
-        HirExpr.OverloadDispatch,
-        HirExpr.FunctionRef,
-        HirExpr.ClassExpr,
-        HirExpr.InterfaceExpr,
-        HirExpr.TypeApply,
-        HirExpr.RecordNew,
-        HirExpr.RecordReuse,
-        HirExpr.Move,
-        HirExpr.Freeze {
+public sealed interface HirExpr
+        permits HirExpr.Const,
+                HirExpr.IntParseFallback,
+                HirExpr.CoreCollectionRef,
+                HirExpr.CoreExceptionRef,
+                HirExpr.VarRead,
+                HirExpr.NameRead,
+                HirExpr.ThisRef,
+                HirExpr.RecurseRef,
+                HirExpr.Def,
+                HirExpr.VarAssign,
+                HirExpr.NameAssign,
+                HirExpr.ThisFieldAssign,
+                HirExpr.JavaFieldAssign,
+                HirExpr.DynamicFieldAssign,
+                HirExpr.ThisFieldGet,
+                HirExpr.JavaFieldGet,
+                HirExpr.ArrayCreate,
+                HirExpr.ArrayOp,
+                HirExpr.ModuleExportGet,
+                HirExpr.DynamicSelect,
+                HirExpr.Unary,
+                HirExpr.Binary,
+                HirExpr.Range,
+                HirExpr.Logic,
+                HirExpr.Is,
+                HirExpr.As,
+                HirExpr.NonNull,
+                HirExpr.SpreadAdapt,
+                HirExpr.JavaSamAdapt,
+                HirExpr.Block,
+                HirExpr.If,
+                HirExpr.Match,
+                HirExpr.While,
+                HirExpr.For,
+                HirExpr.Try,
+                HirExpr.Break,
+                HirExpr.Continue,
+                HirExpr.Return,
+                HirExpr.Throw,
+                HirExpr.CoreCollectionCall,
+                HirExpr.SuperCall,
+                HirExpr.SelfRecurseCall,
+                HirExpr.SelfTailCall,
+                HirExpr.DirectBabbleCall,
+                HirExpr.DirectThisMethodCall,
+                HirExpr.InterfaceCall,
+                HirExpr.JavaConstructorCall,
+                HirExpr.JavaMethodCall,
+                HirExpr.CoreMethodCall,
+                HirExpr.SafeCall,
+                HirExpr.DynamicCall,
+                HirExpr.MakeOverloadSet,
+                HirExpr.OverloadSelect,
+                HirExpr.OverloadDispatch,
+                HirExpr.FunctionRef,
+                HirExpr.ClassExpr,
+                HirExpr.InterfaceExpr,
+                HirExpr.TypeApply,
+                HirExpr.RecordNew,
+                HirExpr.RecordReuse,
+                HirExpr.Move,
+                HirExpr.Freeze {
 
     ExprMeta meta();
 
@@ -127,28 +126,34 @@ public sealed interface HirExpr permits
 
     // ---------------------------------------------------------------- literals
 
-    /** Compile-time constant: {@code null}, {@code Boolean}, {@code Byte}, {@code Short}, {@code Integer}, {@code Long}, {@code Float}, {@code Double}, {@code Character}, or {@code String}. */
-    record Const(Object value, ExprMeta meta) implements HirExpr {
-    }
+    /**
+     * Compile-time constant: {@code null}, {@code Boolean}, {@code Byte}, {@code Short}, {@code
+     * Integer}, {@code Long}, {@code Float}, {@code Double}, {@code Character}, or {@code String}.
+     */
+    record Const(Object value, ExprMeta meta) implements HirExpr {}
 
-    /** Out-of-range integer literal kept to throw the exact runtime {@code NumberFormatException}. */
-    record IntParseFallback(String text, ExprMeta meta) implements HirExpr {
-    }
+    /**
+     * Out-of-range integer literal kept to throw the exact runtime {@code NumberFormatException}.
+     */
+    record IntParseFallback(String text, ExprMeta meta) implements HirExpr {}
 
-    /** Bare core collection constructor reference ({@code list}, {@code set}, {@code map}, etc.). */
-    record CoreCollectionRef(String collectionKind, ExprMeta meta) implements HirExpr {
-    }
+    /**
+     * Bare core collection constructor reference ({@code list}, {@code set}, {@code map}, etc.).
+     */
+    record CoreCollectionRef(String collectionKind, ExprMeta meta) implements HirExpr {}
 
-    /** Core {@code exception} class reference ({@code BabbleException}) as a value ({@code BIP028-D2}). */
-    record CoreExceptionRef(ExprMeta meta) implements HirExpr {
-    }
+    /**
+     * Core {@code exception} class reference ({@code BabbleException}) as a value ({@code
+     * BIP028-D2}).
+     */
+    record CoreExceptionRef(ExprMeta meta) implements HirExpr {}
 
     // ---------------------------------------------------------------- variables & names
 
-    record VarRead(HirVar var, ExprMeta meta) implements HirExpr {
-    }
+    record VarRead(HirVar var, ExprMeta meta) implements HirExpr {}
 
-    record NameRead(String name, boolean finalBinding, boolean definitelyDefined, ExprMeta meta) implements HirExpr {
+    record NameRead(String name, boolean finalBinding, boolean definitelyDefined, ExprMeta meta)
+            implements HirExpr {
         public NameRead(String name, ExprMeta meta) {
             this(name, false, false, meta);
         }
@@ -158,22 +163,15 @@ public sealed interface HirExpr permits
         }
     }
 
-    record ThisRef(HirVar var, int enclosingClassId, ExprMeta meta) implements HirExpr {
-    }
+    record ThisRef(HirVar var, int enclosingClassId, ExprMeta meta) implements HirExpr {}
 
-    record RecurseRef(HirVar var, ExprMeta meta) implements HirExpr {
-    }
+    record RecurseRef(HirVar var, ExprMeta meta) implements HirExpr {}
 
     // ---------------------------------------------------------------- definitions & assignments
 
     record Def(
-            String name,
-            LoweringTargets.DefTarget target,
-            HirVar var,
-            HirExpr value,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            String name, LoweringTargets.DefTarget target, HirVar var, HirExpr value, ExprMeta meta)
+            implements HirExpr {}
 
     record VarAssign(
             HirVar var,
@@ -181,9 +179,8 @@ public sealed interface HirExpr permits
             HirExpr value,
             String targetText,
             String valueText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
     record NameAssign(
             String name,
@@ -191,9 +188,8 @@ public sealed interface HirExpr permits
             HirExpr value,
             String targetText,
             String valueText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
     record ThisFieldAssign(
             HirExpr receiver,
@@ -204,9 +200,8 @@ public sealed interface HirExpr permits
             HirExpr value,
             String targetText,
             String valueText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
     record JavaFieldAssign(
             HirExpr receiver,
@@ -217,9 +212,8 @@ public sealed interface HirExpr permits
             HirExpr value,
             String targetText,
             String valueText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
     record DynamicFieldAssign(
             HirExpr receiver,
@@ -229,9 +223,8 @@ public sealed interface HirExpr permits
             HirExpr value,
             String targetText,
             String valueText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
     // ---------------------------------------------------------------- member selection
 
@@ -245,14 +238,25 @@ public sealed interface HirExpr permits
             PrimitiveKind fieldKind,
             boolean immutableField,
             boolean definitelyDefined,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public ThisFieldGet {
             fieldKind = fieldKind != null ? fieldKind : PrimitiveKind.NONE;
         }
 
-        public ThisFieldGet(HirExpr receiver, int classId, int memberIndex, String memberName, ExprMeta meta) {
-            this(receiver, null, classId, null, memberIndex, memberName, PrimitiveKind.NONE, false, false, meta);
+        public ThisFieldGet(
+                HirExpr receiver, int classId, int memberIndex, String memberName, ExprMeta meta) {
+            this(
+                    receiver,
+                    null,
+                    classId,
+                    null,
+                    memberIndex,
+                    memberName,
+                    PrimitiveKind.NONE,
+                    false,
+                    false,
+                    meta);
         }
     }
 
@@ -261,9 +265,8 @@ public sealed interface HirExpr permits
             String receiverText,
             boolean pureStaticReceiver,
             LoweringTargets.JavaFieldTarget target,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
     record ArrayCreate(
             LoweringTargets.ArrayCreationKind kind,
@@ -273,10 +276,13 @@ public sealed interface HirExpr permits
             boolean componentIsJavaInterface,
             Class<?> componentClass,
             List<HirExpr> args,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public ArrayCreate {
-            elementType = elementType != null ? elementType : HirArrayElementType.from(elemKind, null, false, 0, componentClass);
+            elementType =
+                    elementType != null
+                            ? elementType
+                            : HirArrayElementType.from(elemKind, null, false, 0, componentClass);
             args = List.copyOf(args);
         }
 
@@ -287,10 +293,16 @@ public sealed interface HirExpr permits
                 boolean componentIsJavaInterface,
                 Class<?> componentClass,
                 List<HirExpr> args,
-                ExprMeta meta
-        ) {
-            this(kind, elemKind, HirArrayElementType.from(elemKind, null, false, 0, componentClass),
-                    componentInternalName, componentIsJavaInterface, componentClass, args, meta);
+                ExprMeta meta) {
+            this(
+                    kind,
+                    elemKind,
+                    HirArrayElementType.from(elemKind, null, false, 0, componentClass),
+                    componentInternalName,
+                    componentIsJavaInterface,
+                    componentClass,
+                    args,
+                    meta);
         }
     }
 
@@ -303,10 +315,13 @@ public sealed interface HirExpr permits
             Class<?> arrayClass,
             Class<?> componentClass,
             List<HirExpr> args,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public ArrayOp {
-            elementType = elementType != null ? elementType : HirArrayElementType.from(elemKind, null, false, 0, componentClass);
+            elementType =
+                    elementType != null
+                            ? elementType
+                            : HirArrayElementType.from(elemKind, null, false, 0, componentClass);
             args = List.copyOf(args);
         }
 
@@ -318,39 +333,32 @@ public sealed interface HirExpr permits
                 Class<?> arrayClass,
                 Class<?> componentClass,
                 List<HirExpr> args,
-                ExprMeta meta
-        ) {
-            this(kind, receiver, receiverText, elemKind,
+                ExprMeta meta) {
+            this(
+                    kind,
+                    receiver,
+                    receiverText,
+                    elemKind,
                     HirArrayElementType.from(elemKind, null, false, 0, componentClass),
-                    arrayClass, componentClass, args, meta);
+                    arrayClass,
+                    componentClass,
+                    args,
+                    meta);
         }
     }
 
     record ModuleExportGet(
-            HirExpr receiver,
-            LoweringTargets.ModuleExportTarget target,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            HirExpr receiver, LoweringTargets.ModuleExportTarget target, ExprMeta meta)
+            implements HirExpr {}
 
     record DynamicSelect(
-            HirExpr receiver,
-            String receiverText,
-            String memberName,
-            boolean safe,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            HirExpr receiver, String receiverText, String memberName, boolean safe, ExprMeta meta)
+            implements HirExpr {}
 
     // ---------------------------------------------------------------- operators
 
-    record Unary(
-            UnaryOp op,
-            HirExpr operand,
-            String operandText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+    record Unary(UnaryOp op, HirExpr operand, String operandText, ExprMeta meta)
+            implements HirExpr {}
 
     record Binary(
             BinaryOp op,
@@ -358,17 +366,11 @@ public sealed interface HirExpr permits
             HirExpr right,
             String leftText,
             String rightText,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            ExprMeta meta)
+            implements HirExpr {}
 
-    record Logic(
-            LogicOp op,
-            HirExpr left,
-            HirExpr right,
-            boolean rightNarrowed,
-            ExprMeta meta
-    ) implements HirExpr {
+    record Logic(LogicOp op, HirExpr left, HirExpr right, boolean rightNarrowed, ExprMeta meta)
+            implements HirExpr {
         public Logic(LogicOp op, HirExpr left, HirExpr right, ExprMeta meta) {
             this(op, left, right, false, meta);
         }
@@ -382,13 +384,19 @@ public sealed interface HirExpr permits
             LoweringTargets.IsTarget target,
             List<LoweringTargets.IsTarget> intersectionTargets,
             String descriptor,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public Is {
-            intersectionTargets = intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
+            intersectionTargets =
+                    intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
         }
 
-        public Is(HirExpr left, String builtin, LoweringTargets.IsTarget target, String descriptor, ExprMeta meta) {
+        public Is(
+                HirExpr left,
+                String builtin,
+                LoweringTargets.IsTarget target,
+                String descriptor,
+                ExprMeta meta) {
             this(left, builtin, target, List.of(), descriptor, meta);
         }
     }
@@ -398,34 +406,25 @@ public sealed interface HirExpr permits
             LoweringTargets.IsTarget target,
             LoweringTargets.JavaSamTarget samTarget,
             String targetDescriptor,
-            ExprMeta meta
-    ) implements HirExpr {
-        public As(HirExpr left, LoweringTargets.IsTarget target, String targetDescriptor, ExprMeta meta) {
+            ExprMeta meta)
+            implements HirExpr {
+        public As(
+                HirExpr left,
+                LoweringTargets.IsTarget target,
+                String targetDescriptor,
+                ExprMeta meta) {
             this(left, target, null, targetDescriptor, meta);
         }
     }
 
-    record NonNull(
-            HirExpr operand,
-            String expectedType,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+    record NonNull(HirExpr operand, String expectedType, ExprMeta meta) implements HirExpr {}
 
-    record SpreadAdapt(
-            HirExpr value,
-            LoweringTargets.SpreadAdapt adapt,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+    record SpreadAdapt(HirExpr value, LoweringTargets.SpreadAdapt adapt, ExprMeta meta)
+            implements HirExpr {}
 
     /** Java-interop SAM / SAM+markers adapter conversion ({@code BIP022-D7}). */
-    record JavaSamAdapt(
-            HirExpr value,
-            LoweringTargets.JavaSamTarget target,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+    record JavaSamAdapt(HirExpr value, LoweringTargets.JavaSamTarget target, ExprMeta meta)
+            implements HirExpr {}
 
     // ---------------------------------------------------------------- control flow
 
@@ -435,8 +434,8 @@ public sealed interface HirExpr permits
             String[] declaredNames,
             List<HirVar> declaredVars,
             int innerWideningRank,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public Block {
             statements = List.copyOf(statements);
             declaredNames = declaredNames != null ? declaredNames.clone() : new String[0];
@@ -452,13 +451,8 @@ public sealed interface HirExpr permits
         }
     }
 
-    record If(
-            HirExpr cond,
-            HirExpr thenBranch,
-            HirExpr elseBranch,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+    record If(HirExpr cond, HirExpr thenBranch, HirExpr elseBranch, ExprMeta meta)
+            implements HirExpr {}
 
     record MatchArm(
             HirPattern pattern,
@@ -466,20 +460,13 @@ public sealed interface HirExpr permits
             HirExpr guard,
             HirExpr body,
             int bodyWideningRank,
-            int line
-    ) {
+            int line) {
         public MatchArm {
             boundVars = List.copyOf(boundVars);
         }
     }
 
-    record MatchElse(
-            HirVar var,
-            HirExpr body,
-            int bodyWideningRank,
-            int line
-    ) {
-    }
+    record MatchElse(HirVar var, HirExpr body, int bodyWideningRank, int line) {}
 
     record Match(
             HirExpr scrutinee,
@@ -487,19 +474,14 @@ public sealed interface HirExpr permits
             List<MatchArm> arms,
             MatchElse elseArm,
             boolean exhaustive,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public Match {
             arms = List.copyOf(arms);
         }
     }
 
-    record While(
-            HirExpr cond,
-            HirExpr body,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+    record While(HirExpr cond, HirExpr body, ExprMeta meta) implements HirExpr {}
 
     record Range(
             HirExpr start,
@@ -507,8 +489,8 @@ public sealed interface HirExpr permits
             boolean inclusive,
             PrimitiveKind elemKind,
             boolean stringElement,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public Range {
             elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
         }
@@ -520,8 +502,7 @@ public sealed interface HirExpr permits
             HirExpr step,
             boolean inclusive,
             boolean descending,
-            PrimitiveKind elemKind
-    ) {
+            PrimitiveKind elemKind) {
         public CountedRangeLoop {
             elemKind = elemKind != null ? elemKind : PrimitiveKind.INT;
         }
@@ -536,8 +517,8 @@ public sealed interface HirExpr permits
             int bodyWideningRank,
             LoweringTargets.JavaSamTarget elemSamTarget,
             CountedRangeLoop countedRange,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public For {
             bodyDeclaredVars = List.copyOf(bodyDeclaredVars);
             body = List.copyOf(body);
@@ -551,9 +532,17 @@ public sealed interface HirExpr permits
                 List<HirExpr> body,
                 int bodyWideningRank,
                 LoweringTargets.JavaSamTarget elemSamTarget,
-                ExprMeta meta
-        ) {
-            this(iterable, target, loopVar, bodyDeclaredVars, body, bodyWideningRank, elemSamTarget, null, meta);
+                ExprMeta meta) {
+            this(
+                    iterable,
+                    target,
+                    loopVar,
+                    bodyDeclaredVars,
+                    body,
+                    bodyWideningRank,
+                    elemSamTarget,
+                    null,
+                    meta);
         }
     }
 
@@ -565,8 +554,7 @@ public sealed interface HirExpr permits
             boolean opensNamespaceScope,
             String[] declaredNames,
             int wideningRank,
-            int line
-    ) {
+            int line) {
         public HirCatch {
             body = List.copyOf(body);
             declaredVars = List.copyOf(declaredVars);
@@ -587,8 +575,8 @@ public sealed interface HirExpr permits
             String[] finallyDeclaredNames,
             boolean finallyNothrow,
             boolean hasFinally,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public Try {
             tryBody = List.copyOf(tryBody);
             tryDeclaredVars = List.copyOf(tryDeclaredVars);
@@ -596,29 +584,23 @@ public sealed interface HirExpr permits
             catches = List.copyOf(catches);
             finallyBody = List.copyOf(finallyBody);
             finallyDeclaredVars = List.copyOf(finallyDeclaredVars);
-            finallyDeclaredNames = finallyDeclaredNames != null ? finallyDeclaredNames.clone() : new String[0];
+            finallyDeclaredNames =
+                    finallyDeclaredNames != null ? finallyDeclaredNames.clone() : new String[0];
         }
     }
 
-    record Break(HirExpr value, ExprMeta meta) implements HirExpr {
-    }
+    record Break(HirExpr value, ExprMeta meta) implements HirExpr {}
 
-    record Continue(ExprMeta meta) implements HirExpr {
-    }
+    record Continue(ExprMeta meta) implements HirExpr {}
 
-    record Return(HirExpr value, ExprMeta meta) implements HirExpr {
-    }
+    record Return(HirExpr value, ExprMeta meta) implements HirExpr {}
 
-    record Throw(HirExpr value, boolean isJavaThrowable, ExprMeta meta) implements HirExpr {
-    }
+    record Throw(HirExpr value, boolean isJavaThrowable, ExprMeta meta) implements HirExpr {}
 
     // ---------------------------------------------------------------- calls
 
-    record CoreCollectionCall(
-            String collectionKind,
-            List<HirCallArg> args,
-            ExprMeta meta
-    ) implements HirExpr {
+    record CoreCollectionCall(String collectionKind, List<HirCallArg> args, ExprMeta meta)
+            implements HirExpr {
         public CoreCollectionCall {
             args = List.copyOf(args);
         }
@@ -633,8 +615,8 @@ public sealed interface HirExpr permits
             List<HirCallArg> args,
             LoweringTargets.ArgumentBinding binding,
             CallSite callSite,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public SuperCall {
             args = List.copyOf(args);
         }
@@ -644,24 +626,24 @@ public sealed interface HirExpr permits
             int functionId,
             List<HirExpr> args,
             LoweringTargets.ArgumentBinding binding,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public SelfRecurseCall {
             args = List.copyOf(args);
         }
     }
 
     /**
-     * A self tail call (docs/design/bip024_tail-calls.md) : a call of function {@code functionId} to itself
-     * whose value is the function's result, run as a jump back to the start of the function with new
-     * arguments. It only ever appears in the body of that function.
+     * A self tail call (docs/design/bip024_tail-calls.md) : a call of function {@code functionId}
+     * to itself whose value is the function's result, run as a jump back to the start of the
+     * function with new arguments. It only ever appears in the body of that function.
      */
     record SelfTailCall(
             int functionId,
             List<HirCallArg> args,
             LoweringTargets.ArgumentBinding binding,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public SelfTailCall {
             args = List.copyOf(args);
         }
@@ -673,8 +655,8 @@ public sealed interface HirExpr permits
             LoweringTargets.ExportedFunctionTarget externalTarget,
             List<HirExpr> args,
             LoweringTargets.ArgumentBinding binding,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public DirectBabbleCall {
             args = List.copyOf(args);
         }
@@ -684,8 +666,7 @@ public sealed interface HirExpr permits
                 int targetFunctionId,
                 List<HirExpr> args,
                 LoweringTargets.ArgumentBinding binding,
-                ExprMeta meta
-        ) {
+                ExprMeta meta) {
             this(callee, targetFunctionId, null, args, binding, meta);
         }
     }
@@ -703,24 +684,62 @@ public sealed interface HirExpr permits
             List<HirCallArg> args,
             LoweringTargets.ArgumentBinding binding,
             CallSite callSite,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public DirectThisMethodCall {
             args = List.copyOf(args);
         }
 
-        public DirectThisMethodCall(HirExpr receiver, String receiverText, int classId, String memberName,
-                                    int overloadAltIndex, int targetFunctionId, List<HirCallArg> args,
-                                    LoweringTargets.ArgumentBinding binding, CallSite callSite, ExprMeta meta) {
-            this(receiver, receiverText, classId, null, null, memberName, overloadAltIndex, targetFunctionId,
-                    null, args, binding, callSite, meta);
+        public DirectThisMethodCall(
+                HirExpr receiver,
+                String receiverText,
+                int classId,
+                String memberName,
+                int overloadAltIndex,
+                int targetFunctionId,
+                List<HirCallArg> args,
+                LoweringTargets.ArgumentBinding binding,
+                CallSite callSite,
+                ExprMeta meta) {
+            this(
+                    receiver,
+                    receiverText,
+                    classId,
+                    null,
+                    null,
+                    memberName,
+                    overloadAltIndex,
+                    targetFunctionId,
+                    null,
+                    args,
+                    binding,
+                    callSite,
+                    meta);
         }
 
-        public DirectThisMethodCall(HirExpr receiver, int classId, String memberName, int targetFunctionId,
-                                    List<HirCallArg> args, LoweringTargets.ArgumentBinding binding,
-                                    CallSite callSite, ExprMeta meta) {
-            this(receiver, null, classId, null, null, memberName, -1, targetFunctionId,
-                    null, args, binding, callSite, meta);
+        public DirectThisMethodCall(
+                HirExpr receiver,
+                int classId,
+                String memberName,
+                int targetFunctionId,
+                List<HirCallArg> args,
+                LoweringTargets.ArgumentBinding binding,
+                CallSite callSite,
+                ExprMeta meta) {
+            this(
+                    receiver,
+                    null,
+                    classId,
+                    null,
+                    null,
+                    memberName,
+                    -1,
+                    targetFunctionId,
+                    null,
+                    args,
+                    binding,
+                    callSite,
+                    meta);
         }
     }
 
@@ -733,8 +752,8 @@ public sealed interface HirExpr permits
             LoweringTargets.FunctionSignature signature,
             List<HirExpr> args,
             LoweringTargets.ArgumentBinding binding,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public InterfaceCall {
             args = List.copyOf(args);
         }
@@ -746,8 +765,8 @@ public sealed interface HirExpr permits
             boolean pureStaticCallee,
             LoweringTargets.JavaConstructorTarget target,
             List<HirExpr> args,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public JavaConstructorCall {
             args = List.copyOf(args);
         }
@@ -760,16 +779,17 @@ public sealed interface HirExpr permits
             boolean pureStaticReceiver,
             LoweringTargets.JavaCallTarget target,
             List<HirExpr> args,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public JavaMethodCall {
             args = List.copyOf(args);
         }
     }
 
     /**
-     * Target-neutral portable core method call on {@code string}, core collections ({@code list}..{@code entry}),
-     * {@code exception}, or portable {@code Appendable} ({@code BIP025-D3}, {@code BIP025-D6}, {@code BIP025-D12}).
+     * Target-neutral portable core method call on {@code string}, core collections ({@code
+     * list}..{@code entry}), {@code exception}, or portable {@code Appendable} ({@code BIP025-D3},
+     * {@code BIP025-D6}, {@code BIP025-D12}).
      */
     record CoreMethodCall(
             HirExpr receiver,
@@ -778,8 +798,8 @@ public sealed interface HirExpr permits
             String coreKind,
             String memberName,
             List<HirExpr> args,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public CoreMethodCall {
             args = List.copyOf(args);
         }
@@ -795,8 +815,8 @@ public sealed interface HirExpr permits
             LoweringTargets.ArgumentBinding binding,
             LoweringTargets.FunctionSignature babbleSig,
             CallSite callSite,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public SafeCall {
             args = List.copyOf(args);
         }
@@ -808,8 +828,8 @@ public sealed interface HirExpr permits
             LoweringTargets.ArgumentBinding binding,
             LoweringTargets.FunctionSignature babbleSig,
             CallSite callSite,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public DynamicCall {
             args = List.copyOf(args);
         }
@@ -818,10 +838,8 @@ public sealed interface HirExpr permits
     // ---------------------------------------------------------------- overload sets (BIP021-I5)
 
     record MakeOverloadSet(
-            List<HirExpr> operands,
-            List<LoweringTargets.OverloadAltMetaInfo> metas,
-            ExprMeta meta
-    ) implements HirExpr {
+            List<HirExpr> operands, List<LoweringTargets.OverloadAltMetaInfo> metas, ExprMeta meta)
+            implements HirExpr {
         public MakeOverloadSet {
             operands = List.copyOf(operands);
             metas = List.copyOf(metas);
@@ -829,13 +847,8 @@ public sealed interface HirExpr permits
     }
 
     record OverloadSelect(
-            HirExpr set,
-            int index,
-            String signatureKey,
-            boolean exactSet,
-            ExprMeta meta
-    ) implements HirExpr {
-    }
+            HirExpr set, int index, String signatureKey, boolean exactSet, ExprMeta meta)
+            implements HirExpr {}
 
     record OverloadBranch(
             List<LoweringTargets.OverloadSplitCheck> checks,
@@ -845,8 +858,7 @@ public sealed interface HirExpr permits
             boolean exactSet,
             LoweringTargets.FunctionSignature signature,
             LoweringTargets.ArgumentBinding binding,
-            PrimitiveKind resultKind
-    ) {
+            PrimitiveKind resultKind) {
         public OverloadBranch {
             checks = List.copyOf(checks);
         }
@@ -858,8 +870,8 @@ public sealed interface HirExpr permits
             CallSite callSite,
             List<HirExpr> args,
             List<OverloadBranch> branches,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public OverloadDispatch {
             args = List.copyOf(args);
             branches = List.copyOf(branches);
@@ -868,21 +880,21 @@ public sealed interface HirExpr permits
 
     // ---------------------------------------------------------------- value constructors
 
-    record FunctionRef(int functionId, ExprMeta meta) implements HirExpr {
-    }
+    record FunctionRef(int functionId, ExprMeta meta) implements HirExpr {}
 
-    record ClassExpr(int classId, ExprMeta meta) implements HirExpr {
-    }
+    record ClassExpr(int classId, ExprMeta meta) implements HirExpr {}
 
-    record InterfaceExpr(int interfaceId, ExprMeta meta) implements HirExpr {
-    }
+    record InterfaceExpr(int interfaceId, ExprMeta meta) implements HirExpr {}
 
-    record TypeApply(HirExpr inner, ExprMeta meta) implements HirExpr {
-    }
+    record TypeApply(HirExpr inner, ExprMeta meta) implements HirExpr {}
 
-    // ---------------------------------------------------------------- record & ownership ops (BIP014-I4)
+    // ---------------------------------------------------------------- record & ownership ops
+    // (BIP014-I4)
 
-    /** Direct fast constructor call for a capture-free method-only compiled {@code record} ({@code BIP014-I4}). */
+    /**
+     * Direct fast constructor call for a capture-free method-only compiled {@code record} ({@code
+     * BIP014-I4}).
+     */
     record RecordNew(
             int classId,
             String classTypeId,
@@ -892,8 +904,8 @@ public sealed interface HirExpr permits
             PrimitiveKind[] paramKinds,
             List<HirExpr> args,
             LoweringTargets.ArgumentBinding binding,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public RecordNew {
             paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
             args = List.copyOf(args);
@@ -907,13 +919,24 @@ public sealed interface HirExpr permits
                 PrimitiveKind[] paramKinds,
                 List<HirExpr> args,
                 LoweringTargets.ArgumentBinding binding,
-                ExprMeta meta
-        ) {
-            this(classId, classTypeId, classJvmName, classRef, false, paramKinds, args, binding, meta);
+                ExprMeta meta) {
+            this(
+                    classId,
+                    classTypeId,
+                    classJvmName,
+                    classRef,
+                    false,
+                    paramKinds,
+                    args,
+                    binding,
+                    meta);
         }
     }
 
-    /** Functional-but-in-place ({@code O10}) update of a uniquely owned {@code record} instance ({@code BIP014-I4}). */
+    /**
+     * Functional-but-in-place ({@code O10}) update of a uniquely owned {@code record} instance
+     * ({@code BIP014-I4}).
+     */
     record RecordReuse(
             HirExpr target,
             int classId,
@@ -921,20 +944,23 @@ public sealed interface HirExpr permits
             String classJvmName,
             PrimitiveKind[] paramKinds,
             List<HirExpr> args,
-            ExprMeta meta
-    ) implements HirExpr {
+            ExprMeta meta)
+            implements HirExpr {
         public RecordReuse {
             paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
             args = List.copyOf(args);
         }
     }
 
-    /** Ownership transfer marker ({@code move(x)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-I4}). */
-    record Move(HirVar var, HirExpr operand, ExprMeta meta) implements HirExpr {
-    }
+    /**
+     * Ownership transfer marker ({@code move(x)}), zero-cost at runtime ({@code BIP007-I2}, {@code
+     * BIP014-I4}).
+     */
+    record Move(HirVar var, HirExpr operand, ExprMeta meta) implements HirExpr {}
 
-    /** Deep-immutability marker ({@code freeze(expr)}), zero-cost at runtime ({@code BIP007-I2}, {@code BIP014-I4}). */
-    record Freeze(HirExpr operand, ExprMeta meta) implements HirExpr {
-    }
+    /**
+     * Deep-immutability marker ({@code freeze(expr)}), zero-cost at runtime ({@code BIP007-I2},
+     * {@code BIP014-I4}).
+     */
+    record Freeze(HirExpr operand, ExprMeta meta) implements HirExpr {}
 }
-

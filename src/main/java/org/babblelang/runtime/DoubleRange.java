@@ -4,7 +4,8 @@ package org.babblelang.runtime;
  * Immutable continuous range record backing {@code range of float} and {@code range of double}
  * ({@code BIP031-D6}). Not iterable.
  */
-public record DoubleRange<T extends Number>(double startDouble, double endDouble, boolean inclusive, boolean isFloat)
+public record DoubleRange<T extends Number>(
+        double startDouble, double endDouble, boolean inclusive, boolean isFloat)
         implements Range<T> {
 
     public static DoubleRange<Float> ofFloat(float start, float end, boolean inclusive) {
@@ -36,7 +37,9 @@ public record DoubleRange<T extends Number>(double startDouble, double endDouble
     }
 
     public boolean containsDouble(double value) {
-        return inclusive ? (value >= startDouble && value <= endDouble) : (value >= startDouble && value < endDouble);
+        return inclusive
+                ? (value >= startDouble && value <= endDouble)
+                : (value >= startDouble && value < endDouble);
     }
 
     @Override

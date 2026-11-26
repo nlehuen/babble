@@ -1,5 +1,12 @@
 package org.babblelang.tests;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.List;
+import javax.script.ScriptContext;
+import javax.script.ScriptException;
+import javax.script.SimpleScriptContext;
 import org.babblelang.compiler.CompiledBabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
@@ -12,23 +19,16 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.util.CheckClassAdapter;
 
-import javax.script.ScriptContext;
-import javax.script.ScriptException;
-import javax.script.SimpleScriptContext;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Tests for BIP020-I3 : creating arrays ({@code (array of T)(n)}, {@code array(n)},
- * {@code .of(...)}, {@code from:}), {@code size()}/{@code get}/{@code set}, {@code .length}
- * removal, content equality/hashing/printing, {@code ArrayStoreException} parity, and effects.
+ * Tests for BIP020-I3 : creating arrays ({@code (array of T)(n)}, {@code array(n)}, {@code
+ * .of(...)}, {@code from:}), {@code size()}/{@code get}/{@code set}, {@code .length} removal,
+ * content equality/hashing/printing, {@code ArrayStoreException} parity, and effects.
  */
 public class Bip020P3ArrayOpsTestCase {
 
     private static List<String> diagnosticsOf(String source) {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         StringWriter err = new StringWriter();
         engine.getContext().setErrorWriter(err);
         try {
@@ -50,26 +50,48 @@ public class Bip020P3ArrayOpsTestCase {
 
     private static void assertDiagnostics(String source, String... expectedSubstrings) {
         List<String> diags = diagnosticsOf(source);
-        Assertions.assertEquals(expectedSubstrings.length, diags.size(),
-                "Expected " + expectedSubstrings.length + " diagnostics, got " + diags + " for:\n" + source);
+        Assertions.assertEquals(
+                expectedSubstrings.length,
+                diags.size(),
+                "Expected "
+                        + expectedSubstrings.length
+                        + " diagnostics, got "
+                        + diags
+                        + " for:\n"
+                        + source);
         for (int i = 0; i < expectedSubstrings.length; i++) {
-            Assertions.assertTrue(diags.get(i).contains(expectedSubstrings[i]),
-                    "Diagnostic #" + i + " mismatch: expected '" + expectedSubstrings[i] + "', got '" + diags.get(i) + "'");
+            Assertions.assertTrue(
+                    diags.get(i).contains(expectedSubstrings[i]),
+                    "Diagnostic #"
+                            + i
+                            + " mismatch: expected '"
+                            + expectedSubstrings[i]
+                            + "', got '"
+                            + diags.get(i)
+                            + "'");
         }
     }
 
     private static void assertRejected(String source, String expectedSubstring) {
         List<String> diags = diagnosticsOf(source);
-        Assertions.assertFalse(diags.isEmpty(), "Expected error containing '" + expectedSubstring + "', got none for:\n" + source);
-        Assertions.assertTrue(diags.stream().anyMatch(d -> d.contains(expectedSubstring)),
-                "Expected error containing '" + expectedSubstring + "', got " + diags + " for:\n" + source);
+        Assertions.assertFalse(
+                diags.isEmpty(),
+                "Expected error containing '" + expectedSubstring + "', got none for:\n" + source);
+        Assertions.assertTrue(
+                diags.stream().anyMatch(d -> d.contains(expectedSubstring)),
+                "Expected error containing '"
+                        + expectedSubstring
+                        + "', got "
+                        + diags
+                        + " for:\n"
+                        + source);
     }
 
-    private record ModeRun(Object value, String output, String error) {
-    }
+    private record ModeRun(Object value, String output, String error) {}
 
     private static ModeRun runMode(String mode, String opt, String source) {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
         if (opt != null) {
             engine.put("babble.opt", opt);
@@ -108,42 +130,57 @@ public class Bip020P3ArrayOpsTestCase {
         Assertions.assertNotNull(interp.error(), "expected interpret error");
         Assertions.assertNotNull(compO1.error(), "expected compile -O1 error");
         Assertions.assertNotNull(compO0.error(), "expected compile -O0 error");
-        Assertions.assertTrue(interp.error().contains(expectedErrorSubstring), "interpret got: " + interp.error());
-        Assertions.assertTrue(compO1.error().contains(expectedErrorSubstring), "compile -O1 got: " + compO1.error());
-        Assertions.assertTrue(compO0.error().contains(expectedErrorSubstring), "compile -O0 got: " + compO0.error());
+        Assertions.assertTrue(
+                interp.error().contains(expectedErrorSubstring),
+                "interpret got: " + interp.error());
+        Assertions.assertTrue(
+                compO1.error().contains(expectedErrorSubstring),
+                "compile -O1 got: " + compO1.error());
+        Assertions.assertTrue(
+                compO0.error().contains(expectedErrorSubstring),
+                "compile -O0 got: " + compO0.error());
         Assertions.assertEquals(interp.error(), compO1.error(), "error parity interpret vs O1");
         Assertions.assertEquals(interp.error(), compO0.error(), "error parity interpret vs O0");
     }
 
     private static List<Integer> collectOpcodes(byte[] classBytes) {
         List<Integer> opcodes = new ArrayList<>();
-        new ClassReader(classBytes).accept(new ClassVisitor(Opcodes.ASM9) {
-            @Override
-            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                return new MethodVisitor(Opcodes.ASM9) {
-                    @Override
-                    public void visitInsn(int opcode) {
-                        opcodes.add(opcode);
-                    }
+        new ClassReader(classBytes)
+                .accept(
+                        new ClassVisitor(Opcodes.ASM9) {
+                            @Override
+                            public MethodVisitor visitMethod(
+                                    int access,
+                                    String name,
+                                    String descriptor,
+                                    String signature,
+                                    String[] exceptions) {
+                                return new MethodVisitor(Opcodes.ASM9) {
+                                    @Override
+                                    public void visitInsn(int opcode) {
+                                        opcodes.add(opcode);
+                                    }
 
-                    @Override
-                    public void visitIntInsn(int opcode, int operand) {
-                        opcodes.add(opcode);
-                    }
+                                    @Override
+                                    public void visitIntInsn(int opcode, int operand) {
+                                        opcodes.add(opcode);
+                                    }
 
-                    @Override
-                    public void visitTypeInsn(int opcode, String type) {
-                        opcodes.add(opcode);
-                    }
-                };
-            }
-        }, 0);
+                                    @Override
+                                    public void visitTypeInsn(int opcode, String type) {
+                                        opcodes.add(opcode);
+                                    }
+                                };
+                            }
+                        },
+                        0);
         return opcodes;
     }
 
     @Test
     public void testArrayCreationAllFormsAndBytecode() throws Exception {
-        String source = """
+        String source =
+                """
                 def Point = record (x: int) ()
                 def Shape = interface ( def area: fn (): int )
                 def Circle = class (def r: int) implements Shape ( def area = fn (): int -> ( this.r * this.r ) )
@@ -211,13 +248,18 @@ public class Bip020P3ArrayOpsTestCase {
         assertNoErrors(source);
         assertAllModesEqual(source, "ok");
 
-        BabbleScriptEngine compileEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine compileEngine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         compileEngine.put(BabbleScriptEngine.MODE, "compile");
         CompiledBabbleScript compiled = (CompiledBabbleScript) compileEngine.compile(source);
         List<Integer> allOps = new ArrayList<>();
         for (byte[] bytes : compiled.getClasses().values()) {
             StringWriter problems = new StringWriter();
-            CheckClassAdapter.verify(new ClassReader(bytes), compiled.getScriptClass().getClassLoader(), false, new PrintWriter(problems));
+            CheckClassAdapter.verify(
+                    new ClassReader(bytes),
+                    compiled.getScriptClass().getClassLoader(),
+                    false,
+                    new PrintWriter(problems));
             Assertions.assertEquals("", problems.toString());
             allOps.addAll(collectOpcodes(bytes));
         }
@@ -236,7 +278,8 @@ public class Bip020P3ArrayOpsTestCase {
 
     @Test
     public void testStaticRejectionsAndLengthRemoval() {
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def Point = class () ()
                 def a1 = (array of string)(10)
                 def a2 = (array of Point)(5)
@@ -267,7 +310,8 @@ public class Bip020P3ArrayOpsTestCase {
                 "No such field in array of int : length (use size())",
                 "No such name in array(int) : nope");
 
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def bad1 of T = fn (x: T) -> ( (array of T)(2) )
                 def bad2 of T = fn (shared x: T) -> ( (array of T).of(x) )
                 def bad3 of T = fn () -> ( (array of T?)(2) )
@@ -285,7 +329,8 @@ public class Bip020P3ArrayOpsTestCase {
 
     @Test
     public void testGetSetJavaInterfacesAndRuntimeExceptionParity() {
-        String source = """
+        String source =
+                """
                 def log = list of string()
                 def Task = class (def label: string) implements java.lang.Runnable (
                     def run = fn io () -> ( log.add(this.label) ; () )
@@ -317,38 +362,49 @@ public class Bip020P3ArrayOpsTestCase {
         assertAllModesEqual(source, "[one, replaced, zero]:5");
 
         assertAllModesThrow("(array of int)(-3)", "java.lang.NegativeArraySizeException");
-        assertAllModesThrow("def a = array.of(1, 2) ; a.get(5)", "java.lang.ArrayIndexOutOfBoundsException");
-        assertAllModesThrow("def a = array.of(1, 2) ; a.set(-1, 9)", "java.lang.ArrayIndexOutOfBoundsException");
+        assertAllModesThrow(
+                "def a = array.of(1, 2) ; a.get(5)", "java.lang.ArrayIndexOutOfBoundsException");
+        assertAllModesThrow(
+                "def a = array.of(1, 2) ; a.set(-1, 9)",
+                "java.lang.ArrayIndexOutOfBoundsException");
 
-        // Exact runtime ArrayStoreException parity: Java String[], Babble Circle[], nested Circle[][]
-        assertAllModesThrow("""
+        // Exact runtime ArrayStoreException parity: Java String[], Babble Circle[], nested
+        // Circle[][]
+        assertAllModesThrow(
+                """
                 def s = array.of("a", "b")
                 def anyArr: array of any = s
                 anyArr.set(0, 123)
-                """, "java.lang.ArrayStoreException: java.lang.Integer");
+                """,
+                "java.lang.ArrayStoreException: java.lang.Integer");
 
-        assertAllModesThrow("""
+        assertAllModesThrow(
+                """
                 def Shape = interface ( def m: fn (): int )
                 def Circle = class () implements Shape ( def m = fn (): int -> ( 1 ) )
                 def Square = class () implements Shape ( def m = fn (): int -> ( 2 ) )
                 def cs = (array of Circle).of(Circle())
                 def sh: array of Shape = cs
                 sh.set(0, Square())
-                """, "java.lang.ArrayStoreException: Square");
+                """,
+                "java.lang.ArrayStoreException: Square");
 
-        assertAllModesThrow("""
+        assertAllModesThrow(
+                """
                 def Shape = interface ( def m: fn (): int )
                 def Circle = class () implements Shape ( def m = fn (): int -> ( 1 ) )
                 def Square = class () implements Shape ( def m = fn (): int -> ( 2 ) )
                 def grid = (array of (array of Circle)).of((array of Circle).of(Circle()))
                 def anyGrid: array of any = grid
                 anyGrid.set(0, (array of Square).of())
-                """, "java.lang.ArrayStoreException: array of Square");
+                """,
+                "java.lang.ArrayStoreException: array of Square");
     }
 
     @Test
     public void testContentEqualityHashCodeToStringPrintingRecordsAndCycles() {
-        String source = """
+        String source =
+                """
                 def Packet = record (tag: string, data: array of int) ()
                 def a = array.of(1, 2, 3)
                 def b = array.of(1, 2, 3)
@@ -395,7 +451,8 @@ public class Bip020P3ArrayOpsTestCase {
 
     @Test
     public void testArrayEffectsProvenanceAndFrozen() {
-        String validEffects = """
+        String validEffects =
+                """
                 def Box = class (def v: int) ()
                 def outer = array.of(10, 20, 30)
                 def frzOuter = freeze(array.of(10, 20, 30))
@@ -420,13 +477,27 @@ public class Bip020P3ArrayOpsTestCase {
         assertNoErrors(validEffects);
         assertAllModesEqual(validEffects, 3 + 10 + 10 + 1);
 
-        assertRejected("def outer = array.of(1, 2)\ndef badRead: fn (): int = fn (): int -> ( outer.get(0) )", "volatile");
-        assertRejected("def outer = array.of(1, 2)\ndef frz = freeze(array.of(1, 2))\ndef badEq: fn (): bool = fn (): bool -> ( outer == frz )", "volatile");
-        assertRejected("def outer = array.of(1, 2)\ndef badStr: fn (): string = fn (): string -> ( \"\" + outer )", "volatile");
-        assertRejected("def outer = array.of(1, 2)\ndef badFor: fn (): int = fn (): int -> ( var s = 0 ; for x in outer then ( s += x ) ; s )", "volatile");
+        assertRejected(
+                "def outer = array.of(1, 2)\ndef badRead: fn (): int = fn (): int -> ( outer.get(0) )",
+                "volatile");
+        assertRejected(
+                "def outer = array.of(1, 2)\ndef frz = freeze(array.of(1, 2))\ndef badEq: fn (): bool = fn (): bool -> ( outer == frz )",
+                "volatile");
+        assertRejected(
+                "def outer = array.of(1, 2)\ndef badStr: fn (): string = fn (): string -> ( \"\" + outer )",
+                "volatile");
+        assertRejected(
+                "def outer = array.of(1, 2)\ndef badFor: fn (): int = fn (): int -> ( var s = 0 ; for x in outer then ( s += x ) ; s )",
+                "volatile");
         assertRejected("def badMutParam = fn (a: array of int) -> ( a.set(0, 5) )", "mut");
-        assertRejected("def frz = freeze(array.of(1, 2))\ndef badFrzSet = fn () -> ( frz.set(0, 5) )", "Cannot call mut method set on frozen value");
-        assertRejected("def Box = class (def v: int) ()\ndef sharedBox = Box(1)\ndef badUnique: fn (): unique array of Box = fn (): unique array of Box -> ( array.of(sharedBox) )", "unique");
-        assertRejected("def Box = class (def v: int) ()\ndef badEscape = fn (b: Box) -> ( array.of(b) )", "Borrowed parameter b escapes");
+        assertRejected(
+                "def frz = freeze(array.of(1, 2))\ndef badFrzSet = fn () -> ( frz.set(0, 5) )",
+                "Cannot call mut method set on frozen value");
+        assertRejected(
+                "def Box = class (def v: int) ()\ndef sharedBox = Box(1)\ndef badUnique: fn (): unique array of Box = fn (): unique array of Box -> ( array.of(sharedBox) )",
+                "unique");
+        assertRejected(
+                "def Box = class (def v: int) ()\ndef badEscape = fn (b: Box) -> ( array.of(b) )",
+                "Borrowed parameter b escapes");
     }
 }

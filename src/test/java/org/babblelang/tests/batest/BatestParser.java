@@ -20,8 +20,7 @@ public final class BatestParser {
     public static final int MAX_PREAMBLE_CODE_CHARS = 800;
     public static final int MAX_CASE_CODE_CHARS = 400;
 
-    private BatestParser() {
-    }
+    private BatestParser() {}
 
     public static BatestFile parse(Path path, String relativePath) throws IOException {
         String content = Files.readString(path, StandardCharsets.UTF_8);
@@ -33,16 +32,16 @@ public final class BatestParser {
     }
 
     /**
-     * Returns the length of {@code source} after removing Babble line ({@code ;; ...})
-     * and block ({@code ;;( ... ;;)}) comments and blank comment-only lines.
+     * Returns the length of {@code source} after removing Babble line ({@code ;; ...}) and block
+     * ({@code ;;( ... ;;)}) comments and blank comment-only lines.
      */
     public static int codeLength(String source) {
         return stripComments(source).length();
     }
 
     /**
-     * Strips Babble line and block comments while preserving string and char literals,
-     * then drops lines that become blank and trims trailing line whitespace.
+     * Strips Babble line and block comments while preserving string and char literals, then drops
+     * lines that become blank and trims trailing line whitespace.
      */
     static String stripComments(String source) {
         if (source == null || source.isEmpty()) {
@@ -85,8 +84,10 @@ public final class BatestParser {
                 if (i + 2 < n && source.charAt(i + 2) == '(') {
                     i += 3;
                     while (i < n) {
-                        if (source.charAt(i) == ';' && i + 2 < n
-                                && source.charAt(i + 1) == ';' && source.charAt(i + 2) == ')') {
+                        if (source.charAt(i) == ';'
+                                && i + 2 < n
+                                && source.charAt(i + 1) == ';'
+                                && source.charAt(i + 2) == ')') {
                             i += 3;
                             break;
                         }

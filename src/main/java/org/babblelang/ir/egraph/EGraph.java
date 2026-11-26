@@ -1,7 +1,5 @@
 package org.babblelang.ir.egraph;
 
-import org.babblelang.analysis.PrimitiveKind;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -14,17 +12,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.ToIntFunction;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Compact, zero-dependency pure-expression E-graph with union-find, hash-consing,
- * congruence-closure rebuilding, eager constant-folding e-class analysis, bounded
- * equality saturation, and cost-based extraction ({@code BIP027-D1}).
+ * congruence-closure rebuilding, eager constant-folding e-class analysis, bounded equality
+ * saturation, and cost-based extraction ({@code BIP027-D1}).
  */
 public final class EGraph {
     public static final int MAX_FOLDED_STRING_LENGTH = 4096;
 
     /** Algebraic properties attached to pure call symbols ({@link ENode.Op#CALL}). */
-    public record CallProps(boolean idempotent, boolean associative, boolean commutative, boolean involution) {
+    public record CallProps(
+            boolean idempotent, boolean associative, boolean commutative, boolean involution) {
         public static final CallProps NONE = new CallProps(false, false, false, false);
     }
 
@@ -46,8 +46,7 @@ public final class EGraph {
     }
 
     /** Extracted minimum-cost expression tree. */
-    public record ExtractedTree(ENode node, List<ExtractedTree> children) {
-    }
+    public record ExtractedTree(ENode node, List<ExtractedTree> children) {}
 
     private final List<Integer> parent = new ArrayList<>();
     private final List<Set<ENode>> classes = new ArrayList<>();
@@ -59,8 +58,7 @@ public final class EGraph {
     private final Deque<Integer> worklist = new ArrayDeque<>();
     private int totalNodes = 0;
 
-    private record ParentEdge(ENode node, int classId) {
-    }
+    private record ParentEdge(ENode node, int classId) {}
 
     public void registerCallProps(String symbol, CallProps props) {
         if (symbol != null && props != null) {
@@ -98,12 +96,16 @@ public final class EGraph {
         return constOf.get(find(classId));
     }
 
-    /** Marks an e-class as having guaranteed reflexive equality (e.g. {@code string} opaque leaves). */
+    /**
+     * Marks an e-class as having guaranteed reflexive equality (e.g. {@code string} opaque leaves).
+     */
     public void markReflexiveEq(int classId) {
         reflexiveEqClasses.add(find(classId));
     }
 
-    /** True when {@code a == a -> true} and {@code a != a -> false} are sound for {@code classId}. */
+    /**
+     * True when {@code a == a -> true} and {@code a != a -> false} are sound for {@code classId}.
+     */
     public boolean isReflexiveEq(int classId) {
         return reflexiveEqClasses.contains(find(classId));
     }
@@ -265,13 +267,14 @@ public final class EGraph {
             return ENode.constVal(!b, PrimitiveKind.BOOL);
         }
         if (node.op() == ENode.Op.NEG && c0.literal() instanceof Number n) {
-            Object neg = switch (node.kind()) {
-                case INT -> -n.intValue();
-                case LONG -> -n.longValue();
-                case FLOAT -> -n.floatValue();
-                case DOUBLE -> -n.doubleValue();
-                default -> null;
-            };
+            Object neg =
+                    switch (node.kind()) {
+                        case INT -> -n.intValue();
+                        case LONG -> -n.longValue();
+                        case FLOAT -> -n.floatValue();
+                        case DOUBLE -> -n.doubleValue();
+                        default -> null;
+                    };
             return neg != null ? ENode.constVal(neg, node.kind()) : null;
         }
         return null;
@@ -279,63 +282,89 @@ public final class EGraph {
 
     private static ENode foldBinary(ENode node, ENode c0, ENode c1) {
         ENode.Op op = node.op();
-        if (op == ENode.Op.STR_ADD && c0.literal() instanceof String s0 && c1.literal() instanceof String s1) {
+        if (op == ENode.Op.STR_ADD
+                && c0.literal() instanceof String s0
+                && c1.literal() instanceof String s1) {
             if (s0.length() + s1.length() <= MAX_FOLDED_STRING_LENGTH) {
                 return ENode.constVal(s0 + s1, PrimitiveKind.NONE);
             }
             return null;
         }
         if ((op == ENode.Op.AND || op == ENode.Op.OR)
-                && c0.literal() instanceof Boolean b0 && c1.literal() instanceof Boolean b1) {
+                && c0.literal() instanceof Boolean b0
+                && c1.literal() instanceof Boolean b1) {
             return ENode.constVal(op == ENode.Op.AND ? (b0 && b1) : (b0 || b1), PrimitiveKind.BOOL);
         }
-        if (op == ENode.Op.EQ || op == ENode.Op.NEQ || op == ENode.Op.LT
-                || op == ENode.Op.LTE || op == ENode.Op.GT || op == ENode.Op.GTE) {
+        if (op == ENode.Op.EQ
+                || op == ENode.Op.NEQ
+                || op == ENode.Op.LT
+                || op == ENode.Op.LTE
+                || op == ENode.Op.GT
+                || op == ENode.Op.GTE) {
             return foldComparison(op, c0, c1);
         }
         if (!(c0.literal() instanceof Number n0) || !(c1.literal() instanceof Number n1)) {
             return null;
         }
         PrimitiveKind rk = node.kind();
-        Object res = switch (rk) {
-            case INT -> switch (op) {
-                case ADD -> n0.intValue() + n1.intValue();
-                case SUB -> n0.intValue() - n1.intValue();
-                case MUL -> n0.intValue() * n1.intValue();
-                case FLOOR_DIV -> n1.intValue() != 0 ? Math.floorDiv(n0.intValue(), n1.intValue()) : null;
-                case MOD -> n1.intValue() != 0 ? Math.floorMod(n0.intValue(), n1.intValue()) : null;
-                default -> null;
-            };
-            case LONG -> switch (op) {
-                case ADD -> n0.longValue() + n1.longValue();
-                case SUB -> n0.longValue() - n1.longValue();
-                case MUL -> n0.longValue() * n1.longValue();
-                case FLOOR_DIV -> n1.longValue() != 0L ? Math.floorDiv(n0.longValue(), n1.longValue()) : null;
-                case MOD -> n1.longValue() != 0L ? Math.floorMod(n0.longValue(), n1.longValue()) : null;
-                default -> null;
-            };
-            case FLOAT -> switch (op) {
-                case ADD -> n0.floatValue() + n1.floatValue();
-                case SUB -> n0.floatValue() - n1.floatValue();
-                case MUL -> n0.floatValue() * n1.floatValue();
-                case DIV -> n0.floatValue() / n1.floatValue();
-                default -> null;
-            };
-            case DOUBLE -> switch (op) {
-                case ADD -> n0.doubleValue() + n1.doubleValue();
-                case SUB -> n0.doubleValue() - n1.doubleValue();
-                case MUL -> n0.doubleValue() * n1.doubleValue();
-                case DIV -> n0.doubleValue() / n1.doubleValue();
-                default -> null;
-            };
-            default -> null;
-        };
+        Object res =
+                switch (rk) {
+                    case INT ->
+                            switch (op) {
+                                case ADD -> n0.intValue() + n1.intValue();
+                                case SUB -> n0.intValue() - n1.intValue();
+                                case MUL -> n0.intValue() * n1.intValue();
+                                case FLOOR_DIV ->
+                                        n1.intValue() != 0
+                                                ? Math.floorDiv(n0.intValue(), n1.intValue())
+                                                : null;
+                                case MOD ->
+                                        n1.intValue() != 0
+                                                ? Math.floorMod(n0.intValue(), n1.intValue())
+                                                : null;
+                                default -> null;
+                            };
+                    case LONG ->
+                            switch (op) {
+                                case ADD -> n0.longValue() + n1.longValue();
+                                case SUB -> n0.longValue() - n1.longValue();
+                                case MUL -> n0.longValue() * n1.longValue();
+                                case FLOOR_DIV ->
+                                        n1.longValue() != 0L
+                                                ? Math.floorDiv(n0.longValue(), n1.longValue())
+                                                : null;
+                                case MOD ->
+                                        n1.longValue() != 0L
+                                                ? Math.floorMod(n0.longValue(), n1.longValue())
+                                                : null;
+                                default -> null;
+                            };
+                    case FLOAT ->
+                            switch (op) {
+                                case ADD -> n0.floatValue() + n1.floatValue();
+                                case SUB -> n0.floatValue() - n1.floatValue();
+                                case MUL -> n0.floatValue() * n1.floatValue();
+                                case DIV -> n0.floatValue() / n1.floatValue();
+                                default -> null;
+                            };
+                    case DOUBLE ->
+                            switch (op) {
+                                case ADD -> n0.doubleValue() + n1.doubleValue();
+                                case SUB -> n0.doubleValue() - n1.doubleValue();
+                                case MUL -> n0.doubleValue() * n1.doubleValue();
+                                case DIV -> n0.doubleValue() / n1.doubleValue();
+                                default -> null;
+                            };
+                    default -> null;
+                };
         return res != null ? ENode.constVal(res, rk) : null;
     }
 
     private static ENode foldComparison(ENode.Op op, ENode c0, ENode c1) {
-        if (c0.kind() == PrimitiveKind.BOOL && c1.kind() == PrimitiveKind.BOOL
-                && c0.literal() instanceof Boolean b0 && c1.literal() instanceof Boolean b1) {
+        if (c0.kind() == PrimitiveKind.BOOL
+                && c1.kind() == PrimitiveKind.BOOL
+                && c0.literal() instanceof Boolean b0
+                && c1.literal() instanceof Boolean b1) {
             if (op == ENode.Op.EQ) {
                 return ENode.constVal(b0.booleanValue() == b1.booleanValue(), PrimitiveKind.BOOL);
             }
@@ -354,33 +383,38 @@ public final class EGraph {
             return null;
         }
         int cmp;
-        if (c0.kind() == PrimitiveKind.CHAR && c1.kind() == PrimitiveKind.CHAR
-                && c0.literal() instanceof Character ch0 && c1.literal() instanceof Character ch1) {
+        if (c0.kind() == PrimitiveKind.CHAR
+                && c1.kind() == PrimitiveKind.CHAR
+                && c0.literal() instanceof Character ch0
+                && c1.literal() instanceof Character ch1) {
             cmp = Character.compare(ch0, ch1);
         } else if (c0.literal() instanceof Number n0 && c1.literal() instanceof Number n1) {
-            PrimitiveKind common = numericOrder(c0.kind()) >= numericOrder(c1.kind()) ? c0.kind() : c1.kind();
-            cmp = switch (common) {
-                case BYTE, SHORT, INT -> Integer.compare(n0.intValue(), n1.intValue());
-                case LONG -> Long.compare(n0.longValue(), n1.longValue());
-                case FLOAT -> Float.compare(n0.floatValue(), n1.floatValue());
-                case DOUBLE -> Double.compare(n0.doubleValue(), n1.doubleValue());
-                default -> Integer.MIN_VALUE;
-            };
+            PrimitiveKind common =
+                    numericOrder(c0.kind()) >= numericOrder(c1.kind()) ? c0.kind() : c1.kind();
+            cmp =
+                    switch (common) {
+                        case BYTE, SHORT, INT -> Integer.compare(n0.intValue(), n1.intValue());
+                        case LONG -> Long.compare(n0.longValue(), n1.longValue());
+                        case FLOAT -> Float.compare(n0.floatValue(), n1.floatValue());
+                        case DOUBLE -> Double.compare(n0.doubleValue(), n1.doubleValue());
+                        default -> Integer.MIN_VALUE;
+                    };
             if (cmp == Integer.MIN_VALUE) {
                 return null;
             }
         } else {
             return null;
         }
-        boolean res = switch (op) {
-            case LT -> cmp < 0;
-            case LTE -> cmp <= 0;
-            case EQ -> cmp == 0;
-            case NEQ -> cmp != 0;
-            case GTE -> cmp >= 0;
-            case GT -> cmp > 0;
-            default -> throw new IllegalStateException();
-        };
+        boolean res =
+                switch (op) {
+                    case LT -> cmp < 0;
+                    case LTE -> cmp <= 0;
+                    case EQ -> cmp == 0;
+                    case NEQ -> cmp != 0;
+                    case GTE -> cmp >= 0;
+                    case GT -> cmp > 0;
+                    default -> throw new IllegalStateException();
+                };
         return ENode.constVal(res, PrimitiveKind.BOOL);
     }
 
@@ -398,11 +432,9 @@ public final class EGraph {
 
     // ---------------------------------------------------------------- equality saturation
 
-    private record PendingUnion(int a, int b) {
-    }
+    private record PendingUnion(int a, int b) {}
 
-    private record PendingAdd(int classId, ENode node) {
-    }
+    private record PendingAdd(int classId, ENode node) {}
 
     /**
      * Runs equality saturation for at most {@code maxIterations} rounds or until the e-graph
@@ -413,21 +445,22 @@ public final class EGraph {
         for (int iter = 0; iter < maxIterations && totalNodes < maxNodes; iter++) {
             List<PendingUnion> pendingUnions = new ArrayList<>();
             List<PendingAdd> pendingAdds = new ArrayList<>();
-            MatchRecorder recorder = new MatchRecorder() {
-                @Override
-                public void union(int classId, int targetClassId) {
-                    if (find(classId) != find(targetClassId)) {
-                        pendingUnions.add(new PendingUnion(classId, targetClassId));
-                    }
-                }
+            MatchRecorder recorder =
+                    new MatchRecorder() {
+                        @Override
+                        public void union(int classId, int targetClassId) {
+                            if (find(classId) != find(targetClassId)) {
+                                pendingUnions.add(new PendingUnion(classId, targetClassId));
+                            }
+                        }
 
-                @Override
-                public void addAndUnion(int classId, ENode replacement) {
-                    if (totalNodes + pendingAdds.size() < maxNodes) {
-                        pendingAdds.add(new PendingAdd(classId, replacement));
-                    }
-                }
-            };
+                        @Override
+                        public void addAndUnion(int classId, ENode replacement) {
+                            if (totalNodes + pendingAdds.size() < maxNodes) {
+                                pendingAdds.add(new PendingAdd(classId, replacement));
+                            }
+                        }
+                    };
 
             int classCount = parent.size();
             for (int id = 0; id < classCount; id++) {
@@ -469,8 +502,7 @@ public final class EGraph {
 
     // ---------------------------------------------------------------- cost-based extraction
 
-    private record BestNode(int cost, ENode node) {
-    }
+    private record BestNode(int cost, ENode node) {}
 
     /** Extracts the minimum-cost expression tree rooted at {@code rootId}. */
     public ExtractedTree extract(int rootId, ToIntFunction<ENode> nodeCost) {
@@ -501,7 +533,8 @@ public final class EGraph {
         return buildTree(find(rootId), best);
     }
 
-    private int computeNodeCost(ENode node, Map<Integer, BestNode> best, ToIntFunction<ENode> nodeCost) {
+    private int computeNodeCost(
+            ENode node, Map<Integer, BestNode> best, ToIntFunction<ENode> nodeCost) {
         int sum = nodeCost.applyAsInt(node);
         for (int i = 0; i < node.arity(); i++) {
             BestNode childBest = best.get(find(node.child(i)));
@@ -525,8 +558,11 @@ public final class EGraph {
             return candidate.isConst();
         }
         if (candidate.arity() == 2 && prev.arity() == 2 && candidate.op() == prev.op()) {
-            boolean candConstRight = constantOf(candidate.child(1)) != null && constantOf(candidate.child(0)) == null;
-            boolean prevConstRight = constantOf(prev.child(1)) != null && constantOf(prev.child(0)) == null;
+            boolean candConstRight =
+                    constantOf(candidate.child(1)) != null
+                            && constantOf(candidate.child(0)) == null;
+            boolean prevConstRight =
+                    constantOf(prev.child(1)) != null && constantOf(prev.child(0)) == null;
             if (candConstRight != prevConstRight) {
                 return candConstRight;
             }
@@ -537,7 +573,8 @@ public final class EGraph {
     private ExtractedTree buildTree(int classId, Map<Integer, BestNode> best) {
         BestNode b = best.get(classId);
         if (b == null) {
-            throw new IllegalStateException("E-class #" + classId + " has no extractable acyclic node");
+            throw new IllegalStateException(
+                    "E-class #" + classId + " has no extractable acyclic node");
         }
         ENode node = b.node();
         if (node.arity() == 0) {
@@ -555,7 +592,8 @@ public final class EGraph {
             case CONST -> 1;
             case OPAQUE -> 2;
             case NOT, NEG -> 3;
-            case ADD, SUB, MUL, DIV, FLOOR_DIV, MOD, STR_ADD, EQ, NEQ, LT, LTE, GT, GTE, AND, OR -> 4;
+            case ADD, SUB, MUL, DIV, FLOOR_DIV, MOD, STR_ADD, EQ, NEQ, LT, LTE, GT, GTE, AND, OR ->
+                    4;
             case ITE -> 5;
             case CALL -> 10;
         };

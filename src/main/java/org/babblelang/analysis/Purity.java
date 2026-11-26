@@ -16,10 +16,10 @@ package org.babblelang.analysis;
  *                IMPURE
  * </pre>
  *
- * <p>"Contextually" means the callee mutates its arguments ({@code mut} parameters) and nothing else
- * outside its frame ; the receiver is left to {@link EffectSet#mutThis()}, which only matters for a
- * method call. {@code SIDE_EFFECT_FREE} is Babble's {@code volatile} : it reads state it does not
- * own, so its result is not deterministic. {@code IMPURE} is anything not hermetic : I/O, or
+ * <p>"Contextually" means the callee mutates its arguments ({@code mut} parameters) and nothing
+ * else outside its frame ; the receiver is left to {@link EffectSet#mutThis()}, which only matters
+ * for a method call. {@code SIDE_EFFECT_FREE} is Babble's {@code volatile} : it reads state it does
+ * not own, so its result is not deterministic. {@code IMPURE} is anything not hermetic : I/O, or
  * mutation of state outside the frame.
  *
  * <p>ANTLR-free.
@@ -41,7 +41,10 @@ enum Purity {
         this.impure = impure;
     }
 
-    /** The purity of a callee with {@code effects} that mutates the arguments it is given iff {@code mutatesArguments}. */
+    /**
+     * The purity of a callee with {@code effects} that mutates the arguments it is given iff {@code
+     * mutatesArguments}.
+     */
     static Purity of(EffectSet effects, boolean mutatesArguments) {
         if (!effects.isHermetic()) {
             return IMPURE;
@@ -49,7 +52,10 @@ enum Purity {
         return of(mutatesArguments, !effects.isDeterministic(), false);
     }
 
-    /** {@link #of(EffectSet, boolean)} for a callee whose {@code mut} parameters are {@code mutParams}. */
+    /**
+     * {@link #of(EffectSet, boolean)} for a callee whose {@code mut} parameters are {@code
+     * mutParams}.
+     */
     static Purity of(EffectSet effects, boolean[] mutParams) {
         return of(effects, EffectChecker.anyTrue(mutParams));
     }
@@ -76,7 +82,9 @@ enum Purity {
 
     /** The join : what calling either may do (downward in the diagram). */
     Purity join(Purity other) {
-        return of(mutatesArguments || other.mutatesArguments, volatileReads || other.volatileReads,
+        return of(
+                mutatesArguments || other.mutatesArguments,
+                volatileReads || other.volatileReads,
                 impure || other.impure);
     }
 

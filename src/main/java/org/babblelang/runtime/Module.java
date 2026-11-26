@@ -1,16 +1,17 @@
 package org.babblelang.runtime;
 
-
 import java.util.Set;
 
 /**
- * What {@code import("file.ba")} returns : the exported names of a file, as read-only
- * members. A member reads the current value of the definition, so a module imported in a
- * cycle, before its definitions ran, fails with "Name used before definition" like any
- * other early use.
+ * What {@code import("file.ba")} returns : the exported names of a file, as read-only members. A
+ * member reads the current value of the definition, so a module imported in a cycle, before its
+ * definitions ran, fails with "Name used before definition" like any other early use.
  */
 public final class Module implements HasMembers {
-    /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
+    /**
+     * {@code import} takes a name with this extension for a Babble file, any other for a Java
+     * package.
+     */
     public static final String EXTENSION = ".ba";
 
     private final String name;
@@ -80,9 +81,10 @@ public final class Module implements HasMembers {
 
     @Override
     public void setMember(String member, Object value, boolean own) {
-        throw new BabbleException(exports.contains(member)
-                ? "Cannot assign to an export : " + member
-                : "No such export : " + member + " in " + name);
+        throw new BabbleException(
+                exports.contains(member)
+                        ? "Cannot assign to an export : " + member
+                        : "No such export : " + member + " in " + name);
     }
 
     @Override

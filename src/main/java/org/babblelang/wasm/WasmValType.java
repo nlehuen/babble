@@ -4,12 +4,10 @@ import java.io.ByteArrayOutputStream;
 import java.util.Objects;
 
 /**
- * WebAssembly 3.0 value types, packed storage types, and heap types ({@code BIP025-I0}, {@code BIP025-D1}).
+ * WebAssembly 3.0 value types, packed storage types, and heap types ({@code BIP025-I0}, {@code
+ * BIP025-D1}).
  */
-public sealed interface WasmValType permits
-        WasmValType.Num,
-        WasmValType.Packed,
-        WasmValType.Ref {
+public sealed interface WasmValType permits WasmValType.Num, WasmValType.Packed, WasmValType.Ref {
 
     /** Numeric value types. */
     enum Num implements WasmValType {
@@ -155,7 +153,10 @@ public sealed interface WasmValType permits
                     case NOEXN -> "nullexnref";
                 };
             }
-            String ht = heapType instanceof HeapType.Indexed idx ? "$t" + idx.typeIndex() : heapType.wat();
+            String ht =
+                    heapType instanceof HeapType.Indexed idx
+                            ? "$t" + idx.typeIndex()
+                            : heapType.wat();
             return nullable ? "(ref null " + ht + ")" : "(ref " + ht + ")";
         }
 
@@ -205,7 +206,10 @@ public sealed interface WasmValType permits
         return this instanceof Packed;
     }
 
-    /** Returns the stack/local value type corresponding to a storage type (packed i8/i16 widen to i32). */
+    /**
+     * Returns the stack/local value type corresponding to a storage type (packed i8/i16 widen to
+     * i32).
+     */
     default WasmValType unpacked() {
         return this instanceof Packed ? I32 : this;
     }

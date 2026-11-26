@@ -6,6 +6,5 @@ import org.babblelang.axioms.MeansNullable;
 @Axioms(targetName = "androidx.annotation.Nullable")
 @MeansNullable
 public final class NullableAxioms {
-    private NullableAxioms() {
-    }
+    private NullableAxioms() {}
 }

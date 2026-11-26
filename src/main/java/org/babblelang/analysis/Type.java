@@ -5,15 +5,12 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
-/**
- * A static type, as the type checker computes it (see docs/design/bip008_static-typing.md).
- */
+/** A static type, as the type checker computes it (see docs/design/bip008_static-typing.md). */
 sealed interface Type {
     /** The built-in types, and the special ones. */
     record Simple(String name, Class<?> javaClass) implements Type {
@@ -23,12 +20,21 @@ sealed interface Type {
         }
     }
 
-    /** Internal sentinel for an expression or declaration whose type failed to resolve (never a language type). */
+    /**
+     * Internal sentinel for an expression or declaration whose type failed to resolve (never a
+     * language type).
+     */
     Simple ERROR = new Simple("<error>", null);
-    /** The sound non-null top type : assignable from every non-null type, usable only once narrowed or cast. */
+
+    /**
+     * The sound non-null top type : assignable from every non-null type, usable only once narrowed
+     * or cast.
+     */
     Simple ANY = new Simple("any", Object.class);
+
     /** The type of an expression that never yields a value : {@code return}. */
     Simple NOTHING = new Simple("nothing", null);
+
     Simple NULL = new Simple("null", null);
     Simple BYTE = new Simple("byte", Byte.class);
     Simple SHORT = new Simple("short", Short.class);
@@ -40,7 +46,10 @@ sealed interface Type {
     Simple CHAR = new Simple("char", Character.class);
     Simple STRING = new Simple("string", String.class);
 
-    /** Position in the strict widening chain {@code byte < short < int < long < float < double}, or -1. */
+    /**
+     * Position in the strict widening chain {@code byte < short < int < long < float < double}, or
+     * -1.
+     */
     static int numericRank(Type type) {
         if (type == BYTE) return 0;
         if (type == SHORT) return 1;
@@ -77,7 +86,8 @@ sealed interface Type {
 
     static Type rangeElement(Type type) {
         Type unwrapped = type instanceof Frozen f ? f.of() : type;
-        if (unwrapped instanceof JavaInstance ji && ji.type() == org.babblelang.runtime.Range.class) {
+        if (unwrapped instanceof JavaInstance ji
+                && ji.type() == org.babblelang.runtime.Range.class) {
             return ji.typeArguments().isEmpty() ? ANY : ji.typeArguments().get(0);
         }
         return null;
@@ -91,13 +101,21 @@ sealed interface Type {
         return isNumericScalar(type) || type == BOOL || type == CHAR || type == STRING;
     }
 
-    /** A union of distinct non-union, non-nothing, non-error types (with {@code null}, if present, last). */
+    /**
+     * A union of distinct non-union, non-nothing, non-error types (with {@code null}, if present,
+     * last).
+     */
     record Union(List<Type> members) implements Type {
         @Override
         public String toString() {
             if (members.size() == 2 && members.get(1) == NULL) {
                 Type base = members.get(0);
-                return (base instanceof Function || base instanceof Intersection || base instanceof Array ? "(" + base + ")" : base.toString()) + "?";
+                return (base instanceof Function
+                                        || base instanceof Intersection
+                                        || base instanceof Array
+                                ? "(" + base + ")"
+                                : base.toString())
+                        + "?";
             }
             return members.stream()
                     .map(m -> m instanceof Function ? "(" + m + ")" : m.toString())
@@ -109,8 +127,8 @@ sealed interface Type {
     Type NULLABLE_ANY = new Union(List.of(ANY, NULL));
 
     /**
-     * An intersection of interface types (BIP022) : the values that are all of its members.
-     * Built by {@link #intersection}, so it has at least two distinct members, none of them an
+     * An intersection of interface types (BIP022) : the values that are all of its members. Built
+     * by {@link #intersection}, so it has at least two distinct members, none of them an
      * intersection, {@code any} or a type another member implies ; a member may be a union of
      * interfaces, which relations distribute (BIP022-D2).
      */
@@ -118,7 +136,10 @@ sealed interface Type {
         @Override
         public String toString() {
             return members.stream()
-                    .map(m -> m instanceof Union || m instanceof Function ? "(" + m + ")" : m.toString())
+                    .map(m ->
+                            m instanceof Union || m instanceof Function
+                                    ? "(" + m + ")"
+                                    : m.toString())
                     .collect(Collectors.joining(" & "));
         }
     }
@@ -128,10 +149,9 @@ sealed interface Type {
     }
 
     /**
-     * The normal form of an intersection (BIP022-D2) : nested intersections flattened,
-     * {@code any} and duplicates dropped, and a member another member implies dropped
-     * ({@code Shape & Base} is {@code Shape} when {@code Shape extends Base}) ; one member left
-     * is that member.
+     * The normal form of an intersection (BIP022-D2) : nested intersections flattened, {@code any}
+     * and duplicates dropped, and a member another member implies dropped ({@code Shape & Base} is
+     * {@code Shape} when {@code Shape extends Base}) ; one member left is that member.
      */
     static Type intersection(Collection<? extends Type> types) {
         List<Type> flat = new ArrayList<>();
@@ -166,12 +186,17 @@ sealed interface Type {
         return kept.size() == 1 ? kept.get(0) : new Intersection(List.copyOf(kept));
     }
 
-    /** Whether every value of {@code sub} is a {@code sup}, by declared interfaces alone (no type arguments on {@code sup}). */
+    /**
+     * Whether every value of {@code sub} is a {@code sup}, by declared interfaces alone (no type
+     * arguments on {@code sup}).
+     */
     private static boolean impliesNominally(Type sub, Type sup) {
         if (sub instanceof Instance s && sup instanceof Instance t && t.typeArguments().isEmpty()) {
             return s.node() != t.node() && TypeAlgebra.isSubtype(s.node(), t.node());
         }
-        if (sub instanceof JavaInstance s && sup instanceof JavaInstance t && t.typeArguments().isEmpty()) {
+        if (sub instanceof JavaInstance s
+                && sup instanceof JavaInstance t
+                && t.typeArguments().isEmpty()) {
             return s.type() != t.type() && t.type().isAssignableFrom(s.type());
         }
         return false;
@@ -195,7 +220,10 @@ sealed interface Type {
                 case Instance i -> i.typeArguments().isEmpty();
                 case JavaInstance j -> j.typeArguments().isEmpty();
                 case CoreCollection c -> c.typeArguments().isEmpty();
-                case Union u -> u.members().size() == 2 && u.members().get(1) == NULL && isSimpleElement(u.members().get(0));
+                case Union u ->
+                        u.members().size() == 2
+                                && u.members().get(1) == NULL
+                                && isSimpleElement(u.members().get(0));
                 default -> false;
             };
         }
@@ -215,7 +243,10 @@ sealed interface Type {
         }
     }
 
-    /** A Babble generic type parameter declared on a class, interface, type alias, function def/literal, or function type. */
+    /**
+     * A Babble generic type parameter declared on a class, interface, type alias, function
+     * def/literal, or function type.
+     */
     final class TypeVar implements Type {
         private final SymbolId owner;
         private final String name;
@@ -245,7 +276,9 @@ sealed interface Type {
             return index;
         }
 
-        /** Declared upper bound, or null when unbounded (effective bound {@link Type#NULLABLE_ANY}). */
+        /**
+         * Declared upper bound, or null when unbounded (effective bound {@link Type#NULLABLE_ANY}).
+         */
         Type bound() {
             return bound;
         }
@@ -260,10 +293,11 @@ sealed interface Type {
 
         @Override
         public boolean equals(Object o) {
-            return this == o || (o instanceof TypeVar other
-                    && index == other.index
-                    && java.util.Objects.equals(owner, other.owner)
-                    && java.util.Objects.equals(name, other.name));
+            return this == o
+                    || (o instanceof TypeVar other
+                            && index == other.index
+                            && java.util.Objects.equals(owner, other.owner)
+                            && java.util.Objects.equals(name, other.name));
         }
 
         @Override
@@ -281,17 +315,24 @@ sealed interface Type {
     record Frozen(Type of) implements Type {
         @Override
         public String toString() {
-            return "frozen " + (of instanceof Union || of instanceof Function || of instanceof Intersection ? "(" + of + ")" : of);
+            return "frozen "
+                    + (of instanceof Union || of instanceof Function || of instanceof Intersection
+                            ? "(" + of + ")"
+                            : of);
         }
     }
 
     /**
      * Wraps {@code type} in {@link Frozen} per BIP007-D7 : simplifies only on the 9 core scalars
-     * and {@code null}, distributes over {@link Union} ({@code frozen T?} becomes
-     * {@code (frozen T)?}), and never unwraps nominal/reference types.
+     * and {@code null}, distributes over {@link Union} ({@code frozen T?} becomes {@code (frozen
+     * T)?}), and never unwraps nominal/reference types.
      */
     static Type frozen(Type type) {
-        if (type == null || type == ERROR || type == NOTHING || type == NULL || isCoreScalar(type)) {
+        if (type == null
+                || type == ERROR
+                || type == NOTHING
+                || type == NULL
+                || isCoreScalar(type)) {
             return type;
         }
         if (type instanceof Frozen) {
@@ -309,11 +350,20 @@ sealed interface Type {
 
     /** The universal nullable frozen top type {@code frozen any?}. */
     Type FROZEN_ANY = new Frozen(ANY);
+
     Type NULLABLE_FROZEN_ANY = new Union(List.of(FROZEN_ANY, NULL));
 
     /** A parameter of a function type : its name is part of the type, since calls bind by name. */
-    record Parameter(String name, Type type, boolean optional, boolean keywordOnly, boolean rest,
-                     boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
+    record Parameter(
+            String name,
+            Type type,
+            boolean optional,
+            boolean keywordOnly,
+            boolean rest,
+            boolean mut,
+            boolean borrow,
+            boolean explicitShared,
+            boolean unique) {
         Parameter(String name, Type type, boolean optional) {
             this(name, type, optional, false, false, false, false, false, false);
         }
@@ -322,30 +372,76 @@ sealed interface Type {
             this(name, type, optional, false, false, mut, borrow, false, false);
         }
 
-        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared) {
+        Parameter(
+                String name,
+                Type type,
+                boolean optional,
+                boolean mut,
+                boolean borrow,
+                boolean explicitShared) {
             this(name, type, optional, false, false, mut, borrow, explicitShared, false);
         }
 
-        Parameter(String name, Type type, boolean optional, boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
+        Parameter(
+                String name,
+                Type type,
+                boolean optional,
+                boolean mut,
+                boolean borrow,
+                boolean explicitShared,
+                boolean unique) {
             this(name, type, optional, false, false, mut, borrow, explicitShared, unique);
         }
 
-        Parameter(String name, Type type, boolean optional, boolean keywordOnly,
-                  boolean mut, boolean borrow, boolean explicitShared, boolean unique) {
+        Parameter(
+                String name,
+                Type type,
+                boolean optional,
+                boolean keywordOnly,
+                boolean mut,
+                boolean borrow,
+                boolean explicitShared,
+                boolean unique) {
             this(name, type, optional, keywordOnly, false, mut, borrow, explicitShared, unique);
         }
 
         Parameter withType(Type newType) {
-            return new Parameter(name, newType, optional, keywordOnly, rest, mut, borrow, explicitShared, unique);
+            return new Parameter(
+                    name,
+                    newType,
+                    optional,
+                    keywordOnly,
+                    rest,
+                    mut,
+                    borrow,
+                    explicitShared,
+                    unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow) {
-            return new Parameter(name, type, optional, keywordOnly, rest, newMut, newBorrow && !explicitShared && !unique, explicitShared, unique);
+            return new Parameter(
+                    name,
+                    type,
+                    optional,
+                    keywordOnly,
+                    rest,
+                    newMut,
+                    newBorrow && !explicitShared && !unique,
+                    explicitShared,
+                    unique);
         }
 
         Parameter withModifiers(boolean newMut, boolean newBorrow, boolean newUnique) {
-            return new Parameter(name, type, optional, keywordOnly, rest, newMut, newBorrow && !explicitShared && !newUnique,
-                    explicitShared && !newUnique, newUnique);
+            return new Parameter(
+                    name,
+                    type,
+                    optional,
+                    keywordOnly,
+                    rest,
+                    newMut,
+                    newBorrow && !explicitShared && !newUnique,
+                    explicitShared && !newUnique,
+                    newUnique);
         }
 
         private static String formatRestType(Type t) {
@@ -378,24 +474,39 @@ sealed interface Type {
     }
 
     /**
-     * A function type. {@code forwardedEffectParams} are the indices of its own callback
-     * parameters named in {@code calling} (BIP017-D1); {@code capturedCallings} the names of
-     * callback parameters of an enclosing function it captures and forwards the effects of
-     * ({@code fn calling (f, g) (a : A) : C} returned by {@code compose}), which a call of that
-     * enclosing function replaces by the effects of its arguments (BIP017-D5).
+     * A function type. {@code forwardedEffectParams} are the indices of its own callback parameters
+     * named in {@code calling} (BIP017-D1); {@code capturedCallings} the names of callback
+     * parameters of an enclosing function it captures and forwards the effects of ({@code fn
+     * calling (f, g) (a : A) : C} returned by {@code compose}), which a call of that enclosing
+     * function replaces by the effects of its arguments (BIP017-D5).
      */
-    record Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result,
-                    EffectSet effects, Set<Integer> forwardedEffectParams, Set<String> capturedCallings) implements Type {
+    record Function(
+            List<TypeVar> typeParameters,
+            List<Parameter> parameters,
+            Type result,
+            EffectSet effects,
+            Set<Integer> forwardedEffectParams,
+            Set<String> capturedCallings)
+            implements Type {
         public Function {
             effects = effects != null ? effects : EffectSet.EMPTY;
-            forwardedEffectParams = forwardedEffectParams == null || forwardedEffectParams.isEmpty()
-                    ? Set.of() : Set.copyOf(forwardedEffectParams);
-            capturedCallings = capturedCallings == null || capturedCallings.isEmpty()
-                    ? Set.of() : java.util.Collections.unmodifiableSet(new java.util.TreeSet<>(capturedCallings));
+            forwardedEffectParams =
+                    forwardedEffectParams == null || forwardedEffectParams.isEmpty()
+                            ? Set.of()
+                            : Set.copyOf(forwardedEffectParams);
+            capturedCallings =
+                    capturedCallings == null || capturedCallings.isEmpty()
+                            ? Set.of()
+                            : java.util.Collections.unmodifiableSet(
+                                    new java.util.TreeSet<>(capturedCallings));
         }
 
-        Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result,
-                 EffectSet effects, Set<Integer> forwardedEffectParams) {
+        Function(
+                List<TypeVar> typeParameters,
+                List<Parameter> parameters,
+                Type result,
+                EffectSet effects,
+                Set<Integer> forwardedEffectParams) {
             this(typeParameters, parameters, result, effects, forwardedEffectParams, Set.of());
         }
 
@@ -411,10 +522,18 @@ sealed interface Type {
 
         /** This type with other captured callbacks (and the same everything else). */
         Function withCapturedCallings(EffectSet newEffects, Set<String> newCaptured) {
-            return new Function(typeParameters, parameters, result, newEffects, forwardedEffectParams, newCaptured);
+            return new Function(
+                    typeParameters,
+                    parameters,
+                    result,
+                    newEffects,
+                    forwardedEffectParams,
+                    newCaptured);
         }
 
-        /** The names of the enclosing function's parameters that {@code type} (a result) forwards. */
+        /**
+         * The names of the enclosing function's parameters that {@code type} (a result) forwards.
+         */
         static Set<String> capturedCallingsOf(Type type) {
             Set<String> names = new java.util.TreeSet<>();
             for (Type member : membersOf(type)) {
@@ -434,7 +553,11 @@ sealed interface Type {
             this(List.of(), parameters, result, effects, Set.of());
         }
 
-        Function(List<Parameter> parameters, Type result, EffectSet effects, Set<Integer> forwardedEffectParams) {
+        Function(
+                List<Parameter> parameters,
+                Type result,
+                EffectSet effects,
+                Set<Integer> forwardedEffectParams) {
             this(List.of(), parameters, result, effects, forwardedEffectParams);
         }
 
@@ -442,25 +565,45 @@ sealed interface Type {
             this(typeParameters, parameters, result, EffectSet.EMPTY, Set.of());
         }
 
-        Function(List<TypeVar> typeParameters, List<Parameter> parameters, Type result, EffectSet effects) {
+        Function(
+                List<TypeVar> typeParameters,
+                List<Parameter> parameters,
+                Type result,
+                EffectSet effects) {
             this(typeParameters, parameters, result, effects, Set.of());
         }
 
         Function withEffects(EffectSet newEffects) {
-            return new Function(typeParameters, parameters, result, newEffects, forwardedEffectParams, capturedCallings);
+            return new Function(
+                    typeParameters,
+                    parameters,
+                    result,
+                    newEffects,
+                    forwardedEffectParams,
+                    capturedCallings);
         }
 
         Function withEffects(EffectSet newEffects, List<Parameter> newParameters) {
-            return new Function(typeParameters, newParameters, result, newEffects, forwardedEffectParams, capturedCallings);
+            return new Function(
+                    typeParameters,
+                    newParameters,
+                    result,
+                    newEffects,
+                    forwardedEffectParams,
+                    capturedCallings);
         }
 
-        /** The names a {@code calling} clause lists : own callback parameters, then captured ones. */
+        /**
+         * The names a {@code calling} clause lists : own callback parameters, then captured ones.
+         */
         List<String> callingNames() {
-            List<String> names = new ArrayList<>(forwardedEffectParams.stream()
-                    .sorted()
-                    .filter(i -> i >= 0 && i < parameters.size())
-                    .map(i -> parameters.get(i).name())
-                    .toList());
+            List<String> names =
+                    new ArrayList<>(
+                            forwardedEffectParams.stream()
+                                    .sorted()
+                                    .filter(i -> i >= 0 && i < parameters.size())
+                                    .map(i -> parameters.get(i).name())
+                                    .toList());
             names.addAll(capturedCallings);
             return names;
         }
@@ -470,7 +613,8 @@ sealed interface Type {
             if (names.isEmpty()) {
                 return "";
             }
-            return names.size() == 1 ? "calling " + names.get(0) + " "
+            return names.size() == 1
+                    ? "calling " + names.get(0) + " "
                     : "calling (" + String.join(", ", names) + ") ";
         }
 
@@ -498,21 +642,31 @@ sealed interface Type {
 
         /** Formats this function type highlighting guarantees relevant to {@code expected}. */
         String describeAgainst(Function expected) {
-            java.util.EnumSet<org.babblelang.effects.Effect> shown = EffectSet.copySet(effects.declared());
+            java.util.EnumSet<org.babblelang.effects.Effect> shown =
+                    EffectSet.copySet(effects.declared());
             for (org.babblelang.effects.Effect req : expected.effects().effects()) {
                 if (effects.has(req)) {
                     shown.add(req);
                 }
             }
-            boolean showIO = effects.isIO() || (expected.effects().isHermetic() && !effects.isHermetic());
-            boolean showVolatile = !showIO && (effects.explicitVolatile()
-                    || (expected.effects().isDeterministic() && effects.isHermetic() && !effects.isDeterministic()));
-            boolean showSharedThis = effects.explicitSharedThis()
-                    || (expected.effects().borrowThis() && !effects.borrowThis());
-            boolean showUniqueReturn = effects.explicitUniqueResult()
-                    || (expected.effects().uniqueResult() && effects.uniqueResult());
-            String prefix = EffectSet.formatSurface(shown, showIO, showVolatile, effects.mutThis(), showSharedThis)
-                    + formatCallingClause();
+            boolean showIO =
+                    effects.isIO() || (expected.effects().isHermetic() && !effects.isHermetic());
+            boolean showVolatile =
+                    !showIO
+                            && (effects.explicitVolatile()
+                                    || (expected.effects().isDeterministic()
+                                            && effects.isHermetic()
+                                            && !effects.isDeterministic()));
+            boolean showSharedThis =
+                    effects.explicitSharedThis()
+                            || (expected.effects().borrowThis() && !effects.borrowThis());
+            boolean showUniqueReturn =
+                    effects.explicitUniqueResult()
+                            || (expected.effects().uniqueResult() && effects.uniqueResult());
+            String prefix =
+                    EffectSet.formatSurface(
+                                    shown, showIO, showVolatile, effects.mutThis(), showSharedThis)
+                            + formatCallingClause();
             boolean showFn = !expected.typeParameters().isEmpty() || !typeParameters.isEmpty();
             String tp = formatTypeParams(typeParameters);
             StringBuilder params = new StringBuilder("(");
@@ -530,11 +684,15 @@ sealed interface Type {
                 if (p.rest()) {
                     sawRest = true;
                 }
-                boolean showShared = i < expected.parameters().size() && expected.parameters().get(i).borrow();
+                boolean showShared =
+                        i < expected.parameters().size() && expected.parameters().get(i).borrow();
                 params.append(p.format(showShared));
             }
             params.append(")");
-            return (showFn ? "fn " : "") + tp + prefix + params
+            return (showFn ? "fn " : "")
+                    + tp
+                    + prefix
+                    + params
                     + (result == ERROR ? "" : " : " + (showUniqueReturn ? "unique " : "") + result);
         }
 
@@ -559,10 +717,14 @@ sealed interface Type {
                 params.append(p);
             }
             params.append(")");
-            return (typeParameters.isEmpty() ? "" : "fn ") + tp
-                    + effects.formatDeclaredPrefix() + formatCallingClause()
+            return (typeParameters.isEmpty() ? "" : "fn ")
+                    + tp
+                    + effects.formatDeclaredPrefix()
+                    + formatCallingClause()
                     + params
-                    + (result == ERROR ? "" : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
+                    + (result == ERROR
+                            ? ""
+                            : " : " + (effects.explicitUniqueResult() ? "unique " : "") + result);
         }
     }
 
@@ -577,9 +739,12 @@ sealed interface Type {
 
         @Override
         public String toString() {
-            return "overload (" + alternatives.stream()
-                    .map(alt -> alt.typeParameters().isEmpty() ? "fn " + alt : alt.toString())
-                    .collect(Collectors.joining(", ")) + ")";
+            return "overload ("
+                    + alternatives.stream()
+                            .map(alt ->
+                                    alt.typeParameters().isEmpty() ? "fn " + alt : alt.toString())
+                            .collect(Collectors.joining(", "))
+                    + ")";
         }
     }
 
@@ -604,8 +769,12 @@ sealed interface Type {
 
         @Override
         public String toString() {
-            return typeArguments.isEmpty() ? node.name
-                    : node.name + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            return typeArguments.isEmpty()
+                    ? node.name
+                    : node.name
+                            + typeArguments.stream()
+                                    .map(Type::toString)
+                                    .collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
@@ -620,7 +789,10 @@ sealed interface Type {
         }
     }
 
-    /** The value of a class or interface expression : its constructor and statics, optionally specialized via {@code of}. */
+    /**
+     * The value of a class or interface expression : its constructor and statics, optionally
+     * specialized via {@code of}.
+     */
     record ClassValue(TypeNode node, List<Type> typeArguments) implements Type {
         ClassValue(TypeNode node) {
             this(node, List.of());
@@ -629,12 +801,19 @@ sealed interface Type {
         @Override
         public String toString() {
             String base = (node.isInterface() ? "interface " : "class ") + node.name;
-            return typeArguments.isEmpty() ? base
-                    : base + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            return typeArguments.isEmpty()
+                    ? base
+                    : base
+                            + typeArguments.stream()
+                                    .map(Type::toString)
+                                    .collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
-    /** A core collection constructor value ({@code list}, {@code list of int}, {@code map of (string, int)}, etc.). */
+    /**
+     * A core collection constructor value ({@code list}, {@code list of int}, {@code map of
+     * (string, int)}, etc.).
+     */
     record CoreCollection(String kind, List<Type> typeArguments) implements Type {
         CoreCollection(String kind) {
             this(kind, List.of());
@@ -642,12 +821,19 @@ sealed interface Type {
 
         @Override
         public String toString() {
-            return typeArguments.isEmpty() ? kind
-                    : kind + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            return typeArguments.isEmpty()
+                    ? kind
+                    : kind
+                            + typeArguments.stream()
+                                    .map(Type::toString)
+                                    .collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
-    /** The {@code of} factory of an array type ({@code array.of} or {@code (array of T).of}, BIP020 §2.3). */
+    /**
+     * The {@code of} factory of an array type ({@code array.of} or {@code (array of T).of}, BIP020
+     * §2.3).
+     */
     record ArrayOfFactory(Type element) implements Type {
         @Override
         public String toString() {
@@ -655,7 +841,10 @@ sealed interface Type {
         }
     }
 
-    /** A module imported statically : its exports are its members (docs/design/bip005_modules.md §8.2). */
+    /**
+     * A module imported statically : its exports are its members (docs/design/bip005_modules.md
+     * §8.2).
+     */
     record Module(ModuleInterface module) implements Type {
         @Override
         public String toString() {
@@ -670,7 +859,10 @@ sealed interface Type {
         }
     }
 
-    /** A Java class as a value : its constructors, static methods and member classes, optionally specialized via {@code of}. */
+    /**
+     * A Java class as a value : its constructors, static methods and member classes, optionally
+     * specialized via {@code of}.
+     */
     record JavaClassValue(Class<?> type, List<Type> typeArguments) implements Type {
         JavaClassValue(Class<?> type) {
             this(type, List.of());
@@ -679,8 +871,12 @@ sealed interface Type {
         @Override
         public String toString() {
             String base = "class " + type.getName();
-            return typeArguments.isEmpty() ? base
-                    : base + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            return typeArguments.isEmpty()
+                    ? base
+                    : base
+                            + typeArguments.stream()
+                                    .map(Type::toString)
+                                    .collect(Collectors.joining(", ", "(", ")"));
         }
     }
 
@@ -693,8 +889,12 @@ sealed interface Type {
         @Override
         public String toString() {
             String name = coreCollectionDisplayName(type);
-            return typeArguments.isEmpty() ? name
-                    : name + typeArguments.stream().map(Type::toString).collect(Collectors.joining(", ", "(", ")"));
+            return typeArguments.isEmpty()
+                    ? name
+                    : name
+                            + typeArguments.stream()
+                                    .map(Type::toString)
+                                    .collect(Collectors.joining(", ", "(", ")"));
         }
 
         private static String coreCollectionDisplayName(Class<?> type) {
@@ -727,7 +927,9 @@ sealed interface Type {
     }
 
     /** The methods of a Java class with one name, selected through the class or an instance. */
-    record JavaMethod(Class<?> owner, List<Type> typeArguments, String name, List<Type> methodTypeArguments) implements Type {
+    record JavaMethod(
+            Class<?> owner, List<Type> typeArguments, String name, List<Type> methodTypeArguments)
+            implements Type {
         JavaMethod(Class<?> owner, String name) {
             this(owner, List.of(), name, List.of());
         }
@@ -844,7 +1046,10 @@ sealed interface Type {
         return anyMatch(Type.TypeVar.class::isInstance);
     }
 
-    /** Whether this type mentions a synthetic type variable (one a call is still solving, with no owner). */
+    /**
+     * Whether this type mentions a synthetic type variable (one a call is still solving, with no
+     * owner).
+     */
     default boolean hasSyntheticTypeVar() {
         return anyMatch(t -> t instanceof Type.TypeVar tv && tv.owner() == null);
     }
@@ -893,9 +1098,9 @@ sealed interface Type {
     }
 
     /**
-     * Top-down structural map catamorphism: {@code mapper.apply(node)} returns a replacement
-     * to short-circuit, or {@code null} to descend into children. Preserves physical identity
-     * when no child changes.
+     * Top-down structural map catamorphism: {@code mapper.apply(node)} returns a replacement to
+     * short-circuit, or {@code null} to descend into children. Preserves physical identity when no
+     * child changes.
      */
     default Type mapTypes(UnaryOperator<Type> mapper) {
         Type direct = mapper.apply(this);
@@ -920,21 +1125,34 @@ sealed interface Type {
                 yield elem != a.element() ? new Array(elem) : a;
             }
             case Function fn -> {
-                List<Parameter> mappedParams = mapElements(fn.parameters(), orig -> {
-                    Type mappedType = orig.type().mapTypes(mapper);
-                    return mappedType != orig.type() ? orig.withType(mappedType) : orig;
-                });
+                List<Parameter> mappedParams =
+                        mapElements(
+                                fn.parameters(),
+                                orig -> {
+                                    Type mappedType = orig.type().mapTypes(mapper);
+                                    return mappedType != orig.type()
+                                            ? orig.withType(mappedType)
+                                            : orig;
+                                });
                 Type res = fn.result().mapTypes(mapper);
                 yield (mappedParams != fn.parameters() || res != fn.result())
-                        ? new Function(fn.typeParameters(), mappedParams, res, fn.effects(),
-                                fn.forwardedEffectParams(), fn.capturedCallings())
+                        ? new Function(
+                                fn.typeParameters(),
+                                mappedParams,
+                                res,
+                                fn.effects(),
+                                fn.forwardedEffectParams(),
+                                fn.capturedCallings())
                         : fn;
             }
             case Overloaded ov -> {
-                List<Function> mapped = mapElements(ov.alternatives(), orig -> {
-                    Type m = orig.mapTypes(mapper);
-                    return m instanceof Function mf ? mf : orig;
-                });
+                List<Function> mapped =
+                        mapElements(
+                                ov.alternatives(),
+                                orig -> {
+                                    Type m = orig.mapTypes(mapper);
+                                    return m instanceof Function mf ? mf : orig;
+                                });
                 yield mapped != ov.alternatives() ? new Overloaded(mapped) : ov;
             }
             case Instance inst -> {
@@ -947,7 +1165,9 @@ sealed interface Type {
             }
             case JavaMethod jm -> {
                 List<Type> mapped = mapList(jm.typeArguments(), mapper);
-                yield mapped != jm.typeArguments() ? new JavaMethod(jm.owner(), mapped, jm.name()) : jm;
+                yield mapped != jm.typeArguments()
+                        ? new JavaMethod(jm.owner(), mapped, jm.name())
+                        : jm;
             }
             case ArrayOfFactory af -> {
                 if (af.element() == null) {

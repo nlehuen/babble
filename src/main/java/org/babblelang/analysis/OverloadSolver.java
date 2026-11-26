@@ -1,7 +1,5 @@
 package org.babblelang.analysis;
 
-import org.babblelang.runtime.ClassShape;
-
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -11,20 +9,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.babblelang.runtime.ClassShape;
 
 /**
- * Static well-formedness checking ({@code BIP021-D10}), most-specific overload ordering
- * ({@code BIP021-D11}), static overlap/meet, runtime disjointness, and target-type selection
- * ({@code BIP021-D12}) for Babble overload sets.
+ * Static well-formedness checking ({@code BIP021-D10}), most-specific overload ordering ({@code
+ * BIP021-D11}), static overlap/meet, runtime disjointness, and target-type selection ({@code
+ * BIP021-D12}) for Babble overload sets.
  */
 final class OverloadSolver {
 
-    private OverloadSolver() {
-    }
+    private OverloadSolver() {}
 
     /** One call shape tested during exhaustive ambiguity checking. */
-    record CallShape(int posCount, List<String> kwNames) {
-    }
+    record CallShape(int posCount, List<String> kwNames) {}
 
     /** Result of comparing two alternatives at a call shape or concrete argument list. */
     enum Order {
@@ -33,14 +30,17 @@ final class OverloadSolver {
         INCOMPARABLE
     }
 
-    // ---------------------------------------------------------------- exhaustive ambiguity check (BIP021-D10)
+    // ---------------------------------------------------------------- exhaustive ambiguity check
+    // (BIP021-D10)
 
     /**
-     * Checks whether {@code alternatives} form an unambiguous overload set under {@code BIP021-D10}.
+     * Checks whether {@code alternatives} form an unambiguous overload set under {@code
+     * BIP021-D10}.
      *
      * @return {@code null} when well-formed, or the exact diagnostic message for the first witness.
      */
-    static String checkWellFormed(TypeAlgebra algebra, String setName, List<Type.Function> alternatives) {
+    static String checkWellFormed(
+            TypeAlgebra algebra, String setName, List<Type.Function> alternatives) {
         int n = alternatives.size();
         for (int i = 0; i < n; i++) {
             Type.Function a = alternatives.get(i);
@@ -55,8 +55,14 @@ final class OverloadSolver {
         return null;
     }
 
-    private static String checkPair(TypeAlgebra algebra, String setName, List<Type.Function> all,
-                                    int idxA, int idxB, Type.Function a, Type.Function b) {
+    private static String checkPair(
+            TypeAlgebra algebra,
+            String setName,
+            List<Type.Function> all,
+            int idxA,
+            int idxB,
+            Type.Function a,
+            Type.Function b) {
         List<CallShape> shapes = commonShapes(a, b);
         for (CallShape shape : shapes) {
             List<Type> paramsA = effectiveParamTypes(a, shape);
@@ -84,7 +90,8 @@ final class OverloadSolver {
             if (!hasWitness) {
                 continue;
             }
-            if (hasMeetAlternative(algebra, all, idxA, idxB, a, paramsA, b, paramsB, shape, witness)) {
+            if (hasMeetAlternative(
+                    algebra, all, idxA, idxB, a, paramsA, b, paramsB, shape, witness)) {
                 continue;
             }
             return formatAmbiguity(setName, shape, witness, a, b);
@@ -92,11 +99,17 @@ final class OverloadSolver {
         return null;
     }
 
-    private static boolean hasMeetAlternative(TypeAlgebra algebra, List<Type.Function> all,
-                                              int idxA, int idxB,
-                                              Type.Function a, List<Type> paramsA,
-                                              Type.Function b, List<Type> paramsB,
-                                              CallShape shape, List<Type> witness) {
+    private static boolean hasMeetAlternative(
+            TypeAlgebra algebra,
+            List<Type.Function> all,
+            int idxA,
+            int idxB,
+            Type.Function a,
+            List<Type> paramsA,
+            Type.Function b,
+            List<Type> paramsB,
+            CallShape shape,
+            List<Type> witness) {
         for (int k = 0; k < all.size(); k++) {
             if (k == idxA || k == idxB) {
                 continue;
@@ -118,15 +131,22 @@ final class OverloadSolver {
         return false;
     }
 
-    private static boolean acceptsWitness(TypeAlgebra algebra, Type.Function fn, List<Type> fnParams, List<Type> witness) {
+    private static boolean acceptsWitness(
+            TypeAlgebra algebra, Type.Function fn, List<Type> fnParams, List<Type> witness) {
         return acceptsWitness(algebra, fn, fnParams, witness, false);
     }
 
-    private static boolean acceptsWitness(TypeAlgebra algebra, Type.Function fn, List<Type> fnParams,
-                                          List<Type> witness, boolean borrowAware) {
+    private static boolean acceptsWitness(
+            TypeAlgebra algebra,
+            Type.Function fn,
+            List<Type> fnParams,
+            List<Type> witness,
+            boolean borrowAware) {
         if (fn.typeParameters().isEmpty()) {
-            boolean frozenBorrowSafe = borrowAware
-                    && (fn.effects().uniqueResult() || algebra.isDeeplyImmutable(fn.result()));
+            boolean frozenBorrowSafe =
+                    borrowAware
+                            && (fn.effects().uniqueResult()
+                                    || algebra.isDeeplyImmutable(fn.result()));
             for (int i = 0; i < fnParams.size(); i++) {
                 boolean borrowReadOnly = false;
                 if (frozenBorrowSafe) {
@@ -175,7 +195,8 @@ final class OverloadSolver {
         return shapes;
     }
 
-    private static void addShapesForPosCount(Type.Function a, Type.Function b, int p, List<CallShape> shapes) {
+    private static void addShapesForPosCount(
+            Type.Function a, Type.Function b, int p, List<CallShape> shapes) {
         Set<String> reqKws = new LinkedHashSet<>();
         collectRequiredNamedAfter(a, p, reqKws);
         collectRequiredNamedAfter(b, p, reqKws);
@@ -184,7 +205,8 @@ final class OverloadSolver {
         }
         List<String> baseKw = List.copyOf(reqKws);
         shapes.add(new CallShape(p, baseKw));
-        // Also test common optional named parameters that could distinguish or create a cross-ambiguity.
+        // Also test common optional named parameters that could distinguish or create a
+        // cross-ambiguity.
         Set<String> optA = availableNamedAfter(a, p, reqKws);
         Set<String> optB = availableNamedAfter(b, p, reqKws);
         List<String> commonOpts = new ArrayList<>();
@@ -208,11 +230,15 @@ final class OverloadSolver {
     }
 
     private static int minPositional(Type.Function fn) {
-        // Required positional parameters can also be passed by name! So positional count can go down to 0
-        // if required positional params are passed by name — wait: in commonShapes we keep required positional
+        // Required positional parameters can also be passed by name! So positional count can go
+        // down to 0
+        // if required positional params are passed by name — wait: in commonShapes we keep required
+        // positional
         // params as positional, and handle keyword-only params in reqKws.
-        // Wait: what if A is (a: int, b: double) and B is (b: int, a: double)? Passed by name f(a: 1, b: 1)
-        // has posCount = 0, kwNames = [a, b]! Let's support posCount starting at 0 when named params overlap!
+        // Wait: what if A is (a: int, b: double) and B is (b: int, a: double)? Passed by name f(a:
+        // 1, b: 1)
+        // has posCount = 0, kwNames = [a, b]! Let's support posCount starting at 0 when named
+        // params overlap!
         int count = 0;
         for (Type.Parameter p : fn.parameters()) {
             if (p.keywordOnly() || p.rest() || p.optional()) {
@@ -270,7 +296,8 @@ final class OverloadSolver {
         return true;
     }
 
-    private static Set<String> availableNamedAfter(Type.Function fn, int posCount, Set<String> already) {
+    private static Set<String> availableNamedAfter(
+            Type.Function fn, int posCount, Set<String> already) {
         Set<String> out = new LinkedHashSet<>();
         for (int i = 0; i < fn.parameters().size(); i++) {
             Type.Parameter p = fn.parameters().get(i);
@@ -295,8 +322,9 @@ final class OverloadSolver {
     }
 
     /**
-     * Returns the parameter types of {@code fn} at {@code shape} (positional args first, then named args
-     * in {@code shape.kwNames()} order), or {@code null} if {@code fn} does not accept {@code shape}.
+     * Returns the parameter types of {@code fn} at {@code shape} (positional args first, then named
+     * args in {@code shape.kwNames()} order), or {@code null} if {@code fn} does not accept {@code
+     * shape}.
      */
     static List<Type> effectiveParamTypes(Type.Function fn, CallShape shape) {
         int restIdx = fn.restIndex();
@@ -338,8 +366,8 @@ final class OverloadSolver {
         return types;
     }
 
-    private static String formatAmbiguity(String setName, CallShape shape, List<Type> witness,
-                                          Type.Function a, Type.Function b) {
+    private static String formatAmbiguity(
+            String setName, CallShape shape, List<Type> witness, Type.Function a, Type.Function b) {
         StringBuilder args = new StringBuilder();
         for (int i = 0; i < witness.size(); i++) {
             if (i > 0) {
@@ -350,24 +378,36 @@ final class OverloadSolver {
             }
             args.append(TypeDisplay.display(witness.get(i)));
         }
-        return "Ambiguous overloads of " + setName + " : " + setName + "(" + args + ") fits "
-                + formatAlternative(a) + " and " + formatAlternative(b);
+        return "Ambiguous overloads of "
+                + setName
+                + " : "
+                + setName
+                + "("
+                + args
+                + ") fits "
+                + formatAlternative(a)
+                + " and "
+                + formatAlternative(b);
     }
 
     static String formatAlternative(Type.Function fn) {
         return fn.typeParameters().isEmpty() ? "fn " + fn : fn.toString();
     }
 
-    // ---------------------------------------------------------------- specificity ordering (BIP021-D10, BIP021-D11)
+    // ---------------------------------------------------------------- specificity ordering
+    // (BIP021-D10, BIP021-D11)
 
     /**
-     * Compares two alternatives at a common parameter shape (same arity).
-     * {@code A} is strictly more specific than {@code B} when {@code B} accepts every argument list
-     * {@code A} accepts (by subtyping, numeric widening, or generic instantiation) and not vice versa.
+     * Compares two alternatives at a common parameter shape (same arity). {@code A} is strictly
+     * more specific than {@code B} when {@code B} accepts every argument list {@code A} accepts (by
+     * subtyping, numeric widening, or generic instantiation) and not vice versa.
      */
-    static Order compareAlternatives(TypeAlgebra algebra,
-                                     Type.Function a, List<Type> paramsA,
-                                     Type.Function b, List<Type> paramsB) {
+    static Order compareAlternatives(
+            TypeAlgebra algebra,
+            Type.Function a,
+            List<Type> paramsA,
+            Type.Function b,
+            List<Type> paramsB) {
         boolean bAcceptsA = alternativeAccepts(algebra, b, paramsB, a, paramsA);
         boolean aAcceptsB = alternativeAccepts(algebra, a, paramsA, b, paramsB);
         if (bAcceptsA && !aAcceptsB) {
@@ -380,9 +420,12 @@ final class OverloadSolver {
     }
 
     /** Whether {@code general} can accept every argument tuple that {@code specific} accepts. */
-    private static boolean alternativeAccepts(TypeAlgebra algebra,
-                                              Type.Function general, List<Type> genParams,
-                                              Type.Function specific, List<Type> specParams) {
+    private static boolean alternativeAccepts(
+            TypeAlgebra algebra,
+            Type.Function general,
+            List<Type> genParams,
+            Type.Function specific,
+            List<Type> specParams) {
         if (genParams.size() != specParams.size()) {
             return false;
         }
@@ -397,9 +440,15 @@ final class OverloadSolver {
         return genericAccepts(algebra, general, genParams, specParams, false);
     }
 
-    /** Whether a generic alternative {@code general} can be instantiated to accept {@code argTypes}. */
-    private static boolean genericAccepts(TypeAlgebra algebra, Type.Function general,
-                                          List<Type> genParams, List<Type> argTypes, boolean borrowAware) {
+    /**
+     * Whether a generic alternative {@code general} can be instantiated to accept {@code argTypes}.
+     */
+    private static boolean genericAccepts(
+            TypeAlgebra algebra,
+            Type.Function general,
+            List<Type> genParams,
+            List<Type> argTypes,
+            boolean borrowAware) {
         // Rename general's type vars fresh so they never collide with argTypes' own type vars.
         Map<Type.TypeVar, Type> freshMap = new HashMap<>();
         List<Type.TypeVar> freshVars = new ArrayList<>(general.typeParameters().size());
@@ -429,7 +478,13 @@ final class OverloadSolver {
                 Type.Parameter param = parameterAtPos(general, i);
                 borrowReadOnly = param != null && param.borrow() && !param.mut();
             }
-            if (!algebra.relate(arg, pattern, TypeAlgebra.RelateMode.ASSIGNABLE, store, borrowReadOnly, false)) {
+            if (!algebra.relate(
+                    arg,
+                    pattern,
+                    TypeAlgebra.RelateMode.ASSIGNABLE,
+                    store,
+                    borrowReadOnly,
+                    false)) {
                 return false;
             }
         }
@@ -446,14 +501,18 @@ final class OverloadSolver {
                 }
             }
         }
-        Type instResult = borrowAware
-                ? algebra.substitute(algebra.substitute(general.result(), finalMap), solved)
-                : null;
-        boolean frozenBorrowSafe = borrowAware
-                && (general.effects().uniqueResult() || algebra.isDeeplyImmutable(instResult));
+        Type instResult =
+                borrowAware
+                        ? algebra.substitute(algebra.substitute(general.result(), finalMap), solved)
+                        : null;
+        boolean frozenBorrowSafe =
+                borrowAware
+                        && (general.effects().uniqueResult()
+                                || algebra.isDeeplyImmutable(instResult));
         // Verify each substituted parameter accepts the corresponding arg type.
         for (int i = 0; i < genParams.size(); i++) {
-            Type instParam = algebra.substitute(algebra.substitute(genParams.get(i), finalMap), solved);
+            Type instParam =
+                    algebra.substitute(algebra.substitute(genParams.get(i), finalMap), solved);
             boolean borrowReadOnly = false;
             if (frozenBorrowSafe) {
                 Type.Parameter param = parameterAtPos(general, i);
@@ -466,7 +525,8 @@ final class OverloadSolver {
         return true;
     }
 
-    static Map<Type.TypeVar, Type> solveConstraints(TypeAlgebra.ConstraintStore store, List<Type.TypeVar> vars) {
+    static Map<Type.TypeVar, Type> solveConstraints(
+            TypeAlgebra.ConstraintStore store, List<Type.TypeVar> vars) {
         Map<Type.TypeVar, Type> solved = new HashMap<>();
         for (Type.TypeVar tv : vars) {
             Type t = store.lower(tv);
@@ -483,17 +543,22 @@ final class OverloadSolver {
         return solved;
     }
 
-    /** Whether a parameter of type {@code paramType} accepts an argument of type {@code argType} (subtype or widening). */
+    /**
+     * Whether a parameter of type {@code paramType} accepts an argument of type {@code argType}
+     * (subtype or widening).
+     */
     static boolean paramAccepts(TypeAlgebra algebra, Type paramType, Type argType) {
         return paramAccepts(algebra, paramType, argType, false);
     }
 
-    static boolean paramAccepts(TypeAlgebra algebra, Type paramType, Type argType, boolean borrowCovariant) {
+    static boolean paramAccepts(
+            TypeAlgebra algebra, Type paramType, Type argType, boolean borrowCovariant) {
         if (paramType.equals(argType)) {
             return true;
         }
         if (borrowCovariant
-                ? algebra.relate(argType, paramType, TypeAlgebra.RelateMode.ASSIGNABLE, null, true, false)
+                ? algebra.relate(
+                        argType, paramType, TypeAlgebra.RelateMode.ASSIGNABLE, null, true, false)
                 : algebra.assignable(argType, paramType)) {
             return true;
         }
@@ -503,7 +568,8 @@ final class OverloadSolver {
         return rArg >= 0 && rParam >= 0 && rArg <= rParam;
     }
 
-    // ---------------------------------------------------------------- static overlap & meet (BIP021 §4.5 table)
+    // ---------------------------------------------------------------- static overlap & meet
+    // (BIP021 §4.5 table)
 
     private static boolean allOverlap(TypeAlgebra algebra, List<Type> a, List<Type> b) {
         for (int i = 0; i < a.size(); i++) {
@@ -514,7 +580,10 @@ final class OverloadSolver {
         return true;
     }
 
-    /** Static overlap per BIP021 §4.5 table : whether some static argument type fits both {@code a} and {@code b}. */
+    /**
+     * Static overlap per BIP021 §4.5 table : whether some static argument type fits both {@code a}
+     * and {@code b}.
+     */
     static boolean staticOverlaps(TypeAlgebra algebra, Type a, Type b) {
         return staticOverlaps(algebra, a, b, new HashSet<>());
     }
@@ -522,7 +591,11 @@ final class OverloadSolver {
     private static boolean staticOverlaps(TypeAlgebra algebra, Type a, Type b, Set<String> active) {
         a = TypeAlgebra.unwrapFrozen(a);
         b = TypeAlgebra.unwrapFrozen(b);
-        if (a == Type.ERROR || b == Type.ERROR || a == Type.NOTHING || b == Type.NOTHING || a.equals(b)) {
+        if (a == Type.ERROR
+                || b == Type.ERROR
+                || a == Type.NOTHING
+                || b == Type.NOTHING
+                || a.equals(b)) {
             return true;
         }
         if (a instanceof Type.Union || b instanceof Type.Union) {
@@ -553,7 +626,8 @@ final class OverloadSolver {
         if (b instanceof Type.Intersection ib) {
             return intersectionOverlaps(algebra, ib, a, active);
         }
-        // Numeric scalars overlap along the widening chain byte -> short -> int -> long -> float -> double.
+        // Numeric scalars overlap along the widening chain byte -> short -> int -> long -> float ->
+        // double.
         if (Type.isNumericScalar(a) && Type.isNumericScalar(b)) {
             return true;
         }
@@ -562,7 +636,8 @@ final class OverloadSolver {
         }
         // Function types overlap iff they share a reachable arity and have overlapping results.
         if (a instanceof Type.Function fa && b instanceof Type.Function fb) {
-            return !commonShapes(fa, fb).isEmpty() && staticOverlaps(algebra, fa.result(), fb.result(), active);
+            return !commonShapes(fa, fb).isEmpty()
+                    && staticOverlaps(algebra, fa.result(), fb.result(), active);
         }
         if (a instanceof Type.Function || b instanceof Type.Function) {
             return false;
@@ -582,8 +657,12 @@ final class OverloadSolver {
         // Babble classes, records, and interfaces.
         if (a instanceof Type.Instance ia && b instanceof Type.Instance ib) {
             if (ia.node() == ib.node()) {
-                return typeArgsOverlap(algebra, ia.node().kind == ClassShape.Kind.VALUE_CLASS,
-                        ia.typeArguments(), ib.typeArguments(), active);
+                return typeArgsOverlap(
+                        algebra,
+                        ia.node().kind == ClassShape.Kind.VALUE_CLASS,
+                        ia.typeArguments(),
+                        ib.typeArguments(),
+                        active);
             }
             if (ia.node().isInterface() && ib.node().isInterface()) {
                 return true;
@@ -591,12 +670,14 @@ final class OverloadSolver {
             if (ia.node().isInterface()) {
                 Type proj = algebra.projectToBabble(ib, ia.node());
                 return proj instanceof Type.Instance pi
-                        && typeArgsOverlap(algebra, false, ia.typeArguments(), pi.typeArguments(), active);
+                        && typeArgsOverlap(
+                                algebra, false, ia.typeArguments(), pi.typeArguments(), active);
             }
             if (ib.node().isInterface()) {
                 Type proj = algebra.projectToBabble(ia, ib.node());
                 return proj instanceof Type.Instance pi
-                        && typeArgsOverlap(algebra, false, pi.typeArguments(), ib.typeArguments(), active);
+                        && typeArgsOverlap(
+                                algebra, false, pi.typeArguments(), ib.typeArguments(), active);
             }
             // Two distinct Babble classes/records never overlap (no class inheritance).
             return false;
@@ -611,14 +692,16 @@ final class OverloadSolver {
         if (a instanceof Type.JavaInstance ja && b instanceof Type.JavaInstance jb) {
             return javaTypesOverlap(algebra, ja, jb, active);
         }
-        // Core scalar vs Java interface/supertype (e.g. int vs Comparable of int, string vs CharSequence).
+        // Core scalar vs Java interface/supertype (e.g. int vs Comparable of int, string vs
+        // CharSequence).
         if (algebra.assignable(a, b) || algebra.assignable(b, a)) {
             return true;
         }
         return javaClassesCastable(JavaTypeBridge.javaClassOf(a), JavaTypeBridge.javaClassOf(b));
     }
 
-    private static boolean typeVarOverlaps(TypeAlgebra algebra, Type.TypeVar tv, Type other, Set<String> active) {
+    private static boolean typeVarOverlaps(
+            TypeAlgebra algebra, Type.TypeVar tv, Type other, Set<String> active) {
         String key = "TV:" + System.identityHashCode(tv) + ":" + other;
         if (!active.add(key)) {
             return true;
@@ -631,7 +714,8 @@ final class OverloadSolver {
         }
     }
 
-    private static boolean intersectionOverlaps(TypeAlgebra algebra, Type.Intersection inter, Type other, Set<String> active) {
+    private static boolean intersectionOverlaps(
+            TypeAlgebra algebra, Type.Intersection inter, Type other, Set<String> active) {
         for (Type m : inter.members()) {
             if (!staticOverlaps(algebra, m, other, active)) {
                 return false;
@@ -649,25 +733,36 @@ final class OverloadSolver {
                 || (cb.isInterface() && !Modifier.isFinal(ca.getModifiers()));
     }
 
-    private static boolean babbleJavaOverlap(TypeAlgebra algebra, Type.Instance bi, Type.JavaInstance ji, Set<String> active) {
+    private static boolean babbleJavaOverlap(
+            TypeAlgebra algebra, Type.Instance bi, Type.JavaInstance ji, Set<String> active) {
         if (ji.type().isInterface()) {
             if (bi.node().isInterface()) {
                 return true;
             }
             Type proj = algebra.projectToJava(bi, ji.type());
             return proj instanceof Type.JavaInstance pj
-                    && typeArgsOverlap(algebra, isCovariantJavaClass(ji.type()),
-                    pj.typeArguments(), ji.typeArguments(), active);
+                    && typeArgsOverlap(
+                            algebra,
+                            isCovariantJavaClass(ji.type()),
+                            pj.typeArguments(),
+                            ji.typeArguments(),
+                            active);
         }
         return (bi.node().isInterface() && !Modifier.isFinal(ji.type().getModifiers()))
                 || ji.type() == Object.class;
     }
 
-    private static boolean javaTypesOverlap(TypeAlgebra algebra, Type.JavaInstance ja, Type.JavaInstance jb, Set<String> active) {
+    private static boolean javaTypesOverlap(
+            TypeAlgebra algebra, Type.JavaInstance ja, Type.JavaInstance jb, Set<String> active) {
         Class<?> ca = ja.type();
         Class<?> cb = jb.type();
         if (ca == cb) {
-            return typeArgsOverlap(algebra, isCovariantJavaClass(ca), ja.typeArguments(), jb.typeArguments(), active);
+            return typeArgsOverlap(
+                    algebra,
+                    isCovariantJavaClass(ca),
+                    ja.typeArguments(),
+                    jb.typeArguments(),
+                    active);
         }
         if (ca.isAssignableFrom(cb)) {
             return javaSuperOverlap(algebra, ja, jb, active);
@@ -678,28 +773,41 @@ final class OverloadSolver {
         return javaClassesCastable(ca, cb);
     }
 
-    private static boolean javaSuperOverlap(TypeAlgebra algebra, Type.JavaInstance sup, Type.JavaInstance sub, Set<String> active) {
+    private static boolean javaSuperOverlap(
+            TypeAlgebra algebra, Type.JavaInstance sup, Type.JavaInstance sub, Set<String> active) {
         Type proj = algebra.projectToJava(sub, sup.type());
         return !(proj instanceof Type.JavaInstance pj)
-                || typeArgsOverlap(algebra, isCovariantJavaClass(sup.type()), sup.typeArguments(), pj.typeArguments(), active);
+                || typeArgsOverlap(
+                        algebra,
+                        isCovariantJavaClass(sup.type()),
+                        sup.typeArguments(),
+                        pj.typeArguments(),
+                        active);
     }
 
     private static boolean isCovariantJavaClass(Class<?> cls) {
-        return cls == java.util.Map.Entry.class || cls == Iterable.class || cls == java.util.Iterator.class
+        return cls == java.util.Map.Entry.class
+                || cls == Iterable.class
+                || cls == java.util.Iterator.class
                 || cls == org.babblelang.runtime.Range.class;
     }
 
-    private static boolean typeArgsOverlap(TypeAlgebra algebra, boolean covariant,
-                                           List<Type> argsA, List<Type> argsB, Set<String> active) {
+    private static boolean typeArgsOverlap(
+            TypeAlgebra algebra,
+            boolean covariant,
+            List<Type> argsA,
+            List<Type> argsB,
+            Set<String> active) {
         if (argsA.isEmpty() || argsB.isEmpty() || argsA.size() != argsB.size()) {
             return true;
         }
         for (int i = 0; i < argsA.size(); i++) {
             Type ta = argsA.get(i);
             Type tb = argsB.get(i);
-            boolean ok = (covariant || ta instanceof Type.TypeVar || tb instanceof Type.TypeVar)
-                    ? staticOverlaps(algebra, ta, tb, active)
-                    : ta.equals(tb);
+            boolean ok =
+                    (covariant || ta instanceof Type.TypeVar || tb instanceof Type.TypeVar)
+                            ? staticOverlaps(algebra, ta, tb, active)
+                            : ta.equals(tb);
             if (!ok) {
                 return false;
             }
@@ -708,8 +816,8 @@ final class OverloadSolver {
     }
 
     /**
-     * Computes a static witness type that fits both {@code a} and {@code b} (their static meet),
-     * or {@code null} if they do not statically overlap.
+     * Computes a static witness type that fits both {@code a} and {@code b} (their static meet), or
+     * {@code null} if they do not statically overlap.
      */
     static Type staticMeet(TypeAlgebra algebra, Type a, Type b) {
         return staticMeet(algebra, a, b, new HashSet<>());
@@ -762,17 +870,21 @@ final class OverloadSolver {
         if (paramAccepts(algebra, a, b)) {
             return b;
         }
-        // Two interfaces (or intersections of interfaces) meet at their intersection A & B (BIP022).
+        // Two interfaces (or intersections of interfaces) meet at their intersection A & B
+        // (BIP022).
         Type baseA = TypeAlgebra.unwrapFrozen(a);
         Type baseB = TypeAlgebra.unwrapFrozen(b);
         if (isInterfaceLike(baseA) && isInterfaceLike(baseB)) {
             Type inter = Type.intersection(baseA, baseB);
-            return (a instanceof Type.Frozen || b instanceof Type.Frozen) ? Type.frozen(inter) : inter;
+            return (a instanceof Type.Frozen || b instanceof Type.Frozen)
+                    ? Type.frozen(inter)
+                    : inter;
         }
         return a;
     }
 
-    private static Type typeVarMeet(TypeAlgebra algebra, Type.TypeVar tv, Type other, Set<String> active) {
+    private static Type typeVarMeet(
+            TypeAlgebra algebra, Type.TypeVar tv, Type other, Set<String> active) {
         String key = "M:" + System.identityHashCode(tv) + ":" + other;
         if (!active.add(key)) {
             return other;
@@ -796,14 +908,18 @@ final class OverloadSolver {
         return u instanceof Type.Intersection;
     }
 
-    // ---------------------------------------------------------------- target-type selection & signature key (BIP021-D12)
+    // ---------------------------------------------------------------- target-type selection &
+    // signature key (BIP021-D12)
 
     /**
      * Picks the index of the most specific alternative in {@code set} assignable to {@code target},
      * or {@code -1} if none matches.
      */
-    static int selectAlternativeForFunction(TypeAlgebra algebra, Type.Overloaded set, Type.Function target,
-                                            boolean checkingEffects) {
+    static int selectAlternativeForFunction(
+            TypeAlgebra algebra,
+            Type.Overloaded set,
+            Type.Function target,
+            boolean checkingEffects) {
         List<Type.Function> alts = set.alternatives();
         List<Type> targetParams = target.parameters().stream().map(Type.Parameter::type).toList();
         int best = -1;
@@ -818,7 +934,10 @@ final class OverloadSolver {
                 CallShape shape = new CallShape(targetParams.size(), List.of());
                 List<Type> pa = effectiveParamTypes(alt, shape);
                 List<Type> pb = effectiveParamTypes(alts.get(best), shape);
-                if (pa != null && pb != null && compareAlternatives(algebra, alt, pa, alts.get(best), pb) == Order.FIRST_BETTER) {
+                if (pa != null
+                        && pb != null
+                        && compareAlternatives(algebra, alt, pa, alts.get(best), pb)
+                                == Order.FIRST_BETTER) {
                     best = i;
                 }
             }
@@ -830,7 +949,8 @@ final class OverloadSolver {
      * Picks the index of the most specific alternative in {@code set} assignable to the functional
      * Java interface {@code samInterface}, or {@code -1} if none matches.
      */
-    static int selectAlternativeForSam(TypeAlgebra algebra, Type.Overloaded set, Type.JavaInstance samInterface) {
+    static int selectAlternativeForSam(
+            TypeAlgebra algebra, Type.Overloaded set, Type.JavaInstance samInterface) {
         List<Type.Function> alts = set.alternatives();
         int best = -1;
         for (int i = 0; i < alts.size(); i++) {
@@ -859,10 +979,12 @@ final class OverloadSolver {
      * method's parameter types (BIP021-D13), or {@code -1} if none matches. Tries exact Java
      * nullability first, then falls back to non-null at {@code UNSPECIFIED} positions when needed.
      */
-    static int selectAlternativeForJavaMethod(TypeAlgebra algebra, Type.Overloaded set,
-                                              java.lang.reflect.Method jm,
-                                              List<Type> javaParamTypes,
-                                              List<Type> fallbackParamTypes) {
+    static int selectAlternativeForJavaMethod(
+            TypeAlgebra algebra,
+            Type.Overloaded set,
+            java.lang.reflect.Method jm,
+            List<Type> javaParamTypes,
+            List<Type> fallbackParamTypes) {
         int match = matchJavaMethodPass(algebra, set, jm, javaParamTypes);
         if (match >= 0 || fallbackParamTypes == null) {
             return match;
@@ -870,8 +992,11 @@ final class OverloadSolver {
         return matchJavaMethodPass(algebra, set, jm, fallbackParamTypes);
     }
 
-    private static int matchJavaMethodPass(TypeAlgebra algebra, Type.Overloaded set,
-                                           java.lang.reflect.Method jm, List<Type> paramTypes) {
+    private static int matchJavaMethodPass(
+            TypeAlgebra algebra,
+            Type.Overloaded set,
+            java.lang.reflect.Method jm,
+            List<Type> paramTypes) {
         List<Type.Function> alts = set.alternatives();
         int count = paramTypes.size();
         CallShape shape = new CallShape(count, List.of());
@@ -906,8 +1031,12 @@ final class OverloadSolver {
         return pickMostSpecificIndex(algebra, alts, matchedIdx, matchedEff);
     }
 
-    /** Picks the index of the most specific alternative in {@code set} accepting positional {@code argTypes}, or {@code -1}. */
-    static int selectAlternativeForPositionalArgs(TypeAlgebra algebra, Type.Overloaded set, List<Type> argTypes) {
+    /**
+     * Picks the index of the most specific alternative in {@code set} accepting positional {@code
+     * argTypes}, or {@code -1}.
+     */
+    static int selectAlternativeForPositionalArgs(
+            TypeAlgebra algebra, Type.Overloaded set, List<Type> argTypes) {
         List<Type.Function> alts = set.alternatives();
         CallShape shape = new CallShape(argTypes.size(), List.of());
         List<Integer> matchedIdx = new ArrayList<>();
@@ -923,8 +1052,11 @@ final class OverloadSolver {
         return pickMostSpecificIndex(algebra, alts, matchedIdx, matchedEff);
     }
 
-    private static int pickMostSpecificIndex(TypeAlgebra algebra, List<Type.Function> alts,
-                                             List<Integer> matchedIdx, List<List<Type>> matchedEff) {
+    private static int pickMostSpecificIndex(
+            TypeAlgebra algebra,
+            List<Type.Function> alts,
+            List<Integer> matchedIdx,
+            List<List<Type>> matchedEff) {
         if (matchedIdx.isEmpty()) {
             return -1;
         }
@@ -938,7 +1070,8 @@ final class OverloadSolver {
                     continue;
                 }
                 Type.Function other = alts.get(matchedIdx.get(j));
-                if (compareAlternatives(algebra, other, matchedEff.get(j), cand, candEff) == Order.FIRST_BETTER) {
+                if (compareAlternatives(algebra, other, matchedEff.get(j), cand, candEff)
+                        == Order.FIRST_BETTER) {
                     beaten = true;
                     break;
                 }
@@ -953,10 +1086,16 @@ final class OverloadSolver {
         return bestPos >= 0 ? matchedIdx.get(bestPos) : -1;
     }
 
-    /** Fully qualified Java method signature for BIP021 §4.8 diagnostics, e.g. {@code java.lang.Appendable.append(java.lang.CharSequence, int, int)}. */
+    /**
+     * Fully qualified Java method signature for BIP021 §4.8 diagnostics, e.g. {@code
+     * java.lang.Appendable.append(java.lang.CharSequence, int, int)}.
+     */
     static String javaMethodSignature(java.lang.reflect.Method method) {
-        StringBuilder sb = new StringBuilder(method.getDeclaringClass().getName())
-                .append('.').append(method.getName()).append('(');
+        StringBuilder sb =
+                new StringBuilder(method.getDeclaringClass().getName())
+                        .append('.')
+                        .append(method.getName())
+                        .append('(');
         Class<?>[] params = method.getParameterTypes();
         for (int i = 0; i < params.length; i++) {
             if (i > 0) {
@@ -981,16 +1120,24 @@ final class OverloadSolver {
         return sb.toString();
     }
 
-    /** Runtime type descriptor for a parameter type (used in {@link org.babblelang.runtime.OverloadSet}). */
+    /**
+     * Runtime type descriptor for a parameter type (used in {@link
+     * org.babblelang.runtime.OverloadSet}).
+     */
     static String paramDescriptor(Type type) {
-        if (type == null || type == Type.ERROR || type == Type.NULLABLE_ANY || type instanceof Type.TypeVar) {
+        if (type == null
+                || type == Type.ERROR
+                || type == Type.NULLABLE_ANY
+                || type instanceof Type.TypeVar) {
             return "";
         }
         String desc = LoweringAnalyzer.descriptor(type);
         return desc != null ? desc : "";
     }
 
-    /** Parameter descriptors array for runtime {@link org.babblelang.runtime.OverloadSet.AltMeta}. */
+    /**
+     * Parameter descriptors array for runtime {@link org.babblelang.runtime.OverloadSet.AltMeta}.
+     */
     static String[] paramDescriptors(Type.Function fn) {
         List<Type.Parameter> params = fn.parameters();
         String[] descs = new String[params.size()];
@@ -1000,7 +1147,10 @@ final class OverloadSolver {
         return descs;
     }
 
-    /** Runtime type-test descriptor list for one union-split component (supports {@code null} and {@code A & B}). */
+    /**
+     * Runtime type-test descriptor list for one union-split component (supports {@code null} and
+     * {@code A & B}).
+     */
     static List<String> runtimeTestDescriptors(Type component) {
         if (component == Type.NULL) {
             return List.of("null");
@@ -1025,10 +1175,10 @@ final class OverloadSolver {
      * alternatives) can be reliably told apart at runtime (BIP021-D11 #4).
      *
      * <p>Returns {@code true} if they are runtime-disjoint ({@code !overlapsErased}), OR if both
-     * have concrete runtime test descriptors and one is strictly more specific than the other
-     * (e.g. {@code Shape & Named} vs {@code Shape}, or {@code Circle} vs {@code Shape}) with
-     * distinct runtime test descriptors (so erased generics like {@code list of int} vs
-     * {@code list of string} return {@code false}).</p>
+     * have concrete runtime test descriptors and one is strictly more specific than the other (e.g.
+     * {@code Shape & Named} vs {@code Shape}, or {@code Circle} vs {@code Shape}) with distinct
+     * runtime test descriptors (so erased generics like {@code list of int} vs {@code list of
+     * string} return {@code false}).
      */
     static boolean runtimeDistinguishable(TypeAlgebra algebra, Type ca, Type cb) {
         if (!algebra.overlapsErased(ca, cb)) {
@@ -1037,10 +1187,14 @@ final class OverloadSolver {
         // Two functions or any TypeVar are never distinguishable at runtime.
         Type ua = TypeAlgebra.unwrapFrozen(ca);
         Type ub = TypeAlgebra.unwrapFrozen(cb);
-        if (ua instanceof Type.TypeVar || ub instanceof Type.TypeVar
-                || ua instanceof Type.Function || ub instanceof Type.Function
-                || ua instanceof Type.Overloaded || ub instanceof Type.Overloaded
-                || ua == Type.ANY || ub == Type.ANY) {
+        if (ua instanceof Type.TypeVar
+                || ub instanceof Type.TypeVar
+                || ua instanceof Type.Function
+                || ub instanceof Type.Function
+                || ua instanceof Type.Overloaded
+                || ub instanceof Type.Overloaded
+                || ua == Type.ANY
+                || ub == Type.ANY) {
             return false;
         }
         List<String> da = runtimeTestDescriptors(ca);

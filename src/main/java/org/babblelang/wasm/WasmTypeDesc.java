@@ -4,11 +4,12 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Parses Babble runtime type descriptors ({@code kind|display|payload}, matching
- * {@code org.babblelang.runtime.Types}) at Wasm compile time for portability checking
- * ({@link WasmPortabilityChecker}) and exact {@code is}/{@code as} lowering ({@code BIP025-I5}).
+ * Parses Babble runtime type descriptors ({@code kind|display|payload}, matching {@code
+ * org.babblelang.runtime.Types}) at Wasm compile time for portability checking ({@link
+ * WasmPortabilityChecker}) and exact {@code is}/{@code as} lowering ({@code BIP025-I5}).
  */
-public record WasmTypeDesc(String kind, String display, String payload, List<WasmTypeDesc> members) {
+public record WasmTypeDesc(
+        String kind, String display, String payload, List<WasmTypeDesc> members) {
 
     public static WasmTypeDesc parse(String descriptor) {
         if (descriptor == null || descriptor.isEmpty()) {
@@ -42,9 +43,21 @@ public record WasmTypeDesc(String kind, String display, String payload, List<Was
             if (c == '%' && i + 2 < component.length()) {
                 String hex = component.substring(i + 1, i + 3);
                 switch (hex) {
-                    case "25" -> { sb.append('%'); i += 2; continue; }
-                    case "2C" -> { sb.append(','); i += 2; continue; }
-                    case "7C" -> { sb.append('|'); i += 2; continue; }
+                    case "25" -> {
+                        sb.append('%');
+                        i += 2;
+                        continue;
+                    }
+                    case "2C" -> {
+                        sb.append(',');
+                        i += 2;
+                        continue;
+                    }
+                    case "7C" -> {
+                        sb.append('|');
+                        i += 2;
+                        continue;
+                    }
                     default -> {}
                 }
             }

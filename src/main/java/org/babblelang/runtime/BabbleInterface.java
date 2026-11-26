@@ -5,8 +5,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * The value of an {@code interface} expression : required members, default methods, and
- * the interfaces it extends, Babble ones or Java ones.
+ * The value of an {@code interface} expression : required members, default methods, and the
+ * interfaces it extends, Babble ones or Java ones.
  */
 public final class BabbleInterface extends BabbleType {
     private final Object[] parents;
@@ -28,8 +28,8 @@ public final class BabbleInterface extends BabbleType {
     }
 
     /**
-     * The default method this interface provides for a name : its own, or one it inherits.
-     * A member of its own, required or not, hides what its parents provide.
+     * The default method this interface provides for a name : its own, or one it inherits. A member
+     * of its own, required or not, hides what its parents provide.
      */
     public Callable findDefault(String name) {
         int index = shape.memberIndex(name);
@@ -91,7 +91,9 @@ public final class BabbleInterface extends BabbleType {
         }
     }
 
-    /** Whether this interface was created by the expression with that id, or extends one that was. */
+    /**
+     * Whether this interface was created by the expression with that id, or extends one that was.
+     */
     boolean extendsId(String typeId) {
         if (shape().id().equals(typeId)) {
             return true;
@@ -112,7 +114,9 @@ public final class BabbleInterface extends BabbleType {
         for (Object parent : parents) {
             if (parent == type
                     || parent instanceof BabbleInterface babble && babble.extendsType(type)
-                    || parent instanceof Class<?> java && type instanceof Class<?> other && other.isAssignableFrom(java)) {
+                    || parent instanceof Class<?> java
+                            && type instanceof Class<?> other
+                            && other.isAssignableFrom(java)) {
                 return true;
             }
         }

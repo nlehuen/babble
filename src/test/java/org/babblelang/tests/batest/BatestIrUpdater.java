@@ -12,18 +12,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * Thread-safe, guarded IR-only golden updater for {@code -Dbatest.updateIr=true}
- * ({@code BIP029-D9}, {@code BIP029-I2}).
+ * Thread-safe, guarded IR-only golden updater for {@code -Dbatest.updateIr=true} ({@code
+ * BIP029-D9}, {@code BIP029-I2}).
  *
- * <p>Rewrites <em>only</em> exact-golden {@code hir}/{@code mir} block bodies (never {@code babble},
- * {@code stdout}, {@code stderr}, {@code error}, {@code regex}, or {@code check} blocks), and only
- * when behavioral assertions and bytecode verification passed.
+ * <p>Rewrites <em>only</em> exact-golden {@code hir}/{@code mir} block bodies (never {@code
+ * babble}, {@code stdout}, {@code stderr}, {@code error}, {@code regex}, or {@code check} blocks),
+ * and only when behavioral assertions and bytecode verification passed.
  */
 final class BatestIrUpdater {
     static final String PROPERTY = "batest.updateIr";
 
-    private record Replacement(int bodyStartLine, int bodyEndLine, String newBody) {
-    }
+    private record Replacement(int bodyStartLine, int bodyEndLine, String newBody) {}
 
     private final Map<Path, List<Replacement>> pending = new ConcurrentHashMap<>();
 
@@ -36,16 +35,18 @@ final class BatestIrUpdater {
             return;
         }
         pending.computeIfAbsent(filePath, k -> new CopyOnWriteArrayList<>())
-                .add(new Replacement(expectation.bodyStartLine(), expectation.bodyEndLine(), actualCanonical));
+                .add(
+                        new Replacement(
+                                expectation.bodyStartLine(),
+                                expectation.bodyEndLine(),
+                                actualCanonical));
     }
 
     boolean hasUpdates() {
         return !pending.isEmpty();
     }
 
-    /**
-     * Applies all recorded exact-golden IR block updates and returns a human-readable summary.
-     */
+    /** Applies all recorded exact-golden IR block updates and returns a human-readable summary. */
     String flushAll() throws IOException {
         int fileCount = 0;
         int blockCount = 0;
@@ -63,9 +64,15 @@ final class BatestIrUpdater {
             fileNames.add(path.toString());
         }
         pending.clear();
-        return "Updated " + blockCount + " IR golden block(s) in " + fileCount + " file(s) ("
+        return "Updated "
+                + blockCount
+                + " IR golden block(s) in "
+                + fileCount
+                + " file(s) ("
                 + String.join(", ", fileNames)
-                + ") : inspect git diff and re-run without -D" + PROPERTY + "=true";
+                + ") : inspect git diff and re-run without -D"
+                + PROPERTY
+                + "=true";
     }
 
     static String applyToString(String original, List<Replacement> replacements) {
@@ -77,7 +84,8 @@ final class BatestIrUpdater {
             lines.remove(lines.size() - 1);
         }
 
-        // Apply bottom-up so earlier line indices remain valid (deduplicate identical spans from multi-stage blocks).
+        // Apply bottom-up so earlier line indices remain valid (deduplicate identical spans from
+        // multi-stage blocks).
         Map<Integer, Replacement> deduped = new java.util.LinkedHashMap<>();
         for (Replacement r : replacements) {
             deduped.putIfAbsent(r.bodyStartLine(), r);
@@ -88,9 +96,8 @@ final class BatestIrUpdater {
             int startIdx = r.bodyStartLine() - 1;
             int endIdx = r.bodyEndLine() - 1;
             lines.subList(startIdx, endIdx).clear();
-            List<String> newLines = r.newBody().isEmpty()
-                    ? List.of()
-                    : List.of(r.newBody().split("\n", -1));
+            List<String> newLines =
+                    r.newBody().isEmpty() ? List.of() : List.of(r.newBody().split("\n", -1));
             lines.addAll(startIdx, newLines);
         }
         String joined = String.join(lineSep, lines);

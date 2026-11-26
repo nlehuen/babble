@@ -4,13 +4,11 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * WebAssembly 3.0 composite type definitions ({@code func}, {@code struct}, {@code array}),
- * {@code sub}/{@code sub final} wrappers, and {@code rec} groups ({@code BIP025-I0}).
+ * WebAssembly 3.0 composite type definitions ({@code func}, {@code struct}, {@code array}), {@code
+ * sub}/{@code sub final} wrappers, and {@code rec} groups ({@code BIP025-I0}).
  */
-public sealed interface WasmTypeDef permits
-        WasmTypeDef.FuncType,
-        WasmTypeDef.StructType,
-        WasmTypeDef.ArrayType {
+public sealed interface WasmTypeDef
+        permits WasmTypeDef.FuncType, WasmTypeDef.StructType, WasmTypeDef.ArrayType {
 
     record Field(String name, WasmValType type, boolean mutable) {
         public Field {
@@ -45,7 +43,10 @@ public sealed interface WasmTypeDef permits
         }
     }
 
-    /** A subtype entry inside the Wasm type section (optionally non-final and/or extending a supertype). */
+    /**
+     * A subtype entry inside the Wasm type section (optionally non-final and/or extending a
+     * supertype).
+     */
     record SubType(int index, String name, boolean isFinal, int superTypeIndex, WasmTypeDef body) {
         public SubType {
             Objects.requireNonNull(body, "body");
@@ -56,7 +57,10 @@ public sealed interface WasmTypeDef permits
         }
     }
 
-    /** A recursive type group ({@code rec (...)}) in the type section. Single-element non-recursive groups encode compactly. */
+    /**
+     * A recursive type group ({@code rec (...)}) in the type section. Single-element non-recursive
+     * groups encode compactly.
+     */
     record RecGroup(List<SubType> types) {
         public RecGroup {
             types = List.copyOf(types);

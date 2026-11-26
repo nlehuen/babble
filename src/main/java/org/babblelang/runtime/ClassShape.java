@@ -10,24 +10,29 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * The static description of a class, object or interface expression, computed by the
- * analysis : its display name, its members and their kinds, its constructor parameters,
- * and its static members. Every class value created by the same expression shares it.
- * <p>
- * It is encoded as a string so that compiled code can hold it as a single constant.
- * <p>
- * Its id names the expression for nominal type checks (T9) : instances of every class
- * value an expression creates have that type. Members and statics declared with a type
- * carry its descriptor ({@link Types}), which an assignment checks.
+ * The static description of a class, object or interface expression, computed by the analysis : its
+ * display name, its members and their kinds, its constructor parameters, and its static members.
+ * Every class value created by the same expression shares it.
+ *
+ * <p>It is encoded as a string so that compiled code can hold it as a single constant.
+ *
+ * <p>Its id names the expression for nominal type checks (T9) : instances of every class value an
+ * expression creates have that type. Members and statics declared with a type carry its descriptor
+ * ({@link Types}), which an assignment checks.
  */
 public final class ClassShape {
     public enum Kind {
-        CLASS, VALUE_CLASS, OBJECT, INTERFACE
+        CLASS,
+        VALUE_CLASS,
+        OBJECT,
+        INTERFACE
     }
 
     /** A member initialised by a function literal : a method, or an interface default. */
     public static final int METHOD = 1;
+
     public static final int PRIVATE = 2;
+
     /** A member declared with {@code var} rather than {@code def} ({@code BIP034}). */
     public static final int MUTABLE = 4;
 
@@ -49,28 +54,82 @@ public final class ClassShape {
 
     /**
      * @param parameterMembers for each constructor parameter, the index of the member it
-     *                         initialises, or -1 for a plain parameter
+     *     initialises, or -1 for a plain parameter
      */
-    public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
-                      int requiredParameters, String[] statics, int[] staticFlags) {
-        this(kind, name, members, flags, parameters, parameterMembers, requiredParameters, parameters.length, statics, staticFlags, "",
-                new String[members.length], new String[statics.length]);
+    public ClassShape(
+            Kind kind,
+            String name,
+            String[] members,
+            int[] flags,
+            String[] parameters,
+            int[] parameterMembers,
+            int requiredParameters,
+            String[] statics,
+            int[] staticFlags) {
+        this(
+                kind,
+                name,
+                members,
+                flags,
+                parameters,
+                parameterMembers,
+                requiredParameters,
+                parameters.length,
+                statics,
+                staticFlags,
+                "",
+                new String[members.length],
+                new String[statics.length]);
     }
 
     /**
-     * @param id          a name for the expression, unique within the JVM
+     * @param id a name for the expression, unique within the JVM
      * @param memberTypes for each member, the descriptor of its declared type, or null
      * @param staticTypes the same for statics
      */
-    public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
-                      int requiredParameters, String[] statics, int[] staticFlags, String id, String[] memberTypes, String[] staticTypes) {
-        this(kind, name, members, flags, parameters, parameterMembers, requiredParameters, parameters.length,
-                statics, staticFlags, id, memberTypes, staticTypes);
+    public ClassShape(
+            Kind kind,
+            String name,
+            String[] members,
+            int[] flags,
+            String[] parameters,
+            int[] parameterMembers,
+            int requiredParameters,
+            String[] statics,
+            int[] staticFlags,
+            String id,
+            String[] memberTypes,
+            String[] staticTypes) {
+        this(
+                kind,
+                name,
+                members,
+                flags,
+                parameters,
+                parameterMembers,
+                requiredParameters,
+                parameters.length,
+                statics,
+                staticFlags,
+                id,
+                memberTypes,
+                staticTypes);
     }
 
-    public ClassShape(Kind kind, String name, String[] members, int[] flags, String[] parameters, int[] parameterMembers,
-                      int requiredParameters, int keywordOnlyStart, String[] statics, int[] staticFlags,
-                      String id, String[] memberTypes, String[] staticTypes) {
+    public ClassShape(
+            Kind kind,
+            String name,
+            String[] members,
+            int[] flags,
+            String[] parameters,
+            int[] parameterMembers,
+            int requiredParameters,
+            int keywordOnlyStart,
+            String[] statics,
+            int[] staticFlags,
+            String id,
+            String[] memberTypes,
+            String[] staticTypes) {
         this.id = id;
         this.memberTypes = memberTypes;
         this.staticTypes = staticTypes;
@@ -137,7 +196,9 @@ public final class ClassShape {
         return parameterMembers[parameter];
     }
 
-    /** Whether member {@code memberIndex} is initialized directly by a constructor header parameter. */
+    /**
+     * Whether member {@code memberIndex} is initialized directly by a constructor header parameter.
+     */
     public boolean isHeaderParameterMember(int memberIndex) {
         if (memberIndex < 0) {
             return false;
@@ -202,8 +263,24 @@ public final class ClassShape {
      * identifiers, and type descriptors URL-encoded, empty for none.
      */
     public String encode() {
-        String base = kind + ";" + name + ";" + requiredParameters + ";" + pairs(members, flags) + ";" + pairs(parameters, parameterMembers)
-                + ";" + pairs(statics, staticFlags) + ";" + id + ";" + typeList(memberTypes) + ";" + typeList(staticTypes);
+        String base =
+                kind
+                        + ";"
+                        + name
+                        + ";"
+                        + requiredParameters
+                        + ";"
+                        + pairs(members, flags)
+                        + ";"
+                        + pairs(parameters, parameterMembers)
+                        + ";"
+                        + pairs(statics, staticFlags)
+                        + ";"
+                        + id
+                        + ";"
+                        + typeList(memberTypes)
+                        + ";"
+                        + typeList(staticTypes);
         return keywordOnlyStart < parameters.length ? base + ";" + keywordOnlyStart : base;
     }
 
@@ -224,7 +301,8 @@ public final class ClassShape {
         String[] result = new String[count];
         String[] parts = encoded.split(",", -1);
         for (int i = 0; i < count && i < parts.length; i++) {
-            result[i] = parts[i].isEmpty() ? null : URLDecoder.decode(parts[i], StandardCharsets.UTF_8);
+            result[i] =
+                    parts[i].isEmpty() ? null : URLDecoder.decode(parts[i], StandardCharsets.UTF_8);
         }
         return result;
     }
@@ -252,10 +330,20 @@ public final class ClassShape {
         unpair(parts[4], parameters, parameterMembers);
         unpair(parts[5], statics, staticFlags);
         int kwStart = parts.length > 9 ? Integer.parseInt(parts[9]) : parameters.size();
-        return new ClassShape(Kind.valueOf(parts[0]), parts[1], members.toArray(new String[0]), ints(flags),
-                parameters.toArray(new String[0]), ints(parameterMembers), Integer.parseInt(parts[2]), kwStart,
-                statics.toArray(new String[0]), ints(staticFlags), parts[6],
-                decodeTypes(parts[7], members.size()), decodeTypes(parts[8], statics.size()));
+        return new ClassShape(
+                Kind.valueOf(parts[0]),
+                parts[1],
+                members.toArray(new String[0]),
+                ints(flags),
+                parameters.toArray(new String[0]),
+                ints(parameterMembers),
+                Integer.parseInt(parts[2]),
+                kwStart,
+                statics.toArray(new String[0]),
+                ints(staticFlags),
+                parts[6],
+                decodeTypes(parts[7], members.size()),
+                decodeTypes(parts[8], statics.size()));
     }
 
     private static void unpair(String encoded, List<String> names, List<Integer> values) {

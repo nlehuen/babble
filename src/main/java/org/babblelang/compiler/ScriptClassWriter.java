@@ -1,8 +1,5 @@
 package org.babblelang.compiler;
 
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Type;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -11,12 +8,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Type;
 
 /**
- * {@code COMPUTE_FRAMES} merges types with {@link #getCommonSuperClass}, which by
- * default loads classes through ASM's own class loader. This answers from both the
- * runtime/classpath classes and the generated class/interface metadata, and never tries
- * to load a class currently being generated.
+ * {@code COMPUTE_FRAMES} merges types with {@link #getCommonSuperClass}, which by default loads
+ * classes through ASM's own class loader. This answers from both the runtime/classpath classes and
+ * the generated class/interface metadata, and never tries to load a class currently being
+ * generated.
  */
 final class ScriptClassWriter extends ClassWriter {
     private static final String OBJECT = "java/lang/Object";
@@ -26,9 +25,11 @@ final class ScriptClassWriter extends ClassWriter {
     private final Map<String, List<String>> generatedClassParents;
     private final Map<String, List<String>> generatedInterfaceParents;
 
-    ScriptClassWriter(ClassLoader runtimeLoader, String scriptClass,
-                      Map<String, List<String>> generatedClassParents,
-                      Map<String, List<String>> generatedInterfaceParents) {
+    ScriptClassWriter(
+            ClassLoader runtimeLoader,
+            String scriptClass,
+            Map<String, List<String>> generatedClassParents,
+            Map<String, List<String>> generatedInterfaceParents) {
         super(COMPUTE_FRAMES);
         this.runtimeLoader = runtimeLoader;
         this.scriptClass = scriptClass;
@@ -226,7 +227,10 @@ final class ScriptClassWriter extends ClassWriter {
         while (!queue.isEmpty()) {
             String cur = queue.poll();
             for (String parent : directParents(cur)) {
-                if (parent != null && !OBJECT.equals(parent) && isInterfaceType(parent) && result.add(parent)) {
+                if (parent != null
+                        && !OBJECT.equals(parent)
+                        && isInterfaceType(parent)
+                        && result.add(parent)) {
                     queue.add(parent);
                 }
             }

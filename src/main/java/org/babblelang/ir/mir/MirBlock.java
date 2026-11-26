@@ -16,8 +16,7 @@ public record MirBlock(
         List<MirInst> insts,
         MirTerminator terminator,
         List<MirHandler> handlers,
-        boolean handlerEntry
-) {
+        boolean handlerEntry) {
     public MirBlock {
         params = List.copyOf(params);
         insts = List.copyOf(insts);

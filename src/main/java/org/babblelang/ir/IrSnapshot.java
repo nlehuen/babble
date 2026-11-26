@@ -6,12 +6,13 @@ import java.util.Objects;
  * Immutable snapshot of an IR tier captured at a specific optimization level and pipeline stage
  * ({@code BIP029-I1}, {@code BIP029-D6}).
  *
- * @param tier         IR tier ({@link IrTier#HIR} or {@link IrTier#MIR})
- * @param moduleKey    logical module key if compiling a module, or {@code null} for main scripts
+ * @param tier IR tier ({@link IrTier#HIR} or {@link IrTier#MIR})
+ * @param moduleKey logical module key if compiling a module, or {@code null} for main scripts
  * @param internalName generated JVM internal class name (for raw CLI dump headers/filenames)
- * @param optLevel     active optimization level ({@code 0}, {@code 1}, {@code 2})
- * @param stage        pipeline stage: {@value #STAGE_BEFORE}, {@value #STAGE_FINAL}, or {@code "after:<PassName>"}
- * @param ir           captured printable IR snapshot
+ * @param optLevel active optimization level ({@code 0}, {@code 1}, {@code 2})
+ * @param stage pipeline stage: {@value #STAGE_BEFORE}, {@value #STAGE_FINAL}, or {@code
+ *     "after:<PassName>"}
+ * @param ir captured printable IR snapshot
  */
 public record IrSnapshot(
         IrTier tier,
@@ -19,8 +20,7 @@ public record IrSnapshot(
         String internalName,
         int optLevel,
         String stage,
-        IrDumpable ir
-) {
+        IrDumpable ir) {
     public static final String STAGE_BEFORE = "before";
     public static final String STAGE_FINAL = "final";
     public static final String STAGE_AFTER_PREFIX = "after:";
@@ -47,7 +47,7 @@ public record IrSnapshot(
         if (stage.startsWith(STAGE_AFTER_PREFIX) && stage.length() > STAGE_AFTER_PREFIX.length()) {
             return stage;
         }
-        throw new IllegalArgumentException("Invalid IR stage : " + stage
-                + " (expected before, final, or after:<PassName>)");
+        throw new IllegalArgumentException(
+                "Invalid IR stage : " + stage + " (expected before, final, or after:<PassName>)");
     }
 }

@@ -12,32 +12,28 @@ import java.util.function.BiFunction;
 import java.util.function.Predicate;
 
 /**
- * ANTLR-free Bourdoncle Weak Topological Ordering (WTO, {@code [Bou93]}) and recursive
- * fixpoint solver for interprocedural effect inference ({@code BIP027-I4}).
+ * ANTLR-free Bourdoncle Weak Topological Ordering (WTO, {@code [Bou93]}) and recursive fixpoint
+ * solver for interprocedural effect inference ({@code BIP027-I4}).
  *
- * <p>Decomposes a call graph {@code caller -> callees} into a bottom-up hierarchical WTO
- * (callees before callers, inner recursive components stabilized before outer heads) so
- * every monotone summary over a finite-height lattice converges cleanly without arbitrary
- * flat-SCC cutoff caps.
+ * <p>Decomposes a call graph {@code caller -> callees} into a bottom-up hierarchical WTO (callees
+ * before callers, inner recursive components stabilized before outer heads) so every monotone
+ * summary over a finite-height lattice converges cleanly without arbitrary flat-SCC cutoff caps.
  */
 final class EffectFixpointDriver {
     private static final int SAFETY_ITER_CAP = 128;
 
-    private EffectFixpointDriver() {
-    }
+    private EffectFixpointDriver() {}
 
-    sealed interface WtoElement<N> permits Vertex, Component {
-    }
+    sealed interface WtoElement<N> permits Vertex, Component {}
 
-    record Vertex<N>(N node) implements WtoElement<N> {
-    }
+    record Vertex<N>(N node) implements WtoElement<N> {}
 
-    record Component<N>(N head, List<WtoElement<N>> body) implements WtoElement<N> {
-    }
+    record Component<N>(N head, List<WtoElement<N>> body) implements WtoElement<N> {}
 
     /**
-     * Builds a bottom-up Bourdoncle WTO of {@code nodes} under {@code edges} ({@code caller -> callees}).
-     * Acyclic callees precede callers; cyclic components nest inner cycles inside their outer head.
+     * Builds a bottom-up Bourdoncle WTO of {@code nodes} under {@code edges} ({@code caller ->
+     * callees}). Acyclic callees precede callers; cyclic components nest inner cycles inside their
+     * outer head.
      */
     static <N> List<WtoElement<N>> buildWto(List<N> nodes, Map<N, Set<N>> edges) {
         Map<N, Integer> dfn = new IdentityHashMap<>();
@@ -136,19 +132,21 @@ final class EffectFixpointDriver {
      * Runs Bourdoncle's recursive iteration strategy over {@code wto}, updating {@code summaries}
      * via {@code transfer} until every component reaches a fixed point.
      */
-    static <N, S> void solve(List<WtoElement<N>> wto,
-                             Map<N, S> summaries,
-                             Predicate<N> isFixed,
-                             BiFunction<N, S, S> transfer) {
+    static <N, S> void solve(
+            List<WtoElement<N>> wto,
+            Map<N, S> summaries,
+            Predicate<N> isFixed,
+            BiFunction<N, S, S> transfer) {
         for (WtoElement<N> el : wto) {
             solveElement(el, summaries, isFixed, transfer);
         }
     }
 
-    private static <N, S> boolean solveElement(WtoElement<N> el,
-                                               Map<N, S> summaries,
-                                               Predicate<N> isFixed,
-                                               BiFunction<N, S, S> transfer) {
+    private static <N, S> boolean solveElement(
+            WtoElement<N> el,
+            Map<N, S> summaries,
+            Predicate<N> isFixed,
+            BiFunction<N, S, S> transfer) {
         if (el instanceof Vertex<N> v) {
             return updateNode(v.node(), summaries, isFixed, transfer);
         }
@@ -167,10 +165,8 @@ final class EffectFixpointDriver {
         return everChanged;
     }
 
-    private static <N, S> boolean updateNode(N node,
-                                             Map<N, S> summaries,
-                                             Predicate<N> isFixed,
-                                             BiFunction<N, S, S> transfer) {
+    private static <N, S> boolean updateNode(
+            N node, Map<N, S> summaries, Predicate<N> isFixed, BiFunction<N, S, S> transfer) {
         if (isFixed.test(node)) {
             return false;
         }

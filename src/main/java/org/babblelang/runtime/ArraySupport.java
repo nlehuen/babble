@@ -1,7 +1,5 @@
 package org.babblelang.runtime;
 
-import org.babblelang.engine.impl.natives.java.JavaObject;
-
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -12,26 +10,29 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.babblelang.engine.impl.natives.java.JavaObject;
 
 /**
- * Runtime support for {@code array of T} (BIP020-I3) : allocation, {@code size}/{@code get}/{@code set},
- * content equality/hashing/printing, interpreter Babble-element store checking via a weak side table,
- * and dynamic array member dispatch. Depends only on {@code org.babblelang.runtime} and {@code java.base}.
+ * Runtime support for {@code array of T} (BIP020-I3) : allocation, {@code size}/{@code get}/{@code
+ * set}, content equality/hashing/printing, interpreter Babble-element store checking via a weak
+ * side table, and dynamic array member dispatch. Depends only on {@code org.babblelang.runtime} and
+ * {@code java.base}.
  */
 public final class ArraySupport {
     private static final String[] GET_PARAMS = {"index"};
     private static final String[] SET_PARAMS = {"index", "value"};
     private static final String[] EQUALS_PARAMS = {"other"};
-    private static final Pattern COMPILED_ARRAY_CLASS = Pattern.compile("(\\[+)L(?:[\\w.$]+\\$)?C\\d+\\$([A-Za-z_][\\w]*);");
-    private static final Pattern COMPILED_BABBLE_CLASS = Pattern.compile("(?:[\\w.$]+\\$)?C\\d+\\$([A-Za-z_][\\w]*)");
+    private static final Pattern COMPILED_ARRAY_CLASS =
+            Pattern.compile("(\\[+)L(?:[\\w.$]+\\$)?C\\d+\\$([A-Za-z_][\\w]*);");
+    private static final Pattern COMPILED_BABBLE_CLASS =
+            Pattern.compile("(?:[\\w.$]+\\$)?C\\d+\\$([A-Za-z_][\\w]*)");
 
-    private record BabbleElementTag(String typeId, String displayName, Set<String> conformIds, int nestedDims) {
-    }
+    private record BabbleElementTag(
+            String typeId, String displayName, Set<String> conformIds, int nestedDims) {}
 
     private static final WeakHashMap<Object, BabbleElementTag> ELEMENT_TAGS = new WeakHashMap<>();
 
-    private ArraySupport() {
-    }
+    private ArraySupport() {}
 
     // ---------------------------------------------------------------- creation
 
@@ -54,22 +55,32 @@ public final class ArraySupport {
         return Array.newInstance(componentType == null ? Object.class : componentType, length);
     }
 
-    /** Creates an interpreted Babble-element array and registers its element tag in the side table. */
-    public static Object newBabbleArray(String typeId, String displayName, Set<String> conformIds,
-                                        int nestedDims, int length) {
+    /**
+     * Creates an interpreted Babble-element array and registers its element tag in the side table.
+     */
+    public static Object newBabbleArray(
+            String typeId, String displayName, Set<String> conformIds, int nestedDims, int length) {
         Class<?> comp = InterpretedInstance.class;
         for (int i = 0; i < nestedDims; i++) {
             comp = comp.arrayType();
         }
         Object array = Array.newInstance(comp, length);
         synchronized (ELEMENT_TAGS) {
-            ELEMENT_TAGS.put(array, new BabbleElementTag(typeId, displayName,
-                    conformIds == null ? Set.of(typeId) : conformIds, nestedDims));
+            ELEMENT_TAGS.put(
+                    array,
+                    new BabbleElementTag(
+                            typeId,
+                            displayName,
+                            conformIds == null ? Set.of(typeId) : conformIds,
+                            nestedDims));
         }
         return array;
     }
 
-    /** Creates an array from explicit {@code elements}, converting Java interface elements if needed. */
+    /**
+     * Creates an array from explicit {@code elements}, converting Java interface elements if
+     * needed.
+     */
     public static Object of(Class<?> componentType, Object[] elements, ScriptRuntime rt) {
         Object array = newArray(componentType, elements.length);
         for (int i = 0; i < elements.length; i++) {
@@ -79,8 +90,12 @@ public final class ArraySupport {
     }
 
     /** Creates an interpreted Babble-element array from explicit {@code elements}. */
-    public static Object ofBabble(String typeId, String displayName, Set<String> conformIds,
-                                  int nestedDims, Object[] elements) {
+    public static Object ofBabble(
+            String typeId,
+            String displayName,
+            Set<String> conformIds,
+            int nestedDims,
+            Object[] elements) {
         Object array = newBabbleArray(typeId, displayName, conformIds, nestedDims, elements.length);
         for (int i = 0; i < elements.length; i++) {
             set(array, i, elements[i], null);
@@ -88,7 +103,9 @@ public final class ArraySupport {
         return array;
     }
 
-    /** Copies elements from an array or {@link Iterable} into a new array of {@code componentType}. */
+    /**
+     * Copies elements from an array or {@link Iterable} into a new array of {@code componentType}.
+     */
     public static Object from(Class<?> componentType, Object source, ScriptRuntime rt) {
         Object raw = Values.unwrap(source);
         if (raw == null) {
@@ -117,11 +134,14 @@ public final class ArraySupport {
             }
             return dst;
         }
-        throw new BabbleException("Type error : expected iterable or array, got " + Types.describe(raw));
+        throw new BabbleException(
+                "Type error : expected iterable or array, got " + Types.describe(raw));
     }
 
     private static Object widenBoxedNumeric(Class<?> componentType, Object value) {
-        if (!(value instanceof Number n) || componentType == null || componentType.isInstance(value)) {
+        if (!(value instanceof Number n)
+                || componentType == null
+                || componentType.isInstance(value)) {
             return value;
         }
         if (componentType == Short.class) return n.shortValue();
@@ -132,9 +152,17 @@ public final class ArraySupport {
         return value;
     }
 
-    /** Copies elements from an array or {@link Iterable} into a new interpreted Babble-element array. */
-    public static Object fromBabble(String typeId, String displayName, Set<String> conformIds,
-                                    int nestedDims, Object source, ScriptRuntime rt) {
+    /**
+     * Copies elements from an array or {@link Iterable} into a new interpreted Babble-element
+     * array.
+     */
+    public static Object fromBabble(
+            String typeId,
+            String displayName,
+            Set<String> conformIds,
+            int nestedDims,
+            Object source,
+            ScriptRuntime rt) {
         Object raw = Values.unwrap(source);
         if (raw == null) {
             throw new NullPointerException("Cannot copy array from null");
@@ -158,7 +186,8 @@ public final class ArraySupport {
             }
             return dst;
         }
-        throw new BabbleException("Type error : expected iterable or array, got " + Types.describe(raw));
+        throw new BabbleException(
+                "Type error : expected iterable or array, got " + Types.describe(raw));
     }
 
     // ---------------------------------------------------------------- element access
@@ -167,7 +196,10 @@ public final class ArraySupport {
         return Array.getLength(Values.unwrap(array));
     }
 
-    /** Returns {@code true} when {@code array} contains an element equal to {@code value} under Babble {@code ==}. */
+    /**
+     * Returns {@code true} when {@code array} contains an element equal to {@code value} under
+     * Babble {@code ==}.
+     */
     public static boolean contains(Object array, Object value) {
         Object raw = Values.unwrap(array);
         if (raw == null) {
@@ -311,7 +343,10 @@ public final class ArraySupport {
         checkBabbleStore(oa, value);
         Object stored = Values.unwrap(value);
         Class<?> comp = oa.getClass().getComponentType();
-        if (stored != null && comp != Object.class && comp != InterpretedInstance.class && !comp.isInstance(stored)) {
+        if (stored != null
+                && comp != Object.class
+                && comp != InterpretedInstance.class
+                && !comp.isInstance(stored)) {
             stored = Values.toJava(stored, comp, rt);
         }
         try {
@@ -339,7 +374,8 @@ public final class ArraySupport {
         if (tag.nestedDims() == 0) {
             BabbleClass actual = BabbleObjects.babbleClass(value);
             if (actual == null || !actual.conformsTo(tag.typeId())) {
-                throw new ArrayStoreException(actual != null ? actual.name() : value.getClass().getName());
+                throw new ArrayStoreException(
+                        actual != null ? actual.name() : value.getClass().getName());
             }
             return;
         }
@@ -352,7 +388,8 @@ public final class ArraySupport {
             valTag = ELEMENT_TAGS.get(rawVal);
         }
         if (valTag != null) {
-            if (valTag.nestedDims() != tag.nestedDims() - 1 || !valTag.conformIds().contains(tag.typeId())) {
+            if (valTag.nestedDims() != tag.nestedDims() - 1
+                    || !valTag.conformIds().contains(tag.typeId())) {
                 String prefix = "array of ".repeat(valTag.nestedDims() + 1);
                 throw new ArrayStoreException(prefix + valTag.displayName());
             }
@@ -361,7 +398,10 @@ public final class ArraySupport {
 
     // ---------------------------------------------------------------- equality, hash, formatting
 
-    /** Deep structural equality matching {@code Arrays.deepEquals} with Babble's {@code ==} on elements. */
+    /**
+     * Deep structural equality matching {@code Arrays.deepEquals} with Babble's {@code ==} on
+     * elements.
+     */
     public static boolean deepEquals(Object a, Object b) {
         Object ua = Values.unwrap(a);
         Object ub = Values.unwrap(b);
@@ -471,17 +511,24 @@ public final class ArraySupport {
         return raw != null && raw.getClass().isArray() ? deepToString(raw) : String.valueOf(raw);
     }
 
-    /** Formats a host Java {@link Throwable} consistently across modes (stripping Helpful NPE details). */
+    /**
+     * Formats a host Java {@link Throwable} consistently across modes (stripping Helpful NPE
+     * details).
+     */
     public static String formatJavaException(Throwable t) {
         String name = t.getClass().getName();
         String msg = t instanceof NullPointerException ? null : t.getMessage();
         return msg == null ? name : name + " : " + msg;
     }
 
-    /** Whether the top stack frame points to internal Babble compiler/interpreter code (not user throw). */
+    /**
+     * Whether the top stack frame points to internal Babble compiler/interpreter code (not user
+     * throw).
+     */
     private static boolean isInternalEngineFrame(StackTraceElement top) {
         String cls = top.getClassName();
-        if (cls.equals("org.babblelang.engine.impl.Interpreter") && "visitThrowExpression".equals(top.getMethodName())) {
+        if (cls.equals("org.babblelang.engine.impl.Interpreter")
+                && "visitThrowExpression".equals(top.getMethodName())) {
             return false;
         }
         if (cls.equals("org.babblelang.compiler.ScriptClassLoader")
@@ -489,7 +536,7 @@ public final class ArraySupport {
             return false;
         }
         return cls.startsWith("org.babblelang.engine.impl.")
-                && !cls.startsWith("org.babblelang.engine.impl.natives.")
+                        && !cls.startsWith("org.babblelang.engine.impl.natives.")
                 || cls.startsWith("org.babblelang.analysis.")
                 || cls.startsWith("org.babblelang.compiler.")
                 || cls.startsWith("org.babblelang.ir.")
@@ -510,12 +557,14 @@ public final class ArraySupport {
             StringBuilder sb = new StringBuilder();
             while (arrMatcher.find()) {
                 String prefix = "array of ".repeat(arrMatcher.group(1).length());
-                arrMatcher.appendReplacement(sb, Matcher.quoteReplacement(prefix + arrMatcher.group(2)));
+                arrMatcher.appendReplacement(
+                        sb, Matcher.quoteReplacement(prefix + arrMatcher.group(2)));
             }
             arrMatcher.appendTail(sb);
             return COMPILED_BABBLE_CLASS.matcher(sb.toString()).replaceAll("$1");
         }
-        if (t instanceof ArrayIndexOutOfBoundsException || t instanceof NegativeArraySizeException) {
+        if (t instanceof ArrayIndexOutOfBoundsException
+                || t instanceof NegativeArraySizeException) {
             return t.toString();
         }
         StackTraceElement[] stack = t.getStackTrace();
@@ -527,10 +576,14 @@ public final class ArraySupport {
 
     // ---------------------------------------------------------------- dynamic member dispatch
 
-    /** Selects a Babble array method ({@code size}, {@code get}, {@code set}, {@code equals}, {@code hashCode}, {@code toString}) or falls back to {@link JavaObject#member}. */
+    /**
+     * Selects a Babble array method ({@code size}, {@code get}, {@code set}, {@code equals}, {@code
+     * hashCode}, {@code toString}) or falls back to {@link JavaObject#member}.
+     */
     public static Object member(Object array, String name) {
         if ("length".equals(name)) {
-            throw new BabbleException("No such name in " + Types.describe(array) + " : length (use size())");
+            throw new BabbleException(
+                    "No such name in " + Types.describe(array) + " : length (use size())");
         }
         return switch (name) {
             case "size" -> new ArrayMethod(array, "size", 0);

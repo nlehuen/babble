@@ -5,8 +5,10 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** Marks an {@link Axioms} stub whose target annotation cancels a null-marked scope ({@code BIP019} §2.5). */
+/**
+ * Marks an {@link Axioms} stub whose target annotation cancels a null-marked scope ({@code BIP019}
+ * §2.5).
+ */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface MeansNullUnmarked {
-}
+public @interface MeansNullUnmarked {}

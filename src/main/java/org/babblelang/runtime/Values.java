@@ -1,25 +1,26 @@
 package org.babblelang.runtime;
 
-
 import java.lang.reflect.Proxy;
 
 /**
- * Value-level operations : hashing consistent with {@code ==}, identity, {@code is}, and
- * the conversions of values crossing the boundary with Java.
+ * Value-level operations : hashing consistent with {@code ==}, identity, {@code is}, and the
+ * conversions of values crossing the boundary with Java.
  */
 public final class Values {
-    private Values() {
-    }
+    private Values() {}
 
     /**
-     * The hash consistent with {@code ==} : integral numbers and doubles with an integral
-     * value hash alike, so {@code hash(1) == hash(1.0)}.
+     * The hash consistent with {@code ==} : integral numbers and doubles with an integral value
+     * hash alike, so {@code hash(1) == hash(1.0)}.
      */
     public static int hash(Object value) {
         if (value == null) {
             return 0;
         }
-        if (value instanceof Integer || value instanceof Long || value instanceof Short || value instanceof Byte) {
+        if (value instanceof Integer
+                || value instanceof Long
+                || value instanceof Short
+                || value instanceof Byte) {
             return Long.hashCode(((Number) value).longValue());
         }
         if (value instanceof Number number) {
@@ -42,8 +43,8 @@ public final class Values {
     }
 
     /**
-     * Identity, except for numbers, booleans, characters and strings, which have no
-     * meaningful identity : for them it is {@code ==}.
+     * Identity, except for numbers, booleans, characters and strings, which have no meaningful
+     * identity : for them it is {@code ==}.
      */
     public static boolean same(Object a, Object b) {
         if (a instanceof JavaValue wrapper) {
@@ -62,7 +63,10 @@ public final class Values {
     }
 
     private static boolean isPlain(Object value) {
-        return value instanceof Number || value instanceof Boolean || value instanceof Character || value instanceof String;
+        return value instanceof Number
+                || value instanceof Boolean
+                || value instanceof Character
+                || value instanceof String;
     }
 
     /** {@code value is type} : type is a class value, an interface value or a Java class. */
@@ -121,7 +125,10 @@ public final class Values {
         return value instanceof Number n && !(value instanceof Double) ? n.doubleValue() : value;
     }
 
-    /** Converts a widened numeric value to {@code short}, {@code int}, {@code long}, {@code float}, or {@code double}. */
+    /**
+     * Converts a widened numeric value to {@code short}, {@code int}, {@code long}, {@code float},
+     * or {@code double}.
+     */
     public static Object widenNumeric(Object value, int targetRank) {
         if (!(value instanceof Number n)) {
             return value;
@@ -136,17 +143,21 @@ public final class Values {
         };
     }
 
-    /** A function, a bound method or a class value : what converts to a Java functional interface. */
+    /**
+     * A function, a bound method or a class value : what converts to a Java functional interface.
+     */
     public static boolean isBabbleCallable(Object value) {
-        return value instanceof BabbleFunction || value instanceof BoundMethod
+        return value instanceof BabbleFunction
+                || value instanceof BoundMethod
                 || value instanceof OverloadSet
-                || value instanceof BabbleClass babbleClass && babbleClass.shape().kind() != ClassShape.Kind.OBJECT;
+                || value instanceof BabbleClass babbleClass
+                        && babbleClass.shape().kind() != ClassShape.Kind.OBJECT;
     }
 
     /**
-     * A value going to Java, where {@code type} is expected : wrappers are unwrapped, a
-     * Babble instance becomes its face, and a Babble function becomes an implementation
-     * of an expected functional interface.
+     * A value going to Java, where {@code type} is expected : wrappers are unwrapped, a Babble
+     * instance becomes its face, and a Babble function becomes an implementation of an expected
+     * functional interface.
      */
     public static Object toJava(Object value, Class<?> type, ScriptRuntime rt) {
         if (value instanceof JavaValue wrapper) {
@@ -155,22 +166,33 @@ public final class Values {
         if (BabbleObjects.isInstance(value)) {
             return BabbleObjects.face(value);
         }
-        if (type != null && !type.isInstance(value) && isBabbleCallable(value) && JavaTypes.isFunctionalInterface(type)) {
+        if (type != null
+                && !type.isInstance(value)
+                && isBabbleCallable(value)
+                && JavaTypes.isFunctionalInterface(type)) {
             return Faces.function((Callable) value, type, rt);
         }
         return value;
     }
 
-    /** Eagerly adapts a Babble callable to a Java functional interface plus optional marker interfaces. */
-    public static Object toJavaSam(Object value, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
+    /**
+     * Eagerly adapts a Babble callable to a Java functional interface plus optional marker
+     * interfaces.
+     */
+    public static Object toJavaSam(
+            Object value, Class<?> samInterface, Class<?>[] markers, ScriptRuntime rt) {
         if (value != null && isBabbleCallable(value)) {
             return Faces.function((Callable) value, samInterface, markers, rt);
         }
         return value;
     }
 
-    /** Name-based {@link #toJavaSam} for non-public Java interfaces where {@code LDC} cannot reference the class. */
-    public static Object toJavaSamByName(Object value, String samName, String[] markerNames, ScriptRuntime rt) {
+    /**
+     * Name-based {@link #toJavaSam} for non-public Java interfaces where {@code LDC} cannot
+     * reference the class.
+     */
+    public static Object toJavaSamByName(
+            Object value, String samName, String[] markerNames, ScriptRuntime rt) {
         if (value == null || !isBabbleCallable(value)) {
             return value;
         }
@@ -205,7 +227,8 @@ public final class Values {
 
     /** A value coming back from Java : the face of a Babble instance is the instance again. */
     public static Object fromJava(Object value) {
-        if (value instanceof Proxy && Proxy.getInvocationHandler(value) instanceof Faces.FaceHandler face) {
+        if (value instanceof Proxy
+                && Proxy.getInvocationHandler(value) instanceof Faces.FaceHandler face) {
             return face.instance();
         }
         return value;
@@ -222,7 +245,10 @@ public final class Values {
         return result;
     }
 
-    /** Adapts an array, {@link java.util.Iterator}, or {@link Iterable} to a {@link java.util.Iterator} for dynamic {@code for} loops. */
+    /**
+     * Adapts an array, {@link java.util.Iterator}, or {@link Iterable} to a {@link
+     * java.util.Iterator} for dynamic {@code for} loops.
+     */
     public static java.util.Iterator<?> asIterator(Object value) {
         Object raw = unwrap(value);
         if (raw.getClass().isArray()) {
@@ -250,13 +276,15 @@ public final class Values {
     /** The arity of a Babble callable, as {min, max}, or null when it is not known. */
     static int[] arity(Callable callable) {
         if (callable instanceof BabbleFunction function && function.minArity() >= 0) {
-            return new int[]{function.minArity(), function.maxArity()};
+            return new int[] {function.minArity(), function.maxArity()};
         }
         if (callable instanceof BoundMethod bound) {
             return arity(bound.function());
         }
         if (callable instanceof BabbleClass babbleClass) {
-            return new int[]{babbleClass.shape().requiredParameters(), babbleClass.shape().parameters().length};
+            return new int[] {
+                babbleClass.shape().requiredParameters(), babbleClass.shape().parameters().length
+            };
         }
         return null;
     }

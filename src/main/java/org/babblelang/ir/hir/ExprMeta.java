@@ -1,14 +1,14 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.EffectSet;
+import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.effects.Effect;
 
 /**
  * Per-expression static metadata carried on every {@link HirExpr} node (BIP014-I1).
  *
- * <p>Detaches downstream optimization passes and bytecode emission from ANTLR4
- * {@code ParserRuleContext} side tables in {@code ScopeAnalysis}.
+ * <p>Detaches downstream optimization passes and bytecode emission from ANTLR4 {@code
+ * ParserRuleContext} side tables in {@code ScopeAnalysis}.
  */
 public record ExprMeta(
         int line,
@@ -19,8 +19,7 @@ public record ExprMeta(
         boolean deeplyImmutable,
         boolean stringType,
         boolean frozen,
-        boolean unique
-) {
+        boolean unique) {
     public ExprMeta {
         kind = kind != null ? kind : PrimitiveKind.NONE;
         effects = effects != null ? effects : EffectSet.EMPTY;
@@ -33,9 +32,17 @@ public record ExprMeta(
             String checkedType,
             EffectSet effects,
             boolean deeplyImmutable,
-            boolean stringType
-    ) {
-        this(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, false, false);
+            boolean stringType) {
+        this(
+                line,
+                kind,
+                wideningRank,
+                checkedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                false,
+                false);
     }
 
     public static ExprMeta of(int line, PrimitiveKind kind) {
@@ -43,36 +50,101 @@ public record ExprMeta(
         return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, imm, false, false, false);
     }
 
-    public static ExprMeta of(int line, PrimitiveKind kind, boolean deeplyImmutable, boolean stringType) {
-        return new ExprMeta(line, kind, -1, null, EffectSet.EMPTY, deeplyImmutable, stringType, false, false);
+    public static ExprMeta of(
+            int line, PrimitiveKind kind, boolean deeplyImmutable, boolean stringType) {
+        return new ExprMeta(
+                line, kind, -1, null, EffectSet.EMPTY, deeplyImmutable, stringType, false, false);
     }
 
     public ExprMeta withLine(int newLine) {
-        return new ExprMeta(newLine, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, unique);
+        return new ExprMeta(
+                newLine,
+                kind,
+                wideningRank,
+                checkedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                frozen,
+                unique);
     }
 
     public ExprMeta withKind(PrimitiveKind newKind) {
-        return new ExprMeta(line, newKind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, unique);
+        return new ExprMeta(
+                line,
+                newKind,
+                wideningRank,
+                checkedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                frozen,
+                unique);
     }
 
     public ExprMeta withWideningRank(int newRank) {
-        return new ExprMeta(line, kind, newRank, checkedType, effects, deeplyImmutable, stringType, frozen, unique);
+        return new ExprMeta(
+                line,
+                kind,
+                newRank,
+                checkedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                frozen,
+                unique);
     }
 
     public ExprMeta withCheckedType(String newCheckedType) {
-        return new ExprMeta(line, kind, wideningRank, newCheckedType, effects, deeplyImmutable, stringType, frozen, unique);
+        return new ExprMeta(
+                line,
+                kind,
+                wideningRank,
+                newCheckedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                frozen,
+                unique);
     }
 
     public ExprMeta withEffects(EffectSet newEffects) {
-        return new ExprMeta(line, kind, wideningRank, checkedType, newEffects, deeplyImmutable, stringType, frozen, unique);
+        return new ExprMeta(
+                line,
+                kind,
+                wideningRank,
+                checkedType,
+                newEffects,
+                deeplyImmutable,
+                stringType,
+                frozen,
+                unique);
     }
 
     public ExprMeta withFrozen(boolean newFrozen) {
-        return new ExprMeta(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, newFrozen, unique);
+        return new ExprMeta(
+                line,
+                kind,
+                wideningRank,
+                checkedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                newFrozen,
+                unique);
     }
 
     public ExprMeta withUnique(boolean newUnique) {
-        return new ExprMeta(line, kind, wideningRank, checkedType, effects, deeplyImmutable, stringType, frozen, newUnique);
+        return new ExprMeta(
+                line,
+                kind,
+                wideningRank,
+                checkedType,
+                effects,
+                deeplyImmutable,
+                stringType,
+                frozen,
+                newUnique);
     }
 
     public boolean isPure() {
@@ -103,4 +175,3 @@ public record ExprMeta(
         return effects.has(Effect.ASSOCIATIVE);
     }
 }
-

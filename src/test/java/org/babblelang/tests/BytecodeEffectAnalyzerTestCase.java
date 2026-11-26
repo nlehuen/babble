@@ -1,5 +1,6 @@
 package org.babblelang.tests;
 
+import java.lang.reflect.Method;
 import org.babblelang.analysis.BytecodeEffectAnalyzer;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.engine.BabbleScriptEngine;
@@ -9,11 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 
-import java.lang.reflect.Method;
-
-/**
- * Tests for RM007 (BIP007-I3) : opt-in ASM {@link BytecodeEffectAnalyzer}.
- */
+/** Tests for RM007 (BIP007-I3) : opt-in ASM {@link BytecodeEffectAnalyzer}. */
 public class BytecodeEffectAnalyzerTestCase {
 
     public static final class SampleHelpers {
@@ -78,53 +75,78 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertTrue(suggestion.contains("nothrow"), suggestion);
 
         // Seeded Math.sqrt intrinsic + transitive pure helper call
-        EffectSet rTrig = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("trigHypot", double.class, double.class)).effects();
+        EffectSet rTrig =
+                BytecodeEffectAnalyzer.analyze(
+                                SampleHelpers.class.getMethod(
+                                        "trigHypot", double.class, double.class))
+                        .effects();
         Assertions.assertTrue(rTrig.isPure());
         Assertions.assertTrue(rTrig.isDeterministic());
         Assertions.assertTrue(rTrig.isNothrow());
 
-        EffectSet rTrans = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("callsHelper", int.class, int.class)).effects();
+        EffectSet rTrans =
+                BytecodeEffectAnalyzer.analyze(
+                                SampleHelpers.class.getMethod("callsHelper", int.class, int.class))
+                        .effects();
         Assertions.assertTrue(rTrans.isPure());
         Assertions.assertTrue(rTrans.isDeterministic());
         Assertions.assertTrue(rTrans.isNothrow());
 
         // Integer division drops nothrow but stays pure deterministic
-        EffectSet rDiv = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("intDiv", int.class, int.class)).effects();
+        EffectSet rDiv =
+                BytecodeEffectAnalyzer.analyze(
+                                SampleHelpers.class.getMethod("intDiv", int.class, int.class))
+                        .effects();
         Assertions.assertTrue(rDiv.isPure());
         Assertions.assertTrue(rDiv.isDeterministic());
         Assertions.assertFalse(rDiv.isNothrow());
 
         // Reading non-final static drops deterministic
-        EffectSet rRead = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("readsMutableStatic", int.class)).effects();
+        EffectSet rRead =
+                BytecodeEffectAnalyzer.analyze(
+                                SampleHelpers.class.getMethod("readsMutableStatic", int.class))
+                        .effects();
         Assertions.assertTrue(rRead.isPure());
         Assertions.assertFalse(rRead.isDeterministic());
 
         // Writing static field drops pure, hermetic, deterministic
-        EffectSet rWrite = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("writesMutableStatic", int.class)).effects();
+        EffectSet rWrite =
+                BytecodeEffectAnalyzer.analyze(
+                                SampleHelpers.class.getMethod("writesMutableStatic", int.class))
+                        .effects();
         Assertions.assertFalse(rWrite.isPure());
         Assertions.assertFalse(rWrite.isHermetic());
         Assertions.assertFalse(rWrite.isDeterministic());
 
         // Synchronized drops pure/deterministic/nothrow
-        EffectSet rSync = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("syncAdd", int.class, int.class)).effects();
+        EffectSet rSync =
+                BytecodeEffectAnalyzer.analyze(
+                                SampleHelpers.class.getMethod("syncAdd", int.class, int.class))
+                        .effects();
         Assertions.assertFalse(rSync.isPure());
         Assertions.assertFalse(rSync.isDeterministic());
 
         // Open virtual dispatch without curated axiom drops pure/deterministic/nothrow;
-        // with curated Object.hashCode it resolves through the curated axiom to pure volatile (BIP019 §5.2).
-        BytecodeEffectAnalyzer.Result rOpenEmpty = BytecodeEffectAnalyzer.analyze(
-                SampleHelpers.class.getMethod("openDispatch", Object.class),
-                org.babblelang.analysis.BuiltinAxioms.EMPTY);
+        // with curated Object.hashCode it resolves through the curated axiom to pure volatile
+        // (BIP019 §5.2).
+        BytecodeEffectAnalyzer.Result rOpenEmpty =
+                BytecodeEffectAnalyzer.analyze(
+                        SampleHelpers.class.getMethod("openDispatch", Object.class),
+                        org.babblelang.analysis.BuiltinAxioms.EMPTY);
         Assertions.assertFalse(rOpenEmpty.effects().isPure());
-        Assertions.assertTrue(rOpenEmpty.reasons().stream().anyMatch(s -> s.contains("open dispatch")));
-        BytecodeEffectAnalyzer.Result rOpenCurated = BytecodeEffectAnalyzer.analyze(
-                SampleHelpers.class.getMethod("openDispatch", Object.class),
-                org.babblelang.analysis.BuiltinAxioms.standard());
+        Assertions.assertTrue(
+                rOpenEmpty.reasons().stream().anyMatch(s -> s.contains("open dispatch")));
+        BytecodeEffectAnalyzer.Result rOpenCurated =
+                BytecodeEffectAnalyzer.analyze(
+                        SampleHelpers.class.getMethod("openDispatch", Object.class),
+                        org.babblelang.analysis.BuiltinAxioms.standard());
         Assertions.assertTrue(rOpenCurated.effects().isPure());
         Assertions.assertFalse(rOpenCurated.effects().isDeterministic());
 
         // Loop drops @TERMINATING while staying pure deterministic nothrow
-        EffectSet rLoop = BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("loopSum", int.class)).effects();
+        EffectSet rLoop =
+                BytecodeEffectAnalyzer.analyze(SampleHelpers.class.getMethod("loopSum", int.class))
+                        .effects();
         Assertions.assertTrue(rLoop.isPure());
         Assertions.assertTrue(rLoop.isDeterministic());
         Assertions.assertTrue(rLoop.isNothrow());
@@ -133,7 +155,8 @@ public class BytecodeEffectAnalyzerTestCase {
 
     @Test
     public void testOptInEngineIntegration() throws Exception {
-        String script = """
+        String script =
+                """
                 def H = import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.SampleHelpers
                 def f = fn nothrow (a: int, b: int): int -> ( H.pureAdd(a, b) )
                 f(3, 4)
@@ -181,7 +204,8 @@ public class BytecodeEffectAnalyzerTestCase {
 
     @Test
     public void testValueLatticeInfersMutBorrowReadsAndNullness() throws Exception {
-        BytecodeEffectAnalyzer.Result getRes = BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("getValue"));
+        BytecodeEffectAnalyzer.Result getRes =
+                BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("getValue"));
         Assertions.assertTrue(getRes.effects().isPure());
         Assertions.assertTrue(getRes.effects().isDeterministic());
         Assertions.assertTrue(getRes.effects().isNothrow());
@@ -189,18 +213,22 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertFalse(getRes.mutReceiver());
         Assertions.assertTrue(getRes.borrowReceiver());
 
-        BytecodeEffectAnalyzer.Result setRes = BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("setValue", int.class));
+        BytecodeEffectAnalyzer.Result setRes =
+                BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("setValue", int.class));
         Assertions.assertTrue(setRes.effects().isHermetic());
         Assertions.assertFalse(setRes.effects().isPure());
         Assertions.assertTrue(setRes.mutReceiver());
         Assertions.assertTrue(setRes.borrowReceiver());
 
-        BytecodeEffectAnalyzer.Result storeRes = BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("storeRef", Object.class));
+        BytecodeEffectAnalyzer.Result storeRes =
+                BytecodeEffectAnalyzer.analyze(
+                        StatefulBox.class.getMethod("storeRef", Object.class));
         Assertions.assertTrue(storeRes.effects().isHermetic());
         Assertions.assertTrue(storeRes.mutReceiver());
         Assertions.assertFalse(storeRes.borrowParams()[0]); // param stored in field -> shared!
 
-        BytecodeEffectAnalyzer.Result copyRes = BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("freshCopy"));
+        BytecodeEffectAnalyzer.Result copyRes =
+                BytecodeEffectAnalyzer.analyze(StatefulBox.class.getMethod("freshCopy"));
         Assertions.assertTrue(copyRes.effects().isPure());
         Assertions.assertTrue(copyRes.returnNonNull());
         Assertions.assertTrue(copyRes.fresh());
@@ -209,44 +237,84 @@ public class BytecodeEffectAnalyzerTestCase {
 
     @Test
     public void testAxiomDumperProducesCanonicalOutput() {
-        String dump = org.babblelang.analysis.AxiomDumper.dumpClass(StatefulBox.class, org.babblelang.analysis.BuiltinAxioms.EMPTY);
-        Assertions.assertTrue(dump.contains("axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class ("), dump);
+        String dump =
+                org.babblelang.analysis.AxiomDumper.dumpClass(
+                        StatefulBox.class, org.babblelang.analysis.BuiltinAxioms.EMPTY);
+        Assertions.assertTrue(
+                dump.contains(
+                        "axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class ("),
+                dump);
         Assertions.assertTrue(dump.contains("def getValue: fn nothrow (): int"), dump);
-        Assertions.assertTrue(dump.contains("def setValue: fn mut nothrow shallow (p0: int): void"), dump);
-        Assertions.assertTrue(dump.contains("def storeRef: fn mut nothrow shallow (shared p0: any?): void"), dump);
+        Assertions.assertTrue(
+                dump.contains("def setValue: fn mut nothrow shallow (p0: int): void"), dump);
+        Assertions.assertTrue(
+                dump.contains("def storeRef: fn mut nothrow shallow (shared p0: any?): void"),
+                dump);
         Assertions.assertTrue(dump.contains("def freshCopy: fn nothrow fresh ():"), dump);
         // Output parses back cleanly and obeys §3.4 canonical order:
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(dump, "StatefulBox"));
+        Assertions.assertEquals(
+                java.util.List.of(),
+                org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(dump, "StatefulBox"));
     }
 
     @Test
     public void testGoldenDumpsForMathAndArrayList() throws Exception {
-        String mathDump = org.babblelang.analysis.AxiomDumper.dumpClass(Math.class, org.babblelang.analysis.BuiltinAxioms.standard());
-        Assertions.assertTrue(mathDump.startsWith("axiom java.lang.Math: class (\n) static (\n"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def abs: fn nothrow idempotent foldable (p0: double): double"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def sqrt: fn nothrow foldable (p0: double): double"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def addExact: fn (p0: int, p1: int): int"), mathDump);
-        Assertions.assertTrue(mathDump.contains("def ceilDiv: fn (p0: int, p1: int): int"), mathDump);
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(mathDump, "Math"));
+        String mathDump =
+                org.babblelang.analysis.AxiomDumper.dumpClass(
+                        Math.class, org.babblelang.analysis.BuiltinAxioms.standard());
+        Assertions.assertTrue(
+                mathDump.startsWith("axiom java.lang.Math: class (\n) static (\n"), mathDump);
+        Assertions.assertTrue(
+                mathDump.contains("def abs: fn nothrow idempotent foldable (p0: double): double"),
+                mathDump);
+        Assertions.assertTrue(
+                mathDump.contains("def sqrt: fn nothrow foldable (p0: double): double"), mathDump);
+        Assertions.assertTrue(
+                mathDump.contains("def addExact: fn (p0: int, p1: int): int"), mathDump);
+        Assertions.assertTrue(
+                mathDump.contains("def ceilDiv: fn (p0: int, p1: int): int"), mathDump);
+        Assertions.assertEquals(
+                java.util.List.of(),
+                org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(mathDump, "Math"));
 
-        String listDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.util.ArrayList.class, org.babblelang.analysis.BuiltinAxioms.standard());
-        Assertions.assertTrue(listDump.startsWith("axiom java.util.ArrayList of E: class notnull (\n"), listDump);
-        Assertions.assertTrue(listDump.contains("def clear: fn mut shared shallow (): void"), listDump);
+        String listDump =
+                org.babblelang.analysis.AxiomDumper.dumpClass(
+                        java.util.ArrayList.class,
+                        org.babblelang.analysis.BuiltinAxioms.standard());
+        Assertions.assertTrue(
+                listDump.startsWith("axiom java.util.ArrayList of E: class notnull (\n"), listDump);
+        Assertions.assertTrue(
+                listDump.contains("def clear: fn mut shared shallow (): void"), listDump);
         Assertions.assertTrue(listDump.contains("def isEmpty: fn nothrow (): bool"), listDump);
-        Assertions.assertTrue(listDump.contains("def iterator: fn shared nothrow view (): (java.util.Iterator of any?)!"), listDump);
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(listDump, "ArrayList"));
+        Assertions.assertTrue(
+                listDump.contains(
+                        "def iterator: fn shared nothrow view (): (java.util.Iterator of any?)!"),
+                listDump);
+        Assertions.assertEquals(
+                java.util.List.of(),
+                org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(listDump, "ArrayList"));
     }
 
-    /** JDK 22+ constructors read Throwable.jfrTracing for JFR : the curated Throwable and Error constructors keep exceptions nothrow on every JDK. */
+    /**
+     * JDK 22+ constructors read Throwable.jfrTracing for JFR : the curated Throwable and Error
+     * constructors keep exceptions nothrow on every JDK.
+     */
     @Test
     public void testExceptionConstructorsIgnoreJfrTracing() {
-        org.babblelang.analysis.BuiltinAxioms axioms = org.babblelang.analysis.BuiltinAxioms.standard();
-        String arithmetic = org.babblelang.analysis.AxiomDumper.dumpClass(ArithmeticException.class, axioms);
+        org.babblelang.analysis.BuiltinAxioms axioms =
+                org.babblelang.analysis.BuiltinAxioms.standard();
+        String arithmetic =
+                org.babblelang.analysis.AxiomDumper.dumpClass(ArithmeticException.class, axioms);
         Assertions.assertTrue(arithmetic.contains("def new: fn nothrow fresh ()"), arithmetic);
-        Assertions.assertTrue(arithmetic.contains("def new: fn nothrow (shared p0: string?)"), arithmetic);
+        Assertions.assertTrue(
+                arithmetic.contains("def new: fn nothrow (shared p0: string?)"), arithmetic);
         String linkage = org.babblelang.analysis.AxiomDumper.dumpClass(LinkageError.class, axioms);
-        Assertions.assertTrue(linkage.contains("def new: fn nothrow (shared p0: string?)"), linkage);
-        Assertions.assertTrue(linkage.contains("def new: fn nothrow (shared p0: string?, shared p1: java.lang.Throwable?)"), linkage);
+        Assertions.assertTrue(
+                linkage.contains("def new: fn nothrow (shared p0: string?)"), linkage);
+        Assertions.assertTrue(
+                linkage.contains(
+                        "def new: fn nothrow (shared p0: string?, shared p1: java.lang.Throwable?)"),
+                linkage);
         Assertions.assertFalse(arithmetic.contains("jfrTracing"), arithmetic);
         Assertions.assertFalse(linkage.contains("jfrTracing"), linkage);
     }
@@ -259,58 +327,91 @@ public class BytecodeEffectAnalyzerTestCase {
         java.io.PrintStream oldErr = System.err;
         java.io.ByteArrayOutputStream errBytes = new java.io.ByteArrayOutputStream();
         try {
-            System.setProperty("babble.dumpAxioms", "org.babblelang.tests.BytecodeEffectAnalyzerTestCase$StatefulBox");
+            System.setProperty(
+                    "babble.dumpAxioms",
+                    "org.babblelang.tests.BytecodeEffectAnalyzerTestCase$StatefulBox");
             System.setProperty("babble.axioms.report", "true");
             System.setErr(new java.io.PrintStream(errBytes));
 
-            org.babblelang.analysis.BuiltinAxioms custom = org.babblelang.analysis.BuiltinAxioms.fromSource(
-                    "axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class (\n"
-                            + "    def getValue: fn (): int\n"
-                            + ")\n", "test.ba");
-            BabbleScriptEngine engine = (BabbleScriptEngine) new BabbleScriptEngineFactory().getScriptEngine();
+            org.babblelang.analysis.BuiltinAxioms custom =
+                    org.babblelang.analysis.BuiltinAxioms.fromSource(
+                            "axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class (\n"
+                                    + "    def getValue: fn (): int\n"
+                                    + ")\n",
+                            "test.ba");
+            BabbleScriptEngine engine =
+                    (BabbleScriptEngine) new BabbleScriptEngineFactory().getScriptEngine();
             engine.setBuiltinAxioms(custom);
             engine.put("babble.mode", "compile");
-            Object res = engine.eval("""
-                    def B = import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.StatefulBox
-                    def f = fn (): int -> ( B(42).getValue() )
-                    f()
-                    """);
+            Object res =
+                    engine.eval(
+                            """
+                            def B = import("org.babblelang.tests").BytecodeEffectAnalyzerTestCase.StatefulBox
+                            def f = fn (): int -> ( B(42).getValue() )
+                            f()
+                            """);
             Assertions.assertEquals(42, res);
             String err = errBytes.toString();
-            Assertions.assertTrue(err.contains("axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class"), err);
+            Assertions.assertTrue(
+                    err.contains(
+                            "axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class"),
+                    err);
             Assertions.assertTrue(err.contains("Axiom report :"), err);
         } finally {
             System.setErr(oldErr);
-            if (oldDump == null) System.clearProperty("babble.dumpAxioms"); else System.setProperty("babble.dumpAxioms", oldDump);
-            if (oldReport == null) System.clearProperty("babble.axioms.report"); else System.setProperty("babble.axioms.report", oldReport);
+            if (oldDump == null) System.clearProperty("babble.dumpAxioms");
+            else System.setProperty("babble.dumpAxioms", oldDump);
+            if (oldReport == null) System.clearProperty("babble.axioms.report");
+            else System.setProperty("babble.axioms.report", oldReport);
         }
     }
 
     @Test
     public void testJavaBaseSimulationCompletesDeterministically() throws Exception {
-        // BIP019 §2.2 / §5.1: analyzing core java.base classes with BytecodeEffectAnalyzer is deterministic,
+        // BIP019 §2.2 / §5.1: analyzing core java.base classes with BytecodeEffectAnalyzer is
+        // deterministic,
         // bounded, and never throws across repeated runs in different orders.
-        java.util.List<Class<?>> classes = java.util.List.of(
-                Math.class, StrictMath.class, Integer.class, Long.class, Double.class, Float.class,
-                String.class, java.util.Objects.class, java.util.ArrayList.class, java.util.HashMap.class);
+        java.util.List<Class<?>> classes =
+                java.util.List.of(
+                        Math.class,
+                        StrictMath.class,
+                        Integer.class,
+                        Long.class,
+                        Double.class,
+                        Float.class,
+                        String.class,
+                        java.util.Objects.class,
+                        java.util.ArrayList.class,
+                        java.util.HashMap.class);
         java.util.Map<String, String> firstPass = new java.util.LinkedHashMap<>();
         for (Class<?> c : classes) {
-            firstPass.put(c.getName(), org.babblelang.analysis.AxiomDumper.dumpClass(c, org.babblelang.analysis.BuiltinAxioms.standard()));
+            firstPass.put(
+                    c.getName(),
+                    org.babblelang.analysis.AxiomDumper.dumpClass(
+                            c, org.babblelang.analysis.BuiltinAxioms.standard()));
         }
         // Reverse order must produce byte-for-byte identical dumps (determinism §5.1).
         for (int i = classes.size() - 1; i >= 0; i--) {
             Class<?> c = classes.get(i);
-            String second = org.babblelang.analysis.AxiomDumper.dumpClass(c, org.babblelang.analysis.BuiltinAxioms.standard());
-            Assertions.assertEquals(firstPass.get(c.getName()), second, "Non-deterministic dump for " + c.getName());
+            String second =
+                    org.babblelang.analysis.AxiomDumper.dumpClass(
+                            c, org.babblelang.analysis.BuiltinAxioms.standard());
+            Assertions.assertEquals(
+                    firstPass.get(c.getName()),
+                    second,
+                    "Non-deterministic dump for " + c.getName());
         }
     }
 
     @Test
     public void testInferredEffectsOverlayAndRedundancyCheck() throws Exception {
         // BIP030 : StringWriter.getBuffer has `fn ... : java.lang.StringBuffer!`; bytecode infers
-        // `pure nothrow view`, curated nullness overlays `returnNonNull == true`, and bytecode alone
-        // cannot prove the `buf` field non-null so AxiomDumper prints `;; curated nullness, inferred effects`.
-        org.babblelang.analysis.BuiltinAxioms std = org.babblelang.analysis.BuiltinAxioms.standard();
+        // `pure nothrow view`, curated nullness overlays `returnNonNull == true`, and bytecode
+        // alone
+        // cannot prove the `buf` field non-null so AxiomDumper prints `;; curated nullness,
+        // inferred effects`.
+        org.babblelang.analysis.BuiltinAxioms std =
+                org.babblelang.analysis.BuiltinAxioms.standard();
         Method getBuffer = java.io.StringWriter.class.getMethod("getBuffer");
         BytecodeEffectAnalyzer.Result res = BytecodeEffectAnalyzer.analyze(getBuffer, std);
         Assertions.assertTrue(res.effects().isPure());
@@ -318,28 +419,52 @@ public class BytecodeEffectAnalyzerTestCase {
         Assertions.assertTrue(res.view());
         Assertions.assertTrue(res.returnNonNull());
 
-        String swDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.io.StringWriter.class, std);
-        Assertions.assertTrue(swDump.contains(";; curated nullness, inferred effects\n    def getBuffer: fn nothrow view (): java.lang.StringBuffer!"), swDump);
-        Assertions.assertEquals(java.util.List.of(), org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(swDump, "StringWriter"));
+        String swDump =
+                org.babblelang.analysis.AxiomDumper.dumpClass(java.io.StringWriter.class, std);
+        Assertions.assertTrue(
+                swDump.contains(
+                        ";; curated nullness, inferred effects\n    def getBuffer: fn nothrow view (): java.lang.StringBuffer!"),
+                swDump);
+        Assertions.assertEquals(
+                java.util.List.of(),
+                org.babblelang.analysis.AxiomDumper.checkCanonicalOrder(swDump, "StringWriter"));
 
-        // BIP030-D6 : isAtLeastAsStrongAs must check curated nullness even for `io` and `...` axioms.
-        // 1. `fn ... : StatefulBox!` on freshCopy() IS proved non-null by bytecode (`new`) -> `;; curated, inferred the same`.
-        // 2. `fn io (): java.lang.StringBuffer!` on StringWriter.getBuffer() is NOT proved non-null by bytecode -> `;; curated` (not `inferred the same`).
-        org.babblelang.analysis.BuiltinAxioms freshCurated = org.babblelang.analysis.BuiltinAxioms.fromSource("""
-                axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class (
-                    def freshCopy: fn ... : org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox!
-                )
-                """, "fresh.ba");
-        String freshDump = org.babblelang.analysis.AxiomDumper.dumpClass(StatefulBox.class, freshCurated);
-        Assertions.assertTrue(freshDump.contains(";; curated, inferred the same\n    def freshCopy: fn nothrow fresh ():"), freshDump);
+        // BIP030-D6 : isAtLeastAsStrongAs must check curated nullness even for `io` and `...`
+        // axioms.
+        // 1. `fn ... : StatefulBox!` on freshCopy() IS proved non-null by bytecode (`new`) -> `;;
+        // curated, inferred the same`.
+        // 2. `fn io (): java.lang.StringBuffer!` on StringWriter.getBuffer() is NOT proved non-null
+        // by bytecode -> `;; curated` (not `inferred the same`).
+        org.babblelang.analysis.BuiltinAxioms freshCurated =
+                org.babblelang.analysis.BuiltinAxioms.fromSource(
+                        """
+                        axiom org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox: class (
+                            def freshCopy: fn ... : org.babblelang.tests.BytecodeEffectAnalyzerTestCase.StatefulBox!
+                        )
+                        """,
+                        "fresh.ba");
+        String freshDump =
+                org.babblelang.analysis.AxiomDumper.dumpClass(StatefulBox.class, freshCurated);
+        Assertions.assertTrue(
+                freshDump.contains(
+                        ";; curated, inferred the same\n    def freshCopy: fn nothrow fresh ():"),
+                freshDump);
 
-        org.babblelang.analysis.BuiltinAxioms ioNonNull = org.babblelang.analysis.BuiltinAxioms.fromSource("""
-                axiom java.io.StringWriter: class (
-                    def getBuffer: fn io (): java.lang.StringBuffer!
-                )
-                """, "io_nonnull.ba");
-        String ioDump = org.babblelang.analysis.AxiomDumper.dumpClass(java.io.StringWriter.class, ioNonNull);
-        Assertions.assertTrue(ioDump.contains(";; curated\n    def getBuffer: fn io (): java.lang.StringBuffer!"), ioDump);
-        Assertions.assertFalse(ioDump.contains(";; curated, inferred the same\n    def getBuffer:"), ioDump);
+        org.babblelang.analysis.BuiltinAxioms ioNonNull =
+                org.babblelang.analysis.BuiltinAxioms.fromSource(
+                        """
+                        axiom java.io.StringWriter: class (
+                            def getBuffer: fn io (): java.lang.StringBuffer!
+                        )
+                        """,
+                        "io_nonnull.ba");
+        String ioDump =
+                org.babblelang.analysis.AxiomDumper.dumpClass(
+                        java.io.StringWriter.class, ioNonNull);
+        Assertions.assertTrue(
+                ioDump.contains(";; curated\n    def getBuffer: fn io (): java.lang.StringBuffer!"),
+                ioDump);
+        Assertions.assertFalse(
+                ioDump.contains(";; curated, inferred the same\n    def getBuffer:"), ioDump);
     }
 }

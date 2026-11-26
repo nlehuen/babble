@@ -1,10 +1,5 @@
 package org.babblelang.analysis;
 
-import org.babblelang.effects.Effect;
-import org.babblelang.engine.BabbleScriptEngine;
-import org.babblelang.parser.BabbleParser;
-import org.objectweb.asm.Type;
-
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Constructor;
@@ -20,10 +15,8 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Enumeration;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -31,20 +24,23 @@ import java.util.TreeSet;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Stream;
+import org.babblelang.effects.Effect;
+import org.babblelang.engine.BabbleScriptEngine;
+import org.babblelang.parser.BabbleParser;
+import org.objectweb.asm.Type;
 
 /**
  * Formats and dumps what the compiler assumes (curated or inferred) about a Java class or every
- * public class of a Java package in canonical §3.4 {@code curated.ba} syntax
- * ({@code docs/design/bip019_refactoring-axioms.md} §5.1).
+ * public class of a Java package in canonical §3.4 {@code curated.ba} syntax ({@code
+ * docs/design/bip019_refactoring-axioms.md} §5.1).
  */
 public final class AxiomDumper {
 
-    private AxiomDumper() {
-    }
+    private AxiomDumper() {}
 
     /**
-     * Resolves {@code target} as either a single Java class or a Java package name, returning
-     * the sorted list of classes (by binary name), or an empty list if {@code target} is neither.
+     * Resolves {@code target} as either a single Java class or a Java package name, returning the
+     * sorted list of classes (by binary name), or an empty list if {@code target} is neither.
      */
     public static List<Class<?>> resolveTarget(String target) {
         if (target == null || target.isBlank()) {
@@ -58,7 +54,10 @@ public final class AxiomDumper {
         return listPublicPackageClasses(trimmed);
     }
 
-    /** Dumps axioms for {@code target} (class or package) to {@code out}. Returns {@code false} if unknown. */
+    /**
+     * Dumps axioms for {@code target} (class or package) to {@code out}. Returns {@code false} if
+     * unknown.
+     */
     public static boolean dumpTarget(String target, BuiltinAxioms axioms, PrintWriter out) {
         List<Class<?>> classes = resolveTarget(target);
         if (classes.isEmpty()) {
@@ -75,7 +74,10 @@ public final class AxiomDumper {
         return true;
     }
 
-    /** Dumps axioms for a comma-separated list of classes/packages (for {@code -Dbabble.dumpAxioms=...}). */
+    /**
+     * Dumps axioms for a comma-separated list of classes/packages (for {@code
+     * -Dbabble.dumpAxioms=...}).
+     */
     public static void dumpTargets(String spec, BuiltinAxioms axioms, PrintWriter err) {
         if (spec == null || spec.isBlank()) {
             return;
@@ -94,7 +96,9 @@ public final class AxiomDumper {
         err.flush();
     }
 
-    /** Renders what Babble assumes about {@code cls} in canonical §3.4 {@code curated.ba} syntax. */
+    /**
+     * Renders what Babble assumes about {@code cls} in canonical §3.4 {@code curated.ba} syntax.
+     */
     public static String dumpClass(Class<?> cls, BuiltinAxioms axioms) {
         BuiltinAxioms effective = axioms != null ? axioms : BuiltinAxioms.standard();
         StringBuilder sb = new StringBuilder();
@@ -138,13 +142,14 @@ public final class AxiomDumper {
             }
         }
 
-        Comparator<Executable> execOrder = (a, b) -> {
-            String na = a instanceof Constructor<?> ? "new" : a.getName();
-            String nb = b instanceof Constructor<?> ? "new" : b.getName();
-            List<String> pa = paramDescriptors(a);
-            List<String> pb = paramDescriptors(b);
-            return compareMemberOrder(na, pa, nb, pb);
-        };
+        Comparator<Executable> execOrder =
+                (a, b) -> {
+                    String na = a instanceof Constructor<?> ? "new" : a.getName();
+                    String nb = b instanceof Constructor<?> ? "new" : b.getName();
+                    List<String> pa = paramDescriptors(a);
+                    List<String> pb = paramDescriptors(b);
+                    return compareMemberOrder(na, pa, nb, pb);
+                };
         instanceMethods.sort(execOrder);
         ctors.sort(execOrder);
         staticMethods.sort(execOrder);
@@ -168,12 +173,14 @@ public final class AxiomDumper {
         return sb.toString();
     }
 
-    private static void appendMember(StringBuilder sb, Class<?> cls, Executable exec, BuiltinAxioms axioms) {
+    private static void appendMember(
+            StringBuilder sb, Class<?> cls, Executable exec, BuiltinAxioms axioms) {
         boolean isCtor = exec instanceof Constructor<?>;
         String name = isCtor ? "new" : exec.getName();
-        AxiomData.MemberAxiom curated = isCtor
-                ? axioms.constructorAxiom(cls, (Constructor<?>) exec)
-                : axioms.methodAxiom(cls, name, (Method) exec);
+        AxiomData.MemberAxiom curated =
+                isCtor
+                        ? axioms.constructorAxiom(cls, (Constructor<?>) exec)
+                        : axioms.methodAxiom(cls, name, (Method) exec);
 
         BytecodeEffectAnalyzer.Result inferred = BytecodeEffectAnalyzer.analyzeRaw(exec, axioms);
         String comment;
@@ -196,7 +203,10 @@ public final class AxiomDumper {
             } else if (inferred.reasons().isEmpty()) {
                 comment = ";; curated nullness, inferred effects";
             } else {
-                comment = ";; curated nullness, inferred effects (" + String.join(", ", inferred.reasons()) + ")";
+                comment =
+                        ";; curated nullness, inferred effects ("
+                                + String.join(", ", inferred.reasons())
+                                + ")";
             }
             EffectChecker.JavaCallProfile prof = inferred.toProfile(exec);
             eff = prof.effects();
@@ -209,9 +219,12 @@ public final class AxiomDumper {
             fresh = prof.fresh();
             foldable = false;
             paramNulls = curated.hasSignature() ? curated.paramNullness() : null;
-            retNull = curated.returnNullness() != null
-                    ? curated.returnNullness()
-                    : (inferred.returnNonNull() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.NULLABLE);
+            retNull =
+                    curated.returnNullness() != null
+                            ? curated.returnNullness()
+                            : (inferred.returnNonNull()
+                                    ? JavaNullability.Nullness.NON_NULL
+                                    : JavaNullability.Nullness.NULLABLE);
         } else if (curated != null) {
             boolean same = BytecodeEffectAnalyzer.isAtLeastAsStrongAs(inferred, curated, exec);
             comment = same ? ";; curated, inferred the same" : ";; curated";
@@ -226,9 +239,12 @@ public final class AxiomDumper {
             fresh = prof.fresh();
             foldable = curated.foldable();
             paramNulls = curated.hasSignature() ? curated.paramNullness() : null;
-            retNull = curated.returnNullness() != null
-                    ? curated.returnNullness()
-                    : (inferred.returnNonNull() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.NULLABLE);
+            retNull =
+                    curated.returnNullness() != null
+                            ? curated.returnNullness()
+                            : (inferred.returnNonNull()
+                                    ? JavaNullability.Nullness.NON_NULL
+                                    : JavaNullability.Nullness.NULLABLE);
         } else {
             if (inferred.reasons().isEmpty()) {
                 comment = ";; inferred";
@@ -246,7 +262,10 @@ public final class AxiomDumper {
             fresh = prof.fresh();
             foldable = false;
             paramNulls = null;
-            retNull = inferred.returnNonNull() ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.NULLABLE;
+            retNull =
+                    inferred.returnNonNull()
+                            ? JavaNullability.Nullness.NON_NULL
+                            : JavaNullability.Nullness.NULLABLE;
         }
 
         sb.append("    ").append(comment).append("\n");
@@ -270,7 +289,13 @@ public final class AxiomDumper {
             if (eff.isNothrow()) {
                 words.add("nothrow");
             }
-            for (Effect e : List.of(Effect.IDEMPOTENT, Effect.COMMUTATIVE, Effect.ASSOCIATIVE, Effect.MONOTONE, Effect.INJECTIVE)) {
+            for (Effect e :
+                    List.of(
+                            Effect.IDEMPOTENT,
+                            Effect.COMMUTATIVE,
+                            Effect.ASSOCIATIVE,
+                            Effect.MONOTONE,
+                            Effect.INJECTIVE)) {
                 if (eff.has(e)) {
                     words.add(e.name().toLowerCase());
                 }
@@ -296,7 +321,8 @@ public final class AxiomDumper {
                 sb.append("shared ");
             }
             sb.append("p").append(i).append(": ");
-            JavaNullability.Nullness pn = (paramNulls != null && i < paramNulls.length) ? paramNulls[i] : null;
+            JavaNullability.Nullness pn =
+                    (paramNulls != null && i < paramNulls.length) ? paramNulls[i] : null;
             sb.append(formatJavaType(pTypes[i], pn));
         }
         sb.append(")");
@@ -317,9 +343,15 @@ public final class AxiomDumper {
         if (cls == double.class) return "double";
         if (cls == boolean.class) return "bool";
         if (cls == char.class) return "char";
-        boolean nullable = nullness == JavaNullability.Nullness.NULLABLE || nullness == JavaNullability.Nullness.UNSPECIFIED || nullness == null;
+        boolean nullable =
+                nullness == JavaNullability.Nullness.NULLABLE
+                        || nullness == JavaNullability.Nullness.UNSPECIFIED
+                        || nullness == null;
         if (cls.isArray()) {
-            String inner = "array of " + formatJavaType(cls.getComponentType(), JavaNullability.Nullness.NULLABLE);
+            String inner =
+                    "array of "
+                            + formatJavaType(
+                                    cls.getComponentType(), JavaNullability.Nullness.NULLABLE);
             return nullable ? "(" + inner + ")?" : "(" + inner + ")!";
         }
         String base;
@@ -333,7 +365,11 @@ public final class AxiomDumper {
             if (tpCount == 1) {
                 base = base + " of any?";
             } else if (tpCount > 1) {
-                base = base + " of (" + String.join(", ", Collections.nCopies(tpCount, "any?")) + ")";
+                base =
+                        base
+                                + " of ("
+                                + String.join(", ", Collections.nCopies(tpCount, "any?"))
+                                + ")";
             }
         }
         if (nullable) {
@@ -351,7 +387,9 @@ public final class AxiomDumper {
         return out;
     }
 
-    /** Discovers all public classes in {@code packageName} on the JDK jrt filesystem and classpath. */
+    /**
+     * Discovers all public classes in {@code packageName} on the JDK jrt filesystem and classpath.
+     */
     public static List<Class<?>> listPublicPackageClasses(String packageName) {
         String pathRel = packageName.replace('.', '/');
         Set<String> classNames = new TreeSet<>();
@@ -367,8 +405,13 @@ public final class AxiomDumper {
                             try (Stream<Path> files = Files.list(pkgDir)) {
                                 for (Path f : files.toList()) {
                                     String fn = f.getFileName().toString();
-                                    if (fn.endsWith(".class") && !fn.equals("package-info.class") && !fn.equals("module-info.class")) {
-                                        classNames.add(packageName + "." + fn.substring(0, fn.length() - 6));
+                                    if (fn.endsWith(".class")
+                                            && !fn.equals("package-info.class")
+                                            && !fn.equals("module-info.class")) {
+                                        classNames.add(
+                                                packageName
+                                                        + "."
+                                                        + fn.substring(0, fn.length() - 6));
                                     }
                                 }
                             }
@@ -390,8 +433,11 @@ public final class AxiomDumper {
                         try (Stream<Path> files = Files.list(dir)) {
                             for (Path f : files.toList()) {
                                 String fn = f.getFileName().toString();
-                                if (fn.endsWith(".class") && !fn.equals("package-info.class") && !fn.equals("module-info.class")) {
-                                    classNames.add(packageName + "." + fn.substring(0, fn.length() - 6));
+                                if (fn.endsWith(".class")
+                                        && !fn.equals("package-info.class")
+                                        && !fn.equals("module-info.class")) {
+                                    classNames.add(
+                                            packageName + "." + fn.substring(0, fn.length() - 6));
                                 }
                             }
                         }
@@ -405,8 +451,13 @@ public final class AxiomDumper {
                             String name = entries.nextElement().getName();
                             if (name.startsWith(prefix) && name.endsWith(".class")) {
                                 String tail = name.substring(prefix.length());
-                                if (!tail.contains("/") && !tail.equals("package-info.class") && !tail.equals("module-info.class")) {
-                                    classNames.add(packageName + "." + tail.substring(0, tail.length() - 6));
+                                if (!tail.contains("/")
+                                        && !tail.equals("package-info.class")
+                                        && !tail.equals("module-info.class")) {
+                                    classNames.add(
+                                            packageName
+                                                    + "."
+                                                    + tail.substring(0, tail.length() - 6));
                                 }
                             }
                         }
@@ -430,15 +481,22 @@ public final class AxiomDumper {
         return result;
     }
 
-    // ================================================================ Canonical Order & Curated Validation (§3.4, §7)
+    // ================================================================ Canonical Order & Curated
+    // Validation (§3.4, §7)
 
-    /** Checks that an axiom source obeys the BIP019 §3.4 canonical order; returns violations (empty if valid). */
+    /**
+     * Checks that an axiom source obeys the BIP019 §3.4 canonical order; returns violations (empty
+     * if valid).
+     */
     public static List<String> checkCanonicalOrder(String source, String sourceName) {
         return checkCanonicalOrder(source, sourceName, null);
     }
 
-    /** Checks canonical order and (if non-null) that every class belongs to {@code expectedPackage}. */
-    public static List<String> checkCanonicalOrder(String source, String sourceName, String expectedPackage) {
+    /**
+     * Checks canonical order and (if non-null) that every class belongs to {@code expectedPackage}.
+     */
+    public static List<String> checkCanonicalOrder(
+            String source, String sourceName, String expectedPackage) {
         try {
             BabbleParser.FileContext file = BabbleScriptEngine.parseSource(source, sourceName);
             return checkCanonicalOrder(file, expectedPackage);
@@ -447,7 +505,8 @@ public final class AxiomDumper {
         }
     }
 
-    private static List<String> checkCanonicalOrder(BabbleParser.FileContext file, String expectedPackage) {
+    private static List<String> checkCanonicalOrder(
+            BabbleParser.FileContext file, String expectedPackage) {
         List<String> violations = new ArrayList<>();
         String prevClassBinary = null;
         boolean prevWasClassAxiom = false;
@@ -456,7 +515,8 @@ public final class AxiomDumper {
 
         for (BabbleParser.ExpressionContext expr : file.expression()) {
             if (!(expr instanceof BabbleParser.AxiomExpressionContext ax)) {
-                violations.add("Non-axiom expression in curated.ba at line " + expr.getStart().getLine());
+                violations.add(
+                        "Non-axiom expression in curated.ba at line " + expr.getStart().getLine());
                 continue;
             }
             List<String> path = AxiomData.targetPathOf(ax.target);
@@ -464,18 +524,27 @@ public final class AxiomDumper {
             List<String> clsPath = isClass ? path : path.subList(0, path.size() - 1);
             Class<?> cls = JavaTypeBridge.loadClass(String.join(".", clsPath));
             if (cls == null) {
-                violations.add("Unknown class " + String.join(".", clsPath) + " at line " + ax.getStart().getLine());
+                violations.add(
+                        "Unknown class "
+                                + String.join(".", clsPath)
+                                + " at line "
+                                + ax.getStart().getLine());
                 continue;
             }
             if (expectedPackage != null && !expectedPackage.equals(cls.getPackageName())) {
-                violations.add("Class " + cls.getName() + " does not belong to package " + expectedPackage);
+                violations.add(
+                        "Class "
+                                + cls.getName()
+                                + " does not belong to package "
+                                + expectedPackage);
             }
             String binary = cls.getName();
             String memberName = isClass ? null : path.get(path.size() - 1);
             List<String> memberParams = List.of();
             if (!isClass) {
                 List<String> errs = new ArrayList<>();
-                AxiomData.ParsedAxiom parsed = AxiomData.parse(ax, null, true, (m, at) -> errs.add(m));
+                AxiomData.ParsedAxiom parsed =
+                        AxiomData.parse(ax, null, true, (m, at) -> errs.add(m));
                 if (parsed != null && parsed.memberAxiom() != null) {
                     memberParams = parsed.memberAxiom().paramDescriptors();
                 }
@@ -484,14 +553,26 @@ public final class AxiomDumper {
             if (prevClassBinary != null) {
                 int cmp = binary.compareTo(prevClassBinary);
                 if (cmp < 0) {
-                    violations.add("Axiom for " + binary + " must appear before " + prevClassBinary);
+                    violations.add(
+                            "Axiom for " + binary + " must appear before " + prevClassBinary);
                 } else if (cmp == 0) {
                     if (isClass && !prevWasClassAxiom) {
-                        violations.add("Class axiom for " + binary + " must appear before its member axioms");
+                        violations.add(
+                                "Class axiom for "
+                                        + binary
+                                        + " must appear before its member axioms");
                     } else if (!isClass && !prevWasClassAxiom) {
-                        int mCmp = compareMemberOrder(memberName, memberParams, prevMemberName, prevMemberParams);
+                        int mCmp =
+                                compareMemberOrder(
+                                        memberName, memberParams, prevMemberName, prevMemberParams);
                         if (mCmp < 0) {
-                            violations.add("Member axiom " + binary + "." + memberName + " is out of order after " + prevMemberName);
+                            violations.add(
+                                    "Member axiom "
+                                            + binary
+                                            + "."
+                                            + memberName
+                                            + " is out of order after "
+                                            + prevMemberName);
                         }
                     }
                 }
@@ -504,7 +585,8 @@ public final class AxiomDumper {
             if (isClass) {
                 checkClassWordOrder(ax.axiomType(), binary, violations);
                 List<BabbleParser.AxiomMembersContext> sections = ax.axiomType().axiomMembers();
-                Map<String, String> classTypeVars = AxiomData.buildClassTypeVars(ax.typeParameters(), cls, (m, at) -> {});
+                Map<String, String> classTypeVars =
+                        AxiomData.buildClassTypeVars(ax.typeParameters(), cls, (m, at) -> {});
                 for (BabbleParser.AxiomMembersContext sec : sections) {
                     checkMemberSectionOrder(sec, cls, classTypeVars, violations);
                 }
@@ -515,21 +597,24 @@ public final class AxiomDumper {
         return violations;
     }
 
-    private static void checkClassWordOrder(BabbleParser.AxiomTypeContext typeCtx, String binary, List<String> violations) {
+    private static void checkClassWordOrder(
+            BabbleParser.AxiomTypeContext typeCtx, String binary, List<String> violations) {
         int prevRank = -1;
         for (org.antlr.v4.runtime.Token w : typeCtx.classWords) {
             int rank = AxiomData.CLASS_WORD_ORDER.indexOf(w.getText());
             if (rank < 0) {
                 violations.add("Unknown class word '" + w.getText() + "' on " + binary);
             } else if (rank <= prevRank) {
-                violations.add("Class word '" + w.getText() + "' out of canonical order on " + binary);
+                violations.add(
+                        "Class word '" + w.getText() + "' out of canonical order on " + binary);
             } else {
                 prevRank = rank;
             }
         }
     }
 
-    private static void checkEffectWordOrder(BabbleParser.AxiomTypeContext typeCtx, String label, List<String> violations) {
+    private static void checkEffectWordOrder(
+            BabbleParser.AxiomTypeContext typeCtx, String label, List<String> violations) {
         BabbleParser.AxiomEffectPrefixContext prefix = typeCtx.axiomEffectPrefix();
         if (prefix == null) {
             return;
@@ -540,31 +625,50 @@ public final class AxiomDumper {
             if (rank < 0) {
                 violations.add("Unknown effect word '" + w.getText() + "' on " + label);
             } else if (rank <= prevRank) {
-                violations.add("Effect word '" + w.getText() + "' out of canonical order on " + label);
+                violations.add(
+                        "Effect word '" + w.getText() + "' out of canonical order on " + label);
             } else {
                 prevRank = rank;
             }
         }
     }
 
-    private static void checkMemberSectionOrder(BabbleParser.AxiomMembersContext section,
-                                                Class<?> cls,
-                                                Map<String, String> classTypeVars,
-                                                List<String> violations) {
+    private static void checkMemberSectionOrder(
+            BabbleParser.AxiomMembersContext section,
+            Class<?> cls,
+            Map<String, String> classTypeVars,
+            List<String> violations) {
         String prevName = null;
         List<String> prevParams = null;
         boolean prevHasSig = false;
         for (BabbleParser.AxiomMemberContext mCtx : section.axiomMember()) {
             String name = mCtx.memberName() != null ? mCtx.memberName().getText() : "*";
             checkEffectWordOrder(mCtx.axiomType(), cls.getName() + "." + name, violations);
-            AxiomData.MemberAxiom parsed = AxiomData.parseFnAxiom(mCtx.axiomType(), cls, name,
-                    AxiomData.MemberKind.ANY, false, classTypeVars, null, true, (m, at) -> {});
+            AxiomData.MemberAxiom parsed =
+                    AxiomData.parseFnAxiom(
+                            mCtx.axiomType(),
+                            cls,
+                            name,
+                            AxiomData.MemberKind.ANY,
+                            false,
+                            classTypeVars,
+                            null,
+                            true,
+                            (m, at) -> {});
             boolean hasSig = parsed != null && parsed.hasSignature();
             List<String> params = parsed != null ? parsed.paramDescriptors() : List.of();
             if (prevName != null) {
                 int cmp = compareMemberOrder(name, params, prevName, prevParams);
                 if (cmp < 0 || (cmp == 0 && !hasSig && prevHasSig)) {
-                    violations.add("Member " + cls.getName() + "." + name + params + " out of canonical order after " + prevName + prevParams);
+                    violations.add(
+                            "Member "
+                                    + cls.getName()
+                                    + "."
+                                    + name
+                                    + params
+                                    + " out of canonical order after "
+                                    + prevName
+                                    + prevParams);
                 }
             }
             prevName = name;
@@ -573,7 +677,8 @@ public final class AxiomDumper {
         }
     }
 
-    static int compareMemberOrder(String nameA, List<String> paramsA, String nameB, List<String> paramsB) {
+    static int compareMemberOrder(
+            String nameA, List<String> paramsA, String nameB, List<String> paramsB) {
         int rA = memberNameRank(nameA);
         int rB = memberNameRank(nameB);
         if (rA != rB) {
@@ -606,7 +711,8 @@ public final class AxiomDumper {
     public static List<String> validateCuratedPackage(BuiltinAxioms axioms, String packageName) {
         AxiomData.AxiomTable table = axioms.loadPackage(packageName);
         List<String> errors = new ArrayList<>();
-        for (Map.Entry<Class<?>, List<AxiomData.MemberAxiom>> entry : table.membersByOwner().entrySet()) {
+        for (Map.Entry<Class<?>, List<AxiomData.MemberAxiom>> entry :
+                table.membersByOwner().entrySet()) {
             Class<?> cls = entry.getKey();
             for (AxiomData.MemberAxiom m : entry.getValue()) {
                 if ("*".equals(m.name())) {
@@ -621,8 +727,11 @@ public final class AxiomDumper {
                         }
                     }
                     if (!matched) {
-                        errors.add("Curated constructor axiom matches no public constructor : "
-                                + cls.getName() + ".new" + (m.hasSignature() ? m.paramDescriptors() : ""));
+                        errors.add(
+                                "Curated constructor axiom matches no public constructor : "
+                                        + cls.getName()
+                                        + ".new"
+                                        + (m.hasSignature() ? m.paramDescriptors() : ""));
                     }
                 } else {
                     List<Method> matchedMethods = new ArrayList<>();
@@ -639,8 +748,12 @@ public final class AxiomDumper {
                         }
                     }
                     if (matchedMethods.isEmpty()) {
-                        errors.add("Curated method axiom matches no public method : "
-                                + cls.getName() + "." + m.name() + (m.hasSignature() ? m.paramDescriptors() : ""));
+                        errors.add(
+                                "Curated method axiom matches no public method : "
+                                        + cls.getName()
+                                        + "."
+                                        + m.name()
+                                        + (m.hasSignature() ? m.paramDescriptors() : ""));
                     } else if (!m.hasSignature() && m.returnDescriptor() != null) {
                         for (Method jm : matchedMethods) {
                             if (jm.isBridge() || jm.isSynthetic()) {
@@ -648,9 +761,16 @@ public final class AxiomDumper {
                             }
                             String actualRet = Type.getDescriptor(jm.getReturnType());
                             if (!m.returnDescriptor().equals(actualRet)) {
-                                errors.add("Curated return-only axiom return type mismatch on "
-                                        + cls.getName() + "." + m.name() + Type.getMethodDescriptor(jm)
-                                        + " : expected " + m.returnDescriptor() + ", actual " + actualRet);
+                                errors.add(
+                                        "Curated return-only axiom return type mismatch on "
+                                                + cls.getName()
+                                                + "."
+                                                + m.name()
+                                                + Type.getMethodDescriptor(jm)
+                                                + " : expected "
+                                                + m.returnDescriptor()
+                                                + ", actual "
+                                                + actualRet);
                             }
                         }
                     }
@@ -661,8 +781,8 @@ public final class AxiomDumper {
     }
 
     /**
-     * Lists all Java package names that have a {@code curated.ba} resource under
-     * {@code org/babblelang/axioms/} on the classpath (directory or jar, §2.1).
+     * Lists all Java package names that have a {@code curated.ba} resource under {@code
+     * org/babblelang/axioms/} on the classpath (directory or jar, §2.1).
      */
     public static Set<String> discoverCuratedPackages() throws IOException {
         Set<String> packages = new TreeSet<>();
@@ -674,11 +794,13 @@ public final class AxiomDumper {
                 try {
                     Path dir = Path.of(url.toURI());
                     try (Stream<Path> walk = Files.walk(dir)) {
-                        walk.filter(p -> p.getFileName().toString().equals("curated.ba")).forEach(p -> {
-                            Path rel = dir.relativize(p.getParent());
-                            String pkg = rel.toString().replace('\\', '/').replace('/', '.');
-                            packages.add(pkg);
-                        });
+                        walk.filter(p -> p.getFileName().toString().equals("curated.ba"))
+                                .forEach(p -> {
+                                    Path rel = dir.relativize(p.getParent());
+                                    String pkg =
+                                            rel.toString().replace('\\', '/').replace('/', '.');
+                                    packages.add(pkg);
+                                });
                     }
                 } catch (Exception e) {
                     throw new IOException("Failed to scan axioms directory " + url, e);
@@ -689,9 +811,12 @@ public final class AxiomDumper {
                     Enumeration<JarEntry> entries = jar.entries();
                     while (entries.hasMoreElements()) {
                         String name = entries.nextElement().getName();
-                        if (name.startsWith(BuiltinAxioms.AXIOMS_RESOURCE_ROOT) && name.endsWith("/curated.ba")) {
-                            String rel = name.substring(BuiltinAxioms.AXIOMS_RESOURCE_ROOT.length(),
-                                    name.length() - "/curated.ba".length());
+                        if (name.startsWith(BuiltinAxioms.AXIOMS_RESOURCE_ROOT)
+                                && name.endsWith("/curated.ba")) {
+                            String rel =
+                                    name.substring(
+                                            BuiltinAxioms.AXIOMS_RESOURCE_ROOT.length(),
+                                            name.length() - "/curated.ba".length());
                             packages.add(rel.replace('/', '.'));
                         }
                     }

@@ -8,5 +8,4 @@ import java.lang.annotation.Target;
 /** Marks an {@link Axioms} stub whose target annotation means non-null ({@code BIP019} §2.5). */
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.TYPE)
-public @interface MeansNonNull {
-}
+public @interface MeansNonNull {}

@@ -1,9 +1,8 @@
 package org.babblelang.tests;
 
+import javax.script.ScriptException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import javax.script.ScriptException;
 
 public class BabbleNativesTestCase extends BabbleTestBase {
     @Test
@@ -31,15 +30,24 @@ public class BabbleNativesTestCase extends BabbleTestBase {
     @Test
     public void testBuiltinAssertFails() {
         // Must fail even though the JVM may be running without -ea.
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1 == 2) "));
+        ScriptException e =
+                Assertions.assertThrows(
+                        ScriptException.class, () -> interpret(" suppose(1 == 2) "));
         // ANTLR's getText() concatenates tokens, so the reported expression has no spaces.
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Assertion failed at line 1 : 1==2 in <input> at line number 1", e.getMessage());
+        Assertions.assertEquals(
+                "org.babblelang.runtime.BabbleException: Assertion failed at line 1 : 1==2 in <input> at line number 1",
+                e.getMessage());
     }
 
     @Test
     public void testBuiltinAssertFailsWithMessage() {
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1 == 2, \"one is not two\") "));
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: one is not two in <input> at line number 1", e.getMessage());
+        ScriptException e =
+                Assertions.assertThrows(
+                        ScriptException.class,
+                        () -> interpret(" suppose(1 == 2, \"one is not two\") "));
+        Assertions.assertEquals(
+                "org.babblelang.runtime.BabbleException: one is not two in <input> at line number 1",
+                e.getMessage());
     }
 
     @Test
@@ -50,8 +58,10 @@ public class BabbleNativesTestCase extends BabbleTestBase {
 
     @Test
     public void testBuiltinAssertRejectsNonBoolean() {
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1) "));
-        Assertions.assertTrue(e.getMessage().contains("Type error : expected bool, got int"), e.getMessage());
+        ScriptException e =
+                Assertions.assertThrows(ScriptException.class, () -> interpret(" suppose(1) "));
+        Assertions.assertTrue(
+                e.getMessage().contains("Type error : expected bool, got int"), e.getMessage());
     }
 
     @Test
@@ -74,7 +84,8 @@ public class BabbleNativesTestCase extends BabbleTestBase {
     }
 
     private void assertError(String message, String source) {
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> interpret(source), source);
+        ScriptException e =
+                Assertions.assertThrows(ScriptException.class, () -> interpret(source), source);
         Assertions.assertTrue(e.getMessage().contains(message), e.getMessage());
     }
 }

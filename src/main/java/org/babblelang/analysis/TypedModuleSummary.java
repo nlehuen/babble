@@ -1,36 +1,33 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.effects.Effect;
-import org.babblelang.parser.BabbleParser;
-
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.parser.BabbleParser;
 
 /**
- * AST-detached, immutable type and effect summary published by a finished module
- * (or committed REPL input) so importers and subsequent inputs never retain
- * another file's {@link TypeChecker}, {@link EffectChecker}, or ANTLR parse tree
- * ({@code docs/design/bip010_type-checker-simplification.md} §4.6, {@code BIP010-D3}).
+ * AST-detached, immutable type and effect summary published by a finished module (or committed REPL
+ * input) so importers and subsequent inputs never retain another file's {@link TypeChecker}, {@link
+ * EffectChecker}, or ANTLR parse tree ({@code docs/design/bip010_type-checker-simplification.md}
+ * §4.6, {@code BIP010-D3}).
  */
 final class TypedModuleSummary {
 
     /**
-     * AST-free higher-order effect specialization template for an exported or
-     * session-committed callable, backed by {@link SymbolicEffectSummary} ({@code BIP027-I4}).
+     * AST-free higher-order effect specialization template for an exported or session-committed
+     * callable, backed by {@link SymbolicEffectSummary} ({@code BIP027-I4}).
      */
     record CallableEffectTemplate(SymbolicEffectSummary summary) {
         EffectChecker.CallableSummary base() {
             return summary.base;
         }
 
-        EffectChecker.CallableSummary specialize(Type.Function[] boundCallbacks,
-                                                 EffectChecker.CallableSummary[] boundSummaries) {
+        EffectChecker.CallableSummary specialize(
+                Type.Function[] boundCallbacks, EffectChecker.CallableSummary[] boundSummaries) {
             return summary.instantiate(boundCallbacks, boundSummaries);
         }
     }
@@ -44,11 +41,20 @@ final class TypedModuleSummary {
             Map<ParserRuleContext, Type> memberTypes,
             Map<ParserRuleContext, Object> staticSingletons,
             AxiomData.AxiomTable axioms,
-            Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries) {
-    }
+            Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries) {}
 
-    static final TypedModuleSummary EMPTY = new TypedModuleSummary(
-            Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), AxiomData.AxiomTable.EMPTY, null);
+    static final TypedModuleSummary EMPTY =
+            new TypedModuleSummary(
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    Map.of(),
+                    AxiomData.AxiomTable.EMPTY,
+                    null);
 
     private final Map<String, Type> exports;
     private final Map<String, Object> staticSingletons;
@@ -86,8 +92,8 @@ final class TypedModuleSummary {
 
     /**
      * The summary of the file {@code checker} analysed : its exports and static singletons, its
-     * classes and interfaces, the effect templates of its callables, and, for a session input,
-     * what the following inputs read of its declarations.
+     * classes and interfaces, the effect templates of its callables, and, for a session input, what
+     * the following inputs read of its declarations.
      */
     static TypedModuleSummary build(BlockScopes pass, TypeChecker checker, StaticRefs refs) {
         Map<String, Type> exports = new LinkedHashMap<>();
@@ -99,7 +105,8 @@ final class TypedModuleSummary {
             if (t != null) {
                 exports.put(name, t);
             }
-            if (decl instanceof BabbleParser.DefExpressionContext def && !checker.isReassigned(def)) {
+            if (decl instanceof BabbleParser.DefExpressionContext def
+                    && !checker.isReassigned(def)) {
                 Object ref = refs.freeze(refs.resolve(def.value, 0));
                 if (ref != null) {
                     staticSingletons.put(name, ref);
@@ -145,18 +152,23 @@ final class TypedModuleSummary {
                     constructorParams.put(node, List.copyOf(params));
                 }
                 if (checker.effectChecker != null) {
-                    EffectChecker.CallableSummary cs = checker.effectChecker.constructorSummary(node);
+                    EffectChecker.CallableSummary cs =
+                            checker.effectChecker.constructorSummary(node);
                     if (cs != null) {
                         constructorSummaries.put(node, cs);
                     }
                 }
             }
         }
-        Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates = new IdentityHashMap<>();
+        Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates =
+                new IdentityHashMap<>();
         if (checker.effectChecker != null) {
-            for (Map.Entry<Type.Function, BabbleParser.FunctionLiteralContext> entry : checker.functionLiterals().entrySet()) {
+            for (Map.Entry<Type.Function, BabbleParser.FunctionLiteralContext> entry :
+                    checker.functionLiterals().entrySet()) {
                 if (checker.inFile(entry.getValue())) {
-                    TypedModuleSummary.CallableEffectTemplate tpl = checker.effectChecker.buildCallableTemplate(entry.getValue(), entry.getKey());
+                    TypedModuleSummary.CallableEffectTemplate tpl =
+                            checker.effectChecker.buildCallableTemplate(
+                                    entry.getValue(), entry.getKey());
                     if (tpl != null) {
                         callableTemplates.put(entry.getKey(), tpl);
                     }
@@ -166,7 +178,8 @@ final class TypedModuleSummary {
                 if (expType instanceof Type.Overloaded ov) {
                     for (Type.Function alt : ov.alternatives()) {
                         if (!callableTemplates.containsKey(alt)) {
-                            TypedModuleSummary.CallableEffectTemplate importedTpl = checker.imported().callableTemplate(alt);
+                            TypedModuleSummary.CallableEffectTemplate importedTpl =
+                                    checker.imported().callableTemplate(alt);
                             if (importedTpl != null) {
                                 callableTemplates.put(alt, importedTpl);
                             }
@@ -185,30 +198,41 @@ final class TypedModuleSummary {
                 constructorSummaries,
                 callableTemplates,
                 checker.exportedAxioms(),
-                pass.session == null ? null : new Session(
-                        frozenDeclarations(checker),
-                        frozenMembers(pass, checker),
-                        refs.frozenSingletons(),
-                        checker.effectChecker != null ? checker.effectChecker.committedAxioms() : AxiomData.AxiomTable.EMPTY,
-                        checker.effectChecker != null ? checker.effectChecker.committedCallableSummaries() : Map.of()));
+                pass.session == null
+                        ? null
+                        : new Session(
+                                frozenDeclarations(checker),
+                                frozenMembers(pass, checker),
+                                refs.frozenSingletons(),
+                                checker.effectChecker != null
+                                        ? checker.effectChecker.committedAxioms()
+                                        : AxiomData.AxiomTable.EMPTY,
+                                checker.effectChecker != null
+                                        ? checker.effectChecker.committedCallableSummaries()
+                                        : Map.of()));
     }
 
     private static Map<ParserRuleContext, Type> frozenDeclarations(TypeChecker checker) {
         Map<ParserRuleContext, Type> frozen = new HashMap<>();
         for (Map.Entry<ParserRuleContext, Type> entry : checker.declarationTypes().entrySet()) {
-            if (checker.inFile(entry.getKey()) && !TypeChecker.isUnresolved(entry.getValue()) && entry.getValue() != Type.NULL) {
+            if (checker.inFile(entry.getKey())
+                    && !TypeChecker.isUnresolved(entry.getValue())
+                    && entry.getValue() != Type.NULL) {
                 frozen.put(entry.getKey(), entry.getValue());
             }
         }
         for (Map.Entry<ParserRuleContext, Type> entry : checker.inferredDefs().entrySet()) {
-            if (checker.inFile(entry.getKey()) && !TypeChecker.isUnresolved(entry.getValue()) && entry.getValue() != Type.NULL) {
+            if (checker.inFile(entry.getKey())
+                    && !TypeChecker.isUnresolved(entry.getValue())
+                    && entry.getValue() != Type.NULL) {
                 frozen.put(entry.getKey(), entry.getValue());
             }
         }
         return frozen;
     }
 
-    private static Map<ParserRuleContext, Type> frozenMembers(BlockScopes pass, TypeChecker checker) {
+    private static Map<ParserRuleContext, Type> frozenMembers(
+            BlockScopes pass, TypeChecker checker) {
         Map<ParserRuleContext, Type> frozen = new HashMap<>();
         for (TypeNode node : pass.types) {
             for (TypeNode.Member member : node.members.values()) {
@@ -221,7 +245,11 @@ final class TypedModuleSummary {
         return frozen;
     }
 
-    private static void freezeMember(TypeChecker checker, TypeNode owner, TypeNode.Member member, Map<ParserRuleContext, Type> frozen) {
+    private static void freezeMember(
+            TypeChecker checker,
+            TypeNode owner,
+            TypeNode.Member member,
+            Map<ParserRuleContext, Type> frozen) {
         if (checker.inFile(member.declaration)) {
             Type type = checker.memberType(owner, member);
             if (!TypeChecker.isUnresolved(type) && type != Type.NULL) {

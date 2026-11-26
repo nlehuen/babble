@@ -24,8 +24,7 @@ public class JavaClassDemo {
         }
     }
 
-    @org.babblelang.effects.NotNull
-    public String nonNullLabel = "";
+    @org.babblelang.effects.NotNull public String nonNullLabel = "";
 
     private final String name;
 
@@ -92,6 +91,7 @@ public class JavaClassDemo {
 
     /** Public instance fields : read and assigned on an instance. */
     public int count;
+
     public Runnable action;
     public final String label = "demo";
 
@@ -128,7 +128,8 @@ public class JavaClassDemo {
         return "Method3";
     }
 
-    // P5 runtime boundary helpers : boxed primitive returns/fields, Java defaults, and Faces callbacks.
+    // P5 runtime boundary helpers : boxed primitive returns/fields, Java defaults, and Faces
+    // callbacks.
 
     public static Integer boxedInt(boolean present) {
         return present ? 42 : null;
@@ -154,9 +155,13 @@ public class JavaClassDemo {
 
     public interface TypedCallback {
         int acceptInt(Integer value);
+
         double acceptDouble(Double value);
+
         boolean acceptBool(Boolean value);
+
         String acceptString(String value);
+
         int acceptRunnable(Runnable action);
     }
 
@@ -170,7 +175,9 @@ public class JavaClassDemo {
 
     public static double invokeAcceptDoubleRaw(TypedCallback cb, Object rawValue) throws Throwable {
         java.lang.reflect.Method m = TypedCallback.class.getMethod("acceptDouble", Double.class);
-        return (double) java.lang.reflect.Proxy.getInvocationHandler(cb).invoke(cb, m, new Object[]{rawValue});
+        return (double)
+                java.lang.reflect.Proxy.getInvocationHandler(cb)
+                        .invoke(cb, m, new Object[] {rawValue});
     }
 
     public static boolean invokeAcceptBool(TypedCallback cb, Boolean value) {
@@ -183,12 +190,17 @@ public class JavaClassDemo {
 
     public static String invokeAcceptStringRaw(TypedCallback cb, Object rawValue) throws Throwable {
         java.lang.reflect.Method m = TypedCallback.class.getMethod("acceptString", String.class);
-        return (String) java.lang.reflect.Proxy.getInvocationHandler(cb).invoke(cb, m, new Object[]{rawValue});
+        return (String)
+                java.lang.reflect.Proxy.getInvocationHandler(cb)
+                        .invoke(cb, m, new Object[] {rawValue});
     }
 
     public static int invokeAcceptRunnableRaw(TypedCallback cb, Object rawValue) throws Throwable {
-        java.lang.reflect.Method m = TypedCallback.class.getMethod("acceptRunnable", Runnable.class);
-        return (int) java.lang.reflect.Proxy.getInvocationHandler(cb).invoke(cb, m, new Object[]{rawValue});
+        java.lang.reflect.Method m =
+                TypedCallback.class.getMethod("acceptRunnable", Runnable.class);
+        return (int)
+                java.lang.reflect.Proxy.getInvocationHandler(cb)
+                        .invoke(cb, m, new Object[] {rawValue});
     }
 
     @FunctionalInterface
@@ -231,21 +243,52 @@ public class JavaClassDemo {
         return ((java.util.function.Predicate) pred).test(raw);
     }
 
-    public static CharSequence invokeErasedSupplier(java.util.function.Supplier<? extends CharSequence> sup) {
+    public static CharSequence invokeErasedSupplier(
+            java.util.function.Supplier<? extends CharSequence> sup) {
         return sup.get();
     }
 
     @FunctionalInterface
     public interface Arity16Sam {
-        int apply(int a0, int a1, int a2, int a3, int a4, int a5, int a6, int a7,
-                  int a8, int a9, int a10, int a11, int a12, int a13, int a14, int a15);
+        int apply(
+                int a0,
+                int a1,
+                int a2,
+                int a3,
+                int a4,
+                int a5,
+                int a6,
+                int a7,
+                int a8,
+                int a9,
+                int a10,
+                int a11,
+                int a12,
+                int a13,
+                int a14,
+                int a15);
     }
 
     @FunctionalInterface
     public interface Arity17Sam {
-        double apply(int a0, double a1, java.io.File a2, String a3,
-                     int a4, int a5, int a6, int a7, int a8, int a9,
-                     int a10, int a11, int a12, int a13, int a14, int a15, int a16);
+        double apply(
+                int a0,
+                double a1,
+                java.io.File a2,
+                String a3,
+                int a4,
+                int a5,
+                int a6,
+                int a7,
+                int a8,
+                int a9,
+                int a10,
+                int a11,
+                int a12,
+                int a13,
+                int a14,
+                int a15,
+                int a16);
 
         default int tag() {
             return 17;
@@ -296,23 +339,26 @@ public class JavaClassDemo {
     }
 
     public static Integer @org.babblelang.effects.NotNull [] boxedIntArray() {
-        return new Integer[]{1, null, 3};
+        return new Integer[] {1, null, 3};
     }
 
-    public static int @org.babblelang.effects.NotNull [] @org.babblelang.effects.NotNull [] jaggedIntArray() {
-        return new int[][]{new int[]{1, 2}, new int[]{3}};
+    public static int @org.babblelang.effects.NotNull [] @org.babblelang.effects.NotNull []
+            jaggedIntArray() {
+        return new int[][] {new int[] {1, 2}, new int[] {3}};
     }
 
     // BIP020-I4 generic array helpers & RM003 Java array bridge interfaces.
     public interface ArrayTransformer<E> {
         @org.babblelang.effects.NotNull
-        E @org.babblelang.effects.NotNull [] transform(@org.babblelang.effects.NotNull E @org.babblelang.effects.NotNull [] input);
+        E @org.babblelang.effects.NotNull [] transform(
+                @org.babblelang.effects.NotNull E @org.babblelang.effects.NotNull [] input);
     }
 
     public interface ArrayExportable<E> {
         <T> T @org.babblelang.effects.NotNull [] toArray(T @org.babblelang.effects.NotNull [] a);
 
-        default <T> T @org.babblelang.effects.NotNull [] toArray(java.util.function.IntFunction<T[]> generator) {
+        default <T> T @org.babblelang.effects.NotNull [] toArray(
+                java.util.function.IntFunction<T[]> generator) {
             return toArray(generator.apply(2));
         }
 
@@ -335,7 +381,8 @@ public class JavaClassDemo {
         return ((ArrayTransformer) transformer).transform((Object[]) raw);
     }
 
-    public static String[] invokeExportableStrings(ArrayExportable<@org.babblelang.effects.NotNull String> exp) {
+    public static String[] invokeExportableStrings(
+            ArrayExportable<@org.babblelang.effects.NotNull String> exp) {
         return exp.toArray(String[]::new);
     }
 
@@ -418,7 +465,8 @@ public class JavaClassDemo {
         return a.compareTo(b) >= 0 ? a : b;
     }
 
-    public static <T extends java.util.function.Consumer<String> & java.io.Serializable> String acceptSerializable(T c, String s) {
+    public static <T extends java.util.function.Consumer<String> & java.io.Serializable>
+            String acceptSerializable(T c, String s) {
         c.accept(s);
         return s + ":" + !isProxy(c);
     }
@@ -453,17 +501,18 @@ public class JavaClassDemo {
         r.run();
     }
 
-    interface HiddenMarkerSam extends Runnable {
-    }
+    interface HiddenMarkerSam extends Runnable {}
 
     @org.babblelang.effects.Pure
     public static boolean isSerializableRunnable(Object x) {
         return x instanceof Runnable && x instanceof java.io.Serializable && !isProxy(x);
     }
 
-    public static <T extends HiddenIntSam & java.io.Serializable> int invokeHiddenSerializable(T sam, int x) {
+    public static <T extends HiddenIntSam & java.io.Serializable> int invokeHiddenSerializable(
+            T sam, int x) {
         if (!(sam instanceof java.io.Serializable) || !isProxy(sam)) {
-            throw new IllegalStateException("Expected Serializable Proxy fallback for package-private SAM");
+            throw new IllegalStateException(
+                    "Expected Serializable Proxy fallback for package-private SAM");
         }
         return sam.apply(x);
     }

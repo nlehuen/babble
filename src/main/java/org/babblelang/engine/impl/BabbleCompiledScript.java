@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl;
 
+import javax.script.ScriptException;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.engine.BabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
@@ -7,17 +8,17 @@ import org.babblelang.parser.BabbleParser;
 import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.ScriptRuntime;
 
-import javax.script.ScriptException;
-
-/**
- * A script run by the interpreter.
- */
+/** A script run by the interpreter. */
 public class BabbleCompiledScript extends BabbleScript {
     private final BabbleParser.FileContext file;
     private final ScopeAnalysis scopes;
     private final String sourceName;
 
-    public BabbleCompiledScript(BabbleScriptEngine engine, BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) {
+    public BabbleCompiledScript(
+            BabbleScriptEngine engine,
+            BabbleParser.FileContext file,
+            ScopeAnalysis scopes,
+            String sourceName) {
         super(engine);
         this.file = file;
         this.scopes = scopes;
@@ -35,11 +36,17 @@ public class BabbleCompiledScript extends BabbleScript {
         try {
             return interpreter.visitFile(file);
         } catch (Exception e) {
-            throw new ScriptException(ArraySupport.formatThrowable(e), sourceName, interpreter.getLast().getStart().getLine());
+            throw new ScriptException(
+                    ArraySupport.formatThrowable(e),
+                    sourceName,
+                    interpreter.getLast().getStart().getLine());
         } catch (Error e) {
             throw e;
         } catch (Throwable t) {
-            throw new ScriptException(ArraySupport.formatThrowable(t), sourceName, interpreter.getLast().getStart().getLine());
+            throw new ScriptException(
+                    ArraySupport.formatThrowable(t),
+                    sourceName,
+                    interpreter.getLast().getStart().getLine());
         } finally {
             BabbleScriptEngine.flush(runtime.writer());
         }

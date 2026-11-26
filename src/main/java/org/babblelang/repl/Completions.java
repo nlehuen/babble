@@ -1,5 +1,16 @@
 package org.babblelang.repl;
 
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.parser.BabbleLexer;
@@ -12,28 +23,17 @@ import org.babblelang.runtime.JavaValue;
 import org.babblelang.runtime.Members;
 import org.babblelang.runtime.Module;
 
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.SortedSet;
-import java.util.TreeSet;
-
 /**
  * What Tab offers in the interactive mode (docs/design/bip004_repl.md §9, {@code BIP004-D5}) :
- * commands, file names after {@code :load}, the names an input can use and the keywords,
- * and the members after a chain of plain names ({@code p.}, {@code java.lang.Math.}). Completion
- * never runs code : a chain is followed by looking names and members up, never by calling,
- * so nothing is offered after a call ({@code f().}).
+ * commands, file names after {@code :load}, the names an input can use and the keywords, and the
+ * members after a chain of plain names ({@code p.}, {@code java.lang.Math.}). Completion never runs
+ * code : a chain is followed by looking names and members up, never by calling, so nothing is
+ * offered after a call ({@code f().}).
  */
 public final class Completions {
     /** The commands of the loop, as {@code :help} lists them. */
-    public static final List<String> COMMANDS = List.of(":cancel", ":help", ":load", ":quit", ":type");
+    public static final List<String> COMMANDS =
+            List.of(":cancel", ":help", ":load", ":quit", ":type");
 
     private static final SortedSet<String> KEYWORDS = keywords();
 
@@ -41,7 +41,7 @@ public final class Completions {
      * @param start where the text the candidates replace begins : it ends at the cursor
      * @param candidates what can replace it, sorted
      * @param shared how many characters every candidate starts with that a list of them needn't
-     *               show : the receiver of members ({@code java.lang.Math.}), or the directory of files
+     *     show : the receiver of members ({@code java.lang.Math.}), or the directory of files
      */
     public record Completion(int start, List<String> candidates, int shared) {
         public Completion(int start, List<String> candidates) {
@@ -49,8 +49,7 @@ public final class Completions {
         }
     }
 
-    private Completions() {
-    }
+    private Completions() {}
 
     /** What can complete the text before {@code cursor} in {@code buffer}. */
     public static Completion at(BabbleSession session, String buffer, int cursor) {
@@ -65,7 +64,8 @@ public final class Completions {
             String command = stripped.substring(0, space);
             if (command.equals(":load") || command.equals(":l")) {
                 int argument = commandStart + space;
-                while (argument < before.length() && Character.isWhitespace(before.charAt(argument))) {
+                while (argument < before.length()
+                        && Character.isWhitespace(before.charAt(argument))) {
                     argument++;
                 }
                 String typed = before.substring(argument);
@@ -83,8 +83,10 @@ public final class Completions {
     /** The start of the chain of names that ends at the end of {@code before}. */
     public static int wordStart(String before) {
         int start = before.length();
-        while (start > 0 && (Character.isLetterOrDigit(before.charAt(start - 1)) || before.charAt(start - 1) == '_'
-                || before.charAt(start - 1) == '.')) {
+        while (start > 0
+                && (Character.isLetterOrDigit(before.charAt(start - 1))
+                        || before.charAt(start - 1) == '_'
+                        || before.charAt(start - 1) == '.')) {
             start--;
         }
         return start;
@@ -93,7 +95,9 @@ public final class Completions {
     private static Completion expression(BabbleSession session, String before) {
         int start = wordStart(before);
         String chain = before.substring(start);
-        if (chain.startsWith(".") || !chain.isEmpty() && Character.isDigit(chain.charAt(0)) || chain.contains("..")) {
+        if (chain.startsWith(".")
+                || !chain.isEmpty() && Character.isDigit(chain.charAt(0))
+                || chain.contains("..")) {
             // After a call, a parenthesis or a number : completing would mean running something.
             return new Completion(before.length(), List.of());
         }
@@ -155,16 +159,14 @@ public final class Completions {
             }
             case Module module -> members.addAll(module.exports());
             case JavaClass javaClass -> javaMembers(javaClass.javaClass(), true, members);
-            case JavaValue wrapper when wrapper.javaValue() != null -> javaMembers(wrapper.javaValue().getClass(), false, members);
+            case JavaValue wrapper when wrapper.javaValue() != null ->
+                    javaMembers(wrapper.javaValue().getClass(), false, members);
             case Number number -> {
                 // Babble's scalars have no members.
             }
-            case Boolean bool -> {
-            }
-            case Character character -> {
-            }
-            case Callable callable -> {
-            }
+            case Boolean bool -> {}
+            case Character character -> {}
+            case Callable callable -> {}
             default -> {
                 // A Java object, as Java calls return them : not one of Babble's own values.
                 if (!value.getClass().getName().startsWith("org.babblelang.")) {
@@ -198,7 +200,10 @@ public final class Completions {
         }
     }
 
-    /** The files and directories whose path starts with {@code typed}, directories ending with a slash. */
+    /**
+     * The files and directories whose path starts with {@code typed}, directories ending with a
+     * slash.
+     */
     private static List<String> files(String path) {
         int slash = path.lastIndexOf('/');
         String directory = slash < 0 ? "" : path.substring(0, slash + 1);

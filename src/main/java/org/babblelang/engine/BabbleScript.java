@@ -1,15 +1,14 @@
 package org.babblelang.engine;
 
-import org.babblelang.runtime.ScriptRuntime;
-
 import javax.script.CompiledScript;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.ScriptException;
+import org.babblelang.runtime.ScriptRuntime;
 
 /**
- * A script ready to run, in either mode. An eval normally gets fresh namespaces ; a
- * {@link BabbleSession} runs each of its inputs in the namespace the previous ones left.
+ * A script ready to run, in either mode. An eval normally gets fresh namespaces ; a {@link
+ * BabbleSession} runs each of its inputs in the namespace the previous ones left.
  */
 public abstract class BabbleScript extends CompiledScript {
     private final BabbleScriptEngine engine;

@@ -6,6 +6,5 @@ import org.babblelang.axioms.MeansNonNull;
 @Axioms(targetName = "org.jspecify.annotations.NonNull")
 @MeansNonNull
 public final class NonNullAxioms {
-    private NonNullAxioms() {
-    }
+    private NonNullAxioms() {}
 }

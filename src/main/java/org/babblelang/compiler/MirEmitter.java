@@ -1,8 +1,18 @@
 package org.babblelang.compiler;
 
+import static org.babblelang.compiler.JvmPrimitives.*;
+import static org.objectweb.asm.Opcodes.*;
+
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirExpr;
@@ -20,28 +30,15 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static org.babblelang.compiler.JvmPrimitives.*;
-import static org.objectweb.asm.Opcodes.*;
-
 /**
- * Emits JVM bytecode for a single SSA {@link MirFunction} inside {@link HirEmitter}'s active
- * {@link MethodEmitContext} ({@code BIP014-I3} §6.4).
+ * Emits JVM bytecode for a single SSA {@link MirFunction} inside {@link HirEmitter}'s active {@link
+ * MethodEmitContext} ({@code BIP014-I3} §6.4).
  *
- * <p>Performs backward CFG liveness and JVM-type-segregated local slot coloring, zero-copy
- * aliasing for {@link MirInst.Narrow}/{@link MirInst.Move}/{@link MirInst.Freeze}, cycle-breaking
- * parallel-copy lowering on {@code Br}/{@code BrIf} edges, contiguous RPO {@code visitTryCatchBlock}
- * range merging, and zero-duplication ABI delegation into {@link HirEmitter}'s sub-emitters via
- * {@link MethodEmitContext#mirOverrides}.
+ * <p>Performs backward CFG liveness and JVM-type-segregated local slot coloring, zero-copy aliasing
+ * for {@link MirInst.Narrow}/{@link MirInst.Move}/{@link MirInst.Freeze}, cycle-breaking
+ * parallel-copy lowering on {@code Br}/{@code BrIf} edges, contiguous RPO {@code
+ * visitTryCatchBlock} range merging, and zero-duplication ABI delegation into {@link HirEmitter}'s
+ * sub-emitters via {@link MethodEmitContext#mirOverrides}.
  */
 final class MirEmitter {
     private final HirEmitter emitter;
@@ -56,23 +53,46 @@ final class MirEmitter {
     private final Map<Integer, Label> blockLabels = new HashMap<>();
     private final Map<Integer, Integer> valSlots = new HashMap<>();
     private final Map<Integer, MirVal> aliasTarget = new HashMap<>();
+
     /** Constants pushed again at each use instead of living in a local, by value id. */
     private final Map<Integer, MirInst.Const> rematerialized = new HashMap<>();
-    /** Comparisons and negations emitted as the conditional jump of their block's {@code BrIf}, by result id. */
+
+    /**
+     * Comparisons and negations emitted as the conditional jump of their block's {@code BrIf}, by
+     * result id.
+     */
     private final Map<Integer, MirInst> fusedConditions = new HashMap<>();
-    /** Values left on the operand stack by their definition for the next instruction, which loads them first. */
+
+    /**
+     * Values left on the operand stack by their definition for the next instruction, which loads
+     * them first.
+     */
     private final Set<Integer> stacked = new HashSet<>();
-    /** Side-effecting instruction results with zero uses : popped on the stack instead of stored in a local. */
+
+    /**
+     * Side-effecting instruction results with zero uses : popped on the stack instead of stored in
+     * a local.
+     */
     private final Set<Integer> discarded = new HashSet<>();
-    /** Instructions not emitted where they stand : rematerialized constants and fused conditions. */
-    private final Set<MirInst> deferred = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-    /** Defining instruction per SSA value id (for emission-time non-negative strength reduction). */
+
+    /**
+     * Instructions not emitted where they stand : rematerialized constants and fused conditions.
+     */
+    private final Set<MirInst> deferred =
+            java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+
+    /**
+     * Defining instruction per SSA value id (for emission-time non-negative strength reduction).
+     */
     private final Map<Integer, MirInst> defByValId = new HashMap<>();
+
     /** Counted-range loop block-parameter value ids proven non-negative. */
     private final Set<Integer> nonNegativeBlockParams = new HashSet<>();
+
     private final List<Runnable> edgeTrampolines = new ArrayList<>();
 
-    MirEmitter(HirEmitter emitter, MirFunction fn, HirFunction hirFn, PrimitiveKind methodReturnKind) {
+    MirEmitter(
+            HirEmitter emitter, MirFunction fn, HirFunction hirFn, PrimitiveKind methodReturnKind) {
         this.emitter = emitter;
         this.ctx = emitter.ctx;
         this.mv = ctx.mv;
@@ -93,7 +113,8 @@ final class MirEmitter {
             blockLabels.put(b.id(), new Label());
         }
 
-        // Emit blocks in RPO order, recording start/end labels for contiguous exception-table ranges.
+        // Emit blocks in RPO order, recording start/end labels for contiguous exception-table
+        // ranges.
         Label[] startLabels = new Label[rpo.size()];
         Label[] endLabels = new Label[rpo.size()];
         boolean[] hasCode = new boolean[rpo.size()];
@@ -114,7 +135,9 @@ final class MirEmitter {
                     continue;
                 }
                 emitInst(inst);
-                if (!(inst instanceof MirInst.Narrow || inst instanceof MirInst.Move || inst instanceof MirInst.Freeze)) {
+                if (!(inst instanceof MirInst.Narrow
+                        || inst instanceof MirInst.Move
+                        || inst instanceof MirInst.Freeze)) {
                     emitted = true;
                 }
             }
@@ -134,8 +157,10 @@ final class MirEmitter {
             trampoline.run();
         }
 
-        // Register merged contiguous try-catch ranges in exact innermost-to-outermost handler order,
-        // skipping zero-instruction fallthrough blocks so every JVM range satisfies start_pc < end_pc.
+        // Register merged contiguous try-catch ranges in exact innermost-to-outermost handler
+        // order,
+        // skipping zero-instruction fallthrough blocks so every JVM range satisfies start_pc <
+        // end_pc.
         int i = 0;
         while (i < rpo.size()) {
             List<MirHandler> handlers = rpo.get(i).handlers();
@@ -150,14 +175,16 @@ final class MirEmitter {
             for (MirHandler h : handlers) {
                 Label handlerLabel = blockLabels.get(h.handlerBlockId());
                 if (handlerLabel != null) {
-                    mv.visitTryCatchBlock(startLabels[i], endLabels[j], handlerLabel, h.catchJvmType());
+                    mv.visitTryCatchBlock(
+                            startLabels[i], endLabels[j], handlerLabel, h.catchJvmType());
                 }
             }
             i = j + 1;
         }
     }
 
-    // ------------------------------------------------------------------ pinned slots & SSA slot coloring
+    // ------------------------------------------------------------------ pinned slots & SSA slot
+    // coloring
 
     private void ensurePinnedSlots() {
         for (HirVar v : fn.pinnedVars()) {
@@ -174,7 +201,8 @@ final class MirEmitter {
     }
 
     private void resolveAliasesAndAllocateSlots() {
-        // 1. Bind non-pinned function parameters directly to the slots initialized by HirEmitter's prologue.
+        // 1. Bind non-pinned function parameters directly to the slots initialized by HirEmitter's
+        // prologue.
         for (int i = 0; i < fn.params().size(); i++) {
             MirVal pv = fn.params().get(i);
             HirVar hv = fn.paramVars().get(i);
@@ -237,7 +265,8 @@ final class MirEmitter {
             for (MirInst inst : b.insts()) {
                 int ipos = pos++;
                 if (deferred.contains(inst)) {
-                    // A fused condition reads its operands at the branch ; a constant reads nothing.
+                    // A fused condition reads its operands at the branch ; a constant reads
+                    // nothing.
                     if (fusedConditions.containsKey(inst.result().id())) {
                         fusedUses.addAll(inst.usedValues());
                     }
@@ -254,8 +283,10 @@ final class MirEmitter {
                     lastUsePos[root] = Math.max(lastUsePos[root], ipos);
                 }
                 MirVal res = inst.result();
-                if (res != null && !aliasTarget.containsKey(res.id())
-                        && !stacked.contains(res.id()) && !discarded.contains(res.id())) {
+                if (res != null
+                        && !aliasTarget.containsKey(res.id())
+                        && !stacked.contains(res.id())
+                        && !discarded.contains(res.id())) {
                     bDefs.set(res.id());
                     defPos[res.id()] = ipos;
                     valKind[res.id()] = res.kind();
@@ -266,7 +297,9 @@ final class MirEmitter {
             termUses.addAll(fusedUses);
             for (MirVal u : termUses) {
                 int root = resolveRoot(u).id();
-                if (rematerialized.containsKey(root) || fusedConditions.containsKey(root) || stacked.contains(root)) {
+                if (rematerialized.containsKey(root)
+                        || fusedConditions.containsKey(root)
+                        || stacked.contains(root)) {
                     continue;
                 }
                 if (!bDefs.get(root)) {
@@ -318,8 +351,7 @@ final class MirEmitter {
         }
 
         // 4. Build [start, end] live intervals for all non-param, non-alias SSA values.
-        record Interval(int valId, int start, int end, int category, PrimitiveKind kind) {
-        }
+        record Interval(int valId, int start, int end, int category, PrimitiveKind kind) {}
         int[] rangeStart = new int[valCount];
         int[] rangeEnd = new int[valCount];
         BitSet ranged = new BitSet(valCount);
@@ -357,9 +389,13 @@ final class MirEmitter {
         List<Interval> intervals = new ArrayList<>(ranged.cardinality());
         for (int vid = ranged.nextSetBit(0); vid >= 0; vid = ranged.nextSetBit(vid + 1)) {
             PrimitiveKind pk = valKind[vid];
-            intervals.add(new Interval(vid, rangeStart[vid], rangeEnd[vid], jvmSlotCategory(pk), pk));
+            intervals.add(
+                    new Interval(vid, rangeStart[vid], rangeEnd[vid], jvmSlotCategory(pk), pk));
         }
-        intervals.sort((x, y) -> x.start != y.start ? Integer.compare(x.start, y.start) : Integer.compare(x.valId, y.valId));
+        intervals.sort((x, y) ->
+                x.start != y.start
+                        ? Integer.compare(x.start, y.start)
+                        : Integer.compare(x.valId, y.valId));
 
         // 5. Linear-scan coloring segregated by JVM slot verification category (I/J/F/D/A).
         Map<Integer, List<int[]>> activeByCat = new HashMap<>(); // cat -> list of [endPos, slot]
@@ -374,18 +410,18 @@ final class MirEmitter {
             }
             int slot = free.isEmpty() ? ctx.newLocal(iv.kind) : free.remove(free.size() - 1);
             valSlots.put(iv.valId, slot);
-            active.add(new int[]{iv.end, slot});
+            active.add(new int[] {iv.end, slot});
         }
     }
 
     /**
      * Rematerialized constants : a primitive of its own kind, a string or null, pushed again at
      * each use (by {@link #loadVal}, {@link #operandOf} or a parallel copy) instead of stored in a
-     * local and loaded back, unless an instruction reads it from a slot directly. Fused
-     * conditions : a primitive comparison or boolean negation whose only use is the
-     * {@code BrIf} of its block, emitted as that branch's conditional jump instead of a 0 or 1
-     * tested again (see {@link #emitBranchOnTruth}). Both keep the bytecode of a function as
-     * compact as {@code HirEmitter}'s, whose size the JIT's inlining heuristics go by.
+     * local and loaded back, unless an instruction reads it from a slot directly. Fused conditions
+     * : a primitive comparison or boolean negation whose only use is the {@code BrIf} of its block,
+     * emitted as that branch's conditional jump instead of a 0 or 1 tested again (see {@link
+     * #emitBranchOnTruth}). Both keep the bytecode of a function as compact as {@code
+     * HirEmitter}'s, whose size the JIT's inlining heuristics go by.
      */
     private void selectRematerializedAndFused() {
         Map<Integer, Integer> useCount = new HashMap<>();
@@ -403,7 +439,8 @@ final class MirEmitter {
                     constants.put(c.result().id(), c);
                 }
                 MirVal res = inst.result();
-                if (res != null && aliasTarget.containsKey(res.id())
+                if (res != null
+                        && aliasTarget.containsKey(res.id())
                         && resolveRoot(res).kind() != res.kind()) {
                     needsSlot.add(resolveRoot(res).id());
                 }
@@ -429,15 +466,20 @@ final class MirEmitter {
                 }
             }
             MirVal cond = bi.cond();
-            while (cond != null && useCount.getOrDefault(cond.id(), 0) == 1 && !needsSlot.contains(cond.id())) {
+            while (cond != null
+                    && useCount.getOrDefault(cond.id(), 0) == 1
+                    && !needsSlot.contains(cond.id())) {
                 MirInst def = defs.get(cond.id());
                 MirVal next = null;
-                if (def instanceof MirInst.Binary bin && bin.op().isComparison()
+                if (def instanceof MirInst.Binary bin
+                        && bin.op().isComparison()
                         && bin.result().kind() == PrimitiveKind.BOOL
                         && canEmitPrimitiveCmp(bin.op(), bin.left().kind(), bin.right().kind())) {
                     // ends the chain
-                } else if (def instanceof MirInst.Unary un && un.op() == HirExpr.UnaryOp.NOT
-                        && un.operand().kind() == PrimitiveKind.BOOL && un.result().kind() == PrimitiveKind.BOOL) {
+                } else if (def instanceof MirInst.Unary un
+                        && un.op() == HirExpr.UnaryOp.NOT
+                        && un.operand().kind() == PrimitiveKind.BOOL
+                        && un.result().kind() == PrimitiveKind.BOOL) {
                     next = un.operand();
                 } else {
                     break;
@@ -459,7 +501,9 @@ final class MirEmitter {
             for (int i = 0; i < emitted.size(); i++) {
                 MirInst producer = emitted.get(i);
                 MirVal res = producer.result();
-                if (res == null || !leavesResultViaStore(producer) || aliasTarget.containsKey(res.id())
+                if (res == null
+                        || !leavesResultViaStore(producer)
+                        || aliasTarget.containsKey(res.id())
                         || needsSlot.contains(res.id())) {
                     continue;
                 }
@@ -473,12 +517,16 @@ final class MirEmitter {
                 }
                 if (i + 1 < emitted.size()) {
                     MirVal first = firstLoadedOperand(emitted.get(i + 1));
-                    if (first != null && resolveRoot(first).id() == res.id() && first.kind() == res.kind()) {
+                    if (first != null
+                            && resolveRoot(first).id() == res.id()
+                            && first.kind() == res.kind()) {
                         stacked.add(res.id());
                     }
                 } else {
                     MirVal first = firstLoadedOperand(b.terminator());
-                    if (first != null && resolveRoot(first).id() == res.id() && first.kind() == res.kind()) {
+                    if (first != null
+                            && resolveRoot(first).id() == res.id()
+                            && first.kind() == res.kind()) {
                         stacked.add(res.id());
                     } else if (b.terminator() instanceof MirTerminator.Br br) {
                         MirBlock target = blockById.get(br.targetBlock());
@@ -497,11 +545,17 @@ final class MirEmitter {
         }
     }
 
-    /** Whether an instruction's emission ends in {@link #storeResult}, which can leave the result on the stack instead. */
+    /**
+     * Whether an instruction's emission ends in {@link #storeResult}, which can leave the result on
+     * the stack instead.
+     */
     private static boolean leavesResultViaStore(MirInst inst) {
-        return !(inst instanceof MirInst.ForIterInit || inst instanceof MirInst.UnwrapThrown
-                || inst instanceof MirInst.ScopeEnter || inst instanceof MirInst.Narrow
-                || inst instanceof MirInst.Move || inst instanceof MirInst.Freeze);
+        return !(inst instanceof MirInst.ForIterInit
+                || inst instanceof MirInst.UnwrapThrown
+                || inst instanceof MirInst.ScopeEnter
+                || inst instanceof MirInst.Narrow
+                || inst instanceof MirInst.Move
+                || inst instanceof MirInst.Freeze);
     }
 
     /**
@@ -527,16 +581,18 @@ final class MirEmitter {
             case MirInst.NonNull nn -> nn.operand();
             case MirInst.IsCheck ic -> ic.operand();
             case MirInst.CallBabble cb -> !cb.selfRecurse() ? cb.callee() : null;
-            case MirInst.OpaqueExpr op -> !op.operands().isEmpty()
-                    && (op.template() instanceof HirExpr.DynamicCall
-                    || op.template() instanceof HirExpr.ModuleExportGet
-                    || op.template() instanceof HirExpr.DynamicSelect
-                    || op.template() instanceof HirExpr.OverloadSelect
-                    || op.template() instanceof HirExpr.OverloadDispatch
-                    || op.template() instanceof HirExpr.SafeCall
-                    || op.template() instanceof HirExpr.SpreadAdapt
-                    || op.template() instanceof HirExpr.JavaSamAdapt)
-                    ? op.operands().get(0) : null;
+            case MirInst.OpaqueExpr op ->
+                    !op.operands().isEmpty()
+                                    && (op.template() instanceof HirExpr.DynamicCall
+                                            || op.template() instanceof HirExpr.ModuleExportGet
+                                            || op.template() instanceof HirExpr.DynamicSelect
+                                            || op.template() instanceof HirExpr.OverloadSelect
+                                            || op.template() instanceof HirExpr.OverloadDispatch
+                                            || op.template() instanceof HirExpr.SafeCall
+                                            || op.template() instanceof HirExpr.SpreadAdapt
+                                            || op.template() instanceof HirExpr.JavaSamAdapt)
+                            ? op.operands().get(0)
+                            : null;
             default -> null;
         };
     }
@@ -565,20 +621,31 @@ final class MirEmitter {
         return null;
     }
 
-    /** The operands an instruction reads from their local directly, rather than through {@link #loadVal}. */
+    /**
+     * The operands an instruction reads from their local directly, rather than through {@link
+     * #loadVal}.
+     */
     private static List<MirVal> slotOperands(MirInst inst) {
-        List<MirVal> operands = switch (inst) {
-            case MirInst.ScopeExit sx -> java.util.Collections.singletonList(sx.prevNamespace());
-            case MirInst.UnwrapThrown ut -> java.util.Collections.singletonList(ut.thrownExn());
-            case MirInst.AddSuppressed as -> java.util.Arrays.asList(as.primary(), as.secondary());
-            case MirInst.ArrayLen al -> java.util.Collections.singletonList(al.array());
-            case MirInst.ForIterInit fi -> java.util.Collections.singletonList(fi.iterable());
-            case MirInst.ForIterHasNext fh -> fh.target().kind() == LoweringTargets.ForKind.ARRAY
-                    ? java.util.Collections.<MirVal>emptyList() : java.util.Collections.singletonList(fh.iterator());
-            case MirInst.ForIterNext fnInst -> java.util.Arrays.asList(fnInst.iterator(), fnInst.index());
-            case MirInst.CatchMatch cm -> java.util.Collections.singletonList(cm.value());
-            default -> java.util.Collections.<MirVal>emptyList();
-        };
+        List<MirVal> operands =
+                switch (inst) {
+                    case MirInst.ScopeExit sx ->
+                            java.util.Collections.singletonList(sx.prevNamespace());
+                    case MirInst.UnwrapThrown ut ->
+                            java.util.Collections.singletonList(ut.thrownExn());
+                    case MirInst.AddSuppressed as ->
+                            java.util.Arrays.asList(as.primary(), as.secondary());
+                    case MirInst.ArrayLen al -> java.util.Collections.singletonList(al.array());
+                    case MirInst.ForIterInit fi ->
+                            java.util.Collections.singletonList(fi.iterable());
+                    case MirInst.ForIterHasNext fh ->
+                            fh.target().kind() == LoweringTargets.ForKind.ARRAY
+                                    ? java.util.Collections.<MirVal>emptyList()
+                                    : java.util.Collections.singletonList(fh.iterator());
+                    case MirInst.ForIterNext fnInst ->
+                            java.util.Arrays.asList(fnInst.iterator(), fnInst.index());
+                    case MirInst.CatchMatch cm -> java.util.Collections.singletonList(cm.value());
+                    default -> java.util.Collections.<MirVal>emptyList();
+                };
         // Some operands are absent (the index of a loop over an iterator).
         return operands.stream().filter(java.util.Objects::nonNull).toList();
     }
@@ -592,7 +659,10 @@ final class MirEmitter {
         return pushed != null && pushed.isPrimitive() && pushed == c.result().kind();
     }
 
-    /** The kind of what {@link #pushConstant} leaves on the stack for {@code v}, or null for no constant. */
+    /**
+     * The kind of what {@link #pushConstant} leaves on the stack for {@code v}, or null for no
+     * constant.
+     */
     private static PrimitiveKind constantKind(Object v) {
         if (v == null || v instanceof String) {
             return PrimitiveKind.NONE;
@@ -750,7 +820,7 @@ final class MirEmitter {
                 storeResult(c.result());
             }
             case MirInst.Narrow ignored -> {} // zero-cost alias
-            case MirInst.Move ignored -> {}   // zero-cost alias
+            case MirInst.Move ignored -> {} // zero-cost alias
             case MirInst.Freeze ignored -> {} // zero-cost alias
             case MirInst.Unary u -> emitUnary(u);
             case MirInst.Binary b -> emitBinary(b);
@@ -791,7 +861,8 @@ final class MirEmitter {
                 loadVal(sw.value());
                 PrimitiveKind vk = sw.var().primitiveKind();
                 emitter.convertStack(ctx.stackKind, vk);
-                emitter.storeVariable(sw.var(), sw.opKind() == MirInst.SlotOpKind.INIT, vk, sw.line());
+                emitter.storeVariable(
+                        sw.var(), sw.opKind() == MirInst.SlotOpKind.INIT, vk, sw.line());
                 popOn(mv, ctx.stackKind);
                 ctx.stackKind = PrimitiveKind.NONE;
             }
@@ -800,7 +871,12 @@ final class MirEmitter {
                 mv.visitVarInsn(ASTORE, slotOf(se.result()));
                 mv.visitVarInsn(ALOAD, ctx.nsLocal);
                 emitter.getStringArray(se.declaredNames());
-                mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "child", "([Ljava/lang/String;)L" + NAMESPACE + ";", false);
+                mv.visitMethodInsn(
+                        INVOKEVIRTUAL,
+                        NAMESPACE,
+                        "child",
+                        "([Ljava/lang/String;)L" + NAMESPACE + ";",
+                        false);
                 mv.visitVarInsn(ASTORE, ctx.nsLocal);
             }
             case MirInst.ScopeExit sx -> {
@@ -812,15 +888,24 @@ final class MirEmitter {
             case MirInst.ForIterNext fnInst -> emitForIterNext(fnInst);
             case MirInst.UnwrapThrown ut -> {
                 mv.visitVarInsn(ALOAD, slotOf(ut.thrownExn()));
-                mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "ThrownException", "value", "()Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKEVIRTUAL,
+                        RUNTIME + "ThrownException",
+                        "value",
+                        "()Ljava/lang/Object;",
+                        false);
                 mv.visitVarInsn(ASTORE, slotOf(ut.result()));
             }
             case MirInst.CatchMatch cm -> emitCatchMatch(cm);
             case MirInst.AddSuppressed as -> {
                 mv.visitVarInsn(ALOAD, slotOf(as.primary()));
                 mv.visitVarInsn(ALOAD, slotOf(as.secondary()));
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Throwables", "addSuppressed",
-                        "(Ljava/lang/Throwable;Ljava/lang/Throwable;)V", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "Throwables",
+                        "addSuppressed",
+                        "(Ljava/lang/Throwable;Ljava/lang/Throwable;)V",
+                        false);
             }
             case MirInst.NameRead nr -> emitNameRead(nr);
             case MirInst.NameAssign na -> emitNameAssign(na);
@@ -857,25 +942,31 @@ final class MirEmitter {
             return;
         }
         PrimitiveKind rk = u.result().kind();
-        if (rk == PrimitiveKind.INT || rk == PrimitiveKind.LONG
-                || rk == PrimitiveKind.FLOAT || rk == PrimitiveKind.DOUBLE) {
+        if (rk == PrimitiveKind.INT
+                || rk == PrimitiveKind.LONG
+                || rk == PrimitiveKind.FLOAT
+                || rk == PrimitiveKind.DOUBLE) {
             loadVal(u.operand());
             emitter.convertStack(u.operand().kind(), rk);
-            mv.visitInsn(switch (rk) {
-                case INT -> INEG;
-                case LONG -> LNEG;
-                case FLOAT -> FNEG;
-                case DOUBLE -> DNEG;
-                default -> throw new IllegalStateException();
-            });
+            mv.visitInsn(
+                    switch (rk) {
+                        case INT -> INEG;
+                        case LONG -> LNEG;
+                        case FLOAT -> FNEG;
+                        case DOUBLE -> DNEG;
+                        default -> throw new IllegalStateException();
+                    });
             ctx.stackKind = rk;
             storeResult(u.result());
             return;
         }
         HirExpr opPh = placeholder(u.operand(), u.line());
-        withOverrides(Map.of(opPh, operandOf(u.operand())), () ->
-                emitter.controlOps.emitUnary(new HirExpr.Unary(u.op(), opPh, u.operandText(),
-                        ExprMeta.of(u.line(), rk))));
+        withOverrides(
+                Map.of(opPh, operandOf(u.operand())),
+                () ->
+                        emitter.controlOps.emitUnary(
+                                new HirExpr.Unary(
+                                        u.op(), opPh, u.operandText(), ExprMeta.of(u.line(), rk))));
         storeResult(u.result());
     }
 
@@ -884,21 +975,36 @@ final class MirEmitter {
         PrimitiveKind rk = b.right().kind();
         PrimitiveKind out = b.result().kind();
 
-        if (b.op().isComparison() && out == PrimitiveKind.BOOL && canEmitPrimitiveCmp(b.op(), lk, rk)) {
+        if (b.op().isComparison()
+                && out == PrimitiveKind.BOOL
+                && canEmitPrimitiveCmp(b.op(), lk, rk)) {
             emitPrimitiveComparison(b.op(), b.left(), b.right());
             storeResult(b.result());
             return;
         }
         if (b.op().isArithmetic() && isNumericKind(lk) && isNumericKind(rk)) {
             if ((out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
-                    && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL)) {
+                    && (b.op() == HirExpr.BinaryOp.ADD
+                            || b.op() == HirExpr.BinaryOp.SUB
+                            || b.op() == HirExpr.BinaryOp.MUL)) {
                 loadVal(b.left());
                 emitter.convertStack(lk, out);
                 loadVal(b.right());
                 emitter.convertStack(rk, out);
-                int insn = out == PrimitiveKind.INT
-                        ? switch (b.op()) { case ADD -> IADD; case SUB -> ISUB; case MUL -> IMUL; default -> throw new IllegalStateException(); }
-                        : switch (b.op()) { case ADD -> LADD; case SUB -> LSUB; case MUL -> LMUL; default -> throw new IllegalStateException(); };
+                int insn =
+                        out == PrimitiveKind.INT
+                                ? switch (b.op()) {
+                                    case ADD -> IADD;
+                                    case SUB -> ISUB;
+                                    case MUL -> IMUL;
+                                    default -> throw new IllegalStateException();
+                                }
+                                : switch (b.op()) {
+                                    case ADD -> LADD;
+                                    case SUB -> LSUB;
+                                    case MUL -> LMUL;
+                                    default -> throw new IllegalStateException();
+                                };
                 mv.visitInsn(insn);
                 ctx.stackKind = out;
                 storeResult(b.result());
@@ -955,9 +1061,22 @@ final class MirEmitter {
                 emitter.convertStack(lk, out);
                 loadVal(b.right());
                 emitter.convertStack(rk, out);
-                int insn = out == PrimitiveKind.FLOAT
-                        ? switch (b.op()) { case ADD -> FADD; case SUB -> FSUB; case MUL -> FMUL; case DIV -> FDIV; default -> throw new IllegalStateException(); }
-                        : switch (b.op()) { case ADD -> DADD; case SUB -> DSUB; case MUL -> DMUL; case DIV -> DDIV; default -> throw new IllegalStateException(); };
+                int insn =
+                        out == PrimitiveKind.FLOAT
+                                ? switch (b.op()) {
+                                    case ADD -> FADD;
+                                    case SUB -> FSUB;
+                                    case MUL -> FMUL;
+                                    case DIV -> FDIV;
+                                    default -> throw new IllegalStateException();
+                                }
+                                : switch (b.op()) {
+                                    case ADD -> DADD;
+                                    case SUB -> DSUB;
+                                    case MUL -> DMUL;
+                                    case DIV -> DDIV;
+                                    default -> throw new IllegalStateException();
+                                };
                 mv.visitInsn(insn);
                 ctx.stackKind = out;
                 storeResult(b.result());
@@ -971,8 +1090,17 @@ final class MirEmitter {
         Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(2);
         ov.put(lPh, operandOf(b.left()));
         ov.put(rPh, operandOf(b.right()));
-        withOverrides(ov, () -> emitter.controlOps.emitBinary(
-                new HirExpr.Binary(b.op(), lPh, rPh, b.leftText(), b.rightText(), ExprMeta.of(b.line(), out))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.controlOps.emitBinary(
+                                new HirExpr.Binary(
+                                        b.op(),
+                                        lPh,
+                                        rPh,
+                                        b.leftText(),
+                                        b.rightText(),
+                                        ExprMeta.of(b.line(), out))));
         storeResult(b.result());
     }
 
@@ -982,8 +1110,17 @@ final class MirEmitter {
         Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(2);
         ov.put(sPh, operandOf(rn.start()));
         ov.put(ePh, operandOf(rn.end()));
-        withOverrides(ov, () -> emitter.controlOps.emitRange(
-                new HirExpr.Range(sPh, ePh, rn.inclusive(), rn.elemKind(), false, ExprMeta.of(rn.line(), PrimitiveKind.NONE))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.controlOps.emitRange(
+                                new HirExpr.Range(
+                                        sPh,
+                                        ePh,
+                                        rn.inclusive(),
+                                        rn.elemKind(),
+                                        false,
+                                        ExprMeta.of(rn.line(), PrimitiveKind.NONE))));
         storeResult(rn.result());
     }
 
@@ -1031,7 +1168,8 @@ final class MirEmitter {
                 }
                 MirVal a0 = edges.get(0).args().get(k);
                 MirVal a1 = edges.get(1).args().get(k);
-                // Identify which incoming edge is the step back-edge (param +/- posConst) and which is init.
+                // Identify which incoming edge is the step back-edge (param +/- posConst) and which
+                // is init.
                 InEdge initEdge;
                 InEdge backEdge;
                 MirVal initVal;
@@ -1069,12 +1207,12 @@ final class MirEmitter {
                     if (!isStaticallyNonNegative(initVal, 0)) {
                         continue;
                     }
-                    if (isCountedAscendingBounded(initEdge.from(), initEdge.isThenEdge(), initVal, stopVal, incoming)) {
+                    if (isCountedAscendingBounded(
+                            initEdge.from(), initEdge.isThenEdge(), initVal, stopVal, incoming)) {
                         nonNegativeBlockParams.add(resolveRoot(param).id());
                     }
                 } else {
-                    if (isStaticallyNonNegative(stopVal, 0)
-                            && isRangeLastCall(initVal, stopVal)) {
+                    if (isStaticallyNonNegative(stopVal, 0) && isRangeLastCall(initVal, stopVal)) {
                         nonNegativeBlockParams.add(resolveRoot(param).id());
                     }
                 }
@@ -1129,20 +1267,27 @@ final class MirEmitter {
             return false;
         }
         String name = m.getName();
-        if (!"lastIntElement".equals(name) && !"lastLongElement".equals(name) && !"lastCharElement".equals(name)) {
+        if (!"lastIntElement".equals(name)
+                && !"lastLongElement".equals(name)
+                && !"lastCharElement".equals(name)) {
             return false;
         }
         return !cj.args().isEmpty()
                 && resolveRoot(cj.args().get(0)).id() == resolveRoot(expectedStart).id();
     }
 
-    private <T> boolean isCountedAscendingBounded(MirBlock initFrom, boolean initIsThenEdge,
-                                                  MirVal startVal, MirVal stopVal,
-                                                  Map<Integer, ?> incoming) {
-        // Case 1: direct BrIf(LTE(startVal, stopVal), bbHead, bbExit) (inclusive step 1, CfgSimplify-merged)
+    private <T> boolean isCountedAscendingBounded(
+            MirBlock initFrom,
+            boolean initIsThenEdge,
+            MirVal startVal,
+            MirVal stopVal,
+            Map<Integer, ?> incoming) {
+        // Case 1: direct BrIf(LTE(startVal, stopVal), bbHead, bbExit) (inclusive step 1,
+        // CfgSimplify-merged)
         if (initIsThenEdge && initFrom.terminator() instanceof MirTerminator.BrIf bi) {
             MirInst cmpDef = defByValId.get(resolveRoot(bi.cond()).id());
-            if (cmpDef instanceof MirInst.Binary cmp && cmp.op() == HirExpr.BinaryOp.LTE
+            if (cmpDef instanceof MirInst.Binary cmp
+                    && cmp.op() == HirExpr.BinaryOp.LTE
                     && resolveRoot(cmp.left()).id() == resolveRoot(startVal).id()
                     && resolveRoot(cmp.right()).id() == resolveRoot(stopVal).id()) {
                 return true;
@@ -1155,7 +1300,8 @@ final class MirEmitter {
         }
         MirBlock guardBlock = null;
         for (MirBlock b : rpo) {
-            if (b.terminator() instanceof MirTerminator.BrIf bi && bi.thenBlock() == initFrom.id()) {
+            if (b.terminator() instanceof MirTerminator.BrIf bi
+                    && bi.thenBlock() == initFrom.id()) {
                 guardBlock = b;
                 break;
             }
@@ -1175,7 +1321,8 @@ final class MirEmitter {
         }
         if (cmp.op() == HirExpr.BinaryOp.LT) {
             MirInst stopDef = defByValId.get(resolveRoot(stopVal).id());
-            if (stopDef instanceof MirInst.Binary sub && sub.op() == HirExpr.BinaryOp.SUB
+            if (stopDef instanceof MirInst.Binary sub
+                    && sub.op() == HirExpr.BinaryOp.SUB
                     && resolveRoot(sub.left()).id() == resolveRoot(endVal).id()) {
                 MirInst.Const one = constOf(sub.right());
                 if (one != null && one.value() instanceof Number n && n.longValue() == 1L) {
@@ -1206,7 +1353,8 @@ final class MirEmitter {
         }
         MirInst.Const c = constOf(root);
         if (c != null) {
-            return (c.value() instanceof Number n && n.longValue() >= 0L) || c.value() instanceof Character;
+            return (c.value() instanceof Number n && n.longValue() >= 0L)
+                    || c.value() instanceof Character;
         }
         MirInst def = defByValId.get(root.id());
         if (def == null) {
@@ -1214,33 +1362,43 @@ final class MirEmitter {
         }
         return switch (def) {
             case MirInst.Copy cp -> isStaticallyNonNegative(cp.source(), depth + 1);
-            case MirInst.Convert cv -> cv.operand().kind() == PrimitiveKind.CHAR
-                    || ((cv.operand().kind() == PrimitiveKind.BYTE || cv.operand().kind() == PrimitiveKind.SHORT
-                    || cv.operand().kind() == PrimitiveKind.INT)
-                    && (cv.targetKind() == PrimitiveKind.INT || cv.targetKind() == PrimitiveKind.LONG)
-                    && isStaticallyNonNegative(cv.operand(), depth + 1));
+            case MirInst.Convert cv ->
+                    cv.operand().kind() == PrimitiveKind.CHAR
+                            || ((cv.operand().kind() == PrimitiveKind.BYTE
+                                            || cv.operand().kind() == PrimitiveKind.SHORT
+                                            || cv.operand().kind() == PrimitiveKind.INT)
+                                    && (cv.targetKind() == PrimitiveKind.INT
+                                            || cv.targetKind() == PrimitiveKind.LONG)
+                                    && isStaticallyNonNegative(cv.operand(), depth + 1));
             case MirInst.ArrayLen ignored -> true;
             case MirInst.CallJava cj -> {
                 java.lang.reflect.Method m = cj.target().method();
                 yield ("length".equals(m.getName()) && m.getDeclaringClass() == String.class)
                         || ("size".equals(m.getName())
-                        && (java.util.Collection.class.isAssignableFrom(m.getDeclaringClass())
-                        || java.util.Map.class.isAssignableFrom(m.getDeclaringClass())));
+                                && (java.util.Collection.class.isAssignableFrom(
+                                                m.getDeclaringClass())
+                                        || java.util.Map.class.isAssignableFrom(
+                                                m.getDeclaringClass())));
             }
             case MirInst.Binary b -> {
                 if (b.op() != HirExpr.BinaryOp.MOD
-                        || (b.result().kind() != PrimitiveKind.INT && b.result().kind() != PrimitiveKind.LONG)) {
+                        || (b.result().kind() != PrimitiveKind.INT
+                                && b.result().kind() != PrimitiveKind.LONG)) {
                     yield false;
                 }
                 MirInst.Const rc = constOf(b.right());
-                yield rc != null && rc.value() instanceof Number rn
-                        && (b.result().kind() == PrimitiveKind.LONG ? rn.longValue() > 0L : rn.intValue() > 0);
+                yield rc != null
+                        && rc.value() instanceof Number rn
+                        && (b.result().kind() == PrimitiveKind.LONG
+                                ? rn.longValue() > 0L
+                                : rn.intValue() > 0);
             }
             default -> false;
         };
     }
 
-    private static boolean canEmitPrimitiveCmp(HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk) {
+    private static boolean canEmitPrimitiveCmp(
+            HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk) {
         if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL) {
             return op == HirExpr.BinaryOp.EQ || op == HirExpr.BinaryOp.NEQ;
         }
@@ -1262,8 +1420,12 @@ final class MirEmitter {
         ctx.stackKind = PrimitiveKind.BOOL;
     }
 
-    /** Jumps to {@code target} when {@code left op right} is {@code branchIfTrue}, with the ordering of the other modes. */
-    private void emitComparisonJump(HirExpr.BinaryOp op, MirVal left, MirVal right, boolean branchIfTrue, Label target) {
+    /**
+     * Jumps to {@code target} when {@code left op right} is {@code branchIfTrue}, with the ordering
+     * of the other modes.
+     */
+    private void emitComparisonJump(
+            HirExpr.BinaryOp op, MirVal left, MirVal right, boolean branchIfTrue, Label target) {
         HirExpr.BinaryOp jumpOp = branchIfTrue ? op : negate(op);
         PrimitiveKind lk = left.kind();
         PrimitiveKind rk = right.kind();
@@ -1291,15 +1453,17 @@ final class MirEmitter {
             mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
         }
         // A three-way result : its integer negation is exact, NaN included.
-        mv.visitJumpInsn(switch (jumpOp) {
-            case LT -> IFLT;
-            case LTE -> IFLE;
-            case EQ -> IFEQ;
-            case NEQ -> IFNE;
-            case GTE -> IFGE;
-            case GT -> IFGT;
-            default -> throw new IllegalStateException();
-        }, target);
+        mv.visitJumpInsn(
+                switch (jumpOp) {
+                    case LT -> IFLT;
+                    case LTE -> IFLE;
+                    case EQ -> IFEQ;
+                    case NEQ -> IFNE;
+                    case GTE -> IFGE;
+                    case GT -> IFGT;
+                    default -> throw new IllegalStateException();
+                },
+                target);
     }
 
     private static HirExpr.BinaryOp negate(HirExpr.BinaryOp op) {
@@ -1345,7 +1509,8 @@ final class MirEmitter {
             emitDefaultValueOn(mv, vk);
             storeKindOn(mv, vk, slot);
         } else {
-            mv.visitFieldInsn(GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
+            mv.visitFieldInsn(
+                    GETSTATIC, RUNTIME + "Undefined", "UNDEFINED", "L" + RUNTIME + "Undefined;");
             mv.visitVarInsn(ASTORE, slot);
         }
     }
@@ -1354,32 +1519,65 @@ final class MirEmitter {
 
     private void emitCheckCast(MirInst.CheckCast cc) {
         HirExpr ph = placeholder(cc.operand(), cc.line());
-        withOverrides(Map.of(ph, operandOf(cc.operand())), () -> emitter.controlOps.emitAsExpr(
-                new HirExpr.As(ph, cc.target(), cc.samTarget(), cc.descriptor(), ExprMeta.of(cc.line(), cc.result().kind()))));
+        withOverrides(
+                Map.of(ph, operandOf(cc.operand())),
+                () ->
+                        emitter.controlOps.emitAsExpr(
+                                new HirExpr.As(
+                                        ph,
+                                        cc.target(),
+                                        cc.samTarget(),
+                                        cc.descriptor(),
+                                        ExprMeta.of(cc.line(), cc.result().kind()))));
         storeResult(cc.result());
     }
 
     private void emitNonNull(MirInst.NonNull nn) {
         HirExpr ph = placeholder(nn.operand(), nn.line());
-        withOverrides(Map.of(ph, operandOf(nn.operand())), () -> emitter.controlOps.emitNonNull(
-                new HirExpr.NonNull(ph, nn.expectedType(), ExprMeta.of(nn.line(), nn.result().kind()))));
+        withOverrides(
+                Map.of(ph, operandOf(nn.operand())),
+                () ->
+                        emitter.controlOps.emitNonNull(
+                                new HirExpr.NonNull(
+                                        ph,
+                                        nn.expectedType(),
+                                        ExprMeta.of(nn.line(), nn.result().kind()))));
         storeResult(nn.result());
     }
 
     private void emitIsCheck(MirInst.IsCheck ic) {
         HirExpr ph = placeholder(ic.operand(), ic.line());
-        withOverrides(Map.of(ph, operandOf(ic.operand())), () -> emitter.controlOps.emitIs(
-                new HirExpr.Is(ph, ic.builtin(), ic.target(), ic.intersectionTargets(), ic.descriptor(),
-                        ExprMeta.of(ic.line(), ic.result().kind()))));
+        withOverrides(
+                Map.of(ph, operandOf(ic.operand())),
+                () ->
+                        emitter.controlOps.emitIs(
+                                new HirExpr.Is(
+                                        ph,
+                                        ic.builtin(),
+                                        ic.target(),
+                                        ic.intersectionTargets(),
+                                        ic.descriptor(),
+                                        ExprMeta.of(ic.line(), ic.result().kind()))));
         storeResult(ic.result());
     }
 
     private void emitLoadField(MirInst.LoadField lf) {
         HirExpr ph = placeholder(lf.receiver(), lf.line());
-        withOverrides(Map.of(ph, operandOf(lf.receiver())), () -> emitter.assigns.emitThisFieldGet(
-                new HirExpr.ThisFieldGet(ph, lf.receiverText(), lf.classId(), lf.externalClassJvmName(),
-                        lf.memberIndex(), lf.memberName(), lf.fieldKind(), lf.immutableField(), lf.definitelyDefined(),
-                        ExprMeta.of(lf.line(), lf.result().kind()))));
+        withOverrides(
+                Map.of(ph, operandOf(lf.receiver())),
+                () ->
+                        emitter.assigns.emitThisFieldGet(
+                                new HirExpr.ThisFieldGet(
+                                        ph,
+                                        lf.receiverText(),
+                                        lf.classId(),
+                                        lf.externalClassJvmName(),
+                                        lf.memberIndex(),
+                                        lf.memberName(),
+                                        lf.fieldKind(),
+                                        lf.immutableField(),
+                                        lf.definitelyDefined(),
+                                        ExprMeta.of(lf.line(), lf.result().kind()))));
         storeResult(lf.result());
     }
 
@@ -1391,10 +1589,26 @@ final class MirEmitter {
 
     private void emitNameAssign(MirInst.NameAssign na) {
         HirExpr ph = placeholder(na.value(), na.line());
-        ExprMeta meta = new ExprMeta(na.line(), PrimitiveKind.NONE, na.wideningRank(), null,
-                org.babblelang.analysis.EffectSet.EMPTY, false, false);
-        withOverrides(Map.of(ph, operandOf(na.value())), () -> emitter.assigns.emitNameAssign(
-                new HirExpr.NameAssign(na.name(), na.operator(), ph, na.targetText(), na.valueText(), meta)));
+        ExprMeta meta =
+                new ExprMeta(
+                        na.line(),
+                        PrimitiveKind.NONE,
+                        na.wideningRank(),
+                        null,
+                        org.babblelang.analysis.EffectSet.EMPTY,
+                        false,
+                        false);
+        withOverrides(
+                Map.of(ph, operandOf(na.value())),
+                () ->
+                        emitter.assigns.emitNameAssign(
+                                new HirExpr.NameAssign(
+                                        na.name(),
+                                        na.operator(),
+                                        ph,
+                                        na.targetText(),
+                                        na.valueText(),
+                                        meta)));
         storeResult(na.result());
     }
 
@@ -1404,9 +1618,20 @@ final class MirEmitter {
         Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(2);
         ov.put(rPh, operandOf(sf.receiver()));
         ov.put(vPh, operandOf(sf.value()));
-        withOverrides(ov, () -> emitter.assigns.emitThisFieldAssign(
-                new HirExpr.ThisFieldAssign(rPh, sf.classId(), sf.memberIndex(), sf.memberName(), null, vPh,
-                        sf.targetText(), sf.valueText(), ExprMeta.of(sf.line(), sf.value().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.assigns.emitThisFieldAssign(
+                                new HirExpr.ThisFieldAssign(
+                                        rPh,
+                                        sf.classId(),
+                                        sf.memberIndex(),
+                                        sf.memberName(),
+                                        null,
+                                        vPh,
+                                        sf.targetText(),
+                                        sf.valueText(),
+                                        ExprMeta.of(sf.line(), sf.value().kind()))));
         popOn(mv, ctx.stackKind);
         ctx.stackKind = PrimitiveKind.NONE;
     }
@@ -1419,9 +1644,16 @@ final class MirEmitter {
             ov.put(rPh, operandOf(lj.receiver()));
         }
         HirExpr finalR = rPh;
-        withOverrides(ov, () -> emitter.assigns.emitJavaFieldGet(
-                new HirExpr.JavaFieldGet(finalR, lj.receiverText(), lj.pureStaticReceiver(), lj.target(),
-                        ExprMeta.of(lj.line(), lj.result().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.assigns.emitJavaFieldGet(
+                                new HirExpr.JavaFieldGet(
+                                        finalR,
+                                        lj.receiverText(),
+                                        lj.pureStaticReceiver(),
+                                        lj.target(),
+                                        ExprMeta.of(lj.line(), lj.result().kind()))));
         storeResult(lj.result());
     }
 
@@ -1435,9 +1667,20 @@ final class MirEmitter {
         HirExpr vPh = placeholder(sj.value(), sj.line());
         ov.put(vPh, operandOf(sj.value()));
         HirExpr finalR = rPh;
-        withOverrides(ov, () -> emitter.assigns.emitJavaFieldAssignExpr(
-                new HirExpr.JavaFieldAssign(finalR, sj.receiverText(), sj.pureStaticReceiver(), sj.target(), null,
-                        vPh, sj.targetText(), sj.valueText(), ExprMeta.of(sj.line(), sj.value().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.assigns.emitJavaFieldAssignExpr(
+                                new HirExpr.JavaFieldAssign(
+                                        finalR,
+                                        sj.receiverText(),
+                                        sj.pureStaticReceiver(),
+                                        sj.target(),
+                                        null,
+                                        vPh,
+                                        sj.targetText(),
+                                        sj.valueText(),
+                                        ExprMeta.of(sj.line(), sj.value().kind()))));
         popOn(mv, ctx.stackKind);
         ctx.stackKind = PrimitiveKind.NONE;
     }
@@ -1448,9 +1691,19 @@ final class MirEmitter {
         Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(2);
         ov.put(aPh, operandOf(ag.array()));
         ov.put(iPh, operandOf(ag.index()));
-        withOverrides(ov, () -> emitter.assigns.emitArrayOp(
-                new HirExpr.ArrayOp(LoweringTargets.ArrayOpKind.GET, aPh, ag.receiverText(), ag.elemKind(),
-                        ag.arrayClass(), ag.componentClass(), List.of(iPh), ExprMeta.of(ag.line(), ag.result().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.assigns.emitArrayOp(
+                                new HirExpr.ArrayOp(
+                                        LoweringTargets.ArrayOpKind.GET,
+                                        aPh,
+                                        ag.receiverText(),
+                                        ag.elemKind(),
+                                        ag.arrayClass(),
+                                        ag.componentClass(),
+                                        List.of(iPh),
+                                        ExprMeta.of(ag.line(), ag.result().kind()))));
         storeResult(ag.result());
     }
 
@@ -1462,9 +1715,19 @@ final class MirEmitter {
         ov.put(aPh, operandOf(as.array()));
         ov.put(iPh, operandOf(as.index()));
         ov.put(vPh, operandOf(as.value()));
-        withOverrides(ov, () -> emitter.assigns.emitArrayOp(
-                new HirExpr.ArrayOp(LoweringTargets.ArrayOpKind.SET, aPh, as.receiverText(), as.elemKind(),
-                        as.arrayClass(), as.componentClass(), List.of(iPh, vPh), ExprMeta.of(as.line(), PrimitiveKind.NONE))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.assigns.emitArrayOp(
+                                new HirExpr.ArrayOp(
+                                        LoweringTargets.ArrayOpKind.SET,
+                                        aPh,
+                                        as.receiverText(),
+                                        as.elemKind(),
+                                        as.arrayClass(),
+                                        as.componentClass(),
+                                        List.of(iPh, vPh),
+                                        ExprMeta.of(as.line(), PrimitiveKind.NONE))));
         popOn(mv, ctx.stackKind);
         ctx.stackKind = PrimitiveKind.NONE;
     }
@@ -1479,9 +1742,19 @@ final class MirEmitter {
             return;
         }
         HirExpr aPh = placeholder(al.array(), al.line());
-        withOverrides(Map.of(aPh, operandOf(al.array())), () -> emitter.assigns.emitArrayOp(
-                new HirExpr.ArrayOp(LoweringTargets.ArrayOpKind.SIZE, aPh, al.receiverText(), al.elemKind(),
-                        al.arrayClass(), al.componentClass(), List.of(), ExprMeta.of(al.line(), PrimitiveKind.INT))));
+        withOverrides(
+                Map.of(aPh, operandOf(al.array())),
+                () ->
+                        emitter.assigns.emitArrayOp(
+                                new HirExpr.ArrayOp(
+                                        LoweringTargets.ArrayOpKind.SIZE,
+                                        aPh,
+                                        al.receiverText(),
+                                        al.elemKind(),
+                                        al.arrayClass(),
+                                        al.componentClass(),
+                                        List.of(),
+                                        ExprMeta.of(al.line(), PrimitiveKind.INT))));
         storeResult(al.result());
     }
 
@@ -1490,7 +1763,8 @@ final class MirEmitter {
         mv.visitTypeInsn(CHECKCAST, RUNTIME + "Module");
         ConstantPool.pushInt(mv, le.target().index());
         ctx.line(le.line());
-        mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "Module", "exportAt", "(I)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL, RUNTIME + "Module", "exportAt", "(I)Ljava/lang/Object;", false);
         ctx.stackKind = PrimitiveKind.NONE;
         storeResult(le.result());
     }
@@ -1499,15 +1773,29 @@ final class MirEmitter {
         Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(1 + cb.args().size());
         List<HirExpr> argPhs = makePlaceholders(cb.args(), cb.line(), ov);
         if (cb.selfRecurse()) {
-            withOverrides(ov, () -> emitter.calls.emitSelfRecurseCall(
-                    new HirExpr.SelfRecurseCall(cb.targetFunctionId(), argPhs, cb.binding(),
-                            ExprMeta.of(cb.line(), cb.result().kind()))));
+            withOverrides(
+                    ov,
+                    () ->
+                            emitter.calls.emitSelfRecurseCall(
+                                    new HirExpr.SelfRecurseCall(
+                                            cb.targetFunctionId(),
+                                            argPhs,
+                                            cb.binding(),
+                                            ExprMeta.of(cb.line(), cb.result().kind()))));
         } else {
             HirExpr cPh = placeholder(cb.callee(), cb.line());
             ov.put(cPh, operandOf(cb.callee()));
-            withOverrides(ov, () -> emitter.calls.emitDirectBabbleCall(
-                    new HirExpr.DirectBabbleCall(cPh, cb.targetFunctionId(), cb.externalTarget(), argPhs, cb.binding(),
-                            ExprMeta.of(cb.line(), cb.result().kind()))));
+            withOverrides(
+                    ov,
+                    () ->
+                            emitter.calls.emitDirectBabbleCall(
+                                    new HirExpr.DirectBabbleCall(
+                                            cPh,
+                                            cb.targetFunctionId(),
+                                            cb.externalTarget(),
+                                            argPhs,
+                                            cb.binding(),
+                                            ExprMeta.of(cb.line(), cb.result().kind()))));
         }
         storeResult(cb.result());
     }
@@ -1523,11 +1811,24 @@ final class MirEmitter {
             ov.put(ph, operandOf(a));
             callArgs.add(new HirCallArg(cm.argNames().get(i), ph));
         }
-        withOverrides(ov, () -> emitter.calls.emitDirectThisMethodCall(
-                new HirExpr.DirectThisMethodCall(rPh, cm.receiverText(), cm.classId(), cm.externalClassJvmName(),
-                        cm.classTypeId(), cm.memberName(), cm.overloadAltIndex(), cm.targetFunctionId(),
-                        cm.externalSignature(), callArgs, cm.binding(), cm.callSite(),
-                        ExprMeta.of(cm.line(), cm.result().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.calls.emitDirectThisMethodCall(
+                                new HirExpr.DirectThisMethodCall(
+                                        rPh,
+                                        cm.receiverText(),
+                                        cm.classId(),
+                                        cm.externalClassJvmName(),
+                                        cm.classTypeId(),
+                                        cm.memberName(),
+                                        cm.overloadAltIndex(),
+                                        cm.targetFunctionId(),
+                                        cm.externalSignature(),
+                                        callArgs,
+                                        cm.binding(),
+                                        cm.callSite(),
+                                        ExprMeta.of(cm.line(), cm.result().kind()))));
         storeResult(cm.result());
     }
 
@@ -1536,9 +1837,20 @@ final class MirEmitter {
         HirExpr rPh = placeholder(ci.receiver(), ci.line());
         ov.put(rPh, operandOf(ci.receiver()));
         List<HirExpr> argPhs = makePlaceholders(ci.args(), ci.line(), ov);
-        withOverrides(ov, () -> emitter.calls.emitInterfaceCall(
-                new HirExpr.InterfaceCall(rPh, ci.receiverText(), ci.selectorLine(), ci.interfaceTypeId(),
-                        ci.memberName(), ci.signature(), argPhs, ci.binding(), ExprMeta.of(ci.line(), ci.result().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.calls.emitInterfaceCall(
+                                new HirExpr.InterfaceCall(
+                                        rPh,
+                                        ci.receiverText(),
+                                        ci.selectorLine(),
+                                        ci.interfaceTypeId(),
+                                        ci.memberName(),
+                                        ci.signature(),
+                                        argPhs,
+                                        ci.binding(),
+                                        ExprMeta.of(ci.line(), ci.result().kind()))));
         storeResult(ci.result());
     }
 
@@ -1551,9 +1863,18 @@ final class MirEmitter {
         }
         List<HirExpr> argPhs = makePlaceholders(cj.args(), cj.line(), ov);
         HirExpr finalR = rPh;
-        withOverrides(ov, () -> emitter.calls.emitJavaMethodCall(
-                new HirExpr.JavaMethodCall(finalR, cj.receiverText(), cj.selectorLine(), cj.pureStaticReceiver(),
-                        cj.target(), argPhs, ExprMeta.of(cj.line(), cj.result().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.calls.emitJavaMethodCall(
+                                new HirExpr.JavaMethodCall(
+                                        finalR,
+                                        cj.receiverText(),
+                                        cj.selectorLine(),
+                                        cj.pureStaticReceiver(),
+                                        cj.target(),
+                                        argPhs,
+                                        ExprMeta.of(cj.line(), cj.result().kind()))));
         storeResult(cj.result());
     }
 
@@ -1566,9 +1887,17 @@ final class MirEmitter {
         }
         List<HirExpr> argPhs = makePlaceholders(cc.args(), cc.line(), ov);
         HirExpr finalC = cPh;
-        withOverrides(ov, () -> emitter.calls.emitJavaConstructorCall(
-                new HirExpr.JavaConstructorCall(finalC, cc.calleeText(), cc.pureStaticCallee(), cc.target(),
-                        argPhs, ExprMeta.of(cc.line(), cc.result().kind()))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.calls.emitJavaConstructorCall(
+                                new HirExpr.JavaConstructorCall(
+                                        finalC,
+                                        cc.calleeText(),
+                                        cc.pureStaticCallee(),
+                                        cc.target(),
+                                        argPhs,
+                                        ExprMeta.of(cc.line(), cc.result().kind()))));
         storeResult(cc.result());
     }
 
@@ -1577,10 +1906,20 @@ final class MirEmitter {
         HirExpr crPh = placeholder(rn.classRef(), rn.line());
         ov.put(crPh, operandOf(rn.classRef()));
         List<HirExpr> argPhs = makePlaceholders(rn.args(), rn.line(), ov);
-        withOverrides(ov, () -> emitter.calls.emitRecordNew(
-                new HirExpr.RecordNew(rn.classId(), rn.classTypeId(), rn.classJvmName(), crPh,
-                        rn.classRefIsInstance(), rn.paramKinds(), argPhs, rn.binding(),
-                        ExprMeta.of(rn.line(), PrimitiveKind.NONE))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.calls.emitRecordNew(
+                                new HirExpr.RecordNew(
+                                        rn.classId(),
+                                        rn.classTypeId(),
+                                        rn.classJvmName(),
+                                        crPh,
+                                        rn.classRefIsInstance(),
+                                        rn.paramKinds(),
+                                        argPhs,
+                                        rn.binding(),
+                                        ExprMeta.of(rn.line(), PrimitiveKind.NONE))));
         storeResult(rn.result());
     }
 
@@ -1589,9 +1928,18 @@ final class MirEmitter {
         HirExpr tPh = placeholder(rr.target(), rr.line());
         ov.put(tPh, operandOf(rr.target()));
         List<HirExpr> argPhs = makePlaceholders(rr.args(), rr.line(), ov);
-        withOverrides(ov, () -> emitter.calls.emitRecordReuse(
-                new HirExpr.RecordReuse(tPh, rr.classId(), rr.classTypeId(), rr.classJvmName(),
-                        rr.paramKinds(), argPhs, ExprMeta.of(rr.line(), PrimitiveKind.NONE))));
+        withOverrides(
+                ov,
+                () ->
+                        emitter.calls.emitRecordReuse(
+                                new HirExpr.RecordReuse(
+                                        tPh,
+                                        rr.classId(),
+                                        rr.classTypeId(),
+                                        rr.classJvmName(),
+                                        rr.paramKinds(),
+                                        argPhs,
+                                        ExprMeta.of(rr.line(), PrimitiveKind.NONE))));
         storeResult(rr.result());
     }
 
@@ -1605,7 +1953,8 @@ final class MirEmitter {
         storeResult(op.result());
     }
 
-    // ------------------------------------------------------------------ for-loop & try-catch instructions
+    // ------------------------------------------------------------------ for-loop & try-catch
+    // instructions
 
     private void emitForIterInit(MirInst.ForIterInit fi) {
         int ln = fi.line();
@@ -1616,28 +1965,53 @@ final class MirEmitter {
             case ARRAY -> {
                 String arrDesc = Type.getDescriptor(target.arrayClass());
                 mv.visitVarInsn(ALOAD, recvSlot);
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "unwrap",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        false);
                 mv.visitTypeInsn(CHECKCAST, arrDesc);
                 mv.visitVarInsn(ASTORE, slotOf(fi.result()));
             }
             case JAVA_ITERABLE -> {
                 mv.visitVarInsn(ALOAD, recvSlot);
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "unwrap",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        false);
                 mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
                 ctx.line(ln);
-                mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
+                mv.visitMethodInsn(
+                        INVOKEINTERFACE,
+                        "java/lang/Iterable",
+                        "iterator",
+                        "()Ljava/util/Iterator;",
+                        true);
                 mv.visitVarInsn(ASTORE, slotOf(fi.result()));
             }
             case JAVA_ITERATOR -> {
                 mv.visitVarInsn(ALOAD, recvSlot);
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "unwrap",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        false);
                 mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
                 mv.visitVarInsn(ASTORE, slotOf(fi.result()));
             }
             case BABBLE_TO_JAVA_ITERABLE -> {
                 emitter.controlOps.emitZeroArgBabbleCall(recvSlot, "iterator", null, ln);
                 emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "unwrap",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        false);
                 mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
                 mv.visitVarInsn(ASTORE, slotOf(fi.result()));
             }
@@ -1653,7 +2027,12 @@ final class MirEmitter {
             case DYNAMIC_UNION -> {
                 mv.visitVarInsn(ALOAD, recvSlot);
                 ctx.line(ln);
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "asIterator", "(Ljava/lang/Object;)Ljava/util/Iterator;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "asIterator",
+                        "(Ljava/lang/Object;)Ljava/util/Iterator;",
+                        false);
                 mv.visitVarInsn(ASTORE, slotOf(fi.result()));
             }
         }
@@ -1669,11 +2048,14 @@ final class MirEmitter {
             storeResult(fh.result());
             return;
         }
-        if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
-            emitter.controlOps.emitZeroArgBabbleCall(slotOf(fh.iterator()), "hasNext", target.hasNextSig(), ln);
+        if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE
+                || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
+            emitter.controlOps.emitZeroArgBabbleCall(
+                    slotOf(fh.iterator()), "hasNext", target.hasNextSig(), ln);
             if (ctx.stackKind != PrimitiveKind.BOOL) {
                 emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
                 ctx.stackKind = PrimitiveKind.BOOL;
             }
             storeResult(fh.result());
@@ -1696,34 +2078,44 @@ final class MirEmitter {
             mv.visitVarInsn(ALOAD, slotOf(fnInst.iterator()));
             mv.visitVarInsn(ILOAD, slotOf(fnInst.index()));
             if (elemKind != PrimitiveKind.NONE) {
-                mv.visitInsn(switch (elemKind) {
-                    case BYTE, BOOL -> BALOAD;
-                    case SHORT -> SALOAD;
-                    case INT -> IALOAD;
-                    case LONG -> LALOAD;
-                    case FLOAT -> FALOAD;
-                    case DOUBLE -> DALOAD;
-                    case CHAR -> CALOAD;
-                    case NONE -> AALOAD;
-                });
+                mv.visitInsn(
+                        switch (elemKind) {
+                            case BYTE, BOOL -> BALOAD;
+                            case SHORT -> SALOAD;
+                            case INT -> IALOAD;
+                            case LONG -> LALOAD;
+                            case FLOAT -> FALOAD;
+                            case DOUBLE -> DALOAD;
+                            case CHAR -> CALOAD;
+                            case NONE -> AALOAD;
+                        });
                 ctx.stackKind = elemKind;
             } else {
                 mv.visitInsn(AALOAD);
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "fromJava",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        false);
                 ctx.stackKind = PrimitiveKind.NONE;
             }
             storeResult(fnInst.result());
             return;
         }
-        if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
-            emitter.controlOps.emitZeroArgBabbleCall(slotOf(fnInst.iterator()), "next", target.nextSig(), ln);
+        if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE
+                || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
+            emitter.controlOps.emitZeroArgBabbleCall(
+                    slotOf(fnInst.iterator()), "next", target.nextSig(), ln);
             storeResult(fnInst.result());
             return;
         }
         mv.visitVarInsn(ALOAD, slotOf(fnInst.iterator()));
         ctx.line(ln);
-        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
-        mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
+        mv.visitMethodInsn(
+                INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         ctx.stackKind = PrimitiveKind.NONE;
         storeResult(fnInst.result());
     }
@@ -1754,7 +2146,12 @@ final class MirEmitter {
             mv.visitVarInsn(ALOAD, valSlot);
             ConstantPool.pushString(mv, ct.typeDescriptor());
             ctx.line(cm.line());
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Types", "matches", "(Ljava/lang/Object;Ljava/lang/String;)Z", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Types",
+                    "matches",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Z",
+                    false);
         } else {
             mv.visitInsn(ICONST_0);
         }
@@ -1762,12 +2159,14 @@ final class MirEmitter {
         storeResult(cm.result());
     }
 
-    // ------------------------------------------------------------------ terminators & parallel copy
+    // ------------------------------------------------------------------ terminators & parallel
+    // copy
 
     private boolean emitTerminator(MirTerminator term, MirBlock nextBlock) {
         switch (term) {
             case MirTerminator.Br br -> {
-                boolean copied = hasNonTrivialCopies(br.args(), blockById.get(br.targetBlock()).params());
+                boolean copied =
+                        hasNonTrivialCopies(br.args(), blockById.get(br.targetBlock()).params());
                 emitParallelCopy(br.args(), blockById.get(br.targetBlock()).params());
                 if (nextBlock == null || nextBlock.id() != br.targetBlock()) {
                     mv.visitJumpInsn(GOTO, blockLabels.get(br.targetBlock()));
@@ -1858,17 +2257,27 @@ final class MirEmitter {
                 emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
                 ctx.line(th.line());
                 if (th.isJavaThrowable()) {
-                    mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            VALUES,
+                            "unwrap",
+                            "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            false);
                     mv.visitTypeInsn(CHECKCAST, "java/lang/Throwable");
                 } else {
-                    mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Throwables", "toThrowable",
-                            "(Ljava/lang/Object;)Ljava/lang/Throwable;", false);
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            RUNTIME + "Throwables",
+                            "toThrowable",
+                            "(Ljava/lang/Object;)Ljava/lang/Throwable;",
+                            false);
                 }
                 mv.visitInsn(ATHROW);
                 return true;
             }
             case MirTerminator.TailCall tc -> {
-                Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(tc.args().size());
+                Map<HirExpr, MethodEmitContext.MirOperand> ov =
+                        new IdentityHashMap<>(tc.args().size());
                 List<HirCallArg> callArgs = new ArrayList<>(tc.args().size());
                 for (int i = 0; i < tc.args().size(); i++) {
                     MirVal a = tc.args().get(i);
@@ -1876,9 +2285,15 @@ final class MirEmitter {
                     ov.put(ph, operandOf(a));
                     callArgs.add(new HirCallArg(tc.argNames().get(i), ph));
                 }
-                withOverrides(ov, () -> emitter.calls.emitSelfTailCall(
-                        new HirExpr.SelfTailCall(tc.functionId(), callArgs, tc.binding(),
-                                ExprMeta.of(tc.line(), PrimitiveKind.NONE))));
+                withOverrides(
+                        ov,
+                        () ->
+                                emitter.calls.emitSelfTailCall(
+                                        new HirExpr.SelfTailCall(
+                                                tc.functionId(),
+                                                callArgs,
+                                                tc.binding(),
+                                                ExprMeta.of(tc.line(), PrimitiveKind.NONE))));
                 return true;
             }
             case MirTerminator.Unreachable ignored -> {
@@ -1901,7 +2316,8 @@ final class MirEmitter {
         }
         loadVal(cond);
         switch (cond.kind()) {
-            case BOOL, BYTE, SHORT, INT, CHAR -> mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
+            case BOOL, BYTE, SHORT, INT, CHAR ->
+                    mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
             case LONG -> {
                 mv.visitInsn(LCONST_0);
                 mv.visitInsn(LCMP);
@@ -1918,7 +2334,8 @@ final class MirEmitter {
                 mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
             }
             case NONE -> {
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
                 mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
             }
         }
@@ -1927,7 +2344,8 @@ final class MirEmitter {
     private boolean hasNonTrivialCopies(List<MirVal> args, List<MirVal> params) {
         for (int i = 0; i < args.size(); i++) {
             int rootId = resolveRoot(args.get(i)).id();
-            if (stacked.contains(rootId) || rematerialized.containsKey(rootId)
+            if (stacked.contains(rootId)
+                    || rematerialized.containsKey(rootId)
                     || slotOf(args.get(i)) != slotOf(params.get(i))) {
                 return true;
             }
@@ -1935,9 +2353,7 @@ final class MirEmitter {
         return false;
     }
 
-    /**
-     * Cycle-safe parallel copy of edge {@code args} into target block {@code params}.
-     */
+    /** Cycle-safe parallel copy of edge {@code args} into target block {@code params}. */
     private void emitParallelCopy(List<MirVal> args, List<MirVal> params) {
         final class MoveOp {
             int src;
@@ -1991,7 +2407,8 @@ final class MirEmitter {
                 storeKindOn(mv, ready.kind, ready.dst);
                 pending.remove(ready);
             } else {
-                // Break cycle by spilling the first move's source into a fresh temporary of matching kind.
+                // Break cycle by spilling the first move's source into a fresh temporary of
+                // matching kind.
                 MoveOp cyc = pending.get(0);
                 int tmp = ctx.newLocal(cyc.kind);
                 loadKindOn(mv, cyc.kind, cyc.src);
@@ -2031,7 +2448,8 @@ final class MirEmitter {
         return new MethodEmitContext.MirOperand(slotOf(v), v.kind());
     }
 
-    private List<HirExpr> makePlaceholders(List<MirVal> vals, int line, Map<HirExpr, MethodEmitContext.MirOperand> ov) {
+    private List<HirExpr> makePlaceholders(
+            List<MirVal> vals, int line, Map<HirExpr, MethodEmitContext.MirOperand> ov) {
         List<HirExpr> out = new ArrayList<>(vals.size());
         for (MirVal v : vals) {
             HirExpr ph = placeholder(v, line);
@@ -2041,7 +2459,8 @@ final class MirEmitter {
         return out;
     }
 
-    private void withOverrides(Map<HirExpr, MethodEmitContext.MirOperand> overrides, Runnable body) {
+    private void withOverrides(
+            Map<HirExpr, MethodEmitContext.MirOperand> overrides, Runnable body) {
         Map<HirExpr, MethodEmitContext.MirOperand> prev = ctx.mirOverrides;
         ctx.mirOverrides = overrides;
         try {

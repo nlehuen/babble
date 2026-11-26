@@ -1,9 +1,5 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.LoweringTargets;
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.ir.IrTarget;
-
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -12,33 +8,39 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.ir.IrTarget;
 
 /**
- * Canonical, preamble-independent, human-readable printer for {@link HirModule}
- * ({@code BIP029-I1}, {@code BIP029-D5}, {@code BIP029-D7}).
+ * Canonical, preamble-independent, human-readable printer for {@link HirModule} ({@code BIP029-I1},
+ * {@code BIP029-D5}, {@code BIP029-D7}).
  *
  * <p>Unlike {@link HirPrinter#print(HirModule)}, which prints raw module-global IDs and JVM-mangled
  * names on single lines for low-level debugging, {@code HirCanonicalPrinter}:
+ *
  * <ul>
  *   <li>Scopes output to a specific {@link IrTarget} (function, method, class/record/interface,
- *       top-level, or full module).</li>
- *   <li>Normalizes variable IDs locally per target: unique user names omit {@code #id} ({@code var(x)}),
- *       shadowed locals receive local {@code #1}/{@code #2} suffixes, and global-ID-suffixed synthetic
- *       temps ({@code $licm17}, {@code $try24}, {@code $sr_p12}) are renumbered locally from {@code 0}.</li>
+ *       top-level, or full module).
+ *   <li>Normalizes variable IDs locally per target: unique user names omit {@code #id} ({@code
+ *       var(x)}), shadowed locals receive local {@code #1}/{@code #2} suffixes, and
+ *       global-ID-suffixed synthetic temps ({@code $licm17}, {@code $try24}, {@code $sr_p12}) are
+ *       renumbered locally from {@code 0}.
  *   <li>Resolves numeric function, class, and interface references to symbolic names and strips
- *       generated {@code Script$N$} prefixes from type descriptors.</li>
+ *       generated {@code Script$N$} prefixes from type descriptors.
  *   <li>Pretty-prints compound control flow ({@code block}, {@code if}, {@code while}, {@code for},
- *       {@code try}/{@code catch}/{@code finally}) with deterministic 2-space indentation.</li>
+ *       {@code try}/{@code catch}/{@code finally}) with deterministic 2-space indentation.
  * </ul>
  */
 public final class HirCanonicalPrinter {
-    private static final Pattern SYNTH_TEMP = Pattern.compile("^(\\$[a-zA-Z][a-zA-Z_]*[a-zA-Z])(\\d+)$");
+    private static final Pattern SYNTH_TEMP =
+            Pattern.compile("^(\\$[a-zA-Z][a-zA-Z_]*[a-zA-Z])(\\d+)$");
     private static final Pattern SCRIPT_PREFIX = Pattern.compile("(?:babble/)?Script\\$\\d+\\$");
     private static final Pattern SCRIPT_SELF = Pattern.compile("(?:babble/)?Script\\$\\d+");
-    private static final Pattern BABBLE_TYPE_ID = Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
+    private static final Pattern BABBLE_TYPE_ID =
+            Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
 
-    private HirCanonicalPrinter() {
-    }
+    private HirCanonicalPrinter() {}
 
     public static String print(HirModule module, IrTarget target) {
         Map<String, String> typeNames = buildTypeNameMap(module);
@@ -49,7 +51,8 @@ public final class HirCanonicalPrinter {
                 printFunction(sb, module, fn, typeNames, 0);
             }
             case IrTarget.Method methodTarget -> {
-                List<HirFunction> methods = resolveMethods(module, methodTarget.ownerName(), methodTarget.methodName());
+                List<HirFunction> methods =
+                        resolveMethods(module, methodTarget.ownerName(), methodTarget.methodName());
                 for (int i = 0; i < methods.size(); i++) {
                     if (i > 0) {
                         sb.append('\n');
@@ -74,17 +77,26 @@ public final class HirCanonicalPrinter {
             }
         }
         if (matches.isEmpty()) {
-            throw new IllegalArgumentException("No HIR function named '" + name + "' (available: "
-                    + availableTargets(module) + ")");
+            throw new IllegalArgumentException(
+                    "No HIR function named '"
+                            + name
+                            + "' (available: "
+                            + availableTargets(module)
+                            + ")");
         }
         if (matches.size() > 1) {
-            throw new IllegalArgumentException("Ambiguous HIR function '" + name + "' (" + matches.size()
-                    + " matches; use a unique name in the case)");
+            throw new IllegalArgumentException(
+                    "Ambiguous HIR function '"
+                            + name
+                            + "' ("
+                            + matches.size()
+                            + " matches; use a unique name in the case)");
         }
         return matches.get(0);
     }
 
-    private static List<HirFunction> resolveMethods(HirModule module, String ownerName, String methodName) {
+    private static List<HirFunction> resolveMethods(
+            HirModule module, String ownerName, String methodName) {
         HirClass cls = findClassByName(module, ownerName);
         if (cls != null) {
             Set<Integer> ids = new LinkedHashSet<>();
@@ -110,8 +122,16 @@ public final class HirCanonicalPrinter {
                 }
             }
             if (result.isEmpty()) {
-                throw new IllegalArgumentException("No HIR method '" + ownerName + "." + methodName
-                        + "' on " + typeKindLabel(cls) + " '" + ownerName + "'");
+                throw new IllegalArgumentException(
+                        "No HIR method '"
+                                + ownerName
+                                + "."
+                                + methodName
+                                + "' on "
+                                + typeKindLabel(cls)
+                                + " '"
+                                + ownerName
+                                + "'");
             }
             return result;
         }
@@ -134,13 +154,25 @@ public final class HirCanonicalPrinter {
                 }
             }
             if (result.isEmpty()) {
-                throw new IllegalArgumentException("No HIR default method '" + ownerName + "." + methodName
-                        + "' on interface '" + ownerName + "'");
+                throw new IllegalArgumentException(
+                        "No HIR default method '"
+                                + ownerName
+                                + "."
+                                + methodName
+                                + "' on interface '"
+                                + ownerName
+                                + "'");
             }
             return result;
         }
-        throw new IllegalArgumentException("No HIR type named '" + ownerName + "' for method '" + methodName
-                + "' (available: " + availableTargets(module) + ")");
+        throw new IllegalArgumentException(
+                "No HIR type named '"
+                        + ownerName
+                        + "' for method '"
+                        + methodName
+                        + "' (available: "
+                        + availableTargets(module)
+                        + ")");
     }
 
     private static HirClass findClassByName(HirModule module, String name) {
@@ -151,7 +183,8 @@ public final class HirCanonicalPrinter {
             }
         }
         if (matches.size() > 1) {
-            throw new IllegalArgumentException("Ambiguous HIR class/record '" + name + "' (" + matches.size() + " matches)");
+            throw new IllegalArgumentException(
+                    "Ambiguous HIR class/record '" + name + "' (" + matches.size() + " matches)");
         }
         return matches.isEmpty() ? null : matches.get(0);
     }
@@ -164,7 +197,8 @@ public final class HirCanonicalPrinter {
             }
         }
         if (matches.size() > 1) {
-            throw new IllegalArgumentException("Ambiguous HIR interface '" + name + "' (" + matches.size() + " matches)");
+            throw new IllegalArgumentException(
+                    "Ambiguous HIR interface '" + name + "' (" + matches.size() + " matches)");
         }
         return matches.isEmpty() ? null : matches.get(0);
     }
@@ -190,10 +224,15 @@ public final class HirCanonicalPrinter {
 
     // ------------------------------------------------------------------ structural printers
 
-    private static void printModule(StringBuilder sb, HirModule module, Map<String, String> typeNames) {
+    private static void printModule(
+            StringBuilder sb, HirModule module, Map<String, String> typeNames) {
         String label = module.sourceName();
-        if (label == null || label.isBlank() || "<unknown>".equals(label) || "<script>".equals(label)
-                || "<input>".equals(label) || SCRIPT_SELF.matcher(label).matches()) {
+        if (label == null
+                || label.isBlank()
+                || "<unknown>".equals(label)
+                || "<script>".equals(label)
+                || "<input>".equals(label)
+                || SCRIPT_SELF.matcher(label).matches()) {
             label = "<main>";
         }
         sb.append("module ").append(label).append('\n');
@@ -218,7 +257,8 @@ public final class HirCanonicalPrinter {
         }
     }
 
-    private static void printTopLevel(StringBuilder sb, HirModule module, Map<String, String> typeNames, int indent) {
+    private static void printTopLevel(
+            StringBuilder sb, HirModule module, Map<String, String> typeNames, int indent) {
         ScopeNormalizer norm = new ScopeNormalizer(module, typeNames);
         norm.scanList(module.topLevelStatements());
         norm.finalizeNames();
@@ -238,38 +278,58 @@ public final class HirCanonicalPrinter {
         }
     }
 
-    private static void printTypeDef(StringBuilder sb, HirModule module, IrTarget.TypeDef target,
-                                     Map<String, String> typeNames, int indent) {
+    private static void printTypeDef(
+            StringBuilder sb,
+            HirModule module,
+            IrTarget.TypeDef target,
+            Map<String, String> typeNames,
+            int indent) {
         switch (target.kind()) {
             case CLASS -> {
                 HirClass cls = findClassByName(module, target.name());
                 if (cls == null || (cls.shape().isValue() && !cls.isObject())) {
-                    throw new IllegalArgumentException("No HIR class named '" + target.name() + "' (available: "
-                            + availableTargets(module) + ")");
+                    throw new IllegalArgumentException(
+                            "No HIR class named '"
+                                    + target.name()
+                                    + "' (available: "
+                                    + availableTargets(module)
+                                    + ")");
                 }
                 printClass(sb, module, cls, typeNames, indent);
             }
             case RECORD -> {
                 HirClass cls = findClassByName(module, target.name());
                 if (cls == null || !cls.shape().isValue() || cls.isObject()) {
-                    throw new IllegalArgumentException("No HIR record named '" + target.name() + "' (available: "
-                            + availableTargets(module) + ")");
+                    throw new IllegalArgumentException(
+                            "No HIR record named '"
+                                    + target.name()
+                                    + "' (available: "
+                                    + availableTargets(module)
+                                    + ")");
                 }
                 printClass(sb, module, cls, typeNames, indent);
             }
             case INTERFACE -> {
                 HirInterface iface = findInterfaceByName(module, target.name());
                 if (iface == null) {
-                    throw new IllegalArgumentException("No HIR interface named '" + target.name() + "' (available: "
-                            + availableTargets(module) + ")");
+                    throw new IllegalArgumentException(
+                            "No HIR interface named '"
+                                    + target.name()
+                                    + "' (available: "
+                                    + availableTargets(module)
+                                    + ")");
                 }
                 printInterface(sb, module, iface, typeNames, indent);
             }
         }
     }
 
-    private static void printClass(StringBuilder sb, HirModule module, HirClass cls,
-                                   Map<String, String> typeNames, int indent) {
+    private static void printClass(
+            StringBuilder sb,
+            HirModule module,
+            HirClass cls,
+            Map<String, String> typeNames,
+            int indent) {
         ScopeNormalizer norm = new ScopeNormalizer(module, typeNames);
         norm.scanVars(cls.declaredVars());
         norm.scanParams(cls.params());
@@ -315,8 +375,12 @@ public final class HirCanonicalPrinter {
         }
     }
 
-    private static void printInterface(StringBuilder sb, HirModule module, HirInterface iface,
-                                       Map<String, String> typeNames, int indent) {
+    private static void printInterface(
+            StringBuilder sb,
+            HirModule module,
+            HirInterface iface,
+            Map<String, String> typeNames,
+            int indent) {
         ScopeNormalizer norm = new ScopeNormalizer(module, typeNames);
         norm.scanList(iface.body());
         if (iface.staticBlock() != null) {
@@ -337,8 +401,12 @@ public final class HirCanonicalPrinter {
         }
     }
 
-    private static void printFunction(StringBuilder sb, HirModule module, HirFunction fn,
-                                      Map<String, String> typeNames, int indent) {
+    private static void printFunction(
+            StringBuilder sb,
+            HirModule module,
+            HirFunction fn,
+            Map<String, String> typeNames,
+            int indent) {
         ScopeNormalizer norm = new ScopeNormalizer(module, typeNames);
         norm.scanVars(fn.declaredVars());
         norm.scanParams(fn.params());
@@ -433,7 +501,8 @@ public final class HirCanonicalPrinter {
 
     // ------------------------------------------------------------------ expression printer
 
-    private static void printExpr(StringBuilder sb, HirExpr expr, ScopeNormalizer norm, int indent) {
+    private static void printExpr(
+            StringBuilder sb, HirExpr expr, ScopeNormalizer norm, int indent) {
         if (expr == null) {
             sb.append("null");
             return;
@@ -450,8 +519,10 @@ public final class HirCanonicalPrinter {
                     sb.append(c.value()).append(':').append(kindTag(c.meta().kind()));
                 }
             }
-            case HirExpr.IntParseFallback f -> sb.append("int-parse(\"").append(escape(f.text())).append("\")");
-            case HirExpr.CoreCollectionRef r -> sb.append("core-col(").append(r.collectionKind()).append(')');
+            case HirExpr.IntParseFallback f ->
+                    sb.append("int-parse(\"").append(escape(f.text())).append("\")");
+            case HirExpr.CoreCollectionRef r ->
+                    sb.append("core-col(").append(r.collectionKind()).append(')');
             case HirExpr.CoreExceptionRef ignored -> sb.append("core-exception");
             case HirExpr.VarRead v -> sb.append("var(").append(norm.varName(v.var())).append(')');
             case HirExpr.NameRead n -> sb.append("name(").append(n.name()).append(')');
@@ -512,10 +583,13 @@ public final class HirCanonicalPrinter {
                 printExpr(sb, a.value(), norm, indent + 1);
                 sb.append(')');
             }
-            case HirExpr.ThisFieldGet g -> sb.append("(get-this-field ").append(g.memberName()).append(')');
+            case HirExpr.ThisFieldGet g ->
+                    sb.append("(get-this-field ").append(g.memberName()).append(')');
             case HirExpr.JavaFieldGet g -> {
-                sb.append("(get-jfield ").append(g.target().field().getDeclaringClass().getSimpleName())
-                        .append('.').append(g.target().field().getName());
+                sb.append("(get-jfield ")
+                        .append(g.target().field().getDeclaringClass().getSimpleName())
+                        .append('.')
+                        .append(g.target().field().getName());
                 if (!g.pureStaticReceiver()) {
                     sb.append(' ');
                     printExpr(sb, g.receiver(), norm, indent + 1);
@@ -549,7 +623,11 @@ public final class HirCanonicalPrinter {
                 sb.append(')');
             }
             case HirExpr.Binary b -> {
-                sb.append('(').append(b.op().symbol()).append(':').append(kindTag(b.meta().kind())).append(' ');
+                sb.append('(')
+                        .append(b.op().symbol())
+                        .append(':')
+                        .append(kindTag(b.meta().kind()))
+                        .append(' ');
                 printExpr(sb, b.left(), norm, indent + 1);
                 sb.append(' ');
                 printExpr(sb, b.right(), norm, indent + 1);
@@ -579,10 +657,14 @@ public final class HirCanonicalPrinter {
                     for (int k = 0; k < i.intersectionTargets().size(); k++) {
                         if (k > 0) sb.append('&');
                         LoweringTargets.IsTarget t = i.intersectionTargets().get(k);
-                        sb.append(norm.normalizeType(t.typeId() != null ? t.typeId() : t.jvmInternalName()));
+                        sb.append(
+                                norm.normalizeType(
+                                        t.typeId() != null ? t.typeId() : t.jvmInternalName()));
                     }
                 } else {
-                    sb.append(norm.normalizeType(i.target() != null ? i.target().typeId() : i.descriptor()));
+                    sb.append(
+                            norm.normalizeType(
+                                    i.target() != null ? i.target().typeId() : i.descriptor()));
                 }
                 sb.append(')');
             }
@@ -630,7 +712,8 @@ public final class HirCanonicalPrinter {
             case HirExpr.If i -> {
                 sb.append("(if ");
                 printExpr(sb, i.cond(), norm, indent + 1);
-                if (isMultiline(i.thenBranch()) || (i.elseBranch() != null && isMultiline(i.elseBranch()))) {
+                if (isMultiline(i.thenBranch())
+                        || (i.elseBranch() != null && isMultiline(i.elseBranch()))) {
                     sb.append('\n');
                     indent(sb, indent + 1);
                     printExpr(sb, i.thenBranch(), norm, indent + 1);
@@ -796,9 +879,12 @@ public final class HirCanonicalPrinter {
                 sb.append(')');
             }
             case HirExpr.DirectBabbleCall c -> {
-                String targetName = c.externalTarget() != null
-                        ? c.externalTarget().moduleName() + "#" + c.externalTarget().exportName()
-                        : norm.fnRef(c.targetFunctionId());
+                String targetName =
+                        c.externalTarget() != null
+                                ? c.externalTarget().moduleName()
+                                        + "#"
+                                        + c.externalTarget().exportName()
+                                : norm.fnRef(c.targetFunctionId());
                 sb.append("(call-fn ").append(targetName);
                 printArgs(sb, c.args(), norm, indent + 1);
                 sb.append(')');
@@ -822,13 +908,16 @@ public final class HirCanonicalPrinter {
                 sb.append(')');
             }
             case HirExpr.JavaConstructorCall c -> {
-                sb.append("(jnew ").append(c.target().constructor().getDeclaringClass().getSimpleName());
+                sb.append("(jnew ")
+                        .append(c.target().constructor().getDeclaringClass().getSimpleName());
                 printArgs(sb, c.args(), norm, indent + 1);
                 sb.append(')');
             }
             case HirExpr.JavaMethodCall c -> {
-                sb.append("(jcall ").append(c.target().method().getDeclaringClass().getSimpleName())
-                        .append('.').append(c.target().method().getName());
+                sb.append("(jcall ")
+                        .append(c.target().method().getDeclaringClass().getSimpleName())
+                        .append('.')
+                        .append(c.target().method().getName());
                 if (!c.target().isStatic()) {
                     sb.append(' ');
                     printExpr(sb, c.receiver(), norm, indent + 1);
@@ -837,7 +926,11 @@ public final class HirCanonicalPrinter {
                 sb.append(')');
             }
             case HirExpr.CoreMethodCall c -> {
-                sb.append("(core-call ").append(c.coreKind()).append('.').append(c.memberName()).append(' ');
+                sb.append("(core-call ")
+                        .append(c.coreKind())
+                        .append('.')
+                        .append(c.memberName())
+                        .append(' ');
                 printExpr(sb, c.receiver(), norm, indent + 1);
                 printArgs(sb, c.args(), norm, indent + 1);
                 sb.append(')');
@@ -871,9 +964,12 @@ public final class HirCanonicalPrinter {
                 printArgs(sb, d.args(), norm, indent + 1);
                 sb.append(')');
             }
-            case HirExpr.FunctionRef f -> sb.append("(fn-ref ").append(norm.fnRef(f.functionId())).append(')');
-            case HirExpr.ClassExpr c -> sb.append("(class-ref ").append(norm.classRef(c.classId())).append(')');
-            case HirExpr.InterfaceExpr i -> sb.append("(iface-ref ").append(norm.ifaceRef(i.interfaceId())).append(')');
+            case HirExpr.FunctionRef f ->
+                    sb.append("(fn-ref ").append(norm.fnRef(f.functionId())).append(')');
+            case HirExpr.ClassExpr c ->
+                    sb.append("(class-ref ").append(norm.classRef(c.classId())).append(')');
+            case HirExpr.InterfaceExpr i ->
+                    sb.append("(iface-ref ").append(norm.ifaceRef(i.interfaceId())).append(')');
             case HirExpr.TypeApply t -> {
                 sb.append("(type-apply ");
                 printExpr(sb, t.inner(), norm, indent + 1);
@@ -909,8 +1005,9 @@ public final class HirCanonicalPrinter {
             return false;
         }
         return switch (expr) {
-            case HirExpr.Block b -> b.statements().size() > 1
-                    || (b.statements().size() == 1 && isMultiline(b.statements().get(0)));
+            case HirExpr.Block b ->
+                    b.statements().size() > 1
+                            || (b.statements().size() == 1 && isMultiline(b.statements().get(0)));
             case HirExpr.While ignored -> true;
             case HirExpr.For ignored -> true;
             case HirExpr.Try ignored -> true;
@@ -920,11 +1017,14 @@ public final class HirCanonicalPrinter {
         };
     }
 
-    private static void printPattern(StringBuilder sb, HirPattern pattern, ScopeNormalizer norm, int indent) {
+    private static void printPattern(
+            StringBuilder sb, HirPattern pattern, ScopeNormalizer norm, int indent) {
         switch (pattern) {
             case HirPattern.Const c -> {
                 if (c.isEnum()) {
-                    sb.append(c.enumClass().getSimpleName()).append('.').append(c.enumConstantName());
+                    sb.append(c.enumClass().getSimpleName())
+                            .append('.')
+                            .append(c.enumConstantName());
                 } else if (c.value() == null) {
                     sb.append("null");
                 } else if (c.value() instanceof String s) {
@@ -1017,14 +1117,16 @@ public final class HirCanonicalPrinter {
         }
     }
 
-    private static void printArgs(StringBuilder sb, List<HirExpr> args, ScopeNormalizer norm, int indent) {
+    private static void printArgs(
+            StringBuilder sb, List<HirExpr> args, ScopeNormalizer norm, int indent) {
         for (HirExpr arg : args) {
             sb.append(' ');
             printExpr(sb, arg, norm, indent);
         }
     }
 
-    private static void printCallArgs(StringBuilder sb, List<HirCallArg> args, ScopeNormalizer norm, int indent) {
+    private static void printCallArgs(
+            StringBuilder sb, List<HirCallArg> args, ScopeNormalizer norm, int indent) {
         for (HirCallArg arg : args) {
             sb.append(' ');
             if (arg.name() != null) {
@@ -1034,7 +1136,8 @@ public final class HirCanonicalPrinter {
         }
     }
 
-    // ------------------------------------------------------------------ local identifier normalizer
+    // ------------------------------------------------------------------ local identifier
+    // normalizer
 
     private static final class ScopeNormalizer {
         private final HirModule module;
@@ -1484,6 +1587,10 @@ public final class HirCanonicalPrinter {
     }
 
     private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t").replace("\"", "\\\"");
+        return s.replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("\"", "\\\"");
     }
 }

@@ -1,14 +1,5 @@
 package org.babblelang.ir.mir;
 
-import org.babblelang.analysis.LoweringTargets;
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.ir.IrTarget;
-import org.babblelang.ir.hir.HirClass;
-import org.babblelang.ir.hir.HirExpr;
-import org.babblelang.ir.hir.HirFunction;
-import org.babblelang.ir.hir.HirInterface;
-import org.babblelang.ir.hir.HirModule;
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -20,27 +11,35 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.ir.IrTarget;
+import org.babblelang.ir.hir.HirClass;
+import org.babblelang.ir.hir.HirExpr;
+import org.babblelang.ir.hir.HirFunction;
+import org.babblelang.ir.hir.HirInterface;
+import org.babblelang.ir.hir.HirModule;
 
 /**
- * Canonical, deterministic, preamble-independent printer for {@link MirModule}
- * ({@code BIP014-I3} §6.5, {@code BIP029-I1} §4.3).
+ * Canonical, deterministic, preamble-independent printer for {@link MirModule} ({@code BIP014-I3}
+ * §6.5, {@code BIP029-I1} §4.3).
  *
  * <p>Guarantees:
+ *
  * <ul>
- *   <li>Reachable basic blocks are numbered {@code bb0..bbN} in deterministic Reverse Post-Order.</li>
- *   <li>SSA values are numbered {@code v0..vN} locally per function in definition order.</li>
- *   <li>Numeric function/class IDs and {@code Script$N$} prefixes are replaced by symbolic names.</li>
- *   <li>Non-lowered functions and top-level scripts emit explicit
- *       {@code ; [not-lowered: <reason>]} markers so fallbacks are never silent.</li>
+ *   <li>Reachable basic blocks are numbered {@code bb0..bbN} in deterministic Reverse Post-Order.
+ *   <li>SSA values are numbered {@code v0..vN} locally per function in definition order.
+ *   <li>Numeric function/class IDs and {@code Script$N$} prefixes are replaced by symbolic names.
+ *   <li>Non-lowered functions and top-level scripts emit explicit {@code ; [not-lowered: <reason>]}
+ *       markers so fallbacks are never silent.
  * </ul>
  */
 public final class MirCanonicalPrinter {
     private static final Pattern SCRIPT_PREFIX = Pattern.compile("(?:babble/)?Script\\$\\d+\\$");
     private static final Pattern SCRIPT_SELF = Pattern.compile("(?:babble/)?Script\\$\\d+");
-    private static final Pattern BABBLE_TYPE_ID = Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
+    private static final Pattern BABBLE_TYPE_ID =
+            Pattern.compile("(babble(?:\\||%7C)[^|,%]+)(?:\\||%7C)T\\d+");
 
-    private MirCanonicalPrinter() {
-    }
+    private MirCanonicalPrinter() {}
 
     public static String print(MirModule mirModule, IrTarget target) {
         HirModule hir = mirModule.hir();
@@ -51,7 +50,8 @@ public final class MirCanonicalPrinter {
                 printFunctionTarget(sb, mirModule, hirFn, 0);
             }
             case IrTarget.Method methodTarget -> {
-                List<HirFunction> methods = resolveMethods(hir, methodTarget.ownerName(), methodTarget.methodName());
+                List<HirFunction> methods =
+                        resolveMethods(hir, methodTarget.ownerName(), methodTarget.methodName());
                 for (int i = 0; i < methods.size(); i++) {
                     if (i > 0) sb.append('\n');
                     printFunctionTarget(sb, mirModule, methods.get(i), 0);
@@ -74,17 +74,26 @@ public final class MirCanonicalPrinter {
             }
         }
         if (matches.isEmpty()) {
-            throw new IllegalArgumentException("No MIR function named '" + name + "' (available: "
-                    + availableTargets(module) + ")");
+            throw new IllegalArgumentException(
+                    "No MIR function named '"
+                            + name
+                            + "' (available: "
+                            + availableTargets(module)
+                            + ")");
         }
         if (matches.size() > 1) {
-            throw new IllegalArgumentException("Ambiguous MIR function '" + name + "' (" + matches.size()
-                    + " matches; use a unique name in the case)");
+            throw new IllegalArgumentException(
+                    "Ambiguous MIR function '"
+                            + name
+                            + "' ("
+                            + matches.size()
+                            + " matches; use a unique name in the case)");
         }
         return matches.get(0);
     }
 
-    private static List<HirFunction> resolveMethods(HirModule module, String ownerName, String methodName) {
+    private static List<HirFunction> resolveMethods(
+            HirModule module, String ownerName, String methodName) {
         HirClass cls = findClassByName(module, ownerName);
         if (cls != null) {
             Set<Integer> ids = new LinkedHashSet<>();
@@ -104,7 +113,8 @@ public final class MirCanonicalPrinter {
                 if (fn != null) result.add(fn);
             }
             if (result.isEmpty()) {
-                throw new IllegalArgumentException("No MIR method '" + ownerName + "." + methodName + "'");
+                throw new IllegalArgumentException(
+                        "No MIR method '" + ownerName + "." + methodName + "'");
             }
             return result;
         }
@@ -121,12 +131,19 @@ public final class MirCanonicalPrinter {
                 if (fn != null) result.add(fn);
             }
             if (result.isEmpty()) {
-                throw new IllegalArgumentException("No MIR default method '" + ownerName + "." + methodName + "'");
+                throw new IllegalArgumentException(
+                        "No MIR default method '" + ownerName + "." + methodName + "'");
             }
             return result;
         }
-        throw new IllegalArgumentException("No MIR type named '" + ownerName + "' for method '" + methodName
-                + "' (available: " + availableTargets(module) + ")");
+        throw new IllegalArgumentException(
+                "No MIR type named '"
+                        + ownerName
+                        + "' for method '"
+                        + methodName
+                        + "' (available: "
+                        + availableTargets(module)
+                        + ")");
     }
 
     private static HirClass findClassByName(HirModule module, String name) {
@@ -168,8 +185,12 @@ public final class MirCanonicalPrinter {
     private static void printModule(StringBuilder sb, MirModule mirModule) {
         HirModule hir = mirModule.hir();
         String label = hir.sourceName();
-        if (label == null || label.isBlank() || "<unknown>".equals(label) || "<script>".equals(label)
-                || "<input>".equals(label) || SCRIPT_SELF.matcher(label).matches()) {
+        if (label == null
+                || label.isBlank()
+                || "<unknown>".equals(label)
+                || "<script>".equals(label)
+                || "<input>".equals(label)
+                || SCRIPT_SELF.matcher(label).matches()) {
             label = "<main>";
         }
         sb.append("module ").append(label).append('\n');
@@ -179,7 +200,8 @@ public final class MirCanonicalPrinter {
         }
     }
 
-    private static void printTypeDef(StringBuilder sb, MirModule mirModule, IrTarget.TypeDef target, int indent) {
+    private static void printTypeDef(
+            StringBuilder sb, MirModule mirModule, IrTarget.TypeDef target, int indent) {
         HirModule hir = mirModule.hir();
         HirClass cls = findClassByName(hir, target.name());
         if (cls != null) {
@@ -233,14 +255,18 @@ public final class MirCanonicalPrinter {
 
     // ------------------------------------------------------------------ function printer
 
-    private static void printFunctionTarget(StringBuilder sb, MirModule mirModule, HirFunction hirFn, int indent) {
+    private static void printFunctionTarget(
+            StringBuilder sb, MirModule mirModule, HirFunction hirFn, int indent) {
         MirFunction fn = mirModule.function(hirFn.id());
         String displayName = formatFnName(mirModule.hir(), hirFn);
         if (fn == null) {
             String reason = mirModule.fallbackReason(hirFn.id());
             indent(sb, indent);
-            sb.append("fn ").append(displayName)
-                    .append(" ; [not-lowered: ").append(reason != null ? reason : "unknown").append(']');
+            sb.append("fn ")
+                    .append(displayName)
+                    .append(" ; [not-lowered: ")
+                    .append(reason != null ? reason : "unknown")
+                    .append(']');
             return;
         }
         printFunction(sb, mirModule.hir(), fn, displayName, indent);
@@ -248,13 +274,17 @@ public final class MirCanonicalPrinter {
 
     public static String printFunction(HirModule hir, MirFunction fn) {
         HirFunction hirFn = hir.function(fn.hirFunctionId());
-        String displayName = hirFn != null ? formatFnName(hir, hirFn) : (fn.name() != null ? fn.name() : "<anon>");
+        String displayName =
+                hirFn != null
+                        ? formatFnName(hir, hirFn)
+                        : (fn.name() != null ? fn.name() : "<anon>");
         StringBuilder sb = new StringBuilder();
         printFunction(sb, hir, fn, displayName, 0);
         return sb.toString().stripTrailing();
     }
 
-    private static void printFunction(StringBuilder sb, HirModule hir, MirFunction fn, String displayName, int indent) {
+    private static void printFunction(
+            StringBuilder sb, HirModule hir, MirFunction fn, String displayName, int indent) {
         MirCfg cfg = MirCfg.analyze(fn);
         List<MirBlock> rpo = cfg.rpo();
 
@@ -305,7 +335,9 @@ public final class MirCanonicalPrinter {
                 for (int i = 0; i < b.params().size(); i++) {
                     if (i > 0) sb.append(", ");
                     MirVal bp = b.params().get(i);
-                    sb.append(valNames.get(bp.id())).append(": ").append(MirVal.kindLabel(bp.kind()));
+                    sb.append(valNames.get(bp.id()))
+                            .append(": ")
+                            .append(MirVal.kindLabel(bp.kind()));
                 }
                 sb.append(')');
             }
@@ -317,7 +349,8 @@ public final class MirCanonicalPrinter {
                 for (int i = 0; i < b.handlers().size(); i++) {
                     if (i > 0) sb.append(", ");
                     MirHandler h = b.handlers().get(i);
-                    sb.append(shortJvmType(h.catchJvmType())).append(" -> ")
+                    sb.append(shortJvmType(h.catchJvmType()))
+                            .append(" -> ")
                             .append(blockNames.getOrDefault(h.handlerBlockId(), "bb?"));
                 }
                 sb.append(']');
@@ -335,7 +368,8 @@ public final class MirCanonicalPrinter {
         }
     }
 
-    private static void printInst(StringBuilder sb, HirModule hir, MirInst inst, Map<Integer, String> vals) {
+    private static void printInst(
+            StringBuilder sb, HirModule hir, MirInst inst, Map<Integer, String> vals) {
         if (inst.result() != null) {
             MirVal r = inst.result();
             sb.append(val(vals, r)).append(": ").append(MirVal.kindLabel(r.kind())).append(" = ");
@@ -345,25 +379,58 @@ public final class MirCanonicalPrinter {
             case MirInst.Copy c -> sb.append("copy ").append(val(vals, c.source()));
             case MirInst.Unary u -> {
                 String op = u.op() == HirExpr.UnaryOp.NEGATE ? "neg" : "not";
-                sb.append(op).append(' ').append(val(vals, u.operand())).append(" {").append(u.effect().canonicalTag()).append('}');
+                sb.append(op)
+                        .append(' ')
+                        .append(val(vals, u.operand()))
+                        .append(" {")
+                        .append(u.effect().canonicalTag())
+                        .append('}');
             }
             case MirInst.Binary b -> {
-                String op = b.stringConcat() ? "strcat"
-                        : (b.op() == HirExpr.BinaryOp.FLOOR_DIV ? "floordiv" : b.op().name().toLowerCase(Locale.ROOT));
-                sb.append(op).append(' ').append(val(vals, b.left())).append(", ").append(val(vals, b.right()))
-                        .append(" {").append(b.effect().canonicalTag()).append('}');
+                String op =
+                        b.stringConcat()
+                                ? "strcat"
+                                : (b.op() == HirExpr.BinaryOp.FLOOR_DIV
+                                        ? "floordiv"
+                                        : b.op().name().toLowerCase(Locale.ROOT));
+                sb.append(op)
+                        .append(' ')
+                        .append(val(vals, b.left()))
+                        .append(", ")
+                        .append(val(vals, b.right()))
+                        .append(" {")
+                        .append(b.effect().canonicalTag())
+                        .append('}');
             }
-            case MirInst.Widen w -> sb.append("widen#").append(w.wideningRank()).append(' ').append(val(vals, w.operand()));
-            case MirInst.Convert c -> sb.append("convert.").append(MirVal.kindLabel(c.targetKind())).append(' ').append(val(vals, c.operand()));
-            case MirInst.Narrow n -> sb.append("narrow.").append(n.narrowKind() == MirInst.NarrowKind.NON_NULL ? "nonnull" : "is")
-                    .append(' ').append(val(vals, n.operand()))
-                    .append(" <").append(sanitizeDescriptor(n.targetDesc())).append('>');
+            case MirInst.Widen w ->
+                    sb.append("widen#")
+                            .append(w.wideningRank())
+                            .append(' ')
+                            .append(val(vals, w.operand()));
+            case MirInst.Convert c ->
+                    sb.append("convert.")
+                            .append(MirVal.kindLabel(c.targetKind()))
+                            .append(' ')
+                            .append(val(vals, c.operand()));
+            case MirInst.Narrow n ->
+                    sb.append("narrow.")
+                            .append(
+                                    n.narrowKind() == MirInst.NarrowKind.NON_NULL
+                                            ? "nonnull"
+                                            : "is")
+                            .append(' ')
+                            .append(val(vals, n.operand()))
+                            .append(" <")
+                            .append(sanitizeDescriptor(n.targetDesc()))
+                            .append('>');
             case MirInst.CheckCast c -> {
                 sb.append("checkcast ").append(val(vals, c.operand()));
                 if (c.descriptor() != null) {
                     sb.append(" <").append(sanitizeDescriptor(c.descriptor())).append('>');
                 } else if (c.samTarget() != null) {
-                    sb.append(" <sam:").append(c.samTarget().samInterface().getSimpleName()).append('>');
+                    sb.append(" <sam:")
+                            .append(c.samTarget().samInterface().getSimpleName())
+                            .append('>');
                 }
             }
             case MirInst.NonNull n -> sb.append("nonnull ").append(val(vals, n.operand()));
@@ -379,13 +446,24 @@ public final class MirCanonicalPrinter {
                 sb.append('>');
             }
             case MirInst.LoadField lf -> {
-                sb.append("load_field ").append(val(vals, lf.receiver())).append('.').append(lf.memberName())
-                        .append(" {").append(lf.effect().canonicalTag()).append('}');
+                sb.append("load_field ")
+                        .append(val(vals, lf.receiver()))
+                        .append('.')
+                        .append(lf.memberName())
+                        .append(" {")
+                        .append(lf.effect().canonicalTag())
+                        .append('}');
             }
             case MirInst.StoreField sf -> {
-                sb.append("store_field ").append(val(vals, sf.receiver())).append('.').append(sf.memberName())
-                        .append(", ").append(val(vals, sf.value()))
-                        .append(" {").append(sf.effect().canonicalTag()).append('}');
+                sb.append("store_field ")
+                        .append(val(vals, sf.receiver()))
+                        .append('.')
+                        .append(sf.memberName())
+                        .append(", ")
+                        .append(val(vals, sf.value()))
+                        .append(" {")
+                        .append(sf.effect().canonicalTag())
+                        .append('}');
             }
             case MirInst.LoadJavaField lj -> {
                 Field f = lj.target().field();
@@ -405,20 +483,44 @@ public final class MirCanonicalPrinter {
                 } else {
                     sb.append(f.getDeclaringClass().getSimpleName()).append('.');
                 }
-                sb.append(f.getName()).append(", ").append(val(vals, sj.value()))
-                        .append(" {").append(sj.effect().canonicalTag()).append('}');
+                sb.append(f.getName())
+                        .append(", ")
+                        .append(val(vals, sj.value()))
+                        .append(" {")
+                        .append(sj.effect().canonicalTag())
+                        .append('}');
             }
-            case MirInst.ArrayGet ag -> sb.append("array_get ").append(val(vals, ag.array()))
-                    .append('[').append(val(vals, ag.index())).append("] {").append(ag.effect().canonicalTag()).append('}');
-            case MirInst.ArraySet as -> sb.append("array_set ").append(val(vals, as.array()))
-                    .append('[').append(val(vals, as.index())).append("] = ").append(val(vals, as.value()))
-                    .append(" {").append(as.effect().canonicalTag()).append('}');
-            case MirInst.ArrayLen al -> sb.append("array_len ").append(val(vals, al.array()))
-                    .append(" {").append(al.effect().canonicalTag()).append('}');
+            case MirInst.ArrayGet ag ->
+                    sb.append("array_get ")
+                            .append(val(vals, ag.array()))
+                            .append('[')
+                            .append(val(vals, ag.index()))
+                            .append("] {")
+                            .append(ag.effect().canonicalTag())
+                            .append('}');
+            case MirInst.ArraySet as ->
+                    sb.append("array_set ")
+                            .append(val(vals, as.array()))
+                            .append('[')
+                            .append(val(vals, as.index()))
+                            .append("] = ")
+                            .append(val(vals, as.value()))
+                            .append(" {")
+                            .append(as.effect().canonicalTag())
+                            .append('}');
+            case MirInst.ArrayLen al ->
+                    sb.append("array_len ")
+                            .append(val(vals, al.array()))
+                            .append(" {")
+                            .append(al.effect().canonicalTag())
+                            .append('}');
             case MirInst.CallBabble cb -> {
                 String name;
                 if (cb.externalTarget() != null) {
-                    name = cb.externalTarget().moduleName() + "#" + cb.externalTarget().exportName();
+                    name =
+                            cb.externalTarget().moduleName()
+                                    + "#"
+                                    + cb.externalTarget().exportName();
                 } else {
                     HirFunction tgt = hir.function(cb.targetFunctionId());
                     name = tgt != null ? formatFnName(hir, tgt) : ("fn#" + cb.targetFunctionId());
@@ -428,12 +530,20 @@ public final class MirCanonicalPrinter {
                 sb.append(") {").append(cb.effect().canonicalTag()).append('}');
             }
             case MirInst.CallMethod cm -> {
-                sb.append("call_method ").append(val(vals, cm.receiver())).append('.').append(cm.memberName()).append('(');
+                sb.append("call_method ")
+                        .append(val(vals, cm.receiver()))
+                        .append('.')
+                        .append(cm.memberName())
+                        .append('(');
                 appendVals(sb, cm.args(), vals);
                 sb.append(") {").append(cm.effect().canonicalTag()).append('}');
             }
             case MirInst.CallInterface ci -> {
-                sb.append("call_iface ").append(val(vals, ci.receiver())).append('.').append(ci.memberName()).append('(');
+                sb.append("call_iface ")
+                        .append(val(vals, ci.receiver()))
+                        .append('.')
+                        .append(ci.memberName())
+                        .append('(');
                 appendVals(sb, ci.args(), vals);
                 sb.append(") {").append(ci.effect().canonicalTag()).append('}');
             }
@@ -458,38 +568,70 @@ public final class MirCanonicalPrinter {
             case MirInst.RecordNew rn -> {
                 HirClass cls = rn.classId() >= 0 ? hir.clazz(rn.classId()) : null;
                 String clsName = cls != null ? cls.shape().name() : shortJvmType(rn.classJvmName());
-                sb.append("record_new ").append(clsName)
-                        .append('[').append(val(vals, rn.classRef())).append("](");
+                sb.append("record_new ")
+                        .append(clsName)
+                        .append('[')
+                        .append(val(vals, rn.classRef()))
+                        .append("](");
                 appendVals(sb, rn.args(), vals);
                 sb.append(") {").append(rn.effect().canonicalTag()).append('}');
             }
             case MirInst.RecordReuse rr -> {
                 HirClass cls = rr.classId() >= 0 ? hir.clazz(rr.classId()) : null;
                 String clsName = cls != null ? cls.shape().name() : shortJvmType(rr.classJvmName());
-                sb.append("record_reuse ").append(val(vals, rr.target())).append(" as ").append(clsName).append('(');
+                sb.append("record_reuse ")
+                        .append(val(vals, rr.target()))
+                        .append(" as ")
+                        .append(clsName)
+                        .append('(');
                 appendVals(sb, rr.args(), vals);
                 sb.append(") {").append(rr.effect().canonicalTag()).append('}');
             }
-            case MirInst.RangeNew rn -> sb.append("range_new ")
-                    .append(rn.inclusive() ? ".." : "..<").append(' ')
-                    .append(val(vals, rn.start())).append(", ").append(val(vals, rn.end()))
-                    .append(" {").append(rn.effect().canonicalTag()).append('}');
+            case MirInst.RangeNew rn ->
+                    sb.append("range_new ")
+                            .append(rn.inclusive() ? ".." : "..<")
+                            .append(' ')
+                            .append(val(vals, rn.start()))
+                            .append(", ")
+                            .append(val(vals, rn.end()))
+                            .append(" {")
+                            .append(rn.effect().canonicalTag())
+                            .append('}');
             case MirInst.Move m -> sb.append("move ").append(val(vals, m.operand()));
             case MirInst.Freeze f -> sb.append("freeze ").append(val(vals, f.operand()));
             case MirInst.SlotDecl sd -> sb.append("slot_decl ").append(sd.var().name());
-            case MirInst.SlotRead sr -> sb.append("slot_read ").append(sr.var().name())
-                    .append(" {").append(sr.effect().canonicalTag()).append('}');
-            case MirInst.SlotWrite sw -> sb.append(sw.opKind() == MirInst.SlotOpKind.INIT ? "slot_init " : "slot_write ")
-                    .append(sw.var().name()).append(", ").append(val(vals, sw.value()))
-                    .append(" {").append(sw.effect().canonicalTag()).append('}');
-            case MirInst.ScopeEnter se -> sb.append("scope_enter [").append(String.join(", ", se.declaredNames())).append(']');
-            case MirInst.ScopeExit sx -> sb.append("scope_exit ").append(val(vals, sx.prevNamespace()));
-            case MirInst.ForIterInit fi -> sb.append("for_init.").append(fi.target().kind().name().toLowerCase(Locale.ROOT))
-                    .append(' ').append(val(vals, fi.iterable()));
+            case MirInst.SlotRead sr ->
+                    sb.append("slot_read ")
+                            .append(sr.var().name())
+                            .append(" {")
+                            .append(sr.effect().canonicalTag())
+                            .append('}');
+            case MirInst.SlotWrite sw ->
+                    sb.append(sw.opKind() == MirInst.SlotOpKind.INIT ? "slot_init " : "slot_write ")
+                            .append(sw.var().name())
+                            .append(", ")
+                            .append(val(vals, sw.value()))
+                            .append(" {")
+                            .append(sw.effect().canonicalTag())
+                            .append('}');
+            case MirInst.ScopeEnter se ->
+                    sb.append("scope_enter [")
+                            .append(String.join(", ", se.declaredNames()))
+                            .append(']');
+            case MirInst.ScopeExit sx ->
+                    sb.append("scope_exit ").append(val(vals, sx.prevNamespace()));
+            case MirInst.ForIterInit fi ->
+                    sb.append("for_init.")
+                            .append(fi.target().kind().name().toLowerCase(Locale.ROOT))
+                            .append(' ')
+                            .append(val(vals, fi.iterable()));
             case MirInst.ForIterHasNext fh -> {
                 sb.append("for_has_next ").append(val(vals, fh.iterator()));
                 if (fh.index() != null) {
-                    sb.append(", ").append(val(vals, fh.index())).append(", ").append(val(vals, fh.length()));
+                    sb.append(", ")
+                            .append(val(vals, fh.index()))
+                            .append(", ")
+                            .append(val(vals, fh.length()));
                 }
             }
             case MirInst.ForIterNext fn -> {
@@ -498,16 +640,33 @@ public final class MirCanonicalPrinter {
                     sb.append(", ").append(val(vals, fn.index()));
                 }
             }
-            case MirInst.UnwrapThrown ut -> sb.append("unwrap_thrown ").append(val(vals, ut.thrownExn()));
-            case MirInst.CatchMatch cm -> sb.append("catch_match ").append(val(vals, cm.value()))
-                    .append(" <").append(formatCatchTarget(cm.target())).append('>');
-            case MirInst.AddSuppressed as -> sb.append("add_suppressed ").append(val(vals, as.primary()))
-                    .append(", ").append(val(vals, as.secondary()));
-            case MirInst.NameRead nr -> sb.append("name_read ").append(nr.name())
-                    .append(" {").append(nr.effect().canonicalTag()).append('}');
-            case MirInst.LoadExport le -> sb.append("export_get ").append(val(vals, le.module()))
-                    .append('.').append(le.target().name())
-                    .append(" {").append(le.effect().canonicalTag()).append('}');
+            case MirInst.UnwrapThrown ut ->
+                    sb.append("unwrap_thrown ").append(val(vals, ut.thrownExn()));
+            case MirInst.CatchMatch cm ->
+                    sb.append("catch_match ")
+                            .append(val(vals, cm.value()))
+                            .append(" <")
+                            .append(formatCatchTarget(cm.target()))
+                            .append('>');
+            case MirInst.AddSuppressed as ->
+                    sb.append("add_suppressed ")
+                            .append(val(vals, as.primary()))
+                            .append(", ")
+                            .append(val(vals, as.secondary()));
+            case MirInst.NameRead nr ->
+                    sb.append("name_read ")
+                            .append(nr.name())
+                            .append(" {")
+                            .append(nr.effect().canonicalTag())
+                            .append('}');
+            case MirInst.LoadExport le ->
+                    sb.append("export_get ")
+                            .append(val(vals, le.module()))
+                            .append('.')
+                            .append(le.target().name())
+                            .append(" {")
+                            .append(le.effect().canonicalTag())
+                            .append('}');
             case MirInst.NameAssign na -> {
                 sb.append("name_assign ").append(na.name());
                 if (na.operator() != null) {
@@ -525,8 +684,8 @@ public final class MirCanonicalPrinter {
         }
     }
 
-    private static void formatOpaqueOperands(StringBuilder sb, HirModule hir, MirInst.OpaqueExpr op,
-                                             Map<Integer, String> vals) {
+    private static void formatOpaqueOperands(
+            StringBuilder sb, HirModule hir, MirInst.OpaqueExpr op, Map<Integer, String> vals) {
         List<MirVal> ops = op.operands();
         switch (op.template()) {
             case HirExpr.ModuleExportGet mg -> {
@@ -581,25 +740,35 @@ public final class MirCanonicalPrinter {
             }
             case HirExpr.ClassExpr ce -> {
                 HirClass cls = hir.clazz(ce.classId());
-                sb.append(cls != null && cls.shape().name() != null ? cls.shape().name() : "<class>");
+                sb.append(
+                        cls != null && cls.shape().name() != null ? cls.shape().name() : "<class>");
             }
             case HirExpr.InterfaceExpr ie -> {
                 var iface = hir.iface(ie.interfaceId());
-                sb.append(iface != null && iface.shape().name() != null ? iface.shape().name() : "<interface>");
+                sb.append(
+                        iface != null && iface.shape().name() != null
+                                ? iface.shape().name()
+                                : "<interface>");
             }
             default -> appendVals(sb, ops, vals);
         }
     }
 
-    private static void printTerminator(StringBuilder sb, HirModule hir, MirTerminator term,
-                                        Map<Integer, String> blocks, Map<Integer, String> vals) {
+    private static void printTerminator(
+            StringBuilder sb,
+            HirModule hir,
+            MirTerminator term,
+            Map<Integer, String> blocks,
+            Map<Integer, String> vals) {
         switch (term) {
             case MirTerminator.Br br -> {
                 sb.append("br ").append(blocks.getOrDefault(br.targetBlock(), "bb?"));
                 appendEdgeArgs(sb, br.args(), vals);
             }
             case MirTerminator.BrIf bi -> {
-                sb.append("br_if ").append(val(vals, bi.cond())).append(", ")
+                sb.append("br_if ")
+                        .append(val(vals, bi.cond()))
+                        .append(", ")
                         .append(blocks.getOrDefault(bi.thenBlock(), "bb?"));
                 appendEdgeArgs(sb, bi.thenArgs(), vals);
                 sb.append(", ").append(blocks.getOrDefault(bi.elseBlock(), "bb?"));
@@ -611,14 +780,18 @@ public final class MirCanonicalPrinter {
                     if (i > 0) {
                         sb.append(", ");
                     }
-                    sb.append(sw.keys()[i]).append(" -> ").append(blocks.getOrDefault(sw.targetBlocks()[i], "bb?"));
+                    sb.append(sw.keys()[i])
+                            .append(" -> ")
+                            .append(blocks.getOrDefault(sw.targetBlocks()[i], "bb?"));
                     appendEdgeArgs(sb, sw.targetArgs().get(i), vals);
                 }
                 sb.append("] default -> ").append(blocks.getOrDefault(sw.defaultBlock(), "bb?"));
                 appendEdgeArgs(sb, sw.defaultArgs(), vals);
             }
             case MirTerminator.Ret ret -> sb.append("ret ").append(val(vals, ret.value()));
-            case MirTerminator.Throw th -> sb.append(th.isJavaThrowable() ? "rethrow " : "throw ").append(val(vals, th.value()));
+            case MirTerminator.Throw th ->
+                    sb.append(th.isJavaThrowable() ? "rethrow " : "throw ")
+                            .append(val(vals, th.value()));
             case MirTerminator.TailCall tc -> {
                 HirFunction tgt = hir.function(tc.functionId());
                 String name = tgt != null ? formatFnName(hir, tgt) : ("fn#" + tc.functionId());
@@ -630,7 +803,8 @@ public final class MirCanonicalPrinter {
         }
     }
 
-    private static void appendEdgeArgs(StringBuilder sb, List<MirVal> args, Map<Integer, String> vals) {
+    private static void appendEdgeArgs(
+            StringBuilder sb, List<MirVal> args, Map<Integer, String> vals) {
         if (args.isEmpty()) {
             return;
         }
@@ -710,7 +884,11 @@ public final class MirCanonicalPrinter {
         if (ct.babbleTargets() != null && !ct.babbleTargets().isEmpty()) {
             List<String> names = new ArrayList<>(ct.babbleTargets().size());
             for (LoweringTargets.IsTarget t : ct.babbleTargets()) {
-                names.add(sanitizeDescriptor(t.typeId() != null ? t.typeId() : shortJvmType(t.jvmInternalName())));
+                names.add(
+                        sanitizeDescriptor(
+                                t.typeId() != null
+                                        ? t.typeId()
+                                        : shortJvmType(t.jvmInternalName())));
             }
             return String.join("|", names);
         }

@@ -1,5 +1,10 @@
 package org.babblelang.tests;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CharRange;
 import org.babblelang.runtime.ComparableRange;
@@ -12,16 +17,10 @@ import org.babblelang.runtime.Range;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.NoSuchElementException;
-
 /**
- * Direct unit tests for {@code BIP031-I1} runtime classes ({@link Range}, {@link IntRange},
- * {@link LongRange}, {@link CharRange}, {@link DoubleRange}, {@link ComparableRange}) and
- * {@link Operators#mod} / {@link Operators#floorDiv}.
+ * Direct unit tests for {@code BIP031-I1} runtime classes ({@link Range}, {@link IntRange}, {@link
+ * LongRange}, {@link CharRange}, {@link DoubleRange}, {@link ComparableRange}) and {@link
+ * Operators#mod} / {@link Operators#floorDiv}.
  */
 public class RangeRuntimeTestCase {
 
@@ -64,17 +63,20 @@ public class RangeRuntimeTestCase {
         Assertions.assertNotEquals(Range.ofInt(0, 10, false), Range.ofInt(0, 9, true));
         Assertions.assertEquals("0..<10", Range.ofInt(0, 10, false).toString());
         Assertions.assertEquals("1..10", Range.ofInt(1, 10, true).toString());
-        Assertions.assertEquals("(0..<5).reversed()", Range.ofInt(0, 5, false).reversed().toString());
+        Assertions.assertEquals(
+                "(0..<5).reversed()", Range.ofInt(0, 5, false).reversed().toString());
 
         // Overflow-safe stepping near MAX_VALUE and full MIN_VALUE..MAX_VALUE containment.
         IntRange<Integer> bigStep = Range.ofInt(0, Integer.MAX_VALUE, false).step(1_000_000_000);
         Assertions.assertEquals(List.of(0, 1_000_000_000, 2_000_000_000), collect(bigStep));
-        Assertions.assertEquals(List.of(2_000_000_000, 1_000_000_000, 0), collect(bigStep.reversed()));
+        Assertions.assertEquals(
+                List.of(2_000_000_000, 1_000_000_000, 0), collect(bigStep.reversed()));
 
         IntRange<Integer> maxEnd = Range.ofInt(Integer.MAX_VALUE - 1, Integer.MAX_VALUE, true);
         Assertions.assertEquals(List.of(Integer.MAX_VALUE - 1, Integer.MAX_VALUE), collect(maxEnd));
 
-        IntRange<Integer> fullStep3 = Range.ofInt(Integer.MIN_VALUE, Integer.MAX_VALUE, true).step(3);
+        IntRange<Integer> fullStep3 =
+                Range.ofInt(Integer.MIN_VALUE, Integer.MAX_VALUE, true).step(3);
         Assertions.assertTrue(fullStep3.containsInt(Integer.MIN_VALUE));
         Assertions.assertTrue(fullStep3.containsInt(Integer.MAX_VALUE));
         Assertions.assertFalse(fullStep3.containsInt(Integer.MAX_VALUE - 1));
@@ -98,9 +100,13 @@ public class RangeRuntimeTestCase {
         Assertions.assertFalse(shortRange.contains(10));
 
         // Non-positive step throws BabbleException.
-        BabbleException ex0 = Assertions.assertThrows(BabbleException.class, () -> Range.ofInt(0, 10, false).step(0));
+        BabbleException ex0 =
+                Assertions.assertThrows(
+                        BabbleException.class, () -> Range.ofInt(0, 10, false).step(0));
         Assertions.assertEquals("Range step must be positive : 0", ex0.getMessage());
-        BabbleException exNeg = Assertions.assertThrows(BabbleException.class, () -> Range.ofInt(0, 10, false).step(-2));
+        BabbleException exNeg =
+                Assertions.assertThrows(
+                        BabbleException.class, () -> Range.ofInt(0, 10, false).step(-2));
         Assertions.assertEquals("Range step must be positive : -2", exNeg.getMessage());
     }
 
@@ -113,11 +119,20 @@ public class RangeRuntimeTestCase {
         Assertions.assertFalse(lr.contains(0));
 
         LongRange tail = Range.ofLong(Long.MAX_VALUE - 2L, Long.MAX_VALUE, true);
-        Assertions.assertEquals(List.of(Long.MAX_VALUE - 2L, Long.MAX_VALUE - 1L, Long.MAX_VALUE), collect(tail));
-        Assertions.assertEquals(List.of(Long.MAX_VALUE, Long.MAX_VALUE - 1L, Long.MAX_VALUE - 2L), collect(tail.reversed()));
+        Assertions.assertEquals(
+                List.of(Long.MAX_VALUE - 2L, Long.MAX_VALUE - 1L, Long.MAX_VALUE), collect(tail));
+        Assertions.assertEquals(
+                List.of(Long.MAX_VALUE, Long.MAX_VALUE - 1L, Long.MAX_VALUE - 2L),
+                collect(tail.reversed()));
 
-        LongRange stepped = Range.ofLong(0L, Long.MAX_VALUE, false).step(3_000_000_000_000_000_000L);
-        Assertions.assertEquals(List.of(0L, 3_000_000_000_000_000_000L, 6_000_000_000_000_000_000L, 9_000_000_000_000_000_000L),
+        LongRange stepped =
+                Range.ofLong(0L, Long.MAX_VALUE, false).step(3_000_000_000_000_000_000L);
+        Assertions.assertEquals(
+                List.of(
+                        0L,
+                        3_000_000_000_000_000_000L,
+                        6_000_000_000_000_000_000L,
+                        9_000_000_000_000_000_000L),
                 collect(stepped));
 
         CharRange cr = Range.ofChar('a', 'e', true).step(2);
@@ -156,7 +171,8 @@ public class RangeRuntimeTestCase {
         Assertions.assertFalse(sr.contains(null));
         Assertions.assertEquals("alpha..omega", sr.toString());
 
-        ComparableRange<LocalDate> dates = Range.ofComparable(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), false);
+        ComparableRange<LocalDate> dates =
+                Range.ofComparable(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), false);
         Assertions.assertTrue(dates.contains(LocalDate.of(2026, 6, 15)));
         Assertions.assertFalse(dates.contains(LocalDate.of(2026, 12, 31)));
     }
@@ -187,9 +203,12 @@ public class RangeRuntimeTestCase {
         // Zero divisor throws ArithmeticException; float/double throw BabbleException.
         Assertions.assertThrows(ArithmeticException.class, () -> Operators.mod(1, 0, site));
         Assertions.assertThrows(ArithmeticException.class, () -> Operators.floorDiv(1, 0, site));
-        BabbleException badDouble = Assertions.assertThrows(BabbleException.class, () -> Operators.mod(1.5, 2, site));
+        BabbleException badDouble =
+                Assertions.assertThrows(BabbleException.class, () -> Operators.mod(1.5, 2, site));
         Assertions.assertEquals("Not an integer : a", badDouble.getMessage());
-        BabbleException badFloat = Assertions.assertThrows(BabbleException.class, () -> Operators.floorDiv(1, 2.0f, site));
+        BabbleException badFloat =
+                Assertions.assertThrows(
+                        BabbleException.class, () -> Operators.floorDiv(1, 2.0f, site));
         Assertions.assertEquals("Not an integer : b", badFloat.getMessage());
 
         Assertions.assertEquals("mod", Operators.method("mod"));

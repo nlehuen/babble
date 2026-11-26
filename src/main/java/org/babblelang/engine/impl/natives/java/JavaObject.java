@@ -1,13 +1,12 @@
 package org.babblelang.engine.impl.natives.java;
 
-import org.babblelang.runtime.BabbleException;
-import org.babblelang.runtime.Scope;
-import org.babblelang.runtime.Slot;
-import org.babblelang.runtime.JavaValue;
-
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
+import org.babblelang.runtime.BabbleException;
+import org.babblelang.runtime.JavaValue;
+import org.babblelang.runtime.Scope;
+import org.babblelang.runtime.Slot;
 
 public class JavaObject implements Scope<Object>, JavaValue {
     private final JavaClass clazz;
@@ -20,8 +19,8 @@ public class JavaObject implements Scope<Object>, JavaValue {
     }
 
     /**
-     * A Java object a host hands to a script, as if the script had constructed it : its
-     * methods can be called. Its class must be public, as they are found through it.
+     * A Java object a host hands to a script, as if the script had constructed it : its methods can
+     * be called. Its class must be public, as they are found through it.
      */
     public static JavaObject of(Object value) {
         return new JavaObject(JavaClass.of(value.getClass()), value);
@@ -57,8 +56,8 @@ public class JavaObject implements Scope<Object>, JavaValue {
     }
 
     /**
-     * {@code value.name} on any Java object, wrapped or not (as Java calls return them) : a
-     * method bound to it, or a member of its class, a static field or a member class.
+     * {@code value.name} on any Java object, wrapped or not (as Java calls return them) : a method
+     * bound to it, or a member of its class, a static field or a member class.
      */
     public static Object member(Object value, String name) {
         return member(JavaClass.of(value.getClass()), value, name);
@@ -70,8 +69,8 @@ public class JavaObject implements Scope<Object>, JavaValue {
     }
 
     /**
-     * {@code target.name = value} on a Java class (a static field), or on a Java object,
-     * wrapped or not (a field of it, or a static one).
+     * {@code target.name = value} on a Java class (a static field), or on a Java object, wrapped or
+     * not (a field of it, or a static one).
      */
     public static void assign(Object target, String name, Object value) {
         if (target instanceof JavaClass clazz) {

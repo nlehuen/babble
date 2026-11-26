@@ -5,19 +5,17 @@ import org.babblelang.engine.impl.natives.java.JavaObject;
 
 /**
  * Member selection, {@code target.name}, and member assignment, {@code target.name = v}.
- * <p>
- * {@code this.name} takes a separate path, {@link #selectOwn} and {@link #assignOwn},
- * which is the only one that may reach a private member.
+ *
+ * <p>{@code this.name} takes a separate path, {@link #selectOwn} and {@link #assignOwn}, which is
+ * the only one that may reach a private member.
  */
 public final class Members {
-    private Members() {
-    }
+    private Members() {}
 
     /**
-     * Objects, class and interface values, namespaces, Java scopes and Java objects have
-     * members. Babble's own values (null, numbers, booleans, strings, functions) have none :
-     * selecting on them is a language-level error, not a ClassCastException escaping the
-     * runtime.
+     * Objects, class and interface values, namespaces, Java scopes and Java objects have members.
+     * Babble's own values (null, numbers, booleans, strings, functions) have none : selecting on
+     * them is a language-level error, not a ClassCastException escaping the runtime.
      */
     public static Object select(Object target, String name, String targetText) {
         if (target instanceof HasMembers members) {
@@ -44,15 +42,19 @@ public final class Members {
     }
 
     private static boolean isBoxedPrimitive(Object target) {
-        return target instanceof Byte || target instanceof Short
-                || target instanceof Integer || target instanceof Long
-                || target instanceof Float || target instanceof Double
-                || target instanceof Boolean || target instanceof Character;
+        return target instanceof Byte
+                || target instanceof Short
+                || target instanceof Integer
+                || target instanceof Long
+                || target instanceof Float
+                || target instanceof Double
+                || target instanceof Boolean
+                || target instanceof Character;
     }
 
     /**
-     * A Java object with Java members (including {@code String}), as opposed to Babble's
-     * memberless values: null, the 8 primitive scalars, and callables (BIP011-D5).
+     * A Java object with Java members (including {@code String}), as opposed to Babble's memberless
+     * values: null, the 8 primitive scalars, and callables (BIP011-D5).
      */
     private static boolean isJavaObject(Object target) {
         return target != null && !isBoxedPrimitive(target) && !(target instanceof Callable);
@@ -70,12 +72,14 @@ public final class Members {
     }
 
     /**
-     * Checks the target of a member assignment. This runs before the assigned value is
-     * evaluated, as the target comes first in the source.
+     * Checks the target of a member assignment. This runs before the assigned value is evaluated,
+     * as the target comes first in the source.
      */
     public static Object assignable(Object target, String targetText) {
-        if (!(target instanceof HasMembers) && !BabbleObjects.isCompiledInstance(target)
-                && !(target instanceof Scope<?>) && !isJavaObject(target)) {
+        if (!(target instanceof HasMembers)
+                && !BabbleObjects.isCompiledInstance(target)
+                && !(target instanceof Scope<?>)
+                && !isJavaObject(target)) {
             throw new BabbleException("Not an assignable scope : " + targetText);
         }
         return target;
@@ -87,7 +91,9 @@ public final class Members {
             members.setMember(name, value, false);
         } else if (BabbleObjects.isCompiledInstance(target)) {
             BabbleObjects.setMember(target, name, value, false);
-        } else if (target instanceof JavaClass || target instanceof JavaValue || isJavaObject(target)) {
+        } else if (target instanceof JavaClass
+                || target instanceof JavaValue
+                || isJavaObject(target)) {
             // A Java field : a class's static one, or an object's.
             JavaObject.assign(target, name, value);
         } else {

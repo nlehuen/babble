@@ -1,9 +1,8 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.analysis.EffectSet;
-
 import java.util.List;
+import org.babblelang.analysis.EffectSet;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Compiled function literal, class/object method, or interface default method in {@link HirModule}
@@ -27,8 +26,7 @@ public record HirFunction(
         int bodyWideningRank,
         EffectSet effects,
         List<HirExpr> body,
-        int line
-) {
+        int line) {
     public static final int MAX_SPREAD = 8;
 
     public HirFunction {
@@ -103,20 +101,69 @@ public record HirFunction(
     }
 
     public HirFunction withBody(List<HirExpr> newBody) {
-        return new HirFunction(id, name, jvmMethodName, ownerClassId, memberName, namespaceScope,
-                declaredNames, declaredVars, capturedVars, params, requiredParams, keywordOnlyStart, restIndex, returnKind,
-                bodyWideningRank, effects, newBody, line);
+        return new HirFunction(
+                id,
+                name,
+                jvmMethodName,
+                ownerClassId,
+                memberName,
+                namespaceScope,
+                declaredNames,
+                declaredVars,
+                capturedVars,
+                params,
+                requiredParams,
+                keywordOnlyStart,
+                restIndex,
+                returnKind,
+                bodyWideningRank,
+                effects,
+                newBody,
+                line);
     }
 
-    public HirFunction withBodyAndDeclaredVars(List<HirExpr> newBody, List<HirVar> newDeclaredVars) {
-        return new HirFunction(id, name, jvmMethodName, ownerClassId, memberName, namespaceScope,
-                declaredNames, newDeclaredVars, capturedVars, params, requiredParams, keywordOnlyStart, restIndex, returnKind,
-                bodyWideningRank, effects, newBody, line);
+    public HirFunction withBodyAndDeclaredVars(
+            List<HirExpr> newBody, List<HirVar> newDeclaredVars) {
+        return new HirFunction(
+                id,
+                name,
+                jvmMethodName,
+                ownerClassId,
+                memberName,
+                namespaceScope,
+                declaredNames,
+                newDeclaredVars,
+                capturedVars,
+                params,
+                requiredParams,
+                keywordOnlyStart,
+                restIndex,
+                returnKind,
+                bodyWideningRank,
+                effects,
+                newBody,
+                line);
     }
 
     public HirFunction withParamsAndBody(List<HirParam> newParams, List<HirExpr> newBody) {
-        return new HirFunction(id, name, jvmMethodName, ownerClassId, memberName, namespaceScope,
-                declaredNames, declaredVars, capturedVars, newParams, requiredParams, keywordOnlyStart, restIndex, returnKind,
-                bodyWideningRank, effects, newBody, line);
+        return new HirFunction(
+                id,
+                name,
+                jvmMethodName,
+                ownerClassId,
+                memberName,
+                namespaceScope,
+                declaredNames,
+                declaredVars,
+                capturedVars,
+                newParams,
+                requiredParams,
+                keywordOnlyStart,
+                restIndex,
+                returnKind,
+                bodyWideningRank,
+                effects,
+                newBody,
+                line);
     }
 }

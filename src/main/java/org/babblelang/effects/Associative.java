@@ -10,5 +10,4 @@ import java.lang.annotation.Target;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.METHOD})
-public @interface Associative {
-}
+public @interface Associative {}

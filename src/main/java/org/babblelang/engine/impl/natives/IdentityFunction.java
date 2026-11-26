@@ -5,9 +5,7 @@ import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.ScriptRuntime;
 
-/**
- * Zero-cost identity built-in used for {@code move(x)} and {@code freeze(x)} (BIP007-I2).
- */
+/** Zero-cost identity built-in used for {@code move(x)} and {@code freeze(x)} (BIP007-I2). */
 public class IdentityFunction implements Callable {
     private final String name;
 

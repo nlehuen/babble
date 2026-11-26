@@ -1,21 +1,19 @@
 package org.babblelang.analysis;
 
-import org.babblelang.runtime.ClassShape;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.babblelang.runtime.ClassShape;
 
 /**
  * ANTLR-free lowering, signature, binding, and hierarchy value types produced by static analysis
- * and consumed by {@code ir.hir}, {@code opt}, and {@code compiler} without importing {@link ScopeAnalysis}
- * (BIP027-D3).
+ * and consumed by {@code ir.hir}, {@code opt}, and {@code compiler} without importing {@link
+ * ScopeAnalysis} (BIP027-D3).
  */
 public final class LoweringTargets {
-    private LoweringTargets() {
-    }
+    private LoweringTargets() {}
 
     /** What a {@code def} defines. */
     public enum DefKind {
@@ -31,25 +29,35 @@ public final class LoweringTargets {
         REQUIRED
     }
 
-    public record DefTarget(DefKind kind, int index) {
-    }
+    public record DefTarget(DefKind kind, int index) {}
 
-    public record JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver, boolean varArgs) {
-        public JavaCallTarget(java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver) {
+    public record JavaCallTarget(
+            java.lang.reflect.Method method,
+            boolean isStatic,
+            boolean unwrapReceiver,
+            boolean varArgs) {
+        public JavaCallTarget(
+                java.lang.reflect.Method method, boolean isStatic, boolean unwrapReceiver) {
             this(method, isStatic, unwrapReceiver, false);
         }
     }
 
-    public record JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor, boolean varArgs) {
+    public record JavaConstructorTarget(
+            java.lang.reflect.Constructor<?> constructor, boolean varArgs) {
         public JavaConstructorTarget(java.lang.reflect.Constructor<?> constructor) {
             this(constructor, false);
         }
     }
 
-    public record JavaFieldTarget(java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {
-    }
+    public record JavaFieldTarget(
+            java.lang.reflect.Field field, boolean isStatic, boolean unwrapReceiver) {}
 
-    public record ModuleExportTarget(int index, String name, String moduleName, String moduleKey, boolean definitelyInitialized) {
+    public record ModuleExportTarget(
+            int index,
+            String name,
+            String moduleName,
+            String moduleKey,
+            boolean definitelyInitialized) {
         public ModuleExportTarget(int index, String name, String moduleName) {
             this(index, name, moduleName, moduleName, false);
         }
@@ -68,8 +76,7 @@ public final class LoweringTargets {
             String jvmMethodName,
             FunctionSignature signature,
             boolean hasMutParam,
-            EffectSet effects
-    ) {
+            EffectSet effects) {
         public ExportedFunctionTarget {
             effects = effects != null ? effects : EffectSet.EMPTY;
         }
@@ -79,12 +86,17 @@ public final class LoweringTargets {
         }
     }
 
-    public record FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits, int restIndex) {
+    public record FunctionSignature(
+            PrimitiveKind[] parameterKinds,
+            PrimitiveKind returnKind,
+            int optionalParamBits,
+            int restIndex) {
         public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind) {
             this(parameterKinds, returnKind, 0, -1);
         }
 
-        public FunctionSignature(PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits) {
+        public FunctionSignature(
+                PrimitiveKind[] parameterKinds, PrimitiveKind returnKind, int optionalParamBits) {
             this(parameterKinds, returnKind, optionalParamBits, -1);
         }
 
@@ -124,7 +136,10 @@ public final class LoweringTargets {
         }
     }
 
-    /** How a spread call argument ({@code ...e}) is adapted to its target parameter ({@code BIP021-D7}). */
+    /**
+     * How a spread call argument ({@code ...e}) is adapted to its target parameter ({@code
+     * BIP021-D7}).
+     */
     public enum SpreadKind {
         NONE,
         AS_IS,
@@ -136,12 +151,16 @@ public final class LoweringTargets {
     }
 
     /** Per-argument spread adaptation metadata ({@code BIP021-D7}, {@code BIP022-D7}). */
-    public record SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType, JavaSamTarget elementSamTarget) {
+    public record SpreadAdapt(
+            SpreadKind kind, Class<?> arrayComponentType, JavaSamTarget elementSamTarget) {
         public static final SpreadAdapt NONE = new SpreadAdapt(SpreadKind.NONE, null, null);
         public static final SpreadAdapt AS_IS = new SpreadAdapt(SpreadKind.AS_IS, null, null);
-        public static final SpreadAdapt TO_ITERABLE = new SpreadAdapt(SpreadKind.TO_ITERABLE, null, null);
-        public static final SpreadAdapt TO_LIST_BORROWED = new SpreadAdapt(SpreadKind.TO_LIST_BORROWED, null, null);
-        public static final SpreadAdapt TO_LIST_COPY = new SpreadAdapt(SpreadKind.TO_LIST_COPY, null, null);
+        public static final SpreadAdapt TO_ITERABLE =
+                new SpreadAdapt(SpreadKind.TO_ITERABLE, null, null);
+        public static final SpreadAdapt TO_LIST_BORROWED =
+                new SpreadAdapt(SpreadKind.TO_LIST_BORROWED, null, null);
+        public static final SpreadAdapt TO_LIST_COPY =
+                new SpreadAdapt(SpreadKind.TO_LIST_COPY, null, null);
 
         public SpreadAdapt(SpreadKind kind, Class<?> arrayComponentType) {
             this(kind, arrayComponentType, null);
@@ -159,29 +178,42 @@ public final class LoweringTargets {
             if (elementSamTarget == null) {
                 return borrowed ? TO_LIST_BORROWED : TO_LIST_COPY;
             }
-            return new SpreadAdapt(borrowed ? SpreadKind.TO_LIST_BORROWED : SpreadKind.TO_LIST_COPY, null, elementSamTarget);
+            return new SpreadAdapt(
+                    borrowed ? SpreadKind.TO_LIST_BORROWED : SpreadKind.TO_LIST_COPY,
+                    null,
+                    elementSamTarget);
         }
 
         public static SpreadAdapt toIterable(JavaSamTarget elementSamTarget) {
-            return elementSamTarget == null ? TO_ITERABLE
+            return elementSamTarget == null
+                    ? TO_ITERABLE
                     : new SpreadAdapt(SpreadKind.TO_ITERABLE, null, elementSamTarget);
         }
 
         public static SpreadAdapt toSam(JavaSamTarget elementSamTarget) {
-            return elementSamTarget == null ? NONE
+            return elementSamTarget == null
+                    ? NONE
                     : new SpreadAdapt(SpreadKind.TO_SAM, null, elementSamTarget);
         }
     }
 
     /**
-     * Static argument binding for a Babble call ({@code BIP021-D4}, {@code BIP021-D5}, {@code BIP021-D7}).
-     * {@code paramToArg[p]} is the source call-argument index {@code 0..argCount-1} supplying
-     * parameter {@code p}, or {@code -1} if parameter {@code p} is omitted (or is the rest parameter).
-     * {@code missingParamBits} has bit {@code p} set when {@code p < 32 && paramToArg[p] < 0 && p != restParam}.
+     * Static argument binding for a Babble call ({@code BIP021-D4}, {@code BIP021-D5}, {@code
+     * BIP021-D7}). {@code paramToArg[p]} is the source call-argument index {@code 0..argCount-1}
+     * supplying parameter {@code p}, or {@code -1} if parameter {@code p} is omitted (or is the
+     * rest parameter). {@code missingParamBits} has bit {@code p} set when {@code p < 32 &&
+     * paramToArg[p] < 0 && p != restParam}.
      */
-    public record ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits,
-                                  int restParam, int[] restArgs, boolean[] restArgIsSpread,
-                                  PrimitiveKind restElementKind, SpreadAdapt[] argAdapts) {
+    public record ArgumentBinding(
+            int[] paramToArg,
+            int argCount,
+            boolean reordered,
+            int missingParamBits,
+            int restParam,
+            int[] restArgs,
+            boolean[] restArgIsSpread,
+            PrimitiveKind restElementKind,
+            SpreadAdapt[] argAdapts) {
         private static final int[] NO_INTS = new int[0];
         private static final boolean[] NO_BOOLS = new boolean[0];
 
@@ -191,8 +223,18 @@ public final class LoweringTargets {
             restElementKind = restElementKind != null ? restElementKind : PrimitiveKind.NONE;
         }
 
-        public ArgumentBinding(int[] paramToArg, int argCount, boolean reordered, int missingParamBits) {
-            this(paramToArg, argCount, reordered, missingParamBits, -1, NO_INTS, NO_BOOLS, PrimitiveKind.NONE, null);
+        public ArgumentBinding(
+                int[] paramToArg, int argCount, boolean reordered, int missingParamBits) {
+            this(
+                    paramToArg,
+                    argCount,
+                    reordered,
+                    missingParamBits,
+                    -1,
+                    NO_INTS,
+                    NO_BOOLS,
+                    PrimitiveKind.NONE,
+                    null);
         }
 
         public boolean hasRest() {
@@ -216,8 +258,12 @@ public final class LoweringTargets {
         }
 
         public SpreadAdapt adaptForArg(int argIndex) {
-            return argAdapts != null && argIndex >= 0 && argIndex < argAdapts.length && argAdapts[argIndex] != null
-                    ? argAdapts[argIndex] : SpreadAdapt.NONE;
+            return argAdapts != null
+                            && argIndex >= 0
+                            && argIndex < argAdapts.length
+                            && argAdapts[argIndex] != null
+                    ? argAdapts[argIndex]
+                    : SpreadAdapt.NONE;
         }
 
         public boolean hasOmitted() {
@@ -234,10 +280,17 @@ public final class LoweringTargets {
         }
 
         public boolean isIdentityPositional() {
-            return !reordered && !hasOmitted() && !hasRest() && !hasSpreads() && paramToArg.length == argCount;
+            return !reordered
+                    && !hasOmitted()
+                    && !hasRest()
+                    && !hasSpreads()
+                    && paramToArg.length == argCount;
         }
 
-        /** Computes the callee's {@code $spec} optional-ordinal mask from {@code calleeOptionalParamBits}. */
+        /**
+         * Computes the callee's {@code $spec} optional-ordinal mask from {@code
+         * calleeOptionalParamBits}.
+         */
         public int specMaskFor(int calleeOptionalParamBits, int calleeParamCount) {
             int mask = 0;
             int optBit = 0;
@@ -253,12 +306,22 @@ public final class LoweringTargets {
         }
     }
 
-    public record ParentRef(String babbleTypeId, Class<?> javaClass) {
-    }
+    public record ParentRef(String babbleTypeId, Class<?> javaClass) {}
 
-    public record MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature,
-                             List<FunctionSignature> overloadSignatures, List<String> overloadSignatureKeys) {
-        public MemberSpec(String name, boolean hasDefault, boolean required, boolean callable, FunctionSignature declaredSignature) {
+    public record MemberSpec(
+            String name,
+            boolean hasDefault,
+            boolean required,
+            boolean callable,
+            FunctionSignature declaredSignature,
+            List<FunctionSignature> overloadSignatures,
+            List<String> overloadSignatureKeys) {
+        public MemberSpec(
+                String name,
+                boolean hasDefault,
+                boolean required,
+                boolean callable,
+                FunctionSignature declaredSignature) {
             this(name, hasDefault, required, callable, declaredSignature, List.of(), List.of());
         }
 
@@ -267,23 +330,45 @@ public final class LoweringTargets {
         }
     }
 
-    public record TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
-                                    Set<String> allBabbleInterfaceIds, Set<Class<?>> allJavaInterfaces,
-                                    Map<String, MemberSpec> interfaceMembers,
-                                    Map<String, Integer> javaBridgeOverloads,
-                                    Map<String, Integer> babbleBridgeOverloads) {
-        public TypeHierarchyInfo(String id, ClassShape.Kind kind, String name, List<ParentRef> directParents,
-                                 Set<String> allBabbleInterfaceIds, Set<Class<?>> allJavaInterfaces,
-                                 Map<String, MemberSpec> interfaceMembers) {
-            this(id, kind, name, directParents, allBabbleInterfaceIds, allJavaInterfaces, interfaceMembers, Map.of(), Map.of());
+    public record TypeHierarchyInfo(
+            String id,
+            ClassShape.Kind kind,
+            String name,
+            List<ParentRef> directParents,
+            Set<String> allBabbleInterfaceIds,
+            Set<Class<?>> allJavaInterfaces,
+            Map<String, MemberSpec> interfaceMembers,
+            Map<String, Integer> javaBridgeOverloads,
+            Map<String, Integer> babbleBridgeOverloads) {
+        public TypeHierarchyInfo(
+                String id,
+                ClassShape.Kind kind,
+                String name,
+                List<ParentRef> directParents,
+                Set<String> allBabbleInterfaceIds,
+                Set<Class<?>> allJavaInterfaces,
+                Map<String, MemberSpec> interfaceMembers) {
+            this(
+                    id,
+                    kind,
+                    name,
+                    directParents,
+                    allBabbleInterfaceIds,
+                    allJavaInterfaces,
+                    interfaceMembers,
+                    Map.of(),
+                    Map.of());
         }
     }
 
-    public record SuperTargetInfo(String ownerTypeId, boolean ownerIsInterface,
-                                  String directBabbleTypeId, Class<?> directJavaClass,
-                                  String providerBabbleTypeId, Class<?> providerJavaClass,
-                                  String memberName) {
-    }
+    public record SuperTargetInfo(
+            String ownerTypeId,
+            boolean ownerIsInterface,
+            String directBabbleTypeId,
+            Class<?> directJavaClass,
+            String providerBabbleTypeId,
+            Class<?> providerJavaClass,
+            String memberName) {}
 
     public record IsTarget(String typeId, ClassShape.Kind kind, String jvmInternalName) {
         public IsTarget(String typeId, ClassShape.Kind kind) {
@@ -291,7 +376,10 @@ public final class LoweringTargets {
         }
     }
 
-    /** Java SAM interface (plus optional marker interfaces) for eager callable conversion ({@code BIP022-D7}). */
+    /**
+     * Java SAM interface (plus optional marker interfaces) for eager callable conversion ({@code
+     * BIP022-D7}).
+     */
     public record JavaSamTarget(Class<?> samInterface, Class<?>[] markers) {
         private static final Class<?>[] NO_MARKERS = new Class<?>[0];
 
@@ -316,21 +404,26 @@ public final class LoweringTargets {
         }
     }
 
-    public record InterfaceCallTarget(String interfaceTypeId, String memberName, FunctionSignature signature, boolean guaranteedCallable) {
-    }
+    public record InterfaceCallTarget(
+            String interfaceTypeId,
+            String memberName,
+            FunctionSignature signature,
+            boolean guaranteedCallable) {}
 
     /** Per-alternative runtime metadata for {@code overload (...)} construction (BIP021-D16). */
-    public record OverloadAltMetaInfo(String signatureKey, String display, int minArity, int maxArity,
-                                      int restIndex, String[] paramDescriptors) {
-    }
+    public record OverloadAltMetaInfo(
+            String signatureKey,
+            String display,
+            int minArity,
+            int maxArity,
+            int restIndex,
+            String[] paramDescriptors) {}
 
     /** Coercion from an overload set expression to a single alternative (BIP021-D12). */
-    public record OverloadSelection(int index, String signatureKey, boolean exactSet) {
-    }
+    public record OverloadSelection(int index, String signatureKey, boolean exactSet) {}
 
     /** One runtime type check at a union-split argument position (BIP021-D11 #4). */
-    public record OverloadSplitCheck(int argIndex, List<String> descriptors, boolean isNull) {
-    }
+    public record OverloadSplitCheck(int argIndex, List<String> descriptors, boolean isNull) {}
 
     public enum ForKind {
         ARRAY,
@@ -343,16 +436,11 @@ public final class LoweringTargets {
         DYNAMIC_UNION
     }
 
-    public record RangeTarget(PrimitiveKind elemKind, boolean stringElement) {
-    }
+    public record RangeTarget(PrimitiveKind elemKind, boolean stringElement) {}
 
     /** Compile-time constant for a {@code match} value pattern ({@code BIP038}). */
     public record PatternConst(
-            Object value,
-            Class<?> enumClass,
-            String enumConstantName,
-            PrimitiveKind kind
-    ) {
+            Object value, Class<?> enumClass, String enumConstantName, PrimitiveKind kind) {
         public PatternConst {
             kind = kind != null ? kind : PrimitiveKind.NONE;
         }
@@ -371,10 +459,10 @@ public final class LoweringTargets {
             String builtin,
             IsTarget target,
             List<IsTarget> intersectionTargets,
-            String descriptor
-    ) {
+            String descriptor) {
         public PatternTypeTarget {
-            intersectionTargets = intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
+            intersectionTargets =
+                    intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
         }
     }
 
@@ -393,7 +481,10 @@ public final class LoweringTargets {
         }
     }
 
-    /** Record destructuring lowering target for Babble and Java {@code record} patterns ({@code BIP038-D6}). */
+    /**
+     * Record destructuring lowering target for Babble and Java {@code record} patterns ({@code
+     * BIP038-D6}).
+     */
     public record RecordDestructureTarget(
             boolean isJavaRecord,
             String babbleTypeId,
@@ -402,25 +493,28 @@ public final class LoweringTargets {
             int[] babbleMemberIndices,
             PrimitiveKind[] fieldKinds,
             java.lang.reflect.Method[] javaAccessors,
-            PatternTypeTarget typeTest
-    ) {
+            PatternTypeTarget typeTest) {
         public RecordDestructureTarget {
             fieldNames = fieldNames != null ? fieldNames.clone() : new String[0];
-            babbleMemberIndices = babbleMemberIndices != null ? babbleMemberIndices.clone() : new int[0];
+            babbleMemberIndices =
+                    babbleMemberIndices != null ? babbleMemberIndices.clone() : new int[0];
             fieldKinds = fieldKinds != null ? fieldKinds.clone() : new PrimitiveKind[0];
-            javaAccessors = javaAccessors != null ? javaAccessors.clone() : new java.lang.reflect.Method[0];
+            javaAccessors =
+                    javaAccessors != null ? javaAccessors.clone() : new java.lang.reflect.Method[0];
         }
     }
 
-    /** Sequence destructuring lowering target for {@code list} and {@code array} patterns ({@code BIP038-D7}). */
+    /**
+     * Sequence destructuring lowering target for {@code list} and {@code array} patterns ({@code
+     * BIP038-D7}).
+     */
     public record SequenceDestructureTarget(
             boolean isArray,
             Class<?> arrayClass,
             PrimitiveKind elemKind,
             int fixedCount,
             boolean hasRest,
-            PatternTypeTarget typeTest
-    ) {
+            PatternTypeTarget typeTest) {
         public SequenceDestructureTarget {
             elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
         }
@@ -436,9 +530,7 @@ public final class LoweringTargets {
             FunctionSignature hasNextSig,
             InterfaceCallTarget hasNextInterfaceTarget,
             FunctionSignature nextSig,
-            InterfaceCallTarget nextInterfaceTarget
-    ) {
-    }
+            InterfaceCallTarget nextInterfaceTarget) {}
 
     public enum ArrayCreationKind {
         SIZE,
@@ -453,9 +545,7 @@ public final class LoweringTargets {
             String babbleTypeId,
             String babbleDisplayName,
             Set<String> babbleConformIds,
-            int nestedDims
-    ) {
-    }
+            int nestedDims) {}
 
     public enum ArrayOpKind {
         SIZE,
@@ -470,13 +560,10 @@ public final class LoweringTargets {
             ArrayOpKind kind,
             PrimitiveKind elemKind,
             Class<?> arrayClass,
-            Class<?> componentClass
-    ) {
-    }
+            Class<?> componentClass) {}
 
     /** Static lowering info for {@code throw expr} ({@code BIP028-D2}). */
-    public record ThrowTarget(boolean isJavaThrowable) {
-    }
+    public record ThrowTarget(boolean isJavaThrowable) {}
 
     /** Static lowering info for a {@code catch} clause ({@code BIP028-D2}, {@code BIP028-D4}). */
     public record CatchTarget(
@@ -486,29 +573,28 @@ public final class LoweringTargets {
             boolean catchesNonErrorAny,
             boolean catchesJavaThrowable,
             boolean skipsThrownException,
-            List<IsTarget> babbleTargets
-    ) {
-    }
+            List<IsTarget> babbleTargets) {}
 
-    /** Direct compiled Babble class/record field read target ({@code BIP014-I4}, {@code BIP034-I3}). */
+    /**
+     * Direct compiled Babble class/record field read target ({@code BIP014-I4}, {@code BIP034-I3}).
+     */
     public record ClassFieldTarget(
             String classTypeId,
             String memberName,
             int memberIndex,
             PrimitiveKind fieldKind,
             boolean immutableField,
-            boolean definitelyDefined
-    ) {
+            boolean definitelyDefined) {
         public ClassFieldTarget {
             fieldKind = fieldKind != null ? fieldKind : PrimitiveKind.NONE;
         }
     }
 
-    /** Direct fast constructor target for a capture-free method-only compiled {@code record} ({@code BIP014-I4}). */
-    public record RecordNewTarget(
-            String classTypeId,
-            PrimitiveKind[] paramKinds
-    ) {
+    /**
+     * Direct fast constructor target for a capture-free method-only compiled {@code record} ({@code
+     * BIP014-I4}).
+     */
+    public record RecordNewTarget(String classTypeId, PrimitiveKind[] paramKinds) {
         public RecordNewTarget {
             paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
         }
@@ -520,21 +606,20 @@ public final class LoweringTargets {
             String memberName,
             int overloadAltIndex,
             FunctionSignature signature,
-            boolean recordValue
-    ) {
-    }
+            boolean recordValue) {}
 
-    /** Converged ownership and static record-type metadata of a function parameter ({@code BIP014-I4}). */
-    public record ParamOwnership(
-            boolean mut,
-            boolean borrow,
-            boolean unique,
-            String recordTypeId
-    ) {
+    /**
+     * Converged ownership and static record-type metadata of a function parameter ({@code
+     * BIP014-I4}).
+     */
+    public record ParamOwnership(boolean mut, boolean borrow, boolean unique, String recordTypeId) {
         public static final ParamOwnership DEFAULT = new ParamOwnership(false, true, false, null);
     }
 
-    /** Declared WebAssembly host-import signature from {@code axiom wasm.<mod>.<name>: fn ...} ({@code BIP025-D9}). */
+    /**
+     * Declared WebAssembly host-import signature from {@code axiom wasm.<mod>.<name>: fn ...}
+     * ({@code BIP025-D9}).
+     */
     public record WasmImportSpec(
             String module,
             String name,
@@ -543,8 +628,7 @@ public final class LoweringTargets {
             PrimitiveKind returnKind,
             boolean returnIsString,
             boolean returnIsVoid,
-            int line
-    ) {
+            int line) {
         public WasmImportSpec {
             paramKinds = paramKinds != null ? paramKinds.clone() : new PrimitiveKind[0];
             paramIsString = paramIsString != null ? paramIsString.clone() : new boolean[0];
@@ -560,4 +644,3 @@ public final class LoweringTargets {
         }
     }
 }
-

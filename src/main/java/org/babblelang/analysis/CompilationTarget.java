@@ -5,14 +5,17 @@ import java.util.Locale;
 /**
  * Compilation backend target profile ({@code BIP025-D3}, {@code BIP025-D8}).
  *
- * <p>Kept strictly ANTLR-free inside {@code org.babblelang.analysis} so front-end analysis,
- * HIR construction, Nanopass optimization ({@code FbipReusePass}), and backend emitters share
- * one target abstraction.
+ * <p>Kept strictly ANTLR-free inside {@code org.babblelang.analysis} so front-end analysis, HIR
+ * construction, Nanopass optimization ({@code FbipReusePass}), and backend emitters share one
+ * target abstraction.
  */
 public enum CompilationTarget {
     /** Standard JVM bytecode backend ({@code babblec -target jvm}, the default). */
     JVM("jvm"),
-    /** WebAssembly 3.0 (WasmGC) targeting browsers and Node.js with {@code app.mjs} glue ({@code BIP025-D8}). */
+    /**
+     * WebAssembly 3.0 (WasmGC) targeting browsers and Node.js with {@code app.mjs} glue ({@code
+     * BIP025-D8}).
+     */
     WASM_JS("wasm-js"),
     /** WebAssembly 3.0 (WasmGC) pure-compute module with zero host imports ({@code BIP025-D8}). */
     WASM_BARE("wasm-bare");
@@ -57,10 +60,14 @@ public enum CompilationTarget {
             case "jvm" -> JVM;
             case "wasm-js", "wasm_js" -> WASM_JS;
             case "wasm-bare", "wasm_bare" -> WASM_BARE;
-            case "wasm-wasi", "wasm_wasi" -> throw new IllegalArgumentException(
-                    "Target wasm-wasi is deferred until the WasmGC Component Model Canonical ABI stabilizes (BIP025-D8)");
-            default -> throw new IllegalArgumentException(
-                    "Unknown compilation target : " + raw + " (expected jvm, wasm-js, or wasm-bare)");
+            case "wasm-wasi", "wasm_wasi" ->
+                    throw new IllegalArgumentException(
+                            "Target wasm-wasi is deferred until the WasmGC Component Model Canonical ABI stabilizes (BIP025-D8)");
+            default ->
+                    throw new IllegalArgumentException(
+                            "Unknown compilation target : "
+                                    + raw
+                                    + " (expected jvm, wasm-js, or wasm-bare)");
         };
     }
 }

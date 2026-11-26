@@ -1,13 +1,12 @@
 package org.babblelang.ir.mir;
 
-import org.babblelang.ir.IrDumpable;
-import org.babblelang.ir.IrTarget;
-import org.babblelang.ir.hir.HirModule;
-
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.babblelang.ir.IrDumpable;
+import org.babblelang.ir.IrTarget;
+import org.babblelang.ir.hir.HirModule;
 
 /**
  * Module-level SSA {@code MIR} container implementing {@link IrDumpable} for {@code BIP029}
@@ -22,7 +21,8 @@ public final class MirModule implements IrDumpable {
     private final Map<Integer, MirFunction> functions;
     private final Map<Integer, String> fallbacks;
 
-    public MirModule(HirModule hir, Map<Integer, MirFunction> functions, Map<Integer, String> fallbacks) {
+    public MirModule(
+            HirModule hir, Map<Integer, MirFunction> functions, Map<Integer, String> fallbacks) {
         this.hir = Objects.requireNonNull(hir, "hir");
         this.functions = Collections.unmodifiableMap(new LinkedHashMap<>(functions));
         this.fallbacks = Collections.unmodifiableMap(new LinkedHashMap<>(fallbacks));

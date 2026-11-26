@@ -1,5 +1,7 @@
 package org.babblelang.opt.hir;
 
+import java.util.ArrayList;
+import java.util.List;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
@@ -11,41 +13,40 @@ import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirVar;
 import org.babblelang.opt.HirRewriter;
 
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Mandatory pre-emission normalization pass enforcing the JVM empty-operand-stack invariant
- * for {@link HirExpr.Try} ({@code BIP028-D9}, §7.2.1).
+ * Mandatory pre-emission normalization pass enforcing the JVM empty-operand-stack invariant for
+ * {@link HirExpr.Try} ({@code BIP028-D9}, §7.2.1).
  *
- * <p>On the JVM, entering an exception handler clears the operand stack. Whenever a
- * {@link HirExpr.Try} appears inside a compound expression that would otherwise leave values
- * on the operand stack (binary RHS, call/array/overload arguments, member/namespace/field
- * assignments), this pass hoists preceding sibling expressions and the {@code Try}-bearing
- * operand(s) into sequential synthetic temp {@link HirVar}s in a wrapping {@link HirExpr.Block},
- * preserving strict left-to-right evaluation order, unboxed primitive kinds, and source lines.
+ * <p>On the JVM, entering an exception handler clears the operand stack. Whenever a {@link
+ * HirExpr.Try} appears inside a compound expression that would otherwise leave values on the
+ * operand stack (binary RHS, call/array/overload arguments, member/namespace/field assignments),
+ * this pass hoists preceding sibling expressions and the {@code Try}-bearing operand(s) into
+ * sequential synthetic temp {@link HirVar}s in a wrapping {@link HirExpr.Block}, preserving strict
+ * left-to-right evaluation order, unboxed primitive kinds, and source lines.
  */
 public final class HirTryNormalize {
-    private HirTryNormalize() {
-    }
+    private HirTryNormalize() {}
 
     public static HirModule normalize(HirModule module) {
         int[] nextVarId = {module.nextVarId()};
         return HirRewriter.rewriteModule(
                 module,
-                (ownerMethodId, currentFnId, stmts) -> HirRewriter.rewriteList(stmts,
-                        s -> normalizeExpr(s, ownerMethodId, nextVarId)),
+                (ownerMethodId, currentFnId, stmts) ->
+                        HirRewriter.rewriteList(
+                                stmts, s -> normalizeExpr(s, ownerMethodId, nextVarId)),
                 defaultExpr -> normalizeExpr(defaultExpr, 0, nextVarId),
-                () -> nextVarId[0]
-        );
+                () -> nextVarId[0]);
     }
 
     private static HirExpr normalizeExpr(HirExpr expr, int ownerId, int[] nextVarId) {
         if (expr == null || !containsTry(expr)) {
             return expr;
         }
-        // Bottom-up: normalize children first so inner compound expressions inside Try/If/etc. are normalized.
-        HirExpr cur = HirRewriter.rewriteChildren(expr, child -> normalizeExpr(child, ownerId, nextVarId));
+        // Bottom-up: normalize children first so inner compound expressions inside Try/If/etc. are
+        // normalized.
+        HirExpr cur =
+                HirRewriter.rewriteChildren(
+                        expr, child -> normalizeExpr(child, ownerId, nextVarId));
         return spillIfNeeded(cur, ownerId, nextVarId);
     }
 
@@ -55,7 +56,9 @@ public final class HirTryNormalize {
                 if (d.var() == null && d.value() != null && containsTry(d.value())) {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr valRef = s.hoist(d.value());
-                    yield s.wrap(new HirExpr.Def(d.name(), d.target(), null, valRef, d.meta()), d.meta());
+                    yield s.wrap(
+                            new HirExpr.Def(d.name(), d.target(), null, valRef, d.meta()),
+                            d.meta());
                 }
                 yield d;
             }
@@ -63,7 +66,15 @@ public final class HirTryNormalize {
                 if (a.operator() == null && containsTry(a.value())) {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr valRef = s.hoist(a.value());
-                    yield s.wrap(new HirExpr.NameAssign(a.name(), null, valRef, a.targetText(), a.valueText(), a.meta()), a.meta());
+                    yield s.wrap(
+                            new HirExpr.NameAssign(
+                                    a.name(),
+                                    null,
+                                    valRef,
+                                    a.targetText(),
+                                    a.valueText(),
+                                    a.meta()),
+                            a.meta());
                 }
                 yield a;
             }
@@ -72,8 +83,18 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr recvRef = s.hoist(a.receiver());
                     HirExpr valRef = s.hoist(a.value());
-                    yield s.wrap(new HirExpr.ThisFieldAssign(recvRef, a.classId(), a.memberIndex(), a.memberName(),
-                            null, valRef, a.targetText(), a.valueText(), a.meta()), a.meta());
+                    yield s.wrap(
+                            new HirExpr.ThisFieldAssign(
+                                    recvRef,
+                                    a.classId(),
+                                    a.memberIndex(),
+                                    a.memberName(),
+                                    null,
+                                    valRef,
+                                    a.targetText(),
+                                    a.valueText(),
+                                    a.meta()),
+                            a.meta());
                 }
                 yield a;
             }
@@ -82,8 +103,18 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr recvRef = a.pureStaticReceiver() ? a.receiver() : s.hoist(a.receiver());
                     HirExpr valRef = s.hoist(a.value());
-                    yield s.wrap(new HirExpr.JavaFieldAssign(recvRef, a.receiverText(), a.pureStaticReceiver(),
-                            a.target(), null, valRef, a.targetText(), a.valueText(), a.meta()), a.meta());
+                    yield s.wrap(
+                            new HirExpr.JavaFieldAssign(
+                                    recvRef,
+                                    a.receiverText(),
+                                    a.pureStaticReceiver(),
+                                    a.target(),
+                                    null,
+                                    valRef,
+                                    a.targetText(),
+                                    a.valueText(),
+                                    a.meta()),
+                            a.meta());
                 }
                 yield a;
             }
@@ -92,8 +123,17 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr recvRef = s.hoist(a.receiver());
                     HirExpr valRef = s.hoist(a.value());
-                    yield s.wrap(new HirExpr.DynamicFieldAssign(recvRef, a.receiverText(), a.memberName(),
-                            null, valRef, a.targetText(), a.valueText(), a.meta()), a.meta());
+                    yield s.wrap(
+                            new HirExpr.DynamicFieldAssign(
+                                    recvRef,
+                                    a.receiverText(),
+                                    a.memberName(),
+                                    null,
+                                    valRef,
+                                    a.targetText(),
+                                    a.valueText(),
+                                    a.meta()),
+                            a.meta());
                 }
                 yield a;
             }
@@ -102,7 +142,10 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr lRef = s.hoist(b.left());
                     HirExpr rRef = s.hoist(b.right());
-                    yield s.wrap(new HirExpr.Binary(b.op(), lRef, rRef, b.leftText(), b.rightText(), b.meta()), b.meta());
+                    yield s.wrap(
+                            new HirExpr.Binary(
+                                    b.op(), lRef, rRef, b.leftText(), b.rightText(), b.meta()),
+                            b.meta());
                 }
                 yield b;
             }
@@ -111,7 +154,15 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr sRef = s.hoist(r.start());
                     HirExpr eRef = s.hoist(r.end());
-                    yield s.wrap(new HirExpr.Range(sRef, eRef, r.inclusive(), r.elemKind(), r.stringElement(), r.meta()), r.meta());
+                    yield s.wrap(
+                            new HirExpr.Range(
+                                    sRef,
+                                    eRef,
+                                    r.inclusive(),
+                                    r.elemKind(),
+                                    r.stringElement(),
+                                    r.meta()),
+                            r.meta());
                 }
                 yield r;
             }
@@ -120,8 +171,16 @@ public final class HirTryNormalize {
                 if (lastTry >= 0) {
                     Spill s = new Spill(ownerId, nextVarId);
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.ArrayCreate(c.kind(), c.elemKind(), c.componentInternalName(),
-                            c.componentIsJavaInterface(), c.componentClass(), na, c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.ArrayCreate(
+                                    c.kind(),
+                                    c.elemKind(),
+                                    c.componentInternalName(),
+                                    c.componentIsJavaInterface(),
+                                    c.componentClass(),
+                                    na,
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -131,8 +190,17 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nr = s.hoist(op.receiver());
                     List<HirExpr> na = s.hoistPrefix(op.args(), lastTry);
-                    yield s.wrap(new HirExpr.ArrayOp(op.kind(), nr, op.receiverText(), op.elemKind(),
-                            op.arrayClass(), op.componentClass(), na, op.meta()), op.meta());
+                    yield s.wrap(
+                            new HirExpr.ArrayOp(
+                                    op.kind(),
+                                    nr,
+                                    op.receiverText(),
+                                    op.elemKind(),
+                                    op.arrayClass(),
+                                    op.componentClass(),
+                                    na,
+                                    op.meta()),
+                            op.meta());
                 }
                 yield op;
             }
@@ -141,7 +209,9 @@ public final class HirTryNormalize {
                 if (lastTry >= 0) {
                     Spill s = new Spill(ownerId, nextVarId);
                     List<HirCallArg> na = s.hoistCallArgPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.CoreCollectionCall(c.collectionKind(), na, c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.CoreCollectionCall(c.collectionKind(), na, c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -150,8 +220,18 @@ public final class HirTryNormalize {
                 if (lastTry >= 0) {
                     Spill s = new Spill(ownerId, nextVarId);
                     List<HirCallArg> na = s.hoistCallArgPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.SuperCall(c.thisVar(), c.ownerClassId(), c.memberName(), c.targetInfo(),
-                            c.superTypeRef(), na, c.binding(), c.callSite(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.SuperCall(
+                                    c.thisVar(),
+                                    c.ownerClassId(),
+                                    c.memberName(),
+                                    c.targetInfo(),
+                                    c.superTypeRef(),
+                                    na,
+                                    c.binding(),
+                                    c.callSite(),
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -160,7 +240,9 @@ public final class HirTryNormalize {
                 if (lastTry >= 0) {
                     Spill s = new Spill(ownerId, nextVarId);
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.SelfRecurseCall(c.functionId(), na, c.binding(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.SelfRecurseCall(c.functionId(), na, c.binding(), c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -169,7 +251,9 @@ public final class HirTryNormalize {
                 if (lastTry >= 0) {
                     Spill s = new Spill(ownerId, nextVarId);
                     List<HirCallArg> na = s.hoistCallArgPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.SelfTailCall(c.functionId(), na, c.binding(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.SelfTailCall(c.functionId(), na, c.binding(), c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -179,7 +263,10 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nc = s.hoist(c.callee());
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.DirectBabbleCall(nc, c.targetFunctionId(), na, c.binding(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.DirectBabbleCall(
+                                    nc, c.targetFunctionId(), na, c.binding(), c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -189,8 +276,19 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nr = s.hoist(c.receiver());
                     List<HirCallArg> na = s.hoistCallArgPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.DirectThisMethodCall(nr, c.receiverText(), c.classId(), c.memberName(),
-                            c.overloadAltIndex(), c.targetFunctionId(), na, c.binding(), c.callSite(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.DirectThisMethodCall(
+                                    nr,
+                                    c.receiverText(),
+                                    c.classId(),
+                                    c.memberName(),
+                                    c.overloadAltIndex(),
+                                    c.targetFunctionId(),
+                                    na,
+                                    c.binding(),
+                                    c.callSite(),
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -200,8 +298,18 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nr = s.hoist(c.receiver());
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.InterfaceCall(nr, c.receiverText(), c.selectorLine(),
-                            c.interfaceTypeId(), c.memberName(), c.signature(), na, c.binding(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.InterfaceCall(
+                                    nr,
+                                    c.receiverText(),
+                                    c.selectorLine(),
+                                    c.interfaceTypeId(),
+                                    c.memberName(),
+                                    c.signature(),
+                                    na,
+                                    c.binding(),
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -211,8 +319,15 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nc = c.pureStaticCallee() ? c.callee() : s.hoist(c.callee());
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.JavaConstructorCall(nc, c.calleeText(), c.pureStaticCallee(),
-                            c.target(), na, c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.JavaConstructorCall(
+                                    nc,
+                                    c.calleeText(),
+                                    c.pureStaticCallee(),
+                                    c.target(),
+                                    na,
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -222,8 +337,16 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nr = c.pureStaticReceiver() ? c.receiver() : s.hoist(c.receiver());
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.JavaMethodCall(nr, c.receiverText(), c.selectorLine(),
-                            c.pureStaticReceiver(), c.target(), na, c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.JavaMethodCall(
+                                    nr,
+                                    c.receiverText(),
+                                    c.selectorLine(),
+                                    c.pureStaticReceiver(),
+                                    c.target(),
+                                    na,
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -233,8 +356,16 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nr = s.hoist(c.receiver());
                     List<HirExpr> na = s.hoistPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.CoreMethodCall(nr, c.receiverText(), c.selectorLine(),
-                            c.coreKind(), c.memberName(), na, c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.CoreMethodCall(
+                                    nr,
+                                    c.receiverText(),
+                                    c.selectorLine(),
+                                    c.coreKind(),
+                                    c.memberName(),
+                                    na,
+                                    c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -244,7 +375,10 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nc = s.hoist(c.callee());
                     List<HirCallArg> na = s.hoistCallArgPrefix(c.args(), lastTry);
-                    yield s.wrap(new HirExpr.DynamicCall(nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta()), c.meta());
+                    yield s.wrap(
+                            new HirExpr.DynamicCall(
+                                    nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta()),
+                            c.meta());
                 }
                 yield c;
             }
@@ -255,14 +389,51 @@ public final class HirTryNormalize {
                     HirExpr recvRef = outerSpill.hoist(c.receiver());
                     Spill innerSpill = new Spill(ownerId, nextVarId);
                     List<HirCallArg> na = innerSpill.hoistCallArgPrefix(c.args(), lastTry);
-                    HirExpr safeCall = new HirExpr.SafeCall(recvRef, c.receiverText(), c.memberName(),
-                            c.selectorLine(), c.selectorCheckedType(), na, c.binding(), c.babbleSig(), c.callSite(), c.meta());
+                    HirExpr safeCall =
+                            new HirExpr.SafeCall(
+                                    recvRef,
+                                    c.receiverText(),
+                                    c.memberName(),
+                                    c.selectorLine(),
+                                    c.selectorCheckedType(),
+                                    na,
+                                    c.binding(),
+                                    c.babbleSig(),
+                                    c.callSite(),
+                                    c.meta());
                     HirExpr nonNullBranch = innerSpill.wrap(safeCall, c.meta());
-                    ExprMeta condMeta = new ExprMeta(c.meta().line(), PrimitiveKind.BOOL, -1, null, EffectSet.EMPTY, true, false);
-                    ExprMeta nullMeta = new ExprMeta(c.meta().line(), PrimitiveKind.NONE, -1, null, EffectSet.EMPTY, true, false);
-                    HirExpr isNull = new HirExpr.Binary(HirExpr.BinaryOp.EQ, recvRef, new HirExpr.Const(null, nullMeta),
-                            c.receiverText(), "null", condMeta);
-                    HirExpr guard = new HirExpr.If(isNull, new HirExpr.Const(null, nullMeta), nonNullBranch, c.meta());
+                    ExprMeta condMeta =
+                            new ExprMeta(
+                                    c.meta().line(),
+                                    PrimitiveKind.BOOL,
+                                    -1,
+                                    null,
+                                    EffectSet.EMPTY,
+                                    true,
+                                    false);
+                    ExprMeta nullMeta =
+                            new ExprMeta(
+                                    c.meta().line(),
+                                    PrimitiveKind.NONE,
+                                    -1,
+                                    null,
+                                    EffectSet.EMPTY,
+                                    true,
+                                    false);
+                    HirExpr isNull =
+                            new HirExpr.Binary(
+                                    HirExpr.BinaryOp.EQ,
+                                    recvRef,
+                                    new HirExpr.Const(null, nullMeta),
+                                    c.receiverText(),
+                                    "null",
+                                    condMeta);
+                    HirExpr guard =
+                            new HirExpr.If(
+                                    isNull,
+                                    new HirExpr.Const(null, nullMeta),
+                                    nonNullBranch,
+                                    c.meta());
                     yield outerSpill.wrap(guard, c.meta());
                 }
                 yield c;
@@ -282,7 +453,10 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nc = s.hoist(d.callee());
                     List<HirExpr> na = s.hoistPrefix(d.args(), lastTry);
-                    yield s.wrap(new HirExpr.OverloadDispatch(nc, d.calleeText(), d.callSite(), na, d.branches(), d.meta()), d.meta());
+                    yield s.wrap(
+                            new HirExpr.OverloadDispatch(
+                                    nc, d.calleeText(), d.callSite(), na, d.branches(), d.meta()),
+                            d.meta());
                 }
                 yield d;
             }
@@ -292,8 +466,18 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr ncr = s.hoist(r.classRef());
                     List<HirExpr> na = lastTry >= 0 ? s.hoistPrefix(r.args(), lastTry) : r.args();
-                    yield s.wrap(new HirExpr.RecordNew(r.classId(), r.classTypeId(), r.classJvmName(),
-                            ncr, r.classRefIsInstance(), r.paramKinds(), na, r.binding(), r.meta()), r.meta());
+                    yield s.wrap(
+                            new HirExpr.RecordNew(
+                                    r.classId(),
+                                    r.classTypeId(),
+                                    r.classJvmName(),
+                                    ncr,
+                                    r.classRefIsInstance(),
+                                    r.paramKinds(),
+                                    na,
+                                    r.binding(),
+                                    r.meta()),
+                            r.meta());
                 }
                 yield r;
             }
@@ -303,8 +487,16 @@ public final class HirTryNormalize {
                     Spill s = new Spill(ownerId, nextVarId);
                     HirExpr nt = s.hoist(r.target());
                     List<HirExpr> na = lastTry >= 0 ? s.hoistPrefix(r.args(), lastTry) : r.args();
-                    yield s.wrap(new HirExpr.RecordReuse(nt, r.classId(), r.classTypeId(), r.classJvmName(),
-                            r.paramKinds(), na, r.meta()), r.meta());
+                    yield s.wrap(
+                            new HirExpr.RecordReuse(
+                                    nt,
+                                    r.classId(),
+                                    r.classTypeId(),
+                                    r.classJvmName(),
+                                    r.paramKinds(),
+                                    na,
+                                    r.meta()),
+                            r.meta());
                 }
                 yield r;
             }
@@ -327,15 +519,43 @@ public final class HirTryNormalize {
             PrimitiveKind vk = effectiveKind(expr.meta());
             int id = nextVarId[0]++;
             String name = "$try" + id;
-            HirVar var = new HirVar(id, name, Resolution.Variable.Kind.DEFINITION, ownerId,
-                    vk, false, true, false, true);
+            HirVar var =
+                    new HirVar(
+                            id,
+                            name,
+                            Resolution.Variable.Kind.DEFINITION,
+                            ownerId,
+                            vk,
+                            false,
+                            true,
+                            false,
+                            true);
             vars.add(var);
-            ExprMeta defMeta = new ExprMeta(expr.meta().line(), vk, -1, null,
-                    EffectSet.EMPTY, expr.meta().deeplyImmutable(), expr.meta().stringType());
-            defs.add(new HirExpr.Def(name, new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
-                    var, expr, defMeta));
-            ExprMeta readMeta = new ExprMeta(expr.meta().line(), vk, -1, null,
-                    EffectSet.EMPTY, expr.meta().deeplyImmutable(), expr.meta().stringType());
+            ExprMeta defMeta =
+                    new ExprMeta(
+                            expr.meta().line(),
+                            vk,
+                            -1,
+                            null,
+                            EffectSet.EMPTY,
+                            expr.meta().deeplyImmutable(),
+                            expr.meta().stringType());
+            defs.add(
+                    new HirExpr.Def(
+                            name,
+                            new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
+                            var,
+                            expr,
+                            defMeta));
+            ExprMeta readMeta =
+                    new ExprMeta(
+                            expr.meta().line(),
+                            vk,
+                            -1,
+                            null,
+                            EffectSet.EMPTY,
+                            expr.meta().deeplyImmutable(),
+                            expr.meta().stringType());
             return new HirExpr.VarRead(var, readMeta);
         }
 
@@ -424,7 +644,8 @@ public final class HirTryNormalize {
             case HirExpr.NameAssign a -> containsTry(a.value());
             case HirExpr.ThisFieldAssign a -> containsTry(a.receiver()) || containsTry(a.value());
             case HirExpr.JavaFieldAssign a -> containsTry(a.receiver()) || containsTry(a.value());
-            case HirExpr.DynamicFieldAssign a -> containsTry(a.receiver()) || containsTry(a.value());
+            case HirExpr.DynamicFieldAssign a ->
+                    containsTry(a.receiver()) || containsTry(a.value());
             case HirExpr.ThisFieldGet g -> containsTry(g.receiver());
             case HirExpr.JavaFieldGet g -> containsTry(g.receiver());
             case HirExpr.ModuleExportGet g -> containsTry(g.receiver());
@@ -440,13 +661,19 @@ public final class HirTryNormalize {
             case HirExpr.JavaSamAdapt j -> containsTry(j.value());
             case HirExpr.TypeApply t -> containsTry(t.inner());
             case HirExpr.Block b -> anyContainsTry(b.statements());
-            case HirExpr.If i -> containsTry(i.cond()) || containsTry(i.thenBranch()) || containsTry(i.elseBranch());
+            case HirExpr.If i ->
+                    containsTry(i.cond())
+                            || containsTry(i.thenBranch())
+                            || containsTry(i.elseBranch());
             case HirExpr.Match m -> matchContainsTry(m);
             case HirExpr.While w -> containsTry(w.cond()) || containsTry(w.body());
-            case HirExpr.For f -> (f.countedRange() != null
-                    ? (containsTry(f.countedRange().start()) || containsTry(f.countedRange().end())
-                            || containsTry(f.countedRange().step()))
-                    : containsTry(f.iterable())) || anyContainsTry(f.body());
+            case HirExpr.For f ->
+                    (f.countedRange() != null
+                                    ? (containsTry(f.countedRange().start())
+                                            || containsTry(f.countedRange().end())
+                                            || containsTry(f.countedRange().step()))
+                                    : containsTry(f.iterable()))
+                            || anyContainsTry(f.body());
             case HirExpr.Break b -> containsTry(b.value());
             case HirExpr.Return r -> containsTry(r.value());
             case HirExpr.Throw th -> containsTry(th.value());
@@ -457,13 +684,18 @@ public final class HirTryNormalize {
             case HirExpr.SelfRecurseCall c -> anyContainsTry(c.args());
             case HirExpr.SelfTailCall c -> anyCallArgContainsTry(c.args());
             case HirExpr.DirectBabbleCall c -> containsTry(c.callee()) || anyContainsTry(c.args());
-            case HirExpr.DirectThisMethodCall c -> containsTry(c.receiver()) || anyCallArgContainsTry(c.args());
+            case HirExpr.DirectThisMethodCall c ->
+                    containsTry(c.receiver()) || anyCallArgContainsTry(c.args());
             case HirExpr.InterfaceCall c -> containsTry(c.receiver()) || anyContainsTry(c.args());
-            case HirExpr.JavaConstructorCall c -> (!c.pureStaticCallee() && containsTry(c.callee())) || anyContainsTry(c.args());
-            case HirExpr.JavaMethodCall c -> (!c.pureStaticReceiver() && containsTry(c.receiver())) || anyContainsTry(c.args());
+            case HirExpr.JavaConstructorCall c ->
+                    (!c.pureStaticCallee() && containsTry(c.callee())) || anyContainsTry(c.args());
+            case HirExpr.JavaMethodCall c ->
+                    (!c.pureStaticReceiver() && containsTry(c.receiver()))
+                            || anyContainsTry(c.args());
             case HirExpr.CoreMethodCall c -> containsTry(c.receiver()) || anyContainsTry(c.args());
             case HirExpr.SafeCall c -> containsTry(c.receiver()) || anyCallArgContainsTry(c.args());
-            case HirExpr.DynamicCall c -> containsTry(c.callee()) || anyCallArgContainsTry(c.args());
+            case HirExpr.DynamicCall c ->
+                    containsTry(c.callee()) || anyCallArgContainsTry(c.args());
             case HirExpr.MakeOverloadSet m -> anyContainsTry(m.operands());
             case HirExpr.OverloadSelect s -> containsTry(s.set());
             case HirExpr.OverloadDispatch d -> containsTry(d.callee()) || anyContainsTry(d.args());
@@ -479,7 +711,9 @@ public final class HirTryNormalize {
             return true;
         }
         for (HirExpr.MatchArm arm : m.arms()) {
-            if (patternContainsTry(arm.pattern()) || containsTry(arm.guard()) || containsTry(arm.body())) {
+            if (patternContainsTry(arm.pattern())
+                    || containsTry(arm.guard())
+                    || containsTry(arm.body())) {
                 return true;
             }
         }

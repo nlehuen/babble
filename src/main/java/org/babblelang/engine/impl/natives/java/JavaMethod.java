@@ -1,13 +1,12 @@
 package org.babblelang.engine.impl.natives.java;
 
+import java.lang.reflect.Method;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.Overloads;
 import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Throwables;
 import org.babblelang.runtime.Values;
-
-import java.lang.reflect.Method;
 
 class JavaMethod implements Callable {
     private final Class<?> clazz;
@@ -19,9 +18,7 @@ class JavaMethod implements Callable {
         this.name = name;
     }
 
-    /**
-     * Called through the class, as a static method.
-     */
+    /** Called through the class, as a static method. */
     @Override
     public Object call(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         return invoke(clazz, args, rt);
@@ -33,7 +30,8 @@ class JavaMethod implements Callable {
      */
     Object invoke(Object thiz, Object[] args, ScriptRuntime rt) {
         Overloads.Resolved<Method> resolved = resolveDetailed(args);
-        Object[] java = Overloads.toJavaArguments(resolved.executable(), resolved.varArgs(), args, rt);
+        Object[] java =
+                Overloads.toJavaArguments(resolved.executable(), resolved.varArgs(), args, rt);
         Object result;
         try {
             result = resolved.executable().invoke(thiz, java);

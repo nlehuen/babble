@@ -3,8 +3,8 @@ package org.babblelang.runtime;
 import java.lang.reflect.Modifier;
 
 /**
- * Immutable range record backing {@code range of string} and {@code range of T} for any Java
- * {@link Comparable} type ({@code BIP031-D6}). Not iterable.
+ * Immutable range record backing {@code range of string} and {@code range of T} for any Java {@link
+ * Comparable} type ({@code BIP031-D6}). Not iterable.
  */
 public record ComparableRange<T extends Comparable<? super T>>(T start, T end, boolean inclusive)
         implements Range<T> {
@@ -30,7 +30,8 @@ public record ComparableRange<T extends Comparable<? super T>>(T start, T end, b
         if (value == null) {
             return false;
         }
-        if (Modifier.isFinal(start.getClass().getModifiers()) && !start.getClass().isInstance(value)) {
+        if (Modifier.isFinal(start.getClass().getModifiers())
+                && !start.getClass().isInstance(value)) {
             return false;
         }
         try {

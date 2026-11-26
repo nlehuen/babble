@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -11,8 +10,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The value of a {@code class} expression, or the anonymous class of an {@code object}
- * literal. Calling it constructs an instance.
+ * The value of a {@code class} expression, or the anonymous class of an {@code object} literal.
+ * Calling it constructs an instance.
  */
 public final class BabbleClass extends BabbleType implements Callable {
     private final Namespace closure;
@@ -26,26 +25,38 @@ public final class BabbleClass extends BabbleType implements Callable {
     private final Map<String, List<Method>> javaDefaults = new ConcurrentHashMap<>();
 
     /**
-     * @param closure    the namespace the class expression was evaluated in
-     * @param interfaces the implemented interfaces : BabbleInterface values or Java interface classes
+     * @param closure the namespace the class expression was evaluated in
+     * @param interfaces the implemented interfaces : BabbleInterface values or Java interface
+     *     classes
      */
     public BabbleClass(ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces) {
         this(shape, closure, Arguments.NONE, body, interfaces);
     }
 
     /**
-     * @param captured the cells of the outer variables the class body and its methods use
-     *                 (compiled code) : stored once per class value, not per instance
+     * @param captured the cells of the outer variables the class body and its methods use (compiled
+     *     code) : stored once per class value, not per instance
      */
-    public BabbleClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces) {
+    public BabbleClass(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            Object[] interfaces) {
         this(shape, closure, captured, body, interfaces, InterpretedInstance::new);
     }
 
     /**
-     * @param factory creates the instances : the class the compiler generated for the
-     *                class expression, when it did
+     * @param factory creates the instances : the class the compiler generated for the class
+     *     expression, when it did
      */
-    public BabbleClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces, InstanceFactory factory) {
+    public BabbleClass(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            Object[] interfaces,
+            InstanceFactory factory) {
         super(shape);
         this.closure = closure;
         this.captured = captured;
@@ -96,17 +107,36 @@ public final class BabbleClass extends BabbleType implements Callable {
     }
 
     /** Creates the single instance of an object literal. */
-    public static Object object(ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
+    public static Object object(
+            ClassShape shape,
+            Namespace closure,
+            ClassBody body,
+            Object[] interfaces,
+            ScriptRuntime rt) {
         return object(shape, closure, Arguments.NONE, body, interfaces, rt);
     }
 
-    public static Object object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces, ScriptRuntime rt) {
-        return new BabbleClass(shape, closure, captured, body, interfaces).construct(rt, Arguments.NONE, null, null);
+    public static Object object(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            Object[] interfaces,
+            ScriptRuntime rt) {
+        return new BabbleClass(shape, closure, captured, body, interfaces)
+                .construct(rt, Arguments.NONE, null, null);
     }
 
-    public static Object object(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces,
-                                InstanceFactory factory, ScriptRuntime rt) {
-        return new BabbleClass(shape, closure, captured, body, interfaces, factory).construct(rt, Arguments.NONE, null, null);
+    public static Object object(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            Object[] interfaces,
+            InstanceFactory factory,
+            ScriptRuntime rt) {
+        return new BabbleClass(shape, closure, captured, body, interfaces, factory)
+                .construct(rt, Arguments.NONE, null, null);
     }
 
     /** The default method an implemented interface provides for a name the class doesn't define. */
@@ -114,7 +144,9 @@ public final class BabbleClass extends BabbleType implements Callable {
         return defaults.get(name);
     }
 
-    /** Own default method at {@code memberIndex} of the implemented Babble interface {@code typeId}. */
+    /**
+     * Own default method at {@code memberIndex} of the implemented Babble interface {@code typeId}.
+     */
     public Callable interfaceDefault(String typeId, int memberIndex) {
         BabbleInterface iface = babbleInterfaces.get(typeId);
         return iface != null ? iface.defaultAt(memberIndex) : null;
@@ -128,17 +160,19 @@ public final class BabbleClass extends BabbleType implements Callable {
 
     /** The Java default methods of that name, inherited from the implemented Java interfaces. */
     List<Method> javaDefaultMethods(String name) {
-        return javaDefaults.computeIfAbsent(name, n -> {
-            List<Method> result = new ArrayList<>();
-            for (Class<?> java : javaInterfaces) {
-                for (Method method : java.getMethods()) {
-                    if (method.isDefault() && method.getName().equals(n)) {
-                        result.add(method);
+        return javaDefaults.computeIfAbsent(
+                name,
+                n -> {
+                    List<Method> result = new ArrayList<>();
+                    for (Class<?> java : javaInterfaces) {
+                        for (Method method : java.getMethods()) {
+                            if (method.isDefault() && method.getName().equals(n)) {
+                                result.add(method);
+                            }
+                        }
                     }
-                }
-            }
-            return result;
-        });
+                    return result;
+                });
     }
 
     /** Every Java interface the class implements, directly or through a Babble interface. */
@@ -160,8 +194,8 @@ public final class BabbleClass extends BabbleType implements Callable {
     }
 
     /**
-     * Whether instances have the type a class or interface expression defines, by its
-     * shape's id : they were created by it, or implement an interface it created.
+     * Whether instances have the type a class or interface expression defines, by its shape's id :
+     * they were created by it, or implement an interface it created.
      */
     public boolean conformsTo(String typeId) {
         if (shape().id().equals(typeId)) {
@@ -181,7 +215,8 @@ public final class BabbleClass extends BabbleType implements Callable {
             return isJava(java);
         }
         for (Object implemented : interfaces) {
-            if (implemented == type || implemented instanceof BabbleInterface babble && babble.extendsType(type)) {
+            if (implemented == type
+                    || implemented instanceof BabbleInterface babble && babble.extendsType(type)) {
                 return true;
             }
         }

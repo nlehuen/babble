@@ -7,26 +7,27 @@ import java.util.Objects;
  * Compact WebAssembly 3.0 instruction IR shared by {@link WasmWriter}, {@link WatPrinter}, and
  * {@link WasmVerifier} ({@code BIP025-I0}, {@code BIP025-D2}).
  */
-public sealed interface WasmInstr permits
-        WasmInstr.Simple,
-        WasmInstr.I32Const,
-        WasmInstr.I64Const,
-        WasmInstr.F32Const,
-        WasmInstr.F64Const,
-        WasmInstr.Idx,
-        WasmInstr.Idx2,
-        WasmInstr.Block,
-        WasmInstr.TryTable,
-        WasmInstr.BrTable,
-        WasmInstr.RefNull,
-        WasmInstr.RefTypeOp,
-        WasmInstr.BrOnCast,
-        WasmInstr.SelectTyped {
+public sealed interface WasmInstr
+        permits WasmInstr.Simple,
+                WasmInstr.I32Const,
+                WasmInstr.I64Const,
+                WasmInstr.F32Const,
+                WasmInstr.F64Const,
+                WasmInstr.Idx,
+                WasmInstr.Idx2,
+                WasmInstr.Block,
+                WasmInstr.TryTable,
+                WasmInstr.BrTable,
+                WasmInstr.RefNull,
+                WasmInstr.RefTypeOp,
+                WasmInstr.BrOnCast,
+                WasmInstr.SelectTyped {
 
-    /** Block result signature: empty ({@code 0x40}), single value type, or concrete func type index. */
+    /**
+     * Block result signature: empty ({@code 0x40}), single value type, or concrete func type index.
+     */
     sealed interface BlockType permits BlockType.Empty, BlockType.Val, BlockType.TypeIdx {
-        record Empty() implements BlockType {
-        }
+        record Empty() implements BlockType {}
 
         record Val(WasmValType type) implements BlockType {
             public Val {
@@ -310,7 +311,12 @@ public sealed interface WasmInstr permits
         ARRAY_FILL(0xFB, 0x10, "array.fill", IdxKind.TYPE);
 
         public enum IdxKind {
-            FUNC, TYPE, LOCAL, GLOBAL, TAG, LABEL
+            FUNC,
+            TYPE,
+            LOCAL,
+            GLOBAL,
+            TAG,
+            LABEL
         }
 
         private final int prefix;
@@ -405,29 +411,21 @@ public sealed interface WasmInstr permits
         }
     }
 
-    record Simple(SimpleOp op) implements WasmInstr {
-    }
+    record Simple(SimpleOp op) implements WasmInstr {}
 
-    record I32Const(int value) implements WasmInstr {
-    }
+    record I32Const(int value) implements WasmInstr {}
 
-    record I64Const(long value) implements WasmInstr {
-    }
+    record I64Const(long value) implements WasmInstr {}
 
-    record F32Const(float value) implements WasmInstr {
-    }
+    record F32Const(float value) implements WasmInstr {}
 
-    record F64Const(double value) implements WasmInstr {
-    }
+    record F64Const(double value) implements WasmInstr {}
 
-    record Idx(IdxOp op, int index) implements WasmInstr {
-    }
+    record Idx(IdxOp op, int index) implements WasmInstr {}
 
-    record Idx2(Idx2Op op, int index1, int index2) implements WasmInstr {
-    }
+    record Idx2(Idx2Op op, int index1, int index2) implements WasmInstr {}
 
-    record Block(BlockKind kind, BlockType blockType) implements WasmInstr {
-    }
+    record Block(BlockKind kind, BlockType blockType) implements WasmInstr {}
 
     record TryTable(BlockType blockType, List<CatchClause> catches) implements WasmInstr {
         public TryTable {
@@ -441,16 +439,18 @@ public sealed interface WasmInstr permits
         }
     }
 
-    record RefNull(WasmValType.HeapType heapType) implements WasmInstr {
-    }
+    record RefNull(WasmValType.HeapType heapType) implements WasmInstr {}
 
-    record RefTypeOp(RefTypeOpKind kind, WasmValType.HeapType heapType) implements WasmInstr {
-    }
+    record RefTypeOp(RefTypeOpKind kind, WasmValType.HeapType heapType) implements WasmInstr {}
 
-    record BrOnCast(boolean fail, int labelIndex, boolean srcNullable, boolean dstNullable,
-                    WasmValType.HeapType srcType, WasmValType.HeapType dstType) implements WasmInstr {
-    }
+    record BrOnCast(
+            boolean fail,
+            int labelIndex,
+            boolean srcNullable,
+            boolean dstNullable,
+            WasmValType.HeapType srcType,
+            WasmValType.HeapType dstType)
+            implements WasmInstr {}
 
-    record SelectTyped(WasmValType type) implements WasmInstr {
-    }
+    record SelectTyped(WasmValType type) implements WasmInstr {}
 }

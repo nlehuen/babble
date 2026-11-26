@@ -1,46 +1,48 @@
 package org.babblelang.runtime;
 
-
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
- * The single implementation of the argument binding rules, used by the interpreter and
- * by compiled function prologues.
- * <p>
- * Under {@code BIP021-D23}, a positional argument may follow named ones only while each
- * named argument before it is in its own positional slot. Passing a parameter both by
- * position and by name, or twice by name, is rejected as {@code Parameter given twice}.
- * Parameters at or after {@code keywordOnlyStart} are only bound by name when names are
- * present; calls already lowered positionally by the front end ({@code names == null},
- * {@code BIP021-D4}) pass every slot in parameter order with {@link #MISSING} for omitted
- * optional parameters.
+ * The single implementation of the argument binding rules, used by the interpreter and by compiled
+ * function prologues.
+ *
+ * <p>Under {@code BIP021-D23}, a positional argument may follow named ones only while each named
+ * argument before it is in its own positional slot. Passing a parameter both by position and by
+ * name, or twice by name, is rejected as {@code Parameter given twice}. Parameters at or after
+ * {@code keywordOnlyStart} are only bound by name when names are present; calls already lowered
+ * positionally by the front end ({@code names == null}, {@code BIP021-D4}) pass every slot in
+ * parameter order with {@link #MISSING} for omitted optional parameters.
  */
 public final class Arguments {
     /** What {@link Binder#take} returns when no argument matches the parameter. */
-    public static final Object MISSING = new Object() {
-        @Override
-        public String toString() {
-            return "MISSING";
-        }
-    };
+    public static final Object MISSING =
+            new Object() {
+                @Override
+                public String toString() {
+                    return "MISSING";
+                }
+            };
 
     /** Shared argument array for calls without arguments. */
     public static final Object[] NONE = new Object[0];
 
-    private Arguments() {
-    }
+    private Arguments() {}
 
     public static Binder binder(String[] parameters, Object[] args, String[] names) {
         return new Binder(parameters, parameters.length, -1, args, names);
     }
 
-    public static Binder binder(String[] parameters, int keywordOnlyStart, Object[] args, String[] names) {
+    public static Binder binder(
+            String[] parameters, int keywordOnlyStart, Object[] args, String[] names) {
         return new Binder(parameters, keywordOnlyStart, -1, args, names);
     }
 
-    public static Binder binder(String[] parameters, int keywordOnlyStart, int restIndex, Object[] args, String[] names) {
+    public static Binder binder(
+            String[] parameters,
+            int keywordOnlyStart,
+            int restIndex,
+            Object[] args,
+            String[] names) {
         return new Binder(parameters, keywordOnlyStart, restIndex, args, names);
     }
 
@@ -53,7 +55,8 @@ public final class Arguments {
      * Maps caller parameter-index missing bits ({@code bit i == 1} when parameter {@code i} was
      * omitted) into a callee {@code $spec}'s ordinal optional-parameter mask ({@code BIP021-D3}).
      */
-    public static int remapMask(int missingParamBits, int targetOptionalParamBits, int incomingCount) {
+    public static int remapMask(
+            int missingParamBits, int targetOptionalParamBits, int incomingCount) {
         int mask = 0;
         int optBit = 0;
         for (int bits = targetOptionalParamBits; bits != 0; bits &= bits - 1) {
@@ -76,7 +79,12 @@ public final class Arguments {
         private final Iterable<?> restValue;
         private final BabbleException tooManyError;
 
-        private Binder(String[] parameters, int keywordOnlyStart, int restIndex, Object[] args, String[] names) {
+        private Binder(
+                String[] parameters,
+                int keywordOnlyStart,
+                int restIndex,
+                Object[] args,
+                String[] names) {
             this.parameters = parameters;
             this.restIndex = restIndex;
             int kwStart = Math.min(keywordOnlyStart, parameters.length);
@@ -94,9 +102,10 @@ public final class Arguments {
                         }
                     }
                     this.packedRestAt = packed;
-                    this.restValue = packed >= 0
-                            ? Spreads.collectRest(args, restIndex, packed + 1)
-                            : Spreads.collectRest(args, restIndex);
+                    this.restValue =
+                            packed >= 0
+                                    ? Spreads.collectRest(args, restIndex, packed + 1)
+                                    : Spreads.collectRest(args, restIndex);
                 } else {
                     this.packedRestAt = -1;
                     this.restValue = null;
@@ -116,7 +125,8 @@ public final class Arguments {
                 if (name == null) {
                     posCount++;
                     if (firstOutOfPos != null) {
-                        throw new BabbleException("Named argument out of position : " + firstOutOfPos);
+                        throw new BabbleException(
+                                "Named argument out of position : " + firstOutOfPos);
                     }
                     if (restIndex >= 0 && j >= restIndex) {
                         restItems.add(args[j]);
@@ -141,12 +151,13 @@ public final class Arguments {
             }
             this.matched = map;
             this.restValue = restItems != null ? Spreads.collectRest(restItems.toArray(), 0) : null;
-            this.tooManyError = extra > 0 ? tooMany(Math.min(kwStart, parameters.length), posCount) : null;
+            this.tooManyError =
+                    extra > 0 ? tooMany(Math.min(kwStart, parameters.length), posCount) : null;
         }
 
         /**
-         * The argument for parameter {@code index} : by name, else by position, else
-         * {@link Arguments#MISSING}.
+         * The argument for parameter {@code index} : by name, else by position, else {@link
+         * Arguments#MISSING}.
          */
         public Object take(int index) {
             if (index == restIndex) {
@@ -170,9 +181,7 @@ public final class Arguments {
             return Arguments.missing(parameters[index]);
         }
 
-        /**
-         * Arguments the caller supplied that no declared parameter claimed.
-         */
+        /** Arguments the caller supplied that no declared parameter claimed. */
         public void rejectLeftovers() {
             if (names == null) {
                 if (restIndex < 0 && args.length > parameters.length) {
@@ -186,7 +195,8 @@ public final class Arguments {
         }
 
         private static BabbleException tooMany(int declared, int given) {
-            return new BabbleException("Too many parameters : " + declared + " declared, " + given + " given");
+            return new BabbleException(
+                    "Too many parameters : " + declared + " declared, " + given + " given");
         }
     }
 }

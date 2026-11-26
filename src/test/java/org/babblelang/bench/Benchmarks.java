@@ -1,49 +1,49 @@
 package org.babblelang.bench;
 
+import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import javax.script.CompiledScript;
+import javax.script.ScriptContext;
+import javax.script.ScriptEngine;
+import javax.script.SimpleBindings;
 import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.engine.FileModuleSource;
 import org.babblelang.engine.ModuleSource;
 
-import javax.script.CompiledScript;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.SimpleBindings;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
- * A plain warm-up and timing harness comparing interpret, compile -O0, compile -O1 and
- * compile -O2 (docs/design/bip001_bytecode-compiler.md §11, docs/design/bip014_optimization-passes.md).
- * Not a test : run its main method from the repository root, with the test class path
- * (it imports the modules of {@code examples/raytracer-argon/lib}).
+ * A plain warm-up and timing harness comparing interpret, compile -O0, compile -O1 and compile -O2
+ * (docs/design/bip001_bytecode-compiler.md §11, docs/design/bip014_optimization-passes.md). Not a
+ * test : run its main method from the repository root, with the test class path (it imports the
+ * modules of {@code examples/raytracer-argon/lib}).
  *
- * <p>Arguments : an optional filter on the benchmark names, then optionally the modes to run,
- * among {@code interpret}, {@code O0}, {@code O1} and {@code O2} (all of them by default) ; a mode
- * left out prints {@code -}.
+ * <p>Arguments : an optional filter on the benchmark names, then optionally the modes to run, among
+ * {@code interpret}, {@code O0}, {@code O1} and {@code O2} (all of them by default) ; a mode left
+ * out prints {@code -}.
  *
- * <p>The modes of one run share a JVM, so a mode profits from what the earlier ones warmed up
- * (the runtime's classes, the compiler's) : to compare two levels closely, run each in a JVM of
- * its own, several times, with a fixed heap ({@code -Xms1g -Xmx1g -XX:+UseParallelGC}, as the
- * test suite runs), for example {@code Benchmarks argon O1} then {@code Benchmarks argon O2}.
- * The argon rows are what the whole ray tracer costs at a level : its render, and compiling its
- * modules before the first pixel.
+ * <p>The modes of one run share a JVM, so a mode profits from what the earlier ones warmed up (the
+ * runtime's classes, the compiler's) : to compare two levels closely, run each in a JVM of its own,
+ * several times, with a fixed heap ({@code -Xms1g -Xmx1g -XX:+UseParallelGC}, as the test suite
+ * runs), for example {@code Benchmarks argon O1} then {@code Benchmarks argon O2}. The argon rows
+ * are what the whole ray tracer costs at a level : its render, and compiling its modules before the
+ * first pixel.
  */
 public final class Benchmarks {
     private static final int WARMUP = 50;
     private static final int RUNS = 20;
 
     /**
-     * A small render of the argon ray tracer's final scene (its 480 marbles behind the BVH, a
-     * 64 x 36 image at 4 samples per pixel) : interface dispatch, records, closures and the
-     * numeric kernels of {@code lib/math.ba} together, as in the full render. Its imports resolve
-     * against {@link #ARGON_FILE}.
+     * A small render of the argon ray tracer's final scene (its 480 marbles behind the BVH, a 64 x
+     * 36 image at 4 samples per pixel) : interface dispatch, records, closures and the numeric
+     * kernels of {@code lib/math.ba} together, as in the full render. Its imports resolve against
+     * {@link #ARGON_FILE}.
      */
-    private static final String ARGON = """
+    private static final String ARGON =
+            """
             def raytracer = import("lib/raytracer.ba")
             def run = fn (): double -> (
                 def rng: raytracer.Rng = raytracer.Rng(2026)
@@ -60,6 +60,7 @@ public final class Benchmarks {
             )
             run()
             """;
+
     private static final Path ARGON_FILE = Path.of("examples/raytracer-argon/benchmark.ba");
 
     private static final Path ARGON_MAIN = Path.of("examples/raytracer-argon/raytracer.ba");
@@ -68,9 +69,9 @@ public final class Benchmarks {
 
     /**
      * A benchmark : its script, the file it is named as (for its imports) or null, whether to
-     * interpret it, and whether to time compiling the program of {@code file} (its main module
-     * and every module it imports, each time in a new engine, as {@code -compile} does) rather
-     * than running {@code script}.
+     * interpret it, and whether to time compiling the program of {@code file} (its main module and
+     * every module it imports, each time in a new engine, as {@code -compile} does) rather than
+     * running {@code script}.
      */
     private record Bench(String script, Path file, boolean interpret, boolean compileOnly) {
         Bench(String script) {
@@ -78,7 +79,8 @@ public final class Benchmarks {
         }
     }
 
-    private static final String STACK_SOURCE = """
+    private static final String STACK_SOURCE =
+            """
             ;;(
                 Implementation of a simple LIFO stack
             ;;)
@@ -150,30 +152,37 @@ public final class Benchmarks {
             def create of T = fn (): unique Stack of T -> (Stack())
             """;
 
-    private Benchmarks() {
-    }
+    private Benchmarks() {}
 
     public static void main(String[] args) throws Exception {
         Map<String, String> scripts = new LinkedHashMap<>();
         Map<String, Bench> benches = new LinkedHashMap<>();
-        scripts.put("fib(25) : calls and arithmetic",
+        scripts.put(
+                "fib(25) : calls and arithmetic",
                 "def fib = fn (n : int) : int -> ( if n < 2 then ( n ) else ( fib(n - 1) + fib(n - 2) ) ) ; fib(25)");
-        scripts.put("while loop : locals and while",
+        scripts.put(
+                "while loop : locals and while",
                 "def loop = fn (n : int) : int -> ( var i = 0 ; var s = 0 ; while i < n then ( s = s + i ; i = i + 1 ) ; s ) ; loop(300000)");
-        scripts.put("tail-recursive sum : self tail calls (BIP024)",
+        scripts.put(
+                "tail-recursive sum : self tail calls (BIP024)",
                 "def sum = fn (n : int, acc : int) : int -> ( if n == 0 then ( acc ) else ( sum(n - 1, acc + n) ) ) ; sum(300000, 0)");
-        scripts.put("Counter.ba closure : captured variables",
+        scripts.put(
+                "Counter.ba closure : captured variables",
                 "def counter = fn () -> ( var c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; var i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
-        scripts.put("Stack.ba push/pop : objects and methods",
-                STACK_SOURCE + "def l : Stack of int = create() ; var i = 0\n"
+        scripts.put(
+                "Stack.ba push/pop : objects and methods",
+                STACK_SOURCE
+                        + "def l : Stack of int = create() ; var i = 0\n"
                         + "while i < 20000 then ( l.push(i) ; i = i + 1 )\n"
                         + "while l.size > 0 then ( l.pop() )");
-        scripts.put("ArrayList add/get : Java interop",
+        scripts.put(
+                "ArrayList add/get : Java interop",
                 "def l : java.util.ArrayList of int = java.util.ArrayList() ; var i = 0 ; while i < 20000 then ( l.add(i) ; i = i + 1 )\n"
                         + "var s = 0 ; i = 0 ; while i < 20000 then ( s = s + l.get(i) ; i = i + 1 ) ; s");
         // BIP014 optimizer microbenchmarks
-        scripts.put("opt : const fold + dead branch + algebraic",
+        scripts.put(
+                "opt : const fold + dead branch + algebraic",
                 "def f = fn (n : int) : int -> (\n"
                         + "    def k = (2 + 3) * (10 - 4)\n"
                         + "    var i = 0\n"
@@ -186,7 +195,8 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "f(300000)");
-        scripts.put("opt : small helper inlining",
+        scripts.put(
+                "opt : small helper inlining",
                 "def sq = fn (x : int) : int -> ( x * x )\n"
                         + "def inc = fn (x : int) : int -> ( x + 1 )\n"
                         + "def run = fn (n : int) : int -> (\n"
@@ -199,7 +209,8 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(300000)");
-        scripts.put("opt : loop-invariant pure call (LICM)",
+        scripts.put(
+                "opt : loop-invariant pure call (LICM)",
                 "axiom java.lang.Math.sqrt: fn pure nothrow\n"
                         + "axiom java.lang.Math.sin: fn pure nothrow\n"
                         + "def heavy = fn (x : double) : double -> ( java.lang.Math.sqrt(x * x + 1.0) + java.lang.Math.sin(x) )\n"
@@ -213,7 +224,8 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(200000, 1.5)");
-        scripts.put("opt : record Vec3 dot loop",
+        scripts.put(
+                "opt : record Vec3 dot loop",
                 "def Vec3 = record (x : double, y : double, z : double) (\n"
                         + "    def plus = fn (o : Vec3) : Vec3 -> ( Vec3(this.x + o.x, this.y + o.y, this.z + o.z) )\n"
                         + "    def dot = fn (o : Vec3) : double -> ( this.x * o.x + this.y * o.y + this.z * o.z )\n"
@@ -231,7 +243,8 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(200000)");
-        scripts.put("mir : header LICM + GVN/CSE + predicate reorder",
+        scripts.put(
+                "mir : header LICM + GVN/CSE + predicate reorder",
                 "def slow = fn nothrow (x : double) : bool -> (\n"
                         + "    java.lang.Math.sin(x) + java.lang.Math.cos(x) > 0.0\n"
                         + ")\n"
@@ -246,7 +259,8 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(40, 1000, -2.5)");
-        scripts.put("mir : typedCall primitive return",
+        scripts.put(
+                "mir : typedCall primitive return",
                 "def stepA = fn (x : double) : double -> ( if x > 100.0 then ( x * 0.25 + 1.0 ) else ( x * 0.5 + 1.5 ) )\n"
                         + "def stepB = fn (x : double) : double -> ( if x > 100.0 then ( x * 0.2 + 2.0 ) else ( x * 0.4 + 2.5 ) )\n"
                         + "def run = fn (n : int, a : fn (double) : double, b : fn (double) : double) : double -> (\n"
@@ -263,7 +277,8 @@ public final class Benchmarks {
                         + "    acc\n"
                         + ")\n"
                         + "run(100000, stepA, stepB) + run(100000, stepB, stepA)");
-        scripts.put("mir : branch-heavy math & AABB slab loop",
+        scripts.put(
+                "mir : branch-heavy math & AABB slab loop",
                 "def sqrt = fn (x : double) : double -> (\n"
                         + "    if x <= 0.0 then ( return 0.0 )\n"
                         + "    var g = if x > 1.0 then ( x * 0.5 ) else ( 1.0 )\n"
@@ -298,7 +313,8 @@ public final class Benchmarks {
                         + "    s\n"
                         + ")\n"
                         + "run(3000) + run(3000)");
-        scripts.put("mir : BVH-style interface dispatch",
+        scripts.put(
+                "mir : BVH-style interface dispatch",
                 "def Interval = record (min : double, max : double) ()\n"
                         + "def Box = record (lo : double, hi : double) (\n"
                         + "    def hit = fn (x : double, rayT : Interval) : bool -> (\n"
@@ -346,28 +362,43 @@ public final class Benchmarks {
 
         scripts.forEach((name, script) -> benches.put(name, new Bench(script)));
         // Too slow to interpret 70 times : compiled modes only.
-        benches.put("argon ray tracer : 64x36, 4 samples per pixel", new Bench(ARGON, ARGON_FILE, false, false));
+        benches.put(
+                "argon ray tracer : 64x36, 4 samples per pixel",
+                new Bench(ARGON, ARGON_FILE, false, false));
         // What -O2 costs before the first pixel : the analysis and the passes of its 15 modules.
-        benches.put("argon ray tracer : compile its 15 modules", new Bench(null, ARGON_MAIN, false, true));
+        benches.put(
+                "argon ray tracer : compile its 15 modules",
+                new Bench(null, ARGON_MAIN, false, true));
 
         String filter = args.length > 0 ? args[0] : "";
-        List<String> modes = args.length > 1
-                ? Arrays.asList(args).subList(1, args.length)
-                : List.of("interpret", "O0", "O1", "O2");
-        System.out.println("| Benchmark | interpret (ms) | -O0 (ms) | -O1 (ms) | -O2 (ms) | -O2/-O0 | -O2/-O1 |");
+        List<String> modes =
+                args.length > 1
+                        ? Arrays.asList(args).subList(1, args.length)
+                        : List.of("interpret", "O0", "O1", "O2");
+        System.out.println(
+                "| Benchmark | interpret (ms) | -O0 (ms) | -O1 (ms) | -O2 (ms) | -O2/-O0 | -O2/-O1 |");
         System.out.println("|---|---:|---:|---:|---:|---:|---:|");
         for (Map.Entry<String, Bench> entry : benches.entrySet()) {
             if (!filter.isEmpty() && !entry.getKey().contains(filter)) {
                 continue;
             }
             Bench bench = entry.getValue();
-            double interpreted = bench.interpret() && modes.contains("interpret") ? time("interpret", 0, bench) : Double.NaN;
+            double interpreted =
+                    bench.interpret() && modes.contains("interpret")
+                            ? time("interpret", 0, bench)
+                            : Double.NaN;
             double opt0 = modes.contains("O0") ? time("compile", 0, bench) : Double.NaN;
             double opt1 = modes.contains("O1") ? time("compile", 1, bench) : Double.NaN;
             double opt2 = modes.contains("O2") ? time("compile", 2, bench) : Double.NaN;
-            System.out.printf("| %s | %s | %s | %s | %s | %s | %s |%n",
-                    entry.getKey(), millis(interpreted), millis(opt0), millis(opt1), millis(opt2),
-                    ratio(opt0, opt2), ratio(opt1, opt2));
+            System.out.printf(
+                    "| %s | %s | %s | %s | %s | %s | %s |%n",
+                    entry.getKey(),
+                    millis(interpreted),
+                    millis(opt0),
+                    millis(opt1),
+                    millis(opt2),
+                    ratio(opt0, opt2),
+                    ratio(opt1, opt2));
         }
     }
 
@@ -376,7 +407,9 @@ public final class Benchmarks {
     }
 
     private static String ratio(double base, double opt2) {
-        return Double.isNaN(base) || Double.isNaN(opt2) ? "-" : String.format("%.2fx", base / Math.max(opt2, 1e-6));
+        return Double.isNaN(base) || Double.isNaN(opt2)
+                ? "-"
+                : String.format("%.2fx", base / Math.max(opt2, 1e-6));
     }
 
     private static volatile Object blackhole;
@@ -386,12 +419,16 @@ public final class Benchmarks {
         if (bench.compileOnly()) {
             return timeCompile(optLevel, bench.file());
         }
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
         engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         if (bench.file() != null) {
-            engine.getContext().setAttribute(ScriptEngine.FILENAME,
-                    bench.file().toAbsolutePath().normalize().toString(), ScriptContext.ENGINE_SCOPE);
+            engine.getContext()
+                    .setAttribute(
+                            ScriptEngine.FILENAME,
+                            bench.file().toAbsolutePath().normalize().toString(),
+                            ScriptContext.ENGINE_SCOPE);
         }
         CompiledScript compiled = engine.compile(bench.script());
         for (int i = 0; i < WARMUP; i++) {
@@ -407,7 +444,9 @@ public final class Benchmarks {
         return times[RUNS / 2] / 1e6;
     }
 
-    /** The median time of compiling a program in a new engine, in milliseconds, after warming up. */
+    /**
+     * The median time of compiling a program in a new engine, in milliseconds, after warming up.
+     */
     private static double timeCompile(int optLevel, Path main) throws Exception {
         Path file = main.toAbsolutePath().normalize();
         ModuleSource source = FileModuleSource.rooted(file.getParent());
@@ -424,8 +463,10 @@ public final class Benchmarks {
         return times[COMPILE_RUNS / 2] / 1e6;
     }
 
-    private static void compileProgram(int optLevel, ModuleSource source, Path file) throws Exception {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+    private static void compileProgram(int optLevel, ModuleSource source, Path file)
+            throws Exception {
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, "compile");
         engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
         engine.compileProgram(source, file.toString());

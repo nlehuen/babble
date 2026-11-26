@@ -1,17 +1,16 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.parser.BabbleParser;
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.List;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.parser.BabbleParser;
 
 /**
- * The typed program {@link EffectChecker} reads ({@code BIP010-D6}) : the type of every
- * expression where it occurs (narrowed by the tests that guard it), the declarations names
- * resolve to and their converged types, members, the Babble and Java callables each call
- * resolved to, and the summaries of other files. Queries only : effects never change types.
+ * The typed program {@link EffectChecker} reads ({@code BIP010-D6}) : the type of every expression
+ * where it occurs (narrowed by the tests that guard it), the declarations names resolve to and
+ * their converged types, members, the Babble and Java callables each call resolved to, and the
+ * summaries of other files. Queries only : effects never change types.
  */
 final class TypedProgram {
     private final TypeChecker checker;
@@ -101,7 +100,10 @@ final class TypedProgram {
     }
 
     Type instanceMemberTypeForEffects(Type.Instance inst, TypeNode.Member member) {
-        return checker.algebra().substitute(checker.memberType(inst.node(), member), checker.algebra().instanceEnv(inst));
+        return checker.algebra()
+                .substitute(
+                        checker.memberType(inst.node(), member),
+                        checker.algebra().instanceEnv(inst));
     }
 
     TypeNode.Member findMemberOnNode(TypeNode node, String name) {
@@ -129,12 +131,14 @@ final class TypedProgram {
         return checker.matchTyper().rangePatterns().get(vp);
     }
 
-    LoweringTargets.MembershipTarget matchMembershipTarget(BabbleParser.MembershipPatternContext mp) {
+    LoweringTargets.MembershipTarget matchMembershipTarget(
+            BabbleParser.MembershipPatternContext mp) {
         return checker.matchTyper().membershipTargets().get(mp);
     }
 
     boolean isModuleExportImmutable(ModuleInterface mod, String name, Type resType) {
-        return checker.effectChecker != null && checker.effectChecker.isImmutableConstantValue(resType);
+        return checker.effectChecker != null
+                && checker.effectChecker.isImmutableConstantValue(resType);
     }
 
     boolean isBuiltinFunction(Type.Function fn) {
@@ -181,8 +185,12 @@ final class TypedProgram {
 
     /** The Java field a selection reads, when it has a static target. */
     LoweringTargets.JavaFieldTarget javaFieldTargetOf(BabbleParser.SelectorContext sel) {
-        return sel.expression() == null || sel.safe != null ? null
-                : LoweringAnalyzer.fieldReadTarget(checker.types().get(sel.expression()), ScopeAnalysis.selectorName(sel), checker.algebra());
+        return sel.expression() == null || sel.safe != null
+                ? null
+                : LoweringAnalyzer.fieldReadTarget(
+                        checker.types().get(sel.expression()),
+                        ScopeAnalysis.selectorName(sel),
+                        checker.algebra());
     }
 
     /** Whether the value of {@code ctx} is checked at runtime (a Java generic result, T9). */
@@ -196,9 +204,10 @@ final class TypedProgram {
     }
 
     /** The index of the parameter an argument binds to, or -1. */
-    int parameterIndexForArg(List<Type.Parameter> parameters,
-                             List<BabbleParser.CallParameterContext> arguments,
-                             BabbleParser.CallParameterContext targetArg) {
+    int parameterIndexForArg(
+            List<Type.Parameter> parameters,
+            List<BabbleParser.CallParameterContext> arguments,
+            BabbleParser.CallParameterContext targetArg) {
         String argName = ScopeAnalysis.callParamName(targetArg);
         if (argName != null) {
             for (int i = 0; i < parameters.size(); i++) {
@@ -218,7 +227,9 @@ final class TypedProgram {
 
     LoweringTargets.SpreadAdapt spreadAdapt(ParserRuleContext call, int argIndex) {
         LoweringTargets.SpreadAdapt[] adapts = checker.callSolver().resolvedSpreadAdapts(call);
-        return adapts != null && argIndex >= 0 && argIndex < adapts.length ? adapts[argIndex] : null;
+        return adapts != null && argIndex >= 0 && argIndex < adapts.length
+                ? adapts[argIndex]
+                : null;
     }
 
     Type extractSequenceElement(Type type) {

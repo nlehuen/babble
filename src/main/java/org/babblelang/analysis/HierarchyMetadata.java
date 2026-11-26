@@ -1,10 +1,5 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.tree.ParseTreeProperty;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.ClassShape;
-
 import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -13,16 +8,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTreeProperty;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.ClassShape;
 
 /**
- * Class, interface, {@code super}, and type-hierarchy metadata sub-view of {@link ScopeAnalysis} (BIP027-D3).
+ * Class, interface, {@code super}, and type-hierarchy metadata sub-view of {@link ScopeAnalysis}
+ * (BIP027-D3).
  */
 public final class HierarchyMetadata {
     private final ScopeAnalysis owner;
     private final ParseTreeProperty<ClassShape> shapes = new ParseTreeProperty<>();
-    private final ParseTreeProperty<BabbleParser.TypeContext> superTargets = new ParseTreeProperty<>();
-    private final ParseTreeProperty<LoweringTargets.SuperTargetInfo> superTargetInfos = new ParseTreeProperty<>();
-    private final Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies = new LinkedHashMap<>();
+    private final ParseTreeProperty<BabbleParser.TypeContext> superTargets =
+            new ParseTreeProperty<>();
+    private final ParseTreeProperty<LoweringTargets.SuperTargetInfo> superTargetInfos =
+            new ParseTreeProperty<>();
+    private final Map<String, LoweringTargets.TypeHierarchyInfo> typeHierarchies =
+            new LinkedHashMap<>();
 
     HierarchyMetadata(ScopeAnalysis owner) {
         this.owner = owner;
@@ -37,23 +40,28 @@ public final class HierarchyMetadata {
         return shapes.get(type);
     }
 
-    void setSuperTarget(BabbleParser.SuperExpressionContext superExpression, BabbleParser.TypeContext type) {
+    void setSuperTarget(
+            BabbleParser.SuperExpressionContext superExpression, BabbleParser.TypeContext type) {
         superTargets.put(superExpression, type);
     }
 
     /**
-     * The interface a {@code super} call goes to : its qualifier, or for an unqualified
-     * call, the entry of the implements or extends list that provides the default.
+     * The interface a {@code super} call goes to : its qualifier, or for an unqualified call, the
+     * entry of the implements or extends list that provides the default.
      */
-    public BabbleParser.TypeContext superTarget(BabbleParser.SuperExpressionContext superExpression) {
+    public BabbleParser.TypeContext superTarget(
+            BabbleParser.SuperExpressionContext superExpression) {
         return superTargets.get(superExpression);
     }
 
-    void setSuperTargetInfo(BabbleParser.SuperExpressionContext superExpression, LoweringTargets.SuperTargetInfo info) {
+    void setSuperTargetInfo(
+            BabbleParser.SuperExpressionContext superExpression,
+            LoweringTargets.SuperTargetInfo info) {
         superTargetInfos.put(superExpression, info);
     }
 
-    public LoweringTargets.SuperTargetInfo superTargetInfo(BabbleParser.SuperExpressionContext superExpression) {
+    public LoweringTargets.SuperTargetInfo superTargetInfo(
+            BabbleParser.SuperExpressionContext superExpression) {
         return superTargetInfos.get(superExpression);
     }
 

@@ -1,14 +1,5 @@
 package org.babblelang.opt.mir;
 
-import org.babblelang.ir.mir.MirBlock;
-import org.babblelang.ir.mir.MirCfg;
-import org.babblelang.ir.mir.MirFunction;
-import org.babblelang.ir.mir.MirInst;
-import org.babblelang.ir.mir.MirModule;
-import org.babblelang.ir.mir.MirTerminator;
-import org.babblelang.ir.mir.MirVal;
-import org.babblelang.opt.PassContext;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -18,10 +9,18 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.babblelang.ir.mir.MirBlock;
+import org.babblelang.ir.mir.MirCfg;
+import org.babblelang.ir.mir.MirFunction;
+import org.babblelang.ir.mir.MirInst;
+import org.babblelang.ir.mir.MirModule;
+import org.babblelang.ir.mir.MirTerminator;
+import org.babblelang.ir.mir.MirVal;
+import org.babblelang.opt.PassContext;
 
 /**
- * Dead Code, Dead Block-Parameter, Unreachable-Block, and Empty-Trampoline Elimination
- * ({@code O4}) over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
+ * Dead Code, Dead Block-Parameter, Unreachable-Block, and Empty-Trampoline Elimination ({@code O4})
+ * over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  */
 public final class MirDcePass implements MirPass {
     @Override
@@ -38,14 +37,14 @@ public final class MirDcePass implements MirPass {
             updated.put(e.getKey(), r.fn);
             total += r.rewrites;
         }
-        return total == 0 ? Result.unchanged(module) : new Result(module.withFunctions(updated), total);
+        return total == 0
+                ? Result.unchanged(module)
+                : new Result(module.withFunctions(updated), total);
     }
 
-    private record FnResult(MirFunction fn, int rewrites) {
-    }
+    private record FnResult(MirFunction fn, int rewrites) {}
 
-    private record ParamCoord(int blockId, int index) {
-    }
+    private record ParamCoord(int blockId, int index) {}
 
     private static FnResult runOnFunction(MirFunction fn) {
         int rewrites = 0;
@@ -159,7 +158,8 @@ public final class MirDcePass implements MirPass {
             List<MirVal> newParams = dropP.isEmpty() ? b.params() : filterOut(b.params(), dropP);
             List<MirInst> newInsts = new ArrayList<>(b.insts().size());
             for (MirInst inst : b.insts()) {
-                if (inst.result() != null && inst.effect().isRemovableIfUnused()
+                if (inst.result() != null
+                        && inst.effect().isRemovableIfUnused()
                         && !liveVals.contains(inst.result().id())) {
                     rewrites++;
                     continue;
@@ -170,7 +170,9 @@ public final class MirDcePass implements MirPass {
             if (term instanceof MirTerminator.Br br) {
                 Set<Integer> td = deadParamIndices.getOrDefault(br.targetBlock(), Set.of());
                 if (!td.isEmpty()) {
-                    term = new MirTerminator.Br(br.targetBlock(), filterOut(br.args(), td), br.line());
+                    term =
+                            new MirTerminator.Br(
+                                    br.targetBlock(), filterOut(br.args(), td), br.line());
                 }
             } else if (term instanceof MirTerminator.BrIf bi) {
                 Set<Integer> td = deadParamIndices.getOrDefault(bi.thenBlock(), Set.of());
@@ -181,7 +183,14 @@ public final class MirDcePass implements MirPass {
                     term = new MirTerminator.Br(bi.thenBlock(), tArgs, bi.line());
                     rewrites++;
                 } else if (!td.isEmpty() || !ed.isEmpty()) {
-                    term = new MirTerminator.BrIf(bi.cond(), bi.thenBlock(), tArgs, bi.elseBlock(), eArgs, bi.line());
+                    term =
+                            new MirTerminator.BrIf(
+                                    bi.cond(),
+                                    bi.thenBlock(),
+                                    tArgs,
+                                    bi.elseBlock(),
+                                    eArgs,
+                                    bi.line());
                 }
             } else if (term instanceof MirTerminator.Switch sw) {
                 boolean changed = false;
@@ -196,25 +205,39 @@ public final class MirDcePass implements MirPass {
                     }
                 }
                 Set<Integer> dd = deadParamIndices.getOrDefault(sw.defaultBlock(), Set.of());
-                List<MirVal> newDefArgs = dd.isEmpty() ? sw.defaultArgs() : filterOut(sw.defaultArgs(), dd);
+                List<MirVal> newDefArgs =
+                        dd.isEmpty() ? sw.defaultArgs() : filterOut(sw.defaultArgs(), dd);
                 if (!dd.isEmpty()) {
                     changed = true;
                 }
                 if (changed) {
-                    term = new MirTerminator.Switch(sw.key(), sw.keys(), sw.targetBlocks(), newTargetArgs,
-                            sw.defaultBlock(), newDefArgs, sw.line());
+                    term =
+                            new MirTerminator.Switch(
+                                    sw.key(),
+                                    sw.keys(),
+                                    sw.targetBlocks(),
+                                    newTargetArgs,
+                                    sw.defaultBlock(),
+                                    newDefArgs,
+                                    sw.line());
                 }
             }
-            swept.add(new MirBlock(b.id(), newParams, newInsts, term, b.handlers(), b.handlerEntry()));
+            swept.add(
+                    new MirBlock(
+                            b.id(), newParams, newInsts, term, b.handlers(), b.handlerEntry()));
         }
 
-        // Thread empty zero-param trampoline blocks: bbX: br bbY -> redirect predecessors directly to bbY.
+        // Thread empty zero-param trampoline blocks: bbX: br bbY -> redirect predecessors directly
+        // to bbY.
         Map<Integer, Integer> redirect = new HashMap<>();
         for (MirBlock b : swept) {
-            if (b.id() != fn.entryBlockId() && !b.handlerEntry()
-                    && b.params().isEmpty() && b.insts().isEmpty()
+            if (b.id() != fn.entryBlockId()
+                    && !b.handlerEntry()
+                    && b.params().isEmpty()
+                    && b.insts().isEmpty()
                     && b.terminator() instanceof MirTerminator.Br br
-                    && br.args().isEmpty() && br.targetBlock() != b.id()) {
+                    && br.args().isEmpty()
+                    && br.targetBlock() != b.id()) {
                 redirect.put(b.id(), br.targetBlock());
             }
         }
@@ -231,10 +254,18 @@ public final class MirDcePass implements MirPass {
                         rewrites++;
                     }
                 } else if (term instanceof MirTerminator.BrIf bi) {
-                    int tt = bi.thenArgs().isEmpty() ? followRedirect(redirect, bi.thenBlock()) : bi.thenBlock();
-                    int et = bi.elseArgs().isEmpty() ? followRedirect(redirect, bi.elseBlock()) : bi.elseBlock();
+                    int tt =
+                            bi.thenArgs().isEmpty()
+                                    ? followRedirect(redirect, bi.thenBlock())
+                                    : bi.thenBlock();
+                    int et =
+                            bi.elseArgs().isEmpty()
+                                    ? followRedirect(redirect, bi.elseBlock())
+                                    : bi.elseBlock();
                     if (tt != bi.thenBlock() || et != bi.elseBlock()) {
-                        term = new MirTerminator.BrIf(bi.cond(), tt, bi.thenArgs(), et, bi.elseArgs(), bi.line());
+                        term =
+                                new MirTerminator.BrIf(
+                                        bi.cond(), tt, bi.thenArgs(), et, bi.elseArgs(), bi.line());
                         anyThreaded = true;
                         rewrites++;
                     }
@@ -250,13 +281,23 @@ public final class MirDcePass implements MirPass {
                             }
                         }
                     }
-                    int nd = sw.defaultArgs().isEmpty() ? followRedirect(redirect, sw.defaultBlock()) : sw.defaultBlock();
+                    int nd =
+                            sw.defaultArgs().isEmpty()
+                                    ? followRedirect(redirect, sw.defaultBlock())
+                                    : sw.defaultBlock();
                     if (nd != sw.defaultBlock()) {
                         changed = true;
                     }
                     if (changed) {
-                        term = new MirTerminator.Switch(sw.key(), sw.keys(), newTargets, sw.targetArgs(),
-                                nd, sw.defaultArgs(), sw.line());
+                        term =
+                                new MirTerminator.Switch(
+                                        sw.key(),
+                                        sw.keys(),
+                                        newTargets,
+                                        sw.targetArgs(),
+                                        nd,
+                                        sw.defaultArgs(),
+                                        sw.line());
                         anyThreaded = true;
                         rewrites++;
                     }
@@ -269,7 +310,8 @@ public final class MirDcePass implements MirPass {
             }
         }
 
-        return rewrites == 0 ? new FnResult(fn, 0)
+        return rewrites == 0
+                ? new FnResult(fn, 0)
                 : new FnResult(fn.withBlocks(swept, fn.nextValId(), fn.nextBlockId()), rewrites);
     }
 

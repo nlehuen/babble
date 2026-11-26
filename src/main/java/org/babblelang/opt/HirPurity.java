@@ -1,8 +1,12 @@
 package org.babblelang.opt;
 
+import java.lang.reflect.Method;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.analysis.EffectSet;
 import org.babblelang.effects.Effect;
 import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
@@ -12,23 +16,16 @@ import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-
 /**
  * Shared {@code BIP007}/{@code BIP016}-gated soundness queries over {@link HirExpr} (BIP014-I2).
  *
  * <p>Every query here is conservatively sound: returning {@code false} merely skips an
- * optimization, while returning {@code true} guarantees observable equivalence with the
- * reference {@code Interpreter}.
+ * optimization, while returning {@code true} guarantees observable equivalence with the reference
+ * {@code Interpreter}.
  */
 public final class HirPurity {
 
-    private HirPurity() {
-    }
+    private HirPurity() {}
 
     public static boolean isNumericKind(PrimitiveKind kind) {
         return switch (kind) {
@@ -62,7 +59,9 @@ public final class HirPurity {
     }
 
     public static boolean isStringCheckedType(String checkedType) {
-        return checkedType == null || "string|string|".equals(checkedType) || "string".equals(checkedType);
+        return checkedType == null
+                || "string|string|".equals(checkedType)
+                || "string".equals(checkedType);
     }
 
     /**
@@ -73,7 +72,8 @@ public final class HirPurity {
         return isPureNothrowTerminating(expr, module, new HashSet<>());
     }
 
-    private static boolean isPureNothrowTerminating(HirExpr expr, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isPureNothrowTerminating(
+            HirExpr expr, HirModule module, Set<Integer> visitingFns) {
         if (expr == null) {
             return true;
         }
@@ -87,7 +87,8 @@ public final class HirPurity {
             case HirExpr.FunctionRef f -> true;
             case HirExpr.VarRead v -> !v.var().mayBeUndefined() || v.var().definitelyDefined();
             case HirExpr.NameRead nr -> nr.finalBinding() && nr.definitelyDefined();
-            case HirExpr.ThisRef t -> t.var() != null && (!t.var().mayBeUndefined() || t.var().definitelyDefined());
+            case HirExpr.ThisRef t ->
+                    t.var() != null && (!t.var().mayBeUndefined() || t.var().definitelyDefined());
             case HirExpr.Unary u -> {
                 if (!isPureNothrowTerminating(u.operand(), module, visitingFns)) {
                     yield false;
@@ -105,44 +106,64 @@ public final class HirPurity {
                 if (b.op().isComparison()) {
                     yield canLowerComparison(b)
                             || ((b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ)
-                            && b.left().meta().stringType() && b.right().meta().stringType());
+                                    && b.left().meta().stringType()
+                                    && b.right().meta().stringType());
                 }
                 if (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV) {
                     yield b.meta().kind().isPrimitive()
-                            && isNumericKind(b.left().meta().kind()) && isNumericKind(b.right().meta().kind())
+                            && isNumericKind(b.left().meta().kind())
+                            && isNumericKind(b.right().meta().kind())
                             && b.right() instanceof HirExpr.Const rc
-                            && rc.value() instanceof Number n && n.longValue() != 0L;
+                            && rc.value() instanceof Number n
+                            && n.longValue() != 0L;
                 }
                 if (b.meta().kind().isPrimitive()
-                        && isNumericKind(b.left().meta().kind()) && isNumericKind(b.right().meta().kind())) {
+                        && isNumericKind(b.left().meta().kind())
+                        && isNumericKind(b.right().meta().kind())) {
                     yield true;
                 }
-                yield b.op() == HirExpr.BinaryOp.ADD && b.left().meta().stringType() && b.right().meta().stringType();
+                yield b.op() == HirExpr.BinaryOp.ADD
+                        && b.left().meta().stringType()
+                        && b.right().meta().stringType();
             }
-            case HirExpr.Range r -> (r.elemKind().isPrimitive() || r.stringElement())
-                    && isPureNothrowTerminating(r.start(), module, visitingFns)
-                    && isPureNothrowTerminating(r.end(), module, visitingFns);
-            case HirExpr.Logic l -> isPureNothrowTerminating(l.left(), module, visitingFns)
-                    && isPureNothrowTerminating(l.right(), module, visitingFns);
-            case HirExpr.Block b -> !b.opensNamespaceScope() && isPureLocalBlock(b, Set.of(), module, visitingFns);
-            case HirExpr.For f -> f.countedRange() != null && isPureForWithLocals(f, Set.of(), module, visitingFns);
-            case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
-                    && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
-                    && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
+            case HirExpr.Range r ->
+                    (r.elemKind().isPrimitive() || r.stringElement())
+                            && isPureNothrowTerminating(r.start(), module, visitingFns)
+                            && isPureNothrowTerminating(r.end(), module, visitingFns);
+            case HirExpr.Logic l ->
+                    isPureNothrowTerminating(l.left(), module, visitingFns)
+                            && isPureNothrowTerminating(l.right(), module, visitingFns);
+            case HirExpr.Block b ->
+                    !b.opensNamespaceScope() && isPureLocalBlock(b, Set.of(), module, visitingFns);
+            case HirExpr.For f ->
+                    f.countedRange() != null
+                            && isPureForWithLocals(f, Set.of(), module, visitingFns);
+            case HirExpr.If i ->
+                    isPureNothrowTerminating(i.cond(), module, visitingFns)
+                            && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
+                            && (i.elseBranch() == null
+                                    || isPureNothrowTerminating(
+                                            i.elseBranch(), module, visitingFns));
             case HirExpr.Match m -> isMatchPureNothrowTerminating(m, module, visitingFns);
             case HirExpr.Try t -> isTryPureNothrowTerminating(t, Set.of(), module, visitingFns);
             case HirExpr.Throw th -> false;
-            case HirExpr.As a -> a.targetDescriptor() == null && a.samTarget() == null
-                    && isPureNothrowTerminating(a.left(), module, visitingFns);
+            case HirExpr.As a ->
+                    a.targetDescriptor() == null
+                            && a.samTarget() == null
+                            && isPureNothrowTerminating(a.left(), module, visitingFns);
             case HirExpr.TypeApply t -> isPureNothrowTerminating(t.inner(), module, visitingFns);
-            case HirExpr.MakeOverloadSet m -> allPureNothrowTerminating(m.operands(), module, visitingFns);
-            case HirExpr.OverloadSelect s -> s.exactSet() && isPureNothrowTerminating(s.set(), module, visitingFns);
-            case HirExpr.ModuleExportGet g -> g.target().definitelyInitialized()
-                    && isPureNothrowTerminating(g.receiver(), module, visitingFns);
+            case HirExpr.MakeOverloadSet m ->
+                    allPureNothrowTerminating(m.operands(), module, visitingFns);
+            case HirExpr.OverloadSelect s ->
+                    s.exactSet() && isPureNothrowTerminating(s.set(), module, visitingFns);
+            case HirExpr.ModuleExportGet g ->
+                    g.target().definitelyInitialized()
+                            && isPureNothrowTerminating(g.receiver(), module, visitingFns);
             case HirExpr.DirectBabbleCall c -> {
-                boolean calleeOk = isPureNothrowTerminating(c.callee(), module, visitingFns)
-                        || (c.callee() instanceof HirExpr.NameRead nr
-                        && isDefinitelyInitializedTopLevelFn(nr.name(), module));
+                boolean calleeOk =
+                        isPureNothrowTerminating(c.callee(), module, visitingFns)
+                                || (c.callee() instanceof HirExpr.NameRead nr
+                                        && isDefinitelyInitializedTopLevelFn(nr.name(), module));
                 if (!calleeOk || !allPureNothrowTerminating(c.args(), module, visitingFns)) {
                     yield false;
                 }
@@ -151,20 +172,27 @@ public final class HirPurity {
                     EffectSet callFx = c.meta().effects();
                     EffectSet fnFx = ext.effects();
                     yield !ext.hasMutParam()
-                            && callFx.isPure() && callFx.isNothrow() && callFx.terminating()
-                            && (fnFx == null || (fnFx.isPure() && fnFx.isNothrow() && fnFx.terminating()));
+                            && callFx.isPure()
+                            && callFx.isNothrow()
+                            && callFx.terminating()
+                            && (fnFx == null
+                                    || (fnFx.isPure() && fnFx.isNothrow() && fnFx.terminating()));
                 }
                 HirFunction fn = module.function(c.targetFunctionId());
-                yield fn != null && isCallSitePure(fn, c.meta().effects())
-                        && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
+                yield fn != null
+                        && isCallSitePure(fn, c.meta().effects())
+                        && isFunctionPureNothrowTerminating(
+                                fn, c.meta().effects(), module, visitingFns);
             }
             case HirExpr.JavaMethodCall c -> {
                 if (c.target().isStatic()) {
-                    if (!c.pureStaticReceiver() && !isPureNothrowTerminating(c.receiver(), module, visitingFns)) {
+                    if (!c.pureStaticReceiver()
+                            && !isPureNothrowTerminating(c.receiver(), module, visitingFns)) {
                         yield false;
                     }
                 } else {
-                    // Non-static call can throw NPE if receiver is null unless proven non-null (e.g. Const String).
+                    // Non-static call can throw NPE if receiver is null unless proven non-null
+                    // (e.g. Const String).
                     if (!(c.receiver() instanceof HirExpr.Const rc && rc.value() != null)) {
                         yield false;
                     }
@@ -177,7 +205,10 @@ public final class HirPurity {
                     yield true;
                 }
                 EffectSet fx = c.meta().effects();
-                yield fx.isPure() && fx.isNothrow() && fx.terminating() && allArgsPrimitiveOrImmutable(c.args());
+                yield fx.isPure()
+                        && fx.isNothrow()
+                        && fx.terminating()
+                        && allArgsPrimitiveOrImmutable(c.args());
             }
             case HirExpr.ThisFieldGet g -> {
                 if (g.receiverText() == null) {
@@ -185,21 +216,28 @@ public final class HirPurity {
                         yield false;
                     }
                     HirClass cls = module.clazz(g.classId());
-                    yield cls != null && g.immutableField() && g.definitelyDefined()
-                            && (g.memberIndex() >= cls.primDefBits().length || cls.primDefBits()[g.memberIndex()] < 0)
+                    yield cls != null
+                            && g.immutableField()
+                            && g.definitelyDefined()
+                            && (g.memberIndex() >= cls.primDefBits().length
+                                    || cls.primDefBits()[g.memberIndex()] < 0)
                             && isPureNothrowTerminating(g.receiver(), module, visitingFns);
                 }
-                yield g.immutableField() && g.definitelyDefined()
+                yield g.immutableField()
+                        && g.definitelyDefined()
                         && isPureNothrowTerminating(g.receiver(), module, visitingFns)
-                        && (g.receiver() instanceof HirExpr.ThisRef || g.receiver() instanceof HirExpr.RecordNew
-                        || g.receiver() instanceof HirExpr.VarRead);
+                        && (g.receiver() instanceof HirExpr.ThisRef
+                                || g.receiver() instanceof HirExpr.RecordNew
+                                || g.receiver() instanceof HirExpr.VarRead);
             }
             case HirExpr.Move m -> isPureNothrowTerminating(m.operand(), module, visitingFns);
             case HirExpr.Freeze f -> isPureNothrowTerminating(f.operand(), module, visitingFns);
             case HirExpr.RecordNew r -> {
-                boolean classRefOk = isPureNothrowTerminating(r.classRef(), module, visitingFns)
-                        || (r.classRef() instanceof HirExpr.NameRead nr
-                        && isDefinitelyInitializedTopLevelBinding(nr.name(), module));
+                boolean classRefOk =
+                        isPureNothrowTerminating(r.classRef(), module, visitingFns)
+                                || (r.classRef() instanceof HirExpr.NameRead nr
+                                        && isDefinitelyInitializedTopLevelBinding(
+                                                nr.name(), module));
                 yield classRefOk && allPureNothrowTerminating(r.args(), module, visitingFns);
             }
             case HirExpr.DirectThisMethodCall c -> {
@@ -211,14 +249,18 @@ public final class HirPurity {
                         yield false;
                     }
                 }
-                if (c.receiverText() != null && !(c.receiver() instanceof HirExpr.ThisRef
-                        || c.receiver() instanceof HirExpr.RecordNew || c.receiver() instanceof HirExpr.VarRead)) {
+                if (c.receiverText() != null
+                        && !(c.receiver() instanceof HirExpr.ThisRef
+                                || c.receiver() instanceof HirExpr.RecordNew
+                                || c.receiver() instanceof HirExpr.VarRead)) {
                     yield false;
                 }
                 if (c.targetFunctionId() >= 0) {
                     HirFunction fn = module.function(c.targetFunctionId());
-                    yield fn != null && isCallSitePure(fn, c.meta().effects())
-                            && isFunctionPureNothrowTerminating(fn, c.meta().effects(), module, visitingFns);
+                    yield fn != null
+                            && isCallSitePure(fn, c.meta().effects())
+                            && isFunctionPureNothrowTerminating(
+                                    fn, c.meta().effects(), module, visitingFns);
                 }
                 EffectSet fx = c.meta().effects();
                 yield fx.isPure() && fx.isNothrow() && fx.terminating();
@@ -237,27 +279,36 @@ public final class HirPurity {
                     yield false;
                 }
                 EffectSet fx = c.meta().effects();
-                yield fx.isPure() && fx.isNothrow() && fx.terminating()
+                yield fx.isPure()
+                        && fx.isNothrow()
+                        && fx.terminating()
                         && (c.receiver() instanceof HirExpr.ThisRef
-                        || c.receiver() instanceof HirExpr.RecordNew
-                        || c.receiver() instanceof HirExpr.VarRead);
+                                || c.receiver() instanceof HirExpr.RecordNew
+                                || c.receiver() instanceof HirExpr.VarRead);
             }
             default -> false;
         };
     }
 
-    private static boolean isPureLocalBlock(HirExpr.Block b, Set<Integer> outerLocals,
-                                            HirModule module, Set<Integer> visitingFns) {
+    private static boolean isPureLocalBlock(
+            HirExpr.Block b, Set<Integer> outerLocals, HirModule module, Set<Integer> visitingFns) {
         return isPureStatements(b.statements(), b.declaredVars(), outerLocals, module, visitingFns);
     }
 
-    /** Whether a scoped statement list (e.g. a {@code try} body) is pure, nothrow, and terminating. */
-    public static boolean isPureStatements(List<HirExpr> stmts, List<HirVar> declaredVars, HirModule module) {
+    /**
+     * Whether a scoped statement list (e.g. a {@code try} body) is pure, nothrow, and terminating.
+     */
+    public static boolean isPureStatements(
+            List<HirExpr> stmts, List<HirVar> declaredVars, HirModule module) {
         return isPureStatements(stmts, declaredVars, Set.of(), module, new HashSet<>());
     }
 
-    private static boolean isPureStatements(List<HirExpr> stmts, List<HirVar> declaredVars,
-                                            Set<Integer> outerLocals, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isPureStatements(
+            List<HirExpr> stmts,
+            List<HirVar> declaredVars,
+            Set<Integer> outerLocals,
+            HirModule module,
+            Set<Integer> visitingFns) {
         if (declaredVars.isEmpty() && outerLocals.isEmpty()) {
             return allPureNothrowTerminating(stmts, module, visitingFns);
         }
@@ -270,8 +321,8 @@ public final class HirPurity {
         return allPureWithLocals(stmts, localIds, module, visitingFns);
     }
 
-    private static boolean isTryPureNothrowTerminating(HirExpr.Try t, Set<Integer> outerLocals,
-                                                       HirModule module, Set<Integer> visitingFns) {
+    private static boolean isTryPureNothrowTerminating(
+            HirExpr.Try t, Set<Integer> outerLocals, HirModule module, Set<Integer> visitingFns) {
         if (t.tryOpensNamespaceScope() || t.finallyOpensNamespaceScope()) {
             return false;
         }
@@ -280,15 +331,21 @@ public final class HirPurity {
         }
         for (HirExpr.HirCatch cc : t.catches()) {
             if (cc.opensNamespaceScope()
-                    || !isPureStatements(cc.body(), cc.declaredVars(), outerLocals, module, visitingFns)) {
+                    || !isPureStatements(
+                            cc.body(), cc.declaredVars(), outerLocals, module, visitingFns)) {
                 return false;
             }
         }
         return !t.hasFinally()
-                || isPureStatements(t.finallyBody(), t.finallyDeclaredVars(), outerLocals, module, visitingFns);
+                || isPureStatements(
+                        t.finallyBody(), t.finallyDeclaredVars(), outerLocals, module, visitingFns);
     }
 
-    private static boolean allPureWithLocals(List<HirExpr> stmts, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
+    private static boolean allPureWithLocals(
+            List<HirExpr> stmts,
+            Set<Integer> localIds,
+            HirModule module,
+            Set<Integer> visitingFns) {
         for (HirExpr s : stmts) {
             if (!isPureStmtWithLocals(s, localIds, module, visitingFns)) {
                 return false;
@@ -297,7 +354,8 @@ public final class HirPurity {
         return true;
     }
 
-    private static boolean isPureStmtWithLocals(HirExpr s, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isPureStmtWithLocals(
+            HirExpr s, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
         if (s instanceof HirExpr.Def d && d.var() != null && localIds.contains(d.var().id())) {
             return d.value() == null || isPureNothrowTerminating(d.value(), module, visitingFns);
         }
@@ -313,7 +371,8 @@ public final class HirPurity {
         return isPureNothrowTerminating(s, module, visitingFns);
     }
 
-    private static boolean isPureForWithLocals(HirExpr.For f, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isPureForWithLocals(
+            HirExpr.For f, Set<Integer> localIds, HirModule module, Set<Integer> visitingFns) {
         EffectSet fx = f.meta().effects();
         if (!fx.isPure() || !fx.isNothrow() || !fx.terminating()) {
             return false;
@@ -325,7 +384,9 @@ public final class HirPurity {
                 return false;
             }
             if (cr.step() != null
-                    && !(cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L)) {
+                    && !(cr.step() instanceof HirExpr.Const sc
+                            && sc.value() instanceof Number sn
+                            && sn.longValue() > 0L)) {
                 return false;
             }
         } else if (!isPureNothrowTerminating(f.iterable(), module, visitingFns)) {
@@ -342,7 +403,9 @@ public final class HirPurity {
 
     private static boolean allArgsPrimitiveOrImmutable(List<HirExpr> args) {
         for (HirExpr a : args) {
-            if (!a.meta().kind().isPrimitive() && !a.meta().deeplyImmutable() && !a.meta().stringType()) {
+            if (!a.meta().kind().isPrimitive()
+                    && !a.meta().deeplyImmutable()
+                    && !a.meta().stringType()) {
                 return false;
             }
         }
@@ -351,18 +414,19 @@ public final class HirPurity {
 
     /**
      * Whether a direct call of {@code fn} can be pure, as far as its callable arguments go. A
-     * function that calls or passes on a function-typed parameter ({@code fn calling f},
-     * {@code BIP017}) has its own effects only on condition of what each call passes : a callback
-     * may reassign a local of the caller's frame (a {@code borrow} closure, {@code BIP016} §4.5),
-     * which is no effect of the caller as a whole, but makes the call itself impure. Only the
-     * call site's effects know, so they must be pure too.
+     * function that calls or passes on a function-typed parameter ({@code fn calling f}, {@code
+     * BIP017}) has its own effects only on condition of what each call passes : a callback may
+     * reassign a local of the caller's frame (a {@code borrow} closure, {@code BIP016} §4.5), which
+     * is no effect of the caller as a whole, but makes the call itself impure. Only the call site's
+     * effects know, so they must be pure too.
      */
     private static boolean isCallSitePure(HirFunction fn, EffectSet callSiteEffects) {
         return callSiteEffects.isPure() || !usesCallableParameter(fn);
     }
 
     private static boolean usesCallableParameter(HirFunction fn) {
-        Set<HirVar> callables = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        Set<HirVar> callables =
+                java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
         for (org.babblelang.ir.hir.HirParam p : fn.params()) {
             if (p.var() != null && p.checkedType() != null && p.checkedType().startsWith("fn|")) {
                 callables.add(p.var());
@@ -389,14 +453,16 @@ public final class HirPurity {
             found[0] = true;
             return;
         }
-        HirRewriter.rewriteChildren(expr, child -> {
-            findVarReads(child, vars, found);
-            return child;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    findVarReads(child, vars, found);
+                    return child;
+                });
     }
 
-    public static boolean isFunctionPureNothrowTerminating(HirFunction fn, EffectSet callSiteEffects,
-                                                           HirModule module, Set<Integer> visitingFns) {
+    public static boolean isFunctionPureNothrowTerminating(
+            HirFunction fn, EffectSet callSiteEffects, HirModule module, Set<Integer> visitingFns) {
         if (fn == null || fn.namespaceScope() || !fn.capturedVars().isEmpty()) {
             return false;
         }
@@ -409,7 +475,8 @@ public final class HirPurity {
         if (nothrow && term) {
             return true;
         }
-        // Fallback: check small non-recursive function body directly (handles helpers calling axiom pure nothrow Math.*).
+        // Fallback: check small non-recursive function body directly (handles helpers calling axiom
+        // pure nothrow Math.*).
         if (!visitingFns.add(fn.id())) {
             return false;
         }
@@ -425,7 +492,8 @@ public final class HirPurity {
         }
     }
 
-    private static boolean isBodyStmtPureNothrowTerminating(HirExpr expr, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isBodyStmtPureNothrowTerminating(
+            HirExpr expr, HirModule module, Set<Integer> visitingFns) {
         if (expr instanceof HirExpr.Def d && d.var() != null && !d.var().isCaptured()) {
             return d.value() == null || isPureNothrowTerminating(d.value(), module, visitingFns);
         }
@@ -455,7 +523,8 @@ public final class HirPurity {
                 }
             }
         } else if (expr instanceof HirExpr.DirectThisMethodCall c) {
-            HirFunction fn = c.targetFunctionId() >= 0 ? module.function(c.targetFunctionId()) : null;
+            HirFunction fn =
+                    c.targetFunctionId() >= 0 ? module.function(c.targetFunctionId()) : null;
             EffectSet fx = fn != null ? fn.effects() : c.meta().effects();
             if (!fx.isDeterministic()) {
                 return false;
@@ -478,12 +547,14 @@ public final class HirPurity {
             }
         }
         boolean[] ok = {true};
-        HirRewriter.rewriteChildren(expr, child -> {
-            if (ok[0] && !isDeterministic(child, module)) {
-                ok[0] = false;
-            }
-            return child;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    if (ok[0] && !isDeterministic(child, module)) {
+                        ok[0] = false;
+                    }
+                    return child;
+                });
         return ok[0];
     }
 
@@ -493,7 +564,9 @@ public final class HirPurity {
                 EffectSet fx = c.externalTarget().effects();
                 return !c.externalTarget().hasMutParam()
                         && ((fx.isPure() && fx.isDeterministic() && fx.has(Effect.IDEMPOTENT))
-                        || (c.meta().isPure() && c.meta().isDeterministic() && c.meta().isIdempotent()));
+                                || (c.meta().isPure()
+                                        && c.meta().isDeterministic()
+                                        && c.meta().isIdempotent()));
             }
             HirFunction fn = module.function(c.targetFunctionId());
             if (fn == null) return false;
@@ -508,7 +581,8 @@ public final class HirPurity {
         return false;
     }
 
-    private static boolean isMatchPureNothrowTerminating(HirExpr.Match m, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isMatchPureNothrowTerminating(
+            HirExpr.Match m, HirModule module, Set<Integer> visitingFns) {
         if (!m.exhaustive() && m.elseArm() == null) {
             return false;
         }
@@ -519,27 +593,32 @@ public final class HirPurity {
             if (!isPatternPureNothrowTerminating(arm.pattern(), module, visitingFns)) {
                 return false;
             }
-            if (arm.guard() != null && !isPureNothrowTerminating(arm.guard(), module, visitingFns)) {
+            if (arm.guard() != null
+                    && !isPureNothrowTerminating(arm.guard(), module, visitingFns)) {
                 return false;
             }
             if (!isPureNothrowTerminating(arm.body(), module, visitingFns)) {
                 return false;
             }
         }
-        return m.elseArm() == null || isPureNothrowTerminating(m.elseArm().body(), module, visitingFns);
+        return m.elseArm() == null
+                || isPureNothrowTerminating(m.elseArm().body(), module, visitingFns);
     }
 
     public static boolean isPatternPureNothrowTerminating(HirPattern pattern, HirModule module) {
         return isPatternPureNothrowTerminating(pattern, module, new HashSet<>());
     }
 
-    private static boolean isPatternPureNothrowTerminating(HirPattern pattern, HirModule module, Set<Integer> visitingFns) {
+    private static boolean isPatternPureNothrowTerminating(
+            HirPattern pattern, HirModule module, Set<Integer> visitingFns) {
         return switch (pattern) {
             case HirPattern.Const ignored -> true;
             case HirPattern.Wildcard ignored -> true;
             case HirPattern.TypeTest ignored -> true;
             case HirPattern.ValueExpr v -> isPureNothrowTerminating(v.expr(), module, visitingFns);
-            case HirPattern.Bind b -> b.inner() == null || isPatternPureNothrowTerminating(b.inner(), module, visitingFns);
+            case HirPattern.Bind b ->
+                    b.inner() == null
+                            || isPatternPureNothrowTerminating(b.inner(), module, visitingFns);
             case HirPattern.Or o -> {
                 for (HirPattern alt : o.alternatives()) {
                     if (!isPatternPureNothrowTerminating(alt, module, visitingFns)) {
@@ -548,13 +627,19 @@ public final class HirPurity {
                 }
                 yield true;
             }
-            case HirPattern.Relational r -> (r.op() == HirExpr.BinaryOp.EQ || r.op() == HirExpr.BinaryOp.NEQ
-                    || r.scrutineeKind().isPrimitive()) && isPureNothrowTerminating(r.rhs(), module, visitingFns);
-            case HirPattern.RangeTest r -> (r.step() == null
-                    || (r.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L))
-                    && (r.elemKind().isPrimitive() || r.stringElement())
-                    && isPureNothrowTerminating(r.lo(), module, visitingFns)
-                    && isPureNothrowTerminating(r.hi(), module, visitingFns);
+            case HirPattern.Relational r ->
+                    (r.op() == HirExpr.BinaryOp.EQ
+                                    || r.op() == HirExpr.BinaryOp.NEQ
+                                    || r.scrutineeKind().isPrimitive())
+                            && isPureNothrowTerminating(r.rhs(), module, visitingFns);
+            case HirPattern.RangeTest r ->
+                    (r.step() == null
+                                    || (r.step() instanceof HirExpr.Const sc
+                                            && sc.value() instanceof Number sn
+                                            && sn.longValue() > 0L))
+                            && (r.elemKind().isPrimitive() || r.stringElement())
+                            && isPureNothrowTerminating(r.lo(), module, visitingFns)
+                            && isPureNothrowTerminating(r.hi(), module, visitingFns);
             case HirPattern.Membership m -> false;
             case HirPattern.RecordDestructure rd -> {
                 if (rd.isJavaRecord()) {
@@ -578,7 +663,8 @@ public final class HirPurity {
         };
     }
 
-    private static boolean allPureNothrowTerminating(List<HirExpr> exprs, HirModule module, Set<Integer> visitingFns) {
+    private static boolean allPureNothrowTerminating(
+            List<HirExpr> exprs, HirModule module, Set<Integer> visitingFns) {
         for (HirExpr e : exprs) {
             if (!isPureNothrowTerminating(e, module, visitingFns)) {
                 return false;
@@ -587,7 +673,10 @@ public final class HirPurity {
         return true;
     }
 
-    /** Collects all {@link HirVar#id()} that are written by {@code VarAssign} or bound inside a loop. */
+    /**
+     * Collects all {@link HirVar#id()} that are written by {@code VarAssign} or bound inside a
+     * loop.
+     */
     public static void collectModifiedVars(HirExpr expr, Set<Integer> out) {
         if (expr == null) {
             return;
@@ -635,10 +724,12 @@ public final class HirPurity {
                 out.add(v.id());
             }
         }
-        HirRewriter.rewriteChildren(expr, child -> {
-            collectModifiedVars(child, out);
-            return child;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    collectModifiedVars(child, out);
+                    return child;
+                });
     }
 
     private static final class TopLevelCache {
@@ -647,7 +738,8 @@ public final class HirPurity {
         Set<String> bindings;
     }
 
-    private static final ThreadLocal<TopLevelCache> TOP_LEVEL_CACHE = ThreadLocal.withInitial(TopLevelCache::new);
+    private static final ThreadLocal<TopLevelCache> TOP_LEVEL_CACHE =
+            ThreadLocal.withInitial(TopLevelCache::new);
 
     public static boolean isDefinitelyInitializedTopLevelFn(String name, HirModule module) {
         return findDefinitelyInitializedTopLevelFns(module).contains(name);
@@ -666,8 +758,8 @@ public final class HirPurity {
     }
 
     /**
-     * Collects top-level {@code def name = fn|class|record|interface|const} bindings that appear
-     * in the leading pure declaration prefix of the module and are never reassigned.
+     * Collects top-level {@code def name = fn|class|record|interface|const} bindings that appear in
+     * the leading pure declaration prefix of the module and are never reassigned.
      */
     public static Set<String> findDefinitelyInitializedTopLevelBindings(HirModule module) {
         return cachedTopLevel(module).bindings;
@@ -679,16 +771,20 @@ public final class HirPurity {
             return cache;
         }
         Set<String> reassignedNames = new HashSet<>();
-        HirRewriter.rewriteModuleBodies(module, stmts -> {
-            for (HirExpr s : stmts) {
-                collectNameAssigns(s, reassignedNames);
-            }
-            return stmts;
-        });
+        HirRewriter.rewriteModuleBodies(
+                module,
+                stmts -> {
+                    for (HirExpr s : stmts) {
+                        collectNameAssigns(s, reassignedNames);
+                    }
+                    return stmts;
+                });
         Set<String> fns = new HashSet<>();
         Set<String> bindings = new HashSet<>();
         for (HirExpr stmt : module.topLevelStatements()) {
-            if (stmt instanceof HirExpr.Def d && d.var() == null && d.target().kind() == LoweringTargets.DefKind.LEXICAL) {
+            if (stmt instanceof HirExpr.Def d
+                    && d.var() == null
+                    && d.target().kind() == LoweringTargets.DefKind.LEXICAL) {
                 HirExpr val = unwrapTransparent(d.value());
                 if (val instanceof HirExpr.FunctionRef) {
                     if (!reassignedNames.contains(d.name())) {
@@ -697,7 +793,9 @@ public final class HirPurity {
                     }
                     continue;
                 }
-                if (val instanceof HirExpr.Const || val instanceof HirExpr.ClassExpr || val instanceof HirExpr.InterfaceExpr) {
+                if (val instanceof HirExpr.Const
+                        || val instanceof HirExpr.ClassExpr
+                        || val instanceof HirExpr.InterfaceExpr) {
                     if (!reassignedNames.contains(d.name())) {
                         bindings.add(d.name());
                     }
@@ -724,9 +822,11 @@ public final class HirPurity {
         if (expr instanceof HirExpr.NameAssign a) {
             out.add(a.name());
         }
-        HirRewriter.rewriteChildren(expr, child -> {
-            collectNameAssigns(child, out);
-            return child;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    collectNameAssigns(child, out);
+                    return child;
+                });
     }
 }

@@ -1,5 +1,9 @@
 package org.babblelang.compiler;
 
+import static org.babblelang.compiler.JvmPrimitives.*;
+import static org.objectweb.asm.Opcodes.*;
+
+import java.lang.reflect.Field;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.ExprMeta;
@@ -9,15 +13,9 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import java.lang.reflect.Field;
-
-import static org.babblelang.compiler.JvmPrimitives.*;
-import static org.objectweb.asm.Opcodes.*;
-
 /**
- * Bytecode emission for definitions, variable/field assignments, compound assignments,
- * member selection, and array creation/operations, extracted from {@link HirEmitter}
- * (BIP027-I2).
+ * Bytecode emission for definitions, variable/field assignments, compound assignments, member
+ * selection, and array creation/operations, extracted from {@link HirEmitter} (BIP027-I2).
  */
 final class AssignAndMemberEmitter {
     private final HirEmitter emitter;
@@ -61,7 +59,8 @@ final class AssignAndMemberEmitter {
         }
         if (target.kind() == LoweringTargets.DefKind.MEMBER) {
             if (c.constructorClass == null) {
-                throw new IllegalStateException("Unexpected MEMBER def outside compiled class : " + d.name());
+                throw new IllegalStateException(
+                        "Unexpected MEMBER def outside compiled class : " + d.name());
             }
             int idx = target.index();
             PrimitiveKind mk = c.constructorClass.memberKinds[idx];
@@ -102,37 +101,61 @@ final class AssignAndMemberEmitter {
         }
         defValueAs(d, PrimitiveKind.NONE);
         switch (target.kind()) {
-            case LEXICAL -> mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "initialize", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
-            case STATIC -> mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "BabbleType", "initStatic", "(ILjava/lang/Object;)Ljava/lang/Object;", false);
-            default -> mv.visitMethodInsn(INVOKESTATIC, CLASSES, "setDefault", "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;", false);
+            case LEXICAL ->
+                    mv.visitMethodInsn(
+                            INVOKEVIRTUAL,
+                            NAMESPACE,
+                            "initialize",
+                            "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;",
+                            false);
+            case STATIC ->
+                    mv.visitMethodInsn(
+                            INVOKEVIRTUAL,
+                            RUNTIME + "BabbleType",
+                            "initStatic",
+                            "(ILjava/lang/Object;)Ljava/lang/Object;",
+                            false);
+            default ->
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            CLASSES,
+                            "setDefault",
+                            "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;",
+                            false);
         }
         c.stackKind = PrimitiveKind.NONE;
     }
 
     /**
-     * Checks whether a compound assignment of {@code targetKind} with {@code rhsKind} and
-     * {@code op} can lower directly to primitive JVM arithmetic ({@code IADD/ISUB/IMUL} or
-     * {@code DADD/DSUB/DMUL/DDIV}).
+     * Checks whether a compound assignment of {@code targetKind} with {@code rhsKind} and {@code
+     * op} can lower directly to primitive JVM arithmetic ({@code IADD/ISUB/IMUL} or {@code
+     * DADD/DSUB/DMUL/DDIV}).
      */
-    private static boolean canLowerPrimitiveCompound(PrimitiveKind targetKind, PrimitiveKind rhsKind, String op) {
+    private static boolean canLowerPrimitiveCompound(
+            PrimitiveKind targetKind, PrimitiveKind rhsKind, String op) {
         if (targetKind == PrimitiveKind.INT) {
-            return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.BYTE || rhsKind == PrimitiveKind.SHORT)
+            return (rhsKind == PrimitiveKind.INT
+                            || rhsKind == PrimitiveKind.BYTE
+                            || rhsKind == PrimitiveKind.SHORT)
                     && !"/".equals(op);
         }
         if (targetKind == PrimitiveKind.LONG && "//".equals(op)) {
-            return rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.LONG
-                    || rhsKind == PrimitiveKind.BYTE || rhsKind == PrimitiveKind.SHORT;
+            return rhsKind == PrimitiveKind.INT
+                    || rhsKind == PrimitiveKind.LONG
+                    || rhsKind == PrimitiveKind.BYTE
+                    || rhsKind == PrimitiveKind.SHORT;
         }
         if (targetKind == PrimitiveKind.DOUBLE) {
-            return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE) && !"//".equals(op);
+            return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE)
+                    && !"//".equals(op);
         }
         return false;
     }
 
     /**
-     * Given the current primitive value of {@code kind} already on top of the JVM stack,
-     * saves it, evaluates {@code rhs} as {@code kind}, applies {@code op}, and leaves the
-     * resulting {@code kind} on the stack.
+     * Given the current primitive value of {@code kind} already on top of the JVM stack, saves it,
+     * evaluates {@code rhs} as {@code kind}, applies {@code op}, and leaves the resulting {@code
+     * kind} on the stack.
      */
     private void emitPrimitiveCompoundArith(PrimitiveKind kind, String op, HirExpr rhsExpr) {
         MethodEmitContext c = ctx();
@@ -146,25 +169,34 @@ final class AssignAndMemberEmitter {
         loadKindOn(mv, kind, rhs);
         if ("//".equals(op)) {
             c.line(rhsExpr.meta().line());
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math", "floorDiv",
-                    kind == PrimitiveKind.LONG ? "(JJ)J" : "(II)I", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    "java/lang/Math",
+                    "floorDiv",
+                    kind == PrimitiveKind.LONG ? "(JJ)J" : "(II)I",
+                    false);
             c.stackKind = kind;
             return;
         }
-        int opcode = kind == PrimitiveKind.INT
-                ? switch (op) {
-                    case "+" -> IADD;
-                    case "-" -> ISUB;
-                    case "*" -> IMUL;
-                    default -> throw new IllegalStateException("Unexpected int compound op: " + op);
-                }
-                : switch (op) {
-                    case "+" -> DADD;
-                    case "-" -> DSUB;
-                    case "*" -> DMUL;
-                    case "/" -> DDIV;
-                    default -> throw new IllegalStateException("Unexpected double compound op: " + op);
-                };
+        int opcode =
+                kind == PrimitiveKind.INT
+                        ? switch (op) {
+                            case "+" -> IADD;
+                            case "-" -> ISUB;
+                            case "*" -> IMUL;
+                            default ->
+                                    throw new IllegalStateException(
+                                            "Unexpected int compound op: " + op);
+                        }
+                        : switch (op) {
+                            case "+" -> DADD;
+                            case "-" -> DSUB;
+                            case "*" -> DMUL;
+                            case "/" -> DDIV;
+                            default ->
+                                    throw new IllegalStateException(
+                                            "Unexpected double compound op: " + op);
+                        };
         mv.visitInsn(opcode);
         c.stackKind = kind;
     }
@@ -210,7 +242,12 @@ final class AssignAndMemberEmitter {
             emitter.widenStackRank(a.meta().wideningRank());
             emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
             c.line(ln);
-            mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKEVIRTUAL,
+                    NAMESPACE,
+                    "assign",
+                    "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -225,7 +262,12 @@ final class AssignAndMemberEmitter {
         mv.visitLdcInsn(a.name());
         mv.visitInsn(SWAP);
         c.line(ln);
-        mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "assign", "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL,
+                NAMESPACE,
+                "assign",
+                "(Ljava/lang/String;Ljava/lang/Object;)Ljava/lang/Object;",
+                false);
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -245,9 +287,11 @@ final class AssignAndMemberEmitter {
                     mv.visitVarInsn(ASTORE, recv);
                     emitter.emitAndWiden(a.value());
                     emitter.widenStackRank(a.meta().wideningRank());
-                    if (c.stackKind == PrimitiveKind.NONE && mk == PrimitiveKind.DOUBLE
+                    if (c.stackKind == PrimitiveKind.NONE
+                            && mk == PrimitiveKind.DOUBLE
                             && a.value().meta().kind() == PrimitiveKind.INT
-                            && a.value().meta().wideningRank() < 0 && a.meta().wideningRank() < 0) {
+                            && a.value().meta().wideningRank() < 0
+                            && a.meta().wideningRank() < 0) {
                         unboxOn(mv, PrimitiveKind.INT);
                         mv.visitInsn(I2D);
                         c.stackKind = PrimitiveKind.DOUBLE;
@@ -271,7 +315,12 @@ final class AssignAndMemberEmitter {
                 mv.visitFieldInsn(GETFIELD, gen.name, name, "Ljava/lang/Object;");
                 mv.visitLdcInsn(name);
                 c.line(ln);
-                mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        CLASSES,
+                        "member",
+                        "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                        false);
                 mv.visitInsn(POP);
                 mv.visitInsn(SWAP);
                 emitter.widenStackRank(a.meta().wideningRank());
@@ -286,7 +335,12 @@ final class AssignAndMemberEmitter {
             emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
             mv.visitLdcInsn(name);
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignOwn", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Members",
+                    "assignOwn",
+                    "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -338,7 +392,12 @@ final class AssignAndMemberEmitter {
             mv.visitFieldInsn(GETFIELD, gen.name, name, "Ljava/lang/Object;");
             mv.visitLdcInsn(name);
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    CLASSES,
+                    "member",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
             mv.visitVarInsn(ASTORE, current);
             emitCompound(ln, op, a.targetText(), a.value(), a.valueText(), current);
             emitter.widenStackRank(a.meta().wideningRank());
@@ -355,7 +414,12 @@ final class AssignAndMemberEmitter {
         mv.visitVarInsn(ALOAD, thiz);
         mv.visitLdcInsn(name);
         c.line(ln);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Members",
+                "selectOwn",
+                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         mv.visitVarInsn(ASTORE, current);
         emitCompound(ln, op, a.targetText(), a.value(), a.valueText(), current);
         emitter.widenStackRank(a.meta().wideningRank());
@@ -363,7 +427,12 @@ final class AssignAndMemberEmitter {
         mv.visitInsn(SWAP);
         mv.visitLdcInsn(name);
         c.line(ln);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignOwn", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Members",
+                "assignOwn",
+                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -379,11 +448,19 @@ final class AssignAndMemberEmitter {
         int recvLocal = -1;
         if (target.isStatic()) {
             if (!a.pureStaticReceiver()) {
-                emitter.emitCheckedJavaReceiver(a.receiver(), a.receiverText(), ln, false, OBJECT, "notAssignable", null);
+                emitter.emitCheckedJavaReceiver(
+                        a.receiver(), a.receiverText(), ln, false, OBJECT, "notAssignable", null);
                 mv.visitInsn(POP);
             }
         } else {
-            emitter.emitCheckedJavaReceiver(a.receiver(), a.receiverText(), ln, target.unwrapReceiver(), owner, "notAssignable", null);
+            emitter.emitCheckedJavaReceiver(
+                    a.receiver(),
+                    a.receiverText(),
+                    ln,
+                    target.unwrapReceiver(),
+                    owner,
+                    "notAssignable",
+                    null);
             recvLocal = c.newLocal();
             mv.visitVarInsn(ASTORE, recvLocal);
         }
@@ -399,13 +476,15 @@ final class AssignAndMemberEmitter {
         if (canLowerPrimitiveCompound(fieldKind, a.value().meta().kind(), op)) {
             if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
             c.line(ln);
-            mv.visitFieldInsn(target.isStatic() ? GETSTATIC : GETFIELD, owner, field.getName(), desc);
+            mv.visitFieldInsn(
+                    target.isStatic() ? GETSTATIC : GETFIELD, owner, field.getName(), desc);
             emitPrimitiveCompoundArith(fieldKind, op, a.value());
             int res = c.newLocal(fieldKind);
             storeKindOn(mv, fieldKind, res);
             if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
             loadKindOn(mv, fieldKind, res);
-            mv.visitFieldInsn(target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
+            mv.visitFieldInsn(
+                    target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
             loadKindOn(mv, fieldKind, res);
             c.stackKind = fieldKind;
             return;
@@ -428,7 +507,14 @@ final class AssignAndMemberEmitter {
         } else {
             mv.visitLdcInsn(Type.getType(fieldType));
             mv.visitVarInsn(ALOAD, c.rtLocal);
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava", "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "toJava",
+                    "(Ljava/lang/Object;Ljava/lang/Class;L"
+                            + SCRIPT_RUNTIME
+                            + ";)Ljava/lang/Object;",
+                    false);
             if (fieldType != Object.class) {
                 mv.visitTypeInsn(CHECKCAST, Type.getInternalName(fieldType));
             }
@@ -438,9 +524,15 @@ final class AssignAndMemberEmitter {
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitSimpleJavaFieldAssign(HirExpr.JavaFieldAssign a, LoweringTargets.JavaFieldTarget target,
-                                           Field field, Class<?> fieldType, String owner, String desc,
-                                           int recvLocal, int ln) {
+    private void emitSimpleJavaFieldAssign(
+            HirExpr.JavaFieldAssign a,
+            LoweringTargets.JavaFieldTarget target,
+            Field field,
+            Class<?> fieldType,
+            String owner,
+            String desc,
+            int recvLocal,
+            int ln) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         if (fieldType == int.class || fieldType == boolean.class) {
@@ -451,7 +543,8 @@ final class AssignAndMemberEmitter {
             c.line(ln);
             if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
             mv.visitVarInsn(ILOAD, val);
-            mv.visitFieldInsn(target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
+            mv.visitFieldInsn(
+                    target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
             mv.visitVarInsn(ILOAD, val);
             c.stackKind = pk;
             return;
@@ -463,7 +556,8 @@ final class AssignAndMemberEmitter {
             c.line(ln);
             if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
             mv.visitVarInsn(DLOAD, val);
-            mv.visitFieldInsn(target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
+            mv.visitFieldInsn(
+                    target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
             mv.visitVarInsn(DLOAD, val);
             c.stackKind = PrimitiveKind.DOUBLE;
             return;
@@ -482,9 +576,11 @@ final class AssignAndMemberEmitter {
             c.line(ln);
             if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
             mv.visitVarInsn(LLOAD, val);
-            mv.visitFieldInsn(target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
+            mv.visitFieldInsn(
+                    target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
             mv.visitVarInsn(LLOAD, val);
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -502,9 +598,11 @@ final class AssignAndMemberEmitter {
             c.line(ln);
             if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
             mv.visitVarInsn(FLOAD, val);
-            mv.visitFieldInsn(target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
+            mv.visitFieldInsn(
+                    target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
             mv.visitVarInsn(FLOAD, val);
-            mv.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -519,7 +617,14 @@ final class AssignAndMemberEmitter {
         if (!valKind.isPrimitive()) {
             mv.visitLdcInsn(Type.getType(fieldType));
             mv.visitVarInsn(ALOAD, c.rtLocal);
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava", "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "toJava",
+                    "(Ljava/lang/Object;Ljava/lang/Class;L"
+                            + SCRIPT_RUNTIME
+                            + ";)Ljava/lang/Object;",
+                    false);
         }
         if (fieldType != Object.class) {
             mv.visitTypeInsn(CHECKCAST, Type.getInternalName(fieldType));
@@ -537,13 +642,23 @@ final class AssignAndMemberEmitter {
             emitter.emitBoxed(a.receiver());
             c.line(ln);
             ConstantPool.pushString(mv, a.receiverText());
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Members",
+                    "assignable",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
             emitter.emitAndWiden(a.value());
             emitter.widenStackRank(a.meta().wideningRank());
             emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
             mv.visitLdcInsn(a.memberName());
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assign", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Members",
+                    "assign",
+                    "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -552,13 +667,23 @@ final class AssignAndMemberEmitter {
         emitter.emitBoxed(a.receiver());
         c.line(ln);
         ConstantPool.pushString(mv, a.receiverText());
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assignable", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Members",
+                "assignable",
+                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         mv.visitVarInsn(ASTORE, scope);
         mv.visitVarInsn(ALOAD, scope);
         mv.visitLdcInsn(a.memberName());
         ConstantPool.pushString(mv, a.receiverText());
         c.line(ln);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Members",
+                "select",
+                "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         mv.visitVarInsn(ASTORE, current);
         emitCompound(ln, a.operator(), a.targetText(), a.value(), a.valueText(), current);
         emitter.widenStackRank(a.meta().wideningRank());
@@ -566,16 +691,28 @@ final class AssignAndMemberEmitter {
         mv.visitInsn(SWAP);
         mv.visitLdcInsn(a.memberName());
         c.line(ln);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "assign", "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Members",
+                "assign",
+                "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitCompound(int lineNumber, String operator, String targetText, HirExpr rhsExpr, String rhsText, int currentLocal) {
+    private void emitCompound(
+            int lineNumber,
+            String operator,
+            String targetText,
+            HirExpr rhsExpr,
+            String rhsText,
+            int currentLocal) {
         MethodEmitContext c = ctx();
         int value = c.newLocal();
         emitter.emitBoxed(rhsExpr);
         c.mv.visitVarInsn(ASTORE, value);
-        emitter.controlOps.emitDynamicArithmetic(lineNumber, operator, targetText, rhsText, currentLocal, value);
+        emitter.controlOps.emitDynamicArithmetic(
+                lineNumber, operator, targetText, rhsText, currentLocal, value);
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -587,9 +724,13 @@ final class AssignAndMemberEmitter {
         int ln = g.meta().line();
         if (g.receiverText() != null) {
             ClassGen gen = g.classId() >= 0 ? emitter.classGen(g.classId()) : null;
-            String targetJvm = g.externalClassJvmName() != null ? g.externalClassJvmName() : (gen != null ? gen.name : null);
+            String targetJvm =
+                    g.externalClassJvmName() != null
+                            ? g.externalClassJvmName()
+                            : (gen != null ? gen.name : null);
             int idx = g.memberIndex();
-            if (targetJvm != null && (g.externalClassJvmName() != null || (gen != null && idx >= 0))) {
+            if (targetJvm != null
+                    && (g.externalClassJvmName() != null || (gen != null && idx >= 0))) {
                 emitter.emitBoxed(g.receiver());
                 Label ok = new Label();
                 mv.visitInsn(DUP);
@@ -597,7 +738,12 @@ final class AssignAndMemberEmitter {
                 mv.visitInsn(POP);
                 c.line(ln);
                 ConstantPool.pushString(mv, g.receiverText());
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "notAScope", "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "Members",
+                        "notAScope",
+                        "(Ljava/lang/String;)L" + RUNTIME + "BabbleException;",
+                        false);
                 mv.visitInsn(ATHROW);
                 mv.visitLabel(ok);
                 mv.visitTypeInsn(CHECKCAST, targetJvm);
@@ -618,7 +764,12 @@ final class AssignAndMemberEmitter {
                 if (!g.definitelyDefined()) {
                     mv.visitLdcInsn(g.memberName());
                     c.line(ln);
-                    mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            CLASSES,
+                            "member",
+                            "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                            false);
                 }
                 c.stackKind = PrimitiveKind.NONE;
                 checkSelectorType(g.meta());
@@ -645,12 +796,22 @@ final class AssignAndMemberEmitter {
             mv.visitFieldInsn(GETFIELD, gen.name, g.memberName(), "Ljava/lang/Object;");
             mv.visitLdcInsn(g.memberName());
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, CLASSES, "member", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    CLASSES,
+                    "member",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
         } else {
             emitter.emitBoxed(g.receiver());
             mv.visitLdcInsn(g.memberName());
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "selectOwn", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Members",
+                    "selectOwn",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
         }
         c.stackKind = PrimitiveKind.NONE;
         checkSelectorType(g.meta());
@@ -665,15 +826,25 @@ final class AssignAndMemberEmitter {
         String owner = Type.getInternalName(field.getDeclaringClass());
         if (target.isStatic()) {
             if (!g.pureStaticReceiver()) {
-                emitter.emitCheckedJavaReceiver(g.receiver(), g.receiverText(), ln, false, OBJECT, "notAScope", null);
+                emitter.emitCheckedJavaReceiver(
+                        g.receiver(), g.receiverText(), ln, false, OBJECT, "notAScope", null);
                 mv.visitInsn(POP);
             }
             c.line(ln);
-            mv.visitFieldInsn(GETSTATIC, owner, field.getName(), Type.getDescriptor(field.getType()));
+            mv.visitFieldInsn(
+                    GETSTATIC, owner, field.getName(), Type.getDescriptor(field.getType()));
         } else {
-            emitter.emitCheckedJavaReceiver(g.receiver(), g.receiverText(), ln, target.unwrapReceiver(), owner, "notAScope", null);
+            emitter.emitCheckedJavaReceiver(
+                    g.receiver(),
+                    g.receiverText(),
+                    ln,
+                    target.unwrapReceiver(),
+                    owner,
+                    "notAScope",
+                    null);
             c.line(ln);
-            mv.visitFieldInsn(GETFIELD, owner, field.getName(), Type.getDescriptor(field.getType()));
+            mv.visitFieldInsn(
+                    GETFIELD, owner, field.getName(), Type.getDescriptor(field.getType()));
         }
         emitter.emitJavaValueToBabbleStack(field.getType());
         checkSelectorType(g.meta());
@@ -706,10 +877,21 @@ final class AssignAndMemberEmitter {
                         if (c.componentIsJavaInterface() && c.componentClass() != null) {
                             mv.visitLdcInsn(Type.getType(c.componentClass()));
                             mv.visitVarInsn(ALOAD, mc.rtLocal);
-                            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava",
-                                    "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                            mv.visitMethodInsn(
+                                    INVOKESTATIC,
+                                    VALUES,
+                                    "toJava",
+                                    "(Ljava/lang/Object;Ljava/lang/Class;L"
+                                            + SCRIPT_RUNTIME
+                                            + ";)Ljava/lang/Object;",
+                                    false);
                         } else {
-                            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                            mv.visitMethodInsn(
+                                    INVOKESTATIC,
+                                    VALUES,
+                                    "unwrap",
+                                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                    false);
                         }
                     }
                     mc.line(ln);
@@ -726,8 +908,14 @@ final class AssignAndMemberEmitter {
                 emitter.emitBoxed(c.args().get(0));
                 mv.visitVarInsn(ALOAD, mc.rtLocal);
                 mc.line(ln);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "from",
-                        "(Ljava/lang/Class;Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "ArraySupport",
+                        "from",
+                        "(Ljava/lang/Class;Ljava/lang/Object;L"
+                                + SCRIPT_RUNTIME
+                                + ";)Ljava/lang/Object;",
+                        false);
             }
         }
         mc.stackKind = PrimitiveKind.NONE;
@@ -739,16 +927,21 @@ final class AssignAndMemberEmitter {
         MethodVisitor mv = c.mv;
         int ln = op.meta().line();
         PrimitiveKind elemKind = op.elemKind();
-        String castName = elemKind.isPrimitive() ? Type.getInternalName(op.arrayClass()) : "[Ljava/lang/Object;";
+        String castName =
+                elemKind.isPrimitive()
+                        ? Type.getInternalName(op.arrayClass())
+                        : "[Ljava/lang/Object;";
         switch (op.kind()) {
             case SIZE -> {
-                emitter.emitCheckedJavaReceiver(op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
+                emitter.emitCheckedJavaReceiver(
+                        op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
                 c.line(ln);
                 mv.visitInsn(ARRAYLENGTH);
                 c.stackKind = PrimitiveKind.INT;
             }
             case GET -> {
-                emitter.emitCheckedJavaReceiver(op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
+                emitter.emitCheckedJavaReceiver(
+                        op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
                 emitter.emitAs(op.args().get(0), PrimitiveKind.INT);
                 c.line(ln);
                 if (elemKind.isPrimitive()) {
@@ -756,12 +949,18 @@ final class AssignAndMemberEmitter {
                     c.stackKind = elemKind;
                 } else {
                     mv.visitInsn(AALOAD);
-                    mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            VALUES,
+                            "fromJava",
+                            "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            false);
                     c.stackKind = PrimitiveKind.NONE;
                 }
             }
             case SET -> {
-                emitter.emitCheckedJavaReceiver(op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
+                emitter.emitCheckedJavaReceiver(
+                        op.receiver(), op.receiverText(), ln, true, castName, "notAScope", null);
                 emitter.emitAs(op.args().get(0), PrimitiveKind.INT);
                 if (elemKind.isPrimitive()) {
                     emitter.emitAs(op.args().get(1), elemKind);
@@ -770,10 +969,21 @@ final class AssignAndMemberEmitter {
                     if (op.componentClass() != null && op.componentClass().isInterface()) {
                         mv.visitLdcInsn(Type.getType(op.componentClass()));
                         mv.visitVarInsn(ALOAD, c.rtLocal);
-                        mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJava",
-                                "(Ljava/lang/Object;Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+                        mv.visitMethodInsn(
+                                INVOKESTATIC,
+                                VALUES,
+                                "toJava",
+                                "(Ljava/lang/Object;Ljava/lang/Class;L"
+                                        + SCRIPT_RUNTIME
+                                        + ";)Ljava/lang/Object;",
+                                false);
                     } else {
-                        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                        mv.visitMethodInsn(
+                                INVOKESTATIC,
+                                VALUES,
+                                "unwrap",
+                                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                                false);
                     }
                 }
                 c.line(ln);
@@ -785,40 +995,55 @@ final class AssignAndMemberEmitter {
                 emitter.emitBoxed(op.receiver());
                 emitter.emitBoxed(op.args().get(0));
                 c.line(ln);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "deepEquals",
-                        "(Ljava/lang/Object;Ljava/lang/Object;)Z", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "ArraySupport",
+                        "deepEquals",
+                        "(Ljava/lang/Object;Ljava/lang/Object;)Z",
+                        false);
                 c.stackKind = PrimitiveKind.BOOL;
             }
             case HASH_CODE -> {
                 emitter.emitBoxed(op.receiver());
                 c.line(ln);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "deepHashCode", "(Ljava/lang/Object;)I", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "ArraySupport",
+                        "deepHashCode",
+                        "(Ljava/lang/Object;)I",
+                        false);
                 c.stackKind = PrimitiveKind.INT;
             }
             case TO_STRING -> {
                 emitter.emitBoxed(op.receiver());
                 c.line(ln);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "ArraySupport", "deepToString",
-                        "(Ljava/lang/Object;)Ljava/lang/String;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "ArraySupport",
+                        "deepToString",
+                        "(Ljava/lang/Object;)Ljava/lang/String;",
+                        false);
                 c.stackKind = PrimitiveKind.NONE;
             }
         }
         emitter.calls.finishCallCheck(op.meta());
     }
 
-    private static void emitNewArray(MethodVisitor mv, PrimitiveKind elemKind, String componentInternalName) {
+    private static void emitNewArray(
+            MethodVisitor mv, PrimitiveKind elemKind, String componentInternalName) {
         if (elemKind.isPrimitive()) {
-            int code = switch (elemKind) {
-                case BYTE -> T_BYTE;
-                case SHORT -> T_SHORT;
-                case INT -> T_INT;
-                case LONG -> T_LONG;
-                case FLOAT -> T_FLOAT;
-                case DOUBLE -> T_DOUBLE;
-                case BOOL -> T_BOOLEAN;
-                case CHAR -> T_CHAR;
-                case NONE -> throw new IllegalStateException();
-            };
+            int code =
+                    switch (elemKind) {
+                        case BYTE -> T_BYTE;
+                        case SHORT -> T_SHORT;
+                        case INT -> T_INT;
+                        case LONG -> T_LONG;
+                        case FLOAT -> T_FLOAT;
+                        case DOUBLE -> T_DOUBLE;
+                        case BOOL -> T_BOOLEAN;
+                        case CHAR -> T_CHAR;
+                        case NONE -> throw new IllegalStateException();
+                    };
             mv.visitIntInsn(NEWARRAY, code);
         } else {
             mv.visitTypeInsn(ANEWARRAY, componentInternalName);
@@ -826,17 +1051,18 @@ final class AssignAndMemberEmitter {
     }
 
     private static void pushPrimitiveClass(MethodVisitor mv, PrimitiveKind elemKind) {
-        String wrapper = switch (elemKind) {
-            case BYTE -> "java/lang/Byte";
-            case SHORT -> "java/lang/Short";
-            case INT -> "java/lang/Integer";
-            case LONG -> "java/lang/Long";
-            case FLOAT -> "java/lang/Float";
-            case DOUBLE -> "java/lang/Double";
-            case BOOL -> "java/lang/Boolean";
-            case CHAR -> "java/lang/Character";
-            case NONE -> throw new IllegalStateException();
-        };
+        String wrapper =
+                switch (elemKind) {
+                    case BYTE -> "java/lang/Byte";
+                    case SHORT -> "java/lang/Short";
+                    case INT -> "java/lang/Integer";
+                    case LONG -> "java/lang/Long";
+                    case FLOAT -> "java/lang/Float";
+                    case DOUBLE -> "java/lang/Double";
+                    case BOOL -> "java/lang/Boolean";
+                    case CHAR -> "java/lang/Character";
+                    case NONE -> throw new IllegalStateException();
+                };
         mv.visitFieldInsn(GETSTATIC, wrapper, "TYPE", "Ljava/lang/Class;");
     }
 
@@ -873,7 +1099,8 @@ final class AssignAndMemberEmitter {
         mv.visitTypeInsn(CHECKCAST, RUNTIME + "Module");
         ConstantPool.pushInt(mv, g.target().index());
         c.line(g.meta().line());
-        mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "Module", "exportAt", "(I)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL, RUNTIME + "Module", "exportAt", "(I)Ljava/lang/Object;", false);
         c.stackKind = PrimitiveKind.NONE;
         checkSelectorType(g.meta());
     }
@@ -922,11 +1149,21 @@ final class AssignAndMemberEmitter {
         MethodVisitor mv = c.mv;
         c.line(lineNumber);
         if (text.length() <= ConstantPool.MAX_STRING_CONSTANT) {
-            mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, name, text);
+            mv.visitInvokeDynamicInsn(
+                    "select",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    SELECT_BOOTSTRAP,
+                    name,
+                    text);
         } else {
             mv.visitLdcInsn(name);
             ConstantPool.pushString(mv, text);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Members", "select", "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Members",
+                    "select",
+                    "(Ljava/lang/Object;Ljava/lang/String;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
         }
         c.stackKind = PrimitiveKind.NONE;
     }

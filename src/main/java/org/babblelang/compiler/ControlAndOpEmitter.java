@@ -1,5 +1,10 @@
 package org.babblelang.compiler;
 
+import static org.babblelang.compiler.JvmPrimitives.*;
+import static org.objectweb.asm.Opcodes.*;
+
+import java.util.ArrayList;
+import java.util.List;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirExpr;
@@ -11,16 +16,10 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import java.util.ArrayList;
-import java.util.List;
-
-import static org.babblelang.compiler.JvmPrimitives.*;
-import static org.objectweb.asm.Opcodes.*;
-
 /**
  * Bytecode emission for unary/binary/logical operators, conditions, type checks/casts/SAM
- * adaptations, blocks, conditionals, loops ({@code while}/{@code for}), and jumps
- * ({@code break}/{@code continue}/{@code return}), extracted from {@link HirEmitter} (BIP027-I2).
+ * adaptations, blocks, conditionals, loops ({@code while}/{@code for}), and jumps ({@code
+ * break}/{@code continue}/{@code return}), extracted from {@link HirEmitter} (BIP027-I2).
  */
 final class ControlAndOpEmitter {
     private final HirEmitter emitter;
@@ -82,7 +81,8 @@ final class ControlAndOpEmitter {
         Label number = new Label();
         Label end = new Label();
         mv.visitVarInsn(ALOAD, operand);
-        mv.visitMethodInsn(INVOKESTATIC, BABBLE_OBJECTS, "isInstance", "(Ljava/lang/Object;)Z", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, BABBLE_OBJECTS, "isInstance", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, number);
         emitOperatorCall(u.meta().line(), u.operandText(), Operators.NEGATE, null, operand, -1);
         mv.visitJumpInsn(GOTO, end);
@@ -90,7 +90,12 @@ final class ControlAndOpEmitter {
         mv.visitVarInsn(ALOAD, operand);
         mv.visitLdcInsn(u.operandText());
         c.line(u.meta().line());
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", "negate", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Operators",
+                "negate",
+                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         mv.visitLabel(end);
         c.stackKind = PrimitiveKind.NONE;
     }
@@ -114,35 +119,41 @@ final class ControlAndOpEmitter {
         PrimitiveKind resultKind = b.meta().kind();
         PrimitiveKind lk = b.left().meta().kind();
         PrimitiveKind rk = b.right().meta().kind();
-        if (isNumericKind(lk) && isNumericKind(rk)
-                && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL)) {
+        if (isNumericKind(lk)
+                && isNumericKind(rk)
+                && (b.op() == HirExpr.BinaryOp.ADD
+                        || b.op() == HirExpr.BinaryOp.SUB
+                        || b.op() == HirExpr.BinaryOp.MUL)) {
             if (resultKind == PrimitiveKind.INT) {
                 emitter.emitAs(b.left(), PrimitiveKind.INT);
                 emitter.emitAs(b.right(), PrimitiveKind.INT);
-                mv.visitInsn(switch (b.op()) {
-                    case ADD -> IADD;
-                    case SUB -> ISUB;
-                    case MUL -> IMUL;
-                    default -> throw new IllegalStateException();
-                });
+                mv.visitInsn(
+                        switch (b.op()) {
+                            case ADD -> IADD;
+                            case SUB -> ISUB;
+                            case MUL -> IMUL;
+                            default -> throw new IllegalStateException();
+                        });
                 c.stackKind = PrimitiveKind.INT;
                 return;
             }
             if (resultKind == PrimitiveKind.LONG) {
                 emitter.emitAs(b.left(), PrimitiveKind.LONG);
                 emitter.emitAs(b.right(), PrimitiveKind.LONG);
-                mv.visitInsn(switch (b.op()) {
-                    case ADD -> LADD;
-                    case SUB -> LSUB;
-                    case MUL -> LMUL;
-                    default -> throw new IllegalStateException();
-                });
+                mv.visitInsn(
+                        switch (b.op()) {
+                            case ADD -> LADD;
+                            case SUB -> LSUB;
+                            case MUL -> LMUL;
+                            default -> throw new IllegalStateException();
+                        });
                 c.stackKind = PrimitiveKind.LONG;
                 return;
             }
         }
 
-        if (isNumericKind(lk) && isNumericKind(rk)
+        if (isNumericKind(lk)
+                && isNumericKind(rk)
                 && (b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
             if (resultKind == PrimitiveKind.INT) {
                 emitter.emitAs(b.left(), PrimitiveKind.INT);
@@ -168,8 +179,12 @@ final class ControlAndOpEmitter {
                 }
                 emitter.emitAs(b.right(), PrimitiveKind.INT);
                 c.line(b.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math",
-                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv", "(II)I", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        "java/lang/Math",
+                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv",
+                        "(II)I",
+                        false);
                 c.stackKind = PrimitiveKind.INT;
                 return;
             }
@@ -197,62 +212,84 @@ final class ControlAndOpEmitter {
                 }
                 emitter.emitAs(b.right(), PrimitiveKind.LONG);
                 c.line(b.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, "java/lang/Math",
-                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv", "(JJ)J", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        "java/lang/Math",
+                        b.op() == HirExpr.BinaryOp.MOD ? "floorMod" : "floorDiv",
+                        "(JJ)J",
+                        false);
                 c.stackKind = PrimitiveKind.LONG;
                 return;
             }
         }
 
-        if (resultKind == PrimitiveKind.FLOAT && isNumericKind(lk) && isNumericKind(rk) && b.op().isArithmetic()) {
+        if (resultKind == PrimitiveKind.FLOAT
+                && isNumericKind(lk)
+                && isNumericKind(rk)
+                && b.op().isArithmetic()) {
             emitter.emitAs(b.left(), PrimitiveKind.FLOAT);
             emitter.emitAs(b.right(), PrimitiveKind.FLOAT);
-            mv.visitInsn(switch (b.op()) {
-                case ADD -> FADD;
-                case SUB -> FSUB;
-                case MUL -> FMUL;
-                case DIV -> FDIV;
-                default -> throw new IllegalStateException();
-            });
+            mv.visitInsn(
+                    switch (b.op()) {
+                        case ADD -> FADD;
+                        case SUB -> FSUB;
+                        case MUL -> FMUL;
+                        case DIV -> FDIV;
+                        default -> throw new IllegalStateException();
+                    });
             c.stackKind = PrimitiveKind.FLOAT;
             return;
         }
 
-        if (resultKind == PrimitiveKind.DOUBLE && isNumericKind(lk) && isNumericKind(rk) && b.op().isArithmetic()) {
+        if (resultKind == PrimitiveKind.DOUBLE
+                && isNumericKind(lk)
+                && isNumericKind(rk)
+                && b.op().isArithmetic()) {
             emitter.emitAs(b.left(), PrimitiveKind.DOUBLE);
             emitter.emitAs(b.right(), PrimitiveKind.DOUBLE);
-            mv.visitInsn(switch (b.op()) {
-                case ADD -> DADD;
-                case SUB -> DSUB;
-                case MUL -> DMUL;
-                case DIV -> DDIV;
-                default -> throw new IllegalStateException();
-            });
+            mv.visitInsn(
+                    switch (b.op()) {
+                        case ADD -> DADD;
+                        case SUB -> DSUB;
+                        case MUL -> DMUL;
+                        case DIV -> DDIV;
+                        default -> throw new IllegalStateException();
+                    });
             c.stackKind = PrimitiveKind.DOUBLE;
             return;
         }
 
-        String method = switch (b.op()) {
-            case MUL -> "mul";
-            case DIV -> "div";
-            case FLOOR_DIV -> "floorDiv";
-            case MOD -> "mod";
-            case ADD -> "add";
-            case SUB -> "sub";
-            case LT -> "lt";
-            case LTE -> "le";
-            case EQ -> "eq";
-            case NEQ -> "ne";
-            case GTE -> "ge";
-            case GT -> "gt";
-        };
+        String method =
+                switch (b.op()) {
+                    case MUL -> "mul";
+                    case DIV -> "div";
+                    case FLOOR_DIV -> "floorDiv";
+                    case MOD -> "mod";
+                    case ADD -> "add";
+                    case SUB -> "sub";
+                    case LT -> "lt";
+                    case LTE -> "le";
+                    case EQ -> "eq";
+                    case NEQ -> "ne";
+                    case GTE -> "ge";
+                    case GT -> "gt";
+                };
         String operatorMethod = Operators.method(b.op().symbol());
         if (operatorMethod == null) {
             emitter.emitBoxed(b.left());
             emitter.emitBoxed(b.right());
-            mv.visitFieldInsn(GETSTATIC, emitter.className, emitter.constantPool.opSiteField(b.leftText(), b.rightText()), "L" + OP_SITE + ";");
+            mv.visitFieldInsn(
+                    GETSTATIC,
+                    emitter.className,
+                    emitter.constantPool.opSiteField(b.leftText(), b.rightText()),
+                    "L" + OP_SITE + ";");
             c.line(b.meta().line());
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", method, "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Operators",
+                    method,
+                    "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;",
+                    false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -262,7 +299,8 @@ final class ControlAndOpEmitter {
         mv.visitVarInsn(ASTORE, left);
         emitter.emitBoxed(b.right());
         mv.visitVarInsn(ASTORE, right);
-        emitDynamicArithmetic(b.meta().line(), b.op().symbol(), b.leftText(), b.rightText(), left, right);
+        emitDynamicArithmetic(
+                b.meta().line(), b.op().symbol(), b.leftText(), b.rightText(), left, right);
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -277,49 +315,76 @@ final class ControlAndOpEmitter {
                 emitter.emitAs(r.end(), PrimitiveKind.BYTE);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofByte", "(BBZ)L" + RUNTIME + "IntRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, rangeOwner, "ofByte", "(BBZ)L" + RUNTIME + "IntRange;", true);
             }
             case SHORT -> {
                 emitter.emitAs(r.start(), PrimitiveKind.SHORT);
                 emitter.emitAs(r.end(), PrimitiveKind.SHORT);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofShort", "(SSZ)L" + RUNTIME + "IntRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofShort",
+                        "(SSZ)L" + RUNTIME + "IntRange;",
+                        true);
             }
             case INT -> {
                 emitter.emitAs(r.start(), PrimitiveKind.INT);
                 emitter.emitAs(r.end(), PrimitiveKind.INT);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofInt", "(IIZ)L" + RUNTIME + "IntRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, rangeOwner, "ofInt", "(IIZ)L" + RUNTIME + "IntRange;", true);
             }
             case LONG -> {
                 emitter.emitAs(r.start(), PrimitiveKind.LONG);
                 emitter.emitAs(r.end(), PrimitiveKind.LONG);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofLong", "(JJZ)L" + RUNTIME + "LongRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofLong",
+                        "(JJZ)L" + RUNTIME + "LongRange;",
+                        true);
             }
             case CHAR -> {
                 emitter.emitAs(r.start(), PrimitiveKind.CHAR);
                 emitter.emitAs(r.end(), PrimitiveKind.CHAR);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofChar", "(CCZ)L" + RUNTIME + "CharRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofChar",
+                        "(CCZ)L" + RUNTIME + "CharRange;",
+                        true);
             }
             case FLOAT -> {
                 emitter.emitAs(r.start(), PrimitiveKind.FLOAT);
                 emitter.emitAs(r.end(), PrimitiveKind.FLOAT);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofFloat", "(FFZ)L" + RUNTIME + "DoubleRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofFloat",
+                        "(FFZ)L" + RUNTIME + "DoubleRange;",
+                        true);
             }
             case DOUBLE -> {
                 emitter.emitAs(r.start(), PrimitiveKind.DOUBLE);
                 emitter.emitAs(r.end(), PrimitiveKind.DOUBLE);
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofDouble", "(DDZ)L" + RUNTIME + "DoubleRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofDouble",
+                        "(DDZ)L" + RUNTIME + "DoubleRange;",
+                        true);
             }
             default -> {
                 emitter.emitBoxed(r.start());
@@ -328,53 +393,93 @@ final class ControlAndOpEmitter {
                 mv.visitTypeInsn(CHECKCAST, "java/lang/Comparable");
                 mv.visitInsn(r.inclusive() ? ICONST_1 : ICONST_0);
                 c.line(r.meta().line());
-                mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "ofComparable",
-                        "(Ljava/lang/Comparable;Ljava/lang/Comparable;Z)L" + RUNTIME + "ComparableRange;", true);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        rangeOwner,
+                        "ofComparable",
+                        "(Ljava/lang/Comparable;Ljava/lang/Comparable;Z)L"
+                                + RUNTIME
+                                + "ComparableRange;",
+                        true);
             }
         }
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    void emitDynamicArithmetic(int lineNumber, String operator, String leftText, String rightText, int left, int right) {
+    void emitDynamicArithmetic(
+            int lineNumber,
+            String operator,
+            String leftText,
+            String rightText,
+            int left,
+            int right) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        String method = switch (operator) {
-            case "*" -> "mul";
-            case "/" -> "div";
-            case "//" -> "floorDiv";
-            case "mod" -> "mod";
-            case "+" -> "add";
-            case "-" -> "sub";
-            default -> throw new IllegalStateException("Bad op : " + operator);
-        };
+        String method =
+                switch (operator) {
+                    case "*" -> "mul";
+                    case "/" -> "div";
+                    case "//" -> "floorDiv";
+                    case "mod" -> "mod";
+                    case "+" -> "add";
+                    case "-" -> "sub";
+                    default -> throw new IllegalStateException("Bad op : " + operator);
+                };
         Label numbers = new Label();
         Label end = new Label();
         mv.visitVarInsn(ALOAD, left);
-        mv.visitMethodInsn(INVOKESTATIC, BABBLE_OBJECTS, "isInstance", "(Ljava/lang/Object;)Z", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, BABBLE_OBJECTS, "isInstance", "(Ljava/lang/Object;)Z", false);
         mv.visitJumpInsn(IFEQ, numbers);
         emitOperatorCall(lineNumber, leftText, Operators.method(operator), rightText, left, right);
         mv.visitJumpInsn(GOTO, end);
         mv.visitLabel(numbers);
         mv.visitVarInsn(ALOAD, left);
         mv.visitVarInsn(ALOAD, right);
-        mv.visitFieldInsn(GETSTATIC, emitter.className, emitter.constantPool.opSiteField(leftText, rightText), "L" + OP_SITE + ";");
+        mv.visitFieldInsn(
+                GETSTATIC,
+                emitter.className,
+                emitter.constantPool.opSiteField(leftText, rightText),
+                "L" + OP_SITE + ";");
         c.line(lineNumber);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Operators", method, "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Operators",
+                method,
+                "(Ljava/lang/Object;Ljava/lang/Object;L" + OP_SITE + ";)Ljava/lang/Object;",
+                false);
         mv.visitLabel(end);
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitOperatorCall(int lineNumber, String receiver, String method, String argumentText, int receiverLocal, int argument) {
+    private void emitOperatorCall(
+            int lineNumber,
+            String receiver,
+            String method,
+            String argumentText,
+            int receiverLocal,
+            int argument) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        String[] argTexts = argumentText == null ? new String[0] : new String[]{argumentText};
-        CallSite site = new CallSite(emitter.sourceName, lineNumber, receiver + "." + method, argTexts);
+        String[] argTexts = argumentText == null ? new String[0] : new String[] {argumentText};
+        CallSite site =
+                new CallSite(emitter.sourceName, lineNumber, receiver + "." + method, argTexts);
         String field = emitter.constantPool.callSiteField(site);
         mv.visitVarInsn(ALOAD, receiverLocal);
         c.line(lineNumber);
-        mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, method, receiver);
+        mv.visitInvokeDynamicInsn(
+                "select",
+                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                SELECT_BOOTSTRAP,
+                method,
+                receiver);
         mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + CALL_SITE + ";");
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Calls",
+                "callable",
+                "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";",
+                false);
         mv.visitVarInsn(ALOAD, c.rtLocal);
         mv.visitInsn(ACONST_NULL);
         mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + CALL_SITE + ";");
@@ -382,8 +487,18 @@ final class ControlAndOpEmitter {
             mv.visitVarInsn(ALOAD, argument);
         }
         c.line(lineNumber);
-        mv.visitInvokeDynamicInsn("call", "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/String;L" + CALL_SITE + ";"
-                + (argument >= 0 ? "Ljava/lang/Object;" : "") + ")Ljava/lang/Object;", CALL_BOOTSTRAP);
+        mv.visitInvokeDynamicInsn(
+                "call",
+                "(L"
+                        + CALLABLE
+                        + ";L"
+                        + SCRIPT_RUNTIME
+                        + ";[Ljava/lang/String;L"
+                        + CALL_SITE
+                        + ";"
+                        + (argument >= 0 ? "Ljava/lang/Object;" : "")
+                        + ")Ljava/lang/Object;",
+                CALL_BOOTSTRAP);
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -430,7 +545,8 @@ final class ControlAndOpEmitter {
         }
         emitter.emitExpr(expr);
         switch (c.stackKind) {
-            case BOOL, BYTE, SHORT, INT, CHAR -> mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
+            case BOOL, BYTE, SHORT, INT, CHAR ->
+                    mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
             case LONG -> {
                 mv.visitInsn(LCONST_0);
                 mv.visitInsn(LCMP);
@@ -447,7 +563,8 @@ final class ControlAndOpEmitter {
                 mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
             }
             case NONE -> {
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
                 mv.visitJumpInsn(branchIfTrue ? IFNE : IFEQ, target);
             }
         }
@@ -493,15 +610,16 @@ final class ControlAndOpEmitter {
         } else {
             mv.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "compare", "(DD)I", false);
         }
-        int jump = switch (b.op()) {
-            case LT -> branchIfTrue ? IFLT : IFGE;
-            case LTE -> branchIfTrue ? IFLE : IFGT;
-            case EQ -> branchIfTrue ? IFEQ : IFNE;
-            case NEQ -> branchIfTrue ? IFNE : IFEQ;
-            case GTE -> branchIfTrue ? IFGE : IFLT;
-            case GT -> branchIfTrue ? IFGT : IFLE;
-            default -> throw new IllegalStateException();
-        };
+        int jump =
+                switch (b.op()) {
+                    case LT -> branchIfTrue ? IFLT : IFGE;
+                    case LTE -> branchIfTrue ? IFLE : IFGT;
+                    case EQ -> branchIfTrue ? IFEQ : IFNE;
+                    case NEQ -> branchIfTrue ? IFNE : IFEQ;
+                    case GTE -> branchIfTrue ? IFGE : IFLT;
+                    case GT -> branchIfTrue ? IFGT : IFLE;
+                    default -> throw new IllegalStateException();
+                };
         mv.visitJumpInsn(jump, target);
     }
 
@@ -527,14 +645,24 @@ final class ControlAndOpEmitter {
         if (i.builtin() != null) {
             mv.visitLdcInsn(i.builtin());
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Values", "isBuiltin", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Values",
+                    "isBuiltin",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
         String targetJvm = resolveIsTargetJvm(i.target());
         if (targetJvm != null) {
             if (i.target().jvmInternalName() != null) {
-                mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        VALUES,
+                        "unwrap",
+                        "(Ljava/lang/Object;)Ljava/lang/Object;",
+                        false);
             }
             c.line(ln);
             mv.visitTypeInsn(INSTANCEOF, targetJvm);
@@ -557,7 +685,12 @@ final class ControlAndOpEmitter {
             }
             if (!jvms.isEmpty()) {
                 if (unwrap) {
-                    mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+                    mv.visitMethodInsn(
+                            INVOKESTATIC,
+                            VALUES,
+                            "unwrap",
+                            "(Ljava/lang/Object;)Ljava/lang/Object;",
+                            false);
                 }
                 c.line(ln);
                 if (jvms.size() == 1) {
@@ -589,7 +722,12 @@ final class ControlAndOpEmitter {
         }
         ConstantPool.pushString(mv, i.descriptor());
         c.line(ln);
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Types", "matches", "(Ljava/lang/Object;Ljava/lang/String;)Z", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Types",
+                "matches",
+                "(Ljava/lang/Object;Ljava/lang/String;)Z",
+                false);
         c.stackKind = PrimitiveKind.BOOL;
     }
 
@@ -675,8 +813,14 @@ final class ControlAndOpEmitter {
             }
             mv.visitVarInsn(ALOAD, c.rtLocal);
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJavaSam",
-                    "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "toJavaSam",
+                    "(Ljava/lang/Object;Ljava/lang/Class;[Ljava/lang/Class;L"
+                            + SCRIPT_RUNTIME
+                            + ";)Ljava/lang/Object;",
+                    false);
         } else {
             mv.visitLdcInsn(sam.getName());
             if (markers.length == 0) {
@@ -691,8 +835,14 @@ final class ControlAndOpEmitter {
             }
             mv.visitVarInsn(ALOAD, c.rtLocal);
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "toJavaSamByName",
-                    "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "toJavaSamByName",
+                    "(Ljava/lang/Object;Ljava/lang/String;[Ljava/lang/String;L"
+                            + SCRIPT_RUNTIME
+                            + ";)Ljava/lang/Object;",
+                    false);
         }
     }
 
@@ -706,7 +856,12 @@ final class ControlAndOpEmitter {
         emitter.emitBoxed(n.operand());
         mv.visitLdcInsn(n.expectedType());
         c.line(n.meta().line());
-        mv.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "checkNotNull", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                JAVA_TYPES,
+                "checkNotNull",
+                "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                false);
         PrimitiveKind targetKind = n.meta().kind();
         if (targetKind.isPrimitive()) {
             unboxOn(mv, targetKind);
@@ -721,7 +876,12 @@ final class ControlAndOpEmitter {
         MethodVisitor mv = c.mv;
         String field = emitter.constantPool.typeField(descriptor);
         mv.visitFieldInsn(GETSTATIC, emitter.className, field, "L" + TYPES_TYPE + ";");
-        mv.visitMethodInsn(INVOKESTATIC, TYPES, "check", "(Ljava/lang/Object;L" + TYPES_TYPE + ";)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                TYPES,
+                "check",
+                "(Ljava/lang/Object;L" + TYPES_TYPE + ";)Ljava/lang/Object;",
+                false);
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -738,7 +898,12 @@ final class ControlAndOpEmitter {
         } else if (b.opensNamespaceScope()) {
             mv.visitVarInsn(ALOAD, c.nsLocal);
             emitter.getStringArray(b.declaredNames());
-            mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "child", "([Ljava/lang/String;)L" + NAMESPACE + ";", false);
+            mv.visitMethodInsn(
+                    INVOKEVIRTUAL,
+                    NAMESPACE,
+                    "child",
+                    "([Ljava/lang/String;)L" + NAMESPACE + ";",
+                    false);
             int namespace = c.newLocal();
             mv.visitVarInsn(ASTORE, namespace);
             emitter.withNamespace(namespace, () -> emitter.statements(b.statements()));
@@ -796,7 +961,8 @@ final class ControlAndOpEmitter {
         MethodVisitor mv = c.mv;
         int ln = f.meta().line();
         LoweringTargets.ForLoopTarget target = f.target();
-        LoweringTargets.ForKind kind = target != null ? target.kind() : LoweringTargets.ForKind.DYNAMIC_UNION;
+        LoweringTargets.ForKind kind =
+                target != null ? target.kind() : LoweringTargets.ForKind.DYNAMIC_UNION;
         Label head = new Label();
         Label end = new Label();
         int result = c.newLocal();
@@ -811,12 +977,14 @@ final class ControlAndOpEmitter {
             emitArrayFor(f, target.arrayClass(), result, head, end);
             return;
         }
-        if (kind == LoweringTargets.ForKind.JAVA_ITERABLE || kind == LoweringTargets.ForKind.JAVA_ITERATOR
+        if (kind == LoweringTargets.ForKind.JAVA_ITERABLE
+                || kind == LoweringTargets.ForKind.JAVA_ITERATOR
                 || kind == LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE) {
             emitJavaIteratorFor(f, kind, result, head, end, ln);
             return;
         }
-        if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
+        if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE
+                || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
             emitBabbleIteratorFor(f, kind, target, result, head, end, ln);
             return;
         }
@@ -844,13 +1012,16 @@ final class ControlAndOpEmitter {
         int stepLocal = -1;
         if (cr.step() == null) {
             constStep = 1L;
-        } else if (cr.step() instanceof HirExpr.Const sc && sc.value() instanceof Number sn && sn.longValue() > 0L) {
+        } else if (cr.step() instanceof HirExpr.Const sc
+                && sc.value() instanceof Number sn
+                && sn.longValue() > 0L) {
             constStep = isLong ? sn.longValue() : sn.intValue();
         } else {
             stepLocal = c.newLocal(loopKind);
             emitter.emitAs(cr.step(), loopKind);
             c.line(ln);
-            mv.visitMethodInsn(INVOKESTATIC, rangeOwner, "validateStep", isLong ? "(J)J" : "(I)I", true);
+            mv.visitMethodInsn(
+                    INVOKESTATIC, rangeOwner, "validateStep", isLong ? "(J)J" : "(I)I", true);
             storeKindOn(mv, loopKind, stepLocal);
         }
 
@@ -908,9 +1079,11 @@ final class ControlAndOpEmitter {
         int stopLocal = cr.descending() ? startLocal : lastLocal;
         Label stepLabel = new Label();
 
-        boolean markNonNeg = f.loopVar() != null && !f.loopVar().isCaptured()
-                && (rk == PrimitiveKind.CHAR || isStaticallyNonNegative(cr.start()))
-                && !isVarAssignedIn(f.body(), f.loopVar().id());
+        boolean markNonNeg =
+                f.loopVar() != null
+                        && !f.loopVar().isCaptured()
+                        && (rk == PrimitiveKind.CHAR || isStaticallyNonNegative(cr.start()))
+                        && !isVarAssignedIn(f.body(), f.loopVar().id());
         if (markNonNeg) {
             c.nonNegativeVars.add(f.loopVar().id());
         }
@@ -973,23 +1146,33 @@ final class ControlAndOpEmitter {
             return true;
         }
         return switch (expr) {
-            case HirExpr.Const c -> (c.value() instanceof Number n && n.longValue() >= 0L)
-                    || c.value() instanceof Character;
-            case HirExpr.VarRead v -> v.var().primitiveKind() == PrimitiveKind.CHAR
-                    || ctx().nonNegativeVars.contains(v.var().id());
+            case HirExpr.Const c ->
+                    (c.value() instanceof Number n && n.longValue() >= 0L)
+                            || c.value() instanceof Character;
+            case HirExpr.VarRead v ->
+                    v.var().primitiveKind() == PrimitiveKind.CHAR
+                            || ctx().nonNegativeVars.contains(v.var().id());
             case HirExpr.ArrayOp op -> op.kind() == LoweringTargets.ArrayOpKind.SIZE;
-            case HirExpr.CoreMethodCall c -> "size".equals(c.memberName()) || "length".equals(c.memberName());
+            case HirExpr.CoreMethodCall c ->
+                    "size".equals(c.memberName()) || "length".equals(c.memberName());
             case HirExpr.JavaMethodCall c -> {
                 java.lang.reflect.Method m = c.target().method();
                 yield ("length".equals(m.getName()) && m.getDeclaringClass() == String.class)
                         || ("size".equals(m.getName())
-                        && (java.util.Collection.class.isAssignableFrom(m.getDeclaringClass())
-                        || java.util.Map.class.isAssignableFrom(m.getDeclaringClass())));
+                                && (java.util.Collection.class.isAssignableFrom(
+                                                m.getDeclaringClass())
+                                        || java.util.Map.class.isAssignableFrom(
+                                                m.getDeclaringClass())));
             }
-            case HirExpr.Binary b -> b.op() == HirExpr.BinaryOp.MOD
-                    && (b.meta().kind() == PrimitiveKind.INT || b.meta().kind() == PrimitiveKind.LONG)
-                    && b.right() instanceof HirExpr.Const rc && rc.value() instanceof Number rn
-                    && (b.meta().kind() == PrimitiveKind.LONG ? rn.longValue() > 0L : rn.intValue() > 0);
+            case HirExpr.Binary b ->
+                    b.op() == HirExpr.BinaryOp.MOD
+                            && (b.meta().kind() == PrimitiveKind.INT
+                                    || b.meta().kind() == PrimitiveKind.LONG)
+                            && b.right() instanceof HirExpr.Const rc
+                            && rc.value() instanceof Number rn
+                            && (b.meta().kind() == PrimitiveKind.LONG
+                                    ? rn.longValue() > 0L
+                                    : rn.intValue() > 0);
             default -> false;
         };
     }
@@ -1013,10 +1196,12 @@ final class ControlAndOpEmitter {
             assigned[0] = true;
             return;
         }
-        org.babblelang.opt.HirRewriter.rewriteChildren(expr, child -> {
-            checkVarAssigned(child, varId, assigned);
-            return child;
-        });
+        org.babblelang.opt.HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    checkVarAssigned(child, varId, assigned);
+                    return child;
+                });
     }
 
     private void emitArrayFor(HirExpr.For f, Class<?> arrClass, int result, Label head, Label end) {
@@ -1030,7 +1215,8 @@ final class ControlAndOpEmitter {
         Label step = new Label();
 
         emitter.emitBoxed(f.iterable());
-        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         mv.visitTypeInsn(CHECKCAST, arrDesc);
         mv.visitInsn(DUP);
         mv.visitVarInsn(ASTORE, arrLocal);
@@ -1048,20 +1234,26 @@ final class ControlAndOpEmitter {
         mv.visitVarInsn(ILOAD, idxLocal);
         PrimitiveKind elemStackKind = javaPrimitiveKind(comp);
         if (elemStackKind != PrimitiveKind.NONE) {
-            int aload = switch (elemStackKind) {
-                case BYTE, BOOL -> BALOAD;
-                case SHORT -> SALOAD;
-                case INT -> IALOAD;
-                case LONG -> LALOAD;
-                case FLOAT -> FALOAD;
-                case DOUBLE -> DALOAD;
-                case CHAR -> CALOAD;
-                case NONE -> AALOAD;
-            };
+            int aload =
+                    switch (elemStackKind) {
+                        case BYTE, BOOL -> BALOAD;
+                        case SHORT -> SALOAD;
+                        case INT -> IALOAD;
+                        case LONG -> LALOAD;
+                        case FLOAT -> FALOAD;
+                        case DOUBLE -> DALOAD;
+                        case CHAR -> CALOAD;
+                        case NONE -> AALOAD;
+                    };
             mv.visitInsn(aload);
         } else {
             mv.visitInsn(AALOAD);
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "fromJava",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
         }
         emitForIterationBody(f, result, end, step, elemStackKind);
         mv.visitLabel(step);
@@ -1072,7 +1264,13 @@ final class ControlAndOpEmitter {
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitJavaIteratorFor(HirExpr.For f, LoweringTargets.ForKind kind, int result, Label head, Label end, int ln) {
+    private void emitJavaIteratorFor(
+            HirExpr.For f,
+            LoweringTargets.ForKind kind,
+            int result,
+            Label head,
+            Label end,
+            int ln) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         int itLocal = c.newLocal();
@@ -1081,15 +1279,30 @@ final class ControlAndOpEmitter {
             emitter.emitBoxed(f.iterable());
             mv.visitVarInsn(ASTORE, recvLocal);
             emitZeroArgBabbleCall(recvLocal, "iterator", null, ln);
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "unwrap",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
             mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
         } else {
             emitter.emitBoxed(f.iterable());
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "unwrap",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
             if (kind == LoweringTargets.ForKind.JAVA_ITERABLE) {
                 mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
                 c.line(ln);
-                mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
+                mv.visitMethodInsn(
+                        INVOKEINTERFACE,
+                        "java/lang/Iterable",
+                        "iterator",
+                        "()Ljava/util/Iterator;",
+                        true);
             } else {
                 mv.visitTypeInsn(CHECKCAST, "java/util/Iterator");
             }
@@ -1103,8 +1316,10 @@ final class ControlAndOpEmitter {
         mv.visitJumpInsn(IFEQ, end);
         mv.visitVarInsn(ALOAD, itLocal);
         c.line(ln);
-        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
-        mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
+        mv.visitMethodInsn(
+                INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         emitForIterationBody(f, result, end, head, PrimitiveKind.NONE);
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);
@@ -1112,8 +1327,14 @@ final class ControlAndOpEmitter {
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitBabbleIteratorFor(HirExpr.For f, LoweringTargets.ForKind kind,
-                                       LoweringTargets.ForLoopTarget target, int result, Label head, Label end, int ln) {
+    private void emitBabbleIteratorFor(
+            HirExpr.For f,
+            LoweringTargets.ForKind kind,
+            LoweringTargets.ForLoopTarget target,
+            int result,
+            Label head,
+            Label end,
+            int ln) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         int iterLocal = c.newLocal();
@@ -1125,12 +1346,14 @@ final class ControlAndOpEmitter {
             mv.visitVarInsn(ASTORE, iterLocal);
         }
         mv.visitLabel(head);
-        emitZeroArgBabbleCall(iterLocal, "hasNext", target != null ? target.hasNextSig() : null, ln);
+        emitZeroArgBabbleCall(
+                iterLocal, "hasNext", target != null ? target.hasNextSig() : null, ln);
         if (c.stackKind == PrimitiveKind.BOOL) {
             mv.visitJumpInsn(IFEQ, end);
         } else {
             emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC, RUNTIME + "Truth", "test", "(Ljava/lang/Object;)Z", false);
             mv.visitJumpInsn(IFEQ, end);
         }
         emitZeroArgBabbleCall(iterLocal, "next", target != null ? target.nextSig() : null, ln);
@@ -1155,15 +1378,22 @@ final class ControlAndOpEmitter {
         Label iterLoop = new Label();
 
         emitter.emitBoxed(f.iterable());
-        mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         mv.visitInsn(DUP);
         mv.visitVarInsn(ASTORE, rawLocal);
-        mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL, "java/lang/Object", "getClass", "()Ljava/lang/Class;", false);
         mv.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Class", "isArray", "()Z", false);
         mv.visitJumpInsn(IFEQ, notArr);
 
         mv.visitVarInsn(ALOAD, rawLocal);
-        mv.visitMethodInsn(INVOKESTATIC, "java/lang/reflect/Array", "getLength", "(Ljava/lang/Object;)I", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "java/lang/reflect/Array",
+                "getLength",
+                "(Ljava/lang/Object;)I",
+                false);
         mv.visitVarInsn(ISTORE, lenLocal);
         mv.visitInsn(ICONST_0);
         mv.visitVarInsn(ISTORE, idxLocal);
@@ -1173,8 +1403,14 @@ final class ControlAndOpEmitter {
         mv.visitJumpInsn(IF_ICMPGE, end);
         mv.visitVarInsn(ALOAD, rawLocal);
         mv.visitVarInsn(ILOAD, idxLocal);
-        mv.visitMethodInsn(INVOKESTATIC, "java/lang/reflect/Array", "get", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
-        mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                "java/lang/reflect/Array",
+                "get",
+                "(Ljava/lang/Object;I)Ljava/lang/Object;",
+                false);
+        mv.visitMethodInsn(
+                INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         emitForIterationBody(f, result, end, arrStep, PrimitiveKind.NONE);
         mv.visitLabel(arrStep);
         mv.visitIincInsn(idxLocal, 1);
@@ -1192,7 +1428,8 @@ final class ControlAndOpEmitter {
         mv.visitLabel(notIter);
         mv.visitVarInsn(ALOAD, rawLocal);
         mv.visitTypeInsn(CHECKCAST, "java/lang/Iterable");
-        mv.visitMethodInsn(INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
+        mv.visitMethodInsn(
+                INVOKEINTERFACE, "java/lang/Iterable", "iterator", "()Ljava/util/Iterator;", true);
         mv.visitVarInsn(ASTORE, itLocal);
 
         mv.visitLabel(iterLoop);
@@ -1200,8 +1437,10 @@ final class ControlAndOpEmitter {
         mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "hasNext", "()Z", true);
         mv.visitJumpInsn(IFEQ, end);
         mv.visitVarInsn(ALOAD, itLocal);
-        mv.visitMethodInsn(INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
-        mv.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        mv.visitMethodInsn(
+                INVOKEINTERFACE, "java/util/Iterator", "next", "()Ljava/lang/Object;", true);
+        mv.visitMethodInsn(
+                INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
         emitForIterationBody(f, result, end, iterLoop, PrimitiveKind.NONE);
         mv.visitJumpInsn(GOTO, iterLoop);
 
@@ -1210,8 +1449,12 @@ final class ControlAndOpEmitter {
         c.stackKind = PrimitiveKind.NONE;
     }
 
-    private void emitForIterationBody(HirExpr.For f, int resultSlot, Label breakLabel, Label continueLabel,
-                                      PrimitiveKind elemStackKind) {
+    private void emitForIterationBody(
+            HirExpr.For f,
+            int resultSlot,
+            Label breakLabel,
+            Label continueLabel,
+            PrimitiveKind elemStackKind) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         LoweringTargets.ForLoopTarget target = f.target();
@@ -1251,20 +1494,43 @@ final class ControlAndOpEmitter {
         }
     }
 
-    void emitZeroArgBabbleCall(int receiverLocal, String memberName,
-                               LoweringTargets.FunctionSignature sig, int lineNumber) {
+    void emitZeroArgBabbleCall(
+            int receiverLocal,
+            String memberName,
+            LoweringTargets.FunctionSignature sig,
+            int lineNumber) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        String site = emitter.constantPool.callSiteField(new CallSite(emitter.sourceName, lineNumber, memberName, new String[0]));
+        String site =
+                emitter.constantPool.callSiteField(
+                        new CallSite(emitter.sourceName, lineNumber, memberName, new String[0]));
         mv.visitVarInsn(ALOAD, receiverLocal);
         c.line(lineNumber);
-        mv.visitInvokeDynamicInsn("select", "(Ljava/lang/Object;)Ljava/lang/Object;", SELECT_BOOTSTRAP, memberName, memberName);
+        mv.visitInvokeDynamicInsn(
+                "select",
+                "(Ljava/lang/Object;)Ljava/lang/Object;",
+                SELECT_BOOTSTRAP,
+                memberName,
+                memberName);
         mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
-        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";", false);
+        mv.visitMethodInsn(
+                INVOKESTATIC,
+                RUNTIME + "Calls",
+                "callable",
+                "(Ljava/lang/Object;L" + CALL_SITE + ";)L" + CALLABLE + ";",
+                false);
         mv.visitVarInsn(ALOAD, c.rtLocal);
         if (sig != null && sig.returnKind().isPrimitive()) {
             mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
-            String desc = "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";L" + CALL_SITE + ";)" + jvmDescriptor(sig.returnKind());
+            String desc =
+                    "(L"
+                            + CALLABLE
+                            + ";L"
+                            + SCRIPT_RUNTIME
+                            + ";L"
+                            + CALL_SITE
+                            + ";)"
+                            + jvmDescriptor(sig.returnKind());
             c.line(lineNumber);
             mv.visitInvokeDynamicInsn("typedCall", desc, TYPED_CALL_BOOTSTRAP);
             c.stackKind = sig.returnKind();
@@ -1272,7 +1538,16 @@ final class ControlAndOpEmitter {
             mv.visitInsn(ACONST_NULL);
             mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
             c.line(lineNumber);
-            mv.visitInvokeDynamicInsn("call", "(L" + CALLABLE + ";L" + SCRIPT_RUNTIME + ";[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", CALL_BOOTSTRAP);
+            mv.visitInvokeDynamicInsn(
+                    "call",
+                    "(L"
+                            + CALLABLE
+                            + ";L"
+                            + SCRIPT_RUNTIME
+                            + ";[Ljava/lang/String;L"
+                            + CALL_SITE
+                            + ";)Ljava/lang/Object;",
+                    CALL_BOOTSTRAP);
             c.stackKind = PrimitiveKind.NONE;
         }
     }
@@ -1334,11 +1609,20 @@ final class ControlAndOpEmitter {
         emitter.emitBoxed(th.value());
         c.line(th.meta().line());
         if (th.isJavaThrowable()) {
-            mv.visitMethodInsn(INVOKESTATIC, VALUES, "unwrap", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "unwrap",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
             mv.visitTypeInsn(CHECKCAST, "java/lang/Throwable");
         } else {
-            mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Throwables", "toThrowable",
-                    "(Ljava/lang/Object;)Ljava/lang/Throwable;", false);
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    RUNTIME + "Throwables",
+                    "toThrowable",
+                    "(Ljava/lang/Object;)Ljava/lang/Throwable;",
+                    false);
         }
         mv.visitInsn(ATHROW);
         mv.visitInsn(ACONST_NULL);
@@ -1352,7 +1636,8 @@ final class ControlAndOpEmitter {
             return List.of();
         }
         List<MethodEmitContext.ActiveFinally> popped = new ArrayList<>();
-        while (!c.activeFinallies.isEmpty() && c.activeFinallies.peek().loopDepthAtEntry >= minLoopDepth) {
+        while (!c.activeFinallies.isEmpty()
+                && c.activeFinallies.peek().loopDepthAtEntry >= minLoopDepth) {
             MethodEmitContext.ActiveFinally af = c.activeFinallies.pop();
             popped.add(af);
             af.splitBefore(mv);
@@ -1376,8 +1661,11 @@ final class ControlAndOpEmitter {
         }
     }
 
-    private void emitScopedBody(List<HirExpr> stmts, List<org.babblelang.ir.hir.HirVar> declVars,
-                                boolean opensNs, String[] declNames) {
+    private void emitScopedBody(
+            List<HirExpr> stmts,
+            List<org.babblelang.ir.hir.HirVar> declVars,
+            boolean opensNs,
+            String[] declNames) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         if (!declVars.isEmpty()) {
@@ -1388,7 +1676,12 @@ final class ControlAndOpEmitter {
         } else if (opensNs) {
             mv.visitVarInsn(ALOAD, c.nsLocal);
             emitter.getStringArray(declNames);
-            mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "child", "([Ljava/lang/String;)L" + NAMESPACE + ";", false);
+            mv.visitMethodInsn(
+                    INVOKEVIRTUAL,
+                    NAMESPACE,
+                    "child",
+                    "([Ljava/lang/String;)L" + NAMESPACE + ";",
+                    false);
             int ns = c.newLocal();
             mv.visitVarInsn(ASTORE, ns);
             emitter.withNamespace(ns, () -> emitter.statements(stmts));
@@ -1402,7 +1695,11 @@ final class ControlAndOpEmitter {
             return;
         }
         MethodEmitContext c = ctx();
-        emitScopedBody(t.finallyBody(), t.finallyDeclaredVars(), t.finallyOpensNamespaceScope(), t.finallyDeclaredNames());
+        emitScopedBody(
+                t.finallyBody(),
+                t.finallyDeclaredVars(),
+                t.finallyOpensNamespaceScope(),
+                t.finallyDeclaredNames());
         popOn(c.mv, c.stackKind);
         c.stackKind = PrimitiveKind.NONE;
     }
@@ -1418,15 +1715,21 @@ final class ControlAndOpEmitter {
         Label tryEnd = new Label();
         Label finallyAbnormal = hasNonEmptyFinally ? new Label() : null;
 
-        // 1. Emit tryBody inside an ActiveFinally range (even without finally, so inner return/break
+        // 1. Emit tryBody inside an ActiveFinally range (even without finally, so inner
+        // return/break
         //    running an outer finally splits this try's catch ranges cleanly!).
         Label tryStart = new Label();
         mv.visitLabel(tryStart);
-        MethodEmitContext.ActiveFinally tryRange = new MethodEmitContext.ActiveFinally(
-                t, c.loopTargets.size(), tryStart, hasNonEmptyFinally);
+        MethodEmitContext.ActiveFinally tryRange =
+                new MethodEmitContext.ActiveFinally(
+                        t, c.loopTargets.size(), tryStart, hasNonEmptyFinally);
         c.activeFinallies.push(tryRange);
         try {
-            emitScopedBody(t.tryBody(), t.tryDeclaredVars(), t.tryOpensNamespaceScope(), t.tryDeclaredNames());
+            emitScopedBody(
+                    t.tryBody(),
+                    t.tryDeclaredVars(),
+                    t.tryOpensNamespaceScope(),
+                    t.tryDeclaredNames());
             emitter.widenStackRank(t.tryWideningRank());
             emitter.convertStack(c.stackKind, targetKind);
             storeKindOn(mv, targetKind, resultLocal);
@@ -1443,8 +1746,11 @@ final class ControlAndOpEmitter {
         boolean needsThrownDispatcher = false;
         for (HirExpr.HirCatch cc : catches) {
             LoweringTargets.CatchTarget ct = cc.target();
-            if (ct != null && (ct.catchesBabble() || ct.catchesNonErrorAny()
-                    || ct.catchesJavaThrowable() || ct.skipsThrownException())) {
+            if (ct != null
+                    && (ct.catchesBabble()
+                            || ct.catchesNonErrorAny()
+                            || ct.catchesJavaThrowable()
+                            || ct.skipsThrownException())) {
                 needsThrownDispatcher = true;
                 break;
             }
@@ -1459,8 +1765,11 @@ final class ControlAndOpEmitter {
         // Register catch handlers for tryBody segments (innermost tries already registered theirs).
         if (needsThrownDispatcher) {
             for (int seg = 0; seg < tryRange.rangeStarts.size(); seg++) {
-                mv.visitTryCatchBlock(tryRange.rangeStarts.get(seg), tryRange.rangeEnds.get(seg),
-                        thrownExHandler, RUNTIME + "ThrownException");
+                mv.visitTryCatchBlock(
+                        tryRange.rangeStarts.get(seg),
+                        tryRange.rangeEnds.get(seg),
+                        thrownExHandler,
+                        RUNTIME + "ThrownException");
             }
         }
         for (int i = 0; i < catches.size(); i++) {
@@ -1468,14 +1777,18 @@ final class ControlAndOpEmitter {
             if (ct != null) {
                 for (String jvmType : ct.jvmCatchTypes()) {
                     for (int seg = 0; seg < tryRange.rangeStarts.size(); seg++) {
-                        mv.visitTryCatchBlock(tryRange.rangeStarts.get(seg), tryRange.rangeEnds.get(seg),
-                                catchLabels[i], jvmType);
+                        mv.visitTryCatchBlock(
+                                tryRange.rangeStarts.get(seg),
+                                tryRange.rangeEnds.get(seg),
+                                catchLabels[i],
+                                jvmType);
                     }
                 }
             }
         }
 
-        // 3. Emit ThrownException dispatcher (preserves exact source order across Java & Babble catches).
+        // 3. Emit ThrownException dispatcher (preserves exact source order across Java & Babble
+        // catches).
         if (needsThrownDispatcher) {
             mv.visitLabel(thrownExHandler);
             // Stack: [ThrownException]
@@ -1496,7 +1809,12 @@ final class ControlAndOpEmitter {
                 }
                 if (ct.catchesNonErrorAny()) {
                     mv.visitVarInsn(ALOAD, teLocal);
-                    mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "ThrownException", "value", "()Ljava/lang/Object;", false);
+                    mv.visitMethodInsn(
+                            INVOKEVIRTUAL,
+                            RUNTIME + "ThrownException",
+                            "value",
+                            "()Ljava/lang/Object;",
+                            false);
                     mv.visitJumpInsn(GOTO, catchLabels[i]);
                     guaranteedHandled = true;
                     break;
@@ -1505,7 +1823,12 @@ final class ControlAndOpEmitter {
                     if (valLocal < 0) {
                         valLocal = c.newLocal();
                         mv.visitVarInsn(ALOAD, teLocal);
-                        mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "ThrownException", "value", "()Ljava/lang/Object;", false);
+                        mv.visitMethodInsn(
+                                INVOKEVIRTUAL,
+                                RUNTIME + "ThrownException",
+                                "value",
+                                "()Ljava/lang/Object;",
+                                false);
                         mv.visitVarInsn(ASTORE, valLocal);
                     }
                     Label nextClause = new Label();
@@ -1521,8 +1844,12 @@ final class ControlAndOpEmitter {
                     } else if (ct.typeDescriptor() != null) {
                         mv.visitVarInsn(ALOAD, valLocal);
                         ConstantPool.pushString(mv, ct.typeDescriptor());
-                        mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Types", "matches",
-                                "(Ljava/lang/Object;Ljava/lang/String;)Z", false);
+                        mv.visitMethodInsn(
+                                INVOKESTATIC,
+                                RUNTIME + "Types",
+                                "matches",
+                                "(Ljava/lang/Object;Ljava/lang/String;)Z",
+                                false);
                         mv.visitJumpInsn(IFNE, matchedClause);
                         mv.visitJumpInsn(GOTO, nextClause);
                     } else {
@@ -1560,9 +1887,11 @@ final class ControlAndOpEmitter {
             }
             Label catchSegStart = new Label();
             mv.visitLabel(catchSegStart);
-            MethodEmitContext.ActiveFinally catchRange = hasNonEmptyFinally
-                    ? new MethodEmitContext.ActiveFinally(t, c.loopTargets.size(), catchSegStart, true)
-                    : null;
+            MethodEmitContext.ActiveFinally catchRange =
+                    hasNonEmptyFinally
+                            ? new MethodEmitContext.ActiveFinally(
+                                    t, c.loopTargets.size(), catchSegStart, true)
+                            : null;
             if (catchRange != null) {
                 c.activeFinallies.push(catchRange);
             }
@@ -1580,7 +1909,12 @@ final class ControlAndOpEmitter {
                 } else if (cc.opensNamespaceScope()) {
                     mv.visitVarInsn(ALOAD, c.nsLocal);
                     emitter.getStringArray(cc.declaredNames());
-                    mv.visitMethodInsn(INVOKEVIRTUAL, NAMESPACE, "child", "([Ljava/lang/String;)L" + NAMESPACE + ";", false);
+                    mv.visitMethodInsn(
+                            INVOKEVIRTUAL,
+                            NAMESPACE,
+                            "child",
+                            "([Ljava/lang/String;)L" + NAMESPACE + ";",
+                            false);
                     int ns = c.newLocal();
                     mv.visitVarInsn(ASTORE, ns);
                     emitter.withNamespace(ns, () -> emitter.statements(cc.body()));
@@ -1603,16 +1937,20 @@ final class ControlAndOpEmitter {
             mv.visitJumpInsn(GOTO, tryEnd);
         }
 
-        // 5. Emit abnormal finally handler with automatic addSuppressed when !finallyNothrow (BIP028-D6).
+        // 5. Emit abnormal finally handler with automatic addSuppressed when !finallyNothrow
+        // (BIP028-D6).
         if (hasNonEmptyFinally) {
             for (int seg = 0; seg < tryRange.rangeStarts.size(); seg++) {
-                mv.visitTryCatchBlock(tryRange.rangeStarts.get(seg), tryRange.rangeEnds.get(seg),
-                        finallyAbnormal, null);
+                mv.visitTryCatchBlock(
+                        tryRange.rangeStarts.get(seg),
+                        tryRange.rangeEnds.get(seg),
+                        finallyAbnormal,
+                        null);
             }
             for (MethodEmitContext.ActiveFinally cr : catchRanges) {
                 for (int seg = 0; seg < cr.rangeStarts.size(); seg++) {
-                    mv.visitTryCatchBlock(cr.rangeStarts.get(seg), cr.rangeEnds.get(seg),
-                            finallyAbnormal, null);
+                    mv.visitTryCatchBlock(
+                            cr.rangeStarts.get(seg), cr.rangeEnds.get(seg), finallyAbnormal, null);
                 }
             }
             mv.visitLabel(finallyAbnormal);
@@ -1635,8 +1973,12 @@ final class ControlAndOpEmitter {
                 // Stack: [Throwable secondary]
                 mv.visitVarInsn(ALOAD, primaryLocal);
                 mv.visitInsn(SWAP);
-                mv.visitMethodInsn(INVOKESTATIC, RUNTIME + "Throwables", "addSuppressed",
-                        "(Ljava/lang/Throwable;Ljava/lang/Throwable;)V", false);
+                mv.visitMethodInsn(
+                        INVOKESTATIC,
+                        RUNTIME + "Throwables",
+                        "addSuppressed",
+                        "(Ljava/lang/Throwable;Ljava/lang/Throwable;)V",
+                        false);
                 mv.visitLabel(rethrowLabel);
                 mv.visitTryCatchBlock(finStart, finEnd, suppressHandler, "java/lang/Throwable");
             }

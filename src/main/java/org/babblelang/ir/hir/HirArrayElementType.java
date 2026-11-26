@@ -3,52 +3,47 @@ package org.babblelang.ir.hir;
 import org.babblelang.analysis.PrimitiveKind;
 
 /**
- * Target-neutral element type descriptor for {@link HirExpr.ArrayCreate} and {@link HirExpr.ArrayOp}
- * ({@code BIP025-D3}).
+ * Target-neutral element type descriptor for {@link HirExpr.ArrayCreate} and {@link
+ * HirExpr.ArrayOp} ({@code BIP025-D3}).
  *
  * <p>Replaces direct {@code Class<?>} dependencies for non-JVM backends while preserving exact
  * runtime element type information for covariant {@code $RefArray} checks ({@code BIP020-D8}).
  */
-public sealed interface HirArrayElementType permits
-        HirArrayElementType.Primitive,
-        HirArrayElementType.BoxedPrimitive,
-        HirArrayElementType.StringType,
-        HirArrayElementType.BabbleType,
-        HirArrayElementType.Array,
-        HirArrayElementType.CoreCollection,
-        HirArrayElementType.CoreException,
-        HirArrayElementType.Any,
-        HirArrayElementType.JavaClass {
+public sealed interface HirArrayElementType
+        permits HirArrayElementType.Primitive,
+                HirArrayElementType.BoxedPrimitive,
+                HirArrayElementType.StringType,
+                HirArrayElementType.BabbleType,
+                HirArrayElementType.Array,
+                HirArrayElementType.CoreCollection,
+                HirArrayElementType.CoreException,
+                HirArrayElementType.Any,
+                HirArrayElementType.JavaClass {
 
-    record Primitive(PrimitiveKind kind) implements HirArrayElementType {
-    }
+    record Primitive(PrimitiveKind kind) implements HirArrayElementType {}
 
-    record BoxedPrimitive(PrimitiveKind kind) implements HirArrayElementType {
-    }
+    record BoxedPrimitive(PrimitiveKind kind) implements HirArrayElementType {}
 
-    record StringType() implements HirArrayElementType {
-    }
+    record StringType() implements HirArrayElementType {}
 
-    record BabbleType(String typeId, boolean isInterface) implements HirArrayElementType {
-    }
+    record BabbleType(String typeId, boolean isInterface) implements HirArrayElementType {}
 
-    record Array(HirArrayElementType element) implements HirArrayElementType {
-    }
+    record Array(HirArrayElementType element) implements HirArrayElementType {}
 
-    record CoreCollection(String kind) implements HirArrayElementType {
-    }
+    record CoreCollection(String kind) implements HirArrayElementType {}
 
-    record CoreException() implements HirArrayElementType {
-    }
+    record CoreException() implements HirArrayElementType {}
 
-    record Any() implements HirArrayElementType {
-    }
+    record Any() implements HirArrayElementType {}
 
-    record JavaClass(Class<?> cls) implements HirArrayElementType {
-    }
+    record JavaClass(Class<?> cls) implements HirArrayElementType {}
 
-    static HirArrayElementType from(PrimitiveKind elemKind, String babbleTypeId, boolean babbleIsInterface,
-                                    int nestedDims, Class<?> componentClass) {
+    static HirArrayElementType from(
+            PrimitiveKind elemKind,
+            String babbleTypeId,
+            boolean babbleIsInterface,
+            int nestedDims,
+            Class<?> componentClass) {
         if (elemKind != null && elemKind.isPrimitive()) {
             return new Primitive(elemKind);
         }

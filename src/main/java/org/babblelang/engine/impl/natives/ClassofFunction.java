@@ -1,10 +1,9 @@
 package org.babblelang.engine.impl.natives;
 
-import org.babblelang.runtime.BabbleException;
-import org.babblelang.runtime.Namespace;
 import org.babblelang.engine.impl.natives.java.JavaClass;
 import org.babblelang.engine.impl.natives.java.JavaPackage;
 import org.babblelang.runtime.BabbleClass;
+import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.BabbleInterface;
 import org.babblelang.runtime.BabbleObjects;
 import org.babblelang.runtime.CallSite;
@@ -13,8 +12,8 @@ import org.babblelang.runtime.JavaValue;
 import org.babblelang.runtime.ScriptRuntime;
 
 /**
- * {@code classof(v)} : the class value that created a Babble instance, or the Java class
- * of a Java value. It is not privileged : private statics stay with the static block.
+ * {@code classof(v)} : the class value that created a Babble instance, or the Java class of a Java
+ * value. It is not privileged : private statics stay with the static block.
  */
 public class ClassofFunction implements Callable {
     @Override

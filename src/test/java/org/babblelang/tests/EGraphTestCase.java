@@ -8,8 +8,8 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
- * Unit tests for the shared zero-dependency pure-expression E-graph ({@link EGraph})
- * and declarative {@link AlgebraicRules} ({@code BIP027-D1}).
+ * Unit tests for the shared zero-dependency pure-expression E-graph ({@link EGraph}) and
+ * declarative {@link AlgebraicRules} ({@code BIP027-D1}).
  */
 public class EGraphTestCase {
 
@@ -64,7 +64,9 @@ public class EGraphTestCase {
 
         Assertions.assertFalse(g.areEquivalent(addZero, x), "-0.0 + 0.0 is +0.0, not -0.0");
         Assertions.assertFalse(g.areEquivalent(mulZero, zero), "NaN * 0.0 is NaN, not 0.0");
-        Assertions.assertFalse(g.areEquivalent(mulOne, x), "double * 1.0 must not be rewritten by optimizer rules");
+        Assertions.assertFalse(
+                g.areEquivalent(mulOne, x),
+                "double * 1.0 must not be rewritten by optimizer rules");
         Assertions.assertFalse(g.areEquivalent(subSelf, zero), "Inf - Inf is NaN, not 0.0");
     }
 
@@ -133,8 +135,12 @@ public class EGraphTestCase {
 
         int eqTrue = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, b, t));
         int eqFalse = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, b, f));
-        int notNotB = g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL,
-                g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, b))));
+        int notNotB =
+                g.add(
+                        ENode.unary(
+                                ENode.Op.NOT,
+                                PrimitiveKind.BOOL,
+                                g.add(ENode.unary(ENode.Op.NOT, PrimitiveKind.BOOL, b))));
 
         g.saturate(AlgebraicRules.optimizerRules(), 6, 32);
 
@@ -153,11 +159,41 @@ public class EGraphTestCase {
             int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
             int b = g.add(ENode.opaque("b", PrimitiveKind.INT));
             int c = g.add(ENode.opaque("c", PrimitiveKind.INT));
-            int minAB = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, b)), a, b));
-            int minBA = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, b, a)), b, a));
-            int minAB_C = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, minAB, c)), minAB, c));
-            int minBC = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, b, c)), b, c));
-            int minA_BC = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, minBC)), a, minBC));
+            int minAB =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, b)),
+                                    a,
+                                    b));
+            int minBA =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, b, a)),
+                                    b,
+                                    a));
+            int minAB_C =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, minAB, c)),
+                                    minAB,
+                                    c));
+            int minBC =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, b, c)),
+                                    b,
+                                    c));
+            int minA_BC =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, minBC)),
+                                    a,
+                                    minBC));
             g.saturate(AlgebraicRules.verifierRules(), 6, 128);
             Assertions.assertTrue(g.areEquivalent(minAB, minBA));
             Assertions.assertTrue(g.areEquivalent(minAB_C, minA_BC));
@@ -169,10 +205,40 @@ public class EGraphTestCase {
             int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
             int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
             int hundred = g.add(ENode.constVal(100, PrimitiveKind.INT));
-            int lo1 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, zero)), zero, a));
-            int clamp1 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, lo1, hundred)), hundred, lo1));
-            int lo2 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, clamp1, zero)), zero, clamp1));
-            int clamp2 = g.add(ENode.ite(PrimitiveKind.INT, g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, lo2, hundred)), hundred, lo2));
+            int lo1 =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, zero)),
+                                    zero,
+                                    a));
+            int clamp1 =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.GT, PrimitiveKind.BOOL, lo1, hundred)),
+                                    hundred,
+                                    lo1));
+            int lo2 =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.LT, PrimitiveKind.BOOL, clamp1, zero)),
+                                    zero,
+                                    clamp1));
+            int clamp2 =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.GT, PrimitiveKind.BOOL, lo2, hundred)),
+                                    hundred,
+                                    lo2));
             g.saturate(AlgebraicRules.verifierRules(), 8, 256);
             Assertions.assertTrue(g.areEquivalent(clamp1, clamp2));
         }
@@ -185,12 +251,24 @@ public class EGraphTestCase {
             int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
             int aSubB = g.add(ENode.binary(ENode.Op.SUB, PrimitiveKind.INT, a, b));
             int bSubA = g.add(ENode.binary(ENode.Op.SUB, PrimitiveKind.INT, b, a));
-            int absAB = g.add(ENode.ite(PrimitiveKind.INT,
-                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, aSubB, zero)),
-                    g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, aSubB)), aSubB));
-            int absBA = g.add(ENode.ite(PrimitiveKind.INT,
-                    g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, bSubA, zero)),
-                    g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, bSubA)), bSubA));
+            int absAB =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.LT, PrimitiveKind.BOOL, aSubB, zero)),
+                                    g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, aSubB)),
+                                    aSubB));
+            int absBA =
+                    g.add(
+                            ENode.ite(
+                                    PrimitiveKind.INT,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.LT, PrimitiveKind.BOOL, bSubA, zero)),
+                                    g.add(ENode.unary(ENode.Op.NEG, PrimitiveKind.INT, bSubA)),
+                                    bSubA));
             g.saturate(AlgebraicRules.verifierRules(), 6, 128);
             Assertions.assertTrue(g.areEquivalent(absAB, absBA));
         }
@@ -200,8 +278,20 @@ public class EGraphTestCase {
             EGraph gd = new EGraph();
             int da = gd.add(ENode.opaque("da", PrimitiveKind.DOUBLE));
             int db = gd.add(ENode.opaque("db", PrimitiveKind.DOUBLE));
-            int dMinAB = gd.add(ENode.ite(PrimitiveKind.DOUBLE, gd.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, da, db)), da, db));
-            int dMinBA = gd.add(ENode.ite(PrimitiveKind.DOUBLE, gd.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, db, da)), db, da));
+            int dMinAB =
+                    gd.add(
+                            ENode.ite(
+                                    PrimitiveKind.DOUBLE,
+                                    gd.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, da, db)),
+                                    da,
+                                    db));
+            int dMinBA =
+                    gd.add(
+                            ENode.ite(
+                                    PrimitiveKind.DOUBLE,
+                                    gd.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, db, da)),
+                                    db,
+                                    da));
             gd.saturate(AlgebraicRules.verifierRules(), 6, 128);
             Assertions.assertFalse(gd.areEquivalent(dMinAB, dMinBA));
         }
@@ -245,8 +335,13 @@ public class EGraphTestCase {
         int sa = g.add(ENode.constVal("a", PrimitiveKind.NONE));
         int sb = g.add(ENode.constVal("b", PrimitiveKind.NONE));
         int sab = g.add(ENode.constVal("ab", PrimitiveKind.NONE));
-        int sAddAB1 = g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE,
-                g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE, s, sa)), sb));
+        int sAddAB1 =
+                g.add(
+                        ENode.binary(
+                                ENode.Op.STR_ADD,
+                                PrimitiveKind.NONE,
+                                g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE, s, sa)),
+                                sb));
         int sAddAB2 = g.add(ENode.binary(ENode.Op.STR_ADD, PrimitiveKind.NONE, s, sab));
         int strAssocEq = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, sAddAB1, sAddAB2));
 
@@ -284,9 +379,14 @@ public class EGraphTestCase {
         Assertions.assertTrue(g.areEquivalent(dbEq, t));
         Assertions.assertTrue(g.areEquivalent(dbNeq, f));
 
-        Assertions.assertFalse(g.areEquivalent(anyEq, t), "any may hold an object with non-reflexive or throwing equals");
-        Assertions.assertFalse(g.areEquivalent(anyNeq, f), "any may hold an object with non-reflexive or throwing equals");
-        Assertions.assertFalse(g.areEquivalent(anyEqTrue, any), "any == true must not collapse to any");
+        Assertions.assertFalse(
+                g.areEquivalent(anyEq, t),
+                "any may hold an object with non-reflexive or throwing equals");
+        Assertions.assertFalse(
+                g.areEquivalent(anyNeq, f),
+                "any may hold an object with non-reflexive or throwing equals");
+        Assertions.assertFalse(
+                g.areEquivalent(anyEqTrue, any), "any == true must not collapse to any");
     }
 
     @Test
@@ -329,7 +429,8 @@ public class EGraphTestCase {
 
     @Test
     public void testIntegralModAndFloorDivAlgebraicRules() {
-        // 1. Optimizer rules: unit divisors, idempotent mod, non-zero zero/self, overflow-guarded factor cancel
+        // 1. Optimizer rules: unit divisors, idempotent mod, non-zero zero/self, overflow-guarded
+        // factor cancel
         {
             EGraph g = new EGraph();
             int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
@@ -354,9 +455,11 @@ public class EGraphTestCase {
             int zeroDiv5 = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, zero, five));
             int fiveDiv5 = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, five, five));
 
-            // Overflow-guarded factor cancellation: (shortX * 3) // 3 == shortX, but (a * 4) // 4 is NOT cancelled
+            // Overflow-guarded factor cancellation: (shortX * 3) // 3 == shortX, but (a * 4) // 4
+            // is NOT cancelled
             int sxMul3 = g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, shortX, three));
-            int sxCancel = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, sxMul3, three));
+            int sxCancel =
+                    g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, sxMul3, three));
             int aMul4 = g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, a, four));
             int aNoCancel = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, aMul4, four));
 
@@ -364,7 +467,8 @@ public class EGraphTestCase {
             int zeroModB = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, zero, b));
             int bDivB = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, b, b));
 
-            // Division identity must NOT fire under optimizerRules when b is unknown (could throw on b == 0)
+            // Division identity must NOT fire under optimizerRules when b is unknown (could throw
+            // on b == 0)
             int aDivB = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, a, b));
             int bTimesQ = g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, b, aDivB));
             int recon = g.add(ENode.binary(ENode.Op.ADD, PrimitiveKind.INT, bTimesQ, aModB));
@@ -382,8 +486,10 @@ public class EGraphTestCase {
             Assertions.assertTrue(g.areEquivalent(fiveDiv5, one));
             Assertions.assertTrue(g.areEquivalent(sxCancel, shortX));
 
-            Assertions.assertFalse(g.areEquivalent(aNoCancel, a), "int * 4 may overflow; must not cancel // 4");
-            Assertions.assertFalse(g.areEquivalent(zeroModB, zero), "0 mod b may throw when b == 0");
+            Assertions.assertFalse(
+                    g.areEquivalent(aNoCancel, a), "int * 4 may overflow; must not cancel // 4");
+            Assertions.assertFalse(
+                    g.areEquivalent(zeroModB, zero), "0 mod b may throw when b == 0");
             Assertions.assertFalse(g.areEquivalent(bDivB, one), "b // b may throw when b == 0");
             Assertions.assertFalse(g.areEquivalent(recon, a), "division identity is verifier-only");
         }
@@ -395,8 +501,13 @@ public class EGraphTestCase {
             int b = g.add(ENode.constVal(5, PrimitiveKind.INT));
             int q = g.add(ENode.binary(ENode.Op.FLOOR_DIV, PrimitiveKind.INT, a, b));
             int r = g.add(ENode.binary(ENode.Op.MOD, PrimitiveKind.INT, a, b));
-            int recon = g.add(ENode.binary(ENode.Op.ADD, PrimitiveKind.INT,
-                    g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, b, q)), r));
+            int recon =
+                    g.add(
+                            ENode.binary(
+                                    ENode.Op.ADD,
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.binary(ENode.Op.MUL, PrimitiveKind.INT, b, q)),
+                                    r));
 
             g.saturate(AlgebraicRules.verifierRules(), 6, 256);
 

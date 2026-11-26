@@ -1,11 +1,17 @@
 package org.babblelang.opt.hir;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.ExprMeta;
-import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
@@ -19,31 +25,24 @@ import org.babblelang.opt.HirRewriter;
 import org.babblelang.opt.PassContext;
 import org.babblelang.runtime.ClassShape;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
- * {@code O9} — Scalar replacement of aggregates (SROA) for non-escaping {@code record} values
- * and flattened {@code $unboxed} entry points for non-inlined {@code borrow} {@code record}
- * parameters ({@code BIP014-I4}).
+ * {@code O9} — Scalar replacement of aggregates (SROA) for non-escaping {@code record} values and
+ * flattened {@code $unboxed} entry points for non-inlined {@code borrow} {@code record} parameters
+ * ({@code BIP014-I4}).
  *
  * <p>Consists of three cooperating sub-passes over {@link HirModule}:
+ *
  * <ol>
  *   <li><b>Projection beta-reduction</b>: {@code ThisFieldGet(RecordNew(C, args), p)} (including
  *       through non-namespace {@code Block}s produced by {@link InlinePass}) reduces directly to
- *       {@code args[p]} while preserving exact left-to-right side effects.</li>
+ *       {@code args[p]} while preserving exact left-to-right side effects.
  *   <li><b>Flattened {@code $unboxed} entry points</b>: for non-method, capture-free functions
  *       taking {@code borrow} {@code record} parameters accessed solely via field projection,
  *       synthesizes a companion {@code HirFunction} accepting the record's fields directly and
- *       rewrites qualifying {@link HirExpr.DirectBabbleCall} sites.</li>
+ *       rewrites qualifying {@link HirExpr.DirectBabbleCall} sites.
  *   <li><b>Non-escaping local scalarization</b>: replaces non-escaping local {@code record}
  *       variables (including loop-carried variables reassigned to fresh {@code RecordNew}s) with
- *       per-field primitive/reference locals across all 8 {@code PrimitiveKind}s.</li>
+ *       per-field primitive/reference locals across all 8 {@code PrimitiveKind}s.
  * </ol>
  */
 public final class ScalarReplacePass implements HirPass {
@@ -58,8 +57,7 @@ public final class ScalarReplacePass implements HirPass {
             String classJvmName,
             PrimitiveKind[] paramKinds,
             int[] memberIndices,
-            String[] fieldNames
-    ) {
+            String[] fieldNames) {
         int fieldCount() {
             return paramKinds.length;
         }
@@ -74,7 +72,8 @@ public final class ScalarReplacePass implements HirPass {
         }
 
         boolean sameType(RecordLayout other) {
-            return other != null && classTypeId.equals(other.classTypeId)
+            return other != null
+                    && classTypeId.equals(other.classTypeId)
                     && paramKinds.length == other.paramKinds.length;
         }
     }
@@ -89,10 +88,13 @@ public final class ScalarReplacePass implements HirPass {
         Set<String> initBindings = HirPurity.findDefinitelyInitializedTopLevelBindings(module);
 
         // Sub-pass 1: Projection beta-reduction everywhere in module.
-        HirModule cur = betaReduceModule(module, layoutsByTypeId, initBindings, nextVarId, rewrites);
+        HirModule cur =
+                betaReduceModule(module, layoutsByTypeId, initBindings, nextVarId, rewrites);
 
         // Sub-pass 2: Flattened $unboxed entry points for non-inlined borrow record parameters.
-        cur = unboxBorrowParams(cur, layoutsByTypeId, initBindings, nextVarId, nextOwnerId, rewrites);
+        cur =
+                unboxBorrowParams(
+                        cur, layoutsByTypeId, initBindings, nextVarId, nextOwnerId, rewrites);
 
         // Sub-pass 3: Non-escaping local record scalarization inside frame-scoped functions.
         cur = scalarizeLocalRecords(cur, layoutsByTypeId, initBindings, nextVarId, rewrites);
@@ -118,16 +120,26 @@ public final class ScalarReplacePass implements HirPass {
             for (int i = 0; i < n; i++) {
                 HirParam p = cls.params().get(i);
                 int mi = p.memberIndex();
-                kinds[i] = mi >= 0 && mi < cls.memberKinds().length ? cls.memberKinds()[mi] : p.kind();
+                kinds[i] =
+                        mi >= 0 && mi < cls.memberKinds().length ? cls.memberKinds()[mi] : p.kind();
                 memberIndices[i] = mi;
                 fieldNames[i] = p.name();
             }
-            out.put(cls.shape().id(), new RecordLayout(cls.id(), cls.shape().id(), cls.jvmName(), kinds, memberIndices, fieldNames));
+            out.put(
+                    cls.shape().id(),
+                    new RecordLayout(
+                            cls.id(),
+                            cls.shape().id(),
+                            cls.jvmName(),
+                            kinds,
+                            memberIndices,
+                            fieldNames));
         }
         return out;
     }
 
-    private static RecordLayout layoutOf(HirExpr.RecordNew r, Map<String, RecordLayout> localLayouts, HirModule module) {
+    private static RecordLayout layoutOf(
+            HirExpr.RecordNew r, Map<String, RecordLayout> localLayouts, HirModule module) {
         RecordLayout local = localLayouts.get(r.classTypeId());
         if (local != null) {
             return local;
@@ -142,10 +154,19 @@ public final class ScalarReplacePass implements HirPass {
             memberIndices[i] = i;
             fieldNames[i] = "f" + i;
         }
-        return new RecordLayout(r.classId(), r.classTypeId(), r.classJvmName(), r.paramKinds(), memberIndices, fieldNames);
+        return new RecordLayout(
+                r.classId(),
+                r.classTypeId(),
+                r.classJvmName(),
+                r.paramKinds(),
+                memberIndices,
+                fieldNames);
     }
 
-    /** Maps parameter index {@code p} to source argument index in {@code r.args()}, or {@code null} if unsupported. */
+    /**
+     * Maps parameter index {@code p} to source argument index in {@code r.args()}, or {@code null}
+     * if unsupported.
+     */
     private static int[] resolveArgMapping(HirExpr.RecordNew r) {
         int n = r.paramKinds().length;
         LoweringTargets.ArgumentBinding b = r.binding();
@@ -163,15 +184,18 @@ public final class ScalarReplacePass implements HirPass {
         return map;
     }
 
-    private static boolean isPureClassRef(HirExpr classRef, boolean isInstance, HirModule module, Set<String> initBindings) {
+    private static boolean isPureClassRef(
+            HirExpr classRef, boolean isInstance, HirModule module, Set<String> initBindings) {
         if (classRef instanceof HirExpr.NameRead nr) {
-            return (nr.finalBinding() && nr.definitelyDefined()) || initBindings.contains(nr.name());
+            return (nr.finalBinding() && nr.definitelyDefined())
+                    || initBindings.contains(nr.name());
         }
         if (classRef instanceof HirExpr.ClassExpr) {
             return true;
         }
         if (classRef instanceof HirExpr.ModuleExportGet meg) {
-            return meg.receiver() instanceof HirExpr.NameRead || HirPurity.isPureNothrowTerminating(meg.receiver(), module);
+            return meg.receiver() instanceof HirExpr.NameRead
+                    || HirPurity.isPureNothrowTerminating(meg.receiver(), module);
         }
         return HirPurity.isPureNothrowTerminating(classRef, module);
     }
@@ -180,27 +204,57 @@ public final class ScalarReplacePass implements HirPass {
         if (g.meta().checkedType() != null) {
             return -1;
         }
-        boolean typeMatch = (layout.classId() >= 0 && g.classId() == layout.classId())
-                || (g.externalClassJvmName() != null && g.externalClassJvmName().equals(layout.classJvmName()));
-        if (!typeMatch || (g.receiverText() != null && (!g.immutableField() || !g.definitelyDefined()))) {
+        boolean typeMatch =
+                (layout.classId() >= 0 && g.classId() == layout.classId())
+                        || (g.externalClassJvmName() != null
+                                && g.externalClassJvmName().equals(layout.classJvmName()));
+        if (!typeMatch
+                || (g.receiverText() != null && (!g.immutableField() || !g.definitelyDefined()))) {
             return -1;
         }
         return layout.paramIndexForMember(g.memberIndex());
     }
 
-    // ---------------------------------------------------------------- Sub-pass 1: projection beta-reduction
+    // ---------------------------------------------------------------- Sub-pass 1: projection
+    // beta-reduction
 
-    private HirModule betaReduceModule(HirModule module, Map<String, RecordLayout> localLayouts,
-                                       Set<String> initBindings, int[] nextVarId, int[] rewrites) {
+    private HirModule betaReduceModule(
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            int[] nextVarId,
+            int[] rewrites) {
         boolean[] changed = {false};
-        List<HirExpr> newTop = HirRewriter.rewriteList(module.topLevelStatements(),
-                s -> betaReduceExpr(s, -1, module, localLayouts, initBindings, nextVarId, rewrites, changed));
+        List<HirExpr> newTop =
+                HirRewriter.rewriteList(
+                        module.topLevelStatements(),
+                        s ->
+                                betaReduceExpr(
+                                        s,
+                                        -1,
+                                        module,
+                                        localLayouts,
+                                        initBindings,
+                                        nextVarId,
+                                        rewrites,
+                                        changed));
         Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
             int ownerId = fn.namespaceScope() ? -1 : fn.id();
-            List<HirExpr> nb = HirRewriter.rewriteList(fn.body(),
-                    s -> betaReduceExpr(s, ownerId, module, localLayouts, initBindings, nextVarId, rewrites, changed));
+            List<HirExpr> nb =
+                    HirRewriter.rewriteList(
+                            fn.body(),
+                            s ->
+                                    betaReduceExpr(
+                                            s,
+                                            ownerId,
+                                            module,
+                                            localLayouts,
+                                            initBindings,
+                                            nextVarId,
+                                            rewrites,
+                                            changed));
             if (nb != fn.body()) {
                 fn = fn.withBody(nb);
             }
@@ -209,17 +263,40 @@ public final class ScalarReplacePass implements HirPass {
         if (!changed[0]) {
             return module;
         }
-        return module.withUpdates(newTop, newFns, module.classes(), module.interfaces(),
-                nextVarId[0], module.nextOwnerId());
+        return module.withUpdates(
+                newTop,
+                newFns,
+                module.classes(),
+                module.interfaces(),
+                nextVarId[0],
+                module.nextOwnerId());
     }
 
-    private HirExpr betaReduceExpr(HirExpr expr, int ownerFnId, HirModule module,
-                                   Map<String, RecordLayout> localLayouts, Set<String> initBindings,
-                                   int[] nextVarId, int[] rewrites, boolean[] changed) {
-        HirExpr cur = HirRewriter.rewriteChildren(expr,
-                c -> betaReduceExpr(c, ownerFnId, module, localLayouts, initBindings, nextVarId, rewrites, changed));
+    private HirExpr betaReduceExpr(
+            HirExpr expr,
+            int ownerFnId,
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            int[] nextVarId,
+            int[] rewrites,
+            boolean[] changed) {
+        HirExpr cur =
+                HirRewriter.rewriteChildren(
+                        expr,
+                        c ->
+                                betaReduceExpr(
+                                        c,
+                                        ownerFnId,
+                                        module,
+                                        localLayouts,
+                                        initBindings,
+                                        nextVarId,
+                                        rewrites,
+                                        changed));
         if (cur instanceof HirExpr.Match m && m.meta().checkedType() == null) {
-            HirExpr reducedMatch = tryBetaReduceMatch(m, ownerFnId, module, localLayouts, initBindings);
+            HirExpr reducedMatch =
+                    tryBetaReduceMatch(m, ownerFnId, module, localLayouts, initBindings);
             if (reducedMatch != null) {
                 rewrites[0]++;
                 changed[0] = true;
@@ -232,24 +309,33 @@ public final class ScalarReplacePass implements HirPass {
         }
         HirExpr recv = unwrapOwnership(g.receiver());
         if (recv instanceof HirExpr.RecordNew r) {
-            HirExpr reduced = reduceRecordProjection(g, r, ownerFnId, module, localLayouts, initBindings, nextVarId);
+            HirExpr reduced =
+                    reduceRecordProjection(
+                            g, r, ownerFnId, module, localLayouts, initBindings, nextVarId);
             if (reduced != null) {
                 rewrites[0]++;
                 changed[0] = true;
                 return reduced;
             }
-        } else if (recv instanceof HirExpr.Block b && !b.opensNamespaceScope() && !b.statements().isEmpty()
-                && b.innerWideningRank() < 0 && b.meta().wideningRank() < 0 && b.meta().checkedType() == null) {
+        } else if (recv instanceof HirExpr.Block b
+                && !b.opensNamespaceScope()
+                && !b.statements().isEmpty()
+                && b.innerWideningRank() < 0
+                && b.meta().wideningRank() < 0
+                && b.meta().checkedType() == null) {
             int last = b.statements().size() - 1;
             HirExpr tail = unwrapOwnership(b.statements().get(last));
             if (tail instanceof HirExpr.RecordNew r) {
-                HirExpr reduced = reduceRecordProjection(g, r, ownerFnId, module, localLayouts, initBindings, nextVarId);
+                HirExpr reduced =
+                        reduceRecordProjection(
+                                g, r, ownerFnId, module, localLayouts, initBindings, nextVarId);
                 if (reduced != null) {
                     List<HirExpr> stmts = new ArrayList<>(b.statements());
                     stmts.set(last, reduced);
                     rewrites[0]++;
                     changed[0] = true;
-                    return new HirExpr.Block(stmts, false, new String[0], b.declaredVars(), -1, g.meta());
+                    return new HirExpr.Block(
+                            stmts, false, new String[0], b.declaredVars(), -1, g.meta());
                 }
             }
         }
@@ -262,7 +348,9 @@ public final class ScalarReplacePass implements HirPass {
                 expr = m.operand();
             } else if (expr instanceof HirExpr.Freeze f) {
                 expr = f.operand();
-            } else if (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr() && b.meta().checkedType() == null) {
+            } else if (expr instanceof HirExpr.Block b
+                    && b.isTransparentSingleExpr()
+                    && b.meta().checkedType() == null) {
                 expr = b.statements().get(0);
             } else {
                 return expr;
@@ -270,9 +358,14 @@ public final class ScalarReplacePass implements HirPass {
         }
     }
 
-    private HirExpr reduceRecordProjection(HirExpr.ThisFieldGet g, HirExpr.RecordNew r, int ownerFnId,
-                                           HirModule module, Map<String, RecordLayout> localLayouts,
-                                           Set<String> initBindings, int[] nextVarId) {
+    private HirExpr reduceRecordProjection(
+            HirExpr.ThisFieldGet g,
+            HirExpr.RecordNew r,
+            int ownerFnId,
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            int[] nextVarId) {
         RecordLayout layout = layoutOf(r, localLayouts, module);
         if (layout == null) {
             return null;
@@ -289,7 +382,8 @@ public final class ScalarReplacePass implements HirPass {
         HirExpr chosenArg = r.args().get(chosenIdx);
         PrimitiveKind fieldKind = layout.paramKinds()[p];
 
-        boolean classRefPure = isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings);
+        boolean classRefPure =
+                isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings);
         boolean allSiblingsPure = true;
         for (int i = 0; i < r.args().size(); i++) {
             if (i != chosenIdx && !HirPurity.isPureNothrowTerminating(r.args().get(i), module)) {
@@ -301,7 +395,8 @@ public final class ScalarReplacePass implements HirPass {
         if (classRefPure && allSiblingsPure) {
             return adaptProjectedArg(chosenArg, fieldKind, g.meta());
         }
-        // Preserve left-to-right side effects only inside frame-scoped functions where we can bind a temp local.
+        // Preserve left-to-right side effects only inside frame-scoped functions where we can bind
+        // a temp local.
         if (ownerFnId < 0) {
             return null;
         }
@@ -316,47 +411,88 @@ public final class ScalarReplacePass implements HirPass {
             }
         }
         int tmpId = nextVarId[0]++;
-        HirVar tmp = new HirVar(tmpId, "$sr_p" + tmpId, Resolution.Variable.Kind.DEFINITION, ownerFnId,
-                fieldKind, false, true, false, true);
+        HirVar tmp =
+                new HirVar(
+                        tmpId,
+                        "$sr_p" + tmpId,
+                        Resolution.Variable.Kind.DEFINITION,
+                        ownerFnId,
+                        fieldKind,
+                        false,
+                        true,
+                        false,
+                        true);
         temps.add(tmp);
-        ExprMeta defMeta = new ExprMeta(chosenArg.meta().line(), fieldKind, chosenArg.meta().wideningRank(),
-                null, EffectSet.EMPTY, g.meta().deeplyImmutable(), g.meta().stringType());
-        stmts.add(new HirExpr.Def(tmp.name(), new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
-                tmp, chosenArg, defMeta));
+        ExprMeta defMeta =
+                new ExprMeta(
+                        chosenArg.meta().line(),
+                        fieldKind,
+                        chosenArg.meta().wideningRank(),
+                        null,
+                        EffectSet.EMPTY,
+                        g.meta().deeplyImmutable(),
+                        g.meta().stringType());
+        stmts.add(
+                new HirExpr.Def(
+                        tmp.name(),
+                        new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
+                        tmp,
+                        chosenArg,
+                        defMeta));
         for (int i = chosenIdx + 1; i < r.args().size(); i++) {
             if (!HirPurity.isPureNothrowTerminating(r.args().get(i), module)) {
                 stmts.add(r.args().get(i));
             }
         }
-        ExprMeta readMeta = new ExprMeta(g.meta().line(), fieldKind, g.meta().wideningRank(),
-                null, EffectSet.EMPTY, g.meta().deeplyImmutable(), g.meta().stringType());
+        ExprMeta readMeta =
+                new ExprMeta(
+                        g.meta().line(),
+                        fieldKind,
+                        g.meta().wideningRank(),
+                        null,
+                        EffectSet.EMPTY,
+                        g.meta().deeplyImmutable(),
+                        g.meta().stringType());
         stmts.add(new HirExpr.VarRead(tmp, readMeta));
         return new HirExpr.Block(stmts, false, new String[0], temps, -1, g.meta());
     }
 
-    private static HirExpr adaptProjectedArg(HirExpr arg, PrimitiveKind fieldKind, ExprMeta getMeta) {
+    private static HirExpr adaptProjectedArg(
+            HirExpr arg, PrimitiveKind fieldKind, ExprMeta getMeta) {
         int fieldRank = fieldKind.numericRank();
-        boolean kindMatch = arg.meta().kind() == fieldKind
-                || (fieldRank >= 1 && arg.meta().wideningRank() == fieldRank);
+        boolean kindMatch =
+                arg.meta().kind() == fieldKind
+                        || (fieldRank >= 1 && arg.meta().wideningRank() == fieldRank);
         if (getMeta.wideningRank() < 0 && kindMatch) {
             return arg;
         }
-        int targetRank = getMeta.wideningRank() >= 0 ? getMeta.wideningRank()
-                : (arg.meta().kind() != fieldKind && fieldRank >= 1 ? fieldRank : -1);
-        ExprMeta wrapMeta = new ExprMeta(getMeta.line(), fieldKind, targetRank, null,
-                arg.meta().effects(), getMeta.deeplyImmutable(), getMeta.stringType(),
-                arg.meta().frozen(), arg.meta().unique());
+        int targetRank =
+                getMeta.wideningRank() >= 0
+                        ? getMeta.wideningRank()
+                        : (arg.meta().kind() != fieldKind && fieldRank >= 1 ? fieldRank : -1);
+        ExprMeta wrapMeta =
+                new ExprMeta(
+                        getMeta.line(),
+                        fieldKind,
+                        targetRank,
+                        null,
+                        arg.meta().effects(),
+                        getMeta.deeplyImmutable(),
+                        getMeta.stringType(),
+                        arg.meta().frozen(),
+                        arg.meta().unique());
         return new HirExpr.Block(List.of(arg), false, new String[0], List.of(), -1, wrapMeta);
     }
 
     // ---------------------------------------------------------------- BIP038 match RecordNew SROA
 
-    private record StaticMatchResult(HirExpr.MatchArm arm, boolean isElse) {
-    }
+    private record StaticMatchResult(HirExpr.MatchArm arm, boolean isElse) {}
 
-    private static StaticMatchResult findStaticMatchArm(HirExpr.Match m, RecordLayout layout, HirModule module) {
+    private static StaticMatchResult findStaticMatchArm(
+            HirExpr.Match m, RecordLayout layout, HirModule module) {
         for (HirExpr.MatchArm arm : m.arms()) {
-            if (arm.guard() == null && patternDefinitelyMatchesLayout(arm.pattern(), layout, arm.boundVars())) {
+            if (arm.guard() == null
+                    && patternDefinitelyMatchesLayout(arm.pattern(), layout, arm.boundVars())) {
                 return new StaticMatchResult(arm, false);
             }
             if (patternDefinitelyRejectsLayout(arm.pattern(), layout)
@@ -371,7 +507,8 @@ public final class ScalarReplacePass implements HirPass {
         return null;
     }
 
-    private static boolean patternDefinitelyMatchesLayout(HirPattern pat, RecordLayout layout, List<HirVar> boundVars) {
+    private static boolean patternDefinitelyMatchesLayout(
+            HirPattern pat, RecordLayout layout, List<HirVar> boundVars) {
         if (pat instanceof HirPattern.RecordDestructure rd) {
             if (rd.isJavaRecord() || !layout.classTypeId().equals(rd.babbleTypeId())) {
                 return false;
@@ -390,7 +527,9 @@ public final class ScalarReplacePass implements HirPass {
                 if (fp instanceof HirPattern.Wildcard) {
                     continue;
                 }
-                if (fp instanceof HirPattern.Bind b && b.inner() == null && !b.var().isCaptured()
+                if (fp instanceof HirPattern.Bind b
+                        && b.inner() == null
+                        && !b.var().isCaptured()
                         && b.var().primitiveKind() == layout.paramKinds()[p]) {
                     boundCount++;
                     continue;
@@ -400,8 +539,7 @@ public final class ScalarReplacePass implements HirPass {
             return boundCount == boundVars.size();
         }
         if (pat instanceof HirPattern.TypeTest tt && boundVars.isEmpty()) {
-            return tt.target() != null
-                    && layout.classTypeId().equals(tt.target().typeId());
+            return tt.target() != null && layout.classTypeId().equals(tt.target().typeId());
         }
         return false;
     }
@@ -423,7 +561,8 @@ public final class ScalarReplacePass implements HirPass {
             case HirPattern.RecordDestructure rd ->
                     rd.isJavaRecord() || !layout.classTypeId().equals(rd.babbleTypeId());
             case HirPattern.SequenceDestructure ignored -> true;
-            case HirPattern.Bind b -> b.inner() != null && patternDefinitelyRejectsLayout(b.inner(), layout);
+            case HirPattern.Bind b ->
+                    b.inner() != null && patternDefinitelyRejectsLayout(b.inner(), layout);
             case HirPattern.Or o -> {
                 for (HirPattern alt : o.alternatives()) {
                     if (!patternDefinitelyRejectsLayout(alt, layout)) {
@@ -436,15 +575,23 @@ public final class ScalarReplacePass implements HirPass {
         };
     }
 
-    private HirExpr tryBetaReduceMatch(HirExpr.Match m, int ownerFnId, HirModule module,
-                                       Map<String, RecordLayout> localLayouts, Set<String> initBindings) {
+    private HirExpr tryBetaReduceMatch(
+            HirExpr.Match m,
+            int ownerFnId,
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings) {
         HirExpr scrut = unwrapOwnership(m.scrutinee());
         HirExpr.Block prefixBlock = null;
         HirExpr.RecordNew r = null;
         if (scrut instanceof HirExpr.RecordNew rn) {
             r = rn;
-        } else if (scrut instanceof HirExpr.Block b && !b.opensNamespaceScope() && !b.statements().isEmpty()
-                && b.innerWideningRank() < 0 && b.meta().wideningRank() < 0 && b.meta().checkedType() == null) {
+        } else if (scrut instanceof HirExpr.Block b
+                && !b.opensNamespaceScope()
+                && !b.statements().isEmpty()
+                && b.innerWideningRank() < 0
+                && b.meta().wideningRank() < 0
+                && b.meta().checkedType() == null) {
             HirExpr tail = unwrapOwnership(b.statements().get(b.statements().size() - 1));
             if (tail instanceof HirExpr.RecordNew rn) {
                 prefixBlock = b;
@@ -463,7 +610,8 @@ public final class ScalarReplacePass implements HirPass {
         if (res == null) {
             return null;
         }
-        boolean classRefPure = isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings);
+        boolean classRefPure =
+                isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings);
         if (!classRefPure && ownerFnId < 0) {
             return null;
         }
@@ -496,44 +644,70 @@ public final class ScalarReplacePass implements HirPass {
             HirVar bv = boundByArgIdx[aIdx];
             if (bv != null) {
                 PrimitiveKind fk = kindByArgIdx[aIdx];
-                ExprMeta defMeta = new ExprMeta(arg.meta().line(), fk,
-                        arg.meta().kind() != fk && fk.numericRank() >= 1 ? fk.numericRank() : arg.meta().wideningRank(),
-                        null, arg.meta().effects(), fk.isPrimitive(), arg.meta().stringType());
-                stmts.add(new HirExpr.Def(bv.name(), new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
-                        bv, arg, defMeta));
+                ExprMeta defMeta =
+                        new ExprMeta(
+                                arg.meta().line(),
+                                fk,
+                                arg.meta().kind() != fk && fk.numericRank() >= 1
+                                        ? fk.numericRank()
+                                        : arg.meta().wideningRank(),
+                                null,
+                                arg.meta().effects(),
+                                fk.isPrimitive(),
+                                arg.meta().stringType());
+                stmts.add(
+                        new HirExpr.Def(
+                                bv.name(),
+                                new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
+                                bv,
+                                arg,
+                                defMeta));
             } else if (!HirPurity.isPureNothrowTerminating(arg, module)) {
                 stmts.add(arg);
             }
         }
         HirExpr body = res.isElse() ? m.elseArm().body() : res.arm().body();
-        int bodyWiden = res.isElse() ? m.elseArm().bodyWideningRank() : res.arm().bodyWideningRank();
+        int bodyWiden =
+                res.isElse() ? m.elseArm().bodyWideningRank() : res.arm().bodyWideningRank();
         stmts.add(body);
 
-        HirExpr reduced = new HirExpr.Block(stmts, false, new String[0], declared, bodyWiden, m.meta());
+        HirExpr reduced =
+                new HirExpr.Block(stmts, false, new String[0], declared, bodyWiden, m.meta());
         if (prefixBlock != null) {
             List<HirExpr> combined = new ArrayList<>(prefixBlock.statements());
             combined.set(combined.size() - 1, reduced);
-            return new HirExpr.Block(combined, false, new String[0], prefixBlock.declaredVars(), -1, m.meta());
+            return new HirExpr.Block(
+                    combined, false, new String[0], prefixBlock.declaredVars(), -1, m.meta());
         }
         return reduced;
     }
 
-    // ---------------------------------------------------------------- Sub-pass 2: flattened $unboxed borrow entry points
+    // ---------------------------------------------------------------- Sub-pass 2: flattened
+    // $unboxed borrow entry points
 
     private record UnboxPlan(
             HirFunction original,
             int unboxedFnId,
             RecordLayout[] paramLayouts // non-null for flattened borrow record params
-    ) {
-    }
+            ) {}
 
-    private HirModule unboxBorrowParams(HirModule module, Map<String, RecordLayout> localLayouts,
-                                        Set<String> initBindings, int[] nextVarId, int[] nextOwnerId, int[] rewrites) {
-        // 1. Identify candidate functions with borrow record parameters used solely via field projection.
+    private HirModule unboxBorrowParams(
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            int[] nextVarId,
+            int[] nextOwnerId,
+            int[] rewrites) {
+        // 1. Identify candidate functions with borrow record parameters used solely via field
+        // projection.
         Map<Integer, RecordLayout[]> candidates = new LinkedHashMap<>();
         for (HirFunction fn : module.functions().values()) {
-            if (fn.isCompiledClassMethod() || fn.namespaceScope() || !fn.capturedVars().isEmpty()
-                    || fn.restIndex() >= 0 || fn.optionalCount() > 0 || fn.params().isEmpty()
+            if (fn.isCompiledClassMethod()
+                    || fn.namespaceScope()
+                    || !fn.capturedVars().isEmpty()
+                    || fn.restIndex() >= 0
+                    || fn.optionalCount() > 0
+                    || fn.params().isEmpty()
                     || fn.jvmMethodName().endsWith("$unboxed")) {
                 continue;
             }
@@ -569,19 +743,28 @@ public final class ScalarReplacePass implements HirPass {
         }
 
         // 4. Rewrite qualifying DirectBabbleCall sites in top-level and all original functions.
-        List<HirExpr> newTop = HirRewriter.rewriteList(module.topLevelStatements(),
-                s -> rewriteUnboxCallExpr(s, plans, module, initBindings, rewrites));
+        List<HirExpr> newTop =
+                HirRewriter.rewriteList(
+                        module.topLevelStatements(),
+                        s -> rewriteUnboxCallExpr(s, plans, module, initBindings, rewrites));
         for (Map.Entry<Integer, HirFunction> e : new LinkedHashMap<>(newFns).entrySet()) {
             HirFunction fn = e.getValue();
-            List<HirExpr> nb = HirRewriter.rewriteList(fn.body(),
-                    s -> rewriteUnboxCallExpr(s, plans, module, initBindings, rewrites));
+            List<HirExpr> nb =
+                    HirRewriter.rewriteList(
+                            fn.body(),
+                            s -> rewriteUnboxCallExpr(s, plans, module, initBindings, rewrites));
             if (nb != fn.body()) {
                 newFns.put(e.getKey(), fn.withBody(nb));
             }
         }
 
-        return module.withUpdates(newTop, newFns, module.classes(), module.interfaces(),
-                nextVarId[0], nextOwnerId[0]);
+        return module.withUpdates(
+                newTop,
+                newFns,
+                module.classes(),
+                module.interfaces(),
+                nextVarId[0],
+                nextOwnerId[0]);
     }
 
     private static boolean containsSelfRecursion(List<HirExpr> body) {
@@ -594,17 +777,22 @@ public final class ScalarReplacePass implements HirPass {
 
     private static void scanSelfRecursion(HirExpr expr, boolean[] found) {
         if (expr == null || found[0]) return;
-        if (expr instanceof HirExpr.RecurseRef || expr instanceof HirExpr.SelfRecurseCall || expr instanceof HirExpr.SelfTailCall) {
+        if (expr instanceof HirExpr.RecurseRef
+                || expr instanceof HirExpr.SelfRecurseCall
+                || expr instanceof HirExpr.SelfTailCall) {
             found[0] = true;
             return;
         }
-        HirRewriter.rewriteChildren(expr, c -> {
-            scanSelfRecursion(c, found);
-            return c;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                c -> {
+                    scanSelfRecursion(c, found);
+                    return c;
+                });
     }
 
-    private static RecordLayout[] analyzeBorrowParams(HirFunction fn, Map<String, RecordLayout> localLayouts) {
+    private static RecordLayout[] analyzeBorrowParams(
+            HirFunction fn, Map<String, RecordLayout> localLayouts) {
         List<HirParam> params = fn.params();
         Map<Integer, RecordLayout> borrowVarLayouts = new HashMap<>();
         RecordLayout[] result = new RecordLayout[params.size()];
@@ -614,9 +802,14 @@ public final class ScalarReplacePass implements HirPass {
 
         for (int i = 0; i < params.size(); i++) {
             HirParam p = params.get(i);
-            RecordLayout layout = (p.isBorrow() && p.recordTypeId() != null && p.var() != null && !p.var().isCaptured()
-                    && p.samTarget() == null)
-                    ? localLayouts.get(p.recordTypeId()) : null;
+            RecordLayout layout =
+                    (p.isBorrow()
+                                    && p.recordTypeId() != null
+                                    && p.var() != null
+                                    && !p.var().isCaptured()
+                                    && p.samTarget() == null)
+                            ? localLayouts.get(p.recordTypeId())
+                            : null;
             if (layout != null) {
                 result[i] = layout;
                 borrowVarLayouts.put(p.var().id(), layout);
@@ -666,8 +859,8 @@ public final class ScalarReplacePass implements HirPass {
         return result;
     }
 
-    private static void checkBorrowParamUses(HirExpr expr, Map<Integer, RecordLayout> borrowVarLayouts,
-                                             Set<Integer> disqualified) {
+    private static void checkBorrowParamUses(
+            HirExpr expr, Map<Integer, RecordLayout> borrowVarLayouts, Set<Integer> disqualified) {
         if (expr == null) return;
         if (expr instanceof HirExpr.ThisFieldGet g && g.receiver() instanceof HirExpr.VarRead vr) {
             RecordLayout layout = borrowVarLayouts.get(vr.var().id());
@@ -691,15 +884,20 @@ public final class ScalarReplacePass implements HirPass {
             checkBorrowParamUses(va.value(), borrowVarLayouts, disqualified);
             return;
         }
-        HirRewriter.rewriteChildren(expr, c -> {
-            checkBorrowParamUses(c, borrowVarLayouts, disqualified);
-            return c;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                c -> {
+                    checkBorrowParamUses(c, borrowVarLayouts, disqualified);
+                    return c;
+                });
     }
 
-    private static void findQualifyingUnboxCalls(HirModule module, Map<Integer, RecordLayout[]> candidates,
-                                                 Map<String, RecordLayout> localLayouts, Set<String> initBindings,
-                                                 Set<Integer> used) {
+    private static void findQualifyingUnboxCalls(
+            HirModule module,
+            Map<Integer, RecordLayout[]> candidates,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            Set<Integer> used) {
         for (HirExpr s : module.topLevelStatements()) {
             scanUnboxCalls(s, candidates, module, initBindings, used);
         }
@@ -710,8 +908,12 @@ public final class ScalarReplacePass implements HirPass {
         }
     }
 
-    private static void scanUnboxCalls(HirExpr expr, Map<Integer, RecordLayout[]> candidates,
-                                       HirModule module, Set<String> initBindings, Set<Integer> used) {
+    private static void scanUnboxCalls(
+            HirExpr expr,
+            Map<Integer, RecordLayout[]> candidates,
+            HirModule module,
+            Set<String> initBindings,
+            Set<Integer> used) {
         if (expr == null) return;
         if (expr instanceof HirExpr.DirectBabbleCall c && c.targetFunctionId() >= 0) {
             RecordLayout[] plan = candidates.get(c.targetFunctionId());
@@ -719,15 +921,21 @@ public final class ScalarReplacePass implements HirPass {
                 used.add(c.targetFunctionId());
             }
         }
-        HirRewriter.rewriteChildren(expr, child -> {
-            scanUnboxCalls(child, candidates, module, initBindings, used);
-            return child;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    scanUnboxCalls(child, candidates, module, initBindings, used);
+                    return child;
+                });
     }
 
-    private static boolean canRewriteCallToUnboxed(HirExpr.DirectBabbleCall c, RecordLayout[] plan,
-                                                   HirModule module, Set<String> initBindings) {
-        if (c.meta().checkedType() != null || c.args().size() != plan.length
+    private static boolean canRewriteCallToUnboxed(
+            HirExpr.DirectBabbleCall c,
+            RecordLayout[] plan,
+            HirModule module,
+            Set<String> initBindings) {
+        if (c.meta().checkedType() != null
+                || c.args().size() != plan.length
                 || (c.binding() != null && !c.binding().isIdentityPositional())) {
             return false;
         }
@@ -739,13 +947,15 @@ public final class ScalarReplacePass implements HirPass {
             HirExpr arg = unwrapOwnership(c.args().get(i));
             if (arg instanceof HirExpr.RecordNew r) {
                 if (!r.classTypeId().equals(layout.classTypeId())
-                        || !isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings)
+                        || !isPureClassRef(
+                                r.classRef(), r.classRefIsInstance(), module, initBindings)
                         || (r.binding() != null && !r.binding().isIdentityPositional())
                         || r.args().size() != layout.fieldCount()) {
                     return false;
                 }
             } else if (arg instanceof HirExpr.VarRead vr) {
-                if (vr.var().isCaptured() || (vr.var().mayBeUndefined() && !vr.var().definitelyDefined())) {
+                if (vr.var().isCaptured()
+                        || (vr.var().mayBeUndefined() && !vr.var().definitelyDefined())) {
                     return false;
                 }
             } else {
@@ -755,8 +965,8 @@ public final class ScalarReplacePass implements HirPass {
         return true;
     }
 
-    private static HirFunction synthesizeUnboxedFunction(HirFunction orig, int unboxedId,
-                                                         RecordLayout[] plan, int[] nextVarId) {
+    private static HirFunction synthesizeUnboxedFunction(
+            HirFunction orig, int unboxedId, RecordLayout[] plan, int[] nextVarId) {
         Map<Integer, HirVar> varRemap = new HashMap<>();
         Map<Integer, HirVar[]> flattenedParamVars = new HashMap<>();
         Map<Integer, RecordLayout> flattenedLayouts = new HashMap<>();
@@ -772,12 +982,31 @@ public final class ScalarReplacePass implements HirPass {
                     int id = nextVarId[0]++;
                     String fname = p.name() + "$" + layout.fieldNames()[f];
                     PrimitiveKind fk = layout.paramKinds()[f];
-                    HirVar fv = new HirVar(id, fname, Resolution.Variable.Kind.PARAMETER, unboxedId,
-                            fk, false, true, false, true);
+                    HirVar fv =
+                            new HirVar(
+                                    id,
+                                    fname,
+                                    Resolution.Variable.Kind.PARAMETER,
+                                    unboxedId,
+                                    fk,
+                                    false,
+                                    true,
+                                    false,
+                                    true);
                     fieldVars[f] = fv;
                     newDeclaredVars.add(fv);
-                    newParams.add(new HirParam(fname, fv, fk, -1, null, -1, null, null,
-                            LoweringTargets.ParamOwnership.DEFAULT, p.line()));
+                    newParams.add(
+                            new HirParam(
+                                    fname,
+                                    fv,
+                                    fk,
+                                    -1,
+                                    null,
+                                    -1,
+                                    null,
+                                    null,
+                                    LoweringTargets.ParamOwnership.DEFAULT,
+                                    p.line()));
                 }
                 flattenedParamVars.put(p.var().id(), fieldVars);
                 flattenedLayouts.put(p.var().id(), layout);
@@ -789,8 +1018,19 @@ public final class ScalarReplacePass implements HirPass {
                     varRemap.put(p.var().id(), newVar);
                     newDeclaredVars.add(newVar);
                 }
-                newParams.add(new HirParam(p.name(), newVar, p.kind(), p.wideningRank(), p.checkedType(),
-                        p.memberIndex(), p.defaultValue(), p.samTarget(), p.ownership(), p.mutable(), p.line()));
+                newParams.add(
+                        new HirParam(
+                                p.name(),
+                                newVar,
+                                p.kind(),
+                                p.wideningRank(),
+                                p.checkedType(),
+                                p.memberIndex(),
+                                p.defaultValue(),
+                                p.samTarget(),
+                                p.ownership(),
+                                p.mutable(),
+                                p.line()));
             }
         }
 
@@ -802,7 +1042,14 @@ public final class ScalarReplacePass implements HirPass {
             varRemap.put(v.id(), mapped);
             newDeclaredVars.add(mapped);
         }
-        List<HirExpr> newBody = rewriteUnboxedBody(orig.body(), unboxedId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
+        List<HirExpr> newBody =
+                rewriteUnboxedBody(
+                        orig.body(),
+                        unboxedId,
+                        varRemap,
+                        flattenedParamVars,
+                        flattenedLayouts,
+                        nextVarId);
 
         return new HirFunction(
                 unboxedId,
@@ -822,12 +1069,11 @@ public final class ScalarReplacePass implements HirPass {
                 orig.bodyWideningRank(),
                 orig.effects(),
                 newBody,
-                orig.line()
-        );
+                orig.line());
     }
 
-    private static List<HirVar> remapVarList(List<HirVar> vars, int newOwnerId,
-                                             Map<Integer, HirVar> varRemap, int[] nextVarId) {
+    private static List<HirVar> remapVarList(
+            List<HirVar> vars, int newOwnerId, Map<Integer, HirVar> varRemap, int[] nextVarId) {
         if (vars.isEmpty()) {
             return List.of();
         }
@@ -843,23 +1089,34 @@ public final class ScalarReplacePass implements HirPass {
         return out;
     }
 
-    private static List<HirExpr> rewriteUnboxedBody(List<HirExpr> stmts, int newOwnerId,
-                                                    Map<Integer, HirVar> varRemap,
-                                                    Map<Integer, HirVar[]> flattenedParamVars,
-                                                    Map<Integer, RecordLayout> flattenedLayouts,
-                                                    int[] nextVarId) {
+    private static List<HirExpr> rewriteUnboxedBody(
+            List<HirExpr> stmts,
+            int newOwnerId,
+            Map<Integer, HirVar> varRemap,
+            Map<Integer, HirVar[]> flattenedParamVars,
+            Map<Integer, RecordLayout> flattenedLayouts,
+            int[] nextVarId) {
         List<HirExpr> out = new ArrayList<>(stmts.size());
         for (HirExpr s : stmts) {
-            out.add(rewriteUnboxedExpr(s, newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId));
+            out.add(
+                    rewriteUnboxedExpr(
+                            s,
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId));
         }
         return out;
     }
 
-    private static HirExpr rewriteUnboxedExpr(HirExpr expr, int newOwnerId,
-                                              Map<Integer, HirVar> varRemap,
-                                              Map<Integer, HirVar[]> flattenedParamVars,
-                                              Map<Integer, RecordLayout> flattenedLayouts,
-                                              int[] nextVarId) {
+    private static HirExpr rewriteUnboxedExpr(
+            HirExpr expr,
+            int newOwnerId,
+            Map<Integer, HirVar> varRemap,
+            Map<Integer, HirVar[]> flattenedParamVars,
+            Map<Integer, RecordLayout> flattenedLayouts,
+            int[] nextVarId) {
         if (expr == null) {
             return null;
         }
@@ -878,66 +1135,216 @@ public final class ScalarReplacePass implements HirPass {
         }
         if (expr instanceof HirExpr.Def d) {
             HirVar mapped = d.var() != null ? varRemap.getOrDefault(d.var().id(), d.var()) : null;
-            HirExpr nv = rewriteUnboxedExpr(d.value(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
+            HirExpr nv =
+                    rewriteUnboxedExpr(
+                            d.value(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
             return new HirExpr.Def(d.name(), d.target(), mapped, nv, d.meta());
         }
         if (expr instanceof HirExpr.VarAssign a) {
             HirVar mapped = varRemap.getOrDefault(a.var().id(), a.var());
-            HirExpr nv = rewriteUnboxedExpr(a.value(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
-            return new HirExpr.VarAssign(mapped, a.operator(), nv, a.targetText(), a.valueText(), a.meta());
+            HirExpr nv =
+                    rewriteUnboxedExpr(
+                            a.value(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
+            return new HirExpr.VarAssign(
+                    mapped, a.operator(), nv, a.targetText(), a.valueText(), a.meta());
         }
         if (expr instanceof HirExpr.Move m) {
             HirVar mapped = m.var() != null ? varRemap.getOrDefault(m.var().id(), m.var()) : null;
-            HirExpr op = rewriteUnboxedExpr(m.operand(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
+            HirExpr op =
+                    rewriteUnboxedExpr(
+                            m.operand(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
             return new HirExpr.Move(mapped, op, m.meta());
         }
         if (expr instanceof HirExpr.Block b) {
             List<HirVar> newDecls = remapVarList(b.declaredVars(), newOwnerId, varRemap, nextVarId);
-            List<HirExpr> ns = rewriteUnboxedBody(b.statements(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
-            return new HirExpr.Block(ns, b.opensNamespaceScope(), b.declaredNames(), newDecls, b.innerWideningRank(), b.meta());
+            List<HirExpr> ns =
+                    rewriteUnboxedBody(
+                            b.statements(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
+            return new HirExpr.Block(
+                    ns,
+                    b.opensNamespaceScope(),
+                    b.declaredNames(),
+                    newDecls,
+                    b.innerWideningRank(),
+                    b.meta());
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr iter = f.iterable() != null ? rewriteUnboxedExpr(f.iterable(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId) : null;
+            HirExpr iter =
+                    f.iterable() != null
+                            ? rewriteUnboxedExpr(
+                                    f.iterable(),
+                                    newOwnerId,
+                                    varRemap,
+                                    flattenedParamVars,
+                                    flattenedLayouts,
+                                    nextVarId)
+                            : null;
             HirExpr.CountedRangeLoop cr = f.countedRange();
             if (cr != null) {
-                cr = new HirExpr.CountedRangeLoop(
-                        rewriteUnboxedExpr(cr.start(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId),
-                        rewriteUnboxedExpr(cr.end(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId),
-                        cr.step() != null ? rewriteUnboxedExpr(cr.step(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId) : null,
-                        cr.inclusive(), cr.descending(), cr.elemKind());
+                cr =
+                        new HirExpr.CountedRangeLoop(
+                                rewriteUnboxedExpr(
+                                        cr.start(),
+                                        newOwnerId,
+                                        varRemap,
+                                        flattenedParamVars,
+                                        flattenedLayouts,
+                                        nextVarId),
+                                rewriteUnboxedExpr(
+                                        cr.end(),
+                                        newOwnerId,
+                                        varRemap,
+                                        flattenedParamVars,
+                                        flattenedLayouts,
+                                        nextVarId),
+                                cr.step() != null
+                                        ? rewriteUnboxedExpr(
+                                                cr.step(),
+                                                newOwnerId,
+                                                varRemap,
+                                                flattenedParamVars,
+                                                flattenedLayouts,
+                                                nextVarId)
+                                        : null,
+                                cr.inclusive(),
+                                cr.descending(),
+                                cr.elemKind());
             }
-            HirVar loopVar = f.loopVar() != null ? remapVarList(List.of(f.loopVar()), newOwnerId, varRemap, nextVarId).get(0) : null;
-            List<HirVar> decls = remapVarList(f.bodyDeclaredVars(), newOwnerId, varRemap, nextVarId);
-            List<HirExpr> nb = rewriteUnboxedBody(f.body(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
-            return new HirExpr.For(iter, f.target(), loopVar, decls, nb, f.bodyWideningRank(), f.elemSamTarget(), cr, f.meta());
+            HirVar loopVar =
+                    f.loopVar() != null
+                            ? remapVarList(List.of(f.loopVar()), newOwnerId, varRemap, nextVarId)
+                                    .get(0)
+                            : null;
+            List<HirVar> decls =
+                    remapVarList(f.bodyDeclaredVars(), newOwnerId, varRemap, nextVarId);
+            List<HirExpr> nb =
+                    rewriteUnboxedBody(
+                            f.body(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
+            return new HirExpr.For(
+                    iter,
+                    f.target(),
+                    loopVar,
+                    decls,
+                    nb,
+                    f.bodyWideningRank(),
+                    f.elemSamTarget(),
+                    cr,
+                    f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
             List<HirVar> td = remapVarList(t.tryDeclaredVars(), newOwnerId, varRemap, nextVarId);
-            List<HirExpr> tb = rewriteUnboxedBody(t.tryBody(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
+            List<HirExpr> tb =
+                    rewriteUnboxedBody(
+                            t.tryBody(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
             List<HirExpr.HirCatch> ncs = new ArrayList<>(t.catches().size());
             for (HirExpr.HirCatch cc : t.catches()) {
-                HirVar cv = cc.var() != null ? remapVarList(List.of(cc.var()), newOwnerId, varRemap, nextVarId).get(0) : null;
+                HirVar cv =
+                        cc.var() != null
+                                ? remapVarList(List.of(cc.var()), newOwnerId, varRemap, nextVarId)
+                                        .get(0)
+                                : null;
                 List<HirVar> cd = remapVarList(cc.declaredVars(), newOwnerId, varRemap, nextVarId);
-                List<HirExpr> cb = rewriteUnboxedBody(cc.body(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
-                ncs.add(new HirExpr.HirCatch(cv, cc.target(), cb, cd, cc.opensNamespaceScope(), cc.declaredNames(), cc.wideningRank(), cc.line()));
+                List<HirExpr> cb =
+                        rewriteUnboxedBody(
+                                cc.body(),
+                                newOwnerId,
+                                varRemap,
+                                flattenedParamVars,
+                                flattenedLayouts,
+                                nextVarId);
+                ncs.add(
+                        new HirExpr.HirCatch(
+                                cv,
+                                cc.target(),
+                                cb,
+                                cd,
+                                cc.opensNamespaceScope(),
+                                cc.declaredNames(),
+                                cc.wideningRank(),
+                                cc.line()));
             }
-            List<HirVar> fd = remapVarList(t.finallyDeclaredVars(), newOwnerId, varRemap, nextVarId);
-            List<HirExpr> fb = rewriteUnboxedBody(t.finallyBody(), newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId);
-            return new HirExpr.Try(tb, td, t.tryOpensNamespaceScope(), t.tryDeclaredNames(), t.tryWideningRank(),
-                    ncs, fb, fd, t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(), t.finallyNothrow(), t.hasFinally(), t.meta());
+            List<HirVar> fd =
+                    remapVarList(t.finallyDeclaredVars(), newOwnerId, varRemap, nextVarId);
+            List<HirExpr> fb =
+                    rewriteUnboxedBody(
+                            t.finallyBody(),
+                            newOwnerId,
+                            varRemap,
+                            flattenedParamVars,
+                            flattenedLayouts,
+                            nextVarId);
+            return new HirExpr.Try(
+                    tb,
+                    td,
+                    t.tryOpensNamespaceScope(),
+                    t.tryDeclaredNames(),
+                    t.tryWideningRank(),
+                    ncs,
+                    fb,
+                    fd,
+                    t.finallyOpensNamespaceScope(),
+                    t.finallyDeclaredNames(),
+                    t.finallyNothrow(),
+                    t.hasFinally(),
+                    t.meta());
         }
-        return HirRewriter.rewriteChildren(expr,
-                c -> rewriteUnboxedExpr(c, newOwnerId, varRemap, flattenedParamVars, flattenedLayouts, nextVarId));
+        return HirRewriter.rewriteChildren(
+                expr,
+                c ->
+                        rewriteUnboxedExpr(
+                                c,
+                                newOwnerId,
+                                varRemap,
+                                flattenedParamVars,
+                                flattenedLayouts,
+                                nextVarId));
     }
 
-    private HirExpr rewriteUnboxCallExpr(HirExpr expr, Map<Integer, UnboxPlan> plans, HirModule module,
-                                         Set<String> initBindings, int[] rewrites) {
-        HirExpr cur = HirRewriter.rewriteChildren(expr, c -> rewriteUnboxCallExpr(c, plans, module, initBindings, rewrites));
+    private HirExpr rewriteUnboxCallExpr(
+            HirExpr expr,
+            Map<Integer, UnboxPlan> plans,
+            HirModule module,
+            Set<String> initBindings,
+            int[] rewrites) {
+        HirExpr cur =
+                HirRewriter.rewriteChildren(
+                        expr, c -> rewriteUnboxCallExpr(c, plans, module, initBindings, rewrites));
         if (!(cur instanceof HirExpr.DirectBabbleCall c) || c.targetFunctionId() < 0) {
             return cur;
         }
         UnboxPlan plan = plans.get(c.targetFunctionId());
-        if (plan == null || !canRewriteCallToUnboxed(c, plan.paramLayouts(), module, initBindings)) {
+        if (plan == null
+                || !canRewriteCallToUnboxed(c, plan.paramLayouts(), module, initBindings)) {
             return cur;
         }
         List<HirExpr> flatArgs = new ArrayList<>();
@@ -955,35 +1362,52 @@ public final class ScalarReplacePass implements HirPass {
             } else if (unwrapped instanceof HirExpr.VarRead vr) {
                 for (int f = 0; f < layout.fieldCount(); f++) {
                     PrimitiveKind fk = layout.paramKinds()[f];
-                    ExprMeta fm = new ExprMeta(c.meta().line(), fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
-                    flatArgs.add(new HirExpr.ThisFieldGet(
-                            vr,
-                            vr.var().name(),
-                            layout.classId(),
-                            layout.classId() < 0 ? layout.classJvmName() : null,
-                            layout.memberIndices()[f],
-                            layout.fieldNames()[f],
-                            fk,
-                            true,
-                            true,
-                            fm));
+                    ExprMeta fm =
+                            new ExprMeta(
+                                    c.meta().line(),
+                                    fk,
+                                    -1,
+                                    null,
+                                    EffectSet.EMPTY,
+                                    fk.isPrimitive(),
+                                    false);
+                    flatArgs.add(
+                            new HirExpr.ThisFieldGet(
+                                    vr,
+                                    vr.var().name(),
+                                    layout.classId(),
+                                    layout.classId() < 0 ? layout.classJvmName() : null,
+                                    layout.memberIndices()[f],
+                                    layout.fieldNames()[f],
+                                    fk,
+                                    true,
+                                    true,
+                                    fm));
                 }
             }
         }
         rewrites[0]++;
-        return new HirExpr.DirectBabbleCall(c.callee(), plan.unboxedFnId(), flatArgs, null, c.meta());
+        return new HirExpr.DirectBabbleCall(
+                c.callee(), plan.unboxedFnId(), flatArgs, null, c.meta());
     }
 
-    // ---------------------------------------------------------------- Sub-pass 3: non-escaping local record scalarization
+    // ---------------------------------------------------------------- Sub-pass 3: non-escaping
+    // local record scalarization
 
-    private HirModule scalarizeLocalRecords(HirModule module, Map<String, RecordLayout> localLayouts,
-                                            Set<String> initBindings, int[] nextVarId, int[] rewrites) {
+    private HirModule scalarizeLocalRecords(
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            int[] nextVarId,
+            int[] rewrites) {
         boolean changed = false;
         Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
             if (!fn.namespaceScope()) {
-                HirFunction updated = scalarizeInFunction(fn, module, localLayouts, initBindings, nextVarId, rewrites);
+                HirFunction updated =
+                        scalarizeInFunction(
+                                fn, module, localLayouts, initBindings, nextVarId, rewrites);
                 if (updated != fn) {
                     changed = true;
                     fn = updated;
@@ -994,30 +1418,44 @@ public final class ScalarReplacePass implements HirPass {
         if (!changed) {
             return module;
         }
-        return module.withUpdates(module.topLevelStatements(), newFns, module.classes(), module.interfaces(),
-                nextVarId[0], module.nextOwnerId());
+        return module.withUpdates(
+                module.topLevelStatements(),
+                newFns,
+                module.classes(),
+                module.interfaces(),
+                nextVarId[0],
+                module.nextOwnerId());
     }
 
-    private HirFunction scalarizeInFunction(HirFunction fn, HirModule module,
-                                            Map<String, RecordLayout> localLayouts, Set<String> initBindings,
-                                            int[] nextVarId, int[] rewrites) {
-        // 1. Collect eligible non-cell local HirVars declared inside fn (excluding params, for-loop vars, catch vars).
+    private HirFunction scalarizeInFunction(
+            HirFunction fn,
+            HirModule module,
+            Map<String, RecordLayout> localLayouts,
+            Set<String> initBindings,
+            int[] nextVarId,
+            int[] rewrites) {
+        // 1. Collect eligible non-cell local HirVars declared inside fn (excluding params, for-loop
+        // vars, catch vars).
         Map<Integer, HirVar> localVars = new LinkedHashMap<>();
         collectEligibleLocalVars(fn, localVars);
         if (localVars.isEmpty()) {
             return fn;
         }
 
-        // 2. Discover candidate record layouts from Def / VarAssign RHSs (iterative propagation across copy defs).
+        // 2. Discover candidate record layouts from Def / VarAssign RHSs (iterative propagation
+        // across copy defs).
         Map<Integer, RecordLayout> candidates = new LinkedHashMap<>();
         Set<Integer> disqualified = new HashSet<>();
-        discoverInitialCandidates(fn.body(), localVars, localLayouts, module, candidates, disqualified);
+        discoverInitialCandidates(
+                fn.body(), localVars, localLayouts, module, candidates, disqualified);
         if (candidates.isEmpty()) {
             return fn;
         }
 
-        // 3. Fixed-point escape & soundness verification: remove any var that escapes, has a non-record RHS,
-        //    is defined/assigned in a value-used position, or is used in any way other than valid ThisFieldGet
+        // 3. Fixed-point escape & soundness verification: remove any var that escapes, has a
+        // non-record RHS,
+        //    is defined/assigned in a value-used position, or is used in any way other than valid
+        // ThisFieldGet
         //    or copy/destructuring into another surviving candidate.
         while (!candidates.isEmpty()) {
             Set<Integer> bad = new HashSet<>();
@@ -1042,23 +1480,42 @@ public final class ScalarReplacePass implements HirPass {
             for (int i = 0; i < layout.fieldCount(); i++) {
                 int sid = nextVarId[0]++;
                 String sname = "$sr_" + orig.name() + "_" + i;
-                scalars[i] = new HirVar(sid, sname, Resolution.Variable.Kind.DEFINITION, fn.id(),
-                        layout.paramKinds()[i], false, true, false, true);
+                scalars[i] =
+                        new HirVar(
+                                sid,
+                                sname,
+                                Resolution.Variable.Kind.DEFINITION,
+                                fn.id(),
+                                layout.paramKinds()[i],
+                                false,
+                                true,
+                                false,
+                                true);
             }
             scalarVars.put(e.getKey(), scalars);
         }
 
         // 5. Rewrite function declaredVars and body.
         List<HirVar> newDeclVars = expandDeclaredVars(fn.declaredVars(), scalarVars);
-        List<HirExpr> newBody = rewriteScalarizedStmts(fn.body(), fn.id(), candidates, scalarVars,
-                localLayouts, module, initBindings, nextVarId);
+        List<HirExpr> newBody =
+                rewriteScalarizedStmts(
+                        fn.body(),
+                        fn.id(),
+                        candidates,
+                        scalarVars,
+                        localLayouts,
+                        module,
+                        initBindings,
+                        nextVarId);
         rewrites[0] += candidates.size();
         return fn.withBodyAndDeclaredVars(newBody, newDeclVars);
     }
 
-    private static void addEligibleVars(List<HirVar> vars, Set<Integer> exclude, Map<Integer, HirVar> out) {
+    private static void addEligibleVars(
+            List<HirVar> vars, Set<Integer> exclude, Map<Integer, HirVar> out) {
         for (HirVar v : vars) {
-            if (!v.isCaptured() && v.kind() == Resolution.Variable.Kind.DEFINITION
+            if (!v.isCaptured()
+                    && v.kind() == Resolution.Variable.Kind.DEFINITION
                     && (exclude == null || !exclude.contains(v.id()))
                     && (!v.mayBeUndefined() || v.definitelyDefined())) {
                 out.put(v.id(), v);
@@ -1092,22 +1549,29 @@ public final class ScalarReplacePass implements HirPass {
             }
             addEligibleVars(t.finallyDeclaredVars(), null, out);
         }
-        HirRewriter.rewriteChildren(expr, c -> {
-            collectBlockLocalVars(c, out);
-            return c;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                c -> {
+                    collectBlockLocalVars(c, out);
+                    return c;
+                });
     }
 
-    private static void discoverInitialCandidates(List<HirExpr> body, Map<Integer, HirVar> localVars,
-                                                  Map<String, RecordLayout> localLayouts, HirModule module,
-                                                  Map<Integer, RecordLayout> candidates, Set<Integer> disqualified) {
+    private static void discoverInitialCandidates(
+            List<HirExpr> body,
+            Map<Integer, HirVar> localVars,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Map<Integer, RecordLayout> candidates,
+            Set<Integer> disqualified) {
         // Iteratively propagate layouts from RecordNew and candidate VarReads.
         boolean progress = true;
         while (progress) {
             progress = false;
             int beforeSize = candidates.size();
             for (HirExpr s : body) {
-                scanCandidateAssignments(s, localVars, localLayouts, module, candidates, disqualified);
+                scanCandidateAssignments(
+                        s, localVars, localLayouts, module, candidates, disqualified);
             }
             if (candidates.size() != beforeSize) {
                 progress = true;
@@ -1118,9 +1582,13 @@ public final class ScalarReplacePass implements HirPass {
         }
     }
 
-    private static void recordCandidateLayout(int vid, HirExpr value, Map<String, RecordLayout> localLayouts,
-                                              HirModule module, Map<Integer, RecordLayout> candidates,
-                                              Set<Integer> disqualified) {
+    private static void recordCandidateLayout(
+            int vid,
+            HirExpr value,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Map<Integer, RecordLayout> candidates,
+            Set<Integer> disqualified) {
         RecordLayout layout = inferRecordLayout(value, candidates, localLayouts, module);
         if (layout != null) {
             RecordLayout existing = candidates.get(vid);
@@ -1132,33 +1600,47 @@ public final class ScalarReplacePass implements HirPass {
         }
     }
 
-    private static void scanCandidateAssignments(HirExpr expr, Map<Integer, HirVar> localVars,
-                                                 Map<String, RecordLayout> localLayouts, HirModule module,
-                                                 Map<Integer, RecordLayout> candidates, Set<Integer> disqualified) {
+    private static void scanCandidateAssignments(
+            HirExpr expr,
+            Map<Integer, HirVar> localVars,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Map<Integer, RecordLayout> candidates,
+            Set<Integer> disqualified) {
         if (expr == null) return;
-        if (expr instanceof HirExpr.Def d && d.var() != null && localVars.containsKey(d.var().id())) {
+        if (expr instanceof HirExpr.Def d
+                && d.var() != null
+                && localVars.containsKey(d.var().id())) {
             int vid = d.var().id();
             if (d.value() == null) {
                 disqualified.add(vid);
             } else {
-                recordCandidateLayout(vid, d.value(), localLayouts, module, candidates, disqualified);
+                recordCandidateLayout(
+                        vid, d.value(), localLayouts, module, candidates, disqualified);
             }
         } else if (expr instanceof HirExpr.VarAssign a && localVars.containsKey(a.var().id())) {
             int vid = a.var().id();
             if (a.operator() != null) {
                 disqualified.add(vid);
             } else {
-                recordCandidateLayout(vid, a.value(), localLayouts, module, candidates, disqualified);
+                recordCandidateLayout(
+                        vid, a.value(), localLayouts, module, candidates, disqualified);
             }
         }
-        HirRewriter.rewriteChildren(expr, c -> {
-            scanCandidateAssignments(c, localVars, localLayouts, module, candidates, disqualified);
-            return c;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                c -> {
+                    scanCandidateAssignments(
+                            c, localVars, localLayouts, module, candidates, disqualified);
+                    return c;
+                });
     }
 
-    private static RecordLayout inferRecordLayout(HirExpr expr, Map<Integer, RecordLayout> candidates,
-                                                  Map<String, RecordLayout> localLayouts, HirModule module) {
+    private static RecordLayout inferRecordLayout(
+            HirExpr expr,
+            Map<Integer, RecordLayout> candidates,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module) {
         if (expr == null) return null;
         if (expr instanceof HirExpr.RecordNew r) {
             return resolveArgMapping(r) != null ? layoutOf(r, localLayouts, module) : null;
@@ -1172,11 +1654,19 @@ public final class ScalarReplacePass implements HirPass {
         if (expr instanceof HirExpr.VarRead vr) {
             return candidates.get(vr.var().id());
         }
-        if (expr instanceof HirExpr.Block b && !b.opensNamespaceScope() && !b.statements().isEmpty()
+        if (expr instanceof HirExpr.Block b
+                && !b.opensNamespaceScope()
+                && !b.statements().isEmpty()
                 && b.meta().checkedType() == null) {
-            return inferRecordLayout(b.statements().get(b.statements().size() - 1), candidates, localLayouts, module);
+            return inferRecordLayout(
+                    b.statements().get(b.statements().size() - 1),
+                    candidates,
+                    localLayouts,
+                    module);
         }
-        if (expr instanceof HirExpr.If i && i.elseBranch() != null && i.meta().checkedType() == null) {
+        if (expr instanceof HirExpr.If i
+                && i.elseBranch() != null
+                && i.meta().checkedType() == null) {
             RecordLayout tl = inferRecordLayout(i.thenBranch(), candidates, localLayouts, module);
             RecordLayout el = inferRecordLayout(i.elseBranch(), candidates, localLayouts, module);
             if (tl != null && tl.sameType(el)) {
@@ -1187,20 +1677,32 @@ public final class ScalarReplacePass implements HirPass {
         return null;
     }
 
-    private static void verifyBodyStatements(List<HirExpr> stmts, boolean lastValueUsed,
-                                             Map<Integer, RecordLayout> candidates,
-                                             Map<String, RecordLayout> localLayouts,
-                                             HirModule module, Set<Integer> bad) {
+    private static void verifyBodyStatements(
+            List<HirExpr> stmts,
+            boolean lastValueUsed,
+            Map<Integer, RecordLayout> candidates,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<Integer> bad) {
         int last = stmts.size() - 1;
         for (int i = 0; i < stmts.size(); i++) {
-            verifyExpr(stmts.get(i), i == last && lastValueUsed, candidates, localLayouts, module, bad);
+            verifyExpr(
+                    stmts.get(i),
+                    i == last && lastValueUsed,
+                    candidates,
+                    localLayouts,
+                    module,
+                    bad);
         }
     }
 
-    private static void verifyExpr(HirExpr expr, boolean valueUsed,
-                                   Map<Integer, RecordLayout> candidates,
-                                   Map<String, RecordLayout> localLayouts,
-                                   HirModule module, Set<Integer> bad) {
+    private static void verifyExpr(
+            HirExpr expr,
+            boolean valueUsed,
+            Map<Integer, RecordLayout> candidates,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<Integer> bad) {
         if (expr == null) return;
         switch (expr) {
             case HirExpr.Def d -> {
@@ -1209,7 +1711,13 @@ public final class ScalarReplacePass implements HirPass {
                     if (valueUsed || d.value() == null || d.meta().checkedType() != null) {
                         bad.add(vid);
                         verifyExpr(d.value(), true, candidates, localLayouts, module, bad);
-                    } else if (!verifyDestructuredRhs(d.value(), candidates.get(vid), candidates, localLayouts, module, bad)) {
+                    } else if (!verifyDestructuredRhs(
+                            d.value(),
+                            candidates.get(vid),
+                            candidates,
+                            localLayouts,
+                            module,
+                            bad)) {
                         bad.add(vid);
                     }
                     return;
@@ -1222,7 +1730,13 @@ public final class ScalarReplacePass implements HirPass {
                     if (valueUsed || a.operator() != null || a.meta().checkedType() != null) {
                         bad.add(vid);
                         verifyExpr(a.value(), true, candidates, localLayouts, module, bad);
-                    } else if (!verifyDestructuredRhs(a.value(), candidates.get(vid), candidates, localLayouts, module, bad)) {
+                    } else if (!verifyDestructuredRhs(
+                            a.value(),
+                            candidates.get(vid),
+                            candidates,
+                            localLayouts,
+                            module,
+                            bad)) {
                         bad.add(vid);
                     }
                     return;
@@ -1230,7 +1744,8 @@ public final class ScalarReplacePass implements HirPass {
                 verifyExpr(a.value(), true, candidates, localLayouts, module, bad);
             }
             case HirExpr.ThisFieldGet g -> {
-                if (g.receiver() instanceof HirExpr.VarRead vr && candidates.containsKey(vr.var().id())) {
+                if (g.receiver() instanceof HirExpr.VarRead vr
+                        && candidates.containsKey(vr.var().id())) {
                     RecordLayout layout = candidates.get(vr.var().id());
                     if (matchingParamIndex(g, layout) < 0) {
                         bad.add(vr.var().id());
@@ -1244,7 +1759,9 @@ public final class ScalarReplacePass implements HirPass {
                     bad.add(vr.var().id());
                 }
             }
-            case HirExpr.Block b -> verifyBodyStatements(b.statements(), valueUsed, candidates, localLayouts, module, bad);
+            case HirExpr.Block b ->
+                    verifyBodyStatements(
+                            b.statements(), valueUsed, candidates, localLayouts, module, bad);
             case HirExpr.If i -> {
                 verifyExpr(i.cond(), true, candidates, localLayouts, module, bad);
                 verifyExpr(i.thenBranch(), valueUsed, candidates, localLayouts, module, bad);
@@ -1253,12 +1770,19 @@ public final class ScalarReplacePass implements HirPass {
                 }
             }
             case HirExpr.Match m -> {
-                if (m.meta().checkedType() == null && m.scrutinee() instanceof HirExpr.VarRead vr
+                if (m.meta().checkedType() == null
+                        && m.scrutinee() instanceof HirExpr.VarRead vr
                         && candidates.containsKey(vr.var().id())) {
-                    StaticMatchResult res = findStaticMatchArm(m, candidates.get(vr.var().id()), module);
+                    StaticMatchResult res =
+                            findStaticMatchArm(m, candidates.get(vr.var().id()), module);
                     if (res != null) {
-                        verifyExpr(res.isElse() ? m.elseArm().body() : res.arm().body(),
-                                valueUsed, candidates, localLayouts, module, bad);
+                        verifyExpr(
+                                res.isElse() ? m.elseArm().body() : res.arm().body(),
+                                valueUsed,
+                                candidates,
+                                localLayouts,
+                                module,
+                                bad);
                         return;
                     }
                 }
@@ -1271,7 +1795,8 @@ public final class ScalarReplacePass implements HirPass {
                     verifyExpr(arm.body(), valueUsed, candidates, localLayouts, module, bad);
                 }
                 if (m.elseArm() != null) {
-                    verifyExpr(m.elseArm().body(), valueUsed, candidates, localLayouts, module, bad);
+                    verifyExpr(
+                            m.elseArm().body(), valueUsed, candidates, localLayouts, module, bad);
                 }
             }
             case HirExpr.While w -> {
@@ -1280,10 +1805,17 @@ public final class ScalarReplacePass implements HirPass {
             }
             case HirExpr.For f -> {
                 if (f.countedRange() != null) {
-                    verifyExpr(f.countedRange().start(), true, candidates, localLayouts, module, bad);
+                    verifyExpr(
+                            f.countedRange().start(), true, candidates, localLayouts, module, bad);
                     verifyExpr(f.countedRange().end(), true, candidates, localLayouts, module, bad);
                     if (f.countedRange().step() != null) {
-                        verifyExpr(f.countedRange().step(), true, candidates, localLayouts, module, bad);
+                        verifyExpr(
+                                f.countedRange().step(),
+                                true,
+                                candidates,
+                                localLayouts,
+                                module,
+                                bad);
                     }
                 } else {
                     verifyExpr(f.iterable(), true, candidates, localLayouts, module, bad);
@@ -1293,22 +1825,32 @@ public final class ScalarReplacePass implements HirPass {
             case HirExpr.Try t -> {
                 verifyBodyStatements(t.tryBody(), valueUsed, candidates, localLayouts, module, bad);
                 for (HirExpr.HirCatch cc : t.catches()) {
-                    verifyBodyStatements(cc.body(), valueUsed, candidates, localLayouts, module, bad);
+                    verifyBodyStatements(
+                            cc.body(), valueUsed, candidates, localLayouts, module, bad);
                 }
                 verifyBodyStatements(t.finallyBody(), false, candidates, localLayouts, module, bad);
             }
-            default -> HirRewriter.rewriteChildren(expr, c -> {
-                verifyExpr(c, true, candidates, localLayouts, module, bad);
-                return c;
-            });
+            default ->
+                    HirRewriter.rewriteChildren(
+                            expr,
+                            c -> {
+                                verifyExpr(c, true, candidates, localLayouts, module, bad);
+                                return c;
+                            });
         }
     }
 
-    /** Verifies {@code rhs} produces {@code expected} via RecordNew/candidate copy/Block/If and walks nested expressions. */
-    private static boolean verifyDestructuredRhs(HirExpr rhs, RecordLayout expected,
-                                                 Map<Integer, RecordLayout> candidates,
-                                                 Map<String, RecordLayout> localLayouts,
-                                                 HirModule module, Set<Integer> bad) {
+    /**
+     * Verifies {@code rhs} produces {@code expected} via RecordNew/candidate copy/Block/If and
+     * walks nested expressions.
+     */
+    private static boolean verifyDestructuredRhs(
+            HirExpr rhs,
+            RecordLayout expected,
+            Map<Integer, RecordLayout> candidates,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<Integer> bad) {
         if (rhs == null || rhs.meta().checkedType() != null) {
             verifyExpr(rhs, true, candidates, localLayouts, module, bad);
             return false;
@@ -1319,8 +1861,11 @@ public final class ScalarReplacePass implements HirPass {
                 verifyExpr(r, true, candidates, localLayouts, module, bad);
                 return false;
             }
-            // If classRef is an instance VarRead of a candidate (from InlinePass), it does not escape because r is scalarized.
-            if (!(r.classRefIsInstance() && r.classRef() instanceof HirExpr.VarRead cr && candidates.containsKey(cr.var().id()))) {
+            // If classRef is an instance VarRead of a candidate (from InlinePass), it does not
+            // escape because r is scalarized.
+            if (!(r.classRefIsInstance()
+                    && r.classRef() instanceof HirExpr.VarRead cr
+                    && candidates.containsKey(cr.var().id()))) {
                 verifyExpr(r.classRef(), true, candidates, localLayouts, module, bad);
             }
             for (HirExpr arg : r.args()) {
@@ -1329,10 +1874,12 @@ public final class ScalarReplacePass implements HirPass {
             return true;
         }
         if (rhs instanceof HirExpr.Move m) {
-            return verifyDestructuredRhs(m.operand(), expected, candidates, localLayouts, module, bad);
+            return verifyDestructuredRhs(
+                    m.operand(), expected, candidates, localLayouts, module, bad);
         }
         if (rhs instanceof HirExpr.Freeze f) {
-            return verifyDestructuredRhs(f.operand(), expected, candidates, localLayouts, module, bad);
+            return verifyDestructuredRhs(
+                    f.operand(), expected, candidates, localLayouts, module, bad);
         }
         if (rhs instanceof HirExpr.VarRead vr) {
             RecordLayout ul = candidates.get(vr.var().id());
@@ -1341,28 +1888,38 @@ public final class ScalarReplacePass implements HirPass {
             }
             return false;
         }
-        if (rhs instanceof HirExpr.Block b && !b.opensNamespaceScope() && !b.statements().isEmpty()
-                && b.innerWideningRank() < 0 && b.meta().wideningRank() < 0) {
+        if (rhs instanceof HirExpr.Block b
+                && !b.opensNamespaceScope()
+                && !b.statements().isEmpty()
+                && b.innerWideningRank() < 0
+                && b.meta().wideningRank() < 0) {
             int last = b.statements().size() - 1;
             for (int i = 0; i < last; i++) {
                 verifyExpr(b.statements().get(i), false, candidates, localLayouts, module, bad);
             }
-            return verifyDestructuredRhs(b.statements().get(last), expected, candidates, localLayouts, module, bad);
+            return verifyDestructuredRhs(
+                    b.statements().get(last), expected, candidates, localLayouts, module, bad);
         }
         if (rhs instanceof HirExpr.If i && i.elseBranch() != null && i.meta().wideningRank() < 0) {
             verifyExpr(i.cond(), true, candidates, localLayouts, module, bad);
-            boolean tok = verifyDestructuredRhs(i.thenBranch(), expected, candidates, localLayouts, module, bad);
-            boolean eok = verifyDestructuredRhs(i.elseBranch(), expected, candidates, localLayouts, module, bad);
+            boolean tok =
+                    verifyDestructuredRhs(
+                            i.thenBranch(), expected, candidates, localLayouts, module, bad);
+            boolean eok =
+                    verifyDestructuredRhs(
+                            i.elseBranch(), expected, candidates, localLayouts, module, bad);
             return tok && eok;
         }
         verifyExpr(rhs, true, candidates, localLayouts, module, bad);
         return false;
     }
 
-    private static void verifyPattern(org.babblelang.ir.hir.HirPattern pattern,
-                                      Map<Integer, RecordLayout> candidates,
-                                      Map<String, RecordLayout> localLayouts,
-                                      HirModule module, Set<Integer> bad) {
+    private static void verifyPattern(
+            org.babblelang.ir.hir.HirPattern pattern,
+            Map<Integer, RecordLayout> candidates,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<Integer> bad) {
         if (pattern == null) {
             return;
         }
@@ -1403,7 +1960,8 @@ public final class ScalarReplacePass implements HirPass {
         }
     }
 
-    private static List<HirVar> expandDeclaredVars(List<HirVar> orig, Map<Integer, HirVar[]> scalarVars) {
+    private static List<HirVar> expandDeclaredVars(
+            List<HirVar> orig, Map<Integer, HirVar[]> scalarVars) {
         if (orig.isEmpty()) {
             return orig;
         }
@@ -1431,25 +1989,40 @@ public final class ScalarReplacePass implements HirPass {
         return out;
     }
 
-    private List<HirExpr> rewriteScalarizedStmts(List<HirExpr> stmts, int ownerFnId,
-                                                 Map<Integer, RecordLayout> candidates,
-                                                 Map<Integer, HirVar[]> scalarVars,
-                                                 Map<String, RecordLayout> localLayouts,
-                                                 HirModule module, Set<String> initBindings,
-                                                 int[] nextVarId) {
+    private List<HirExpr> rewriteScalarizedStmts(
+            List<HirExpr> stmts,
+            int ownerFnId,
+            Map<Integer, RecordLayout> candidates,
+            Map<Integer, HirVar[]> scalarVars,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<String> initBindings,
+            int[] nextVarId) {
         List<HirExpr> out = new ArrayList<>(stmts.size());
         for (HirExpr s : stmts) {
-            out.add(rewriteScalarizedExpr(s, ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId));
+            out.add(
+                    rewriteScalarizedExpr(
+                            s,
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId));
         }
         return out;
     }
 
-    private HirExpr rewriteScalarizedExpr(HirExpr expr, int ownerFnId,
-                                          Map<Integer, RecordLayout> candidates,
-                                          Map<Integer, HirVar[]> scalarVars,
-                                          Map<String, RecordLayout> localLayouts,
-                                          HirModule module, Set<String> initBindings,
-                                          int[] nextVarId) {
+    private HirExpr rewriteScalarizedExpr(
+            HirExpr expr,
+            int ownerFnId,
+            Map<Integer, RecordLayout> candidates,
+            Map<Integer, HirVar[]> scalarVars,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<String> initBindings,
+            int[] nextVarId) {
         if (expr == null) {
             return null;
         }
@@ -1461,7 +2034,8 @@ public final class ScalarReplacePass implements HirPass {
                 return new HirExpr.VarRead(scalars[p], g.meta());
             }
         }
-        if (expr instanceof HirExpr.Match m && m.meta().checkedType() == null
+        if (expr instanceof HirExpr.Match m
+                && m.meta().checkedType() == null
                 && m.scrutinee() instanceof HirExpr.VarRead vr) {
             HirVar[] scalars = scalarVars.get(vr.var().id());
             if (scalars != null) {
@@ -1470,95 +2044,298 @@ public final class ScalarReplacePass implements HirPass {
                 if (res != null) {
                     List<HirExpr> stmts = new ArrayList<>();
                     List<HirVar> decls = List.of();
-                    if (!res.isElse() && res.arm().pattern() instanceof HirPattern.RecordDestructure rd) {
+                    if (!res.isElse()
+                            && res.arm().pattern() instanceof HirPattern.RecordDestructure rd) {
                         int[] memberIndices = rd.babbleMemberIndices();
                         for (int k = 0; k < rd.fieldPatterns().size(); k++) {
                             if (rd.fieldPatterns().get(k) instanceof HirPattern.Bind b) {
                                 int p = layout.paramIndexForMember(memberIndices[k]);
                                 PrimitiveKind fk = layout.paramKinds()[p];
-                                ExprMeta rm = new ExprMeta(b.line(), fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
-                                stmts.add(makeScalarStore(b.var(), new HirExpr.VarRead(scalars[p], rm), true, b.line(), fk));
+                                ExprMeta rm =
+                                        new ExprMeta(
+                                                b.line(),
+                                                fk,
+                                                -1,
+                                                null,
+                                                EffectSet.EMPTY,
+                                                fk.isPrimitive(),
+                                                false);
+                                stmts.add(
+                                        makeScalarStore(
+                                                b.var(),
+                                                new HirExpr.VarRead(scalars[p], rm),
+                                                true,
+                                                b.line(),
+                                                fk));
                             }
                         }
                         decls = res.arm().boundVars();
                     }
-                    HirExpr body = rewriteScalarizedExpr(res.isElse() ? m.elseArm().body() : res.arm().body(),
-                            ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
-                    int bodyWiden = res.isElse() ? m.elseArm().bodyWideningRank() : res.arm().bodyWideningRank();
+                    HirExpr body =
+                            rewriteScalarizedExpr(
+                                    res.isElse() ? m.elseArm().body() : res.arm().body(),
+                                    ownerFnId,
+                                    candidates,
+                                    scalarVars,
+                                    localLayouts,
+                                    module,
+                                    initBindings,
+                                    nextVarId);
+                    int bodyWiden =
+                            res.isElse()
+                                    ? m.elseArm().bodyWideningRank()
+                                    : res.arm().bodyWideningRank();
                     stmts.add(body);
-                    return new HirExpr.Block(stmts, false, new String[0], decls, bodyWiden, m.meta());
+                    return new HirExpr.Block(
+                            stmts, false, new String[0], decls, bodyWiden, m.meta());
                 }
             }
         }
-        if (expr instanceof HirExpr.Def d && d.var() != null && scalarVars.containsKey(d.var().id())) {
-            return emitDestructuredStore(d.value(), scalarVars.get(d.var().id()), candidates.get(d.var().id()),
-                    true, d.meta().line(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
+        if (expr instanceof HirExpr.Def d
+                && d.var() != null
+                && scalarVars.containsKey(d.var().id())) {
+            return emitDestructuredStore(
+                    d.value(),
+                    scalarVars.get(d.var().id()),
+                    candidates.get(d.var().id()),
+                    true,
+                    d.meta().line(),
+                    ownerFnId,
+                    candidates,
+                    scalarVars,
+                    localLayouts,
+                    module,
+                    initBindings,
+                    nextVarId);
         }
         if (expr instanceof HirExpr.VarAssign a && scalarVars.containsKey(a.var().id())) {
-            return emitDestructuredStore(a.value(), scalarVars.get(a.var().id()), candidates.get(a.var().id()),
-                    false, a.meta().line(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
+            return emitDestructuredStore(
+                    a.value(),
+                    scalarVars.get(a.var().id()),
+                    candidates.get(a.var().id()),
+                    false,
+                    a.meta().line(),
+                    ownerFnId,
+                    candidates,
+                    scalarVars,
+                    localLayouts,
+                    module,
+                    initBindings,
+                    nextVarId);
         }
         if (expr instanceof HirExpr.Block b) {
             List<HirVar> newDecls = expandDeclaredVars(b.declaredVars(), scalarVars);
-            List<HirExpr> newStmts = rewriteScalarizedStmts(b.statements(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId);
-            return new HirExpr.Block(newStmts, b.opensNamespaceScope(), b.declaredNames(), newDecls, b.innerWideningRank(), b.meta());
+            List<HirExpr> newStmts =
+                    rewriteScalarizedStmts(
+                            b.statements(),
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
+            return new HirExpr.Block(
+                    newStmts,
+                    b.opensNamespaceScope(),
+                    b.declaredNames(),
+                    newDecls,
+                    b.innerWideningRank(),
+                    b.meta());
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr iter = f.iterable() != null ? rewriteScalarizedExpr(f.iterable(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId) : null;
+            HirExpr iter =
+                    f.iterable() != null
+                            ? rewriteScalarizedExpr(
+                                    f.iterable(),
+                                    ownerFnId,
+                                    candidates,
+                                    scalarVars,
+                                    localLayouts,
+                                    module,
+                                    initBindings,
+                                    nextVarId)
+                            : null;
             HirExpr.CountedRangeLoop cr = f.countedRange();
             if (cr != null) {
-                cr = new HirExpr.CountedRangeLoop(
-                        rewriteScalarizedExpr(cr.start(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId),
-                        rewriteScalarizedExpr(cr.end(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId),
-                        cr.step() != null ? rewriteScalarizedExpr(cr.step(), ownerFnId, candidates, scalarVars, localLayouts, module, initBindings, nextVarId) : null,
-                        cr.inclusive(), cr.descending(), cr.elemKind());
+                cr =
+                        new HirExpr.CountedRangeLoop(
+                                rewriteScalarizedExpr(
+                                        cr.start(),
+                                        ownerFnId,
+                                        candidates,
+                                        scalarVars,
+                                        localLayouts,
+                                        module,
+                                        initBindings,
+                                        nextVarId),
+                                rewriteScalarizedExpr(
+                                        cr.end(),
+                                        ownerFnId,
+                                        candidates,
+                                        scalarVars,
+                                        localLayouts,
+                                        module,
+                                        initBindings,
+                                        nextVarId),
+                                cr.step() != null
+                                        ? rewriteScalarizedExpr(
+                                                cr.step(),
+                                                ownerFnId,
+                                                candidates,
+                                                scalarVars,
+                                                localLayouts,
+                                                module,
+                                                initBindings,
+                                                nextVarId)
+                                        : null,
+                                cr.inclusive(),
+                                cr.descending(),
+                                cr.elemKind());
             }
             List<HirVar> newDecls = expandDeclaredVars(f.bodyDeclaredVars(), scalarVars);
-            List<HirExpr> newBody = rewriteScalarizedStmts(f.body(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId);
-            return new HirExpr.For(iter, f.target(), f.loopVar(), newDecls, newBody, f.bodyWideningRank(), f.elemSamTarget(), cr, f.meta());
+            List<HirExpr> newBody =
+                    rewriteScalarizedStmts(
+                            f.body(),
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
+            return new HirExpr.For(
+                    iter,
+                    f.target(),
+                    f.loopVar(),
+                    newDecls,
+                    newBody,
+                    f.bodyWideningRank(),
+                    f.elemSamTarget(),
+                    cr,
+                    f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
             List<HirVar> newTryDecls = expandDeclaredVars(t.tryDeclaredVars(), scalarVars);
-            List<HirExpr> newTryBody = rewriteScalarizedStmts(t.tryBody(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId);
+            List<HirExpr> newTryBody =
+                    rewriteScalarizedStmts(
+                            t.tryBody(),
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
             List<HirExpr.HirCatch> newCatches = new ArrayList<>(t.catches().size());
             for (HirExpr.HirCatch cc : t.catches()) {
                 List<HirVar> cd = expandDeclaredVars(cc.declaredVars(), scalarVars);
-                List<HirExpr> cb = rewriteScalarizedStmts(cc.body(), ownerFnId, candidates, scalarVars,
-                        localLayouts, module, initBindings, nextVarId);
-                newCatches.add(new HirExpr.HirCatch(cc.var(), cc.target(), cb, cd, cc.opensNamespaceScope(),
-                        cc.declaredNames(), cc.wideningRank(), cc.line()));
+                List<HirExpr> cb =
+                        rewriteScalarizedStmts(
+                                cc.body(),
+                                ownerFnId,
+                                candidates,
+                                scalarVars,
+                                localLayouts,
+                                module,
+                                initBindings,
+                                nextVarId);
+                newCatches.add(
+                        new HirExpr.HirCatch(
+                                cc.var(),
+                                cc.target(),
+                                cb,
+                                cd,
+                                cc.opensNamespaceScope(),
+                                cc.declaredNames(),
+                                cc.wideningRank(),
+                                cc.line()));
             }
             List<HirVar> newFinDecls = expandDeclaredVars(t.finallyDeclaredVars(), scalarVars);
-            List<HirExpr> newFinBody = rewriteScalarizedStmts(t.finallyBody(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId);
-            return new HirExpr.Try(newTryBody, newTryDecls, t.tryOpensNamespaceScope(), t.tryDeclaredNames(),
-                    t.tryWideningRank(), newCatches, newFinBody, newFinDecls, t.finallyOpensNamespaceScope(),
-                    t.finallyDeclaredNames(), t.finallyNothrow(), t.hasFinally(), t.meta());
+            List<HirExpr> newFinBody =
+                    rewriteScalarizedStmts(
+                            t.finallyBody(),
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
+            return new HirExpr.Try(
+                    newTryBody,
+                    newTryDecls,
+                    t.tryOpensNamespaceScope(),
+                    t.tryDeclaredNames(),
+                    t.tryWideningRank(),
+                    newCatches,
+                    newFinBody,
+                    newFinDecls,
+                    t.finallyOpensNamespaceScope(),
+                    t.finallyDeclaredNames(),
+                    t.finallyNothrow(),
+                    t.hasFinally(),
+                    t.meta());
         }
-        return HirRewriter.rewriteChildren(expr, c -> rewriteScalarizedExpr(c, ownerFnId, candidates, scalarVars,
-                localLayouts, module, initBindings, nextVarId));
+        return HirRewriter.rewriteChildren(
+                expr,
+                c ->
+                        rewriteScalarizedExpr(
+                                c,
+                                ownerFnId,
+                                candidates,
+                                scalarVars,
+                                localLayouts,
+                                module,
+                                initBindings,
+                                nextVarId));
     }
 
-    private HirExpr emitDestructuredStore(HirExpr rhs, HirVar[] targetScalars, RecordLayout layout,
-                                          boolean isDef, int line, int ownerFnId,
-                                          Map<Integer, RecordLayout> candidates,
-                                          Map<Integer, HirVar[]> scalarVars,
-                                          Map<String, RecordLayout> localLayouts,
-                                          HirModule module, Set<String> initBindings,
-                                          int[] nextVarId) {
+    private HirExpr emitDestructuredStore(
+            HirExpr rhs,
+            HirVar[] targetScalars,
+            RecordLayout layout,
+            boolean isDef,
+            int line,
+            int ownerFnId,
+            Map<Integer, RecordLayout> candidates,
+            Map<Integer, HirVar[]> scalarVars,
+            Map<String, RecordLayout> localLayouts,
+            HirModule module,
+            Set<String> initBindings,
+            int[] nextVarId) {
         if (rhs instanceof HirExpr.Move m) {
-            return emitDestructuredStore(m.operand(), targetScalars, layout, isDef, line, ownerFnId,
-                    candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
+            return emitDestructuredStore(
+                    m.operand(),
+                    targetScalars,
+                    layout,
+                    isDef,
+                    line,
+                    ownerFnId,
+                    candidates,
+                    scalarVars,
+                    localLayouts,
+                    module,
+                    initBindings,
+                    nextVarId);
         }
         if (rhs instanceof HirExpr.Freeze f) {
-            return emitDestructuredStore(f.operand(), targetScalars, layout, isDef, line, ownerFnId,
-                    candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
+            return emitDestructuredStore(
+                    f.operand(),
+                    targetScalars,
+                    layout,
+                    isDef,
+                    line,
+                    ownerFnId,
+                    candidates,
+                    scalarVars,
+                    localLayouts,
+                    module,
+                    initBindings,
+                    nextVarId);
         }
-        ExprMeta voidMeta = new ExprMeta(line, PrimitiveKind.NONE, -1, null, EffectSet.EMPTY, true, false);
+        ExprMeta voidMeta =
+                new ExprMeta(line, PrimitiveKind.NONE, -1, null, EffectSet.EMPTY, true, false);
         if (rhs instanceof HirExpr.VarRead vr) {
             HirVar[] srcScalars = scalarVars.get(vr.var().id());
             if (srcScalars == targetScalars) {
@@ -1567,7 +2344,8 @@ public final class ScalarReplacePass implements HirPass {
             List<HirExpr> stmts = new ArrayList<>(targetScalars.length);
             for (int i = 0; i < targetScalars.length; i++) {
                 PrimitiveKind fk = layout.paramKinds()[i];
-                ExprMeta fm = new ExprMeta(line, fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
+                ExprMeta fm =
+                        new ExprMeta(line, fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
                 HirExpr read = new HirExpr.VarRead(srcScalars[i], fm);
                 stmts.add(makeScalarStore(targetScalars[i], read, isDef, line, fk));
             }
@@ -1578,16 +2356,35 @@ public final class ScalarReplacePass implements HirPass {
             int n = layout.fieldCount();
             List<HirExpr> rewrittenArgs = new ArrayList<>(r.args().size());
             for (HirExpr arg : r.args()) {
-                rewrittenArgs.add(rewriteScalarizedExpr(arg, ownerFnId, candidates, scalarVars,
-                        localLayouts, module, initBindings, nextVarId));
+                rewrittenArgs.add(
+                        rewriteScalarizedExpr(
+                                arg,
+                                ownerFnId,
+                                candidates,
+                                scalarVars,
+                                localLayouts,
+                                module,
+                                initBindings,
+                                nextVarId));
             }
             List<HirExpr> stmts = new ArrayList<>();
-            boolean skipClassRef = (r.classRefIsInstance() && r.classRef() instanceof HirExpr.VarRead cr
-                    && scalarVars.containsKey(cr.var().id()))
-                    || isPureClassRef(r.classRef(), r.classRefIsInstance(), module, initBindings);
+            boolean skipClassRef =
+                    (r.classRefIsInstance()
+                                    && r.classRef() instanceof HirExpr.VarRead cr
+                                    && scalarVars.containsKey(cr.var().id()))
+                            || isPureClassRef(
+                                    r.classRef(), r.classRefIsInstance(), module, initBindings);
             if (!skipClassRef) {
-                stmts.add(rewriteScalarizedExpr(r.classRef(), ownerFnId, candidates, scalarVars,
-                        localLayouts, module, initBindings, nextVarId));
+                stmts.add(
+                        rewriteScalarizedExpr(
+                                r.classRef(),
+                                ownerFnId,
+                                candidates,
+                                scalarVars,
+                                localLayouts,
+                                module,
+                                initBindings,
+                                nextVarId));
             }
             boolean inOrder = true;
             for (int i = 0; i < n; i++) {
@@ -1596,16 +2393,24 @@ public final class ScalarReplacePass implements HirPass {
                     break;
                 }
             }
-            // For simple in-order Def (not VarAssign), emit Def(targetScalars[i], arg[i]) directly so
+            // For simple in-order Def (not VarAssign), emit Def(targetScalars[i], arg[i]) directly
+            // so
             // HirEGraphSimplifyPass can constant-propagate immutable fields.
             if (isDef && inOrder) {
                 for (int i = 0; i < n; i++) {
                     HirExpr a = rewrittenArgs.get(i);
-                    stmts.add(makeScalarStore(targetScalars[i], a, true, a.meta().line(), layout.paramKinds()[i]));
+                    stmts.add(
+                            makeScalarStore(
+                                    targetScalars[i],
+                                    a,
+                                    true,
+                                    a.meta().line(),
+                                    layout.paramKinds()[i]));
                 }
                 return new HirExpr.Block(stmts, false, new String[0], List.of(), -1, voidMeta);
             }
-            // Evaluate all arguments left-to-right into fresh temps before storing (safe for swaps like p = Vec3(p.y, p.x)).
+            // Evaluate all arguments left-to-right into fresh temps before storing (safe for swaps
+            // like p = Vec3(p.y, p.x)).
             List<HirVar> temps = new ArrayList<>(r.args().size());
             HirVar[] argTempBySourceIdx = new HirVar[r.args().size()];
             PrimitiveKind[] sourceKind = new PrimitiveKind[r.args().size()];
@@ -1616,8 +2421,17 @@ public final class ScalarReplacePass implements HirPass {
                 HirExpr a = rewrittenArgs.get(aIdx);
                 PrimitiveKind ak = sourceKind[aIdx] != null ? sourceKind[aIdx] : a.meta().kind();
                 int tid = nextVarId[0]++;
-                HirVar tmp = new HirVar(tid, "$sr_t" + tid, Resolution.Variable.Kind.DEFINITION, ownerFnId,
-                        ak, false, true, false, true);
+                HirVar tmp =
+                        new HirVar(
+                                tid,
+                                "$sr_t" + tid,
+                                Resolution.Variable.Kind.DEFINITION,
+                                ownerFnId,
+                                ak,
+                                false,
+                                true,
+                                false,
+                                true);
                 temps.add(tmp);
                 argTempBySourceIdx[aIdx] = tmp;
                 stmts.add(makeScalarStore(tmp, a, true, a.meta().line(), ak));
@@ -1625,8 +2439,11 @@ public final class ScalarReplacePass implements HirPass {
             for (int p = 0; p < n; p++) {
                 HirVar tmp = argTempBySourceIdx[argMap[p]];
                 PrimitiveKind fk = layout.paramKinds()[p];
-                ExprMeta rm = new ExprMeta(line, fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
-                stmts.add(makeScalarStore(targetScalars[p], new HirExpr.VarRead(tmp, rm), isDef, line, fk));
+                ExprMeta rm =
+                        new ExprMeta(line, fk, -1, null, EffectSet.EMPTY, fk.isPrimitive(), false);
+                stmts.add(
+                        makeScalarStore(
+                                targetScalars[p], new HirExpr.VarRead(tmp, rm), isDef, line, fk));
             }
             return new HirExpr.Block(stmts, false, new String[0], temps, -1, voidMeta);
         }
@@ -1635,33 +2452,98 @@ public final class ScalarReplacePass implements HirPass {
             int last = b.statements().size() - 1;
             List<HirExpr> stmts = new ArrayList<>(b.statements().size());
             for (int i = 0; i < last; i++) {
-                stmts.add(rewriteScalarizedExpr(b.statements().get(i), ownerFnId, candidates, scalarVars,
-                        localLayouts, module, initBindings, nextVarId));
+                stmts.add(
+                        rewriteScalarizedExpr(
+                                b.statements().get(i),
+                                ownerFnId,
+                                candidates,
+                                scalarVars,
+                                localLayouts,
+                                module,
+                                initBindings,
+                                nextVarId));
             }
-            stmts.add(emitDestructuredStore(b.statements().get(last), targetScalars, layout, isDef, line, ownerFnId,
-                    candidates, scalarVars, localLayouts, module, initBindings, nextVarId));
+            stmts.add(
+                    emitDestructuredStore(
+                            b.statements().get(last),
+                            targetScalars,
+                            layout,
+                            isDef,
+                            line,
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId));
             return new HirExpr.Block(stmts, false, new String[0], newDecls, -1, voidMeta);
         }
         if (rhs instanceof HirExpr.If i) {
-            HirExpr cond = rewriteScalarizedExpr(i.cond(), ownerFnId, candidates, scalarVars,
-                    localLayouts, module, initBindings, nextVarId);
+            HirExpr cond =
+                    rewriteScalarizedExpr(
+                            i.cond(),
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
             // Both branches store into already-declared outer targetScalars using VarAssign.
-            HirExpr tb = emitDestructuredStore(i.thenBranch(), targetScalars, layout, false, line, ownerFnId,
-                    candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
-            HirExpr eb = emitDestructuredStore(i.elseBranch(), targetScalars, layout, false, line, ownerFnId,
-                    candidates, scalarVars, localLayouts, module, initBindings, nextVarId);
+            HirExpr tb =
+                    emitDestructuredStore(
+                            i.thenBranch(),
+                            targetScalars,
+                            layout,
+                            false,
+                            line,
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
+            HirExpr eb =
+                    emitDestructuredStore(
+                            i.elseBranch(),
+                            targetScalars,
+                            layout,
+                            false,
+                            line,
+                            ownerFnId,
+                            candidates,
+                            scalarVars,
+                            localLayouts,
+                            module,
+                            initBindings,
+                            nextVarId);
             return new HirExpr.If(cond, tb, eb, voidMeta);
         }
-        throw new IllegalStateException("ScalarReplacePass : unexpected destructured RHS " + rhs.getClass().getSimpleName());
+        throw new IllegalStateException(
+                "ScalarReplacePass : unexpected destructured RHS "
+                        + rhs.getClass().getSimpleName());
     }
 
-    private static HirExpr makeScalarStore(HirVar target, HirExpr value, boolean isDef, int line, PrimitiveKind kind) {
-        ExprMeta meta = new ExprMeta(line, kind, value.meta().wideningRank(), null,
-                EffectSet.EMPTY, kind.isPrimitive(), value.meta().stringType());
+    private static HirExpr makeScalarStore(
+            HirVar target, HirExpr value, boolean isDef, int line, PrimitiveKind kind) {
+        ExprMeta meta =
+                new ExprMeta(
+                        line,
+                        kind,
+                        value.meta().wideningRank(),
+                        null,
+                        EffectSet.EMPTY,
+                        kind.isPrimitive(),
+                        value.meta().stringType());
         if (isDef) {
-            return new HirExpr.Def(target.name(),
+            return new HirExpr.Def(
+                    target.name(),
                     new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
-                    target, value, meta);
+                    target,
+                    value,
+                    meta);
         }
         return new HirExpr.VarAssign(target, null, value, target.name(), "", meta);
     }

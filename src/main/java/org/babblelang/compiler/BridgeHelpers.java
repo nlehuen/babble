@@ -1,30 +1,33 @@
 package org.babblelang.compiler;
 
-import org.babblelang.analysis.LoweringTargets;
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.ir.hir.HirModule;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.MethodVisitor;
+import static org.objectweb.asm.Opcodes.*;
 
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-
-import static org.objectweb.asm.Opcodes.*;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.ir.hir.HirModule;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 
 /**
- * Shared interface hierarchy inspection, inherited-default invocation, and {@code $super$N}
- * helper generation for {@link ClassGen} and {@link InterfaceGen} (BIP027-I2).
+ * Shared interface hierarchy inspection, inherited-default invocation, and {@code $super$N} helper
+ * generation for {@link ClassGen} and {@link InterfaceGen} (BIP027-I2).
  */
 final class BridgeHelpers {
-    record AncestorMethod(String memberName, String bridgeKey, int overloadIndex, String signatureKey,
-                          String descriptor, LoweringTargets.FunctionSignature signature) {
-    }
+    record AncestorMethod(
+            String memberName,
+            String bridgeKey,
+            int overloadIndex,
+            String signatureKey,
+            String descriptor,
+            LoweringTargets.FunctionSignature signature) {}
 
-    record InheritedDefault(String directParentId, String providerId, LoweringTargets.MemberSpec providerSpec) {
-    }
+    record InheritedDefault(
+            String directParentId, String providerId, LoweringTargets.MemberSpec providerSpec) {}
 
     private final HirEmitter emitter;
     private final HirModule module;
@@ -37,51 +40,67 @@ final class BridgeHelpers {
     }
 
     /**
-     * Emits (or retrieves from {@code cache}) a synthetic {@code $super$N} method on
-     * {@code writer} that forwards directly via {@code INVOKESPECIAL} to
-     * {@code directParentJvm.bm$<memberName>}. Shared by {@link ClassGen} and {@link InterfaceGen}.
+     * Emits (or retrieves from {@code cache}) a synthetic {@code $super$N} method on {@code writer}
+     * that forwards directly via {@code INVOKESPECIAL} to {@code directParentJvm.bm$<memberName>}.
+     * Shared by {@link ClassGen} and {@link InterfaceGen}.
      */
-    String superHelper(ClassWriter writer, Map<String, String> cache, int access,
-                       String directParentJvm, String memberName, LoweringTargets.FunctionSignature sig) {
+    String superHelper(
+            ClassWriter writer,
+            Map<String, String> cache,
+            int access,
+            String directParentJvm,
+            String memberName,
+            LoweringTargets.FunctionSignature sig) {
         String desc = JvmPrimitives.bridgeDescriptor(sig);
         String key = directParentJvm + "." + memberName + desc;
-        return cache.computeIfAbsent(key, k -> {
-            String helperName = "$super$" + emitter.nextSuperHelper();
-            MethodVisitor m = writer.visitMethod(access, helperName, desc, null, null);
-            m.visitCode();
-            int[] paramSlots = JvmPrimitives.bridgeParamSlots(sig);
-            m.visitVarInsn(ALOAD, 0);
-            m.visitVarInsn(ALOAD, 1);
-            for (int i = 0; i < sig.parameterKinds().length; i++) {
-                JvmPrimitives.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
-            }
-            if (sig.hasOptionalMask()) {
-                m.visitVarInsn(ILOAD, JvmPrimitives.bridgeMaskSlot(sig));
-            }
-            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, JvmPrimitives.bridgeMethodName(memberName), desc, true);
-            m.visitInsn(JvmPrimitives.returnInsn(sig.returnKind()));
-            m.visitMaxs(0, 0);
-            m.visitEnd();
-            return helperName;
-        });
+        return cache.computeIfAbsent(
+                key,
+                k -> {
+                    String helperName = "$super$" + emitter.nextSuperHelper();
+                    MethodVisitor m = writer.visitMethod(access, helperName, desc, null, null);
+                    m.visitCode();
+                    int[] paramSlots = JvmPrimitives.bridgeParamSlots(sig);
+                    m.visitVarInsn(ALOAD, 0);
+                    m.visitVarInsn(ALOAD, 1);
+                    for (int i = 0; i < sig.parameterKinds().length; i++) {
+                        JvmPrimitives.loadKindOn(m, sig.parameterKinds()[i], paramSlots[i]);
+                    }
+                    if (sig.hasOptionalMask()) {
+                        m.visitVarInsn(ILOAD, JvmPrimitives.bridgeMaskSlot(sig));
+                    }
+                    m.visitMethodInsn(
+                            INVOKESPECIAL,
+                            directParentJvm,
+                            JvmPrimitives.bridgeMethodName(memberName),
+                            desc,
+                            true);
+                    m.visitInsn(JvmPrimitives.returnInsn(sig.returnKind()));
+                    m.visitMaxs(0, 0);
+                    m.visitEnd();
+                    return helperName;
+                });
     }
 
-    InheritedDefault findInheritedDefault(LoweringTargets.TypeHierarchyInfo ownerHierarchy, String memberName) {
+    InheritedDefault findInheritedDefault(
+            LoweringTargets.TypeHierarchyInfo ownerHierarchy, String memberName) {
         if (ownerHierarchy == null) {
             return null;
         }
         for (LoweringTargets.ParentRef parent : ownerHierarchy.directParents()) {
             if (parent.babbleTypeId() != null) {
-                InheritedDefault found = findDefaultInInterface(parent.babbleTypeId(), memberName, new HashSet<>());
+                InheritedDefault found =
+                        findDefaultInInterface(parent.babbleTypeId(), memberName, new HashSet<>());
                 if (found != null) {
-                    return new InheritedDefault(parent.babbleTypeId(), found.providerId(), found.providerSpec());
+                    return new InheritedDefault(
+                            parent.babbleTypeId(), found.providerId(), found.providerSpec());
                 }
             }
         }
         return null;
     }
 
-    private InheritedDefault findDefaultInInterface(String ifaceId, String memberName, Set<String> visited) {
+    private InheritedDefault findDefaultInInterface(
+            String ifaceId, String memberName, Set<String> visited) {
         if (ifaceId == null || !visited.add(ifaceId)) {
             return null;
         }
@@ -95,7 +114,8 @@ final class BridgeHelpers {
         }
         for (LoweringTargets.ParentRef parent : info.directParents()) {
             if (parent.babbleTypeId() != null) {
-                InheritedDefault found = findDefaultInInterface(parent.babbleTypeId(), memberName, visited);
+                InheritedDefault found =
+                        findDefaultInInterface(parent.babbleTypeId(), memberName, visited);
                 if (found != null) {
                     return found;
                 }
@@ -104,19 +124,24 @@ final class BridgeHelpers {
         return null;
     }
 
-    private static boolean specHasMethod(LoweringTargets.MemberSpec spec, String bridgeKey, String descriptor) {
+    private static boolean specHasMethod(
+            LoweringTargets.MemberSpec spec, String bridgeKey, String descriptor) {
         if (spec == null) {
             return false;
         }
-        if (spec.name().equals(bridgeKey) && spec.callable() && spec.declaredSignature() != null
+        if (spec.name().equals(bridgeKey)
+                && spec.callable()
+                && spec.declaredSignature() != null
                 && JvmPrimitives.bridgeDescriptor(spec.declaredSignature()).equals(descriptor)) {
             return true;
         }
         if (spec.isOverloaded() && bridgeKey.startsWith(spec.name() + "$")) {
             try {
                 int idx = Integer.parseInt(bridgeKey.substring(spec.name().length() + 1));
-                if (idx >= 0 && idx < spec.overloadSignatures().size()
-                        && JvmPrimitives.bridgeDescriptor(spec.overloadSignatures().get(idx)).equals(descriptor)) {
+                if (idx >= 0
+                        && idx < spec.overloadSignatures().size()
+                        && JvmPrimitives.bridgeDescriptor(spec.overloadSignatures().get(idx))
+                                .equals(descriptor)) {
                     return true;
                 }
             } catch (NumberFormatException ignored) {
@@ -156,20 +181,23 @@ final class BridgeHelpers {
         return false;
     }
 
-    int countDirectParentsWithMethod(LoweringTargets.TypeHierarchyInfo hierarchy, String bridgeKey, String descriptor) {
+    int countDirectParentsWithMethod(
+            LoweringTargets.TypeHierarchyInfo hierarchy, String bridgeKey, String descriptor) {
         if (hierarchy == null) {
             return 0;
         }
         int count = 0;
         for (LoweringTargets.ParentRef parent : hierarchy.directParents()) {
-            if (parent.babbleTypeId() != null && interfaceHasMethod(parent.babbleTypeId(), bridgeKey, descriptor)) {
+            if (parent.babbleTypeId() != null
+                    && interfaceHasMethod(parent.babbleTypeId(), bridgeKey, descriptor)) {
                 count++;
             }
         }
         return count;
     }
 
-    Map<String, AncestorMethod> collectAncestorMethods(LoweringTargets.TypeHierarchyInfo hierarchy) {
+    Map<String, AncestorMethod> collectAncestorMethods(
+            LoweringTargets.TypeHierarchyInfo hierarchy) {
         Map<String, AncestorMethod> result = new LinkedHashMap<>();
         if (hierarchy == null) {
             return result;
@@ -185,8 +213,15 @@ final class BridgeHelpers {
             for (LoweringTargets.MemberSpec ancSpec : ancInfo.interfaceMembers().values()) {
                 if (ancSpec.callable() && ancSpec.declaredSignature() != null) {
                     String desc = JvmPrimitives.bridgeDescriptor(ancSpec.declaredSignature());
-                    result.putIfAbsent(ancSpec.name() + "\0" + desc,
-                            new AncestorMethod(ancSpec.name(), ancSpec.name(), -1, null, desc, ancSpec.declaredSignature()));
+                    result.putIfAbsent(
+                            ancSpec.name() + "\0" + desc,
+                            new AncestorMethod(
+                                    ancSpec.name(),
+                                    ancSpec.name(),
+                                    -1,
+                                    null,
+                                    desc,
+                                    ancSpec.declaredSignature()));
                 } else if (ancSpec.isOverloaded()) {
                     List<LoweringTargets.FunctionSignature> sigs = ancSpec.overloadSignatures();
                     List<String> keys = ancSpec.overloadSignatureKeys();
@@ -195,7 +230,8 @@ final class BridgeHelpers {
                         String bKey = ancSpec.name() + "$" + k;
                         String desc = JvmPrimitives.bridgeDescriptor(sig);
                         String sigKey = k < keys.size() ? keys.get(k) : null;
-                        result.putIfAbsent(bKey + "\0" + desc,
+                        result.putIfAbsent(
+                                bKey + "\0" + desc,
                                 new AncestorMethod(ancSpec.name(), bKey, k, sigKey, desc, sig));
                     }
                 }
@@ -204,13 +240,20 @@ final class BridgeHelpers {
         return result;
     }
 
-    void emitInheritedDefaultInvoke(MethodVisitor m, InheritedDefault def, String directParentJvm,
-                                    String memberName, String bridgeKey, String signatureKey,
-                                    String targetDesc, LoweringTargets.FunctionSignature targetSig) {
+    void emitInheritedDefaultInvoke(
+            MethodVisitor m,
+            InheritedDefault def,
+            String directParentJvm,
+            String memberName,
+            String bridgeKey,
+            String signatureKey,
+            String targetDesc,
+            LoweringTargets.FunctionSignature targetSig) {
         int[] paramSlots = JvmPrimitives.bridgeParamSlots(targetSig);
         int argCount = targetSig.parameterKinds().length;
         String mName = JvmPrimitives.bridgeMethodName(bridgeKey);
-        if (directParentJvm != null && interfaceHasMethod(def.directParentId(), bridgeKey, targetDesc)) {
+        if (directParentJvm != null
+                && interfaceHasMethod(def.directParentId(), bridgeKey, targetDesc)) {
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             for (int i = 0; i < argCount; i++) {
@@ -223,15 +266,20 @@ final class BridgeHelpers {
             m.visitInsn(JvmPrimitives.returnInsn(targetSig.returnKind()));
             return;
         }
-        LoweringTargets.FunctionSignature provSig = def != null && def.providerSpec().callable() ? def.providerSpec().declaredSignature() : null;
+        LoweringTargets.FunctionSignature provSig =
+                def != null && def.providerSpec().callable()
+                        ? def.providerSpec().declaredSignature()
+                        : null;
         String provDesc = provSig != null ? JvmPrimitives.bridgeDescriptor(provSig) : null;
-        if (directParentJvm != null && provDesc != null
+        if (directParentJvm != null
+                && provDesc != null
                 && provSig.parameterKinds().length == argCount
                 && interfaceHasMethod(def.directParentId(), memberName, provDesc)) {
             m.visitVarInsn(ALOAD, 0);
             m.visitVarInsn(ALOAD, 1);
             for (int i = 0; i < argCount; i++) {
-                JvmPrimitives.emitAdaptBridgeArg(m, targetSig, paramSlots, i, provSig.parameterKinds()[i], -1);
+                JvmPrimitives.emitAdaptBridgeArg(
+                        m, targetSig, paramSlots, i, provSig.parameterKinds()[i], -1);
             }
             if (provSig.hasOptionalMask()) {
                 if (targetSig.hasOptionalMask()) {
@@ -240,7 +288,12 @@ final class BridgeHelpers {
                     m.visitInsn(ICONST_0);
                 }
             }
-            m.visitMethodInsn(INVOKESPECIAL, directParentJvm, JvmPrimitives.bridgeMethodName(memberName), provDesc, true);
+            m.visitMethodInsn(
+                    INVOKESPECIAL,
+                    directParentJvm,
+                    JvmPrimitives.bridgeMethodName(memberName),
+                    provDesc,
+                    true);
             JvmPrimitives.emitAdaptKind(m, provSig.returnKind(), targetSig.returnKind());
             m.visitInsn(JvmPrimitives.returnInsn(targetSig.returnKind()));
             return;
@@ -249,20 +302,49 @@ final class BridgeHelpers {
         m.visitVarInsn(ALOAD, 0);
         m.visitLdcInsn(memberName);
         m.visitInsn(ICONST_0);
-        m.visitMethodInsn(INVOKESTATIC, JvmPrimitives.BABBLE_OBJECTS, "getMember", "(Ljava/lang/Object;Ljava/lang/String;Z)Ljava/lang/Object;", false);
+        m.visitMethodInsn(
+                INVOKESTATIC,
+                JvmPrimitives.BABBLE_OBJECTS,
+                "getMember",
+                "(Ljava/lang/Object;Ljava/lang/String;Z)Ljava/lang/Object;",
+                false);
         if (signatureKey != null) {
             m.visitLdcInsn(signatureKey);
-            m.visitMethodInsn(INVOKESTATIC, JvmPrimitives.OVERLOAD_SET, "selectFrom", "(Ljava/lang/Object;Ljava/lang/String;)L" + JvmPrimitives.CALLABLE + ";", false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    JvmPrimitives.OVERLOAD_SET,
+                    "selectFrom",
+                    "(Ljava/lang/Object;Ljava/lang/String;)L" + JvmPrimitives.CALLABLE + ";",
+                    false);
         } else {
-            m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + JvmPrimitives.CALL_SITE + ";");
-            m.visitMethodInsn(INVOKESTATIC, JvmPrimitives.RUNTIME + "Calls", "callable", "(Ljava/lang/Object;L" + JvmPrimitives.CALL_SITE + ";)L" + JvmPrimitives.CALLABLE + ";", false);
+            m.visitFieldInsn(
+                    GETSTATIC, emitter.className, siteField, "L" + JvmPrimitives.CALL_SITE + ";");
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    JvmPrimitives.RUNTIME + "Calls",
+                    "callable",
+                    "(Ljava/lang/Object;L"
+                            + JvmPrimitives.CALL_SITE
+                            + ";)L"
+                            + JvmPrimitives.CALLABLE
+                            + ";",
+                    false);
         }
         m.visitVarInsn(ALOAD, 1);
         JvmPrimitives.packBridgeArgsArray(m, targetSig, paramSlots);
         m.visitInsn(ACONST_NULL);
-        m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + JvmPrimitives.CALL_SITE + ";");
-        m.visitMethodInsn(INVOKEINTERFACE, JvmPrimitives.CALLABLE, "call",
-                "(L" + JvmPrimitives.SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + JvmPrimitives.CALL_SITE + ";)Ljava/lang/Object;", true);
+        m.visitFieldInsn(
+                GETSTATIC, emitter.className, siteField, "L" + JvmPrimitives.CALL_SITE + ";");
+        m.visitMethodInsn(
+                INVOKEINTERFACE,
+                JvmPrimitives.CALLABLE,
+                "call",
+                "(L"
+                        + JvmPrimitives.SCRIPT_RUNTIME
+                        + ";[Ljava/lang/Object;[Ljava/lang/String;L"
+                        + JvmPrimitives.CALL_SITE
+                        + ";)Ljava/lang/Object;",
+                true);
         JvmPrimitives.emitAdaptKind(m, PrimitiveKind.NONE, targetSig.returnKind());
         m.visitInsn(JvmPrimitives.returnInsn(targetSig.returnKind()));
     }

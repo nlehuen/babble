@@ -1,15 +1,14 @@
 package org.babblelang.ir.mir;
 
-import org.babblelang.analysis.PrimitiveKind;
-
 import java.util.Objects;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Immutable SSA value identity in {@link MirFunction} ({@code BIP014-I3}).
  *
- * <p>Equality and hashing are keyed solely on {@link #id()}. Every SSA value is defined exactly once
- * (either as a function parameter, a basic-block parameter, or the result of a {@link MirInst}) and
- * carries its unboxed JVM {@link PrimitiveKind}.
+ * <p>Equality and hashing are keyed solely on {@link #id()}. Every SSA value is defined exactly
+ * once (either as a function parameter, a basic-block parameter, or the result of a {@link
+ * MirInst}) and carries its unboxed JVM {@link PrimitiveKind}.
  */
 public record MirVal(int id, PrimitiveKind kind, String hint) {
     public MirVal {

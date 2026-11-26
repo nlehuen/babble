@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-
 import java.util.HashMap;
 import java.util.Map;
 import java.util.SortedSet;
@@ -17,6 +16,7 @@ public class Namespace implements Scope<Object> {
 
     private final Namespace parent;
     final Map<String, Slot<Object>> locals = new HashMap<>();
+
     /** Whether a {@link #resolve} looked through this scope without finding its name here. */
     private boolean walked;
 
@@ -33,8 +33,7 @@ public class Namespace implements Scope<Object> {
     }
 
     /**
-     * Enters a block scope : a child namespace with the names the block defines
-     * already declared.
+     * Enters a block scope : a child namespace with the names the block defines already declared.
      */
     public Namespace child(String[] declared) {
         return child(declared, null);
@@ -59,8 +58,8 @@ public class Namespace implements Scope<Object> {
     }
 
     /**
-     * Declares names without giving them a value : they shadow outer names from now on,
-     * but reading them fails until their definition runs.
+     * Declares names without giving them a value : they shadow outer names from now on, but reading
+     * them fails until their definition runs.
      */
     public void declare(String[] names) {
         declare(names, null);
@@ -73,9 +72,7 @@ public class Namespace implements Scope<Object> {
         }
     }
 
-    /**
-     * Runs the definition {@code def name = value} in this scope, and returns the value.
-     */
+    /** Runs the definition {@code def name = value} in this scope, and returns the value. */
     public Object initialize(String name, Object value) {
         Slot<Object> slot = locals.get(name);
         if (slot == null) {
@@ -86,9 +83,7 @@ public class Namespace implements Scope<Object> {
         return value;
     }
 
-    /**
-     * Binds a parameter of a function call.
-     */
+    /** Binds a parameter of a function call. */
     public void defineParameter(String name, Object value) {
         defineParameter(name, value, true);
     }
@@ -97,17 +92,13 @@ public class Namespace implements Scope<Object> {
         define(name, isFinal).set(value);
     }
 
-    /**
-     * The assignment {@code name = value} : sets the nearest visible definition.
-     */
+    /** The assignment {@code name = value} : sets the nearest visible definition. */
     public Object assign(String name, Object value) {
         get(name).assign(value);
         return value;
     }
 
-    /**
-     * The value of the nearest visible definition of {@code name}.
-     */
+    /** The value of the nearest visible definition of {@code name}. */
     public Object lookup(String name) {
         return get(name).get();
     }
@@ -143,9 +134,9 @@ public class Namespace implements Scope<Object> {
     }
 
     /**
-     * {@link #get}, for a cache : the slot {@code key} resolves to from here, which stays the
-     * same as long as {@link #epoch} does. The scopes looked through on the way are marked, so
-     * that defining a name in one of them later starts a new epoch.
+     * {@link #get}, for a cache : the slot {@code key} resolves to from here, which stays the same
+     * as long as {@link #epoch} does. The scopes looked through on the way are marked, so that
+     * defining a name in one of them later starts a new epoch.
      */
     Slot<Object> resolve(String key) {
         Namespace current = this;
@@ -160,7 +151,10 @@ public class Namespace implements Scope<Object> {
         throw new BabbleException("No such name : " + key);
     }
 
-    /** Every name visible here, this scope's and its parents', for completion in the interactive mode. */
+    /**
+     * Every name visible here, this scope's and its parents', for completion in the interactive
+     * mode.
+     */
     public SortedSet<String> names() {
         SortedSet<String> names = new TreeSet<>();
         for (Namespace current = this; current != null; current = current.parent) {
@@ -168,5 +162,4 @@ public class Namespace implements Scope<Object> {
         }
         return names;
     }
-
 }

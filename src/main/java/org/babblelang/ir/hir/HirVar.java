@@ -21,25 +21,64 @@ public record HirVar(
         boolean mayBeUndefined,
         boolean definitelyDefined,
         boolean mutable,
-        boolean capturedByValue
-) {
+        boolean capturedByValue) {
     public HirVar {
         primitiveKind = primitiveKind != null ? primitiveKind : PrimitiveKind.NONE;
     }
 
-    public HirVar(int id, String name, Resolution.Variable.Kind kind, int ownerMethodId,
-                  PrimitiveKind primitiveKind, boolean cell, boolean used,
-                  boolean mayBeUndefined, boolean definitelyDefined, boolean mutable) {
-        this(id, name, kind, ownerMethodId, primitiveKind, cell, used, mayBeUndefined, definitelyDefined, mutable, false);
+    public HirVar(
+            int id,
+            String name,
+            Resolution.Variable.Kind kind,
+            int ownerMethodId,
+            PrimitiveKind primitiveKind,
+            boolean cell,
+            boolean used,
+            boolean mayBeUndefined,
+            boolean definitelyDefined,
+            boolean mutable) {
+        this(
+                id,
+                name,
+                kind,
+                ownerMethodId,
+                primitiveKind,
+                cell,
+                used,
+                mayBeUndefined,
+                definitelyDefined,
+                mutable,
+                false);
     }
 
-    public HirVar(int id, String name, Resolution.Variable.Kind kind, int ownerMethodId,
-                  PrimitiveKind primitiveKind, boolean cell, boolean used,
-                  boolean mayBeUndefined, boolean definitelyDefined) {
-        this(id, name, kind, ownerMethodId, primitiveKind, cell, used, mayBeUndefined, definitelyDefined, false, false);
+    public HirVar(
+            int id,
+            String name,
+            Resolution.Variable.Kind kind,
+            int ownerMethodId,
+            PrimitiveKind primitiveKind,
+            boolean cell,
+            boolean used,
+            boolean mayBeUndefined,
+            boolean definitelyDefined) {
+        this(
+                id,
+                name,
+                kind,
+                ownerMethodId,
+                primitiveKind,
+                cell,
+                used,
+                mayBeUndefined,
+                definitelyDefined,
+                false,
+                false);
     }
 
-    /** Whether any nested method captures this variable (either via a heap {@code Cell} or by value). */
+    /**
+     * Whether any nested method captures this variable (either via a heap {@code Cell} or by
+     * value).
+     */
     public boolean isCaptured() {
         return cell || capturedByValue;
     }
@@ -50,11 +89,35 @@ public record HirVar(
     }
 
     public HirVar withIdAndOwner(int newId, int newOwnerMethodId) {
-        return new HirVar(newId, name, kind, newOwnerMethodId, primitiveKind, cell, used, mayBeUndefined, definitelyDefined, mutable, capturedByValue);
+        return new HirVar(
+                newId,
+                name,
+                kind,
+                newOwnerMethodId,
+                primitiveKind,
+                cell,
+                used,
+                mayBeUndefined,
+                definitelyDefined,
+                mutable,
+                capturedByValue);
     }
 
     public HirVar asUsed() {
-        return used ? this : new HirVar(id, name, kind, ownerMethodId, primitiveKind, cell, true, mayBeUndefined, definitelyDefined, mutable, capturedByValue);
+        return used
+                ? this
+                : new HirVar(
+                        id,
+                        name,
+                        kind,
+                        ownerMethodId,
+                        primitiveKind,
+                        cell,
+                        true,
+                        mayBeUndefined,
+                        definitelyDefined,
+                        mutable,
+                        capturedByValue);
     }
 
     @Override

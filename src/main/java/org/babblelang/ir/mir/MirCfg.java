@@ -13,12 +13,12 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * CFG, Reverse Post-Order (RPO), dominator-tree (Cooper–Harvey–Kennedy), and natural-loop
- * analysis over {@link MirFunction} ({@code BIP014-I3}).
+ * CFG, Reverse Post-Order (RPO), dominator-tree (Cooper–Harvey–Kennedy), and natural-loop analysis
+ * over {@link MirFunction} ({@code BIP014-I3}).
  *
  * <p>All CFG traversals include both normal terminator edges and exception-handler edges so
- * dominance, liveness, verification, and optimization passes stay sound under {@code BIP028}
- * {@code try}/{@code catch}/{@code finally}.
+ * dominance, liveness, verification, and optimization passes stay sound under {@code BIP028} {@code
+ * try}/{@code catch}/{@code finally}.
  */
 public final class MirCfg {
     private final MirFunction fn;
@@ -45,8 +45,7 @@ public final class MirCfg {
         Set<Integer> visited = new HashSet<>();
         MirBlock entry = blocksById.get(fn.entryBlockId());
         if (entry != null) {
-            record Frame(int blockId, int nextSucc) {
-            }
+            record Frame(int blockId, int nextSucc) {}
             Deque<Frame> stack = new ArrayDeque<>();
             visited.add(entry.id());
             stack.push(new Frame(entry.id(), 0));
@@ -194,7 +193,9 @@ public final class MirCfg {
         return preds.getOrDefault(blockId, List.of());
     }
 
-    /** Immediate dominator block ID, or {@code -1} for unreachable blocks (entry returns itself). */
+    /**
+     * Immediate dominator block ID, or {@code -1} for unreachable blocks (entry returns itself).
+     */
     public int immediateDominator(int blockId) {
         Integer idx = rpoIndex.get(blockId);
         if (idx == null || idomRpo[idx] < 0) {
@@ -235,14 +236,15 @@ public final class MirCfg {
         return cur == dIdx;
     }
 
-    /** Natural loop with its header, body blocks (including header), back-edge latches, and outside predecessors. */
+    /**
+     * Natural loop with its header, body blocks (including header), back-edge latches, and outside
+     * predecessors.
+     */
     public record NaturalLoop(
             int headerId,
             Set<Integer> bodyIds,
             Set<Integer> latchIds,
-            List<Integer> outsidePredecessors
-    ) {
-    }
+            List<Integer> outsidePredecessors) {}
 
     /** Finds all natural loops (grouped by header, inner-to-outer order by body size). */
     public List<NaturalLoop> findNaturalLoops() {
@@ -279,8 +281,12 @@ public final class MirCfg {
                     outside.add(p);
                 }
             }
-            result.add(new NaturalLoop(header, Collections.unmodifiableSet(body),
-                    Collections.unmodifiableSet(latches.get(header)), List.copyOf(outside)));
+            result.add(
+                    new NaturalLoop(
+                            header,
+                            Collections.unmodifiableSet(body),
+                            Collections.unmodifiableSet(latches.get(header)),
+                            List.copyOf(outside)));
         }
         // Sort innermost loops first (smallest body first) for clean bottom-up LICM.
         result.sort((a, b) -> Integer.compare(a.bodyIds().size(), b.bodyIds().size()));

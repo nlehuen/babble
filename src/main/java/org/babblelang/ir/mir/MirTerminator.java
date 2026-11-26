@@ -1,12 +1,11 @@
 package org.babblelang.ir.mir;
 
-import org.babblelang.analysis.LoweringTargets;
-import org.babblelang.analysis.PrimitiveKind;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
+import org.babblelang.analysis.LoweringTargets;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Sealed basic-block terminators for SSA CFG {@code MIR} ({@code BIP014-I3} §6.4).
@@ -14,14 +13,14 @@ import java.util.function.UnaryOperator;
  * <p>Every {@link MirBlock} ends with exactly one terminator. Control transfers to other blocks
  * carry explicit block-parameter arguments ({@link Br}, {@link BrIf}), replacing {@code phi} nodes.
  */
-public sealed interface MirTerminator permits
-        MirTerminator.Br,
-        MirTerminator.BrIf,
-        MirTerminator.Switch,
-        MirTerminator.Ret,
-        MirTerminator.Throw,
-        MirTerminator.TailCall,
-        MirTerminator.Unreachable {
+public sealed interface MirTerminator
+        permits MirTerminator.Br,
+                MirTerminator.BrIf,
+                MirTerminator.Switch,
+                MirTerminator.Ret,
+                MirTerminator.Throw,
+                MirTerminator.TailCall,
+                MirTerminator.Unreachable {
 
     int line();
 
@@ -62,7 +61,7 @@ public sealed interface MirTerminator permits
 
         @Override
         public int[] successorIds() {
-            return new int[]{targetBlock};
+            return new int[] {targetBlock};
         }
 
         @Override
@@ -79,8 +78,8 @@ public sealed interface MirTerminator permits
             List<MirVal> thenArgs,
             int elseBlock,
             List<MirVal> elseArgs,
-            int line
-    ) implements MirTerminator {
+            int line)
+            implements MirTerminator {
         public BrIf {
             Objects.requireNonNull(cond, "cond");
             thenArgs = List.copyOf(thenArgs);
@@ -98,7 +97,9 @@ public sealed interface MirTerminator permits
 
         @Override
         public int[] successorIds() {
-            return thenBlock == elseBlock ? new int[]{thenBlock} : new int[]{thenBlock, elseBlock};
+            return thenBlock == elseBlock
+                    ? new int[] {thenBlock}
+                    : new int[] {thenBlock, elseBlock};
         }
 
         @Override
@@ -106,12 +107,16 @@ public sealed interface MirTerminator permits
             MirVal nc = fn.apply(cond);
             List<MirVal> nt = remapList(thenArgs, fn);
             List<MirVal> ne = remapList(elseArgs, fn);
-            return (nc == cond && nt == thenArgs && ne == elseArgs) ? this
+            return (nc == cond && nt == thenArgs && ne == elseArgs)
+                    ? this
                     : new BrIf(nc, thenBlock, nt, elseBlock, ne, line);
         }
     }
 
-    /** Multi-way integer switch {@code switch key [k0 -> bb0(args...), ...] default -> bbD(defaultArgs...)} ({@code BIP038-D10}). */
+    /**
+     * Multi-way integer switch {@code switch key [k0 -> bb0(args...), ...] default ->
+     * bbD(defaultArgs...)} ({@code BIP038-D10}).
+     */
     record Switch(
             MirVal key,
             int[] keys,
@@ -119,8 +124,8 @@ public sealed interface MirTerminator permits
             List<List<MirVal>> targetArgs,
             int defaultBlock,
             List<MirVal> defaultArgs,
-            int line
-    ) implements MirTerminator {
+            int line)
+            implements MirTerminator {
         public Switch {
             Objects.requireNonNull(key, "key");
             keys = keys.clone();
@@ -149,7 +154,8 @@ public sealed interface MirTerminator permits
 
         @Override
         public int[] successorIds() {
-            java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>(targetBlocks.length + 1);
+            java.util.LinkedHashSet<Integer> uniq =
+                    new java.util.LinkedHashSet<>(targetBlocks.length + 1);
             for (int tb : targetBlocks) {
                 uniq.add(tb);
             }
@@ -177,13 +183,22 @@ public sealed interface MirTerminator permits
                 }
             }
             List<MirVal> nda = remapList(defaultArgs, fn);
-            return (nk == key && nta == null && nda == defaultArgs) ? this
-                    : new Switch(nk, keys, targetBlocks, nta != null ? nta : targetArgs, defaultBlock, nda, line);
+            return (nk == key && nta == null && nda == defaultArgs)
+                    ? this
+                    : new Switch(
+                            nk,
+                            keys,
+                            targetBlocks,
+                            nta != null ? nta : targetArgs,
+                            defaultBlock,
+                            nda,
+                            line);
         }
     }
 
     /** Function return {@code ret value}. */
-    record Ret(MirVal value, PrimitiveKind returnKind, int wideningRank, int line) implements MirTerminator {
+    record Ret(MirVal value, PrimitiveKind returnKind, int wideningRank, int line)
+            implements MirTerminator {
         public Ret {
             Objects.requireNonNull(value, "value");
             returnKind = returnKind != null ? returnKind : PrimitiveKind.NONE;
@@ -235,8 +250,8 @@ public sealed interface MirTerminator permits
             List<MirVal> args,
             List<String> argNames,
             LoweringTargets.ArgumentBinding binding,
-            int line
-    ) implements MirTerminator {
+            int line)
+            implements MirTerminator {
         public TailCall {
             args = List.copyOf(args);
             argNames = java.util.Collections.unmodifiableList(new ArrayList<>(argNames));

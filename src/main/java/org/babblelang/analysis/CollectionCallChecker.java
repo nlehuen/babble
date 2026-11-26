@@ -1,7 +1,5 @@
 package org.babblelang.analysis;
 
-import org.babblelang.parser.BabbleParser;
-
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -10,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
+import org.babblelang.parser.BabbleParser;
 
 /**
  * Core collection and array factory call typing extracted from {@link CallSolver} (BIP027-I1):
@@ -23,27 +22,31 @@ final class CollectionCallChecker {
         this.checker = checker;
     }
 
-    Type coreCollectionCall(String kind, List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
+    Type coreCollectionCall(
+            String kind, List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
         if ("array".equals(kind)) {
             return checkArrayCall(explicitArgs, ctx, expected);
         }
-        Class<?> javaClass = switch (kind) {
-            case "list" -> List.class;
-            case "set" -> Set.class;
-            case "sortedset" -> SortedSet.class;
-            case "map" -> Map.class;
-            case "sortedmap" -> SortedMap.class;
-            case "entry" -> Map.Entry.class;
-            default -> throw new IllegalStateException("Unknown core collection: " + kind);
-        };
+        Class<?> javaClass =
+                switch (kind) {
+                    case "list" -> List.class;
+                    case "set" -> Set.class;
+                    case "sortedset" -> SortedSet.class;
+                    case "map" -> Map.class;
+                    case "sortedmap" -> SortedMap.class;
+                    case "entry" -> Map.Entry.class;
+                    default -> throw new IllegalStateException("Unknown core collection: " + kind);
+                };
         boolean isMap = "map".equals(kind) || "sortedmap".equals(kind);
         int expectedArity = (isMap || "entry".equals(kind)) ? 2 : 1;
         List<BabbleParser.CallParameterContext> args = ctx.callParameters().callParameter();
-        List<Type> expectedTypeArgs = extractExpectedCollectionArgs(expected, javaClass, expectedArity);
+        List<Type> expectedTypeArgs =
+                extractExpectedCollectionArgs(expected, javaClass, expectedArity);
         if ("entry".equals(kind)) {
             return checkEntryCall(args, explicitArgs, expectedTypeArgs, ctx);
         }
-        return checkContainerFactoryCall(kind, javaClass, isMap, args, explicitArgs, expectedTypeArgs, ctx);
+        return checkContainerFactoryCall(
+                kind, javaClass, isMap, args, explicitArgs, expectedTypeArgs, ctx);
     }
 
     Type arrayOfCall(Type.ArrayOfFactory factory, BabbleParser.CallContext ctx, Type expected) {
@@ -119,17 +122,25 @@ final class CollectionCallChecker {
         }
     }
 
-    private List<Type> extractExpectedCollectionArgs(Type expected, Class<?> targetClass, int arity) {
+    private List<Type> extractExpectedCollectionArgs(
+            Type expected, Class<?> targetClass, int arity) {
         if (expected == null || expected == Type.ERROR || expected == Type.NOTHING) {
             return null;
         }
         Type base = Type.withoutNull(expected);
         if (base instanceof Type.JavaInstance ji) {
-            Type projected = checker.algebra().projectToJava(new Type.JavaInstance(targetClass, List.of()), ji.type());
-            if (projected != null && ji.typeArguments().size() == arity && ji.type().isAssignableFrom(targetClass)) {
+            Type projected =
+                    checker.algebra()
+                            .projectToJava(
+                                    new Type.JavaInstance(targetClass, List.of()), ji.type());
+            if (projected != null
+                    && ji.typeArguments().size() == arity
+                    && ji.type().isAssignableFrom(targetClass)) {
                 return ji.typeArguments();
             }
-            if (arity == 1 && (ji.type() == Iterable.class || ji.type() == Collection.class) && ji.typeArguments().size() == 1) {
+            if (arity == 1
+                    && (ji.type() == Iterable.class || ji.type() == Collection.class)
+                    && ji.typeArguments().size() == 1) {
                 return ji.typeArguments();
             }
         }
@@ -152,8 +163,10 @@ final class CollectionCallChecker {
             case Type.TypeVar ignored -> true;
             case Type.Frozen f -> dependsOnTypeVar(f.of());
             case Type.Array a -> dependsOnTypeVar(a.element());
-            case Type.Union u -> u.members().stream().anyMatch(CollectionCallChecker::dependsOnTypeVar);
-            case Type.Intersection i -> i.members().stream().anyMatch(CollectionCallChecker::dependsOnTypeVar);
+            case Type.Union u ->
+                    u.members().stream().anyMatch(CollectionCallChecker::dependsOnTypeVar);
+            case Type.Intersection i ->
+                    i.members().stream().anyMatch(CollectionCallChecker::dependsOnTypeVar);
             default -> false;
         };
     }
@@ -162,9 +175,11 @@ final class CollectionCallChecker {
         return Type.isPrimitiveScalar(elem) || Type.containsNull(elem);
     }
 
-    private Type checkArrayCall(List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
+    private Type checkArrayCall(
+            List<Type> explicitArgs, BabbleParser.CallContext ctx, Type expected) {
         List<BabbleParser.CallParameterContext> args = ctx.callParameters().callParameter();
-        Type explicitElem = explicitArgs != null && explicitArgs.size() == 1 ? explicitArgs.get(0) : null;
+        Type explicitElem =
+                explicitArgs != null && explicitArgs.size() == 1 ? explicitArgs.get(0) : null;
         Type expectedElem = explicitElem == null ? extractExpectedArrayElement(expected) : null;
         Type hintElem = explicitElem != null ? explicitElem : expectedElem;
 
@@ -181,20 +196,32 @@ final class CollectionCallChecker {
         BabbleParser.CallParameterContext arg0 = args.get(0);
         String name0 = ScopeAnalysis.callParamName(arg0);
         if ("from".equals(name0)) {
-            Type fromHint = hintElem != null ? new Type.JavaInstance(Iterable.class, List.of(hintElem)) : null;
+            Type fromHint =
+                    hintElem != null
+                            ? new Type.JavaInstance(Iterable.class, List.of(hintElem))
+                            : null;
             Type srcType = checker.check(arg0.expression(), fromHint);
             if (TypeChecker.isUnresolved(srcType)) {
                 return hintElem != null ? new Type.Array(hintElem) : Type.ERROR;
             }
             Type unwrappedSrc = TypeAlgebra.unwrapFrozen(srcType);
-            Type srcElem = unwrappedSrc instanceof Type.Array sa ? sa.element() : extractIterableElement(unwrappedSrc);
+            Type srcElem =
+                    unwrappedSrc instanceof Type.Array sa
+                            ? sa.element()
+                            : extractIterableElement(unwrappedSrc);
             if (srcElem == null) {
-                checker.warn("Type error : expected iterable or array, got " + srcType, arg0.expression());
+                checker.warn(
+                        "Type error : expected iterable or array, got " + srcType,
+                        arg0.expression());
                 return Type.ERROR;
             }
             Type elem = hintElem != null ? hintElem : srcElem;
-            if (hintElem != null && !TypeChecker.isUnresolved(srcElem) && !checker.algebra().assignable(srcElem, hintElem)) {
-                checker.warn("Type error : expected " + hintElem + " elements, got " + srcElem, arg0.expression());
+            if (hintElem != null
+                    && !TypeChecker.isUnresolved(srcElem)
+                    && !checker.algebra().assignable(srcElem, hintElem)) {
+                checker.warn(
+                        "Type error : expected " + hintElem + " elements, got " + srcElem,
+                        arg0.expression());
                 return Type.ERROR;
             }
             if (dependsOnTypeVar(elem)) {
@@ -217,7 +244,9 @@ final class CollectionCallChecker {
                 return Type.ERROR;
             }
             if (!TypeChecker.isUnresolved(elem) && !hasDefaultElement(elem)) {
-                checker.warn("No default element : " + new Type.Array(elem) + " has non-null elements", ctx);
+                checker.warn(
+                        "No default element : " + new Type.Array(elem) + " has non-null elements",
+                        ctx);
                 return Type.ERROR;
             }
             return new Type.Array(elem);
@@ -237,11 +266,17 @@ final class CollectionCallChecker {
         return true;
     }
 
-    private Type checkEntryCall(List<BabbleParser.CallParameterContext> args, List<Type> explicitArgs,
-                                List<Type> expectedArgs, BabbleParser.CallContext ctx) {
+    private Type checkEntryCall(
+            List<BabbleParser.CallParameterContext> args,
+            List<Type> explicitArgs,
+            List<Type> expectedArgs,
+            BabbleParser.CallContext ctx) {
         if (args.size() != 2) {
-            checker.warn(args.size() < 2 ? "Missing parameter : " + (args.isEmpty() ? "key" : "value")
-                    : "Too many parameters : 2 declared, " + args.size() + " given", ctx);
+            checker.warn(
+                    args.size() < 2
+                            ? "Missing parameter : " + (args.isEmpty() ? "key" : "value")
+                            : "Too many parameters : 2 declared, " + args.size() + " given",
+                    ctx);
             synthAll(args);
             return Type.ERROR;
         }
@@ -253,15 +288,27 @@ final class CollectionCallChecker {
             if ("value".equals(n0) && "key".equals(n1)) {
                 keyIdx = 1;
                 valIdx = 0;
-            } else if ((n0 != null && !"key".equals(n0)) || (n1 != null && !"value".equals(n1))
+            } else if ((n0 != null && !"key".equals(n0))
+                    || (n1 != null && !"value".equals(n1))
                     || (n0 != null && n0.equals(n1))) {
-                checker.warn("No such parameter : " + (n0 != null && !"key".equals(n0) && !"value".equals(n0) ? n0 : n1), ctx);
+                checker.warn(
+                        "No such parameter : "
+                                + (n0 != null && !"key".equals(n0) && !"value".equals(n0)
+                                        ? n0
+                                        : n1),
+                        ctx);
                 synthAll(args);
                 return Type.ERROR;
             }
         }
-        Type expK = explicitArgs != null ? explicitArgs.get(0) : (expectedArgs != null ? expectedArgs.get(0) : null);
-        Type expV = explicitArgs != null ? explicitArgs.get(1) : (expectedArgs != null ? expectedArgs.get(1) : null);
+        Type expK =
+                explicitArgs != null
+                        ? explicitArgs.get(0)
+                        : (expectedArgs != null ? expectedArgs.get(0) : null);
+        Type expV =
+                explicitArgs != null
+                        ? explicitArgs.get(1)
+                        : (expectedArgs != null ? expectedArgs.get(1) : null);
         Type k = checker.check(args.get(keyIdx).expression(), expK);
         Type v = checker.check(args.get(valIdx).expression(), expV);
         if (explicitArgs != null) {
@@ -273,17 +320,29 @@ final class CollectionCallChecker {
     }
 
     /**
-     * Unified factory checker for sequence ({@code list}/{@code set}/{@code sortedset}) and
-     * map ({@code map}/{@code sortedmap}) constructors: shares {@code capacity:}, {@code comparator:},
+     * Unified factory checker for sequence ({@code list}/{@code set}/{@code sortedset}) and map
+     * ({@code map}/{@code sortedmap}) constructors: shares {@code capacity:}, {@code comparator:},
      * {@code from:}, positional-element, and {@code Comparable} validation.
      */
-    private Type checkContainerFactoryCall(String kind, Class<?> javaClass, boolean isMap,
-                                           List<BabbleParser.CallParameterContext> args,
-                                           List<Type> explicitArgs, List<Type> expectedArgs,
-                                           BabbleParser.CallContext ctx) {
+    private Type checkContainerFactoryCall(
+            String kind,
+            Class<?> javaClass,
+            boolean isMap,
+            List<BabbleParser.CallParameterContext> args,
+            List<Type> explicitArgs,
+            List<Type> expectedArgs,
+            BabbleParser.CallContext ctx) {
         boolean isSorted = "sortedset".equals(kind) || "sortedmap".equals(kind);
-        Type hint0 = explicitArgs != null ? explicitArgs.get(0) : (expectedArgs != null ? expectedArgs.get(0) : null);
-        Type hint1 = isMap ? (explicitArgs != null ? explicitArgs.get(1) : (expectedArgs != null ? expectedArgs.get(1) : null)) : null;
+        Type hint0 =
+                explicitArgs != null
+                        ? explicitArgs.get(0)
+                        : (expectedArgs != null ? expectedArgs.get(0) : null);
+        Type hint1 =
+                isMap
+                        ? (explicitArgs != null
+                                ? explicitArgs.get(1)
+                                : (expectedArgs != null ? expectedArgs.get(1) : null))
+                        : null;
         int count = args.size();
         String n0 = count > 0 ? ScopeAnalysis.callParamName(args.get(0)) : null;
         String n1 = count > 1 ? ScopeAnalysis.callParamName(args.get(1)) : null;
@@ -334,11 +393,19 @@ final class CollectionCallChecker {
             }
             comparatorIsNull = checker.synth(args.get(0).expression()) == Type.NULL;
         } else if ((count == 1 && "from".equals(n0))
-                || (count == 2 && isSorted && (("from".equals(n0) && "comparator".equals(n1)) || ("comparator".equals(n0) && "from".equals(n1))))) {
+                || (count == 2
+                        && isSorted
+                        && (("from".equals(n0) && "comparator".equals(n1))
+                                || ("comparator".equals(n0) && "from".equals(n1))))) {
             int fromIdx = "from".equals(n0) ? 0 : 1;
-            Type expectedSource = isMap
-                    ? ((hint0 != null && hint1 != null) ? new Type.JavaInstance(Map.class, List.of(hint0, hint1)) : null)
-                    : (hint0 != null ? new Type.JavaInstance(Iterable.class, List.of(hint0)) : null);
+            Type expectedSource =
+                    isMap
+                            ? ((hint0 != null && hint1 != null)
+                                    ? new Type.JavaInstance(Map.class, List.of(hint0, hint1))
+                                    : null)
+                            : (hint0 != null
+                                    ? new Type.JavaInstance(Iterable.class, List.of(hint0))
+                                    : null);
             Type fromType = checker.check(args.get(fromIdx).expression(), expectedSource);
             if (isMap) {
                 List<Type> fromKV = extractMapEntries(fromType);
@@ -349,7 +416,11 @@ final class CollectionCallChecker {
             }
             if (primaryType == null || (isMap && secondaryType == null)) {
                 if (!TypeChecker.isUnresolved(fromType)) {
-                    checker.warn("Type error : expected " + (isMap ? "map" : "java.lang.Iterable") + ", got " + fromType,
+                    checker.warn(
+                            "Type error : expected "
+                                    + (isMap ? "map" : "java.lang.Iterable")
+                                    + ", got "
+                                    + fromType,
                             args.get(fromIdx).expression());
                 }
                 if (count == 2) {
@@ -357,14 +428,17 @@ final class CollectionCallChecker {
                 }
                 return Type.ERROR;
             }
-            Type borrowTarget = isMap
-                    ? new Type.JavaInstance(Map.class, List.of(primaryType, secondaryType))
-                    : new Type.JavaInstance(Iterable.class, List.of(primaryType));
+            Type borrowTarget =
+                    isMap
+                            ? new Type.JavaInstance(Map.class, List.of(primaryType, secondaryType))
+                            : new Type.JavaInstance(Iterable.class, List.of(primaryType));
             checker.subsumesBorrow(args.get(fromIdx).expression(), fromType, borrowTarget);
             if (count == 2) {
                 int compIdx = 1 - fromIdx;
                 hasComparator = true;
-                Type compPattern = Type.nullable(new Type.JavaInstance(Comparator.class, List.of(primaryType)));
+                Type compPattern =
+                        Type.nullable(
+                                new Type.JavaInstance(Comparator.class, List.of(primaryType)));
                 Type compType = checker.check(args.get(compIdx).expression(), compPattern);
                 checker.subsumes(args.get(compIdx).expression(), compType, compPattern);
                 comparatorIsNull = compType == Type.NULL;
@@ -372,14 +446,16 @@ final class CollectionCallChecker {
         } else {
             for (int i = 0; i < count; i++) {
                 if (ScopeAnalysis.callParamName(args.get(i)) != null) {
-                    checker.warn("No such parameter : " + ScopeAnalysis.callParamName(args.get(i)), ctx);
+                    checker.warn(
+                            "No such parameter : " + ScopeAnalysis.callParamName(args.get(i)), ctx);
                     synthAll(args);
                     return Type.ERROR;
                 }
             }
-            Type[] resolved = isMap
-                    ? checkMapPositionalEntries(args, explicitArgs, hint0, hint1)
-                    : checkSeqPositionalElements(args, explicitArgs, hint0);
+            Type[] resolved =
+                    isMap
+                            ? checkMapPositionalEntries(args, explicitArgs, hint0, hint1)
+                            : checkSeqPositionalElements(args, explicitArgs, hint0);
             if (resolved == null) {
                 return Type.ERROR;
             }
@@ -387,16 +463,22 @@ final class CollectionCallChecker {
             secondaryType = isMap ? resolved[1] : null;
         }
 
-        if (isSorted && (!hasComparator || comparatorIsNull) && !TypeChecker.isUnresolved(primaryType)) {
+        if (isSorted
+                && (!hasComparator || comparatorIsNull)
+                && !TypeChecker.isUnresolved(primaryType)) {
             if (!isNaturallyComparable(primaryType)) {
-                checker.warn("Type error : " + primaryType + " is not Comparable (pass comparator: ...)", ctx);
+                checker.warn(
+                        "Type error : " + primaryType + " is not Comparable (pass comparator: ...)",
+                        ctx);
                 return Type.ERROR;
             }
         }
-        return new Type.JavaInstance(javaClass, isMap ? List.of(primaryType, secondaryType) : List.of(primaryType));
+        return new Type.JavaInstance(
+                javaClass, isMap ? List.of(primaryType, secondaryType) : List.of(primaryType));
     }
 
-    private Type[] checkSeqPositionalElements(List<BabbleParser.CallParameterContext> args, List<Type> explicitArgs, Type hintT) {
+    private Type[] checkSeqPositionalElements(
+            List<BabbleParser.CallParameterContext> args, List<Type> explicitArgs, Type hintT) {
         int count = args.size();
         List<BabbleParser.ExpressionContext> exprs = new ArrayList<>(count);
         List<Type> actuals = new ArrayList<>(count);
@@ -422,13 +504,19 @@ final class CollectionCallChecker {
                 checker.coerce(exprs.get(i), actuals.get(i), elemType);
             }
         }
-        return new Type[]{elemType};
+        return new Type[] {elemType};
     }
 
-    private Type[] checkMapPositionalEntries(List<BabbleParser.CallParameterContext> args, List<Type> explicitArgs,
-                                             Type hintK, Type hintV) {
+    private Type[] checkMapPositionalEntries(
+            List<BabbleParser.CallParameterContext> args,
+            List<Type> explicitArgs,
+            Type hintK,
+            Type hintV) {
         int count = args.size();
-        Type entryHint = (hintK != null && hintV != null) ? new Type.JavaInstance(Map.Entry.class, List.of(hintK, hintV)) : null;
+        Type entryHint =
+                (hintK != null && hintV != null)
+                        ? new Type.JavaInstance(Map.Entry.class, List.of(hintK, hintV))
+                        : null;
         List<BabbleParser.ExpressionContext> exprs = new ArrayList<>(count);
         List<Type> actuals = new ArrayList<>(count);
         for (BabbleParser.CallParameterContext arg : args) {
@@ -440,7 +528,7 @@ final class CollectionCallChecker {
             for (int i = 0; i < count; i++) {
                 checker.subsumes(exprs.get(i), actuals.get(i), expectedEntry);
             }
-            return new Type[]{explicitArgs.get(0), explicitArgs.get(1)};
+            return new Type[] {explicitArgs.get(0), explicitArgs.get(1)};
         }
         Type keyType = null;
         Type valType = null;
@@ -450,7 +538,8 @@ final class CollectionCallChecker {
                 return null;
             }
             Type projected = checker.algebra().projectToJava(argType, Map.Entry.class);
-            if (!(projected instanceof Type.JavaInstance entryInst) || entryInst.typeArguments().size() != 2) {
+            if (!(projected instanceof Type.JavaInstance entryInst)
+                    || entryInst.typeArguments().size() != 2) {
                 checker.warn("Type error : expected entry, got " + argType, exprs.get(i));
                 return null;
             }
@@ -467,11 +556,14 @@ final class CollectionCallChecker {
                 }
             }
         }
-        return new Type[]{keyType, valType};
+        return new Type[] {keyType, valType};
     }
 
-    private Type checkComparatorArg(BabbleParser.ExpressionContext compExpr, Type hintT, String kind,
-                                    BabbleParser.CallContext ctx) {
+    private Type checkComparatorArg(
+            BabbleParser.ExpressionContext compExpr,
+            Type hintT,
+            String kind,
+            BabbleParser.CallContext ctx) {
         if (hintT != null) {
             Type compPattern = new Type.JavaInstance(Comparator.class, List.of(hintT));
             Type compType = checker.check(compExpr, compPattern);
@@ -521,9 +613,15 @@ final class CollectionCallChecker {
         if (Type.containsNull(type)) {
             return false;
         }
-        if (type == Type.BYTE || type == Type.SHORT || type == Type.INT || type == Type.LONG
-                || type == Type.FLOAT || type == Type.DOUBLE || type == Type.BOOL
-                || type == Type.CHAR || type == Type.STRING) {
+        if (type == Type.BYTE
+                || type == Type.SHORT
+                || type == Type.INT
+                || type == Type.LONG
+                || type == Type.FLOAT
+                || type == Type.DOUBLE
+                || type == Type.BOOL
+                || type == Type.CHAR
+                || type == Type.STRING) {
             return true;
         }
         if (type instanceof Type.JavaInstance ji) {

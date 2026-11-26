@@ -3,15 +3,22 @@ package org.babblelang.tests;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-/**
- * "==" uses Java's equals() for everything but null and numbers.
- */
+/** "==" uses Java's equals() for everything but null and numbers. */
 public class BabbleEqualityTestCase extends BabbleTestBase {
     @Test
     public void testJavaObjectsCompareByEquals() throws Exception {
-        Assertions.assertEquals(true, interpret("def a : java.util.List of int = java.util.ArrayList() ; def b : java.util.List of int = java.util.ArrayList() ; a.add(1) ; b.add(1) ; a == b"));
-        Assertions.assertEquals(false, interpret("def a : java.util.List of int = java.util.ArrayList() ; def b : java.util.List of int = java.util.ArrayList() ; a.add(1) ; b.add(2) ; a == b"));
-        Assertions.assertEquals(true, interpret("def a : java.util.List of int = java.util.ArrayList() ; a.add(1) ; a.subList(0, 1) == a.subList(0, 1)"));
+        Assertions.assertEquals(
+                true,
+                interpret(
+                        "def a : java.util.List of int = java.util.ArrayList() ; def b : java.util.List of int = java.util.ArrayList() ; a.add(1) ; b.add(1) ; a == b"));
+        Assertions.assertEquals(
+                false,
+                interpret(
+                        "def a : java.util.List of int = java.util.ArrayList() ; def b : java.util.List of int = java.util.ArrayList() ; a.add(1) ; b.add(2) ; a == b"));
+        Assertions.assertEquals(
+                true,
+                interpret(
+                        "def a : java.util.List of int = java.util.ArrayList() ; a.add(1) ; a.subList(0, 1) == a.subList(0, 1)"));
     }
 
     @Test
@@ -23,12 +30,17 @@ public class BabbleEqualityTestCase extends BabbleTestBase {
     @Test
     public void testFunctionsCompareByIdentity() throws Exception {
         Assertions.assertEquals(true, interpret("def f = fn () -> ( 1 ) ; f == f"));
-        Assertions.assertEquals(false, interpret("def mk = fn () -> ( fn () -> ( 1 ) ) ; mk() == mk()"));
+        Assertions.assertEquals(
+                false, interpret("def mk = fn () -> ( fn () -> ( 1 ) ) ; mk() == mk()"));
     }
 
     @Test
     public void testSelectingAMethodTwiceGivesEqualValues() throws Exception {
-        Assertions.assertEquals(true, interpret("def C = class () ( def m = fn () -> ( 1 ) ) ; def o = C() ; o.m == o.m"));
-        Assertions.assertEquals(false, interpret("def C = class () ( def m = fn () -> ( 1 ) ) ; C().m == C().m"));
+        Assertions.assertEquals(
+                true,
+                interpret(
+                        "def C = class () ( def m = fn () -> ( 1 ) ) ; def o = C() ; o.m == o.m"));
+        Assertions.assertEquals(
+                false, interpret("def C = class () ( def m = fn () -> ( 1 ) ) ; C().m == C().m"));
     }
 }

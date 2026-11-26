@@ -6,6 +6,5 @@ import org.babblelang.axioms.MeansNullUnmarked;
 @Axioms(targetName = "org.jspecify.annotations.NullUnmarked")
 @MeansNullUnmarked
 public final class NullUnmarkedAxioms {
-    private NullUnmarkedAxioms() {
-    }
+    private NullUnmarkedAxioms() {}
 }

@@ -1,12 +1,5 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.tree.ParseTree;
-import org.babblelang.parser.BabbleBaseVisitor;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.ClassShape;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -16,48 +9,65 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
+import org.babblelang.parser.BabbleBaseVisitor;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.ClassShape;
 
 /**
- * The analysis run on every file before either mode executes it. This first pass walks
- * the scopes ; {@link TypeChecks} then resolves what needs the whole file.
+ * The analysis run on every file before either mode executes it. This first pass walks the scopes ;
+ * {@link TypeChecks} then resolves what needs the whole file.
+ *
  * <ul>
- * <li>It computes the names each scope defines, so that they can be declared when the
- * scope is entered (hoisting), and the members of classes, objects and interfaces.</li>
- * <li>It rejects two definitions of one name in a scope, and a definition in a
- * {@code while} test, which would run on every iteration.</li>
- * <li>It checks where {@code return}, {@code this}, {@code super}, {@code private} and
- * header {@code def}s may appear.</li>
+ *   <li>It computes the names each scope defines, so that they can be declared when the scope is
+ *       entered (hoisting), and the members of classes, objects and interfaces.
+ *   <li>It rejects two definitions of one name in a scope, and a definition in a {@code while}
+ *       test, which would run on every iteration.
+ *   <li>It checks where {@code return}, {@code this}, {@code super}, {@code private} and header
+ *       {@code def}s may appear.
  * </ul>
- * Scopes are opened by the file, function literals (shared by the parameters and the top
- * level of the body), packages, class and object bodies, interface bodies, static blocks,
- * and every other block : a block expression, an {@code if} branch or a {@code while}
- * body. The top-level {@code def}s of a class, object, interface or static body declare
- * members, which bind no unqualified name.
+ *
+ * Scopes are opened by the file, function literals (shared by the parameters and the top level of
+ * the body), packages, class and object bodies, interface bodies, static blocks, and every other
+ * block : a block expression, an {@code if} branch or a {@code while} body. The top-level {@code
+ * def}s of a class, object, interface or static body declare members, which bind no unqualified
+ * name.
  */
 public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private enum ReturnTarget {
-        NONE, FUNCTION, DEFAULT, CLASS_BODY
+        NONE,
+        FUNCTION,
+        DEFAULT,
+        CLASS_BODY
     }
 
-    record PendingSuper(BabbleParser.SuperExpressionContext ctx, TypeNode owner, ScopeNode scope, String member) {
-    }
+    record PendingSuper(
+            BabbleParser.SuperExpressionContext ctx,
+            TypeNode owner,
+            ScopeNode scope,
+            String member) {}
 
-    record PendingAccess(ParserRuleContext ctx, BabbleParser.ExpressionContext receiver, String member, boolean assignment, ScopeNode scope) {
-    }
+    record PendingAccess(
+            ParserRuleContext ctx,
+            BabbleParser.ExpressionContext receiver,
+            String member,
+            boolean assignment,
+            ScopeNode scope) {}
 
-    record PendingAssignment(BabbleParser.AssignExpressionContext ctx, String name, ScopeNode scope) {
-    }
+    record PendingAssignment(
+            BabbleParser.AssignExpressionContext ctx, String name, ScopeNode scope) {}
 
     /** {@code import("file.ba")} : a static import (docs/design/bip005_modules.md §4.2). */
-    record PendingImport(BabbleParser.CallContext ctx, String name, ScopeNode scope) {
-    }
+    record PendingImport(BabbleParser.CallContext ctx, String name, ScopeNode scope) {}
 
-    /** A use of a lexical name : a plain name, an unqualified assignment, {@code this} or {@code recurse}. */
-    record Occurrence(ParserRuleContext ctx, String name, ScopeNode scope) {
-    }
+    /**
+     * A use of a lexical name : a plain name, an unqualified assignment, {@code this} or {@code
+     * recurse}.
+     */
+    record Occurrence(ParserRuleContext ctx, String name, ScopeNode scope) {}
 
-    record PendingAxiomExpr(BabbleParser.AxiomExpressionContext ctx, ScopeNode scope) {
-    }
+    record PendingAxiomExpr(BabbleParser.AxiomExpressionContext ctx, ScopeNode scope) {}
 
     final ScopeAnalysis analysis = new ScopeAnalysis();
     final List<TypeNode> types = new ArrayList<>();
@@ -70,15 +80,20 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     final List<Occurrence> occurrences = new ArrayList<>();
     final List<PendingImport> imports = new ArrayList<>();
     final List<PendingAxiomExpr> axiomExpressions = new ArrayList<>();
+
     /** The interfaces of the files imported statically, by import call. */
     final Map<BabbleParser.CallContext, ModuleInterface> modules = new LinkedHashMap<>();
 
     /** The interactive session the file is an input of, or null. */
     final AnalysisSession session;
+
     final HostEffects hostEffects;
-    final Map<BabbleParser.SuperExpressionContext, TypeChecks.Provider> superProviders = new HashMap<>();
+    final Map<BabbleParser.SuperExpressionContext, TypeChecks.Provider> superProviders =
+            new HashMap<>();
+
     /** The file's type and effect summary, once analysed (what a session keeps of it). */
     TypedModuleSummary summary;
+
     ScopeNode fileScope;
 
     private final Deque<ScopeNode> scopes = new ArrayDeque<>();
@@ -87,8 +102,12 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private boolean inFinally = false;
     private int finallyLoopFloor = 0;
 
-    /** The key of the module analysed, its types' ids derive from, or null : see {@link ModuleLoader#moduleKey}. */
+    /**
+     * The key of the module analysed, its types' ids derive from, or null : see {@link
+     * ModuleLoader#moduleKey}.
+     */
     private String moduleKey;
+
     /** How many types of each name the module has so far, for their ids. */
     private final Map<String, Integer> typeNames = new HashMap<>();
 
@@ -111,30 +130,36 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     /**
-     * @param session the interactive session the file is an input of, whose earlier inputs
-     *                it sees the definitions of, or null. The session only changes when
-     *                the result is {@link AnalysisSession#commit committed}.
+     * @param session the interactive session the file is an input of, whose earlier inputs it sees
+     *     the definitions of, or null. The session only changes when the result is {@link
+     *     AnalysisSession#commit committed}.
      */
     public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session) {
         return analyze(file, session, null);
     }
 
     /**
-     * @param loader what loads the files the file imports statically, or null to leave
-     *               every import to runtime
+     * @param loader what loads the files the file imports statically, or null to leave every import
+     *     to runtime
      */
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader) {
+    public static ScopeAnalysis analyze(
+            BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader) {
         return analyze(file, session, loader, HostEffects.DEFAULT);
     }
 
-    public static ScopeAnalysis analyze(BabbleParser.FileContext file, AnalysisSession session, ModuleLoader loader, HostEffects hostEffects) {
+    public static ScopeAnalysis analyze(
+            BabbleParser.FileContext file,
+            AnalysisSession session,
+            ModuleLoader loader,
+            HostEffects hostEffects) {
         BlockScopes pass = new BlockScopes(session, hostEffects);
         pass.moduleKey = loader != null ? loader.moduleKey() : null;
         pass.analysis.setPass(pass);
         if (session != null) {
             pass.analysis.setSession(session);
         }
-        pass.fileScope = pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
+        pass.fileScope =
+                pass.inScope(ScopeNode.Kind.FILE, file, null, () -> pass.visitChildren(file));
         // The exported names are known : a file importing this one back, in a cycle, sees them.
         ModuleInterface self = new ModuleInterface(pass);
         if (loader != null) {
@@ -142,14 +167,16 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             for (PendingImport pending : pass.imports) {
                 // A script that defines its own import calls it, not the implicit one.
                 if (TypeChecks.resolveName("import", pending.scope()) == null) {
-                    ModuleInterface imported = loader.load(pending.name(), pending.ctx().getStart().getLine());
+                    ModuleInterface imported =
+                            loader.load(pending.name(), pending.ctx().getStart().getLine());
                     pass.modules.put(pending.ctx(), imported);
                     self.addDependency(imported);
                 }
             }
         }
         for (Occurrence occ : pass.occurrences) {
-            if ("import".equals(occ.name()) && TypeChecks.resolveName("import", occ.scope()) == null) {
+            if ("import".equals(occ.name())
+                    && TypeChecks.resolveName("import", occ.scope()) == null) {
                 if (occ.ctx().getParent() instanceof BabbleParser.CallContext call
                         && call.expression() == occ.ctx()
                         && (pass.modules.containsKey(call) || isStaticJavaPackageImport(call))) {
@@ -183,7 +210,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return scopes.element();
     }
 
-    private ScopeNode inScope(ScopeNode.Kind kind, ParserRuleContext owner, TypeNode type, Runnable body) {
+    private ScopeNode inScope(
+            ScopeNode.Kind kind, ParserRuleContext owner, TypeNode type, Runnable body) {
         ScopeNode scope = new ScopeNode(kind, scopes.peek(), owner, type);
         scopeNodes.put(owner, scope);
         scopes.push(scope);
@@ -251,35 +279,64 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
     }
 
-    private static TypeNode.Member addMember(Map<String, TypeNode.Member> members, Token name, int flags,
-                                             ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function) {
+    private static TypeNode.Member addMember(
+            Map<String, TypeNode.Member> members,
+            Token name,
+            int flags,
+            ParserRuleContext declaration,
+            BabbleParser.FunctionLiteralContext function) {
         return addMember(members, name, flags, declaration, function, false, List.of());
     }
 
-    private static TypeNode.Member addMember(Map<String, TypeNode.Member> members, Token name, int flags,
-                                             ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function,
-                                             boolean isOverload, List<BabbleParser.FunctionLiteralContext> overloadFunctions) {
+    private static TypeNode.Member addMember(
+            Map<String, TypeNode.Member> members,
+            Token name,
+            int flags,
+            ParserRuleContext declaration,
+            BabbleParser.FunctionLiteralContext function,
+            boolean isOverload,
+            List<BabbleParser.FunctionLiteralContext> overloadFunctions) {
         String text = name.getText();
         if (members.containsKey(text)) {
             throw error("Member already defined : " + text, name);
         }
-        TypeNode.Member member = new TypeNode.Member(text, flags, members.size(), declaration, function, isOverload, overloadFunctions);
+        TypeNode.Member member =
+                new TypeNode.Member(
+                        text,
+                        flags,
+                        members.size(),
+                        declaration,
+                        function,
+                        isOverload,
+                        overloadFunctions);
         members.put(text, member);
         return member;
     }
 
-    /** Returns the enclosing {@code def m = ...} when {@code fn} is its direct RHS or inside its {@code overload (...)}. */
-    private static BabbleParser.DefExpressionContext owningMemberDef(BabbleParser.FunctionLiteralContext fn) {
+    /**
+     * Returns the enclosing {@code def m = ...} when {@code fn} is its direct RHS or inside its
+     * {@code overload (...)}.
+     */
+    private static BabbleParser.DefExpressionContext owningMemberDef(
+            BabbleParser.FunctionLiteralContext fn) {
         ParserRuleContext cur = fn;
         while (cur.getParent() instanceof BabbleParser.OverloadExpressionContext ov) {
             cur = ov;
         }
-        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur && def.VAR() == null ? def : null;
+        return cur.getParent() instanceof BabbleParser.DefExpressionContext def
+                        && def.value == cur
+                        && def.VAR() == null
+                ? def
+                : null;
     }
 
-    /** Collects direct function literal operands of an {@code overload (...)}; returns true if every operand is a function literal. */
-    private static boolean collectOverloadFunctions(BabbleParser.OverloadExpressionContext ov,
-                                                    List<BabbleParser.FunctionLiteralContext> out) {
+    /**
+     * Collects direct function literal operands of an {@code overload (...)}; returns true if every
+     * operand is a function literal.
+     */
+    private static boolean collectOverloadFunctions(
+            BabbleParser.OverloadExpressionContext ov,
+            List<BabbleParser.FunctionLiteralContext> out) {
         boolean allLiterals = true;
         for (BabbleParser.ExpressionContext op : ov.expression()) {
             if (op instanceof BabbleParser.FunctionLiteralContext lit) {
@@ -300,7 +357,10 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return name != null ? name : anonymous;
     }
 
-    /** {@code lib/vec3.ba#Vec3}, then {@code lib/vec3.ba#Vec3#1} for a second type of that name, in a module. */
+    /**
+     * {@code lib/vec3.ba#Vec3}, then {@code lib/vec3.ba#Vec3#1} for a second type of that name, in
+     * a module.
+     */
     private String typeId(String name) {
         if (moduleKey == null) {
             return TypeNode.nextId();
@@ -309,7 +369,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return moduleKey + "#" + name + (seen > 0 ? "#" + seen : "");
     }
 
-    private TypeNode newType(ParserRuleContext ctx, ClassShape.Kind kind, String name, BabbleParser.TypeListContext typeList) {
+    private TypeNode newType(
+            ParserRuleContext ctx,
+            ClassShape.Kind kind,
+            String name,
+            BabbleParser.TypeListContext typeList) {
         List<BabbleParser.TypeContext> parentTypes = typeList != null ? typeList.type() : List.of();
         TypeNode type = new TypeNode(ctx, typeId(name), kind, name, current(), parentTypes);
         types.add(type);
@@ -325,7 +389,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         boolean staticMethod = false;
         if (owningMemberDef(ctx) != null) {
             ScopeNode scope = current();
-            if (scope.kind == ScopeNode.Kind.CLASS_BODY || scope.kind == ScopeNode.Kind.INTERFACE_BODY) {
+            if (scope.kind == ScopeNode.Kind.CLASS_BODY
+                    || scope.kind == ScopeNode.Kind.INTERFACE_BODY) {
                 memberOf = scope.type;
             } else if (scope.kind == ScopeNode.Kind.STATIC_BODY) {
                 memberOf = scope.type;
@@ -334,53 +399,77 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
         TypeNode owner = memberOf;
         boolean isStatic = staticMethod;
-        inReturnTarget(ReturnTarget.FUNCTION, () -> {
-            inScope(ScopeNode.Kind.FUNCTION, ctx, null, () -> {
-                current().memberOf = owner;
-                current().staticMethod = isStatic;
-                if (ctx.typeParameters() != null) {
-                    visit(ctx.typeParameters());
-                }
-                List<String> parameters = new ArrayList<>();
-                int required = 0;
-                int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.fnParameters());
-                int restIndex = -1;
-                boolean seenOptional = false;
-                List<BabbleParser.FnParamContext> fnParams = ctx.fnParameters().fnParam();
-                for (int i = 0; i < fnParams.size(); i++) {
-                    BabbleParser.FnParamContext parameter = fnParams.get(i);
-                    declare(parameter.ID().getSymbol(), parameter, false);
-                    parameters.add(parameter.ID().getText());
-                    if (parameter.type() != null) {
-                        visit(parameter.type());
-                    }
-                    if (parameter.rest != null) {
-                        if (restIndex >= 0 || ctx.fnParameters().kwSep != null) {
-                            throw error("More than one variadic parameter : " + parameter.ID().getText(), parameter.ID().getSymbol());
-                        }
-                        if (parameter.defaultValue != null) {
-                            throw error("Variadic parameter with a default : " + parameter.ID().getText(), parameter.ID().getSymbol());
-                        }
-                        restIndex = i;
-                    } else if (parameter.defaultValue != null) {
-                        if (i < kwStart) {
-                            seenOptional = true;
-                        }
-                        inReturnTarget(ReturnTarget.DEFAULT, () -> visit(parameter.defaultValue));
-                    } else {
-                        if (i < kwStart && seenOptional) {
-                            throw error("Required parameter after an optional one : " + parameter.ID().getText(), parameter.ID().getSymbol());
-                        }
-                        required++;
-                    }
-                }
-                if (ctx.type() != null) {
-                    visit(ctx.type());
-                }
-                analysis.calls().setParameters(ctx, parameters.toArray(new String[0]), required, kwStart, restIndex);
-                visitChildren(ctx.functionBlock);
-            });
-        });
+        inReturnTarget(
+                ReturnTarget.FUNCTION,
+                () -> {
+                    inScope(
+                            ScopeNode.Kind.FUNCTION,
+                            ctx,
+                            null,
+                            () -> {
+                                current().memberOf = owner;
+                                current().staticMethod = isStatic;
+                                if (ctx.typeParameters() != null) {
+                                    visit(ctx.typeParameters());
+                                }
+                                List<String> parameters = new ArrayList<>();
+                                int required = 0;
+                                int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.fnParameters());
+                                int restIndex = -1;
+                                boolean seenOptional = false;
+                                List<BabbleParser.FnParamContext> fnParams =
+                                        ctx.fnParameters().fnParam();
+                                for (int i = 0; i < fnParams.size(); i++) {
+                                    BabbleParser.FnParamContext parameter = fnParams.get(i);
+                                    declare(parameter.ID().getSymbol(), parameter, false);
+                                    parameters.add(parameter.ID().getText());
+                                    if (parameter.type() != null) {
+                                        visit(parameter.type());
+                                    }
+                                    if (parameter.rest != null) {
+                                        if (restIndex >= 0 || ctx.fnParameters().kwSep != null) {
+                                            throw error(
+                                                    "More than one variadic parameter : "
+                                                            + parameter.ID().getText(),
+                                                    parameter.ID().getSymbol());
+                                        }
+                                        if (parameter.defaultValue != null) {
+                                            throw error(
+                                                    "Variadic parameter with a default : "
+                                                            + parameter.ID().getText(),
+                                                    parameter.ID().getSymbol());
+                                        }
+                                        restIndex = i;
+                                    } else if (parameter.defaultValue != null) {
+                                        if (i < kwStart) {
+                                            seenOptional = true;
+                                        }
+                                        inReturnTarget(
+                                                ReturnTarget.DEFAULT,
+                                                () -> visit(parameter.defaultValue));
+                                    } else {
+                                        if (i < kwStart && seenOptional) {
+                                            throw error(
+                                                    "Required parameter after an optional one : "
+                                                            + parameter.ID().getText(),
+                                                    parameter.ID().getSymbol());
+                                        }
+                                        required++;
+                                    }
+                                }
+                                if (ctx.type() != null) {
+                                    visit(ctx.type());
+                                }
+                                analysis.calls()
+                                        .setParameters(
+                                                ctx,
+                                                parameters.toArray(new String[0]),
+                                                required,
+                                                kwStart,
+                                                restIndex);
+                                visitChildren(ctx.functionBlock);
+                            });
+                });
         return null;
     }
 
@@ -433,72 +522,116 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
         boolean value = ctx.RECORD() != null;
-        TypeNode type = newType(ctx, value ? ClassShape.Kind.VALUE_CLASS : ClassShape.Kind.CLASS, typeName(ctx, "class"), ctx.typeList());
+        TypeNode type =
+                newType(
+                        ctx,
+                        value ? ClassShape.Kind.VALUE_CLASS : ClassShape.Kind.CLASS,
+                        typeName(ctx, "class"),
+                        ctx.typeList());
         boolean isValue = value;
 
-        inReturnTarget(ReturnTarget.CLASS_BODY, () -> {
-            inScope(ScopeNode.Kind.CLASS_BODY, ctx, type, () -> {
-                Set<String> parameterNames = new HashSet<>();
-                if (ctx.classParameters() != null) {
-                    int kwStart = ScopeAnalysis.keywordOnlyStart(ctx.classParameters());
-                    type.keywordOnlyStart = kwStart;
-                    boolean seenOptional = false;
-                    List<BabbleParser.ClassParamContext> classParams = ctx.classParameters().classParam();
-                    for (int i = 0; i < classParams.size(); i++) {
-                        BabbleParser.ClassParamContext parameter = classParams.get(i);
-                        Token name = parameter.ID().getSymbol();
-                        if (!parameterNames.add(name.getText())) {
-                            throw error("Name already defined : " + name.getText(), name);
-                        }
-                        boolean isVar = parameter.VAR() != null;
-                        if (isValue && isVar) {
-                            throw error("Value class members cannot be var : " + name.getText(), parameter.VAR().getSymbol());
-                        }
-                        boolean member = parameter.DEF() != null || isVar || isValue;
-                        if (parameter.PRIVATE() != null && !member) {
-                            throw error("private only applies to members", parameter.PRIVATE().getSymbol());
-                        }
-                        if (isValue && parameter.DEF() != null) {
-                            analysis.warn("def is redundant on a value class parameter : " + name.getText(), name.getLine());
-                        }
-                        if (parameter.type() != null) {
-                            visit(parameter.type());
-                        }
-                        type.parameters.add(name.getText());
-                        if (member) {
-                            int flags = (parameter.PRIVATE() != null ? ClassShape.PRIVATE : 0)
-                                    | (isVar ? ClassShape.MUTABLE : 0);
-                            type.parameterMembers.add(addMember(type.members, name, flags, parameter, null).index);
-                        } else {
-                            type.parameterMembers.add(-1);
-                            declare(name, parameter, false);
-                        }
-                        if (parameter.defaultValue != null) {
-                            if (i < kwStart) {
-                                seenOptional = true;
-                            }
-                            visit(parameter.defaultValue);
-                        } else {
-                            if (i < kwStart && seenOptional) {
-                                throw error("Required parameter after an optional one : " + name.getText(), name);
-                            }
-                            type.requiredParameters++;
-                        }
+        inReturnTarget(
+                ReturnTarget.CLASS_BODY,
+                () -> {
+                    inScope(
+                            ScopeNode.Kind.CLASS_BODY,
+                            ctx,
+                            type,
+                            () -> {
+                                Set<String> parameterNames = new HashSet<>();
+                                if (ctx.classParameters() != null) {
+                                    int kwStart =
+                                            ScopeAnalysis.keywordOnlyStart(ctx.classParameters());
+                                    type.keywordOnlyStart = kwStart;
+                                    boolean seenOptional = false;
+                                    List<BabbleParser.ClassParamContext> classParams =
+                                            ctx.classParameters().classParam();
+                                    for (int i = 0; i < classParams.size(); i++) {
+                                        BabbleParser.ClassParamContext parameter =
+                                                classParams.get(i);
+                                        Token name = parameter.ID().getSymbol();
+                                        if (!parameterNames.add(name.getText())) {
+                                            throw error(
+                                                    "Name already defined : " + name.getText(),
+                                                    name);
+                                        }
+                                        boolean isVar = parameter.VAR() != null;
+                                        if (isValue && isVar) {
+                                            throw error(
+                                                    "Value class members cannot be var : "
+                                                            + name.getText(),
+                                                    parameter.VAR().getSymbol());
+                                        }
+                                        boolean member =
+                                                parameter.DEF() != null || isVar || isValue;
+                                        if (parameter.PRIVATE() != null && !member) {
+                                            throw error(
+                                                    "private only applies to members",
+                                                    parameter.PRIVATE().getSymbol());
+                                        }
+                                        if (isValue && parameter.DEF() != null) {
+                                            analysis.warn(
+                                                    "def is redundant on a value class parameter : "
+                                                            + name.getText(),
+                                                    name.getLine());
+                                        }
+                                        if (parameter.type() != null) {
+                                            visit(parameter.type());
+                                        }
+                                        type.parameters.add(name.getText());
+                                        if (member) {
+                                            int flags =
+                                                    (parameter.PRIVATE() != null
+                                                                    ? ClassShape.PRIVATE
+                                                                    : 0)
+                                                            | (isVar ? ClassShape.MUTABLE : 0);
+                                            type.parameterMembers.add(
+                                                    addMember(
+                                                                    type.members,
+                                                                    name,
+                                                                    flags,
+                                                                    parameter,
+                                                                    null)
+                                                            .index);
+                                        } else {
+                                            type.parameterMembers.add(-1);
+                                            declare(name, parameter, false);
+                                        }
+                                        if (parameter.defaultValue != null) {
+                                            if (i < kwStart) {
+                                                seenOptional = true;
+                                            }
+                                            visit(parameter.defaultValue);
+                                        } else {
+                                            if (i < kwStart && seenOptional) {
+                                                throw error(
+                                                        "Required parameter after an optional one : "
+                                                                + name.getText(),
+                                                        name);
+                                            }
+                                            type.requiredParameters++;
+                                        }
+                                    }
+                                }
+                                visitChildren(ctx.classBlock);
+                            });
+                    if (ctx.staticBlock != null) {
+                        inScope(
+                                ScopeNode.Kind.STATIC_BODY,
+                                ctx.staticBlock,
+                                type,
+                                () -> visitChildren(ctx.staticBlock));
                     }
-                }
-                visitChildren(ctx.classBlock);
-            });
-            if (ctx.staticBlock != null) {
-                inScope(ScopeNode.Kind.STATIC_BODY, ctx.staticBlock, type, () -> visitChildren(ctx.staticBlock));
-            }
-        });
+                });
 
         for (TypeNode.Member member : type.members.values()) {
             if (isValue && (member.name.equals("equals") || member.name.equals("hashCode"))) {
                 throw error(member.name + " is generated for value classes", member.declaration);
             }
             if (!isValue && member.name.equals("equals")) {
-                analysis.warn("equals has no effect on == : use a value class", member.declaration.getStart().getLine());
+                analysis.warn(
+                        "equals has no effect on == : use a value class",
+                        member.declaration.getStart().getLine());
             }
         }
         return null;
@@ -507,33 +640,52 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     @Override
     public Void visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         TypeNode type = newType(ctx, ClassShape.Kind.OBJECT, "object", ctx.typeList());
-        inReturnTarget(ReturnTarget.CLASS_BODY,
-                () -> inScope(ScopeNode.Kind.CLASS_BODY, ctx, type, () -> visitChildren(ctx.createBlock)));
+        inReturnTarget(
+                ReturnTarget.CLASS_BODY,
+                () ->
+                        inScope(
+                                ScopeNode.Kind.CLASS_BODY,
+                                ctx,
+                                type,
+                                () -> visitChildren(ctx.createBlock)));
         return null;
     }
 
     @Override
     public Void visitInterfaceExpression(BabbleParser.InterfaceExpressionContext ctx) {
-        TypeNode type = newType(ctx, ClassShape.Kind.INTERFACE, typeName(ctx, "interface"), ctx.typeList());
-        inReturnTarget(ReturnTarget.CLASS_BODY, () -> {
-            inScope(ScopeNode.Kind.INTERFACE_BODY, ctx, type, () -> {
-                for (BabbleParser.ExpressionContext statement : ctx.interfaceBlock.expression()) {
-                    if (!(statement instanceof BabbleParser.DefExpressionContext)) {
-                        throw error("An interface can only declare members", statement);
+        TypeNode type =
+                newType(ctx, ClassShape.Kind.INTERFACE, typeName(ctx, "interface"), ctx.typeList());
+        inReturnTarget(
+                ReturnTarget.CLASS_BODY,
+                () -> {
+                    inScope(
+                            ScopeNode.Kind.INTERFACE_BODY,
+                            ctx,
+                            type,
+                            () -> {
+                                for (BabbleParser.ExpressionContext statement :
+                                        ctx.interfaceBlock.expression()) {
+                                    if (!(statement instanceof BabbleParser.DefExpressionContext)) {
+                                        throw error(
+                                                "An interface can only declare members", statement);
+                                    }
+                                    visit(statement);
+                                }
+                            });
+                    if (ctx.staticBlock != null) {
+                        inScope(
+                                ScopeNode.Kind.STATIC_BODY,
+                                ctx.staticBlock,
+                                type,
+                                () -> visitChildren(ctx.staticBlock));
                     }
-                    visit(statement);
-                }
-            });
-            if (ctx.staticBlock != null) {
-                inScope(ScopeNode.Kind.STATIC_BODY, ctx.staticBlock, type, () -> visitChildren(ctx.staticBlock));
-            }
-        });
+                });
         return null;
     }
 
     /**
-     * Only reached for blocks that open a scope of their own : function, class,
-     * object and interface bodies are visited through their owner.
+     * Only reached for blocks that open a scope of their own : function, class, object and
+     * interface bodies are visited through their owner.
      */
     @Override
     public Void visitBlock(BabbleParser.BlockContext ctx) {
@@ -548,13 +700,16 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             throw error("Axiom declaration in a while test", ctx);
         }
         if (ctx.EXPORT() != null && scope.kind != ScopeNode.Kind.FILE) {
-            throw error("export only applies to the top-level definitions of a file", ctx.EXPORT().getSymbol());
+            throw error(
+                    "export only applies to the top-level definitions of a file",
+                    ctx.EXPORT().getSymbol());
         }
         if (AxiomData.isBabbleNameAxiom(ctx)) {
             scope.babbleAxioms.put(AxiomData.babbleName(ctx), ctx);
         } else if (AxiomData.isWasmImportAxiom(ctx)) {
             scope.wasmAxioms
-                    .computeIfAbsent(AxiomData.wasmImportModule(ctx), k -> new java.util.LinkedHashMap<>())
+                    .computeIfAbsent(
+                            AxiomData.wasmImportModule(ctx), k -> new java.util.LinkedHashMap<>())
                     .put(AxiomData.wasmImportName(ctx), ctx);
         }
         axiomExpressions.add(new PendingAxiomExpr(ctx, scope));
@@ -564,12 +719,18 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     // ---------------------------------------------------------------- definitions
 
     /** {@code export def} : only for the top-level {@code def} names of the file itself. */
-    private void export(org.antlr.v4.runtime.tree.TerminalNode export, Token name, BabbleParser.DefExpressionContext ctx) {
+    private void export(
+            org.antlr.v4.runtime.tree.TerminalNode export,
+            Token name,
+            BabbleParser.DefExpressionContext ctx) {
         if (export == null) {
             return;
         }
         if (current().kind != ScopeNode.Kind.FILE) {
-            throw error("export only applies to the top-level definitions of a file : " + name.getText(), export.getSymbol());
+            throw error(
+                    "export only applies to the top-level definitions of a file : "
+                            + name.getText(),
+                    export.getSymbol());
         }
         if (ctx != null && ctx.VAR() != null) {
             throw error("Cannot export a var : " + name.getText(), ctx.VAR().getSymbol());
@@ -587,13 +748,19 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         export(ctx.EXPORT(), ctx.name, ctx);
         boolean isPrivate = ctx.PRIVATE() != null;
         if (isVar && ctx.typeParameters() != null) {
-            throw error("Type parameters only apply to def : " + ctx.name.getText(), ctx.typeParameters());
+            throw error(
+                    "Type parameters only apply to def : " + ctx.name.getText(),
+                    ctx.typeParameters());
         }
         if (isVar && ctx.value instanceof BabbleParser.TypeAliasExpressionContext) {
-            throw error("Type alias must be declared with def : " + ctx.name.getText(), ctx.VAR().getSymbol());
+            throw error(
+                    "Type alias must be declared with def : " + ctx.name.getText(),
+                    ctx.VAR().getSymbol());
         }
-        BabbleParser.FunctionLiteralContext function = ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
-        BabbleParser.OverloadExpressionContext overload = ctx.value instanceof BabbleParser.OverloadExpressionContext ov ? ov : null;
+        BabbleParser.FunctionLiteralContext function =
+                ctx.value instanceof BabbleParser.FunctionLiteralContext literal ? literal : null;
+        BabbleParser.OverloadExpressionContext overload =
+                ctx.value instanceof BabbleParser.OverloadExpressionContext ov ? ov : null;
         List<BabbleParser.FunctionLiteralContext> overloadFns = List.of();
         boolean allOverloadLiterals = false;
         if (overload != null) {
@@ -601,70 +768,135 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             allOverloadLiterals = collectOverloadFunctions(overload, collected);
             overloadFns = collected;
         }
-        // BIP034-D5 : `var f = fn ...` in a class/object/static body is a mutable field, not a method.
+        // BIP034-D5 : `var f = fn ...` in a class/object/static body is a mutable field, not a
+        // method.
         boolean isMethod = !isVar && (function != null || overload != null);
-        int flags = (isMethod ? ClassShape.METHOD : 0)
-                | (isPrivate ? ClassShape.PRIVATE : 0)
-                | (isVar ? ClassShape.MUTABLE : 0);
+        int flags =
+                (isMethod ? ClassShape.METHOD : 0)
+                        | (isPrivate ? ClassShape.PRIVATE : 0)
+                        | (isVar ? ClassShape.MUTABLE : 0);
         BabbleParser.FunctionLiteralContext memberFn = isMethod ? function : null;
         boolean memberOverload = isMethod && overload != null;
-        List<BabbleParser.FunctionLiteralContext> memberOverloadFns = isMethod ? overloadFns : List.of();
+        List<BabbleParser.FunctionLiteralContext> memberOverloadFns =
+                isMethod ? overloadFns : List.of();
 
         if (ctx.typeParameters() != null) {
             visit(ctx.typeParameters());
             if (function != null && function.typeParameters() != null) {
-                throw error("Type parameters declared twice : " + ctx.name.getText(), function.typeParameters());
+                throw error(
+                        "Type parameters declared twice : " + ctx.name.getText(),
+                        function.typeParameters());
             }
             if (scope.kind != ScopeNode.Kind.INTERFACE_BODY
                     && !(ctx.value instanceof BabbleParser.FunctionLiteralContext
-                    || ctx.value instanceof BabbleParser.ClassExpressionContext
-                    || ctx.value instanceof BabbleParser.InterfaceExpressionContext
-                    || ctx.value instanceof BabbleParser.TypeAliasExpressionContext)) {
-                throw error("Type parameters only apply to functions, classes, interfaces, and type aliases : " + ctx.name.getText(), ctx.typeParameters());
+                            || ctx.value instanceof BabbleParser.ClassExpressionContext
+                            || ctx.value instanceof BabbleParser.InterfaceExpressionContext
+                            || ctx.value instanceof BabbleParser.TypeAliasExpressionContext)) {
+                throw error(
+                        "Type parameters only apply to functions, classes, interfaces, and type aliases : "
+                                + ctx.name.getText(),
+                        ctx.typeParameters());
             }
         }
 
         switch (scope.kind) {
             case CLASS_BODY -> {
                 if (isVar && scope.type.kind == ClassShape.Kind.VALUE_CLASS) {
-                    throw error("Value class members cannot be var : " + ctx.name.getText(), ctx.VAR().getSymbol());
+                    throw error(
+                            "Value class members cannot be var : " + ctx.name.getText(),
+                            ctx.VAR().getSymbol());
                 }
                 if (ctx.value == null) {
-                    throw error("Declaration requires an initializer : " + ctx.name.getText(), ctx.name);
+                    throw error(
+                            "Declaration requires an initializer : " + ctx.name.getText(),
+                            ctx.name);
                 }
-                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, memberFn, memberOverload, memberOverloadFns);
-                analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(LoweringTargets.DefKind.MEMBER, member.index));
+                TypeNode.Member member =
+                        addMember(
+                                scope.type.members,
+                                ctx.name,
+                                flags,
+                                ctx,
+                                memberFn,
+                                memberOverload,
+                                memberOverloadFns);
+                analysis.lowering()
+                        .setDefTarget(
+                                ctx,
+                                new LoweringTargets.DefTarget(
+                                        LoweringTargets.DefKind.MEMBER, member.index));
             }
             case STATIC_BODY -> {
                 if (isVar && !isPrivate) {
-                    throw error("Public static members cannot be var : " + ctx.name.getText(), ctx.VAR().getSymbol());
+                    throw error(
+                            "Public static members cannot be var : " + ctx.name.getText(),
+                            ctx.VAR().getSymbol());
                 }
                 if (ctx.value == null) {
-                    throw error("Declaration requires an initializer : " + ctx.name.getText(), ctx.name);
+                    throw error(
+                            "Declaration requires an initializer : " + ctx.name.getText(),
+                            ctx.name);
                 }
-                TypeNode.Member member = addMember(scope.type.statics, ctx.name, flags, ctx, memberFn, memberOverload, memberOverloadFns);
-                analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(LoweringTargets.DefKind.STATIC, member.index));
+                TypeNode.Member member =
+                        addMember(
+                                scope.type.statics,
+                                ctx.name,
+                                flags,
+                                ctx,
+                                memberFn,
+                                memberOverload,
+                                memberOverloadFns);
+                analysis.lowering()
+                        .setDefTarget(
+                                ctx,
+                                new LoweringTargets.DefTarget(
+                                        LoweringTargets.DefKind.STATIC, member.index));
             }
             case INTERFACE_BODY -> {
                 if (isVar) {
-                    throw error("Interface members cannot be var : " + ctx.name.getText(), ctx.VAR().getSymbol());
+                    throw error(
+                            "Interface members cannot be var : " + ctx.name.getText(),
+                            ctx.VAR().getSymbol());
                 }
                 if (isPrivate) {
-                    throw error("Interface members cannot be private : " + ctx.name.getText(), ctx.PRIVATE().getSymbol());
+                    throw error(
+                            "Interface members cannot be private : " + ctx.name.getText(),
+                            ctx.PRIVATE().getSymbol());
                 }
-                if (ctx.value != null && function == null && !(overload != null && allOverloadLiterals)) {
-                    throw error("An interface default must be a function literal : " + ctx.name.getText(), ctx.name);
+                if (ctx.value != null
+                        && function == null
+                        && !(overload != null && allOverloadLiterals)) {
+                    throw error(
+                            "An interface default must be a function literal : "
+                                    + ctx.name.getText(),
+                            ctx.name);
                 }
-                TypeNode.Member member = addMember(scope.type.members, ctx.name, flags, ctx, memberFn, memberOverload, memberOverloadFns);
-                analysis.lowering().setDefTarget(ctx, new LoweringTargets.DefTarget(
-                        (function != null || overload != null) ? LoweringTargets.DefKind.DEFAULT : LoweringTargets.DefKind.REQUIRED, member.index));
+                TypeNode.Member member =
+                        addMember(
+                                scope.type.members,
+                                ctx.name,
+                                flags,
+                                ctx,
+                                memberFn,
+                                memberOverload,
+                                memberOverloadFns);
+                analysis.lowering()
+                        .setDefTarget(
+                                ctx,
+                                new LoweringTargets.DefTarget(
+                                        (function != null || overload != null)
+                                                ? LoweringTargets.DefKind.DEFAULT
+                                                : LoweringTargets.DefKind.REQUIRED,
+                                        member.index));
             }
             default -> {
                 if (isPrivate) {
                     throw error("private only applies to members", ctx.PRIVATE().getSymbol());
                 }
                 if (ctx.value == null) {
-                    throw error("Declaration requires an initializer : " + ctx.name.getText(), ctx.name);
+                    throw error(
+                            "Declaration requires an initializer : " + ctx.name.getText(),
+                            ctx.name);
                 }
                 declare(ctx.name, ctx, true);
             }
@@ -697,10 +929,15 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             visit(ctx.type());
         }
         visit(ctx.iterable);
-        inLoop(() -> inScope(ScopeNode.Kind.BLOCK, ctx.forBlock, null, () -> {
-            declare(ctx.name, ctx, false);
-            visitChildren(ctx.forBlock);
-        }));
+        inLoop(() ->
+                inScope(
+                        ScopeNode.Kind.BLOCK,
+                        ctx.forBlock,
+                        null,
+                        () -> {
+                            declare(ctx.name, ctx, false);
+                            visitChildren(ctx.forBlock);
+                        }));
         return null;
     }
 
@@ -711,12 +948,16 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             if (clause.type() != null) {
                 visit(clause.type());
             }
-            inScope(ScopeNode.Kind.BLOCK, clause.catchBlock, null, () -> {
-                if (clause.name != null) {
-                    declare(clause.name, clause, false);
-                }
-                visitChildren(clause.catchBlock);
-            });
+            inScope(
+                    ScopeNode.Kind.BLOCK,
+                    clause.catchBlock,
+                    null,
+                    () -> {
+                        if (clause.name != null) {
+                            declare(clause.name, clause, false);
+                        }
+                        visitChildren(clause.catchBlock);
+                    });
         }
         if (ctx.finallyBlock != null) {
             boolean outerInFinally = inFinally;
@@ -733,8 +974,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return null;
     }
 
-    private record PatternBinding(Token name, ParserRuleContext decl) {
-    }
+    private record PatternBinding(Token name, ParserRuleContext decl) {}
 
     @Override
     public Void visitMatchExpression(BabbleParser.MatchExpressionContext ctx) {
@@ -742,26 +982,36 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         for (BabbleParser.CaseClauseContext clause : ctx.caseClause()) {
             List<PatternBinding> bindings = new ArrayList<>();
             collectPattern(clause.pattern(), true, clause.guard != null, false, bindings);
-            inScope(ScopeNode.Kind.BLOCK, clause, null, () -> {
-                for (PatternBinding b : bindings) {
-                    if (current().names.containsKey(b.name().getText())) {
-                        throw error("Duplicate pattern variable : " + b.name().getText(), b.name());
-                    }
-                    declare(b.name(), b.decl(), false);
-                }
-                if (clause.guard != null) {
-                    visit(clause.guard);
-                }
-                visit(clause.armBlock);
-            });
+            inScope(
+                    ScopeNode.Kind.BLOCK,
+                    clause,
+                    null,
+                    () -> {
+                        for (PatternBinding b : bindings) {
+                            if (current().names.containsKey(b.name().getText())) {
+                                throw error(
+                                        "Duplicate pattern variable : " + b.name().getText(),
+                                        b.name());
+                            }
+                            declare(b.name(), b.decl(), false);
+                        }
+                        if (clause.guard != null) {
+                            visit(clause.guard);
+                        }
+                        visit(clause.armBlock);
+                    });
         }
         if (ctx.elseClause() != null) {
             BabbleParser.ElseClauseContext ec = ctx.elseClause();
             if (ec.name != null) {
-                inScope(ScopeNode.Kind.BLOCK, ec, null, () -> {
-                    declare(ec.name, ec, false);
-                    visit(ec.elseBlock);
-                });
+                inScope(
+                        ScopeNode.Kind.BLOCK,
+                        ec,
+                        null,
+                        () -> {
+                            declare(ec.name, ec, false);
+                            visit(ec.elseBlock);
+                        });
             } else {
                 visit(ec.elseBlock);
             }
@@ -769,8 +1019,12 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return null;
     }
 
-    private void collectPattern(BabbleParser.PatternContext pat, boolean topLevel, boolean hasGuard,
-                                boolean inOr, List<PatternBinding> bindings) {
+    private void collectPattern(
+            BabbleParser.PatternContext pat,
+            boolean topLevel,
+            boolean hasGuard,
+            boolean inOr,
+            List<PatternBinding> bindings) {
         List<BabbleParser.AtomicPatternContext> atoms = pat.atomicPattern();
         boolean isOr = inOr || atoms.size() > 1;
         for (BabbleParser.AtomicPatternContext atom : atoms) {
@@ -778,16 +1032,25 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
     }
 
-    private void collectAtomicPattern(BabbleParser.AtomicPatternContext atom, boolean topLevel, boolean hasGuard,
-                                      boolean inOr, List<PatternBinding> bindings) {
+    private void collectAtomicPattern(
+            BabbleParser.AtomicPatternContext atom,
+            boolean topLevel,
+            boolean hasGuard,
+            boolean inOr,
+            List<PatternBinding> bindings) {
         switch (atom) {
             case BabbleParser.BindingPatternContext bp -> {
                 if (inOr) {
-                    throw error("Pattern binding not allowed in OR-pattern : " + bp.name.getText(), bp.name);
+                    throw error(
+                            "Pattern binding not allowed in OR-pattern : " + bp.name.getText(),
+                            bp.name);
                 }
                 if (topLevel && bp.patternBindingType() == null && !hasGuard) {
-                    throw error("Unconditional binding in case : use else def " + bp.name.getText()
-                            + " then (...) or add a type or guard", bp);
+                    throw error(
+                            "Unconditional binding in case : use else def "
+                                    + bp.name.getText()
+                                    + " then (...) or add a type or guard",
+                            bp);
                 }
                 if (bp.patternBindingType() != null) {
                     visit(bp.patternBindingType());
@@ -814,19 +1077,21 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             case BabbleParser.ValuePatternContext vp -> {
                 if (isWildcardExpr(vp.expr)) {
                     if (topLevel) {
-                        throw error("Wildcard _ is not allowed as a top-level case : use else (...)", vp);
+                        throw error(
+                                "Wildcard _ is not allowed as a top-level case : use else (...)",
+                                vp);
                     }
                     return;
                 }
                 checkValuePatternExpression(vp.expr);
                 visit(vp.expr);
             }
-            default -> {
-            }
+            default -> {}
         }
     }
 
-    private void collectPatternArgs(BabbleParser.PatternArgsContext args, boolean inOr, List<PatternBinding> bindings) {
+    private void collectPatternArgs(
+            BabbleParser.PatternArgsContext args, boolean inOr, List<PatternBinding> bindings) {
         for (BabbleParser.PatternArgContext arg : args.patternArg()) {
             collectPattern(arg.pattern(), false, false, inOr, bindings);
         }
@@ -848,7 +1113,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private static void checkValuePatternExpression(BabbleParser.ExpressionContext expr) {
         String form = disallowedValuePatternForm(expr);
         if (form != null) {
-            throw error("Not a value pattern : " + form + ". Parenthesize it or bind it with def first", expr);
+            throw error(
+                    "Not a value pattern : " + form + ". Parenthesize it or bind it with def first",
+                    expr);
         }
     }
 
@@ -865,7 +1132,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             case BabbleParser.ContinueExpressionContext ignored -> "continue";
             case BabbleParser.ThrowExpressionContext ignored -> "throw";
             case BabbleParser.FunctionLiteralContext ignored -> "fn";
-            case BabbleParser.ClassExpressionContext cls -> cls.RECORD() != null ? "record" : "class";
+            case BabbleParser.ClassExpressionContext cls ->
+                    cls.RECORD() != null ? "record" : "class";
             case BabbleParser.InterfaceExpressionContext ignored -> "interface";
             case BabbleParser.ObjectExpressionContext ignored -> "object";
             case BabbleParser.TypeAliasExpressionContext ignored -> "type";
@@ -917,10 +1185,14 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     // ---------------------------------------------------------------- this, super, members
 
-    /** The scope that gives {@code this} its meaning : a class, object, interface or static body. */
+    /**
+     * The scope that gives {@code this} its meaning : a class, object, interface or static body.
+     */
     static ScopeNode thisScope(ScopeNode scope) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
-            if (s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY || s.kind == ScopeNode.Kind.STATIC_BODY) {
+            if (s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.INTERFACE_BODY
+                    || s.kind == ScopeNode.Kind.STATIC_BODY) {
                 return s;
             }
         }
@@ -941,7 +1213,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         }
         // A value class under construction must not let "this" escape : outside of its
         // methods, it may only read fields that are already defined.
-        for (ScopeNode s = current(); s != null && s.kind != ScopeNode.Kind.FUNCTION; s = s.parent) {
+        for (ScopeNode s = current();
+                s != null && s.kind != ScopeNode.Kind.FUNCTION;
+                s = s.parent) {
             if (s.kind == ScopeNode.Kind.CLASS_BODY) {
                 if (s.type.kind == ClassShape.Kind.VALUE_CLASS && !isFieldRead(ctx)) {
                     throw error("this cannot escape a value class under construction", ctx);
@@ -959,14 +1233,17 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     private static boolean isFieldRead(BabbleParser.ThisExpressionContext ctx) {
         return ctx.getParent() instanceof BabbleParser.SelectorContext selector
                 && selector.expression() == ctx
-                && !(selector.getParent() instanceof BabbleParser.CallContext call && call.expression() == selector);
+                && !(selector.getParent() instanceof BabbleParser.CallContext call
+                        && call.expression() == selector);
     }
 
     @Override
     public Void visitSuperExpression(BabbleParser.SuperExpressionContext ctx) {
-        if (!(ctx.getParent() instanceof BabbleParser.SelectorContext selector && selector.expression() == ctx
+        if (!(ctx.getParent() instanceof BabbleParser.SelectorContext selector
+                && selector.expression() == ctx
                 && selector.safe == null
-                && selector.getParent() instanceof BabbleParser.CallContext call && call.expression() == selector)) {
+                && selector.getParent() instanceof BabbleParser.CallContext call
+                && call.expression() == selector)) {
             throw error("super must be called directly", ctx);
         }
         // The outermost function literal before the type body must be one of its methods.
@@ -975,8 +1252,12 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         for (ScopeNode s = current(); s != null; s = s.parent) {
             if (s.kind == ScopeNode.Kind.FUNCTION) {
                 function = s;
-            } else if (s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY) {
-                if (function != null && function.parent == s && function.memberOf == s.type && !function.staticMethod) {
+            } else if (s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.INTERFACE_BODY) {
+                if (function != null
+                        && function.parent == s
+                        && function.memberOf == s.type
+                        && !function.staticMethod) {
                     owner = s.type;
                 }
                 break;
@@ -1004,13 +1285,17 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return moduleKey;
     }
 
-    /** The file a call imports statically : {@code import("….ba")} with a string literal, or null. */
+    /**
+     * The file a call imports statically : {@code import("….ba")} with a string literal, or null.
+     */
     static String staticImport(BabbleParser.CallContext call) {
-        if (call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+        if (call.expression() instanceof BabbleParser.SelectorContext callee
+                && callee.expression() == null
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
                 && ScopeAnalysis.callParamName(call.callParameters().callParameter(0)) == null
-                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
+                && call.callParameters().callParameter(0).expression()
+                        instanceof BabbleParser.StringContext string) {
             String name = org.babblelang.parser.StringLiterals.decode(string);
             return name.endsWith(".ba") ? name : null;
         }
@@ -1018,11 +1303,13 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     }
 
     private static boolean isStaticJavaPackageImport(BabbleParser.CallContext call) {
-        if (call.expression() instanceof BabbleParser.SelectorContext callee && callee.expression() == null
+        if (call.expression() instanceof BabbleParser.SelectorContext callee
+                && callee.expression() == null
                 && callee.ID().getText().equals("import")
                 && call.callParameters().callParameter().size() == 1
                 && ScopeAnalysis.callParamName(call.callParameters().callParameter(0)) == null
-                && call.callParameters().callParameter(0).expression() instanceof BabbleParser.StringContext string) {
+                && call.callParameters().callParameter(0).expression()
+                        instanceof BabbleParser.StringContext string) {
             String name = org.babblelang.parser.StringLiterals.decode(string);
             return !name.endsWith(".ba");
         }
@@ -1036,7 +1323,9 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             occurrences.add(new Occurrence(ctx, ctx.ID().getText(), current()));
         }
         if (receiver != null && !(receiver instanceof BabbleParser.SuperExpressionContext)) {
-            accesses.add(new PendingAccess(ctx, receiver, ScopeAnalysis.selectorName(ctx), false, current()));
+            accesses.add(
+                    new PendingAccess(
+                            ctx, receiver, ScopeAnalysis.selectorName(ctx), false, current()));
         }
         return visitChildren(ctx);
     }

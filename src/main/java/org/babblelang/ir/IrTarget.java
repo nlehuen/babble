@@ -6,20 +6,18 @@ import java.util.Objects;
  * Target slice selector for canonical IR dumping ({@code BIP029-I1}, {@code BIP029-D7}).
  *
  * <p>Syntax used in {@code .batest.md} headers and CLI tools:
+ *
  * <ul>
- *   <li>{@code fn=<name>} — named non-method function</li>
- *   <li>{@code fn=<Type>.<method>} — method owned by a class, record, object, or interface</li>
- *   <li>{@code class=<name>} / {@code record=<name>} / {@code interface=<name>} — type declaration and owned methods</li>
- *   <li>{@code top-level} — script top-level statements</li>
- *   <li>{@code module} — entire normalized module</li>
+ *   <li>{@code fn=<name>} — named non-method function
+ *   <li>{@code fn=<Type>.<method>} — method owned by a class, record, object, or interface
+ *   <li>{@code class=<name>} / {@code record=<name>} / {@code interface=<name>} — type declaration
+ *       and owned methods
+ *   <li>{@code top-level} — script top-level statements
+ *   <li>{@code module} — entire normalized module
  * </ul>
  */
-public sealed interface IrTarget permits
-        IrTarget.Fn,
-        IrTarget.Method,
-        IrTarget.TypeDef,
-        IrTarget.TopLevel,
-        IrTarget.Module {
+public sealed interface IrTarget
+        permits IrTarget.Fn, IrTarget.Method, IrTarget.TypeDef, IrTarget.TopLevel, IrTarget.Module {
 
     enum TypeKind {
         CLASS("class"),
@@ -56,7 +54,8 @@ public sealed interface IrTarget permits
             Objects.requireNonNull(ownerName, "ownerName");
             Objects.requireNonNull(methodName, "methodName");
             if (ownerName.isEmpty() || methodName.isEmpty()) {
-                throw new IllegalArgumentException("Method target requires non-empty owner and method names");
+                throw new IllegalArgumentException(
+                        "Method target requires non-empty owner and method names");
             }
         }
 
@@ -97,7 +96,10 @@ public sealed interface IrTarget permits
 
     String format();
 
-    /** Parses a target token such as {@code fn=norm}, {@code fn=Vec3.dot}, {@code record=Vec3}, {@code top-level}, or {@code module}. */
+    /**
+     * Parses a target token such as {@code fn=norm}, {@code fn=Vec3.dot}, {@code record=Vec3},
+     * {@code top-level}, or {@code module}.
+     */
     static IrTarget parse(String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("Missing IR target");
@@ -110,8 +112,10 @@ public sealed interface IrTarget permits
         }
         int eq = token.indexOf('=');
         if (eq <= 0 || eq == token.length() - 1) {
-            throw new IllegalArgumentException("Invalid IR target : " + token
-                    + " (expected fn=<name>, fn=<Type>.<method>, class=<name>, record=<name>, interface=<name>, top-level, or module)");
+            throw new IllegalArgumentException(
+                    "Invalid IR target : "
+                            + token
+                            + " (expected fn=<name>, fn=<Type>.<method>, class=<name>, record=<name>, interface=<name>, top-level, or module)");
         }
         String key = token.substring(0, eq);
         String val = token.substring(eq + 1);

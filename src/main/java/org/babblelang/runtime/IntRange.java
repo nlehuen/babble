@@ -4,8 +4,8 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 
 /**
- * Immutable discrete range record backing {@code range of byte}, {@code range of short},
- * and {@code range of int} ({@code BIP031-D6}).
+ * Immutable discrete range record backing {@code range of byte}, {@code range of short}, and {@code
+ * range of int} ({@code BIP031-D6}).
  */
 public record IntRange<T extends Number>(
         int startInt, int endInt, boolean inclusive, int step, boolean descending, byte elemKind)

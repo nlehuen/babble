@@ -8,8 +8,7 @@ import java.util.Set;
  * ({@code BIP025-I0}, {@code BIP025-D2}, {@code BIP029} {@code wat} blocks).
  */
 public final class WatPrinter {
-    private WatPrinter() {
-    }
+    private WatPrinter() {}
 
     public static String print(WasmModule module) {
         StringBuilder sb = new StringBuilder(2048);
@@ -38,15 +37,24 @@ public final class WatPrinter {
 
         // Imports
         for (WasmModule.FuncImport imp : module.funcImports()) {
-            sb.append("  (import \"").append(escape(imp.module())).append("\" \"")
-                    .append(escape(imp.field())).append("\" (func ").append(funcLabel(module, imp.funcIndex()))
-                    .append(" (type ").append(typeLabel(module, imp.typeIndex())).append(")))\n");
+            sb.append("  (import \"")
+                    .append(escape(imp.module()))
+                    .append("\" \"")
+                    .append(escape(imp.field()))
+                    .append("\" (func ")
+                    .append(funcLabel(module, imp.funcIndex()))
+                    .append(" (type ")
+                    .append(typeLabel(module, imp.typeIndex()))
+                    .append(")))\n");
         }
 
         // Tags
         for (WasmModule.TagDef tag : module.tags()) {
-            sb.append("  (tag ").append(tagLabel(module, tag.tagIndex()))
-                    .append(" (type ").append(typeLabel(module, tag.typeIndex())).append("))\n");
+            sb.append("  (tag ")
+                    .append(tagLabel(module, tag.tagIndex()))
+                    .append(" (type ")
+                    .append(typeLabel(module, tag.typeIndex()))
+                    .append("))\n");
         }
 
         // Globals
@@ -64,8 +72,11 @@ public final class WatPrinter {
 
         // Exports
         for (WasmModule.ExportDef exp : module.exports()) {
-            sb.append("  (export \"").append(escape(exp.name())).append("\" (")
-                    .append(exp.kind().wat()).append(' ');
+            sb.append("  (export \"")
+                    .append(escape(exp.name()))
+                    .append("\" (")
+                    .append(exp.kind().wat())
+                    .append(' ');
             switch (exp.kind()) {
                 case FUNC -> sb.append(funcLabel(module, exp.index()));
                 case GLOBAL -> sb.append(globalLabel(module, exp.index()));
@@ -91,7 +102,11 @@ public final class WatPrinter {
 
         // Passive data segments
         for (int i = 0; i < module.passiveDatas().size(); i++) {
-            sb.append("  (data $d").append(i).append(" \"").append(escapeBytes(module.passiveDatas().get(i))).append("\")\n");
+            sb.append("  (data $d")
+                    .append(i)
+                    .append(" \"")
+                    .append(escapeBytes(module.passiveDatas().get(i)))
+                    .append("\")\n");
         }
 
         // Defined functions
@@ -158,8 +173,11 @@ public final class WatPrinter {
     }
 
     private static void printFunc(StringBuilder sb, WasmModule module, WasmModule.FuncDef fn) {
-        sb.append("  (func ").append(funcLabel(module, fn.funcIndex()))
-                .append(" (type ").append(typeLabel(module, fn.typeIndex())).append(')');
+        sb.append("  (func ")
+                .append(funcLabel(module, fn.funcIndex()))
+                .append(" (type ")
+                .append(typeLabel(module, fn.typeIndex()))
+                .append(')');
         WasmTypeDef.FuncType ft = (WasmTypeDef.FuncType) module.typeAt(fn.typeIndex()).body();
         for (int i = 0; i < ft.params().size(); i++) {
             sb.append(" (param");
@@ -197,7 +215,8 @@ public final class WatPrinter {
         sb.append("  )\n");
     }
 
-    private static void printInlineInstrs(StringBuilder sb, WasmModule module, List<WasmInstr> instrs) {
+    private static void printInlineInstrs(
+            StringBuilder sb, WasmModule module, List<WasmInstr> instrs) {
         for (int i = 0; i < instrs.size(); i++) {
             if (i > 0) sb.append(' ');
             sb.append('(');
@@ -231,9 +250,13 @@ public final class WatPrinter {
                     case ARRAY_NEW_FIXED ->
                             sb.append(typeLabel(module, i.index1())).append(' ').append(i.index2());
                     case ARRAY_NEW_DATA ->
-                            sb.append(typeLabel(module, i.index1())).append(" $d").append(i.index2());
+                            sb.append(typeLabel(module, i.index1()))
+                                    .append(" $d")
+                                    .append(i.index2());
                     case ARRAY_COPY ->
-                            sb.append(typeLabel(module, i.index1())).append(' ').append(typeLabel(module, i.index2()));
+                            sb.append(typeLabel(module, i.index1()))
+                                    .append(' ')
+                                    .append(typeLabel(module, i.index2()));
                 }
             }
             case WasmInstr.Block b -> {
@@ -258,23 +281,38 @@ public final class WatPrinter {
                 }
                 sb.append(' ').append(b.defaultLabel());
             }
-            case WasmInstr.RefNull r -> sb.append("ref.null ").append(formatHeapType(module, r.heapType()));
-            case WasmInstr.RefTypeOp r -> sb.append(r.kind().wat()).append(" (ref ")
-                    .append(r.kind().nullable() ? "null " : "")
-                    .append(formatHeapType(module, r.heapType())).append(')');
-            case WasmInstr.BrOnCast b -> sb.append(b.fail() ? "br_on_cast_fail " : "br_on_cast ")
-                    .append(b.labelIndex())
-                    .append(" (ref ").append(b.srcNullable() ? "null " : "").append(formatHeapType(module, b.srcType())).append(')')
-                    .append(" (ref ").append(b.dstNullable() ? "null " : "").append(formatHeapType(module, b.dstType())).append(')');
-            case WasmInstr.SelectTyped s -> sb.append("select (result ").append(formatType(module, s.type())).append(')');
+            case WasmInstr.RefNull r ->
+                    sb.append("ref.null ").append(formatHeapType(module, r.heapType()));
+            case WasmInstr.RefTypeOp r ->
+                    sb.append(r.kind().wat())
+                            .append(" (ref ")
+                            .append(r.kind().nullable() ? "null " : "")
+                            .append(formatHeapType(module, r.heapType()))
+                            .append(')');
+            case WasmInstr.BrOnCast b ->
+                    sb.append(b.fail() ? "br_on_cast_fail " : "br_on_cast ")
+                            .append(b.labelIndex())
+                            .append(" (ref ")
+                            .append(b.srcNullable() ? "null " : "")
+                            .append(formatHeapType(module, b.srcType()))
+                            .append(')')
+                            .append(" (ref ")
+                            .append(b.dstNullable() ? "null " : "")
+                            .append(formatHeapType(module, b.dstType()))
+                            .append(')');
+            case WasmInstr.SelectTyped s ->
+                    sb.append("select (result ").append(formatType(module, s.type())).append(')');
         }
     }
 
-    private static void printBlockType(StringBuilder sb, WasmModule module, WasmInstr.BlockType bt) {
+    private static void printBlockType(
+            StringBuilder sb, WasmModule module, WasmInstr.BlockType bt) {
         switch (bt) {
             case WasmInstr.BlockType.Empty e -> {}
-            case WasmInstr.BlockType.Val v -> sb.append(" (result ").append(formatType(module, v.type())).append(')');
-            case WasmInstr.BlockType.TypeIdx t -> sb.append(" (type ").append(typeLabel(module, t.typeIndex())).append(')');
+            case WasmInstr.BlockType.Val v ->
+                    sb.append(" (result ").append(formatType(module, v.type())).append(')');
+            case WasmInstr.BlockType.TypeIdx t ->
+                    sb.append(" (type ").append(typeLabel(module, t.typeIndex())).append(')');
         }
     }
 
@@ -354,8 +392,13 @@ public final class WatPrinter {
         StringBuilder sb = new StringBuilder(raw.length());
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')
-                    || c == '_' || c == '$' || c == '.' || c == '-') {
+            if ((c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '_'
+                    || c == '$'
+                    || c == '.'
+                    || c == '-') {
                 sb.append(c);
             } else {
                 sb.append('_');
@@ -400,7 +443,10 @@ public final class WatPrinter {
         return sb.toString();
     }
 
-    /** Wraps {@code module} as an {@link org.babblelang.ir.IrDumpable} for {@link org.babblelang.ir.IrTier#WAT}. */
+    /**
+     * Wraps {@code module} as an {@link org.babblelang.ir.IrDumpable} for {@link
+     * org.babblelang.ir.IrTier#WAT}.
+     */
     public static org.babblelang.ir.IrDumpable asDumpable(WasmModule module) {
         return new org.babblelang.ir.IrDumpable() {
             @Override
@@ -426,13 +472,16 @@ public final class WatPrinter {
                             return sb.toString().strip();
                         }
                     }
-                    throw new IllegalArgumentException("No top-level M0_init function in WAT module");
+                    throw new IllegalArgumentException(
+                            "No top-level M0_init function in WAT module");
                 }
                 if (target instanceof org.babblelang.ir.IrTarget.Fn f) {
                     String suffix = "_" + sanitize(f.name());
                     for (WasmModule.FuncDef fn : module.definedFuncs()) {
                         String n = fn.name();
-                        if (n != null && !n.endsWith("_generic") && !n.contains("$")
+                        if (n != null
+                                && !n.endsWith("_generic")
+                                && !n.contains("$")
                                 && (n.equals(f.name()) || n.endsWith(suffix))) {
                             printFunc(sb, module, fn);
                         }
@@ -446,7 +495,9 @@ public final class WatPrinter {
                     String marker = "_" + sanitize(m.ownerName()) + "$" + sanitize(m.methodName());
                     for (WasmModule.FuncDef fn : module.definedFuncs()) {
                         String n = fn.name();
-                        if (n != null && !n.endsWith("_generic") && (n.endsWith(marker) || n.contains(marker + "$"))) {
+                        if (n != null
+                                && !n.endsWith("_generic")
+                                && (n.endsWith(marker) || n.contains(marker + "$"))) {
                             printFunc(sb, module, fn);
                         }
                     }
@@ -458,7 +509,8 @@ public final class WatPrinter {
                 if (target instanceof org.babblelang.ir.IrTarget.TypeDef td) {
                     String suffix = "_" + sanitize(td.name());
                     for (WasmTypeDef.SubType sub : module.flatTypes()) {
-                        if (sub != null && sub.name() != null
+                        if (sub != null
+                                && sub.name() != null
                                 && (sub.name().equals(td.name()) || sub.name().endsWith(suffix))
                                 && !sub.name().startsWith("ClassVal_")) {
                             printSubType(sb, module, sub);
@@ -468,7 +520,10 @@ public final class WatPrinter {
                     String methMarker = "_" + sanitize(td.name()) + "$";
                     for (WasmModule.FuncDef fn : module.definedFuncs()) {
                         String n = fn.name();
-                        if (n != null && !n.endsWith("_generic") && !n.endsWith("$ctor_generic") && n.contains(methMarker)) {
+                        if (n != null
+                                && !n.endsWith("_generic")
+                                && !n.endsWith("$ctor_generic")
+                                && n.contains(methMarker)) {
                             printFunc(sb, module, fn);
                         }
                     }

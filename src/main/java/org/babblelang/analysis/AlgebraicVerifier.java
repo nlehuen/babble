@@ -1,35 +1,34 @@
 package org.babblelang.analysis;
 
-import org.babblelang.effects.Effect;
-import org.babblelang.ir.egraph.AlgebraicRules;
-import org.babblelang.ir.egraph.EGraph;
-import org.babblelang.ir.egraph.ENode;
-
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiPredicate;
+import org.babblelang.effects.Effect;
+import org.babblelang.ir.egraph.AlgebraicRules;
+import org.babblelang.ir.egraph.EGraph;
+import org.babblelang.ir.egraph.ENode;
 
 /**
- * ANTLR-free algebraic signature validation, bounded E-graph equational law verification
- * ({@code idempotent}, {@code commutative}, {@code associative}), and partial-derivative
- * sign &amp; bijectivity analysis ({@code monotone}, {@code injective})
- * ({@code BIP027-I6}, {@code BIP027-D1}).
+ * ANTLR-free algebraic signature validation, bounded E-graph equational law verification ({@code
+ * idempotent}, {@code commutative}, {@code associative}), and partial-derivative sign &amp;
+ * bijectivity analysis ({@code monotone}, {@code injective}) ({@code BIP027-I6}, {@code
+ * BIP027-D1}).
  *
- * <p>Reuses {@link EGraph} and {@link AlgebraicRules#verifierRules()} directly so the
- * optimizer and effect verifier share one single source of truth for integral, boolean,
- * string, order-lattice, and strict IEEE-754 floating-point algebraic laws.
+ * <p>Reuses {@link EGraph} and {@link AlgebraicRules#verifierRules()} directly so the optimizer and
+ * effect verifier share one single source of truth for integral, boolean, string, order-lattice,
+ * and strict IEEE-754 floating-point algebraic laws.
  */
 final class AlgebraicVerifier {
     static final int VERIFIER_MAX_ITERS = 8;
     static final int VERIFIER_MAX_NODES = 256;
 
-    private AlgebraicVerifier() {
-    }
+    private AlgebraicVerifier() {}
 
-    // ---------------------------------------------------------------- pure & mut algebraic terms (ANTLR-free)
+    // ---------------------------------------------------------------- pure & mut algebraic terms
+    // (ANTLR-free)
 
     /** Normalized ANTLR-free pure expression term over a function's parameters. */
     sealed interface Term permits Param, Const, Opaque, Unary, Binary, Call, Ite, Cast, Ctor {
@@ -38,32 +37,33 @@ final class AlgebraicVerifier {
         PrimitiveKind kind();
     }
 
-    record Param(int index, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Param(int index, Type type, PrimitiveKind kind) implements Term {}
 
-    record Const(Object value, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Const(Object value, Type type, PrimitiveKind kind) implements Term {}
 
-    record Opaque(String id, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Opaque(String id, Type type, PrimitiveKind kind) implements Term {}
 
-    record Unary(ENode.Op op, Term operand, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Unary(ENode.Op op, Term operand, Type type, PrimitiveKind kind) implements Term {}
 
-    record Binary(ENode.Op op, Term left, Term right, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Binary(ENode.Op op, Term left, Term right, Type type, PrimitiveKind kind)
+            implements Term {}
 
-    record Call(String symbol, List<Term> args, EffectSet calleeEffects, EGraph.CallProps props,
-                Type type, PrimitiveKind kind) implements Term {
-    }
+    record Call(
+            String symbol,
+            List<Term> args,
+            EffectSet calleeEffects,
+            EGraph.CallProps props,
+            Type type,
+            PrimitiveKind kind)
+            implements Term {}
 
-    record Ite(Term cond, Term thenBranch, Term elseBranch, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Ite(Term cond, Term thenBranch, Term elseBranch, Type type, PrimitiveKind kind)
+            implements Term {}
 
-    record Cast(Term operand, Type srcType, Type type, PrimitiveKind kind) implements Term {
-    }
+    record Cast(Term operand, Type srcType, Type type, PrimitiveKind kind) implements Term {}
 
-    record Ctor(String symbol, List<Term> args, boolean injectiveValueCtor, Type type) implements Term {
+    record Ctor(String symbol, List<Term> args, boolean injectiveValueCtor, Type type)
+            implements Term {
         @Override
         public PrimitiveKind kind() {
             return PrimitiveKind.NONE;
@@ -71,27 +71,33 @@ final class AlgebraicVerifier {
     }
 
     /** Normalized ANTLR-free representation of a mutating method/function body. */
-    sealed interface MutBody permits ForwardMutCall, FieldTransition {
-    }
+    sealed interface MutBody permits ForwardMutCall, FieldTransition {}
 
-    record ForwardMutCall(EffectSet calleeEffects) implements MutBody {
-    }
+    record ForwardMutCall(EffectSet calleeEffects) implements MutBody {}
 
     /**
      * Single-field state transition {@code target.field = nextState(params..., oldField)} where
-     * {@code stateParamIndex == paramCount} represents {@code oldField}, and {@code targetParamIndex}
-     * is {@code -1} for {@code this} or the index of the mutated parameter.
+     * {@code stateParamIndex == paramCount} represents {@code oldField}, and {@code
+     * targetParamIndex} is {@code -1} for {@code this} or the index of the mutated parameter.
      */
-    record FieldTransition(int stateParamIndex, int targetParamIndex, int paramCount,
-                           List<PrimitiveKind> paramKinds, PrimitiveKind stateKind,
-                           Term nextState) implements MutBody {
-    }
+    record FieldTransition(
+            int stateParamIndex,
+            int targetParamIndex,
+            int paramCount,
+            List<PrimitiveKind> paramKinds,
+            PrimitiveKind stateKind,
+            Term nextState)
+            implements MutBody {}
 
     // ---------------------------------------------------------------- signature validation
 
-    static List<String> validateAlgebraicSignature(Set<Effect> effects, List<Type.Parameter> params, Type result,
-                                                   boolean mutThis, boolean axiomatic,
-                                                   BiPredicate<Type, Type> sameDomain) {
+    static List<String> validateAlgebraicSignature(
+            Set<Effect> effects,
+            List<Type.Parameter> params,
+            Type result,
+            boolean mutThis,
+            boolean axiomatic,
+            BiPredicate<Type, Type> sameDomain) {
         if (effects.isEmpty()) {
             return List.of();
         }
@@ -101,8 +107,11 @@ final class AlgebraicVerifier {
         boolean isPure = effects.contains(Effect.PURE);
 
         if (effects.contains(Effect.ASSOCIATIVE)) {
-            if (!isPure || hasMut || params.size() != 2
-                    || result == Type.NULL || result == Type.NOTHING
+            if (!isPure
+                    || hasMut
+                    || params.size() != 2
+                    || result == Type.NULL
+                    || result == Type.NOTHING
                     || !sameDomain.test(params.get(0).type(), params.get(1).type())
                     || !sameDomain.test(params.get(0).type(), result)) {
                 errors.add("associative requires a pure binary (T, T) : T signature");
@@ -110,8 +119,11 @@ final class AlgebraicVerifier {
         }
         if (effects.contains(Effect.COMMUTATIVE)) {
             if (!hasMut) {
-                if (!isPure || params.size() != 2 || !sameDomain.test(params.get(0).type(), params.get(1).type())) {
-                    errors.add("commutative without mut requires a pure binary (T, T) : R signature");
+                if (!isPure
+                        || params.size() != 2
+                        || !sameDomain.test(params.get(0).type(), params.get(1).type())) {
+                    errors.add(
+                            "commutative without mut requires a pure binary (T, T) : R signature");
                 }
             } else if (mutThis ? params.isEmpty() : params.size() < 2) {
                 errors.add("mut commutative requires a value parameter on the mutated target");
@@ -119,20 +131,27 @@ final class AlgebraicVerifier {
         }
         if (effects.contains(Effect.IDEMPOTENT)) {
             if (!hasMut && !(axiomatic && !isPure)) {
-                if (!isPure || params.size() != 1 || result == Type.NULL || !sameDomain.test(params.get(0).type(), result)) {
-                    errors.add("idempotent without mut requires a pure unary (T) : T signature or an effectful axiom");
+                if (!isPure
+                        || params.size() != 1
+                        || result == Type.NULL
+                        || !sameDomain.test(params.get(0).type(), result)) {
+                    errors.add(
+                            "idempotent without mut requires a pure unary (T) : T signature or an effectful axiom");
                 }
             }
         }
         if (effects.contains(Effect.MONOTONE)) {
-            if (hasMut || params.isEmpty() || !isOrderedType(result)
+            if (hasMut
+                    || params.isEmpty()
+                    || !isOrderedType(result)
                     || params.stream().noneMatch(p -> isOrderedType(p.type()))) {
                 errors.add("monotone requires ordered parameter and return types without mut");
             }
         }
         if (effects.contains(Effect.INJECTIVE)) {
             if (result == Type.NULL || result == Type.NOTHING || hasMut || params.isEmpty()) {
-                errors.add("injective requires at least one parameter, no mut, and a non-null return type");
+                errors.add(
+                        "injective requires at least one parameter, no mut, and a non-null return type");
             }
         }
         return errors;
@@ -172,10 +191,15 @@ final class AlgebraicVerifier {
         return PrimitiveKind.NONE;
     }
 
-    // ---------------------------------------------------------------- pure verification (E-graph + RelSignDomain)
+    // ---------------------------------------------------------------- pure verification (E-graph +
+    // RelSignDomain)
 
-    static void verifyPureProperties(Term body, List<Type.Parameter> params, Type result,
-                                     BiPredicate<Type, Type> sameDomain, EnumSet<Effect> out) {
+    static void verifyPureProperties(
+            Term body,
+            List<Type.Parameter> params,
+            Type result,
+            BiPredicate<Type, Type> sameDomain,
+            EnumSet<Effect> out) {
         if (body == null || params.isEmpty()) {
             return;
         }
@@ -193,13 +217,16 @@ final class AlgebraicVerifier {
                 out.add(Effect.COMMUTATIVE);
             }
             if (sameDomain.test(params.get(0).type(), result)
-                    && result != Type.NULL && result != Type.NOTHING
+                    && result != Type.NULL
+                    && result != Type.NOTHING
                     && checkAssociative(body, pk)) {
                 out.add(Effect.ASSOCIATIVE);
             }
         }
         // 3. Unary idempotence via bounded E-graph equivalence saturation.
-        if (params.size() == 1 && sameDomain.test(params.get(0).type(), result) && result != Type.NULL) {
+        if (params.size() == 1
+                && sameDomain.test(params.get(0).type(), result)
+                && result != Type.NULL) {
             PrimitiveKind pk = primitiveKindOf(params.get(0).type());
             if (checkIdempotent(body, pk)) {
                 out.add(Effect.IDEMPOTENT);
@@ -232,14 +259,15 @@ final class AlgebraicVerifier {
         }
     }
 
-    // ---------------------------------------------------------------- bounded E-graph equivalence checks
+    // ---------------------------------------------------------------- bounded E-graph equivalence
+    // checks
 
     static boolean checkCommutative(Term body, PrimitiveKind argKind) {
         EGraph g = new EGraph();
         int a = g.add(ENode.opaque("$a", argKind));
         int b = g.add(ENode.opaque("$b", argKind));
-        int ab = lower(body, new int[]{a, b}, g);
-        int ba = lower(body, new int[]{b, a}, g);
+        int ab = lower(body, new int[] {a, b}, g);
+        int ba = lower(body, new int[] {b, a}, g);
         g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
         return g.areEquivalent(ab, ba);
     }
@@ -249,10 +277,10 @@ final class AlgebraicVerifier {
         int a = g.add(ENode.opaque("$a", argKind));
         int b = g.add(ENode.opaque("$b", argKind));
         int c = g.add(ENode.opaque("$c", argKind));
-        int ab = lower(body, new int[]{a, b}, g);
-        int lhs = lower(body, new int[]{ab, c}, g);
-        int bc = lower(body, new int[]{b, c}, g);
-        int rhs = lower(body, new int[]{a, bc}, g);
+        int ab = lower(body, new int[] {a, b}, g);
+        int lhs = lower(body, new int[] {ab, c}, g);
+        int bc = lower(body, new int[] {b, c}, g);
+        int rhs = lower(body, new int[] {a, bc}, g);
         g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
         return g.areEquivalent(lhs, rhs);
     }
@@ -260,8 +288,8 @@ final class AlgebraicVerifier {
     static boolean checkIdempotent(Term body, PrimitiveKind argKind) {
         EGraph g = new EGraph();
         int a = g.add(ENode.opaque("$a", argKind));
-        int fa = lower(body, new int[]{a}, g);
-        int ffa = lower(body, new int[]{fa}, g);
+        int fa = lower(body, new int[] {a}, g);
+        int ffa = lower(body, new int[] {fa}, g);
         g.saturate(AlgebraicRules.verifierRules(), VERIFIER_MAX_ITERS, VERIFIER_MAX_NODES);
         return g.areEquivalent(fa, ffa);
     }
@@ -317,38 +345,51 @@ final class AlgebraicVerifier {
     }
 
     private static int lower(Term term, int[] paramIds, EGraph g) {
-        int id = switch (term) {
-            case Param p -> paramIds[p.index()];
-            case Const c -> g.add(ENode.constVal(c.value(), c.kind()));
-            case Opaque o -> g.add(ENode.opaque(o.id(), o.kind()));
-            case Unary u -> g.add(ENode.unary(u.op(), u.kind(), lower(u.operand(), paramIds, g)));
-            case Binary b -> g.add(ENode.binary(b.op(), b.kind(), lower(b.left(), paramIds, g), lower(b.right(), paramIds, g)));
-            case Ite ite -> g.add(ENode.ite(ite.kind(),
-                    lower(ite.cond(), paramIds, g),
-                    lower(ite.thenBranch(), paramIds, g),
-                    lower(ite.elseBranch(), paramIds, g)));
-            case Cast c -> {
-                int inner = lower(c.operand(), paramIds, g);
-                yield c.srcType().equals(c.type()) ? inner : g.add(ENode.call("$cast:" + c.kind(), c.kind(), inner));
-            }
-            case Call c -> {
-                if (c.props() != null && !c.props().equals(EGraph.CallProps.NONE)) {
-                    g.registerCallProps(c.symbol(), c.props());
-                }
-                int[] kids = new int[c.args().size()];
-                for (int i = 0; i < kids.length; i++) {
-                    kids[i] = lower(c.args().get(i), paramIds, g);
-                }
-                yield g.add(ENode.call(c.symbol(), c.kind(), kids));
-            }
-            case Ctor c -> {
-                int[] kids = new int[c.args().size()];
-                for (int i = 0; i < kids.length; i++) {
-                    kids[i] = lower(c.args().get(i), paramIds, g);
-                }
-                yield g.add(ENode.call(c.symbol(), PrimitiveKind.NONE, kids));
-            }
-        };
+        int id =
+                switch (term) {
+                    case Param p -> paramIds[p.index()];
+                    case Const c -> g.add(ENode.constVal(c.value(), c.kind()));
+                    case Opaque o -> g.add(ENode.opaque(o.id(), o.kind()));
+                    case Unary u ->
+                            g.add(ENode.unary(u.op(), u.kind(), lower(u.operand(), paramIds, g)));
+                    case Binary b ->
+                            g.add(
+                                    ENode.binary(
+                                            b.op(),
+                                            b.kind(),
+                                            lower(b.left(), paramIds, g),
+                                            lower(b.right(), paramIds, g)));
+                    case Ite ite ->
+                            g.add(
+                                    ENode.ite(
+                                            ite.kind(),
+                                            lower(ite.cond(), paramIds, g),
+                                            lower(ite.thenBranch(), paramIds, g),
+                                            lower(ite.elseBranch(), paramIds, g)));
+                    case Cast c -> {
+                        int inner = lower(c.operand(), paramIds, g);
+                        yield c.srcType().equals(c.type())
+                                ? inner
+                                : g.add(ENode.call("$cast:" + c.kind(), c.kind(), inner));
+                    }
+                    case Call c -> {
+                        if (c.props() != null && !c.props().equals(EGraph.CallProps.NONE)) {
+                            g.registerCallProps(c.symbol(), c.props());
+                        }
+                        int[] kids = new int[c.args().size()];
+                        for (int i = 0; i < kids.length; i++) {
+                            kids[i] = lower(c.args().get(i), paramIds, g);
+                        }
+                        yield g.add(ENode.call(c.symbol(), c.kind(), kids));
+                    }
+                    case Ctor c -> {
+                        int[] kids = new int[c.args().size()];
+                        for (int i = 0; i < kids.length; i++) {
+                            kids[i] = lower(c.args().get(i), paramIds, g);
+                        }
+                        yield g.add(ENode.call(c.symbol(), PrimitiveKind.NONE, kids));
+                    }
+                };
         Type t = term.type();
         if (t instanceof Type.Frozen f) {
             t = f.of();
@@ -359,7 +400,8 @@ final class AlgebraicVerifier {
         return id;
     }
 
-    // ---------------------------------------------------------------- partial-derivative sign & bijectivity domain
+    // ---------------------------------------------------------------- partial-derivative sign &
+    // bijectivity domain
 
     /** Abstract partial-derivative sign lattice ({@code BIP027} §3.5). */
     enum Sign {
@@ -447,7 +489,9 @@ final class AlgebraicVerifier {
                             unknownParam = p;
                         }
                     }
-                    if (!multipleUnknown && unknownParam >= 0 && evalRel(arg, unknownParam).injective()) {
+                    if (!multipleUnknown
+                            && unknownParam >= 0
+                            && evalRel(arg, unknownParam).injective()) {
                         recovered.set(unknownParam);
                         progress = true;
                     }
@@ -460,9 +504,10 @@ final class AlgebraicVerifier {
 
     static RelVal evalRel(Term term, int targetParam) {
         return switch (term) {
-            case Param p -> p.index() == targetParam
-                    ? new RelVal(isOrderedType(p.type()) ? Sign.INC : Sign.TOP, true)
-                    : RelVal.CONST;
+            case Param p ->
+                    p.index() == targetParam
+                            ? new RelVal(isOrderedType(p.type()) ? Sign.INC : Sign.TOP, true)
+                            : RelVal.CONST;
             case Const c -> RelVal.CONST;
             case Opaque o -> RelVal.CONST;
             case Unary u -> evalUnaryRel(u, targetParam);
@@ -503,19 +548,21 @@ final class AlgebraicVerifier {
         if (b.kind() == PrimitiveKind.INT || b.kind() == PrimitiveKind.LONG) {
             // Wrapping 32/64-bit integer arithmetic is never monotone.
             if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
-                boolean inj = switch (b.op()) {
-                    case ADD, SUB -> l.injective();
-                    case MUL -> l.injective() && isOddIntegralConst(b.right());
-                    default -> false;
-                };
+                boolean inj =
+                        switch (b.op()) {
+                            case ADD, SUB -> l.injective();
+                            case MUL -> l.injective() && isOddIntegralConst(b.right());
+                            default -> false;
+                        };
                 return new RelVal(Sign.TOP, inj);
             }
             if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
-                boolean inj = switch (b.op()) {
-                    case ADD, SUB -> r.injective();
-                    case MUL -> r.injective() && isOddIntegralConst(b.left());
-                    default -> false;
-                };
+                boolean inj =
+                        switch (b.op()) {
+                            case ADD, SUB -> r.injective();
+                            case MUL -> r.injective() && isOddIntegralConst(b.left());
+                            default -> false;
+                        };
                 return new RelVal(Sign.TOP, inj);
             }
             return RelVal.TOP;
@@ -530,11 +577,15 @@ final class AlgebraicVerifier {
             if (b.op() == ENode.Op.MUL) {
                 if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
                     Double k = evalConstDouble(b.right());
-                    return new RelVal(k == null ? Sign.TOP : (k >= 0.0 ? l.sign() : l.sign().negate()), false);
+                    return new RelVal(
+                            k == null ? Sign.TOP : (k >= 0.0 ? l.sign() : l.sign().negate()),
+                            false);
                 }
                 if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
                     Double k = evalConstDouble(b.left());
-                    return new RelVal(k == null ? Sign.TOP : (k >= 0.0 ? r.sign() : r.sign().negate()), false);
+                    return new RelVal(
+                            k == null ? Sign.TOP : (k >= 0.0 ? r.sign() : r.sign().negate()),
+                            false);
                 }
             }
             if (b.op() == ENode.Op.DIV && l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
@@ -547,10 +598,12 @@ final class AlgebraicVerifier {
         }
         if (b.op() == ENode.Op.STR_ADD) {
             if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
-                return new RelVal(Sign.TOP, l.injective() && isLosslessToStringType(b.left().type()));
+                return new RelVal(
+                        Sign.TOP, l.injective() && isLosslessToStringType(b.left().type()));
             }
             if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
-                return new RelVal(Sign.TOP, r.injective() && isLosslessToStringType(b.right().type()));
+                return new RelVal(
+                        Sign.TOP, r.injective() && isLosslessToStringType(b.right().type()));
             }
         }
         return RelVal.TOP;
@@ -591,8 +644,10 @@ final class AlgebraicVerifier {
         if (!(ite.cond() instanceof Binary cmp)) {
             return false;
         }
-        if (cmp.op() != ENode.Op.LT && cmp.op() != ENode.Op.LTE
-                && cmp.op() != ENode.Op.GT && cmp.op() != ENode.Op.GTE) {
+        if (cmp.op() != ENode.Op.LT
+                && cmp.op() != ENode.Op.LTE
+                && cmp.op() != ENode.Op.GT
+                && cmp.op() != ENode.Op.GTE) {
             return false;
         }
         return (cmp.left().equals(ite.thenBranch()) && cmp.right().equals(ite.elseBranch()))
@@ -631,8 +686,11 @@ final class AlgebraicVerifier {
                 monoSign = combined;
             }
         }
-        boolean inj = fx.has(Effect.INJECTIVE) && nonConstCount == 1
-                && singleNonConst == 0 && argRels[0].injective();
+        boolean inj =
+                fx.has(Effect.INJECTIVE)
+                        && nonConstCount == 1
+                        && singleNonConst == 0
+                        && argRels[0].injective();
         return new RelVal(monoSign, inj);
     }
 
@@ -655,15 +713,22 @@ final class AlgebraicVerifier {
     }
 
     private static boolean isLosslessToStringType(Type type) {
-        return type == Type.STRING || type == Type.BYTE || type == Type.SHORT
-                || type == Type.INT || type == Type.LONG || type == Type.CHAR || type == Type.BOOL;
+        return type == Type.STRING
+                || type == Type.BYTE
+                || type == Type.SHORT
+                || type == Type.INT
+                || type == Type.LONG
+                || type == Type.CHAR
+                || type == Type.BOOL;
     }
 
     private static boolean isMonotoneNumericWidening(Type src, Type dst) {
         if (src == Type.CHAR) {
             return Type.isNumericScalar(dst) && Type.numericRank(dst) >= 2;
         }
-        return Type.isNumericScalar(src) && Type.isNumericScalar(dst) && Type.numericRank(src) <= Type.numericRank(dst);
+        return Type.isNumericScalar(src)
+                && Type.isNumericScalar(dst)
+                && Type.numericRank(src) <= Type.numericRank(dst);
     }
 
     private static boolean isLosslessWidening(Type src, Type dst) {
@@ -680,7 +745,10 @@ final class AlgebraicVerifier {
 
     private static boolean isOddIntegralConst(Term term) {
         Number n = evalConstNumber(term);
-        return (n instanceof Byte || n instanceof Short || n instanceof Integer || n instanceof Long)
+        return (n instanceof Byte
+                        || n instanceof Short
+                        || n instanceof Integer
+                        || n instanceof Long)
                 && (n.longValue() & 1L) != 0L;
     }
 

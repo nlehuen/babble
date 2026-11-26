@@ -1,14 +1,17 @@
 package org.babblelang.ir;
 
 /**
- * Lazy, thread-safe observer receiving compiler IR snapshots ({@code BIP029-I1}, {@code BIP029-D6}).
+ * Lazy, thread-safe observer receiving compiler IR snapshots ({@code BIP029-I1}, {@code
+ * BIP029-D6}).
  *
- * <p>Attached per-engine via {@code BabbleCompiler.IR_OBSERVER} for parallel-safe {@code .batest.md}
- * assertions and also used by CLI {@code -Dbabble.dumpIr}. Calls to {@link #wants} allow pass drivers
- * to skip retaining or formatting unused stages.
+ * <p>Attached per-engine via {@code BabbleCompiler.IR_OBSERVER} for parallel-safe {@code
+ * .batest.md} assertions and also used by CLI {@code -Dbabble.dumpIr}. Calls to {@link #wants}
+ * allow pass drivers to skip retaining or formatting unused stages.
  */
 public interface IrObserver {
-    /** Whether this observer is interested in snapshots for the given tier, opt level, and stage. */
+    /**
+     * Whether this observer is interested in snapshots for the given tier, opt level, and stage.
+     */
     default boolean wants(IrTier tier, int optLevel, String stage) {
         return IrSnapshot.STAGE_FINAL.equals(stage);
     }

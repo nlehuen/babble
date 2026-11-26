@@ -1,5 +1,13 @@
 package org.babblelang.analysis;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.IdentityHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.antlr.v4.runtime.ParserRuleContext;
 import org.babblelang.effects.Effect;
 import org.babblelang.ir.egraph.EGraph;
@@ -9,18 +17,9 @@ import org.babblelang.parser.StringLiterals;
 import org.babblelang.runtime.ClassShape;
 import org.babblelang.runtime.Operators;
 
-import java.lang.reflect.Constructor;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.IdentityHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
- * Thin ANTLR AST extraction adapters feeding the ANTLR-free {@link AlgebraicVerifier}
- * (and {@code SizeChangeTermination}) cores ({@code BIP027-I6}).
+ * Thin ANTLR AST extraction adapters feeding the ANTLR-free {@link AlgebraicVerifier} (and {@code
+ * SizeChangeTermination}) cores ({@code BIP027-I6}).
  */
 final class EffectAstExtractors {
     private static final int MAX_TERM_NODES = 64;
@@ -31,21 +30,29 @@ final class EffectAstExtractors {
         this.ec = ec;
     }
 
-    // ---------------------------------------------------------------- algebraic signature & inference entry points
+    // ---------------------------------------------------------------- algebraic signature &
+    // inference entry points
 
-    void validateAlgebraicSignature(Set<Effect> effects, List<Type.Parameter> params, Type result,
-                                    boolean mutThis, boolean axiomatic, ParserRuleContext at) {
-        List<String> errors = AlgebraicVerifier.validateAlgebraicSignature(
-                effects, params, result, mutThis, axiomatic, this::sameDomainType);
+    void validateAlgebraicSignature(
+            Set<Effect> effects,
+            List<Type.Parameter> params,
+            Type result,
+            boolean mutThis,
+            boolean axiomatic,
+            ParserRuleContext at) {
+        List<String> errors =
+                AlgebraicVerifier.validateAlgebraicSignature(
+                        effects, params, result, mutThis, axiomatic, this::sameDomainType);
         for (String err : errors) {
             ec.checker.effectDiagnostic(err, at);
         }
     }
 
-    void inferAlgebraicProperties(BabbleParser.FunctionLiteralContext fn,
-                                  EnumSet<Effect> effs,
-                                  boolean[] mutParams,
-                                  boolean mutThis) {
+    void inferAlgebraicProperties(
+            BabbleParser.FunctionLiteralContext fn,
+            EnumSet<Effect> effs,
+            boolean[] mutParams,
+            boolean mutThis) {
         Type fnRaw = ec.checker.rawTypeOf(fn);
         if (!(fnRaw instanceof Type.Function tf)) {
             return;
@@ -55,10 +62,13 @@ final class EffectAstExtractors {
         Type result = tf.result();
         boolean anyMut = mutThis || EffectChecker.anyTrue(mutParams);
         if (!anyMut && effs.contains(Effect.PURE) && effs.contains(Effect.DETERMINISTIC)) {
-            AlgebraicVerifier.Term body = extractPureBlock(fn.functionBlock, paramDecls, null, -1, null);
-            AlgebraicVerifier.verifyPureProperties(body, params, result, this::sameDomainType, effs);
+            AlgebraicVerifier.Term body =
+                    extractPureBlock(fn.functionBlock, paramDecls, null, -1, null);
+            AlgebraicVerifier.verifyPureProperties(
+                    body, params, result, this::sameDomainType, effs);
         } else if (anyMut && effs.contains(Effect.HERMETIC)) {
-            AlgebraicVerifier.MutBody mutBody = extractMutBody(fn.functionBlock, paramDecls, params, mutParams, mutThis);
+            AlgebraicVerifier.MutBody mutBody =
+                    extractMutBody(fn.functionBlock, paramDecls, params, mutParams, mutThis);
             AlgebraicVerifier.verifyMutProperties(mutBody, effs);
         }
     }
@@ -70,9 +80,11 @@ final class EffectAstExtractors {
         return a.equals(b) || (ec.checker.assignable(a, b) && ec.checker.assignable(b, a));
     }
 
-    // ---------------------------------------------------------------- pure expression term extraction
+    // ---------------------------------------------------------------- pure expression term
+    // extraction
 
-    private record StateField(ParserRuleContext targetParam, String fieldName, int stateParamIndex, Type fieldType) {
+    private record StateField(
+            ParserRuleContext targetParam, String fieldName, int stateParamIndex, Type fieldType) {
         boolean matchesReceiver(BabbleParser.ExpressionContext recv, EffectAstExtractors self) {
             BabbleParser.ExpressionContext u = EffectBodyWalker.unwrapParens(recv);
             if (targetParam == null) {
@@ -82,11 +94,12 @@ final class EffectAstExtractors {
         }
     }
 
-    private AlgebraicVerifier.Term extractPureBlock(BabbleParser.BlockContext block,
-                                                    List<BabbleParser.FnParamContext> paramDecls,
-                                                    StateField stateField,
-                                                    int budgetOverride,
-                                                    Map<ParserRuleContext, AlgebraicVerifier.Term> seedLocals) {
+    private AlgebraicVerifier.Term extractPureBlock(
+            BabbleParser.BlockContext block,
+            List<BabbleParser.FnParamContext> paramDecls,
+            StateField stateField,
+            int budgetOverride,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> seedLocals) {
         if (block == null || block.expression().isEmpty()) {
             return null;
         }
@@ -94,18 +107,19 @@ final class EffectAstExtractors {
         for (int i = 0; i < paramDecls.size(); i++) {
             paramIndex.put(paramDecls.get(i), i);
         }
-        Map<ParserRuleContext, AlgebraicVerifier.Term> locals = seedLocals != null
-                ? new IdentityHashMap<>(seedLocals) : new IdentityHashMap<>();
+        Map<ParserRuleContext, AlgebraicVerifier.Term> locals =
+                seedLocals != null ? new IdentityHashMap<>(seedLocals) : new IdentityHashMap<>();
         int[] budget = {budgetOverride > 0 ? budgetOverride : MAX_TERM_NODES};
         return extractStatements(block.expression(), 0, paramIndex, locals, stateField, budget);
     }
 
-    private AlgebraicVerifier.Term extractStatements(List<BabbleParser.ExpressionContext> stmts,
-                                                     int startIdx,
-                                                     Map<ParserRuleContext, Integer> paramIndex,
-                                                     Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
-                                                     StateField stateField,
-                                                     int[] budget) {
+    private AlgebraicVerifier.Term extractStatements(
+            List<BabbleParser.ExpressionContext> stmts,
+            int startIdx,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            StateField stateField,
+            int[] budget) {
         if (startIdx >= stmts.size()) {
             return null;
         }
@@ -122,30 +136,38 @@ final class EffectAstExtractors {
                 if (isLast || def.value == null) {
                     return null;
                 }
-                AlgebraicVerifier.Term val = extractExpr(def.value, paramIndex, locals, stateField, budget);
+                AlgebraicVerifier.Term val =
+                        extractExpr(def.value, paramIndex, locals, stateField, budget);
                 if (val == null) {
                     return null;
                 }
                 locals.put(def, val);
                 continue;
             }
-            if (stmt instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) == null) {
+            if (stmt instanceof BabbleParser.AssignExpressionContext assign
+                    && ScopeAnalysis.assignReceiver(assign) == null) {
                 String name = ScopeAnalysis.assignName(assign);
-                Object resolved = ec.checker.resolveNameForEffects(name, ec.checker.occurrenceScopeOf(assign));
+                Object resolved =
+                        ec.checker.resolveNameForEffects(
+                                name, ec.checker.occurrenceScopeOf(assign));
                 if (!(resolved instanceof ParserRuleContext decl)
                         || (!locals.containsKey(decl) && !paramIndex.containsKey(decl))) {
                     return null;
                 }
-                AlgebraicVerifier.Term rhs = extractExpr(assign.value, paramIndex, locals, stateField, budget);
+                AlgebraicVerifier.Term rhs =
+                        extractExpr(assign.value, paramIndex, locals, stateField, budget);
                 if (rhs == null) {
                     return null;
                 }
                 String compoundOp = Operators.compound(assign.op.getText());
                 AlgebraicVerifier.Term nextVal = rhs;
                 if (compoundOp != null) {
-                    AlgebraicVerifier.Term cur = locals.containsKey(decl)
-                            ? locals.get(decl)
-                            : paramTerm(paramIndex.get(decl), ec.checker.typeOfDeclarationForEffects(decl));
+                    AlgebraicVerifier.Term cur =
+                            locals.containsKey(decl)
+                                    ? locals.get(decl)
+                                    : paramTerm(
+                                            paramIndex.get(decl),
+                                            ec.checker.typeOfDeclarationForEffects(decl));
                     Type resType = ec.checker.rawTypeOf(assign);
                     nextVal = buildBinaryTerm(compoundOp, cur, rhs, resType, budget);
                     if (nextVal == null) {
@@ -159,7 +181,9 @@ final class EffectAstExtractors {
                 continue;
             }
             if (!isLast && stmt instanceof BabbleParser.IfExpressionContext ie) {
-                AlgebraicVerifier.Term early = tryExtractEarlyReturnIf(ie.ifExpr(), stmts, i + 1, paramIndex, locals, stateField, budget);
+                AlgebraicVerifier.Term early =
+                        tryExtractEarlyReturnIf(
+                                ie.ifExpr(), stmts, i + 1, paramIndex, locals, stateField, budget);
                 if (early != null) {
                     return early;
                 }
@@ -173,13 +197,14 @@ final class EffectAstExtractors {
         return null;
     }
 
-    private AlgebraicVerifier.Term tryExtractEarlyReturnIf(BabbleParser.IfExprContext ifCtx,
-                                                           List<BabbleParser.ExpressionContext> outerStmts,
-                                                           int nextIdx,
-                                                           Map<ParserRuleContext, Integer> paramIndex,
-                                                           Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
-                                                           StateField stateField,
-                                                           int[] budget) {
+    private AlgebraicVerifier.Term tryExtractEarlyReturnIf(
+            BabbleParser.IfExprContext ifCtx,
+            List<BabbleParser.ExpressionContext> outerStmts,
+            int nextIdx,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            StateField stateField,
+            int[] budget) {
         if (ifCtx.elseBlock != null || ifCtx.elseIf != null) {
             return null;
         }
@@ -187,21 +212,25 @@ final class EffectAstExtractors {
             return null;
         }
         List<BabbleParser.ExpressionContext> thenStmts = ifCtx.thenBlock.expression();
-        BabbleParser.ExpressionContext lastThen = EffectBodyWalker.unwrapParens(thenStmts.get(thenStmts.size() - 1));
+        BabbleParser.ExpressionContext lastThen =
+                EffectBodyWalker.unwrapParens(thenStmts.get(thenStmts.size() - 1));
         if (!(lastThen instanceof BabbleParser.ReturnExpressionContext)) {
             return null;
         }
-        AlgebraicVerifier.Term cond = extractExpr(ifCtx.test, paramIndex, locals, stateField, budget);
+        AlgebraicVerifier.Term cond =
+                extractExpr(ifCtx.test, paramIndex, locals, stateField, budget);
         if (cond == null) {
             return null;
         }
         Map<ParserRuleContext, AlgebraicVerifier.Term> thenLocals = new IdentityHashMap<>(locals);
-        AlgebraicVerifier.Term thenTerm = extractStatements(thenStmts, 0, paramIndex, thenLocals, stateField, budget);
+        AlgebraicVerifier.Term thenTerm =
+                extractStatements(thenStmts, 0, paramIndex, thenLocals, stateField, budget);
         if (thenTerm == null) {
             return null;
         }
         Map<ParserRuleContext, AlgebraicVerifier.Term> elseLocals = new IdentityHashMap<>(locals);
-        AlgebraicVerifier.Term elseTerm = extractStatements(outerStmts, nextIdx, paramIndex, elseLocals, stateField, budget);
+        AlgebraicVerifier.Term elseTerm =
+                extractStatements(outerStmts, nextIdx, paramIndex, elseLocals, stateField, budget);
         if (elseTerm == null) {
             return null;
         }
@@ -209,14 +238,16 @@ final class EffectAstExtractors {
             return null;
         }
         Type resType = thenTerm.type();
-        return new AlgebraicVerifier.Ite(cond, thenTerm, elseTerm, resType, AlgebraicVerifier.primitiveKindOf(resType));
+        return new AlgebraicVerifier.Ite(
+                cond, thenTerm, elseTerm, resType, AlgebraicVerifier.primitiveKindOf(resType));
     }
 
-    private AlgebraicVerifier.Term extractExpr(BabbleParser.ExpressionContext raw,
-                                               Map<ParserRuleContext, Integer> paramIndex,
-                                               Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
-                                               StateField stateField,
-                                               int[] budget) {
+    private AlgebraicVerifier.Term extractExpr(
+            BabbleParser.ExpressionContext raw,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            StateField stateField,
+            int[] budget) {
         if (raw == null || !consumeNode(budget)) {
             return null;
         }
@@ -226,7 +257,8 @@ final class EffectAstExtractors {
 
         if (expr instanceof BabbleParser.BlockExpressionContext be) {
             Map<ParserRuleContext, AlgebraicVerifier.Term> nested = new IdentityHashMap<>(locals);
-            return extractStatements(be.block().expression(), 0, paramIndex, nested, stateField, budget);
+            return extractStatements(
+                    be.block().expression(), 0, paramIndex, nested, stateField, budget);
         }
         if (expr instanceof BabbleParser.ReturnExpressionContext ret) {
             return ret.expression() != null
@@ -237,7 +269,8 @@ final class EffectAstExtractors {
             return new AlgebraicVerifier.Const(null, Type.NULL, PrimitiveKind.NONE);
         }
         if (expr instanceof BabbleParser.BooleanContext bc) {
-            return new AlgebraicVerifier.Const("true".equals(bc.getText()), Type.BOOL, PrimitiveKind.BOOL);
+            return new AlgebraicVerifier.Const(
+                    "true".equals(bc.getText()), Type.BOOL, PrimitiveKind.BOOL);
         }
         if (expr instanceof BabbleParser.IntegerContext ic) {
             try {
@@ -246,12 +279,14 @@ final class EffectAstExtractors {
                     return new AlgebraicVerifier.Const((long) v, Type.LONG, PrimitiveKind.LONG);
                 }
                 if (kind == PrimitiveKind.DOUBLE) {
-                    return new AlgebraicVerifier.Const((double) v, Type.DOUBLE, PrimitiveKind.DOUBLE);
+                    return new AlgebraicVerifier.Const(
+                            (double) v, Type.DOUBLE, PrimitiveKind.DOUBLE);
                 }
                 if (kind == PrimitiveKind.FLOAT) {
                     return new AlgebraicVerifier.Const((float) v, Type.FLOAT, PrimitiveKind.FLOAT);
                 }
-                return new AlgebraicVerifier.Const(v, type, kind == PrimitiveKind.NONE ? PrimitiveKind.INT : kind);
+                return new AlgebraicVerifier.Const(
+                        v, type, kind == PrimitiveKind.NONE ? PrimitiveKind.INT : kind);
             } catch (NumberFormatException ignored) {
                 return null;
             }
@@ -284,21 +319,25 @@ final class EffectAstExtractors {
         }
         if (expr instanceof BabbleParser.CharLiteralContext cc) {
             try {
-                return new AlgebraicVerifier.Const(StringLiterals.decodeChar(cc.getText()), Type.CHAR, PrimitiveKind.CHAR);
+                return new AlgebraicVerifier.Const(
+                        StringLiterals.decodeChar(cc.getText()), Type.CHAR, PrimitiveKind.CHAR);
             } catch (IllegalArgumentException ignored) {
                 return null;
             }
         }
         if (expr instanceof BabbleParser.StringContext sc) {
             try {
-                return new AlgebraicVerifier.Const(StringLiterals.decode(sc), Type.STRING, PrimitiveKind.NONE);
+                return new AlgebraicVerifier.Const(
+                        StringLiterals.decode(sc), Type.STRING, PrimitiveKind.NONE);
             } catch (IllegalArgumentException ignored) {
                 return null;
             }
         }
         if (expr instanceof BabbleParser.SelectorContext sel) {
             if (sel.expression() == null) {
-                Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                Object resolved =
+                        ec.checker.resolveNameForEffects(
+                                sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
                 if (resolved instanceof ParserRuleContext decl) {
                     if (locals.containsKey(decl)) {
                         return locals.get(decl);
@@ -307,8 +346,10 @@ final class EffectAstExtractors {
                     if (idx != null) {
                         return paramTerm(idx, type);
                     }
-                    if (!ec.checker.isReassigned(decl) && ec.javaResolver.isImmutableConstantValue(type)) {
-                        return new AlgebraicVerifier.Opaque("ext@" + System.identityHashCode(decl), type, kind);
+                    if (!ec.checker.isReassigned(decl)
+                            && ec.javaResolver.isImmutableConstantValue(type)) {
+                        return new AlgebraicVerifier.Opaque(
+                                "ext@" + System.identityHashCode(decl), type, kind);
                     }
                 }
                 return null;
@@ -321,19 +362,26 @@ final class EffectAstExtractors {
             return null;
         }
         if (expr instanceof BabbleParser.NegateContext neg) {
-            AlgebraicVerifier.Term sub = extractExpr(neg.operand, paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term sub =
+                    extractExpr(neg.operand, paramIndex, locals, stateField, budget);
             if (sub == null) {
                 return null;
             }
-            return new AlgebraicVerifier.Unary(ENode.Op.NEG, widenIfNeeded(sub, type, kind, budget), type, kind);
+            return new AlgebraicVerifier.Unary(
+                    ENode.Op.NEG, widenIfNeeded(sub, type, kind, budget), type, kind);
         }
         if (expr instanceof BabbleParser.BooleanNotContext notCtx) {
-            AlgebraicVerifier.Term sub = extractExpr(notCtx.expression(), paramIndex, locals, stateField, budget);
-            return sub != null ? new AlgebraicVerifier.Unary(ENode.Op.NOT, sub, Type.BOOL, PrimitiveKind.BOOL) : null;
+            AlgebraicVerifier.Term sub =
+                    extractExpr(notCtx.expression(), paramIndex, locals, stateField, budget);
+            return sub != null
+                    ? new AlgebraicVerifier.Unary(ENode.Op.NOT, sub, Type.BOOL, PrimitiveKind.BOOL)
+                    : null;
         }
         if (expr instanceof BabbleParser.BooleanOpContext boolOp) {
-            AlgebraicVerifier.Term l = extractExpr(boolOp.left, paramIndex, locals, stateField, budget);
-            AlgebraicVerifier.Term r = extractExpr(boolOp.right, paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term l =
+                    extractExpr(boolOp.left, paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term r =
+                    extractExpr(boolOp.right, paramIndex, locals, stateField, budget);
             if (l == null || r == null) {
                 return null;
             }
@@ -341,15 +389,18 @@ final class EffectAstExtractors {
             return new AlgebraicVerifier.Binary(op, l, r, Type.BOOL, PrimitiveKind.BOOL);
         }
         if (expr instanceof BabbleParser.BinaryOpContext bin) {
-            AlgebraicVerifier.Term l = extractExpr(bin.left, paramIndex, locals, stateField, budget);
-            AlgebraicVerifier.Term r = extractExpr(bin.right, paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term l =
+                    extractExpr(bin.left, paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term r =
+                    extractExpr(bin.right, paramIndex, locals, stateField, budget);
             if (l == null || r == null) {
                 return null;
             }
             return buildBinaryTerm(bin.op.getText(), l, r, type, budget);
         }
         if (expr instanceof BabbleParser.AsExpressionContext asExpr) {
-            AlgebraicVerifier.Term sub = extractExpr(asExpr.left, paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term sub =
+                    extractExpr(asExpr.left, paramIndex, locals, stateField, budget);
             if (sub == null) {
                 return null;
             }
@@ -364,17 +415,26 @@ final class EffectAstExtractors {
         return null;
     }
 
-    private AlgebraicVerifier.Term extractIf(BabbleParser.IfExprContext ifCtx,
-                                             Map<ParserRuleContext, Integer> paramIndex,
-                                             Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
-                                             StateField stateField,
-                                             int[] budget) {
-        AlgebraicVerifier.Term cond = extractExpr(ifCtx.test, paramIndex, locals, stateField, budget);
+    private AlgebraicVerifier.Term extractIf(
+            BabbleParser.IfExprContext ifCtx,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            StateField stateField,
+            int[] budget) {
+        AlgebraicVerifier.Term cond =
+                extractExpr(ifCtx.test, paramIndex, locals, stateField, budget);
         if (cond == null || ifCtx.thenBlock == null) {
             return null;
         }
         Map<ParserRuleContext, AlgebraicVerifier.Term> thenLocals = new IdentityHashMap<>(locals);
-        AlgebraicVerifier.Term thenTerm = extractStatements(ifCtx.thenBlock.expression(), 0, paramIndex, thenLocals, stateField, budget);
+        AlgebraicVerifier.Term thenTerm =
+                extractStatements(
+                        ifCtx.thenBlock.expression(),
+                        0,
+                        paramIndex,
+                        thenLocals,
+                        stateField,
+                        budget);
         if (thenTerm == null) {
             return null;
         }
@@ -382,8 +442,16 @@ final class EffectAstExtractors {
         if (ifCtx.elseIf != null) {
             elseTerm = extractIf(ifCtx.elseIf, paramIndex, locals, stateField, budget);
         } else if (ifCtx.elseBlock != null) {
-            Map<ParserRuleContext, AlgebraicVerifier.Term> elseLocals = new IdentityHashMap<>(locals);
-            elseTerm = extractStatements(ifCtx.elseBlock.expression(), 0, paramIndex, elseLocals, stateField, budget);
+            Map<ParserRuleContext, AlgebraicVerifier.Term> elseLocals =
+                    new IdentityHashMap<>(locals);
+            elseTerm =
+                    extractStatements(
+                            ifCtx.elseBlock.expression(),
+                            0,
+                            paramIndex,
+                            elseLocals,
+                            stateField,
+                            budget);
         } else {
             elseTerm = new AlgebraicVerifier.Const(null, Type.NULL, PrimitiveKind.NONE);
         }
@@ -395,17 +463,20 @@ final class EffectAstExtractors {
             resType = thenTerm.type();
         }
         PrimitiveKind kind = AlgebraicVerifier.primitiveKindOf(resType);
-        return new AlgebraicVerifier.Ite(cond,
+        return new AlgebraicVerifier.Ite(
+                cond,
                 widenIfNeeded(thenTerm, resType, kind, budget),
                 widenIfNeeded(elseTerm, resType, kind, budget),
-                resType, kind);
+                resType,
+                kind);
     }
 
-    private AlgebraicVerifier.Term extractCall(BabbleParser.CallContext call,
-                                               Map<ParserRuleContext, Integer> paramIndex,
-                                               Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
-                                               StateField stateField,
-                                               int[] budget) {
+    private AlgebraicVerifier.Term extractCall(
+            BabbleParser.CallContext call,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            StateField stateField,
+            int[] budget) {
         List<BabbleParser.CallParameterContext> argParams = call.callParameters().callParameter();
         for (BabbleParser.CallParameterContext ap : argParams) {
             if (ScopeAnalysis.callParamName(ap) != null || ap.spread != null) {
@@ -416,23 +487,34 @@ final class EffectAstExtractors {
         PrimitiveKind resKind = AlgebraicVerifier.primitiveKindOf(resType);
 
         // Core scalar conversions `double(x)`, `int(x)`, etc.
-        if (call.expression() instanceof BabbleParser.CoreScalarRefContext && argParams.size() == 1) {
-            AlgebraicVerifier.Term arg = extractExpr(argParams.get(0).expression(), paramIndex, locals, stateField, budget);
-            return arg != null ? new AlgebraicVerifier.Cast(arg, arg.type(), resType, resKind) : null;
+        if (call.expression() instanceof BabbleParser.CoreScalarRefContext
+                && argParams.size() == 1) {
+            AlgebraicVerifier.Term arg =
+                    extractExpr(
+                            argParams.get(0).expression(), paramIndex, locals, stateField, budget);
+            return arg != null
+                    ? new AlgebraicVerifier.Cast(arg, arg.type(), resType, resKind)
+                    : null;
         }
 
         // Babble class / record constructor
         Type calleeType = ec.checker.rawTypeOf(call.expression());
         if (calleeType instanceof Type.ClassValue cv && !cv.node().isInterface()) {
-            List<AlgebraicVerifier.Term> args = extractArgTerms(argParams, paramIndex, locals, stateField, budget);
+            List<AlgebraicVerifier.Term> args =
+                    extractArgTerms(argParams, paramIndex, locals, stateField, budget);
             if (args == null) {
                 return null;
             }
             EffectChecker.CallableSummary cs = ec.constructorSummary(cv.node());
             boolean isVal = cv.node().kind == ClassShape.Kind.VALUE_CLASS;
-            boolean inj = isVal && cs != null && cs.effects().isPure() && cs.effects().isDeterministic()
-                    && !cv.node().parameters.isEmpty();
-            return new AlgebraicVerifier.Ctor("babble:ctor@" + System.identityHashCode(cv.node()), args, inj, resType);
+            boolean inj =
+                    isVal
+                            && cs != null
+                            && cs.effects().isPure()
+                            && cs.effects().isDeterministic()
+                            && !cv.node().parameters.isEmpty();
+            return new AlgebraicVerifier.Ctor(
+                    "babble:ctor@" + System.identityHashCode(cv.node()), args, inj, resType);
         }
 
         EffectSet fx = calleeIntrinsicOrResolvedEffects(call);
@@ -444,40 +526,51 @@ final class EffectAstExtractors {
             return null;
         }
         List<AlgebraicVerifier.Term> allArgs = new ArrayList<>(argParams.size() + 1);
-        BabbleParser.ExpressionContext unwrappedCallee = call.expression() instanceof BabbleParser.TypeApplyContext ta
-                ? ta.expression() : call.expression();
-        if (unwrappedCallee instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
+        BabbleParser.ExpressionContext unwrappedCallee =
+                call.expression() instanceof BabbleParser.TypeApplyContext ta
+                        ? ta.expression()
+                        : call.expression();
+        if (unwrappedCallee instanceof BabbleParser.SelectorContext sel
+                && sel.expression() != null) {
             Type recvType = ec.checker.rawTypeOf(sel.expression());
-            if (!(recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
-                    || recvType instanceof Type.Module || recvType instanceof Type.JavaPackage)) {
-                AlgebraicVerifier.Term recvTerm = extractExpr(sel.expression(), paramIndex, locals, stateField, budget);
+            if (!(recvType instanceof Type.JavaClassValue
+                    || recvType instanceof Type.ClassValue
+                    || recvType instanceof Type.Module
+                    || recvType instanceof Type.JavaPackage)) {
+                AlgebraicVerifier.Term recvTerm =
+                        extractExpr(sel.expression(), paramIndex, locals, stateField, budget);
                 if (recvTerm == null) {
                     return null;
                 }
                 allArgs.add(recvTerm);
             }
         }
-        List<AlgebraicVerifier.Term> explicitArgs = extractArgTerms(argParams, paramIndex, locals, stateField, budget);
+        List<AlgebraicVerifier.Term> explicitArgs =
+                extractArgTerms(argParams, paramIndex, locals, stateField, budget);
         if (explicitArgs == null) {
             return null;
         }
         allArgs.addAll(explicitArgs);
-        EGraph.CallProps props = new EGraph.CallProps(
-                fx.has(Effect.IDEMPOTENT),
-                fx.has(Effect.ASSOCIATIVE),
-                fx.has(Effect.COMMUTATIVE),
-                false);
-        return new AlgebraicVerifier.Call(symbol, List.copyOf(allArgs), fx, props, resType, resKind);
+        EGraph.CallProps props =
+                new EGraph.CallProps(
+                        fx.has(Effect.IDEMPOTENT),
+                        fx.has(Effect.ASSOCIATIVE),
+                        fx.has(Effect.COMMUTATIVE),
+                        false);
+        return new AlgebraicVerifier.Call(
+                symbol, List.copyOf(allArgs), fx, props, resType, resKind);
     }
 
-    private List<AlgebraicVerifier.Term> extractArgTerms(List<BabbleParser.CallParameterContext> argParams,
-                                                         Map<ParserRuleContext, Integer> paramIndex,
-                                                         Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
-                                                         StateField stateField,
-                                                         int[] budget) {
+    private List<AlgebraicVerifier.Term> extractArgTerms(
+            List<BabbleParser.CallParameterContext> argParams,
+            Map<ParserRuleContext, Integer> paramIndex,
+            Map<ParserRuleContext, AlgebraicVerifier.Term> locals,
+            StateField stateField,
+            int[] budget) {
         List<AlgebraicVerifier.Term> out = new ArrayList<>(argParams.size());
         for (BabbleParser.CallParameterContext ap : argParams) {
-            AlgebraicVerifier.Term t = extractExpr(ap.expression(), paramIndex, locals, stateField, budget);
+            AlgebraicVerifier.Term t =
+                    extractExpr(ap.expression(), paramIndex, locals, stateField, budget);
             if (t == null) {
                 return null;
             }
@@ -486,75 +579,106 @@ final class EffectAstExtractors {
         return out;
     }
 
-    private AlgebraicVerifier.Term buildBinaryTerm(String op, AlgebraicVerifier.Term l, AlgebraicVerifier.Term r,
-                                                   Type resType, int[] budget) {
+    private AlgebraicVerifier.Term buildBinaryTerm(
+            String op,
+            AlgebraicVerifier.Term l,
+            AlgebraicVerifier.Term r,
+            Type resType,
+            int[] budget) {
         PrimitiveKind resKind = AlgebraicVerifier.primitiveKindOf(resType);
         return switch (op) {
             case "+" -> {
                 if (resType == Type.STRING) {
-                    yield new AlgebraicVerifier.Binary(ENode.Op.STR_ADD, l, r, Type.STRING, PrimitiveKind.NONE);
+                    yield new AlgebraicVerifier.Binary(
+                            ENode.Op.STR_ADD, l, r, Type.STRING, PrimitiveKind.NONE);
                 }
                 if (!Type.isNumericScalar(resType)) {
                     yield null;
                 }
-                yield new AlgebraicVerifier.Binary(ENode.Op.ADD,
+                yield new AlgebraicVerifier.Binary(
+                        ENode.Op.ADD,
                         widenIfNeeded(l, resType, resKind, budget),
                         widenIfNeeded(r, resType, resKind, budget),
-                        resType, resKind);
+                        resType,
+                        resKind);
             }
-            case "-" -> Type.isNumericScalar(resType)
-                    ? new AlgebraicVerifier.Binary(ENode.Op.SUB,
-                    widenIfNeeded(l, resType, resKind, budget),
-                    widenIfNeeded(r, resType, resKind, budget),
-                    resType, resKind)
-                    : null;
-            case "*" -> Type.isNumericScalar(resType)
-                    ? new AlgebraicVerifier.Binary(ENode.Op.MUL,
-                    widenIfNeeded(l, resType, resKind, budget),
-                    widenIfNeeded(r, resType, resKind, budget),
-                    resType, resKind)
-                    : null;
-            case "/" -> Type.isNumericScalar(resType)
-                    ? new AlgebraicVerifier.Binary(ENode.Op.DIV,
-                    widenIfNeeded(l, resType, resKind, budget),
-                    widenIfNeeded(r, resType, resKind, budget),
-                    resType, resKind)
-                    : null;
-            case "//" -> Type.isIntegralScalar(resType)
-                    ? new AlgebraicVerifier.Binary(ENode.Op.FLOOR_DIV,
-                    widenIfNeeded(l, resType, resKind, budget),
-                    widenIfNeeded(r, resType, resKind, budget),
-                    resType, resKind)
-                    : null;
-            case "mod" -> Type.isIntegralScalar(resType)
-                    ? new AlgebraicVerifier.Binary(ENode.Op.MOD,
-                    widenIfNeeded(l, resType, resKind, budget),
-                    widenIfNeeded(r, resType, resKind, budget),
-                    resType, resKind)
-                    : null;
-            case "==" -> new AlgebraicVerifier.Binary(ENode.Op.EQ, l, r, Type.BOOL, PrimitiveKind.BOOL);
-            case "!=", "<>" -> new AlgebraicVerifier.Binary(ENode.Op.NEQ, l, r, Type.BOOL, PrimitiveKind.BOOL);
-            case "<" -> new AlgebraicVerifier.Binary(ENode.Op.LT, l, r, Type.BOOL, PrimitiveKind.BOOL);
-            case "<=" -> new AlgebraicVerifier.Binary(ENode.Op.LTE, l, r, Type.BOOL, PrimitiveKind.BOOL);
-            case ">" -> new AlgebraicVerifier.Binary(ENode.Op.GT, l, r, Type.BOOL, PrimitiveKind.BOOL);
-            case ">=" -> new AlgebraicVerifier.Binary(ENode.Op.GTE, l, r, Type.BOOL, PrimitiveKind.BOOL);
+            case "-" ->
+                    Type.isNumericScalar(resType)
+                            ? new AlgebraicVerifier.Binary(
+                                    ENode.Op.SUB,
+                                    widenIfNeeded(l, resType, resKind, budget),
+                                    widenIfNeeded(r, resType, resKind, budget),
+                                    resType,
+                                    resKind)
+                            : null;
+            case "*" ->
+                    Type.isNumericScalar(resType)
+                            ? new AlgebraicVerifier.Binary(
+                                    ENode.Op.MUL,
+                                    widenIfNeeded(l, resType, resKind, budget),
+                                    widenIfNeeded(r, resType, resKind, budget),
+                                    resType,
+                                    resKind)
+                            : null;
+            case "/" ->
+                    Type.isNumericScalar(resType)
+                            ? new AlgebraicVerifier.Binary(
+                                    ENode.Op.DIV,
+                                    widenIfNeeded(l, resType, resKind, budget),
+                                    widenIfNeeded(r, resType, resKind, budget),
+                                    resType,
+                                    resKind)
+                            : null;
+            case "//" ->
+                    Type.isIntegralScalar(resType)
+                            ? new AlgebraicVerifier.Binary(
+                                    ENode.Op.FLOOR_DIV,
+                                    widenIfNeeded(l, resType, resKind, budget),
+                                    widenIfNeeded(r, resType, resKind, budget),
+                                    resType,
+                                    resKind)
+                            : null;
+            case "mod" ->
+                    Type.isIntegralScalar(resType)
+                            ? new AlgebraicVerifier.Binary(
+                                    ENode.Op.MOD,
+                                    widenIfNeeded(l, resType, resKind, budget),
+                                    widenIfNeeded(r, resType, resKind, budget),
+                                    resType,
+                                    resKind)
+                            : null;
+            case "==" ->
+                    new AlgebraicVerifier.Binary(ENode.Op.EQ, l, r, Type.BOOL, PrimitiveKind.BOOL);
+            case "!=", "<>" ->
+                    new AlgebraicVerifier.Binary(ENode.Op.NEQ, l, r, Type.BOOL, PrimitiveKind.BOOL);
+            case "<" ->
+                    new AlgebraicVerifier.Binary(ENode.Op.LT, l, r, Type.BOOL, PrimitiveKind.BOOL);
+            case "<=" ->
+                    new AlgebraicVerifier.Binary(ENode.Op.LTE, l, r, Type.BOOL, PrimitiveKind.BOOL);
+            case ">" ->
+                    new AlgebraicVerifier.Binary(ENode.Op.GT, l, r, Type.BOOL, PrimitiveKind.BOOL);
+            case ">=" ->
+                    new AlgebraicVerifier.Binary(ENode.Op.GTE, l, r, Type.BOOL, PrimitiveKind.BOOL);
             default -> null;
         };
     }
 
-    private static AlgebraicVerifier.Term widenIfNeeded(AlgebraicVerifier.Term term, Type targetType,
-                                                        PrimitiveKind targetKind, int[] budget) {
-        if (term.type().equals(targetType) || targetKind == PrimitiveKind.NONE || !Type.isNumericScalar(term.type())) {
+    private static AlgebraicVerifier.Term widenIfNeeded(
+            AlgebraicVerifier.Term term, Type targetType, PrimitiveKind targetKind, int[] budget) {
+        if (term.type().equals(targetType)
+                || targetKind == PrimitiveKind.NONE
+                || !Type.isNumericScalar(term.type())) {
             return term;
         }
         if (term instanceof AlgebraicVerifier.Const c && c.value() instanceof Number n) {
-            Object converted = switch (targetKind) {
-                case LONG -> n.longValue();
-                case FLOAT -> n.floatValue();
-                case DOUBLE -> n.doubleValue();
-                case INT -> n.intValue();
-                default -> null;
-            };
+            Object converted =
+                    switch (targetKind) {
+                        case LONG -> n.longValue();
+                        case FLOAT -> n.floatValue();
+                        case DOUBLE -> n.doubleValue();
+                        case INT -> n.intValue();
+                        default -> null;
+                    };
             if (converted != null) {
                 return new AlgebraicVerifier.Const(converted, targetType, targetKind);
             }
@@ -575,11 +699,12 @@ final class EffectAstExtractors {
 
     // ---------------------------------------------------------------- mutating body extraction
 
-    private AlgebraicVerifier.MutBody extractMutBody(BabbleParser.BlockContext block,
-                                                     List<BabbleParser.FnParamContext> paramDecls,
-                                                     List<Type.Parameter> params,
-                                                     boolean[] mutParams,
-                                                     boolean mutThis) {
+    private AlgebraicVerifier.MutBody extractMutBody(
+            BabbleParser.BlockContext block,
+            List<BabbleParser.FnParamContext> paramDecls,
+            List<Type.Parameter> params,
+            boolean[] mutParams,
+            boolean mutThis) {
         if (block == null || block.expression().isEmpty()) {
             return null;
         }
@@ -587,18 +712,23 @@ final class EffectAstExtractors {
         List<PrimitiveKind> paramKinds = new ArrayList<>(params.size());
         for (int i = 0; i < paramDecls.size(); i++) {
             paramIndex.put(paramDecls.get(i), i);
-            paramKinds.add(i < params.size() ? AlgebraicVerifier.primitiveKindOf(params.get(i).type()) : PrimitiveKind.NONE);
+            paramKinds.add(
+                    i < params.size()
+                            ? AlgebraicVerifier.primitiveKindOf(params.get(i).type())
+                            : PrimitiveKind.NONE);
         }
         Map<ParserRuleContext, AlgebraicVerifier.Term> locals = new IdentityHashMap<>();
         int[] budget = {MAX_TERM_NODES};
 
-        // Allow leading pure local `def`s followed by one mutating call or one target-field assignment.
+        // Allow leading pure local `def`s followed by one mutating call or one target-field
+        // assignment.
         List<BabbleParser.ExpressionContext> stmts = block.expression();
         int n = stmts.size();
         for (int i = 0; i < n - 1; i++) {
             BabbleParser.ExpressionContext s = EffectBodyWalker.unwrapParens(stmts.get(i));
             if (s instanceof BabbleParser.DefExpressionContext def && def.value != null) {
-                AlgebraicVerifier.Term val = extractExpr(def.value, paramIndex, locals, null, budget);
+                AlgebraicVerifier.Term val =
+                        extractExpr(def.value, paramIndex, locals, null, budget);
                 if (val == null) {
                     return null;
                 }
@@ -617,8 +747,10 @@ final class EffectAstExtractors {
             return new AlgebraicVerifier.ForwardMutCall(calleeIntrinsicOrResolvedEffects(call));
         }
         // 2. Single-field state transition `this.field <op>= rhs` or `mutParam.field <op>= rhs`
-        if (last instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) != null) {
-            BabbleParser.ExpressionContext recv = EffectBodyWalker.unwrapParens(ScopeAnalysis.assignReceiver(assign));
+        if (last instanceof BabbleParser.AssignExpressionContext assign
+                && ScopeAnalysis.assignReceiver(assign) != null) {
+            BabbleParser.ExpressionContext recv =
+                    EffectBodyWalker.unwrapParens(ScopeAnalysis.assignReceiver(assign));
             int targetIdx = -1;
             ParserRuleContext targetParam = null;
             if (mutThis && recv instanceof BabbleParser.ThisExpressionContext) {
@@ -658,8 +790,13 @@ final class EffectAstExtractors {
                     return null;
                 }
             }
-            return new AlgebraicVerifier.FieldTransition(stateIdx, targetIdx, paramDecls.size(),
-                    List.copyOf(paramKinds), fieldKind, nextState);
+            return new AlgebraicVerifier.FieldTransition(
+                    stateIdx,
+                    targetIdx,
+                    paramDecls.size(),
+                    List.copyOf(paramKinds),
+                    fieldKind,
+                    nextState);
         }
         return null;
     }
@@ -668,7 +805,9 @@ final class EffectAstExtractors {
 
     private Object resolveParam(BabbleParser.ExpressionContext expr) {
         if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object r = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+            Object r =
+                    ec.checker.resolveNameForEffects(
+                            sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
             if (r instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc)) {
                 return r;
             }
@@ -679,10 +818,20 @@ final class EffectAstExtractors {
     private String callSymbol(BabbleParser.CallContext call, Type calleeType) {
         Method rm = ec.checker.resolvedJavaMethodOf(call);
         if (rm != null) {
-            return "java:" + rm.getDeclaringClass().getName() + "." + rm.getName() + ":" + rm.getParameterCount();
+            return "java:"
+                    + rm.getDeclaringClass().getName()
+                    + "."
+                    + rm.getName()
+                    + ":"
+                    + rm.getParameterCount();
         }
         if (calleeType instanceof Type.JavaMethod jm) {
-            return "java:" + jm.owner().getName() + "." + jm.name() + ":" + call.callParameters().callParameter().size();
+            return "java:"
+                    + jm.owner().getName()
+                    + "."
+                    + jm.name()
+                    + ":"
+                    + call.callParameters().callParameter().size();
         }
         if (calleeType instanceof Type.Function fn) {
             BabbleParser.FunctionLiteralContext lit = ec.checker.literalOf(fn);
@@ -690,9 +839,12 @@ final class EffectAstExtractors {
                 return "babble:fn@" + System.identityHashCode(lit);
             }
         }
-        BabbleParser.ExpressionContext calleeExpr = EffectBodyWalker.unwrapParens(call.expression());
+        BabbleParser.ExpressionContext calleeExpr =
+                EffectBodyWalker.unwrapParens(call.expression());
         if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+            Object resolved =
+                    ec.checker.resolveNameForEffects(
+                            sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
             if (resolved instanceof ParserRuleContext decl && !ec.checker.isReassigned(decl)) {
                 return "babble:decl@" + System.identityHashCode(decl);
             }
@@ -703,11 +855,15 @@ final class EffectAstExtractors {
     EffectSet calleeIntrinsicOrResolvedEffects(BabbleParser.CallContext call) {
         Method rm = ec.checker.resolvedJavaMethodOf(call);
         if (rm != null) {
-            return ec.javaResolver.resolveJavaMethodProfile(rm.getDeclaringClass(), rm.getName(), rm).effects();
+            return ec.javaResolver
+                    .resolveJavaMethodProfile(rm.getDeclaringClass(), rm.getName(), rm)
+                    .effects();
         }
         Constructor<?> rc = ec.checker.resolvedJavaConstructorOf(call);
         if (rc != null) {
-            return ec.javaResolver.resolveJavaConstructorProfile(rc.getDeclaringClass(), rc).effects();
+            return ec.javaResolver
+                    .resolveJavaConstructorProfile(rc.getDeclaringClass(), rc)
+                    .effects();
         }
         Type callee = ec.checker.rawTypeOf(call.expression());
         if (callee instanceof Type.JavaMethod jm) {
@@ -726,16 +882,17 @@ final class EffectAstExtractors {
         return null;
     }
 
-    // ---------------------------------------------------------------- polynomial SCP extraction (BIP027-I6)
+    // ---------------------------------------------------------------- polynomial SCP extraction
+    // (BIP027-I6)
 
     /**
      * Attempts to certify termination of a cyclic WTO component via Ben-Amram &amp; Lee's
-     * polynomial-time Size-Change Termination ({@link SizeChangeTermination}) over guarded
-     * integer decreases and acyclic {@code record} structural descent.
+     * polynomial-time Size-Change Termination ({@link SizeChangeTermination}) over guarded integer
+     * decreases and acyclic {@code record} structural descent.
      *
      * <p>Conservatively returns {@code false} if any callable in {@code component} is not a
-     * non-interface function literal, has a rest parameter, or can be invoked indirectly/dynamically
-     * within the component.
+     * non-interface function literal, has a rest parameter, or can be invoked
+     * indirectly/dynamically within the component.
      */
     boolean certifyComponentTermination(List<ParserRuleContext> component) {
         int n = component.size();
@@ -749,7 +906,8 @@ final class EffectAstExtractors {
             if (!(component.get(i) instanceof BabbleParser.FunctionLiteralContext fn)) {
                 return false;
             }
-            if (ec.modifiers.isInterfaceDefault(fn) || ec.pass.analysis.calls().restIndex(fn) >= 0) {
+            if (ec.modifiers.isInterfaceDefault(fn)
+                    || ec.pass.analysis.calls().restIndex(fn) >= 0) {
                 return false;
             }
             compIds.put(fn, i);
@@ -768,12 +926,14 @@ final class EffectAstExtractors {
         return SizeChangeTermination.isTerminating(arities, graphs);
     }
 
-    private record ParamDesc(int paramIdx, SizeChangeTermination.Relation rel, boolean isInt, boolean isRecord) {
-    }
+    private record ParamDesc(
+            int paramIdx, SizeChangeTermination.Relation rel, boolean isInt, boolean isRecord) {}
 
-    private record ScpPathEnv(Map<Integer, Long> lowerBounds, Map<ParserRuleContext, ParamDesc> locals) {
+    private record ScpPathEnv(
+            Map<Integer, Long> lowerBounds, Map<ParserRuleContext, ParamDesc> locals) {
         ScpPathEnv copy() {
-            return new ScpPathEnv(new java.util.HashMap<>(lowerBounds), new IdentityHashMap<>(locals));
+            return new ScpPathEnv(
+                    new java.util.HashMap<>(lowerBounds), new IdentityHashMap<>(locals));
         }
 
         ScpPathEnv withLowerBound(int paramIdx, long bound) {
@@ -795,9 +955,11 @@ final class EffectAstExtractors {
         private final Map<ParserRuleContext, Integer> trackedIntParams = new IdentityHashMap<>();
         private final Map<ParserRuleContext, Integer> trackedRecordParams = new IdentityHashMap<>();
 
-        ScpWalker(BabbleParser.FunctionLiteralContext owner, int ownerId,
-                  Map<BabbleParser.FunctionLiteralContext, Integer> compIds,
-                  List<SizeChangeTermination.CallGraph> outGraphs) {
+        ScpWalker(
+                BabbleParser.FunctionLiteralContext owner,
+                int ownerId,
+                Map<BabbleParser.FunctionLiteralContext, Integer> compIds,
+                List<SizeChangeTermination.CallGraph> outGraphs) {
             this.owner = owner;
             this.ownerId = ownerId;
             this.compIds = compIds;
@@ -852,9 +1014,13 @@ final class EffectAstExtractors {
                         return false;
                     }
                     // Early-return guard refinement for subsequent statements in the block.
-                    if (ifCtx.elseBlock == null && ifCtx.elseIf == null && alwaysExitsBlock(ifCtx.thenBlock)) {
+                    if (ifCtx.elseBlock == null
+                            && ifCtx.elseIf == null
+                            && alwaysExitsBlock(ifCtx.thenBlock)) {
                         cur = assume(ifCtx.test, false, cur);
-                    } else if (ifCtx.elseBlock != null && alwaysExitsBlock(ifCtx.elseBlock) && !alwaysExitsBlock(ifCtx.thenBlock)) {
+                    } else if (ifCtx.elseBlock != null
+                            && alwaysExitsBlock(ifCtx.elseBlock)
+                            && !alwaysExitsBlock(ifCtx.thenBlock)) {
                         cur = assume(ifCtx.test, true, cur);
                     }
                     continue;
@@ -905,9 +1071,13 @@ final class EffectAstExtractors {
                 if (!walkBlock(cc.armBlock, armEnv)) {
                     return false;
                 }
-                if (cc.guard == null && scrutDesc != null && scrutDesc.isInt()
+                if (cc.guard == null
+                        && scrutDesc != null
+                        && scrutDesc.isInt()
                         && scrutDesc.rel() == SizeChangeTermination.Relation.SAME) {
-                    fallthroughEnv = refineFallthroughFromPattern(cc.pattern(), scrutDesc.paramIdx(), fallthroughEnv);
+                    fallthroughEnv =
+                            refineFallthroughFromPattern(
+                                    cc.pattern(), scrutDesc.paramIdx(), fallthroughEnv);
                 }
             }
             if (m.elseClause() != null) {
@@ -942,7 +1112,8 @@ final class EffectAstExtractors {
                     }
                     case BabbleParser.TypeOrDestructurePatternContext tp -> {
                         if (tp.patternArgs() != null) {
-                            for (BabbleParser.PatternArgContext arg : tp.patternArgs().patternArg()) {
+                            for (BabbleParser.PatternArgContext arg :
+                                    tp.patternArgs().patternArg()) {
                                 if (!walkPatternExprs(arg.pattern(), env)) {
                                     return false;
                                 }
@@ -951,21 +1122,22 @@ final class EffectAstExtractors {
                     }
                     case BabbleParser.BindingPatternContext bp -> {
                         if (bp.patternArgs() != null) {
-                            for (BabbleParser.PatternArgContext arg : bp.patternArgs().patternArg()) {
+                            for (BabbleParser.PatternArgContext arg :
+                                    bp.patternArgs().patternArg()) {
                                 if (!walkPatternExprs(arg.pattern(), env)) {
                                     return false;
                                 }
                             }
                         }
                     }
-                    default -> {
-                    }
+                    default -> {}
                 }
             }
             return true;
         }
 
-        private ScpPathEnv bindPatternScp(BabbleParser.PatternContext pat, ParamDesc targetDesc, ScpPathEnv env) {
+        private ScpPathEnv bindPatternScp(
+                BabbleParser.PatternContext pat, ParamDesc targetDesc, ScpPathEnv env) {
             if (pat.atomicPattern().size() != 1) {
                 return env;
             }
@@ -986,7 +1158,8 @@ final class EffectAstExtractors {
                 return env;
             }
             if (atom instanceof BabbleParser.RelationalPatternContext rp
-                    && targetDesc != null && targetDesc.isInt()
+                    && targetDesc != null
+                    && targetDesc.isInt()
                     && targetDesc.rel() == SizeChangeTermination.Relation.SAME) {
                 Long c = evalIntConst(rp.rhs);
                 if (c != null) {
@@ -994,7 +1167,8 @@ final class EffectAstExtractors {
                 }
             }
             if (atom instanceof BabbleParser.ValuePatternContext vp
-                    && targetDesc != null && targetDesc.isInt()
+                    && targetDesc != null
+                    && targetDesc.isInt()
                     && targetDesc.rel() == SizeChangeTermination.Relation.SAME) {
                 LoweringMetadata.RangePatternSource rps = ec.checker.matchRangePattern(vp);
                 if (rps != null) {
@@ -1012,23 +1186,34 @@ final class EffectAstExtractors {
             return env;
         }
 
-        private ScpPathEnv bindPatternArgsScp(ParserRuleContext owner, BabbleParser.PatternArgsContext args,
-                                              ParamDesc parentDesc, ScpPathEnv env) {
+        private ScpPathEnv bindPatternArgsScp(
+                ParserRuleContext owner,
+                BabbleParser.PatternArgsContext args,
+                ParamDesc parentDesc,
+                ScpPathEnv env) {
             MatchTyper.RecordDestructureInfo recInfo = ec.checker.matchRecordDestructure(owner);
-            if (recInfo == null || recInfo.isJavaRecord() || parentDesc == null || !parentDesc.isRecord()) {
+            if (recInfo == null
+                    || recInfo.isJavaRecord()
+                    || parentDesc == null
+                    || !parentDesc.isRecord()) {
                 return env;
             }
             List<BabbleParser.PatternArgContext> argList = args.patternArg();
             for (int i = 0; i < argList.size() && i < recInfo.fieldTypes().size(); i++) {
                 Type ft = recInfo.fieldTypes().get(i);
-                ParamDesc fieldDesc = new ParamDesc(parentDesc.paramIdx(), SizeChangeTermination.Relation.DOWN,
-                        isIntegerType(ft), isRecordType(ft));
+                ParamDesc fieldDesc =
+                        new ParamDesc(
+                                parentDesc.paramIdx(),
+                                SizeChangeTermination.Relation.DOWN,
+                                isIntegerType(ft),
+                                isRecordType(ft));
                 env = bindPatternScp(argList.get(i).pattern(), fieldDesc, env);
             }
             return env;
         }
 
-        private ScpPathEnv refineFallthroughFromPattern(BabbleParser.PatternContext pat, int paramIdx, ScpPathEnv env) {
+        private ScpPathEnv refineFallthroughFromPattern(
+                BabbleParser.PatternContext pat, int paramIdx, ScpPathEnv env) {
             if (pat.atomicPattern().size() != 1) {
                 return env;
             }
@@ -1053,8 +1238,10 @@ final class EffectAstExtractors {
             if (raw == null) {
                 return true;
             }
-            ParserRuleContext ctx = raw instanceof BabbleParser.ExpressionContext e
-                    ? EffectBodyWalker.unwrapParens(e) : raw;
+            ParserRuleContext ctx =
+                    raw instanceof BabbleParser.ExpressionContext e
+                            ? EffectBodyWalker.unwrapParens(e)
+                            : raw;
             if (ctx instanceof BabbleParser.BlockContext b) {
                 return walkBlock(b, env);
             }
@@ -1071,7 +1258,8 @@ final class EffectAstExtractors {
             if (ctx instanceof BabbleParser.FunctionLiteralContext inner) {
                 return !treeReferencesComponent(inner);
             }
-            if (ctx instanceof BabbleParser.ClassExpressionContext || ctx instanceof BabbleParser.InterfaceExpressionContext) {
+            if (ctx instanceof BabbleParser.ClassExpressionContext
+                    || ctx instanceof BabbleParser.InterfaceExpressionContext) {
                 return true;
             }
             if (ctx instanceof BabbleParser.IfExpressionContext ie) {
@@ -1094,7 +1282,8 @@ final class EffectAstExtractors {
                 if (sel.expression() != null && !walkExpr(sel.expression(), env)) {
                     return false;
                 }
-                // Passing a component function as a value (not directly invoked) could escape into a HOF.
+                // Passing a component function as a value (not directly invoked) could escape into
+                // a HOF.
                 return !selectorTargetsComponent(sel);
             }
             if (ctx instanceof BabbleParser.BinaryOpContext bin) {
@@ -1118,13 +1307,15 @@ final class EffectAstExtractors {
         }
 
         private boolean walkCall(BabbleParser.CallContext call, ScpPathEnv env) {
-            List<BabbleParser.CallParameterContext> callParams = call.callParameters().callParameter();
+            List<BabbleParser.CallParameterContext> callParams =
+                    call.callParameters().callParameter();
             for (BabbleParser.CallParameterContext ap : callParams) {
                 if (!walkExpr(ap.expression(), env)) {
                     return false;
                 }
             }
-            BabbleParser.ExpressionContext calleeExpr = EffectBodyWalker.unwrapParens(call.expression());
+            BabbleParser.ExpressionContext calleeExpr =
+                    EffectBodyWalker.unwrapParens(call.expression());
             if (calleeExpr instanceof BabbleParser.TypeApplyContext ta) {
                 calleeExpr = EffectBodyWalker.unwrapParens(ta.expression());
             }
@@ -1135,9 +1326,11 @@ final class EffectAstExtractors {
             }
 
             // 2. Direct single-target call to a member of this component
-            BabbleParser.FunctionLiteralContext directTarget = resolveDirectComponentCallee(calleeExpr);
+            BabbleParser.FunctionLiteralContext directTarget =
+                    resolveDirectComponentCallee(calleeExpr);
             if (directTarget != null) {
-                if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() != null) {
+                if (calleeExpr instanceof BabbleParser.SelectorContext sel
+                        && sel.expression() != null) {
                     if (!walkExpr(sel.expression(), env)) {
                         return false;
                     }
@@ -1145,7 +1338,8 @@ final class EffectAstExtractors {
                 return recordDirectCall(directTarget, compIds.get(directTarget), callParams, env);
             }
 
-            // 3. Walk non-direct callee expression; reject if its type could dynamically reach the component.
+            // 3. Walk non-direct callee expression; reject if its type could dynamically reach the
+            // component.
             if (!walkExpr(call.expression(), env)) {
                 return false;
             }
@@ -1156,15 +1350,19 @@ final class EffectAstExtractors {
             return true;
         }
 
-        private boolean recordDirectCall(BabbleParser.FunctionLiteralContext targetFn, int targetId,
-                                         List<BabbleParser.CallParameterContext> callParams, ScpPathEnv env) {
+        private boolean recordDirectCall(
+                BabbleParser.FunctionLiteralContext targetFn,
+                int targetId,
+                List<BabbleParser.CallParameterContext> callParams,
+                ScpPathEnv env) {
             for (BabbleParser.CallParameterContext ap : callParams) {
                 if (ap.spread != null) {
                     return false;
                 }
             }
             Type targetRaw = ec.checker.rawTypeOf(targetFn);
-            List<Type.Parameter> targetParams = targetRaw instanceof Type.Function tf ? tf.parameters() : List.of();
+            List<Type.Parameter> targetParams =
+                    targetRaw instanceof Type.Function tf ? tf.parameters() : List.of();
             List<SizeChangeTermination.Edge> edges = new ArrayList<>();
             for (BabbleParser.CallParameterContext ap : callParams) {
                 int dstIdx = ec.checker.parameterIndexForArg(targetParams, callParams, ap);
@@ -1184,7 +1382,9 @@ final class EffectAstExtractors {
             BabbleParser.ExpressionContext expr = EffectBodyWalker.unwrapParens(raw);
             // 1. Bare variable: tracked parameter or local alias/descent
             if (expr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-                Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                Object resolved =
+                        ec.checker.resolveNameForEffects(
+                                sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
                 if (resolved instanceof ParserRuleContext decl) {
                     ParamDesc local = env.locals().get(decl);
                     if (local != null) {
@@ -1192,11 +1392,13 @@ final class EffectAstExtractors {
                     }
                     Integer intIdx = trackedIntParams.get(decl);
                     if (intIdx != null) {
-                        return new ParamDesc(intIdx, SizeChangeTermination.Relation.SAME, true, false);
+                        return new ParamDesc(
+                                intIdx, SizeChangeTermination.Relation.SAME, true, false);
                     }
                     Integer recIdx = trackedRecordParams.get(decl);
                     if (recIdx != null) {
-                        return new ParamDesc(recIdx, SizeChangeTermination.Relation.SAME, false, true);
+                        return new ParamDesc(
+                                recIdx, SizeChangeTermination.Relation.SAME, false, true);
                     }
                 }
                 return null;
@@ -1208,8 +1410,11 @@ final class EffectAstExtractors {
                     Type recvType = ec.checker.rawTypeOf(sel.expression());
                     if (isRecordFieldAccess(recvType, ScopeAnalysis.selectorName(sel))) {
                         Type resType = ec.checker.rawTypeOf(sel);
-                        return new ParamDesc(base.paramIdx(), SizeChangeTermination.Relation.DOWN,
-                                isIntegerType(resType), isRecordType(resType));
+                        return new ParamDesc(
+                                base.paramIdx(),
+                                SizeChangeTermination.Relation.DOWN,
+                                isIntegerType(resType),
+                                isRecordType(resType));
                     }
                 }
                 return null;
@@ -1219,24 +1424,36 @@ final class EffectAstExtractors {
                 String op = bin.op.getText();
                 if ("-".equals(op) || "+".equals(op)) {
                     ParamDesc left = describeArg(bin.left, env);
-                    if (left != null && left.isInt() && left.rel() == SizeChangeTermination.Relation.SAME) {
+                    if (left != null
+                            && left.isInt()
+                            && left.rel() == SizeChangeTermination.Relation.SAME) {
                         Long lb = env.lowerBounds().get(left.paramIdx());
                         if (lb != null && lb >= 0) {
                             Long c = evalIntConst(bin.right);
                             if (c != null) {
                                 long delta = "-".equals(op) ? c : -c;
                                 if (delta >= 1 && delta <= Integer.MAX_VALUE) {
-                                    return new ParamDesc(left.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                                    return new ParamDesc(
+                                            left.paramIdx(),
+                                            SizeChangeTermination.Relation.DOWN,
+                                            true,
+                                            false);
                                 }
                                 if (delta == 0) {
                                     return left;
                                 }
                             } else if ("-".equals(op)) {
                                 ParamDesc right = describeArg(bin.right, env);
-                                if (right != null && right.isInt() && right.rel() == SizeChangeTermination.Relation.SAME) {
+                                if (right != null
+                                        && right.isInt()
+                                        && right.rel() == SizeChangeTermination.Relation.SAME) {
                                     Long rlb = env.lowerBounds().get(right.paramIdx());
                                     if (rlb != null && rlb >= 1) {
-                                        return new ParamDesc(left.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                                        return new ParamDesc(
+                                                left.paramIdx(),
+                                                SizeChangeTermination.Relation.DOWN,
+                                                true,
+                                                false);
                                     }
                                 }
                             }
@@ -1245,14 +1462,19 @@ final class EffectAstExtractors {
                 }
                 return null;
             }
-            // 4. Guarded integer halving / floorDiv / floorMod: `int(n / 2)`, `Math.floorDiv(n, 2)`, `Math.floorMod(a, b)`
+            // 4. Guarded integer halving / floorDiv / floorMod: `int(n / 2)`, `Math.floorDiv(n,
+            // 2)`, `Math.floorMod(a, b)`
             if (expr instanceof BabbleParser.CallContext call) {
-                List<BabbleParser.CallParameterContext> args = call.callParameters().callParameter();
-                if (call.expression() instanceof BabbleParser.CoreScalarRefContext && args.size() == 1) {
+                List<BabbleParser.CallParameterContext> args =
+                        call.callParameters().callParameter();
+                if (call.expression() instanceof BabbleParser.CoreScalarRefContext
+                        && args.size() == 1) {
                     Type dst = ec.checker.rawTypeOf(call);
                     if (dst == Type.INT || dst == Type.LONG) {
-                        BabbleParser.ExpressionContext inner = EffectBodyWalker.unwrapParens(args.get(0).expression());
-                        if (inner instanceof BabbleParser.BinaryOpContext bin && "/".equals(bin.op.getText())) {
+                        BabbleParser.ExpressionContext inner =
+                                EffectBodyWalker.unwrapParens(args.get(0).expression());
+                        if (inner instanceof BabbleParser.BinaryOpContext bin
+                                && "/".equals(bin.op.getText())) {
                             return describeDivDecrease(bin.left, bin.right, env);
                         }
                     }
@@ -1260,14 +1482,21 @@ final class EffectAstExtractors {
                 Method rm = ec.checker.resolvedJavaMethodOf(call);
                 if (rm != null && rm.getDeclaringClass() == Math.class && args.size() == 2) {
                     if ("floorDiv".equals(rm.getName())) {
-                        return describeDivDecrease(args.get(0).expression(), args.get(1).expression(), env);
+                        return describeDivDecrease(
+                                args.get(0).expression(), args.get(1).expression(), env);
                     }
                     if ("floorMod".equals(rm.getName())) {
                         ParamDesc mod = describeArg(args.get(1).expression(), env);
-                        if (mod != null && mod.isInt() && mod.rel() == SizeChangeTermination.Relation.SAME) {
+                        if (mod != null
+                                && mod.isInt()
+                                && mod.rel() == SizeChangeTermination.Relation.SAME) {
                             Long lb = env.lowerBounds().get(mod.paramIdx());
                             if (lb != null && lb >= 1) {
-                                return new ParamDesc(mod.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                                return new ParamDesc(
+                                        mod.paramIdx(),
+                                        SizeChangeTermination.Relation.DOWN,
+                                        true,
+                                        false);
                             }
                         }
                     }
@@ -1276,12 +1505,16 @@ final class EffectAstExtractors {
             return null;
         }
 
-        private ParamDesc describeDivDecrease(BabbleParser.ExpressionContext numExpr,
-                                              BabbleParser.ExpressionContext denExpr,
-                                              ScpPathEnv env) {
+        private ParamDesc describeDivDecrease(
+                BabbleParser.ExpressionContext numExpr,
+                BabbleParser.ExpressionContext denExpr,
+                ScpPathEnv env) {
             ParamDesc num = describeArg(numExpr, env);
             Long denom = evalIntConst(denExpr);
-            if (num == null || !num.isInt() || num.rel() != SizeChangeTermination.Relation.SAME || denom == null) {
+            if (num == null
+                    || !num.isInt()
+                    || num.rel() != SizeChangeTermination.Relation.SAME
+                    || denom == null) {
                 return null;
             }
             Long lb = env.lowerBounds().get(num.paramIdx());
@@ -1289,7 +1522,8 @@ final class EffectAstExtractors {
                 return null;
             }
             if (denom >= 2 && lb >= 1) {
-                return new ParamDesc(num.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
+                return new ParamDesc(
+                        num.paramIdx(), SizeChangeTermination.Relation.DOWN, true, false);
             }
             if (denom >= 1) {
                 return num;
@@ -1297,7 +1531,8 @@ final class EffectAstExtractors {
             return null;
         }
 
-        private ScpPathEnv assume(BabbleParser.ExpressionContext raw, boolean truth, ScpPathEnv env) {
+        private ScpPathEnv assume(
+                BabbleParser.ExpressionContext raw, boolean truth, ScpPathEnv env) {
             BabbleParser.ExpressionContext cond = EffectBodyWalker.unwrapParens(raw);
             if (cond instanceof BabbleParser.BooleanNotContext notCtx) {
                 return assume(notCtx.expression(), !truth, env);
@@ -1324,17 +1559,27 @@ final class EffectAstExtractors {
                 ParamDesc rp = describeArg(bin.right, env);
                 Long lc = evalIntConst(bin.left);
                 Long rc = evalIntConst(bin.right);
-                if (lp != null && lp.isInt() && lp.rel() == SizeChangeTermination.Relation.SAME && rc != null) {
+                if (lp != null
+                        && lp.isInt()
+                        && lp.rel() == SizeChangeTermination.Relation.SAME
+                        && rc != null) {
                     return refineBound(env, lp.paramIdx(), op, rc);
                 }
-                if (rp != null && rp.isInt() && rp.rel() == SizeChangeTermination.Relation.SAME && lc != null) {
+                if (rp != null
+                        && rp.isInt()
+                        && rp.rel() == SizeChangeTermination.Relation.SAME
+                        && lc != null) {
                     String flipped = flipComparisonOp(op);
                     if (flipped != null) {
                         return refineBound(env, rp.paramIdx(), flipped, lc);
                     }
                 }
-                if (lp != null && lp.isInt() && lp.rel() == SizeChangeTermination.Relation.SAME
-                        && rp != null && rp.isInt() && rp.rel() == SizeChangeTermination.Relation.SAME) {
+                if (lp != null
+                        && lp.isInt()
+                        && lp.rel() == SizeChangeTermination.Relation.SAME
+                        && rp != null
+                        && rp.isInt()
+                        && rp.rel() == SizeChangeTermination.Relation.SAME) {
                     Long rlb = env.lowerBounds().get(rp.paramIdx());
                     if (rlb != null) {
                         if (">".equals(op) && rlb < Long.MAX_VALUE) {
@@ -1364,27 +1609,36 @@ final class EffectAstExtractors {
                 case ">=", "==" -> env.withLowerBound(paramIdx, c);
                 case "!=", "<>" -> {
                     Long cur = env.lowerBounds().get(paramIdx);
-                    yield (cur != null && cur == c && c < Long.MAX_VALUE) ? env.withLowerBound(paramIdx, c + 1) : env;
+                    yield (cur != null && cur == c && c < Long.MAX_VALUE)
+                            ? env.withLowerBound(paramIdx, c + 1)
+                            : env;
                 }
                 default -> env;
             };
         }
 
-        private BabbleParser.FunctionLiteralContext resolveDirectComponentCallee(BabbleParser.ExpressionContext calleeExpr) {
+        private BabbleParser.FunctionLiteralContext resolveDirectComponentCallee(
+                BabbleParser.ExpressionContext calleeExpr) {
             if (calleeExpr instanceof BabbleParser.SelectorContext sel) {
                 if (sel.expression() == null) {
-                    Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                    Object resolved =
+                            ec.checker.resolveNameForEffects(
+                                    sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
                     if (resolved instanceof BabbleParser.DefExpressionContext def
                             && !ec.checker.isReassigned(def)
                             && def.value instanceof BabbleParser.FunctionLiteralContext lit
                             && compIds.containsKey(lit)) {
                         return lit;
                     }
-                } else if (EffectBodyWalker.unwrapParens(sel.expression()) instanceof BabbleParser.ThisExpressionContext) {
+                } else if (EffectBodyWalker.unwrapParens(sel.expression())
+                        instanceof BabbleParser.ThisExpressionContext) {
                     Type recv = ec.checker.rawTypeOf(sel.expression());
                     if (recv instanceof Type.Instance inst && !inst.node().isInterface()) {
-                        TypeNode.Member mem = inst.node().members.get(ScopeAnalysis.selectorName(sel));
-                        if (mem != null && mem.function != null && compIds.containsKey(mem.function)) {
+                        TypeNode.Member mem =
+                                inst.node().members.get(ScopeAnalysis.selectorName(sel));
+                        if (mem != null
+                                && mem.function != null
+                                && compIds.containsKey(mem.function)) {
                             return mem.function;
                         }
                     }
@@ -1395,7 +1649,9 @@ final class EffectAstExtractors {
 
         private boolean selectorTargetsComponent(BabbleParser.SelectorContext sel) {
             if (sel.expression() == null) {
-                Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+                Object resolved =
+                        ec.checker.resolveNameForEffects(
+                                sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
                 if (resolved instanceof BabbleParser.DefExpressionContext def
                         && def.value instanceof BabbleParser.FunctionLiteralContext lit
                         && compIds.containsKey(lit)) {
@@ -1476,7 +1732,8 @@ final class EffectAstExtractors {
         boolean hasRecord = false;
         for (Type m : Type.membersOf(unwrapped)) {
             Type um = TypeAlgebra.unwrapFrozen(m);
-            if (um instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+            if (um instanceof Type.Instance inst
+                    && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
                 hasRecord = true;
             } else if (!Type.isCoreScalar(um) && um != Type.STRING) {
                 return false;
@@ -1490,7 +1747,8 @@ final class EffectAstExtractors {
             return false;
         }
         Type unwrapped = TypeAlgebra.unwrapFrozen(Type.withoutNull(recvType));
-        if (unwrapped instanceof Type.Instance inst && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
+        if (unwrapped instanceof Type.Instance inst
+                && inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
             TypeNode.Member m = inst.node().members.get(fieldName);
             return m != null && !m.isMethod() && !m.hasFunction;
         }
@@ -1508,7 +1766,9 @@ final class EffectAstExtractors {
             }
             if (u instanceof BabbleParser.IfExpressionContext ie) {
                 BabbleParser.IfExprContext ifCtx = ie.ifExpr();
-                if (ifCtx.elseBlock != null && alwaysExitsBlock(ifCtx.thenBlock) && alwaysExitsBlock(ifCtx.elseBlock)) {
+                if (ifCtx.elseBlock != null
+                        && alwaysExitsBlock(ifCtx.thenBlock)
+                        && alwaysExitsBlock(ifCtx.elseBlock)) {
                     return true;
                 }
             }

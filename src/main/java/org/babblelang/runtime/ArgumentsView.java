@@ -13,11 +13,10 @@ public abstract class ArgumentsView implements Iterable<Object> {
 
     /**
      * Sentinel wrapping an already-packed rest {@link Iterable} when passed through the generic
-     * {@link Callable#call} convention so a variadic callee can distinguish a packed rest from
-     * raw positional elements supplied via a fixed-arity function type ({@code BIP021-D5}).
+     * {@link Callable#call} convention so a variadic callee can distinguish a packed rest from raw
+     * positional elements supplied via a fixed-arity function type ({@code BIP021-D5}).
      */
-    public record PackedRest(Iterable<?> iterable) {
-    }
+    public record PackedRest(Iterable<?> iterable) {}
 
     public abstract int size();
 
@@ -48,7 +47,7 @@ public abstract class ArgumentsView implements Iterable<Object> {
     }
 
     public static ArgumentsView single(Object element) {
-        return new ObjectView(new Object[]{element});
+        return new ObjectView(new Object[] {element});
     }
 
     public static ArgumentsView ofBytes(byte... elements) {

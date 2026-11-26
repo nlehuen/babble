@@ -1,14 +1,5 @@
 package org.babblelang.wasm;
 
-import org.babblelang.analysis.CompilationTarget;
-import org.babblelang.ir.hir.HirClass;
-import org.babblelang.ir.hir.HirExpr;
-import org.babblelang.ir.hir.HirFunction;
-import org.babblelang.ir.hir.HirInterface;
-import org.babblelang.ir.hir.HirModule;
-import org.babblelang.ir.hir.HirParam;
-import org.babblelang.ir.hir.HirVar;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -18,17 +9,26 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.babblelang.analysis.CompilationTarget;
+import org.babblelang.ir.hir.HirClass;
+import org.babblelang.ir.hir.HirExpr;
+import org.babblelang.ir.hir.HirFunction;
+import org.babblelang.ir.hir.HirInterface;
+import org.babblelang.ir.hir.HirModule;
+import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirVar;
 
 /**
- * Whole-program closed-world linker from {@link HirModule}s to a single WebAssembly 3.0
- * {@link WasmModule} ({@code BIP025-I1}, {@code BIP025-I2}, {@code BIP025-D3}).
+ * Whole-program closed-world linker from {@link HirModule}s to a single WebAssembly 3.0 {@link
+ * WasmModule} ({@code BIP025-I1}, {@code BIP025-I2}, {@code BIP025-D3}).
  *
- * <p>Resolves module globals, {@code $ModuleVal} exports, classes/records/objects, interfaces
- * &amp; typed {@code $ITable_I}s, functions &amp; closures, generic call trampolines, module
+ * <p>Resolves module globals, {@code $ModuleVal} exports, classes/records/objects, interfaces &amp;
+ * typed {@code $ITable_I}s, functions &amp; closures, generic call trampolines, module
  * initialization guards, and entry-point exports.
  */
 public final class WasmProgramLinker {
-    public record ModuleInput(String key, String displayName, HirModule hir, Map<String, String> staticImports) {
+    public record ModuleInput(
+            String key, String displayName, HirModule hir, Map<String, String> staticImports) {
         public ModuleInput {
             staticImports = staticImports != null ? Map.copyOf(staticImports) : Map.of();
         }
@@ -46,22 +46,35 @@ public final class WasmProgramLinker {
         public final WasmModule.FuncDef directFuncDef;
         public final int genericFuncIdx;
         public final WasmModule.FuncDef genericFuncDef;
-        public final int closureStructType; // -1 if capture-free (uses $FnBase) or class/interface method
+        public final int
+                closureStructType; // -1 if capture-free (uses $FnBase) or class/interface method
         public final int singletonGlobalIdx; // >= 0 if capture-free standalone function
         public final List<WasmValType> captureFieldTypes;
         public final boolean hasEnvParam;
         public final boolean hasThisParam;
-        public final WasmObjectSystem.ClassInfo ownerClass; // non-null for class/record/object methods
-        public final WasmObjectSystem.IfaceInfo ownerIface; // non-null for interface default methods
+        public final WasmObjectSystem.ClassInfo
+                ownerClass; // non-null for class/record/object methods
+        public final WasmObjectSystem.IfaceInfo
+                ownerIface; // non-null for interface default methods
         public final boolean isInterfaceDefault;
         public final boolean hasOptMaskParam;
         public final boolean hasBoxedMissingOptParams;
 
-        FuncInfo(int moduleIndex, HirFunction hir, WasmModule.FuncDef directFuncDef,
-                 WasmModule.FuncDef genericFuncDef, int closureStructType, int singletonGlobalIdx,
-                 List<WasmValType> captureFieldTypes, boolean hasEnvParam, boolean hasThisParam,
-                 WasmObjectSystem.ClassInfo ownerClass, WasmObjectSystem.IfaceInfo ownerIface,
-                 boolean isInterfaceDefault, boolean hasOptMaskParam, boolean hasBoxedMissingOptParams) {
+        FuncInfo(
+                int moduleIndex,
+                HirFunction hir,
+                WasmModule.FuncDef directFuncDef,
+                WasmModule.FuncDef genericFuncDef,
+                int closureStructType,
+                int singletonGlobalIdx,
+                List<WasmValType> captureFieldTypes,
+                boolean hasEnvParam,
+                boolean hasThisParam,
+                WasmObjectSystem.ClassInfo ownerClass,
+                WasmObjectSystem.IfaceInfo ownerIface,
+                boolean isInterfaceDefault,
+                boolean hasOptMaskParam,
+                boolean hasBoxedMissingOptParams) {
             this.moduleIndex = moduleIndex;
             this.hir = hir;
             this.directFuncIdx = directFuncDef.funcIndex();
@@ -84,14 +97,17 @@ public final class WasmProgramLinker {
         public WasmObjectSystem.IfaceInfo staticOwnerIface;
     }
 
-    /** Whether {@code cv} is a {@code BIP034-I5} value-captured immutable {@code def} (no {@code $Cell}). */
+    /**
+     * Whether {@code cv} is a {@code BIP034-I5} value-captured immutable {@code def} (no {@code
+     * $Cell}).
+     */
     public static boolean isValueCapture(HirVar cv) {
         return cv != null && cv.capturedByValue() && !cv.cell();
     }
 
     /** Unboxed primitive Wasm global backing an immutable top-level primitive {@code def}. */
-    public record PrimitiveGlobal(int ownerModIndex, int globalIdx, org.babblelang.analysis.PrimitiveKind kind) {
-    }
+    public record PrimitiveGlobal(
+            int ownerModIndex, int globalIdx, org.babblelang.analysis.PrimitiveKind kind) {}
 
     /** Per-module linked state: top-level globals, ModuleVal, init function, and function table. */
     public static final class ModuleLinkInfo {
@@ -101,17 +117,19 @@ public final class WasmProgramLinker {
         public final Map<String, Integer> topLevelDefIndex = new LinkedHashMap<>();
         public final Set<String> immutableTopLevelNames = new HashSet<>();
         public final Map<String, Object> immutableTopLevelConsts = new LinkedHashMap<>();
-        public final Map<String, PrimitiveGlobal> immutableTopLevelPrimGlobals = new LinkedHashMap<>();
+        public final Map<String, PrimitiveGlobal> immutableTopLevelPrimGlobals =
+                new LinkedHashMap<>();
         public final Map<String, ModuleLinkInfo> immutableModuleImports = new LinkedHashMap<>();
         public final Map<String, FuncInfo> immutableTopLevelFuncs = new LinkedHashMap<>();
-        public final Map<String, WasmObjectSystem.ClassInfo> immutableTopLevelClasses = new LinkedHashMap<>();
+        public final Map<String, WasmObjectSystem.ClassInfo> immutableTopLevelClasses =
+                new LinkedHashMap<>();
         public final Map<Integer, Integer> funcOwnerTopLevelStmtIdx = new HashMap<>();
         public final Map<Integer, Integer> classOwnerTopLevelStmtIdx = new HashMap<>();
         public final Map<Integer, FuncInfo> functions = new LinkedHashMap<>();
         public final Set<Integer> interfaceDefaultFuncIds = new HashSet<>();
         public final Map<Integer, Integer> interfaceDefaultOwnerIfaceId = new LinkedHashMap<>();
         public int initStateGlobalIdx; // 0 = uninit, 1 = initing, 2 = done
-        public int modValGlobalIdx;    // (mut (ref null $ModuleVal))
+        public int modValGlobalIdx; // (mut (ref null $ModuleVal))
         public int initFuncIdx;
         public WasmModule.FuncDef initFuncDef;
 
@@ -135,9 +153,12 @@ public final class WasmProgramLinker {
         }
     }
 
-    /** Bound Wasm host import declared via {@code axiom wasm.<mod>.<name>: fn ...} ({@code BIP025-D9}). */
-    public record WasmImportBinding(org.babblelang.analysis.LoweringTargets.WasmImportSpec spec, int funcIdx) {
-    }
+    /**
+     * Bound Wasm host import declared via {@code axiom wasm.<mod>.<name>: fn ...} ({@code
+     * BIP025-D9}).
+     */
+    public record WasmImportBinding(
+            org.babblelang.analysis.LoweringTargets.WasmImportSpec spec, int funcIdx) {}
 
     private final List<ModuleInput> inputs;
     private final CompilationTarget target;
@@ -170,13 +191,20 @@ public final class WasmProgramLinker {
         this.rangeOps = new WasmRangeOpsGen(mod, ts, rt);
         this.ops.setCollections(colOps);
         this.rt.emitPolymorphicHelpers(
-                arrOps.fnArrayDeepEquals, arrOps.fnArrayDeepHash, arrOps.fnArrayFormat,
-                colOps.fnColEq, colOps.fnColHash, colOps.fnColFmt,
-                rangeOps.fnRangeEq, rangeOps.fnRangeHash, rangeOps.fnRangeFmt);
+                arrOps.fnArrayDeepEquals,
+                arrOps.fnArrayDeepHash,
+                arrOps.fnArrayFormat,
+                colOps.fnColEq,
+                colOps.fnColHash,
+                colOps.fnColFmt,
+                rangeOps.fnRangeEq,
+                rangeOps.fnRangeHash,
+                rangeOps.fnRangeFmt);
         this.objects = new WasmObjectSystem(this);
         this.arrOps.emitTdSubtypeBody(objects);
         this.ops.emitClassofWithTable(objects.gClassVals);
-        this.fnInitSingletonsDef = mod.addFunction("init_fn_singletons", ts.internFuncType(List.of(), List.of()));
+        this.fnInitSingletonsDef =
+                mod.addFunction("init_fn_singletons", ts.internFuncType(List.of(), List.of()));
     }
 
     private void declareUserWasmImports() {
@@ -210,8 +238,15 @@ public final class WasmProgramLinker {
                     results = List.of(WasmValType.EXTERNREF);
                 }
                 int sigIdx = ts.internFuncType(params, results);
-                int fidx = mod.addFuncImport(spec.module(), spec.name(), sigIdx,
-                        "wasm_" + sanitizeName(spec.module()) + "_" + sanitizeName(spec.name()));
+                int fidx =
+                        mod.addFuncImport(
+                                spec.module(),
+                                spec.name(),
+                                sigIdx,
+                                "wasm_"
+                                        + sanitizeName(spec.module())
+                                        + "_"
+                                        + sanitizeName(spec.name()));
                 wasmImports.put(key, new WasmImportBinding(spec, fidx));
             }
         }
@@ -288,27 +323,49 @@ public final class WasmProgramLinker {
             modulesByKey.put(in.key(), info);
             modulesByKey.put(in.hir().moduleId(), info);
 
-            info.initStateGlobalIdx = mod.addGlobal("M" + m + "_state", WasmValType.I32, true,
-                    List.of(new WasmInstr.I32Const(0)));
-            info.modValGlobalIdx = mod.addGlobal("M" + m + "_mod", WasmValType.refNull(ts.moduleValType), true,
-                    ts.defaultConstExpr(WasmValType.refNull(ts.moduleValType)));
+            info.initStateGlobalIdx =
+                    mod.addGlobal(
+                            "M" + m + "_state",
+                            WasmValType.I32,
+                            true,
+                            List.of(new WasmInstr.I32Const(0)));
+            info.modValGlobalIdx =
+                    mod.addGlobal(
+                            "M" + m + "_mod",
+                            WasmValType.refNull(ts.moduleValType),
+                            true,
+                            ts.defaultConstExpr(WasmValType.refNull(ts.moduleValType)));
 
             for (String name : in.hir().topLevelDeclaredNames()) {
-                int g = mod.addGlobal("M" + m + "_g_" + sanitizeName(name), ts.anyRef(), true,
-                        ts.defaultConstExpr(ts.anyRef()));
+                int g =
+                        mod.addGlobal(
+                                "M" + m + "_g_" + sanitizeName(name),
+                                ts.anyRef(),
+                                true,
+                                ts.defaultConstExpr(ts.anyRef()));
                 info.topLevelGlobals.put(name, g);
             }
             for (String exp : in.hir().exports()) {
                 if (!info.topLevelGlobals.containsKey(exp)) {
-                    int g = mod.addGlobal("M" + m + "_g_" + sanitizeName(exp), ts.anyRef(), true,
-                            ts.defaultConstExpr(ts.anyRef()));
+                    int g =
+                            mod.addGlobal(
+                                    "M" + m + "_g_" + sanitizeName(exp),
+                                    ts.anyRef(),
+                                    true,
+                                    ts.defaultConstExpr(ts.anyRef()));
                     info.topLevelGlobals.put(exp, g);
                 }
             }
             for (HirExpr stmt : in.hir().topLevelStatements()) {
-                if (stmt instanceof HirExpr.Def d && d.var() == null && !info.topLevelGlobals.containsKey(d.name())) {
-                    int g = mod.addGlobal("M" + m + "_g_" + sanitizeName(d.name()), ts.anyRef(), true,
-                            ts.defaultConstExpr(ts.anyRef()));
+                if (stmt instanceof HirExpr.Def d
+                        && d.var() == null
+                        && !info.topLevelGlobals.containsKey(d.name())) {
+                    int g =
+                            mod.addGlobal(
+                                    "M" + m + "_g_" + sanitizeName(d.name()),
+                                    ts.anyRef(),
+                                    true,
+                                    ts.defaultConstExpr(ts.anyRef()));
                     info.topLevelGlobals.put(d.name(), g);
                 }
             }
@@ -341,7 +398,8 @@ public final class WasmProgramLinker {
         }
         indexImmutableStaticBindings();
 
-        // Phase 2: Emit all function/method bodies, constructors, vtable hooks, itables, and module inits
+        // Phase 2: Emit all function/method bodies, constructors, vtable hooks, itables, and module
+        // inits
         WasmCallEmitter callEmitter = new WasmCallEmitter(this);
         WasmFuncEmitter funcEmitter = new WasmFuncEmitter(this, callEmitter);
         callEmitter.setFuncEmitter(funcEmitter);
@@ -367,8 +425,11 @@ public final class WasmProgramLinker {
         rt.finalizeStrings();
     }
 
-    private static void markStaticMethods(ModuleLinkInfo info, List<HirExpr> stmts,
-                                          WasmObjectSystem.ClassInfo ci, WasmObjectSystem.IfaceInfo ii) {
+    private static void markStaticMethods(
+            ModuleLinkInfo info,
+            List<HirExpr> stmts,
+            WasmObjectSystem.ClassInfo ci,
+            WasmObjectSystem.IfaceInfo ii) {
         for (HirExpr e : stmts) {
             if (e instanceof HirExpr.Def d && d.value() != null) {
                 markStaticFnExpr(info, d.value(), ci, ii);
@@ -376,8 +437,11 @@ public final class WasmProgramLinker {
         }
     }
 
-    private static void markStaticFnExpr(ModuleLinkInfo info, HirExpr expr,
-                                         WasmObjectSystem.ClassInfo ci, WasmObjectSystem.IfaceInfo ii) {
+    private static void markStaticFnExpr(
+            ModuleLinkInfo info,
+            HirExpr expr,
+            WasmObjectSystem.ClassInfo ci,
+            WasmObjectSystem.IfaceInfo ii) {
         if (expr instanceof HirExpr.FunctionRef fr) {
             FuncInfo fi = info.functions.get(fr.functionId());
             if (fi != null) {
@@ -394,25 +458,28 @@ public final class WasmProgramLinker {
     /**
      * Indexes immutable top-level module imports, functions, classes, and class static methods
      * across the closed-world module DAG so {@link WasmCallEmitter} can emit direct typed Wasm
-     * {@code call} instructions instead of runtime {@code $ModuleVal}/{@code $ClassVal} lookups
-     * and {@code $generic} boxing arrays.
+     * {@code call} instructions instead of runtime {@code $ModuleVal}/{@code $ClassVal} lookups and
+     * {@code $generic} boxing arrays.
      */
     private void indexImmutableStaticBindings() {
         Set<String> globallyAssignedMembers = new HashSet<>();
         Map<Integer, Set<String>> moduleReassignedNames = new HashMap<>();
         for (ModuleLinkInfo info : linkedModules) {
             Set<String> reassigned = new HashSet<>();
-            walkModuleExprs(info.input.hir(), e -> {
-                if (e instanceof HirExpr.NameAssign na) {
-                    reassigned.add(na.name());
-                } else if (e instanceof HirExpr.DynamicFieldAssign dfa) {
-                    globallyAssignedMembers.add(dfa.memberName());
-                }
-            });
+            walkModuleExprs(
+                    info.input.hir(),
+                    e -> {
+                        if (e instanceof HirExpr.NameAssign na) {
+                            reassigned.add(na.name());
+                        } else if (e instanceof HirExpr.DynamicFieldAssign dfa) {
+                            globallyAssignedMembers.add(dfa.memberName());
+                        }
+                    });
             moduleReassignedNames.put(info.index, reassigned);
         }
 
-        // Pass 1: record top-level statement ownership + direct immutable bindings within each module
+        // Pass 1: record top-level statement ownership + direct immutable bindings within each
+        // module
         for (ModuleLinkInfo info : linkedModules) {
             HirModule hm = info.input.hir();
             String[] declNames = hm.topLevelDeclaredNames();
@@ -456,26 +523,34 @@ public final class WasmProgramLinker {
                     if (ci != null && !ci.hasCaptures) {
                         info.immutableTopLevelClasses.put(d.name(), ci);
                     }
-                } else if (val instanceof HirExpr.Const cst && isFoldableConst(cst.value())
+                } else if (val instanceof HirExpr.Const cst
+                        && isFoldableConst(cst.value())
                         && d.meta().wideningRank() < 0) {
                     info.immutableTopLevelConsts.put(d.name(), cst.value());
-                } else if (d.value().meta().kind().isPrimitive()
-                        && d.meta().wideningRank() < 0) {
+                } else if (d.value().meta().kind().isPrimitive() && d.meta().wideningRank() < 0) {
                     org.babblelang.analysis.PrimitiveKind pk = d.value().meta().kind();
-                    int pg = mod.addGlobal("M" + info.index + "_gp_" + sanitizeName(d.name()),
-                            ts.valTypeFor(pk), true, ts.defaultConstExpr(ts.valTypeFor(pk)));
-                    info.immutableTopLevelPrimGlobals.put(d.name(), new PrimitiveGlobal(info.index, pg, pk));
+                    int pg =
+                            mod.addGlobal(
+                                    "M" + info.index + "_gp_" + sanitizeName(d.name()),
+                                    ts.valTypeFor(pk),
+                                    true,
+                                    ts.defaultConstExpr(ts.valTypeFor(pk)));
+                    info.immutableTopLevelPrimGlobals.put(
+                            d.name(), new PrimitiveGlobal(info.index, pg, pk));
                 }
             }
         }
 
-        // Pass 2: propagate immutable imported aliases (`def X = import("...").Y` or `def X = mod.Y`)
+        // Pass 2: propagate immutable imported aliases (`def X = import("...").Y` or `def X =
+        // mod.Y`)
         for (int pass = 0; pass < linkedModules.size(); pass++) {
             boolean changed = false;
             for (ModuleLinkInfo info : linkedModules) {
                 List<HirExpr> stmts = info.input.hir().topLevelStatements();
                 for (int i = 0; i < stmts.size(); i++) {
-                    if (!(stmts.get(i) instanceof HirExpr.Def d) || d.var() != null || d.value() == null) {
+                    if (!(stmts.get(i) instanceof HirExpr.Def d)
+                            || d.var() != null
+                            || d.value() == null) {
                         continue;
                     }
                     if (!info.topLevelDefIndex.containsKey(d.name())) {
@@ -483,7 +558,8 @@ public final class WasmProgramLinker {
                     }
                     HirExpr val = unwrapTypeApply(d.value());
                     if (val instanceof HirExpr.ModuleExportGet meg) {
-                        ModuleLinkInfo targetMod = resolveStaticImportExpr(info, unwrapTypeApply(meg.receiver()));
+                        ModuleLinkInfo targetMod =
+                                resolveStaticImportExpr(info, unwrapTypeApply(meg.receiver()));
                         if (targetMod == null && meg.receiver() instanceof HirExpr.NameRead nr) {
                             Integer modDefIdx = info.topLevelDefIndex.get(nr.name());
                             if (modDefIdx != null && modDefIdx < i) {
@@ -500,7 +576,8 @@ public final class WasmProgramLinker {
                                 }
                             }
                             if (!info.immutableTopLevelClasses.containsKey(d.name())) {
-                                WasmObjectSystem.ClassInfo tci = targetMod.immutableTopLevelClasses.get(exportName);
+                                WasmObjectSystem.ClassInfo tci =
+                                        targetMod.immutableTopLevelClasses.get(exportName);
                                 if (tci != null) {
                                     info.immutableTopLevelClasses.put(d.name(), tci);
                                     changed = true;
@@ -516,7 +593,8 @@ public final class WasmProgramLinker {
                             }
                             if (!info.immutableTopLevelPrimGlobals.containsKey(d.name())
                                     && d.meta().wideningRank() < 0) {
-                                PrimitiveGlobal tpg = targetMod.immutableTopLevelPrimGlobals.get(exportName);
+                                PrimitiveGlobal tpg =
+                                        targetMod.immutableTopLevelPrimGlobals.get(exportName);
                                 if (tpg != null) {
                                     info.immutableTopLevelPrimGlobals.put(d.name(), tpg);
                                     changed = true;
@@ -529,7 +607,8 @@ public final class WasmProgramLinker {
             if (!changed) break;
         }
 
-        // Pass 3: index immutable static methods & fields on classes (e.g. `HitRecord.create`, `Vec3.ZERO`)
+        // Pass 3: index immutable static methods & fields on classes (e.g. `HitRecord.create`,
+        // `Vec3.ZERO`)
         for (ModuleLinkInfo info : linkedModules) {
             for (HirClass hc : info.input.hir().classes().values()) {
                 if (hc.staticBlock() == null) continue;
@@ -546,26 +625,34 @@ public final class WasmProgramLinker {
                     }
                 }
                 while (!work.isEmpty()) {
-                    walkExpr(work.poll(), x -> {
-                        if (x instanceof HirExpr.NameAssign na) {
-                            stReassigned.add(na.name());
-                        } else if (x instanceof HirExpr.FunctionRef fr && seenFns.add(fr.functionId())) {
-                            HirFunction hf = info.input.hir().functions().get(fr.functionId());
-                            if (hf != null) {
-                                for (HirParam p : hf.params()) {
-                                    if (p.defaultValue() != null) work.add(p.defaultValue());
+                    walkExpr(
+                            work.poll(),
+                            x -> {
+                                if (x instanceof HirExpr.NameAssign na) {
+                                    stReassigned.add(na.name());
+                                } else if (x instanceof HirExpr.FunctionRef fr
+                                        && seenFns.add(fr.functionId())) {
+                                    HirFunction hf =
+                                            info.input.hir().functions().get(fr.functionId());
+                                    if (hf != null) {
+                                        for (HirParam p : hf.params()) {
+                                            if (p.defaultValue() != null)
+                                                work.add(p.defaultValue());
+                                        }
+                                        work.addAll(hf.body());
+                                    }
                                 }
-                                work.addAll(hf.body());
-                            }
-                        }
-                    });
+                            });
                 }
                 for (HirExpr e : body) {
-                    if (!(e instanceof HirExpr.Def d) || d.var() != null || d.value() == null) continue;
-                    if (stDefCounts.getOrDefault(d.name(), 0) != 1 || stReassigned.contains(d.name())) continue;
+                    if (!(e instanceof HirExpr.Def d) || d.var() != null || d.value() == null)
+                        continue;
+                    if (stDefCounts.getOrDefault(d.name(), 0) != 1
+                            || stReassigned.contains(d.name())) continue;
                     int sIdx = ci.shape.staticIndex(d.name());
                     boolean isImmutableStaticDef = sIdx >= 0 && !ci.shape.isStaticMutable(sIdx);
-                    if (!isImmutableStaticDef && globallyAssignedMembers.contains(d.name())) continue;
+                    if (!isImmutableStaticDef && globallyAssignedMembers.contains(d.name()))
+                        continue;
                     if (isImmutableStaticDef) {
                         ci.immutableStaticFields.add(d.name());
                     }
@@ -576,7 +663,8 @@ public final class WasmProgramLinker {
                             ci.immutableStaticMethods.put(d.name(), fi);
                         }
                     } else if (isImmutableStaticDef
-                            && val instanceof HirExpr.Const cst && isFoldableConst(cst.value())
+                            && val instanceof HirExpr.Const cst
+                            && isFoldableConst(cst.value())
                             && d.meta().wideningRank() < 0) {
                         ci.immutableStaticConsts.put(d.name(), cst.value());
                     }
@@ -586,9 +674,15 @@ public final class WasmProgramLinker {
     }
 
     private static boolean isFoldableConst(Object value) {
-        return value instanceof Byte || value instanceof Short || value instanceof Integer
-                || value instanceof Long || value instanceof Float || value instanceof Double
-                || value instanceof Boolean || value instanceof Character || value instanceof String;
+        return value instanceof Byte
+                || value instanceof Short
+                || value instanceof Integer
+                || value instanceof Long
+                || value instanceof Float
+                || value instanceof Double
+                || value instanceof Boolean
+                || value instanceof Character
+                || value instanceof String;
     }
 
     private void markOwnedByTopLevelStmt(ModuleLinkInfo info, HirExpr root, int stmtIdx) {
@@ -600,30 +694,35 @@ public final class WasmProgramLinker {
         if (root != null) work.add(root);
         while (!work.isEmpty()) {
             HirExpr cur = work.poll();
-            walkExpr(cur, e -> {
-                if (e instanceof HirExpr.FunctionRef fr && seenFns.add(fr.functionId())) {
-                    info.funcOwnerTopLevelStmtIdx.putIfAbsent(fr.functionId(), stmtIdx);
-                    HirFunction hf = hm.functions().get(fr.functionId());
-                    if (hf != null) {
-                        for (HirParam p : hf.params()) if (p.defaultValue() != null) work.add(p.defaultValue());
-                        work.addAll(hf.body());
-                    }
-                } else if (e instanceof HirExpr.ClassExpr ce && seenCls.add(ce.classId())) {
-                    info.classOwnerTopLevelStmtIdx.putIfAbsent(ce.classId(), stmtIdx);
-                    HirClass hc = hm.classes().get(ce.classId());
-                    if (hc != null) {
-                        for (HirParam p : hc.params()) if (p.defaultValue() != null) work.add(p.defaultValue());
-                        work.addAll(hc.body());
-                        if (hc.staticBlock() != null) work.addAll(hc.staticBlock().body());
-                    }
-                } else if (e instanceof HirExpr.InterfaceExpr ie && seenIfaces.add(ie.interfaceId())) {
-                    HirInterface hi = hm.interfaces().get(ie.interfaceId());
-                    if (hi != null) {
-                        work.addAll(hi.body());
-                        if (hi.staticBlock() != null) work.addAll(hi.staticBlock().body());
-                    }
-                }
-            });
+            walkExpr(
+                    cur,
+                    e -> {
+                        if (e instanceof HirExpr.FunctionRef fr && seenFns.add(fr.functionId())) {
+                            info.funcOwnerTopLevelStmtIdx.putIfAbsent(fr.functionId(), stmtIdx);
+                            HirFunction hf = hm.functions().get(fr.functionId());
+                            if (hf != null) {
+                                for (HirParam p : hf.params())
+                                    if (p.defaultValue() != null) work.add(p.defaultValue());
+                                work.addAll(hf.body());
+                            }
+                        } else if (e instanceof HirExpr.ClassExpr ce && seenCls.add(ce.classId())) {
+                            info.classOwnerTopLevelStmtIdx.putIfAbsent(ce.classId(), stmtIdx);
+                            HirClass hc = hm.classes().get(ce.classId());
+                            if (hc != null) {
+                                for (HirParam p : hc.params())
+                                    if (p.defaultValue() != null) work.add(p.defaultValue());
+                                work.addAll(hc.body());
+                                if (hc.staticBlock() != null) work.addAll(hc.staticBlock().body());
+                            }
+                        } else if (e instanceof HirExpr.InterfaceExpr ie
+                                && seenIfaces.add(ie.interfaceId())) {
+                            HirInterface hi = hm.interfaces().get(ie.interfaceId());
+                            if (hi != null) {
+                                work.addAll(hi.body());
+                                if (hi.staticBlock() != null) work.addAll(hi.staticBlock().body());
+                            }
+                        }
+                    });
         }
     }
 
@@ -666,7 +765,8 @@ public final class WasmProgramLinker {
         return true;
     }
 
-    private static void walkModuleExprs(HirModule hm, java.util.function.Consumer<HirExpr> visitor) {
+    private static void walkModuleExprs(
+            HirModule hm, java.util.function.Consumer<HirExpr> visitor) {
         for (HirExpr e : hm.topLevelStatements()) walkExpr(e, visitor);
         for (HirFunction f : hm.functions().values()) {
             for (HirParam p : f.params()) walkExpr(p.defaultValue(), visitor);
@@ -691,21 +791,45 @@ public final class WasmProgramLinker {
         if (e == null) return;
         visitor.accept(e);
         switch (e) {
-            case HirExpr.Block b -> { for (HirExpr s : b.statements()) walkExpr(s, visitor); }
+            case HirExpr.Block b -> {
+                for (HirExpr s : b.statements()) walkExpr(s, visitor);
+            }
             case HirExpr.Def d -> walkExpr(d.value(), visitor);
             case HirExpr.VarAssign a -> walkExpr(a.value(), visitor);
             case HirExpr.NameAssign a -> walkExpr(a.value(), visitor);
-            case HirExpr.ThisFieldAssign a -> { walkExpr(a.receiver(), visitor); walkExpr(a.value(), visitor); }
-            case HirExpr.DynamicFieldAssign a -> { walkExpr(a.receiver(), visitor); walkExpr(a.value(), visitor); }
+            case HirExpr.ThisFieldAssign a -> {
+                walkExpr(a.receiver(), visitor);
+                walkExpr(a.value(), visitor);
+            }
+            case HirExpr.DynamicFieldAssign a -> {
+                walkExpr(a.receiver(), visitor);
+                walkExpr(a.value(), visitor);
+            }
             case HirExpr.ThisFieldGet g -> walkExpr(g.receiver(), visitor);
             case HirExpr.ModuleExportGet g -> walkExpr(g.receiver(), visitor);
             case HirExpr.DynamicSelect s -> walkExpr(s.receiver(), visitor);
             case HirExpr.Unary u -> walkExpr(u.operand(), visitor);
-            case HirExpr.Binary b -> { walkExpr(b.left(), visitor); walkExpr(b.right(), visitor); }
-            case HirExpr.Range r -> { walkExpr(r.start(), visitor); walkExpr(r.end(), visitor); }
-            case HirExpr.Logic l -> { walkExpr(l.left(), visitor); walkExpr(l.right(), visitor); }
-            case HirExpr.If i -> { walkExpr(i.cond(), visitor); walkExpr(i.thenBranch(), visitor); walkExpr(i.elseBranch(), visitor); }
-            case HirExpr.While w -> { walkExpr(w.cond(), visitor); walkExpr(w.body(), visitor); }
+            case HirExpr.Binary b -> {
+                walkExpr(b.left(), visitor);
+                walkExpr(b.right(), visitor);
+            }
+            case HirExpr.Range r -> {
+                walkExpr(r.start(), visitor);
+                walkExpr(r.end(), visitor);
+            }
+            case HirExpr.Logic l -> {
+                walkExpr(l.left(), visitor);
+                walkExpr(l.right(), visitor);
+            }
+            case HirExpr.If i -> {
+                walkExpr(i.cond(), visitor);
+                walkExpr(i.thenBranch(), visitor);
+                walkExpr(i.elseBranch(), visitor);
+            }
+            case HirExpr.While w -> {
+                walkExpr(w.cond(), visitor);
+                walkExpr(w.body(), visitor);
+            }
             case HirExpr.For f -> {
                 if (f.countedRange() != null) {
                     walkExpr(f.countedRange().start(), visitor);
@@ -721,26 +845,69 @@ public final class WasmProgramLinker {
             case HirExpr.Throw t -> walkExpr(t.value(), visitor);
             case HirExpr.Try t -> {
                 for (HirExpr s : t.tryBody()) walkExpr(s, visitor);
-                for (HirExpr.HirCatch hc : t.catches()) for (HirExpr s : hc.body()) walkExpr(s, visitor);
+                for (HirExpr.HirCatch hc : t.catches())
+                    for (HirExpr s : hc.body()) walkExpr(s, visitor);
                 for (HirExpr s : t.finallyBody()) walkExpr(s, visitor);
             }
-            case HirExpr.DynamicCall c -> { walkExpr(c.callee(), visitor); for (var a : c.args()) walkExpr(a.value(), visitor); }
-            case HirExpr.DirectBabbleCall c -> { walkExpr(c.callee(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
-            case HirExpr.DirectThisMethodCall c -> { walkExpr(c.receiver(), visitor); for (var a : c.args()) walkExpr(a.value(), visitor); }
-            case HirExpr.InterfaceCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
-            case HirExpr.SafeCall c -> { walkExpr(c.receiver(), visitor); for (var a : c.args()) walkExpr(a.value(), visitor); }
-            case HirExpr.SelfRecurseCall c -> { for (HirExpr a : c.args()) walkExpr(a, visitor); }
-            case HirExpr.SelfTailCall c -> { for (var a : c.args()) walkExpr(a.value(), visitor); }
-            case HirExpr.CoreMethodCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
-            case HirExpr.SuperCall c -> { for (var a : c.args()) walkExpr(a.value(), visitor); }
-            case HirExpr.RecordNew r -> { walkExpr(r.classRef(), visitor); for (HirExpr a : r.args()) walkExpr(a, visitor); }
-            case HirExpr.RecordReuse r -> { walkExpr(r.target(), visitor); for (HirExpr a : r.args()) walkExpr(a, visitor); }
-            case HirExpr.MakeOverloadSet m -> { for (HirExpr op : m.operands()) walkExpr(op, visitor); }
+            case HirExpr.DynamicCall c -> {
+                walkExpr(c.callee(), visitor);
+                for (var a : c.args()) walkExpr(a.value(), visitor);
+            }
+            case HirExpr.DirectBabbleCall c -> {
+                walkExpr(c.callee(), visitor);
+                for (HirExpr a : c.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                walkExpr(c.receiver(), visitor);
+                for (var a : c.args()) walkExpr(a.value(), visitor);
+            }
+            case HirExpr.InterfaceCall c -> {
+                walkExpr(c.receiver(), visitor);
+                for (HirExpr a : c.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.SafeCall c -> {
+                walkExpr(c.receiver(), visitor);
+                for (var a : c.args()) walkExpr(a.value(), visitor);
+            }
+            case HirExpr.SelfRecurseCall c -> {
+                for (HirExpr a : c.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.SelfTailCall c -> {
+                for (var a : c.args()) walkExpr(a.value(), visitor);
+            }
+            case HirExpr.CoreMethodCall c -> {
+                walkExpr(c.receiver(), visitor);
+                for (HirExpr a : c.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.SuperCall c -> {
+                for (var a : c.args()) walkExpr(a.value(), visitor);
+            }
+            case HirExpr.RecordNew r -> {
+                walkExpr(r.classRef(), visitor);
+                for (HirExpr a : r.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.RecordReuse r -> {
+                walkExpr(r.target(), visitor);
+                for (HirExpr a : r.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.MakeOverloadSet m -> {
+                for (HirExpr op : m.operands()) walkExpr(op, visitor);
+            }
             case HirExpr.OverloadSelect s -> walkExpr(s.set(), visitor);
-            case HirExpr.OverloadDispatch d -> { walkExpr(d.callee(), visitor); for (HirExpr a : d.args()) walkExpr(a, visitor); }
-            case HirExpr.CoreCollectionCall c -> { for (var a : c.args()) walkExpr(a.value(), visitor); }
-            case HirExpr.ArrayCreate a -> { for (HirExpr x : a.args()) walkExpr(x, visitor); }
-            case HirExpr.ArrayOp a -> { walkExpr(a.receiver(), visitor); for (HirExpr x : a.args()) walkExpr(x, visitor); }
+            case HirExpr.OverloadDispatch d -> {
+                walkExpr(d.callee(), visitor);
+                for (HirExpr a : d.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.CoreCollectionCall c -> {
+                for (var a : c.args()) walkExpr(a.value(), visitor);
+            }
+            case HirExpr.ArrayCreate a -> {
+                for (HirExpr x : a.args()) walkExpr(x, visitor);
+            }
+            case HirExpr.ArrayOp a -> {
+                walkExpr(a.receiver(), visitor);
+                for (HirExpr x : a.args()) walkExpr(x, visitor);
+            }
             case HirExpr.SpreadAdapt s -> walkExpr(s.value(), visitor);
             case HirExpr.TypeApply t -> walkExpr(t.inner(), visitor);
             case HirExpr.Is i -> walkExpr(i.left(), visitor);
@@ -748,8 +915,13 @@ public final class WasmProgramLinker {
             case HirExpr.NonNull n -> walkExpr(n.operand(), visitor);
             case HirExpr.Move m -> walkExpr(m.operand(), visitor);
             case HirExpr.Freeze f -> walkExpr(f.operand(), visitor);
-            case HirExpr.JavaMethodCall c -> { walkExpr(c.receiver(), visitor); for (HirExpr a : c.args()) walkExpr(a, visitor); }
-            case HirExpr.JavaConstructorCall c -> { for (HirExpr a : c.args()) walkExpr(a, visitor); }
+            case HirExpr.JavaMethodCall c -> {
+                walkExpr(c.receiver(), visitor);
+                for (HirExpr a : c.args()) walkExpr(a, visitor);
+            }
+            case HirExpr.JavaConstructorCall c -> {
+                for (HirExpr a : c.args()) walkExpr(a, visitor);
+            }
             case HirExpr.Match m -> {
                 walkExpr(m.scrutinee(), visitor);
                 for (HirExpr.MatchArm arm : m.arms()) {
@@ -765,7 +937,8 @@ public final class WasmProgramLinker {
         }
     }
 
-    private static void walkPattern(org.babblelang.ir.hir.HirPattern pat, java.util.function.Consumer<HirExpr> visitor) {
+    private static void walkPattern(
+            org.babblelang.ir.hir.HirPattern pat, java.util.function.Consumer<HirExpr> visitor) {
         if (pat == null) return;
         switch (pat) {
             case org.babblelang.ir.hir.HirPattern.Const ignored -> {}
@@ -793,20 +966,25 @@ public final class WasmProgramLinker {
     }
 
     private void declareFunction(ModuleLinkInfo modInfo, HirFunction fn) {
-        WasmObjectSystem.ClassInfo ownerClass = fn.ownerClassId() >= 0
-                ? objects.classByLocal(modInfo.index, fn.ownerClassId()) : null;
-        boolean isIfaceDefault = ownerClass == null && modInfo.interfaceDefaultFuncIds.contains(fn.id());
-        Integer ownerIfaceId = isIfaceDefault ? modInfo.interfaceDefaultOwnerIfaceId.get(fn.id()) : null;
-        WasmObjectSystem.IfaceInfo ownerIface = ownerIfaceId != null
-                ? objects.ifaceByLocal(modInfo.index, ownerIfaceId) : null;
+        WasmObjectSystem.ClassInfo ownerClass =
+                fn.ownerClassId() >= 0
+                        ? objects.classByLocal(modInfo.index, fn.ownerClassId())
+                        : null;
+        boolean isIfaceDefault =
+                ownerClass == null && modInfo.interfaceDefaultFuncIds.contains(fn.id());
+        Integer ownerIfaceId =
+                isIfaceDefault ? modInfo.interfaceDefaultOwnerIfaceId.get(fn.id()) : null;
+        WasmObjectSystem.IfaceInfo ownerIface =
+                ownerIfaceId != null ? objects.ifaceByLocal(modInfo.index, ownerIfaceId) : null;
         boolean hasThis = ownerClass != null || isIfaceDefault;
 
         List<WasmValType> capTypes = new ArrayList<>();
         if (!hasThis) {
             for (HirVar cv : fn.capturedVars()) {
-                capTypes.add(isValueCapture(cv)
-                        ? ts.valTypeFor(cv.primitiveKind())
-                        : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
+                capTypes.add(
+                        isValueCapture(cv)
+                                ? ts.valTypeFor(cv.primitiveKind())
+                                : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
             }
         }
         boolean hasEnv = !hasThis && !capTypes.isEmpty();
@@ -849,30 +1027,56 @@ public final class WasmProgramLinker {
         List<WasmValType> results = List.of(ts.valTypeFor(fn.returnKind()));
         int directSig = ts.internFuncType(params, results);
 
-        String fnLabel = "M" + modInfo.index + "_fn" + fn.id()
-                + (fn.name() != null && !fn.name().isEmpty() ? "_" + sanitizeName(fn.name()) : "");
+        String fnLabel =
+                "M"
+                        + modInfo.index
+                        + "_fn"
+                        + fn.id()
+                        + (fn.name() != null && !fn.name().isEmpty()
+                                ? "_" + sanitizeName(fn.name())
+                                : "");
         WasmModule.FuncDef directDef = mod.addFunction(fnLabel, directSig, paramNames);
 
         WasmModule.FuncDef genericDef = null;
         int singletonGlobal = -1;
         if (!hasThis) {
-            genericDef = mod.addFunction(fnLabel + "$generic", ts.genericCallSigType,
-                    List.of("self", "args", "names"));
+            genericDef =
+                    mod.addFunction(
+                            fnLabel + "$generic",
+                            ts.genericCallSigType,
+                            List.of("self", "args", "names"));
             mod.declareFuncRef(genericDef.funcIndex());
             if (!hasEnv) {
-                singletonGlobal = mod.addGlobal("G_" + fnLabel, WasmValType.refNull(ts.fnBaseType), true,
-                        ts.defaultConstExpr(WasmValType.refNull(ts.fnBaseType)));
+                singletonGlobal =
+                        mod.addGlobal(
+                                "G_" + fnLabel,
+                                WasmValType.refNull(ts.fnBaseType),
+                                true,
+                                ts.defaultConstExpr(WasmValType.refNull(ts.fnBaseType)));
                 WasmCodeBuilder init = fnInitSingletonsDef.code();
                 init.refFunc(genericDef.funcIndex());
-                rt.emitStringLit(init, fn.name() != null && !fn.name().isEmpty() ? fn.name() : "<fn>");
-                init.i32Const(fn.id())
-                        .structNew(ts.fnBaseType)
-                        .globalSet(singletonGlobal);
+                rt.emitStringLit(
+                        init, fn.name() != null && !fn.name().isEmpty() ? fn.name() : "<fn>");
+                init.i32Const(fn.id()).structNew(ts.fnBaseType).globalSet(singletonGlobal);
             }
         }
 
-        FuncInfo fi = new FuncInfo(modInfo.index, fn, directDef, genericDef, closureType, singletonGlobal,
-                capTypes, hasEnv, hasThis, ownerClass, ownerIface, isIfaceDefault, hasOptMask, hasBoxedMissingOpt);
+        FuncInfo fi =
+                new FuncInfo(
+                        modInfo.index,
+                        fn,
+                        directDef,
+                        genericDef,
+                        closureType,
+                        singletonGlobal,
+                        capTypes,
+                        hasEnv,
+                        hasThis,
+                        ownerClass,
+                        ownerIface,
+                        isIfaceDefault,
+                        hasOptMask,
+                        hasBoxedMissingOpt);
         modInfo.functions.put(fn.id(), fi);
     }
 
@@ -909,32 +1113,57 @@ public final class WasmProgramLinker {
                 .end()
                 .localSet(exnLine)
                 .localSet(exnVal)
-                .localGet(exnVal).call(rt.fnFormat).globalSet(rt.gLastError)
+                .localGet(exnVal)
+                .call(rt.fnFormat)
+                .globalSet(rt.gLastError)
                 .i32Const(1)
                 .end();
         mod.addExport("_babble_run", WasmModule.ExportKind.FUNC, runFn.funcIndex());
 
         WasmModule.FuncDef resStrLen = mod.addFunction("_babble_result_len", tI32);
-        resStrLen.code().globalGet(rt.gLastResult).call(rt.fnFormat)
-                .structGet(ts.stringType, 0).arrayLen();
+        resStrLen
+                .code()
+                .globalGet(rt.gLastResult)
+                .call(rt.fnFormat)
+                .structGet(ts.stringType, 0)
+                .arrayLen();
         mod.addExport("_babble_result_len", WasmModule.ExportKind.FUNC, resStrLen.funcIndex());
 
-        WasmModule.FuncDef resStrChar = mod.addFunction("_babble_result_char", tI32ToI32, List.of("i"));
-        resStrChar.code().globalGet(rt.gLastResult).call(rt.fnFormat)
-                .structGet(ts.stringType, 0).localGet(0).arrayGetU(ts.charArrType);
+        WasmModule.FuncDef resStrChar =
+                mod.addFunction("_babble_result_char", tI32ToI32, List.of("i"));
+        resStrChar
+                .code()
+                .globalGet(rt.gLastResult)
+                .call(rt.fnFormat)
+                .structGet(ts.stringType, 0)
+                .localGet(0)
+                .arrayGetU(ts.charArrType);
         mod.addExport("_babble_result_char", WasmModule.ExportKind.FUNC, resStrChar.funcIndex());
 
         WasmModule.FuncDef errStrLen = mod.addFunction("_babble_error_len", tI32);
-        errStrLen.code().globalGet(rt.gLastError).refIsNull().if_(WasmValType.I32)
+        errStrLen
+                .code()
+                .globalGet(rt.gLastError)
+                .refIsNull()
+                .if_(WasmValType.I32)
                 .i32Const(-1)
                 .else_()
-                .globalGet(rt.gLastError).refAsNonNull().structGet(ts.stringType, 0).arrayLen()
+                .globalGet(rt.gLastError)
+                .refAsNonNull()
+                .structGet(ts.stringType, 0)
+                .arrayLen()
                 .end();
         mod.addExport("_babble_error_len", WasmModule.ExportKind.FUNC, errStrLen.funcIndex());
 
-        WasmModule.FuncDef errStrChar = mod.addFunction("_babble_error_char", tI32ToI32, List.of("i"));
-        errStrChar.code().globalGet(rt.gLastError).refAsNonNull()
-                .structGet(ts.stringType, 0).localGet(0).arrayGetU(ts.charArrType);
+        WasmModule.FuncDef errStrChar =
+                mod.addFunction("_babble_error_char", tI32ToI32, List.of("i"));
+        errStrChar
+                .code()
+                .globalGet(rt.gLastError)
+                .refAsNonNull()
+                .structGet(ts.stringType, 0)
+                .localGet(0)
+                .arrayGetU(ts.charArrType);
         mod.addExport("_babble_error_char", WasmModule.ExportKind.FUNC, errStrChar.funcIndex());
 
         if (target == CompilationTarget.WASM_JS) {
@@ -944,10 +1173,15 @@ public final class WasmProgramLinker {
             mod.addExport("_babble_result_js", WasmModule.ExportKind.FUNC, resJs.funcIndex());
 
             WasmModule.FuncDef errJs = mod.addFunction("_babble_error_js", tExt);
-            errJs.code().globalGet(rt.gLastError).refIsNull().if_(WasmValType.EXTERNREF)
+            errJs.code()
+                    .globalGet(rt.gLastError)
+                    .refIsNull()
+                    .if_(WasmValType.EXTERNREF)
                     .refNull(WasmValType.HeapType.Abstract.EXTERN)
                     .else_()
-                    .globalGet(rt.gLastError).refAsNonNull().call(rt.fnToExternStr)
+                    .globalGet(rt.gLastError)
+                    .refAsNonNull()
+                    .call(rt.fnToExternStr)
                     .end();
             mod.addExport("_babble_error_js", WasmModule.ExportKind.FUNC, errJs.funcIndex());
         }
@@ -955,7 +1189,10 @@ public final class WasmProgramLinker {
 
     private List<org.babblelang.runtime.OverloadSet.AltMeta> cachedOverloadMetas;
 
-    /** Returns all {@code AltMeta} descriptors appearing in any {@code MakeOverloadSet} across linked modules. */
+    /**
+     * Returns all {@code AltMeta} descriptors appearing in any {@code MakeOverloadSet} across
+     * linked modules.
+     */
     public List<org.babblelang.runtime.OverloadSet.AltMeta> allOverloadAltMetas() {
         if (cachedOverloadMetas != null) {
             return cachedOverloadMetas;
@@ -986,33 +1223,63 @@ public final class WasmProgramLinker {
         return cachedOverloadMetas;
     }
 
-    private static void collectOverloadMetas(HirExpr e, List<org.babblelang.runtime.OverloadSet.AltMeta> out) {
+    private static void collectOverloadMetas(
+            HirExpr e, List<org.babblelang.runtime.OverloadSet.AltMeta> out) {
         if (e == null) return;
         if (e instanceof HirExpr.MakeOverloadSet m) {
             for (var info : m.metas()) {
-                out.add(new org.babblelang.runtime.OverloadSet.AltMeta(
-                        info.signatureKey(), info.display(), info.minArity(), info.maxArity(),
-                        info.restIndex(), info.paramDescriptors()));
+                out.add(
+                        new org.babblelang.runtime.OverloadSet.AltMeta(
+                                info.signatureKey(),
+                                info.display(),
+                                info.minArity(),
+                                info.maxArity(),
+                                info.restIndex(),
+                                info.paramDescriptors()));
             }
             for (HirExpr op : m.operands()) collectOverloadMetas(op, out);
             return;
         }
         switch (e) {
-            case HirExpr.Block b -> { for (HirExpr s : b.statements()) collectOverloadMetas(s, out); }
+            case HirExpr.Block b -> {
+                for (HirExpr s : b.statements()) collectOverloadMetas(s, out);
+            }
             case HirExpr.Def d -> collectOverloadMetas(d.value(), out);
             case HirExpr.VarAssign a -> collectOverloadMetas(a.value(), out);
             case HirExpr.NameAssign a -> collectOverloadMetas(a.value(), out);
-            case HirExpr.ThisFieldAssign a -> { collectOverloadMetas(a.receiver(), out); collectOverloadMetas(a.value(), out); }
-            case HirExpr.DynamicFieldAssign a -> { collectOverloadMetas(a.receiver(), out); collectOverloadMetas(a.value(), out); }
+            case HirExpr.ThisFieldAssign a -> {
+                collectOverloadMetas(a.receiver(), out);
+                collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.DynamicFieldAssign a -> {
+                collectOverloadMetas(a.receiver(), out);
+                collectOverloadMetas(a.value(), out);
+            }
             case HirExpr.ThisFieldGet g -> collectOverloadMetas(g.receiver(), out);
             case HirExpr.ModuleExportGet g -> collectOverloadMetas(g.receiver(), out);
             case HirExpr.DynamicSelect s -> collectOverloadMetas(s.receiver(), out);
             case HirExpr.Unary u -> collectOverloadMetas(u.operand(), out);
-            case HirExpr.Binary b -> { collectOverloadMetas(b.left(), out); collectOverloadMetas(b.right(), out); }
-            case HirExpr.Range r -> { collectOverloadMetas(r.start(), out); collectOverloadMetas(r.end(), out); }
-            case HirExpr.Logic l -> { collectOverloadMetas(l.left(), out); collectOverloadMetas(l.right(), out); }
-            case HirExpr.If i -> { collectOverloadMetas(i.cond(), out); collectOverloadMetas(i.thenBranch(), out); collectOverloadMetas(i.elseBranch(), out); }
-            case HirExpr.While w -> { collectOverloadMetas(w.cond(), out); collectOverloadMetas(w.body(), out); }
+            case HirExpr.Binary b -> {
+                collectOverloadMetas(b.left(), out);
+                collectOverloadMetas(b.right(), out);
+            }
+            case HirExpr.Range r -> {
+                collectOverloadMetas(r.start(), out);
+                collectOverloadMetas(r.end(), out);
+            }
+            case HirExpr.Logic l -> {
+                collectOverloadMetas(l.left(), out);
+                collectOverloadMetas(l.right(), out);
+            }
+            case HirExpr.If i -> {
+                collectOverloadMetas(i.cond(), out);
+                collectOverloadMetas(i.thenBranch(), out);
+                collectOverloadMetas(i.elseBranch(), out);
+            }
+            case HirExpr.While w -> {
+                collectOverloadMetas(w.cond(), out);
+                collectOverloadMetas(w.body(), out);
+            }
             case HirExpr.For f -> {
                 if (f.countedRange() != null) {
                     collectOverloadMetas(f.countedRange().start(), out);
@@ -1028,25 +1295,66 @@ public final class WasmProgramLinker {
             case HirExpr.Throw t -> collectOverloadMetas(t.value(), out);
             case HirExpr.Try t -> {
                 for (HirExpr s : t.tryBody()) collectOverloadMetas(s, out);
-                for (HirExpr.HirCatch hc : t.catches()) for (HirExpr s : hc.body()) collectOverloadMetas(s, out);
+                for (HirExpr.HirCatch hc : t.catches())
+                    for (HirExpr s : hc.body()) collectOverloadMetas(s, out);
                 for (HirExpr s : t.finallyBody()) collectOverloadMetas(s, out);
             }
-            case HirExpr.DynamicCall c -> { collectOverloadMetas(c.callee(), out); for (var a : c.args()) collectOverloadMetas(a.value(), out); }
-            case HirExpr.DirectBabbleCall c -> { collectOverloadMetas(c.callee(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
-            case HirExpr.DirectThisMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (var a : c.args()) collectOverloadMetas(a.value(), out); }
-            case HirExpr.InterfaceCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
-            case HirExpr.SafeCall c -> { collectOverloadMetas(c.receiver(), out); for (var a : c.args()) collectOverloadMetas(a.value(), out); }
-            case HirExpr.SelfRecurseCall c -> { for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
-            case HirExpr.SelfTailCall c -> { for (var a : c.args()) collectOverloadMetas(a.value(), out); }
-            case HirExpr.CoreMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
-            case HirExpr.SuperCall c -> { for (var a : c.args()) collectOverloadMetas(a.value(), out); }
-            case HirExpr.RecordNew r -> { collectOverloadMetas(r.classRef(), out); for (HirExpr a : r.args()) collectOverloadMetas(a, out); }
-            case HirExpr.RecordReuse r -> { collectOverloadMetas(r.target(), out); for (HirExpr a : r.args()) collectOverloadMetas(a, out); }
+            case HirExpr.DynamicCall c -> {
+                collectOverloadMetas(c.callee(), out);
+                for (var a : c.args()) collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.DirectBabbleCall c -> {
+                collectOverloadMetas(c.callee(), out);
+                for (HirExpr a : c.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                collectOverloadMetas(c.receiver(), out);
+                for (var a : c.args()) collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.InterfaceCall c -> {
+                collectOverloadMetas(c.receiver(), out);
+                for (HirExpr a : c.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.SafeCall c -> {
+                collectOverloadMetas(c.receiver(), out);
+                for (var a : c.args()) collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.SelfRecurseCall c -> {
+                for (HirExpr a : c.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.SelfTailCall c -> {
+                for (var a : c.args()) collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.CoreMethodCall c -> {
+                collectOverloadMetas(c.receiver(), out);
+                for (HirExpr a : c.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.SuperCall c -> {
+                for (var a : c.args()) collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.RecordNew r -> {
+                collectOverloadMetas(r.classRef(), out);
+                for (HirExpr a : r.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.RecordReuse r -> {
+                collectOverloadMetas(r.target(), out);
+                for (HirExpr a : r.args()) collectOverloadMetas(a, out);
+            }
             case HirExpr.OverloadSelect s -> collectOverloadMetas(s.set(), out);
-            case HirExpr.OverloadDispatch d -> { collectOverloadMetas(d.callee(), out); for (HirExpr a : d.args()) collectOverloadMetas(a, out); }
-            case HirExpr.CoreCollectionCall c -> { for (var a : c.args()) collectOverloadMetas(a.value(), out); }
-            case HirExpr.ArrayCreate a -> { for (HirExpr x : a.args()) collectOverloadMetas(x, out); }
-            case HirExpr.ArrayOp a -> { collectOverloadMetas(a.receiver(), out); for (HirExpr x : a.args()) collectOverloadMetas(x, out); }
+            case HirExpr.OverloadDispatch d -> {
+                collectOverloadMetas(d.callee(), out);
+                for (HirExpr a : d.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.CoreCollectionCall c -> {
+                for (var a : c.args()) collectOverloadMetas(a.value(), out);
+            }
+            case HirExpr.ArrayCreate a -> {
+                for (HirExpr x : a.args()) collectOverloadMetas(x, out);
+            }
+            case HirExpr.ArrayOp a -> {
+                collectOverloadMetas(a.receiver(), out);
+                for (HirExpr x : a.args()) collectOverloadMetas(x, out);
+            }
             case HirExpr.SpreadAdapt s -> collectOverloadMetas(s.value(), out);
             case HirExpr.TypeApply t -> collectOverloadMetas(t.inner(), out);
             case HirExpr.Is i -> collectOverloadMetas(i.left(), out);
@@ -1054,8 +1362,13 @@ public final class WasmProgramLinker {
             case HirExpr.NonNull n -> collectOverloadMetas(n.operand(), out);
             case HirExpr.Move m -> collectOverloadMetas(m.operand(), out);
             case HirExpr.Freeze f -> collectOverloadMetas(f.operand(), out);
-            case HirExpr.JavaMethodCall c -> { collectOverloadMetas(c.receiver(), out); for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
-            case HirExpr.JavaConstructorCall c -> { for (HirExpr a : c.args()) collectOverloadMetas(a, out); }
+            case HirExpr.JavaMethodCall c -> {
+                collectOverloadMetas(c.receiver(), out);
+                for (HirExpr a : c.args()) collectOverloadMetas(a, out);
+            }
+            case HirExpr.JavaConstructorCall c -> {
+                for (HirExpr a : c.args()) collectOverloadMetas(a, out);
+            }
             case HirExpr.Match m -> {
                 collectOverloadMetas(m.scrutinee(), out);
                 for (HirExpr.MatchArm arm : m.arms()) {
@@ -1071,25 +1384,30 @@ public final class WasmProgramLinker {
         }
     }
 
-    private static void collectPatternOverloadMetas(org.babblelang.ir.hir.HirPattern pat,
-                                                    List<org.babblelang.runtime.OverloadSet.AltMeta> out) {
+    private static void collectPatternOverloadMetas(
+            org.babblelang.ir.hir.HirPattern pat,
+            List<org.babblelang.runtime.OverloadSet.AltMeta> out) {
         if (pat == null) return;
         switch (pat) {
             case org.babblelang.ir.hir.HirPattern.Const ignored -> {}
             case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> {}
             case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> {}
-            case org.babblelang.ir.hir.HirPattern.Bind b -> collectPatternOverloadMetas(b.inner(), out);
-            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> collectOverloadMetas(v.expr(), out);
+            case org.babblelang.ir.hir.HirPattern.Bind b ->
+                    collectPatternOverloadMetas(b.inner(), out);
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v ->
+                    collectOverloadMetas(v.expr(), out);
             case org.babblelang.ir.hir.HirPattern.Or o -> {
                 for (var alt : o.alternatives()) collectPatternOverloadMetas(alt, out);
             }
-            case org.babblelang.ir.hir.HirPattern.Relational r -> collectOverloadMetas(r.rhs(), out);
+            case org.babblelang.ir.hir.HirPattern.Relational r ->
+                    collectOverloadMetas(r.rhs(), out);
             case org.babblelang.ir.hir.HirPattern.RangeTest rt -> {
                 collectOverloadMetas(rt.lo(), out);
                 collectOverloadMetas(rt.hi(), out);
                 collectOverloadMetas(rt.step(), out);
             }
-            case org.babblelang.ir.hir.HirPattern.Membership m -> collectOverloadMetas(m.container(), out);
+            case org.babblelang.ir.hir.HirPattern.Membership m ->
+                    collectOverloadMetas(m.container(), out);
             case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
                 for (var fp : rd.fieldPatterns()) collectPatternOverloadMetas(fp, out);
             }
@@ -1106,7 +1424,10 @@ public final class WasmProgramLinker {
         StringBuilder sb = new StringBuilder(raw.length());
         for (int i = 0; i < raw.length(); i++) {
             char c = raw.charAt(i);
-            if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_') {
+            if ((c >= 'a' && c <= 'z')
+                    || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9')
+                    || c == '_') {
                 sb.append(c);
             } else {
                 sb.append('_');

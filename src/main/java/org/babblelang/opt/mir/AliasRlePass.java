@@ -1,5 +1,11 @@
 package org.babblelang.opt.mir;
 
+import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.babblelang.ir.mir.MirBlock;
 import org.babblelang.ir.mir.MirCfg;
 import org.babblelang.ir.mir.MirEffect;
@@ -10,24 +16,15 @@ import org.babblelang.ir.mir.MirTerminator;
 import org.babblelang.ir.mir.MirVal;
 import org.babblelang.opt.PassContext;
 
-import java.lang.reflect.Field;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
- * Alias-aware Redundant Load Elimination and Store-to-Load Forwarding ({@code O7}) over SSA
- * {@link MirModule} ({@code BIP014-I3} §6.4).
+ * Alias-aware Redundant Load Elimination and Store-to-Load Forwarding ({@code O7}) over SSA {@link
+ * MirModule} ({@code BIP014-I3} §6.4).
  *
- * <p>Uses {@link MirEffect.AliasClass} ({@code FROZEN}, {@code UNIQUE_PARAM(k)}, {@code SHARED})
- * to forward {@code StoreField}/{@code StoreJavaField} values directly to dominating loads and
+ * <p>Uses {@link MirEffect.AliasClass} ({@code FROZEN}, {@code UNIQUE_PARAM(k)}, {@code SHARED}) to
+ * forward {@code StoreField}/{@code StoreJavaField} values directly to dominating loads and
  * eliminate redundant {@code LoadField}/{@code LoadJavaField} instructions across disjoint writes
- * (e.g., writes to a {@code unique} parameter never invalidate reads from a different {@code unique}
- * parameter or {@code frozen} records).
+ * (e.g., writes to a {@code unique} parameter never invalidate reads from a different {@code
+ * unique} parameter or {@code frozen} records).
  */
 public final class AliasRlePass implements MirPass {
     @Override
@@ -44,20 +41,18 @@ public final class AliasRlePass implements MirPass {
             updated.put(e.getKey(), r.fn);
             total += r.rewrites;
         }
-        return total == 0 ? Result.unchanged(module) : new Result(module.withFunctions(updated), total);
+        return total == 0
+                ? Result.unchanged(module)
+                : new Result(module.withFunctions(updated), total);
     }
 
-    private record FnResult(MirFunction fn, int rewrites) {
-    }
+    private record FnResult(MirFunction fn, int rewrites) {}
 
-    private record FieldLoc(int recvId, int classId, int memberIndex, String memberName) {
-    }
+    private record FieldLoc(int recvId, int classId, int memberIndex, String memberName) {}
 
-    private record JavaFieldLoc(int recvId, Field field) {
-    }
+    private record JavaFieldLoc(int recvId, Field field) {}
 
-    private record KnownVal(MirVal value, MirEffect.AliasClass alias) {
-    }
+    private record KnownVal(MirVal value, MirEffect.AliasClass alias) {}
 
     private static FnResult runOnFunction(MirFunction fn) {
         MirCfg cfg = MirCfg.analyze(fn);
@@ -66,8 +61,15 @@ public final class AliasRlePass implements MirPass {
         Map<Integer, List<MirInst>> outInsts = new HashMap<>();
         int[] rewrites = {0};
 
-        visitDom(fn.entryBlockId(), cfg, blockMap, new HashMap<>(), new HashMap<>(),
-                subst, outInsts, rewrites);
+        visitDom(
+                fn.entryBlockId(),
+                cfg,
+                blockMap,
+                new HashMap<>(),
+                new HashMap<>(),
+                subst,
+                outInsts,
+                rewrites);
 
         if (rewrites[0] == 0) {
             return new FnResult(fn, 0);
@@ -81,12 +83,15 @@ public final class AliasRlePass implements MirPass {
         return new FnResult(fn.withBlocks(out, fn.nextValId(), fn.nextBlockId()), rewrites[0]);
     }
 
-    private static void visitDom(int blockId, MirCfg cfg, Map<Integer, MirBlock> blockMap,
-                                 Map<FieldLoc, KnownVal> parentFields,
-                                 Map<JavaFieldLoc, KnownVal> parentJavaFields,
-                                 Map<Integer, MirVal> subst,
-                                 Map<Integer, List<MirInst>> outInsts,
-                                 int[] rewrites) {
+    private static void visitDom(
+            int blockId,
+            MirCfg cfg,
+            Map<Integer, MirBlock> blockMap,
+            Map<FieldLoc, KnownVal> parentFields,
+            Map<JavaFieldLoc, KnownVal> parentJavaFields,
+            Map<Integer, MirVal> subst,
+            Map<Integer, List<MirInst>> outInsts,
+            int[] rewrites) {
         MirBlock b = blockMap.get(blockId);
         if (b == null) return;
         Map<FieldLoc, KnownVal> fields = new HashMap<>(parentFields);
@@ -102,7 +107,12 @@ public final class AliasRlePass implements MirPass {
         for (MirInst raw : b.insts()) {
             MirInst inst = raw.remapUses(v -> resolve(subst, v));
             if (inst instanceof MirInst.LoadField lf) {
-                FieldLoc loc = new FieldLoc(lf.receiver().id(), lf.classId(), lf.memberIndex(), lf.memberName());
+                FieldLoc loc =
+                        new FieldLoc(
+                                lf.receiver().id(),
+                                lf.classId(),
+                                lf.memberIndex(),
+                                lf.memberName());
                 KnownVal known = fields.get(loc);
                 if (known != null && known.value.kind() == lf.result().kind()) {
                     subst.put(lf.result().id(), known.value);
@@ -117,7 +127,12 @@ public final class AliasRlePass implements MirPass {
                 invalidateOverlapping(fields, sf.effect());
                 invalidateOverlapping(jfields, sf.effect());
                 if (sf.classId() >= 0 && sf.memberIndex() >= 0) {
-                    FieldLoc loc = new FieldLoc(sf.receiver().id(), sf.classId(), sf.memberIndex(), sf.memberName());
+                    FieldLoc loc =
+                            new FieldLoc(
+                                    sf.receiver().id(),
+                                    sf.classId(),
+                                    sf.memberIndex(),
+                                    sf.memberName());
                     fields.put(loc, new KnownVal(sf.value(), sf.effect().alias()));
                 }
                 kept.add(inst);
@@ -141,12 +156,15 @@ public final class AliasRlePass implements MirPass {
                 invalidateOverlapping(jfields, sj.effect());
                 if (sj.value().kind().isPrimitive()) {
                     int rid = sj.receiver() != null ? sj.receiver().id() : -1;
-                    jfields.put(new JavaFieldLoc(rid, sj.target().field()), new KnownVal(sj.value(), sj.effect().alias()));
+                    jfields.put(
+                            new JavaFieldLoc(rid, sj.target().field()),
+                            new KnownVal(sj.value(), sj.effect().alias()));
                 }
                 kept.add(inst);
                 continue;
             }
-            if (inst.effect().kind() == MirEffect.Kind.WRITE || inst.effect().kind() == MirEffect.Kind.IMPURE) {
+            if (inst.effect().kind() == MirEffect.Kind.WRITE
+                    || inst.effect().kind() == MirEffect.Kind.IMPURE) {
                 invalidateOverlapping(fields, inst.effect());
                 invalidateOverlapping(jfields, inst.effect());
             }
@@ -157,12 +175,20 @@ public final class AliasRlePass implements MirPass {
         boolean hasHandlers = !b.handlers().isEmpty();
         for (int childId : cfg.domChildren(blockId)) {
             MirBlock child = blockMap.get(childId);
-            boolean normalSinglePred = !hasHandlers
-                    || (child != null && !child.handlerEntry() && cfg.predecessors(childId).size() == 1);
-            visitDom(childId, cfg, blockMap,
+            boolean normalSinglePred =
+                    !hasHandlers
+                            || (child != null
+                                    && !child.handlerEntry()
+                                    && cfg.predecessors(childId).size() == 1);
+            visitDom(
+                    childId,
+                    cfg,
+                    blockMap,
                     normalSinglePred ? fields : parentFields,
                     normalSinglePred ? jfields : parentJavaFields,
-                    subst, outInsts, rewrites);
+                    subst,
+                    outInsts,
+                    rewrites);
         }
     }
 

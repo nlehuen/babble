@@ -1,20 +1,20 @@
 package org.babblelang.ir.mir;
 
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.ir.hir.HirVar;
-
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.ir.hir.HirVar;
 
 /**
  * Immutable per-function SSA Control-Flow Graph ({@code BIP014-I3} §6.4).
  *
- * <p>Each {@link MirFunction} corresponds 1-to-1 to a non-namespace-scoped {@link org.babblelang.ir.hir.HirFunction}
- * (identified by {@link #hirFunctionId()}). Parameters that live as non-cell, non-try-escaped
- * values enter as SSA values in {@link #params()} (ordered matching {@code HirFunction.params()},
- * with {@code null} placeholders only for parameters without a frame {@link HirVar}).
+ * <p>Each {@link MirFunction} corresponds 1-to-1 to a non-namespace-scoped {@link
+ * org.babblelang.ir.hir.HirFunction} (identified by {@link #hirFunctionId()}). Parameters that live
+ * as non-cell, non-try-escaped values enter as SSA values in {@link #params()} (ordered matching
+ * {@code HirFunction.params()}, with {@code null} placeholders only for parameters without a frame
+ * {@link HirVar}).
  */
 public record MirFunction(
         int hirFunctionId,
@@ -30,8 +30,7 @@ public record MirFunction(
         int nextValId,
         int nextBlockId,
         List<HirVar> pinnedVars,
-        Map<Integer, MirEffect.AliasClass> valAliases
-) {
+        Map<Integer, MirEffect.AliasClass> valAliases) {
     public MirFunction {
         params = List.copyOf(params);
         paramVars = List.copyOf(paramVars);
@@ -59,15 +58,42 @@ public record MirFunction(
     }
 
     public MirFunction withBlocks(List<MirBlock> newBlocks, int newNextValId, int newNextBlockId) {
-        return new MirFunction(hirFunctionId, name, ownerClassName, ownerClassId, params, paramVars,
-                returnKind, bodyWideningRank, entryBlockId, newBlocks, newNextValId, newNextBlockId,
-                pinnedVars, valAliases);
+        return new MirFunction(
+                hirFunctionId,
+                name,
+                ownerClassName,
+                ownerClassId,
+                params,
+                paramVars,
+                returnKind,
+                bodyWideningRank,
+                entryBlockId,
+                newBlocks,
+                newNextValId,
+                newNextBlockId,
+                pinnedVars,
+                valAliases);
     }
 
-    public MirFunction withBlocksAndAliases(List<MirBlock> newBlocks, int newNextValId, int newNextBlockId,
-                                            Map<Integer, MirEffect.AliasClass> newAliases) {
-        return new MirFunction(hirFunctionId, name, ownerClassName, ownerClassId, params, paramVars,
-                returnKind, bodyWideningRank, entryBlockId, newBlocks, newNextValId, newNextBlockId,
-                pinnedVars, Objects.requireNonNull(newAliases, "newAliases"));
+    public MirFunction withBlocksAndAliases(
+            List<MirBlock> newBlocks,
+            int newNextValId,
+            int newNextBlockId,
+            Map<Integer, MirEffect.AliasClass> newAliases) {
+        return new MirFunction(
+                hirFunctionId,
+                name,
+                ownerClassName,
+                ownerClassId,
+                params,
+                paramVars,
+                returnKind,
+                bodyWideningRank,
+                entryBlockId,
+                newBlocks,
+                newNextValId,
+                newNextBlockId,
+                pinnedVars,
+                Objects.requireNonNull(newAliases, "newAliases"));
     }
 }

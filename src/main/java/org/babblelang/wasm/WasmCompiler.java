@@ -1,20 +1,19 @@
 package org.babblelang.wasm;
 
-import org.babblelang.analysis.CompilationTarget;
-import org.babblelang.ir.hir.HirModule;
-
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import org.babblelang.analysis.CompilationTarget;
+import org.babblelang.ir.hir.HirModule;
 
 /**
- * Orchestrates WebAssembly 3.0 compilation from target-neutral {@link HirModule}s:
- * portability checking ({@link WasmPortabilityChecker}), closed-world linking
- * ({@link WasmProgramLinker}), structural verification ({@link WasmVerifier}),
- * WAT rendering ({@link WatPrinter}), binary encoding ({@link WasmWriter}),
- * and JS ES module glue emission ({@link WasmJsGlueGen}) ({@code BIP025-I1}).
+ * Orchestrates WebAssembly 3.0 compilation from target-neutral {@link HirModule}s: portability
+ * checking ({@link WasmPortabilityChecker}), closed-world linking ({@link WasmProgramLinker}),
+ * structural verification ({@link WasmVerifier}), WAT rendering ({@link WatPrinter}), binary
+ * encoding ({@link WasmWriter}), and JS ES module glue emission ({@link WasmJsGlueGen}) ({@code
+ * BIP025-I1}).
  */
 public final class WasmCompiler {
     public record Options(
@@ -22,8 +21,7 @@ public final class WasmCompiler {
             boolean verify,
             boolean debugNames,
             boolean dumpWat,
-            boolean wasmOpt
-    ) {
+            boolean wasmOpt) {
         public static Options defaults(CompilationTarget target) {
             boolean verify = Boolean.getBoolean("babble.verify");
             boolean debugNames = Boolean.getBoolean("babble.wasmDebugNames");
@@ -38,23 +36,26 @@ public final class WasmCompiler {
             byte[] wasmBytes,
             String wat,
             String jsGlue,
-            List<WasmPortabilityChecker.Diagnostic> portabilityErrors
-    ) {
+            List<WasmPortabilityChecker.Diagnostic> portabilityErrors) {
         public boolean ok() {
             return portabilityErrors.isEmpty();
         }
     }
 
-    private WasmCompiler() {
-    }
+    private WasmCompiler() {}
 
-    /** Compiles linked HIR modules into a verified WebAssembly 3.0 binary (plus optional JS glue). */
-    public static CompileResult compile(List<WasmProgramLinker.ModuleInput> modules, Options options, String wasmFileName) {
+    /**
+     * Compiles linked HIR modules into a verified WebAssembly 3.0 binary (plus optional JS glue).
+     */
+    public static CompileResult compile(
+            List<WasmProgramLinker.ModuleInput> modules, Options options, String wasmFileName) {
         if (options.target() == CompilationTarget.JVM) {
-            throw new IllegalArgumentException("WasmCompiler requires a WebAssembly target, got : jvm");
+            throw new IllegalArgumentException(
+                    "WasmCompiler requires a WebAssembly target, got : jvm");
         }
         List<HirModule> hirs = modules.stream().map(WasmProgramLinker.ModuleInput::hir).toList();
-        List<WasmPortabilityChecker.Diagnostic> diags = WasmPortabilityChecker.check(hirs, options.target());
+        List<WasmPortabilityChecker.Diagnostic> diags =
+                WasmPortabilityChecker.check(hirs, options.target());
         if (!diags.isEmpty()) {
             return new CompileResult(null, null, null, null, diags);
         }
@@ -70,14 +71,19 @@ public final class WasmCompiler {
         }
 
         byte[] bytes = WasmWriter.encode(wasmMod, options.debugNames());
-        String jsGlue = options.target() == CompilationTarget.WASM_JS
-                ? WasmJsGlueGen.generate(wasmFileName != null ? wasmFileName : "app.wasm")
-                : null;
+        String jsGlue =
+                options.target() == CompilationTarget.WASM_JS
+                        ? WasmJsGlueGen.generate(wasmFileName != null ? wasmFileName : "app.wasm")
+                        : null;
         return new CompileResult(wasmMod, bytes, wat, jsGlue, List.of());
     }
 
-    /** Writes {@code outWasm} (and sibling {@code .mjs} on {@code wasm-js}), running optional {@code wasm-opt}. */
-    public static void writeOutputs(CompileResult result, Path outWasm, Options options) throws IOException {
+    /**
+     * Writes {@code outWasm} (and sibling {@code .mjs} on {@code wasm-js}), running optional {@code
+     * wasm-opt}.
+     */
+    public static void writeOutputs(CompileResult result, Path outWasm, Options options)
+            throws IOException {
         if (outWasm.toAbsolutePath().getParent() != null) {
             Files.createDirectories(outWasm.toAbsolutePath().getParent());
         }
@@ -87,7 +93,8 @@ public final class WasmCompiler {
         }
         if (result.jsGlue() != null) {
             String base = outWasm.getFileName().toString();
-            String mjsName = (base.endsWith(".wasm") ? base.substring(0, base.length() - 5) : base) + ".mjs";
+            String mjsName =
+                    (base.endsWith(".wasm") ? base.substring(0, base.length() - 5) : base) + ".mjs";
             Path outMjs = outWasm.toAbsolutePath().normalize().getParent().resolve(mjsName);
             Files.writeString(outMjs, result.jsGlue(), StandardCharsets.UTF_8);
         }
@@ -97,10 +104,18 @@ public final class WasmCompiler {
         Path normalized = wasmPath.toAbsolutePath().normalize();
         Path parent = normalized.getParent();
         Path tmp = Files.createTempFile(parent, ".babble-opt-", ".wasm");
-        ProcessBuilder pb = new ProcessBuilder(
-                "wasm-opt", "-O3", "--enable-gc", "--enable-reference-types",
-                "--enable-exception-handling", "--enable-tail-call", "--enable-multivalue",
-                normalized.toString(), "-o", tmp.toString());
+        ProcessBuilder pb =
+                new ProcessBuilder(
+                        "wasm-opt",
+                        "-O3",
+                        "--enable-gc",
+                        "--enable-reference-types",
+                        "--enable-exception-handling",
+                        "--enable-tail-call",
+                        "--enable-multivalue",
+                        normalized.toString(),
+                        "-o",
+                        tmp.toString());
         pb.redirectErrorStream(true);
         try {
             Process p = pb.start();

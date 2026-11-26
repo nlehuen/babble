@@ -1,6 +1,5 @@
 package org.babblelang.engine;
 
-import org.babblelang.runtime.LogicalPaths;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -9,16 +8,16 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import org.babblelang.runtime.LogicalPaths;
 
 /**
- * Modules in files, the default source. A relative name is resolved against the directory
- * of the importing module, as its display name gives it, else against the working directory.
- * A module's key is its real path, so every spelling of a file, through {@code ..} or a
- * symbolic link, is one module ; its display name is the path as resolved ; its version, a
- * hash of its content.
- * <p>
- * {@link #rooted} gives a source confined to a directory, whose keys and display names are
- * paths relative to it ({@code lib/vec3.ba}), the same on every machine.
+ * Modules in files, the default source. A relative name is resolved against the directory of the
+ * importing module, as its display name gives it, else against the working directory. A module's
+ * key is its real path, so every spelling of a file, through {@code ..} or a symbolic link, is one
+ * module ; its display name is the path as resolved ; its version, a hash of its content.
+ *
+ * <p>{@link #rooted} gives a source confined to a directory, whose keys and display names are paths
+ * relative to it ({@code lib/vec3.ba}), the same on every machine.
  */
 public final class FileModuleSource implements ModuleSource {
     public static final FileModuleSource INSTANCE = new FileModuleSource(null);
@@ -34,11 +33,10 @@ public final class FileModuleSource implements ModuleSource {
 
     /**
      * The modules under a directory (docs/design/bip006_module-sources-and-aot.md §4.2), for a host
-     * that confines imports, and for ahead-of-time compilation. Names are resolved as by
-     * {@link MapModuleSource} : relative to the importing module's directory, or from the root
-     * when they start with "/" ; an import that would leave the directory, through ".." or a
-     * symbolic link, finds nothing. Keys and display names are "/"-separated paths relative to
-     * the root.
+     * that confines imports, and for ahead-of-time compilation. Names are resolved as by {@link
+     * MapModuleSource} : relative to the importing module's directory, or from the root when they
+     * start with "/" ; an import that would leave the directory, through ".." or a symbolic link,
+     * finds nothing. Keys and display names are "/"-separated paths relative to the root.
      */
     public static FileModuleSource rooted(Path root) throws IOException {
         return new FileModuleSource(root.toRealPath());
@@ -66,8 +64,8 @@ public final class FileModuleSource implements ModuleSource {
     }
 
     /**
-     * A script named after a file need not be one, as when a host evaluates a string under a
-     * file's name : its imports are still resolved from that file's directory.
+     * A script named after a file need not be one, as when a host evaluates a string under a file's
+     * name : its imports are still resolved from that file's directory.
      */
     private ModuleId resolveUnderRoot(String name, ModuleId importer) throws IOException {
         String path = LogicalPaths.resolve(name, importer != null ? importer.key() : null);
@@ -105,7 +103,10 @@ public final class FileModuleSource implements ModuleSource {
         }
     }
 
-    /** A script's name : a path under the root, absolute or relative to it, whether it exists or not. */
+    /**
+     * A script's name : a path under the root, absolute or relative to it, whether it exists or
+     * not.
+     */
     private ModuleId identifyUnderRoot(String sourceName) {
         String path;
         try {
@@ -144,7 +145,10 @@ public final class FileModuleSource implements ModuleSource {
 
     static String hash(String text) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of()
+                    .formatHex(
+                            MessageDigest.getInstance("SHA-256")
+                                    .digest(text.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is part of every JRE", e);
         }

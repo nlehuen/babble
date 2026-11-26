@@ -1,8 +1,7 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.PrimitiveKind;
-
 import java.util.List;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
  * Structural and semantic invariant verifier for {@link HirModule} (BIP014-I1).
@@ -11,8 +10,7 @@ import java.util.List;
  * suites) after HIR construction and after every optimization pass.
  */
 public final class HirVerifier {
-    private HirVerifier() {
-    }
+    private HirVerifier() {}
 
     public static void verify(HirModule module) {
         if (module == null) {
@@ -46,13 +44,15 @@ public final class HirVerifier {
         }
     }
 
-    private static void verifyStatements(HirModule module, List<HirExpr> stmts, boolean inFunction, int loopDepth) {
+    private static void verifyStatements(
+            HirModule module, List<HirExpr> stmts, boolean inFunction, int loopDepth) {
         for (HirExpr stmt : stmts) {
             verifyExpr(module, stmt, inFunction, loopDepth);
         }
     }
 
-    private static void verifyExpr(HirModule module, HirExpr expr, boolean inFunction, int loopDepth) {
+    private static void verifyExpr(
+            HirModule module, HirExpr expr, boolean inFunction, int loopDepth) {
         if (expr == null) {
             throw new IllegalStateException("HirVerifier : null HirExpr");
         }
@@ -72,8 +72,7 @@ public final class HirVerifier {
                     throw new IllegalStateException("HirVerifier : null CoreCollectionRef kind");
                 }
             }
-            case HirExpr.CoreExceptionRef r -> {
-            }
+            case HirExpr.CoreExceptionRef r -> {}
             case HirExpr.VarRead v -> {
                 if (v.var() == null) {
                     throw new IllegalStateException("HirVerifier : null VarRead var");
@@ -86,11 +85,11 @@ public final class HirVerifier {
             }
             case HirExpr.ThisRef t -> {
                 if (t.enclosingClassId() >= 0 && module.clazz(t.enclosingClassId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown enclosingClassId " + t.enclosingClassId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown enclosingClassId " + t.enclosingClassId());
                 }
             }
-            case HirExpr.RecurseRef r -> {
-            }
+            case HirExpr.RecurseRef r -> {}
             case HirExpr.Def d -> {
                 if (d.value() != null) {
                     verifyExpr(module, d.value(), inFunction, loopDepth);
@@ -130,7 +129,8 @@ public final class HirVerifier {
                 verifyExpr(module, op.receiver(), inFunction, loopDepth);
                 verifyStatements(module, op.args(), inFunction, loopDepth);
             }
-            case HirExpr.ModuleExportGet g -> verifyExpr(module, g.receiver(), inFunction, loopDepth);
+            case HirExpr.ModuleExportGet g ->
+                    verifyExpr(module, g.receiver(), inFunction, loopDepth);
             case HirExpr.DynamicSelect s -> verifyExpr(module, s.receiver(), inFunction, loopDepth);
             case HirExpr.Unary u -> verifyExpr(module, u.operand(), inFunction, loopDepth);
             case HirExpr.Binary b -> {
@@ -160,7 +160,8 @@ public final class HirVerifier {
             }
             case HirExpr.Match m -> {
                 if (m.scrutineeVar() == null) {
-                    throw new IllegalStateException("HirVerifier : null Match scrutineeVar at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : null Match scrutineeVar at line " + meta.line());
                 }
                 verifyExpr(module, m.scrutinee(), inFunction, loopDepth);
                 for (HirExpr.MatchArm arm : m.arms()) {
@@ -192,7 +193,8 @@ public final class HirVerifier {
             }
             case HirExpr.Try t -> {
                 if (t.catches().isEmpty() && !t.hasFinally()) {
-                    throw new IllegalStateException("HirVerifier : try without catch or finally at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : try without catch or finally at line " + meta.line());
                 }
                 verifyStatements(module, t.tryBody(), inFunction, loopDepth);
                 for (HirExpr.HirCatch cc : t.catches()) {
@@ -202,7 +204,8 @@ public final class HirVerifier {
             }
             case HirExpr.Break b -> {
                 if (loopDepth <= 0) {
-                    throw new IllegalStateException("HirVerifier : break outside loop at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : break outside loop at line " + meta.line());
                 }
                 if (b.value() != null) {
                     verifyExpr(module, b.value(), inFunction, loopDepth);
@@ -210,40 +213,50 @@ public final class HirVerifier {
             }
             case HirExpr.Continue c -> {
                 if (loopDepth <= 0) {
-                    throw new IllegalStateException("HirVerifier : continue outside loop at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : continue outside loop at line " + meta.line());
                 }
             }
             case HirExpr.Return r -> {
                 if (!inFunction) {
-                    throw new IllegalStateException("HirVerifier : return outside function at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : return outside function at line " + meta.line());
                 }
                 verifyExpr(module, r.value(), inFunction, loopDepth);
             }
             case HirExpr.Throw th -> {
                 if (th.value() == null) {
-                    throw new IllegalStateException("HirVerifier : null Throw value at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : null Throw value at line " + meta.line());
                 }
                 verifyExpr(module, th.value(), inFunction, loopDepth);
             }
-            case HirExpr.CoreCollectionCall c -> verifyCallArgs(module, c.args(), inFunction, loopDepth);
+            case HirExpr.CoreCollectionCall c ->
+                    verifyCallArgs(module, c.args(), inFunction, loopDepth);
             case HirExpr.SuperCall c -> verifyCallArgs(module, c.args(), inFunction, loopDepth);
             case HirExpr.SelfRecurseCall c -> {
                 if (module.function(c.functionId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown SelfRecurseCall functionId " + c.functionId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown SelfRecurseCall functionId " + c.functionId());
                 }
                 verifyStatements(module, c.args(), inFunction, loopDepth);
             }
             case HirExpr.SelfTailCall c -> {
                 // HirEmitter checks that it is in the body of function functionId.
                 if (!inFunction || module.function(c.functionId()) == null) {
-                    throw new IllegalStateException("HirVerifier : SelfTailCall outside of its function #" + c.functionId()
-                            + " at line " + meta.line());
+                    throw new IllegalStateException(
+                            "HirVerifier : SelfTailCall outside of its function #"
+                                    + c.functionId()
+                                    + " at line "
+                                    + meta.line());
                 }
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);
             }
             case HirExpr.DirectBabbleCall c -> {
                 if (c.externalTarget() == null && module.function(c.targetFunctionId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown DirectBabbleCall targetFunctionId " + c.targetFunctionId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown DirectBabbleCall targetFunctionId "
+                                    + c.targetFunctionId());
                 }
                 verifyExpr(module, c.callee(), inFunction, loopDepth);
                 verifyStatements(module, c.args(), inFunction, loopDepth);
@@ -251,13 +264,19 @@ public final class HirVerifier {
             case HirExpr.DirectThisMethodCall c -> {
                 if (c.externalClassJvmName() == null) {
                     if (module.clazz(c.classId()) == null) {
-                        throw new IllegalStateException("HirVerifier : unknown DirectThisMethodCall classId " + c.classId());
+                        throw new IllegalStateException(
+                                "HirVerifier : unknown DirectThisMethodCall classId "
+                                        + c.classId());
                     }
                     if (module.function(c.targetFunctionId()) == null) {
-                        throw new IllegalStateException("HirVerifier : unknown DirectThisMethodCall targetFunctionId " + c.targetFunctionId());
+                        throw new IllegalStateException(
+                                "HirVerifier : unknown DirectThisMethodCall targetFunctionId "
+                                        + c.targetFunctionId());
                     }
                 } else if (c.externalSignature() == null) {
-                    throw new IllegalStateException("HirVerifier : external DirectThisMethodCall missing signature for " + c.memberName());
+                    throw new IllegalStateException(
+                            "HirVerifier : external DirectThisMethodCall missing signature for "
+                                    + c.memberName());
                 }
                 verifyExpr(module, c.receiver(), inFunction, loopDepth);
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);
@@ -288,36 +307,44 @@ public final class HirVerifier {
                 verifyExpr(module, c.callee(), inFunction, loopDepth);
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);
             }
-            case HirExpr.MakeOverloadSet m -> verifyStatements(module, m.operands(), inFunction, loopDepth);
+            case HirExpr.MakeOverloadSet m ->
+                    verifyStatements(module, m.operands(), inFunction, loopDepth);
             case HirExpr.OverloadSelect s -> verifyExpr(module, s.set(), inFunction, loopDepth);
             case HirExpr.OverloadDispatch d -> {
                 verifyExpr(module, d.callee(), inFunction, loopDepth);
                 verifyStatements(module, d.args(), inFunction, loopDepth);
                 for (HirExpr.OverloadBranch b : d.branches()) {
-                    if (b.directFunctionId() >= 0 && module.function(b.directFunctionId()) == null) {
-                        throw new IllegalStateException("HirVerifier : unknown OverloadBranch directFunctionId " + b.directFunctionId());
+                    if (b.directFunctionId() >= 0
+                            && module.function(b.directFunctionId()) == null) {
+                        throw new IllegalStateException(
+                                "HirVerifier : unknown OverloadBranch directFunctionId "
+                                        + b.directFunctionId());
                     }
                 }
             }
             case HirExpr.FunctionRef f -> {
                 if (module.function(f.functionId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown FunctionRef functionId " + f.functionId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown FunctionRef functionId " + f.functionId());
                 }
             }
             case HirExpr.ClassExpr c -> {
                 if (module.clazz(c.classId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown ClassExpr classId " + c.classId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown ClassExpr classId " + c.classId());
                 }
             }
             case HirExpr.InterfaceExpr i -> {
                 if (module.iface(i.interfaceId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown InterfaceExpr interfaceId " + i.interfaceId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown InterfaceExpr interfaceId " + i.interfaceId());
                 }
             }
             case HirExpr.TypeApply t -> verifyExpr(module, t.inner(), inFunction, loopDepth);
             case HirExpr.RecordNew r -> {
                 if (r.classId() >= 0 && module.clazz(r.classId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown RecordNew classId " + r.classId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown RecordNew classId " + r.classId());
                 }
                 if (r.classJvmName() == null) {
                     throw new IllegalStateException("HirVerifier : null RecordNew classJvmName");
@@ -327,7 +354,8 @@ public final class HirVerifier {
             }
             case HirExpr.RecordReuse r -> {
                 if (r.classId() >= 0 && module.clazz(r.classId()) == null) {
-                    throw new IllegalStateException("HirVerifier : unknown RecordReuse classId " + r.classId());
+                    throw new IllegalStateException(
+                            "HirVerifier : unknown RecordReuse classId " + r.classId());
                 }
                 verifyExpr(module, r.target(), inFunction, loopDepth);
                 verifyStatements(module, r.args(), inFunction, loopDepth);
@@ -337,7 +365,8 @@ public final class HirVerifier {
         }
     }
 
-    private static void verifyPattern(HirModule module, HirPattern pattern, boolean inFunction, int loopDepth) {
+    private static void verifyPattern(
+            HirModule module, HirPattern pattern, boolean inFunction, int loopDepth) {
         if (pattern == null) {
             throw new IllegalStateException("HirVerifier : null HirPattern");
         }
@@ -364,7 +393,8 @@ public final class HirVerifier {
                     verifyExpr(module, r.step(), inFunction, loopDepth);
                 }
             }
-            case HirPattern.Membership m -> verifyExpr(module, m.container(), inFunction, loopDepth);
+            case HirPattern.Membership m ->
+                    verifyExpr(module, m.container(), inFunction, loopDepth);
             case HirPattern.RecordDestructure rd -> {
                 for (HirPattern fp : rd.fieldPatterns()) {
                     verifyPattern(module, fp, inFunction, loopDepth);
@@ -378,7 +408,8 @@ public final class HirVerifier {
         }
     }
 
-    private static void verifyCallArgs(HirModule module, List<HirCallArg> args, boolean inFunction, int loopDepth) {
+    private static void verifyCallArgs(
+            HirModule module, List<HirCallArg> args, boolean inFunction, int loopDepth) {
         for (HirCallArg arg : args) {
             verifyExpr(module, arg.value(), inFunction, loopDepth);
         }

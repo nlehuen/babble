@@ -1,5 +1,9 @@
 package org.babblelang.tests;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import org.babblelang.analysis.CompilationTarget;
 import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.BabbleScriptEngine;
@@ -11,37 +15,45 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.List;
-
 /**
  * End-to-end tests for the WebAssembly 3.0 backend ({@code BIP025-I1}): scalars, control flow,
- * closures, {@code BIP024} tail calls, {@code BIP021} optional/named/overloaded calls,
- * {@code BIP028} exceptions &amp; 2-copy {@code finally}, and {@code -target wasm-js|wasm-bare} CLI.
+ * closures, {@code BIP024} tail calls, {@code BIP021} optional/named/overloaded calls, {@code
+ * BIP028} exceptions &amp; 2-copy {@code finally}, and {@code -target wasm-js|wasm-bare} CLI.
  */
 public class WasmCompilerTestCase {
 
-    private static WasmCompiler.CompileResult compileRaw(String source, CompilationTarget target, int optLevel, boolean debugNames) throws Exception {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+    private static WasmCompiler.CompileResult compileRaw(
+            String source, CompilationTarget target, int optLevel, boolean debugNames)
+            throws Exception {
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleCompiler.OPT_LEVEL, optLevel);
-        List<BabbleScriptEngine.HirProgramModule> mods = engine.compileSourceToHir(source, "test.ba", target);
-        List<WasmProgramLinker.ModuleInput> inputs = mods.stream()
-                .map(m -> new WasmProgramLinker.ModuleInput(m.id().key(), m.id().displayName(), m.hir(), m.staticImportKeys()))
-                .toList();
+        List<BabbleScriptEngine.HirProgramModule> mods =
+                engine.compileSourceToHir(source, "test.ba", target);
+        List<WasmProgramLinker.ModuleInput> inputs =
+                mods.stream()
+                        .map(m ->
+                                new WasmProgramLinker.ModuleInput(
+                                        m.id().key(),
+                                        m.id().displayName(),
+                                        m.hir(),
+                                        m.staticImportKeys()))
+                        .toList();
         boolean dumpWat = WasmCompiler.Options.defaults(target).dumpWat();
-        WasmCompiler.Options opts = new WasmCompiler.Options(target, true, debugNames, dumpWat, false);
+        WasmCompiler.Options opts =
+                new WasmCompiler.Options(target, true, debugNames, dumpWat, false);
         return WasmCompiler.compile(inputs, opts, "test.wasm");
     }
 
-    private static WasmCompiler.CompileResult compile(String source, CompilationTarget target, int optLevel) throws Exception {
+    private static WasmCompiler.CompileResult compile(
+            String source, CompilationTarget target, int optLevel) throws Exception {
         WasmCompiler.CompileResult res = compileRaw(source, target, optLevel, true);
         Assertions.assertTrue(res.ok(), "Portability errors : " + res.portabilityErrors());
         return res;
     }
 
-    private static NodeWasmRunner.RunOutcome runWasm(String source, CompilationTarget target, int optLevel) throws Exception {
+    private static NodeWasmRunner.RunOutcome runWasm(
+            String source, CompilationTarget target, int optLevel) throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
         WasmCompiler.CompileResult res = compile(source, target, optLevel);
         if (target == CompilationTarget.WASM_BARE) {
@@ -52,7 +64,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void scalarsAndConversionsOnBareAndJs() throws Exception {
-        String code = """
+        String code =
+                """
                 def b = byte(120)
                 def s = short(1000)
                 def i = 42
@@ -78,7 +91,8 @@ public class WasmCompilerTestCase {
                 assert(-0.0 < 0.0)
                 "ok:" + (i + 1)
                 """;
-        for (CompilationTarget t : List.of(CompilationTarget.WASM_BARE, CompilationTarget.WASM_JS)) {
+        for (CompilationTarget t :
+                List.of(CompilationTarget.WASM_BARE, CompilationTarget.WASM_JS)) {
             NodeWasmRunner.RunOutcome out = runWasm(code, t, 1);
             Assertions.assertTrue(out.ok(), t + " failed : " + out.error());
             Assertions.assertEquals("\"ok:43\"", out.resultJson(), "Target : " + t);
@@ -87,7 +101,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void controlFlowLoopsBreakValueAndShortCircuit() throws Exception {
-        String code = """
+        String code =
+                """
                 var sum = 0
                 var i = 0
                 while i < 10 then (
@@ -119,7 +134,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void closuresCaptureCellsAndHigherOrderFunctions() throws Exception {
-        String code = """
+        String code =
+                """
                 def makeCounter = fn (start: int): fn io (): int -> (
                     var n = start
                     fn io (): int -> (
@@ -146,7 +162,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void tailCallRecursion500kDeepUsesReturnCall() throws Exception {
-        String code = """
+        String code =
+                """
                 export def sumTo = fn (n: long, acc: long): long -> (
                     if n <= 0L then (acc) else (recurse(n - 1L, acc + n))
                 )
@@ -154,7 +171,8 @@ public class WasmCompilerTestCase {
                 """;
         WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_BARE, 1);
         String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
-        Assertions.assertTrue(wat.contains("return_call"), "Expected return_call in WAT for BIP024 tail call");
+        Assertions.assertTrue(
+                wat.contains("return_call"), "Expected return_call in WAT for BIP024 tail call");
 
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
         NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(compiled.wasmBytes());
@@ -164,7 +182,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void optionalNamedReorderedAndOverloadedCalls() throws Exception {
-        String code = """
+        String code =
+                """
                 def sub = fn (a: int, b: int = 10, c: int = a + b): int -> (a * 100 + b * 10 + c)
                 assert(sub(1) == 100 + 100 + 11)
                 assert(sub(1, 2) == 123)
@@ -193,90 +212,111 @@ public class WasmCompilerTestCase {
     @Test
     public void exceptionsCatchFinallySuppressionAndControlTransfer() throws Exception {
         // 1. try / catch / finally
-        NodeWasmRunner.RunOutcome o1 = runWasm("""
-                var trace = ""
-                def r1 = try (
-                    trace += "T"
-                    throw exception("boom")
-                    "never"
-                ) catch e: exception then (
-                    trace += "C:" + e.getMessage()
-                    "caught"
-                ) finally (
-                    trace += "F"
-                )
-                assert(r1 == "caught")
-                assert(trace == "TC:boomF")
-                trace
-                """, CompilationTarget.WASM_BARE, 1);
+        NodeWasmRunner.RunOutcome o1 =
+                runWasm(
+                        """
+                        var trace = ""
+                        def r1 = try (
+                            trace += "T"
+                            throw exception("boom")
+                            "never"
+                        ) catch e: exception then (
+                            trace += "C:" + e.getMessage()
+                            "caught"
+                        ) finally (
+                            trace += "F"
+                        )
+                        assert(r1 == "caught")
+                        assert(trace == "TC:boomF")
+                        trace
+                        """,
+                        CompilationTarget.WASM_BARE,
+                        1);
         Assertions.assertTrue(o1.ok(), "Subtest 1 (try/catch/finally) failed : " + o1.error());
 
         // 2. Return intercepted by finally
-        NodeWasmRunner.RunOutcome o2 = runWasm("""
-                var finRan = false
-                def withRet = fn io (): int -> (
-                    try (
-                        return 42
-                    ) finally (
-                        finRan = true
-                    )
-                )
-                assert(withRet() == 42)
-                assert(finRan)
-                42
-                """, CompilationTarget.WASM_BARE, 1);
+        NodeWasmRunner.RunOutcome o2 =
+                runWasm(
+                        """
+                        var finRan = false
+                        def withRet = fn io (): int -> (
+                            try (
+                                return 42
+                            ) finally (
+                                finRan = true
+                            )
+                        )
+                        assert(withRet() == 42)
+                        assert(finRan)
+                        42
+                        """,
+                        CompilationTarget.WASM_BARE,
+                        1);
         Assertions.assertTrue(o2.ok(), "Subtest 2 (return in try/finally) failed : " + o2.error());
 
         // 3. Break intercepted by finally
-        NodeWasmRunner.RunOutcome o3 = runWasm("""
-                var brkFin = 0
-                def brkVal = while true then (
-                    try (
-                        break 77
-                    ) finally (
-                        brkFin += 1
-                    )
-                )
-                assert(brkVal == 77)
-                assert(brkFin == 1)
-                brkVal
-                """, CompilationTarget.WASM_BARE, 1);
+        NodeWasmRunner.RunOutcome o3 =
+                runWasm(
+                        """
+                        var brkFin = 0
+                        def brkVal = while true then (
+                            try (
+                                break 77
+                            ) finally (
+                                brkFin += 1
+                            )
+                        )
+                        assert(brkVal == 77)
+                        assert(brkFin == 1)
+                        brkVal
+                        """,
+                        CompilationTarget.WASM_BARE,
+                        1);
         Assertions.assertTrue(o3.ok(), "Subtest 3 (break in try/finally) failed : " + o3.error());
 
         // 4. Exception with cause
-        NodeWasmRunner.RunOutcome o4 = runWasm("""
-                def root = exception("root-cause")
-                def caused = try (
-                    throw exception("wrapper", root)
-                ) catch e: exception then (
-                    "" + e.getMessage() + ":" + (e.getCause() as exception).getMessage()
-                )
-                assert(caused == "wrapper:root-cause")
-                caused
-                """, CompilationTarget.WASM_BARE, 1);
+        NodeWasmRunner.RunOutcome o4 =
+                runWasm(
+                        """
+                        def root = exception("root-cause")
+                        def caused = try (
+                            throw exception("wrapper", root)
+                        ) catch e: exception then (
+                            "" + e.getMessage() + ":" + (e.getCause() as exception).getMessage()
+                        )
+                        assert(caused == "wrapper:root-cause")
+                        caused
+                        """,
+                        CompilationTarget.WASM_BARE,
+                        1);
         Assertions.assertTrue(o4.ok(), "Subtest 4 (exception cause) failed : " + o4.error());
 
         // 5. BIP028-D6: throw in finally attaches suppressed and rethrows primary!
-        NodeWasmRunner.RunOutcome o5 = runWasm("""
-                def suppMsg = try (
-                    try (
-                        throw exception("primary")
-                    ) finally (
-                        throw exception("secondary")
-                    )
-                ) catch e: exception then (
-                    e.getMessage()
-                )
-                assert(suppMsg == "primary")
-                suppMsg
-                """, CompilationTarget.WASM_BARE, 1);
+        NodeWasmRunner.RunOutcome o5 =
+                runWasm(
+                        """
+                        def suppMsg = try (
+                            try (
+                                throw exception("primary")
+                            ) finally (
+                                throw exception("secondary")
+                            )
+                        ) catch e: exception then (
+                            e.getMessage()
+                        )
+                        assert(suppMsg == "primary")
+                        suppMsg
+                        """,
+                        CompilationTarget.WASM_BARE,
+                        1);
         Assertions.assertTrue(o5.ok(), "Subtest 5 (finally suppression) failed : " + o5.error());
         Assertions.assertEquals("\"primary\"", o5.resultJson());
     }
 
     @Test
     public void wasmJsStdoutAndDoubleFormattingParity() throws Exception {
-        String code = """
+        String code =
+                """
                 println("hello ", 42, " ", 1.0, " ", -0.0, " ", 10000000.0, " ", 0.0001)
                 print("done")
                 assert(double("3.5") == 3.5)
@@ -291,33 +331,58 @@ public class WasmCompilerTestCase {
     public void cliCompileTargetWasmJsAndBareDeterministic(@TempDir Path dir) throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
         Path script = dir.resolve("hello.ba");
-        Files.writeString(script, """
+        Files.writeString(
+                script,
+                """
                 println("from-cli:", 21 * 2)
-                """, StandardCharsets.UTF_8);
+                """,
+                StandardCharsets.UTF_8);
 
         Path wasmOut = dir.resolve("hello.wasm");
         Path mjsOut = dir.resolve("hello.mjs");
         java.io.StringWriter outBuf = new java.io.StringWriter();
         java.io.StringWriter errBuf = new java.io.StringWriter();
-        int status = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", script.toString(), "-o", wasmOut.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(outBuf), new java.io.PrintWriter(errBuf), false);
+        int status =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            script.toString(),
+                            "-o",
+                            wasmOut.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(outBuf),
+                        new java.io.PrintWriter(errBuf),
+                        false);
         Assertions.assertEquals(0, status, "CLI compile failed : " + errBuf);
         Assertions.assertTrue(Files.isRegularFile(wasmOut));
         Assertions.assertTrue(Files.isRegularFile(mjsOut));
 
         // Deterministic rebuild check
         byte[] firstBytes = Files.readAllBytes(wasmOut);
-        int status2 = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", script.toString(), "-o", wasmOut.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(new java.io.StringWriter()), new java.io.PrintWriter(new java.io.StringWriter()), false);
+        int status2 =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            script.toString(),
+                            "-o",
+                            wasmOut.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        false);
         Assertions.assertEquals(0, status2);
-        Assertions.assertArrayEquals(firstBytes, Files.readAllBytes(wasmOut), "Wasm build must be deterministic");
+        Assertions.assertArrayEquals(
+                firstBytes, Files.readAllBytes(wasmOut), "Wasm build must be deterministic");
 
         // Execute generated hello.mjs directly with `node`
-        Process p = new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
+        Process p =
+                new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
         String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = p.waitFor();
@@ -325,11 +390,13 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals("from-cli:42\n", stdout);
     }
 
-    // ---------------------------------------------------------------- BIP025-I2 Object model, arrays & modules
+    // ---------------------------------------------------------------- BIP025-I2 Object model,
+    // arrays & modules
 
     @Test
     public void recordsImmutableFieldsOperatorsAndValueSemantics() throws Exception {
-        String code = """
+        String code =
+                """
                 def Vec2 = record (x: double, y: double) (
                     def plus = fn (other: Vec2): Vec2 -> (Vec2(this.x + other.x, this.y + other.y))
                     def minus = fn (other: Vec2): Vec2 -> (Vec2(this.x - other.x, this.y - other.y))
@@ -362,9 +429,11 @@ public class WasmCompilerTestCase {
         WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_BARE, 1);
         String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
         // BIP025-D11: record parameter fields must be strictly immutable (no `(mut f64)`)!
-        Assertions.assertTrue(wat.contains("(field $f_x f64)") && wat.contains("(field $f_y f64)"),
+        Assertions.assertTrue(
+                wat.contains("(field $f_x f64)") && wat.contains("(field $f_y f64)"),
                 "Expected immutable f64 fields for record Vec2 in WAT");
-        Assertions.assertFalse(wat.contains("(field $f_x (mut f64))"),
+        Assertions.assertFalse(
+                wat.contains("(field $f_x (mut f64))"),
                 "Record fields must NOT be mutable in WasmGC (BIP025-D11)");
 
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
@@ -375,7 +444,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void classesMutableFieldsStaticsObjectsBoundMethodsAndCaptures() throws Exception {
-        String code = """
+        String code =
+                """
                 def Counter = class (start: int = 0) (
                     var value = start
                     Counter.bumpTotal(1)
@@ -428,7 +498,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void interfacesDefaultsSuperBitsetIntersectionAndDevirtualization() throws Exception {
-        String code = """
+        String code =
+                """
                 def Named = interface (
                     def name: fn (): string
                     def label = fn (): string -> ("<" + this.name() + ">")
@@ -475,7 +546,8 @@ public class WasmCompilerTestCase {
         WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_BARE, 1);
         String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
         // BIP025-D7: single-mask i64.and + i64.eq for intersection `x is (Named & Aged)`
-        Assertions.assertTrue(wat.contains("i64.and") && wat.contains("i64.eq"),
+        Assertions.assertTrue(
+                wat.contains("i64.and") && wat.contains("i64.eq"),
                 "Expected single-mask i64.and + i64.eq for interface intersection in WAT");
 
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
@@ -486,7 +558,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void arraysPrimitiveRefDeepEqualityAndBoundsChecks() throws Exception {
-        String code = """
+        String code =
+                """
                 def a = (array of int)(4)
                 assert(a.size() == 4)
                 assert(a.get(0) == 0)
@@ -532,7 +605,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void nominalThrowCatchAndNominalOverloadDispatch() throws Exception {
-        String code = """
+        String code =
+                """
                 def DomainErr = interface (
                     def code: fn (): int
                 )
@@ -577,14 +651,19 @@ public class WasmCompilerTestCase {
     @Test
     public void multiModuleStaticImportLinkingAndExecution(@TempDir Path dir) throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
-        Files.writeString(dir.resolve("vec.ba"), """
+        Files.writeString(
+                dir.resolve("vec.ba"),
+                """
                 export def Vec2 = record (x: double, y: double) (
                     def plus = fn (o: Vec2): Vec2 -> (Vec2(this.x + o.x, this.y + o.y))
                     def lenSq = fn (): double -> (this.x * this.x + this.y * this.y)
                 )
                 export def ORIGIN = Vec2(0.0, 0.0)
-                """, StandardCharsets.UTF_8);
-        Files.writeString(dir.resolve("shape.ba"), """
+                """,
+                StandardCharsets.UTF_8);
+        Files.writeString(
+                dir.resolve("shape.ba"),
+                """
                 def vec = import("vec.ba")
                 export def Shape = interface (
                     def area: fn (): double
@@ -592,27 +671,41 @@ public class WasmCompilerTestCase {
                 export def Box = record (size: vec.Vec2) implements Shape (
                     def area = fn (): double -> (this.size.x * this.size.y)
                 )
-                """, StandardCharsets.UTF_8);
+                """,
+                StandardCharsets.UTF_8);
         Path main = dir.resolve("main.ba");
-        Files.writeString(main, """
+        Files.writeString(
+                main,
+                """
                 def vec = import("vec.ba")
                 def shape = import("shape.ba")
                 def v = vec.ORIGIN + vec.Vec2(3.0, 4.0)
                 def s: shape.Shape = shape.Box(v)
                 println("lenSq=", v.lenSq(), " area=", s.area())
-                """, StandardCharsets.UTF_8);
+                """,
+                StandardCharsets.UTF_8);
 
         Path wasmOut = dir.resolve("app.wasm");
         Path mjsOut = dir.resolve("app.mjs");
         java.io.StringWriter errBuf = new java.io.StringWriter();
-        int status = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", main.toString(), "-o", wasmOut.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(new java.io.StringWriter()),
-                new java.io.PrintWriter(errBuf), false);
+        int status =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            main.toString(),
+                            "-o",
+                            wasmOut.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(errBuf),
+                        false);
         Assertions.assertEquals(0, status, "Multi-module compile failed : " + errBuf);
 
-        Process p = new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
+        Process p =
+                new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
         String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = p.waitFor();
@@ -620,11 +713,13 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals("lenSq=25.0 area=12.0\n", stdout);
     }
 
-    // ---------------------------------------------------------------- BIP025-I3 Strings, Collections, For, Appendable & Argon
+    // ---------------------------------------------------------------- BIP025-I3 Strings,
+    // Collections, For, Appendable & Argon
 
     @Test
     public void stringsPortableApiParity() throws Exception {
-        String code = """
+        String code =
+                """
                 def s = "  Hello, Babble Wasm!  "
                 assert(s.length() == 23)
                 assert(not s.isEmpty())
@@ -669,7 +764,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void coreCollectionsListSetSortedSetMapSortedMapEntry() throws Exception {
-        String code = """
+        String code =
+                """
                 def xs = list(1, 2, 3)
                 assert(xs is list and xs.size() == 3 and not xs.isEmpty())
                 xs.add(4)
@@ -728,7 +824,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void forLoopsArraysCollectionsCustomIterablesAndBreakValue() throws Exception {
-        String code = """
+        String code =
+                """
                 var arrSum = 0
                 for x in (array of int).of(10, 20, 30, 40) then (
                     if x == 20 then (continue)
@@ -784,7 +881,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void portableAppendableCustomOutputSink() throws Exception {
-        String code = """
+        String code =
+                """
                 def Sink = class () implements java.lang.Appendable (
                     var out = ""
                     def append = overload (
@@ -823,8 +921,10 @@ public class WasmCompilerTestCase {
         Path argonRoot = Path.of("examples/raytracer-argon").toAbsolutePath().normalize();
         Path miniScript = dir.resolve("argon_mini.ba");
         String libPath = argonRoot.resolve("lib/raytracer.ba").toString().replace("\\", "/");
-        // Small 16x9 render exercising all 15 unmodified Argon modules (Vec3, Ray, BVH, Sphere, Materials, Camera, Range, STDOUT)
-        String miniCode = """
+        // Small 16x9 render exercising all 15 unmodified Argon modules (Vec3, Ray, BVH, Sphere,
+        // Materials, Camera, Range, STDOUT)
+        String miniCode =
+                """
                 def raytracer = import("%s")
                 def rng: raytracer.Rng = raytracer.Rng(2026)
                 def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: rng, gridRadius: 2)
@@ -842,30 +942,46 @@ public class WasmCompilerTestCase {
                     focusDist: 10.0
                 )
                 camera.render(world, rng)
-                """.formatted(libPath);
+                """
+                        .formatted(libPath);
         Files.writeString(miniScript, miniCode, StandardCharsets.UTF_8);
 
         // 1. Run on JVM
         java.io.StringWriter jvmOut = new java.io.StringWriter();
         java.io.StringWriter jvmErr = new java.io.StringWriter();
-        int jvmStatus = org.babblelang.Main.run(
-                new String[]{miniScript.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(jvmOut), new java.io.PrintWriter(jvmErr), false);
+        int jvmStatus =
+                org.babblelang.Main.run(
+                        new String[] {miniScript.toString()},
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(jvmOut),
+                        new java.io.PrintWriter(jvmErr),
+                        false);
         Assertions.assertEquals(0, jvmStatus, "JVM Argon mini render failed : " + jvmErr);
 
         // 2. Compile to WebAssembly (wasm-js) and run in V8
         Path wasmOut = dir.resolve("argon_mini.wasm");
         Path mjsOut = dir.resolve("argon_mini.mjs");
         java.io.StringWriter compileErr = new java.io.StringWriter();
-        int cmpStatus = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", miniScript.toString(), "-o", wasmOut.toString(), "-root", "/"},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(new java.io.StringWriter()),
-                new java.io.PrintWriter(compileErr), false);
+        int cmpStatus =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            miniScript.toString(),
+                            "-o",
+                            wasmOut.toString(),
+                            "-root",
+                            "/"
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(compileErr),
+                        false);
         Assertions.assertEquals(0, cmpStatus, "Wasm Argon mini compile failed : " + compileErr);
 
-        Process p = new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
+        Process p =
+                new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
         String wasmStdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String wasmStderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = p.waitFor();
@@ -873,15 +989,18 @@ public class WasmCompilerTestCase {
 
         // 3. Exact byte-for-byte PPM parity!
         Assertions.assertTrue(wasmStdout.startsWith("P3\n16 9\n255\n"), "Expected PPM header");
-        Assertions.assertEquals(jvmOut.toString(), wasmStdout, "Argon mini PPM must match JVM byte-for-byte");
+        Assertions.assertEquals(
+                jvmOut.toString(), wasmStdout, "Argon mini PPM must match JVM byte-for-byte");
     }
 
-    // ---------------------------------------------------------------- BIP025-I4 Host Imports, CLI Args, Debug Names & Canvas Demo
+    // ---------------------------------------------------------------- BIP025-I4 Host Imports, CLI
+    // Args, Debug Names & Canvas Demo
 
     @Test
     public void wasmHostImportAxiomsWithEffectsAndStrings() throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
-        String code = """
+        String code =
+                """
                 axiom wasm.host.add: fn pure nothrow (a: int, b: int): int
                 axiom wasm.host.greet: fn pure nothrow (who: string): string
                 axiom wasm.host.log: fn io nothrow (msg: string): null
@@ -899,11 +1018,15 @@ public class WasmCompilerTestCase {
                 """;
         WasmCompiler.CompileResult compiled = compile(code, CompilationTarget.WASM_JS, 1);
         String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
-        Assertions.assertTrue(wat.contains("(import \"host\" \"add\""), "Expected host.add import in WAT");
-        Assertions.assertTrue(wat.contains("(import \"host\" \"greet\""), "Expected host.greet import in WAT");
-        Assertions.assertTrue(wat.contains("(import \"host\" \"log\""), "Expected host.log import in WAT");
+        Assertions.assertTrue(
+                wat.contains("(import \"host\" \"add\""), "Expected host.add import in WAT");
+        Assertions.assertTrue(
+                wat.contains("(import \"host\" \"greet\""), "Expected host.greet import in WAT");
+        Assertions.assertTrue(
+                wat.contains("(import \"host\" \"log\""), "Expected host.log import in WAT");
 
-        String hostJs = """
+        String hostJs =
+                """
                 {
                   host: {
                     add: (a, b) => a + b,
@@ -912,26 +1035,34 @@ public class WasmCompilerTestCase {
                   }
                 }
                 """;
-        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runJs(compiled.wasmBytes(), compiled.jsGlue(), List.of(), hostJs);
+        NodeWasmRunner.RunOutcome out =
+                NodeWasmRunner.runJs(compiled.wasmBytes(), compiled.jsGlue(), List.of(), hostJs);
         Assertions.assertTrue(out.ok(), "Host import execution failed : " + out.error());
         Assertions.assertEquals("[LOG]Hello Wasm=42\n", out.stdout());
         Assertions.assertEquals("\"Hello Wasm:42\"", out.resultJson());
 
-        // Effect enforcement : pure (default) function calling io wasm axiom must be rejected by TypeChecker
-        String badEffectCode = """
+        // Effect enforcement : pure (default) function calling io wasm axiom must be rejected by
+        // TypeChecker
+        String badEffectCode =
+                """
                 axiom wasm.host.log: fn io nothrow (msg: string): null
                 def badPure = fn (s: string) -> (
                     wasm.host.log(s)
                 )
                 badPure("oops")
                 """;
-        Assertions.assertThrows(Exception.class, () -> compile(badEffectCode, CompilationTarget.WASM_JS, 1),
+        Assertions.assertThrows(
+                Exception.class,
+                () -> compile(badEffectCode, CompilationTarget.WASM_JS, 1),
                 "Calling io wasm axiom from pure function must fail effect checking");
 
         // Portability enforcement : wasm-bare must reject axiom wasm.* host imports
-        WasmCompiler.CompileResult bareRes = compileRaw(code, CompilationTarget.WASM_BARE, 1, false);
+        WasmCompiler.CompileResult bareRes =
+                compileRaw(code, CompilationTarget.WASM_BARE, 1, false);
         Assertions.assertFalse(bareRes.ok(), "Expected wasm-bare to reject axiom wasm.*");
-        Assertions.assertTrue(bareRes.portabilityErrors().stream().anyMatch(d -> d.detail().contains("wasm.host.add")),
+        Assertions.assertTrue(
+                bareRes.portabilityErrors().stream()
+                        .anyMatch(d -> d.detail().contains("wasm.host.add")),
                 "Expected wasm.host.add diagnostic : " + bareRes.portabilityErrors());
     }
 
@@ -939,24 +1070,38 @@ public class WasmCompilerTestCase {
     public void wasmJsCliArgsPassing(@TempDir Path dir) throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
         Path script = dir.resolve("echo_args.ba");
-        Files.writeString(script, """
+        Files.writeString(
+                script,
+                """
                 println("count=", args.size())
                 for a in args then (
                     println("arg=", a)
                 )
-                """, StandardCharsets.UTF_8);
+                """,
+                StandardCharsets.UTF_8);
         Path wasmOut = dir.resolve("echo_args.wasm");
         Path mjsOut = dir.resolve("echo_args.mjs");
         java.io.StringWriter errBuf = new java.io.StringWriter();
-        int status = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", script.toString(), "-o", wasmOut.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(new java.io.StringWriter()),
-                new java.io.PrintWriter(errBuf), false);
+        int status =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            script.toString(),
+                            "-o",
+                            wasmOut.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(errBuf),
+                        false);
         Assertions.assertEquals(0, status, "Compile failed : " + errBuf);
 
-        Process p = new ProcessBuilder("node", mjsOut.toString(), "alpha", "beta", "gamma")
-                .redirectErrorStream(false).start();
+        Process p =
+                new ProcessBuilder("node", mjsOut.toString(), "alpha", "beta", "gamma")
+                        .redirectErrorStream(false)
+                        .start();
         String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = p.waitFor();
@@ -967,7 +1112,8 @@ public class WasmCompilerTestCase {
     @Test
     public void wasmDebugNameSectionContainsLocalsTypesGlobalsAndFields() throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
-        String code = """
+        String code =
+                """
                 def Point = record (px: double, py: double) (
                     def sum = fn (): double -> (
                         def res: double = this.px + this.py
@@ -976,8 +1122,10 @@ public class WasmCompilerTestCase {
                 )
                 Point(1.5, 2.5).sum()
                 """;
-        WasmCompiler.CompileResult compiled = compileRaw(code, CompilationTarget.WASM_BARE, 1, true);
-        Assertions.assertTrue(compiled.ok(), "Portability errors : " + compiled.portabilityErrors());
+        WasmCompiler.CompileResult compiled =
+                compileRaw(code, CompilationTarget.WASM_BARE, 1, true);
+        Assertions.assertTrue(
+                compiled.ok(), "Portability errors : " + compiled.portabilityErrors());
 
         // Locate custom section 0 named "name" and inspect subsections 0, 1, 2, 4, 7, 10
         byte[] bytes = compiled.wasmBytes();
@@ -1006,8 +1154,10 @@ public class WasmCompilerTestCase {
             }
             pos = secEnd;
         }
-        Assertions.assertTrue(nameSubsections.containsAll(List.of(0, 1, 2, 4, 7, 10)),
-                "Expected module(0), func(1), local(2), type(4), global(7), field(10) subsections, got : " + nameSubsections);
+        Assertions.assertTrue(
+                nameSubsections.containsAll(List.of(0, 1, 2, 4, 7, 10)),
+                "Expected module(0), func(1), local(2), type(4), global(7), field(10) subsections, got : "
+                        + nameSubsections);
 
         // Ensure V8 validates and runs the debug-named binary cleanly
         NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(bytes);
@@ -1022,29 +1172,41 @@ public class WasmCompilerTestCase {
             int b = data[pos++] & 0xFF;
             result |= (b & 0x7F) << shift;
             if ((b & 0x80) == 0) {
-                return new int[]{result, pos};
+                return new int[] {result, pos};
             }
             shift += 7;
         }
     }
 
     @Test
-    public void argonCanvasBrowserDemoCompilesAndRendersWithMockCanvas(@TempDir Path dir) throws Exception {
+    public void argonCanvasBrowserDemoCompilesAndRendersWithMockCanvas(@TempDir Path dir)
+            throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
-        Path canvasScript = Path.of("examples/raytracer-argon/wasm_canvas.ba").toAbsolutePath().normalize();
+        Path canvasScript =
+                Path.of("examples/raytracer-argon/wasm_canvas.ba").toAbsolutePath().normalize();
         Path wasmOut = dir.resolve("wasm_canvas.wasm");
         Path mjsOut = dir.resolve("wasm_canvas.mjs");
         java.io.StringWriter compileErr = new java.io.StringWriter();
-        int status = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", canvasScript.toString(), "-o", wasmOut.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(new java.io.StringWriter()),
-                new java.io.PrintWriter(compileErr), false);
+        int status =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            canvasScript.toString(),
+                            "-o",
+                            wasmOut.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(compileErr),
+                        false);
         Assertions.assertEquals(0, status, "Argon canvas demo compile failed : " + compileErr);
 
         byte[] wasmBytes = Files.readAllBytes(wasmOut);
         String mjsSource = Files.readString(mjsOut, StandardCharsets.UTF_8);
-        String mockCanvasJs = """
+        String mockCanvasJs =
+                """
                 (() => {
                   let pixels = 0;
                   let rows = 0;
@@ -1063,18 +1225,21 @@ public class WasmCompilerTestCase {
                   };
                 })()
                 """;
-        NodeWasmRunner.RunOutcome out = NodeWasmRunner.runJs(
-                wasmBytes, mjsSource, List.of("16", "2", "4", "1"), mockCanvasJs);
+        NodeWasmRunner.RunOutcome out =
+                NodeWasmRunner.runJs(
+                        wasmBytes, mjsSource, List.of("16", "2", "4", "1"), mockCanvasJs);
         Assertions.assertTrue(out.ok(), "Argon canvas demo execution failed : " + out.error());
         Assertions.assertEquals("\"16x9\"", out.resultJson());
         Assertions.assertEquals("pixels=144,rows=9,bad=0\n", out.stdout());
     }
 
-    // ---------------------------------------------------------------- BIP025 Review Regression Tests
+    // ---------------------------------------------------------------- BIP025 Review Regression
+    // Tests
 
     @Test
     public void finallyTwoCopyWithLocalCaptureOnUnwind() throws Exception {
-        String code = """
+        String code =
+                """
                 def log: list of int = list()
                 def run = fn io (boom: bool): int -> (
                     try (
@@ -1105,7 +1270,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void arrayTypeChecksBoxedNullableAndSetReturnsNull() throws Exception {
-        String code = """
+        String code =
+                """
                 def ia = (array of int).of(1, 2, 3)
                 assert(ia is (array of int))
                 assert(not (ia is (array of double)))
@@ -1152,7 +1318,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void userReplaceSafeCallNamedArgsAndOptDefaultClosureCapture() throws Exception {
-        String code = """
+        String code =
+                """
                 def Box = class (var v: int) (
                     def replace = fn mut (a: int, b: int): int -> (this.v = a + b; this.v)
                     def combine = fn (a: int, b: int): int -> (a * 10 + b)
@@ -1186,13 +1353,15 @@ public class WasmCompilerTestCase {
                 h.getter()
                 """;
         NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
-        Assertions.assertTrue(out.ok(), "User replace / safe call / opt-default capture failed : " + out.error());
+        Assertions.assertTrue(
+                out.ok(), "User replace / safe call / opt-default capture failed : " + out.error());
         Assertions.assertEquals("\"23\"", out.resultJson());
     }
 
     @Test
     public void dynamicOverloadSetAndOverloadedOperators() throws Exception {
-        String code = """
+        String code =
+                """
                 def ov = overload (
                     fn (x: int): string -> ("int:" + x),
                     fn (x: string): string -> ("str:" + x),
@@ -1224,7 +1393,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void forwardReferenceRejectedAtRuntime() throws Exception {
-        String code = """
+        String code =
+                """
                 def bad = fn (): int -> (later())
                 var caught = false
                 try (
@@ -1244,7 +1414,8 @@ public class WasmCompilerTestCase {
 
     @Test
     public void stringSplitAndCollectionSafetyInvariants() throws Exception {
-        String code = """
+        String code =
+                """
                 ;; String.split parity: empty delimiter, limit == 0, limit > 0, limit < 0
                 assert("ab".split("") == (array of string).of("a", "b"))
                 assert("a,b,,".split(",") == (array of string).of("a", "b"))
@@ -1319,14 +1490,16 @@ public class WasmCompilerTestCase {
                 m.get("k")
                 """;
         NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_JS, 1);
-        Assertions.assertTrue(out.ok(), "String split & collection invariants test failed : " + out.error());
+        Assertions.assertTrue(
+                out.ok(), "String split & collection invariants test failed : " + out.error());
         Assertions.assertEquals("\"42\"", out.resultJson());
         Assertions.assertEquals("ok", out.stdout());
     }
 
     @Test
     public void unionAsNumericWideningAndBareScientificDouble() throws Exception {
-        String code = """
+        String code =
+                """
                 def x: any = 42
                 def u = x as (string | double)
                 assert(u is double and u == 42.0)
@@ -1338,8 +1511,11 @@ public class WasmCompilerTestCase {
                 bigStr
                 """;
         NodeWasmRunner.RunOutcome out = runWasm(code, CompilationTarget.WASM_BARE, 1);
-        Assertions.assertTrue(out.ok(), "Union widening & bare scientific double failed : " + out.error());
-        Assertions.assertTrue(out.resultJson().contains("E"), "Expected scientific notation, got : " + out.resultJson());
+        Assertions.assertTrue(
+                out.ok(), "Union widening & bare scientific double failed : " + out.error());
+        Assertions.assertTrue(
+                out.resultJson().contains("E"),
+                "Expected scientific notation, got : " + out.resultJson());
     }
 
     @Test
@@ -1349,7 +1525,8 @@ public class WasmCompilerTestCase {
         Path mjs = dir.resolve("glue_check.mjs");
         Files.writeString(mjs, glue, StandardCharsets.UTF_8);
 
-        String checkScript = """
+        String checkScript =
+                """
                 import { formatJavaFloat, parseJavaDouble, createBabbleImports } from '%s';
                 if (formatJavaFloat(1.401298464324817e-45) !== "1.4E-45") throw new Error("Float.MIN_VALUE mismatch: " + formatJavaFloat(1.401298464324817e-45));
                 if (formatJavaFloat(2.802596928649634e-45) !== "2.8E-45") throw new Error("2*MIN_VALUE mismatch: " + formatJavaFloat(2.802596928649634e-45));
@@ -1362,9 +1539,12 @@ public class WasmCompilerTestCase {
                   throw new Error("babble:env merge failed");
                 }
                 console.log("GLUE_OK");
-                """.formatted(mjs.toUri().toString());
-        Process p = new ProcessBuilder("node", "--input-type=module", "-e", checkScript)
-                .redirectErrorStream(false).start();
+                """
+                        .formatted(mjs.toUri().toString());
+        Process p =
+                new ProcessBuilder("node", "--input-type=module", "-e", checkScript)
+                        .redirectErrorStream(false)
+                        .start();
         String stdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         String stderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
         int exit = p.waitFor();
@@ -1375,14 +1555,24 @@ public class WasmCompilerTestCase {
     @Test
     public void babblecPortabilityErrorHasSingleErrorPrefix(@TempDir Path dir) throws Exception {
         Path bad = dir.resolve("bad_port.ba");
-        Files.writeString(bad, "def f = fn io () -> (java.io.File(\"x\"))\nf()\n", StandardCharsets.UTF_8);
+        Files.writeString(
+                bad, "def f = fn io () -> (java.io.File(\"x\"))\nf()\n", StandardCharsets.UTF_8);
         Path outWasm = dir.resolve("bad_port.wasm");
         java.io.StringWriter errBuf = new java.io.StringWriter();
-        int status = org.babblelang.Main.run(
-                new String[]{"-compile", "-target", "wasm-js", bad.toString(), "-o", outWasm.toString()},
-                new java.io.BufferedReader(new java.io.StringReader("")),
-                new java.io.PrintWriter(new java.io.StringWriter()),
-                new java.io.PrintWriter(errBuf), false);
+        int status =
+                org.babblelang.Main.run(
+                        new String[] {
+                            "-compile",
+                            "-target",
+                            "wasm-js",
+                            bad.toString(),
+                            "-o",
+                            outWasm.toString()
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(errBuf),
+                        false);
         Assertions.assertEquals(1, status);
         String err = errBuf.toString();
         Assertions.assertTrue(err.contains("Error : "), "Expected Error prefix : " + err);
@@ -1392,7 +1582,8 @@ public class WasmCompilerTestCase {
     @Test
     public void bip034ImmutabilityValueCaptureAndStaticFolding() throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
-        String code = """
+        String code =
+                """
                 def K: double = 2.5
                 def INF: double = 1.0 / 0.0
                 def DYN_SCALE: double = double(list.of(1).size())
@@ -1435,26 +1626,45 @@ public class WasmCompilerTestCase {
                 )
                 run()
                 """;
-        WasmCompiler.CompileResult compiled = compileRaw(code, CompilationTarget.WASM_BARE, 1, false);
-        Assertions.assertTrue(compiled.ok(), "Portability errors : " + compiled.portabilityErrors());
+        WasmCompiler.CompileResult compiled =
+                compileRaw(code, CompilationTarget.WASM_BARE, 1, false);
+        Assertions.assertTrue(
+                compiled.ok(), "Portability errors : " + compiled.portabilityErrors());
         String wat = org.babblelang.wasm.WatPrinter.print(compiled.module());
 
-        // 1. Header `def a: int` is strictly immutable in WasmGC struct, while `var b: int` is mutable
-        Assertions.assertTrue(wat.contains("(field $f_a i32)"), "Expected immutable header def field $f_a : " + wat);
-        Assertions.assertTrue(wat.contains("(field $f_b (mut i32))"), "Expected mutable header var field $f_b : " + wat);
+        // 1. Header `def a: int` is strictly immutable in WasmGC struct, while `var b: int` is
+        // mutable
+        Assertions.assertTrue(
+                wat.contains("(field $f_a i32)"),
+                "Expected immutable header def field $f_a : " + wat);
+        Assertions.assertTrue(
+                wat.contains("(field $f_b (mut i32))"),
+                "Expected mutable header var field $f_b : " + wat);
 
-        // 2. BIP034-I5 value-capture: makeAdder's inner closure captures raw `i32` directly (not $IntCell)
-        Assertions.assertTrue(wat.contains("(field $cap0 i32)"), "Expected value-captured raw i32 field in closure : " + wat);
+        // 2. BIP034-I5 value-capture: makeAdder's inner closure captures raw `i32` directly (not
+        // $IntCell)
+        Assertions.assertTrue(
+                wat.contains("(field $cap0 i32)"),
+                "Expected value-captured raw i32 field in closure : " + wat);
         // Mutable `var n` in makeCounter still uses a cell capture
-        Assertions.assertTrue(wat.contains("(field $cap0 (ref $IntCell))"), "Expected cell-captured $IntCell for var : " + wat);
+        Assertions.assertTrue(
+                wat.contains("(field $cap0 (ref $IntCell))"),
+                "Expected cell-captured $IntCell for var : " + wat);
 
-        // 3. Unboxed primitive top-level global for non-const `DYN_SCALE` + constant-folded `INF` / `K` / `Box.FACTOR`
-        Assertions.assertTrue(wat.contains("M0_gp_DYN_SCALE"), "Expected unboxed primitive global M0_gp_DYN_SCALE");
+        // 3. Unboxed primitive top-level global for non-const `DYN_SCALE` + constant-folded `INF` /
+        // `K` / `Box.FACTOR`
+        Assertions.assertTrue(
+                wat.contains("M0_gp_DYN_SCALE"),
+                "Expected unboxed primitive global M0_gp_DYN_SCALE");
         Assertions.assertTrue(wat.contains("f64.const inf"), "Expected folded f64.const inf");
 
-        // 4. Dedicated global for immutable static `def ORIGIN` and direct constructor call `$C0_Box$new`
-        Assertions.assertTrue(wat.contains("global.get $G_ST_C0_Box_ORIGIN"), "Expected direct static def global.get");
-        Assertions.assertTrue(wat.contains("call $C0_Box$new"), "Expected direct regular class constructor call");
+        // 4. Dedicated global for immutable static `def ORIGIN` and direct constructor call
+        // `$C0_Box$new`
+        Assertions.assertTrue(
+                wat.contains("global.get $G_ST_C0_Box_ORIGIN"),
+                "Expected direct static def global.get");
+        Assertions.assertTrue(
+                wat.contains("call $C0_Box$new"), "Expected direct regular class constructor call");
 
         // 5. Execute in V8 and verify result
         NodeWasmRunner.RunOutcome out = NodeWasmRunner.runBabbleBare(compiled.wasmBytes());
@@ -1462,4 +1672,3 @@ public class WasmCompilerTestCase {
         Assertions.assertEquals("\"25.5\"", out.resultJson());
     }
 }
-

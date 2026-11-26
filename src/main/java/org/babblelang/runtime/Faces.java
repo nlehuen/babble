@@ -8,17 +8,16 @@ import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * The adapters Java sees : the face of an interpreted Babble instance whose class
- * implements Java interfaces, and Babble callables converted to Java functional interfaces
- * (via cached {@link LambdaMetafactory} factories for accessible {@code 0..16}-argument
- * SAMs, with {@link Proxy} fallback for inaccessible or higher-arity SAMs).
+ * The adapters Java sees : the face of an interpreted Babble instance whose class implements Java
+ * interfaces, and Babble callables converted to Java functional interfaces (via cached {@link
+ * LambdaMetafactory} factories for accessible {@code 0..16}-argument SAMs, with {@link Proxy}
+ * fallback for inaccessible or higher-arity SAMs).
  */
 final class Faces {
     static final int MAX_SAM_ARITY = 16;
@@ -29,7 +28,9 @@ final class Faces {
     static {
         try {
             for (int i = 0; i <= MAX_SAM_ARITY; i++) {
-                INVOKER_HANDLES[i] = LOOKUP.findVirtual(SamInvoker.class, "invoke" + i, MethodType.genericMethodType(i));
+                INVOKER_HANDLES[i] =
+                        LOOKUP.findVirtual(
+                                SamInvoker.class, "invoke" + i, MethodType.genericMethodType(i));
             }
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
@@ -38,22 +39,25 @@ final class Faces {
 
     private static final Class<?>[] NO_MARKERS = new Class<?>[0];
 
-    private static final ClassValue<SamFactory> SAM_FACTORIES = new ClassValue<>() {
-        @Override
-        protected SamFactory computeValue(Class<?> type) {
-            return buildSamFactory(type, NO_MARKERS);
-        }
-    };
+    private static final ClassValue<SamFactory> SAM_FACTORIES =
+            new ClassValue<>() {
+                @Override
+                protected SamFactory computeValue(Class<?> type) {
+                    return buildSamFactory(type, NO_MARKERS);
+                }
+            };
 
-    private static final ClassValue<ConcurrentHashMap<List<Class<?>>, SamFactory>> MARKER_SAM_FACTORIES = new ClassValue<>() {
-        @Override
-        protected ConcurrentHashMap<List<Class<?>>, SamFactory> computeValue(Class<?> type) {
-            return new ConcurrentHashMap<>();
-        }
-    };
+    private static final ClassValue<ConcurrentHashMap<List<Class<?>>, SamFactory>>
+            MARKER_SAM_FACTORIES =
+                    new ClassValue<>() {
+                        @Override
+                        protected ConcurrentHashMap<List<Class<?>>, SamFactory> computeValue(
+                                Class<?> type) {
+                            return new ConcurrentHashMap<>();
+                        }
+                    };
 
-    private Faces() {
-    }
+    private Faces() {}
 
     static Object create(Object instance) {
         Class<?>[] interfaces = BabbleObjects.babbleClass(instance).javaInterfaces();
@@ -61,28 +65,34 @@ final class Faces {
     }
 
     /**
-     * Converts a Babble callable to a Java functional interface. Its arity is checked
-     * now, where the mistake is made, rather than when Java calls it.
+     * Converts a Babble callable to a Java functional interface. Its arity is checked now, where
+     * the mistake is made, rather than when Java calls it.
      */
     static Object function(Callable callable, Class<?> type, ScriptRuntime rt) {
         return function(callable, type, NO_MARKERS, rt);
     }
 
     /**
-     * Converts a Babble callable to a Java functional interface implementing additional
-     * marker (or override-equivalent) interfaces.
+     * Converts a Babble callable to a Java functional interface implementing additional marker (or
+     * override-equivalent) interfaces.
      */
     static Object function(Callable callable, Class<?> type, Class<?>[] markers, ScriptRuntime rt) {
         List<Class<?>> normalizedMarkers = normalizeMarkers(type, markers);
-        SamFactory sam = normalizedMarkers.isEmpty()
-                ? SAM_FACTORIES.get(type)
-                : MARKER_SAM_FACTORIES.get(type).computeIfAbsent(normalizedMarkers,
-                        m -> buildSamFactory(type, m.toArray(Class<?>[]::new)));
+        SamFactory sam =
+                normalizedMarkers.isEmpty()
+                        ? SAM_FACTORIES.get(type)
+                        : MARKER_SAM_FACTORIES
+                                .get(type)
+                                .computeIfAbsent(
+                                        normalizedMarkers,
+                                        m -> buildSamFactory(type, m.toArray(Class<?>[]::new)));
         int[] arity = Values.arity(callable);
         int passed = sam.parameterTypes.length;
         if (arity != null && (passed < arity[0] || passed > arity[1])) {
-            String takes = arity[0] == arity[1] ? String.valueOf(arity[0]) : arity[0] + " to " + arity[1];
-            throw new BabbleException(sam.description + " takes " + passed + " arguments, function takes " + takes);
+            String takes =
+                    arity[0] == arity[1] ? String.valueOf(arity[0]) : arity[0] + " to " + arity[1];
+            throw new BabbleException(
+                    sam.description + " takes " + passed + " arguments, function takes " + takes);
         }
         if (sam.factory != null) {
             try {
@@ -95,7 +105,7 @@ final class Faces {
         }
         Class<?>[] proxyInterfaces;
         if (normalizedMarkers.isEmpty()) {
-            proxyInterfaces = new Class<?>[]{type};
+            proxyInterfaces = new Class<?>[] {type};
         } else {
             proxyInterfaces = new Class<?>[1 + normalizedMarkers.size()];
             proxyInterfaces[0] = type;
@@ -103,8 +113,8 @@ final class Faces {
                 proxyInterfaces[i + 1] = normalizedMarkers.get(i);
             }
         }
-        return Proxy.newProxyInstance(loader(proxyInterfaces), proxyInterfaces,
-                new FunctionHandler(callable, sam, rt));
+        return Proxy.newProxyInstance(
+                loader(proxyInterfaces), proxyInterfaces, new FunctionHandler(callable, sam, rt));
     }
 
     private static List<Class<?>> normalizeMarkers(Class<?> samType, Class<?>[] markers) {
@@ -113,7 +123,10 @@ final class Faces {
         }
         Set<Class<?>> unique = new LinkedHashSet<>();
         for (Class<?> marker : markers) {
-            if (marker != null && marker.isInterface() && marker != samType && !marker.isAssignableFrom(samType)) {
+            if (marker != null
+                    && marker.isInterface()
+                    && marker != samType
+                    && !marker.isAssignableFrom(samType)) {
                 unique.add(marker);
             }
         }
@@ -129,12 +142,17 @@ final class Faces {
         Class<?> returnType = method.getReturnType();
         String description = type.getSimpleName() + "." + method.getName();
         CallSite callSite = site(description, parameterTypes.length);
-        MethodHandle factory = buildMetafactoryHandle(type, markers, method, parameterTypes, returnType);
+        MethodHandle factory =
+                buildMetafactoryHandle(type, markers, method, parameterTypes, returnType);
         return new SamFactory(method, parameterTypes, returnType, description, callSite, factory);
     }
 
-    private static MethodHandle buildMetafactoryHandle(Class<?> type, Class<?>[] markers, Method method,
-                                                       Class<?>[] parameterTypes, Class<?> returnType) {
+    private static MethodHandle buildMetafactoryHandle(
+            Class<?> type,
+            Class<?>[] markers,
+            Method method,
+            Class<?>[] parameterTypes,
+            Class<?> returnType) {
         int arity = parameterTypes.length;
         if (arity > MAX_SAM_ARITY || !isVisibleFromFaces(type) || !isVisibleFromFaces(returnType)) {
             return null;
@@ -164,16 +182,23 @@ final class Faces {
         try {
             java.lang.invoke.CallSite cs;
             if (bridges.isEmpty() && markers.length == 0) {
-                cs = LambdaMetafactory.metafactory(
-                        LOOKUP, method.getName(), invokedType,
-                        samMethodType, implMethod, samMethodType);
+                cs =
+                        LambdaMetafactory.metafactory(
+                                LOOKUP,
+                                method.getName(),
+                                invokedType,
+                                samMethodType,
+                                implMethod,
+                                samMethodType);
             } else {
                 // FLAG_MARKERS must precede FLAG_BRIDGES in altArgs; never set FLAG_SERIALIZABLE
                 // so Babble closures are not tied to JDK SerializedLambda serialization.
-                int flags = (markers.length > 0 ? LambdaMetafactory.FLAG_MARKERS : 0)
-                        | (!bridges.isEmpty() ? LambdaMetafactory.FLAG_BRIDGES : 0);
-                int extra = (markers.length > 0 ? 1 + markers.length : 0)
-                        + (!bridges.isEmpty() ? 1 + bridges.size() : 0);
+                int flags =
+                        (markers.length > 0 ? LambdaMetafactory.FLAG_MARKERS : 0)
+                                | (!bridges.isEmpty() ? LambdaMetafactory.FLAG_BRIDGES : 0);
+                int extra =
+                        (markers.length > 0 ? 1 + markers.length : 0)
+                                + (!bridges.isEmpty() ? 1 + bridges.size() : 0);
                 Object[] altArgs = new Object[4 + extra];
                 altArgs[0] = samMethodType;
                 altArgs[1] = implMethod;
@@ -192,8 +217,9 @@ final class Faces {
                         altArgs[idx++] = bt;
                     }
                 }
-                cs = LambdaMetafactory.altMetafactory(
-                        LOOKUP, method.getName(), invokedType, altArgs);
+                cs =
+                        LambdaMetafactory.altMetafactory(
+                                LOOKUP, method.getName(), invokedType, altArgs);
             }
             return cs.getTarget().asType(MethodType.methodType(Object.class, SamInvoker.class));
         } catch (LambdaConversionException | LinkageError e) {
@@ -201,7 +227,8 @@ final class Faces {
         }
     }
 
-    private static boolean collectBridgeMethodTypes(Class<?> iface, MethodType samMethodType, Set<MethodType> bridges) {
+    private static boolean collectBridgeMethodTypes(
+            Class<?> iface, MethodType samMethodType, Set<MethodType> bridges) {
         for (Method m : JavaTypes.abstractMethods(iface)) {
             MethodType mt = MethodType.methodType(m.getReturnType(), m.getParameterTypes());
             if (!mt.equals(samMethodType)) {
@@ -283,16 +310,21 @@ final class Faces {
         return method.getName().equals(name) && method.getParameterCount() == parameters;
     }
 
-    private static Object invokeDefault(Object proxy, Method method, Object[] args) throws Throwable {
+    private static Object invokeDefault(Object proxy, Method method, Object[] args)
+            throws Throwable {
         if (method.isDefault()) {
             return InvocationHandler.invokeDefault(proxy, method, args);
         }
         throw new BabbleException("No implementation of " + JavaTypes.signature(method));
     }
 
-    private record SamFactory(Method method, Class<?>[] parameterTypes, Class<?> returnType,
-                              String description, CallSite site, MethodHandle factory) {
-    }
+    private record SamFactory(
+            Method method,
+            Class<?>[] parameterTypes,
+            Class<?> returnType,
+            String description,
+            CallSite site,
+            MethodHandle factory) {}
 
     static final class SamInvoker {
         private final Callable callable;
@@ -310,9 +342,13 @@ final class Faces {
             for (int i = 0; i < args.length; i++) {
                 args[i] = JavaTypes.checkParameter(Values.fromJava(args[i]), paramTypes[i]);
             }
-            if (sam.method.isVarArgs() && callable instanceof BabbleFunction bf
-                    && bf.restIndex() == args.length - 1 && args.length > 0 && args[args.length - 1] != null) {
-                args[args.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(args[args.length - 1]));
+            if (sam.method.isVarArgs()
+                    && callable instanceof BabbleFunction bf
+                    && bf.restIndex() == args.length - 1
+                    && args.length > 0
+                    && args[args.length - 1] != null) {
+                args[args.length - 1] =
+                        Spreads.packedRest(ArgumentsView.fromArray(args[args.length - 1]));
             }
             Object result = callable.call(rt, args, null, sam.site);
             return JavaTypes.convertResult(result, sam.returnType, sam.description, rt);
@@ -324,75 +360,181 @@ final class Faces {
         }
 
         Object invoke1(Object a0) {
-            return dispatch(new Object[]{a0});
+            return dispatch(new Object[] {a0});
         }
 
         Object invoke2(Object a0, Object a1) {
-            return dispatch(new Object[]{a0, a1});
+            return dispatch(new Object[] {a0, a1});
         }
 
         Object invoke3(Object a0, Object a1, Object a2) {
-            return dispatch(new Object[]{a0, a1, a2});
+            return dispatch(new Object[] {a0, a1, a2});
         }
 
         Object invoke4(Object a0, Object a1, Object a2, Object a3) {
-            return dispatch(new Object[]{a0, a1, a2, a3});
+            return dispatch(new Object[] {a0, a1, a2, a3});
         }
 
         Object invoke5(Object a0, Object a1, Object a2, Object a3, Object a4) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4});
+            return dispatch(new Object[] {a0, a1, a2, a3, a4});
         }
 
         Object invoke6(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5});
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5});
         }
 
-        Object invoke7(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6});
+        Object invoke7(
+                Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6});
         }
 
-        Object invoke8(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7});
+        Object invoke8(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6, a7});
         }
 
-        Object invoke9(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                       Object a8) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8});
+        Object invoke9(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8});
         }
 
-        Object invoke10(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9});
+        Object invoke10(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9});
         }
 
-        Object invoke11(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9, Object a10) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10});
+        Object invoke11(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9,
+                Object a10) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10});
         }
 
-        Object invoke12(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9, Object a10, Object a11) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11});
+        Object invoke12(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9,
+                Object a10,
+                Object a11) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11});
         }
 
-        Object invoke13(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9, Object a10, Object a11, Object a12) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12});
+        Object invoke13(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9,
+                Object a10,
+                Object a11,
+                Object a12) {
+            return dispatch(new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12});
         }
 
-        Object invoke14(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9, Object a10, Object a11, Object a12, Object a13) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13});
+        Object invoke14(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9,
+                Object a10,
+                Object a11,
+                Object a12,
+                Object a13) {
+            return dispatch(
+                    new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13});
         }
 
-        Object invoke15(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14});
+        Object invoke15(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9,
+                Object a10,
+                Object a11,
+                Object a12,
+                Object a13,
+                Object a14) {
+            return dispatch(
+                    new Object[] {a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14});
         }
 
-        Object invoke16(Object a0, Object a1, Object a2, Object a3, Object a4, Object a5, Object a6, Object a7,
-                        Object a8, Object a9, Object a10, Object a11, Object a12, Object a13, Object a14, Object a15) {
-            return dispatch(new Object[]{a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15});
+        Object invoke16(
+                Object a0,
+                Object a1,
+                Object a2,
+                Object a3,
+                Object a4,
+                Object a5,
+                Object a6,
+                Object a7,
+                Object a8,
+                Object a9,
+                Object a10,
+                Object a11,
+                Object a12,
+                Object a13,
+                Object a14,
+                Object a15) {
+            return dispatch(
+                    new Object[] {
+                        a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, a12, a13, a14, a15
+                    });
         }
     }
 
@@ -422,31 +564,62 @@ final class Faces {
             if (member instanceof OverloadSet ov) {
                 Callable selected = ov.selectForJavaMethod(method);
                 if (selected != null) {
-                    Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
-                    if (method.isVarArgs() && selected instanceof BabbleFunction bf
-                            && bf.restIndex() == babble.length - 1 && babble.length > 0 && babble[babble.length - 1] != null) {
+                    Object[] babble =
+                            JavaTypes.checkParameters(
+                                    Values.fromJava(args), method.getParameterTypes());
+                    if (method.isVarArgs()
+                            && selected instanceof BabbleFunction bf
+                            && bf.restIndex() == babble.length - 1
+                            && babble.length > 0
+                            && babble[babble.length - 1] != null) {
                         babble = babble.clone();
-                        babble[babble.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
+                        babble[babble.length - 1] =
+                                Spreads.packedRest(
+                                        ArgumentsView.fromArray(babble[babble.length - 1]));
                     }
                     ScriptRuntime rt = BabbleObjects.runtime(instance);
-                    Object result = selected instanceof BabbleFunction bf
-                            ? bf.invoke(instance, rt, babble, null, site(method.getName(), babble.length))
-                            : selected.call(rt, babble, null, site(method.getName(), babble.length));
-                    return JavaTypes.convertResult(result, method.getReturnType(),
-                            BabbleObjects.babbleClass(instance).name() + "." + method.getName(), rt);
+                    Object result =
+                            selected instanceof BabbleFunction bf
+                                    ? bf.invoke(
+                                            instance,
+                                            rt,
+                                            babble,
+                                            null,
+                                            site(method.getName(), babble.length))
+                                    : selected.call(
+                                            rt,
+                                            babble,
+                                            null,
+                                            site(method.getName(), babble.length));
+                    return JavaTypes.convertResult(
+                            result,
+                            method.getReturnType(),
+                            BabbleObjects.babbleClass(instance).name() + "." + method.getName(),
+                            rt);
                 }
             } else if (member instanceof BabbleFunction function
-                    && (!method.isDefault() || function.acceptsJavaDefaultOverload(method.getParameterTypes()))) {
-                Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), method.getParameterTypes());
-                if (method.isVarArgs() && function.restIndex() == babble.length - 1
-                        && babble.length > 0 && babble[babble.length - 1] != null) {
+                    && (!method.isDefault()
+                            || function.acceptsJavaDefaultOverload(method.getParameterTypes()))) {
+                Object[] babble =
+                        JavaTypes.checkParameters(
+                                Values.fromJava(args), method.getParameterTypes());
+                if (method.isVarArgs()
+                        && function.restIndex() == babble.length - 1
+                        && babble.length > 0
+                        && babble[babble.length - 1] != null) {
                     babble = babble.clone();
-                    babble[babble.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
+                    babble[babble.length - 1] =
+                            Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
                 }
                 ScriptRuntime rt = BabbleObjects.runtime(instance);
-                Object result = function.invoke(instance, rt, babble, null, site(method.getName(), babble.length));
-                return JavaTypes.convertResult(result, method.getReturnType(),
-                        BabbleObjects.babbleClass(instance).name() + "." + method.getName(), rt);
+                Object result =
+                        function.invoke(
+                                instance, rt, babble, null, site(method.getName(), babble.length));
+                return JavaTypes.convertResult(
+                        result,
+                        method.getReturnType(),
+                        BabbleObjects.babbleClass(instance).name() + "." + method.getName(),
+                        rt);
             }
             return invokeDefault(proxy, method, args);
         }
@@ -474,12 +647,18 @@ final class Faces {
             if (isObjectMethod(called, "toString", 0)) {
                 return callable + " as " + sam.method.getDeclaringClass().getSimpleName();
             }
-            if (called.getName().equals(sam.method.getName()) && called.getParameterCount() == sam.parameterTypes.length) {
-                Object[] babble = JavaTypes.checkParameters(Values.fromJava(args), sam.parameterTypes);
-                if (sam.method.isVarArgs() && callable instanceof BabbleFunction bf
-                        && bf.restIndex() == babble.length - 1 && babble.length > 0 && babble[babble.length - 1] != null) {
+            if (called.getName().equals(sam.method.getName())
+                    && called.getParameterCount() == sam.parameterTypes.length) {
+                Object[] babble =
+                        JavaTypes.checkParameters(Values.fromJava(args), sam.parameterTypes);
+                if (sam.method.isVarArgs()
+                        && callable instanceof BabbleFunction bf
+                        && bf.restIndex() == babble.length - 1
+                        && babble.length > 0
+                        && babble[babble.length - 1] != null) {
                     babble = babble.clone();
-                    babble[babble.length - 1] = Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
+                    babble[babble.length - 1] =
+                            Spreads.packedRest(ArgumentsView.fromArray(babble[babble.length - 1]));
                 }
                 Object result = callable.call(rt, babble, null, sam.site);
                 return JavaTypes.convertResult(result, sam.returnType, sam.description, rt);

@@ -1,32 +1,32 @@
 package org.babblelang;
 
-import org.babblelang.engine.BabbleSession;
-import org.babblelang.engine.TypeCheckException;
-import org.babblelang.repl.LineSource;
-import org.babblelang.repl.PlainInput;
-import org.babblelang.runtime.ArraySupport;
-
-import javax.script.ScriptException;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import javax.script.ScriptException;
+import org.babblelang.engine.BabbleSession;
+import org.babblelang.engine.TypeCheckException;
+import org.babblelang.repl.LineSource;
+import org.babblelang.repl.PlainInput;
+import org.babblelang.runtime.ArraySupport;
 
 /**
- * Babble's interactive mode (docs/design/bip004_repl.md) : reads an input, evaluates it in a
- * {@link BabbleSession}, prints its value, and starts again. An input spans several lines
- * when it stops in the middle of something, an open parenthesis for instance.
- * <p>
- * Lines come from a {@link LineSource} : plain lines, or a line editor on a terminal, with
+ * Babble's interactive mode (docs/design/bip004_repl.md) : reads an input, evaluates it in a {@link
+ * BabbleSession}, prints its value, and starts again. An input spans several lines when it stops in
+ * the middle of something, an open parenthesis for instance.
+ *
+ * <p>Lines come from a {@link LineSource} : plain lines, or a line editor on a terminal, with
  * history and completion (§9). {@link Main} starts it, on its own or after a script.
  */
 public final class Repl {
     public static final String PROMPT = ">> ";
     public static final String CONTINUATION = ".. ";
 
-    private static final String HELP = """
+    private static final String HELP =
+            """
             Type an expression or a definition : its value is printed, unless it is null.
             An input continues on the next line while it is incomplete : inside
             parentheses, or after an operator, a comma, "=", "->", "then" or "else".
@@ -39,7 +39,8 @@ public final class Repl {
             and Tab completes names, members and commands.
             Defining a name again replaces it for what you type next ; functions defined
             before keep using the old definition. To change a variable they see, assign
-            it : x = 2.""";
+            it : x = 2.\
+            """;
 
     private final BabbleSession session;
     private final LineSource in;
@@ -48,8 +49,7 @@ public final class Repl {
 
     /**
      * @param session whose context should write to {@code out}
-     * @param prompts whether to print the banner and the prompts : not when the input is
-     *                piped in
+     * @param prompts whether to print the banner and the prompts : not when the input is piped in
      */
     public Repl(BabbleSession session, BufferedReader in, PrintWriter out, boolean prompts) {
         this(session, new PlainInput(in, out, prompts), out, prompts);
@@ -165,8 +165,8 @@ public final class Repl {
     }
 
     /**
-     * {@code :load file.ba} : runs a file as an input of the session, as {@code -keep-alive}
-     * runs a script. Its value is not shown, and its errors name it.
+     * {@code :load file.ba} : runs a file as an input of the session, as {@code -keep-alive} runs a
+     * script. Its value is not shown, and its errors name it.
      */
     private void load(String argument) {
         String file = unquote(argument);
@@ -178,7 +178,11 @@ public final class Repl {
         try {
             source = Files.readString(Path.of(file));
         } catch (IOException | RuntimeException e) {
-            out.println("Cannot read " + file + " : " + (e instanceof NoSuchFileException ? "no such file" : e));
+            out.println(
+                    "Cannot read "
+                            + file
+                            + " : "
+                            + (e instanceof NoSuchFileException ? "no such file" : e));
             return;
         }
         if (BabbleSession.classify(source) == BabbleSession.Input.EMPTY) {
@@ -198,13 +202,18 @@ public final class Repl {
     }
 
     private static String unquote(String text) {
-        if (text.length() >= 2 && (text.startsWith("\"") && text.endsWith("\"") || text.startsWith("'") && text.endsWith("'"))) {
+        if (text.length() >= 2
+                && (text.startsWith("\"") && text.endsWith("\"")
+                        || text.startsWith("'") && text.endsWith("'"))) {
             return text.substring(1, text.length() - 1);
         }
         return text;
     }
 
-    /** A value as the session shows it : a string between quotes, arrays as {@code [a, b]}, anything else as {@code "" + value} gives it. */
+    /**
+     * A value as the session shows it : a string between quotes, arrays as {@code [a, b]}, anything
+     * else as {@code "" + value} gives it.
+     */
     static String show(Object value) {
         if (value instanceof String string) {
             return "\"" + string.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -213,8 +222,8 @@ public final class Repl {
     }
 
     /**
-     * The error, without the exception's class name, and with its line only : every input
-     * is its own source, so its name says nothing.
+     * The error, without the exception's class name, and with its line only : every input is its
+     * own source, so its name says nothing.
      */
     static String message(ScriptException e) {
         String message = e.getMessage();

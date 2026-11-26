@@ -1,36 +1,41 @@
 package org.babblelang.tests.batest;
 
-import org.babblelang.ir.IrTarget;
-import org.babblelang.ir.IrTier;
-
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.babblelang.ir.IrTarget;
+import org.babblelang.ir.IrTier;
 
 /**
- * Parsed representation of a {@code .batest} (v1, {@code BIP009}) or {@code .batest.md}
- * (v2, {@code BIP029}) specification file.
+ * Parsed representation of a {@code .batest} (v1, {@code BIP009}) or {@code .batest.md} (v2, {@code
+ * BIP029}) specification file.
  */
 public record BatestFile(
         String relativePath,
         Format format,
         String preamble,
         Map<String, String> modules,
-        List<BatestCase> cases
-) {
+        List<BatestCase> cases) {
     public enum Format {
         V1,
         V2
     }
 
     /** Legacy constructor for v1 tests. */
-    public BatestFile(String relativePath, String preamble, Map<String, String> modules, List<BatestCase> cases) {
+    public BatestFile(
+            String relativePath,
+            String preamble,
+            Map<String, String> modules,
+            List<BatestCase> cases) {
         this(relativePath, Format.V1, preamble, modules, cases);
     }
 
-    /** Expected normalized text for one behavioral channel ({@code stdout}, {@code stderr}, or {@code error}). */
+    /**
+     * Expected normalized text for one behavioral channel ({@code stdout}, {@code stderr}, or
+     * {@code error}).
+     */
     public record TextExpectation(String text, boolean regex) {
         public static final TextExpectation EMPTY = new TextExpectation("", false);
 
@@ -38,13 +43,18 @@ public record BatestFile(
             text = text != null ? text : "";
         }
 
-        /** Matches {@code actual} literally or with {@code Pattern.MULTILINE | Pattern.DOTALL} ({@code BIP029-D4}). */
+        /**
+         * Matches {@code actual} literally or with {@code Pattern.MULTILINE | Pattern.DOTALL}
+         * ({@code BIP029-D4}).
+         */
         public boolean matches(String actual) {
             String value = actual != null ? actual : "";
             if (!regex) {
                 return text.equals(value);
             }
-            return Pattern.compile(text, Pattern.MULTILINE | Pattern.DOTALL).matcher(value).matches();
+            return Pattern.compile(text, Pattern.MULTILINE | Pattern.DOTALL)
+                    .matcher(value)
+                    .matches();
         }
     }
 
@@ -55,18 +65,24 @@ public record BatestFile(
     }
 
     /**
-     * An opt-in IR golden/check expectation attached to a {@code .batest.md} case ({@code BIP029-D4}–{@code D8}).
+     * An opt-in IR golden/check expectation attached to a {@code .batest.md} case ({@code
+     * BIP029-D4}–{@code D8}).
      *
-     * @param tier          IR tier ({@code hir} or {@code mir})
-     * @param optLevels     optimization levels where this block applies (e.g. {@code {0}}, {@code {1}}, {@code {0, 1}})
-     * @param target        canonical target slice ({@code fn=f}, {@code fn=Vec3.dot}, {@code record=Vec3}, etc.)
-     * @param stage         pipeline stage ({@code before}, {@code final}, or {@code after:<PassName>})
-     * @param modulePath    normalized virtual module path for {@code in=<mod>}, or {@code null} for the main script
-     * @param matchMode     {@link IrMatchMode#EXACT}, {@link IrMatchMode#REGEX}, or {@link IrMatchMode#CHECK}
-     * @param expected      expected canonical IR text, regex pattern, or {@code check} predicate lines
-     * @param headerLine    1-based line number of the opening fence header
-     * @param bodyStartLine 1-based first line number of the block body (immediately after the opening fence)
-     * @param bodyEndLine   1-based line number of the closing fence (exclusive end of body lines)
+     * @param tier IR tier ({@code hir} or {@code mir})
+     * @param optLevels optimization levels where this block applies (e.g. {@code {0}}, {@code {1}},
+     *     {@code {0, 1}})
+     * @param target canonical target slice ({@code fn=f}, {@code fn=Vec3.dot}, {@code record=Vec3},
+     *     etc.)
+     * @param stage pipeline stage ({@code before}, {@code final}, or {@code after:<PassName>})
+     * @param modulePath normalized virtual module path for {@code in=<mod>}, or {@code null} for
+     *     the main script
+     * @param matchMode {@link IrMatchMode#EXACT}, {@link IrMatchMode#REGEX}, or {@link
+     *     IrMatchMode#CHECK}
+     * @param expected expected canonical IR text, regex pattern, or {@code check} predicate lines
+     * @param headerLine 1-based line number of the opening fence header
+     * @param bodyStartLine 1-based first line number of the block body (immediately after the
+     *     opening fence)
+     * @param bodyEndLine 1-based line number of the closing fence (exclusive end of body lines)
      */
     public record IrExpectation(
             IrTier tier,
@@ -78,8 +94,7 @@ public record BatestFile(
             String expected,
             int headerLine,
             int bodyStartLine,
-            int bodyEndLine
-    ) {
+            int bodyEndLine) {
         public IrExpectation {
             Objects.requireNonNull(tier, "tier");
             optLevels = Set.copyOf(optLevels);
@@ -136,9 +151,7 @@ public record BatestFile(
         }
     }
 
-    /**
-     * A single test case inside a {@code .batest} or {@code .batest.md} file.
-     */
+    /** A single test case inside a {@code .batest} or {@code .batest.md} file. */
     public record BatestCase(
             int index,
             int line,
@@ -151,9 +164,11 @@ public record BatestFile(
             TextExpectation expectedStdout,
             TextExpectation expectedStderr,
             TextExpectation expectedError,
-            List<IrExpectation> irExpectations
-    ) {
-        /** Legacy v1 marker for regex lines (retired in v2 in favor of the {@code regex} block flag). */
+            List<IrExpectation> irExpectations) {
+        /**
+         * Legacy v1 marker for regex lines (retired in v2 in favor of the {@code regex} block
+         * flag).
+         */
         public static final String REGEX_PREFIX = "~~ ";
 
         public BatestCase {
@@ -168,9 +183,21 @@ public record BatestFile(
         }
 
         /** Legacy v1 5-argument constructor. */
-        public BatestCase(int index, int line, List<String> inputs, boolean session, String expected) {
-            this(index, line, "", Format.V1, inputs, session, Map.of(), expected,
-                    TextExpectation.EMPTY, TextExpectation.EMPTY, null, List.of());
+        public BatestCase(
+                int index, int line, List<String> inputs, boolean session, String expected) {
+            this(
+                    index,
+                    line,
+                    "",
+                    Format.V1,
+                    inputs,
+                    session,
+                    Map.of(),
+                    expected,
+                    TextExpectation.EMPTY,
+                    TextExpectation.EMPTY,
+                    null,
+                    List.of());
         }
 
         public String code() {
@@ -184,9 +211,7 @@ public record BatestFile(
             return "case #" + index + " (line " + line + ")";
         }
 
-        /**
-         * Legacy v1 expectation matcher (used for {@link Format#V1} cases).
-         */
+        /** Legacy v1 expectation matcher (used for {@link Format#V1} cases). */
         public boolean matches(String actual) {
             if (expected.equals(actual)) {
                 return true;
@@ -209,7 +234,9 @@ public record BatestFile(
 
         private static boolean lineMatches(String expectedLine, String actualLine) {
             if (expectedLine.startsWith(REGEX_PREFIX)) {
-                return Pattern.compile(expectedLine.substring(REGEX_PREFIX.length())).matcher(actualLine).matches();
+                return Pattern.compile(expectedLine.substring(REGEX_PREFIX.length()))
+                        .matcher(actualLine)
+                        .matches();
             }
             return expectedLine.equals(actualLine);
         }

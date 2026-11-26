@@ -1,9 +1,8 @@
 package org.babblelang.ir.hir;
 
+import java.util.List;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
-
-import java.util.List;
 
 /**
  * Human-readable deterministic textual printer for {@link HirModule} (BIP014-I1).
@@ -11,12 +10,15 @@ import java.util.List;
  * <p>Used by {@code -Dbabble.dumpIr} and golden IR assertions in {@code OptimizerTestCase}.
  */
 public final class HirPrinter {
-    private HirPrinter() {
-    }
+    private HirPrinter() {}
 
     public static String print(HirModule module) {
         StringBuilder sb = new StringBuilder();
-        sb.append("module ").append(module.className()).append(" (").append(module.sourceName()).append(")\n");
+        sb.append("module ")
+                .append(module.className())
+                .append(" (")
+                .append(module.sourceName())
+                .append(")\n");
         if (!module.topLevelStatements().isEmpty()) {
             sb.append("  top-level:\n");
             for (HirExpr stmt : module.topLevelStatements()) {
@@ -26,9 +28,13 @@ public final class HirPrinter {
             }
         }
         for (HirFunction fn : module.functions().values()) {
-            sb.append("  fn #").append(fn.id()).append(' ')
+            sb.append("  fn #")
+                    .append(fn.id())
+                    .append(' ')
                     .append(fn.name() != null ? fn.name() : "<anon>")
-                    .append(" [").append(fn.jvmMethodName()).append("] (");
+                    .append(" [")
+                    .append(fn.jvmMethodName())
+                    .append("] (");
             for (int i = 0; i < fn.params().size(); i++) {
                 if (i > 0) sb.append(", ");
                 HirParam p = fn.params().get(i);
@@ -51,8 +57,15 @@ public final class HirPrinter {
             }
         }
         for (HirClass cls : module.classes().values()) {
-            sb.append("  ").append(cls.isObject() ? "object" : (cls.shape().isValue() ? "record" : "class"))
-                    .append(" #").append(cls.id()).append(' ').append(cls.shape().name());
+            sb.append("  ")
+                    .append(
+                            cls.isObject()
+                                    ? "object"
+                                    : (cls.shape().isValue() ? "record" : "class"))
+                    .append(" #")
+                    .append(cls.id())
+                    .append(' ')
+                    .append(cls.shape().name());
             if (cls.jvmName() != null) {
                 sb.append(" [").append(cls.jvmName()).append(']');
             }
@@ -64,8 +77,13 @@ public final class HirPrinter {
             }
         }
         for (HirInterface iface : module.interfaces().values()) {
-            sb.append("  interface #").append(iface.id()).append(' ').append(iface.shape().name())
-                    .append(" [").append(iface.jvmName()).append("]\n");
+            sb.append("  interface #")
+                    .append(iface.id())
+                    .append(' ')
+                    .append(iface.shape().name())
+                    .append(" [")
+                    .append(iface.jvmName())
+                    .append("]\n");
             for (HirExpr stmt : iface.body()) {
                 sb.append("    ");
                 printExpr(sb, stmt, 2);
@@ -98,10 +116,17 @@ public final class HirPrinter {
                     sb.append(c.value()).append(':').append(kindTag(c.meta().kind()));
                 }
             }
-            case HirExpr.IntParseFallback f -> sb.append("int-parse(\"").append(f.text()).append("\")");
-            case HirExpr.CoreCollectionRef r -> sb.append("core-col(").append(r.collectionKind()).append(')');
+            case HirExpr.IntParseFallback f ->
+                    sb.append("int-parse(\"").append(f.text()).append("\")");
+            case HirExpr.CoreCollectionRef r ->
+                    sb.append("core-col(").append(r.collectionKind()).append(')');
             case HirExpr.CoreExceptionRef r -> sb.append("core-exception");
-            case HirExpr.VarRead v -> sb.append("var(").append(v.var().name()).append('#').append(v.var().id()).append(')');
+            case HirExpr.VarRead v ->
+                    sb.append("var(")
+                            .append(v.var().name())
+                            .append('#')
+                            .append(v.var().id())
+                            .append(')');
             case HirExpr.NameRead n -> sb.append("name(").append(n.name()).append(')');
             case HirExpr.ThisRef t -> sb.append("this");
             case HirExpr.RecurseRef r -> sb.append("recurse");
@@ -151,10 +176,13 @@ public final class HirPrinter {
                 printExpr(sb, a.value(), depth + 1);
                 sb.append(')');
             }
-            case HirExpr.ThisFieldGet g -> sb.append("(get-this-field ").append(g.memberName()).append(')');
+            case HirExpr.ThisFieldGet g ->
+                    sb.append("(get-this-field ").append(g.memberName()).append(')');
             case HirExpr.JavaFieldGet g -> {
-                sb.append("(get-jfield ").append(g.target().field().getDeclaringClass().getSimpleName())
-                        .append('.').append(g.target().field().getName());
+                sb.append("(get-jfield ")
+                        .append(g.target().field().getDeclaringClass().getSimpleName())
+                        .append('.')
+                        .append(g.target().field().getName());
                 if (!g.pureStaticReceiver()) {
                     sb.append(' ');
                     printExpr(sb, g.receiver(), depth + 1);
@@ -188,7 +216,11 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirExpr.Binary b -> {
-                sb.append('(').append(b.op().symbol()).append(':').append(kindTag(b.meta().kind())).append(' ');
+                sb.append('(')
+                        .append(b.op().symbol())
+                        .append(':')
+                        .append(kindTag(b.meta().kind()))
+                        .append(' ');
                 printExpr(sb, b.left(), depth + 1);
                 sb.append(' ');
                 printExpr(sb, b.right(), depth + 1);
@@ -285,7 +317,10 @@ public final class HirPrinter {
                 if (m.elseArm() != null) {
                     sb.append(" (else ");
                     if (m.elseArm().var() != null) {
-                        sb.append(m.elseArm().var().name()).append('#').append(m.elseArm().var().id()).append(' ');
+                        sb.append(m.elseArm().var().name())
+                                .append('#')
+                                .append(m.elseArm().var().id())
+                                .append(' ');
                     }
                     printExpr(sb, m.elseArm().body(), depth + 1);
                     sb.append(')');
@@ -303,7 +338,10 @@ public final class HirPrinter {
                 if (f.countedRange() != null) {
                     HirExpr.CountedRangeLoop cr = f.countedRange();
                     sb.append("(for-range ");
-                    sb.append(f.loopVar() != null ? f.loopVar().name() + "#" + f.loopVar().id() : "_");
+                    sb.append(
+                            f.loopVar() != null
+                                    ? f.loopVar().name() + "#" + f.loopVar().id()
+                                    : "_");
                     sb.append(cr.inclusive() ? " .. " : " ..< ");
                     printExpr(sb, cr.start(), depth + 1);
                     sb.append(' ');
@@ -317,7 +355,11 @@ public final class HirPrinter {
                     }
                 } else {
                     sb.append("(for ");
-                    sb.append(f.loopVar() != null ? f.loopVar().name() + "#" + f.loopVar().id() : "_").append(" in ");
+                    sb.append(
+                                    f.loopVar() != null
+                                            ? f.loopVar().name() + "#" + f.loopVar().id()
+                                            : "_")
+                            .append(" in ");
                     printExpr(sb, f.iterable(), depth + 1);
                 }
                 sb.append(" (block");
@@ -397,7 +439,10 @@ public final class HirPrinter {
             }
             case HirExpr.DirectBabbleCall c -> {
                 if (c.externalTarget() != null) {
-                    sb.append("(call-fn ").append(c.externalTarget().moduleName()).append('#').append(c.externalTarget().exportName());
+                    sb.append("(call-fn ")
+                            .append(c.externalTarget().moduleName())
+                            .append('#')
+                            .append(c.externalTarget().exportName());
                 } else {
                     sb.append("(call-fn #").append(c.targetFunctionId());
                 }
@@ -405,7 +450,10 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirExpr.DirectThisMethodCall c -> {
-                sb.append("(call-this.").append(c.memberName()).append(" #").append(c.targetFunctionId());
+                sb.append("(call-this.")
+                        .append(c.memberName())
+                        .append(" #")
+                        .append(c.targetFunctionId());
                 printCallArgs(sb, c.args(), depth + 1);
                 sb.append(')');
             }
@@ -417,13 +465,16 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirExpr.JavaConstructorCall c -> {
-                sb.append("(jnew ").append(c.target().constructor().getDeclaringClass().getSimpleName());
+                sb.append("(jnew ")
+                        .append(c.target().constructor().getDeclaringClass().getSimpleName());
                 printArgs(sb, c.args(), depth + 1);
                 sb.append(')');
             }
             case HirExpr.JavaMethodCall c -> {
-                sb.append("(jcall ").append(c.target().method().getDeclaringClass().getSimpleName())
-                        .append('.').append(c.target().method().getName());
+                sb.append("(jcall ")
+                        .append(c.target().method().getDeclaringClass().getSimpleName())
+                        .append('.')
+                        .append(c.target().method().getName());
                 if (!c.target().isStatic()) {
                     sb.append(' ');
                     printExpr(sb, c.receiver(), depth + 1);
@@ -432,7 +483,11 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirExpr.CoreMethodCall c -> {
-                sb.append("(core-call ").append(c.coreKind()).append('.').append(c.memberName()).append(' ');
+                sb.append("(core-call ")
+                        .append(c.coreKind())
+                        .append('.')
+                        .append(c.memberName())
+                        .append(' ');
                 printExpr(sb, c.receiver(), depth + 1);
                 printArgs(sb, c.args(), depth + 1);
                 sb.append(')');
@@ -468,7 +523,8 @@ public final class HirPrinter {
             }
             case HirExpr.FunctionRef f -> sb.append("(fn-ref #").append(f.functionId()).append(')');
             case HirExpr.ClassExpr c -> sb.append("(class-ref #").append(c.classId()).append(')');
-            case HirExpr.InterfaceExpr i -> sb.append("(iface-ref #").append(i.interfaceId()).append(')');
+            case HirExpr.InterfaceExpr i ->
+                    sb.append("(iface-ref #").append(i.interfaceId()).append(')');
             case HirExpr.TypeApply t -> {
                 sb.append("(type-apply ");
                 printExpr(sb, t.inner(), depth + 1);
@@ -503,7 +559,9 @@ public final class HirPrinter {
         switch (pattern) {
             case HirPattern.Const c -> {
                 if (c.isEnum()) {
-                    sb.append(c.enumClass().getSimpleName()).append('.').append(c.enumConstantName());
+                    sb.append(c.enumClass().getSimpleName())
+                            .append('.')
+                            .append(c.enumConstantName());
                 } else if (c.value() instanceof String s) {
                     sb.append('"').append(s).append('"');
                 } else {
@@ -512,9 +570,13 @@ public final class HirPrinter {
             }
             case HirPattern.Wildcard ignored -> sb.append('_');
             case HirPattern.ValueExpr v -> printExpr(sb, v.expr(), depth + 1);
-            case HirPattern.TypeTest t -> sb.append("(is ").append(t.builtin() != null ? t.builtin() : t.descriptor()).append(')');
+            case HirPattern.TypeTest t ->
+                    sb.append("(is ")
+                            .append(t.builtin() != null ? t.builtin() : t.descriptor())
+                            .append(')');
             case HirPattern.Bind b -> {
-                sb.append("(bind ").append(b.var() != null ? b.var().name() + "#" + b.var().id() : "_");
+                sb.append("(bind ")
+                        .append(b.var() != null ? b.var().name() + "#" + b.var().id() : "_");
                 if (b.inner() != null) {
                     sb.append(' ');
                     printPattern(sb, b.inner(), depth + 1);
@@ -551,7 +613,11 @@ public final class HirPrinter {
                 sb.append(')');
             }
             case HirPattern.RecordDestructure rd -> {
-                sb.append("(record-pat ").append(rd.isJavaRecord() ? rd.javaRecordClass().getSimpleName() : rd.babbleTypeId());
+                sb.append("(record-pat ")
+                        .append(
+                                rd.isJavaRecord()
+                                        ? rd.javaRecordClass().getSimpleName()
+                                        : rd.babbleTypeId());
                 for (int i = 0; i < rd.fieldPatterns().size(); i++) {
                     sb.append(' ').append(rd.fieldNames().get(i)).append('=');
                     printPattern(sb, rd.fieldPatterns().get(i), depth + 1);
@@ -607,6 +673,10 @@ public final class HirPrinter {
     }
 
     private static String escape(String s) {
-        return s.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t").replace("\"", "\\\"");
+        return s.replace("\\", "\\\\")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t")
+                .replace("\"", "\\\"");
     }
 }

@@ -1,9 +1,5 @@
 package org.babblelang.tests;
 
-import org.babblelang.runtime.Namespace;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,17 +13,21 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
+import org.babblelang.runtime.Namespace;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 /**
  * The runtime boundary (docs/design/bip006_module-sources-and-aot.md §3) : what a compiled Babble
  * program needs to run references nothing of the front end (parser, analysis, compiler,
- * interpreter, engine), no third-party library, and no JDK module but {@code java.base}.
- * The runtime is the {@code runtime} package and the built-ins of {@code engine.impl.natives}
- * and {@code engine.impl.natives.java}.
+ * interpreter, engine), no third-party library, and no JDK module but {@code java.base}. The
+ * runtime is the {@code runtime} package and the built-ins of {@code engine.impl.natives} and
+ * {@code engine.impl.natives.java}.
  */
 public class RuntimeBoundaryTestCase {
     private static final Pattern DESCRIPTOR_CLASS = Pattern.compile("L([A-Za-z_$][\\w/$]*);");
-    private static final Set<String> JAVA_BASE = Object.class.getModule().getDescriptor().packages();
+    private static final Set<String> JAVA_BASE =
+            Object.class.getModule().getDescriptor().packages();
 
     static boolean isRuntime(String internalName) {
         return internalName.startsWith("org/babblelang/runtime/")
@@ -35,7 +35,8 @@ public class RuntimeBoundaryTestCase {
     }
 
     private static Path classesDirectory() throws URISyntaxException {
-        Path directory = Path.of(Namespace.class.getResource("Namespace.class").toURI()).getParent();
+        Path directory =
+                Path.of(Namespace.class.getResource("Namespace.class").toURI()).getParent();
         for (int i = 0; i < Namespace.class.getPackageName().split("\\.").length; i++) {
             directory = directory.getParent();
         }
@@ -47,13 +48,14 @@ public class RuntimeBoundaryTestCase {
         Path root = classesDirectory();
         List<String> result = new ArrayList<>();
         try (Stream<Path> files = Files.walk(root.resolve("org/babblelang"))) {
-            files.filter(f -> f.toString().endsWith(".class")).forEach(f -> {
-                String name = root.relativize(f).toString().replace('\\', '/');
-                name = name.substring(0, name.length() - ".class".length());
-                if (isRuntime(name)) {
-                    result.add(name);
-                }
-            });
+            files.filter(f -> f.toString().endsWith(".class"))
+                    .forEach(f -> {
+                        String name = root.relativize(f).toString().replace('\\', '/');
+                        name = name.substring(0, name.length() - ".class".length());
+                        if (isRuntime(name)) {
+                            result.add(name);
+                        }
+                    });
         }
         return result;
     }
@@ -98,7 +100,10 @@ public class RuntimeBoundaryTestCase {
             }
         }
         for (String constant : utf8) {
-            if (constant != null && (constant.startsWith("(") || constant.startsWith("L") || constant.startsWith("["))) {
+            if (constant != null
+                    && (constant.startsWith("(")
+                            || constant.startsWith("L")
+                            || constant.startsWith("["))) {
                 Matcher m = DESCRIPTOR_CLASS.matcher(constant);
                 while (m.find()) {
                     result.add(m.group(1));
@@ -113,7 +118,9 @@ public class RuntimeBoundaryTestCase {
         if (referenced.startsWith("org/babblelang/")) {
             return isRuntime(referenced) ? null : "the front end";
         }
-        if (referenced.startsWith("java/") || referenced.startsWith("javax/") || referenced.startsWith("jdk/")) {
+        if (referenced.startsWith("java/")
+                || referenced.startsWith("javax/")
+                || referenced.startsWith("jdk/")) {
             int slash = referenced.lastIndexOf('/');
             String pkg = referenced.substring(0, slash).replace('/', '.');
             return JAVA_BASE.contains(pkg) ? null : "a JDK module other than java.base";
@@ -125,8 +132,11 @@ public class RuntimeBoundaryTestCase {
     public void theRuntimeNeedsNothingButItselfAndJavaBase() throws Exception {
         Path root = classesDirectory();
         List<String> classes = runtimeClasses();
-        Assertions.assertTrue(classes.contains("org/babblelang/runtime/Bootstrap"), classes.toString());
-        Assertions.assertTrue(classes.contains("org/babblelang/engine/impl/natives/java/ImportFunction"), classes.toString());
+        Assertions.assertTrue(
+                classes.contains("org/babblelang/runtime/Bootstrap"), classes.toString());
+        Assertions.assertTrue(
+                classes.contains("org/babblelang/engine/impl/natives/java/ImportFunction"),
+                classes.toString());
         List<String> violations = new ArrayList<>();
         for (String name : classes) {
             try (InputStream in = Files.newInputStream(root.resolve(name + ".class"))) {
@@ -144,17 +154,25 @@ public class RuntimeBoundaryTestCase {
     @Test
     public void theCheckSeesWhatItLooksFor() throws Exception {
         // The checks themselves : a front-end class, a library and another JDK module are refused.
-        Assertions.assertEquals("the front end", violation("org/babblelang/engine/BabbleScriptEngine"));
-        Assertions.assertEquals("the front end", violation("org/babblelang/engine/impl/Interpreter"));
+        Assertions.assertEquals(
+                "the front end", violation("org/babblelang/engine/BabbleScriptEngine"));
+        Assertions.assertEquals(
+                "the front end", violation("org/babblelang/engine/impl/Interpreter"));
         Assertions.assertEquals("a third-party library", violation("org/antlr/v4/runtime/Parser"));
-        Assertions.assertEquals("a JDK module other than java.base", violation("javax/script/ScriptContext"));
+        Assertions.assertEquals(
+                "a JDK module other than java.base", violation("javax/script/ScriptContext"));
         Assertions.assertNull(violation("java/lang/invoke/MethodHandle"));
         Assertions.assertNull(violation("org/babblelang/runtime/Operators"));
         // And the class file reader finds references in descriptors, not only in class constants.
-        try (InputStream in = org.babblelang.engine.BabbleScriptEngine.class.getResourceAsStream("BabbleScriptEngine.class")) {
+        try (InputStream in =
+                org.babblelang.engine.BabbleScriptEngine.class.getResourceAsStream(
+                        "BabbleScriptEngine.class")) {
             Set<String> referenced = referencedClasses(in);
-            Assertions.assertTrue(referenced.contains("javax/script/ScriptContext"), referenced.toString());
-            Assertions.assertTrue(referenced.contains("org/babblelang/parser/BabbleParser$FileContext"), referenced.toString());
+            Assertions.assertTrue(
+                    referenced.contains("javax/script/ScriptContext"), referenced.toString());
+            Assertions.assertTrue(
+                    referenced.contains("org/babblelang/parser/BabbleParser$FileContext"),
+                    referenced.toString());
         }
     }
 }

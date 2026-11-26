@@ -1,11 +1,9 @@
 package org.babblelang.engine;
 
-import org.babblelang.runtime.BabbleException;
 import javax.script.ScriptException;
+import org.babblelang.runtime.BabbleException;
 
-/**
- * A source text the lexer or the parser rejected.
- */
+/** A source text the lexer or the parser rejected. */
 final class ParseFailure extends RuntimeException {
     private final int line;
     private final int column;
@@ -14,8 +12,8 @@ final class ParseFailure extends RuntimeException {
 
     /**
      * @param column from 1
-     * @param atEnd  whether the text only fails for stopping where it does : more text
-     *               could complete it
+     * @param atEnd whether the text only fails for stopping where it does : more text could
+     *     complete it
      */
     ParseFailure(String message, int line, int column, boolean lexical, boolean atEnd) {
         super(message);

@@ -11,8 +11,8 @@ import java.util.Set;
  * Self-contained WebAssembly 3.0 module IR ({@code BIP025-I0}).
  *
  * <p>Manages Wasm index spaces (types, imported + defined functions, tags, globals, passive data
- * segments, exports, and declarative function references) deterministically so repeated compiles
- * of the same Babble program yield identical {@code .wasm} bytes.
+ * segments, exports, and declarative function references) deterministically so repeated compiles of
+ * the same Babble program yield identical {@code .wasm} bytes.
  */
 public final class WasmModule {
     public enum ExportKind {
@@ -37,8 +37,8 @@ public final class WasmModule {
         }
     }
 
-    public record FuncImport(int funcIndex, String module, String field, int typeIndex, String debugName) {
-    }
+    public record FuncImport(
+            int funcIndex, String module, String field, int typeIndex, String debugName) {}
 
     public record Local(String name, WasmValType type) {
         public Local {
@@ -92,18 +92,17 @@ public final class WasmModule {
         }
     }
 
-    public record TagDef(int tagIndex, String name, int typeIndex) {
-    }
+    public record TagDef(int tagIndex, String name, int typeIndex) {}
 
-    public record GlobalDef(int globalIndex, String name, WasmValType type, boolean mutable, List<WasmInstr> init) {
+    public record GlobalDef(
+            int globalIndex, String name, WasmValType type, boolean mutable, List<WasmInstr> init) {
         public GlobalDef {
             Objects.requireNonNull(type, "type");
             init = List.copyOf(init);
         }
     }
 
-    public record ExportDef(String name, ExportKind kind, int index) {
-    }
+    public record ExportDef(String name, ExportKind kind, int index) {}
 
     private String moduleName;
     private final List<WasmTypeDef.RecGroup> recGroups = new ArrayList<>();
@@ -117,8 +116,7 @@ public final class WasmModule {
     private final Set<Integer> declaredFuncRefs = new LinkedHashSet<>();
     private int startFuncIndex = -1;
 
-    public WasmModule() {
-    }
+    public WasmModule() {}
 
     public WasmModule(String moduleName) {
         this.moduleName = moduleName;
@@ -132,14 +130,20 @@ public final class WasmModule {
         this.moduleName = moduleName;
     }
 
-    /** Reserves a type index inside a future recursive group (for mutually recursive struct/func types). */
+    /**
+     * Reserves a type index inside a future recursive group (for mutually recursive struct/func
+     * types).
+     */
     public int reserveTypeIndex() {
         int idx = flatTypes.size();
         flatTypes.add(null);
         return idx;
     }
 
-    /** Commits a recursive group whose subtypes were reserved contiguously starting at the first uncommitted slot. */
+    /**
+     * Commits a recursive group whose subtypes were reserved contiguously starting at the first
+     * uncommitted slot.
+     */
     public void commitRecGroup(List<WasmTypeDef.SubType> subtypes) {
         if (subtypes == null || subtypes.isEmpty()) {
             throw new IllegalArgumentException("Rec group must not be empty");
@@ -153,10 +157,15 @@ public final class WasmModule {
         }
         for (WasmTypeDef.SubType sub : subtypes) {
             if (sub == null || sub.index() != expected) {
-                throw new IllegalArgumentException("Rec group subtypes must fill reserved indices contiguously starting at " + expected + ", got : " + (sub != null ? sub.index() : "null"));
+                throw new IllegalArgumentException(
+                        "Rec group subtypes must fill reserved indices contiguously starting at "
+                                + expected
+                                + ", got : "
+                                + (sub != null ? sub.index() : "null"));
             }
             if (flatTypes.get(expected) != null) {
-                throw new IllegalStateException("Duplicate Wasm type definition at index : " + expected);
+                throw new IllegalStateException(
+                        "Duplicate Wasm type definition at index : " + expected);
             }
             expected++;
         }
@@ -169,7 +178,8 @@ public final class WasmModule {
     public int addType(String name, boolean isFinal, int superTypeIndex, WasmTypeDef body) {
         for (int i = 0; i < flatTypes.size(); i++) {
             if (flatTypes.get(i) == null) {
-                throw new IllegalStateException("Cannot addType while reserved type index " + i + " is uncommitted");
+                throw new IllegalStateException(
+                        "Cannot addType while reserved type index " + i + " is uncommitted");
             }
         }
         int idx = flatTypes.size();
@@ -183,17 +193,23 @@ public final class WasmModule {
         return addType(name, true, -1, new WasmTypeDef.FuncType(params, results));
     }
 
-    public int addStructType(String name, boolean isFinal, int superTypeIndex, List<WasmTypeDef.Field> fields) {
+    public int addStructType(
+            String name, boolean isFinal, int superTypeIndex, List<WasmTypeDef.Field> fields) {
         return addType(name, isFinal, superTypeIndex, new WasmTypeDef.StructType(fields));
     }
 
     public int addArrayType(String name, WasmValType elementType, boolean mutable) {
-        return addType(name, true, -1, new WasmTypeDef.ArrayType(new WasmTypeDef.Field("elem", elementType, mutable)));
+        return addType(
+                name,
+                true,
+                -1,
+                new WasmTypeDef.ArrayType(new WasmTypeDef.Field("elem", elementType, mutable)));
     }
 
     public int addFuncImport(String module, String field, int typeIndex, String debugName) {
         if (!definedFuncs.isEmpty()) {
-            throw new IllegalStateException("All function imports must be added before defined functions");
+            throw new IllegalStateException(
+                    "All function imports must be added before defined functions");
         }
         int idx = funcImports.size();
         funcImports.add(new FuncImport(idx, module, field, typeIndex, debugName));
@@ -233,7 +249,10 @@ public final class WasmModule {
         return idx;
     }
 
-    /** Marks a function index for emission in the declarative element segment (required for {@code ref.func}). */
+    /**
+     * Marks a function index for emission in the declarative element segment (required for {@code
+     * ref.func}).
+     */
     public void declareFuncRef(int funcIndex) {
         declaredFuncRefs.add(funcIndex);
     }
@@ -305,7 +324,9 @@ public final class WasmModule {
         return startFuncIndex;
     }
 
-    /** Collects every function index referenced via {@code ref.func} in code or global initializers. */
+    /**
+     * Collects every function index referenced via {@code ref.func} in code or global initializers.
+     */
     public Set<Integer> allReferencedFuncIndices() {
         Set<Integer> refs = new LinkedHashSet<>(declaredFuncRefs);
         for (GlobalDef g : globals) {

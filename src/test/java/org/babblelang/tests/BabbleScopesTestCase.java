@@ -1,9 +1,8 @@
 package org.babblelang.tests;
 
+import javax.script.ScriptException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import javax.script.ScriptException;
 
 public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
@@ -14,8 +13,12 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testPrecedence() throws Exception {
         Assertions.assertEquals(2, interpret("var value = 1; value = value + 1 ; value"));
-        Assertions.assertEquals(2, interpret("def o = object (def value = 1) ; def value = o.value + 1 ; value"));
-        Assertions.assertEquals(1, interpret("def o = object (def value = 1) ; var value : any? = null ; value = o.value ; value"));
+        Assertions.assertEquals(
+                2, interpret("def o = object (def value = 1) ; def value = o.value + 1 ; value"));
+        Assertions.assertEquals(
+                1,
+                interpret(
+                        "def o = object (def value = 1) ; var value : any? = null ; value = o.value ; value"));
     }
 
     @Test
@@ -48,7 +51,9 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testBranchesAndLoopBodiesAreScopes() {
         assertFails("def i = 1 ; if i > 0 then ( def y = 1 ) ; y", "No such name : y");
-        assertFails("var i = 0 ; while i < 3 then ( def x = i * 2 ; i = i + 1 ) ; x", "No such name : x");
+        assertFails(
+                "var i = 0 ; while i < 3 then ( def x = i * 2 ; i = i + 1 ) ; x",
+                "No such name : x");
     }
 
     @Test
@@ -62,36 +67,50 @@ public class BabbleScopesTestCase extends BabbleTestBase {
     @Test
     public void testLoopBodyIsAFreshScopeOnEachIteration() throws Exception {
         // Used to fail on the second iteration with "Name already defined : x".
-        Assertions.assertEquals(4, interpret("var i = 0 ; var s = 0 ; while i < 3 then ( def x = i * 2 ; s = s + x ; i = i + 1 ) ; s - 2"));
+        Assertions.assertEquals(
+                4,
+                interpret(
+                        "var i = 0 ; var s = 0 ; while i < 3 then ( def x = i * 2 ; s = s + x ; i = i + 1 ) ; s - 2"));
         // Closures created in different iterations capture different variables.
-        Assertions.assertEquals(3, interpret(
-                "def Box = class (def f : fn () : int) ()\n"
-                        + "def l : java.util.List of Box = java.util.ArrayList() ; var i = 0\n"
-                        + "while i < 3 then ( def x = i ; l.add(Box(fn () -> ( x ))) ; i = i + 1 )\n"
-                        + "(l.get(0) as Box).f() + (l.get(1) as Box).f() + (l.get(2) as Box).f()"));
+        Assertions.assertEquals(
+                3,
+                interpret(
+                        "def Box = class (def f : fn () : int) ()\n"
+                                + "def l : java.util.List of Box = java.util.ArrayList() ; var i = 0\n"
+                                + "while i < 3 then ( def x = i ; l.add(Box(fn () -> ( x ))) ; i = i + 1 )\n"
+                                + "(l.get(0) as Box).f() + (l.get(1) as Box).f() + (l.get(2) as Box).f()"));
     }
 
     @Test
     public void testNamesAreHoistedToTheStartOfTheirScope() {
         // The local "a" shadows the outer one from the start of the function body.
-        assertFails("def a = 1 ; def f = fn () -> ( def b = a ; def a = 2 ; b + a ) ; f()", "Name used before definition : a");
-        assertFails("def f = fn () -> ( x = 1 ; var x = 2 ) ; f()", "Name used before definition : x");
+        assertFails(
+                "def a = 1 ; def f = fn () -> ( def b = a ; def a = 2 ; b + a ) ; f()",
+                "Name used before definition : a");
+        assertFails(
+                "def f = fn () -> ( x = 1 ; var x = 2 ) ; f()", "Name used before definition : x");
         // At the top level, an implicit of the same name is shadowed too.
-        assertFails("println(1) ; def println = fn (x : any) -> ( x )", "Name used before definition : println");
+        assertFails(
+                "println(1) ; def println = fn (x : any) -> ( x )",
+                "Name used before definition : println");
     }
 
     @Test
     public void testRedefinitionsAreRejectedBeforeRunning() {
         assertFails("def f = fn (a : int) -> ( def a = 2 ) ; 1", "Name already defined : a");
         assertFails("def f = fn (a : int, a : int) -> ( a ) ; 1", "Name already defined : a");
-        assertFails("var i = 0 ; def f = fn (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )", "Definition in a while test : x");
+        assertFails(
+                "var i = 0 ; def f = fn (v : int) -> ( i < 1 ) ; while f(def x = 1) then ( i = 1 )",
+                "Definition in a while test : x");
         // A block in the test is a scope of its own, entered on every evaluation.
-        Assertions.assertDoesNotThrow(() -> interpret("var i = 0 ; while ( def x = i ; x < 2 ) then ( i = i + 1 )"));
+        Assertions.assertDoesNotThrow(
+                () -> interpret("var i = 0 ; while ( def x = i ; x < 2 ) then ( i = i + 1 )"));
     }
 
     @Test
     public void testDefinitionNestedInAnExpressionBelongsToTheEnclosingScope() throws Exception {
-        Assertions.assertEquals(2, interpret("def f = fn (v : int) -> ( v ) ; f(def x = 1) ; x + 1"));
+        Assertions.assertEquals(
+                2, interpret("def f = fn (v : int) -> ( v ) ; f(def x = 1) ; x + 1"));
         Assertions.assertEquals(1, interpret("if def x = 1 then ( x ) else ( 0 )"));
     }
 
@@ -110,7 +129,8 @@ public class BabbleScopesTestCase extends BabbleTestBase {
         // null is not a scope either, and used to surface as a NullPointerException.
         assertStaticFails("def n : any? = null ; n.value", "Not a scope : n", 23);
         assertStaticFails("def f = fn () -> ( 1 ) ; f().value", "Not a scope : f()", 26);
-        assertStaticFails("def f = fn (x : any) : any -> ( x ) ; f(1).value", "Not a scope : f(1)", 39);
+        assertStaticFails(
+                "def f = fn (x : any) : any -> ( x ) ; f(1).value", "Not a scope : f(1)", 39);
     }
 
     @Test
@@ -128,8 +148,11 @@ public class BabbleScopesTestCase extends BabbleTestBase {
             interpret(script);
             Assertions.fail("Should report \"" + message + "\"");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message
-                    + " in <input> at line number 1", e.getMessage());
+            Assertions.assertEquals(
+                    "org.babblelang.runtime.BabbleException: "
+                            + message
+                            + " in <input> at line number 1",
+                    e.getMessage());
         }
     }
 
@@ -138,8 +161,12 @@ public class BabbleScopesTestCase extends BabbleTestBase {
             interpret(script);
             Assertions.fail("Should report \"" + message + "\"");
         } catch (ScriptException e) {
-            Assertions.assertEquals("org.babblelang.runtime.BabbleException: " + message
-                    + " in <input> at line number 1 at column number " + column, e.getMessage());
+            Assertions.assertEquals(
+                    "org.babblelang.runtime.BabbleException: "
+                            + message
+                            + " in <input> at line number 1 at column number "
+                            + column,
+                    e.getMessage());
         }
     }
 

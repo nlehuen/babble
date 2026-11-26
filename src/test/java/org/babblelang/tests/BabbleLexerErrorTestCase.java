@@ -1,15 +1,13 @@
 package org.babblelang.tests;
 
-import org.babblelang.engine.BabbleScriptEngineFactory;
+import javax.script.ScriptException;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import javax.script.ScriptException;
-
 /**
- * A character the grammar doesn't define must abort compilation. ANTLR's default lexer
- * behaviour is to print to stderr, skip the character and carry on, so the engine used to
- * evaluate a mangled token stream and return normally.
+ * A character the grammar doesn't define must abort compilation. ANTLR's default lexer behaviour is
+ * to print to stderr, skip the character and carry on, so the engine used to evaluate a mangled
+ * token stream and return normally.
  */
 public class BabbleLexerErrorTestCase extends BabbleTestBase {
     private ScriptException assertRejected(String script) {
@@ -36,7 +34,8 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
 
         // Already a syntax error once the '#' was dropped, but now reported as the lexical
         // error it actually is.
-        Assertions.assertTrue(assertRejected("def a = 1 # 2").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(
+                assertRejected("def a = 1 # 2").getMessage().contains("Lexical error"));
     }
 
     @Test
@@ -48,11 +47,19 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
     @Test
     public void testSyntaxErrorsSayWhatAndWhere() {
         ScriptException e = assertRejected("def a = 1\ndef = 2");
-        Assertions.assertEquals("org.babblelang.runtime.BabbleException: Syntax error : unexpected '=' in <input> at line number 2 at column number 5", e.getMessage());
+        Assertions.assertEquals(
+                "org.babblelang.runtime.BabbleException: Syntax error : unexpected '=' in <input> at line number 2 at column number 5",
+                e.getMessage());
         Assertions.assertEquals(2, e.getLineNumber());
         Assertions.assertEquals(5, e.getColumnNumber());
-        Assertions.assertTrue(assertRejected("def a = (1 +").getMessage().contains("Syntax error : unexpected end of input"));
-        Assertions.assertTrue(assertRejected("def\na").getMessage().contains("Syntax error : unexpected end of line"));
+        Assertions.assertTrue(
+                assertRejected("def a = (1 +")
+                        .getMessage()
+                        .contains("Syntax error : unexpected end of input"));
+        Assertions.assertTrue(
+                assertRejected("def\na")
+                        .getMessage()
+                        .contains("Syntax error : unexpected end of line"));
     }
 
     @Test
@@ -66,27 +73,54 @@ public class BabbleLexerErrorTestCase extends BabbleTestBase {
 
     @Test
     public void testSingleLineAndMultilineLexicalErrors() {
-        Assertions.assertTrue(assertRejected("def s = \"a\nb\"").getMessage().contains("Lexical error"));
-        Assertions.assertTrue(assertRejected("def s = \"a\rb\"").getMessage().contains("Lexical error"));
-        Assertions.assertTrue(assertRejected("def s = r\"a\nb\"").getMessage().contains("Lexical error"));
-        Assertions.assertTrue(assertRejected("def s = r\"unclosed").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(
+                assertRejected("def s = \"a\nb\"").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(
+                assertRejected("def s = \"a\rb\"").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(
+                assertRejected("def s = r\"a\nb\"").getMessage().contains("Lexical error"));
+        Assertions.assertTrue(
+                assertRejected("def s = r\"unclosed").getMessage().contains("Lexical error"));
 
         ScriptException badOpen = assertRejected("def s = \"\"\"abc\"\"\"");
-        Assertions.assertTrue(badOpen.getMessage().contains("Lexical error at line 1:8 : multiline string opening \"\"\" must be followed by a newline"), badOpen.getMessage());
-        Assertions.assertTrue(assertRejected("def s = r\"\"\"abc\"\"\"").getMessage().contains("multiline string opening \"\"\" must be followed by a newline"));
+        Assertions.assertTrue(
+                badOpen.getMessage()
+                        .contains(
+                                "Lexical error at line 1:8 : multiline string opening \"\"\" must be followed by a newline"),
+                badOpen.getMessage());
+        Assertions.assertTrue(
+                assertRejected("def s = r\"\"\"abc\"\"\"")
+                        .getMessage()
+                        .contains("multiline string opening \"\"\" must be followed by a newline"));
 
         ScriptException mixedWithin = assertRejected("def s = \"\"\"\n \thello\n \"\"\"");
-        Assertions.assertTrue(mixedWithin.getMessage().contains("mixed tabs and spaces in multiline string indentation"), mixedWithin.getMessage());
-        ScriptException mixedAcross = assertRejected("def s = r\"\"\"\n    hello\n\tworld\n    \"\"\"");
-        Assertions.assertTrue(mixedAcross.getMessage().contains("mixed tabs and spaces in multiline string indentation"), mixedAcross.getMessage());
+        Assertions.assertTrue(
+                mixedWithin
+                        .getMessage()
+                        .contains("mixed tabs and spaces in multiline string indentation"),
+                mixedWithin.getMessage());
+        ScriptException mixedAcross =
+                assertRejected("def s = r\"\"\"\n    hello\n\tworld\n    \"\"\"");
+        Assertions.assertTrue(
+                mixedAcross
+                        .getMessage()
+                        .contains("mixed tabs and spaces in multiline string indentation"),
+                mixedAcross.getMessage());
 
         ScriptException badEsc = assertRejected("def s = \"\"\"\n    \\q\n    \"\"\"");
-        Assertions.assertTrue(badEsc.getMessage().contains("unknown escape sequence : \\q"), badEsc.getMessage());
+        Assertions.assertTrue(
+                badEsc.getMessage().contains("unknown escape sequence : \\q"), badEsc.getMessage());
         ScriptException badUni = assertRejected("def s = \"\"\"\n    \\u12g\n    \"\"\"");
-        Assertions.assertTrue(badUni.getMessage().contains("unknown escape sequence : \\u12g"), badUni.getMessage());
+        Assertions.assertTrue(
+                badUni.getMessage().contains("unknown escape sequence : \\u12g"),
+                badUni.getMessage());
         ScriptException shortUni = assertRejected("def s = \"\"\"\n    \\u12\n    \"\"\"");
-        Assertions.assertTrue(shortUni.getMessage().contains("unknown escape sequence : \\u12"), shortUni.getMessage());
+        Assertions.assertTrue(
+                shortUni.getMessage().contains("unknown escape sequence : \\u12"),
+                shortUni.getMessage());
         ScriptException trailingAfterBackslash = assertRejected("def s = \"\"\"\n    a\\   \"\"\"");
-        Assertions.assertTrue(trailingAfterBackslash.getMessage().contains("unknown escape sequence : \\"), trailingAfterBackslash.getMessage());
+        Assertions.assertTrue(
+                trailingAfterBackslash.getMessage().contains("unknown escape sequence : \\"),
+                trailingAfterBackslash.getMessage());
     }
 }

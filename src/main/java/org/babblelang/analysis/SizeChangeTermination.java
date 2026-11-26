@@ -17,17 +17,17 @@ import java.util.Set;
  * <p>Certifies termination of a strongly connected call component when every recursive call cycle
  * can be iteratively eliminated via sound well-founded rankings over non-negative integer or
  * acyclic structural measures:
+ *
  * <ol>
  *   <li>Parameter-SCC sum / multiset / lexicographic ranking (handles direct recursion, mutual
- *       recursion, lexicographic Ackermann, and parameter-permuting {@code gcd}/swap patterns).</li>
- *   <li>Maximum-measure greatest fixed point (handles fan-out decreases).</li>
- *   <li>Minimum-measure greatest fixed point (handles fan-in decreases).</li>
+ *       recursion, lexicographic Ackermann, and parameter-permuting {@code gcd}/swap patterns).
+ *   <li>Maximum-measure greatest fixed point (handles fan-out decreases).
+ *   <li>Minimum-measure greatest fixed point (handles fan-in decreases).
  * </ol>
  */
 final class SizeChangeTermination {
 
-    private SizeChangeTermination() {
-    }
+    private SizeChangeTermination() {}
 
     enum Relation {
         /** Strictly smaller in a well-founded order ({@code <}). */
@@ -36,8 +36,7 @@ final class SizeChangeTermination {
         SAME
     }
 
-    record Edge(int srcParam, int dstParam, Relation rel) {
-    }
+    record Edge(int srcParam, int dstParam, Relation rel) {}
 
     record CallGraph(int from, int to, List<Edge> edges) {
         static CallGraph of(int from, int to, List<Edge> rawEdges) {
@@ -48,7 +47,13 @@ final class SizeChangeTermination {
             Map<Long, Relation> best = new HashMap<>();
             for (Edge e : rawEdges) {
                 long key = (((long) e.srcParam()) << 32) | (e.dstParam() & 0xFFFF_FFFFL);
-                best.merge(key, e.rel(), (a, b) -> (a == Relation.DOWN || b == Relation.DOWN) ? Relation.DOWN : Relation.SAME);
+                best.merge(
+                        key,
+                        e.rel(),
+                        (a, b) ->
+                                (a == Relation.DOWN || b == Relation.DOWN)
+                                        ? Relation.DOWN
+                                        : Relation.SAME);
             }
             List<Edge> dedup = new ArrayList<>(best.size());
             for (Map.Entry<Long, Relation> entry : best.entrySet()) {
@@ -70,8 +75,8 @@ final class SizeChangeTermination {
     }
 
     /**
-     * Returns {@code true} iff every infinite call sequence over {@code calls} is impossible
-     * under well-founded orders on the tracked parameters.
+     * Returns {@code true} iff every infinite call sequence over {@code calls} is impossible under
+     * well-founded orders on the tracked parameters.
      */
     static boolean isTerminating(int[] arities, List<CallGraph> calls) {
         int n = arities.length;
@@ -106,7 +111,9 @@ final class SizeChangeTermination {
             }
             List<CallGraph> next = new ArrayList<>();
             for (CallGraph g : active) {
-                if (inAnyScc.contains(g.from()) && inAnyScc.contains(g.to()) && !toRemove.contains(g)) {
+                if (inAnyScc.contains(g.from())
+                        && inAnyScc.contains(g.to())
+                        && !toRemove.contains(g)) {
                     next.add(g);
                 }
             }
@@ -115,7 +122,8 @@ final class SizeChangeTermination {
         return true;
     }
 
-    private static List<CallGraph> findEliminableEdges(int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
+    private static List<CallGraph> findEliminableEdges(
+            int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
         List<CallGraph> elim = trySumRanking(arities, sccNodes, sccEdges);
         if (!elim.isEmpty()) {
             return elim;
@@ -127,9 +135,11 @@ final class SizeChangeTermination {
         return tryMinRanking(arities, sccNodes, sccEdges);
     }
 
-    // ---------------------------------------------------------------- Criterion 1 : Parameter-SCC sum/multiset ranking
+    // ---------------------------------------------------------------- Criterion 1 : Parameter-SCC
+    // sum/multiset ranking
 
-    private static List<CallGraph> trySumRanking(int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
+    private static List<CallGraph> trySumRanking(
+            int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
         // Assign dense indices 0..totalParams-1 to all (fn, param) pairs in this SCC.
         Map<Integer, Integer> fnBase = new HashMap<>();
         int totalParams = 0;
@@ -157,8 +167,10 @@ final class SizeChangeTermination {
             int fromBase = fnBase.get(g.from());
             int toBase = fnBase.get(g.to());
             for (Edge e : g.edges()) {
-                if (e.srcParam() >= 0 && e.srcParam() < arities[g.from()]
-                        && e.dstParam() >= 0 && e.dstParam() < arities[g.to()]) {
+                if (e.srcParam() >= 0
+                        && e.srcParam() < arities[g.from()]
+                        && e.dstParam() >= 0
+                        && e.dstParam() < arities[g.to()]) {
                     paramAdj.get(fromBase + e.srcParam()).add(toBase + e.dstParam());
                 }
             }
@@ -204,8 +216,8 @@ final class SizeChangeTermination {
      * Checks whether there is an injection {@code m : dstSet -> srcSet} using edges of {@code g}
      * (optionally skipping one pre-matched pair {@code (skipSrc, skipDst)}).
      */
-    private static boolean hasInjection(CallGraph g, List<Integer> srcSet, List<Integer> dstSet,
-                                        int skipSrc, int skipDst) {
+    private static boolean hasInjection(
+            CallGraph g, List<Integer> srcSet, List<Integer> dstSet, int skipSrc, int skipDst) {
         int m = dstSet.size() - (skipDst >= 0 ? 1 : 0);
         int n = srcSet.size() - (skipSrc >= 0 ? 1 : 0);
         if (m == 0) {
@@ -234,8 +246,14 @@ final class SizeChangeTermination {
         return true;
     }
 
-    private static boolean augment(CallGraph g, List<Integer> srcSet, List<Integer> dstSet, int di,
-                                   int skipSrc, boolean[] visited, int[] matchSrc) {
+    private static boolean augment(
+            CallGraph g,
+            List<Integer> srcSet,
+            List<Integer> dstSet,
+            int di,
+            int skipSrc,
+            boolean[] visited,
+            int[] matchSrc) {
         int dst = dstSet.get(di);
         for (int si = 0; si < srcSet.size(); si++) {
             int src = srcSet.get(si);
@@ -243,7 +261,8 @@ final class SizeChangeTermination {
                 continue;
             }
             visited[si] = true;
-            if (matchSrc[si] == -1 || augment(g, srcSet, dstSet, matchSrc[si], skipSrc, visited, matchSrc)) {
+            if (matchSrc[si] == -1
+                    || augment(g, srcSet, dstSet, matchSrc[si], skipSrc, visited, matchSrc)) {
                 matchSrc[si] = di;
                 return true;
             }
@@ -251,10 +270,12 @@ final class SizeChangeTermination {
         return false;
     }
 
-    private static boolean hasStrictInjection(CallGraph g, List<Integer> srcSet, List<Integer> dstSet) {
+    private static boolean hasStrictInjection(
+            CallGraph g, List<Integer> srcSet, List<Integer> dstSet) {
         for (int dst : dstSet) {
             for (int src : srcSet) {
-                if (g.relation(src, dst) == Relation.DOWN && hasInjection(g, srcSet, dstSet, src, dst)) {
+                if (g.relation(src, dst) == Relation.DOWN
+                        && hasInjection(g, srcSet, dstSet, src, dst)) {
                     return true;
                 }
             }
@@ -262,9 +283,11 @@ final class SizeChangeTermination {
         return false;
     }
 
-    // ---------------------------------------------------------------- Criterion 2 : Max-measure greatest fixed point
+    // ---------------------------------------------------------------- Criterion 2 : Max-measure
+    // greatest fixed point
 
-    private static List<CallGraph> tryMaxRanking(int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
+    private static List<CallGraph> tryMaxRanking(
+            int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
         Map<Integer, Set<Integer>> kept = initParamSets(arities, sccNodes);
         boolean changed = true;
         while (changed) {
@@ -321,9 +344,11 @@ final class SizeChangeTermination {
         return strict;
     }
 
-    // ---------------------------------------------------------------- Criterion 3 : Min-measure greatest fixed point
+    // ---------------------------------------------------------------- Criterion 3 : Min-measure
+    // greatest fixed point
 
-    private static List<CallGraph> tryMinRanking(int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
+    private static List<CallGraph> tryMinRanking(
+            int[] arities, List<Integer> sccNodes, List<CallGraph> sccEdges) {
         Map<Integer, Set<Integer>> kept = initParamSets(arities, sccNodes);
         boolean changed = true;
         while (changed) {

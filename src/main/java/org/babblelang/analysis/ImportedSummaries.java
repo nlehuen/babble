@@ -44,8 +44,12 @@ final class ImportedSummaries {
         return modules;
     }
 
-    /** The first answer of the session, then of the modules' published summaries ; null if none knows. */
-    private <T> T find(Function<AnalysisSession, T> fromSession, Function<TypedModuleSummary, T> fromModule) {
+    /**
+     * The first answer of the session, then of the modules' published summaries ; null if none
+     * knows.
+     */
+    private <T> T find(
+            Function<AnalysisSession, T> fromSession, Function<TypedModuleSummary, T> fromModule) {
         if (pass.session != null) {
             T found = fromSession.apply(pass.session);
             if (found != null) {
@@ -79,7 +83,8 @@ final class ImportedSummaries {
     }
 
     Type memberType(TypeNode owner, String name) {
-        return find(s -> member(s.typeMemberTypes.get(owner), name), s -> s.memberType(owner, name));
+        return find(
+                s -> member(s.typeMemberTypes.get(owner), name), s -> s.memberType(owner, name));
     }
 
     List<Type.Parameter> constructorParams(TypeNode node) {

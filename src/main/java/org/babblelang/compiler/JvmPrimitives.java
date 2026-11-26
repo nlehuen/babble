@@ -1,5 +1,9 @@
 package org.babblelang.compiler;
 
+import static org.objectweb.asm.Opcodes.*;
+
+import java.lang.invoke.LambdaMetafactory;
+import java.util.List;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirFunction;
@@ -11,20 +15,13 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Type;
 
-import java.lang.invoke.LambdaMetafactory;
-import java.util.List;
-
-import static org.objectweb.asm.Opcodes.*;
-
 /**
- * Centralized JVM internal names, invokedynamic bootstrap handles, primitive/descriptor
- * mappings, box/unbox/widening/adaptation opcodes, and interface/Java bridge helpers
- * shared across {@link HirEmitter}, {@link ClassGen}, {@link InterfaceGen}, and the
- * specialized emitters (BIP027-I2).
+ * Centralized JVM internal names, invokedynamic bootstrap handles, primitive/descriptor mappings,
+ * box/unbox/widening/adaptation opcodes, and interface/Java bridge helpers shared across {@link
+ * HirEmitter}, {@link ClassGen}, {@link InterfaceGen}, and the specialized emitters (BIP027-I2).
  */
 final class JvmPrimitives {
-    private JvmPrimitives() {
-    }
+    private JvmPrimitives() {}
 
     static final String OBJECT = "java/lang/Object";
     static final String STRING = "java/lang/String";
@@ -67,37 +64,80 @@ final class JvmPrimitives {
     static final String JAVA_TYPES = RUNTIME + "JavaTypes";
     static final String JAVA_OBJECT = "org/babblelang/engine/impl/natives/java/JavaObject";
 
-    static final String RUN_DESCRIPTOR = "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
-    static final String BODY_DESCRIPTOR = "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
-            + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
-    static final String CLASS_BODY_DESCRIPTOR = "(L" + BABBLE_CLASS + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME
-            + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
-    static final String METHOD_DESCRIPTOR = "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME
-            + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;";
+    static final String RUN_DESCRIPTOR =
+            "(L" + SCRIPT_RUNTIME + ";L" + NAMESPACE + ";)Ljava/lang/Object;";
+    static final String BODY_DESCRIPTOR =
+            "(L"
+                    + COMPILED_FUNCTION
+                    + ";Ljava/lang/Object;L"
+                    + SCRIPT_RUNTIME
+                    + ";[Ljava/lang/Object;[Ljava/lang/String;L"
+                    + CALL_SITE
+                    + ";)Ljava/lang/Object;";
+    static final String CLASS_BODY_DESCRIPTOR =
+            "(L"
+                    + BABBLE_CLASS
+                    + ";Ljava/lang/Object;L"
+                    + SCRIPT_RUNTIME
+                    + ";[Ljava/lang/Object;[Ljava/lang/String;L"
+                    + CALL_SITE
+                    + ";)Ljava/lang/Object;";
+    static final String METHOD_DESCRIPTOR =
+            "(L"
+                    + COMPILED_METHOD
+                    + ";L"
+                    + SCRIPT_RUNTIME
+                    + ";[Ljava/lang/Object;[Ljava/lang/String;L"
+                    + CALL_SITE
+                    + ";)Ljava/lang/Object;";
 
-    static final Handle METAFACTORY = new Handle(H_INVOKESTATIC, Type.getInternalName(LambdaMetafactory.class), "metafactory",
-            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
-                    + "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
-            false);
+    static final Handle METAFACTORY =
+            new Handle(
+                    H_INVOKESTATIC,
+                    Type.getInternalName(LambdaMetafactory.class),
+                    "metafactory",
+                    "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+                            + "Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+                    false);
 
     static final String BOOTSTRAP = RUNTIME + "Bootstrap";
-    static final Handle SELECT_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "select",
-            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
-                    + "Ljava/lang/String;Ljava/lang/String;)Ljava/lang/invoke/CallSite;",
-            false);
-    static final Handle NAME_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "name",
-            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
-                    + "Ljava/lang/String;)Ljava/lang/invoke/CallSite;",
-            false);
-    static final Handle CALL_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "call",
-            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
-            false);
-    static final Handle TYPED_CALL_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "typedCall",
-            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
-            false);
-    static final Handle TYPED_CALL_OPT_BOOTSTRAP = new Handle(H_INVOKESTATIC, BOOTSTRAP, "typedCallOpt",
-            "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;I)Ljava/lang/invoke/CallSite;",
-            false);
+    static final Handle SELECT_BOOTSTRAP =
+            new Handle(
+                    H_INVOKESTATIC,
+                    BOOTSTRAP,
+                    "select",
+                    "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+                            + "Ljava/lang/String;Ljava/lang/String;)Ljava/lang/invoke/CallSite;",
+                    false);
+    static final Handle NAME_BOOTSTRAP =
+            new Handle(
+                    H_INVOKESTATIC,
+                    BOOTSTRAP,
+                    "name",
+                    "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;"
+                            + "Ljava/lang/String;)Ljava/lang/invoke/CallSite;",
+                    false);
+    static final Handle CALL_BOOTSTRAP =
+            new Handle(
+                    H_INVOKESTATIC,
+                    BOOTSTRAP,
+                    "call",
+                    "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+                    false);
+    static final Handle TYPED_CALL_BOOTSTRAP =
+            new Handle(
+                    H_INVOKESTATIC,
+                    BOOTSTRAP,
+                    "typedCall",
+                    "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+                    false);
+    static final Handle TYPED_CALL_OPT_BOOTSTRAP =
+            new Handle(
+                    H_INVOKESTATIC,
+                    BOOTSTRAP,
+                    "typedCallOpt",
+                    "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;I)Ljava/lang/invoke/CallSite;",
+                    false);
 
     // ---------------------------------------------------------------- descriptors
 
@@ -116,13 +156,24 @@ final class JvmPrimitives {
     }
 
     static String functionDirectDescriptor(HirFunction fn) {
-        return "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
-                + "Ljava/lang/Object;".repeat(fn.params().size()) + ")Ljava/lang/Object;";
+        return "(L"
+                + COMPILED_FUNCTION
+                + ";Ljava/lang/Object;L"
+                + SCRIPT_RUNTIME
+                + ";L"
+                + BINDER
+                + ";"
+                + "Ljava/lang/Object;".repeat(fn.params().size())
+                + ")Ljava/lang/Object;";
     }
 
     static String functionSpecDescriptor(HirFunction fn) {
         StringBuilder sb = new StringBuilder();
-        sb.append("(L").append(COMPILED_FUNCTION).append(";Ljava/lang/Object;L").append(SCRIPT_RUNTIME).append(';');
+        sb.append("(L")
+                .append(COMPILED_FUNCTION)
+                .append(";Ljava/lang/Object;L")
+                .append(SCRIPT_RUNTIME)
+                .append(';');
         for (HirParam param : fn.params()) {
             sb.append(jvmDescriptor(param.kind()));
         }
@@ -135,7 +186,11 @@ final class JvmPrimitives {
 
     static String functionSpecDescriptor(LoweringTargets.FunctionSignature sig) {
         StringBuilder sb = new StringBuilder();
-        sb.append("(L").append(COMPILED_FUNCTION).append(";Ljava/lang/Object;L").append(SCRIPT_RUNTIME).append(';');
+        sb.append("(L")
+                .append(COMPILED_FUNCTION)
+                .append(";Ljava/lang/Object;L")
+                .append(SCRIPT_RUNTIME)
+                .append(';');
         for (PrimitiveKind pk : sig.parameterKinds()) {
             sb.append(jvmDescriptor(pk));
         }
@@ -147,13 +202,27 @@ final class JvmPrimitives {
     }
 
     static String functionDirectDescriptor(LoweringTargets.FunctionSignature sig) {
-        return "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
-                + "Ljava/lang/Object;".repeat(sig.parameterKinds().length) + ")Ljava/lang/Object;";
+        return "(L"
+                + COMPILED_FUNCTION
+                + ";Ljava/lang/Object;L"
+                + SCRIPT_RUNTIME
+                + ";L"
+                + BINDER
+                + ";"
+                + "Ljava/lang/Object;".repeat(sig.parameterKinds().length)
+                + ")Ljava/lang/Object;";
     }
 
     static String methodDirectDescriptor(HirFunction fn) {
-        return "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
-                + "Ljava/lang/Object;".repeat(fn.params().size()) + ")Ljava/lang/Object;";
+        return "(L"
+                + COMPILED_METHOD
+                + ";L"
+                + SCRIPT_RUNTIME
+                + ";L"
+                + BINDER
+                + ";"
+                + "Ljava/lang/Object;".repeat(fn.params().size())
+                + ")Ljava/lang/Object;";
     }
 
     static String methodSpecDescriptor(HirFunction fn) {
@@ -184,7 +253,13 @@ final class JvmPrimitives {
 
     static String methodDirectDescriptor(LoweringTargets.FunctionSignature sig) {
         StringBuilder sb = new StringBuilder();
-        sb.append("(L").append(COMPILED_METHOD).append(";L").append(SCRIPT_RUNTIME).append(";L").append(BINDER).append(';');
+        sb.append("(L")
+                .append(COMPILED_METHOD)
+                .append(";L")
+                .append(SCRIPT_RUNTIME)
+                .append(";L")
+                .append(BINDER)
+                .append(';');
         for (int i = 0; i < sig.parameterKinds().length; i++) {
             sb.append("Ljava/lang/Object;");
         }
@@ -219,24 +294,26 @@ final class JvmPrimitives {
     // ---------------------------------------------------------------- stack & local opcodes
 
     static void loadKindOn(MethodVisitor m, PrimitiveKind kind, int slot) {
-        int op = switch (kind) {
-            case BYTE, SHORT, INT, BOOL, CHAR -> ILOAD;
-            case LONG -> LLOAD;
-            case FLOAT -> FLOAD;
-            case DOUBLE -> DLOAD;
-            case NONE -> ALOAD;
-        };
+        int op =
+                switch (kind) {
+                    case BYTE, SHORT, INT, BOOL, CHAR -> ILOAD;
+                    case LONG -> LLOAD;
+                    case FLOAT -> FLOAD;
+                    case DOUBLE -> DLOAD;
+                    case NONE -> ALOAD;
+                };
         m.visitVarInsn(op, slot);
     }
 
     static void storeKindOn(MethodVisitor m, PrimitiveKind kind, int slot) {
-        int op = switch (kind) {
-            case BYTE, SHORT, INT, BOOL, CHAR -> ISTORE;
-            case LONG -> LSTORE;
-            case FLOAT -> FSTORE;
-            case DOUBLE -> DSTORE;
-            case NONE -> ASTORE;
-        };
+        int op =
+                switch (kind) {
+                    case BYTE, SHORT, INT, BOOL, CHAR -> ISTORE;
+                    case LONG -> LSTORE;
+                    case FLOAT -> FSTORE;
+                    case DOUBLE -> DSTORE;
+                    case NONE -> ASTORE;
+                };
         m.visitVarInsn(op, slot);
     }
 
@@ -270,31 +347,97 @@ final class JvmPrimitives {
 
     static void boxOn(MethodVisitor m, PrimitiveKind kind) {
         switch (kind) {
-            case BYTE -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Byte", "valueOf", "(B)Ljava/lang/Byte;", false);
-            case SHORT -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Short", "valueOf", "(S)Ljava/lang/Short;", false);
-            case INT -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Integer", "valueOf", "(I)Ljava/lang/Integer;", false);
-            case LONG -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Long", "valueOf", "(J)Ljava/lang/Long;", false);
-            case FLOAT -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Float", "valueOf", "(F)Ljava/lang/Float;", false);
-            case DOUBLE -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Double", "valueOf", "(D)Ljava/lang/Double;", false);
-            case BOOL -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Boolean", "valueOf", "(Z)Ljava/lang/Boolean;", false);
-            case CHAR -> m.visitMethodInsn(INVOKESTATIC, "java/lang/Character", "valueOf", "(C)Ljava/lang/Character;", false);
-            case NONE -> {
-            }
+            case BYTE ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Byte",
+                            "valueOf",
+                            "(B)Ljava/lang/Byte;",
+                            false);
+            case SHORT ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Short",
+                            "valueOf",
+                            "(S)Ljava/lang/Short;",
+                            false);
+            case INT ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Integer",
+                            "valueOf",
+                            "(I)Ljava/lang/Integer;",
+                            false);
+            case LONG ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Long",
+                            "valueOf",
+                            "(J)Ljava/lang/Long;",
+                            false);
+            case FLOAT ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Float",
+                            "valueOf",
+                            "(F)Ljava/lang/Float;",
+                            false);
+            case DOUBLE ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Double",
+                            "valueOf",
+                            "(D)Ljava/lang/Double;",
+                            false);
+            case BOOL ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Boolean",
+                            "valueOf",
+                            "(Z)Ljava/lang/Boolean;",
+                            false);
+            case CHAR ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            "java/lang/Character",
+                            "valueOf",
+                            "(C)Ljava/lang/Character;",
+                            false);
+            case NONE -> {}
         }
     }
 
     static void unboxOn(MethodVisitor m, PrimitiveKind kind) {
         switch (kind) {
-            case BYTE -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxByte", "(Ljava/lang/Object;)B", false);
-            case SHORT -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxShort", "(Ljava/lang/Object;)S", false);
-            case INT -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxInt", "(Ljava/lang/Object;)I", false);
-            case LONG -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxLong", "(Ljava/lang/Object;)J", false);
-            case FLOAT -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxFloat", "(Ljava/lang/Object;)F", false);
-            case DOUBLE -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxDouble", "(Ljava/lang/Object;)D", false);
-            case BOOL -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxBool", "(Ljava/lang/Object;)Z", false);
-            case CHAR -> m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "unboxChar", "(Ljava/lang/Object;)C", false);
-            case NONE -> {
-            }
+            case BYTE ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxByte", "(Ljava/lang/Object;)B", false);
+            case SHORT ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxShort", "(Ljava/lang/Object;)S", false);
+            case INT ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxInt", "(Ljava/lang/Object;)I", false);
+            case LONG ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxLong", "(Ljava/lang/Object;)J", false);
+            case FLOAT ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxFloat", "(Ljava/lang/Object;)F", false);
+            case DOUBLE ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            JAVA_TYPES,
+                            "unboxDouble",
+                            "(Ljava/lang/Object;)D",
+                            false);
+            case BOOL ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxBool", "(Ljava/lang/Object;)Z", false);
+            case CHAR ->
+                    m.visitMethodInsn(
+                            INVOKESTATIC, JAVA_TYPES, "unboxChar", "(Ljava/lang/Object;)C", false);
+            case NONE -> {}
         }
     }
 
@@ -342,8 +485,7 @@ final class JvmPrimitives {
         }
         if (f <= 2) {
             switch (to) {
-                case BYTE, SHORT, INT -> {
-                }
+                case BYTE, SHORT, INT -> {}
                 case LONG -> m.visitInsn(I2L);
                 case FLOAT -> m.visitInsn(I2F);
                 case DOUBLE -> m.visitInsn(I2D);
@@ -389,7 +531,8 @@ final class JvmPrimitives {
                 }
                 case SHORT -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "shortValue", "()S", false);
+                    m.visitMethodInsn(
+                            INVOKEVIRTUAL, "java/lang/Number", "shortValue", "()S", false);
                 }
                 case INT -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Number");
@@ -401,22 +544,25 @@ final class JvmPrimitives {
                 }
                 case FLOAT -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
+                    m.visitMethodInsn(
+                            INVOKEVIRTUAL, "java/lang/Number", "floatValue", "()F", false);
                 }
                 case DOUBLE -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Number");
-                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
+                    m.visitMethodInsn(
+                            INVOKEVIRTUAL, "java/lang/Number", "doubleValue", "()D", false);
                 }
                 case BOOL -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Boolean");
-                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
+                    m.visitMethodInsn(
+                            INVOKEVIRTUAL, "java/lang/Boolean", "booleanValue", "()Z", false);
                 }
                 case CHAR -> {
                     m.visitTypeInsn(CHECKCAST, "java/lang/Character");
-                    m.visitMethodInsn(INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
+                    m.visitMethodInsn(
+                            INVOKEVIRTUAL, "java/lang/Character", "charValue", "()C", false);
                 }
-                case NONE -> {
-                }
+                case NONE -> {}
             }
             return;
         }
@@ -426,10 +572,20 @@ final class JvmPrimitives {
 
     static void emitWidenBoxed(MethodVisitor m, int widenRank) {
         if (widenRank == 5) {
-            m.visitMethodInsn(INVOKESTATIC, VALUES, "toDouble", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "toDouble",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
         } else if (widenRank >= 0) {
             ConstantPool.pushInt(m, widenRank);
-            m.visitMethodInsn(INVOKESTATIC, VALUES, "widenNumeric", "(Ljava/lang/Object;I)Ljava/lang/Object;", false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "widenNumeric",
+                    "(Ljava/lang/Object;I)Ljava/lang/Object;",
+                    false);
         }
     }
 
@@ -454,7 +610,8 @@ final class JvmPrimitives {
         }
     }
 
-    // ---------------------------------------------------------------- bridge descriptors & marshaling
+    // ---------------------------------------------------------------- bridge descriptors &
+    // marshaling
 
     static String bridgeMethodName(String member) {
         return "bm$" + member;
@@ -504,7 +661,8 @@ final class JvmPrimitives {
         return true;
     }
 
-    static void emitLoadBridgeArgBoxed(MethodVisitor m, LoweringTargets.FunctionSignature sig, int[] paramSlots, int index) {
+    static void emitLoadBridgeArgBoxed(
+            MethodVisitor m, LoweringTargets.FunctionSignature sig, int[] paramSlots, int index) {
         PrimitiveKind pk = sig.parameterKinds()[index];
         if (!sig.isOptional(index)) {
             loadKindOn(m, pk, paramSlots[index]);
@@ -526,7 +684,11 @@ final class JvmPrimitives {
         m.visitLabel(done);
     }
 
-    static void emitRemapBridgeMask(MethodVisitor m, LoweringTargets.FunctionSignature sig, HirFunction fn, int ifaceCount) {
+    static void emitRemapBridgeMask(
+            MethodVisitor m,
+            LoweringTargets.FunctionSignature sig,
+            HirFunction fn,
+            int ifaceCount) {
         if (!fn.hasOptionalMask()) {
             return;
         }
@@ -540,12 +702,18 @@ final class JvmPrimitives {
         }
     }
 
-    static void emitAdaptBridgeArg(MethodVisitor m, LoweringTargets.FunctionSignature sig, int[] paramSlots,
-                                   int index, PrimitiveKind toK, int widenRank) {
+    static void emitAdaptBridgeArg(
+            MethodVisitor m,
+            LoweringTargets.FunctionSignature sig,
+            int[] paramSlots,
+            int index,
+            PrimitiveKind toK,
+            int widenRank) {
         PrimitiveKind fromK = sig.parameterKinds()[index];
-        boolean needsNullGuard = sig.isOptional(index)
-                && fromK == PrimitiveKind.NONE
-                && (toK != PrimitiveKind.NONE || widenRank >= 0);
+        boolean needsNullGuard =
+                sig.isOptional(index)
+                        && fromK == PrimitiveKind.NONE
+                        && (toK != PrimitiveKind.NONE || widenRank >= 0);
         if (!needsNullGuard) {
             loadKindOn(m, fromK, paramSlots[index]);
             emitAdaptKind(m, fromK, toK);
@@ -572,7 +740,8 @@ final class JvmPrimitives {
         m.visitLabel(done);
     }
 
-    static void packBridgeArgsArray(MethodVisitor m, LoweringTargets.FunctionSignature sig, int[] paramSlots) {
+    static void packBridgeArgsArray(
+            MethodVisitor m, LoweringTargets.FunctionSignature sig, int[] paramSlots) {
         PrimitiveKind[] kinds = sig.parameterKinds();
         if (kinds.length == 0) {
             m.visitFieldInsn(GETSTATIC, ARGUMENTS, "NONE", "[Ljava/lang/Object;");
@@ -588,8 +757,12 @@ final class JvmPrimitives {
         }
     }
 
-    private static void emitLoadPrimitiveBridgeArg(MethodVisitor m, PrimitiveKind fromKind, int slot,
-                                                   PrimitiveKind targetKind, int widenRank) {
+    private static void emitLoadPrimitiveBridgeArg(
+            MethodVisitor m,
+            PrimitiveKind fromKind,
+            int slot,
+            PrimitiveKind targetKind,
+            int widenRank) {
         loadKindOn(m, fromKind, slot);
         if (targetKind == PrimitiveKind.NONE && widenRank >= 0) {
             boxOn(m, fromKind);
@@ -599,22 +772,43 @@ final class JvmPrimitives {
         }
     }
 
-    static void emitLoadJavaBridgeArg(MethodVisitor m, Class<?> pType, int slot,
-                                      PrimitiveKind targetKind, int widenRank, String checkedDesc) {
+    static void emitLoadJavaBridgeArg(
+            MethodVisitor m,
+            Class<?> pType,
+            int slot,
+            PrimitiveKind targetKind,
+            int widenRank,
+            String checkedDesc) {
         PrimitiveKind pk = javaPrimitiveKind(pType);
         if (pk != PrimitiveKind.NONE) {
             emitLoadPrimitiveBridgeArg(m, pk, slot, targetKind, widenRank);
             return;
         }
         m.visitVarInsn(ALOAD, slot);
-        if (pType != String.class && pType != Byte.class && pType != Short.class
-                && pType != Integer.class && pType != Long.class && pType != Float.class
-                && pType != Double.class && pType != Boolean.class && pType != Character.class) {
-            m.visitMethodInsn(INVOKESTATIC, VALUES, "fromJava", "(Ljava/lang/Object;)Ljava/lang/Object;", false);
+        if (pType != String.class
+                && pType != Byte.class
+                && pType != Short.class
+                && pType != Integer.class
+                && pType != Long.class
+                && pType != Float.class
+                && pType != Double.class
+                && pType != Boolean.class
+                && pType != Character.class) {
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    VALUES,
+                    "fromJava",
+                    "(Ljava/lang/Object;)Ljava/lang/Object;",
+                    false);
         }
         if (checkedDesc != null) {
             m.visitLdcInsn(checkedDesc);
-            m.visitMethodInsn(INVOKESTATIC, TYPES, "check", "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;", false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    TYPES,
+                    "check",
+                    "(Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
+                    false);
         }
         if (targetKind == PrimitiveKind.NONE && widenRank >= 0) {
             emitWidenBoxed(m, widenRank);
@@ -623,7 +817,8 @@ final class JvmPrimitives {
         }
     }
 
-    static void emitPackJavaBridgeArgs(MethodVisitor m, Class<?>[] paramTypes, int[] javaParamSlots) {
+    static void emitPackJavaBridgeArgs(
+            MethodVisitor m, Class<?>[] paramTypes, int[] javaParamSlots) {
         if (paramTypes.length == 0) {
             m.visitFieldInsn(GETSTATIC, ARGUMENTS, "NONE", "[Ljava/lang/Object;");
             return;
@@ -633,13 +828,18 @@ final class JvmPrimitives {
         for (int i = 0; i < paramTypes.length; i++) {
             m.visitInsn(DUP);
             ConstantPool.pushInt(m, i);
-            emitLoadJavaBridgeArg(m, paramTypes[i], javaParamSlots[i], PrimitiveKind.NONE, -1, null);
+            emitLoadJavaBridgeArg(
+                    m, paramTypes[i], javaParamSlots[i], PrimitiveKind.NONE, -1, null);
             m.visitInsn(AASTORE);
         }
     }
 
-    static void emitReturnToJava(MethodVisitor m, PrimitiveKind fromKind, Class<?> retType,
-                                 String description, int rtSlot) {
+    static void emitReturnToJava(
+            MethodVisitor m,
+            PrimitiveKind fromKind,
+            Class<?> retType,
+            String description,
+            int rtSlot) {
         if (retType == void.class) {
             m.visitInsn(fromKind.slots() == 2 ? POP2 : POP);
             m.visitInsn(RETURN);
@@ -647,7 +847,10 @@ final class JvmPrimitives {
         }
         PrimitiveKind retKind = javaPrimitiveKind(retType);
         if (retKind.isPrimitive() && fromKind.isPrimitive()) {
-            if (fromKind == retKind || (isNumericKind(fromKind) && isNumericKind(retKind) && emitPrimitiveWidening(m, fromKind, retKind))) {
+            if (fromKind == retKind
+                    || (isNumericKind(fromKind)
+                            && isNumericKind(retKind)
+                            && emitPrimitiveWidening(m, fromKind, retKind))) {
                 m.visitInsn(returnInsn(retKind));
                 return;
             }
@@ -656,8 +859,14 @@ final class JvmPrimitives {
         emitPushClassConstant(m, retType);
         ConstantPool.pushString(m, description);
         m.visitVarInsn(ALOAD, rtSlot);
-        m.visitMethodInsn(INVOKESTATIC, JAVA_TYPES, "convertResult",
-                "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;L" + SCRIPT_RUNTIME + ";)Ljava/lang/Object;", false);
+        m.visitMethodInsn(
+                INVOKESTATIC,
+                JAVA_TYPES,
+                "convertResult",
+                "(Ljava/lang/Object;Ljava/lang/Class;Ljava/lang/String;L"
+                        + SCRIPT_RUNTIME
+                        + ";)Ljava/lang/Object;",
+                false);
         if (retKind.isPrimitive()) {
             unboxWrapperAndReturn(m, retKind);
         } else {

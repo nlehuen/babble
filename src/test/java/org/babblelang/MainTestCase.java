@@ -1,10 +1,5 @@
 package org.babblelang;
 
-import org.babblelang.engine.BabbleScriptEngine;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
 import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
@@ -13,17 +8,18 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * The command line (docs/design/bip004_repl.md) : a script given as an argument runs, without the
  * interactive mode unless {@code -keep-alive} asks for it.
  */
 public class MainTestCase {
-    @TempDir
-    Path directory;
+    @TempDir Path directory;
 
-    private record Run(int status, List<String> out, List<String> err) {
-    }
+    private record Run(int status, List<String> out, List<String> err) {}
 
     private static List<String> lines(StringWriter writer) {
         return writer.toString().isEmpty() ? List.of() : List.of(writer.toString().split("\\R"));
@@ -33,7 +29,13 @@ public class MainTestCase {
     private static Run run(String input, String... args) throws Exception {
         StringWriter out = new StringWriter();
         StringWriter err = new StringWriter();
-        int status = Main.run(args, new BufferedReader(new StringReader(input)), new PrintWriter(out), new PrintWriter(err), false);
+        int status =
+                Main.run(
+                        args,
+                        new BufferedReader(new StringReader(input)),
+                        new PrintWriter(out),
+                        new PrintWriter(err),
+                        false);
         return new Run(status, lines(out), lines(err));
     }
 
@@ -45,7 +47,10 @@ public class MainTestCase {
 
     @Test
     public void testAScriptRunsWithoutTheInteractiveMode() throws Exception {
-        String hello = script("hello.ba", ";; greets\ndef greet = fn (name : string) : string -> ( \"Hello, \" + name )\nprintln(greet(\"world\"))\n42\n");
+        String hello =
+                script(
+                        "hello.ba",
+                        ";; greets\ndef greet = fn (name : string) : string -> ( \"Hello, \" + name )\nprintln(greet(\"world\"))\n42\n");
         // What is typed is not read, and the script's value is not shown.
         Run run = run("1 + 1\n", hello);
         Assertions.assertEquals(new Run(0, List.of("Hello, world"), List.of()), run);
@@ -53,56 +58,115 @@ public class MainTestCase {
 
     @Test
     public void testAScriptGetsItsArguments() throws Exception {
-        String echo = script("echo.ba", "var i = 0\nwhile i < args.size() then ( println(i, \" \", args.get(i)) ; i = i + 1 )\nprintln(args.size())");
-        Assertions.assertEquals(List.of("0 a", "1 -keep-alive", "2 b c", "3"), run("", echo, "a", "-keep-alive", "b c").out());
+        String echo =
+                script(
+                        "echo.ba",
+                        "var i = 0\nwhile i < args.size() then ( println(i, \" \", args.get(i)) ; i = i + 1 )\nprintln(args.size())");
+        Assertions.assertEquals(
+                List.of("0 a", "1 -keep-alive", "2 b c", "3"),
+                run("", echo, "a", "-keep-alive", "b c").out());
         Assertions.assertEquals(List.of("0"), run("", echo).out());
         // A script can define the name for itself.
-        Assertions.assertEquals(List.of("mine"), run("", script("own.ba", "def args = \"mine\" ; println(args)"), "a").out());
+        Assertions.assertEquals(
+                List.of("mine"),
+                run("", script("own.ba", "def args = \"mine\" ; println(args)"), "a").out());
     }
 
     @Test
     public void testKeepAliveContinuesInTheInteractiveMode() throws Exception {
-        String definitions = script("definitions.ba", "def twice = fn (n : int) : int -> ( n * 2 )\nprintln(\"loaded\")");
+        String definitions =
+                script(
+                        "definitions.ba",
+                        "def twice = fn (n : int) : int -> ( n * 2 )\nprintln(\"loaded\")");
         Run run = run("twice(21)\nargs.get(0)\n", "-keep-alive", definitions, "x");
         Assertions.assertEquals(new Run(0, List.of("loaded", "42", "\"x\""), List.of()), run);
-        Assertions.assertEquals(List.of("loaded", "4"), run("twice(2)\n", "--keep-alive", definitions).out());
+        Assertions.assertEquals(
+                List.of("loaded", "4"), run("twice(2)\n", "--keep-alive", definitions).out());
     }
 
-    /** After a script, the interactive mode's :type and :load see what it defined (docs/design/bip004_repl.md §9). */
+    /**
+     * After a script, the interactive mode's :type and :load see what it defined
+     * (docs/design/bip004_repl.md §9).
+     */
     @Test
     public void testKeepAliveWithTypeAndLoad() throws Exception {
-        String definitions = script("definitions.ba", "def twice = fn (n : int) : int -> ( n * 2 )");
-        String more = script("more.ba", "def quad = fn (n : int) : int -> ( twice(twice(n)) )\nprintln(\"more\")");
-        Run run = run(":type twice\n:load " + more + "\n:type quad(1)\nquad(3)\n", "-keep-alive", definitions);
-        Assertions.assertEquals(new Run(0, List.of("fn (n : int) : int", "more", "int", "12"), List.of()), run);
+        String definitions =
+                script("definitions.ba", "def twice = fn (n : int) : int -> ( n * 2 )");
+        String more =
+                script(
+                        "more.ba",
+                        "def quad = fn (n : int) : int -> ( twice(twice(n)) )\nprintln(\"more\")");
+        Run run =
+                run(
+                        ":type twice\n:load " + more + "\n:type quad(1)\nquad(3)\n",
+                        "-keep-alive",
+                        definitions);
+        Assertions.assertEquals(
+                new Run(0, List.of("fn (n : int) : int", "more", "int", "12"), List.of()), run);
     }
 
     @Test
     public void testAFailingScript() throws Exception {
-        String failing = script("failing.ba", "def a = 1\nprintln(\"before\")\nnosuch\nprintln(\"after\")");
+        String failing =
+                script("failing.ba", "def a = 1\nprintln(\"before\")\nnosuch\nprintln(\"after\")");
         Run run = run("", failing);
-        Assertions.assertEquals(new Run(Main.FAILED, List.of("before"), List.of("Error : No such name : nosuch in " + failing + " at line number 3")), run);
-        // With -keep-alive, the interactive mode starts all the same, with what the script defined until then.
-        Assertions.assertEquals(new Run(0, List.of("before", "Error : No such name : nosuch in " + failing + " at line number 3", "1"), List.of()),
+        Assertions.assertEquals(
+                new Run(
+                        Main.FAILED,
+                        List.of("before"),
+                        List.of(
+                                "Error : No such name : nosuch in "
+                                        + failing
+                                        + " at line number 3")),
+                run);
+        // With -keep-alive, the interactive mode starts all the same, with what the script defined
+        // until then.
+        Assertions.assertEquals(
+                new Run(
+                        0,
+                        List.of(
+                                "before",
+                                "Error : No such name : nosuch in " + failing + " at line number 3",
+                                "1"),
+                        List.of()),
                 run("a\n", "-keep-alive", failing));
 
         String syntax = script("syntax.ba", "def a = 1\ndef = 2");
-        Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Syntax error : unexpected '=' in " + syntax + " at line number 2 at column number 5")),
+        Assertions.assertEquals(
+                new Run(
+                        Main.FAILED,
+                        List.of(),
+                        List.of(
+                                "Error : Syntax error : unexpected '=' in "
+                                        + syntax
+                                        + " at line number 2 at column number 5")),
                 run("", syntax));
-        String overflow = script("overflow.ba", "def r = fn (n : int) : int -> ( 1 + recurse(n + 1) )\nr(1)");
-        Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Stack overflow in " + overflow)), run("", overflow));
+        String overflow =
+                script("overflow.ba", "def r = fn (n : int) : int -> ( 1 + recurse(n + 1) )\nr(1)");
+        Assertions.assertEquals(
+                new Run(Main.FAILED, List.of(), List.of("Error : Stack overflow in " + overflow)),
+                run("", overflow));
     }
 
     @Test
     public void testEmptyScripts() throws Exception {
         Assertions.assertEquals(new Run(0, List.of(), List.of()), run("", script("empty.ba", "")));
-        Assertions.assertEquals(new Run(0, List.of(), List.of()), run("", script("comments.ba", ";; nothing here\n\n")));
+        Assertions.assertEquals(
+                new Run(0, List.of(), List.of()),
+                run("", script("comments.ba", ";; nothing here\n\n")));
     }
 
     @Test
     public void testTheTypeCheckerAppliesToScripts() throws Exception {
         String typed = script("typed.ba", "def x : int = \"s\"\nprintln(\"ran\")");
-        Assertions.assertEquals(new Run(Main.FAILED, List.of(), List.of("Error : Type error : expected int, got string in " + typed + " at line number 1, column 15")),
+        Assertions.assertEquals(
+                new Run(
+                        Main.FAILED,
+                        List.of(),
+                        List.of(
+                                "Error : Type error : expected int, got string in "
+                                        + typed
+                                        + " at line number 1, column 15")),
                 run("", typed));
     }
 
@@ -115,7 +179,15 @@ public class MainTestCase {
     @Test
     public void testCommandLineErrors() throws Exception {
         Run missing = run("", directory.resolve("missing.ba").toString());
-        Assertions.assertEquals(new Run(Main.USAGE_ERROR, List.of(), List.of("Cannot read " + directory.resolve("missing.ba") + " : no such file")), missing);
+        Assertions.assertEquals(
+                new Run(
+                        Main.USAGE_ERROR,
+                        List.of(),
+                        List.of(
+                                "Cannot read "
+                                        + directory.resolve("missing.ba")
+                                        + " : no such file")),
+                missing);
 
         Run unknown = run("1\n", "-nope", "x.ba");
         Assertions.assertEquals(Main.USAGE_ERROR, unknown.status());
@@ -130,25 +202,41 @@ public class MainTestCase {
 
     @Test
     public void testCompile() throws Exception {
-        script("main.ba", "def lib = import(\"lib.ba\")\nprintln(lib.greeting, \" \", args.size())");
+        script(
+                "main.ba",
+                "def lib = import(\"lib.ba\")\nprintln(lib.greeting, \" \", args.size())");
         script("lib.ba", "export def greeting = \"hello\"");
         Run run = run("", "-compile", directory.resolve("main.ba").toString());
         Path jar = directory.resolve("main.jar");
-        Assertions.assertEquals(new Run(0, List.of("Wrote " + jar + " : 2 modules"), List.of()), run);
+        Assertions.assertEquals(
+                new Run(0, List.of("Wrote " + jar + " : 2 modules"), List.of()), run);
         Assertions.assertTrue(Files.isRegularFile(jar));
 
         Path other = directory.resolve("other.jar");
-        run = run("", "-compile", directory.resolve("main.ba").toString(), "-o", other.toString(), "-root", directory.toString());
-        Assertions.assertEquals(new Run(0, List.of("Wrote " + other + " : 2 modules"), List.of()), run);
+        run =
+                run(
+                        "",
+                        "-compile",
+                        directory.resolve("main.ba").toString(),
+                        "-o",
+                        other.toString(),
+                        "-root",
+                        directory.toString());
+        Assertions.assertEquals(
+                new Run(0, List.of("Wrote " + other + " : 2 modules"), List.of()), run);
         Assertions.assertArrayEquals(Files.readAllBytes(jar), Files.readAllBytes(other));
 
         String failing = script("failing.ba", "import(\"nowhere.ba\")");
         run = run("", "-compile", failing);
         Assertions.assertEquals(Main.FAILED, run.status());
-        Assertions.assertTrue(run.err().get(0).startsWith("Error : Cannot import nowhere.ba : no such file"), run.err().toString());
+        Assertions.assertTrue(
+                run.err().get(0).startsWith("Error : Cannot import nowhere.ba : no such file"),
+                run.err().toString());
 
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile").status());
-        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", directory.resolve("missing.ba").toString()).status());
+        Assertions.assertEquals(
+                Main.USAGE_ERROR,
+                run("", "-compile", directory.resolve("missing.ba").toString()).status());
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", failing, "-x").status());
     }
 
@@ -164,7 +252,8 @@ public class MainTestCase {
         Path jar1 = directory.resolve("opt1.jar");
         Assertions.assertEquals(0, run("", "-compile", s, "-O0", "-o", jar0.toString()).status());
         Assertions.assertEquals(0, run("", "-compile", s, "-O1", "-o", jar1.toString()).status());
-        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-compile", s, "-O3", "-o", jar0.toString()).status());
+        Assertions.assertEquals(
+                Main.USAGE_ERROR, run("", "-compile", s, "-O3", "-o", jar0.toString()).status());
     }
 
     @Test
@@ -178,17 +267,22 @@ public class MainTestCase {
         Run pkg = run("", "-axioms", "java.util.function");
         Assertions.assertEquals(0, pkg.status(), pkg.err().toString());
         String pkgOut = String.join("\n", pkg.out());
-        Assertions.assertTrue(pkgOut.contains("axiom java.util.function.Function of (T, R): class notnull ("), pkgOut);
+        Assertions.assertTrue(
+                pkgOut.contains("axiom java.util.function.Function of (T, R): class notnull ("),
+                pkgOut);
         Assertions.assertFalse(pkgOut.contains("nullmarked"), pkgOut);
 
         Run sw = run("", "-axioms", "java.io.StringWriter");
         Assertions.assertEquals(0, sw.status(), sw.err().toString());
         String swOut = String.join("\n", sw.out());
         Assertions.assertTrue(swOut.contains(";; curated nullness, inferred effects"), swOut);
-        Assertions.assertTrue(swOut.contains("def getBuffer: fn nothrow view (): java.lang.StringBuffer!"), swOut);
+        Assertions.assertTrue(
+                swOut.contains("def getBuffer: fn nothrow view (): java.lang.StringBuffer!"),
+                swOut);
 
         Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms").status());
-        Assertions.assertEquals(Main.USAGE_ERROR, run("", "-axioms", "no.such.ClassOrPackage").status());
+        Assertions.assertEquals(
+                Main.USAGE_ERROR, run("", "-axioms", "no.such.ClassOrPackage").status());
     }
 
     @Test
@@ -196,29 +290,52 @@ public class MainTestCase {
         String hello = script("wasm_hello.ba", "println(\"hello wasm\")");
         Path outJs = directory.resolve("hello_js.wasm");
         Run rJs = run("", "-compile", hello, "-target", "wasm-js", "-o", outJs.toString());
-        Assertions.assertEquals(new Run(0, List.of("Wrote " + outJs + " : 1 module"), List.of()), rJs);
+        Assertions.assertEquals(
+                new Run(0, List.of("Wrote " + outJs + " : 1 module"), List.of()), rJs);
         Assertions.assertTrue(Files.isRegularFile(outJs));
         Assertions.assertTrue(Files.isRegularFile(directory.resolve("hello_js.mjs")));
 
         String pure = script("wasm_pure.ba", "def x = 1 + 2\nx * 14");
         Path outBare = directory.resolve("hello_bare.wasm");
         Run rBare = run("", "-compile", pure, "-target", "wasm-bare", "-o", outBare.toString());
-        Assertions.assertEquals(new Run(0, List.of("Wrote " + outBare + " : 1 module"), List.of()), rBare);
+        Assertions.assertEquals(
+                new Run(0, List.of("Wrote " + outBare + " : 1 module"), List.of()), rBare);
         Assertions.assertTrue(Files.isRegularFile(outBare));
         Assertions.assertFalse(Files.exists(directory.resolve("hello_bare.mjs")));
 
         // wasm-bare rejects host I/O (println) with exit 1
-        Run bareReject = run("", "-compile", hello, "-target", "wasm-bare", "-o", directory.resolve("bad_bare.wasm").toString());
+        Run bareReject =
+                run(
+                        "",
+                        "-compile",
+                        hello,
+                        "-target",
+                        "wasm-bare",
+                        "-o",
+                        directory.resolve("bad_bare.wasm").toString());
         Assertions.assertEquals(Main.FAILED, bareReject.status());
-        Assertions.assertTrue(bareReject.err().get(0).contains("wasm-bare"), bareReject.err().toString());
+        Assertions.assertTrue(
+                bareReject.err().get(0).contains("wasm-bare"), bareReject.err().toString());
 
         Run badTarget = run("", "-compile", hello, "-target", "wasm-unknown");
         Assertions.assertEquals(Main.USAGE_ERROR, badTarget.status());
-        Assertions.assertTrue(badTarget.err().get(0).contains("Unknown compilation target"), badTarget.err().toString());
+        Assertions.assertTrue(
+                badTarget.err().get(0).contains("Unknown compilation target"),
+                badTarget.err().toString());
 
-        // -wasm-opt either succeeds (if Binaryen wasm-opt is installed) or fails gracefully with exit 1
+        // -wasm-opt either succeeds (if Binaryen wasm-opt is installed) or fails gracefully with
+        // exit 1
         Path outOpt = directory.resolve("hello_opt.wasm");
-        Run rOpt = run("", "-compile", hello, "-target", "wasm-js", "-wasm-opt", "-o", outOpt.toString());
+        Run rOpt =
+                run(
+                        "",
+                        "-compile",
+                        hello,
+                        "-target",
+                        "wasm-js",
+                        "-wasm-opt",
+                        "-o",
+                        outOpt.toString());
         if (rOpt.status() != 0) {
             Assertions.assertEquals(Main.FAILED, rOpt.status());
             Assertions.assertFalse(rOpt.err().isEmpty());

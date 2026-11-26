@@ -1,8 +1,5 @@
 package org.babblelang;
 
-import org.babblelang.format.Formatter;
-
-import javax.script.ScriptException;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.Reader;
@@ -13,10 +10,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
+import javax.script.ScriptException;
+import org.babblelang.format.Formatter;
 
 /**
- * babblefmt, the command line of Babble's formatter ({@link Formatter}) : what follows
- * {@code -format} on Babble's command line ({@link Main}).
+ * babblefmt, the command line of Babble's formatter ({@link Formatter}) : what follows {@code
+ * -format} on Babble's command line ({@link Main}).
+ *
  * <pre>
  * java -jar babble.jar -format                       formats the standard input to the standard output
  * java -jar babble.jar -format file.ba directory     prints the files, formatted ; directories stand for their .ba files
@@ -26,7 +26,8 @@ import java.util.stream.Stream;
  * </pre>
  */
 final class Babblefmt {
-    static final String USAGE = """
+    static final String USAGE =
+            """
             Usage : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
               Formats Babble source files. Without a file, formats the standard input.
               A directory stands for the .ba files in it, at any depth.
@@ -34,22 +35,30 @@ final class Babblefmt {
               -w        rewrite the files whose formatting changes
               -l        list the files whose formatting would change
               -check    list them, and exit with status 1 if there are any
-              -help     this text""";
+              -help     this text\
+            """;
 
-    /** The exit statuses : a file that can't be formatted or, with -check, isn't ; a command line that can't be used. */
+    /**
+     * The exit statuses : a file that can't be formatted or, with -check, isn't ; a command line
+     * that can't be used.
+     */
     static final int FAILED = 1;
+
     static final int USAGE_ERROR = 2;
 
-    private Babblefmt() {
-    }
+    private Babblefmt() {}
 
-    /** @return the exit status */
+    /**
+     * @return the exit status
+     */
     static int run(String[] args, Reader in, PrintWriter out, PrintWriter err) throws IOException {
         boolean write = false;
         boolean list = false;
         boolean check = false;
         int first = 0;
-        for (; first < args.length && args[first].startsWith("-") && !args[first].equals("--"); first++) {
+        for (;
+                first < args.length && args[first].startsWith("-") && !args[first].equals("--");
+                first++) {
             switch (args[first]) {
                 case "-w", "--write" -> write = true;
                 case "-l", "--list" -> list = true;
@@ -93,8 +102,11 @@ final class Babblefmt {
             Path path = Path.of(args[i]);
             if (Files.isDirectory(path)) {
                 try (Stream<Path> found = Files.walk(path)) {
-                    found.filter(file -> file.getFileName().toString().endsWith(".ba") && Files.isRegularFile(file))
-                            .sorted().forEach(files::add);
+                    found.filter(file ->
+                                    file.getFileName().toString().endsWith(".ba")
+                                            && Files.isRegularFile(file))
+                            .sorted()
+                            .forEach(files::add);
                 }
             } else {
                 files.add(path);
@@ -106,7 +118,11 @@ final class Babblefmt {
             try {
                 source = Files.readString(file);
             } catch (IOException e) {
-                err.println("Cannot read " + file + " : " + (e instanceof NoSuchFileException ? "no such file" : e));
+                err.println(
+                        "Cannot read "
+                                + file
+                                + " : "
+                                + (e instanceof NoSuchFileException ? "no such file" : e));
                 status = FAILED;
                 continue;
             }
@@ -135,7 +151,10 @@ final class Babblefmt {
         return status;
     }
 
-    /** @return the formatted text, or null, the error being reported, when the text can't be formatted */
+    /**
+     * @return the formatted text, or null, the error being reported, when the text can't be
+     *     formatted
+     */
     private static String format(String source, String name, PrintWriter err) {
         try {
             return Formatter.format(source, name);

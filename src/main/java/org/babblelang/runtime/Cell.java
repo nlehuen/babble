@@ -1,9 +1,9 @@
 package org.babblelang.runtime;
 
 /**
- * A variable captured by a closure (compiler phase 2) : the method that declares it and
- * the functions that capture it share the cell. A hoisted definition starts out
- * {@link Undefined#UNDEFINED}.
+ * A variable captured by a closure (compiler phase 2) : the method that declares it and the
+ * functions that capture it share the cell. A hoisted definition starts out {@link
+ * Undefined#UNDEFINED}.
  */
 public final class Cell {
     public Object value;

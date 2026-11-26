@@ -7,13 +7,16 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 /**
- * Tests for {@code BIP019-I2} (reads of mutable state, {@code docs/design/bip019_refactoring-axioms.md} §4).
+ * Tests for {@code BIP019-I2} (reads of mutable state, {@code
+ * docs/design/bip019_refactoring-axioms.md} §4).
  */
 public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
 
     @Test
-    public void testReadOfMutableParamComposesAndStaysDeterministicOnOwnedOrFrozen() throws Exception {
-        String script = """
+    public void testReadOfMutableParamComposesAndStaysDeterministicOnOwnedOrFrozen()
+            throws Exception {
+        String script =
+                """
                 def Counter = class (def n: int) (
                     def get = fn (): int -> (this.n)
                 )
@@ -32,18 +35,23 @@ public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
 
     @Test
     public void testReadOfMutableGlobalBecomesVolatile() throws Exception {
-        String bad = """
+        String bad =
+                """
                 def Counter = class (def n: int) ()
                 def globalC = Counter(5)
                 def readCounter = fn (c: Counter): int -> (c.n)
                 def f = fn (): int -> (readCounter(globalC))
                 f()
                 """;
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        TypeCheckException ex = Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(bad));
-        Assertions.assertTrue(ex.getMessage().contains("violates deterministic guarantee"), ex.getMessage());
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        TypeCheckException ex =
+                Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(bad));
+        Assertions.assertTrue(
+                ex.getMessage().contains("violates deterministic guarantee"), ex.getMessage());
 
-        String good = """
+        String good =
+                """
                 def Counter = class (def n: int) ()
                 def globalC = Counter(5)
                 def readCounter = fn (c: Counter): int -> (c.n)
@@ -55,7 +63,8 @@ public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
 
     @Test
     public void testRecordReadIsAlwaysDeterministic() throws Exception {
-        String script = """
+        String script =
+                """
                 def Point = record (x: int, y: int) ()
                 def origin = Point(3, 4)
                 def sum = fn (): int -> (origin.x + origin.y)
@@ -66,7 +75,8 @@ public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
 
     @Test
     public void testTrackedResultsKeepHigherOrderCompositionDeterministic() throws Exception {
-        String script = """
+        String script =
+                """
                 def Box = class (def v: int) ()
                 def apply = fn (f: fn (b: Box): Box, b: Box): int -> (
                     f(b).v
@@ -83,7 +93,8 @@ public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
 
     @Test
     public void testListFromCarriesElementProvenance() {
-        String bad = """
+        String bad =
+                """
                 def Item = class (def v: int) ()
                 def Holder = class (shared items: list of Item) ()
                 def leak = fn (xs: list of Item): Holder -> (
@@ -91,14 +102,18 @@ public class Bip019P2ReadsModelTestCase extends BabbleTestBase {
                     Holder(copy)
                 )
                 """;
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        TypeCheckException ex = Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(bad));
-        Assertions.assertTrue(ex.getMessage().contains("mark parameter as shared xs"), ex.getMessage());
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        TypeCheckException ex =
+                Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(bad));
+        Assertions.assertTrue(
+                ex.getMessage().contains("mark parameter as shared xs"), ex.getMessage());
     }
 
     @Test
     public void testForLoopOverMutableCollectionComposesReads() throws Exception {
-        String script = """
+        String script =
+                """
                 def sumList = fn (xs: list of int): int -> (
                     var total = 0
                     for x in xs then (

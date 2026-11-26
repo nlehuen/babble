@@ -14,29 +14,38 @@ import java.lang.reflect.Parameter;
  * Java bytecode nullability scanner ({@code BIP011} §6.3, {@code BIP019} §2.4–§2.5).
  *
  * <p>All built-in {@code java.base} nullability assumptions and third-party annotation meanings
- * live in {@code org.babblelang.axioms} ({@link BuiltinAxioms}); this class holds only the
- * lookup mechanism, plus bytecode return-nullness inference when enabled.
+ * live in {@code org.babblelang.axioms} ({@link BuiltinAxioms}); this class holds only the lookup
+ * mechanism, plus bytecode return-nullness inference when enabled.
  */
 final class JavaNullability {
 
     enum Nullness {
-        /** Explicitly non-null (e.g. {@code @NonNull}, {@code @NullMarked}, or curated non-null). */
+        /**
+         * Explicitly non-null (e.g. {@code @NonNull}, {@code @NullMarked}, or curated non-null).
+         */
         NON_NULL,
-        /** Explicitly nullable (e.g. {@code @Nullable}, or curated nullable like {@code Map.get}). */
+        /**
+         * Explicitly nullable (e.g. {@code @Nullable}, or curated nullable like {@code Map.get}).
+         */
         NULLABLE,
-        /** Parametric nullness: preserves the substituted type argument's own nullability (e.g. {@code List.get -> E}). */
+        /**
+         * Parametric nullness: preserves the substituted type argument's own nullability (e.g.
+         * {@code List.get -> E}).
+         */
         PARAMETRIC,
-        /** Unannotated legacy Java reference type: conservatively treated as nullable ({@code T?}). */
+        /**
+         * Unannotated legacy Java reference type: conservatively treated as nullable ({@code T?}).
+         */
         UNSPECIFIED
     }
 
     private static final ThreadLocal<AxiomData.AxiomTable> LOCAL_AXIOMS = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> BYTECODE_ANALYSIS = new ThreadLocal<>();
 
-    private JavaNullability() {
-    }
+    private JavaNullability() {}
 
-    static void runWithContext(AxiomData.AxiomTable table, boolean bytecodeAnalysis, Runnable action) {
+    static void runWithContext(
+            AxiomData.AxiomTable table, boolean bytecodeAnalysis, Runnable action) {
         AxiomData.AxiomTable prevTable = LOCAL_AXIOMS.get();
         Boolean prevBytecode = BYTECODE_ANALYSIS.get();
         if (table == null || table.isEmpty()) {
@@ -66,14 +75,22 @@ final class JavaNullability {
         return flag == null || flag;
     }
 
-    /** Nullness of a Java method's return value (local/curated axioms, annotations, {@code @NullMarked}, bytecode inference). */
+    /**
+     * Nullness of a Java method's return value (local/curated axioms, annotations,
+     * {@code @NullMarked}, bytecode inference).
+     */
     static Nullness returnNullness(Method method) {
         if (method.getReturnType().isPrimitive()) {
             return Nullness.NON_NULL;
         }
         AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
         if (local != null && !local.isEmpty()) {
-            AxiomData.MemberAxiom ax = AxiomData.lookupMethod(method.getDeclaringClass(), method.getName(), method, local::directMembers);
+            AxiomData.MemberAxiom ax =
+                    AxiomData.lookupMethod(
+                            method.getDeclaringClass(),
+                            method.getName(),
+                            method,
+                            local::directMembers);
             if (ax != null && ax.returnNullness() != null) {
                 return ax.returnNullness();
             }
@@ -90,7 +107,8 @@ final class JavaNullability {
             return Nullness.NON_NULL;
         }
         if (isBytecodeAnalysisEnabled()) {
-            BytecodeEffectAnalyzer.Result analyzed = BytecodeEffectAnalyzer.analyze(method, BuiltinAxioms.current());
+            BytecodeEffectAnalyzer.Result analyzed =
+                    BytecodeEffectAnalyzer.analyze(method, BuiltinAxioms.current());
             if (analyzed.returnNonNull()) {
                 return Nullness.NON_NULL;
             }
@@ -109,11 +127,14 @@ final class JavaNullability {
         }
         AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
         if (local != null && !local.isEmpty()) {
-            AxiomData.MemberAxiom ax = exec instanceof Method m
-                    ? AxiomData.lookupMethod(m.getDeclaringClass(), m.getName(), m, local::directMembers)
-                    : exec instanceof Constructor<?> c
-                    ? AxiomData.lookupConstructor(c.getDeclaringClass(), c, local::directMembers)
-                    : null;
+            AxiomData.MemberAxiom ax =
+                    exec instanceof Method m
+                            ? AxiomData.lookupMethod(
+                                    m.getDeclaringClass(), m.getName(), m, local::directMembers)
+                            : exec instanceof Constructor<?> c
+                                    ? AxiomData.lookupConstructor(
+                                            c.getDeclaringClass(), c, local::directMembers)
+                                    : null;
             if (ax != null && ax.hasSignature() && index < ax.paramNullness().length) {
                 return ax.paramNullness()[index];
             }
@@ -133,18 +154,24 @@ final class JavaNullability {
         return isNullMarked(exec) ? Nullness.NON_NULL : Nullness.UNSPECIFIED;
     }
 
-    /** Array-element nullness of a Java executable's array parameter from local or curated axioms, or {@code null}. */
+    /**
+     * Array-element nullness of a Java executable's array parameter from local or curated axioms,
+     * or {@code null}.
+     */
     static Nullness parameterElementNullness(Executable exec, int index) {
         if (exec == null || index < 0 || index >= exec.getParameterCount()) {
             return null;
         }
         AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
         if (local != null && !local.isEmpty()) {
-            AxiomData.MemberAxiom ax = exec instanceof Method m
-                    ? AxiomData.lookupMethod(m.getDeclaringClass(), m.getName(), m, local::directMembers)
-                    : exec instanceof Constructor<?> c
-                    ? AxiomData.lookupConstructor(c.getDeclaringClass(), c, local::directMembers)
-                    : null;
+            AxiomData.MemberAxiom ax =
+                    exec instanceof Method m
+                            ? AxiomData.lookupMethod(
+                                    m.getDeclaringClass(), m.getName(), m, local::directMembers)
+                            : exec instanceof Constructor<?> c
+                                    ? AxiomData.lookupConstructor(
+                                            c.getDeclaringClass(), c, local::directMembers)
+                                    : null;
             if (ax != null && ax.hasSignature() && index < ax.paramElementNullness().length) {
                 return ax.paramElementNullness()[index];
             }
@@ -152,7 +179,10 @@ final class JavaNullability {
         return BuiltinAxioms.current().parameterElementNullness(exec, index);
     }
 
-    /** Nullness of a Java field's value (static-final constant inspection / annotations / {@code @NullMarked}). */
+    /**
+     * Nullness of a Java field's value (static-final constant inspection / annotations /
+     * {@code @NullMarked}).
+     */
     static Nullness fieldNullness(Field field) {
         if (field.getType().isPrimitive()) {
             return Nullness.NON_NULL;
@@ -171,14 +201,20 @@ final class JavaNullability {
         if (annotated != Nullness.UNSPECIFIED) {
             return annotated;
         }
-        return isNullMarkedClass(field.getDeclaringClass()) ? Nullness.NON_NULL : Nullness.UNSPECIFIED;
+        return isNullMarkedClass(field.getDeclaringClass())
+                ? Nullness.NON_NULL
+                : Nullness.UNSPECIFIED;
     }
 
     /** Whether nested type arguments in this executable's signature default to non-null. */
     static boolean isNullMarked(Executable exec) {
         AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
-        if (local != null && !local.isEmpty()
-                && AxiomData.lookupClassFlag(exec.getDeclaringClass(), local::directClassAxiom, AxiomData.ClassAxiom::nullMarked)) {
+        if (local != null
+                && !local.isEmpty()
+                && AxiomData.lookupClassFlag(
+                        exec.getDeclaringClass(),
+                        local::directClassAxiom,
+                        AxiomData.ClassAxiom::nullMarked)) {
             return true;
         }
         if (BuiltinAxioms.current().nullMarked(exec)) {
@@ -234,8 +270,10 @@ final class JavaNullability {
 
     static boolean isNullMarkedClass(Class<?> cls) {
         AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
-        if (local != null && !local.isEmpty()
-                && AxiomData.lookupClassFlag(cls, local::directClassAxiom, AxiomData.ClassAxiom::nullMarked)) {
+        if (local != null
+                && !local.isEmpty()
+                && AxiomData.lookupClassFlag(
+                        cls, local::directClassAxiom, AxiomData.ClassAxiom::nullMarked)) {
             return true;
         }
         if (BuiltinAxioms.current().nullMarked(cls)) {

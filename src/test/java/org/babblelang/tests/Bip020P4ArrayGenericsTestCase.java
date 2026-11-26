@@ -1,5 +1,12 @@
 package org.babblelang.tests;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.reflect.Proxy;
+import java.util.List;
+import javax.script.ScriptContext;
+import javax.script.ScriptException;
+import javax.script.SimpleScriptContext;
 import org.babblelang.compiler.CompiledBabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
@@ -8,22 +15,16 @@ import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.util.CheckClassAdapter;
 
-import javax.script.ScriptContext;
-import javax.script.ScriptException;
-import javax.script.SimpleScriptContext;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.lang.reflect.Proxy;
-import java.util.List;
-
 /**
- * Tests for BIP020-I4 : generic array reference-binding and reifiability rules (§2.3, §2.6)
- * across Babble and Java type variables, plus RM003 bridges for generic Java interface array methods (§2.8).
+ * Tests for BIP020-I4 : generic array reference-binding and reifiability rules (§2.3, §2.6) across
+ * Babble and Java type variables, plus RM003 bridges for generic Java interface array methods
+ * (§2.8).
  */
 public class Bip020P4ArrayGenericsTestCase {
 
     private static List<String> diagnosticsOf(String source) {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         StringWriter err = new StringWriter();
         engine.getContext().setErrorWriter(err);
         try {
@@ -39,16 +40,31 @@ public class Bip020P4ArrayGenericsTestCase {
 
     private static void assertDiagnostics(String source, String... expectedSubstrings) {
         List<String> diags = diagnosticsOf(source);
-        Assertions.assertEquals(expectedSubstrings.length, diags.size(),
-                "Expected " + expectedSubstrings.length + " diagnostics, got " + diags + " for:\n" + source);
+        Assertions.assertEquals(
+                expectedSubstrings.length,
+                diags.size(),
+                "Expected "
+                        + expectedSubstrings.length
+                        + " diagnostics, got "
+                        + diags
+                        + " for:\n"
+                        + source);
         for (int i = 0; i < expectedSubstrings.length; i++) {
-            Assertions.assertTrue(diags.get(i).contains(expectedSubstrings[i]),
-                    "Diagnostic #" + i + " mismatch: expected '" + expectedSubstrings[i] + "', got '" + diags.get(i) + "'");
+            Assertions.assertTrue(
+                    diags.get(i).contains(expectedSubstrings[i]),
+                    "Diagnostic #"
+                            + i
+                            + " mismatch: expected '"
+                            + expectedSubstrings[i]
+                            + "', got '"
+                            + diags.get(i)
+                            + "'");
         }
     }
 
     private static String evalOut(String mode, String opt, String source) throws Exception {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
         if (opt != null) {
             engine.put("babble.opt", opt);
@@ -56,7 +72,11 @@ public class Bip020P4ArrayGenericsTestCase {
         if ("compile".equals(mode)) {
             CompiledBabbleScript compiled = (CompiledBabbleScript) engine.compile(source);
             for (byte[] bytes : compiled.getClasses().values()) {
-                CheckClassAdapter.verify(new ClassReader(bytes), compiled.getClass().getClassLoader(), false, new PrintWriter(new StringWriter()));
+                CheckClassAdapter.verify(
+                        new ClassReader(bytes),
+                        compiled.getClass().getClassLoader(),
+                        false,
+                        new PrintWriter(new StringWriter()));
             }
         }
         ScriptContext ctx = new SimpleScriptContext();
@@ -68,7 +88,8 @@ public class Bip020P4ArrayGenericsTestCase {
     }
 
     private static Object evalResult(String mode, String opt, String source) throws Exception {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
         if (opt != null) {
             engine.put("babble.opt", opt);
@@ -86,7 +107,8 @@ public class Bip020P4ArrayGenericsTestCase {
     }
 
     private static String evalRuntimeError(String mode, String opt, String source) {
-        ScriptException se = Assertions.assertThrows(ScriptException.class, () -> evalOut(mode, opt, source));
+        ScriptException se =
+                Assertions.assertThrows(ScriptException.class, () -> evalOut(mode, opt, source));
         return se.getMessage();
     }
 
@@ -101,7 +123,8 @@ public class Bip020P4ArrayGenericsTestCase {
 
     @Test
     public void testGenericBabbleFunctionsOverReferenceArrays() throws Exception {
-        String script = """
+        String script =
+                """
                 def Point = record (x: int, y: int) ()
                 def Shape = interface (def area: fn (): int)
                 def Named = interface (def name: fn (): string)
@@ -149,115 +172,135 @@ public class Bip020P4ArrayGenericsTestCase {
                 def fnSpec: fn io (a: array of string): string = first
                 println(fnSpec(parts))
                 """;
-        assertAllModesOut(script, String.join("\n",
-                "alpha",
-                "[b, a]",
-                "10",
-                "10",
-                "Point(x: 1, y: 2)",
-                "[Point(x: 3, y: 4), Point(x: 1, y: 2)]",
-                "[7, 8]",
-                "three:9",
-                "42",
-                "null",
-                "alpha") + "\n");
+        assertAllModesOut(
+                script,
+                String.join(
+                                "\n",
+                                "alpha",
+                                "[b, a]",
+                                "10",
+                                "10",
+                                "Point(x: 1, y: 2)",
+                                "[Point(x: 3, y: 4), Point(x: 1, y: 2)]",
+                                "[7, 8]",
+                                "three:9",
+                                "42",
+                                "null",
+                                "alpha")
+                        + "\n");
     }
 
     @Test
     public void testReferenceBindingRuleRejectsPrimitiveScalarsEverywhere() {
-        String badDirectCall = """
+        String badDirectCall =
+                """
                 def first of T = fn io (a: array of T): T -> (a.get(0))
                 first("abc".toCharArray())
                 """;
-        assertDiagnostics(badDirectCall,
-                "Type error : expected array of T, got array of char");
+        assertDiagnostics(badDirectCall, "Type error : expected array of T, got array of char");
 
-        String badMultiParam = """
+        String badMultiParam =
+                """
                 def fill of T = fn (shared x: T, mut a: array of T): T -> (
                     a.set(0, x)
                     x
                 )
                 fill(1, array.of(1, 2))
                 """;
-        assertDiagnostics(badMultiParam,
-                "Type error : expected array of T, got array of int");
+        assertDiagnostics(badMultiParam, "Type error : expected array of T, got array of int");
 
-        String badNullArrayWithPrimArg = """
+        String badNullArrayWithPrimArg =
+                """
                 def pick of T = fn (x: T, a: (array of T)?): T -> (x)
                 pick(1, null)
                 """;
-        assertDiagnostics(badNullArrayWithPrimArg,
+        assertDiagnostics(
+                badNullArrayWithPrimArg,
                 "Type error : type argument int cannot be a primitive in array of T");
 
-        String badTypeApply = """
+        String badTypeApply =
+                """
                 def first of T = fn io (a: array of T): T -> (a.get(0))
                 def f = first of int
                 """;
-        assertDiagnostics(badTypeApply,
-                "Type error : type argument int cannot be a primitive in array of T");
+        assertDiagnostics(
+                badTypeApply, "Type error : type argument int cannot be a primitive in array of T");
 
-        String badFnValueInstantiation = """
+        String badFnValueInstantiation =
+                """
                 def first of T = fn io (a: array of T): T -> (a.get(0))
                 def f: fn io (a: array of int): int = first
                 """;
-        assertDiagnostics(badFnValueInstantiation,
+        assertDiagnostics(
+                badFnValueInstantiation,
                 "Type error : expected io (a : array of int) : int, got fn of T io (a : array of T) : T");
 
-        String badSneakyUnionCollapse = """
+        String badSneakyUnionCollapse =
+                """
                 def sneaky of (T, U) = fn io (a: array of (T | U), x: T, y: U): T | U -> (a.get(0))
                 sneaky(array.of(1, 2), 1, 2)
                 """;
-        assertDiagnostics(badSneakyUnionCollapse,
-                "Type error : expected array of (T | U), got array of int");
+        assertDiagnostics(
+                badSneakyUnionCollapse, "Type error : expected array of (T | U), got array of int");
 
-        String badFrozenElem = """
+        String badFrozenElem =
+                """
                 def headFrozen of T = fn io (a: array of (frozen T), x: T): frozen T -> (a.get(0))
                 headFrozen(array.of(1, 2), 1)
                 """;
-        assertDiagnostics(badFrozenElem,
-                "Type error : expected array of (frozen T), got array of int");
+        assertDiagnostics(
+                badFrozenElem, "Type error : expected array of (frozen T), got array of int");
 
-        String badGenericClass = """
+        String badGenericClass =
+                """
                 def Buffer of T = class () (
                     def data: (array of T)? = null
                 )
                 def b1: (Buffer of int)? = null
                 def b2 = (Buffer of char)()
                 """;
-        assertDiagnostics(badGenericClass,
+        assertDiagnostics(
+                badGenericClass,
                 "Type error : type argument int cannot be a primitive in array of T",
                 "Type error : type argument char cannot be a primitive in array of T");
 
-        String badGenericCtorInference = """
+        String badGenericCtorInference =
+                """
                 def Holder of T = class (def seed: T) (
                     def items: (array of T)? = null
                 )
                 def h = Holder(42)
                 """;
-        assertDiagnostics(badGenericCtorInference,
+        assertDiagnostics(
+                badGenericCtorInference,
                 "Type error : type argument int cannot be a primitive in array of T");
 
-        String badAliasFunctionVsDirectAlias = """
+        String badAliasFunctionVsDirectAlias =
+                """
                 def Arr of T = type array of T
                 def ok: Arr of int = array(3)
                 def firstAlias of T = fn io (a: Arr of T): T -> (a.get(0))
                 firstAlias(ok)
                 """;
-        assertDiagnostics(badAliasFunctionVsDirectAlias,
+        assertDiagnostics(
+                badAliasFunctionVsDirectAlias,
                 "Type error : expected array of T, got array of int");
 
-        String badIsAndAsTypeVar = """
+        String badIsAndAsTypeVar =
+                """
                 def checkArr of T = fn (x: any): bool -> (x is array of T)
                 def castArr of T = fn (x: any): array of T -> (x as array of T)
                 """;
-        assertDiagnostics(badIsAndAsTypeVar,
+        assertDiagnostics(
+                badIsAndAsTypeVar,
                 "Cannot test type parameter with 'is' : array of T",
                 "Cannot cast to type parameter : array of T");
     }
 
     @Test
     public void testJavaGenericArrayMethodsAndRejections() throws Exception {
-        String okJavaGenerics = """
+        String okJavaGenerics =
+                """
                 def demo = import("org.babblelang.tests").JavaClassDemo
                 def xs = list(10, 20, 30)
                 def boxed: array of int? = xs.toArray((array of int?)(0))
@@ -276,46 +319,59 @@ public class Bip020P4ArrayGenericsTestCase {
                 println(demo.echoArrayWithSample("fallback", array.of("picked")))
                 println(demo.echoArrayWithSample("fallback", null))
                 """;
-        assertAllModesOut(okJavaGenerics, String.join("\n",
-                "[10, 20, 30]",
-                "[u, v]",
-                "[u, v, null]",
-                "2:n",
-                "picked",
-                "fallback") + "\n");
+        assertAllModesOut(
+                okJavaGenerics,
+                String.join(
+                                "\n",
+                                "[10, 20, 30]",
+                                "[u, v]",
+                                "[u, v, null]",
+                                "2:n",
+                                "picked",
+                                "fallback")
+                        + "\n");
 
-        String badToArrayPrim = """
+        String badToArrayPrim =
+                """
                 def xs = list(1, 2, 3)
                 xs.toArray((array of int)(0))
                 """;
-        assertDiagnostics(badToArrayPrim,
+        assertDiagnostics(
+                badToArrayPrim,
                 "No applicable overload of java.util.List.toArray for (array of int)");
 
-        String badToArrayTypeApply = """
+        String badToArrayTypeApply =
+                """
                 def xs = list(1, 2, 3)
                 def f = xs.toArray of int
                 """;
-        assertDiagnostics(badToArrayTypeApply,
+        assertDiagnostics(
+                badToArrayTypeApply,
                 "Type error : type argument int cannot be a primitive in array of T");
 
-        String badJavaGenericSamplePrim = """
+        String badJavaGenericSamplePrim =
+                """
                 def demo = import("org.babblelang.tests").JavaClassDemo
                 demo.echoArrayWithSample(1, null)
                 """;
-        assertDiagnostics(badJavaGenericSamplePrim,
+        assertDiagnostics(
+                badJavaGenericSamplePrim,
                 "Type error : type argument int cannot be a primitive in array of T");
 
-        String badJavaIfacePrim = """
+        String badJavaIfacePrim =
+                """
                 def tests = import("org.babblelang.tests")
                 def x: (tests.JavaClassDemo.ArrayTransformer of int)? = null
                 """;
-        assertDiagnostics(badJavaIfacePrim,
+        assertDiagnostics(
+                badJavaIfacePrim,
                 "Type error : type argument int cannot be a primitive in array of E");
     }
 
     @Test
     public void testRm003JavaGenericArrayInterfaceBridgesAndDefaults() throws Exception {
-        String script = """
+        String script =
+                """
                 def tests = import("org.babblelang.tests")
                 def demo = tests.JavaClassDemo
                 def Point = record (x: int, y: int) ()
@@ -362,32 +418,43 @@ public class Bip020P4ArrayGenericsTestCase {
                 println(demo.invokeExportableStrings(bag))
                 println(bagIface.toArray())
                 """;
-        assertAllModesOut(script, String.join("\n",
-                "[HI, THERE]",
-                "[Point(x: 3, y: 4), Point(x: 1, y: 2)]",
-                "[1, 9]",
-                "[first, second]",
-                "2") + "\n");
+        assertAllModesOut(
+                script,
+                String.join(
+                                "\n",
+                                "[HI, THERE]",
+                                "[Point(x: 3, y: 4), Point(x: 1, y: 2)]",
+                                "[1, 9]",
+                                "[first, second]",
+                                "2")
+                        + "\n");
 
         // Verify compiled Upper is a direct non-Proxy ArrayTransformer implementation.
-        Object compiledUpper = evalResult("compile", "1", """
-                def tests = import("org.babblelang.tests")
-                def Upper = class () implements tests.JavaClassDemo.ArrayTransformer of string (
-                    def transform = fn io (a: array of string): array of string -> (a)
-                )
-                Upper()
-                """);
+        Object compiledUpper =
+                evalResult(
+                        "compile",
+                        "1",
+                        """
+                        def tests = import("org.babblelang.tests")
+                        def Upper = class () implements tests.JavaClassDemo.ArrayTransformer of string (
+                            def transform = fn io (a: array of string): array of string -> (a)
+                        )
+                        Upper()
+                        """);
         Assertions.assertInstanceOf(JavaClassDemo.ArrayTransformer.class, compiledUpper);
         Assertions.assertFalse(Proxy.isProxyClass(compiledUpper.getClass()));
 
-        // Raw Java passing wrong array type (Integer[] into ArrayTransformer<String>) fails identically in all modes.
-        String rawBadArg = """
+        // Raw Java passing wrong array type (Integer[] into ArrayTransformer<String>) fails
+        // identically in all modes.
+        String rawBadArg =
+                """
                 def tests = import("org.babblelang.tests")
                 def Upper = class () implements tests.JavaClassDemo.ArrayTransformer of string (
                     def transform = fn io (a: array of string): array of string -> (a)
                 )
                 tests.JavaClassDemo.invokeArrayTransformerRaw(Upper(), (array of int?).of(1, 2))
                 """;
-        assertSameRuntimeError(rawBadArg, "Type error : expected array of string, got array of int?");
+        assertSameRuntimeError(
+                rawBadArg, "Type error : expected array of string, got array of int?");
     }
 }

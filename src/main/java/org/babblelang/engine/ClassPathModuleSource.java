@@ -1,16 +1,16 @@
 package org.babblelang.engine;
 
-import org.babblelang.runtime.LogicalPaths;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import org.babblelang.runtime.LogicalPaths;
 
 /**
  * Modules shipped as resources, for libraries in jars (docs/design/bip006_module-sources-and-aot.md
- * §4.2) : {@code lib/shapes.ba} is the resource {@code <prefix>/lib/shapes.ba} of a class
- * loader. Paths are resolved as by {@link MapModuleSource} ; a module's key is
- * {@code classpath:} and its path, its display name the path, its version a hash of its text.
+ * §4.2) : {@code lib/shapes.ba} is the resource {@code <prefix>/lib/shapes.ba} of a class loader.
+ * Paths are resolved as by {@link MapModuleSource} ; a module's key is {@code classpath:} and its
+ * path, its display name the path, its version a hash of its text.
  */
 public final class ClassPathModuleSource implements ModuleSource {
     private static final String SCHEME = "classpath:";

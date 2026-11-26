@@ -1,6 +1,11 @@
 package org.babblelang.opt.hir;
 
-import org.babblelang.ir.hir.HirCallArg;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
@@ -11,29 +16,23 @@ import org.babblelang.opt.HirPurity;
 import org.babblelang.opt.HirRewriter;
 import org.babblelang.opt.PassContext;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
  * {@code O10} — Functional-but-in-place (FBIP) reuse optimization backed by {@code BIP007-I2}
  * static uniqueness analysis ({@code BIP014-I4}).
  *
  * <p>Rewrites two safe allocation-avoiding patterns:
+ *
  * <ol>
  *   <li><b>Collection reuse</b>: {@code list(from: move(xs))}, {@code set(from: move(s))}, and
  *       {@code map(from: move(m))} where {@code move(...)} is proven statically unique and
- *       non-frozen by {@code EffectChecker} lower to {@code list$reuse}/{@code set$reuse}/
- *       {@code map$reuse} ({@code CoreCollections.*ReuseOrCopy}).</li>
+ *       non-frozen by {@code EffectChecker} lower to {@code list$reuse}/{@code set$reuse}/ {@code
+ *       map$reuse} ({@code CoreCollections.*ReuseOrCopy}).
  *   <li><b>Mutable {@code record} in-place reuse</b>: inside a frame-scoped function taking a
  *       {@code unique} parameter {@code p: R} of a non-deeply-immutable local {@code fastRecord}
- *       {@code R} (so {@code EffectChecker} strictly forbids aliased callers), when {@code p}
- *       never escapes or mutates and a same-type {@link HirExpr.RecordNew} appears in function
- *       tail position, rewrites that {@code RecordNew} to {@link HirExpr.RecordReuse} mutating
- *       {@code p}'s fields in place after evaluating all field arguments.</li>
+ *       {@code R} (so {@code EffectChecker} strictly forbids aliased callers), when {@code p} never
+ *       escapes or mutates and a same-type {@link HirExpr.RecordNew} appears in function tail
+ *       position, rewrites that {@code RecordNew} to {@link HirExpr.RecordReuse} mutating {@code
+ *       p}'s fields in place after evaluating all field arguments.
  * </ol>
  */
 public final class FbipReusePass implements HirPass {
@@ -47,14 +46,16 @@ public final class FbipReusePass implements HirPass {
         int[] rewrites = {0};
         Set<String> initBindings = HirPurity.findDefinitelyInitializedTopLevelBindings(module);
 
-        List<HirExpr> newTop = HirRewriter.rewriteList(module.topLevelStatements(),
-                s -> rewriteCollections(s, rewrites));
+        List<HirExpr> newTop =
+                HirRewriter.rewriteList(
+                        module.topLevelStatements(), s -> rewriteCollections(s, rewrites));
 
         Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
         boolean fnChanged = false;
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
-            List<HirExpr> body = HirRewriter.rewriteList(fn.body(), s -> rewriteCollections(s, rewrites));
+            List<HirExpr> body =
+                    HirRewriter.rewriteList(fn.body(), s -> rewriteCollections(s, rewrites));
             if (!fn.namespaceScope() && !context.target().isWasm()) {
                 body = rewriteTailRecordReuse(fn, body, module, initBindings, rewrites);
             }
@@ -68,11 +69,19 @@ public final class FbipReusePass implements HirPass {
         if (rewrites[0] == 0 && newTop == module.topLevelStatements() && !fnChanged) {
             return Result.unchanged(module);
         }
-        return new Result(module.withUpdates(newTop, newFns, module.classes(), module.interfaces(),
-                module.nextVarId(), module.nextOwnerId()), rewrites[0]);
+        return new Result(
+                module.withUpdates(
+                        newTop,
+                        newFns,
+                        module.classes(),
+                        module.interfaces(),
+                        module.nextVarId(),
+                        module.nextOwnerId()),
+                rewrites[0]);
     }
 
-    // ---------------------------------------------------------------- Pattern A: collection FBIP reuse
+    // ---------------------------------------------------------------- Pattern A: collection FBIP
+    // reuse
 
     private HirExpr rewriteCollections(HirExpr expr, int[] rewrites) {
         HirExpr cur = HirRewriter.rewriteChildren(expr, c -> rewriteCollections(c, rewrites));
@@ -99,10 +108,15 @@ public final class FbipReusePass implements HirPass {
         return new HirExpr.CoreCollectionCall(kind + "$reuse", c.args(), c.meta());
     }
 
-    // ---------------------------------------------------------------- Pattern B: unique record in-place reuse
+    // ---------------------------------------------------------------- Pattern B: unique record
+    // in-place reuse
 
-    private List<HirExpr> rewriteTailRecordReuse(HirFunction fn, List<HirExpr> body, HirModule module,
-                                                 Set<String> initBindings, int[] rewrites) {
+    private List<HirExpr> rewriteTailRecordReuse(
+            HirFunction fn,
+            List<HirExpr> body,
+            HirModule module,
+            Set<String> initBindings,
+            int[] rewrites) {
         if (body.isEmpty()) {
             return body;
         }
@@ -110,7 +124,10 @@ public final class FbipReusePass implements HirPass {
         Map<String, HirParam> uniqueByTypeId = new HashMap<>();
         Set<Integer> uniqueParamVarIds = new HashSet<>();
         for (HirParam p : fn.params()) {
-            if (!p.isUnique() || p.recordTypeId() == null || p.var() == null || p.var().isCaptured()) {
+            if (!p.isUnique()
+                    || p.recordTypeId() == null
+                    || p.var() == null
+                    || p.var().isCaptured()) {
                 continue;
             }
             HirClass cls = findLocalFastRecord(module, p.recordTypeId());
@@ -128,8 +145,10 @@ public final class FbipReusePass implements HirPass {
         }
 
         // Verify which unique params never escape or get reassigned anywhere in body:
-        // every read of p.var() must be a valid ThisFieldGet (so p itself is never stored into a field,
-        // passed as an argument, returned directly, or placed inside the reused record creating a cycle).
+        // every read of p.var() must be a valid ThisFieldGet (so p itself is never stored into a
+        // field,
+        // passed as an argument, returned directly, or placed inside the reused record creating a
+        // cycle).
         Set<Integer> disqualified = new HashSet<>();
         for (HirExpr s : body) {
             checkUniqueParamEscapes(s, uniqueParamVarIds, disqualified);
@@ -159,9 +178,11 @@ public final class FbipReusePass implements HirPass {
         return null;
     }
 
-    private static void checkUniqueParamEscapes(HirExpr expr, Set<Integer> uniqueVarIds, Set<Integer> disqualified) {
+    private static void checkUniqueParamEscapes(
+            HirExpr expr, Set<Integer> uniqueVarIds, Set<Integer> disqualified) {
         if (expr == null) return;
-        if (expr instanceof HirExpr.ThisFieldGet g && g.receiver() instanceof HirExpr.VarRead vr
+        if (expr instanceof HirExpr.ThisFieldGet g
+                && g.receiver() instanceof HirExpr.VarRead vr
                 && uniqueVarIds.contains(vr.var().id())) {
             return;
         }
@@ -178,42 +199,60 @@ public final class FbipReusePass implements HirPass {
             checkUniqueParamEscapes(a.value(), uniqueVarIds, disqualified);
             return;
         }
-        HirRewriter.rewriteChildren(expr, c -> {
-            checkUniqueParamEscapes(c, uniqueVarIds, disqualified);
-            return c;
-        });
+        HirRewriter.rewriteChildren(
+                expr,
+                c -> {
+                    checkUniqueParamEscapes(c, uniqueVarIds, disqualified);
+                    return c;
+                });
     }
 
-    private HirExpr rewriteTailExpr(HirExpr expr, Map<String, HirParam> uniqueByTypeId,
-                                    HirModule module, Set<String> initBindings, int[] rewrites) {
+    private HirExpr rewriteTailExpr(
+            HirExpr expr,
+            Map<String, HirParam> uniqueByTypeId,
+            HirModule module,
+            Set<String> initBindings,
+            int[] rewrites) {
         if (expr == null) return null;
         if (expr instanceof HirExpr.RecordNew r) {
             return tryConvertToReuse(r, uniqueByTypeId, module, initBindings, rewrites);
         }
-        if (expr instanceof HirExpr.Block b && !b.opensNamespaceScope() && !b.statements().isEmpty()) {
+        if (expr instanceof HirExpr.Block b
+                && !b.opensNamespaceScope()
+                && !b.statements().isEmpty()) {
             int last = b.statements().size() - 1;
             HirExpr oldLast = b.statements().get(last);
-            HirExpr newLast = rewriteTailExpr(oldLast, uniqueByTypeId, module, initBindings, rewrites);
+            HirExpr newLast =
+                    rewriteTailExpr(oldLast, uniqueByTypeId, module, initBindings, rewrites);
             if (newLast != oldLast) {
                 List<HirExpr> ns = new java.util.ArrayList<>(b.statements());
                 ns.set(last, newLast);
-                return new HirExpr.Block(ns, b.opensNamespaceScope(), b.declaredNames(), b.declaredVars(),
-                        b.innerWideningRank(), b.meta());
+                return new HirExpr.Block(
+                        ns,
+                        b.opensNamespaceScope(),
+                        b.declaredNames(),
+                        b.declaredVars(),
+                        b.innerWideningRank(),
+                        b.meta());
             }
             return b;
         }
         if (expr instanceof HirExpr.If i) {
-            HirExpr nt = rewriteTailExpr(i.thenBranch(), uniqueByTypeId, module, initBindings, rewrites);
-            HirExpr ne = i.elseBranch() != null
-                    ? rewriteTailExpr(i.elseBranch(), uniqueByTypeId, module, initBindings, rewrites)
-                    : null;
+            HirExpr nt =
+                    rewriteTailExpr(i.thenBranch(), uniqueByTypeId, module, initBindings, rewrites);
+            HirExpr ne =
+                    i.elseBranch() != null
+                            ? rewriteTailExpr(
+                                    i.elseBranch(), uniqueByTypeId, module, initBindings, rewrites)
+                            : null;
             if (nt != i.thenBranch() || ne != i.elseBranch()) {
                 return new HirExpr.If(i.cond(), nt, ne, i.meta());
             }
             return i;
         }
         if (expr instanceof HirExpr.Return ret) {
-            HirExpr nv = rewriteTailExpr(ret.value(), uniqueByTypeId, module, initBindings, rewrites);
+            HirExpr nv =
+                    rewriteTailExpr(ret.value(), uniqueByTypeId, module, initBindings, rewrites);
             if (nv != ret.value()) {
                 return new HirExpr.Return(nv, ret.meta());
             }
@@ -222,8 +261,12 @@ public final class FbipReusePass implements HirPass {
         return expr;
     }
 
-    private HirExpr tryConvertToReuse(HirExpr.RecordNew r, Map<String, HirParam> uniqueByTypeId,
-                                      HirModule module, Set<String> initBindings, int[] rewrites) {
+    private HirExpr tryConvertToReuse(
+            HirExpr.RecordNew r,
+            Map<String, HirParam> uniqueByTypeId,
+            HirModule module,
+            Set<String> initBindings,
+            int[] rewrites) {
         // Soundness gate: EffectChecker enforces strict unaliased uniqueness on unique params ONLY
         // when the record type is NOT deeply immutable (i.e. contains at least one mutable field).
         if (r.meta().deeplyImmutable() || r.meta().frozen() || r.classId() < 0) {
@@ -234,18 +277,27 @@ public final class FbipReusePass implements HirPass {
             return r;
         }
         HirClass cls = module.clazz(r.classId());
-        if (cls == null || !cls.fastRecord() || r.args().size() != cls.params().size()
+        if (cls == null
+                || !cls.fastRecord()
+                || r.args().size() != cls.params().size()
                 || (r.binding() != null && !r.binding().isIdentityPositional())) {
             return r;
         }
-        boolean classRefPure = (r.classRef() instanceof HirExpr.NameRead nr && initBindings.contains(nr.name()))
-                || HirPurity.isPureNothrowTerminating(r.classRef(), module);
+        boolean classRefPure =
+                (r.classRef() instanceof HirExpr.NameRead nr && initBindings.contains(nr.name()))
+                        || HirPurity.isPureNothrowTerminating(r.classRef(), module);
         if (!classRefPure) {
             return r;
         }
         rewrites[0]++;
         HirExpr targetRead = new HirExpr.VarRead(targetParam.var(), r.meta());
-        return new HirExpr.RecordReuse(targetRead, r.classId(), r.classTypeId(), r.classJvmName(),
-                r.paramKinds(), r.args(), r.meta());
+        return new HirExpr.RecordReuse(
+                targetRead,
+                r.classId(),
+                r.classTypeId(),
+                r.classJvmName(),
+                r.paramKinds(),
+                r.args(),
+                r.meta());
     }
 }

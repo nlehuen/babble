@@ -1,8 +1,6 @@
 package org.babblelang.runtime;
 
-/**
- * An unboxed {@code long} cell for captured lexical variables (BIP011).
- */
+/** An unboxed {@code long} cell for captured lexical variables (BIP011). */
 public final class LongCell {
     public long value;
     private boolean defined;

@@ -1,35 +1,38 @@
 package org.babblelang.analysis;
 
-import org.babblelang.effects.Effect;
-
 import java.lang.reflect.Method;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.babblelang.effects.Effect;
 
 /**
  * Per-engine host effect policy (BIP007 §3.1, §6.2 ; BIP016-D8).
  *
- * <p>The assumptions a host registers on {@code BabbleScriptEngine} ({@code assumeEffects},
- * {@code assumeConstructorEffects}, {@code markIO}) are lowered by {@link Registry} into an
- * {@link AxiomData.AxiomTable}, the same table {@code axiom X.m: fn ...} declarations build
- * ({@code BIP027-D6}) : a method assumption is a named member axiom applying to the method's
- * overrides, a constructor assumption is a {@code new} axiom, and a class assumption is an
- * {@code exact} wildcard ({@code def *}) on the class itself.
+ * <p>The assumptions a host registers on {@code BabbleScriptEngine} ({@code assumeEffects}, {@code
+ * assumeConstructorEffects}, {@code markIO}) are lowered by {@link Registry} into an {@link
+ * AxiomData.AxiomTable}, the same table {@code axiom X.m: fn ...} declarations build ({@code
+ * BIP027-D6}) : a method assumption is a named member axiom applying to the method's overrides, a
+ * constructor assumption is a {@code new} axiom, and a class assumption is an {@code exact}
+ * wildcard ({@code def *}) on the class itself.
  */
 public final class HostEffects {
 
-    public static final HostEffects DEFAULT = new HostEffects(true, true, AxiomData.AxiomTable.EMPTY, BuiltinAxioms.standard());
+    public static final HostEffects DEFAULT =
+            new HostEffects(true, true, AxiomData.AxiomTable.EMPTY, BuiltinAxioms.standard());
 
     private final boolean allowAxioms;
     private final boolean bytecodeEffectAnalysis;
     private final AxiomData.AxiomTable hostAxioms;
     private final BuiltinAxioms builtinAxioms;
 
-    HostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, AxiomData.AxiomTable hostAxioms,
-                BuiltinAxioms builtinAxioms) {
+    HostEffects(
+            boolean allowAxioms,
+            boolean bytecodeEffectAnalysis,
+            AxiomData.AxiomTable hostAxioms,
+            BuiltinAxioms builtinAxioms) {
         this.allowAxioms = allowAxioms;
         this.bytecodeEffectAnalysis = bytecodeEffectAnalysis;
         this.hostAxioms = hostAxioms != null ? hostAxioms : AxiomData.AxiomTable.EMPTY;
@@ -70,12 +73,11 @@ public final class HostEffects {
     }
 
     /**
-     * An engine's host registrations, the last one about a target replacing the previous one.
-     * Not thread-safe : the engine guards it.
+     * An engine's host registrations, the last one about a target replacing the previous one. Not
+     * thread-safe : the engine guards it.
      */
     public static final class Registry {
-        private record Key(Class<?> owner, String member) {
-        }
+        private record Key(Class<?> owner, String member) {}
 
         private final Map<Key, List<AxiomData.MemberAxiom>> entries = new LinkedHashMap<>();
 
@@ -95,7 +97,8 @@ public final class HostEffects {
             Objects.requireNonNull(owner, "owner");
             Objects.requireNonNull(methodName, "methodName");
             Lowered lowered = lower(Kind.METHOD, effects);
-            entries.put(new Key(owner, methodName),
+            entries.put(
+                    new Key(owner, methodName),
                     List.of(member(owner, methodName, AxiomData.MemberKind.ANY, false, lowered)));
         }
 
@@ -103,7 +106,8 @@ public final class HostEffects {
         public void assumeConstructor(Class<?> target, Effect... effects) {
             Objects.requireNonNull(target, "target");
             Lowered lowered = lower(Kind.CONSTRUCTOR, effects);
-            entries.put(new Key(target, "new"),
+            entries.put(
+                    new Key(target, "new"),
                     List.of(member(target, "new", AxiomData.MemberKind.STATIC, false, lowered)));
         }
 
@@ -117,13 +121,24 @@ public final class HostEffects {
         public void markIO(Class<?> owner, String methodName) {
             Objects.requireNonNull(owner, "owner");
             Objects.requireNonNull(methodName, "methodName");
-            entries.put(new Key(owner, methodName),
-                    List.of(member(owner, methodName, AxiomData.MemberKind.ANY, false, Lowered.IO)));
+            entries.put(
+                    new Key(owner, methodName),
+                    List.of(
+                            member(
+                                    owner,
+                                    methodName,
+                                    AxiomData.MemberKind.ANY,
+                                    false,
+                                    Lowered.IO)));
         }
 
         /** The engine's policy with these registrations. */
-        public HostEffects toHostEffects(boolean allowAxioms, boolean bytecodeEffectAnalysis, BuiltinAxioms builtinAxioms) {
-            if (allowAxioms && bytecodeEffectAnalysis && entries.isEmpty() && builtinAxioms == BuiltinAxioms.standard()) {
+        public HostEffects toHostEffects(
+                boolean allowAxioms, boolean bytecodeEffectAnalysis, BuiltinAxioms builtinAxioms) {
+            if (allowAxioms
+                    && bytecodeEffectAnalysis
+                    && entries.isEmpty()
+                    && builtinAxioms == BuiltinAxioms.standard()) {
                 return DEFAULT;
             }
             AxiomData.Builder builder = new AxiomData.Builder();
@@ -132,21 +147,35 @@ public final class HostEffects {
                     builder.addMemberAxiom(m);
                 }
             }
-            return new HostEffects(allowAxioms, bytecodeEffectAnalysis, builder.build(), builtinAxioms);
+            return new HostEffects(
+                    allowAxioms, bytecodeEffectAnalysis, builder.build(), builtinAxioms);
         }
 
         private void putClass(Class<?> target, Lowered lowered) {
             // An exact wildcard on the class itself : the instance one for its methods, the static
             // one for its static methods and constructors.
-            entries.put(new Key(target, "*"), List.of(
-                    member(target, "*", AxiomData.MemberKind.INSTANCE, true, lowered),
-                    member(target, "*", AxiomData.MemberKind.STATIC, true, lowered)));
+            entries.put(
+                    new Key(target, "*"),
+                    List.of(
+                            member(target, "*", AxiomData.MemberKind.INSTANCE, true, lowered),
+                            member(target, "*", AxiomData.MemberKind.STATIC, true, lowered)));
         }
 
-        private static AxiomData.MemberAxiom member(Class<?> owner, String name, AxiomData.MemberKind kind,
-                                                    boolean exact, Lowered lowered) {
-            return AxiomData.MemberAxiom.host(owner, name, kind, exact, lowered.effects(),
-                    lowered.mutReceiver(), lowered.sharedReceiver(), lowered.nothrow());
+        private static AxiomData.MemberAxiom member(
+                Class<?> owner,
+                String name,
+                AxiomData.MemberKind kind,
+                boolean exact,
+                Lowered lowered) {
+            return AxiomData.MemberAxiom.host(
+                    owner,
+                    name,
+                    kind,
+                    exact,
+                    lowered.effects(),
+                    lowered.mutReceiver(),
+                    lowered.sharedReceiver(),
+                    lowered.nothrow());
         }
     }
 
@@ -157,7 +186,8 @@ public final class HostEffects {
     }
 
     /** A host registration's {@link Effect}s, normalized into the effect set its axiom states. */
-    private record Lowered(EffectSet effects, boolean mutReceiver, boolean sharedReceiver, boolean nothrow) {
+    private record Lowered(
+            EffectSet effects, boolean mutReceiver, boolean sharedReceiver, boolean nothrow) {
         static final Lowered IO = new Lowered(EffectSet.IO_DECLARED, false, false, false);
     }
 
@@ -173,24 +203,29 @@ public final class HostEffects {
         }
         if (set.contains(Effect.IO)) {
             if (set.size() > 1) {
-                throw new IllegalArgumentException("Effect.IO cannot be combined with positive effects");
+                throw new IllegalArgumentException(
+                        "Effect.IO cannot be combined with positive effects");
             }
             return Lowered.IO;
         }
         if (set.contains(Effect.PURE) && set.contains(Effect.MUT)) {
-            throw new IllegalArgumentException("Effect.PURE and Effect.MUT are mutually exclusive : use Effect.MUT (or Effect.VOLATILE, Effect.MUT)");
+            throw new IllegalArgumentException(
+                    "Effect.PURE and Effect.MUT are mutually exclusive : use Effect.MUT (or Effect.VOLATILE, Effect.MUT)");
         }
         if (set.contains(Effect.PURE) && set.contains(Effect.VOLATILE)) {
-            throw new IllegalArgumentException("Effect.PURE and Effect.VOLATILE are mutually exclusive");
+            throw new IllegalArgumentException(
+                    "Effect.PURE and Effect.VOLATILE are mutually exclusive");
         }
         if (set.contains(Effect.BORROW) && set.contains(Effect.SHARED)) {
-            throw new IllegalArgumentException("Effect.BORROW and Effect.SHARED are mutually exclusive");
+            throw new IllegalArgumentException(
+                    "Effect.BORROW and Effect.SHARED are mutually exclusive");
         }
         if (kind == Kind.CONSTRUCTOR && set.contains(Effect.MUT)) {
             throw new IllegalArgumentException("Constructors cannot declare Effect.MUT");
         }
         if (kind == Kind.CLASS && set.contains(Effect.MUT)) {
-            throw new IllegalArgumentException("Bare class overrides cannot declare Effect.MUT : register per method instead");
+            throw new IllegalArgumentException(
+                    "Bare class overrides cannot declare Effect.MUT : register per method instead");
         }
         boolean mutReceiver = set.remove(Effect.MUT);
         boolean sharedReceiver = set.remove(Effect.SHARED);
@@ -213,8 +248,16 @@ public final class HostEffects {
         if (mutReceiver) {
             set.remove(Effect.PURE);
         }
-        EffectSet effects = EffectSet.ofDeclared(set, mutReceiver, !sharedReceiver, sharedReceiver, uniqueResult,
-                false, volatileEffect, true);
+        EffectSet effects =
+                EffectSet.ofDeclared(
+                        set,
+                        mutReceiver,
+                        !sharedReceiver,
+                        sharedReceiver,
+                        uniqueResult,
+                        false,
+                        volatileEffect,
+                        true);
         return new Lowered(effects, mutReceiver, sharedReceiver, set.contains(Effect.NOTHROW));
     }
 }

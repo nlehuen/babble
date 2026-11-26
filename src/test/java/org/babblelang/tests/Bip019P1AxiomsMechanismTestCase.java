@@ -1,5 +1,6 @@
 package org.babblelang.tests;
 
+import java.lang.reflect.Method;
 import org.babblelang.analysis.BuiltinAxioms;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
@@ -7,8 +8,6 @@ import org.babblelang.engine.TypeCheckException;
 import org.babblelang.format.Formatter;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-
-import java.lang.reflect.Method;
 
 /**
  * Tests for {@code BIP019-I1} (mechanism and the form of axioms) and {@code BIP020-I5} (array
@@ -18,7 +17,8 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testAxiomExpressionEvaluatesToNullAtRuntime() throws Exception {
-        String script = """
+        String script =
+                """
                 def r: any? = (
                     axiom java.lang.Math.sqrt: fn nothrow foldable (a: double): double
                 )
@@ -29,7 +29,8 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testClassAndMemberAxiomsEffectsAndSpecificity() throws Exception {
-        String axiomsSrc = """
+        String axiomsSrc =
+                """
                 axiom java.lang.Comparable of T: class (
                     def compareTo: fn pure (other: T): int
                 )
@@ -68,12 +69,16 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
         Assertions.assertTrue(custom.isIdempotent(trim));
         Assertions.assertTrue(custom.nullMarked(String.class));
         Assertions.assertTrue(custom.isDeeplyImmutable(String.class));
-        Assertions.assertTrue(custom.nullMarked(java.util.ArrayList.class)); // inherited from Collection
+        Assertions.assertTrue(
+                custom.nullMarked(java.util.ArrayList.class)); // inherited from Collection
         Assertions.assertFalse(custom.isDeeplyImmutable(java.util.ArrayList.class));
-        // Array parameter signature matches String.valueOf(char[]) and types as non-null string in a pure fn.
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        // Array parameter signature matches String.valueOf(char[]) and types as non-null string in
+        // a pure fn.
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setBuiltinAxioms(custom);
-        String arrCall = """
+        String arrCall =
+                """
                 def f = fn (): string -> (
                     def cs = (array of char).of('h', 'i')
                     java.lang.String.valueOf(cs)
@@ -85,7 +90,8 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testExactClassAxiomDoesNotApplyToSubclasses() throws Exception {
-        String axiomsSrc = """
+        String axiomsSrc =
+                """
                 axiom java.util.AbstractList of E: class exact notnull immutable (
                     def size: fn nothrow (): int
                 )
@@ -99,7 +105,8 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testBabbleOverrideContractCheckedAgainstInheritedAxiom() throws Exception {
-        String evil = """
+        String evil =
+                """
                 axiom java.lang.Comparable.compareTo: fn pure
                 def Evil = class (def v: int) implements java.lang.Comparable of Evil (
                     def compareTo = fn (mut other: Evil): int -> (
@@ -109,13 +116,19 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
                 )
                 Evil(1).v
                 """;
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        TypeCheckException ex = Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(evil));
-        Assertions.assertTrue(ex.getMessage().contains("Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo"),
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        TypeCheckException ex =
+                Assertions.assertThrows(TypeCheckException.class, () -> engine.eval(evil));
+        Assertions.assertTrue(
+                ex.getMessage()
+                        .contains(
+                                "Function compareTo violates pure guarantee of axiom java.lang.Comparable.compareTo"),
                 ex.getMessage());
 
         // A pure override satisfies the contract cleanly.
-        String good = """
+        String good =
+                """
                 axiom java.lang.Comparable.compareTo: fn pure
                 def Good = class (def v: int) implements java.lang.Comparable of Good (
                     def compareTo = fn (other: Good): int -> (this.v - other.v)
@@ -127,15 +140,18 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testLocalAxiomTakesPrecedenceOverBuiltinAxioms() throws Exception {
-        String axiomsSrc = """
+        String axiomsSrc =
+                """
                 axiom java.lang.Comparable.compareTo: fn pure
                 """;
         BuiltinAxioms custom = BuiltinAxioms.fromSource(axiomsSrc, "comp.ba");
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.setBuiltinAxioms(custom);
 
         // Local `fn io` axiom overrides the built-in `fn pure` contract on Comparable.compareTo.
-        String script = """
+        String script =
+                """
                 axiom java.lang.Comparable.compareTo: fn io
                 def Noisy = class (def v: int) implements java.lang.Comparable of Noisy (
                     def compareTo = fn io (o: Noisy): int -> (
@@ -149,7 +165,8 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testArrayAndBoxedOverloadDisambiguationInAxioms() throws Exception {
-        String script = """
+        String script =
+                """
                 axiom java.util.Arrays: class (
                 ) static (
                     def copyOf: fn nothrow fresh (original: (array of int)!, newLength: int): (array of int)!
@@ -172,22 +189,31 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
 
     @Test
     public void testEmptyAndDuplicateAxiomDiagnostics() {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        TypeCheckException empty = Assertions.assertThrows(TypeCheckException.class,
-                () -> engine.eval("axiom java.lang.Math.sqrt: fn"));
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        TypeCheckException empty =
+                Assertions.assertThrows(
+                        TypeCheckException.class,
+                        () -> engine.eval("axiom java.lang.Math.sqrt: fn"));
         Assertions.assertTrue(empty.getMessage().contains("Empty axiom"), empty.getMessage());
 
-        TypeCheckException dup = Assertions.assertThrows(TypeCheckException.class,
-                () -> engine.eval("""
-                        axiom java.lang.Math.sqrt: fn nothrow (a: double): double
-                        axiom java.lang.Math.sqrt: fn nothrow (a: double): double
-                        """));
-        Assertions.assertTrue(dup.getMessage().contains("Duplicate axiom for member"), dup.getMessage());
+        TypeCheckException dup =
+                Assertions.assertThrows(
+                        TypeCheckException.class,
+                        () ->
+                                engine.eval(
+                                        """
+                                        axiom java.lang.Math.sqrt: fn nothrow (a: double): double
+                                        axiom java.lang.Math.sqrt: fn nothrow (a: double): double
+                                        """));
+        Assertions.assertTrue(
+                dup.getMessage().contains("Duplicate axiom for member"), dup.getMessage());
     }
 
     @Test
     public void testFormatterRoundTripForAxioms() throws Exception {
-        String source = """
+        String source =
+                """
                 ;; Class axiom with instance and static blocks
                 axiom java.util.Collection of E: class notnull (
                     def add: fn mut shared shallow (shared e: E): bool
@@ -219,13 +245,16 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
     public void testBabbleNameAxiomsAndBuiltinsPrelude() throws Exception {
         // 1. Standard builtins.ba provides int, assert, same, classof, etc.
         BuiltinAxioms std = BuiltinAxioms.standard();
-        for (String name : java.util.List.of("assert", "suppose", "same", "classof",
-                "byte", "short", "int", "long", "float", "double", "bool", "char", "string")) {
+        for (String name :
+                java.util.List.of(
+                        "assert", "suppose", "same", "classof", "byte", "short", "int", "long",
+                        "float", "double", "bool", "char", "string")) {
             Assertions.assertTrue(std.builtins().containsKey(name), "Missing built-in : " + name);
         }
 
         // 2. With BuiltinAxioms.EMPTY, ordinary built-ins are unknown (not callable).
-        BabbleScriptEngine emptyEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine emptyEngine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         emptyEngine.setBuiltinAxioms(BuiltinAxioms.EMPTY);
         emptyEngine.enableBytecodeEffectAnalysis(false);
         Assertions.assertThrows(TypeCheckException.class, () -> emptyEngine.eval("int(3.5)"));
@@ -234,10 +263,12 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
         Assertions.assertThrows(TypeCheckException.class, () -> emptyEngine.eval("classof(1)"));
 
         // 3. A Babble-name axiom types a host binding, works inside blocks, and evaluates to null.
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         javax.script.Bindings bindings = engine.createBindings();
         bindings.put("hostAdd", engine.eval("fn (a: int, b: int): int -> (a + b)"));
-        String script = """
+        String script =
+                """
                 def run = fn (): int -> (
                     def r: any? = axiom hostAdd: fn nothrow (a: int, b: int): int
                     assert(r == null)
@@ -247,17 +278,26 @@ public class Bip019P1AxiomsMechanismTestCase extends BabbleTestBase {
                 """;
         Assertions.assertEquals(42, engine.eval(script, bindings));
 
-        // 4. Reading a Babble-name axiom whose binding is missing fails at runtime with No such name.
-        javax.script.ScriptException missing = Assertions.assertThrows(javax.script.ScriptException.class,
-                () -> engine.eval("axiom ghostFn: fn (a: int): int\nghostFn(1)"));
-        Assertions.assertTrue(missing.getMessage().contains("No such name : ghostFn"), missing.getMessage());
+        // 4. Reading a Babble-name axiom whose binding is missing fails at runtime with No such
+        // name.
+        javax.script.ScriptException missing =
+                Assertions.assertThrows(
+                        javax.script.ScriptException.class,
+                        () -> engine.eval("axiom ghostFn: fn (a: int): int\nghostFn(1)"));
+        Assertions.assertTrue(
+                missing.getMessage().contains("No such name : ghostFn"), missing.getMessage());
 
         // 5. Babble-name axioms cannot be exported and require a signature.
-        TypeCheckException noSig = Assertions.assertThrows(TypeCheckException.class,
-                () -> engine.eval("axiom ghostFn: fn pure"));
-        Assertions.assertTrue(noSig.getMessage().contains("requires a signature"), noSig.getMessage());
-        TypeCheckException exported = Assertions.assertThrows(TypeCheckException.class,
-                () -> engine.eval("export axiom ghostFn: fn (a: int): int"));
-        Assertions.assertTrue(exported.getMessage().contains("cannot be exported"), exported.getMessage());
+        TypeCheckException noSig =
+                Assertions.assertThrows(
+                        TypeCheckException.class, () -> engine.eval("axiom ghostFn: fn pure"));
+        Assertions.assertTrue(
+                noSig.getMessage().contains("requires a signature"), noSig.getMessage());
+        TypeCheckException exported =
+                Assertions.assertThrows(
+                        TypeCheckException.class,
+                        () -> engine.eval("export axiom ghostFn: fn (a: int): int"));
+        Assertions.assertTrue(
+                exported.getMessage().contains("cannot be exported"), exported.getMessage());
     }
 }

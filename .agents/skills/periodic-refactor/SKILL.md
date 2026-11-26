@@ -72,8 +72,8 @@ Estimate the expected per-file LOC and **net `src/main` LOC** impact for each pr
 2. Execute the roadmap one step at a time:
    - After each step, run targeted `.batest.md` and JUnit tests plus `ArchitectureBoundaryTestCase` and `RuntimeBoundaryTestCase` (see [references/babble-invariants.md](./references/babble-invariants.md)).
    - Verify `git status -- src/test/batest` is completely empty.
-   - If a grandfathered `> 2,000`-LOC file shrank, tighten its entry in `ArchitectureBoundaryTestCase.GRANDFATHERED_CEILINGS` (or remove it once `<= 2,000` LOC) in the same commit.
-   - Review your diff to confirm reductions came from real factoring—not line-wrapping compression, removed blank lines, or stripped comments.
+   - Run `mvn spotless:apply` (Spotless + `google-java-format` AOSP is gated in `validate` on all Java files), then check `audit_file_sizes.py --check-hard-limit` and tighten/remove any `ArchitectureBoundaryTestCase.GRANDFATHERED_CEILINGS` entry for shrunk files in the same commit.
+   - Review your diff to confirm reductions came from real factoring—not removed blank lines or stripped comments.
    - Commit each green step with a clear message (space before colon, e.g., `Refactor : decompose MirLowerer control-flow lowering`).
 3. Before opening a PR / finishing the session, run the full verification gate:
    - `python3 .agents/skills/periodic-refactor/scripts/audit_file_sizes.py --check-hard-limit` (and report before/after per-file and **net `src/main` LOC**).

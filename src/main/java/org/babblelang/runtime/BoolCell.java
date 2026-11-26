@@ -1,8 +1,6 @@
 package org.babblelang.runtime;
 
-/**
- * An unboxed {@code bool} cell for captured lexical variables (RM001).
- */
+/** An unboxed {@code bool} cell for captured lexical variables (RM001). */
 public final class BoolCell {
     public boolean value;
     private boolean defined;

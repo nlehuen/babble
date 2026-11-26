@@ -7,8 +7,8 @@ import org.babblelang.runtime.ScriptRuntime;
 import org.babblelang.runtime.Values;
 
 /**
- * {@code same(a, b)} : identity, except for numbers, booleans and strings, for which it
- * is {@code ==}.
+ * {@code same(a, b)} : identity, except for numbers, booleans and strings, for which it is {@code
+ * ==}.
  */
 public class SameFunction implements Callable {
     @Override

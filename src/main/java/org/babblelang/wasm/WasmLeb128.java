@@ -2,12 +2,9 @@ package org.babblelang.wasm;
 
 import java.io.ByteArrayOutputStream;
 
-/**
- * LEB128 encoding helpers for WebAssembly 3.0 binary emission ({@code BIP025-I0}).
- */
+/** LEB128 encoding helpers for WebAssembly 3.0 binary emission ({@code BIP025-I0}). */
 final class WasmLeb128 {
-    private WasmLeb128() {
-    }
+    private WasmLeb128() {}
 
     static void writeU32(ByteArrayOutputStream out, int value) {
         long v = Integer.toUnsignedLong(value);

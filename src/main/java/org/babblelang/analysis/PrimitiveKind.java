@@ -1,8 +1,8 @@
 package org.babblelang.analysis;
 
 /**
- * Unboxed JVM primitive storage/expression kind published by {@code LoweringAnalyzer}
- * and consumed across {@code ir.hir}, {@code opt}, and {@code compiler} with zero ANTLR dependency (BIP027-D3).
+ * Unboxed JVM primitive storage/expression kind published by {@code LoweringAnalyzer} and consumed
+ * across {@code ir.hir}, {@code opt}, and {@code compiler} with zero ANTLR dependency (BIP027-D3).
  */
 public enum PrimitiveKind {
     NONE,

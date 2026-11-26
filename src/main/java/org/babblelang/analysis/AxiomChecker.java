@@ -1,13 +1,5 @@
 package org.babblelang.analysis;
 
-import org.babblelang.effects.Effect;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.BabbleClass;
-import org.babblelang.runtime.Callable;
-import org.babblelang.runtime.ClassShape;
-import org.babblelang.runtime.ScriptRuntime;
-import org.babblelang.runtime.Slot;
-
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,13 +16,20 @@ import java.util.SortedSet;
 import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.Function;
+import org.babblelang.effects.Effect;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.BabbleClass;
+import org.babblelang.runtime.Callable;
+import org.babblelang.runtime.ClassShape;
+import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Slot;
 
 /**
- * Property-based axiom fuzzing for {@code axiom}-declared Babble functions
- * ({@code docs/design/bip007_effects.md §5.4}, {@code BIP007-I3}).
+ * Property-based axiom fuzzing for {@code axiom}-declared Babble functions ({@code
+ * docs/design/bip007_effects.md §5.4}, {@code BIP007-I3}).
  *
- * <p>Activated via {@code babble.checkAxioms=true} (engine attribute or system property) or
- * invoked programmatically via {@link #check(ScopeAnalysis, BabbleParser.FileContext, ScriptRuntime)}.
+ * <p>Activated via {@code babble.checkAxioms=true} (engine attribute or system property) or invoked
+ * programmatically via {@link #check(ScopeAnalysis, BabbleParser.FileContext, ScriptRuntime)}.
  */
 public final class AxiomChecker {
 
@@ -41,14 +40,22 @@ public final class AxiomChecker {
     public record Failure(String functionName, Effect axiom, String detail) {
         @Override
         public String toString() {
-            return "Axiom violation in " + functionName + " (" + EffectSet.keywordOf(axiom) + ") : " + detail;
+            return "Axiom violation in "
+                    + functionName
+                    + " ("
+                    + EffectSet.keywordOf(axiom)
+                    + ") : "
+                    + detail;
         }
     }
 
-    public record Skipped(String functionName, String reason) {
-    }
+    public record Skipped(String functionName, String reason) {}
 
-    public record Report(int checkedFunctions, int checkedProperties, List<Failure> failures, List<Skipped> skipped) {
+    public record Report(
+            int checkedFunctions,
+            int checkedProperties,
+            List<Failure> failures,
+            List<Skipped> skipped) {
         public boolean ok() {
             return failures.isEmpty();
         }
@@ -69,7 +76,9 @@ public final class AxiomChecker {
 
     /** Registers a custom generator keyed by Babble type name (e.g. a class or Java type name). */
     public AxiomChecker registerGenerator(String typeName, Function<Random, Object> generator) {
-        customGenerators.put(Objects.requireNonNull(typeName, "typeName"), Objects.requireNonNull(generator, "generator"));
+        customGenerators.put(
+                Objects.requireNonNull(typeName, "typeName"),
+                Objects.requireNonNull(generator, "generator"));
         return this;
     }
 
@@ -82,7 +91,8 @@ public final class AxiomChecker {
     }
 
     /** Fuzz-checks all top-level {@code axiom}-declared Babble functions in {@code file}. */
-    public Report check(ScopeAnalysis analysis, BabbleParser.FileContext file, ScriptRuntime runtime) {
+    public Report check(
+            ScopeAnalysis analysis, BabbleParser.FileContext file, ScriptRuntime runtime) {
         Random rng = new Random(seed);
         int checkedFunctions = 0;
         int checkedProperties = 0;
@@ -135,7 +145,8 @@ public final class AxiomChecker {
             }
             if (effs.contains(Effect.IDEMPOTENT) && paramTypes.size() == 1) {
                 checkedProperties++;
-                checkIdempotent(name, callable, paramTypes.get(0), analysis, runtime, rng, failures);
+                checkIdempotent(
+                        name, callable, paramTypes.get(0), analysis, runtime, rng, failures);
             }
             if (effs.contains(Effect.MONOTONE) && paramTypes.size() == 1) {
                 checkedProperties++;
@@ -146,25 +157,46 @@ public final class AxiomChecker {
                 checkInjective(name, callable, paramTypes.get(0), analysis, runtime, rng, failures);
             }
         }
-        return new Report(checkedFunctions, checkedProperties, List.copyOf(failures), List.copyOf(skipped));
+        return new Report(
+                checkedFunctions, checkedProperties, List.copyOf(failures), List.copyOf(skipped));
     }
 
-    private void checkNothrow(String name, Callable fn, List<Type> paramTypes, ScopeAnalysis analysis,
-                              ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkNothrow(
+            String name,
+            Callable fn,
+            List<Type> paramTypes,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         for (int i = 0; i < samples; i++) {
             Object[] args = generateArgs(paramTypes, i, analysis, rt, rng);
             try {
                 fn.call(rt, args, null, null);
             } catch (Throwable t) {
-                failures.add(new Failure(name, Effect.NOTHROW,
-                        "threw " + t.getClass().getSimpleName() + "(" + t.getMessage() + ") on " + Arrays.toString(args)));
+                failures.add(
+                        new Failure(
+                                name,
+                                Effect.NOTHROW,
+                                "threw "
+                                        + t.getClass().getSimpleName()
+                                        + "("
+                                        + t.getMessage()
+                                        + ") on "
+                                        + Arrays.toString(args)));
                 return;
             }
         }
     }
 
-    private void checkDeterministic(String name, Callable fn, List<Type> paramTypes, ScopeAnalysis analysis,
-                                    ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkDeterministic(
+            String name,
+            Callable fn,
+            List<Type> paramTypes,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         for (int i = 0; i < samples; i++) {
             Object[] args1 = generateArgs(paramTypes, i, analysis, rt, rng);
             Object[] args2 = deepCopyArgs(args1);
@@ -172,27 +204,46 @@ public final class AxiomChecker {
                 Object r1 = fn.call(rt, args1, null, null);
                 Object r2 = fn.call(rt, args2, null, null);
                 if (!valuesEqual(r1, r2)) {
-                    failures.add(new Failure(name, Effect.DETERMINISTIC,
-                            "returned " + r1 + " then " + r2 + " for identical input " + Arrays.toString(args1)));
+                    failures.add(
+                            new Failure(
+                                    name,
+                                    Effect.DETERMINISTIC,
+                                    "returned "
+                                            + r1
+                                            + " then "
+                                            + r2
+                                            + " for identical input "
+                                            + Arrays.toString(args1)));
                     return;
                 }
             } catch (Throwable ignored) {
-                // Non-nothrow functions may throw on some inputs; deterministic check compares normal outputs.
+                // Non-nothrow functions may throw on some inputs; deterministic check compares
+                // normal outputs.
             }
         }
     }
 
-    private void checkCommutative(String name, Callable fn, List<Type> paramTypes, ScopeAnalysis analysis,
-                                  ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkCommutative(
+            String name,
+            Callable fn,
+            List<Type> paramTypes,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         for (int i = 0; i < samples; i++) {
             Object a = generate(paramTypes.get(0), i, analysis, rt, rng, 0);
             Object b = generate(paramTypes.get(1), i + 1, analysis, rt, rng, 0);
             try {
-                Object ab = fn.call(rt, new Object[]{deepCopy(a), deepCopy(b)}, null, null);
-                Object ba = fn.call(rt, new Object[]{deepCopy(b), deepCopy(a)}, null, null);
+                Object ab = fn.call(rt, new Object[] {deepCopy(a), deepCopy(b)}, null, null);
+                Object ba = fn.call(rt, new Object[] {deepCopy(b), deepCopy(a)}, null, null);
                 if (!valuesEqual(ab, ba)) {
-                    failures.add(new Failure(name, Effect.COMMUTATIVE,
-                            "f(" + a + ", " + b + ") = " + ab + " != f(" + b + ", " + a + ") = " + ba));
+                    failures.add(
+                            new Failure(
+                                    name,
+                                    Effect.COMMUTATIVE,
+                                    "f(" + a + ", " + b + ") = " + ab + " != f(" + b + ", " + a
+                                            + ") = " + ba));
                     return;
                 }
             } catch (Throwable ignored) {
@@ -200,22 +251,31 @@ public final class AxiomChecker {
         }
     }
 
-    private void checkAssociative(String name, Callable fn, List<Type> paramTypes, ScopeAnalysis analysis,
-                                  ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkAssociative(
+            String name,
+            Callable fn,
+            List<Type> paramTypes,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         Type t = paramTypes.get(0);
         for (int i = 0; i < samples; i++) {
             Object a = generate(t, i, analysis, rt, rng, 0);
             Object b = generate(t, i + 1, analysis, rt, rng, 0);
             Object c = generate(t, i + 2, analysis, rt, rng, 0);
             try {
-                Object ab = fn.call(rt, new Object[]{deepCopy(a), deepCopy(b)}, null, null);
-                Object lhs = fn.call(rt, new Object[]{ab, deepCopy(c)}, null, null);
-                Object bc = fn.call(rt, new Object[]{deepCopy(b), deepCopy(c)}, null, null);
-                Object rhs = fn.call(rt, new Object[]{deepCopy(a), bc}, null, null);
+                Object ab = fn.call(rt, new Object[] {deepCopy(a), deepCopy(b)}, null, null);
+                Object lhs = fn.call(rt, new Object[] {ab, deepCopy(c)}, null, null);
+                Object bc = fn.call(rt, new Object[] {deepCopy(b), deepCopy(c)}, null, null);
+                Object rhs = fn.call(rt, new Object[] {deepCopy(a), bc}, null, null);
                 if (!valuesEqual(lhs, rhs)) {
-                    failures.add(new Failure(name, Effect.ASSOCIATIVE,
-                            "f(f(" + a + ", " + b + "), " + c + ") = " + lhs
-                                    + " != f(" + a + ", f(" + b + ", " + c + ")) = " + rhs));
+                    failures.add(
+                            new Failure(
+                                    name,
+                                    Effect.ASSOCIATIVE,
+                                    "f(f(" + a + ", " + b + "), " + c + ") = " + lhs + " != f(" + a
+                                            + ", f(" + b + ", " + c + ")) = " + rhs));
                     return;
                 }
             } catch (Throwable ignored) {
@@ -223,16 +283,25 @@ public final class AxiomChecker {
         }
     }
 
-    private void checkIdempotent(String name, Callable fn, Type paramType, ScopeAnalysis analysis,
-                                 ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkIdempotent(
+            String name,
+            Callable fn,
+            Type paramType,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         for (int i = 0; i < samples; i++) {
             Object x = generate(paramType, i, analysis, rt, rng, 0);
             try {
-                Object fx = fn.call(rt, new Object[]{deepCopy(x)}, null, null);
-                Object ffx = fn.call(rt, new Object[]{deepCopy(fx)}, null, null);
+                Object fx = fn.call(rt, new Object[] {deepCopy(x)}, null, null);
+                Object ffx = fn.call(rt, new Object[] {deepCopy(fx)}, null, null);
                 if (!valuesEqual(fx, ffx)) {
-                    failures.add(new Failure(name, Effect.IDEMPOTENT,
-                            "f(" + x + ") = " + fx + " != f(f(" + x + ")) = " + ffx));
+                    failures.add(
+                            new Failure(
+                                    name,
+                                    Effect.IDEMPOTENT,
+                                    "f(" + x + ") = " + fx + " != f(f(" + x + ")) = " + ffx));
                     return;
                 }
             } catch (Throwable ignored) {
@@ -241,8 +310,14 @@ public final class AxiomChecker {
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private void checkMonotone(String name, Callable fn, Type paramType, ScopeAnalysis analysis,
-                               ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkMonotone(
+            String name,
+            Callable fn,
+            Type paramType,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         for (int i = 0; i < samples; i++) {
             Object a = generate(paramType, i, analysis, rt, rng, 0);
             Object b = generate(paramType, i + 1, analysis, rt, rng, 0);
@@ -255,11 +330,17 @@ public final class AxiomChecker {
                 b = tmp;
             }
             try {
-                Object fa = fn.call(rt, new Object[]{deepCopy(a)}, null, null);
-                Object fb = fn.call(rt, new Object[]{deepCopy(b)}, null, null);
-                if (fa instanceof Comparable cfa && fb instanceof Comparable cfb && cfa.compareTo(cfb) > 0) {
-                    failures.add(new Failure(name, Effect.MONOTONE,
-                            a + " <= " + b + " but f(" + a + ") = " + fa + " > f(" + b + ") = " + fb));
+                Object fa = fn.call(rt, new Object[] {deepCopy(a)}, null, null);
+                Object fb = fn.call(rt, new Object[] {deepCopy(b)}, null, null);
+                if (fa instanceof Comparable cfa
+                        && fb instanceof Comparable cfb
+                        && cfa.compareTo(cfb) > 0) {
+                    failures.add(
+                            new Failure(
+                                    name,
+                                    Effect.MONOTONE,
+                                    a + " <= " + b + " but f(" + a + ") = " + fa + " > f(" + b
+                                            + ") = " + fb));
                     return;
                 }
             } catch (Throwable ignored) {
@@ -267,17 +348,26 @@ public final class AxiomChecker {
         }
     }
 
-    private void checkInjective(String name, Callable fn, Type paramType, ScopeAnalysis analysis,
-                                ScriptRuntime rt, Random rng, List<Failure> failures) {
+    private void checkInjective(
+            String name,
+            Callable fn,
+            Type paramType,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            List<Failure> failures) {
         Map<Object, Object> seenOutputs = new HashMap<>();
         for (int i = 0; i < samples; i++) {
             Object x = generate(paramType, i, analysis, rt, rng, 0);
             try {
-                Object fx = fn.call(rt, new Object[]{deepCopy(x)}, null, null);
+                Object fx = fn.call(rt, new Object[] {deepCopy(x)}, null, null);
                 Object prev = seenOutputs.get(fx);
                 if (prev != null && !valuesEqual(prev, x)) {
-                    failures.add(new Failure(name, Effect.INJECTIVE,
-                            "f(" + prev + ") == f(" + x + ") == " + fx));
+                    failures.add(
+                            new Failure(
+                                    name,
+                                    Effect.INJECTIVE,
+                                    "f(" + prev + ") == f(" + x + ") == " + fx));
                     return;
                 }
                 if (fx != null) {
@@ -290,7 +380,8 @@ public final class AxiomChecker {
 
     // ---------------------------------------------------------------- generators
 
-    private String firstUnsupportedParam(List<Type> types, ScopeAnalysis analysis, ScriptRuntime rt) {
+    private String firstUnsupportedParam(
+            List<Type> types, ScopeAnalysis analysis, ScriptRuntime rt) {
         for (Type t : types) {
             if (!isSupported(t, analysis, rt, 0)) {
                 return t.toString();
@@ -318,7 +409,8 @@ public final class AxiomChecker {
         if (t instanceof Type.JavaInstance ji) {
             Class<?> cls = ji.type();
             if (cls == List.class || cls == Set.class || cls == SortedSet.class) {
-                return ji.typeArguments().size() == 1 && isSupported(ji.typeArguments().get(0), analysis, rt, depth + 1);
+                return ji.typeArguments().size() == 1
+                        && isSupported(ji.typeArguments().get(0), analysis, rt, depth + 1);
             }
             if (cls == Map.class || cls == SortedMap.class || cls == Map.Entry.class) {
                 return ji.typeArguments().size() == 2
@@ -368,8 +460,12 @@ public final class AxiomChecker {
         return out;
     }
 
-    private Object[] generateArgs(List<Type> paramTypes, int sampleIdx, ScopeAnalysis analysis,
-                                  ScriptRuntime rt, Random rng) {
+    private Object[] generateArgs(
+            List<Type> paramTypes,
+            int sampleIdx,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng) {
         Object[] args = new Object[paramTypes.size()];
         for (int i = 0; i < paramTypes.size(); i++) {
             args[i] = generate(paramTypes.get(i), sampleIdx + i, analysis, rt, rng, 0);
@@ -377,8 +473,13 @@ public final class AxiomChecker {
         return args;
     }
 
-    private Object generate(Type t, int sampleIdx, ScopeAnalysis analysis,
-                            ScriptRuntime rt, Random rng, int depth) {
+    private Object generate(
+            Type t,
+            int sampleIdx,
+            ScopeAnalysis analysis,
+            ScriptRuntime rt,
+            Random rng,
+            int depth) {
         if (t instanceof Type.Frozen f) {
             return generate(f.of(), sampleIdx, analysis, rt, rng, depth);
         }
@@ -390,7 +491,9 @@ public final class AxiomChecker {
             return null;
         }
         if (t == Type.BOOL) {
-            return sampleIdx == 0 ? Boolean.FALSE : (sampleIdx == 1 ? Boolean.TRUE : rng.nextBoolean());
+            return sampleIdx == 0
+                    ? Boolean.FALSE
+                    : (sampleIdx == 1 ? Boolean.TRUE : rng.nextBoolean());
         }
         if (t == Type.BYTE) {
             return switch (sampleIdx) {
@@ -477,7 +580,8 @@ public final class AxiomChecker {
         if (t instanceof Type.Union u) {
             List<Type> members = new ArrayList<>(u.members());
             Type pick = members.get(Math.floorMod(sampleIdx, members.size()));
-            return generate(pick, sampleIdx / Math.max(1, members.size()), analysis, rt, rng, depth + 1);
+            return generate(
+                    pick, sampleIdx / Math.max(1, members.size()), analysis, rt, rng, depth + 1);
         }
         if (t instanceof Type.JavaInstance ji) {
             Class<?> cls = ji.type();
@@ -518,7 +622,8 @@ public final class AxiomChecker {
                 Type kt = ji.typeArguments().get(0);
                 Type vt = ji.typeArguments().get(1);
                 for (int k = 0; k < size; k++) {
-                    map.put(generate(kt, sampleIdx + k, analysis, rt, rng, depth + 1),
+                    map.put(
+                            generate(kt, sampleIdx + k, analysis, rt, rng, depth + 1),
                             generate(vt, sampleIdx + k + 7, analysis, rt, rng, depth + 1));
                 }
                 return map;

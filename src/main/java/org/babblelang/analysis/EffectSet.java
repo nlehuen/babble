@@ -1,41 +1,55 @@
 package org.babblelang.analysis;
 
-import org.babblelang.effects.Effect;
-
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
+import org.babblelang.effects.Effect;
 
 /**
- * Compile-time effect, receiver-aliasing, and algebraic property summary of a callable
- * (BIP007, BIP016).
+ * Compile-time effect, receiver-aliasing, and algebraic property summary of a callable (BIP007,
+ * BIP016).
  *
  * <p>Layer 1 internal traits stored here ({@code @HERMETIC}, {@code @DETERMINISTIC},
- * {@code @NOTHROW}, {@code @TERMINATING}, {@code mutThis}, {@code borrowThis},
- * {@code uniqueResult}, algebraic traits) are decoupled from Layer 2's opt-out surface syntax
- * ({@code io}, {@code volatile}, {@code mut}, {@code shared}, {@code unique}, opt-in
- * {@code nothrow}).
+ * {@code @NOTHROW}, {@code @TERMINATING}, {@code mutThis}, {@code borrowThis}, {@code
+ * uniqueResult}, algebraic traits) are decoupled from Layer 2's opt-out surface syntax ({@code io},
+ * {@code volatile}, {@code mut}, {@code shared}, {@code unique}, opt-in {@code nothrow}).
  */
 public final class EffectSet {
 
     /** Canonical algebraic modifier display order. */
     private static final Effect[] ALGEBRAIC_ORDER = {
-            Effect.IDEMPOTENT,
-            Effect.COMMUTATIVE,
-            Effect.ASSOCIATIVE,
-            Effect.MONOTONE,
-            Effect.INJECTIVE
+        Effect.IDEMPOTENT, Effect.COMMUTATIVE, Effect.ASSOCIATIVE, Effect.MONOTONE, Effect.INJECTIVE
     };
 
-    public static final EffectSet EMPTY = new EffectSet(
-            EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-            false, false, false, false, false, false, false, false, false);
+    public static final EffectSet EMPTY =
+            new EffectSet(
+                    EnumSet.noneOf(Effect.class),
+                    EnumSet.noneOf(Effect.class),
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false);
 
-    public static final EffectSet IO_DECLARED = new EffectSet(
-            EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-            false, false, false, false, false, false, true, false, false);
+    public static final EffectSet IO_DECLARED =
+            new EffectSet(
+                    EnumSet.noneOf(Effect.class),
+                    EnumSet.noneOf(Effect.class),
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    true,
+                    false,
+                    false);
 
     private final EnumSet<Effect> effects;
     private final EnumSet<Effect> declared;
@@ -53,17 +67,18 @@ public final class EffectSet {
         return set == null || set.isEmpty() ? EnumSet.noneOf(Effect.class) : EnumSet.copyOf(set);
     }
 
-    public EffectSet(Set<Effect> effects,
-                     Set<Effect> declared,
-                     boolean mutThis,
-                     boolean borrowThis,
-                     boolean explicitSharedThis,
-                     boolean uniqueResult,
-                     boolean explicitUniqueResult,
-                     boolean terminating,
-                     boolean io,
-                     boolean explicitVolatile,
-                     boolean axiomatic) {
+    public EffectSet(
+            Set<Effect> effects,
+            Set<Effect> declared,
+            boolean mutThis,
+            boolean borrowThis,
+            boolean explicitSharedThis,
+            boolean uniqueResult,
+            boolean explicitUniqueResult,
+            boolean terminating,
+            boolean io,
+            boolean explicitVolatile,
+            boolean axiomatic) {
         EnumSet<Effect> norm = copySet(effects);
         norm.remove(Effect.MUT);
         norm.remove(Effect.BORROW);
@@ -100,35 +115,76 @@ public final class EffectSet {
     }
 
     public static EffectSet ofInferred(Set<Effect> effects, boolean mutThis, boolean borrowThis) {
-        return new EffectSet(effects, EnumSet.noneOf(Effect.class), mutThis, borrowThis, false,
-                false, false, false, false, false, false);
+        return new EffectSet(
+                effects,
+                EnumSet.noneOf(Effect.class),
+                mutThis,
+                borrowThis,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false);
     }
 
-    public static EffectSet ofInferred(Set<Effect> effects, boolean mutThis, boolean borrowThis,
-                                       boolean uniqueResult, boolean terminating) {
-        return new EffectSet(effects, EnumSet.noneOf(Effect.class), mutThis, borrowThis, false,
-                uniqueResult, false, terminating, false, false, false);
+    public static EffectSet ofInferred(
+            Set<Effect> effects,
+            boolean mutThis,
+            boolean borrowThis,
+            boolean uniqueResult,
+            boolean terminating) {
+        return new EffectSet(
+                effects,
+                EnumSet.noneOf(Effect.class),
+                mutThis,
+                borrowThis,
+                false,
+                uniqueResult,
+                false,
+                terminating,
+                false,
+                false,
+                false);
     }
 
-    public static EffectSet ofDeclared(Set<Effect> effects, boolean mutThis, boolean borrowThis, boolean axiomatic) {
+    public static EffectSet ofDeclared(
+            Set<Effect> effects, boolean mutThis, boolean borrowThis, boolean axiomatic) {
         return ofDeclared(effects, mutThis, borrowThis, false, false, false, false, axiomatic);
     }
 
-    public static EffectSet ofDeclared(Set<Effect> effects, boolean mutThis, boolean borrowThis,
-                                       boolean explicitUniqueResult, boolean axiomatic) {
-        return ofDeclared(effects, mutThis, borrowThis, false, explicitUniqueResult, false, false, axiomatic);
+    public static EffectSet ofDeclared(
+            Set<Effect> effects,
+            boolean mutThis,
+            boolean borrowThis,
+            boolean explicitUniqueResult,
+            boolean axiomatic) {
+        return ofDeclared(
+                effects, mutThis, borrowThis, false, explicitUniqueResult, false, false, axiomatic);
     }
 
-    public static EffectSet ofDeclared(Set<Effect> effects,
-                                       boolean mutThis,
-                                       boolean borrowThis,
-                                       boolean explicitSharedThis,
-                                       boolean explicitUniqueResult,
-                                       boolean io,
-                                       boolean explicitVolatile,
-                                       boolean axiomatic) {
-        return new EffectSet(effects, effects, mutThis, borrowThis, explicitSharedThis,
-                explicitUniqueResult, explicitUniqueResult, false, io, explicitVolatile, axiomatic);
+    public static EffectSet ofDeclared(
+            Set<Effect> effects,
+            boolean mutThis,
+            boolean borrowThis,
+            boolean explicitSharedThis,
+            boolean explicitUniqueResult,
+            boolean io,
+            boolean explicitVolatile,
+            boolean axiomatic) {
+        return new EffectSet(
+                effects,
+                effects,
+                mutThis,
+                borrowThis,
+                explicitSharedThis,
+                explicitUniqueResult,
+                explicitUniqueResult,
+                false,
+                io,
+                explicitVolatile,
+                axiomatic);
     }
 
     public Set<Effect> effects() {
@@ -208,7 +264,13 @@ public final class EffectSet {
     }
 
     public boolean hasExplicitAnnotations() {
-        return io || explicitVolatile || axiomatic || mutThis || explicitSharedThis || explicitUniqueResult || !declared.isEmpty();
+        return io
+                || explicitVolatile
+                || axiomatic
+                || mutThis
+                || explicitSharedThis
+                || explicitUniqueResult
+                || !declared.isEmpty();
     }
 
     public boolean isUnconstrained() {
@@ -216,10 +278,10 @@ public final class EffectSet {
     }
 
     /**
-     * Whether a callable with {@code this} effect summary satisfies {@code required} on a
-     * function type or interface slot : it must guarantee every positive effect in
-     * {@code required}, borrow {@code this} if required, return {@code unique} if required,
-     * and mutate {@code this} only if {@code required} permits {@code mutThis}.
+     * Whether a callable with {@code this} effect summary satisfies {@code required} on a function
+     * type or interface slot : it must guarantee every positive effect in {@code required}, borrow
+     * {@code this} if required, return {@code unique} if required, and mutate {@code this} only if
+     * {@code required} permits {@code mutThis}.
      */
     public boolean satisfies(EffectSet required) {
         if (!effects.containsAll(required.effects)) {
@@ -249,12 +311,23 @@ public final class EffectSet {
             commonDecl.remove(Effect.PURE);
         }
         boolean eitherIO = io || other.io || !common.contains(Effect.HERMETIC);
-        boolean eitherVolatile = !eitherIO && (explicitVolatile || other.explicitVolatile
-                || (common.contains(Effect.HERMETIC) && !common.contains(Effect.DETERMINISTIC)));
+        boolean eitherVolatile =
+                !eitherIO
+                        && (explicitVolatile
+                                || other.explicitVolatile
+                                || (common.contains(Effect.HERMETIC)
+                                        && !common.contains(Effect.DETERMINISTIC)));
         boolean sharedThis = explicitSharedThis || other.explicitSharedThis;
-        boolean bothEmpty = isUnconstrained() && !io && !explicitSharedThis
-                && other.isUnconstrained() && !other.io && !other.explicitSharedThis;
-        return new EffectSet(common, commonDecl,
+        boolean bothEmpty =
+                isUnconstrained()
+                        && !io
+                        && !explicitSharedThis
+                        && other.isUnconstrained()
+                        && !other.io
+                        && !other.explicitSharedThis;
+        return new EffectSet(
+                common,
+                commonDecl,
                 eitherMut,
                 borrowThis && other.borrowThis,
                 sharedThis,
@@ -267,15 +340,23 @@ public final class EffectSet {
     }
 
     /**
-     * Relaxes function-level and receiver-mutation requirements for a callback parameter
-     * listed in {@code fn calling f} (BIP017-D1), while preserving any explicit {@code unique}
-     * return requirement.
+     * Relaxes function-level and receiver-mutation requirements for a callback parameter listed in
+     * {@code fn calling f} (BIP017-D1), while preserving any explicit {@code unique} return
+     * requirement.
      */
     public EffectSet relaxedForForwardedCallback() {
         return new EffectSet(
-                EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-                true, false, false, uniqueResult, explicitUniqueResult,
-                false, true, false, false);
+                EnumSet.noneOf(Effect.class),
+                EnumSet.noneOf(Effect.class),
+                true,
+                false,
+                false,
+                uniqueResult,
+                explicitUniqueResult,
+                false,
+                true,
+                false,
+                false);
     }
 
     /**
@@ -304,13 +385,23 @@ public final class EffectSet {
         EnumSet<Effect> combinedDecl = copySet(declared);
         combinedDecl.retainAll(combined);
         boolean combinedIO = io || cb.isIO() || !combined.contains(Effect.HERMETIC);
-        boolean combinedVolatile = !combinedIO && (explicitVolatile || cb.isVolatile()
-                || (combined.contains(Effect.HERMETIC) && !combined.contains(Effect.DETERMINISTIC)));
-        return new EffectSet(combined, combinedDecl,
-                mutThis, borrowThis, explicitSharedThis,
-                uniqueResult, explicitUniqueResult,
+        boolean combinedVolatile =
+                !combinedIO
+                        && (explicitVolatile
+                                || cb.isVolatile()
+                                || (combined.contains(Effect.HERMETIC)
+                                        && !combined.contains(Effect.DETERMINISTIC)));
+        return new EffectSet(
+                combined,
+                combinedDecl,
+                mutThis,
+                borrowThis,
+                explicitSharedThis,
+                uniqueResult,
+                explicitUniqueResult,
                 terminating && cb.terminating(),
-                combinedIO, combinedVolatile,
+                combinedIO,
+                combinedVolatile,
                 axiomatic && cb.axiomatic());
     }
 
@@ -331,11 +422,12 @@ public final class EffectSet {
         return formatSurface(effects, showIO, showVolatile, mutThis, showShared);
     }
 
-    static String formatSurface(Set<Effect> set,
-                                boolean showIO,
-                                boolean showVolatile,
-                                boolean showMut,
-                                boolean showShared) {
+    static String formatSurface(
+            Set<Effect> set,
+            boolean showIO,
+            boolean showVolatile,
+            boolean showMut,
+            boolean showShared) {
         StringJoiner joiner = new StringJoiner(" ");
         if (showIO) {
             joiner.add("io");
@@ -382,8 +474,18 @@ public final class EffectSet {
 
     @Override
     public int hashCode() {
-        return Objects.hash(effects, declared, mutThis, borrowThis, explicitSharedThis,
-                uniqueResult, explicitUniqueResult, terminating, io, explicitVolatile, axiomatic);
+        return Objects.hash(
+                effects,
+                declared,
+                mutThis,
+                borrowThis,
+                explicitSharedThis,
+                uniqueResult,
+                explicitUniqueResult,
+                terminating,
+                io,
+                explicitVolatile,
+                axiomatic);
     }
 
     @Override
@@ -392,7 +494,9 @@ public final class EffectSet {
             return "<unconstrained>";
         }
         String prefix = formatFullPrefix(false).trim();
-        if (prefix.isEmpty() && effects.contains(Effect.PURE) && effects.contains(Effect.DETERMINISTIC)) {
+        if (prefix.isEmpty()
+                && effects.contains(Effect.PURE)
+                && effects.contains(Effect.DETERMINISTIC)) {
             prefix = "pure";
         }
         if (uniqueResult) {

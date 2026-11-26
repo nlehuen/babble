@@ -1,15 +1,12 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.runtime.ClassShape;
-
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.babblelang.runtime.ClassShape;
 
-/**
- * Compiled {@code interface} declaration in {@link HirModule} (BIP014-I1).
- */
+/** Compiled {@code interface} declaration in {@link HirModule} (BIP014-I1). */
 public record HirInterface(
         int id,
         ClassShape shape,
@@ -20,8 +17,7 @@ public record HirInterface(
         List<HirTypeRef> extendedTypes,
         List<HirExpr> body,
         HirStaticBlock staticBlock,
-        int line
-) {
+        int line) {
     public HirInterface {
         extendedJvmInterfaces = List.copyOf(extendedJvmInterfaces);
         defaultFunctionIds = Collections.unmodifiableMap(new LinkedHashMap<>(defaultFunctionIds));
@@ -40,7 +36,16 @@ public record HirInterface(
     }
 
     public HirInterface withBodyAndStatic(List<HirExpr> newBody, HirStaticBlock newStatic) {
-        return new HirInterface(id, shape, jvmName, extendedJvmInterfaces, defaultFunctionIds,
-                defaultOverloadFunctionIds, extendedTypes, newBody, newStatic, line);
+        return new HirInterface(
+                id,
+                shape,
+                jvmName,
+                extendedJvmInterfaces,
+                defaultFunctionIds,
+                defaultOverloadFunctionIds,
+                extendedTypes,
+                newBody,
+                newStatic,
+                line);
     }
 }

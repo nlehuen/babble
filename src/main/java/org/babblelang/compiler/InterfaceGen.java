@@ -1,5 +1,13 @@
 package org.babblelang.compiler;
 
+import static org.babblelang.compiler.JvmPrimitives.*;
+import static org.objectweb.asm.Opcodes.*;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirFunction;
@@ -8,15 +16,6 @@ import org.babblelang.ir.hir.HirParam;
 import org.babblelang.runtime.ClassShape;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
-
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
-import static org.babblelang.compiler.JvmPrimitives.*;
-import static org.objectweb.asm.Opcodes.*;
 
 /**
  * ANTLR-free JVM interface generator for a {@link HirInterface} (RM003-P2, detached in BIP014-I1).
@@ -35,10 +34,19 @@ final class InterfaceGen {
         this.name = iface.jvmName();
         this.shape = iface.shape();
         String[] extended = iface.extendedJvmInterfaces().toArray(new String[0]);
-        this.writer = new ScriptClassWriter(emitter.runtimeLoader, emitter.className,
-                emitter.generatedClassParents, emitter.generatedInterfaceParents);
-        this.writer.visit(V21, ACC_PUBLIC | ACC_INTERFACE | ACC_ABSTRACT | ACC_SYNTHETIC,
-                name, null, OBJECT, extended.length == 0 ? null : extended);
+        this.writer =
+                new ScriptClassWriter(
+                        emitter.runtimeLoader,
+                        emitter.className,
+                        emitter.generatedClassParents,
+                        emitter.generatedInterfaceParents);
+        this.writer.visit(
+                V21,
+                ACC_PUBLIC | ACC_INTERFACE | ACC_ABSTRACT | ACC_SYNTHETIC,
+                name,
+                null,
+                OBJECT,
+                extended.length == 0 ? null : extended);
         this.writer.visitSource(emitter.sourceName, null);
     }
 
@@ -56,9 +64,10 @@ final class InterfaceGen {
         return fnId >= 0 ? emitter.module.function(fnId) : null;
     }
 
-    String superHelper(String directParentJvm, String memberName, LoweringTargets.FunctionSignature sig) {
-        return emitter.bridges.superHelper(writer, superHelpers, ACC_PUBLIC | ACC_SYNTHETIC,
-                directParentJvm, memberName, sig);
+    String superHelper(
+            String directParentJvm, String memberName, LoweringTargets.FunctionSignature sig) {
+        return emitter.bridges.superHelper(
+                writer, superHelpers, ACC_PUBLIC | ACC_SYNTHETIC, directParentJvm, memberName, sig);
     }
 
     void emitBody() {
@@ -74,11 +83,18 @@ final class InterfaceGen {
                 String desc = bridgeDescriptor(sig);
                 emitted.add(mName + desc);
                 if (!spec.hasDefault()) {
-                    writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
+                    writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null)
+                            .visitEnd();
                 } else {
                     MethodVisitor m = writer.visitMethod(ACC_PUBLIC, mName, desc, null, null);
                     m.visitCode();
-                    emitOwnDefaultInvoke(m, shape.memberIndex(spec.name()), spec.name(), -1, defaultFunction(spec.name()), sig);
+                    emitOwnDefaultInvoke(
+                            m,
+                            shape.memberIndex(spec.name()),
+                            spec.name(),
+                            -1,
+                            defaultFunction(spec.name()),
+                            sig);
                     m.visitMaxs(0, 0);
                     m.visitEnd();
                 }
@@ -90,12 +106,18 @@ final class InterfaceGen {
                     String desc = bridgeDescriptor(sig);
                     emitted.add(mName + desc);
                     if (!spec.hasDefault()) {
-                        writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null).visitEnd();
+                        writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT, mName, desc, null, null)
+                                .visitEnd();
                     } else {
                         MethodVisitor m = writer.visitMethod(ACC_PUBLIC, mName, desc, null, null);
                         m.visitCode();
-                        emitOwnDefaultInvoke(m, shape.memberIndex(spec.name()), spec.name(), k,
-                                defaultOverloadFunction(spec.name(), k), sig);
+                        emitOwnDefaultInvoke(
+                                m,
+                                shape.memberIndex(spec.name()),
+                                spec.name(),
+                                k,
+                                defaultOverloadFunction(spec.name(), k),
+                                sig);
                         m.visitMaxs(0, 0);
                         m.visitEnd();
                     }
@@ -103,7 +125,8 @@ final class InterfaceGen {
             }
         }
 
-        Map<String, BridgeHelpers.AncestorMethod> ancestors = emitter.bridges.collectAncestorMethods(hierarchy);
+        Map<String, BridgeHelpers.AncestorMethod> ancestors =
+                emitter.bridges.collectAncestorMethods(hierarchy);
         for (BridgeHelpers.AncestorMethod anc : ancestors.values()) {
             String mName = bridgeMethodName(anc.bridgeKey());
             if (emitted.contains(mName + anc.descriptor())) {
@@ -113,26 +136,62 @@ final class InterfaceGen {
             if (ownSpec != null) {
                 emitted.add(mName + anc.descriptor());
                 if (!ownSpec.hasDefault()) {
-                    writer.visitMethod(ACC_PUBLIC | ACC_ABSTRACT | ACC_SYNTHETIC, mName, anc.descriptor(), null, null).visitEnd();
+                    writer.visitMethod(
+                                    ACC_PUBLIC | ACC_ABSTRACT | ACC_SYNTHETIC,
+                                    mName,
+                                    anc.descriptor(),
+                                    null,
+                                    null)
+                            .visitEnd();
                 } else if (ownSpec.isOverloaded()) {
-                    MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
+                    MethodVisitor m =
+                            writer.visitMethod(
+                                    ACC_PUBLIC | ACC_SYNTHETIC,
+                                    mName,
+                                    anc.descriptor(),
+                                    null,
+                                    null);
                     m.visitCode();
-                    int altIdx = anc.overloadIndex() >= 0 && anc.overloadIndex() < ownSpec.overloadSignatures().size()
-                            ? anc.overloadIndex() : 0;
-                    emitOwnDefaultInvoke(m, shape.memberIndex(anc.memberName()), anc.memberName(), altIdx,
-                            defaultOverloadFunction(anc.memberName(), altIdx), anc.signature());
+                    int altIdx =
+                            anc.overloadIndex() >= 0
+                                            && anc.overloadIndex()
+                                                    < ownSpec.overloadSignatures().size()
+                                    ? anc.overloadIndex()
+                                    : 0;
+                    emitOwnDefaultInvoke(
+                            m,
+                            shape.memberIndex(anc.memberName()),
+                            anc.memberName(),
+                            altIdx,
+                            defaultOverloadFunction(anc.memberName(), altIdx),
+                            anc.signature());
                     m.visitMaxs(0, 0);
                     m.visitEnd();
                 } else {
-                    MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
+                    MethodVisitor m =
+                            writer.visitMethod(
+                                    ACC_PUBLIC | ACC_SYNTHETIC,
+                                    mName,
+                                    anc.descriptor(),
+                                    null,
+                                    null);
                     m.visitCode();
-                    LoweringTargets.FunctionSignature ownSig = ownSpec.callable() ? ownSpec.declaredSignature() : null;
-                    if (ownSig != null && ownSig.parameterKinds().length == anc.signature().parameterKinds().length) {
+                    LoweringTargets.FunctionSignature ownSig =
+                            ownSpec.callable() ? ownSpec.declaredSignature() : null;
+                    if (ownSig != null
+                            && ownSig.parameterKinds().length
+                                    == anc.signature().parameterKinds().length) {
                         int[] paramSlots = bridgeParamSlots(anc.signature());
                         m.visitVarInsn(ALOAD, 0);
                         m.visitVarInsn(ALOAD, 1);
                         for (int i = 0; i < anc.signature().parameterKinds().length; i++) {
-                            emitAdaptBridgeArg(m, anc.signature(), paramSlots, i, ownSig.parameterKinds()[i], -1);
+                            emitAdaptBridgeArg(
+                                    m,
+                                    anc.signature(),
+                                    paramSlots,
+                                    i,
+                                    ownSig.parameterKinds()[i],
+                                    -1);
                         }
                         if (ownSig.hasOptionalMask()) {
                             if (anc.signature().hasOptionalMask()) {
@@ -141,19 +200,29 @@ final class InterfaceGen {
                                 m.visitInsn(ICONST_0);
                             }
                         }
-                        m.visitMethodInsn(INVOKEINTERFACE, name, bridgeMethodName(anc.memberName()),
-                                bridgeDescriptor(ownSig), true);
+                        m.visitMethodInsn(
+                                INVOKEINTERFACE,
+                                name,
+                                bridgeMethodName(anc.memberName()),
+                                bridgeDescriptor(ownSig),
+                                true);
                         emitAdaptKind(m, ownSig.returnKind(), anc.signature().returnKind());
                         m.visitInsn(returnInsn(anc.signature().returnKind()));
                     } else {
-                        emitOwnDefaultInvoke(m, shape.memberIndex(anc.memberName()), anc.memberName(), -1,
-                                defaultFunction(anc.memberName()), anc.signature());
+                        emitOwnDefaultInvoke(
+                                m,
+                                shape.memberIndex(anc.memberName()),
+                                anc.memberName(),
+                                -1,
+                                defaultFunction(anc.memberName()),
+                                anc.signature());
                     }
                     m.visitMaxs(0, 0);
                     m.visitEnd();
                 }
             } else {
-                BridgeHelpers.InheritedDefault def = emitter.bridges.findInheritedDefault(hierarchy, anc.memberName());
+                BridgeHelpers.InheritedDefault def =
+                        emitter.bridges.findInheritedDefault(hierarchy, anc.memberName());
                 if (def == null) {
                     continue;
                 }
@@ -161,19 +230,39 @@ final class InterfaceGen {
                 if (directParentJvm == null) {
                     continue;
                 }
-                LoweringTargets.FunctionSignature provSig = def.providerSpec().callable() ? def.providerSpec().declaredSignature() : null;
-                if (provSig == null && def.providerSpec().isOverloaded()
-                        && anc.overloadIndex() >= 0 && anc.overloadIndex() < def.providerSpec().overloadSignatures().size()) {
+                LoweringTargets.FunctionSignature provSig =
+                        def.providerSpec().callable()
+                                ? def.providerSpec().declaredSignature()
+                                : null;
+                if (provSig == null
+                        && def.providerSpec().isOverloaded()
+                        && anc.overloadIndex() >= 0
+                        && anc.overloadIndex() < def.providerSpec().overloadSignatures().size()) {
                     provSig = def.providerSpec().overloadSignatures().get(anc.overloadIndex());
                 }
                 String provDesc = provSig != null ? bridgeDescriptor(provSig) : null;
-                int parentsWithSig = emitter.bridges.countDirectParentsWithMethod(hierarchy, anc.bridgeKey(), anc.descriptor());
+                int parentsWithSig =
+                        emitter.bridges.countDirectParentsWithMethod(
+                                hierarchy, anc.bridgeKey(), anc.descriptor());
                 if (parentsWithSig >= 2 || !anc.descriptor().equals(provDesc)) {
                     emitted.add(mName + anc.descriptor());
-                    MethodVisitor m = writer.visitMethod(ACC_PUBLIC | ACC_SYNTHETIC, mName, anc.descriptor(), null, null);
+                    MethodVisitor m =
+                            writer.visitMethod(
+                                    ACC_PUBLIC | ACC_SYNTHETIC,
+                                    mName,
+                                    anc.descriptor(),
+                                    null,
+                                    null);
                     m.visitCode();
-                    emitter.bridges.emitInheritedDefaultInvoke(m, def, directParentJvm, anc.memberName(), anc.bridgeKey(),
-                            anc.signatureKey(), anc.descriptor(), anc.signature());
+                    emitter.bridges.emitInheritedDefaultInvoke(
+                            m,
+                            def,
+                            directParentJvm,
+                            anc.memberName(),
+                            anc.bridgeKey(),
+                            anc.signatureKey(),
+                            anc.descriptor(),
+                            anc.signature());
                     m.visitMaxs(0, 0);
                     m.visitEnd();
                 }
@@ -181,8 +270,13 @@ final class InterfaceGen {
         }
     }
 
-    private void emitOwnDefaultInvoke(MethodVisitor m, int memberIndex, String memberName, int overloadAltIndex,
-                                      HirFunction fn, LoweringTargets.FunctionSignature sig) {
+    private void emitOwnDefaultInvoke(
+            MethodVisitor m,
+            int memberIndex,
+            String memberName,
+            int overloadAltIndex,
+            HirFunction fn,
+            LoweringTargets.FunctionSignature sig) {
         int[] paramSlots = bridgeParamSlots(sig);
         int ifaceCount = sig.parameterKinds().length;
         int fnCount = fn != null ? fn.params().size() : -1;
@@ -195,15 +289,26 @@ final class InterfaceGen {
         ConstantPool.pushInt(m, memberIndex);
         if (overloadAltIndex >= 0) {
             ConstantPool.pushInt(m, overloadAltIndex);
-            m.visitMethodInsn(INVOKESTATIC, CLASSES, "interfaceDefaultAlt",
-                    "(Ljava/lang/Object;Ljava/lang/String;II)L" + RUNTIME + "BabbleFunction;", false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    CLASSES,
+                    "interfaceDefaultAlt",
+                    "(Ljava/lang/Object;Ljava/lang/String;II)L" + RUNTIME + "BabbleFunction;",
+                    false);
         } else {
-            m.visitMethodInsn(INVOKESTATIC, CLASSES, "interfaceDefault",
-                    "(Ljava/lang/Object;Ljava/lang/String;I)L" + RUNTIME + "BabbleFunction;", false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    CLASSES,
+                    "interfaceDefault",
+                    "(Ljava/lang/Object;Ljava/lang/String;I)L" + RUNTIME + "BabbleFunction;",
+                    false);
         }
 
-        if (fn != null && !fn.isCompiledClassMethod() && fn.hasSpec()
-                && ifaceCount <= fnCount && allOptionalFrom(fn, ifaceCount)) {
+        if (fn != null
+                && !fn.isCompiledClassMethod()
+                && fn.hasSpec()
+                && ifaceCount <= fnCount
+                && allOptionalFrom(fn, ifaceCount)) {
             List<HirParam> params = fn.params();
             m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
             m.visitVarInsn(ALOAD, 0);
@@ -216,8 +321,12 @@ final class InterfaceGen {
                 emitDefaultValueOn(m, params.get(i).kind());
             }
             emitRemapBridgeMask(m, sig, fn, ifaceCount);
-            m.visitMethodInsn(INVOKESTATIC, emitter.className, fn.jvmMethodName() + "$spec",
-                    functionSpecDescriptor(fn), false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    emitter.className,
+                    fn.jvmMethodName() + "$spec",
+                    functionSpecDescriptor(fn),
+                    false);
             emitAdaptKind(m, fn.returnKind(), sig.returnKind());
             m.visitInsn(returnInsn(sig.returnKind()));
             return;
@@ -233,21 +342,35 @@ final class InterfaceGen {
             for (int i = ifaceCount; i < fnCount; i++) {
                 m.visitFieldInsn(GETSTATIC, ARGUMENTS, "MISSING", "Ljava/lang/Object;");
             }
-            m.visitMethodInsn(INVOKESTATIC, emitter.className, fn.jvmMethodName(),
-                    functionDirectDescriptor(fn), false);
+            m.visitMethodInsn(
+                    INVOKESTATIC,
+                    emitter.className,
+                    fn.jvmMethodName(),
+                    functionDirectDescriptor(fn),
+                    false);
             emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
             m.visitInsn(returnInsn(sig.returnKind()));
             return;
         }
-        String siteField = emitter.constantPool.syntheticCallSiteField(shape.name() + "." + memberName, ifaceCount);
+        String siteField =
+                emitter.constantPool.syntheticCallSiteField(
+                        shape.name() + "." + memberName, ifaceCount);
         m.visitTypeInsn(CHECKCAST, COMPILED_FUNCTION);
         m.visitVarInsn(ALOAD, 0);
         m.visitVarInsn(ALOAD, 1);
         packBridgeArgsArray(m, sig, paramSlots);
         m.visitInsn(ACONST_NULL);
         m.visitFieldInsn(GETSTATIC, emitter.className, siteField, "L" + CALL_SITE + ";");
-        m.visitMethodInsn(INVOKEVIRTUAL, COMPILED_FUNCTION, "invoke",
-                "(Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";[Ljava/lang/Object;[Ljava/lang/String;L" + CALL_SITE + ";)Ljava/lang/Object;", false);
+        m.visitMethodInsn(
+                INVOKEVIRTUAL,
+                COMPILED_FUNCTION,
+                "invoke",
+                "(Ljava/lang/Object;L"
+                        + SCRIPT_RUNTIME
+                        + ";[Ljava/lang/Object;[Ljava/lang/String;L"
+                        + CALL_SITE
+                        + ";)Ljava/lang/Object;",
+                false);
         emitAdaptKind(m, PrimitiveKind.NONE, sig.returnKind());
         m.visitInsn(returnInsn(sig.returnKind()));
     }

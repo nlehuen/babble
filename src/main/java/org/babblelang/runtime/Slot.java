@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-
 public class Slot<T> {
     private final String name;
     private final boolean isFinal;
@@ -20,9 +19,7 @@ public class Slot<T> {
         return set;
     }
 
-    /**
-     * Gives the slot its value : the initial write of a definition, or a later write.
-     */
+    /** Gives the slot its value : the initial write of a definition, or a later write. */
     public void set(T value) {
         if (set) {
             if (isFinal) {
@@ -35,8 +32,8 @@ public class Slot<T> {
     }
 
     /**
-     * An assignment, {@code x = v} : unlike {@link #set}, it requires the definition to
-     * have run already.
+     * An assignment, {@code x = v} : unlike {@link #set}, it requires the definition to have run
+     * already.
      */
     public void assign(T value) {
         if (!set) {
@@ -46,8 +43,8 @@ public class Slot<T> {
     }
 
     /**
-     * A declared slot is unset until its definition runs : block scope hoists every
-     * name defined in a scope, so reading it any earlier is an error.
+     * A declared slot is unset until its definition runs : block scope hoists every name defined in
+     * a scope, so reading it any earlier is an error.
      */
     public T get() {
         if (set) {

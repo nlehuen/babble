@@ -1,11 +1,10 @@
 package org.babblelang.engine.impl.natives.java;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.Scope;
 import org.babblelang.runtime.Slot;
-
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.Map;
 
 public class JavaPackage implements Scope<Scope> {
     private final ImportFunction importer;
@@ -18,12 +17,12 @@ public class JavaPackage implements Scope<Scope> {
     }
 
     /**
-     * Whether {@code key} names a class or a package that exists, without loading or
-     * initialising anything. Unlike {@link #get}, which takes any other name for a package
-     * (it can't tell one that has no classes yet from one that doesn't exist), this answers
-     * false for a name that is neither : the JDK's packages come from the boot layer's
-     * modules, the others from the class path, where a package is a directory (a jar built
-     * without directory entries has packages this can't see).
+     * Whether {@code key} names a class or a package that exists, without loading or initialising
+     * anything. Unlike {@link #get}, which takes any other name for a package (it can't tell one
+     * that has no classes yet from one that doesn't exist), this answers false for a name that is
+     * neither : the JDK's packages come from the boot layer's modules, the others from the class
+     * path, where a package is a directory (a jar built without directory entries has packages this
+     * can't see).
      */
     public boolean isDeclared(String key) {
         Slot<Scope> cached = locals.get(key);
@@ -59,17 +58,19 @@ public class JavaPackage implements Scope<Scope> {
     }
 
     public Slot<Scope> get(String key) {
-        return locals.computeIfAbsent(key, k -> {
-            Slot<Scope> result = new Slot<>(k, true);
-            String name2 = name + '.' + k;
-            Scope value;
-            try {
-                value = JavaClass.of(Class.forName(name2));
-            } catch (ClassNotFoundException cnfe) {
-                value = importer.getPackage(name2);
-            }
-            result.set(value);
-            return result;
-        });
+        return locals.computeIfAbsent(
+                key,
+                k -> {
+                    Slot<Scope> result = new Slot<>(k, true);
+                    String name2 = name + '.' + k;
+                    Scope value;
+                    try {
+                        value = JavaClass.of(Class.forName(name2));
+                    } catch (ClassNotFoundException cnfe) {
+                        value = importer.getPackage(name2);
+                    }
+                    result.set(value);
+                    return result;
+                });
     }
 }

@@ -1,5 +1,12 @@
 package org.babblelang.tests;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.List;
+import javax.script.ScriptContext;
+import javax.script.ScriptException;
+import javax.script.SimpleScriptContext;
 import org.babblelang.compiler.CompiledBabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
@@ -12,22 +19,15 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.util.CheckClassAdapter;
 
-import javax.script.ScriptContext;
-import javax.script.ScriptException;
-import javax.script.SimpleScriptContext;
-import java.io.PrintWriter;
-import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Tests for BIP020-I2 : the type {@code array of T}, JVM representation, aliases,
- * intersections, variance, Java parameter waiver, {@code is}/{@code as} and warnings.
+ * Tests for BIP020-I2 : the type {@code array of T}, JVM representation, aliases, intersections,
+ * variance, Java parameter waiver, {@code is}/{@code as} and warnings.
  */
 public class Bip020P2ArrayTypesTestCase {
 
     private static List<String> diagnosticsOf(String source) {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         ScriptContext ctx = new SimpleScriptContext();
         StringWriter err = new StringWriter();
         engine.getContext().setErrorWriter(err);
@@ -50,16 +50,31 @@ public class Bip020P2ArrayTypesTestCase {
 
     private static void assertDiagnostics(String source, String... expectedSubstrings) {
         List<String> diags = diagnosticsOf(source);
-        Assertions.assertEquals(expectedSubstrings.length, diags.size(),
-                "Expected " + expectedSubstrings.length + " diagnostics, got " + diags + " for:\n" + source);
+        Assertions.assertEquals(
+                expectedSubstrings.length,
+                diags.size(),
+                "Expected "
+                        + expectedSubstrings.length
+                        + " diagnostics, got "
+                        + diags
+                        + " for:\n"
+                        + source);
         for (int i = 0; i < expectedSubstrings.length; i++) {
-            Assertions.assertTrue(diags.get(i).contains(expectedSubstrings[i]),
-                    "Diagnostic #" + i + " mismatch: expected '" + expectedSubstrings[i] + "', got '" + diags.get(i) + "'");
+            Assertions.assertTrue(
+                    diags.get(i).contains(expectedSubstrings[i]),
+                    "Diagnostic #"
+                            + i
+                            + " mismatch: expected '"
+                            + expectedSubstrings[i]
+                            + "', got '"
+                            + diags.get(i)
+                            + "'");
         }
     }
 
     private static Object eval(String mode, String opt, String source) throws Exception {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, mode);
         if (opt != null) {
             engine.put("babble.opt", opt);
@@ -75,7 +90,8 @@ public class Bip020P2ArrayTypesTestCase {
 
     @Test
     public void testSyntaxNullnessAliasesAndByteBufferArrayMemberName() throws Exception {
-        String valid = """
+        String valid =
+                """
                 def parts: array of string = java.util.regex.Pattern.compile(",").split("a,b")
                 def chars: array of char = "abc".toCharArray()
                 def ints: array of int? = import("org.babblelang.tests").JavaClassDemo.boxedIntArray()
@@ -92,7 +108,8 @@ public class Bip020P2ArrayTypesTestCase {
         assertNoErrors(valid);
         assertAllModesEqual(valid, 2 + 3 + 3 + 2 + 4 + 2);
 
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def raw: array = null
                 def tooMany: array of (int, string) = null
                 def Ints = type array of int
@@ -105,7 +122,8 @@ public class Bip020P2ArrayTypesTestCase {
 
     @Test
     public void testIntersectionsWithArraysAndJavaInterfaces() throws Exception {
-        String assignInterfaces = """
+        String assignInterfaces =
+                """
                 def Shape = interface ( def area : fn () : int )
                 def Named = interface ( def name : fn () : string )
                 def Circle = class () implements Shape, Named (
@@ -129,7 +147,8 @@ public class Bip020P2ArrayTypesTestCase {
         assertNoErrors(assignInterfaces);
         assertAllModesEqual(assignInterfaces, 5);
 
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def Shape = interface ( def area : fn () : int )
                 def bad: (array of int) & Shape = null
                 def bad2: array of int & Shape = null
@@ -140,8 +159,10 @@ public class Bip020P2ArrayTypesTestCase {
 
     @Test
     public void testArrayVarianceAndJavaParameterWaiver() throws Exception {
-        // Valid covariance cases: exact-store ref covariance, borrow/frozen nullness/exactness relaxation, Java non-mut waiver.
-        String valid = """
+        // Valid covariance cases: exact-store ref covariance, borrow/frozen nullness/exactness
+        // relaxation, Java non-mut waiver.
+        String valid =
+                """
                 def Shape = interface ( def area : fn () : int )
                 def Circle = class () implements Shape ( def area = fn () : int -> ( 1 ) )
                 def Demo = import("org.babblelang.tests").JavaClassDemo
@@ -160,7 +181,8 @@ public class Bip020P2ArrayTypesTestCase {
         assertAllModesEqual(valid, 2 + 2 + 3 + 2 + "[a, b]".length());
 
         // Rejected variance cases under BIP020-D8 and BIP020-D12:
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def Shape = interface ( def area : fn () : int )
                 def Named = interface ( def name : fn () : string )
                 def Square = class () implements Shape ( def area = fn () : int -> ( 2 ) )
@@ -203,14 +225,17 @@ public class Bip020P2ArrayTypesTestCase {
     @Test
     public void testMutableGenericVarianceWithJavaAndBabble() {
         // Primitive array invariant even against borrowed int[] -> long[] directly
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def borrowInts = fn (xs: array of int) -> ( xs.size() )
                 def chars: array of char = "abc".toCharArray()
                 borrowInts(chars)
-                """, "Type error : expected array of int, got array of char");
+                """,
+                "Type error : expected array of int, got array of char");
 
         // Mutable vs borrowed exact-source-class for Circle[] -> (Shape & Named)[]
-        assertNoErrors("""
+        assertNoErrors(
+                """
                 def Shape = interface ( def area : fn () : int )
                 def Named = interface ( def name : fn () : string )
                 def Circle = class () implements Shape, Named (
@@ -222,7 +247,8 @@ public class Bip020P2ArrayTypesTestCase {
                 """);
 
         // @Mut Object[] allows string?[] (nullness matches) even though Object[] is Java
-        assertNoErrors("""
+        assertNoErrors(
+                """
                 def Demo = import("org.babblelang.tests").JavaClassDemo
                 def test = fn (mut xs: array of string?) -> ( Demo.mutateObjectArray(xs) )
                 """);
@@ -230,8 +256,10 @@ public class Bip020P2ArrayTypesTestCase {
 
     @Test
     public void testIsAsNullableRulesUncheckedWarningsAndBytecode() throws Exception {
-        // No warning on exact JVM array checks: primitive arrays, nullable primitives, string?, any?, nested nullable primitive rows
-        assertDiagnostics("""
+        // No warning on exact JVM array checks: primitive arrays, nullable primitives, string?,
+        // any?, nested nullable primitive rows
+        assertDiagnostics(
+                """
                 def chars: array of char = "abc".toCharArray()
                 def dyn: any? = chars
                 def b1 = dyn is array of char
@@ -245,8 +273,10 @@ public class Bip020P2ArrayTypesTestCase {
                 def c4 = null as (array of int)?
                 """);
 
-        // Unchecked cast warnings when JVM class doesn't verify nullness, nested elements, or Babble element types
-        assertDiagnostics("""
+        // Unchecked cast warnings when JVM class doesn't verify nullness, nested elements, or
+        // Babble element types
+        assertDiagnostics(
+                """
                 def Point = record (x: int) ()
                 def dyn: any = java.util.regex.Pattern.compile(",").split("a,b")
                 def u1 = dyn is array of string
@@ -268,7 +298,8 @@ public class Bip020P2ArrayTypesTestCase {
                 "Unchecked cast : (array of Point)?");
 
         // Static rejections for disjoint array casts (BIP008 §11 & BIP020-D9)
-        assertDiagnostics("""
+        assertDiagnostics(
+                """
                 def Point = class () ()
                 def Shape = interface ( def m : fn () : int )
                 def f = fn (xs: array of string?, ps: array of Point) -> (
@@ -282,8 +313,10 @@ public class Bip020P2ArrayTypesTestCase {
                 "Type error : expected array of int?, got array of string?",
                 "Type error : expected array of Shape, got array of Point");
 
-        // Runtime execution parity & bytecode verification (`INSTANCEOF [C`, `[Ljava/lang/String;`, `[Ljava/lang/Object;`)
-        String runtimeProgram = """
+        // Runtime execution parity & bytecode verification (`INSTANCEOF [C`, `[Ljava/lang/String;`,
+        // `[Ljava/lang/Object;`)
+        String runtimeProgram =
+                """
                 def Point = record (x: int) ()
                 def Ints = type array of int
                 def Matrix of T = type array of (array of T)
@@ -310,51 +343,77 @@ public class Bip020P2ArrayTypesTestCase {
                 assert((maybeNull as (array of int)?) == null)
                 true
                 """;
-        BabbleScriptEngine compileEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine compileEngine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         compileEngine.put(BabbleScriptEngine.MODE, "compile");
-        CompiledBabbleScript compiled = (CompiledBabbleScript) compileEngine.compile(runtimeProgram);
+        CompiledBabbleScript compiled =
+                (CompiledBabbleScript) compileEngine.compile(runtimeProgram);
         for (byte[] bytes : compiled.getClasses().values()) {
             StringWriter problems = new StringWriter();
-            CheckClassAdapter.verify(new ClassReader(bytes), compiled.getScriptClass().getClassLoader(), false, new PrintWriter(problems));
+            CheckClassAdapter.verify(
+                    new ClassReader(bytes),
+                    compiled.getScriptClass().getClassLoader(),
+                    false,
+                    new PrintWriter(problems));
             Assertions.assertEquals("", problems.toString());
         }
         List<String> instanceofTypes = new ArrayList<>();
         List<String> checkcastTypes = new ArrayList<>();
         for (byte[] bytes : compiled.getClasses().values()) {
-            new ClassReader(bytes).accept(new ClassVisitor(Opcodes.ASM9) {
-                @Override
-                public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
-                    return new MethodVisitor(Opcodes.ASM9) {
-                        @Override
-                        public void visitTypeInsn(int opcode, String type) {
-                            if (opcode == Opcodes.INSTANCEOF) {
-                                instanceofTypes.add(type);
-                            } else if (opcode == Opcodes.CHECKCAST) {
-                                checkcastTypes.add(type);
-                            }
-                        }
-                    };
-                }
-            }, 0);
+            new ClassReader(bytes)
+                    .accept(
+                            new ClassVisitor(Opcodes.ASM9) {
+                                @Override
+                                public MethodVisitor visitMethod(
+                                        int access,
+                                        String name,
+                                        String descriptor,
+                                        String signature,
+                                        String[] exceptions) {
+                                    return new MethodVisitor(Opcodes.ASM9) {
+                                        @Override
+                                        public void visitTypeInsn(int opcode, String type) {
+                                            if (opcode == Opcodes.INSTANCEOF) {
+                                                instanceofTypes.add(type);
+                                            } else if (opcode == Opcodes.CHECKCAST) {
+                                                checkcastTypes.add(type);
+                                            }
+                                        }
+                                    };
+                                }
+                            },
+                            0);
         }
         Assertions.assertTrue(instanceofTypes.contains("[C"), instanceofTypes.toString());
-        Assertions.assertTrue(instanceofTypes.contains("[Ljava/lang/String;"), instanceofTypes.toString());
-        Assertions.assertTrue(instanceofTypes.contains("[Ljava/lang/Object;"), instanceofTypes.toString());
+        Assertions.assertTrue(
+                instanceofTypes.contains("[Ljava/lang/String;"), instanceofTypes.toString());
+        Assertions.assertTrue(
+                instanceofTypes.contains("[Ljava/lang/Object;"), instanceofTypes.toString());
         Assertions.assertTrue(instanceofTypes.contains("[[I"), instanceofTypes.toString());
-        Assertions.assertTrue(checkcastTypes.contains("[Ljava/lang/String;"), checkcastTypes.toString());
-        Assertions.assertTrue(checkcastTypes.contains("[Ljava/lang/Object;"), checkcastTypes.toString());
+        Assertions.assertTrue(
+                checkcastTypes.contains("[Ljava/lang/String;"), checkcastTypes.toString());
+        Assertions.assertTrue(
+                checkcastTypes.contains("[Ljava/lang/Object;"), checkcastTypes.toString());
 
         assertAllModesEqual(runtimeProgram, true);
 
         // Runtime array cast failure message parity (interpreter vs compiler)
-        String castFail = """
+        String castFail =
+                """
                 def xs: (array of string)? = java.util.regex.Pattern.compile(",").split("a,b")
                 xs as (array of int)?
                 """;
-        ScriptException interpErr = Assertions.assertThrows(ScriptException.class, () -> eval("interpret", null, castFail));
-        ScriptException compErr = Assertions.assertThrows(ScriptException.class, () -> eval("compile", "1", castFail));
+        ScriptException interpErr =
+                Assertions.assertThrows(
+                        ScriptException.class, () -> eval("interpret", null, castFail));
+        ScriptException compErr =
+                Assertions.assertThrows(
+                        ScriptException.class, () -> eval("compile", "1", castFail));
         Assertions.assertFalse(interpErr instanceof TypeCheckException);
-        Assertions.assertTrue(interpErr.getMessage().contains("Type error : expected (array of int)?, got array of string"),
+        Assertions.assertTrue(
+                interpErr
+                        .getMessage()
+                        .contains("Type error : expected (array of int)?, got array of string"),
                 interpErr.getMessage());
         Assertions.assertEquals(interpErr.getMessage(), compErr.getMessage());
     }

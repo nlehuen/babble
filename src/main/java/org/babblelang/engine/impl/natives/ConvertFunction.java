@@ -5,12 +5,11 @@ import org.babblelang.runtime.BabbleException;
 import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.Callable;
 import org.babblelang.runtime.ScriptRuntime;
-import org.babblelang.runtime.Values;
 
 /**
- * Built-in scalar conversions ({@code byte(x)}, {@code short(x)}, {@code int(x)},
- * {@code long(x)}, {@code float(x)}, {@code double(x)}, {@code bool(x)}, {@code char(x)},
- * {@code string(x)}) — BIP011-D3 §4.3.
+ * Built-in scalar conversions ({@code byte(x)}, {@code short(x)}, {@code int(x)}, {@code long(x)},
+ * {@code float(x)}, {@code double(x)}, {@code bool(x)}, {@code char(x)}, {@code string(x)}) —
+ * BIP011-D3 §4.3.
  */
 public final class ConvertFunction implements Callable {
     public enum Target {
@@ -65,7 +64,10 @@ public final class ConvertFunction implements Callable {
             throw new BabbleException(name() + "() takes 1 argument, " + args.length + " given");
         }
         Object value = args[0];
-        String text = site != null && site.argTexts().length == 1 ? site.argTexts()[0] : String.valueOf(value);
+        String text =
+                site != null && site.argTexts().length == 1
+                        ? site.argTexts()[0]
+                        : String.valueOf(value);
         return switch (target) {
             case BYTE -> toByte(value, text);
             case SHORT -> toShort(value, text);
@@ -225,8 +227,12 @@ public final class ConvertFunction implements Callable {
         }
         if (value instanceof Number n) {
             double d = n.doubleValue();
-            // 9223372036854775808.0 == 2^63 (exact in IEEE 754); -9223372036854775808.0 == -2^63 (exact).
-            if (Double.isNaN(d) || Double.isInfinite(d) || d >= 9223372036854775808.0 || d < -9223372036854775808.0) {
+            // 9223372036854775808.0 == 2^63 (exact in IEEE 754); -9223372036854775808.0 == -2^63
+            // (exact).
+            if (Double.isNaN(d)
+                    || Double.isInfinite(d)
+                    || d >= 9223372036854775808.0
+                    || d < -9223372036854775808.0) {
                 throw new BabbleException("Out of the long range : " + rangeDetail(n, text));
             }
             return (long) d;
@@ -294,7 +300,10 @@ public final class ConvertFunction implements Callable {
             }
             throw new BabbleException("Expected single-character string : \"" + s + "\"");
         }
-        if (value instanceof Byte || value instanceof Short || value instanceof Integer || value instanceof Long) {
+        if (value instanceof Byte
+                || value instanceof Short
+                || value instanceof Integer
+                || value instanceof Long) {
             long l = ((Number) value).longValue();
             if (l < 0 || l > Character.MAX_VALUE) {
                 throw new BabbleException("Out of the char range : " + rangeDetail(value, text));

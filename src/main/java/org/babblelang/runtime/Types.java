@@ -1,40 +1,51 @@
 package org.babblelang.runtime;
 
-
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The runtime side of declared types (T9, docs/design/bip003_type-system.md) : wherever a value
- * meets a declared type (an argument, a result, a definition or an assignment), both
- * modes check it here, and fail the same way : {@code Type error : expected int, got string}.
- * <p>
- * The analysis describes each declared type with a string, {@code kind|display|payload} :
+ * meets a declared type (an argument, a result, a definition or an assignment), both modes check it
+ * here, and fail the same way : {@code Type error : expected int, got string}.
+ *
+ * <p>The analysis describes each declared type with a string, {@code kind|display|payload} :
+ *
  * <ul>
- * <li>{@code int}, {@code double}, {@code bool}, {@code string} : the built-in types ;</li>
- * <li>{@code fn} : a function type, which any callable value satisfies ;</li>
- * <li>{@code java}, with the Java class's name ;</li>
- * <li>{@code babble}, with the id of the class or interface expression (nominal) ;</li>
- * <li>{@code union} and {@code inter}, with their members' encoded descriptors (BIP022).</li>
+ *   <li>{@code int}, {@code double}, {@code bool}, {@code string} : the built-in types ;
+ *   <li>{@code fn} : a function type, which any callable value satisfies ;
+ *   <li>{@code java}, with the Java class's name ;
+ *   <li>{@code babble}, with the id of the class or interface expression (nominal) ;
+ *   <li>{@code union} and {@code inter}, with their members' encoded descriptors (BIP022).
  * </ul>
- * {@code display} is how the type reads in the message. Types that need no check
- * ({@code any}) have no descriptor.
+ *
+ * {@code display} is how the type reads in the message. Types that need no check ({@code any}) have
+ * no descriptor.
  */
 public final class Types {
     private static final Map<String, Type> PARSED = new ConcurrentHashMap<>();
 
-    private Types() {
-    }
+    private Types() {}
 
     /** A declared type, ready to check values against. */
-    public abstract static sealed class Type permits Builtin, FunctionType, JavaClassType, NominalType, NullType, AnyType, UnionType, IntersectionType {
+    public abstract static sealed class Type
+            permits Builtin,
+                    FunctionType,
+                    JavaClassType,
+                    NominalType,
+                    NullType,
+                    AnyType,
+                    UnionType,
+                    IntersectionType {
         private final String display;
 
         Type(String display) {
             this.display = display;
         }
 
-        /** Whether a value has the type (allowing numeric widening and SAM conversion, for casts/annotations). */
+        /**
+         * Whether a value has the type (allowing numeric widening and SAM conversion, for
+         * casts/annotations).
+         */
         abstract boolean accepts(Object value);
 
         /** Exact runtime type test for {@code is} (no numeric widening, no SAM conversion). */
@@ -63,7 +74,9 @@ public final class Types {
 
         @Override
         boolean accepts(Object value) {
-            return value != null && (javaClass.isInstance(value) || JavaTypes.isWidening(value.getClass(), javaClass));
+            return value != null
+                    && (javaClass.isInstance(value)
+                            || JavaTypes.isWidening(value.getClass(), javaClass));
         }
 
         @Override
@@ -74,8 +87,11 @@ public final class Types {
 
         @Override
         Object convert(Object value) {
-            return value != null && !javaClass.isInstance(value) && JavaTypes.isWidening(value.getClass(), javaClass)
-                    ? JavaTypes.widen(value, javaClass) : value;
+            return value != null
+                            && !javaClass.isInstance(value)
+                            && JavaTypes.isWidening(value.getClass(), javaClass)
+                    ? JavaTypes.widen(value, javaClass)
+                    : value;
         }
     }
 
@@ -105,8 +121,7 @@ public final class Types {
                 return false;
             }
             BabbleClass cls = BabbleObjects.babbleClass(java);
-            return javaClass.isInstance(java)
-                    || cls != null && cls.isJava(javaClass);
+            return javaClass.isInstance(java) || cls != null && cls.isJava(javaClass);
         }
 
         @Override
@@ -249,9 +264,21 @@ public final class Types {
             if (c == '%' && i + 2 < component.length()) {
                 String hex = component.substring(i + 1, i + 3);
                 switch (hex) {
-                    case "25" -> { result.append('%'); i += 2; continue; }
-                    case "2C" -> { result.append(','); i += 2; continue; }
-                    case "7C" -> { result.append('|'); i += 2; continue; }
+                    case "25" -> {
+                        result.append('%');
+                        i += 2;
+                        continue;
+                    }
+                    case "2C" -> {
+                        result.append(',');
+                        i += 2;
+                        continue;
+                    }
+                    case "7C" -> {
+                        result.append('|');
+                        i += 2;
+                        continue;
+                    }
                     default -> {}
                 }
             }
@@ -327,7 +354,10 @@ public final class Types {
     public static Object check(Object value, Type type) {
         if (!type.accepts(value)) {
             String got = describe(value);
-            BabbleClass cls = type instanceof NominalType && got.equals(type.toString()) ? BabbleObjects.babbleClass(value) : null;
+            BabbleClass cls =
+                    type instanceof NominalType && got.equals(type.toString())
+                            ? BabbleObjects.babbleClass(value)
+                            : null;
             if (type instanceof NominalType nominal && cls != null) {
                 // Two classes of one name, as two modules may define : their ids tell which.
                 got += " (expected " + nominal.id + ", got " + cls.shape().id() + ")";
@@ -342,7 +372,10 @@ public final class Types {
         return descriptor == null ? value : check(value, parse(descriptor));
     }
 
-    /** Exact runtime type test for {@code is} : null descriptor means {@code any?}, matching everything. */
+    /**
+     * Exact runtime type test for {@code is} : null descriptor means {@code any?}, matching
+     * everything.
+     */
     public static boolean matches(Object value, String descriptor) {
         return descriptor == null || parse(descriptor).isInstance(value);
     }
@@ -398,27 +431,27 @@ public final class Types {
         return value.getClass().getName();
     }
 
-    private static final Map<Class<?>, String> ARRAY_COMPONENT_NAMES = Map.ofEntries(
-            Map.entry(byte.class, "byte"),
-            Map.entry(short.class, "short"),
-            Map.entry(int.class, "int"),
-            Map.entry(long.class, "long"),
-            Map.entry(float.class, "float"),
-            Map.entry(double.class, "double"),
-            Map.entry(boolean.class, "bool"),
-            Map.entry(char.class, "char"),
-            Map.entry(Byte.class, "byte?"),
-            Map.entry(Short.class, "short?"),
-            Map.entry(Integer.class, "int?"),
-            Map.entry(Long.class, "long?"),
-            Map.entry(Float.class, "float?"),
-            Map.entry(Double.class, "double?"),
-            Map.entry(Boolean.class, "bool?"),
-            Map.entry(Character.class, "char?"),
-            Map.entry(String.class, "string"),
-            Map.entry(Object.class, "any"),
-            Map.entry(InterpretedInstance.class, "any")
-    );
+    private static final Map<Class<?>, String> ARRAY_COMPONENT_NAMES =
+            Map.ofEntries(
+                    Map.entry(byte.class, "byte"),
+                    Map.entry(short.class, "short"),
+                    Map.entry(int.class, "int"),
+                    Map.entry(long.class, "long"),
+                    Map.entry(float.class, "float"),
+                    Map.entry(double.class, "double"),
+                    Map.entry(boolean.class, "bool"),
+                    Map.entry(char.class, "char"),
+                    Map.entry(Byte.class, "byte?"),
+                    Map.entry(Short.class, "short?"),
+                    Map.entry(Integer.class, "int?"),
+                    Map.entry(Long.class, "long?"),
+                    Map.entry(Float.class, "float?"),
+                    Map.entry(Double.class, "double?"),
+                    Map.entry(Boolean.class, "bool?"),
+                    Map.entry(Character.class, "char?"),
+                    Map.entry(String.class, "string"),
+                    Map.entry(Object.class, "any"),
+                    Map.entry(InterpretedInstance.class, "any"));
 
     private static String describeArray(Class<?> arrayClass) {
         Class<?> comp = arrayClass.getComponentType();
@@ -441,13 +474,15 @@ public final class Types {
     }
 
     /**
-     * Whether a non-null Java parameter of erased class {@code javaParam} on a {@code default}
-     * Java interface method can match a Babble parameter with runtime check {@code descriptor}
-     * (so e.g. {@code Collection.toArray(IntFunction)} stays on Java's {@code default} overload
-     * when Babble implements {@code toArray(array of ...)}).
+     * Whether a non-null Java parameter of erased class {@code javaParam} on a {@code default} Java
+     * interface method can match a Babble parameter with runtime check {@code descriptor} (so e.g.
+     * {@code Collection.toArray(IntFunction)} stays on Java's {@code default} overload when Babble
+     * implements {@code toArray(array of ...)}).
      */
     public static boolean canAcceptJavaParamClass(String descriptor, Class<?> javaParam) {
-        return descriptor == null || javaParam == Object.class || canAcceptJavaType(parse(descriptor), javaParam);
+        return descriptor == null
+                || javaParam == Object.class
+                || canAcceptJavaType(parse(descriptor), javaParam);
     }
 
     private static boolean canAcceptJavaType(Type type, Class<?> javaParam) {
@@ -455,13 +490,23 @@ public final class Types {
         return switch (type) {
             case AnyType ignored -> true;
             case NullType ignored -> !javaParam.isPrimitive();
-            case UnionType u -> java.util.Arrays.stream(u.members).anyMatch(m -> canAcceptJavaType(m, javaParam));
-            case IntersectionType inter -> java.util.Arrays.stream(inter.members).allMatch(m -> canAcceptJavaType(m, javaParam));
-            case Builtin b -> b.javaClass.isAssignableFrom(boxed) || JavaTypes.isWidening(boxed, b.javaClass);
-            case FunctionType ignored -> Callable.class.isAssignableFrom(boxed) || boxed.isAssignableFrom(Callable.class);
-            case NominalType ignored -> !javaParam.isPrimitive() && !javaParam.isArray() && boxed.isInterface();
-            case JavaClassType j -> j.javaClass.isAssignableFrom(boxed) || boxed.isAssignableFrom(j.javaClass)
-                    || (boxed.isInterface() && j.javaClass.isInterface());
+            case UnionType u ->
+                    java.util.Arrays.stream(u.members)
+                            .anyMatch(m -> canAcceptJavaType(m, javaParam));
+            case IntersectionType inter ->
+                    java.util.Arrays.stream(inter.members)
+                            .allMatch(m -> canAcceptJavaType(m, javaParam));
+            case Builtin b ->
+                    b.javaClass.isAssignableFrom(boxed) || JavaTypes.isWidening(boxed, b.javaClass);
+            case FunctionType ignored ->
+                    Callable.class.isAssignableFrom(boxed)
+                            || boxed.isAssignableFrom(Callable.class);
+            case NominalType ignored ->
+                    !javaParam.isPrimitive() && !javaParam.isArray() && boxed.isInterface();
+            case JavaClassType j ->
+                    j.javaClass.isAssignableFrom(boxed)
+                            || boxed.isAssignableFrom(j.javaClass)
+                            || (boxed.isInterface() && j.javaClass.isInterface());
         };
     }
 }

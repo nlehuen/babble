@@ -4,8 +4,8 @@ import java.io.IOException;
 
 /**
  * Where the interactive mode reads what is typed (docs/design/bip004_repl.md §9) : plain lines
- * ({@link PlainInput}), or a line editor on a terminal ({@link TerminalInput}), which hands
- * over a whole multi-line input at once.
+ * ({@link PlainInput}), or a line editor on a terminal ({@link TerminalInput}), which hands over a
+ * whole multi-line input at once.
  */
 public interface LineSource extends AutoCloseable {
     /**
@@ -17,8 +17,7 @@ public interface LineSource extends AutoCloseable {
     String readLine(String prompt) throws IOException;
 
     @Override
-    default void close() throws IOException {
-    }
+    default void close() throws IOException {}
 
     /** What is being typed is dropped : the loop forgets the unfinished input. */
     final class Cancelled extends RuntimeException {

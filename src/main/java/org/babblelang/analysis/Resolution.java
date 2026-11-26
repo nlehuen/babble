@@ -1,31 +1,33 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
 
 /**
- * What the compiler needs to resolve names statically (compiler phase 2) : the variable
- * each name refers to, how each scope is represented, and what each method captures.
- * <p>
- * A scope is either a <em>frame</em> scope, whose variables are JVM locals of the method
- * it is compiled into, or a <em>namespace</em> scope, whose names stay in a runtime
- * {@code Namespace} as in phase 1 : the file and interface bodies.
- * <p>
- * The methods of the generated class are the file's {@code run}, one per function
- * literal, and one per class or object body (its constructor). Everything else is
- * compiled inline into the method that encloses it.
+ * What the compiler needs to resolve names statically (compiler phase 2) : the variable each name
+ * refers to, how each scope is represented, and what each method captures.
+ *
+ * <p>A scope is either a <em>frame</em> scope, whose variables are JVM locals of the method it is
+ * compiled into, or a <em>namespace</em> scope, whose names stay in a runtime {@code Namespace} as
+ * in phase 1 : the file and interface bodies.
+ *
+ * <p>The methods of the generated class are the file's {@code run}, one per function literal, and
+ * one per class or object body (its constructor). Everything else is compiled inline into the
+ * method that encloses it.
  */
 public final class Resolution {
     /** A variable of a frame scope. */
     public static final class Variable {
         public enum Kind {
-            PARAMETER, DEFINITION, THIS, RECURSE
+            PARAMETER,
+            DEFINITION,
+            THIS,
+            RECURSE
         }
 
         private final String name;
@@ -56,22 +58,33 @@ public final class Resolution {
             return kind;
         }
 
-        /** The function literal, class or object expression, or file whose method holds the variable. */
+        /**
+         * The function literal, class or object expression, or file whose method holds the
+         * variable.
+         */
         public ParserRuleContext method() {
             return method;
         }
 
-        /** Whether a nested method captures it via a heap {@code Cell} (mutable or non-dominating capture). */
+        /**
+         * Whether a nested method captures it via a heap {@code Cell} (mutable or non-dominating
+         * capture).
+         */
         public boolean isCell() {
             return cell;
         }
 
-        /** Whether a nested method captures this immutable, definitely-initialized variable by value ({@code BIP034-I5}). */
+        /**
+         * Whether a nested method captures this immutable, definitely-initialized variable by value
+         * ({@code BIP034-I5}).
+         */
         public boolean isCapturedByValue() {
             return capturedByValue;
         }
 
-        /** Whether any nested method captures this variable (either via {@code Cell} or by value). */
+        /**
+         * Whether any nested method captures this variable (either via {@code Cell} or by value).
+         */
         public boolean isCaptured() {
             return cell || capturedByValue;
         }
@@ -116,14 +129,13 @@ public final class Resolution {
     final Map<ParserRuleContext, LinkedHashSet<Variable>> captured = new HashMap<>();
     final Set<ParserRuleContext> namespaceScopes = new HashSet<>();
 
-    Resolution() {
-    }
+    Resolution() {}
 
     /**
-     * The variable a name occurrence refers to : a plain name, an unqualified assignment,
-     * {@code this}, {@code recurse}, a lexical def, a parameter declaration, the first name
-     * of a type in an implements list, or a super call's interface. Null when the name is
-     * resolved dynamically, in a namespace.
+     * The variable a name occurrence refers to : a plain name, an unqualified assignment, {@code
+     * this}, {@code recurse}, a lexical def, a parameter declaration, the first name of a type in
+     * an implements list, or a super call's interface. Null when the name is resolved dynamically,
+     * in a namespace.
      */
     public Variable variable(ParserRuleContext occurrence) {
         return bindings.get(occurrence);
@@ -140,9 +152,8 @@ public final class Resolution {
     }
 
     /**
-     * The variables of enclosing methods that a method uses, directly or through methods
-     * nested in it, in a fixed order : the index of each is its place in the method's
-     * captured array.
+     * The variables of enclosing methods that a method uses, directly or through methods nested in
+     * it, in a fixed order : the index of each is its place in the method's captured array.
      */
     public List<Variable> captured(ParserRuleContext method) {
         LinkedHashSet<Variable> variables = captured.get(method);

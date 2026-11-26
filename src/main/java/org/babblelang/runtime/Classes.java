@@ -1,36 +1,44 @@
 package org.babblelang.runtime;
 
-
 /**
  * What both modes call to evaluate class, object and interface expressions.
- * <p>
- * A class body runs in a namespace where {@code this} is the instance under
- * construction ; a static block in one where {@code this} is the class or interface
- * value ; an interface body in one that holds the interface value, which its defaults
- * are stored into.
+ *
+ * <p>A class body runs in a namespace where {@code this} is the instance under construction ; a
+ * static block in one where {@code this} is the class or interface value ; an interface body in one
+ * that holds the interface value, which its defaults are stored into.
  */
 public final class Classes {
     private static final String INTERFACE = "$interface";
 
-    private Classes() {
-    }
+    private Classes() {}
 
-    public static BabbleClass newClass(ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces) {
+    public static BabbleClass newClass(
+            ClassShape shape, Namespace closure, ClassBody body, Object[] interfaces) {
         return new BabbleClass(shape, closure, body, interfaces);
     }
 
-    public static BabbleClass newClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces) {
+    public static BabbleClass newClass(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            Object[] interfaces) {
         return new BabbleClass(shape, closure, captured, body, interfaces);
     }
 
-    public static BabbleClass newClass(ClassShape shape, Namespace closure, Object[] captured, ClassBody body, Object[] interfaces,
-                                       InstanceFactory factory) {
+    public static BabbleClass newClass(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            Object[] interfaces,
+            InstanceFactory factory) {
         return new BabbleClass(shape, closure, captured, body, interfaces, factory);
     }
 
     /**
-     * Reads a member field of a compiled class directly ({@code this.x}) : using it before
-     * its def has run is an error, as through {@link Members}.
+     * Reads a member field of a compiled class directly ({@code this.x}) : using it before its def
+     * has run is an error, as through {@link Members}.
      */
     public static Object member(Object value, String name) {
         if (value == Undefined.UNDEFINED) {
@@ -44,8 +52,8 @@ public final class Classes {
     }
 
     /**
-     * An entry of an implements or extends list, as the analysis resolved it : a Babble
-     * interface, or a Java interface given as its class.
+     * An entry of an implements or extends list, as the analysis resolved it : a Babble interface,
+     * or a Java interface given as its class.
      */
     public static Object type(Object value, String text) {
         if (value instanceof BabbleInterface) {
@@ -88,19 +96,25 @@ public final class Classes {
         return ((BabbleInterface) namespace.lookup(INTERFACE)).setDefault(index, value);
     }
 
-    public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, int memberIndex) {
-        return (BabbleFunction) BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
+    public static BabbleFunction interfaceDefault(
+            Object instance, String ifaceTypeId, int memberIndex) {
+        return (BabbleFunction)
+                BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
     }
 
-    public static BabbleFunction interfaceDefaultAlt(Object instance, String ifaceTypeId, int memberIndex, int altIndex) {
-        Callable def = BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
+    public static BabbleFunction interfaceDefaultAlt(
+            Object instance, String ifaceTypeId, int memberIndex, int altIndex) {
+        Callable def =
+                BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberIndex);
         if (def instanceof OverloadSet ov) {
             return (BabbleFunction) ov.member(altIndex);
         }
         return (BabbleFunction) def;
     }
 
-    public static BabbleFunction interfaceDefault(Object instance, String ifaceTypeId, String memberName) {
-        return (BabbleFunction) BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberName);
+    public static BabbleFunction interfaceDefault(
+            Object instance, String ifaceTypeId, String memberName) {
+        return (BabbleFunction)
+                BabbleObjects.babbleClass(instance).interfaceDefault(ifaceTypeId, memberName);
     }
 }

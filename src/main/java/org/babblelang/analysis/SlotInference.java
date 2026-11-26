@@ -1,8 +1,5 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.parser.BabbleParser;
-
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -16,15 +13,15 @@ import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.TreeMap;
-
-import static org.babblelang.analysis.TypeAlgebra.containsType;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.parser.BabbleParser;
 
 /**
  * The hybrid Tarjan SCC and monotone {@code SlotCell} driver ({@code BIP010} §4.5). Every
- * unannotated def, member, and call-site inferred parameter has a slot whose type joins the
- * values flowing into it, folded in source order ({@code BIP010-D2}), and every self-recursive
- * unannotated function a result slot. The top-level units are evaluated in reverse topological
- * order of their references; a unit that read a slot is evaluated again when the slot changes.
+ * unannotated def, member, and call-site inferred parameter has a slot whose type joins the values
+ * flowing into it, folded in source order ({@code BIP010-D2}), and every self-recursive unannotated
+ * function a result slot. The top-level units are evaluated in reverse topological order of their
+ * references; a unit that read a slot is evaluated again when the slot changes.
  */
 final class SlotInference {
     static final int DEFS = 0;
@@ -71,7 +68,8 @@ final class SlotInference {
                     }
                 }
             }
-            boolean changed = !Objects.equals(this.value, folded) || this.widenedLine != newWidenedLine;
+            boolean changed =
+                    !Objects.equals(this.value, folded) || this.widenedLine != newWidenedLine;
             this.value = folded;
             this.widenedLine = newWidenedLine;
             return changed;
@@ -81,13 +79,17 @@ final class SlotInference {
         Type foldBefore(SiteKey key) {
             Type folded = null;
             for (Type contribution : contributors.headMap(key, false).values()) {
-                Type joined = folded == null ? contribution : checker.algebra().reassignmentJoin(folded, contribution);
+                Type joined =
+                        folded == null
+                                ? contribution
+                                : checker.algebra().reassignmentJoin(folded, contribution);
                 if (joined != null) {
                     folded = joined;
                 }
             }
             return folded;
         }
+
         void addReader(Integer unitIdx) {
             if (unitIdx != null) {
                 readers.add(unitIdx);
@@ -96,8 +98,10 @@ final class SlotInference {
     }
 
     private final TypeChecker checker;
-    private final List<Map<ParserRuleContext, SlotCell>> cells = List.of(new IdentityHashMap<>(), new IdentityHashMap<>(), new IdentityHashMap<>());
-    private final Map<BabbleParser.FunctionLiteralContext, SlotCell> resultCells = new IdentityHashMap<>();
+    private final List<Map<ParserRuleContext, SlotCell>> cells =
+            List.of(new IdentityHashMap<>(), new IdentityHashMap<>(), new IdentityHashMap<>());
+    private final Map<BabbleParser.FunctionLiteralContext, SlotCell> resultCells =
+            new IdentityHashMap<>();
     private final Deque<Integer> activeUnitStack = new ArrayDeque<>();
     private boolean inferenceMode;
     private Map<ParserRuleContext, Integer> topUnitIndex = new IdentityHashMap<>();
@@ -141,7 +145,10 @@ final class SlotInference {
         }
     }
 
-    /** Ranks the top-level units in reverse topological order of their references (Tarjan), the order the worklist evaluates them in. */
+    /**
+     * Ranks the top-level units in reverse topological order of their references (Tarjan), the
+     * order the worklist evaluates them in.
+     */
     void rank(BabbleParser.FileContext file) {
         List<BabbleParser.ExpressionContext> units = file.expression();
         int n = units.size();
@@ -153,7 +160,8 @@ final class SlotInference {
         for (int i = 0; i < n; i++) {
             deps.add(new LinkedHashSet<>());
         }
-        for (Map.Entry<ParserRuleContext, ScopeNode> entry : checker.occurrenceScopes().entrySet()) {
+        for (Map.Entry<ParserRuleContext, ScopeNode> entry :
+                checker.occurrenceScopes().entrySet()) {
             ParserRuleContext occ = entry.getKey();
             if (!checker.inFile(occ)) {
                 continue;
@@ -165,10 +173,13 @@ final class SlotInference {
             String refName = null;
             if (occ instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
                 refName = sel.ID().getText();
-            } else if (occ instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) == null) {
+            } else if (occ instanceof BabbleParser.AssignExpressionContext assign
+                    && ScopeAnalysis.assignReceiver(assign) == null) {
                 refName = ScopeAnalysis.assignName(assign);
             }
-            if (refName != null && TypeChecker.resolveName(null, refName, entry.getValue()) instanceof ParserRuleContext decl) {
+            if (refName != null
+                    && TypeChecker.resolveName(null, refName, entry.getValue())
+                            instanceof ParserRuleContext decl) {
                 Integer vIdx = topUnitOf(decl);
                 if (vIdx != null && !vIdx.equals(uIdx)) {
                     deps.get(uIdx).add(vIdx);
@@ -190,8 +201,15 @@ final class SlotInference {
         }
     }
 
-    private void tarjanStrongConnect(int v, List<Set<Integer>> deps, int[] index, int[] lowlink,
-                                     boolean[] onStack, Deque<Integer> stack, int[] nextIndex, int[] nextRank) {
+    private void tarjanStrongConnect(
+            int v,
+            List<Set<Integer>> deps,
+            int[] index,
+            int[] lowlink,
+            boolean[] onStack,
+            Deque<Integer> stack,
+            int[] nextIndex,
+            int[] nextRank) {
         index[v] = lowlink[v] = nextIndex[0]++;
         stack.push(v);
         onStack[v] = true;
@@ -224,14 +242,20 @@ final class SlotInference {
         return null;
     }
 
-    /** Evaluates every unit, then the units whose slots changed, until no slot changes (each at most 64 times). */
+    /**
+     * Evaluates every unit, then the units whose slots changed, until no slot changes (each at most
+     * 64 times).
+     */
     void converge(BabbleParser.FileContext file) {
         List<BabbleParser.ExpressionContext> units = file.expression();
         int n = units.size();
         if (n == 0) {
             return;
         }
-        worklist = new PriorityQueue<>(Comparator.comparingInt((Integer i) -> sccRank[i]).thenComparingInt(i -> i));
+        worklist =
+                new PriorityQueue<>(
+                        Comparator.comparingInt((Integer i) -> sccRank[i])
+                                .thenComparingInt(i -> i));
         inQueue = new boolean[n];
         evalCount = new int[n];
         for (int i = 0; i < n; i++) {
@@ -293,15 +317,17 @@ final class SlotInference {
     /** The unit being evaluated reads the slot of {@code decl}. */
     void read(int slots, ParserRuleContext decl) {
         if (inferenceMode && !activeUnitStack.isEmpty()) {
-            cells.get(slots).computeIfAbsent(decl, k -> new SlotCell()).addReader(activeUnitStack.peek());
+            cells.get(slots)
+                    .computeIfAbsent(decl, k -> new SlotCell())
+                    .addReader(activeUnitStack.peek());
         }
     }
 
     /**
-     * A value contributed to the slot of an unannotated def, member, or inferred parameter.
-     * While the slots converge, it is recorded in the slot's cell (waking the units that read
-     * it when the slot changes) ; in the final walk, it is checked against the contributions
-     * that precede it in the source, which must join with it.
+     * A value contributed to the slot of an unannotated def, member, or inferred parameter. While
+     * the slots converge, it is recorded in the slot's cell (waking the units that read it when the
+     * slot changes) ; in the final walk, it is checked against the contributions that precede it in
+     * the source, which must join with it.
      */
     void contribute(int slots, ParserRuleContext decl, Type valueType, ParserRuleContext at) {
         Map<ParserRuleContext, SlotCell> cells = this.cells.get(slots);
@@ -314,18 +340,27 @@ final class SlotInference {
         }
         int widenLine = -1;
         if (isParam) {
-            ParserRuleContext site = at.getParent() instanceof BabbleParser.CallParameterContext cp
-                    && cp.getParent() instanceof BabbleParser.CallParametersContext cps
-                    && cps.getParent() instanceof BabbleParser.CallContext call ? call : at;
+            ParserRuleContext site =
+                    at.getParent() instanceof BabbleParser.CallParameterContext cp
+                                    && cp.getParent()
+                                            instanceof BabbleParser.CallParametersContext cps
+                                    && cps.getParent() instanceof BabbleParser.CallContext call
+                            ? call
+                            : at;
             widenLine = site.getStart().getLine();
         } else {
-            ParserRuleContext site = at instanceof BabbleParser.AssignExpressionContext ? at
-                    : at.getParent() instanceof BabbleParser.AssignExpressionContext assign ? assign : null;
+            ParserRuleContext site =
+                    at instanceof BabbleParser.AssignExpressionContext
+                            ? at
+                            : at.getParent() instanceof BabbleParser.AssignExpressionContext assign
+                                    ? assign
+                                    : null;
             if (site != null) {
                 widenLine = site.getStart().getLine();
             }
         }
-        SiteKey key = new SiteKey(at.getStart() != null ? at.getStart().getTokenIndex() : 0, widenLine);
+        SiteKey key =
+                new SiteKey(at.getStart() != null ? at.getStart().getTokenIndex() : 0, widenLine);
         if (!inferenceMode) {
             SlotCell cell = cells.get(decl);
             Type before = cell != null ? cell.foldBefore(key) : null;
@@ -336,9 +371,11 @@ final class SlotInference {
         }
         SlotCell cell = cells.computeIfAbsent(decl, k -> new SlotCell());
         boolean changed = cell.record(key, valueType);
-        if (cell.value != null && cell.value != Type.NULL
-                && (!isParam || !ScopeAnalysis.isParamDecl(decl)
-                || !checker.escapingTargets().contains(TypeChecker.ownerOfParam(decl)))) {
+        if (cell.value != null
+                && cell.value != Type.NULL
+                && (!isParam
+                        || !ScopeAnalysis.isParamDecl(decl)
+                        || !checker.escapingTargets().contains(TypeChecker.ownerOfParam(decl)))) {
             targetMap.put(decl, cell.value);
             if (cell.widenedLine >= 0) {
                 widenMap.put(decl, new TypeChecker.Widening(cell.value, cell.widenedLine));

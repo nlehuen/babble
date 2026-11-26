@@ -1,12 +1,11 @@
 package org.babblelang.runtime;
 
 public final class Truth {
-    private Truth() {
-    }
+    private Truth() {}
 
     /**
-     * A Boolean is itself, a number is true when it is not zero, and anything else is
-     * true when it is not null.
+     * A Boolean is itself, a number is true when it is not zero, and anything else is true when it
+     * is not null.
      */
     public static boolean test(Object value) {
         if (value instanceof Boolean bool) {

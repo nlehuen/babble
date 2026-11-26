@@ -3,10 +3,9 @@ package org.babblelang.runtime;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-/**
- * Immutable discrete range record backing {@code range of char} ({@code BIP031-D6}).
- */
-public record CharRange(char startChar, char endChar, boolean inclusive, int step, boolean descending)
+/** Immutable discrete range record backing {@code range of char} ({@code BIP031-D6}). */
+public record CharRange(
+        char startChar, char endChar, boolean inclusive, int step, boolean descending)
         implements Range<Character>, Iterable<Character> {
 
     public CharRange {

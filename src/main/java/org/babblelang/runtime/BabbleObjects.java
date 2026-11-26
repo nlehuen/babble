@@ -7,12 +7,13 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 
 /**
- * Runtime view of Babble instances across both modes : {@link InterpretedInstance} for
- * the interpreter, and plain compiled classes whose {@code $babble$*} metadata hooks are
- * cached once per class via {@link ClassValue} (BIP020-D18).
+ * Runtime view of Babble instances across both modes : {@link InterpretedInstance} for the
+ * interpreter, and plain compiled classes whose {@code $babble$*} metadata hooks are cached once
+ * per class via {@link ClassValue} (BIP020-D18).
  */
 public final class BabbleObjects {
-    private static final CallSite TO_STRING = new CallSite("<toString>", -1, "toString", new String[0]);
+    private static final CallSite TO_STRING =
+            new CallSite("<toString>", -1, "toString", new String[0]);
 
     private record CompiledInfo(
             MethodHandle babbleClass,
@@ -20,53 +21,97 @@ public final class BabbleObjects {
             MethodHandle field,
             MethodHandle setField,
             MethodHandle isDefined,
-            MethodHandle lookup
-    ) {
-    }
+            MethodHandle lookup) {}
 
-    private static final ClassValue<CompiledInfo> COMPILED = new ClassValue<>() {
-        @Override
-        protected CompiledInfo computeValue(Class<?> type) {
-            if (type.isPrimitive() || type.isArray() || type.isInterface() || !Modifier.isPublic(type.getModifiers())) {
-                return null;
-            }
-            Field clsField;
-            try {
-                clsField = type.getDeclaredField("$babble$class");
-            } catch (NoSuchFieldException e) {
-                return null;
-            }
-            if (!Modifier.isPublic(clsField.getModifiers()) || clsField.getType() != BabbleClass.class) {
-                return null;
-            }
-            MethodHandles.Lookup publicLookup = MethodHandles.publicLookup();
-            try {
-                MethodHandle babbleClass = publicLookup.findGetter(type, "$babble$class", BabbleClass.class)
-                        .asType(MethodType.methodType(BabbleClass.class, Object.class));
-                MethodHandle runtime = publicLookup.findGetter(type, "$babble$rt", ScriptRuntime.class)
-                        .asType(MethodType.methodType(ScriptRuntime.class, Object.class));
-                MethodHandle field = publicLookup.findVirtual(type, "$babble$field", MethodType.methodType(Object.class, int.class))
-                        .asType(MethodType.methodType(Object.class, Object.class, int.class));
-                MethodHandle setField = publicLookup.findVirtual(type, "$babble$setField", MethodType.methodType(void.class, int.class, Object.class))
-                        .asType(MethodType.methodType(void.class, Object.class, int.class, Object.class));
-                MethodHandle isDefined = findOptionalVirtual(publicLookup, type, "$babble$isDefined",
-                        MethodType.methodType(boolean.class, int.class),
-                        MethodType.methodType(boolean.class, Object.class, int.class));
-                MethodHandle lookup = findOptionalVirtual(publicLookup, type, "$babble$lookup",
-                        MethodType.methodType(MethodHandles.Lookup.class),
-                        MethodType.methodType(MethodHandles.Lookup.class, Object.class));
-                return new CompiledInfo(babbleClass, runtime, field, setField, isDefined, lookup);
-            } catch (ReflectiveOperationException e) {
-                throw new IllegalStateException("Malformed compiled Babble class : " + type.getName(), e);
-            }
-        }
-    };
+    private static final ClassValue<CompiledInfo> COMPILED =
+            new ClassValue<>() {
+                @Override
+                protected CompiledInfo computeValue(Class<?> type) {
+                    if (type.isPrimitive()
+                            || type.isArray()
+                            || type.isInterface()
+                            || !Modifier.isPublic(type.getModifiers())) {
+                        return null;
+                    }
+                    Field clsField;
+                    try {
+                        clsField = type.getDeclaredField("$babble$class");
+                    } catch (NoSuchFieldException e) {
+                        return null;
+                    }
+                    if (!Modifier.isPublic(clsField.getModifiers())
+                            || clsField.getType() != BabbleClass.class) {
+                        return null;
+                    }
+                    MethodHandles.Lookup publicLookup = MethodHandles.publicLookup();
+                    try {
+                        MethodHandle babbleClass =
+                                publicLookup
+                                        .findGetter(type, "$babble$class", BabbleClass.class)
+                                        .asType(
+                                                MethodType.methodType(
+                                                        BabbleClass.class, Object.class));
+                        MethodHandle runtime =
+                                publicLookup
+                                        .findGetter(type, "$babble$rt", ScriptRuntime.class)
+                                        .asType(
+                                                MethodType.methodType(
+                                                        ScriptRuntime.class, Object.class));
+                        MethodHandle field =
+                                publicLookup
+                                        .findVirtual(
+                                                type,
+                                                "$babble$field",
+                                                MethodType.methodType(Object.class, int.class))
+                                        .asType(
+                                                MethodType.methodType(
+                                                        Object.class, Object.class, int.class));
+                        MethodHandle setField =
+                                publicLookup
+                                        .findVirtual(
+                                                type,
+                                                "$babble$setField",
+                                                MethodType.methodType(
+                                                        void.class, int.class, Object.class))
+                                        .asType(
+                                                MethodType.methodType(
+                                                        void.class,
+                                                        Object.class,
+                                                        int.class,
+                                                        Object.class));
+                        MethodHandle isDefined =
+                                findOptionalVirtual(
+                                        publicLookup,
+                                        type,
+                                        "$babble$isDefined",
+                                        MethodType.methodType(boolean.class, int.class),
+                                        MethodType.methodType(
+                                                boolean.class, Object.class, int.class));
+                        MethodHandle lookup =
+                                findOptionalVirtual(
+                                        publicLookup,
+                                        type,
+                                        "$babble$lookup",
+                                        MethodType.methodType(MethodHandles.Lookup.class),
+                                        MethodType.methodType(
+                                                MethodHandles.Lookup.class, Object.class));
+                        return new CompiledInfo(
+                                babbleClass, runtime, field, setField, isDefined, lookup);
+                    } catch (ReflectiveOperationException e) {
+                        throw new IllegalStateException(
+                                "Malformed compiled Babble class : " + type.getName(), e);
+                    }
+                }
+            };
 
-    private BabbleObjects() {
-    }
+    private BabbleObjects() {}
 
-    private static MethodHandle findOptionalVirtual(MethodHandles.Lookup publicLookup, Class<?> type,
-                                                      String name, MethodType exactType, MethodType adaptedType)
+    private static MethodHandle findOptionalVirtual(
+            MethodHandles.Lookup publicLookup,
+            Class<?> type,
+            String name,
+            MethodType exactType,
+            MethodType adaptedType)
             throws IllegalAccessException {
         try {
             return publicLookup.findVirtual(type, name, exactType).asType(adaptedType);
@@ -76,7 +121,9 @@ public final class BabbleObjects {
     }
 
     private static CompiledInfo compiledInfo(Object value) {
-        return value != null && !(value instanceof InterpretedInstance) ? COMPILED.get(value.getClass()) : null;
+        return value != null && !(value instanceof InterpretedInstance)
+                ? COMPILED.get(value.getClass())
+                : null;
     }
 
     private static BabbleClass babbleClass(Object instance, CompiledInfo info) {
@@ -119,11 +166,15 @@ public final class BabbleObjects {
         }
     }
 
-    private static BabbleFunction method(Object instance, CompiledInfo info, BabbleClass babbleClass, String name) {
+    private static BabbleFunction method(
+            Object instance, CompiledInfo info, BabbleClass babbleClass, String name) {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index >= 0) {
-            return shape.isMethod(index) && field(info, instance, index) instanceof BabbleFunction function ? function : null;
+            return shape.isMethod(index)
+                            && field(info, instance, index) instanceof BabbleFunction function
+                    ? function
+                    : null;
         }
         Callable def = babbleClass.defaultMethod(name);
         return def instanceof BabbleFunction bf ? bf : null;
@@ -144,7 +195,10 @@ public final class BabbleObjects {
         return cls != null && COMPILED.get(cls) != null;
     }
 
-    /** The {@link BabbleClass} that created {@code value}, or null if {@code value} is not a Babble instance. */
+    /**
+     * The {@link BabbleClass} that created {@code value}, or null if {@code value} is not a Babble
+     * instance.
+     */
     public static BabbleClass babbleClass(Object value) {
         if (value instanceof InterpretedInstance interpreted) {
             return interpreted.babbleClass();
@@ -182,7 +236,10 @@ public final class BabbleObjects {
                 return new BoundMethod((BabbleFunction) inherited, instance);
             }
             if (!babbleClass.javaDefaultMethods(name).isEmpty()) {
-                return new JavaDefaultCall(instance, babbleClass.javaDefaultMethods(name), babbleClass.name() + "." + name);
+                return new JavaDefaultCall(
+                        instance,
+                        babbleClass.javaDefaultMethods(name),
+                        babbleClass.name() + "." + name);
             }
             throw Members.noSuchMember(name);
         }
@@ -215,7 +272,8 @@ public final class BabbleObjects {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index < 0) {
-            if (babbleClass.defaultMethod(name) != null || !babbleClass.javaDefaultMethods(name).isEmpty()) {
+            if (babbleClass.defaultMethod(name) != null
+                    || !babbleClass.javaDefaultMethods(name).isEmpty()) {
                 throw Members.cannotAssignMethod(name);
             }
             throw Members.noSuchMember(name);
@@ -288,7 +346,10 @@ public final class BabbleObjects {
         return null;
     }
 
-    /** What Java sees of a Babble instance : itself if compiled and implementing all interfaces, else a proxy. */
+    /**
+     * What Java sees of a Babble instance : itself if compiled and implementing all interfaces,
+     * else a proxy.
+     */
     public static Object face(Object instance) {
         if (instance instanceof InterpretedInstance interpreted) {
             return interpreted.face();
@@ -321,11 +382,15 @@ public final class BabbleObjects {
         BabbleClass babbleClass = babbleClass(instance, info);
         BabbleFunction toString = method(instance, info, babbleClass, "toString");
         if (toString != null && toString.minArity() == 0) {
-            return String.valueOf(toString.invoke(instance, runtime(instance, info), Arguments.NONE, null, TO_STRING));
+            return String.valueOf(
+                    toString.invoke(
+                            instance, runtime(instance, info), Arguments.NONE, null, TO_STRING));
         }
         ClassShape shape = babbleClass.shape();
         if (!shape.isValue()) {
-            return babbleClass.name() + "@" + Integer.toHexString(System.identityHashCode(instance));
+            return babbleClass.name()
+                    + "@"
+                    + Integer.toHexString(System.identityHashCode(instance));
         }
         StringBuilder result = new StringBuilder(babbleClass.name()).append('(');
         boolean first = true;
@@ -334,7 +399,9 @@ public final class BabbleObjects {
                 if (!first) {
                     result.append(", ");
                 }
-                result.append(shape.member(i)).append(": ").append(ArraySupport.format(field(info, instance, i)));
+                result.append(shape.member(i))
+                        .append(": ")
+                        .append(ArraySupport.format(field(info, instance, i)));
                 first = false;
             }
         }

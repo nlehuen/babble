@@ -1,36 +1,39 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.tree.ParseTree;
-import org.babblelang.parser.BabbleLexer;
-import org.babblelang.parser.BabbleParser;
-
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
+import org.babblelang.parser.BabbleLexer;
+import org.babblelang.parser.BabbleParser;
 
 /**
- * Flow-sensitive narrowing ({@code BIP010} §4.4) : the {@link TypeEnv.Refinement} a test
- * implies when it holds and when it fails ({@code is}, {@code == null}, {@code != null},
- * truthiness, {@code not}, {@code and}, {@code or}), which declarations can be narrowed, and
- * the locals a loop assigns (evicted before its test).
+ * Flow-sensitive narrowing ({@code BIP010} §4.4) : the {@link TypeEnv.Refinement} a test implies
+ * when it holds and when it fails ({@code is}, {@code == null}, {@code != null}, truthiness, {@code
+ * not}, {@code and}, {@code or}), which declarations can be narrowed, and the locals a loop assigns
+ * (evicted before its test).
  */
 final class Narrowing {
     private final TypeChecker checker;
-    private final Map<ParserRuleContext, Set<ParserRuleContext>> assignedLoopLocals = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, Set<ParserRuleContext>> assignedLoopLocals =
+            new IdentityHashMap<>();
 
     Narrowing(TypeChecker checker) {
         this.checker = checker;
     }
 
     Set<ParserRuleContext> assignedLocals(ParserRuleContext ctx) {
-        return assignedLoopLocals.computeIfAbsent(ctx, node -> {
-            Set<ParserRuleContext> assigned = Collections.newSetFromMap(new IdentityHashMap<>());
-            collectAssignedLocals(node, assigned);
-            return Collections.unmodifiableSet(assigned);
-        });
+        return assignedLoopLocals.computeIfAbsent(
+                ctx,
+                node -> {
+                    Set<ParserRuleContext> assigned =
+                            Collections.newSetFromMap(new IdentityHashMap<>());
+                    collectAssignedLocals(node, assigned);
+                    return Collections.unmodifiableSet(assigned);
+                });
     }
 
     private void collectAssignedLocals(ParseTree tree, Set<ParserRuleContext> assigned) {
@@ -40,10 +43,14 @@ final class Narrowing {
                 || tree instanceof BabbleParser.InterfaceExpressionContext) {
             return;
         }
-        if (tree instanceof BabbleParser.AssignExpressionContext assign && ScopeAnalysis.assignReceiver(assign) == null) {
+        if (tree instanceof BabbleParser.AssignExpressionContext assign
+                && ScopeAnalysis.assignReceiver(assign) == null) {
             ScopeNode scope = checker.occurrenceScope(assign);
             String name = ScopeAnalysis.assignName(assign);
-            if (scope != null && name != null && TypeChecker.resolveName(assign, name, scope) instanceof ParserRuleContext decl) {
+            if (scope != null
+                    && name != null
+                    && TypeChecker.resolveName(assign, name, scope)
+                            instanceof ParserRuleContext decl) {
                 assigned.add(decl);
             }
         }
@@ -60,11 +67,14 @@ final class Narrowing {
     }
 
     Type preferMoreSpecific(Type a, Type b) {
-        return checker.algebra().runtimeSubtype(a, b) && !checker.algebra().runtimeSubtype(b, a) ? a : b;
+        return checker.algebra().runtimeSubtype(a, b) && !checker.algebra().runtimeSubtype(b, a)
+                ? a
+                : b;
     }
 
     TypeEnv.Refinement extractRefinement(BabbleParser.ExpressionContext expr) {
-        if (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+        if (expr instanceof BabbleParser.BlockExpressionContext block
+                && block.block().expression().size() == 1) {
             return extractRefinement(block.block().expression(0));
         }
         if (expr instanceof BabbleParser.BooleanNotContext notCtx) {
@@ -78,7 +88,8 @@ final class Narrowing {
                     : left.or(right, this::preferMoreSpecific);
         }
         if (expr instanceof BabbleParser.BinaryOpContext opCtx
-                && (opCtx.op.getType() == BabbleLexer.EQ || opCtx.op.getType() == BabbleLexer.NEQ)) {
+                && (opCtx.op.getType() == BabbleLexer.EQ
+                        || opCtx.op.getType() == BabbleLexer.NEQ)) {
             BabbleParser.ExpressionContext other = null;
             if (isNullLiteral(opCtx.right)) {
                 other = opCtx.left;
@@ -91,8 +102,10 @@ final class Narrowing {
                     Type current = checker.synth(other);
                     if (!TypeChecker.isUnresolved(current) && Type.containsNull(current)) {
                         Type nonNull = Type.withoutNull(current);
-                        Map<ParserRuleContext, Type> whenNotNull = nonNull != Type.NOTHING ? Map.of(decl, nonNull) : Map.of();
-                        TypeEnv.Refinement eqNull = new TypeEnv.Refinement(Map.of(decl, Type.NULL), whenNotNull);
+                        Map<ParserRuleContext, Type> whenNotNull =
+                                nonNull != Type.NOTHING ? Map.of(decl, nonNull) : Map.of();
+                        TypeEnv.Refinement eqNull =
+                                new TypeEnv.Refinement(Map.of(decl, Type.NULL), whenNotNull);
                         return opCtx.op.getType() == BabbleLexer.EQ ? eqNull : eqNull.invert();
                     }
                 }
@@ -106,14 +119,24 @@ final class Narrowing {
             }
             Type target = checker.resolveIsTarget(isCtx);
             Type current = checker.synth(isCtx.left);
-            if (target == null || target == Type.ERROR
-                    || (!TypeChecker.isUnresolved(current) && checker.algebra().runtimeSubtype(current, target))) {
+            if (target == null
+                    || target == Type.ERROR
+                    || (!TypeChecker.isUnresolved(current)
+                            && checker.algebra().runtimeSubtype(current, target))) {
                 return TypeEnv.Refinement.EMPTY;
             }
-            Type narrowedTrue = !TypeChecker.isUnresolved(current) ? checker.algebra().narrowTarget(current, target) : target;
-            Type subtracted = !TypeChecker.isUnresolved(current) ? checker.algebra().subtractType(current, target) : Type.NOTHING;
-            Map<ParserRuleContext, Type> whenFalse = (subtracted != Type.NOTHING && !subtracted.equals(current))
-                    ? Map.of(decl, subtracted) : Map.of();
+            Type narrowedTrue =
+                    !TypeChecker.isUnresolved(current)
+                            ? checker.algebra().narrowTarget(current, target)
+                            : target;
+            Type subtracted =
+                    !TypeChecker.isUnresolved(current)
+                            ? checker.algebra().subtractType(current, target)
+                            : Type.NOTHING;
+            Map<ParserRuleContext, Type> whenFalse =
+                    (subtracted != Type.NOTHING && !subtracted.equals(current))
+                            ? Map.of(decl, subtracted)
+                            : Map.of();
             return new TypeEnv.Refinement(Map.of(decl, narrowedTrue), whenFalse);
         }
         ParserRuleContext decl = narrowableDeclaration(expr);
@@ -130,29 +153,40 @@ final class Narrowing {
     }
 
     private static boolean isNullLiteral(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+        while (expr instanceof BabbleParser.BlockExpressionContext block
+                && block.block().expression().size() == 1) {
             expr = block.block().expression(0);
         }
         return expr instanceof BabbleParser.NullContext;
     }
 
     ParserRuleContext narrowableDeclaration(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext block && block.block().expression().size() == 1) {
+        while (expr instanceof BabbleParser.BlockExpressionContext block
+                && block.block().expression().size() == 1) {
             expr = block.block().expression(0);
         }
-        if (expr instanceof BabbleParser.SelectorContext selector && selector.expression() == null) {
-            Object resolved = TypeChecker.resolveName(selector, selector.ID().getText(), checker.occurrenceScope(selector));
-            // A for loop's variable, catch clause variable, or match pattern variable is a fresh read-only binding : narrowable too.
+        if (expr instanceof BabbleParser.SelectorContext selector
+                && selector.expression() == null) {
+            Object resolved =
+                    TypeChecker.resolveName(
+                            selector, selector.ID().getText(), checker.occurrenceScope(selector));
+            // A for loop's variable, catch clause variable, or match pattern variable is a fresh
+            // read-only binding : narrowable too.
             if (resolved instanceof BabbleParser.DefExpressionContext
                     || resolved instanceof BabbleParser.ForExpressionContext
                     || resolved instanceof BabbleParser.CatchClauseContext
                     || resolved instanceof BabbleParser.BindingPatternContext
                     || resolved instanceof BabbleParser.RestPatternContext
                     || resolved instanceof BabbleParser.ElseClauseContext
-                    || (resolved instanceof ParserRuleContext prc && ScopeAnalysis.isParamDecl(prc))) {
+                    || (resolved instanceof ParserRuleContext prc
+                            && ScopeAnalysis.isParamDecl(prc))) {
                 ParserRuleContext decl = (ParserRuleContext) resolved;
                 if (!checker.isCapturedReassigned(decl)
-                        && (!checker.isReassigned(decl) || Objects.equals(TypeChecker.callableScope(checker.occurrenceScope(selector)), TypeChecker.callableScope(checker.scopeOf(decl))))) {
+                        && (!checker.isReassigned(decl)
+                                || Objects.equals(
+                                        TypeChecker.callableScope(
+                                                checker.occurrenceScope(selector)),
+                                        TypeChecker.callableScope(checker.scopeOf(decl))))) {
                     return decl;
                 }
             }

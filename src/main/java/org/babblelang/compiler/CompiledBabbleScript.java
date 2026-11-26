@@ -1,17 +1,16 @@
 package org.babblelang.compiler;
 
+import java.lang.invoke.MethodHandle;
+import java.util.Map;
+import javax.script.ScriptException;
 import org.babblelang.engine.BabbleScript;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.runtime.ArraySupport;
 import org.babblelang.runtime.ScriptRuntime;
 
-import javax.script.ScriptException;
-import java.lang.invoke.MethodHandle;
-import java.util.Map;
-
 /**
- * A script compiled to a JVM class. The class holds no state of its own, so it serves
- * every eval : each one gets fresh namespaces and its own ScriptRuntime.
+ * A script compiled to a JVM class. The class holds no state of its own, so it serves every eval :
+ * each one gets fresh namespaces and its own ScriptRuntime.
  */
 public final class CompiledBabbleScript extends BabbleScript {
     private final Class<?> scriptClass;
@@ -22,25 +21,92 @@ public final class CompiledBabbleScript extends BabbleScript {
     private final String[] exports;
     private final Map<String, String> interfaceJvmNames;
     private final Map<String, String> classJvmNames;
-    private final Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget> exportedFunctions;
+    private final Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget>
+            exportedFunctions;
     private final Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports;
 
-    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports) {
-        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, Map.of(), Map.of(), Map.of(), Map.of());
+    CompiledBabbleScript(
+            BabbleScriptEngine engine,
+            Class<?> scriptClass,
+            Map<String, byte[]> classes,
+            MethodHandle run,
+            String sourceName,
+            int firstLine,
+            String[] exports) {
+        this(
+                engine,
+                scriptClass,
+                classes,
+                run,
+                sourceName,
+                firstLine,
+                exports,
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of());
     }
 
-    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports, Map<String, String> interfaceJvmNames) {
-        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, interfaceJvmNames, Map.of(), Map.of(), Map.of());
+    CompiledBabbleScript(
+            BabbleScriptEngine engine,
+            Class<?> scriptClass,
+            Map<String, byte[]> classes,
+            MethodHandle run,
+            String sourceName,
+            int firstLine,
+            String[] exports,
+            Map<String, String> interfaceJvmNames) {
+        this(
+                engine,
+                scriptClass,
+                classes,
+                run,
+                sourceName,
+                firstLine,
+                exports,
+                interfaceJvmNames,
+                Map.of(),
+                Map.of(),
+                Map.of());
     }
 
-    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports, Map<String, String> interfaceJvmNames, Map<String, String> classJvmNames) {
-        this(engine, scriptClass, classes, run, sourceName, firstLine, exports, interfaceJvmNames, classJvmNames, Map.of(), Map.of());
+    CompiledBabbleScript(
+            BabbleScriptEngine engine,
+            Class<?> scriptClass,
+            Map<String, byte[]> classes,
+            MethodHandle run,
+            String sourceName,
+            int firstLine,
+            String[] exports,
+            Map<String, String> interfaceJvmNames,
+            Map<String, String> classJvmNames) {
+        this(
+                engine,
+                scriptClass,
+                classes,
+                run,
+                sourceName,
+                firstLine,
+                exports,
+                interfaceJvmNames,
+                classJvmNames,
+                Map.of(),
+                Map.of());
     }
 
-    CompiledBabbleScript(BabbleScriptEngine engine, Class<?> scriptClass, Map<String, byte[]> classes, MethodHandle run, String sourceName, int firstLine, String[] exports,
-                         Map<String, String> interfaceJvmNames, Map<String, String> classJvmNames,
-                         Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget> exportedFunctions,
-                         Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
+    CompiledBabbleScript(
+            BabbleScriptEngine engine,
+            Class<?> scriptClass,
+            Map<String, byte[]> classes,
+            MethodHandle run,
+            String sourceName,
+            int firstLine,
+            String[] exports,
+            Map<String, String> interfaceJvmNames,
+            Map<String, String> classJvmNames,
+            Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget>
+                    exportedFunctions,
+            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
         super(engine);
         this.exports = exports;
         this.scriptClass = scriptClass;
@@ -48,10 +114,13 @@ public final class CompiledBabbleScript extends BabbleScript {
         this.run = run;
         this.sourceName = sourceName;
         this.firstLine = firstLine;
-        this.interfaceJvmNames = interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
+        this.interfaceJvmNames =
+                interfaceJvmNames != null ? Map.copyOf(interfaceJvmNames) : Map.of();
         this.classJvmNames = classJvmNames != null ? Map.copyOf(classJvmNames) : Map.of();
-        this.exportedFunctions = exportedFunctions != null ? Map.copyOf(exportedFunctions) : Map.of();
-        this.crossModuleInlineExports = crossModuleInlineExports != null ? Map.copyOf(crossModuleInlineExports) : Map.of();
+        this.exportedFunctions =
+                exportedFunctions != null ? Map.copyOf(exportedFunctions) : Map.of();
+        this.crossModuleInlineExports =
+                crossModuleInlineExports != null ? Map.copyOf(crossModuleInlineExports) : Map.of();
     }
 
     /** The generated class, for tests and debugging. */
@@ -65,29 +134,39 @@ public final class CompiledBabbleScript extends BabbleScript {
     }
 
     /**
-     * The class files of the script class, then of the classes generated for class and
-     * object expressions, by internal name.
+     * The class files of the script class, then of the classes generated for class and object
+     * expressions, by internal name.
      */
     public Map<String, byte[]> getClasses() {
         return java.util.Collections.unmodifiableMap(classes);
     }
 
-    /** Internal JVM names of Babble interfaces compiled by this script, keyed by {@code ClassShape.id()}. */
+    /**
+     * Internal JVM names of Babble interfaces compiled by this script, keyed by {@code
+     * ClassShape.id()}.
+     */
     public Map<String, String> interfaceJvmNames() {
         return interfaceJvmNames;
     }
 
-    /** Internal JVM names of static top-level Babble classes compiled by this script, keyed by {@code ClassShape.id()}. */
+    /**
+     * Internal JVM names of static top-level Babble classes compiled by this script, keyed by
+     * {@code ClassShape.id()}.
+     */
     public Map<String, String> classJvmNames() {
         return classJvmNames;
     }
 
     /** Direct static JVM targets of top-level exported Babble functions compiled by this script. */
-    public Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget> exportedFunctions() {
+    public Map<String, org.babblelang.analysis.LoweringTargets.ExportedFunctionTarget>
+            exportedFunctions() {
         return exportedFunctions;
     }
 
-    /** Small self-contained pure exported HIR functions and {@code fastRecord} methods eligible for cross-module inlining. */
+    /**
+     * Small self-contained pure exported HIR functions and {@code fastRecord} methods eligible for
+     * cross-module inlining.
+     */
     public Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports() {
         return crossModuleInlineExports;
     }
@@ -113,18 +192,18 @@ public final class CompiledBabbleScript extends BabbleScript {
     }
 
     /**
-     * The Babble line of the innermost frame of the script's classes that has one : the
-     * script class, or the class of a class expression, whose names extend the script
-     * class's with a '$'. Runtime helpers are skipped, so a failure inside an operator
-     * reports the operator's line.
-     * Frames without a line are skipped too : that is a function prologue binding
-     * arguments, and the error is then reported at the line of the call.
+     * The Babble line of the innermost frame of the script's classes that has one : the script
+     * class, or the class of a class expression, whose names extend the script class's with a '$'.
+     * Runtime helpers are skipped, so a failure inside an operator reports the operator's line.
+     * Frames without a line are skipped too : that is a function prologue binding arguments, and
+     * the error is then reported at the line of the call.
      */
     private int lineOf(Throwable t) {
         String name = scriptClass.getName();
         for (StackTraceElement element : t.getStackTrace()) {
             String className = element.getClassName();
-            if ((className.equals(name) || className.startsWith(name + "$")) && element.getLineNumber() >= 0) {
+            if ((className.equals(name) || className.startsWith(name + "$"))
+                    && element.getLineNumber() >= 0) {
                 return element.getLineNumber();
             }
         }

@@ -1,15 +1,14 @@
 package org.babblelang.ir.mir;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.function.UnaryOperator;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirVar;
 import org.babblelang.runtime.CallSite;
-
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.function.UnaryOperator;
 
 /**
  * Sealed hierarchy of SSA instructions inside a {@link MirBlock} ({@code BIP014-I3} §6.4).
@@ -18,49 +17,49 @@ import java.util.function.UnaryOperator;
  * {@link MirVal}, source {@link #line()}, and {@link MirEffect} summary. Passes rewrite operand
  * references uniformly via {@link #remapUses(UnaryOperator)}.
  */
-public sealed interface MirInst permits
-        MirInst.Const,
-        MirInst.Copy,
-        MirInst.Unary,
-        MirInst.Binary,
-        MirInst.Widen,
-        MirInst.Convert,
-        MirInst.Narrow,
-        MirInst.CheckCast,
-        MirInst.NonNull,
-        MirInst.IsCheck,
-        MirInst.LoadField,
-        MirInst.StoreField,
-        MirInst.LoadJavaField,
-        MirInst.StoreJavaField,
-        MirInst.ArrayGet,
-        MirInst.ArraySet,
-        MirInst.ArrayLen,
-        MirInst.CallBabble,
-        MirInst.CallMethod,
-        MirInst.CallInterface,
-        MirInst.CallJava,
-        MirInst.CallJavaCtor,
-        MirInst.RecordNew,
-        MirInst.RecordReuse,
-        MirInst.RangeNew,
-        MirInst.Move,
-        MirInst.Freeze,
-        MirInst.SlotDecl,
-        MirInst.SlotRead,
-        MirInst.SlotWrite,
-        MirInst.NameRead,
-        MirInst.NameAssign,
-        MirInst.LoadExport,
-        MirInst.ScopeEnter,
-        MirInst.ScopeExit,
-        MirInst.ForIterInit,
-        MirInst.ForIterHasNext,
-        MirInst.ForIterNext,
-        MirInst.UnwrapThrown,
-        MirInst.CatchMatch,
-        MirInst.AddSuppressed,
-        MirInst.OpaqueExpr {
+public sealed interface MirInst
+        permits MirInst.Const,
+                MirInst.Copy,
+                MirInst.Unary,
+                MirInst.Binary,
+                MirInst.Widen,
+                MirInst.Convert,
+                MirInst.Narrow,
+                MirInst.CheckCast,
+                MirInst.NonNull,
+                MirInst.IsCheck,
+                MirInst.LoadField,
+                MirInst.StoreField,
+                MirInst.LoadJavaField,
+                MirInst.StoreJavaField,
+                MirInst.ArrayGet,
+                MirInst.ArraySet,
+                MirInst.ArrayLen,
+                MirInst.CallBabble,
+                MirInst.CallMethod,
+                MirInst.CallInterface,
+                MirInst.CallJava,
+                MirInst.CallJavaCtor,
+                MirInst.RecordNew,
+                MirInst.RecordReuse,
+                MirInst.RangeNew,
+                MirInst.Move,
+                MirInst.Freeze,
+                MirInst.SlotDecl,
+                MirInst.SlotRead,
+                MirInst.SlotWrite,
+                MirInst.NameRead,
+                MirInst.NameAssign,
+                MirInst.LoadExport,
+                MirInst.ScopeEnter,
+                MirInst.ScopeExit,
+                MirInst.ForIterInit,
+                MirInst.ForIterHasNext,
+                MirInst.ForIterNext,
+                MirInst.UnwrapThrown,
+                MirInst.CatchMatch,
+                MirInst.AddSuppressed,
+                MirInst.OpaqueExpr {
 
     /** SSA value defined by this instruction, or {@code null} for void instructions. */
     MirVal result();
@@ -72,7 +71,10 @@ public sealed interface MirInst permits
     /** All SSA values read by this instruction. */
     List<MirVal> usedValues();
 
-    /** Returns an instruction with all operand uses remapped through {@code fn} (identity if unchanged). */
+    /**
+     * Returns an instruction with all operand uses remapped through {@code fn} (identity if
+     * unchanged).
+     */
     MirInst remapUses(UnaryOperator<MirVal> fn);
 
     private static List<MirVal> remapList(List<MirVal> vals, UnaryOperator<MirVal> fn) {
@@ -154,8 +156,8 @@ public sealed interface MirInst permits
             MirVal operand,
             String operandText,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public Unary {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(op, "op");
@@ -184,8 +186,8 @@ public sealed interface MirInst permits
             String rightText,
             boolean stringConcat,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public Binary {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(op, "op");
@@ -203,8 +205,10 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nl = fn.apply(left);
             MirVal nr = fn.apply(right);
-            return (nl == left && nr == right) ? this
-                    : new Binary(result, op, nl, nr, leftText, rightText, stringConcat, line, effect);
+            return (nl == left && nr == right)
+                    ? this
+                    : new Binary(
+                            result, op, nl, nr, leftText, rightText, stringConcat, line, effect);
         }
     }
 
@@ -233,7 +237,8 @@ public sealed interface MirInst permits
     }
 
     /** Boxing / unboxing / primitive-kind adaptation ({@code convertStack(from, to)}). */
-    record Convert(MirVal result, MirVal operand, PrimitiveKind targetKind, int line) implements MirInst {
+    record Convert(MirVal result, MirVal operand, PrimitiveKind targetKind, int line)
+            implements MirInst {
         public Convert {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(operand, "operand");
@@ -262,13 +267,8 @@ public sealed interface MirInst permits
      * dominating guard ({@code != null} or {@code is T}) so no pass can hoist guarded operations
      * above their guard. Emits zero runtime instructions (alias of {@link #operand()}).
      */
-    record Narrow(
-            MirVal result,
-            NarrowKind narrowKind,
-            MirVal operand,
-            String targetDesc,
-            int line
-    ) implements MirInst {
+    record Narrow(MirVal result, NarrowKind narrowKind, MirVal operand, String targetDesc, int line)
+            implements MirInst {
         public Narrow {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(narrowKind, "narrowKind");
@@ -299,8 +299,8 @@ public sealed interface MirInst permits
             LoweringTargets.IsTarget target,
             LoweringTargets.JavaSamTarget samTarget,
             String descriptor,
-            int line
-    ) implements MirInst {
+            int line)
+            implements MirInst {
         public CheckCast {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(operand, "operand");
@@ -319,12 +319,15 @@ public sealed interface MirInst permits
         @Override
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal no = fn.apply(operand);
-            return no == operand ? this : new CheckCast(result, no, target, samTarget, descriptor, line);
+            return no == operand
+                    ? this
+                    : new CheckCast(result, no, target, samTarget, descriptor, line);
         }
     }
 
     /** Non-null assertion {@code e!} ({@code BIP011}). */
-    record NonNull(MirVal result, MirVal operand, String expectedType, int line) implements MirInst {
+    record NonNull(MirVal result, MirVal operand, String expectedType, int line)
+            implements MirInst {
         public NonNull {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(operand, "operand");
@@ -355,12 +358,13 @@ public sealed interface MirInst permits
             LoweringTargets.IsTarget target,
             List<LoweringTargets.IsTarget> intersectionTargets,
             String descriptor,
-            int line
-    ) implements MirInst {
+            int line)
+            implements MirInst {
         public IsCheck {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(operand, "operand");
-            intersectionTargets = intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
+            intersectionTargets =
+                    intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
         }
 
         @Override
@@ -376,8 +380,10 @@ public sealed interface MirInst permits
         @Override
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal no = fn.apply(operand);
-            return no == operand ? this
-                    : new IsCheck(result, no, builtin, target, intersectionTargets, descriptor, line);
+            return no == operand
+                    ? this
+                    : new IsCheck(
+                            result, no, builtin, target, intersectionTargets, descriptor, line);
         }
     }
 
@@ -395,8 +401,8 @@ public sealed interface MirInst permits
             boolean immutableField,
             boolean definitelyDefined,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public LoadField {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(receiver, "receiver");
@@ -411,9 +417,21 @@ public sealed interface MirInst permits
         @Override
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nr = fn.apply(receiver);
-            return nr == receiver ? this
-                    : new LoadField(result, nr, receiverText, classId, externalClassJvmName, memberIndex,
-                    memberName, fieldKind, immutableField, definitelyDefined, line, effect);
+            return nr == receiver
+                    ? this
+                    : new LoadField(
+                            result,
+                            nr,
+                            receiverText,
+                            classId,
+                            externalClassJvmName,
+                            memberIndex,
+                            memberName,
+                            fieldKind,
+                            immutableField,
+                            definitelyDefined,
+                            line,
+                            effect);
         }
     }
 
@@ -426,8 +444,8 @@ public sealed interface MirInst permits
             String targetText,
             String valueText,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public StoreField {
             Objects.requireNonNull(receiver, "receiver");
             Objects.requireNonNull(value, "value");
@@ -448,8 +466,18 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nr = fn.apply(receiver);
             MirVal nv = fn.apply(value);
-            return (nr == receiver && nv == value) ? this
-                    : new StoreField(nr, classId, memberIndex, memberName, nv, targetText, valueText, line, effect);
+            return (nr == receiver && nv == value)
+                    ? this
+                    : new StoreField(
+                            nr,
+                            classId,
+                            memberIndex,
+                            memberName,
+                            nv,
+                            targetText,
+                            valueText,
+                            line,
+                            effect);
         }
     }
 
@@ -460,8 +488,8 @@ public sealed interface MirInst permits
             boolean pureStaticReceiver,
             LoweringTargets.JavaFieldTarget target,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public LoadJavaField {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(target, "target");
@@ -477,8 +505,10 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             if (receiver == null) return this;
             MirVal nr = fn.apply(receiver);
-            return nr == receiver ? this
-                    : new LoadJavaField(result, nr, receiverText, pureStaticReceiver, target, line, effect);
+            return nr == receiver
+                    ? this
+                    : new LoadJavaField(
+                            result, nr, receiverText, pureStaticReceiver, target, line, effect);
         }
     }
 
@@ -491,8 +521,8 @@ public sealed interface MirInst permits
             String targetText,
             String valueText,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public StoreJavaField {
             Objects.requireNonNull(target, "target");
             Objects.requireNonNull(value, "value");
@@ -513,8 +543,18 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nr = receiver != null ? fn.apply(receiver) : null;
             MirVal nv = fn.apply(value);
-            return (nr == receiver && nv == value) ? this
-                    : new StoreJavaField(nr, receiverText, pureStaticReceiver, target, nv, targetText, valueText, line, effect);
+            return (nr == receiver && nv == value)
+                    ? this
+                    : new StoreJavaField(
+                            nr,
+                            receiverText,
+                            pureStaticReceiver,
+                            target,
+                            nv,
+                            targetText,
+                            valueText,
+                            line,
+                            effect);
         }
     }
 
@@ -527,8 +567,8 @@ public sealed interface MirInst permits
             Class<?> arrayClass,
             Class<?> componentClass,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public ArrayGet {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(array, "array");
@@ -545,8 +585,18 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal na = fn.apply(array);
             MirVal ni = fn.apply(index);
-            return (na == array && ni == index) ? this
-                    : new ArrayGet(result, na, ni, receiverText, elemKind, arrayClass, componentClass, line, effect);
+            return (na == array && ni == index)
+                    ? this
+                    : new ArrayGet(
+                            result,
+                            na,
+                            ni,
+                            receiverText,
+                            elemKind,
+                            arrayClass,
+                            componentClass,
+                            line,
+                            effect);
         }
     }
 
@@ -559,8 +609,8 @@ public sealed interface MirInst permits
             Class<?> arrayClass,
             Class<?> componentClass,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public ArraySet {
             Objects.requireNonNull(array, "array");
             Objects.requireNonNull(index, "index");
@@ -583,8 +633,18 @@ public sealed interface MirInst permits
             MirVal na = fn.apply(array);
             MirVal ni = fn.apply(index);
             MirVal nv = fn.apply(value);
-            return (na == array && ni == index && nv == value) ? this
-                    : new ArraySet(na, ni, nv, receiverText, elemKind, arrayClass, componentClass, line, effect);
+            return (na == array && ni == index && nv == value)
+                    ? this
+                    : new ArraySet(
+                            na,
+                            ni,
+                            nv,
+                            receiverText,
+                            elemKind,
+                            arrayClass,
+                            componentClass,
+                            line,
+                            effect);
         }
     }
 
@@ -596,8 +656,8 @@ public sealed interface MirInst permits
             Class<?> arrayClass,
             Class<?> componentClass,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public ArrayLen {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(array, "array");
@@ -612,8 +672,17 @@ public sealed interface MirInst permits
         @Override
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal na = fn.apply(array);
-            return na == array ? this
-                    : new ArrayLen(result, na, receiverText, elemKind, arrayClass, componentClass, line, effect);
+            return na == array
+                    ? this
+                    : new ArrayLen(
+                            result,
+                            na,
+                            receiverText,
+                            elemKind,
+                            arrayClass,
+                            componentClass,
+                            line,
+                            effect);
         }
     }
 
@@ -630,8 +699,8 @@ public sealed interface MirInst permits
             boolean commutative,
             boolean idempotent,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public CallBabble {
             Objects.requireNonNull(result, "result");
             args = List.copyOf(args);
@@ -648,9 +717,19 @@ public sealed interface MirInst permits
                 boolean commutative,
                 boolean idempotent,
                 int line,
-                MirEffect effect
-        ) {
-            this(result, callee, selfRecurse, targetFunctionId, null, args, binding, commutative, idempotent, line, effect);
+                MirEffect effect) {
+            this(
+                    result,
+                    callee,
+                    selfRecurse,
+                    targetFunctionId,
+                    null,
+                    args,
+                    binding,
+                    commutative,
+                    idempotent,
+                    line,
+                    effect);
         }
 
         @Override
@@ -666,9 +745,20 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nc = callee != null ? fn.apply(callee) : null;
             List<MirVal> na = remapList(args, fn);
-            return (nc == callee && na == args) ? this
-                    : new CallBabble(result, nc, selfRecurse, targetFunctionId, externalTarget, na, binding,
-                    commutative, idempotent, line, effect);
+            return (nc == callee && na == args)
+                    ? this
+                    : new CallBabble(
+                            result,
+                            nc,
+                            selfRecurse,
+                            targetFunctionId,
+                            externalTarget,
+                            na,
+                            binding,
+                            commutative,
+                            idempotent,
+                            line,
+                            effect);
         }
     }
 
@@ -690,8 +780,8 @@ public sealed interface MirInst permits
             boolean commutative,
             boolean idempotent,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public CallMethod {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(receiver, "receiver");
@@ -712,10 +802,27 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nr = fn.apply(receiver);
             List<MirVal> na = remapList(args, fn);
-            return (nr == receiver && na == args) ? this
-                    : new CallMethod(result, nr, receiverText, classId, externalClassJvmName, classTypeId,
-                    memberName, overloadAltIndex, targetFunctionId, externalSignature, na, argNames,
-                    binding, callSite, commutative, idempotent, line, effect);
+            return (nr == receiver && na == args)
+                    ? this
+                    : new CallMethod(
+                            result,
+                            nr,
+                            receiverText,
+                            classId,
+                            externalClassJvmName,
+                            classTypeId,
+                            memberName,
+                            overloadAltIndex,
+                            targetFunctionId,
+                            externalSignature,
+                            na,
+                            argNames,
+                            binding,
+                            callSite,
+                            commutative,
+                            idempotent,
+                            line,
+                            effect);
         }
     }
 
@@ -730,8 +837,8 @@ public sealed interface MirInst permits
             List<MirVal> args,
             LoweringTargets.ArgumentBinding binding,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public CallInterface {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(receiver, "receiver");
@@ -751,9 +858,20 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nr = fn.apply(receiver);
             List<MirVal> na = remapList(args, fn);
-            return (nr == receiver && na == args) ? this
-                    : new CallInterface(result, nr, receiverText, selectorLine, interfaceTypeId, memberName,
-                    signature, na, binding, line, effect);
+            return (nr == receiver && na == args)
+                    ? this
+                    : new CallInterface(
+                            result,
+                            nr,
+                            receiverText,
+                            selectorLine,
+                            interfaceTypeId,
+                            memberName,
+                            signature,
+                            na,
+                            binding,
+                            line,
+                            effect);
         }
     }
 
@@ -768,8 +886,8 @@ public sealed interface MirInst permits
             boolean commutative,
             boolean idempotent,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public CallJava {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(target, "target");
@@ -790,9 +908,20 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nr = receiver != null ? fn.apply(receiver) : null;
             List<MirVal> na = remapList(args, fn);
-            return (nr == receiver && na == args) ? this
-                    : new CallJava(result, nr, receiverText, selectorLine, pureStaticReceiver, target, na,
-                    commutative, idempotent, line, effect);
+            return (nr == receiver && na == args)
+                    ? this
+                    : new CallJava(
+                            result,
+                            nr,
+                            receiverText,
+                            selectorLine,
+                            pureStaticReceiver,
+                            target,
+                            na,
+                            commutative,
+                            idempotent,
+                            line,
+                            effect);
         }
     }
 
@@ -804,8 +933,8 @@ public sealed interface MirInst permits
             LoweringTargets.JavaConstructorTarget target,
             List<MirVal> args,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public CallJavaCtor {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(target, "target");
@@ -826,8 +955,10 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nc = callee != null ? fn.apply(callee) : null;
             List<MirVal> na = remapList(args, fn);
-            return (nc == callee && na == args) ? this
-                    : new CallJavaCtor(result, nc, calleeText, pureStaticCallee, target, na, line, effect);
+            return (nc == callee && na == args)
+                    ? this
+                    : new CallJavaCtor(
+                            result, nc, calleeText, pureStaticCallee, target, na, line, effect);
         }
     }
 
@@ -842,8 +973,8 @@ public sealed interface MirInst permits
             List<MirVal> args,
             LoweringTargets.ArgumentBinding binding,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public RecordNew {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(classRef, "classRef");
@@ -864,9 +995,20 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal ncr = fn.apply(classRef);
             List<MirVal> na = remapList(args, fn);
-            return (ncr == classRef && na == args) ? this
-                    : new RecordNew(result, classId, classTypeId, classJvmName, ncr, classRefIsInstance,
-                    paramKinds, na, binding, line, effect);
+            return (ncr == classRef && na == args)
+                    ? this
+                    : new RecordNew(
+                            result,
+                            classId,
+                            classTypeId,
+                            classJvmName,
+                            ncr,
+                            classRefIsInstance,
+                            paramKinds,
+                            na,
+                            binding,
+                            line,
+                            effect);
         }
     }
 
@@ -879,8 +1021,8 @@ public sealed interface MirInst permits
             PrimitiveKind[] paramKinds,
             List<MirVal> args,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public RecordReuse {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(target, "target");
@@ -901,8 +1043,18 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nt = fn.apply(target);
             List<MirVal> na = remapList(args, fn);
-            return (nt == target && na == args) ? this
-                    : new RecordReuse(result, nt, classId, classTypeId, classJvmName, paramKinds, na, line, effect);
+            return (nt == target && na == args)
+                    ? this
+                    : new RecordReuse(
+                            result,
+                            nt,
+                            classId,
+                            classTypeId,
+                            classJvmName,
+                            paramKinds,
+                            na,
+                            line,
+                            effect);
         }
     }
 
@@ -952,9 +1104,13 @@ public sealed interface MirInst permits
         }
     }
 
-    // ---------------------------------------------------------------- pinned slots, scopes, for-iters, try helpers
+    // ---------------------------------------------------------------- pinned slots, scopes,
+    // for-iters, try helpers
 
-    /** Declares/initializes a block-local pinned variable (allocates fresh {@code Cell} or undefined flag on each entry). */
+    /**
+     * Declares/initializes a block-local pinned variable (allocates fresh {@code Cell} or undefined
+     * flag on each entry).
+     */
     record SlotDecl(HirVar var, int line) implements MirInst {
         public SlotDecl {
             Objects.requireNonNull(var, "var");
@@ -981,7 +1137,10 @@ public sealed interface MirInst permits
         }
     }
 
-    /** Read from a pinned variable (closure {@code Cell}, {@code mayBeUndefined} local, or {@code try}-mutated local). */
+    /**
+     * Read from a pinned variable (closure {@code Cell}, {@code mayBeUndefined} local, or {@code
+     * try}-mutated local).
+     */
     record SlotRead(MirVal result, HirVar var, int line, MirEffect effect) implements MirInst {
         public SlotRead {
             Objects.requireNonNull(result, "result");
@@ -1000,8 +1159,12 @@ public sealed interface MirInst permits
         }
     }
 
-    /** Write to a pinned variable (closure {@code Cell}, {@code mayBeUndefined} local, or {@code try}-mutated local). */
-    record SlotWrite(HirVar var, SlotOpKind opKind, MirVal value, int line, MirEffect effect) implements MirInst {
+    /**
+     * Write to a pinned variable (closure {@code Cell}, {@code mayBeUndefined} local, or {@code
+     * try}-mutated local).
+     */
+    record SlotWrite(HirVar var, SlotOpKind opKind, MirVal value, int line, MirEffect effect)
+            implements MirInst {
         public SlotWrite {
             Objects.requireNonNull(var, "var");
             Objects.requireNonNull(opKind, "opKind");
@@ -1026,7 +1189,10 @@ public sealed interface MirInst permits
         }
     }
 
-    /** Pushes a child {@code Namespace} for an {@code opensNamespaceScope} block, returning the previous namespace. */
+    /**
+     * Pushes a child {@code Namespace} for an {@code opensNamespaceScope} block, returning the
+     * previous namespace.
+     */
     record ScopeEnter(MirVal result, String[] declaredNames, int line) implements MirInst {
         public ScopeEnter {
             Objects.requireNonNull(result, "result");
@@ -1083,8 +1249,8 @@ public sealed interface MirInst permits
             MirVal iterable,
             LoweringTargets.ForLoopTarget target,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public ForIterInit {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(iterable, "iterable");
@@ -1112,8 +1278,8 @@ public sealed interface MirInst permits
             MirVal length,
             LoweringTargets.ForLoopTarget target,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public ForIterHasNext {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(iterator, "iterator");
@@ -1135,7 +1301,8 @@ public sealed interface MirInst permits
             MirVal nit = fn.apply(iterator);
             MirVal nix = index != null ? fn.apply(index) : null;
             MirVal nln = length != null ? fn.apply(length) : null;
-            return (nit == iterator && nix == index && nln == length) ? this
+            return (nit == iterator && nix == index && nln == length)
+                    ? this
                     : new ForIterHasNext(result, nit, nix, nln, target, line, effect);
         }
     }
@@ -1148,8 +1315,8 @@ public sealed interface MirInst permits
             LoweringTargets.ForLoopTarget target,
             LoweringTargets.JavaSamTarget elemSamTarget,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public ForIterNext {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(iterator, "iterator");
@@ -1166,12 +1333,16 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nit = fn.apply(iterator);
             MirVal nix = index != null ? fn.apply(index) : null;
-            return (nit == iterator && nix == index) ? this
+            return (nit == iterator && nix == index)
+                    ? this
                     : new ForIterNext(result, nit, nix, target, elemSamTarget, line, effect);
         }
     }
 
-    /** Calls {@code ThrownException.value()} inside a {@code try}/{@code catch} dispatcher ({@code BIP028}). */
+    /**
+     * Calls {@code ThrownException.value()} inside a {@code try}/{@code catch} dispatcher ({@code
+     * BIP028}).
+     */
     record UnwrapThrown(MirVal result, MirVal thrownExn, int line) implements MirInst {
         public UnwrapThrown {
             Objects.requireNonNull(result, "result");
@@ -1195,13 +1366,12 @@ public sealed interface MirInst permits
         }
     }
 
-    /** Checks whether an unwrapped Babble thrown value matches a {@code HirCatch} target ({@code BIP028}). */
-    record CatchMatch(
-            MirVal result,
-            MirVal value,
-            LoweringTargets.CatchTarget target,
-            int line
-    ) implements MirInst {
+    /**
+     * Checks whether an unwrapped Babble thrown value matches a {@code HirCatch} target ({@code
+     * BIP028}).
+     */
+    record CatchMatch(MirVal result, MirVal value, LoweringTargets.CatchTarget target, int line)
+            implements MirInst {
         public CatchMatch {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(value, "value");
@@ -1225,7 +1395,10 @@ public sealed interface MirInst permits
         }
     }
 
-    /** Calls {@code Throwables.addSuppressed(primary, secondary)} when a {@code finally} throws ({@code BIP028-D6}). */
+    /**
+     * Calls {@code Throwables.addSuppressed(primary, secondary)} when a {@code finally} throws
+     * ({@code BIP028-D6}).
+     */
     record AddSuppressed(MirVal primary, MirVal secondary, int line) implements MirInst {
         public AddSuppressed {
             Objects.requireNonNull(primary, "primary");
@@ -1258,17 +1431,13 @@ public sealed interface MirInst permits
     /**
      * First-class namespace binding read ({@code BIP034-D7}).
      *
-     * <p>Immutable definitely-initialized {@code def} bindings carry {@link MirEffect#PURE_NOTHROW};
-     * immutable late {@code def}s carry {@link MirEffect#PURE_MAY_THROW}; mutable {@code var}s carry
-     * {@link MirEffect#READ_SHARED} or {@link MirEffect#READ_SHARED_THROW}.
+     * <p>Immutable definitely-initialized {@code def} bindings carry {@link
+     * MirEffect#PURE_NOTHROW}; immutable late {@code def}s carry {@link MirEffect#PURE_MAY_THROW};
+     * mutable {@code var}s carry {@link MirEffect#READ_SHARED} or {@link
+     * MirEffect#READ_SHARED_THROW}.
      */
-    record NameRead(
-            MirVal result,
-            String name,
-            boolean finalBinding,
-            int line,
-            MirEffect effect
-    ) implements MirInst {
+    record NameRead(MirVal result, String name, boolean finalBinding, int line, MirEffect effect)
+            implements MirInst {
         public NameRead {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(name, "name");
@@ -1296,8 +1465,8 @@ public sealed interface MirInst permits
             String valueText,
             int wideningRank,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public NameAssign {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(name, "name");
@@ -1313,8 +1482,18 @@ public sealed interface MirInst permits
         @Override
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal nv = fn.apply(value);
-            return nv == value ? this
-                    : new NameAssign(result, name, operator, nv, targetText, valueText, wideningRank, line, effect);
+            return nv == value
+                    ? this
+                    : new NameAssign(
+                            result,
+                            name,
+                            operator,
+                            nv,
+                            targetText,
+                            valueText,
+                            wideningRank,
+                            line,
+                            effect);
         }
     }
 
@@ -1324,8 +1503,8 @@ public sealed interface MirInst permits
             MirVal module,
             LoweringTargets.ModuleExportTarget target,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public LoadExport {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(module, "module");
@@ -1353,8 +1532,8 @@ public sealed interface MirInst permits
             boolean inclusive,
             PrimitiveKind elemKind,
             int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirEffect effect)
+            implements MirInst {
         public RangeNew {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(start, "start");
@@ -1372,7 +1551,8 @@ public sealed interface MirInst permits
         public MirInst remapUses(UnaryOperator<MirVal> fn) {
             MirVal ns = fn.apply(start);
             MirVal ne = fn.apply(end);
-            return (ns == start && ne == end) ? this
+            return (ns == start && ne == end)
+                    ? this
                     : new RangeNew(result, ns, ne, inclusive, elemKind, line, effect);
         }
     }
@@ -1383,12 +1563,8 @@ public sealed interface MirInst permits
      * {@code CoreCollectionCall}, {@code ArrayCreate}, {@code ClassExpr}, {@code FunctionRef}).
      */
     record OpaqueExpr(
-            MirVal result,
-            HirExpr template,
-            List<MirVal> operands,
-            int line,
-            MirEffect effect
-    ) implements MirInst {
+            MirVal result, HirExpr template, List<MirVal> operands, int line, MirEffect effect)
+            implements MirInst {
         public OpaqueExpr {
             Objects.requireNonNull(result, "result");
             Objects.requireNonNull(template, "template");

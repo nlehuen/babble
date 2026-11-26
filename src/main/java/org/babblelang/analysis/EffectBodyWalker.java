@@ -1,13 +1,5 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.tree.ParseTree;
-import org.babblelang.effects.Effect;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.ClassShape;
-import org.babblelang.runtime.JavaTypes;
-import org.babblelang.runtime.Operators;
-
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
@@ -17,18 +9,22 @@ import java.util.BitSet;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.tree.ParseTree;
+import org.babblelang.effects.Effect;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.ClassShape;
+import org.babblelang.runtime.Operators;
 
 /**
- * Intra-procedural ANTLR body walker and flow-sensitive alias/effect state extracted from
- * {@link EffectChecker} ({@code BIP027-I3}). Delegates call-site analysis to
- * {@link CallEffectAnalyzer}.
+ * Intra-procedural ANTLR body walker and flow-sensitive alias/effect state extracted from {@link
+ * EffectChecker} ({@code BIP027-I3}). Delegates call-site analysis to {@link CallEffectAnalyzer}.
  */
 final class EffectBodyWalker {
     final EffectChecker ec;
@@ -49,8 +45,12 @@ final class EffectBodyWalker {
     final Set<BabbleParser.FunctionLiteralContext> frameChain;
     final boolean emitDiagnostics;
 
-    /** True during single-pass inference of a non-locked function body to build SymbolicEffectSummary (BIP027-I4). */
+    /**
+     * True during single-pass inference of a non-locked function body to build
+     * SymbolicEffectSummary (BIP027-I4).
+     */
     final boolean trackSymbolic;
+
     final BitSet calledCallbacks = new BitSet();
     final long[][] symParamFlow;
     final boolean[][] symThisFlow;
@@ -90,14 +90,18 @@ final class EffectBodyWalker {
         boolean hadLocalThrow;
         boolean hadEscapingThrow;
 
-        TryFrame(int level, List<BabbleParser.CatchClauseContext> catches, Map<ParserRuleContext, Reachability.Origin> preEnv) {
+        TryFrame(
+                int level,
+                List<BabbleParser.CatchClauseContext> catches,
+                Map<ParserRuleContext, Reachability.Origin> preEnv) {
             this.level = level;
             this.catches = catches;
             this.caughtOrigins = new Reachability.Origin[catches.size()];
             this.unwindEnv = new IdentityHashMap<>(preEnv);
         }
 
-        void recordUnwindEnv(Map<ParserRuleContext, Reachability.Origin> currentEnv, EffectBodyWalker walker) {
+        void recordUnwindEnv(
+                Map<ParserRuleContext, Reachability.Origin> currentEnv, EffectBodyWalker walker) {
             this.unwindEnv = walker.mergeEnvs(this.unwindEnv, currentEnv);
         }
     }
@@ -109,30 +113,36 @@ final class EffectBodyWalker {
     final Deque<TryFrame> activeTryStack = new ArrayDeque<>();
     int deepestThrowEscapeLevel = Integer.MAX_VALUE;
     final Set<Integer> forwardedParams;
+
     /**
-     * Callbacks of an enclosing function the owner names in its calling clause (BIP017-D5),
-     * tracked as pseudo-parameters with the bits after the owner's own parameters, so that
-     * returning or storing one is an escape (BIP017-D6). Never published in ec.summaries.
+     * Callbacks of an enclosing function the owner names in its calling clause (BIP017-D5), tracked
+     * as pseudo-parameters with the bits after the owner's own parameters, so that returning or
+     * storing one is an escape (BIP017-D6). Never published in ec.summaries.
      */
     final Map<ParserRuleContext, Integer> pseudoForwarded = new IdentityHashMap<>();
-    final Map<ParserRuleContext, Reachability.Origin> boundMethodReceivers = new IdentityHashMap<>();
+
+    final Map<ParserRuleContext, Reachability.Origin> boundMethodReceivers =
+            new IdentityHashMap<>();
+
     /** Parameters and receiver from which this callable reads mutable state (BIP019 §4). */
     final boolean[] readParams;
+
     boolean readsThis = false;
 
-    EffectBodyWalker(EffectChecker ec,
-                 ParserRuleContext owner,
-                 ScopeNode ownerScope,
-                 List<? extends ParserRuleContext> params,
-                 boolean inferMut,
-                 boolean[] mutParams,
-                 boolean[] borrowParams,
-                 boolean[] uniqueParams,
-                 boolean mutThis,
-                 boolean borrowThis,
-                 EffectChecker.ParsedPrefix declaredPrefix,
-                 Set<BabbleParser.FunctionLiteralContext> frameChain,
-                 boolean emitDiagnostics) {
+    EffectBodyWalker(
+            EffectChecker ec,
+            ParserRuleContext owner,
+            ScopeNode ownerScope,
+            List<? extends ParserRuleContext> params,
+            boolean inferMut,
+            boolean[] mutParams,
+            boolean[] borrowParams,
+            boolean[] uniqueParams,
+            boolean mutThis,
+            boolean borrowThis,
+            EffectChecker.ParsedPrefix declaredPrefix,
+            Set<BabbleParser.FunctionLiteralContext> frameChain,
+            boolean emitDiagnostics) {
         this.ec = ec;
         this.calls = new CallEffectAnalyzer(ec, this);
         this.owner = owner;
@@ -148,22 +158,30 @@ final class EffectBodyWalker {
         this.declaredPrefix = declaredPrefix;
         this.frameChain = frameChain;
         this.emitDiagnostics = emitDiagnostics;
-        this.terminating = !ec.cyclicCallables.contains(owner) || ec.scpTerminatingCallables.contains(owner);
-        this.forwardedParams = owner instanceof BabbleParser.FunctionLiteralContext fn
-                ? EffectModifiers.resolveForwardedParamIndices(fn) : Set.of();
-        this.trackSymbolic = !emitDiagnostics
-                && owner instanceof BabbleParser.FunctionLiteralContext
-                && !declaredPrefix.axiom()
-                && !declaredPrefix.explicitVolatile()
-                && forwardedParams.isEmpty()
-                && !params.isEmpty();
+        this.terminating =
+                !ec.cyclicCallables.contains(owner) || ec.scpTerminatingCallables.contains(owner);
+        this.forwardedParams =
+                owner instanceof BabbleParser.FunctionLiteralContext fn
+                        ? EffectModifiers.resolveForwardedParamIndices(fn)
+                        : Set.of();
+        this.trackSymbolic =
+                !emitDiagnostics
+                        && owner instanceof BabbleParser.FunctionLiteralContext
+                        && !declaredPrefix.axiom()
+                        && !declaredPrefix.explicitVolatile()
+                        && forwardedParams.isEmpty()
+                        && !params.isEmpty();
         this.symParamFlow = trackSymbolic ? new long[params.size()][] : null;
         this.symThisFlow = trackSymbolic ? new boolean[params.size()][] : null;
         this.symExtFlow = trackSymbolic ? new boolean[params.size()][] : null;
-        if (owner instanceof BabbleParser.FunctionLiteralContext fn && EffectModifiers.capturesCallbacks(fn)) {
-            for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
-                ParserRuleContext captured = TypeAnnotations.enclosingParameter(fn.effectPrefix(), id.getText());
-                if (captured instanceof BabbleParser.FnParamContext param && EffectModifiers.capturesCallback(fn, param)
+        if (owner instanceof BabbleParser.FunctionLiteralContext fn
+                && EffectModifiers.capturesCallbacks(fn)) {
+            for (org.antlr.v4.runtime.tree.TerminalNode id :
+                    fn.effectPrefix().callingClause().ID()) {
+                ParserRuleContext captured =
+                        TypeAnnotations.enclosingParameter(fn.effectPrefix(), id.getText());
+                if (captured instanceof BabbleParser.FnParamContext param
+                        && EffectModifiers.capturesCallback(fn, param)
                         && !pseudoForwarded.containsKey(param)) {
                     pseudoForwarded.put(param, params.size() + pseudoForwarded.size());
                 }
@@ -177,9 +195,15 @@ final class EffectBodyWalker {
             boolean isUnique = i < uniqueParams.length && uniqueParams[i];
             if (isUnique) {
                 boolean borrowed = i < borrowParams.length && borrowParams[i];
-                env.put(p, Reachability.Origin.ofUniqueParam(i, p, ec.javaResolver.isDeeplyImmutable(pType), borrowed));
+                env.put(
+                        p,
+                        Reachability.Origin.ofUniqueParam(
+                                i, p, ec.javaResolver.isDeeplyImmutable(pType), borrowed));
             } else {
-                env.put(p, Reachability.Origin.ofParam(i, p, ec.javaResolver.isDeeplyImmutable(pType)));
+                env.put(
+                        p,
+                        Reachability.Origin.ofParam(
+                                i, p, ec.javaResolver.isDeeplyImmutable(pType)));
             }
         }
     }
@@ -227,15 +251,20 @@ final class EffectBodyWalker {
     void absorbElementIntoLocalContainer(Object ownerKey, Reachability.Origin taint) {
         if (ownerKey instanceof ParserRuleContext decl) {
             Reachability.Origin cur = env.get(decl);
-            if (cur != null && cur.owned()
-                    && !cur.external && !cur.aliasesThis && cur.params.isEmpty()) {
+            if (cur != null
+                    && cur.owned()
+                    && !cur.external
+                    && !cur.aliasesThis
+                    && cur.params.isEmpty()) {
                 env.put(decl, cur.absorbElement(taint));
             }
         }
     }
 
     boolean isUnattachedUniqueOrImmutable(Reachability.Origin orig, Type type) {
-        return orig == Reachability.Origin.IMMUTABLE || ec.javaResolver.isDeeplyImmutable(type) || (orig.unique && orig.uniqueOwner == null);
+        return orig == Reachability.Origin.IMMUTABLE
+                || ec.javaResolver.isDeeplyImmutable(type)
+                || (orig.unique && orig.uniqueOwner == null);
     }
 
     static BabbleParser.ExpressionContext unwrapParens(BabbleParser.ExpressionContext expr) {
@@ -260,15 +289,19 @@ final class EffectBodyWalker {
             return decl;
         }
         ScopeNode declScope = ec.pass.definitionScopes.get(decl);
-        LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
-                ? ec.pass.analysis.lowering().defTarget(d).kind() : null;
-        if (owner instanceof BabbleParser.FunctionLiteralContext && isOwnedScopeLocal(decl, declScope, dKind)) {
+        LoweringTargets.DefKind dKind =
+                decl instanceof BabbleParser.DefExpressionContext d
+                        ? ec.pass.analysis.lowering().defTarget(d).kind()
+                        : null;
+        if (owner instanceof BabbleParser.FunctionLiteralContext
+                && isOwnedScopeLocal(decl, declScope, dKind)) {
             return decl;
         }
         return null;
     }
 
-    Reachability.Origin bindLocalOrigin(ParserRuleContext decl, Reachability.Origin rhs, Type localType) {
+    Reachability.Origin bindLocalOrigin(
+            ParserRuleContext decl, Reachability.Origin rhs, Type localType) {
         if (ec.javaResolver.isDeeplyImmutable(localType)) {
             return Reachability.Origin.IMMUTABLE;
         }
@@ -276,14 +309,23 @@ final class EffectBodyWalker {
             return Reachability.Origin.ofUnique(decl, decl, false);
         }
         if (rhs.localFresh() && rhs.uniqueOwner == null) {
-            return new Reachability.Origin((BitSet) rhs.params.clone(), rhs.aliasesThis, rhs.external,
-                    false, rhs.elements(), false, decl,
-                    Set.of(decl), new Reachability.PathKey(decl, List.of()));
+            return new Reachability.Origin(
+                    (BitSet) rhs.params.clone(),
+                    rhs.aliasesThis,
+                    rhs.external,
+                    false,
+                    rhs.elements(),
+                    false,
+                    decl,
+                    Set.of(decl),
+                    new Reachability.PathKey(decl, List.of()));
         }
         if (rhs.owned() && rhs.uniqueOwner != null) {
-            // Aliasing a live unique/localFresh local without move(...) drops uniqueness while preserving provenance.
+            // Aliasing a live unique/localFresh local without move(...) drops uniqueness while
+            // preserving provenance.
             demoteUniqueOwner(rhs.uniqueOwner, Reachability.Origin.IMMUTABLE);
-            return withLocalAliasKey(rhs.demoteAlias(Reachability.Origin.IMMUTABLE), decl, localType);
+            return withLocalAliasKey(
+                    rhs.demoteAlias(Reachability.Origin.IMMUTABLE), decl, localType);
         }
         return withLocalAliasKey(rhs, decl, localType);
     }
@@ -309,7 +351,8 @@ final class EffectBodyWalker {
         if (!emitDiagnostics) {
             return;
         }
-        String key = at.getStart().getLine() + ":" + at.getStart().getCharPositionInLine() + ":" + msg;
+        String key =
+                at.getStart().getLine() + ":" + at.getStart().getCharPositionInLine() + ":" + msg;
         if (reportedMessages.add(key)) {
             ec.checker.effectDiagnostic(msg, at);
         }
@@ -317,14 +360,16 @@ final class EffectBodyWalker {
 
     boolean isConstrainedPureOrHermetic() {
         return !declaredPrefix.axiom()
-                && (declaredPrefix.effects().contains(Effect.PURE) || declaredPrefix.effects().contains(Effect.HERMETIC));
+                && (declaredPrefix.effects().contains(Effect.PURE)
+                        || declaredPrefix.effects().contains(Effect.HERMETIC));
     }
 
     Reachability.Origin evalBlock(BabbleParser.BlockContext block, boolean isFunctionBody) {
         return evalBlock(block, isFunctionBody, false);
     }
 
-    Reachability.Origin evalBlock(BabbleParser.BlockContext block, boolean isFunctionBody, boolean discardLast) {
+    Reachability.Origin evalBlock(
+            BabbleParser.BlockContext block, boolean isFunctionBody, boolean discardLast) {
         if (block == null) {
             return Reachability.Origin.IMMUTABLE;
         }
@@ -411,7 +456,9 @@ final class EffectBodyWalker {
         int startLine = stmt.getStart().getLine();
         int startCol = stmt.getStart().getCharPositionInLine() + 1;
         int endLine = stmt.getStop().getLine();
-        int endCol = stmt.getStop().getCharPositionInLine() + Math.max(1, stmt.getStop().getText().length());
+        int endCol =
+                stmt.getStop().getCharPositionInLine()
+                        + Math.max(1, stmt.getStop().getText().length());
         for (ScopeAnalysis.Warning w : ec.pass.analysis.typeDiagnostics()) {
             if ((w.line() > startLine || (w.line() == startLine && w.column() >= startCol))
                     && (w.line() < endLine || (w.line() == endLine && w.column() <= endCol))) {
@@ -426,7 +473,8 @@ final class EffectBodyWalker {
             return;
         }
         for (BabbleParser.ExpressionContext stmt : block.expression()) {
-            if (stmt instanceof BabbleParser.DefExpressionContext def && def.value instanceof BabbleParser.FunctionLiteralContext) {
+            if (stmt instanceof BabbleParser.DefExpressionContext def
+                    && def.value instanceof BabbleParser.FunctionLiteralContext) {
                 // Method declarations don't execute during construction.
                 continue;
             }
@@ -438,7 +486,8 @@ final class EffectBodyWalker {
         if (ctx == null) {
             return Reachability.Origin.IMMUTABLE;
         }
-        if (ctx instanceof BabbleParser.ExpressionContext expr && ec.checker.rawTypeOf(expr) == Type.ERROR) {
+        if (ctx instanceof BabbleParser.ExpressionContext expr
+                && ec.checker.rawTypeOf(expr) == Type.ERROR) {
             stmtHasError = true;
         }
         if (ctx instanceof BabbleParser.BlockContext b) {
@@ -460,7 +509,8 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.ThisExpressionContext) {
             ScopeNode ts = BlockScopes.thisScope(ec.checker.occurrenceScopeOf(ctx));
             Type thisType = ts != null && ts.type != null ? new Type.Instance(ts.type) : Type.ANY;
-            return Reachability.Origin.ofThis(Reachability.THIS_KEY, ec.javaResolver.isDeeplyImmutable(thisType));
+            return Reachability.Origin.ofThis(
+                    Reachability.THIS_KEY, ec.javaResolver.isDeeplyImmutable(thisType));
         }
         if (ctx instanceof BabbleParser.RecurseContext) {
             if (!ec.scpTerminatingCallables.contains(owner)) {
@@ -471,11 +521,13 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.FunctionLiteralContext lit) {
             return checkClosureCaptureEscape(lit);
         }
-        if (ctx instanceof BabbleParser.ClassExpressionContext || ctx instanceof BabbleParser.InterfaceExpressionContext) {
+        if (ctx instanceof BabbleParser.ClassExpressionContext
+                || ctx instanceof BabbleParser.InterfaceExpressionContext) {
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.ObjectExpressionContext obj) {
-            // Inline `object (...)` executes its createBlock right here under enclosing constraints!
+            // Inline `object (...)` executes its createBlock right here under enclosing
+            // constraints!
             boolean prevConstructing = constructingSelf;
             constructingSelf = true;
             boolean objUnique = true;
@@ -485,7 +537,8 @@ final class EffectBodyWalker {
                         if (def.value instanceof BabbleParser.FunctionLiteralContext) {
                             continue;
                         }
-                        Reachability.Origin init = def.value != null ? eval(def.value) : Reachability.Origin.IMMUTABLE;
+                        Reachability.Origin init =
+                                def.value != null ? eval(def.value) : Reachability.Origin.IMMUTABLE;
                         Type defType = ec.checker.typeOfDeclarationForEffects(def);
                         if (!isUnattachedUniqueOrImmutable(init, defType)) {
                             objUnique = false;
@@ -502,7 +555,9 @@ final class EffectBodyWalker {
                 constructingSelf = prevConstructing;
             }
             boolean imm = ec.javaResolver.isDeeplyImmutable(ec.checker.rawTypeOf(obj));
-            return objUnique ? Reachability.Origin.ofUnique(obj, null, imm) : Reachability.Origin.ofExternal(obj, imm);
+            return objUnique
+                    ? Reachability.Origin.ofUnique(obj, null, imm)
+                    : Reachability.Origin.ofExternal(obj, imm);
         }
         if (ctx instanceof BabbleParser.DefExpressionContext def) {
             return evalDef(def);
@@ -572,7 +627,8 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.TypeApplyContext ta) {
             return eval(ta.expression());
         }
-        if (ctx instanceof BabbleParser.CoreCollectionContext || ctx instanceof BabbleParser.CoreExceptionRefContext) {
+        if (ctx instanceof BabbleParser.CoreCollectionContext
+                || ctx instanceof BabbleParser.CoreExceptionRefContext) {
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.AsExpressionContext asCtx) {
@@ -582,17 +638,25 @@ final class EffectBodyWalker {
             if (!isRedundantCast(src, dst)) {
                 nothrow = false;
             }
-            return ec.javaResolver.isDeeplyImmutable(dst) ? Reachability.Origin.IMMUTABLE : leftOrig;
+            return ec.javaResolver.isDeeplyImmutable(dst)
+                    ? Reachability.Origin.IMMUTABLE
+                    : leftOrig;
         }
         if (ctx instanceof BabbleParser.ReturnExpressionContext ret) {
             stmtHasSideEffect = true;
-            Reachability.Origin val = ret.expression() != null ? eval(ret.expression()) : Reachability.Origin.IMMUTABLE;
+            Reachability.Origin val =
+                    ret.expression() != null
+                            ? eval(ret.expression())
+                            : Reachability.Origin.IMMUTABLE;
             recordReturnOrigin(val, ret);
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.BreakExpressionContext brk) {
             stmtHasSideEffect = true;
-            Reachability.Origin val = brk.expression() != null ? eval(brk.expression()) : Reachability.Origin.IMMUTABLE;
+            Reachability.Origin val =
+                    brk.expression() != null
+                            ? eval(brk.expression())
+                            : Reachability.Origin.IMMUTABLE;
             Reachability.Origin[] acc = loopBreakOrigins.peek();
             if (acc != null) {
                 acc[0] = acc[0] == null ? val : acc[0].join(val);
@@ -618,7 +682,8 @@ final class EffectBodyWalker {
         if (kind == LoweringTargets.DefKind.REQUIRED) {
             return Reachability.Origin.IMMUTABLE;
         }
-        Reachability.Origin init = def.value != null ? eval(def.value) : Reachability.Origin.IMMUTABLE;
+        Reachability.Origin init =
+                def.value != null ? eval(def.value) : Reachability.Origin.IMMUTABLE;
         ScopeNode defScope = ec.pass.definitionScopes.get(def);
         Type defType = ec.checker.typeOfDeclarationForEffects(def);
         if (kind == LoweringTargets.DefKind.MEMBER) {
@@ -630,10 +695,14 @@ final class EffectBodyWalker {
             }
             markStoredOrigin(init, "field " + def.name.getText(), def);
         } else if (isOwnedScopeLocal(def, defScope, kind)) {
-            // Local variable in this function (or top-level binding when verifying top-level file/static block)!
-            Reachability.Origin localOrig = owner instanceof BabbleParser.FunctionLiteralContext
-                    ? bindLocalOrigin(def, init, defType)
-                    : (ec.javaResolver.isDeeplyImmutable(defType) ? Reachability.Origin.IMMUTABLE : withLocalAliasKey(init, def, defType));
+            // Local variable in this function (or top-level binding when verifying top-level
+            // file/static block)!
+            Reachability.Origin localOrig =
+                    owner instanceof BabbleParser.FunctionLiteralContext
+                            ? bindLocalOrigin(def, init, defType)
+                            : (ec.javaResolver.isDeeplyImmutable(defType)
+                                    ? Reachability.Origin.IMMUTABLE
+                                    : withLocalAliasKey(init, def, defType));
             env.put(def, localOrig);
         } else {
             if (init.unique && init.uniqueOwner != null) {
@@ -644,16 +713,19 @@ final class EffectBodyWalker {
         return Reachability.Origin.IMMUTABLE;
     }
 
-    boolean isOwnedScopeLocal(ParserRuleContext decl, ScopeNode declScope, LoweringTargets.DefKind kind) {
-        if (kind == LoweringTargets.DefKind.STATIC || declScope == null || ec.escapedCapturedLocals.contains(decl)) {
+    boolean isOwnedScopeLocal(
+            ParserRuleContext decl, ScopeNode declScope, LoweringTargets.DefKind kind) {
+        if (kind == LoweringTargets.DefKind.STATIC
+                || declScope == null
+                || ec.escapedCapturedLocals.contains(decl)) {
             return false;
         }
         BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
         if (owner instanceof BabbleParser.FunctionLiteralContext) {
-            return declFn == owner
-                    && declScope.kind != ScopeNode.Kind.FILE;
+            return declFn == owner && declScope.kind != ScopeNode.Kind.FILE;
         }
-        if (owner instanceof BabbleParser.FileContext || owner instanceof BabbleParser.BlockContext) {
+        if (owner instanceof BabbleParser.FileContext
+                || owner instanceof BabbleParser.BlockContext) {
             return declFn == null;
         }
         return false;
@@ -665,8 +737,14 @@ final class EffectBodyWalker {
         }
         Set<Object> keys = new HashSet<>(base.directKeys);
         keys.add(localKey);
-        return new Reachability.Origin((BitSet) base.params.clone(), base.aliasesThis, base.external,
-                Set.copyOf(keys), base.pathKey != null ? base.pathKey : new Reachability.PathKey(localKey, List.of()));
+        return new Reachability.Origin(
+                (BitSet) base.params.clone(),
+                base.aliasesThis,
+                base.external,
+                Set.copyOf(keys),
+                base.pathKey != null
+                        ? base.pathKey
+                        : new Reachability.PathKey(localKey, List.of()));
     }
 
     Reachability.Origin evalAssign(BabbleParser.AssignExpressionContext assign) {
@@ -689,27 +767,38 @@ final class EffectBodyWalker {
                     }
                 }
                 if (paramIndex.containsKey(decl)) {
-                    // Local parameter variable reassignment (rebinds local slot, does NOT mutate caller's object!).
+                    // Local parameter variable reassignment (rebinds local slot, does NOT mutate
+                    // caller's object!).
                     Type pType = ec.checker.typeOfDeclarationForEffects(decl);
-                    Reachability.Origin merged = compoundOp != null ? Reachability.Origin.IMMUTABLE : bindLocalOrigin(decl, rhs, pType);
+                    Reachability.Origin merged =
+                            compoundOp != null
+                                    ? Reachability.Origin.IMMUTABLE
+                                    : bindLocalOrigin(decl, rhs, pType);
                     env.put(decl, merged);
                     return merged;
                 }
                 BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                 ScopeNode declScope = ec.pass.definitionScopes.get(decl);
-                LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
-                        ? ec.pass.analysis.lowering().defTarget(d).kind() : null;
+                LoweringTargets.DefKind dKind =
+                        decl instanceof BabbleParser.DefExpressionContext d
+                                ? ec.pass.analysis.lowering().defTarget(d).kind()
+                                : null;
                 if (isOwnedScopeLocal(decl, declScope, dKind)) {
                     Type dType = ec.checker.typeOfDeclarationForEffects(decl);
-                    Reachability.Origin next = compoundOp != null ? Reachability.Origin.IMMUTABLE
-                            : (owner instanceof BabbleParser.FunctionLiteralContext
-                                    ? bindLocalOrigin(decl, rhs, dType)
-                                    : withLocalAliasKey(rhs, decl, dType));
+                    Reachability.Origin next =
+                            compoundOp != null
+                                    ? Reachability.Origin.IMMUTABLE
+                                    : (owner instanceof BabbleParser.FunctionLiteralContext
+                                            ? bindLocalOrigin(decl, rhs, dType)
+                                            : withLocalAliasKey(rhs, decl, dType));
                     env.put(decl, next);
                     return next;
                 }
-                if (declFn != null && frameChain.contains(declFn) && !ec.escapedCapturedLocals.contains(decl)) {
-                    // Frame-local (`borrow`) helper closure reassigning enclosing F's unescaped local `def` (§4.5)!
+                if (declFn != null
+                        && frameChain.contains(declFn)
+                        && !ec.escapedCapturedLocals.contains(decl)) {
+                    // Frame-local (`borrow`) helper closure reassigning enclosing F's unescaped
+                    // local `def` (§4.5)!
                     frameWriteOwners.add(declFn);
                     if (rhs.unique && rhs.uniqueOwner != null) {
                         demoteUniqueOwner(rhs.uniqueOwner, Reachability.Origin.IMMUTABLE);
@@ -736,11 +825,15 @@ final class EffectBodyWalker {
             checkCompoundArithmeticEffects(compoundOp, ec.checker.rawTypeOf(assign), assign);
         }
         Type recvType = effectiveType(recv);
-        if (recvType == Type.ERROR || recvType == Type.ANY || Type.containsNull(recvType)
-                || Type.isCoreScalar(recvType) || recvType instanceof Type.Function) {
+        if (recvType == Type.ERROR
+                || recvType == Type.ANY
+                || Type.containsNull(recvType)
+                || Type.isCoreScalar(recvType)
+                || recvType instanceof Type.Function) {
             return rhs;
         }
-        if (recvType instanceof Type.JavaClassValue || recvType instanceof Type.ClassValue
+        if (recvType instanceof Type.JavaClassValue
+                || recvType instanceof Type.ClassValue
                 || recvType instanceof Type.Module) {
             // Static / module field write -> global mutation!
             hermetic = false;
@@ -755,10 +848,13 @@ final class EffectBodyWalker {
         return rhs;
     }
 
-    void checkCompoundArithmeticEffects(String op, Type resType, BabbleParser.AssignExpressionContext assign) {
+    void checkCompoundArithmeticEffects(
+            String op, Type resType, BabbleParser.AssignExpressionContext assign) {
         if ("+".equals(op) && resType == Type.STRING) {
             applyEffects(ec.javaResolver.toStringProfile(effectiveType(assign.value)));
-        } else if ("//".equals(op) && !(resType instanceof Type.Instance) && !isNonZeroIntegerConstant(assign.value)) {
+        } else if ("//".equals(op)
+                && !(resType instanceof Type.Instance)
+                && !isNonZeroIntegerConstant(assign.value)) {
             nothrow = false;
         }
     }
@@ -770,9 +866,16 @@ final class EffectBodyWalker {
             if (resolved instanceof ParserRuleContext decl) {
                 Type declType = ec.checker.rawTypeOf(sel);
                 boolean imm = ec.javaResolver.isDeeplyImmutable(declType);
-                boolean narrowedImm = declType != null && declType != Type.ERROR && declType != Type.NOTHING && imm;
+                boolean narrowedImm =
+                        declType != null
+                                && declType != Type.ERROR
+                                && declType != Type.NOTHING
+                                && imm;
                 if (paramIndex.containsKey(decl)) {
-                    Reachability.Origin orig = env.getOrDefault(decl, Reachability.Origin.ofParam(paramIndex.get(decl), decl, imm));
+                    Reachability.Origin orig =
+                            env.getOrDefault(
+                                    decl,
+                                    Reachability.Origin.ofParam(paramIndex.get(decl), decl, imm));
                     if (orig.moved) {
                         reportOnce("Use of moved variable " + sel.ID().getText(), sel);
                     }
@@ -783,16 +886,21 @@ final class EffectBodyWalker {
                 }
                 BabbleParser.FunctionLiteralContext declFn = enclosingFunctionOfDecl(decl);
                 ScopeNode declScope = ec.pass.definitionScopes.get(decl);
-                LoweringTargets.DefKind dKind = decl instanceof BabbleParser.DefExpressionContext d
-                        ? ec.pass.analysis.lowering().defTarget(d).kind() : null;
+                LoweringTargets.DefKind dKind =
+                        decl instanceof BabbleParser.DefExpressionContext d
+                                ? ec.pass.analysis.lowering().defTarget(d).kind()
+                                : null;
                 if (isOwnedScopeLocal(decl, declScope, dKind)) {
-                    Reachability.Origin orig = env.getOrDefault(decl, Reachability.Origin.ofExternal(decl, imm));
+                    Reachability.Origin orig =
+                            env.getOrDefault(decl, Reachability.Origin.ofExternal(decl, imm));
                     if (orig.moved) {
                         reportOnce("Use of moved variable " + sel.ID().getText(), sel);
                     }
                     return (!orig.moved && narrowedImm) ? Reachability.Origin.IMMUTABLE : orig;
                 }
-                if (declFn != null && frameChain.contains(declFn) && !ec.escapedCapturedLocals.contains(decl)) {
+                if (declFn != null
+                        && frameChain.contains(declFn)
+                        && !ec.escapedCapturedLocals.contains(decl)) {
                     // Frame-local helper closure reading F's unescaped local `def`!
                     frameReadOwners.add(declFn);
                     return Reachability.Origin.ofExternal(decl, imm);
@@ -838,7 +946,9 @@ final class EffectBodyWalker {
         }
         if (recvType instanceof Type.JavaClassValue jcv) {
             Field f = JavaEffectResolver.findJavaField(jcv.type(), fieldName);
-            if (f != null && Modifier.isStatic(f.getModifiers()) && !Modifier.isFinal(f.getModifiers())) {
+            if (f != null
+                    && Modifier.isStatic(f.getModifiers())
+                    && !Modifier.isFinal(f.getModifiers())) {
                 deterministic = false;
             }
             if (ec.checker.hasCallCheck(sel)) {
@@ -848,7 +958,8 @@ final class EffectBodyWalker {
         }
         if (recvType instanceof Type.ClassValue cv) {
             TypeNode.Member sm = cv.node().statics.get(fieldName);
-            if (sm != null && (sm.isMutable() || !ec.javaResolver.isImmutableConstantValue(resType))) {
+            if (sm != null
+                    && (sm.isMutable() || !ec.javaResolver.isImmutableConstantValue(resType))) {
                 deterministic = false;
             }
             return Reachability.Origin.ofExternal(null, immRes);
@@ -873,7 +984,9 @@ final class EffectBodyWalker {
     }
 
     boolean readsMutableBabbleMember(Type recvType, String fieldName, boolean isFunctionType) {
-        if (recvType == null || containsFrozen(recvType) || ec.javaResolver.isDeeplyImmutable(recvType)) {
+        if (recvType == null
+                || containsFrozen(recvType)
+                || ec.javaResolver.isDeeplyImmutable(recvType)) {
             return false;
         }
         for (Type m : Type.membersOf(Type.withoutNull(recvType))) {
@@ -910,11 +1023,15 @@ final class EffectBodyWalker {
         return ec.javaResolver.isImmutableConstantValue(type);
     }
 
-
-    void recordTargetMutation(Reachability.Origin target, ParserRuleContext targetExpr, String reason,
-                                      ParserRuleContext at, boolean shallow) {
+    void recordTargetMutation(
+            Reachability.Origin target,
+            ParserRuleContext targetExpr,
+            String reason,
+            ParserRuleContext at,
+            boolean shallow) {
         stmtHasSideEffect = true;
-        if (targetExpr instanceof BabbleParser.ExpressionContext expr && effectiveType(expr) == Type.ERROR) {
+        if (targetExpr instanceof BabbleParser.ExpressionContext expr
+                && effectiveType(expr) == Type.ERROR) {
             return;
         }
         if (!activeForIterables.isEmpty()) {
@@ -934,13 +1051,17 @@ final class EffectBodyWalker {
                 }
             }
         }
-        // In BIP007-I2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of a unique local/param)
+        // In BIP007-I2 & BIP016-D9, shallow mutation of a fresh local container (or any mutation of
+        // a unique local/param)
         // stays confined (hermetic/pure) without tainting stored elements!
         if ((target.unique || (target.localFresh() && shallow))
-                && !target.external && target.params.isEmpty() && !target.aliasesThis) {
+                && !target.external
+                && target.params.isEmpty()
+                && !target.aliasesThis) {
             return;
         }
-        Reachability.Origin effectiveTarget = (!shallow && target.hasElementTaint()) ? target.flattenElements() : target;
+        Reachability.Origin effectiveTarget =
+                (!shallow && target.hasElementTaint()) ? target.flattenElements() : target;
         boolean hitParamOrThis = false;
         if (effectiveTarget.aliasesThis) {
             hitParamOrThis = true;
@@ -954,10 +1075,13 @@ final class EffectBodyWalker {
             } else if (inferMut) {
                 mutThis = true;
             } else {
-                reportOnce("Cannot mutate this (" + reason + ") : function is not declared mut", at);
+                reportOnce(
+                        "Cannot mutate this (" + reason + ") : function is not declared mut", at);
             }
         }
-        for (int p = effectiveTarget.params.nextSetBit(0); p >= 0; p = effectiveTarget.params.nextSetBit(p + 1)) {
+        for (int p = effectiveTarget.params.nextSetBit(0);
+                p >= 0;
+                p = effectiveTarget.params.nextSetBit(p + 1)) {
             if (p >= params.size()) {
                 continue; // a captured callback (pseudo-parameter) : outer state
             }
@@ -968,20 +1092,36 @@ final class EffectBodyWalker {
                 mutParams[p] = true;
             } else {
                 String pName = ScopeAnalysis.paramId(params.get(p)).getText();
-                reportOnce("Cannot mutate parameter " + pName + " (" + reason + ") : mark parameter as mut " + pName, at);
+                reportOnce(
+                        "Cannot mutate parameter "
+                                + pName
+                                + " ("
+                                + reason
+                                + ") : mark parameter as mut "
+                                + pName,
+                        at);
             }
         }
         if (effectiveTarget.external || !hitParamOrThis) {
             hermetic = false;
             if (isConstrainedPureOrHermetic()) {
-                reportOnce("Cannot mutate external object in "
-                        + (declaredPrefix.explicitVolatile() ? "volatile" : "pure")
-                        + " function (" + reason + ") : mark function as io", at);
+                reportOnce(
+                        "Cannot mutate external object in "
+                                + (declaredPrefix.explicitVolatile() ? "volatile" : "pure")
+                                + " function ("
+                                + reason
+                                + ") : mark function as io",
+                        at);
             }
         }
     }
 
-    void markStoredIntoTarget(Reachability.Origin target, Reachability.Origin value, Type valueType, String fieldName, ParserRuleContext at) {
+    void markStoredIntoTarget(
+            Reachability.Origin target,
+            Reachability.Origin value,
+            Type valueType,
+            String fieldName,
+            ParserRuleContext at) {
         if (value == Reachability.Origin.IMMUTABLE) {
             return;
         }
@@ -996,7 +1136,8 @@ final class EffectBodyWalker {
             return;
         }
         if (constructingSelf && target.aliasesThis && target.params.isEmpty() && !target.external) {
-            // Storing into `this`'s own fields during construction stays confined inside the new object!
+            // Storing into `this`'s own fields during construction stays confined inside the new
+            // object!
             Reachability.Origin flat = value.flattenElements();
             ctorStoredParams.or(flat.params);
             if (value.owned() && value.uniqueOwner != null) {
@@ -1007,8 +1148,10 @@ final class EffectBodyWalker {
         if (value.owned() && value.uniqueOwner != null) {
             demoteUniqueOwner(value.uniqueOwner, Reachability.Origin.IMMUTABLE);
         }
-        // Storing `this` (or a sub-reference of `this`) back into `this`'s own field does not escape `this`!
-        boolean storingIntoSelfThis = target.aliasesThis && target.params.isEmpty() && !target.external;
+        // Storing `this` (or a sub-reference of `this`) back into `this`'s own field does not
+        // escape `this`!
+        boolean storingIntoSelfThis =
+                target.aliasesThis && target.params.isEmpty() && !target.external;
         markStoredOrigin(value, "field ." + fieldName, at, storingIntoSelfThis);
     }
 
@@ -1016,7 +1159,11 @@ final class EffectBodyWalker {
         markStoredOrigin(value, destination, at, false);
     }
 
-    void markStoredOrigin(Reachability.Origin value, String destination, ParserRuleContext at, boolean ignoreThis) {
+    void markStoredOrigin(
+            Reachability.Origin value,
+            String destination,
+            ParserRuleContext at,
+            boolean ignoreThis) {
         if (value == Reachability.Origin.IMMUTABLE) {
             return;
         }
@@ -1025,8 +1172,12 @@ final class EffectBodyWalker {
             if (borrowThis) {
                 borrowThis = false;
             }
-            if (!inferMut && owner instanceof BabbleParser.FunctionLiteralContext && !declaredPrefix.explicitSharedThis()) {
-                reportOnce("Borrowed this escapes via " + destination + " : mark function as shared", at);
+            if (!inferMut
+                    && owner instanceof BabbleParser.FunctionLiteralContext
+                    && !declaredPrefix.explicitSharedThis()) {
+                reportOnce(
+                        "Borrowed this escapes via " + destination + " : mark function as shared",
+                        at);
             }
         }
         for (int p = flat.params.nextSetBit(0); p >= 0; p = flat.params.nextSetBit(p + 1)) {
@@ -1048,8 +1199,13 @@ final class EffectBodyWalker {
         if (p >= params.size()) {
             String name = pseudoForwardedName(p);
             if (name != null && !inferMut) {
-                reportOnce("Parameter in calling clause escapes via " + destination
-                        + " : remove " + name + " from calling and mark it as shared", at);
+                reportOnce(
+                        "Parameter in calling clause escapes via "
+                                + destination
+                                + " : remove "
+                                + name
+                                + " from calling and mark it as shared",
+                        at);
             }
             return;
         }
@@ -1060,15 +1216,27 @@ final class EffectBodyWalker {
             EffectChecker.ParamMods declared = ec.modifiers.parseParamMods(params.get(p), false);
             if (!declared.shared() && !declared.unique()) {
                 String pName = ScopeAnalysis.paramId(params.get(p)).getText();
-                if (EffectModifiers.inCallingClause((BabbleParser.FunctionLiteralContext) owner, pName)) {
+                if (EffectModifiers.inCallingClause(
+                        (BabbleParser.FunctionLiteralContext) owner, pName)) {
                     // calling forwards f's effects only while the call runs: an escaping f
                     // must leave the clause and be shared, whatever calls it later.
-                    reportOnce("Parameter in calling clause escapes via " + destination
-                            + " : remove " + pName + " from calling and mark it as shared", at);
+                    reportOnce(
+                            "Parameter in calling clause escapes via "
+                                    + destination
+                                    + " : remove "
+                                    + pName
+                                    + " from calling and mark it as shared",
+                            at);
                     return;
                 }
-                reportOnce("Borrowed parameter " + pName + " escapes via " + destination
-                        + " : mark parameter as shared " + pName, at);
+                reportOnce(
+                        "Borrowed parameter "
+                                + pName
+                                + " escapes via "
+                                + destination
+                                + " : mark parameter as shared "
+                                + pName,
+                        at);
             }
         }
     }
@@ -1085,17 +1253,27 @@ final class EffectBodyWalker {
             env.put(decl, Reachability.Origin.MOVED);
         }
         // A forwarded callback is only accounted for while the call runs : returning it (or a
-        // value aliasing it, such as a closure capturing it) would let it run unaccounted (BIP017-D6).
+        // value aliasing it, such as a closure capturing it) would let it run unaccounted
+        // (BIP017-D6).
         if (!inferMut) {
             for (int p = flat.params.nextSetBit(0); p >= 0; p = flat.params.nextSetBit(p + 1)) {
-                String name = p >= params.size() ? pseudoForwardedName(p)
-                        : forwardedParams.contains(p) ? ScopeAnalysis.paramId(params.get(p)).getText() : null;
+                String name =
+                        p >= params.size()
+                                ? pseudoForwardedName(p)
+                                : forwardedParams.contains(p)
+                                        ? ScopeAnalysis.paramId(params.get(p)).getText()
+                                        : null;
                 if (name != null) {
-                    reportOnce("Parameter in calling clause escapes via return : remove " + name + " from calling", at);
+                    reportOnce(
+                            "Parameter in calling clause escapes via return : remove "
+                                    + name
+                                    + " from calling",
+                            at);
                 }
             }
         }
-        // BIP016-D10: returning a @BORROWED parameter or `this` does not store it; record return provenance for callers!
+        // BIP016-D10: returning a @BORROWED parameter or `this` does not store it; record return
+        // provenance for callers!
         BitSet returned = flat.params;
         if (returned.length() > params.size()) {
             returned = (BitSet) returned.clone();
@@ -1111,10 +1289,10 @@ final class EffectBodyWalker {
     }
 
     /**
-     * The origin of a closure value (BIP017-D6) : capturing a parameter or {@code this} aliases
-     * it, like returning it does (BIP016-D10), so the closure carries their provenance and
-     * escapes only where the closure itself is stored. Captured locals are still stored on
-     * capture, their later assignments being outer-variable stores.
+     * The origin of a closure value (BIP017-D6) : capturing a parameter or {@code this} aliases it,
+     * like returning it does (BIP016-D10), so the closure carries their provenance and escapes only
+     * where the closure itself is stored. Captured locals are still stored on capture, their later
+     * assignments being outer-variable stores.
      */
     Reachability.Origin checkClosureCaptureEscape(BabbleParser.FunctionLiteralContext inner) {
         boolean frameLocal = ec.frameLocalOwner.get(inner) == owner;
@@ -1127,13 +1305,17 @@ final class EffectBodyWalker {
         boolean capturesThis = innerContainsThis(inner);
         if (capturesThis) {
             if (!frameLocal) {
-                closure = Reachability.Origin.ofThis(Reachability.THIS_KEY, false).stripDirectIdentity(false);
+                closure =
+                        Reachability.Origin.ofThis(Reachability.THIS_KEY, false)
+                                .stripDirectIdentity(false);
             }
             if (innerSum != null && innerSum.effects().mutThis() && !mutThis) {
                 if (inferMut) {
                     mutThis = true;
                 } else {
-                    reportOnce("Inner closure mutates this : enclosing function is not declared mut", inner);
+                    reportOnce(
+                            "Inner closure mutates this : enclosing function is not declared mut",
+                            inner);
                 }
             }
         }
@@ -1144,8 +1326,12 @@ final class EffectBodyWalker {
             }
             Reachability.Origin orig = env.get(decl);
             if (orig == null && paramIndex.containsKey(decl)) {
-                orig = Reachability.Origin.ofParam(paramIndex.get(decl), decl,
-                        ec.javaResolver.isDeeplyImmutable(ec.checker.typeOfDeclarationForEffects(decl)));
+                orig =
+                        Reachability.Origin.ofParam(
+                                paramIndex.get(decl),
+                                decl,
+                                ec.javaResolver.isDeeplyImmutable(
+                                        ec.checker.typeOfDeclarationForEffects(decl)));
             } else if (orig == null && pseudoForwarded.containsKey(decl)) {
                 orig = Reachability.Origin.ofParam(pseudoForwarded.get(decl), decl, false);
             }
@@ -1164,7 +1350,8 @@ final class EffectBodyWalker {
     }
 
     boolean innerContainsThis(ParseTree tree) {
-        if (tree instanceof BabbleParser.ClassExpressionContext || tree instanceof BabbleParser.ObjectExpressionContext
+        if (tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext
                 || tree instanceof BabbleParser.InterfaceExpressionContext) {
             return false;
         }
@@ -1188,7 +1375,8 @@ final class EffectBodyWalker {
 
         env = new IdentityHashMap<>(snapshot);
         ParserRuleContext otherwise = ctx.elseBlock != null ? ctx.elseBlock : ctx.elseIf;
-        Reachability.Origin elseOrig = otherwise != null ? eval(otherwise) : Reachability.Origin.IMMUTABLE;
+        Reachability.Origin elseOrig =
+                otherwise != null ? eval(otherwise) : Reachability.Origin.IMMUTABLE;
         Map<ParserRuleContext, Reachability.Origin> afterElse = env;
 
         env = mergeEnvs(afterThen, afterElse);
@@ -1198,8 +1386,10 @@ final class EffectBodyWalker {
     Reachability.Origin evalMatch(BabbleParser.MatchExpressionContext ctx) {
         Reachability.Origin scrutOrig = eval(ctx.scrutinee);
         Type scrutType = effectiveType(ctx.scrutinee);
-        if (ctx.elseClause() == null && MatchExhaustiveness.containsExternalClosedJavaType(scrutType)) {
-            // Runtime defense-in-depth throw if external Java enum/sealed adds a variant (BIP038 §5.3).
+        if (ctx.elseClause() == null
+                && MatchExhaustiveness.containsExternalClosedJavaType(scrutType)) {
+            // Runtime defense-in-depth throw if external Java enum/sealed adds a variant (BIP038
+            // §5.3).
             nothrow = false;
         }
         Reachability.Origin activeScrutOrig = scrutOrig;
@@ -1209,10 +1399,12 @@ final class EffectBodyWalker {
 
         for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
             env = new IdentityHashMap<>(fallthroughEnv);
-            ParserRuleContext topUniqueBind = evalPatternEffects(cc.pattern(), activeScrutOrig, scrutType, true);
+            ParserRuleContext topUniqueBind =
+                    evalPatternEffects(cc.pattern(), activeScrutOrig, scrutType, true);
             if (cc.guard != null) {
                 eval(cc.guard);
-                // If a guarded arm's guard moved a consumed unique scrutinee binding, it is no longer unique downstream.
+                // If a guarded arm's guard moved a consumed unique scrutinee binding, it is no
+                // longer unique downstream.
                 if (topUniqueBind != null) {
                     Reachability.Origin afterGuard = env.get(topUniqueBind);
                     if (afterGuard != null && afterGuard.moved) {
@@ -1249,7 +1441,8 @@ final class EffectBodyWalker {
         return resultOrig != null ? resultOrig : Reachability.Origin.IMMUTABLE;
     }
 
-    private Reachability.Origin bindPatternOrigin(ParserRuleContext decl, Reachability.Origin sourceOrig, boolean isTopLevel) {
+    private Reachability.Origin bindPatternOrigin(
+            ParserRuleContext decl, Reachability.Origin sourceOrig, boolean isTopLevel) {
         Type boundType = ec.checker.typeOfDeclarationForEffects(decl);
         if (boundType == null || ec.javaResolver.isDeeplyImmutable(boundType)) {
             return Reachability.Origin.IMMUTABLE;
@@ -1257,22 +1450,43 @@ final class EffectBodyWalker {
         if (sourceOrig.moved) {
             return Reachability.Origin.MOVED;
         }
-        // Consuming scrutinee (`match move(x)` or fresh construction): uniqueOwner == null transfers @UNIQUE to top-level bindings.
+        // Consuming scrutinee (`match move(x)` or fresh construction): uniqueOwner == null
+        // transfers @UNIQUE to top-level bindings.
         if (isTopLevel && sourceOrig.unique && sourceOrig.uniqueOwner == null) {
-            return new Reachability.Origin((BitSet) sourceOrig.params.clone(), sourceOrig.aliasesThis, sourceOrig.external,
-                    true, sourceOrig.elements(), false, decl, Set.of(decl), new Reachability.PathKey(decl, List.of()));
+            return new Reachability.Origin(
+                    (BitSet) sourceOrig.params.clone(),
+                    sourceOrig.aliasesThis,
+                    sourceOrig.external,
+                    true,
+                    sourceOrig.elements(),
+                    false,
+                    decl,
+                    Set.of(decl),
+                    new Reachability.PathKey(decl, List.of()));
         }
         // Borrowing scrutinee (`match x`) or nested destructured field (`is R(def f)`):
-        // inherit @BORROWED provenance pointing back to scrutinee without stealing uniqueness or demoting `x` (BIP038-D9).
+        // inherit @BORROWED provenance pointing back to scrutinee without stealing uniqueness or
+        // demoting `x` (BIP038-D9).
         Reachability.Origin flat = sourceOrig.flattenElements();
         Set<Object> keys = new HashSet<>(flat.directKeys);
         keys.add(decl);
-        return new Reachability.Origin((BitSet) flat.params.clone(), flat.aliasesThis, flat.external,
-                false, null, false, null, Set.copyOf(keys), new Reachability.PathKey(decl, List.of()));
+        return new Reachability.Origin(
+                (BitSet) flat.params.clone(),
+                flat.aliasesThis,
+                flat.external,
+                false,
+                null,
+                false,
+                null,
+                Set.copyOf(keys),
+                new Reachability.PathKey(decl, List.of()));
     }
 
-    private ParserRuleContext evalPatternEffects(BabbleParser.PatternContext pat, Reachability.Origin scrutOrig,
-                                                 Type scrutType, boolean isTopLevel) {
+    private ParserRuleContext evalPatternEffects(
+            BabbleParser.PatternContext pat,
+            Reachability.Origin scrutOrig,
+            Type scrutType,
+            boolean isTopLevel) {
         ParserRuleContext topUniqueBind = null;
         for (BabbleParser.AtomicPatternContext atom : pat.atomicPattern()) {
             switch (atom) {
@@ -1305,7 +1519,9 @@ final class EffectBodyWalker {
                     if ("==".equals(op) || "!=".equals(op)) {
                         applyEffects(ec.javaResolver.equalityProfile(scrutType, rhsType));
                     } else {
-                        applyEffects(ec.javaResolver.comparisonProfile(Type.withoutNull(scrutType), rhsType));
+                        applyEffects(
+                                ec.javaResolver.comparisonProfile(
+                                        Type.withoutNull(scrutType), rhsType));
                     }
                 }
                 case BabbleParser.MembershipPatternContext mp -> {
@@ -1323,19 +1539,36 @@ final class EffectBodyWalker {
                             case COLLECTION -> {
                                 recordTargetRead(contOrig, contType);
                                 Type unwrapped = TypeAlgebra.unwrapFrozen(contType);
-                                Class<?> cls = unwrapped instanceof Type.JavaInstance ji ? ji.type() : java.util.Collection.class;
-                                applyEffects(ec.javaResolver.resolveJavaMethodProfile(cls, "contains",
-                                        JavaEffectResolver.lookupPublicMethod(cls, "contains", Object.class)).effects());
+                                Class<?> cls =
+                                        unwrapped instanceof Type.JavaInstance ji
+                                                ? ji.type()
+                                                : java.util.Collection.class;
+                                applyEffects(
+                                        ec.javaResolver
+                                                .resolveJavaMethodProfile(
+                                                        cls,
+                                                        "contains",
+                                                        JavaEffectResolver.lookupPublicMethod(
+                                                                cls, "contains", Object.class))
+                                                .effects());
                             }
                             case MAP -> {
                                 recordTargetRead(contOrig, contType);
                                 Type unwrapped = TypeAlgebra.unwrapFrozen(contType);
-                                Class<?> cls = unwrapped instanceof Type.JavaInstance ji ? ji.type() : java.util.Map.class;
-                                applyEffects(ec.javaResolver.resolveJavaMethodProfile(cls, "containsKey",
-                                        JavaEffectResolver.lookupPublicMethod(cls, "containsKey", Object.class)).effects());
+                                Class<?> cls =
+                                        unwrapped instanceof Type.JavaInstance ji
+                                                ? ji.type()
+                                                : java.util.Map.class;
+                                applyEffects(
+                                        ec.javaResolver
+                                                .resolveJavaMethodProfile(
+                                                        cls,
+                                                        "containsKey",
+                                                        JavaEffectResolver.lookupPublicMethod(
+                                                                cls, "containsKey", Object.class))
+                                                .effects());
                             }
-                            case RANGE -> {
-                            }
+                            case RANGE -> {}
                         }
                     }
                 }
@@ -1354,20 +1587,26 @@ final class EffectBodyWalker {
                         evalPatternArgsEffects(tp, tp.patternArgs(), scrutOrig, scrutType);
                     }
                 }
-                default -> {
-                }
+                default -> {}
             }
         }
         return topUniqueBind;
     }
 
-    private void evalPatternArgsEffects(ParserRuleContext owner, BabbleParser.PatternArgsContext args,
-                                        Reachability.Origin scrutOrig, Type scrutType) {
+    private void evalPatternArgsEffects(
+            ParserRuleContext owner,
+            BabbleParser.PatternArgsContext args,
+            Reachability.Origin scrutOrig,
+            Type scrutType) {
         MatchTyper.RecordDestructureInfo recInfo = ec.checker.matchRecordDestructure(owner);
         MatchTyper.SequenceDestructureInfo seqInfo = ec.checker.matchSequenceDestructure(owner);
         if (recInfo != null && recInfo.isJavaRecord()) {
             for (java.lang.reflect.Method acc : recInfo.javaAccessors()) {
-                applyEffects(ec.javaResolver.resolveJavaMethodProfile(acc.getDeclaringClass(), acc.getName(), acc).effects());
+                applyEffects(
+                        ec.javaResolver
+                                .resolveJavaMethodProfile(
+                                        acc.getDeclaringClass(), acc.getName(), acc)
+                                .effects());
             }
         }
         if (seqInfo != null) {
@@ -1388,10 +1627,21 @@ final class EffectBodyWalker {
             Reachability.Provenance elemProv = Reachability.Provenance.EMPTY;
             if (seqInfo != null && !ec.javaResolver.isDeeplyImmutable(seqInfo.elemType())) {
                 Reachability.Origin flat = scrutOrig.flattenElements();
-                elemProv = new Reachability.Provenance(flat.params, flat.aliasesThis, flat.external);
+                elemProv =
+                        new Reachability.Provenance(flat.params, flat.aliasesThis, flat.external);
             }
-            env.put(rp, new Reachability.Origin(Reachability.Origin.EMPTY_BITS, false, false, true,
-                    elemProv, false, rp, Set.of(rp), new Reachability.PathKey(rp, List.of())));
+            env.put(
+                    rp,
+                    new Reachability.Origin(
+                            Reachability.Origin.EMPTY_BITS,
+                            false,
+                            false,
+                            true,
+                            elemProv,
+                            false,
+                            rp,
+                            Set.of(rp),
+                            new Reachability.PathKey(rp, List.of())));
         }
     }
 
@@ -1410,8 +1660,8 @@ final class EffectBodyWalker {
                 Map<ParserRuleContext, Reachability.Origin> before = new IdentityHashMap<>(env);
                 eval(ctx.test);
                 bodyOrig = eval(ctx.whileBlock);
-                Map<ParserRuleContext, Reachability.Origin> merged = iter++ < 2
-                        ? mergeEnvs(before, env) : widenEnvs(before, env);
+                Map<ParserRuleContext, Reachability.Origin> merged =
+                        iter++ < 2 ? mergeEnvs(before, env) : widenEnvs(before, env);
                 if (envsEqual(merged, before)) {
                     env = merged;
                     break;
@@ -1426,7 +1676,8 @@ final class EffectBodyWalker {
         return breakAcc[0] != null ? bodyOrig.join(breakAcc[0]) : bodyOrig;
     }
 
-    private static boolean mayOverlapIteratedCollection(Reachability.Origin iterOrig, Reachability.Origin target) {
+    private static boolean mayOverlapIteratedCollection(
+            Reachability.Origin iterOrig, Reachability.Origin target) {
         if (iterOrig == null || target == null) {
             return false;
         }
@@ -1438,7 +1689,10 @@ final class EffectBodyWalker {
         if (target.owned() && !target.external && target.params.isEmpty() && !target.aliasesThis) {
             return false;
         }
-        if (iterOrig.owned() && !iterOrig.external && iterOrig.params.isEmpty() && !iterOrig.aliasesThis) {
+        if (iterOrig.owned()
+                && !iterOrig.external
+                && iterOrig.params.isEmpty()
+                && !iterOrig.aliasesThis) {
             return false;
         }
         return iterOrig.params.intersects(target.params)
@@ -1457,7 +1711,8 @@ final class EffectBodyWalker {
             recordTargetRead(iterOrig, iterType);
             switch (info.kind()) {
                 case ARRAY, COUNTED_RANGE -> {
-                    // Indexed array or counted discrete range loop : @HERMETIC @NOTHROW, terminates.
+                    // Indexed array or counted discrete range loop : @HERMETIC @NOTHROW,
+                    // terminates.
                     isArrayLoop = true;
                 }
                 case JAVA_ITERABLE -> {
@@ -1468,14 +1723,21 @@ final class EffectBodyWalker {
                             curatedFinite = true;
                             curatedNothrow = true;
                         } else {
-                            EffectChecker.JavaCallProfile iterProf = ec.javaResolver.resolveJavaMethodProfile(ji.type(), "iterator", JavaEffectResolver.lookupPublicMethod(ji.type(), "iterator"));
+                            EffectChecker.JavaCallProfile iterProf =
+                                    ec.javaResolver.resolveJavaMethodProfile(
+                                            ji.type(),
+                                            "iterator",
+                                            JavaEffectResolver.lookupPublicMethod(
+                                                    ji.type(), "iterator"));
                             applyEffects(iterProf.effects());
                             if (iterProf.mutReceiver()) {
-                                recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                                recordTargetMutation(
+                                        iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
                             }
                             if (iterProf.view()) {
                                 trackConcurrentMut = true;
-                                if (iterProf.effects().isHermetic() && iterProf.effects().terminating()) {
+                                if (iterProf.effects().isHermetic()
+                                        && iterProf.effects().terminating()) {
                                     curatedFinite = true;
                                     curatedNothrow = iterProf.effects().isNothrow();
                                 }
@@ -1492,7 +1754,8 @@ final class EffectBodyWalker {
                 case JAVA_ITERATOR -> {
                     terminating = false;
                     nothrow = false;
-                    recordTargetMutation(iterOrig, ctx.iterable, "iterator.next", ctx.iterable, true);
+                    recordTargetMutation(
+                            iterOrig, ctx.iterable, "iterator.next", ctx.iterable, true);
                 }
                 case BABBLE_TO_JAVA_ITERABLE -> {
                     terminating = false;
@@ -1500,7 +1763,8 @@ final class EffectBodyWalker {
                     if (info.iteratorFn() != null) {
                         applyEffects(info.iteratorFn().effects());
                         if (info.iteratorFn().effects().mutThis()) {
-                            recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            recordTargetMutation(
+                                    iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
                         }
                     }
                 }
@@ -1509,7 +1773,8 @@ final class EffectBodyWalker {
                     if (info.iteratorFn() != null) {
                         applyEffects(info.iteratorFn().effects());
                         if (info.iteratorFn().effects().mutThis()) {
-                            recordTargetMutation(iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
+                            recordTargetMutation(
+                                    iterOrig, ctx.iterable, "iterator", ctx.iterable, false);
                         }
                     }
                     if (info.hasNextFn() != null) {
@@ -1524,13 +1789,15 @@ final class EffectBodyWalker {
                     if (info.hasNextFn() != null) {
                         applyEffects(info.hasNextFn().effects());
                         if (info.hasNextFn().effects().mutThis()) {
-                            recordTargetMutation(iterOrig, ctx.iterable, "hasNext", ctx.iterable, false);
+                            recordTargetMutation(
+                                    iterOrig, ctx.iterable, "hasNext", ctx.iterable, false);
                         }
                     }
                     if (info.nextFn() != null) {
                         applyEffects(info.nextFn().effects());
                         if (info.nextFn().effects().mutThis()) {
-                            recordTargetMutation(iterOrig, ctx.iterable, "next", ctx.iterable, false);
+                            recordTargetMutation(
+                                    iterOrig, ctx.iterable, "next", ctx.iterable, false);
                         }
                     }
                 }
@@ -1546,8 +1813,17 @@ final class EffectBodyWalker {
             elemOrig = Reachability.Origin.IMMUTABLE;
         } else {
             Reachability.Origin flat = iterOrig.flattenElements();
-            elemOrig = new Reachability.Origin(flat.params, flat.aliasesThis, flat.external, false, null, false, null,
-                    Set.of(ctx), new Reachability.PathKey(ctx, List.of()));
+            elemOrig =
+                    new Reachability.Origin(
+                            flat.params,
+                            flat.aliasesThis,
+                            flat.external,
+                            false,
+                            null,
+                            false,
+                            null,
+                            Set.of(ctx),
+                            new Reachability.PathKey(ctx, List.of()));
         }
         Reachability.Origin[] breakAcc = new Reachability.Origin[1];
         loopBreakOrigins.push(breakAcc);
@@ -1569,8 +1845,8 @@ final class EffectBodyWalker {
                 env.put(ctx, elemOrig);
                 bodyOrig = eval(ctx.forBlock);
                 env.remove(ctx);
-                Map<ParserRuleContext, Reachability.Origin> merged = iter++ < 2
-                        ? mergeEnvs(before, env) : widenEnvs(before, env);
+                Map<ParserRuleContext, Reachability.Origin> merged =
+                        iter++ < 2 ? mergeEnvs(before, env) : widenEnvs(before, env);
                 if (envsEqual(merged, before)) {
                     env = merged;
                     break;
@@ -1603,8 +1879,13 @@ final class EffectBodyWalker {
                 if (loopNothrowOk) {
                     fx.add(Effect.NOTHROW);
                 }
-                ec.pass.analysis.effects().setForEffects(ctx,
-                        EffectSet.ofInferred(fx, false, false, false, loopFinite && bodyTerminating));
+                ec.pass
+                        .analysis
+                        .effects()
+                        .setForEffects(
+                                ctx,
+                                EffectSet.ofInferred(
+                                        fx, false, false, false, loopFinite && bodyTerminating));
             }
             loopBreakOrigins.pop();
         }
@@ -1638,8 +1919,10 @@ final class EffectBodyWalker {
                                 demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
                                 routed = routed.demoteAlias(Reachability.Origin.IMMUTABLE);
                             }
-                            frame.caughtOrigins[i] = frame.caughtOrigins[i] == null
-                                    ? routed : frame.caughtOrigins[i].join(routed);
+                            frame.caughtOrigins[i] =
+                                    frame.caughtOrigins[i] == null
+                                            ? routed
+                                            : frame.caughtOrigins[i].join(routed);
                         }
                         locallyCaught = true;
                         break;
@@ -1693,24 +1976,39 @@ final class EffectBodyWalker {
         Map<ParserRuleContext, Reachability.Origin> afterTry = env;
         frame.recordUnwindEnv(afterTry, this);
         boolean tryHadNonLocalThrow = !nothrow || frame.hadEscapingThrow;
-        boolean tryNothrow = nothrow && !frame.hadLocalThrow && !frame.hadEscapingThrow && tryEscape >= outerFloor;
+        boolean tryNothrow =
+                nothrow
+                        && !frame.hadLocalThrow
+                        && !frame.hadEscapingThrow
+                        && tryEscape >= outerFloor;
 
-        if (tryNothrow && !catches.isEmpty() && emitDiagnostics
-                && forwardedParams.isEmpty() && pseudoForwarded.isEmpty()
+        if (tryNothrow
+                && !catches.isEmpty()
+                && emitDiagnostics
+                && forwardedParams.isEmpty()
+                && pseudoForwarded.isEmpty()
                 && !hasPriorDiagnostic(ctx)) {
             BabbleParser.CatchClauseContext firstCatch = catches.get(0);
             String warnMsg = "try block cannot throw; catch clause is unreachable";
-            String warnKey = firstCatch.getStart().getLine() + ":" + firstCatch.getStart().getCharPositionInLine() + ":WARN:" + warnMsg;
+            String warnKey =
+                    firstCatch.getStart().getLine()
+                            + ":"
+                            + firstCatch.getStart().getCharPositionInLine()
+                            + ":WARN:"
+                            + warnMsg;
             if (reportedMessages.add(warnKey)) {
                 ec.checker.effectWarning(warnMsg, firstCatch);
             }
         }
 
         Map<ParserRuleContext, Reachability.Origin> catchEntryEnv = frame.unwindEnv;
-        Map<ParserRuleContext, Reachability.Origin> finallyEntryEnv = mergeEnvs(catchEntryEnv, afterTry);
+        Map<ParserRuleContext, Reachability.Origin> finallyEntryEnv =
+                mergeEnvs(catchEntryEnv, afterTry);
         Type tryType = ec.checker.rawTypeOf(ctx.tryBlock);
-        Map<ParserRuleContext, Reachability.Origin> normalExitEnv = tryType != Type.NOTHING ? afterTry : null;
-        Reachability.Origin resultOrig = tryType != Type.NOTHING ? tryOrig : Reachability.Origin.IMMUTABLE;
+        Map<ParserRuleContext, Reachability.Origin> normalExitEnv =
+                tryType != Type.NOTHING ? afterTry : null;
+        Reachability.Origin resultOrig =
+                tryType != Type.NOTHING ? tryOrig : Reachability.Origin.IMMUTABLE;
 
         boolean hasExhaustiveCatchAll = false;
         boolean allCatchesNothrow = true;
@@ -1730,11 +2028,19 @@ final class EffectBodyWalker {
             } else {
                 Reachability.Origin localRouted = frame.caughtOrigins[i];
                 if (tryHadNonLocalThrow || localRouted == null) {
-                    Reachability.Origin nonLocal = (!tryHermetic || !tryDeterministic)
-                            ? Reachability.Origin.ofExternal(cc, false)
-                            : new Reachability.Origin(Reachability.Origin.EMPTY_BITS, false, false,
-                                    Set.of(cc), new Reachability.PathKey(cc, List.of()));
-                    eOrig = localRouted == null ? nonLocal : withLocalAliasKey(localRouted.join(nonLocal), cc, boundType);
+                    Reachability.Origin nonLocal =
+                            (!tryHermetic || !tryDeterministic)
+                                    ? Reachability.Origin.ofExternal(cc, false)
+                                    : new Reachability.Origin(
+                                            Reachability.Origin.EMPTY_BITS,
+                                            false,
+                                            false,
+                                            Set.of(cc),
+                                            new Reachability.PathKey(cc, List.of()));
+                    eOrig =
+                            localRouted == null
+                                    ? nonLocal
+                                    : withLocalAliasKey(localRouted.join(nonLocal), cc, boundType);
                 } else {
                     eOrig = withLocalAliasKey(localRouted, cc, boundType);
                 }
@@ -1753,8 +2059,12 @@ final class EffectBodyWalker {
             finallyEntryEnv = mergeEnvs(finallyEntryEnv, afterCatch);
             Type catchBlockType = ec.checker.rawTypeOf(cc.catchBlock);
             if (catchBlockType != Type.NOTHING) {
-                normalExitEnv = normalExitEnv == null ? afterCatch : mergeEnvs(normalExitEnv, afterCatch);
-                resultOrig = resultOrig == Reachability.Origin.IMMUTABLE ? catchOrig : resultOrig.join(catchOrig);
+                normalExitEnv =
+                        normalExitEnv == null ? afterCatch : mergeEnvs(normalExitEnv, afterCatch);
+                resultOrig =
+                        resultOrig == Reachability.Origin.IMMUTABLE
+                                ? catchOrig
+                                : resultOrig.join(catchOrig);
             }
         }
 
@@ -1774,9 +2084,10 @@ final class EffectBodyWalker {
             env = normalExitEnv != null ? normalExitEnv : preEnv;
         }
 
-        boolean tryExprNothrow = tryNothrow
-                ? finallyNothrow
-                : (hasExhaustiveCatchAll && allCatchesNothrow && finallyNothrow);
+        boolean tryExprNothrow =
+                tryNothrow
+                        ? finallyNothrow
+                        : (hasExhaustiveCatchAll && allCatchesNothrow && finallyNothrow);
         nothrow = outerNothrow && tryExprNothrow;
         deepestThrowEscapeLevel = Math.min(outerEscape, propagatedEscape);
 
@@ -1860,7 +2171,10 @@ final class EffectBodyWalker {
             return Reachability.Origin.IMMUTABLE;
         }
         Type elem = Type.rangeElement(res);
-        if (elem != null && !Type.isNumericScalar(elem) && elem != Type.CHAR && elem != Type.STRING) {
+        if (elem != null
+                && !Type.isNumericScalar(elem)
+                && elem != Type.CHAR
+                && elem != Type.STRING) {
             applyEffects(ec.javaResolver.comparisonProfile(elem, elem));
         }
         return ec.javaResolver.isDeeplyImmutable(res)
@@ -1869,7 +2183,8 @@ final class EffectBodyWalker {
     }
 
     static Long tryEvalIntegerConstant(BabbleParser.ExpressionContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+        while (expr instanceof BabbleParser.BlockExpressionContext b
+                && b.block().expression().size() == 1) {
             expr = b.block().expression(0);
         }
         if (expr instanceof BabbleParser.IntegerContext lit) {
@@ -1904,7 +2219,9 @@ final class EffectBodyWalker {
         return v != null && v > 0L;
     }
 
-    Map<ParserRuleContext, Reachability.Origin> mergeEnvs(Map<ParserRuleContext, Reachability.Origin> a, Map<ParserRuleContext, Reachability.Origin> b) {
+    Map<ParserRuleContext, Reachability.Origin> mergeEnvs(
+            Map<ParserRuleContext, Reachability.Origin> a,
+            Map<ParserRuleContext, Reachability.Origin> b) {
         Map<ParserRuleContext, Reachability.Origin> out = new IdentityHashMap<>();
         Set<ParserRuleContext> keys = Collections.newSetFromMap(new IdentityHashMap<>());
         keys.addAll(a.keySet());
@@ -1923,8 +2240,9 @@ final class EffectBodyWalker {
         return out;
     }
 
-    private static boolean envsEqual(Map<ParserRuleContext, Reachability.Origin> a,
-                                     Map<ParserRuleContext, Reachability.Origin> b) {
+    private static boolean envsEqual(
+            Map<ParserRuleContext, Reachability.Origin> a,
+            Map<ParserRuleContext, Reachability.Origin> b) {
         if (a.size() != b.size()) {
             return false;
         }
@@ -1936,8 +2254,9 @@ final class EffectBodyWalker {
         return true;
     }
 
-    Map<ParserRuleContext, Reachability.Origin> widenEnvs(Map<ParserRuleContext, Reachability.Origin> a,
-                                                        Map<ParserRuleContext, Reachability.Origin> b) {
+    Map<ParserRuleContext, Reachability.Origin> widenEnvs(
+            Map<ParserRuleContext, Reachability.Origin> a,
+            Map<ParserRuleContext, Reachability.Origin> b) {
         Map<ParserRuleContext, Reachability.Origin> out = new IdentityHashMap<>();
         Set<ParserRuleContext> keys = Collections.newSetFromMap(new IdentityHashMap<>());
         keys.addAll(a.keySet());
@@ -1962,7 +2281,9 @@ final class EffectBodyWalker {
         }
         BabbleParser.ExpressionContext u = unwrapParens(expr);
         if (u instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
-            Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
+            Object resolved =
+                    ec.checker.resolveNameForEffects(
+                            sel.ID().getText(), ec.checker.occurrenceScopeOf(sel));
             if (resolved instanceof ParserRuleContext decl) {
                 Integer idx = paramIndex.get(decl);
                 if (idx != null && !forwardedParams.contains(idx)) {
@@ -1984,7 +2305,9 @@ final class EffectBodyWalker {
         }
         Reachability.Origin flat = argOrigin.flattenElements();
         long mask = 0L;
-        for (int p = flat.params.nextSetBit(0); p >= 0 && p < 64; p = flat.params.nextSetBit(p + 1)) {
+        for (int p = flat.params.nextSetBit(0);
+                p >= 0 && p < 64;
+                p = flat.params.nextSetBit(p + 1)) {
             mask |= (1L << p);
         }
         symParamFlow[cbIdx][slotIdx] |= mask;
@@ -1998,28 +2321,50 @@ final class EffectBodyWalker {
 
     private void ensureFlowCapacity(int cbIdx, int minSlots) {
         if (symParamFlow[cbIdx] == null || symParamFlow[cbIdx].length < minSlots) {
-            symParamFlow[cbIdx] = symParamFlow[cbIdx] == null
-                    ? new long[minSlots] : Arrays.copyOf(symParamFlow[cbIdx], minSlots);
-            symThisFlow[cbIdx] = symThisFlow[cbIdx] == null
-                    ? new boolean[minSlots] : Arrays.copyOf(symThisFlow[cbIdx], minSlots);
-            symExtFlow[cbIdx] = symExtFlow[cbIdx] == null
-                    ? new boolean[minSlots] : Arrays.copyOf(symExtFlow[cbIdx], minSlots);
+            symParamFlow[cbIdx] =
+                    symParamFlow[cbIdx] == null
+                            ? new long[minSlots]
+                            : Arrays.copyOf(symParamFlow[cbIdx], minSlots);
+            symThisFlow[cbIdx] =
+                    symThisFlow[cbIdx] == null
+                            ? new boolean[minSlots]
+                            : Arrays.copyOf(symThisFlow[cbIdx], minSlots);
+            symExtFlow[cbIdx] =
+                    symExtFlow[cbIdx] == null
+                            ? new boolean[minSlots]
+                            : Arrays.copyOf(symExtFlow[cbIdx], minSlots);
         }
     }
 
-    SymbolicEffectSummary buildSymbolicSummary(EffectChecker.CallableSummary residual, EffectSet[] defaultCbEffects) {
-        return new SymbolicEffectSummary(residual, false, residual.effects(),
-                residual.mutParams().clone(), residual.borrowParams().clone(),
-                residual.readParams().clone(), residual.readsThis(),
-                (BitSet) calledCallbacks.clone(), defaultCbEffects,
-                symParamFlow, symThisFlow, symExtFlow);
+    SymbolicEffectSummary buildSymbolicSummary(
+            EffectChecker.CallableSummary residual, EffectSet[] defaultCbEffects) {
+        return new SymbolicEffectSummary(
+                residual,
+                false,
+                residual.effects(),
+                residual.mutParams().clone(),
+                residual.borrowParams().clone(),
+                residual.readParams().clone(),
+                residual.readsThis(),
+                (BitSet) calledCallbacks.clone(),
+                defaultCbEffects,
+                symParamFlow,
+                symThisFlow,
+                symExtFlow);
     }
 
-    /** The type of an expression where it occurs, narrowed by the tests that guard it (as the typing walk recorded it). */
+    /**
+     * The type of an expression where it occurs, narrowed by the tests that guard it (as the typing
+     * walk recorded it).
+     */
     Type effectiveType(BabbleParser.ExpressionContext expr) {
         BabbleParser.ExpressionContext unwrapped = unwrapParens(expr);
-        return ec.checker.rawTypeOf(unwrapped instanceof BabbleParser.SelectorContext sel && sel.expression() == null ? unwrapped : expr);
+        return ec.checker.rawTypeOf(
+                unwrapped instanceof BabbleParser.SelectorContext sel && sel.expression() == null
+                        ? unwrapped
+                        : expr);
     }
+
     boolean isRedundantCast(Type src, Type dst) {
         if (src == null || dst == null || src == Type.ERROR || dst == Type.ERROR) {
             return true;
@@ -2069,10 +2414,12 @@ final class EffectBodyWalker {
     BabbleParser.FunctionLiteralContext enclosingFunctionOfDecl(ParserRuleContext decl) {
         ScopeNode s = ec.pass.definitionScopes.get(decl);
         while (s != null) {
-            if (s.kind == ScopeNode.Kind.FUNCTION && s.owner instanceof BabbleParser.FunctionLiteralContext fn) {
+            if (s.kind == ScopeNode.Kind.FUNCTION
+                    && s.owner instanceof BabbleParser.FunctionLiteralContext fn) {
                 return fn;
             }
-            if (s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.STATIC_BODY
+            if (s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.STATIC_BODY
                     || s.kind == ScopeNode.Kind.INTERFACE_BODY) {
                 return null;
             }

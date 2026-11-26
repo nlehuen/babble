@@ -6,6 +6,5 @@ import org.babblelang.axioms.MeansNonNull;
 @Axioms(targetName = "androidx.annotation.NonNull")
 @MeansNonNull
 public final class NonNullAxioms {
-    private NonNullAxioms() {
-    }
+    private NonNullAxioms() {}
 }

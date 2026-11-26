@@ -1,34 +1,49 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.effects.Effect;
-import org.babblelang.parser.BabbleParser;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.Set;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.effects.Effect;
+import org.babblelang.parser.BabbleParser;
 
 /**
- * Member resolution : the type of {@code receiver.name} read or assigned, on instances (with
- * their type arguments and inherited defaults), classes, modules, and Java classes,
- * objects and arrays, reporting what the runtime would refuse ({@code No such member},
- * {@code is private}, {@code Not a scope}).
+ * Member resolution : the type of {@code receiver.name} read or assigned, on instances (with their
+ * type arguments and inherited defaults), classes, modules, and Java classes, objects and arrays,
+ * reporting what the runtime would refuse ({@code No such member}, {@code is private}, {@code Not a
+ * scope}).
  */
 final class MemberTypes {
-    private static final EffectSet ARRAY_SIZE_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-    private static final EffectSet ARRAY_READ_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, true, false, true);
-    private static final EffectSet ARRAY_PROTOCOL_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, true, false, true);
-    private static final EffectSet ARRAY_SET_EFFECTS = EffectSet.ofInferred(
-            EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, true, false, true);
+    private static final EffectSet ARRAY_SIZE_EFFECTS =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                    false,
+                    true,
+                    false,
+                    true);
+    private static final EffectSet ARRAY_READ_EFFECTS =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC),
+                    false,
+                    true,
+                    false,
+                    true);
+    private static final EffectSet ARRAY_PROTOCOL_EFFECTS =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                    false,
+                    true,
+                    false,
+                    true);
+    private static final EffectSet ARRAY_SET_EFFECTS =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.HERMETIC, Effect.DETERMINISTIC), true, true, false, true);
 
     private final TypeChecker checker;
 
@@ -36,16 +51,21 @@ final class MemberTypes {
         this.checker = checker;
     }
 
-    record ResolvedMember(TypeNode owner, TypeNode.Member member, Map<Type.TypeVar, Type> env) {
-    }
+    record ResolvedMember(TypeNode owner, TypeNode.Member member, Map<Type.TypeVar, Type> env) {}
 
     /** {@code receiver.name}, read. */
-    Type member(Type receiver, String name, boolean own, ParserRuleContext at, BabbleParser.ExpressionContext receiverExpression) {
+    Type member(
+            Type receiver,
+            String name,
+            boolean own,
+            ParserRuleContext at,
+            BabbleParser.ExpressionContext receiverExpression) {
         return member(receiver, name, own, at, receiverExpression.getText());
     }
 
     /** {@code receiver.name}, read, given the receiver's source text. */
-    Type member(Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
+    Type member(
+            Type receiver, String name, boolean own, ParserRuleContext at, String receiverText) {
         if (TypeChecker.isUnresolved(receiver)) {
             return Type.ERROR;
         }
@@ -76,7 +96,9 @@ final class MemberTypes {
         }
         if (receiver instanceof Type.Frozen frozen) {
             Type inner = member(frozen.of(), name, own, at, receiverText);
-            if (inner == Type.ERROR || inner instanceof Type.Function || inner instanceof Type.JavaMethod) {
+            if (inner == Type.ERROR
+                    || inner instanceof Type.Function
+                    || inner instanceof Type.JavaMethod) {
                 return inner;
             }
             return Type.frozen(inner);
@@ -88,7 +110,10 @@ final class MemberTypes {
                     checker.warn(name + " is private", at);
                     return Type.ERROR;
                 }
-                return checker.algebra().substitute(checker.memberType(resolved.owner(), resolved.member()), resolved.env());
+                return checker.algebra()
+                        .substitute(
+                                checker.memberType(resolved.owner(), resolved.member()),
+                                resolved.env());
             }
             Type inherited = inheritedMember(instance, name);
             if (inherited != null) {
@@ -111,7 +136,13 @@ final class MemberTypes {
         }
         if (receiver instanceof Type.Module module) {
             if (module.module().summary() == null && module.module().exports().contains(name)) {
-                checker.warn("Missing type : " + name + " (import cycle with " + module.module().name() + ")", at);
+                checker.warn(
+                        "Missing type : "
+                                + name
+                                + " (import cycle with "
+                                + module.module().name()
+                                + ")",
+                        at);
                 return Type.ERROR;
             }
             // A missing export is TypeChecks' to report.
@@ -129,24 +160,27 @@ final class MemberTypes {
                     if (cc.typeArguments().size() > 1) {
                         return Type.ERROR;
                     }
-                    return new Type.ArrayOfFactory(cc.typeArguments().isEmpty() ? null : cc.typeArguments().get(0));
+                    return new Type.ArrayOfFactory(
+                            cc.typeArguments().isEmpty() ? null : cc.typeArguments().get(0));
                 }
                 checker.warn("No such name in " + receiver + " : " + name, at);
                 return Type.ERROR;
             }
-            Class<?> javaClass = switch (cc.kind()) {
-                case "list" -> java.util.List.class;
-                case "set" -> java.util.Set.class;
-                case "sortedset" -> java.util.SortedSet.class;
-                case "map" -> java.util.Map.class;
-                case "sortedmap" -> java.util.SortedMap.class;
-                case "entry" -> java.util.Map.Entry.class;
-                default -> null;
-            };
+            Class<?> javaClass =
+                    switch (cc.kind()) {
+                        case "list" -> java.util.List.class;
+                        case "set" -> java.util.Set.class;
+                        case "sortedset" -> java.util.SortedSet.class;
+                        case "map" -> java.util.Map.class;
+                        case "sortedmap" -> java.util.SortedMap.class;
+                        case "entry" -> java.util.Map.Entry.class;
+                        default -> null;
+                    };
             if (javaClass != null) {
                 Type member = javaMember(javaClass, List.of(), name, true, at);
                 if (member instanceof Type.JavaMethod jm && !cc.typeArguments().isEmpty()) {
-                    return new Type.JavaMethod(jm.owner(), jm.typeArguments(), jm.name(), cc.typeArguments());
+                    return new Type.JavaMethod(
+                            jm.owner(), jm.typeArguments(), jm.name(), cc.typeArguments());
                 }
                 return member;
             }
@@ -158,7 +192,8 @@ final class MemberTypes {
             }
             Type member = javaMember(value.type(), List.of(), name, true, at);
             if (member instanceof Type.JavaMethod jm && !value.typeArguments().isEmpty()) {
-                return new Type.JavaMethod(jm.owner(), jm.typeArguments(), jm.name(), value.typeArguments());
+                return new Type.JavaMethod(
+                        jm.owner(), jm.typeArguments(), jm.name(), value.typeArguments());
             }
             return member;
         }
@@ -181,17 +216,32 @@ final class MemberTypes {
                     return new Type.Function(List.of(), Type.INT, ARRAY_SIZE_EFFECTS);
                 case "get":
                     return new Type.Function(
-                            List.of(new Type.Parameter("index", Type.INT, false, false, true, false)),
-                            array.element(), ARRAY_READ_EFFECTS);
+                            List.of(
+                                    new Type.Parameter(
+                                            "index", Type.INT, false, false, true, false)),
+                            array.element(),
+                            ARRAY_READ_EFFECTS);
                 case "set":
                     return new Type.Function(
-                            List.of(new Type.Parameter("index", Type.INT, false, false, true, false),
-                                    new Type.Parameter("value", array.element(), false, false, false, true)),
-                            Type.NULL, ARRAY_SET_EFFECTS);
+                            List.of(
+                                    new Type.Parameter(
+                                            "index", Type.INT, false, false, true, false),
+                                    new Type.Parameter(
+                                            "value", array.element(), false, false, false, true)),
+                            Type.NULL,
+                            ARRAY_SET_EFFECTS);
                 case "equals":
                     return new Type.Function(
-                            List.of(new Type.Parameter("other", OperatorTypes.ANY_OR_FROZEN, false, false, true, false)),
-                            Type.BOOL, ARRAY_PROTOCOL_EFFECTS);
+                            List.of(
+                                    new Type.Parameter(
+                                            "other",
+                                            OperatorTypes.ANY_OR_FROZEN,
+                                            false,
+                                            false,
+                                            true,
+                                            false)),
+                            Type.BOOL,
+                            ARRAY_PROTOCOL_EFFECTS);
                 case "hashCode":
                     return new Type.Function(List.of(), Type.INT, ARRAY_PROTOCOL_EFFECTS);
                 case "toString":
@@ -200,7 +250,8 @@ final class MemberTypes {
                     break;
             }
             if (JavaTypeBridge.hasJavaMethod(Object.class, name)) {
-                return new Type.JavaMethod(JavaTypeBridge.checkedArrayClass(array), List.of(), name);
+                return new Type.JavaMethod(
+                        JavaTypeBridge.checkedArrayClass(array), List.of(), name);
             }
             checker.warn("No such name in " + array + " : " + name, at);
             return Type.ERROR;
@@ -210,8 +261,8 @@ final class MemberTypes {
         return Type.ERROR;
     }
 
-    static final Set<String> RANGE_MEMBER_NAMES = Set.of(
-            "start", "end", "inclusive", "isEmpty", "contains", "step", "reversed");
+    static final Set<String> RANGE_MEMBER_NAMES =
+            Set.of("start", "end", "inclusive", "isEmpty", "contains", "step", "reversed");
 
     private Type rangeMember(Type.JavaInstance range, String name, ParserRuleContext at) {
         Type elem = range.typeArguments().isEmpty() ? Type.ANY : range.typeArguments().get(0);
@@ -219,8 +270,13 @@ final class MemberTypes {
         boolean discrete = Type.isDiscreteRangeElement(elem);
         boolean nothrowElem = scalar || elem == Type.STRING;
         EffectSet pureNothrow = OperatorTypes.PURE_DET_NOTHROW;
-        EffectSet pureMayThrow = EffectSet.ofInferred(
-                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC), false, false, false, true);
+        EffectSet pureMayThrow =
+                EffectSet.ofInferred(
+                        EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC),
+                        false,
+                        false,
+                        false,
+                        true);
         EffectSet elemEffect = nothrowElem ? pureNothrow : pureMayThrow;
         switch (name) {
             case "start", "end":
@@ -232,32 +288,51 @@ final class MemberTypes {
             case "contains":
                 return new Type.Function(
                         List.of(new Type.Parameter("value", elem, false, false, true, false)),
-                        Type.BOOL, elemEffect);
+                        Type.BOOL,
+                        elemEffect);
             case "step":
                 if (!discrete) {
-                    checker.warn("Not iterable : " + TypeDisplay.display(range) + " is not discrete", at);
+                    checker.warn(
+                            "Not iterable : " + TypeDisplay.display(range) + " is not discrete",
+                            at);
                     return Type.ERROR;
                 }
                 Type stepParam = elem == Type.LONG ? Type.LONG : Type.INT;
                 return new Type.Function(
                         List.of(new Type.Parameter("k", stepParam, false, false, true, false)),
-                        range, pureMayThrow);
+                        range,
+                        pureMayThrow);
             case "reversed":
                 if (!discrete) {
-                    checker.warn("Not iterable : " + TypeDisplay.display(range) + " is not discrete", at);
+                    checker.warn(
+                            "Not iterable : " + TypeDisplay.display(range) + " is not discrete",
+                            at);
                     return Type.ERROR;
                 }
                 return new Type.Function(List.of(), range, pureNothrow);
             case "iterator":
                 if (!discrete) {
-                    checker.warn("Not iterable : " + TypeDisplay.display(range) + " is not discrete", at);
+                    checker.warn(
+                            "Not iterable : " + TypeDisplay.display(range) + " is not discrete",
+                            at);
                     return Type.ERROR;
                 }
-                return new Type.Function(List.of(), new Type.JavaInstance(java.util.Iterator.class, List.of(elem)), pureNothrow);
+                return new Type.Function(
+                        List.of(),
+                        new Type.JavaInstance(java.util.Iterator.class, List.of(elem)),
+                        pureNothrow);
             case "equals":
                 return new Type.Function(
-                        List.of(new Type.Parameter("other", OperatorTypes.ANY_OR_FROZEN, false, false, true, false)),
-                        Type.BOOL, elemEffect);
+                        List.of(
+                                new Type.Parameter(
+                                        "other",
+                                        OperatorTypes.ANY_OR_FROZEN,
+                                        false,
+                                        false,
+                                        true,
+                                        false)),
+                        Type.BOOL,
+                        elemEffect);
             case "hashCode":
                 return new Type.Function(List.of(), Type.INT, elemEffect);
             case "toString":
@@ -269,12 +344,16 @@ final class MemberTypes {
     }
 
     /**
-     * A member of {@code A & B} (BIP022-D4) : the member of the operands that declare it ; two
-     * that declare it must agree, one type being a subtype of the other, which is then the
-     * member's type. A union operand distributes first.
+     * A member of {@code A & B} (BIP022-D4) : the member of the operands that declare it ; two that
+     * declare it must agree, one type being a subtype of the other, which is then the member's
+     * type. A union operand distributes first.
      */
-    private Type intersectionMember(Type.Intersection intersection, String name, boolean own,
-                                    ParserRuleContext at, String receiverText) {
+    private Type intersectionMember(
+            Type.Intersection intersection,
+            String name,
+            boolean own,
+            ParserRuleContext at,
+            String receiverText) {
         Type distributed = TypeAlgebra.distribute(intersection);
         if (distributed != intersection) {
             return member(distributed, name, own, at, receiverText);
@@ -316,11 +395,13 @@ final class MemberTypes {
         if (!(type instanceof Type.JavaMethod jm)) {
             return type;
         }
-        List<java.lang.reflect.Method> methods = org.babblelang.runtime.JavaTypes.methods(jm.owner(), jm.name());
+        List<java.lang.reflect.Method> methods =
+                org.babblelang.runtime.JavaTypes.methods(jm.owner(), jm.name());
         if (methods.isEmpty()) {
             return type;
         }
-        Map<java.lang.reflect.TypeVariable<?>, Type> classEnv = JavaTypeBridge.javaTypeEnv(jm.owner(), jm.typeArguments());
+        Map<java.lang.reflect.TypeVariable<?>, Type> classEnv =
+                JavaTypeBridge.javaTypeEnv(jm.owner(), jm.typeArguments());
         List<Type.Function> fns = new ArrayList<>(methods.size());
         EffectChecker ec = checker.effectChecker();
         for (java.lang.reflect.Method m : methods) {
@@ -372,14 +453,21 @@ final class MemberTypes {
             return JavaTypeBridge.hasJavaMethod(String.class, name);
         }
         if (operand instanceof Type.Array) {
-            return "size".equals(name) || "get".equals(name) || "set".equals(name)
-                    || "equals".equals(name) || "hashCode".equals(name) || "toString".equals(name)
+            return "size".equals(name)
+                    || "get".equals(name)
+                    || "set".equals(name)
+                    || "equals".equals(name)
+                    || "hashCode".equals(name)
+                    || "toString".equals(name)
                     || JavaTypeBridge.hasJavaMethod(Object.class, name);
         }
         if (operand instanceof Type.JavaInstance java) {
             if (java.type() == org.babblelang.runtime.Range.class) {
-                return RANGE_MEMBER_NAMES.contains(name) || "iterator".equals(name)
-                        || "equals".equals(name) || "hashCode".equals(name) || "toString".equals(name);
+                return RANGE_MEMBER_NAMES.contains(name)
+                        || "iterator".equals(name)
+                        || "equals".equals(name)
+                        || "hashCode".equals(name)
+                        || "toString".equals(name);
             }
             if (JavaTypeBridge.hasJavaMethod(java.type(), name)) {
                 return true;
@@ -394,9 +482,14 @@ final class MemberTypes {
         return false;
     }
 
-    /** What {@code receiver.name = value} must assign : the member's declared or closed type, or null if inferred locally. */
+    /**
+     * What {@code receiver.name = value} must assign : the member's declared or closed type, or
+     * null if inferred locally.
+     */
     Type assignedMemberType(Type receiver, String name, boolean own, ParserRuleContext at) {
-        while (receiver instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+        while (receiver instanceof Type.TypeVar tv
+                && tv.bound() != null
+                && tv.bound() != Type.ERROR) {
             receiver = tv.bound();
         }
         if (receiver instanceof Type.Frozen) {
@@ -425,11 +518,16 @@ final class MemberTypes {
             if (member == null) {
                 checker.warn("No such member : " + name, at);
             }
-        } else if (!(receiver instanceof Type.Module || receiver instanceof Type.JavaPackage
-                || receiver instanceof Type.JavaClassValue || receiver instanceof Type.JavaInstance
-                || receiver instanceof Type.Array || TypeChecker.isUnresolved(receiver))) {
-            String receiverText = at instanceof BabbleParser.AssignExpressionContext assign
-                    ? ScopeAnalysis.assignReceiver(assign).getText() : name;
+        } else if (!(receiver instanceof Type.Module
+                || receiver instanceof Type.JavaPackage
+                || receiver instanceof Type.JavaClassValue
+                || receiver instanceof Type.JavaInstance
+                || receiver instanceof Type.Array
+                || TypeChecker.isUnresolved(receiver))) {
+            String receiverText =
+                    at instanceof BabbleParser.AssignExpressionContext assign
+                            ? ScopeAnalysis.assignReceiver(assign).getText()
+                            : name;
             checker.warn("Not a scope : " + receiverText, at);
         }
         if (member == null) {
@@ -443,7 +541,8 @@ final class MemberTypes {
             checker.warn("Cannot assign method : " + name, at);
             return null;
         }
-        if (ownerNode != null && ownerNode.kind == org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS
+        if (ownerNode != null
+                && ownerNode.kind == org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS
                 && receiver instanceof Type.Instance) {
             checker.warn("Value members are read-only : " + name, at);
             return null;
@@ -452,7 +551,8 @@ final class MemberTypes {
             checker.warn("Cannot assign to def member : " + name, at);
             return null;
         }
-        if (!checker.isLocal(member.declaration) || (!checker.inFile(member.declaration) && checker.pass().session != null)) {
+        if (!checker.isLocal(member.declaration)
+                || (!checker.inFile(member.declaration) && checker.pass().session != null)) {
             Type closed = checker.memberType(ownerNode, member);
             return closed == Type.ERROR ? null : checker.algebra().substitute(closed, env);
         }
@@ -477,7 +577,9 @@ final class MemberTypes {
     }
 
     static TypeNode.Member assignedBabbleMember(Type receiver, String name, boolean own) {
-        while (receiver instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+        while (receiver instanceof Type.TypeVar tv
+                && tv.bound() != null
+                && tv.bound() != Type.ERROR) {
             receiver = tv.bound();
         }
         TypeNode.Member member = null;
@@ -514,7 +616,9 @@ final class MemberTypes {
             return member != null ? new ResolvedMember(node, member, env) : null;
         }
         for (int i = 0; i < node.parents.size(); i++) {
-            Type parent = checker.algebra().substitute(checker.annotator().parentAnnotation(node, i), env);
+            Type parent =
+                    checker.algebra()
+                            .substitute(checker.annotator().parentAnnotation(node, i), env);
             if (parent instanceof Type.Instance parentInst) {
                 ResolvedMember found = findMember(parentInst, name);
                 if (found != null) {
@@ -526,18 +630,23 @@ final class MemberTypes {
     }
 
     /**
-     * A member the class or interface gets from what it implements or extends : a Babble
-     * default, or any method of a Java interface. Null when there is none.
+     * A member the class or interface gets from what it implements or extends : a Babble default,
+     * or any method of a Java interface. Null when there is none.
      */
     Type inheritedMember(Type.Instance instance, String name) {
         TypeNode node = instance.node();
         Map<Type.TypeVar, Type> env = checker.algebra().instanceEnv(instance);
         for (int i = 0; i < node.parents.size(); i++) {
-            Type parent = checker.algebra().substitute(checker.annotator().parentAnnotation(node, i), env);
+            Type parent =
+                    checker.algebra()
+                            .substitute(checker.annotator().parentAnnotation(node, i), env);
             if (parent instanceof Type.Instance parentInst) {
                 TypeNode.Member member = parentInst.node().members.get(name);
                 if (member != null && (member.hasFunction || node.isInterface())) {
-                    return checker.algebra().substitute(checker.memberType(parentInst.node(), member), checker.algebra().instanceEnv(parentInst));
+                    return checker.algebra()
+                            .substitute(
+                                    checker.memberType(parentInst.node(), member),
+                                    checker.algebra().instanceEnv(parentInst));
                 }
                 Type inherited = inheritedMember(parentInst, name);
                 if (inherited != null) {
@@ -568,8 +677,14 @@ final class MemberTypes {
     }
 
     /** A method or field of a Java class or object, through {@link JavaTypeBridge#javaMember}. */
-    Type javaMember(Class<?> java, List<Type> typeArgs, String name, boolean onClass, ParserRuleContext at) {
-        JavaTypeBridge.JavaMember found = JavaTypeBridge.javaMember(java, typeArgs, name, onClass, checker.algebra());
+    Type javaMember(
+            Class<?> java,
+            List<Type> typeArgs,
+            String name,
+            boolean onClass,
+            ParserRuleContext at) {
+        JavaTypeBridge.JavaMember found =
+                JavaTypeBridge.javaMember(java, typeArgs, name, onClass, checker.algebra());
         if (found.error() != null) {
             checker.warn(found.error(), at);
             return Type.ERROR;
@@ -593,16 +708,20 @@ final class MemberTypes {
         return null;
     }
 
-    /** Checks each class, object, and extending interface against all ancestor Babble and Java interface member types. */
+    /**
+     * Checks each class, object, and extending interface against all ancestor Babble and Java
+     * interface member types.
+     */
     void checkInterfaces() {
         for (TypeNode type : checker.pass().types) {
             if (type.parents.isEmpty()) {
                 continue;
             }
             List<Type.TypeVar> vars = checker.annotator().typeVarsOf(type);
-            Type.Instance selfInst = vars.isEmpty()
-                    ? new Type.Instance(type)
-                    : new Type.Instance(type, List.copyOf(vars));
+            Type.Instance selfInst =
+                    vars.isEmpty()
+                            ? new Type.Instance(type)
+                            : new Type.Instance(type, List.copyOf(vars));
             Map<String, TypeChecks.Provider> defaults = inheritedDefaults(type);
             Set<TypeNode> seen = Collections.newSetFromMap(new IdentityHashMap<>());
             for (Object parent : type.parents) {
@@ -616,7 +735,8 @@ final class MemberTypes {
         }
     }
 
-    private void checkJavaInterfaceOverloads(TypeNode type, Type.Instance selfInst, Map<String, TypeChecks.Provider> defaults) {
+    private void checkJavaInterfaceOverloads(
+            TypeNode type, Type.Instance selfInst, Map<String, TypeChecks.Provider> defaults) {
         Set<Class<?>> javaIfaces = new java.util.LinkedHashSet<>();
         collectJavaInterfaces(type, javaIfaces, Collections.newSetFromMap(new IdentityHashMap<>()));
         if (javaIfaces.isEmpty()) {
@@ -625,10 +745,12 @@ final class MemberTypes {
         Set<String> checked = new java.util.HashSet<>();
         for (Class<?> javaIface : javaIfaces) {
             Type projected = checker.algebra().projectToJava(selfInst, javaIface);
-            Map<java.lang.reflect.TypeVariable<?>, Type> javaEnv = projected instanceof Type.JavaInstance ji
-                    ? JavaTypeBridge.javaTypeEnv(javaIface, ji.typeArguments())
-                    : Map.of();
-            for (java.lang.reflect.Method jm : org.babblelang.runtime.JavaTypes.abstractMethods(javaIface)) {
+            Map<java.lang.reflect.TypeVariable<?>, Type> javaEnv =
+                    projected instanceof Type.JavaInstance ji
+                            ? JavaTypeBridge.javaTypeEnv(javaIface, ji.typeArguments())
+                            : Map.of();
+            for (java.lang.reflect.Method jm :
+                    org.babblelang.runtime.JavaTypes.abstractMethods(javaIface)) {
                 String sigKey = jm.getName() + "#" + org.objectweb.asm.Type.getMethodDescriptor(jm);
                 if (!checked.add(sigKey)) {
                     continue;
@@ -647,10 +769,16 @@ final class MemberTypes {
                     if (provider != null && provider.owner() instanceof TypeNode owner) {
                         TypeNode.Member defMember = owner.members.get(jm.getName());
                         if (defMember != null) {
-                            Type projectedOwner = checker.algebra().projectToBabble(selfInst, owner);
-                            Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj
-                                    ? checker.algebra().instanceEnv(proj) : Map.of();
-                            implType = checker.algebra().substitute(checker.memberType(owner, defMember), ownerEnv);
+                            Type projectedOwner =
+                                    checker.algebra().projectToBabble(selfInst, owner);
+                            Map<Type.TypeVar, Type> ownerEnv =
+                                    projectedOwner instanceof Type.Instance proj
+                                            ? checker.algebra().instanceEnv(proj)
+                                            : Map.of();
+                            implType =
+                                    checker.algebra()
+                                            .substitute(
+                                                    checker.memberType(owner, defMember), ownerEnv);
                             ownerName = owner.name;
                         }
                     }
@@ -673,17 +801,28 @@ final class MemberTypes {
                         fallbackParamTypes.add(pt);
                     }
                 }
-                int chosen = OverloadSolver.selectAlternativeForJavaMethod(
-                        checker.algebra(), ov, jm, javaParamTypes, hasFallbackDiff ? fallbackParamTypes : null);
+                int chosen =
+                        OverloadSolver.selectAlternativeForJavaMethod(
+                                checker.algebra(),
+                                ov,
+                                jm,
+                                javaParamTypes,
+                                hasFallbackDiff ? fallbackParamTypes : null);
                 if (chosen < 0) {
-                    checker.warn(ownerName + "." + jm.getName() + " has no alternative for "
-                            + OverloadSolver.javaMethodSignature(jm), errorSite);
+                    checker.warn(
+                            ownerName
+                                    + "."
+                                    + jm.getName()
+                                    + " has no alternative for "
+                                    + OverloadSolver.javaMethodSignature(jm),
+                            errorSite);
                 }
             }
         }
     }
 
-    private static void collectJavaInterfaces(TypeNode node, Set<Class<?>> out, Set<TypeNode> seen) {
+    private static void collectJavaInterfaces(
+            TypeNode node, Set<Class<?>> out, Set<TypeNode> seen) {
         if (!seen.add(node)) {
             return;
         }
@@ -710,14 +849,24 @@ final class MemberTypes {
         return result;
     }
 
-    private void checkInterfaceConformance(TypeNode type, Type.Instance selfInst, TypeNode iface, Map<String, TypeChecks.Provider> defaults, Set<TypeNode> seen) {
+    private void checkInterfaceConformance(
+            TypeNode type,
+            Type.Instance selfInst,
+            TypeNode iface,
+            Map<String, TypeChecks.Provider> defaults,
+            Set<TypeNode> seen) {
         if (!seen.add(iface)) {
             return;
         }
         Type projectedIface = checker.algebra().projectToBabble(selfInst, iface);
-        Map<Type.TypeVar, Type> ifaceEnv = projectedIface instanceof Type.Instance proj ? checker.algebra().instanceEnv(proj) : Map.of();
+        Map<Type.TypeVar, Type> ifaceEnv =
+                projectedIface instanceof Type.Instance proj
+                        ? checker.algebra().instanceEnv(proj)
+                        : Map.of();
         for (TypeNode.Member req : iface.members.values()) {
-            if (req.declaration != null && !req.hasFunction && checker.annotator().declaredType(req.declaration) == null) {
+            if (req.declaration != null
+                    && !req.hasFunction
+                    && checker.annotator().declaredType(req.declaration) == null) {
                 continue;
             }
             Type required = checker.algebra().substitute(checker.memberType(iface, req), ifaceEnv);
@@ -730,19 +879,28 @@ final class MemberTypes {
                     continue;
                 }
                 Type actual = checker.memberType(type, impl);
-                if (!TypeChecker.isUnresolved(actual) && !checker.algebra().subtype(actual, required)) {
+                if (!TypeChecker.isUnresolved(actual)
+                        && !checker.algebra().subtype(actual, required)) {
                     checker.reportTypeMismatch(actual, required, impl.declaration);
                 }
             } else {
                 TypeChecks.Provider provider = defaults.get(req.name);
-                if (provider != null && provider.owner() instanceof TypeNode owner
+                if (provider != null
+                        && provider.owner() instanceof TypeNode owner
                         && (!type.isInterface() || owner != iface)) {
                     TypeNode.Member defaultMember = owner.members.get(req.name);
                     if (defaultMember != null) {
                         Type projectedOwner = checker.algebra().projectToBabble(selfInst, owner);
-                        Map<Type.TypeVar, Type> ownerEnv = projectedOwner instanceof Type.Instance proj ? checker.algebra().instanceEnv(proj) : Map.of();
-                        Type actual = checker.algebra().substitute(checker.memberType(owner, defaultMember), ownerEnv);
-                        if (!TypeChecker.isUnresolved(actual) && !checker.algebra().subtype(actual, required)) {
+                        Map<Type.TypeVar, Type> ownerEnv =
+                                projectedOwner instanceof Type.Instance proj
+                                        ? checker.algebra().instanceEnv(proj)
+                                        : Map.of();
+                        Type actual =
+                                checker.algebra()
+                                        .substitute(
+                                                checker.memberType(owner, defaultMember), ownerEnv);
+                        if (!TypeChecker.isUnresolved(actual)
+                                && !checker.algebra().subtype(actual, required)) {
                             checker.reportTypeMismatch(actual, required, type.ctx);
                         }
                     }
@@ -756,16 +914,22 @@ final class MemberTypes {
         }
     }
 
-    /** Resolves a non-null iterable/iterator type to its lowering protocol and element type (BIP013, BIP027-I1). */
+    /**
+     * Resolves a non-null iterable/iterator type to its lowering protocol and element type (BIP013,
+     * BIP027-I1).
+     */
     TypeChecker.ForIterableInfo resolveNonNullIterable(Type iterType) {
         boolean frozenIterable = iterType instanceof Type.Frozen;
         Type unwrapped = frozenIterable ? ((Type.Frozen) iterType).of() : iterType;
-        if (unwrapped instanceof Type.TypeVar tv && tv.bound() != null && tv.bound() != Type.ERROR) {
+        if (unwrapped instanceof Type.TypeVar tv
+                && tv.bound() != null
+                && tv.bound() != Type.ERROR) {
             return resolveNonNullIterable(frozenIterable ? Type.frozen(tv.bound()) : tv.bound());
         }
         if (unwrapped instanceof Type.Intersection intersection) {
             for (Type member : intersection.members()) {
-                TypeChecker.ForIterableInfo sub = resolveNonNullIterable(frozenIterable ? Type.frozen(member) : member);
+                TypeChecker.ForIterableInfo sub =
+                        resolveNonNullIterable(frozenIterable ? Type.frozen(member) : member);
                 if (sub != null) {
                     return sub;
                 }
@@ -782,7 +946,10 @@ final class MemberTypes {
                 if (sub == null) {
                     return null;
                 }
-                joinedElem = joinedElem == null ? sub.elemType() : checker.algebra().join(joinedElem, sub.elemType());
+                joinedElem =
+                        joinedElem == null
+                                ? sub.elemType()
+                                : checker.algebra().join(joinedElem, sub.elemType());
                 if (joinedElem == null) {
                     joinedElem = Type.NULLABLE_ANY;
                 }
@@ -792,36 +959,76 @@ final class MemberTypes {
                     sameKind = false;
                 }
             }
-            LoweringTargets.ForKind kind = (sameKind && (commonKind == LoweringTargets.ForKind.JAVA_ITERABLE
-                    || commonKind == LoweringTargets.ForKind.JAVA_ITERATOR))
-                    ? commonKind : LoweringTargets.ForKind.DYNAMIC_UNION;
-            return new TypeChecker.ForIterableInfo(kind, null, joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
-                    null, null, null, null, null);
+            LoweringTargets.ForKind kind =
+                    (sameKind
+                                    && (commonKind == LoweringTargets.ForKind.JAVA_ITERABLE
+                                            || commonKind == LoweringTargets.ForKind.JAVA_ITERATOR))
+                            ? commonKind
+                            : LoweringTargets.ForKind.DYNAMIC_UNION;
+            return new TypeChecker.ForIterableInfo(
+                    kind,
+                    null,
+                    joinedElem != null ? joinedElem : Type.NULLABLE_ANY,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
         }
         if (unwrapped instanceof Type.Array arr) {
             Type elem = frozenIterable ? Type.frozen(arr.element()) : arr.element();
-            return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.ARRAY, JavaTypeBridge.checkedArrayClass(arr), elem,
-                    null, null, null, null, null);
+            return new TypeChecker.ForIterableInfo(
+                    LoweringTargets.ForKind.ARRAY,
+                    JavaTypeBridge.checkedArrayClass(arr),
+                    elem,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null);
         }
         if (unwrapped instanceof Type.JavaInstance ji) {
             if (ji.type() == org.babblelang.runtime.Range.class) {
-                Type elem = ji.typeArguments().isEmpty() ? Type.NULLABLE_ANY : ji.typeArguments().get(0);
+                Type elem =
+                        ji.typeArguments().isEmpty()
+                                ? Type.NULLABLE_ANY
+                                : ji.typeArguments().get(0);
                 if (Type.isDiscreteRangeElement(elem)) {
-                    return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERABLE, null,
+                    return new TypeChecker.ForIterableInfo(
+                            LoweringTargets.ForKind.JAVA_ITERABLE,
+                            null,
                             frozenIterable ? Type.frozen(elem) : elem,
-                            null, null, null, null, null);
+                            null,
+                            null,
+                            null,
+                            null,
+                            null);
                 }
                 return null;
             }
             if (java.lang.Iterable.class.isAssignableFrom(ji.type())) {
                 Type elem = javaIteratorElement(ji, java.lang.Iterable.class, frozenIterable);
-                return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERABLE, null, elem,
-                        null, null, null, null, null);
+                return new TypeChecker.ForIterableInfo(
+                        LoweringTargets.ForKind.JAVA_ITERABLE,
+                        null,
+                        elem,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
             }
             if (java.util.Iterator.class.isAssignableFrom(ji.type())) {
                 Type elem = javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
-                return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.JAVA_ITERATOR, null, elem,
-                        null, null, null, null, null);
+                return new TypeChecker.ForIterableInfo(
+                        LoweringTargets.ForKind.JAVA_ITERATOR,
+                        null,
+                        elem,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null);
             }
             return null;
         }
@@ -831,18 +1038,37 @@ final class MemberTypes {
                 Type iterRes = iterFn.result();
                 if (iterRes != null && !Type.containsNull(iterRes)) {
                     Type unwrappedIter = iterRes instanceof Type.Frozen f ? f.of() : iterRes;
-                    if (unwrappedIter instanceof Type.JavaInstance ji && java.util.Iterator.class.isAssignableFrom(ji.type())) {
-                        Type elem = javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
-                        return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE, null, elem,
-                                inst, null, iterFn, null, null);
+                    if (unwrappedIter instanceof Type.JavaInstance ji
+                            && java.util.Iterator.class.isAssignableFrom(ji.type())) {
+                        Type elem =
+                                javaIteratorElement(ji, java.util.Iterator.class, frozenIterable);
+                        return new TypeChecker.ForIterableInfo(
+                                LoweringTargets.ForKind.BABBLE_TO_JAVA_ITERABLE,
+                                null,
+                                elem,
+                                inst,
+                                null,
+                                iterFn,
+                                null,
+                                null);
                     }
                     if (unwrappedIter instanceof Type.Instance iterInst) {
                         Type.Function hasNextFn = resolveBabbleZeroArgMethod(iterInst, "hasNext");
                         Type.Function nextFn = resolveBabbleZeroArgMethod(iterInst, "next");
-                        if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
-                            Type elem = frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
-                            return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.BABBLE_ITERABLE, null, elem,
-                                    inst, iterInst, iterFn, hasNextFn, nextFn);
+                        if (hasNextFn != null
+                                && nextFn != null
+                                && hasNextFn.result() == Type.BOOL) {
+                            Type elem =
+                                    frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
+                            return new TypeChecker.ForIterableInfo(
+                                    LoweringTargets.ForKind.BABBLE_ITERABLE,
+                                    null,
+                                    elem,
+                                    inst,
+                                    iterInst,
+                                    iterFn,
+                                    hasNextFn,
+                                    nextFn);
                         }
                     }
                 }
@@ -851,16 +1077,25 @@ final class MemberTypes {
             Type.Function nextFn = resolveBabbleZeroArgMethod(inst, "next");
             if (hasNextFn != null && nextFn != null && hasNextFn.result() == Type.BOOL) {
                 Type elem = frozenIterable ? Type.frozen(nextFn.result()) : nextFn.result();
-                return new TypeChecker.ForIterableInfo(LoweringTargets.ForKind.BABBLE_ITERATOR, null, elem,
-                        null, inst, null, hasNextFn, nextFn);
+                return new TypeChecker.ForIterableInfo(
+                        LoweringTargets.ForKind.BABBLE_ITERATOR,
+                        null,
+                        elem,
+                        null,
+                        inst,
+                        null,
+                        hasNextFn,
+                        nextFn);
             }
             return null;
         }
         return null;
     }
 
-    private static Type javaIteratorElement(Type.JavaInstance ji, Class<?> rawInterface, boolean frozenIterable) {
-        Map<java.lang.reflect.TypeVariable<?>, Type> envMap = JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
+    private static Type javaIteratorElement(
+            Type.JavaInstance ji, Class<?> rawInterface, boolean frozenIterable) {
+        Map<java.lang.reflect.TypeVariable<?>, Type> envMap =
+                JavaTypeBridge.javaTypeEnv(ji.type(), ji.typeArguments());
         Type elem = envMap.get(rawInterface.getTypeParameters()[0]);
         if (elem == null) {
             elem = Type.NULLABLE_ANY;
@@ -878,7 +1113,8 @@ final class MemberTypes {
             return null;
         }
         Type substituted = checker.algebra().substitute(raw, resolved.env());
-        if (substituted instanceof Type.Function fn && fn.typeParameters().isEmpty()
+        if (substituted instanceof Type.Function fn
+                && fn.typeParameters().isEmpty()
                 && fn.parameters().stream().allMatch(Type.Parameter::optional)) {
             return fn;
         }

@@ -3,17 +3,16 @@ package org.babblelang.runtime;
 import java.lang.reflect.InvocationTargetException;
 
 /**
- * Runtime helpers for direct JVM {@link Throwable} propagation, reflection unwrapping,
- * custom Babble value throwing, and {@code finally} suppression (BIP028-D2, BIP028-D3, BIP028-D6).
+ * Runtime helpers for direct JVM {@link Throwable} propagation, reflection unwrapping, custom
+ * Babble value throwing, and {@code finally} suppression (BIP028-D2, BIP028-D3, BIP028-D6).
  */
 public final class Throwables {
-    private Throwables() {
-    }
+    private Throwables() {}
 
     /**
-     * Rethrows any {@link Throwable} (including checked Java exceptions such as
-     * {@link java.io.IOException}) without wrapping it, matching JVM bytecode's unchecked
-     * {@code ATHROW} semantics (BIP028-D3).
+     * Rethrows any {@link Throwable} (including checked Java exceptions such as {@link
+     * java.io.IOException}) without wrapping it, matching JVM bytecode's unchecked {@code ATHROW}
+     * semantics (BIP028-D3).
      */
     public static RuntimeException sneakyThrow(Throwable t) {
         Throwables.<RuntimeException>doThrow(t);
@@ -37,9 +36,9 @@ public final class Throwables {
     }
 
     /**
-     * Converts a Babble value into a JVM {@link Throwable} for {@code throw expr} (BIP028-D2):
-     * Java {@link Throwable} instances (including {@link BabbleException}) are returned unwrapped,
-     * and Babble nominal objects are carried in a {@link ThrownException}.
+     * Converts a Babble value into a JVM {@link Throwable} for {@code throw expr} (BIP028-D2): Java
+     * {@link Throwable} instances (including {@link BabbleException}) are returned unwrapped, and
+     * Babble nominal objects are carried in a {@link ThrownException}.
      */
     public static Throwable toThrowable(Object value) {
         if (value == null) {
@@ -71,15 +70,21 @@ public final class Throwables {
     }
 
     /**
-     * Tests whether {@code t} matches a Babble {@code catch} clause at runtime (BIP028-D2, BIP028-D4).
+     * Tests whether {@code t} matches a Babble {@code catch} clause at runtime (BIP028-D2,
+     * BIP028-D4).
      *
-     * @param t                    the caught JVM throwable
-     * @param typeDescriptor       encoded {@link Types} descriptor, or {@code null} for untyped catch-all
-     * @param catchesNonErrorAny   true for untyped catch-all (matches all non-{@link Error} exceptions)
-     * @param catchesJavaThrowable true if the catch type explicitly accepts {@link Throwable} directly
+     * @param t the caught JVM throwable
+     * @param typeDescriptor encoded {@link Types} descriptor, or {@code null} for untyped catch-all
+     * @param catchesNonErrorAny true for untyped catch-all (matches all non-{@link Error}
+     *     exceptions)
+     * @param catchesJavaThrowable true if the catch type explicitly accepts {@link Throwable}
+     *     directly
      */
-    public static boolean matchesCatch(Throwable t, String typeDescriptor,
-                                       boolean catchesNonErrorAny, boolean catchesJavaThrowable) {
+    public static boolean matchesCatch(
+            Throwable t,
+            String typeDescriptor,
+            boolean catchesNonErrorAny,
+            boolean catchesJavaThrowable) {
         if (catchesNonErrorAny) {
             return !(t instanceof Error);
         }

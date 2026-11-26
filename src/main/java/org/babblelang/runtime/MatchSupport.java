@@ -4,9 +4,10 @@ import java.util.Collection;
 import java.util.Map;
 
 /**
- * Runtime support for {@code match} pattern matching ({@code BIP038}): membership tests ({@code in}),
- * null-safe relational and range pattern checks, AOT Java {@code enum} switch-map construction,
- * and defensive non-exhaustive fallback. Depends only on {@code org.babblelang.runtime} and {@code java.base}.
+ * Runtime support for {@code match} pattern matching ({@code BIP038}): membership tests ({@code
+ * in}), null-safe relational and range pattern checks, AOT Java {@code enum} switch-map
+ * construction, and defensive non-exhaustive fallback. Depends only on {@code
+ * org.babblelang.runtime} and {@code java.base}.
  */
 public final class MatchSupport {
     public static final int OP_LT = 0;
@@ -16,10 +17,12 @@ public final class MatchSupport {
 
     private static final OpSite MATCH_OP_SITE = new OpSite("match", "pattern");
 
-    private MatchSupport() {
-    }
+    private MatchSupport() {}
 
-    /** Evaluates {@code value in container} for {@link Range}, {@link Collection}, {@link Map}, or array. */
+    /**
+     * Evaluates {@code value in container} for {@link Range}, {@link Collection}, {@link Map}, or
+     * array.
+     */
     public static boolean inContainer(Object value, Object container) {
         Object rawContainer = Values.unwrap(container);
         if (rawContainer == null) {
@@ -45,12 +48,13 @@ public final class MatchSupport {
         if (rawContainer.getClass().isArray()) {
             return ArraySupport.contains(rawContainer, value);
         }
-        throw new BabbleException("Cannot test membership with 'in' on " + Types.describe(rawContainer));
+        throw new BabbleException(
+                "Cannot test membership with 'in' on " + Types.describe(rawContainer));
     }
 
     /**
-     * Evaluates relational ordering pattern ({@code <}, {@code <=}, {@code >}, {@code >=}).
-     * A {@code null} scrutinee never matches an ordering pattern ({@code BIP038} §4.2).
+     * Evaluates relational ordering pattern ({@code <}, {@code <=}, {@code >}, {@code >=}). A
+     * {@code null} scrutinee never matches an ordering pattern ({@code BIP038} §4.2).
      */
     public static boolean relational(Object scrutinee, Object rhs, int op) {
         if (scrutinee == null || rhs == null) {
@@ -67,9 +71,11 @@ public final class MatchSupport {
 
     /**
      * Evaluates a bare range-membership pattern ({@code lo..hi}, {@code lo..<hi}, or stepped)
-     * without allocating a {@link Range} object. Returns {@code false} if {@code value} is {@code null}.
+     * without allocating a {@link Range} object. Returns {@code false} if {@code value} is {@code
+     * null}.
      */
-    public static boolean rangeMatch(Object value, Object lo, Object hi, boolean inclusive, Object stepObj) {
+    public static boolean rangeMatch(
+            Object value, Object lo, Object hi, boolean inclusive, Object stepObj) {
         if (lo == null || hi == null) {
             throw new BabbleException("Range bound cannot be null");
         }
@@ -107,7 +113,9 @@ public final class MatchSupport {
             double h = hin.doubleValue();
             return !Double.isNaN(v) && v >= l && (inclusive ? v <= h : v < h);
         }
-        if (value instanceof Character vc && lo instanceof Character loc && hi instanceof Character hic) {
+        if (value instanceof Character vc
+                && lo instanceof Character loc
+                && hi instanceof Character hic) {
             char v = vc;
             char l = loc;
             char h = hic;
@@ -134,8 +142,8 @@ public final class MatchSupport {
     }
 
     /**
-     * Builds an AOT-resilient Java {@code enum} switch-map array mapping each runtime
-     * {@link Enum#ordinal()} to its switch case index (or {@code -1} if not matched).
+     * Builds an AOT-resilient Java {@code enum} switch-map array mapping each runtime {@link
+     * Enum#ordinal()} to its switch case index (or {@code -1} if not matched).
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static int[] buildEnumSwitchMap(Class<?> enumClass, String[] constantNames) {
@@ -153,7 +161,10 @@ public final class MatchSupport {
         return map;
     }
 
-    /** Defensive fallback when an exhaustive-without-else match encounters an unknown runtime variant. */
+    /**
+     * Defensive fallback when an exhaustive-without-else match encounters an unknown runtime
+     * variant.
+     */
     public static BabbleException noMatchingCase(Object value) {
         return new BabbleException("No matching case : " + ArraySupport.format(value));
     }

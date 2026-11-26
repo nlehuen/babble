@@ -1,12 +1,11 @@
 package org.babblelang.ir.hir;
 
-import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.runtime.ClassShape;
-
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.babblelang.analysis.PrimitiveKind;
+import org.babblelang.runtime.ClassShape;
 
 /**
  * Compiled {@code class}, {@code record}, or {@code object} declaration in {@link HirModule}
@@ -31,8 +30,7 @@ public record HirClass(
         List<HirExpr> body,
         HirStaticBlock staticBlock,
         boolean fastRecord,
-        int line
-) {
+        int line) {
     public HirClass {
         implementedJvmInterfaces = List.copyOf(implementedJvmInterfaces);
         javaInterfaces = List.copyOf(javaInterfaces);
@@ -65,10 +63,27 @@ public record HirClass(
         return "m$" + member;
     }
 
-    public HirClass withBodyAndStatic(List<HirParam> newParams, List<HirExpr> newBody, HirStaticBlock newStatic) {
-        return new HirClass(id, isObject, shape, jvmName, implementedJvmInterfaces, javaInterfaces,
-                declaredVars, capturedVars, newParams, memberKinds, primDefBits, primDefCount, methodFunctionIds,
-                overloadMethodFunctionIds, implementedTypes, newBody, newStatic, fastRecord, line);
+    public HirClass withBodyAndStatic(
+            List<HirParam> newParams, List<HirExpr> newBody, HirStaticBlock newStatic) {
+        return new HirClass(
+                id,
+                isObject,
+                shape,
+                jvmName,
+                implementedJvmInterfaces,
+                javaInterfaces,
+                declaredVars,
+                capturedVars,
+                newParams,
+                memberKinds,
+                primDefBits,
+                primDefCount,
+                methodFunctionIds,
+                overloadMethodFunctionIds,
+                implementedTypes,
+                newBody,
+                newStatic,
+                fastRecord,
+                line);
     }
 }
-

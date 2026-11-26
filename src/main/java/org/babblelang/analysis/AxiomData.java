@@ -1,13 +1,5 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.tree.ParseTree;
-import org.antlr.v4.runtime.tree.TerminalNode;
-import org.babblelang.effects.Effect;
-import org.babblelang.parser.BabbleLexer;
-import org.babblelang.parser.BabbleParser;
-
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -18,17 +10,21 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Deque;
 import java.util.EnumSet;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.tree.ParseTree;
+import org.antlr.v4.runtime.tree.TerminalNode;
+import org.babblelang.effects.Effect;
+import org.babblelang.parser.BabbleLexer;
+import org.babblelang.parser.BabbleParser;
 
 /**
  * Parsed representation, parser, hierarchy lookup, and canonical-order checker for BIP019 axioms
@@ -46,11 +42,25 @@ final class AxiomData {
     static final List<String> CLASS_WORD_ORDER = List.of("exact", "notnull", "immutable");
 
     /** Canonical order of effect/member words in {@code fn [words...] ...}. */
-    static final List<String> EFFECT_WORD_ORDER = List.of(
-            "io", "...", "volatile", "pure", "mut", "shared", "nothrow",
-            "idempotent", "commutative", "associative", "monotone", "injective",
-            "view", "shallow", "fresh", "foldable", "unique"
-    );
+    static final List<String> EFFECT_WORD_ORDER =
+            List.of(
+                    "io",
+                    "...",
+                    "volatile",
+                    "pure",
+                    "mut",
+                    "shared",
+                    "nothrow",
+                    "idempotent",
+                    "commutative",
+                    "associative",
+                    "monotone",
+                    "injective",
+                    "view",
+                    "shallow",
+                    "fresh",
+                    "foldable",
+                    "unique");
 
     /** One member axiom: a method, constructor ({@code new}), or wildcard ({@code *}). */
     record MemberAxiom(
@@ -86,13 +96,43 @@ final class AxiomData {
          * An axiom without a signature stating {@code effects}, which a host registered on its
          * engine ({@link HostEffects.Registry}) rather than a program declared.
          */
-        static MemberAxiom host(Class<?> owner, String name, MemberKind kind, boolean exact, EffectSet effects,
-                                boolean mutReceiver, boolean sharedReceiver, boolean nothrow) {
-            return new MemberAxiom(owner, name, kind, exact, false, false,
-                    List.of(), null, new JavaNullability.Nullness[0], new JavaNullability.Nullness[0], null,
-                    effects, mutReceiver, !sharedReceiver, sharedReceiver,
-                    new boolean[0], new boolean[0], new boolean[0], new boolean[0],
-                    false, false, false, false, nothrow, true, new boolean[0], false);
+        static MemberAxiom host(
+                Class<?> owner,
+                String name,
+                MemberKind kind,
+                boolean exact,
+                EffectSet effects,
+                boolean mutReceiver,
+                boolean sharedReceiver,
+                boolean nothrow) {
+            return new MemberAxiom(
+                    owner,
+                    name,
+                    kind,
+                    exact,
+                    false,
+                    false,
+                    List.of(),
+                    null,
+                    new JavaNullability.Nullness[0],
+                    new JavaNullability.Nullness[0],
+                    null,
+                    effects,
+                    mutReceiver,
+                    !sharedReceiver,
+                    sharedReceiver,
+                    new boolean[0],
+                    new boolean[0],
+                    new boolean[0],
+                    new boolean[0],
+                    false,
+                    false,
+                    false,
+                    false,
+                    nothrow,
+                    true,
+                    new boolean[0],
+                    false);
         }
 
         boolean isWildcard() {
@@ -161,17 +201,35 @@ final class AxiomData {
             return true;
         }
 
-        /** Converts this axiom to an {@link EffectChecker.JavaCallProfile} for {@code exec} (which may be null). */
+        /**
+         * Converts this axiom to an {@link EffectChecker.JavaCallProfile} for {@code exec} (which
+         * may be null).
+         */
         EffectChecker.JavaCallProfile toProfile(Executable exec) {
             boolean isCtor = exec instanceof Constructor<?> || isConstructor();
-            boolean isStatic = isCtor || (exec != null && Modifier.isStatic(exec.getModifiers())) || kind == MemberKind.STATIC;
-            int paramCount = exec != null ? exec.getParameterCount() : (hasSignature ? paramDescriptors.size() : 0);
+            boolean isStatic =
+                    isCtor
+                            || (exec != null && Modifier.isStatic(exec.getModifiers()))
+                            || kind == MemberKind.STATIC;
+            int paramCount =
+                    exec != null
+                            ? exec.getParameterCount()
+                            : (hasSignature ? paramDescriptors.size() : 0);
             boolean[] mParams = new boolean[paramCount];
             boolean[] bParams = new boolean[paramCount];
             boolean[] uParams = new boolean[paramCount];
             if (effects.isIO()) {
-                return new EffectChecker.JavaCallProfile(EffectSet.IO_DECLARED, false, false,
-                        mParams, bParams, uParams, false, view, shallow, fresh);
+                return new EffectChecker.JavaCallProfile(
+                        EffectSet.IO_DECLARED,
+                        false,
+                        false,
+                        mParams,
+                        bParams,
+                        uParams,
+                        false,
+                        view,
+                        shallow,
+                        fresh);
             }
             if (hasSignature) {
                 int len = Math.min(paramCount, mutParams.length);
@@ -195,17 +253,39 @@ final class AxiomData {
                 for (boolean mp : mParams) {
                     anyParamMut |= mp;
                 }
-                if (!anyParamMut && !effects.isIO() && !effects.isVolatile() && effects.isHermetic()) {
+                if (!anyParamMut
+                        && !effects.isIO()
+                        && !effects.isVolatile()
+                        && effects.isHermetic()) {
                     // Preserve pure if no param is mutated.
                 } else if (anyParamMut) {
                     copy.remove(Effect.PURE);
                 }
-                effSet = new EffectSet(copy, effects.declared(), false, !sharedReceiver, sharedReceiver,
-                        effects.uniqueResult() || fresh, effects.explicitUniqueResult(),
-                        effects.terminating(), effects.isIO(), effects.explicitVolatile(), effects.axiomatic());
+                effSet =
+                        new EffectSet(
+                                copy,
+                                effects.declared(),
+                                false,
+                                !sharedReceiver,
+                                sharedReceiver,
+                                effects.uniqueResult() || fresh,
+                                effects.explicitUniqueResult(),
+                                effects.terminating(),
+                                effects.isIO(),
+                                effects.explicitVolatile(),
+                                effects.axiomatic());
             }
-            return new EffectChecker.JavaCallProfile(effSet, effMutReceiver, effBorrowReceiver,
-                    mParams, bParams, uParams, explicitNothrow, view, shallow, fresh);
+            return new EffectChecker.JavaCallProfile(
+                    effSet,
+                    effMutReceiver,
+                    effBorrowReceiver,
+                    mParams,
+                    bParams,
+                    uParams,
+                    explicitNothrow,
+                    view,
+                    shallow,
+                    fresh);
         }
 
         /** Specificity rank within the same declaring class: higher wins. */
@@ -226,18 +306,25 @@ final class AxiomData {
             boolean exact,
             boolean nullMarked,
             boolean immutable,
-            List<MemberAxiom> members) {
-    }
+            List<MemberAxiom> members) {}
 
-    /** Mutable builder / immutable table of axioms (for one package, or a program's local/exported axioms). */
+    /**
+     * Mutable builder / immutable table of axioms (for one package, or a program's local/exported
+     * axioms).
+     */
     static final class AxiomTable {
         static final AxiomTable EMPTY = new AxiomTable(Map.of(), Map.of());
 
         private final Map<Class<?>, ClassAxiom> classAxioms;
         private final Map<Class<?>, List<MemberAxiom>> membersByOwner;
 
-        AxiomTable(Map<Class<?>, ClassAxiom> classAxioms, Map<Class<?>, List<MemberAxiom>> membersByOwner) {
-            this.classAxioms = classAxioms.isEmpty() ? Map.of() : Collections.unmodifiableMap(new LinkedHashMap<>(classAxioms));
+        AxiomTable(
+                Map<Class<?>, ClassAxiom> classAxioms,
+                Map<Class<?>, List<MemberAxiom>> membersByOwner) {
+            this.classAxioms =
+                    classAxioms.isEmpty()
+                            ? Map.of()
+                            : Collections.unmodifiableMap(new LinkedHashMap<>(classAxioms));
             if (membersByOwner.isEmpty()) {
                 this.membersByOwner = Map.of();
             } else {
@@ -269,7 +356,9 @@ final class AxiomData {
             return membersByOwner.getOrDefault(cls, List.of());
         }
 
-        /** Merges {@code other} on top of {@code this} (entries in {@code other} take precedence). */
+        /**
+         * Merges {@code other} on top of {@code this} (entries in {@code other} take precedence).
+         */
         AxiomTable mergeOver(AxiomTable other) {
             if (other == null || other.isEmpty()) {
                 return this;
@@ -284,7 +373,8 @@ final class AxiomData {
                 mergedMembers.put(e.getKey(), new ArrayList<>(e.getValue()));
             }
             for (Map.Entry<Class<?>, List<MemberAxiom>> e : other.membersByOwner.entrySet()) {
-                List<MemberAxiom> list = mergedMembers.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
+                List<MemberAxiom> list =
+                        mergedMembers.computeIfAbsent(e.getKey(), k -> new ArrayList<>());
                 // Prepend newer entries so later/program axioms win on exact ties.
                 list.addAll(0, e.getValue());
             }
@@ -320,7 +410,8 @@ final class AxiomData {
             for (MemberAxiom m : existing) {
                 if (m.name().equals(candidate.name())
                         && m.hasSignature() == candidate.hasSignature()
-                        && (!m.hasSignature() || m.paramDescriptors().equals(candidate.paramDescriptors()))
+                        && (!m.hasSignature()
+                                || m.paramDescriptors().equals(candidate.paramDescriptors()))
                         && kindsConflict(m.kind(), candidate.kind())) {
                     return true;
                 }
@@ -340,9 +431,9 @@ final class AxiomData {
     // ================================================================ Hierarchy Lookup
 
     /**
-     * Collects {@code owner} and all its supertypes (superclasses and transitive interfaces)
-     * in deterministic breadth-first specificity order: {@code owner}, superclasses up to
-     * {@code Object}, then interfaces closest-first.
+     * Collects {@code owner} and all its supertypes (superclasses and transitive interfaces) in
+     * deterministic breadth-first specificity order: {@code owner}, superclasses up to {@code
+     * Object}, then interfaces closest-first.
      */
     static List<Class<?>> supertypesOf(Class<?> owner) {
         if (owner == null) {
@@ -369,7 +460,8 @@ final class AxiomData {
                 }
             }
         }
-        // Interfaces don't have Object as superclass, but Object methods apply to all reference types.
+        // Interfaces don't have Object as superclass, but Object methods apply to all reference
+        // types.
         if (owner.isInterface() && seen.add(Object.class)) {
             result.add(Object.class);
         }
@@ -380,8 +472,11 @@ final class AxiomData {
      * Finds the most specific matching {@link MemberAxiom} for a Java method across {@code owner}'s
      * type hierarchy, consulting {@code lookup} for each candidate class.
      */
-    static MemberAxiom lookupMethod(Class<?> owner, String methodName, Method exactMethod,
-                                    java.util.function.Function<Class<?>, List<MemberAxiom>> lookup) {
+    static MemberAxiom lookupMethod(
+            Class<?> owner,
+            String methodName,
+            Method exactMethod,
+            java.util.function.Function<Class<?>, List<MemberAxiom>> lookup) {
         if (owner == null || methodName == null) {
             return null;
         }
@@ -393,13 +488,15 @@ final class AxiomData {
                 continue;
             }
             for (MemberAxiom m : members) {
-                if (m.exact() && candidate != owner
+                if (m.exact()
+                        && candidate != owner
                         && !(exactMethod != null && exactMethod.getDeclaringClass() == candidate)) {
                     continue;
                 }
-                boolean matches = exactMethod != null
-                        ? m.matches(exactMethod)
-                        : m.matchesMethodName(methodName, true, true);
+                boolean matches =
+                        exactMethod != null
+                                ? m.matches(exactMethod)
+                                : m.matchesMethodName(methodName, true, true);
                 if (!matches) {
                     continue;
                 }
@@ -415,8 +512,10 @@ final class AxiomData {
      * Finds the most specific matching {@link MemberAxiom} for a Java constructor (constructors are
      * never inherited, so only {@code owner} itself is checked).
      */
-    static MemberAxiom lookupConstructor(Class<?> owner, Constructor<?> exactCtor,
-                                         java.util.function.Function<Class<?>, List<MemberAxiom>> lookup) {
+    static MemberAxiom lookupConstructor(
+            Class<?> owner,
+            Constructor<?> exactCtor,
+            java.util.function.Function<Class<?>, List<MemberAxiom>> lookup) {
         if (owner == null) {
             return null;
         }
@@ -444,11 +543,14 @@ final class AxiomData {
 
     /**
      * Finds the most specific non-exact {@link MemberAxiom} inherited from a set of Java supertypes
-     * (used to verify Babble class overrides against Java interface / {@code Object} axiom contracts,
-     * BIP019 §3.2).
+     * (used to verify Babble class overrides against Java interface / {@code Object} axiom
+     * contracts, BIP019 §3.2).
      */
-    static MemberAxiom lookupInheritedContract(Collection<Class<?>> javaSupertypes, String methodName, int arity,
-                                               java.util.function.Function<Class<?>, List<MemberAxiom>> lookup) {
+    static MemberAxiom lookupInheritedContract(
+            Collection<Class<?>> javaSupertypes,
+            String methodName,
+            int arity,
+            java.util.function.Function<Class<?>, List<MemberAxiom>> lookup) {
         if (javaSupertypes == null || javaSupertypes.isEmpty()) {
             return null;
         }
@@ -463,7 +565,11 @@ final class AxiomData {
                 continue;
             }
             for (MemberAxiom m : members) {
-                if (m.exact() || m.isConstructor() || m.kind() == MemberKind.STATIC || m.isWildcard() || m.inferredEffects()) {
+                if (m.exact()
+                        || m.isConstructor()
+                        || m.kind() == MemberKind.STATIC
+                        || m.isWildcard()
+                        || m.inferredEffects()) {
                     continue;
                 }
                 if (!m.name().equals(methodName)) {
@@ -481,12 +587,12 @@ final class AxiomData {
     }
 
     /**
-     * Whether {@code candidate} is strictly more specific than {@code current}:
-     * 1. A named member beats a wildcard {@code *} (unless the wildcard is on a strictly more specific
-     *    subtype and the named member is on a supertype — wait: a more specific subtype's named member
-     *    beats a supertype's named member, and a supertype's named member beats nothing on a subtype
-     *    unless the subtype also has a named member; specifically, subtype beats supertype, and within
-     *    the same class named+sig > named > wildcard).
+     * Whether {@code candidate} is strictly more specific than {@code current}: 1. A named member
+     * beats a wildcard {@code *} (unless the wildcard is on a strictly more specific subtype and
+     * the named member is on a supertype — wait: a more specific subtype's named member beats a
+     * supertype's named member, and a supertype's named member beats nothing on a subtype unless
+     * the subtype also has a named member; specifically, subtype beats supertype, and within the
+     * same class named+sig > named > wildcard).
      */
     private static boolean isMoreSpecific(MemberAxiom candidate, MemberAxiom current) {
         Class<?> c1 = candidate.ownerClass();
@@ -498,7 +604,8 @@ final class AxiomData {
         if (c2.isAssignableFrom(c1)) {
             // c1 is a strict subtype of c2.
             // A subtype's named axiom always overrides a supertype's axiom.
-            // A subtype's wildcard also overrides a supertype's axiom (e.g. String's `def *: fn pure`
+            // A subtype's wildcard also overrides a supertype's axiom (e.g. String's `def *: fn
+            // pure`
             // overrides Object's `hashCode`).
             return true;
         }
@@ -506,7 +613,8 @@ final class AxiomData {
             // c2 is a strict subtype of c1: keep current.
             return false;
         }
-        // Unrelated interfaces/class: concrete class beats interface; otherwise higher intraClassRank wins.
+        // Unrelated interfaces/class: concrete class beats interface; otherwise higher
+        // intraClassRank wins.
         if (!c1.isInterface() && c2.isInterface()) {
             return true;
         }
@@ -516,9 +624,10 @@ final class AxiomData {
         return candidate.intraClassRank() > current.intraClassRank();
     }
 
-    static boolean lookupClassFlag(Class<?> owner,
-                                   java.util.function.Function<Class<?>, ClassAxiom> lookup,
-                                   java.util.function.Predicate<ClassAxiom> flag) {
+    static boolean lookupClassFlag(
+            Class<?> owner,
+            java.util.function.Function<Class<?>, ClassAxiom> lookup,
+            java.util.function.Predicate<ClassAxiom> flag) {
         if (owner == null) {
             return false;
         }
@@ -546,29 +655,36 @@ final class AxiomData {
     }
 
     /** Result of parsing one {@link BabbleParser.AxiomExpressionContext}. */
-    record ParsedAxiom(ClassAxiom classAxiom, MemberAxiom memberAxiom, String babbleName, Type.Function babbleType) {
+    record ParsedAxiom(
+            ClassAxiom classAxiom,
+            MemberAxiom memberAxiom,
+            String babbleName,
+            Type.Function babbleType) {
         boolean isJava() {
             return classAxiom != null || memberAxiom != null;
         }
     }
 
     /**
-     * Parses a single {@link BabbleParser.AxiomExpressionContext} into either a Java class axiom,
-     * a Java member axiom, or a Babble name axiom.
+     * Parses a single {@link BabbleParser.AxiomExpressionContext} into either a Java class axiom, a
+     * Java member axiom, or a Babble name axiom.
      */
-    static ParsedAxiom parse(BabbleParser.AxiomExpressionContext ctx,
-                             ClassResolver classResolver,
-                             boolean curated,
-                             ErrorSink errors) {
+    static ParsedAxiom parse(
+            BabbleParser.AxiomExpressionContext ctx,
+            ClassResolver classResolver,
+            boolean curated,
+            ErrorSink errors) {
         List<String> targetPath = targetPathOf(ctx.target);
         BabbleParser.AxiomTypeContext typeCtx = ctx.axiomType();
         if (typeCtx.CLASS() != null) {
             Class<?> targetClass = resolveClass(targetPath, classResolver);
             if (targetClass == null) {
-                errors.report("Unknown class in axiom : " + String.join(".", targetPath), ctx.target);
+                errors.report(
+                        "Unknown class in axiom : " + String.join(".", targetPath), ctx.target);
                 return null;
             }
-            Map<String, String> classTypeVars = buildClassTypeVars(ctx.typeParameters(), targetClass, errors);
+            Map<String, String> classTypeVars =
+                    buildClassTypeVars(ctx.typeParameters(), targetClass, errors);
             boolean exact = false;
             boolean nullMarked = false;
             boolean immutable = false;
@@ -580,11 +696,13 @@ final class AxiomData {
                         exact = true;
                     }
                     case "notnull" -> {
-                        if (nullMarked) errors.report("Duplicate axiom class modifier : notnull", ctx);
+                        if (nullMarked)
+                            errors.report("Duplicate axiom class modifier : notnull", ctx);
                         nullMarked = true;
                     }
                     case "immutable" -> {
-                        if (immutable) errors.report("Duplicate axiom class modifier : immutable", ctx);
+                        if (immutable)
+                            errors.report("Duplicate axiom class modifier : immutable", ctx);
                         immutable = true;
                     }
                     default -> errors.report("Unknown axiom class modifier : " + text, ctx);
@@ -593,23 +711,48 @@ final class AxiomData {
             List<MemberAxiom> members = new ArrayList<>();
             List<BabbleParser.AxiomMembersContext> sections = typeCtx.axiomMembers();
             if (!sections.isEmpty()) {
-                parseMemberSection(sections.get(0), targetClass, MemberKind.INSTANCE, exact, classTypeVars, classResolver, curated, members, errors);
+                parseMemberSection(
+                        sections.get(0),
+                        targetClass,
+                        MemberKind.INSTANCE,
+                        exact,
+                        classTypeVars,
+                        classResolver,
+                        curated,
+                        members,
+                        errors);
             }
             if (sections.size() > 1) {
-                parseMemberSection(sections.get(1), targetClass, MemberKind.STATIC, exact, classTypeVars, classResolver, curated, members, errors);
+                parseMemberSection(
+                        sections.get(1),
+                        targetClass,
+                        MemberKind.STATIC,
+                        exact,
+                        classTypeVars,
+                        classResolver,
+                        curated,
+                        members,
+                        errors);
             }
-            return new ParsedAxiom(new ClassAxiom(targetClass, exact, nullMarked, immutable, List.copyOf(members)), null, null, null);
+            return new ParsedAxiom(
+                    new ClassAxiom(targetClass, exact, nullMarked, immutable, List.copyOf(members)),
+                    null,
+                    null,
+                    null);
         }
 
-        // Function axiom: either `axiom java.pkg.Class.member: fn ...` or `axiom babbleName: fn ...`
+        // Function axiom: either `axiom java.pkg.Class.member: fn ...` or `axiom babbleName: fn
+        // ...`
         if (targetPath.size() == 1) {
             // Babble name axiom (BIP019 §2.3 / P7)
             if (ctx.EXPORT() != null) {
-                errors.report("Axiom about a Babble name cannot be exported : " + targetPath.get(0), ctx);
+                errors.report(
+                        "Axiom about a Babble name cannot be exported : " + targetPath.get(0), ctx);
                 return null;
             }
             if (typeCtx.axiomEffectPrefix() != null) {
-                for (BabbleParser.AxiomEffectWordContext w : typeCtx.axiomEffectPrefix().axiomEffectWord()) {
+                for (BabbleParser.AxiomEffectWordContext w :
+                        typeCtx.axiomEffectPrefix().axiomEffectWord()) {
                     if ("...".equals(w.getText())) {
                         errors.report("... is only valid on Java axioms : " + targetPath.get(0), w);
                         return null;
@@ -617,7 +760,9 @@ final class AxiomData {
                 }
             }
             if (typeCtx.fnTypeParameters() == null) {
-                errors.report("Axiom about a Babble name requires a signature : " + targetPath.get(0), ctx);
+                errors.report(
+                        "Axiom about a Babble name requires a signature : " + targetPath.get(0),
+                        ctx);
                 return null;
             }
             return new ParsedAxiom(null, null, targetPath.get(0), null);
@@ -630,24 +775,36 @@ final class AxiomData {
             errors.report("Unknown class in axiom : " + String.join(".", ownerPath), ctx.target);
             return null;
         }
-        Map<String, String> classTypeVars = buildClassTypeVars(ctx.typeParameters(), ownerClass, errors);
+        Map<String, String> classTypeVars =
+                buildClassTypeVars(ctx.typeParameters(), ownerClass, errors);
         MemberKind kind = "new".equals(memberName) ? MemberKind.STATIC : MemberKind.ANY;
-        MemberAxiom member = parseFnAxiom(typeCtx, ownerClass, memberName, kind, false, classTypeVars, classResolver, curated, errors);
+        MemberAxiom member =
+                parseFnAxiom(
+                        typeCtx,
+                        ownerClass,
+                        memberName,
+                        kind,
+                        false,
+                        classTypeVars,
+                        classResolver,
+                        curated,
+                        errors);
         if (member == null) {
             return null;
         }
         return new ParsedAxiom(null, member, null, null);
     }
 
-    private static void parseMemberSection(BabbleParser.AxiomMembersContext section,
-                                           Class<?> ownerClass,
-                                           MemberKind kind,
-                                           boolean exact,
-                                           Map<String, String> classTypeVars,
-                                           ClassResolver classResolver,
-                                           boolean curated,
-                                           List<MemberAxiom> out,
-                                           ErrorSink errors) {
+    private static void parseMemberSection(
+            BabbleParser.AxiomMembersContext section,
+            Class<?> ownerClass,
+            MemberKind kind,
+            boolean exact,
+            Map<String, String> classTypeVars,
+            ClassResolver classResolver,
+            boolean curated,
+            List<MemberAxiom> out,
+            ErrorSink errors) {
         for (BabbleParser.AxiomMemberContext mCtx : section.axiomMember()) {
             String memberName = mCtx.memberName() != null ? mCtx.memberName().getText() : "*";
             if (mCtx.axiomType().CLASS() != null) {
@@ -655,25 +812,39 @@ final class AxiomData {
                 continue;
             }
             if ("new".equals(memberName) && kind == MemberKind.INSTANCE) {
-                errors.report("Constructor axiom new must be declared in static (...) : " + ownerClass.getName(), mCtx);
+                errors.report(
+                        "Constructor axiom new must be declared in static (...) : "
+                                + ownerClass.getName(),
+                        mCtx);
                 continue;
             }
-            MemberAxiom member = parseFnAxiom(mCtx.axiomType(), ownerClass, memberName, kind, exact, classTypeVars, classResolver, curated, errors);
+            MemberAxiom member =
+                    parseFnAxiom(
+                            mCtx.axiomType(),
+                            ownerClass,
+                            memberName,
+                            kind,
+                            exact,
+                            classTypeVars,
+                            classResolver,
+                            curated,
+                            errors);
             if (member != null) {
                 out.add(member);
             }
         }
     }
 
-    static MemberAxiom parseFnAxiom(BabbleParser.AxiomTypeContext typeCtx,
-                                            Class<?> ownerClass,
-                                            String memberName,
-                                            MemberKind kind,
-                                            boolean exact,
-                                            Map<String, String> classTypeVars,
-                                            ClassResolver classResolver,
-                                            boolean curated,
-                                            ErrorSink errors) {
+    static MemberAxiom parseFnAxiom(
+            BabbleParser.AxiomTypeContext typeCtx,
+            Class<?> ownerClass,
+            String memberName,
+            MemberKind kind,
+            boolean exact,
+            Map<String, String> classTypeVars,
+            ClassResolver classResolver,
+            boolean curated,
+            ErrorSink errors) {
         BabbleParser.AxiomEffectPrefixContext prefix = typeCtx.axiomEffectPrefix();
         BabbleParser.FnTypeParametersContext fnParams = typeCtx.fnTypeParameters();
         BabbleParser.TypeContext retTypeCtx = typeCtx.type();
@@ -725,24 +896,67 @@ final class AxiomData {
             }
         }
 
-        if (io && (inferredEffects || explicitPure || volatileEff || mutReceiver || sharedReceiver || nothrow || !algebraic.isEmpty()
-                || view || shallow || fresh || foldable)) {
-            errors.report("io cannot be combined with other effect modifiers in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
+        if (io
+                && (inferredEffects
+                        || explicitPure
+                        || volatileEff
+                        || mutReceiver
+                        || sharedReceiver
+                        || nothrow
+                        || !algebraic.isEmpty()
+                        || view
+                        || shallow
+                        || fresh
+                        || foldable)) {
+            errors.report(
+                    "io cannot be combined with other effect modifiers in axiom : "
+                            + ownerClass.getName()
+                            + "."
+                            + memberName,
+                    typeCtx);
         }
         boolean reportedInferredConflict = false;
-        if (inferredEffects && (io || explicitPure || volatileEff || mutReceiver || sharedReceiver || nothrow || uniqueReturn
-                || !algebraic.isEmpty() || view || shallow || fresh || foldable)) {
-            errors.report("... cannot be combined with effect modifiers in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
+        if (inferredEffects
+                && (io
+                        || explicitPure
+                        || volatileEff
+                        || mutReceiver
+                        || sharedReceiver
+                        || nothrow
+                        || uniqueReturn
+                        || !algebraic.isEmpty()
+                        || view
+                        || shallow
+                        || fresh
+                        || foldable)) {
+            errors.report(
+                    "... cannot be combined with effect modifiers in axiom : "
+                            + ownerClass.getName()
+                            + "."
+                            + memberName,
+                    typeCtx);
             reportedInferredConflict = true;
         }
         if (inferredEffects && fnParams == null && retTypeCtx == null) {
-            errors.report("... requires a signature or return type in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
+            errors.report(
+                    "... requires a signature or return type in axiom : "
+                            + ownerClass.getName()
+                            + "."
+                            + memberName,
+                    typeCtx);
         }
         if ("new".equals(memberName) && retTypeCtx != null) {
-            errors.report("Constructor axiom new cannot declare a return type : " + ownerClass.getName(), typeCtx);
+            errors.report(
+                    "Constructor axiom new cannot declare a return type : " + ownerClass.getName(),
+                    typeCtx);
         }
         if (explicitPure && (mutReceiver || volatileEff)) {
-            errors.report("pure cannot be combined with mut or volatile in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
+            errors.report(
+                    "pure cannot be combined with mut or volatile in axiom : "
+                            + ownerClass.getName()
+                            + "."
+                            + memberName,
+                    typeCtx);
         }
 
         Map<String, String> allTypeVars = new LinkedHashMap<>(classTypeVars);
@@ -802,7 +1016,12 @@ final class AxiomData {
             paramDescriptors = List.copyOf(descs);
         }
         if (inferredEffects && anyParamEffectMod && !reportedInferredConflict) {
-            errors.report("... cannot be combined with effect modifiers in axiom : " + ownerClass.getName() + "." + memberName, typeCtx);
+            errors.report(
+                    "... cannot be combined with effect modifiers in axiom : "
+                            + ownerClass.getName()
+                            + "."
+                            + memberName,
+                    typeCtx);
         }
         if (retTypeCtx != null && !"new".equals(memberName)) {
             TypeErasure ret = eraseType(retTypeCtx, allTypeVars, classResolver, errors);
@@ -830,23 +1049,55 @@ final class AxiomData {
             boolean isCtor = "new".equals(memberName);
             boolean borrowThis = !sharedReceiver;
             boolean terminating = curated && !isCtor;
-            effectSet = new EffectSet(effs, effs, mutReceiver && !isCtor, borrowThis, sharedReceiver,
-                    uniqueReturn, uniqueReturn, terminating, false, volatileEff, true);
+            effectSet =
+                    new EffectSet(
+                            effs,
+                            effs,
+                            mutReceiver && !isCtor,
+                            borrowThis,
+                            sharedReceiver,
+                            uniqueReturn,
+                            uniqueReturn,
+                            terminating,
+                            false,
+                            volatileEff,
+                            true);
         }
 
         boolean[] readParams = new boolean[paramDescriptors.size()];
         Arrays.fill(readParams, true);
         return new MemberAxiom(
-                ownerClass, memberName, kind, exact, hasSignature, inferredEffects,
-                paramDescriptors, returnDescriptor, paramNullness, paramElementNullness, returnNullness,
-                effectSet, mutReceiver, !sharedReceiver, sharedReceiver,
-                mutParams, borrowParams, uniqueParams, sharedParams,
-                view, shallow, fresh, foldable, nothrow, true, readParams, curated);
+                ownerClass,
+                memberName,
+                kind,
+                exact,
+                hasSignature,
+                inferredEffects,
+                paramDescriptors,
+                returnDescriptor,
+                paramNullness,
+                paramElementNullness,
+                returnNullness,
+                effectSet,
+                mutReceiver,
+                !sharedReceiver,
+                sharedReceiver,
+                mutParams,
+                borrowParams,
+                uniqueParams,
+                sharedParams,
+                view,
+                shallow,
+                fresh,
+                foldable,
+                nothrow,
+                true,
+                readParams,
+                curated);
     }
 
-    static Map<String, String> buildClassTypeVars(BabbleParser.TypeParametersContext tpCtx,
-                                                          Class<?> targetClass,
-                                                          ErrorSink errors) {
+    static Map<String, String> buildClassTypeVars(
+            BabbleParser.TypeParametersContext tpCtx, Class<?> targetClass, ErrorSink errors) {
         if (tpCtx == null) {
             return Map.of();
         }
@@ -860,7 +1111,8 @@ final class AxiomData {
                 java.lang.reflect.Type[] bounds = reflected[i].getBounds();
                 if (bounds.length > 0 && bounds[0] instanceof Class<?> bCls) {
                     boundDesc = jvmDescriptor(bCls);
-                } else if (bounds.length > 0 && bounds[0] instanceof java.lang.reflect.ParameterizedType pt
+                } else if (bounds.length > 0
+                        && bounds[0] instanceof java.lang.reflect.ParameterizedType pt
                         && pt.getRawType() instanceof Class<?> raw) {
                     boundDesc = jvmDescriptor(raw);
                 }
@@ -900,30 +1152,39 @@ final class AxiomData {
 
     // ================================================================ Type Erasure & Nullness
 
-    record TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar,
-                       JavaNullability.Nullness elementNullness, boolean isNull) {
+    record TypeErasure(
+            String descriptor,
+            JavaNullability.Nullness nullness,
+            boolean isTypeVar,
+            JavaNullability.Nullness elementNullness,
+            boolean isNull) {
         TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar) {
             this(descriptor, nullness, isTypeVar, null, false);
         }
 
-        TypeErasure(String descriptor, JavaNullability.Nullness nullness, boolean isTypeVar,
-                    JavaNullability.Nullness elementNullness) {
+        TypeErasure(
+                String descriptor,
+                JavaNullability.Nullness nullness,
+                boolean isTypeVar,
+                JavaNullability.Nullness elementNullness) {
             this(descriptor, nullness, isTypeVar, elementNullness, false);
         }
     }
 
-    static TypeErasure eraseType(BabbleParser.TypeContext typeCtx,
-                                 Map<String, String> typeVars,
-                                 ClassResolver classResolver,
-                                 ErrorSink errors) {
+    static TypeErasure eraseType(
+            BabbleParser.TypeContext typeCtx,
+            Map<String, String> typeVars,
+            ClassResolver classResolver,
+            ErrorSink errors) {
         return eraseType(typeCtx, typeVars, classResolver, errors, false);
     }
 
-    private static TypeErasure eraseType(BabbleParser.TypeContext typeCtx,
-                                         Map<String, String> typeVars,
-                                         ClassResolver classResolver,
-                                         ErrorSink errors,
-                                         boolean outerNullSpecified) {
+    private static TypeErasure eraseType(
+            BabbleParser.TypeContext typeCtx,
+            Map<String, String> typeVars,
+            ClassResolver classResolver,
+            ErrorSink errors,
+            boolean outerNullSpecified) {
         // Group operands split by '|' (union) vs '&' (intersection).
         List<List<BabbleParser.NullableTypeContext>> unionMembers = new ArrayList<>();
         List<BabbleParser.NullableTypeContext> currentGroup = new ArrayList<>();
@@ -931,7 +1192,8 @@ final class AxiomData {
             ParseTree child = typeCtx.getChild(i);
             if (child instanceof BabbleParser.NullableTypeContext nt) {
                 currentGroup.add(nt);
-            } else if (child instanceof TerminalNode tn && tn.getSymbol().getType() == BabbleLexer.PIPE) {
+            } else if (child instanceof TerminalNode tn
+                    && tn.getSymbol().getType() == BabbleLexer.PIPE) {
                 unionMembers.add(currentGroup);
                 currentGroup = new ArrayList<>();
             }
@@ -956,176 +1218,261 @@ final class AxiomData {
                         && npt.nonParenNullableType() instanceof BabbleParser.NullTypeContext) {
                     continue;
                 }
-                nonNullMembers.add(eraseNullable(single, typeVars, classResolver, errors, memberNullSpecified));
+                nonNullMembers.add(
+                        eraseNullable(
+                                single, typeVars, classResolver, errors, memberNullSpecified));
             } else {
                 // Intersection A & B erases to its first operand (BIP022).
-                TypeErasure first = eraseNullable(group.get(0), typeVars, classResolver, errors, memberNullSpecified);
+                TypeErasure first =
+                        eraseNullable(
+                                group.get(0), typeVars, classResolver, errors, memberNullSpecified);
                 for (int i = 1; i < group.size(); i++) {
-                    eraseNullable(group.get(i), typeVars, classResolver, errors, memberNullSpecified);
+                    eraseNullable(
+                            group.get(i), typeVars, classResolver, errors, memberNullSpecified);
                 }
                 nonNullMembers.add(first);
             }
         }
         if (nonNullMembers.isEmpty()) {
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false, null, true);
+            return new TypeErasure(
+                    "Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false, null, true);
         }
         if (nonNullMembers.size() == 1) {
             TypeErasure only = nonNullMembers.get(0);
             if (hasNull) {
-                return new TypeErasure(boxDescriptor(only.descriptor()), JavaNullability.Nullness.NULLABLE, false,
-                        only.elementNullness(), only.isNull());
+                return new TypeErasure(
+                        boxDescriptor(only.descriptor()),
+                        JavaNullability.Nullness.NULLABLE,
+                        false,
+                        only.elementNullness(),
+                        only.isNull());
             }
             return only;
         }
         // Multi-member union erases to Object.
         boolean allNull = nonNullMembers.stream().allMatch(TypeErasure::isNull);
-        boolean anyNullable = hasNull || nonNullMembers.stream().anyMatch(m -> m.nullness() == JavaNullability.Nullness.NULLABLE);
-        return new TypeErasure("Ljava/lang/Object;",
-                anyNullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false, null, allNull);
+        boolean anyNullable =
+                hasNull
+                        || nonNullMembers.stream()
+                                .anyMatch(m -> m.nullness() == JavaNullability.Nullness.NULLABLE);
+        return new TypeErasure(
+                "Ljava/lang/Object;",
+                anyNullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL,
+                false,
+                null,
+                allNull);
     }
 
-    private static TypeErasure eraseNullable(BabbleParser.NullableTypeContext ctx,
-                                             Map<String, String> typeVars,
-                                             ClassResolver classResolver,
-                                             ErrorSink errors,
-                                             boolean outerNullSpecified) {
+    private static TypeErasure eraseNullable(
+            BabbleParser.NullableTypeContext ctx,
+            Map<String, String> typeVars,
+            ClassResolver classResolver,
+            ErrorSink errors,
+            boolean outerNullSpecified) {
         if (ctx instanceof BabbleParser.ParenTypeContext paren) {
             boolean hasMod = paren.nullMod != null;
-            TypeErasure inner = eraseType(paren.type(), typeVars, classResolver, errors, outerNullSpecified || hasMod);
+            TypeErasure inner =
+                    eraseType(
+                            paren.type(),
+                            typeVars,
+                            classResolver,
+                            errors,
+                            outerNullSpecified || hasMod);
             if (hasMod) {
                 if (paren.nullMod.getType() == BabbleLexer.QUESTION) {
-                    return new TypeErasure(boxDescriptor(inner.descriptor()), JavaNullability.Nullness.NULLABLE, false,
-                            inner.elementNullness(), inner.isNull());
+                    return new TypeErasure(
+                            boxDescriptor(inner.descriptor()),
+                            JavaNullability.Nullness.NULLABLE,
+                            false,
+                            inner.elementNullness(),
+                            inner.isNull());
                 }
                 if (inner.isNull()) {
                     errors.report("Cannot make null non-nullable : null", paren);
-                    return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
+                    return new TypeErasure(
+                            "Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
                 }
                 if (isPrimitiveDescriptor(inner.descriptor())) {
-                    errors.report("Primitive type does not take ! in axiom : " + paren.getText(), paren);
-                    return new TypeErasure(inner.descriptor(), JavaNullability.Nullness.NON_NULL, false);
+                    errors.report(
+                            "Primitive type does not take ! in axiom : " + paren.getText(), paren);
+                    return new TypeErasure(
+                            inner.descriptor(), JavaNullability.Nullness.NON_NULL, false);
                 }
-                return new TypeErasure(inner.descriptor(), JavaNullability.Nullness.NON_NULL, false, inner.elementNullness());
+                return new TypeErasure(
+                        inner.descriptor(),
+                        JavaNullability.Nullness.NON_NULL,
+                        false,
+                        inner.elementNullness());
             }
             return inner;
         }
-        return eraseNonParen(((BabbleParser.NonParenTypeContext) ctx).nonParenNullableType(),
-                typeVars, classResolver, errors, outerNullSpecified);
+        return eraseNonParen(
+                ((BabbleParser.NonParenTypeContext) ctx).nonParenNullableType(),
+                typeVars,
+                classResolver,
+                errors,
+                outerNullSpecified);
     }
 
-    private static TypeErasure eraseArrayElement(BabbleParser.SimpleTypeContext simple,
-                                                 Map<String, String> typeVars,
-                                                 ClassResolver classResolver,
-                                                 ErrorSink errors) {
+    private static TypeErasure eraseArrayElement(
+            BabbleParser.SimpleTypeContext simple,
+            Map<String, String> typeVars,
+            ClassResolver classResolver,
+            ErrorSink errors) {
         if (simple.OF() == null) {
             errors.report("Missing type arguments : array", simple);
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
+            return new TypeErasure(
+                    "Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
         }
         if (simple.nonParenNullableType() != null) {
             // Wrap in a synthetic evaluation of the single non-paren type.
-            return eraseNonParen(simple.nonParenNullableType(), typeVars, classResolver, errors, false);
+            return eraseNonParen(
+                    simple.nonParenNullableType(), typeVars, classResolver, errors, false);
         }
         if (simple.type().size() != 1) {
-            errors.report("Wrong number of type arguments : expected 1, got " + simple.type().size(), simple);
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
+            errors.report(
+                    "Wrong number of type arguments : expected 1, got " + simple.type().size(),
+                    simple);
+            return new TypeErasure(
+                    "Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
         }
         return eraseType(simple.type(0), typeVars, classResolver, errors, false);
     }
 
-    private static TypeErasure eraseNonParen(BabbleParser.NonParenNullableTypeContext primary,
-                                             Map<String, String> typeVars,
-                                             ClassResolver classResolver,
-                                             ErrorSink errors,
-                                             boolean outerNullSpecified) {
+    private static TypeErasure eraseNonParen(
+            BabbleParser.NonParenNullableTypeContext primary,
+            Map<String, String> typeVars,
+            ClassResolver classResolver,
+            ErrorSink errors,
+            boolean outerNullSpecified) {
         if (primary instanceof BabbleParser.NullTypeContext) {
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false, null, true);
+            return new TypeErasure(
+                    "Ljava/lang/Object;", JavaNullability.Nullness.NULLABLE, false, null, true);
         }
         if (primary instanceof BabbleParser.FunctionTypeContext) {
             if (!outerNullSpecified) {
-                errors.report("Reference type in axiom must specify nullability with ! or ? : " + primary.getText(), primary);
+                errors.report(
+                        "Reference type in axiom must specify nullability with ! or ? : "
+                                + primary.getText(),
+                        primary);
             }
-            return new TypeErasure("Lorg/babblelang/runtime/Callable;", JavaNullability.Nullness.NON_NULL, false);
+            return new TypeErasure(
+                    "Lorg/babblelang/runtime/Callable;", JavaNullability.Nullness.NON_NULL, false);
         }
         BabbleParser.SimpleTypeContext simple = (BabbleParser.SimpleTypeContext) primary;
-        boolean nullable = simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.QUESTION;
+        boolean nullable =
+                simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.QUESTION;
         boolean nonNull = simple.nullMod != null && simple.nullMod.getType() == BabbleLexer.BANG;
         boolean nullSpecified = nullable || nonNull || outerNullSpecified;
         List<String> path = ScopeAnalysis.simpleTypePath(simple);
         if (path.size() == 1) {
             String single = path.get(0);
             if (typeVars.containsKey(single)) {
-                JavaNullability.Nullness tvNullness = nullable
-                        ? JavaNullability.Nullness.NULLABLE
-                        : nonNull ? JavaNullability.Nullness.NON_NULL : JavaNullability.Nullness.PARAMETRIC;
-                return new TypeErasure(typeVars.get(single), tvNullness, tvNullness == JavaNullability.Nullness.PARAMETRIC);
+                JavaNullability.Nullness tvNullness =
+                        nullable
+                                ? JavaNullability.Nullness.NULLABLE
+                                : nonNull
+                                        ? JavaNullability.Nullness.NON_NULL
+                                        : JavaNullability.Nullness.PARAMETRIC;
+                return new TypeErasure(
+                        typeVars.get(single),
+                        tvNullness,
+                        tvNullness == JavaNullability.Nullness.PARAMETRIC);
             }
             if ("array".equals(single)) {
                 if (!nullSpecified) {
-                    errors.report("Reference type in axiom must specify nullability with ! or ? : array", simple);
+                    errors.report(
+                            "Reference type in axiom must specify nullability with ! or ? : array",
+                            simple);
                 }
                 TypeErasure elem = eraseArrayElement(simple, typeVars, classResolver, errors);
-                return new TypeErasure("[" + elem.descriptor(),
-                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL,
-                        false, elem.nullness());
+                return new TypeErasure(
+                        "[" + elem.descriptor(),
+                        nullable
+                                ? JavaNullability.Nullness.NULLABLE
+                                : JavaNullability.Nullness.NON_NULL,
+                        false,
+                        elem.nullness());
             }
-            String primitiveDesc = switch (single) {
-                case "byte" -> nullable ? "Ljava/lang/Byte;" : "B";
-                case "short" -> nullable ? "Ljava/lang/Short;" : "S";
-                case "int" -> nullable ? "Ljava/lang/Integer;" : "I";
-                case "long" -> nullable ? "Ljava/lang/Long;" : "J";
-                case "float" -> nullable ? "Ljava/lang/Float;" : "F";
-                case "double" -> nullable ? "Ljava/lang/Double;" : "D";
-                case "bool" -> nullable ? "Ljava/lang/Boolean;" : "Z";
-                case "char" -> nullable ? "Ljava/lang/Character;" : "C";
-                case "void" -> "V";
-                default -> null;
-            };
+            String primitiveDesc =
+                    switch (single) {
+                        case "byte" -> nullable ? "Ljava/lang/Byte;" : "B";
+                        case "short" -> nullable ? "Ljava/lang/Short;" : "S";
+                        case "int" -> nullable ? "Ljava/lang/Integer;" : "I";
+                        case "long" -> nullable ? "Ljava/lang/Long;" : "J";
+                        case "float" -> nullable ? "Ljava/lang/Float;" : "F";
+                        case "double" -> nullable ? "Ljava/lang/Double;" : "D";
+                        case "bool" -> nullable ? "Ljava/lang/Boolean;" : "Z";
+                        case "char" -> nullable ? "Ljava/lang/Character;" : "C";
+                        case "void" -> "V";
+                        default -> null;
+                    };
             if (primitiveDesc != null) {
                 if (nonNull) {
-                    errors.report("Primitive type does not take ! in axiom : " + single + "!", simple);
+                    errors.report(
+                            "Primitive type does not take ! in axiom : " + single + "!", simple);
                 }
-                return new TypeErasure(primitiveDesc,
-                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
+                return new TypeErasure(
+                        primitiveDesc,
+                        nullable
+                                ? JavaNullability.Nullness.NULLABLE
+                                : JavaNullability.Nullness.NON_NULL,
+                        false);
             }
-            String refBuiltinDesc = switch (single) {
-                case "string" -> "Ljava/lang/String;";
-                case "any" -> "Ljava/lang/Object;";
-                case "list" -> "Ljava/util/List;";
-                case "set" -> "Ljava/util/Set;";
-                case "sortedset" -> "Ljava/util/SortedSet;";
-                case "map" -> "Ljava/util/Map;";
-                case "sortedmap" -> "Ljava/util/SortedMap;";
-                case "entry" -> "Ljava/util/Map$Entry;";
-                case "range" -> "Lorg/babblelang/runtime/Range;";
-                case "exception" -> "Lorg/babblelang/runtime/BabbleException;";
-                default -> null;
-            };
+            String refBuiltinDesc =
+                    switch (single) {
+                        case "string" -> "Ljava/lang/String;";
+                        case "any" -> "Ljava/lang/Object;";
+                        case "list" -> "Ljava/util/List;";
+                        case "set" -> "Ljava/util/Set;";
+                        case "sortedset" -> "Ljava/util/SortedSet;";
+                        case "map" -> "Ljava/util/Map;";
+                        case "sortedmap" -> "Ljava/util/SortedMap;";
+                        case "entry" -> "Ljava/util/Map$Entry;";
+                        case "range" -> "Lorg/babblelang/runtime/Range;";
+                        case "exception" -> "Lorg/babblelang/runtime/BabbleException;";
+                        default -> null;
+                    };
             if (refBuiltinDesc != null) {
                 if (!nullSpecified) {
-                    errors.report("Reference type in axiom must specify nullability with ! or ? : " + single, simple);
+                    errors.report(
+                            "Reference type in axiom must specify nullability with ! or ? : "
+                                    + single,
+                            simple);
                 }
                 validateNestedTypeArgs(simple, typeVars, classResolver, errors);
-                return new TypeErasure(refBuiltinDesc,
-                        nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
+                return new TypeErasure(
+                        refBuiltinDesc,
+                        nullable
+                                ? JavaNullability.Nullness.NULLABLE
+                                : JavaNullability.Nullness.NON_NULL,
+                        false);
             }
         }
         Class<?> cls = resolveClass(path, classResolver);
         if (cls == null) {
             errors.report("Unknown type : " + String.join(".", path), simple);
-            return new TypeErasure("Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
+            return new TypeErasure(
+                    "Ljava/lang/Object;", JavaNullability.Nullness.UNSPECIFIED, false);
         }
         if (!nullSpecified) {
-            errors.report("Reference type in axiom must specify nullability with ! or ? : " + String.join(".", path), simple);
+            errors.report(
+                    "Reference type in axiom must specify nullability with ! or ? : "
+                            + String.join(".", path),
+                    simple);
         }
         validateNestedTypeArgs(simple, typeVars, classResolver, errors);
-        return new TypeErasure(jvmDescriptor(cls),
-                nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL, false);
+        return new TypeErasure(
+                jvmDescriptor(cls),
+                nullable ? JavaNullability.Nullness.NULLABLE : JavaNullability.Nullness.NON_NULL,
+                false);
     }
 
-    private static void validateNestedTypeArgs(BabbleParser.SimpleTypeContext simple,
-                                               Map<String, String> typeVars,
-                                               ClassResolver classResolver,
-                                               ErrorSink errors) {
+    private static void validateNestedTypeArgs(
+            BabbleParser.SimpleTypeContext simple,
+            Map<String, String> typeVars,
+            ClassResolver classResolver,
+            ErrorSink errors) {
         if (simple.OF() == null) {
             return;
         }
@@ -1160,18 +1507,28 @@ final class AxiomData {
         };
     }
 
-    // ================================================================ Babble-Name Axioms (§2.3, BIP019-I7)
+    // ================================================================ Babble-Name Axioms (§2.3,
+    // BIP019-I7)
 
     /** Whether {@code ctx} is an axiom about a single Babble name ({@code axiom foo: fn ...}). */
     static boolean isBabbleNameAxiom(BabbleParser.AxiomExpressionContext ctx) {
-        return ctx != null && ctx.axiomType() != null && ctx.axiomType().FN() != null
-                && ctx.target != null && ctx.target.memberName().isEmpty();
+        return ctx != null
+                && ctx.axiomType() != null
+                && ctx.axiomType().FN() != null
+                && ctx.target != null
+                && ctx.target.memberName().isEmpty();
     }
 
-    /** Whether {@code ctx} is a WebAssembly host-import axiom ({@code axiom wasm.<mod>.<name>: fn ...}, {@code BIP025-D9}). */
+    /**
+     * Whether {@code ctx} is a WebAssembly host-import axiom ({@code axiom wasm.<mod>.<name>: fn
+     * ...}, {@code BIP025-D9}).
+     */
     static boolean isWasmImportAxiom(BabbleParser.AxiomExpressionContext ctx) {
-        return ctx != null && ctx.axiomType() != null && ctx.axiomType().FN() != null
-                && ctx.target != null && ctx.target.ID() != null
+        return ctx != null
+                && ctx.axiomType() != null
+                && ctx.axiomType().FN() != null
+                && ctx.target != null
+                && ctx.target.ID() != null
                 && "wasm".equals(ctx.target.ID().getText())
                 && ctx.target.memberName().size() == 2;
     }
@@ -1184,25 +1541,31 @@ final class AxiomData {
         return isWasmImportAxiom(ctx) ? ctx.target.memberName(1).getText() : null;
     }
 
-    /** Returns the Babble name of a single-segment axiom target (identifier or core scalar keyword). */
+    /**
+     * Returns the Babble name of a single-segment axiom target (identifier or core scalar keyword).
+     */
     static String babbleName(BabbleParser.AxiomExpressionContext ctx) {
         if (!isBabbleNameAxiom(ctx)) {
             return null;
         }
-        return ctx.target.ID() != null ? ctx.target.ID().getText() : ctx.target.coreScalarKeyword().getText();
+        return ctx.target.ID() != null
+                ? ctx.target.ID().getText()
+                : ctx.target.coreScalarKeyword().getText();
     }
 
     /**
-     * Parses a Babble-name axiom ({@code axiom foo: fn ... (params): ret}) or Wasm host-import axiom
-     * ({@code axiom wasm.<mod>.<name>: fn ...}) into a {@link Type.Function}
-     * using {@code typeResolver} to resolve each parameter/return {@link BabbleParser.TypeContext}.
+     * Parses a Babble-name axiom ({@code axiom foo: fn ... (params): ret}) or Wasm host-import
+     * axiom ({@code axiom wasm.<mod>.<name>: fn ...}) into a {@link Type.Function} using {@code
+     * typeResolver} to resolve each parameter/return {@link BabbleParser.TypeContext}.
      */
-    static Type.Function parseBabbleAxiomFunction(BabbleParser.AxiomExpressionContext ctx,
-                                                  java.util.function.Function<BabbleParser.TypeContext, Type> typeResolver,
-                                                  ErrorSink errors) {
-        String name = isWasmImportAxiom(ctx)
-                ? "wasm." + wasmImportModule(ctx) + "." + wasmImportName(ctx)
-                : babbleName(ctx);
+    static Type.Function parseBabbleAxiomFunction(
+            BabbleParser.AxiomExpressionContext ctx,
+            java.util.function.Function<BabbleParser.TypeContext, Type> typeResolver,
+            ErrorSink errors) {
+        String name =
+                isWasmImportAxiom(ctx)
+                        ? "wasm." + wasmImportModule(ctx) + "." + wasmImportName(ctx)
+                        : babbleName(ctx);
         if (name == null) {
             return null;
         }
@@ -1212,7 +1575,8 @@ final class AxiomData {
         }
         BabbleParser.AxiomTypeContext typeCtx = ctx.axiomType();
         if (typeCtx.axiomEffectPrefix() != null) {
-            for (BabbleParser.AxiomEffectWordContext w : typeCtx.axiomEffectPrefix().axiomEffectWord()) {
+            for (BabbleParser.AxiomEffectWordContext w :
+                    typeCtx.axiomEffectPrefix().axiomEffectWord()) {
                 if ("...".equals(w.getText())) {
                     errors.report("... is only valid on Java axioms : " + name, w);
                     return null;
@@ -1231,12 +1595,12 @@ final class AxiomData {
         boolean uniqueRet = typeCtx.uniqueReturn != null;
         EnumSet<Effect> explicit = EnumSet.noneOf(Effect.class);
         if (typeCtx.axiomEffectPrefix() != null) {
-            for (BabbleParser.AxiomEffectWordContext w : typeCtx.axiomEffectPrefix().axiomEffectWord()) {
+            for (BabbleParser.AxiomEffectWordContext w :
+                    typeCtx.axiomEffectPrefix().axiomEffectWord()) {
                 switch (w.getText()) {
                     case "io" -> io = true;
                     case "volatile" -> explicitVolatile = true;
-                    case "pure" -> {
-                    }
+                    case "pure" -> {}
                     case "mut" -> mutThis = true;
                     case "shared" -> sharedThis = true;
                     case "unique" -> uniqueRet = true;
@@ -1247,7 +1611,12 @@ final class AxiomData {
                     case "monotone" -> explicit.add(Effect.MONOTONE);
                     case "injective" -> explicit.add(Effect.INJECTIVE);
                     case "view", "shallow", "fresh", "foldable" ->
-                            errors.report("Java member word '" + w.getText() + "' is not valid on a Babble name axiom : " + name, w);
+                            errors.report(
+                                    "Java member word '"
+                                            + w.getText()
+                                            + "' is not valid on a Babble name axiom : "
+                                            + name,
+                                    w);
                     default -> errors.report("Unknown effect word in axiom : " + w.getText(), w);
                 }
             }
@@ -1274,8 +1643,7 @@ final class AxiomData {
                     case "mut" -> pMut = true;
                     case "shared" -> pShared = true;
                     case "unique" -> pUnique = true;
-                    default -> {
-                    }
+                    default -> {}
                 }
             }
             anyMutParam |= pMut;
@@ -1283,19 +1651,41 @@ final class AxiomData {
             String pName = p.ID() != null ? p.ID().getText() : "p" + index;
             boolean optional = p.optional != null;
             boolean keywordOnly = index >= kwStart;
-            params.add(new Type.Parameter(pName, pt, optional, keywordOnly, rest, pMut, pBorrow, pShared, pUnique));
+            params.add(
+                    new Type.Parameter(
+                            pName,
+                            pt,
+                            optional,
+                            keywordOnly,
+                            rest,
+                            pMut,
+                            pBorrow,
+                            pShared,
+                            pUnique));
             index++;
         }
 
-        Type retType = typeCtx.type() != null ? typeResolver.apply(typeCtx.type()) : Type.NULLABLE_ANY;
+        Type retType =
+                typeCtx.type() != null ? typeResolver.apply(typeCtx.type()) : Type.NULLABLE_ANY;
         if (retType == null) {
             retType = Type.ERROR;
         }
 
         EffectSet effectSet;
         if (io) {
-            effectSet = new EffectSet(EnumSet.noneOf(Effect.class), EnumSet.noneOf(Effect.class),
-                    mutThis, !sharedThis, sharedThis, uniqueRet, uniqueRet, false, true, false, true);
+            effectSet =
+                    new EffectSet(
+                            EnumSet.noneOf(Effect.class),
+                            EnumSet.noneOf(Effect.class),
+                            mutThis,
+                            !sharedThis,
+                            sharedThis,
+                            uniqueRet,
+                            uniqueRet,
+                            false,
+                            true,
+                            false,
+                            true);
         } else {
             EnumSet<Effect> effs = EnumSet.copyOf(explicit);
             effs.add(Effect.HERMETIC);
@@ -1307,8 +1697,19 @@ final class AxiomData {
             }
             effectSet = EffectSet.ofInferred(effs, mutThis, false, uniqueRet, true);
             if (sharedThis) {
-                effectSet = new EffectSet(effectSet.effects(), effectSet.declared(), mutThis, false, true,
-                        uniqueRet, uniqueRet, true, false, explicitVolatile, false);
+                effectSet =
+                        new EffectSet(
+                                effectSet.effects(),
+                                effectSet.declared(),
+                                mutThis,
+                                false,
+                                true,
+                                uniqueRet,
+                                uniqueRet,
+                                true,
+                                false,
+                                explicitVolatile,
+                                false);
             }
         }
         return new Type.Function(List.of(), params, retType, effectSet);
@@ -1333,16 +1734,21 @@ final class AxiomData {
             if ("&".equals(op)) {
                 currentInter.add(rhs);
             } else {
-                unionMembers.add(currentInter.size() == 1 ? currentInter.get(0) : Type.intersection(currentInter));
+                unionMembers.add(
+                        currentInter.size() == 1
+                                ? currentInter.get(0)
+                                : Type.intersection(currentInter));
                 currentInter = new ArrayList<>();
                 currentInter.add(rhs);
             }
         }
-        unionMembers.add(currentInter.size() == 1 ? currentInter.get(0) : Type.intersection(currentInter));
+        unionMembers.add(
+                currentInter.size() == 1 ? currentInter.get(0) : Type.intersection(currentInter));
         return unionMembers.size() == 1 ? unionMembers.get(0) : Type.union(unionMembers);
     }
 
-    private static Type resolveStandaloneNullable(BabbleParser.NullableTypeContext ctx, ErrorSink errors) {
+    private static Type resolveStandaloneNullable(
+            BabbleParser.NullableTypeContext ctx, ErrorSink errors) {
         if (ctx instanceof BabbleParser.NonParenTypeContext nonParen) {
             return resolveStandaloneNonParen(nonParen.nonParenNullableType(), errors);
         }
@@ -1357,7 +1763,8 @@ final class AxiomData {
         return applyStandaloneNullMod(base, paren.nullMod, paren, errors);
     }
 
-    private static Type applyStandaloneNullMod(Type base, Token nullMod, ParserRuleContext at, ErrorSink errors) {
+    private static Type applyStandaloneNullMod(
+            Type base, Token nullMod, ParserRuleContext at, ErrorSink errors) {
         if (base == Type.ERROR || nullMod == null) {
             return base;
         }
@@ -1372,7 +1779,8 @@ final class AxiomData {
         return nonNull;
     }
 
-    private static Type resolveStandaloneNonParen(BabbleParser.NonParenNullableTypeContext ctx, ErrorSink errors) {
+    private static Type resolveStandaloneNonParen(
+            BabbleParser.NonParenNullableTypeContext ctx, ErrorSink errors) {
         if (ctx instanceof BabbleParser.NullTypeContext) {
             return Type.NULL;
         }
@@ -1381,29 +1789,35 @@ final class AxiomData {
             Type base = null;
             if (path.size() == 1) {
                 String name = path.get(0);
-                base = switch (name) {
-                    case "byte" -> Type.BYTE;
-                    case "short" -> Type.SHORT;
-                    case "int" -> Type.INT;
-                    case "long" -> Type.LONG;
-                    case "float" -> Type.FLOAT;
-                    case "double" -> Type.DOUBLE;
-                    case "bool" -> Type.BOOL;
-                    case "char" -> Type.CHAR;
-                    case "string" -> Type.STRING;
-                    case "exception" -> new Type.JavaInstance(org.babblelang.runtime.BabbleException.class);
-                    case "any" -> Type.ANY;
-                    case "void" -> Type.NULL;
-                    case "array" -> {
-                        Type elem = simple.nonParenNullableType() != null
-                                ? resolveStandaloneNonParen(simple.nonParenNullableType(), errors)
-                                : !simple.type().isEmpty()
-                                ? resolveStandaloneType(simple.type(0), errors)
-                                : Type.NULLABLE_ANY;
-                        yield new Type.Array(elem);
-                    }
-                    default -> null;
-                };
+                base =
+                        switch (name) {
+                            case "byte" -> Type.BYTE;
+                            case "short" -> Type.SHORT;
+                            case "int" -> Type.INT;
+                            case "long" -> Type.LONG;
+                            case "float" -> Type.FLOAT;
+                            case "double" -> Type.DOUBLE;
+                            case "bool" -> Type.BOOL;
+                            case "char" -> Type.CHAR;
+                            case "string" -> Type.STRING;
+                            case "exception" ->
+                                    new Type.JavaInstance(
+                                            org.babblelang.runtime.BabbleException.class);
+                            case "any" -> Type.ANY;
+                            case "void" -> Type.NULL;
+                            case "array" -> {
+                                Type elem =
+                                        simple.nonParenNullableType() != null
+                                                ? resolveStandaloneNonParen(
+                                                        simple.nonParenNullableType(), errors)
+                                                : !simple.type().isEmpty()
+                                                        ? resolveStandaloneType(
+                                                                simple.type(0), errors)
+                                                        : Type.NULLABLE_ANY;
+                                yield new Type.Array(elem);
+                            }
+                            default -> null;
+                        };
             }
             if (base == null) {
                 Class<?> cls = JavaTypeBridge.loadClass(String.join(".", path));
@@ -1411,14 +1825,19 @@ final class AxiomData {
                     List<Type> args = new ArrayList<>();
                     if (simple.OF() != null) {
                         if (simple.nonParenNullableType() != null) {
-                            args.add(resolveStandaloneNonParen(simple.nonParenNullableType(), errors));
+                            args.add(
+                                    resolveStandaloneNonParen(
+                                            simple.nonParenNullableType(), errors));
                         } else {
                             for (BabbleParser.TypeContext ta : simple.type()) {
                                 args.add(resolveStandaloneType(ta, errors));
                             }
                         }
                     }
-                    base = args.isEmpty() ? new Type.JavaInstance(cls) : new Type.JavaInstance(cls, args);
+                    base =
+                            args.isEmpty()
+                                    ? new Type.JavaInstance(cls)
+                                    : new Type.JavaInstance(cls, args);
                 }
             }
             if (base == null) {

@@ -1,20 +1,18 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.parser.BabbleLexer;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.effects.Effect;
-import org.babblelang.runtime.Operators;
-
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
-
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.effects.Effect;
+import org.babblelang.parser.BabbleLexer;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.Operators;
 
 /**
- * Operators and implicits : the types of arithmetic, comparisons and equality on numbers,
- * strings and booleans, operator methods on instances ({@code a + b} as {@code a.plus(b)}), and
- * the built-in names ({@code print}, {@code int}, {@code assert}, {@code import}, ...).
+ * Operators and implicits : the types of arithmetic, comparisons and equality on numbers, strings
+ * and booleans, operator methods on instances ({@code a + b} as {@code a.plus(b)}), and the
+ * built-in names ({@code print}, {@code int}, {@code assert}, {@code import}, ...).
  */
 final class OperatorTypes {
     private final TypeChecker checker;
@@ -24,15 +22,32 @@ final class OperatorTypes {
     }
 
     Type binaryOp(BabbleParser.BinaryOpContext ctx, Type left, Type right) {
-        return binaryOp(ctx.op.getType(), ctx.op.getText(), ctx, ctx.left.getText(), ctx.left, left, ctx.right.getText(), ctx.right, right);
+        return binaryOp(
+                ctx.op.getType(),
+                ctx.op.getText(),
+                ctx,
+                ctx.left.getText(),
+                ctx.left,
+                left,
+                ctx.right.getText(),
+                ctx.right,
+                right);
     }
 
     /**
      * {@code left op right}, given the operands' source texts and where to report each : the
      * operands of a binary expression, or the target and the value of a compound assignment.
      */
-    Type binaryOp(int op, String operator, ParserRuleContext ctx, String leftText, ParserRuleContext leftAt, Type left,
-                          String rightText, ParserRuleContext rightAt, Type right) {
+    Type binaryOp(
+            int op,
+            String operator,
+            ParserRuleContext ctx,
+            String leftText,
+            ParserRuleContext leftAt,
+            Type left,
+            String rightText,
+            ParserRuleContext rightAt,
+            Type right) {
         if (op == BabbleLexer.EQ || op == BabbleLexer.NEQ) {
             return Type.BOOL;
         }
@@ -41,7 +56,8 @@ final class OperatorTypes {
         if (method != null && left instanceof Type.Instance) {
             return operatorCall(left, method, rightAt, right, ctx, leftText);
         }
-        if (method != null && left instanceof Type.Union union
+        if (method != null
+                && left instanceof Type.Union union
                 && !Type.containsNull(union)
                 && union.members().stream().allMatch(m -> m instanceof Type.Instance)) {
             List<Type> results = new ArrayList<>(union.members().size());
@@ -59,10 +75,11 @@ final class OperatorTypes {
                 if (left == Type.STRING) {
                     return Type.STRING;
                 }
-                if (TypeChecker.isUnresolved(left) && !(seeding && left == Type.NOTHING && isNumber(right))) {
+                if (TypeChecker.isUnresolved(left)
+                        && !(seeding && left == Type.NOTHING && isNumber(right))) {
                     return left;
                 }
-                // Fall through : anything but a string on the left adds numbers.
+            // Fall through : anything but a string on the left adds numbers.
             case BabbleLexer.MINUS:
             case BabbleLexer.MUL:
             case BabbleLexer.DIV:
@@ -74,9 +91,12 @@ final class OperatorTypes {
                     reportRangeArithmeticHint(operator, ctx, leftAt, left, rightAt, right);
                     return Type.ERROR;
                 }
-                boolean numbers = number(left, leftText, leftAt) & number(right, rightText, rightAt);
+                boolean numbers =
+                        number(left, leftText, leftAt) & number(right, rightText, rightAt);
                 if (op == BabbleLexer.DIV) {
-                    if (!numbers || TypeChecker.isUnresolved(left) || TypeChecker.isUnresolved(right)) {
+                    if (!numbers
+                            || TypeChecker.isUnresolved(left)
+                            || TypeChecker.isUnresolved(right)) {
                         return Type.DOUBLE;
                     }
                     return divisionResult(left, right);
@@ -115,8 +135,10 @@ final class OperatorTypes {
                     return Type.ERROR;
                 }
                 if (isLiteralZero(rightAt)) {
-                    checker.analysisWarn((op == BabbleLexer.MOD ? "Modulo" : "Division")
-                            + " by zero : always throws java.lang.ArithmeticException", ctx);
+                    checker.analysisWarn(
+                            (op == BabbleLexer.MOD ? "Modulo" : "Division")
+                                    + " by zero : always throws java.lang.ArithmeticException",
+                            ctx);
                 }
                 return integralDivisionResult(left, right);
             default:
@@ -131,10 +153,20 @@ final class OperatorTypes {
         return Type.rangeElement(type) != null;
     }
 
-    private void reportRangeArithmeticHint(String operator, ParserRuleContext ctx,
-                                           ParserRuleContext leftAt, Type left,
-                                           ParserRuleContext rightAt, Type right) {
-        String base = "Operator " + operator + " : " + TypeDisplay.display(left) + " and " + TypeDisplay.display(right);
+    private void reportRangeArithmeticHint(
+            String operator,
+            ParserRuleContext ctx,
+            ParserRuleContext leftAt,
+            Type left,
+            ParserRuleContext rightAt,
+            Type right) {
+        String base =
+                "Operator "
+                        + operator
+                        + " : "
+                        + TypeDisplay.display(left)
+                        + " and "
+                        + TypeDisplay.display(right);
         String suggestion = buildRangeBoundSuggestion(operator, ctx, leftAt, rightAt);
         if (suggestion != null) {
             checker.warn(base + ". Parenthesize arithmetic range bounds : " + suggestion, ctx);
@@ -143,28 +175,46 @@ final class OperatorTypes {
         }
     }
 
-    private static String buildRangeBoundSuggestion(String operator, ParserRuleContext ctx,
-                                                    ParserRuleContext leftAt, ParserRuleContext rightAt) {
+    private static String buildRangeBoundSuggestion(
+            String operator,
+            ParserRuleContext ctx,
+            ParserRuleContext leftAt,
+            ParserRuleContext rightAt) {
         if (rightAt instanceof BabbleParser.RangeExpressionContext r) {
-            String leftBound = "(" + leftAt.getText() + " " + operator + " " + r.left.getText() + ")";
+            String leftBound =
+                    "(" + leftAt.getText() + " " + operator + " " + r.left.getText() + ")";
             String rightBound = r.right.getText();
-            if (ctx.getParent() instanceof BabbleParser.BinaryOpContext parent && parent.left == ctx) {
+            if (ctx.getParent() instanceof BabbleParser.BinaryOpContext parent
+                    && parent.left == ctx) {
                 String pOp = parent.op.getText();
-                if ("+".equals(pOp) || "-".equals(pOp) || "*".equals(pOp) || "/".equals(pOp)
-                        || "//".equals(pOp) || "mod".equals(pOp)) {
+                if ("+".equals(pOp)
+                        || "-".equals(pOp)
+                        || "*".equals(pOp)
+                        || "/".equals(pOp)
+                        || "//".equals(pOp)
+                        || "mod".equals(pOp)) {
                     rightBound = "(" + rightBound + " " + pOp + " " + parent.right.getText() + ")";
                 }
             }
             return leftBound + r.op.getText() + rightBound;
         }
         if (leftAt instanceof BabbleParser.RangeExpressionContext r) {
-            return r.left.getText() + r.op.getText() + "(" + r.right.getText() + " " + operator + " " + rightAt.getText() + ")";
+            return r.left.getText()
+                    + r.op.getText()
+                    + "("
+                    + r.right.getText()
+                    + " "
+                    + operator
+                    + " "
+                    + rightAt.getText()
+                    + ")";
         }
         return null;
     }
 
     static boolean isLiteralZero(ParserRuleContext expr) {
-        while (expr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+        while (expr instanceof BabbleParser.BlockExpressionContext b
+                && b.block().expression().size() == 1) {
             expr = b.block().expression(0);
         }
         if (expr instanceof BabbleParser.NegateContext neg) {
@@ -192,9 +242,11 @@ final class OperatorTypes {
         List<Type> results = new ArrayList<>();
         for (Type l : Type.membersOf(left)) {
             for (Type r : Type.membersOf(right)) {
-                boolean isLong = l == Type.LONG || r == Type.LONG
-                        || (l instanceof Type.JavaInstance jl && jl.type() == Long.class)
-                        || (r instanceof Type.JavaInstance jr && jr.type() == Long.class);
+                boolean isLong =
+                        l == Type.LONG
+                                || r == Type.LONG
+                                || (l instanceof Type.JavaInstance jl && jl.type() == Long.class)
+                                || (r instanceof Type.JavaInstance jr && jr.type() == Long.class);
                 results.add(isLong ? Type.LONG : Type.INT);
             }
         }
@@ -239,7 +291,8 @@ final class OperatorTypes {
         }
         // float / {byte, short, int, float} (either side) stays float; everything else is double.
         boolean hasFloat = (l == Type.FLOAT || r == Type.FLOAT);
-        boolean hasWide = (l == Type.DOUBLE || r == Type.DOUBLE || l == Type.LONG || r == Type.LONG);
+        boolean hasWide =
+                (l == Type.DOUBLE || r == Type.DOUBLE || l == Type.LONG || r == Type.LONG);
         return hasFloat && !hasWide ? Type.FLOAT : Type.DOUBLE;
     }
 
@@ -251,36 +304,58 @@ final class OperatorTypes {
         return r <= 2 ? Type.INT : operand;
     }
 
-    static final EffectSet PURE_DET_NOTHROW = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false, false, true);
-    static final EffectSet PURE_DET_NOTHROW_UNIQUE = EffectSet.ofInferred(
-            EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW), false, false, true, true);
+    static final EffectSet PURE_DET_NOTHROW =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                    false,
+                    false,
+                    false,
+                    true);
+    static final EffectSet PURE_DET_NOTHROW_UNIQUE =
+            EffectSet.ofInferred(
+                    EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC, Effect.NOTHROW),
+                    false,
+                    false,
+                    true,
+                    true);
 
-    /** Accepts any value including {@code null} and {@code frozen T} without unwrapping {@code frozen} (BIP007-D8/D9). */
+    /**
+     * Accepts any value including {@code null} and {@code frozen T} without unwrapping {@code
+     * frozen} (BIP007-D8/D9).
+     */
     static final Type ANY_OR_FROZEN = Type.union(Type.NULLABLE_ANY, Type.FROZEN_ANY);
 
     private static final Type.TypeVar MOVE_TV = new Type.TypeVar(new Type.SymbolId("move"), "T", 0);
-    private static final Type.TypeVar FREEZE_TV = new Type.TypeVar(new Type.SymbolId("freeze"), "T", 0);
-    static final Type.Function MOVE_FUNCTION = new Type.Function(
-            List.of(MOVE_TV),
-            List.of(new Type.Parameter("value", MOVE_TV, false, false, false, false, true)),
-            MOVE_TV, PURE_DET_NOTHROW_UNIQUE);
-    static final Type.Function FREEZE_FUNCTION = new Type.Function(
-            List.of(FREEZE_TV),
-            List.of(new Type.Parameter("value", FREEZE_TV, false, false, false, false, true)),
-            new Type.Frozen(FREEZE_TV), PURE_DET_NOTHROW);
-    static final Type.Function DISCARD_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("value", ANY_OR_FROZEN, false, false, true, false)),
-            Type.NULL, PURE_DET_NOTHROW);
-    static final Type.Function IMPORT_FUNCTION = new Type.Function(
-            List.of(new Type.Parameter("name", Type.STRING, false)), Type.ANY);
+    private static final Type.TypeVar FREEZE_TV =
+            new Type.TypeVar(new Type.SymbolId("freeze"), "T", 0);
+    static final Type.Function MOVE_FUNCTION =
+            new Type.Function(
+                    List.of(MOVE_TV),
+                    List.of(new Type.Parameter("value", MOVE_TV, false, false, false, false, true)),
+                    MOVE_TV,
+                    PURE_DET_NOTHROW_UNIQUE);
+    static final Type.Function FREEZE_FUNCTION =
+            new Type.Function(
+                    List.of(FREEZE_TV),
+                    List.of(
+                            new Type.Parameter(
+                                    "value", FREEZE_TV, false, false, false, false, true)),
+                    new Type.Frozen(FREEZE_TV),
+                    PURE_DET_NOTHROW);
+    static final Type.Function DISCARD_FUNCTION =
+            new Type.Function(
+                    List.of(new Type.Parameter("value", ANY_OR_FROZEN, false, false, true, false)),
+                    Type.NULL,
+                    PURE_DET_NOTHROW);
+    static final Type.Function IMPORT_FUNCTION =
+            new Type.Function(List.of(new Type.Parameter("name", Type.STRING, false)), Type.ANY);
     static final Type STDOUT_TYPE = new Type.JavaInstance(java.io.PrintWriter.class);
     static final Type ARGS_TYPE = new Type.JavaInstance(java.util.List.class, List.of(Type.STRING));
 
     /**
-     * A name the analysis doesn't declare : a root Java package, special forms
-     * ({@code move}, {@code freeze}, {@code discard}, {@code import}, {@code STDOUT}, {@code args}),
-     * ordinary built-ins from {@code builtins.ba}, and {@code any} host bindings.
+     * A name the analysis doesn't declare : a root Java package, special forms ({@code move},
+     * {@code freeze}, {@code discard}, {@code import}, {@code STDOUT}, {@code args}), ordinary
+     * built-ins from {@code builtins.ba}, and {@code any} host bindings.
      */
     Type implicitType(String name) {
         return switch (name) {
@@ -328,7 +403,8 @@ final class OperatorTypes {
             return union.members().stream().allMatch(OperatorTypes::isNumeric);
         }
         return Type.isNumericScalar(type)
-                || type instanceof Type.JavaInstance instance && Number.class.isAssignableFrom(instance.type());
+                || type instanceof Type.JavaInstance instance
+                        && Number.class.isAssignableFrom(instance.type());
     }
 
     boolean number(Type type, String text, ParserRuleContext at) {
@@ -377,16 +453,25 @@ final class OperatorTypes {
         }
         Class<?> leftClass = JavaTypeBridge.javaClassOf(left);
         Class<?> rightClass = JavaTypeBridge.javaClassOf(right);
-        return leftClass != null && rightClass != null && Comparable.class.isAssignableFrom(leftClass) && leftClass.isAssignableFrom(rightClass);
+        return leftClass != null
+                && rightClass != null
+                && Comparable.class.isAssignableFrom(leftClass)
+                && leftClass.isAssignableFrom(rightClass);
     }
 
     /**
-     * {@code a + b}, or {@code -a}, on an instance of a class or interface : typed as the call
-     * of its operator method, {@code a.plus(b)} ({@code argument} null for {@code a.neg()}).
+     * {@code a + b}, or {@code -a}, on an instance of a class or interface : typed as the call of
+     * its operator method, {@code a.plus(b)} ({@code argument} null for {@code a.neg()}).
      */
-    Type operatorCall(Type receiver, String method, ParserRuleContext argument, Type argumentType,
-                              ParserRuleContext at, String receiverText) {
-        return checker.callSolver().operatorCall(receiver, method, argument, argumentType, at, receiverText);
+    Type operatorCall(
+            Type receiver,
+            String method,
+            ParserRuleContext argument,
+            Type argumentType,
+            ParserRuleContext at,
+            String receiverText) {
+        return checker.callSolver()
+                .operatorCall(receiver, method, argument, argumentType, at, receiverText);
     }
 
     // ---------------------------------------------------------------- EffectChecker bridge

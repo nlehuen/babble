@@ -1,9 +1,6 @@
 package org.babblelang.compiler;
 
-import org.babblelang.runtime.CallSite;
-import org.babblelang.runtime.ClassShape;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.MethodVisitor;
+import static org.objectweb.asm.Opcodes.*;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -11,13 +8,15 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
-
-import static org.objectweb.asm.Opcodes.*;
+import org.babblelang.runtime.CallSite;
+import org.babblelang.runtime.ClassShape;
+import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 
 /**
- * Manages the static constant fields ({@code CallSite}, {@code OpSite}, {@code ClassShape},
- * {@code Types.Type}, parameter-name arrays, and {@code CompiledMethod} holders) emitted on a
- * generated script class and initialized in chunked {@code <clinit>} helper methods (BIP014-I0).
+ * Manages the static constant fields ({@code CallSite}, {@code OpSite}, {@code ClassShape}, {@code
+ * Types.Type}, parameter-name arrays, and {@code CompiledMethod} holders) emitted on a generated
+ * script class and initialized in chunked {@code <clinit>} helper methods (BIP014-I0).
  */
 final class ConstantPool {
     private static final String STRING = "java/lang/String";
@@ -34,8 +33,8 @@ final class ConstantPool {
     // Estimated bytecode size of the constants built by one <clinit> helper.
     private static final int MAX_CONSTANT_BYTES_PER_HELPER = 30000;
 
-    private record Entry(String field, String descriptor, int estimatedSize, Consumer<MethodVisitor> builder) {
-    }
+    private record Entry(
+            String field, String descriptor, int estimatedSize, Consumer<MethodVisitor> builder) {}
 
     private final String className;
     private final String sourceName;
@@ -54,15 +53,22 @@ final class ConstantPool {
         return entries.isEmpty();
     }
 
-    String add(String prefix, String descriptor, int estimatedSize, Consumer<MethodVisitor> builder) {
+    String add(
+            String prefix, String descriptor, int estimatedSize, Consumer<MethodVisitor> builder) {
         String field = prefix + entries.size();
         entries.add(new Entry(field, descriptor, estimatedSize, builder));
         return field;
     }
 
     String stringArrayField(String[] values) {
-        return stringArrays.computeIfAbsent(Arrays.asList(values), key ->
-                add("NAMES", "[Ljava/lang/String;", estimateSize(values), m -> pushStringArray(m, values)));
+        return stringArrays.computeIfAbsent(
+                Arrays.asList(values),
+                key ->
+                        add(
+                                "NAMES",
+                                "[Ljava/lang/String;",
+                                estimateSize(values),
+                                m -> pushStringArray(m, values)));
     }
 
     String booleanArrayField(boolean[] values) {
@@ -70,8 +76,9 @@ final class ConstantPool {
         for (boolean b : values) {
             key.append(b ? '1' : '0');
         }
-        return booleanArrays.computeIfAbsent(key.toString(), k ->
-                add("FINALS", "[Z", 8 + values.length * 6, m -> pushBooleanArray(m, values)));
+        return booleanArrays.computeIfAbsent(
+                key.toString(),
+                k -> add("FINALS", "[Z", 8 + values.length * 6, m -> pushBooleanArray(m, values)));
     }
 
     private static void pushBooleanArray(MethodVisitor mv, boolean[] values) {
@@ -88,8 +95,14 @@ final class ConstantPool {
     }
 
     String classArrayField(Class<?>[] classes) {
-        return classArrays.computeIfAbsent(Arrays.asList(classes), key ->
-                add("CLASSES", "[Ljava/lang/Class;", 8 + classes.length * 8, m -> pushClassArray(m, classes)));
+        return classArrays.computeIfAbsent(
+                Arrays.asList(classes),
+                key ->
+                        add(
+                                "CLASSES",
+                                "[Ljava/lang/Class;",
+                                8 + classes.length * 8,
+                                m -> pushClassArray(m, classes)));
     }
 
     private static void pushClassArray(MethodVisitor mv, Class<?>[] classes) {
@@ -106,39 +119,66 @@ final class ConstantPool {
     }
 
     String opSiteField(String left, String right) {
-        return add("OP", "L" + OP_SITE + ";", 16, m -> {
-            m.visitTypeInsn(NEW, OP_SITE);
-            m.visitInsn(DUP);
-            pushString(m, left);
-            pushString(m, right);
-            m.visitMethodInsn(INVOKESPECIAL, OP_SITE, "<init>", "(Ljava/lang/String;Ljava/lang/String;)V", false);
-        });
+        return add(
+                "OP",
+                "L" + OP_SITE + ";",
+                16,
+                m -> {
+                    m.visitTypeInsn(NEW, OP_SITE);
+                    m.visitInsn(DUP);
+                    pushString(m, left);
+                    pushString(m, right);
+                    m.visitMethodInsn(
+                            INVOKESPECIAL,
+                            OP_SITE,
+                            "<init>",
+                            "(Ljava/lang/String;Ljava/lang/String;)V",
+                            false);
+                });
     }
 
     String callSiteField(CallSite site) {
-        return add("CS", "L" + CALL_SITE + ";", 24 + estimateSize(site.argTexts()), m -> {
-            m.visitTypeInsn(NEW, CALL_SITE);
-            m.visitInsn(DUP);
-            pushString(m, site.sourceName());
-            pushInt(m, site.line());
-            pushString(m, site.calleeText());
-            pushStringArray(m, site.argTexts());
-            m.visitMethodInsn(INVOKESPECIAL, CALL_SITE, "<init>", "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V", false);
-        });
+        return add(
+                "CS",
+                "L" + CALL_SITE + ";",
+                24 + estimateSize(site.argTexts()),
+                m -> {
+                    m.visitTypeInsn(NEW, CALL_SITE);
+                    m.visitInsn(DUP);
+                    pushString(m, site.sourceName());
+                    pushInt(m, site.line());
+                    pushString(m, site.calleeText());
+                    pushStringArray(m, site.argTexts());
+                    m.visitMethodInsn(
+                            INVOKESPECIAL,
+                            CALL_SITE,
+                            "<init>",
+                            "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V",
+                            false);
+                });
     }
 
     String syntheticCallSiteField(String calleeText, int arity) {
         String[] argTexts = new String[arity];
         Arrays.fill(argTexts, "");
-        return add("CS", "L" + CALL_SITE + ";", 24 + estimateSize(argTexts), m -> {
-            m.visitTypeInsn(NEW, CALL_SITE);
-            m.visitInsn(DUP);
-            pushString(m, sourceName);
-            pushInt(m, 0);
-            pushString(m, calleeText);
-            pushStringArray(m, argTexts);
-            m.visitMethodInsn(INVOKESPECIAL, CALL_SITE, "<init>", "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V", false);
-        });
+        return add(
+                "CS",
+                "L" + CALL_SITE + ";",
+                24 + estimateSize(argTexts),
+                m -> {
+                    m.visitTypeInsn(NEW, CALL_SITE);
+                    m.visitInsn(DUP);
+                    pushString(m, sourceName);
+                    pushInt(m, 0);
+                    pushString(m, calleeText);
+                    pushStringArray(m, argTexts);
+                    m.visitMethodInsn(
+                            INVOKESPECIAL,
+                            CALL_SITE,
+                            "<init>",
+                            "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V",
+                            false);
+                });
     }
 
     String javaCallSiteField(String calleeText, int arity) {
@@ -146,46 +186,83 @@ final class ConstantPool {
         for (int i = 0; i < arity; i++) {
             argTexts[i] = "<argument " + i + ">";
         }
-        return add("CS", "L" + CALL_SITE + ";", 24 + estimateSize(argTexts), m -> {
-            m.visitTypeInsn(NEW, CALL_SITE);
-            m.visitInsn(DUP);
-            pushString(m, "<java>");
-            pushInt(m, -1);
-            pushString(m, calleeText);
-            pushStringArray(m, argTexts);
-            m.visitMethodInsn(INVOKESPECIAL, CALL_SITE, "<init>", "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V", false);
-        });
+        return add(
+                "CS",
+                "L" + CALL_SITE + ";",
+                24 + estimateSize(argTexts),
+                m -> {
+                    m.visitTypeInsn(NEW, CALL_SITE);
+                    m.visitInsn(DUP);
+                    pushString(m, "<java>");
+                    pushInt(m, -1);
+                    pushString(m, calleeText);
+                    pushStringArray(m, argTexts);
+                    m.visitMethodInsn(
+                            INVOKESPECIAL,
+                            CALL_SITE,
+                            "<init>",
+                            "(Ljava/lang/String;ILjava/lang/String;[Ljava/lang/String;)V",
+                            false);
+                });
     }
 
     String shapeField(ClassShape shape) {
         String encoded = shape.encode();
-        return add("SHAPE", "L" + CLASS_SHAPE + ";", 16 + encoded.length() / MAX_STRING_CONSTANT * 6, m -> {
-            pushString(m, encoded);
-            m.visitMethodInsn(INVOKESTATIC, CLASS_SHAPE, "decode", "(Ljava/lang/String;)L" + CLASS_SHAPE + ";", false);
-        });
+        return add(
+                "SHAPE",
+                "L" + CLASS_SHAPE + ";",
+                16 + encoded.length() / MAX_STRING_CONSTANT * 6,
+                m -> {
+                    pushString(m, encoded);
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            CLASS_SHAPE,
+                            "decode",
+                            "(Ljava/lang/String;)L" + CLASS_SHAPE + ";",
+                            false);
+                });
     }
 
     String typeField(String descriptor) {
-        return typeFields.computeIfAbsent(descriptor, d -> add("TYPE", "L" + TYPES_TYPE + ";", 16, m -> {
-            pushString(m, d);
-            m.visitMethodInsn(INVOKESTATIC, TYPES, "parse", "(Ljava/lang/String;)L" + TYPES_TYPE + ";", false);
-        }));
+        return typeFields.computeIfAbsent(
+                descriptor,
+                d ->
+                        add(
+                                "TYPE",
+                                "L" + TYPES_TYPE + ";",
+                                16,
+                                m -> {
+                                    pushString(m, d);
+                                    m.visitMethodInsn(
+                                            INVOKESTATIC,
+                                            TYPES,
+                                            "parse",
+                                            "(Ljava/lang/String;)L" + TYPES_TYPE + ";",
+                                            false);
+                                }));
     }
 
     String enumSwitchMapField(Class<?> enumClass, String[] constantNames) {
-        return add("ENUM_MAP", "[I", 24 + estimateSize(constantNames), m -> {
-            m.visitLdcInsn(org.objectweb.asm.Type.getType(enumClass));
-            pushStringArray(m, constantNames);
-            m.visitMethodInsn(INVOKESTATIC, RUNTIME + "MatchSupport", "buildEnumSwitchMap",
-                    "(Ljava/lang/Class;[Ljava/lang/String;)[I", false);
-        });
+        return add(
+                "ENUM_MAP",
+                "[I",
+                24 + estimateSize(constantNames),
+                m -> {
+                    m.visitLdcInsn(org.objectweb.asm.Type.getType(enumClass));
+                    pushStringArray(m, constantNames);
+                    m.visitMethodInsn(
+                            INVOKESTATIC,
+                            RUNTIME + "MatchSupport",
+                            "buildEnumSwitchMap",
+                            "(Ljava/lang/Class;[Ljava/lang/String;)[I",
+                            false);
+                });
     }
 
     /**
-     * Declares a static field per constant, set in {@code <clinit>} by helper methods of
-     * a bounded size, so that any number of constants fits. The JVM only lets
-     * {@code <clinit>} itself set a final field, so the fields are not final ; nothing but
-     * the helpers ever writes them.
+     * Declares a static field per constant, set in {@code <clinit>} by helper methods of a bounded
+     * size, so that any number of constants fits. The JVM only lets {@code <clinit>} itself set a
+     * final field, so the fields are not final ; nothing but the helpers ever writes them.
      */
     void emitClinit(ClassWriter classWriter) {
         MethodVisitor clinit = classWriter.visitMethod(ACC_STATIC, "<clinit>", "()V", null, null);
@@ -194,7 +271,14 @@ final class ConstantPool {
         int size = 0;
         int helpers = 0;
         for (Entry constant : entries) {
-            classWriter.visitField(ACC_STATIC | ACC_SYNTHETIC, constant.field(), constant.descriptor(), null, null).visitEnd();
+            classWriter
+                    .visitField(
+                            ACC_STATIC | ACC_SYNTHETIC,
+                            constant.field(),
+                            constant.descriptor(),
+                            null,
+                            null)
+                    .visitEnd();
             if (helper != null && size + constant.estimatedSize() > MAX_CONSTANT_BYTES_PER_HELPER) {
                 endHelper(helper);
                 helper = null;
@@ -202,7 +286,9 @@ final class ConstantPool {
             if (helper == null) {
                 String name = "constants$" + (helpers++);
                 clinit.visitMethodInsn(INVOKESTATIC, className, name, "()V", false);
-                helper = classWriter.visitMethod(ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, name, "()V", null, null);
+                helper =
+                        classWriter.visitMethod(
+                                ACC_PRIVATE | ACC_STATIC | ACC_SYNTHETIC, name, "()V", null, null);
                 helper.visitCode();
                 size = 0;
             }
@@ -230,9 +316,17 @@ final class ConstantPool {
             return;
         }
         mv.visitLdcInsn(value.substring(0, MAX_STRING_CONSTANT));
-        for (int start = MAX_STRING_CONSTANT; start < value.length(); start += MAX_STRING_CONSTANT) {
-            mv.visitLdcInsn(value.substring(start, Math.min(value.length(), start + MAX_STRING_CONSTANT)));
-            mv.visitMethodInsn(INVOKEVIRTUAL, STRING, "concat", "(Ljava/lang/String;)Ljava/lang/String;", false);
+        for (int start = MAX_STRING_CONSTANT;
+                start < value.length();
+                start += MAX_STRING_CONSTANT) {
+            mv.visitLdcInsn(
+                    value.substring(start, Math.min(value.length(), start + MAX_STRING_CONSTANT)));
+            mv.visitMethodInsn(
+                    INVOKEVIRTUAL,
+                    STRING,
+                    "concat",
+                    "(Ljava/lang/String;)Ljava/lang/String;",
+                    false);
         }
     }
 

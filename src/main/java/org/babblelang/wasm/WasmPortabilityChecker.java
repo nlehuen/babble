@@ -1,5 +1,9 @@
 package org.babblelang.wasm;
 
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import org.babblelang.analysis.CompilationTarget;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.ir.hir.HirArrayElementType;
@@ -11,77 +15,147 @@ import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Set;
-
 /**
- * Checks {@link HirModule} programs for WebAssembly target portability ({@code BIP025-I0},
- * {@code BIP025-D3}, {@code BIP025-D6}, {@code BIP025-D8}, {@code BIP025-D12}).
+ * Checks {@link HirModule} programs for WebAssembly target portability ({@code BIP025-I0}, {@code
+ * BIP025-D3}, {@code BIP025-D6}, {@code BIP025-D8}, {@code BIP025-D12}).
  *
  * <p>Rejects JVM-only constructs ({@code java.*}/{@code javax.*} calls, Java interface
- * implementations, dynamic {@code import(expr)}, and non-portable JDK methods) with clean
- * {@code Error : Not supported on target wasm : ...} diagnostics, and provides {@link #isPortable}
- * for automatic 4-mode {@code .batest.md} classification.
+ * implementations, dynamic {@code import(expr)}, and non-portable JDK methods) with clean {@code
+ * Error : Not supported on target wasm : ...} diagnostics, and provides {@link #isPortable} for
+ * automatic 4-mode {@code .batest.md} classification.
  */
 public final class WasmPortabilityChecker {
-    private static final Set<String> PORTABLE_STRING_METHODS = Set.of(
-            "length", "isEmpty", "isBlank", "charAt", "substring", "indexOf", "lastIndexOf",
-            "startsWith", "endsWith", "contains", "replace", "trim", "strip",
-            "toLowerCase", "toUpperCase", "equals", "equalsIgnoreCase", "compareTo",
-            "hashCode", "toString", "concat", "repeat", "split", "toCharArray"
-    );
+    private static final Set<String> PORTABLE_STRING_METHODS =
+            Set.of(
+                    "length",
+                    "isEmpty",
+                    "isBlank",
+                    "charAt",
+                    "substring",
+                    "indexOf",
+                    "lastIndexOf",
+                    "startsWith",
+                    "endsWith",
+                    "contains",
+                    "replace",
+                    "trim",
+                    "strip",
+                    "toLowerCase",
+                    "toUpperCase",
+                    "equals",
+                    "equalsIgnoreCase",
+                    "compareTo",
+                    "hashCode",
+                    "toString",
+                    "concat",
+                    "repeat",
+                    "split",
+                    "toCharArray");
 
-    private static final Set<String> PORTABLE_COLLECTION_METHODS = Set.of(
-            "size", "isEmpty", "clear", "contains", "containsKey", "containsValue",
-            "add", "addAll", "remove", "get", "getFirst", "getLast", "set", "indexOf", "lastIndexOf",
-            "subList", "put", "putAll", "getOrDefault", "keySet", "values", "entrySet", "iterator",
-            "first", "last", "firstKey", "lastKey", "getKey", "getValue", "setValue",
-            "equals", "hashCode", "toString", "of", "copyOf", "ofEntries", "entry"
-    );
+    private static final Set<String> PORTABLE_COLLECTION_METHODS =
+            Set.of(
+                    "size",
+                    "isEmpty",
+                    "clear",
+                    "contains",
+                    "containsKey",
+                    "containsValue",
+                    "add",
+                    "addAll",
+                    "remove",
+                    "get",
+                    "getFirst",
+                    "getLast",
+                    "set",
+                    "indexOf",
+                    "lastIndexOf",
+                    "subList",
+                    "put",
+                    "putAll",
+                    "getOrDefault",
+                    "keySet",
+                    "values",
+                    "entrySet",
+                    "iterator",
+                    "first",
+                    "last",
+                    "firstKey",
+                    "lastKey",
+                    "getKey",
+                    "getValue",
+                    "setValue",
+                    "equals",
+                    "hashCode",
+                    "toString",
+                    "of",
+                    "copyOf",
+                    "ofEntries",
+                    "entry");
 
-    private static final Set<String> PORTABLE_CHAR_SEQUENCE_METHODS = Set.of(
-            "length", "isEmpty", "charAt", "toString"
-    );
+    private static final Set<String> PORTABLE_CHAR_SEQUENCE_METHODS =
+            Set.of("length", "isEmpty", "charAt", "toString");
 
-    private static final Set<String> PORTABLE_ITERATOR_METHODS = Set.of(
-            "hasNext", "next", "iterator"
-    );
+    private static final Set<String> PORTABLE_ITERATOR_METHODS =
+            Set.of("hasNext", "next", "iterator");
 
-    private static final Set<String> PORTABLE_EXCEPTION_METHODS = Set.of(
-            "getMessage", "getCause", "getSuppressed", "addSuppressed", "toString"
-    );
+    private static final Set<String> PORTABLE_EXCEPTION_METHODS =
+            Set.of("getMessage", "getCause", "getSuppressed", "addSuppressed", "toString");
 
-    private static final Set<String> PORTABLE_APPENDABLE_METHODS = Set.of(
-            "append"
-    );
+    private static final Set<String> PORTABLE_APPENDABLE_METHODS = Set.of("append");
 
-    private static final Set<String> PORTABLE_RANGE_METHODS = Set.of(
-            "start", "end", "startInt", "endInt", "startLong", "endLong", "startChar", "endChar",
-            "startDouble", "endDouble", "inclusive", "isEmpty",
-            "contains", "containsInt", "containsLong", "containsChar", "containsDouble",
-            "step", "reversed", "iterator", "equals", "hashCode", "toString"
-    );
+    private static final Set<String> PORTABLE_RANGE_METHODS =
+            Set.of(
+                    "start",
+                    "end",
+                    "startInt",
+                    "endInt",
+                    "startLong",
+                    "endLong",
+                    "startChar",
+                    "endChar",
+                    "startDouble",
+                    "endDouble",
+                    "inclusive",
+                    "isEmpty",
+                    "contains",
+                    "containsInt",
+                    "containsLong",
+                    "containsChar",
+                    "containsDouble",
+                    "step",
+                    "reversed",
+                    "iterator",
+                    "equals",
+                    "hashCode",
+                    "toString");
 
-    private static final Set<String> WASM_BARE_FORBIDDEN_NAMES = Set.of(
-            "print", "println", "affiche", "afficherc", "STDOUT", "STDERR", "STDIN", "args", "wasm"
-    );
+    private static final Set<String> WASM_BARE_FORBIDDEN_NAMES =
+            Set.of(
+                    "print",
+                    "println",
+                    "affiche",
+                    "afficherc",
+                    "STDOUT",
+                    "STDERR",
+                    "STDIN",
+                    "args",
+                    "wasm");
 
     public record Diagnostic(int line, String detail) {
         public String format() {
-            return "Error : Not supported on target wasm : " + detail
+            return "Error : Not supported on target wasm : "
+                    + detail
                     + (line > 0 ? " (line " + line + ")" : "");
         }
     }
 
-    private WasmPortabilityChecker() {
-    }
+    private WasmPortabilityChecker() {}
 
     /** Returns every portability violation found across the given modules for {@code target}. */
     public static List<Diagnostic> check(List<HirModule> modules, CompilationTarget target) {
         List<Diagnostic> diagnostics = new ArrayList<>();
-        java.util.Map<String, LoweringTargets.WasmImportSpec> seenWasmImports = new java.util.LinkedHashMap<>();
+        java.util.Map<String, LoweringTargets.WasmImportSpec> seenWasmImports =
+                new java.util.LinkedHashMap<>();
         for (HirModule mod : modules) {
             checkModule(mod, target, seenWasmImports, diagnostics);
         }
@@ -101,10 +175,10 @@ public final class WasmPortabilityChecker {
     }
 
     /**
-     * Classifies a JVM {@link LoweringTargets.JavaCallTarget} into a Portable Core kind
-     * ({@code "string"}, {@code "list"}, {@code "set"}, {@code "sortedset"}, {@code "map"},
-     * {@code "sortedmap"}, {@code "entry"}, {@code "iterable"}, {@code "iterator"},
-     * {@code "exception"}, {@code "appendable"}), or returns {@code null} if non-portable.
+     * Classifies a JVM {@link LoweringTargets.JavaCallTarget} into a Portable Core kind ({@code
+     * "string"}, {@code "list"}, {@code "set"}, {@code "sortedset"}, {@code "map"}, {@code
+     * "sortedmap"}, {@code "entry"}, {@code "iterable"}, {@code "iterator"}, {@code "exception"},
+     * {@code "appendable"}), or returns {@code null} if non-portable.
      */
     public static String portableCoreKind(LoweringTargets.JavaCallTarget target) {
         if (target == null || target.method() == null) {
@@ -123,32 +197,43 @@ public final class WasmPortabilityChecker {
         if (owner == CharSequence.class) {
             return PORTABLE_CHAR_SEQUENCE_METHODS.contains(name) ? "string" : null;
         }
-        if (owner == java.util.List.class || owner == java.util.ArrayList.class || owner == java.util.Collection.class) {
+        if (owner == java.util.List.class
+                || owner == java.util.ArrayList.class
+                || owner == java.util.Collection.class) {
             if (!PORTABLE_COLLECTION_METHODS.contains(name)) return null;
             if ("addAll".equals(name) && arity != 1) return null;
             return "list";
         }
-        if (owner == java.util.SortedSet.class || owner == java.util.TreeSet.class || owner == java.util.NavigableSet.class) {
+        if (owner == java.util.SortedSet.class
+                || owner == java.util.TreeSet.class
+                || owner == java.util.NavigableSet.class) {
             if (!PORTABLE_COLLECTION_METHODS.contains(name)) return null;
             if ("addAll".equals(name) && arity != 1) return null;
             return "sortedset";
         }
-        if (owner == java.util.Set.class || owner == java.util.LinkedHashSet.class || owner == java.util.HashSet.class) {
+        if (owner == java.util.Set.class
+                || owner == java.util.LinkedHashSet.class
+                || owner == java.util.HashSet.class) {
             if (!PORTABLE_COLLECTION_METHODS.contains(name)) return null;
             if ("addAll".equals(name) && arity != 1) return null;
             return "set";
         }
-        if (owner == java.util.SortedMap.class || owner == java.util.TreeMap.class || owner == java.util.NavigableMap.class) {
+        if (owner == java.util.SortedMap.class
+                || owner == java.util.TreeMap.class
+                || owner == java.util.NavigableMap.class) {
             if (!PORTABLE_COLLECTION_METHODS.contains(name)) return null;
             if ("remove".equals(name) && arity != 1) return null;
             return "sortedmap";
         }
-        if (owner == java.util.Map.class || owner == java.util.LinkedHashMap.class || owner == java.util.HashMap.class) {
+        if (owner == java.util.Map.class
+                || owner == java.util.LinkedHashMap.class
+                || owner == java.util.HashMap.class) {
             if (!PORTABLE_COLLECTION_METHODS.contains(name)) return null;
             if ("remove".equals(name) && arity != 1) return null;
             return "map";
         }
-        if (owner == java.util.Map.Entry.class || owner == java.util.AbstractMap.SimpleImmutableEntry.class) {
+        if (owner == java.util.Map.Entry.class
+                || owner == java.util.AbstractMap.SimpleImmutableEntry.class) {
             return PORTABLE_COLLECTION_METHODS.contains(name) ? "entry" : null;
         }
         if (owner == Iterable.class) {
@@ -160,7 +245,9 @@ public final class WasmPortabilityChecker {
         if (owner == org.babblelang.runtime.BabbleException.class || owner == Throwable.class) {
             return PORTABLE_EXCEPTION_METHODS.contains(name) ? "exception" : null;
         }
-        if (owner == Appendable.class || owner == java.io.Writer.class || owner == java.io.PrintWriter.class) {
+        if (owner == Appendable.class
+                || owner == java.io.Writer.class
+                || owner == java.io.PrintWriter.class) {
             return PORTABLE_APPENDABLE_METHODS.contains(name) && arity == 1 ? "appendable" : null;
         }
         if (owner == org.babblelang.runtime.Range.class
@@ -171,15 +258,18 @@ public final class WasmPortabilityChecker {
                 || owner == org.babblelang.runtime.ComparableRange.class) {
             return PORTABLE_RANGE_METHODS.contains(name) ? "range" : null;
         }
-        if (owner == Object.class && (name.equals("equals") || name.equals("hashCode") || name.equals("toString"))) {
+        if (owner == Object.class
+                && (name.equals("equals") || name.equals("hashCode") || name.equals("toString"))) {
             return "any";
         }
         return null;
     }
 
-    private static void checkModule(HirModule mod, CompilationTarget target,
-                                    java.util.Map<String, LoweringTargets.WasmImportSpec> seenWasmImports,
-                                    List<Diagnostic> out) {
+    private static void checkModule(
+            HirModule mod,
+            CompilationTarget target,
+            java.util.Map<String, LoweringTargets.WasmImportSpec> seenWasmImports,
+            List<Diagnostic> out) {
         for (LoweringTargets.WasmImportSpec spec : mod.wasmImports()) {
             String key = spec.module() + "." + spec.name();
             if (target.isWasmBare()) {
@@ -188,21 +278,28 @@ public final class WasmPortabilityChecker {
             }
             LoweringTargets.WasmImportSpec prev = seenWasmImports.putIfAbsent(key, spec);
             if (prev != null && !prev.sameSignature(spec)) {
-                out.add(new Diagnostic(spec.line(), "conflicting wasm import signature : wasm." + key));
+                out.add(
+                        new Diagnostic(
+                                spec.line(), "conflicting wasm import signature : wasm." + key));
             }
             boolean badAbi = false;
             for (int i = 0; i < spec.paramKinds().length; i++) {
-                if (spec.paramKinds()[i] == org.babblelang.analysis.PrimitiveKind.NONE && !spec.paramIsString()[i]) {
+                if (spec.paramKinds()[i] == org.babblelang.analysis.PrimitiveKind.NONE
+                        && !spec.paramIsString()[i]) {
                     badAbi = true;
                     break;
                 }
             }
-            if (!badAbi && !spec.returnIsVoid()
-                    && spec.returnKind() == org.babblelang.analysis.PrimitiveKind.NONE && !spec.returnIsString()) {
+            if (!badAbi
+                    && !spec.returnIsVoid()
+                    && spec.returnKind() == org.babblelang.analysis.PrimitiveKind.NONE
+                    && !spec.returnIsString()) {
                 badAbi = true;
             }
             if (badAbi) {
-                out.add(new Diagnostic(spec.line(), "unsupported wasm import ABI type : wasm." + key));
+                out.add(
+                        new Diagnostic(
+                                spec.line(), "unsupported wasm import ABI type : wasm." + key));
             }
         }
         Set<String> topLevelDefined = new java.util.HashSet<>();
@@ -241,7 +338,9 @@ public final class WasmPortabilityChecker {
         for (HirInterface iface : mod.interfaces().values()) {
             for (String jvmIface : iface.extendedJvmInterfaces()) {
                 if (jvmIface != null
-                        && (jvmIface.startsWith("java/") || jvmIface.startsWith("javax/") || jvmIface.startsWith("jdk/"))
+                        && (jvmIface.startsWith("java/")
+                                || jvmIface.startsWith("javax/")
+                                || jvmIface.startsWith("jdk/"))
                         && !"java/lang/Appendable".equals(jvmIface)) {
                     out.add(new Diagnostic(iface.line(), jvmIface.replace('/', '.')));
                 }
@@ -253,46 +352,75 @@ public final class WasmPortabilityChecker {
         }
     }
 
-    private static void checkList(List<HirExpr> list, CompilationTarget target, Set<String> topLevelDefined, List<Diagnostic> out) {
+    private static void checkList(
+            List<HirExpr> list,
+            CompilationTarget target,
+            Set<String> topLevelDefined,
+            List<Diagnostic> out) {
         for (HirExpr e : list) {
             checkExpr(e, target, topLevelDefined, out);
         }
     }
 
-    private static void checkCallArgs(List<HirCallArg> args, CompilationTarget target, Set<String> topLevelDefined, List<Diagnostic> out) {
+    private static void checkCallArgs(
+            List<HirCallArg> args,
+            CompilationTarget target,
+            Set<String> topLevelDefined,
+            List<Diagnostic> out) {
         for (HirCallArg a : args) {
             checkExpr(a.value(), target, topLevelDefined, out);
         }
     }
 
-    private static void checkExpr(HirExpr expr, CompilationTarget target, Set<String> topLevelDefined, List<Diagnostic> out) {
+    private static void checkExpr(
+            HirExpr expr,
+            CompilationTarget target,
+            Set<String> topLevelDefined,
+            List<Diagnostic> out) {
         if (expr == null) return;
         int line = expr.meta().line();
         switch (expr) {
             case HirExpr.NameRead nr -> {
-                if ("java".equals(nr.name()) || "javax".equals(nr.name()) || "jdk".equals(nr.name())) {
+                if ("java".equals(nr.name())
+                        || "javax".equals(nr.name())
+                        || "jdk".equals(nr.name())) {
                     out.add(new Diagnostic(line, nr.name() + ".*"));
                 } else if ("STDIN".equals(nr.name()) && !topLevelDefined.contains("STDIN")) {
                     out.add(new Diagnostic(line, "STDIN"));
-                } else if (("import".equals(nr.name()) || "importe".equals(nr.name())) && !topLevelDefined.contains(nr.name())) {
+                } else if (("import".equals(nr.name()) || "importe".equals(nr.name()))
+                        && !topLevelDefined.contains(nr.name())) {
                     out.add(new Diagnostic(line, "dynamic import"));
-                } else if (target.isWasmBare() && WASM_BARE_FORBIDDEN_NAMES.contains(nr.name())
+                } else if (target.isWasmBare()
+                        && WASM_BARE_FORBIDDEN_NAMES.contains(nr.name())
                         && !topLevelDefined.contains(nr.name())) {
                     out.add(new Diagnostic(line, nr.name() + " (disallowed on wasm-bare)"));
                 }
             }
             case HirExpr.JavaFieldGet g -> {
-                out.add(new Diagnostic(line, g.target().field().getDeclaringClass().getName() + "." + g.target().field().getName()));
+                out.add(
+                        new Diagnostic(
+                                line,
+                                g.target().field().getDeclaringClass().getName()
+                                        + "."
+                                        + g.target().field().getName()));
                 checkExpr(g.receiver(), target, topLevelDefined, out);
             }
             case HirExpr.JavaFieldAssign a -> {
-                out.add(new Diagnostic(line, a.target().field().getDeclaringClass().getName() + "." + a.target().field().getName()));
+                out.add(
+                        new Diagnostic(
+                                line,
+                                a.target().field().getDeclaringClass().getName()
+                                        + "."
+                                        + a.target().field().getName()));
                 checkExpr(a.receiver(), target, topLevelDefined, out);
                 checkExpr(a.value(), target, topLevelDefined, out);
             }
             case HirExpr.JavaConstructorCall c -> {
                 Class<?> decl = c.target().constructor().getDeclaringClass();
-                boolean synthArith = c.pureStaticCallee() && c.callee() == null && decl == ArithmeticException.class;
+                boolean synthArith =
+                        c.pureStaticCallee()
+                                && c.callee() == null
+                                && decl == ArithmeticException.class;
                 if (decl != org.babblelang.runtime.BabbleException.class && !synthArith) {
                     out.add(new Diagnostic(line, decl.getName()));
                 }
@@ -303,7 +431,12 @@ public final class WasmPortabilityChecker {
             }
             case HirExpr.JavaMethodCall c -> {
                 if (portableCoreKind(c.target()) == null) {
-                    out.add(new Diagnostic(line, c.target().method().getDeclaringClass().getName() + "." + c.target().method().getName()));
+                    out.add(
+                            new Diagnostic(
+                                    line,
+                                    c.target().method().getDeclaringClass().getName()
+                                            + "."
+                                            + c.target().method().getName()));
                 }
                 if (!c.pureStaticReceiver()) {
                     checkExpr(c.receiver(), target, topLevelDefined, out);
@@ -339,8 +472,11 @@ public final class WasmPortabilityChecker {
                 checkExpr(as.left(), target, topLevelDefined, out);
             }
             case HirExpr.DynamicCall c -> {
-                if (c.callee() instanceof HirExpr.NameRead nr && ("import".equals(nr.name()) || "importe".equals(nr.name()))) {
-                    if (c.args().size() != 1 || !(c.args().get(0).value() instanceof HirExpr.Const cst && cst.value() instanceof String path)) {
+                if (c.callee() instanceof HirExpr.NameRead nr
+                        && ("import".equals(nr.name()) || "importe".equals(nr.name()))) {
+                    if (c.args().size() != 1
+                            || !(c.args().get(0).value() instanceof HirExpr.Const cst
+                                    && cst.value() instanceof String path)) {
                         out.add(new Diagnostic(line, "dynamic import"));
                     } else if (!path.endsWith(".ba")) {
                         out.add(new Diagnostic(line, "Java package import : " + path));
@@ -354,14 +490,16 @@ public final class WasmPortabilityChecker {
                 checkList(t.tryBody(), target, topLevelDefined, out);
                 for (HirExpr.HirCatch hc : t.catches()) {
                     if (hc.target() != null) {
-                        if (hc.target().typeDescriptor() != null && !hc.target().typeDescriptor().isEmpty()) {
+                        if (hc.target().typeDescriptor() != null
+                                && !hc.target().typeDescriptor().isEmpty()) {
                             checkDescriptorPortable(hc.target().typeDescriptor(), hc.line(), out);
                         }
                         if (hc.target().jvmCatchTypes() != null) {
                             for (String jvmType : hc.target().jvmCatchTypes()) {
                                 if (jvmType != null
                                         && !jvmType.equals("org/babblelang/runtime/ThrownException")
-                                        && !isPortableJavaTypeName(jvmType.replace('/', '.'), false)) {
+                                        && !isPortableJavaTypeName(
+                                                jvmType.replace('/', '.'), false)) {
                                     out.add(new Diagnostic(hc.line(), jvmType.replace('/', '.')));
                                 }
                             }
@@ -385,13 +523,22 @@ public final class WasmPortabilityChecker {
             case HirExpr.Def d -> checkExpr(d.value(), target, topLevelDefined, out);
             case HirExpr.VarAssign a -> checkExpr(a.value(), target, topLevelDefined, out);
             case HirExpr.NameAssign a -> checkExpr(a.value(), target, topLevelDefined, out);
-            case HirExpr.ThisFieldAssign a -> { checkExpr(a.receiver(), target, topLevelDefined, out); checkExpr(a.value(), target, topLevelDefined, out); }
-            case HirExpr.DynamicFieldAssign a -> { checkExpr(a.receiver(), target, topLevelDefined, out); checkExpr(a.value(), target, topLevelDefined, out); }
+            case HirExpr.ThisFieldAssign a -> {
+                checkExpr(a.receiver(), target, topLevelDefined, out);
+                checkExpr(a.value(), target, topLevelDefined, out);
+            }
+            case HirExpr.DynamicFieldAssign a -> {
+                checkExpr(a.receiver(), target, topLevelDefined, out);
+                checkExpr(a.value(), target, topLevelDefined, out);
+            }
             case HirExpr.ThisFieldGet g -> checkExpr(g.receiver(), target, topLevelDefined, out);
             case HirExpr.ModuleExportGet g -> checkExpr(g.receiver(), target, topLevelDefined, out);
             case HirExpr.DynamicSelect s -> checkExpr(s.receiver(), target, topLevelDefined, out);
             case HirExpr.Unary u -> checkExpr(u.operand(), target, topLevelDefined, out);
-            case HirExpr.Binary b -> { checkExpr(b.left(), target, topLevelDefined, out); checkExpr(b.right(), target, topLevelDefined, out); }
+            case HirExpr.Binary b -> {
+                checkExpr(b.left(), target, topLevelDefined, out);
+                checkExpr(b.right(), target, topLevelDefined, out);
+            }
             case HirExpr.Range r -> {
                 if (!r.elemKind().isPrimitive() && !r.stringElement()) {
                     out.add(new Diagnostic(line, "range of Comparable"));
@@ -399,17 +546,29 @@ public final class WasmPortabilityChecker {
                 checkExpr(r.start(), target, topLevelDefined, out);
                 checkExpr(r.end(), target, topLevelDefined, out);
             }
-            case HirExpr.Logic l -> { checkExpr(l.left(), target, topLevelDefined, out); checkExpr(l.right(), target, topLevelDefined, out); }
+            case HirExpr.Logic l -> {
+                checkExpr(l.left(), target, topLevelDefined, out);
+                checkExpr(l.right(), target, topLevelDefined, out);
+            }
             case HirExpr.NonNull n -> checkExpr(n.operand(), target, topLevelDefined, out);
             case HirExpr.SpreadAdapt s -> {
                 if (s.adapt() != null && s.adapt().elementSamTarget() != null) {
-                    out.add(new Diagnostic(line, s.adapt().elementSamTarget().samInterface().getName()));
+                    out.add(
+                            new Diagnostic(
+                                    line, s.adapt().elementSamTarget().samInterface().getName()));
                 }
                 checkExpr(s.value(), target, topLevelDefined, out);
             }
             case HirExpr.Block b -> checkList(b.statements(), target, topLevelDefined, out);
-            case HirExpr.If i -> { checkExpr(i.cond(), target, topLevelDefined, out); checkExpr(i.thenBranch(), target, topLevelDefined, out); checkExpr(i.elseBranch(), target, topLevelDefined, out); }
-            case HirExpr.While w -> { checkExpr(w.cond(), target, topLevelDefined, out); checkExpr(w.body(), target, topLevelDefined, out); }
+            case HirExpr.If i -> {
+                checkExpr(i.cond(), target, topLevelDefined, out);
+                checkExpr(i.thenBranch(), target, topLevelDefined, out);
+                checkExpr(i.elseBranch(), target, topLevelDefined, out);
+            }
+            case HirExpr.While w -> {
+                checkExpr(w.cond(), target, topLevelDefined, out);
+                checkExpr(w.body(), target, topLevelDefined, out);
+            }
             case HirExpr.For f -> {
                 if (f.countedRange() != null) {
                     checkExpr(f.countedRange().start(), target, topLevelDefined, out);
@@ -423,28 +582,63 @@ public final class WasmPortabilityChecker {
             case HirExpr.Break b -> checkExpr(b.value(), target, topLevelDefined, out);
             case HirExpr.Return r -> checkExpr(r.value(), target, topLevelDefined, out);
             case HirExpr.Throw t -> checkExpr(t.value(), target, topLevelDefined, out);
-            case HirExpr.CoreCollectionCall c -> checkCallArgs(c.args(), target, topLevelDefined, out);
-            case HirExpr.CoreMethodCall c -> { checkExpr(c.receiver(), target, topLevelDefined, out); checkList(c.args(), target, topLevelDefined, out); }
+            case HirExpr.CoreCollectionCall c ->
+                    checkCallArgs(c.args(), target, topLevelDefined, out);
+            case HirExpr.CoreMethodCall c -> {
+                checkExpr(c.receiver(), target, topLevelDefined, out);
+                checkList(c.args(), target, topLevelDefined, out);
+            }
             case HirExpr.SuperCall c -> {
                 if (c.targetInfo() != null && c.targetInfo().directJavaClass() != null) {
-                    out.add(new Diagnostic(line, c.targetInfo().directJavaClass().getName() + "." + c.memberName()));
+                    out.add(
+                            new Diagnostic(
+                                    line,
+                                    c.targetInfo().directJavaClass().getName()
+                                            + "."
+                                            + c.memberName()));
                 } else if (c.targetInfo() != null && c.targetInfo().providerJavaClass() != null) {
-                    out.add(new Diagnostic(line, c.targetInfo().providerJavaClass().getName() + "." + c.memberName()));
+                    out.add(
+                            new Diagnostic(
+                                    line,
+                                    c.targetInfo().providerJavaClass().getName()
+                                            + "."
+                                            + c.memberName()));
                 }
                 checkCallArgs(c.args(), target, topLevelDefined, out);
             }
             case HirExpr.SelfRecurseCall c -> checkList(c.args(), target, topLevelDefined, out);
             case HirExpr.SelfTailCall c -> checkCallArgs(c.args(), target, topLevelDefined, out);
-            case HirExpr.DirectBabbleCall c -> { checkExpr(c.callee(), target, topLevelDefined, out); checkList(c.args(), target, topLevelDefined, out); }
-            case HirExpr.DirectThisMethodCall c -> { checkExpr(c.receiver(), target, topLevelDefined, out); checkCallArgs(c.args(), target, topLevelDefined, out); }
-            case HirExpr.InterfaceCall c -> { checkExpr(c.receiver(), target, topLevelDefined, out); checkList(c.args(), target, topLevelDefined, out); }
-            case HirExpr.SafeCall c -> { checkExpr(c.receiver(), target, topLevelDefined, out); checkCallArgs(c.args(), target, topLevelDefined, out); }
+            case HirExpr.DirectBabbleCall c -> {
+                checkExpr(c.callee(), target, topLevelDefined, out);
+                checkList(c.args(), target, topLevelDefined, out);
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                checkExpr(c.receiver(), target, topLevelDefined, out);
+                checkCallArgs(c.args(), target, topLevelDefined, out);
+            }
+            case HirExpr.InterfaceCall c -> {
+                checkExpr(c.receiver(), target, topLevelDefined, out);
+                checkList(c.args(), target, topLevelDefined, out);
+            }
+            case HirExpr.SafeCall c -> {
+                checkExpr(c.receiver(), target, topLevelDefined, out);
+                checkCallArgs(c.args(), target, topLevelDefined, out);
+            }
             case HirExpr.MakeOverloadSet m -> checkList(m.operands(), target, topLevelDefined, out);
             case HirExpr.OverloadSelect s -> checkExpr(s.set(), target, topLevelDefined, out);
-            case HirExpr.OverloadDispatch d -> { checkExpr(d.callee(), target, topLevelDefined, out); checkList(d.args(), target, topLevelDefined, out); }
+            case HirExpr.OverloadDispatch d -> {
+                checkExpr(d.callee(), target, topLevelDefined, out);
+                checkList(d.args(), target, topLevelDefined, out);
+            }
             case HirExpr.TypeApply t -> checkExpr(t.inner(), target, topLevelDefined, out);
-            case HirExpr.RecordNew r -> { checkExpr(r.classRef(), target, topLevelDefined, out); checkList(r.args(), target, topLevelDefined, out); }
-            case HirExpr.RecordReuse r -> { checkExpr(r.target(), target, topLevelDefined, out); checkList(r.args(), target, topLevelDefined, out); }
+            case HirExpr.RecordNew r -> {
+                checkExpr(r.classRef(), target, topLevelDefined, out);
+                checkList(r.args(), target, topLevelDefined, out);
+            }
+            case HirExpr.RecordReuse r -> {
+                checkExpr(r.target(), target, topLevelDefined, out);
+                checkList(r.args(), target, topLevelDefined, out);
+            }
             case HirExpr.Move m -> checkExpr(m.operand(), target, topLevelDefined, out);
             case HirExpr.Freeze f -> checkExpr(f.operand(), target, topLevelDefined, out);
             case HirExpr.Match m -> {
@@ -461,8 +655,11 @@ public final class WasmPortabilityChecker {
         }
     }
 
-    private static void checkPattern(org.babblelang.ir.hir.HirPattern pat, CompilationTarget target,
-                                     Set<String> topLevelDefined, List<Diagnostic> out) {
+    private static void checkPattern(
+            org.babblelang.ir.hir.HirPattern pat,
+            CompilationTarget target,
+            Set<String> topLevelDefined,
+            List<Diagnostic> out) {
         if (pat == null) return;
         switch (pat) {
             case org.babblelang.ir.hir.HirPattern.Const c -> {
@@ -470,16 +667,20 @@ public final class WasmPortabilityChecker {
                     out.add(new Diagnostic(c.line(), c.enumClass().getName()));
                 }
             }
-            case org.babblelang.ir.hir.HirPattern.ValueExpr v -> checkExpr(v.expr(), target, topLevelDefined, out);
-            case org.babblelang.ir.hir.HirPattern.TypeTest tt -> checkDescriptorPortable(tt.descriptor(), tt.line(), out);
-            case org.babblelang.ir.hir.HirPattern.Bind b -> checkPattern(b.inner(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v ->
+                    checkExpr(v.expr(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.TypeTest tt ->
+                    checkDescriptorPortable(tt.descriptor(), tt.line(), out);
+            case org.babblelang.ir.hir.HirPattern.Bind b ->
+                    checkPattern(b.inner(), target, topLevelDefined, out);
             case org.babblelang.ir.hir.HirPattern.Wildcard w -> {}
             case org.babblelang.ir.hir.HirPattern.Or o -> {
                 for (org.babblelang.ir.hir.HirPattern alt : o.alternatives()) {
                     checkPattern(alt, target, topLevelDefined, out);
                 }
             }
-            case org.babblelang.ir.hir.HirPattern.Relational r -> checkExpr(r.rhs(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.Relational r ->
+                    checkExpr(r.rhs(), target, topLevelDefined, out);
             case org.babblelang.ir.hir.HirPattern.RangeTest rt -> {
                 if (!rt.elemKind().isPrimitive() && !rt.stringElement()) {
                     out.add(new Diagnostic(rt.line(), "range of Comparable"));
@@ -488,7 +689,8 @@ public final class WasmPortabilityChecker {
                 checkExpr(rt.hi(), target, topLevelDefined, out);
                 checkExpr(rt.step(), target, topLevelDefined, out);
             }
-            case org.babblelang.ir.hir.HirPattern.Membership m -> checkExpr(m.container(), target, topLevelDefined, out);
+            case org.babblelang.ir.hir.HirPattern.Membership m ->
+                    checkExpr(m.container(), target, topLevelDefined, out);
             case org.babblelang.ir.hir.HirPattern.RecordDestructure rd -> {
                 if (rd.isJavaRecord()) {
                     out.add(new Diagnostic(rd.line(), rd.javaRecordClass().getName()));
@@ -543,10 +745,15 @@ public final class WasmPortabilityChecker {
             }
             return false;
         }
-        if (insideArray && (fqcn.equals("java.lang.Byte") || fqcn.equals("java.lang.Short")
-                || fqcn.equals("java.lang.Integer") || fqcn.equals("java.lang.Long")
-                || fqcn.equals("java.lang.Float") || fqcn.equals("java.lang.Double")
-                || fqcn.equals("java.lang.Boolean") || fqcn.equals("java.lang.Character"))) {
+        if (insideArray
+                && (fqcn.equals("java.lang.Byte")
+                        || fqcn.equals("java.lang.Short")
+                        || fqcn.equals("java.lang.Integer")
+                        || fqcn.equals("java.lang.Long")
+                        || fqcn.equals("java.lang.Float")
+                        || fqcn.equals("java.lang.Double")
+                        || fqcn.equals("java.lang.Boolean")
+                        || fqcn.equals("java.lang.Character"))) {
             return true;
         }
         return fqcn.equals("java.lang.String")

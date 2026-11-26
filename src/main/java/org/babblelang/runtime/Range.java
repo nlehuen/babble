@@ -2,11 +2,11 @@ package org.babblelang.runtime;
 
 /**
  * First-class immutable range ({@code range of T}, {@code BIP031-D2}/{@code D6}).
- * <p>
- * Covers all ordered types for containment and interval queries ({@link #start()}, {@link #end()},
- * {@link #inclusive()}, {@link #isEmpty()}, {@link #contains(Object)}); discrete scalar ranges
- * ({@link IntRange}, {@link LongRange}, {@link CharRange}) additionally implement {@link Iterable}
- * with positive {@code step(k)} and {@code reversed()} progressions.
+ *
+ * <p>Covers all ordered types for containment and interval queries ({@link #start()}, {@link
+ * #end()}, {@link #inclusive()}, {@link #isEmpty()}, {@link #contains(Object)}); discrete scalar
+ * ranges ({@link IntRange}, {@link LongRange}, {@link CharRange}) additionally implement {@link
+ * Iterable} with positive {@code step(k)} and {@code reversed()} progressions.
  */
 public sealed interface Range<T>
         permits IntRange, LongRange, CharRange, DoubleRange, ComparableRange {
@@ -79,15 +79,15 @@ public sealed interface Range<T>
         return DoubleRange.ofDouble(start, end, inclusive);
     }
 
-    static <T extends Comparable<? super T>> ComparableRange<T> ofComparable(T start, T end, boolean inclusive) {
+    static <T extends Comparable<? super T>> ComparableRange<T> ofComparable(
+            T start, T end, boolean inclusive) {
         return new ComparableRange<>(start, end, inclusive);
     }
 
-    /**
-     * Dynamic range creation (used by the interpreter and dynamic fallbacks).
-     */
+    /** Dynamic range creation (used by the interpreter and dynamic fallbacks). */
     @SuppressWarnings("unchecked")
-    static Range<?> of(Object start, Object end, boolean inclusive, String leftText, String rightText) {
+    static Range<?> of(
+            Object start, Object end, boolean inclusive, String leftText, String rightText) {
         if (start == null) {
             throw new BabbleException("Range bound cannot be null : " + leftText);
         }
@@ -98,7 +98,8 @@ public sealed interface Range<T>
             if (na instanceof Byte && nb instanceof Byte) {
                 return ofByte(na.byteValue(), nb.byteValue(), inclusive);
             }
-            if ((na instanceof Byte || na instanceof Short) && (nb instanceof Byte || nb instanceof Short)) {
+            if ((na instanceof Byte || na instanceof Short)
+                    && (nb instanceof Byte || nb instanceof Short)) {
                 return ofShort(na.shortValue(), nb.shortValue(), inclusive);
             }
             if (isSubInt(na) && isSubInt(nb)) {
@@ -117,7 +118,8 @@ public sealed interface Range<T>
             return ofChar(ca, cb, inclusive);
         }
         if (start instanceof Comparable<?> && start.getClass().isInstance(end)) {
-            return new ComparableRange<>((Comparable<Object>) start, (Comparable<Object>) end, inclusive);
+            return new ComparableRange<>(
+                    (Comparable<Object>) start, (Comparable<Object>) end, inclusive);
         }
         throw new BabbleException("Not comparable : " + leftText + " and " + rightText);
     }
@@ -145,8 +147,8 @@ public sealed interface Range<T>
     }
 
     /**
-     * Overflow-safe last included element of a non-empty {@code int} progression
-     * ({@code byte}/{@code short}/{@code int}). Precondition: {@code !isEmpty()} and {@code step > 0}.
+     * Overflow-safe last included element of a non-empty {@code int} progression ({@code
+     * byte}/{@code short}/{@code int}). Precondition: {@code !isEmpty()} and {@code step > 0}.
      */
     static int lastIntElement(int start, int end, boolean inclusive, int step) {
         long effEnd = inclusive ? (long) end : (long) end - 1L;
@@ -158,8 +160,8 @@ public sealed interface Range<T>
     }
 
     /**
-     * Overflow-safe last included element of a non-empty {@code long} progression using
-     * unsigned 64-bit remainder. Precondition: {@code !isEmpty()} and {@code step > 0}.
+     * Overflow-safe last included element of a non-empty {@code long} progression using unsigned
+     * 64-bit remainder. Precondition: {@code !isEmpty()} and {@code step > 0}.
      */
     static long lastLongElement(long start, long end, boolean inclusive, long step) {
         long effEnd = inclusive ? end : end - 1L;
@@ -171,8 +173,8 @@ public sealed interface Range<T>
     }
 
     /**
-     * Overflow-safe last included element of a non-empty {@code char} progression.
-     * Precondition: {@code !isEmpty()} and {@code step > 0}.
+     * Overflow-safe last included element of a non-empty {@code char} progression. Precondition:
+     * {@code !isEmpty()} and {@code step > 0}.
      */
     static char lastCharElement(char start, char end, boolean inclusive, int step) {
         int effEnd = inclusive ? (int) end : (int) end - 1;

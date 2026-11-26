@@ -1,8 +1,6 @@
 package org.babblelang.runtime;
 
-/**
- * An unboxed {@code double} cell for captured lexical variables (RM001).
- */
+/** An unboxed {@code double} cell for captured lexical variables (RM001). */
 public final class DoubleCell {
     public double value;
     private boolean defined;

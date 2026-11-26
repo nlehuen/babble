@@ -3,10 +3,9 @@ package org.babblelang.runtime;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-/**
- * Immutable discrete range record backing {@code range of long} ({@code BIP031-D6}).
- */
-public record LongRange(long startLong, long endLong, boolean inclusive, long step, boolean descending)
+/** Immutable discrete range record backing {@code range of long} ({@code BIP031-D6}). */
+public record LongRange(
+        long startLong, long endLong, boolean inclusive, long step, boolean descending)
         implements Range<Long>, Iterable<Long> {
 
     public LongRange {

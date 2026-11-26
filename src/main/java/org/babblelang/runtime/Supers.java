@@ -1,19 +1,24 @@
 package org.babblelang.runtime;
 
-
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * {@code super.m(args)} and {@code super(I).m(args)} : the default method an interface
- * provides, called on {@code this}. The analysis has already resolved which interface.
+ * {@code super.m(args)} and {@code super(I).m(args)} : the default method an interface provides,
+ * called on {@code this}. The analysis has already resolved which interface.
  */
 public final class Supers {
-    private Supers() {
-    }
+    private Supers() {}
 
-    public static Object call(Object thiz, Object type, String name, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+    public static Object call(
+            Object thiz,
+            Object type,
+            String name,
+            ScriptRuntime rt,
+            Object[] args,
+            String[] names,
+            CallSite site) {
         if (type instanceof BabbleInterface babble) {
             Callable found = babble.findDefault(name);
             if (found == null) {
@@ -40,7 +45,8 @@ public final class Supers {
             if (methods.isEmpty()) {
                 throw new BabbleException("No default " + name + " to call");
             }
-            return new JavaDefaultCall(thiz, methods, java.getSimpleName() + "." + name).call(rt, args, names, site);
+            return new JavaDefaultCall(thiz, methods, java.getSimpleName() + "." + name)
+                    .call(rt, args, names, site);
         }
         throw new BabbleException("super needs an interface");
     }

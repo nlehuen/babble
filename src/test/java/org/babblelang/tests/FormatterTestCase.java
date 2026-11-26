@@ -1,21 +1,18 @@
 package org.babblelang.tests;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Stream;
+import javax.script.ScriptException;
 import org.babblelang.format.Formatter;
 import org.babblelang.tests.batest.BatestFile;
 import org.babblelang.tests.batest.BatestParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-import javax.script.ScriptException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.stream.Stream;
-
-/**
- * The formatter : what it settles, what it keeps, and that it changes no program's meaning.
- */
+/** The formatter : what it settles, what it keeps, and that it changes no program's meaning. */
 public class FormatterTestCase {
     private static void assertFormats(String expected, String source) throws ScriptException {
         Assertions.assertEquals(expected, Formatter.format(source));
@@ -26,27 +23,41 @@ public class FormatterTestCase {
     @Test
     public void testSpaces() throws Exception {
         assertFormats("def x = 1 + 2 * (3 - 4) / 5\n", "def  x=1+2*(3-4)/5");
-        assertFormats("f(a, b: 2)(c).d.e = not (g() == h)\n", "f ( a ,b:2 ) (c) . d . e=not(g()==h)");
-        assertFormats("def add: fn (a: int, b: int): int = fn (a: int, b: int = 1): int -> (a + b)\n",
+        assertFormats(
+                "f(a, b: 2)(c).d.e = not (g() == h)\n", "f ( a ,b:2 ) (c) . d . e=not(g()==h)");
+        assertFormats(
+                "def add: fn (a: int, b: int): int = fn (a: int, b: int = 1): int -> (a + b)\n",
                 "def add:fn (a:int,b:int):int=fn (a:int,b:int=1):int->( a+b )");
         assertFormats("def f = fn () -> ()\n", "def f=fn ()->( )");
-        assertFormats("x += 1\no.n -= int(2.5)\ny *= 2; z /= 3\n", "x+=1\no . n-=int( 2.5 )\ny*=2;z/=3");
-        assertFormats("x is java.util.List and x <> null or y != 1.5\n", "x  is java . util . List and x<>null or y!=1.5");
+        assertFormats(
+                "x += 1\no.n -= int(2.5)\ny *= 2; z /= 3\n", "x+=1\no . n-=int( 2.5 )\ny*=2;z/=3");
+        assertFormats(
+                "x is java.util.List and x <> null or y != 1.5\n",
+                "x  is java . util . List and x<>null or y!=1.5");
         assertFormats("def x = a + b as int == 1\n", "def x=a+b   as  int==1");
-        assertFormats("def f = x as fn (a: int, b: string): bool\n", "def f = x as fn (a:int,b:string):bool");
+        assertFormats(
+                "def f = x as fn (a: int, b: string): bool\n",
+                "def f = x as fn (a:int,b:string):bool");
         assertFormats("x is int and y is string\n", "x  is  int  and  y  is  string");
-        assertFormats("def x: int | string?\ndef y: (int | string)? = null\ndef z: (fn (n: int): int)? = fn (n: int): int -> (n)\n",
+        assertFormats(
+                "def x: int | string?\ndef y: (int | string)? = null\ndef z: (fn (n: int): int)? = fn (n: int): int -> (n)\n",
                 "def x:int|string ?\ndef y:(int|string)?=null\ndef z:(fn (n:int):int)?=fn (n:int):int->(n)");
         assertFormats("def n: null = null\n", "def  n : null = null");
-        assertFormats("def x: A & B | C\ndef y: (A & B)? = null\n", "def x:A&B|C\ndef y:(A  &  B)?=null");
-        assertFormats("def r = f as (java.lang.Runnable & java.io.Serializable)\n", "def r=f as ( java.lang.Runnable&java.io.Serializable )");
-        assertFormats("def T = type A & (B | C)\ndef P of (K, V) = type entry of (K, V)\n", "def T=type  A&(B|C)\ndef P  of (K,V)=type entry of(K,V)");
+        assertFormats(
+                "def x: A & B | C\ndef y: (A & B)? = null\n", "def x:A&B|C\ndef y:(A  &  B)?=null");
+        assertFormats(
+                "def r = f as (java.lang.Runnable & java.io.Serializable)\n",
+                "def r=f as ( java.lang.Runnable&java.io.Serializable )");
+        assertFormats(
+                "def T = type A & (B | C)\ndef P of (K, V) = type entry of (K, V)\n",
+                "def T=type  A&(B|C)\ndef P  of (K,V)=type entry of(K,V)");
         assertFormats("return (a)\n", "return(a)");
     }
 
     @Test
     public void testGenerics() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def id of T: fn (x: T): T = fn (x: T): T -> (x)
                 def Stack of T = class (def value: T, def next: (Stack of T)?) ()
                 def l: java.util.List of string = java.util.ArrayList()
@@ -56,7 +67,8 @@ public class FormatterTestCase {
                 def g: array of (array of double) = (array of (array of double))(2)
                 def b: (array of int)? = null
                 def p = (array of int).of(1, 2, 3)
-                """, """
+                """,
+                """
                 def id  of  T : fn ( x : T ) : T = fn ( x : T ) : T -> ( x )
                 def Stack  of  T = class ( def value : T , def next : ( Stack  of  T ) ? ) ( )
                 def l : java.util.List  of  string = java.util.ArrayList ( )
@@ -74,7 +86,8 @@ public class FormatterTestCase {
         // A unary minus sticks to its operand ; a binary one is spaced.
         assertFormats("def x = -3 - -y * f(-1, - -z)\n", "def x = - 3--y*f(- 1,- - z)");
         // An "else if" chain is brought back on the lines of its parentheses, as "else" is.
-        assertFormats("""
+        assertFormats(
+                """
                 def sign = fn (n) -> (
                     if n < 0 then (
                         "negative"
@@ -82,7 +95,8 @@ public class FormatterTestCase {
                         "small"
                     ) else ("large")
                 )
-                """, """
+                """,
+                """
                 def sign = fn (n) -> (
                 if n < 0 then (
                 "negative"
@@ -94,12 +108,14 @@ public class FormatterTestCase {
                 )
                 """);
         // A line starting with a dot continues the expression above it.
-        assertFormats("""
+        assertFormats(
+                """
                 def s = java.lang.StringBuilder()
                     .append("a")
                     .append(-1)
                     .toString()
-                """, """
+                """,
+                """
                 def s = java.lang.StringBuilder()
                 .append("a")
                         .append(-1)
@@ -109,7 +125,8 @@ public class FormatterTestCase {
 
     @Test
     public void testClassesAndInterfaces() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def Point = record (def x: double, private def y = 0.0) implements Shape, java.lang.Runnable (
                     def norm = fn () -> (super(Shape).norm() + super.size())
                 ) static (
@@ -121,7 +138,8 @@ public class FormatterTestCase {
                 def one = object implements Shape (
                     def area = 1
                 )
-                """, """
+                """,
+                """
                 def Point = record (def x:double,private def y=0.0)implements Shape,java.lang.Runnable(
                 def norm = fn ()->(super (Shape).norm()+super.size())
                 )
@@ -141,7 +159,8 @@ public class FormatterTestCase {
 
     @Test
     public void testIndentationFollowsParentheses() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 object (
                     def f = fn (n) -> (
                         if n < 2 then (
@@ -158,7 +177,8 @@ public class FormatterTestCase {
                         )
                     )
                 )
-                """, """
+                """,
+                """
                 object (
                 def f = fn (n) -> (
                       if n < 2 then (
@@ -180,7 +200,8 @@ public class FormatterTestCase {
 
     @Test
     public void testBlockParenthesesJoinTheirLine() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 object (
                     if a then (
                         1
@@ -191,7 +212,8 @@ public class FormatterTestCase {
                         3
                     )
                 )
-                """, """
+                """,
+                """
                 object
                 (
                     if a then
@@ -210,7 +232,8 @@ public class FormatterTestCase {
                 )
                 """);
         // Not through a comment, which would end up elsewhere, or swallow the rest of the line.
-        assertFormats("""
+        assertFormats(
+                """
                 if a then  ;; why
                 (
                     1
@@ -219,7 +242,8 @@ public class FormatterTestCase {
                 else (
                     2
                 )
-                """, """
+                """,
+                """
                 if a then ;; why
                 (
                 1
@@ -233,7 +257,8 @@ public class FormatterTestCase {
 
     @Test
     public void testContinuationLines() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def f = fn () -> (
                     def total = first +
                         second +
@@ -253,7 +278,8 @@ public class FormatterTestCase {
                 )
                 def C = class () implements A,
                     B ()
-                """, """
+                """,
+                """
                 def f = fn () -> (
                 def total = first +
                 second +
@@ -278,7 +304,8 @@ public class FormatterTestCase {
 
     @Test
     public void testParameterLists() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def f = fn (
                     a,
                     b = 1
@@ -291,7 +318,8 @@ public class FormatterTestCase {
                 )
                 f(1,
                     2)
-                """, """
+                """,
+                """
                 def f = fn (
                 a,
                 b=1
@@ -314,7 +342,8 @@ public class FormatterTestCase {
 
     @Test
     public void testBlankLines() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 a
 
                 def f = fn () -> (
@@ -324,7 +353,8 @@ public class FormatterTestCase {
                 )
 
                 d
-                """, """
+                """,
+                """
 
 
                 a
@@ -349,7 +379,8 @@ public class FormatterTestCase {
 
     @Test
     public void testComments() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 ;; first
 
                 ;;(
@@ -368,7 +399,8 @@ public class FormatterTestCase {
                 )
                 def longer = 1  ;; not aligned with those above
                 ;; end
-                """, """
+                """,
+                """
                 ;; first  \s
 
                 ;;(
@@ -386,9 +418,12 @@ public class FormatterTestCase {
                 ;; last
                 )
                 def longer = 1 ;; not aligned with those above
-                ;; end""");
-        // A comment of several lines moves as a whole : its lines stay where they are, relative to its start.
-        assertFormats("""
+                ;; end\
+                """);
+        // A comment of several lines moves as a whole : its lines stay where they are, relative to
+        // its start.
+        assertFormats(
+                """
                 (
                     ;;( one
                         two
@@ -396,7 +431,8 @@ public class FormatterTestCase {
                     ;;)
                     a
                 )
-                """, """
+                """,
+                """
                 (
                   ;;( one
                       two
@@ -416,18 +452,22 @@ public class FormatterTestCase {
 
     @Test
     public void testStringsAreKept() throws Exception {
-        assertFormats("def s = \"a  ;; b ( \\\" \" + \"\\n  c\"\n", "def s=\"a  ;; b ( \\\" \"+\"\\n  c\"");
+        assertFormats(
+                "def s = \"a  ;; b ( \\\" \" + \"\\n  c\"\n",
+                "def s=\"a  ;; b ( \\\" \"+\"\\n  c\"");
         assertFormats("def p = r\"C:\\dir\\\"\n", "def p=r\"C:\\dir\\\"");
     }
 
     @Test
     public void testSafeNavigationFormatting() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def x = a?.f(1)?.g
                 def y = a
                     ?.f(1)
                     ?.g
-                """, """
+                """,
+                """
                 def x = a ?. f ( 1 ) ?. g
                 def y = a
                 ?. f(1)
@@ -437,33 +477,45 @@ public class FormatterTestCase {
 
     @Test
     public void testSyntaxErrors() {
-        ScriptException e = Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def f = (\n  1 +\n)", "f.ba"));
-        Assertions.assertTrue(e.getMessage().contains("Syntax error : unexpected ')'"), e.getMessage());
+        ScriptException e =
+                Assertions.assertThrows(
+                        ScriptException.class,
+                        () -> Formatter.format("def f = (\n  1 +\n)", "f.ba"));
+        Assertions.assertTrue(
+                e.getMessage().contains("Syntax error : unexpected ')'"), e.getMessage());
         Assertions.assertEquals(3, e.getLineNumber());
         Assertions.assertEquals("f.ba", e.getFileName());
-        Assertions.assertThrows(ScriptException.class, () -> Formatter.format(";; a comment\n\"open"));
+        Assertions.assertThrows(
+                ScriptException.class, () -> Formatter.format(";; a comment\n\"open"));
     }
 
     /**
-     * Every script of the repository formats, to a text formatting leaves alone. That it
-     * parses to the same tree is the formatter's own check.
+     * Every script of the repository formats, to a text formatting leaves alone. That it parses to
+     * the same tree is the formatter's own check.
      */
     @Test
     public void testEveryScript() throws Exception {
         List<Path> scripts;
         try (Stream<Path> examples = Files.walk(Path.of("examples"));
-             Stream<Path> axioms = Files.walk(Path.of("src/main/java/org/babblelang/axioms"))) {
-            scripts = Stream.concat(examples, axioms)
-                    .filter(path -> path.toString().endsWith(".ba")).sorted().toList();
+                Stream<Path> axioms = Files.walk(Path.of("src/main/java/org/babblelang/axioms"))) {
+            scripts =
+                    Stream.concat(examples, axioms)
+                            .filter(path -> path.toString().endsWith(".ba"))
+                            .sorted()
+                            .toList();
         }
         Assertions.assertFalse(scripts.isEmpty());
         for (Path script : scripts) {
             String original = Files.readString(script);
             String formatted = Formatter.format(original, script.toString());
-            Assertions.assertEquals(formatted, Formatter.format(formatted, script.toString()), script.toString());
-            Assertions.assertTrue(formatted.lines().noneMatch(line -> line.endsWith(" ") || line.contains("\t")), script.toString());
+            Assertions.assertEquals(
+                    formatted, Formatter.format(formatted, script.toString()), script.toString());
+            Assertions.assertTrue(
+                    formatted.lines().noneMatch(line -> line.endsWith(" ") || line.contains("\t")),
+                    script.toString());
             if (script.startsWith(Path.of("src/main/java/org/babblelang/axioms"))) {
-                Assertions.assertEquals(original, formatted, "Axiom file is not formatter-clean : " + script);
+                Assertions.assertEquals(
+                        original, formatted, "Axiom file is not formatter-clean : " + script);
             }
         }
     }
@@ -475,7 +527,8 @@ public class FormatterTestCase {
 
         Path batestRoot = Path.of("src/test/batest");
         try (Stream<Path> stream = Files.walk(batestRoot)) {
-            for (Path file : stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
+            for (Path file :
+                    stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
                 String relative = batestRoot.relativize(file).toString();
                 BatestFile parsed = BatestParser.parse(file, relative);
                 if (parsed.preamble() != null && !parsed.preamble().isBlank()) {
@@ -484,33 +537,43 @@ public class FormatterTestCase {
                 }
                 for (var mod : parsed.modules().entrySet()) {
                     checked++;
-                    checkFormatsIdempotently(mod.getValue(), relative + " module " + mod.getKey(), failures);
+                    checkFormatsIdempotently(
+                            mod.getValue(), relative + " module " + mod.getKey(), failures);
                 }
                 for (BatestFile.BatestCase testCase : parsed.cases()) {
                     if (testCase.expectedError() != null
                             && (testCase.expectedError().text().startsWith("Syntax error")
-                            || testCase.expectedError().text().startsWith("Lexical error"))) {
+                                    || testCase.expectedError()
+                                            .text()
+                                            .startsWith("Lexical error"))) {
                         continue;
                     }
                     for (var mod : testCase.caseModules().entrySet()) {
                         checked++;
-                        checkFormatsIdempotently(mod.getValue(),
-                                relative + ":" + testCase.line() + " module " + mod.getKey(), failures);
+                        checkFormatsIdempotently(
+                                mod.getValue(),
+                                relative + ":" + testCase.line() + " module " + mod.getKey(),
+                                failures);
                     }
                     for (int i = 0; i < testCase.inputs().size(); i++) {
                         checked++;
-                        checkFormatsIdempotently(testCase.inputs().get(i),
-                                relative + ":" + testCase.line() + " input[" + i + "]", failures);
+                        checkFormatsIdempotently(
+                                testCase.inputs().get(i),
+                                relative + ":" + testCase.line() + " input[" + i + "]",
+                                failures);
                     }
                 }
             }
         }
 
-        Assertions.assertTrue(checked > 400, "Expected to check >400 .batest.md snippets, checked " + checked);
-        Assertions.assertEquals(List.of(), failures, "Formatter failures:\n" + String.join("\n", failures));
+        Assertions.assertTrue(
+                checked > 400, "Expected to check >400 .batest.md snippets, checked " + checked);
+        Assertions.assertEquals(
+                List.of(), failures, "Formatter failures:\n" + String.join("\n", failures));
     }
 
-    private static void checkFormatsIdempotently(String source, String label, List<String> failures) {
+    private static void checkFormatsIdempotently(
+            String source, String label, List<String> failures) {
         try {
             String formatted = Formatter.format(source, label);
             String second = Formatter.format(formatted, label);
@@ -527,7 +590,8 @@ public class FormatterTestCase {
 
     @Test
     public void testRm002EffectsAndAxioms() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 axiom java.lang.Math.abs: fn pure nothrow
                 axiom java.util.List.add: fn mut
                 axiom java.awt.Point: class () static (def new: fn pure)
@@ -544,7 +608,8 @@ public class FormatterTestCase {
                 )
                 def unnamed: fn (int, int): int = fn (a: int, b: int): int -> (a + b)
                 unnamed(1, 2)
-                """, """
+                """,
+                """
                 axiom   java . lang . Math . abs :  fn   pure   nothrow
                 axiom java.util.List.add : fn mut
                 axiom java.awt.Point : class ( ) static ( def new : fn pure )
@@ -566,7 +631,8 @@ public class FormatterTestCase {
 
     @Test
     public void testBip011CoreTypesSyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def s: string? = "hi"
                 def u = s!.toUpperCase()
                 def a = 42L
@@ -574,7 +640,8 @@ public class FormatterTestCase {
                 def c = 'a'
                 def xs = list(int)(1, 2)
                 def ys = xs.set(0, 3)
-                """, """
+                """,
+                """
                 def s : string? = "hi"
                 def u = s ! . toUpperCase ( )
                 def a = 42L
@@ -587,14 +654,16 @@ public class FormatterTestCase {
 
     @Test
     public void testBip007OwnershipSyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 axiom java.util.ArrayList: class () static (def new: fn pure unique)
                 def f = fn (unique b: Box, shared c: Box): unique Box -> (
                     def x: frozen list of int = freeze(list(1, 2))
                     discard(x)
                     move(b)
                 )
-                """, """
+                """,
+                """
                 axiom java . util . ArrayList : class ( ) static ( def new : fn pure unique )
                 def f = fn ( unique b : Box , shared c : Box ) : unique Box -> (
                   def x : frozen list of int = freeze ( list ( 1 , 2 ) )
@@ -606,13 +675,15 @@ public class FormatterTestCase {
 
     @Test
     public void testBip020ArraySyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def a: array of int = (array of int)(100)
                 def b: (array of (Shape & Named))? = null
                 def c = (array of int).of(1, 2, 3)
                 def d = array.of(1, 2)
                 def e = (array of double)(from: d)
-                """, """
+                """,
+                """
                 def a : array  of  int = ( array  of  int ) ( 100 )
                 def b : ( array  of ( Shape & Named ) ) ? = null
                 def c = ( array  of  int ) . of ( 1 , 2 , 3 )
@@ -623,12 +694,14 @@ public class FormatterTestCase {
 
     @Test
     public void testBip021OptionalAndKeywordOnlySyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def f: fn (a: int, b: int = ..., ..., c: string = ...): int = fn (a: int, b: int = 1, ..., c: string = ""): int -> (
                     a + b
                 )
                 def C = class (def x: int = 0, ..., def y: int) ()
-                """, """
+                """,
+                """
                 def f : fn ( a : int , b : int = ... , ... , c : string = ... ) : int = fn ( a : int , b : int = 1 , ... , c : string = "" ) : int -> (
                     a + b
                 )
@@ -638,7 +711,8 @@ public class FormatterTestCase {
 
     @Test
     public void testBip021P3GenericLiteralsAndBounds() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def id = fn of T (t: T): T -> (
                     t
                 )
@@ -648,7 +722,8 @@ public class FormatterTestCase {
                 def f: fn of (T: Shape & Named) (x: T): string = fn of (T: Shape & Named) (x: T): string -> (
                     x.name()
                 )
-                """, """
+                """,
+                """
                 def id = fn  of  T ( t : T ) : T -> (
                     t
                 )
@@ -663,7 +738,8 @@ public class FormatterTestCase {
 
     @Test
     public void testBip021P4VariadicAndSpreadSyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def join: fn (parts: string..., sep: string = ...): string = fn (parts: string..., sep: string = ", "): string -> (
                     sep
                 )
@@ -673,7 +749,8 @@ public class FormatterTestCase {
                 def xs = list("a", "b")
                 join(...xs, sep: "-")
                 join(parts: ...xs)
-                """, """
+                """,
+                """
                 def join : fn ( parts : string ... , sep : string = ... ) : string = fn ( parts : string ... , sep : string = ", " ) : string -> (
                     sep
                 )
@@ -688,12 +765,14 @@ public class FormatterTestCase {
 
     @Test
     public void testBip021P5OverloadSyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def f: overload (fn (a: int): int, fn (s: string): int) = overload (
                     fn (a: int): int -> (a + 1),
                     fn (s: string): int -> (s.length())
                 )
-                """, """
+                """,
+                """
                 def f : overload ( fn ( a : int ) : int , fn ( s : string ) : int ) = overload (
                 fn ( a : int ) : int -> ( a + 1 ) ,
                 fn ( s : string ) : int -> ( s . length ( ) )
@@ -703,15 +782,18 @@ public class FormatterTestCase {
 
     @Test
     public void testMultilineAndRawStrings() throws Exception {
-        // Top-level (line.indent = 0 -> 4 spaces), intentional extra indent preserved, trailing space stripped
-        assertFormats("""
+        // Top-level (line.indent = 0 -> 4 spaces), intentional extra indent preserved, trailing
+        // space stripped
+        assertFormats(
+                """
                 def s = \"\"\"
                       alpha
                     beta
 
                     gamma\\s
                     \"\"\"
-                """, """
+                """,
+                """
                 def s=\"\"\"  \s
                   alpha  \s
                 beta
@@ -721,7 +803,8 @@ public class FormatterTestCase {
                 """);
 
         // Block-level (line.indent = 1 -> 8 spaces) and continuation (line.indent = 2 -> 12 spaces)
-        assertFormats("""
+        assertFormats(
+                """
                 def f = fn (): string -> (
                     def a = \"\"\"
                         hello
@@ -732,7 +815,8 @@ public class FormatterTestCase {
                             \"\"\"
                     a + b
                 )
-                """, """
+                """,
+                """
                 def f = fn () : string -> (
                 def a = \"\"\"
                   hello
@@ -746,25 +830,30 @@ public class FormatterTestCase {
                 """);
 
         // Closing delimiter on last content line, line continuation, and trailing comment
-        assertFormats("""
+        assertFormats(
+                """
                 def c = \"\"\"
                     first \\
                     second\"\"\"  ;; trailing
-                """, """
+                """,
+                """
                 def c = \"\"\"
                   first \\
                   second\"\"\" ;; trailing
                 """);
 
         // Uniform tab indentation canonicalizes to spaces when no extra leading tabs exist
-        assertFormats("""
+        assertFormats(
+                """
                 def t = \"\"\"
                     one
                     two
                     \"\"\"
-                """, "def t = \"\"\"\n\tone\n\ttwo\n\t\"\"\"\n");
+                """,
+                "def t = \"\"\"\n\tone\n\ttwo\n\t\"\"\"\n");
 
-        // Extra leading tab in raw/escaped block preserves oldMinIndent so spaces+tabs are never mixed
+        // Extra leading tab in raw/escaped block preserves oldMinIndent so spaces+tabs are never
+        // mixed
         String rawTab = "def rt = r\"\"\"\n\tindented\n\"\"\"\n";
         assertFormats(rawTab, rawTab);
         String tabExtraBody = "def tb = \"\"\"\n\ta\n\t\tb\n\t\"\"\"\n";
@@ -772,22 +861,29 @@ public class FormatterTestCase {
         String rawTabExtraBody = "def rtb = r\"\"\"\n\ta\n\t\tb\n\t\"\"\"\n";
         assertFormats(rawTabExtraBody, rawTabExtraBody);
 
-        // Whitespace-only closing line with extra tab does not emit tabs past minIndent, so canonicalizes to spaces idempotently
+        // Whitespace-only closing line with extra tab does not emit tabs past minIndent, so
+        // canonicalizes to spaces idempotently
         assertFormats("def tc = \"\"\"\n    a\n    \"\"\"\n", "def tc = \"\"\"\n\ta\n\t\t\"\"\"\n");
-        assertFormats("def rtc = r\"\"\"\n    a\n    \"\"\"\n", "def rtc = r\"\"\"\n\ta\n\t\t\"\"\"\n");
+        assertFormats(
+                "def rtc = r\"\"\"\n    a\n    \"\"\"\n", "def rtc = r\"\"\"\n\ta\n\t\t\"\"\"\n");
         assertFormats("\"\"\"\n    a\n    \"\"\"\n", "\"\"\"\n\ta\n\t\t\"\"\"\n");
         assertFormats("r\"\"\"\n    a\n    \"\"\"\n", "r\"\"\"\n\ta\n\t\t\"\"\"\n");
 
         // Invalid multiline and unclosed single-line strings are rejected cleanly
-        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"abc\"\"\""));
-        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"\n \tbad\n \"\"\""));
-        Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = \"\"\"\n    \\q\n    \"\"\""));
+        Assertions.assertThrows(
+                ScriptException.class, () -> Formatter.format("def s = \"\"\"abc\"\"\""));
+        Assertions.assertThrows(
+                ScriptException.class, () -> Formatter.format("def s = \"\"\"\n \tbad\n \"\"\""));
+        Assertions.assertThrows(
+                ScriptException.class,
+                () -> Formatter.format("def s = \"\"\"\n    \\q\n    \"\"\""));
         Assertions.assertThrows(ScriptException.class, () -> Formatter.format("def s = r\"open"));
     }
 
     @Test
     public void testTryCatchFinallyAndThrowFormatting() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def v = try (
                     throw exception("boom")
                 ) catch e: java.io.IOException | exception then (
@@ -801,7 +897,8 @@ public class FormatterTestCase {
                 ) finally (
                     cleanup()
                 )
-                """, """
+                """,
+                """
                 def v=try
                 (
                 throw   exception("boom")
@@ -825,7 +922,8 @@ public class FormatterTestCase {
                 )
                 """);
         // Comments between clauses are preserved without breaking line joins.
-        assertFormats("""
+        assertFormats(
+                """
                 try (
                     work()
                 )
@@ -837,7 +935,8 @@ public class FormatterTestCase {
                 finally (
                     close()
                 )
-                """, """
+                """,
+                """
                 try (
                 work()
                 )
@@ -854,7 +953,8 @@ public class FormatterTestCase {
 
     @Test
     public void testBip030NullabilityAndInferredEffectsSyntax() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def s: string! = "hi"
                 def a: (array of int)! = (array of int)(2)
                 def b: (string?)! = "ok"
@@ -885,7 +985,8 @@ public class FormatterTestCase {
                     def e: fn nothrow: T!
                     def g: fn of T ... : T!
                 )
-                """, """
+                """,
+                """
                 def s : string ! = "hi"
                 def a : ( array of int ) ! = ( array of int ) ( 2 )
                 def b : ( string ? ) ! = "ok"
@@ -921,7 +1022,8 @@ public class FormatterTestCase {
 
     @Test
     public void testVarFormatting() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 var x: int = 0
                 def f = fn (var n: int, var mut xs: list of int): int -> (
                     var acc = n
@@ -934,7 +1036,8 @@ public class FormatterTestCase {
                     def tag = "C"
                     private var total = 0
                 )
-                """, """
+                """,
+                """
                 var  x : int = 0
                 def f = fn ( var  n : int , var  mut  xs : list  of  int ) : int -> (
                 var acc=n
@@ -952,7 +1055,8 @@ public class FormatterTestCase {
 
     @Test
     public void testRangesModAndFloorDivFormatting() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def r1: range of int = 0..<n
                 def r2: range of char = 'a'..'z'
                 def r3 = (a + 1)..(b - 1)
@@ -963,7 +1067,8 @@ public class FormatterTestCase {
                 def q = 7 // 2
                 var k = 17
                 k //= 5
-                """, """
+                """,
+                """
                 def r1 : range  of  int = 0 ..< n
                 def r2 : range  of  char = 'a' .. 'z'
                 def r3 = ( a + 1 ) .. ( b - 1 )
@@ -979,7 +1084,8 @@ public class FormatterTestCase {
 
     @Test
     public void testMatchFormatting() throws Exception {
-        assertFormats("""
+        assertFormats(
+                """
                 def label = match n
                     case 0 then ("zero")
                     case 1 | 2 | 3 then ("small")
@@ -998,7 +1104,8 @@ public class FormatterTestCase {
                     else def other then (
                         "other : " + other
                     )
-                """, """
+                """,
+                """
                 def label = match  n
                 case  0  then  ( "zero" )
                 case 1|2|3 then ("small")
@@ -1020,14 +1127,16 @@ public class FormatterTestCase {
                 "other : " + other
                 )
                 """);
-        assertFormats("""
+        assertFormats(
+                """
                 def area = fn (s: Shape): double -> (
                     match s
                         case is Circle(def r) then (3.14 * r * r)
                         case is Rect(def w, def h) then (w * h)
                         else (0.0)
                 )
-                """, """
+                """,
+                """
                 def area = fn (s:Shape):double -> (
                 match s
                 case is Circle ( def r ) then ( 3.14 * r * r )

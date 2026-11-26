@@ -14,22 +14,23 @@ import java.util.Map;
 
 /**
  * The index of a compiled program's jar (docs/design/bip006_module-sources-and-aot.md §5.4), the
- * resource {@link #RESOURCE} : its main module, the program's root, and for each module its
- * key, display name, script class and exports. One line each, tab-separated :
+ * resource {@link #RESOURCE} : its main module, the program's root, and for each module its key,
+ * display name, script class and exports. One line each, tab-separated :
+ *
  * <pre>
  * main     &lt;key&gt;
  * root     &lt;the root, relative to the jar's directory&gt;
  * module   &lt;key&gt;  &lt;display name&gt;  &lt;class&gt;  &lt;export,export,…&gt;
  * </pre>
- * The root, "/"-separated, may be missing : it is where modules the jar doesn't hold are
- * compiled from, when Babble is on the class path ({@link ModuleCompiler}).
+ *
+ * The root, "/"-separated, may be missing : it is where modules the jar doesn't hold are compiled
+ * from, when Babble is on the class path ({@link ModuleCompiler}).
  */
 public record ProgramIndex(String main, String root, Map<String, Entry> modules) {
     public static final String RESOURCE = "babble/modules.index";
 
     /** A module of the program : {@code className} is a binary name, {@code babble.lib.vec3$ba}. */
-    public record Entry(String key, String displayName, String className, String[] exports) {
-    }
+    public record Entry(String key, String displayName, String className, String[] exports) {}
 
     public void write(Writer out) throws IOException {
         out.write("main\t" + main + "\n");
@@ -37,8 +38,16 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
             out.write("root\t" + root + "\n");
         }
         for (Entry entry : modules.values()) {
-            out.write("module\t" + entry.key() + "\t" + entry.displayName() + "\t" + entry.className() + "\t"
-                    + String.join(",", entry.exports()) + "\n");
+            out.write(
+                    "module\t"
+                            + entry.key()
+                            + "\t"
+                            + entry.displayName()
+                            + "\t"
+                            + entry.className()
+                            + "\t"
+                            + String.join(",", entry.exports())
+                            + "\n");
         }
     }
 
@@ -46,7 +55,8 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
         String main = null;
         String root = null;
         Map<String, Entry> modules = new LinkedHashMap<>();
-        BufferedReader reader = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+        BufferedReader reader =
+                new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
         for (String line = reader.readLine(); line != null; line = reader.readLine()) {
             String[] fields = line.split("\t", -1);
             if (fields[0].equals("main") && fields.length == 2) {
@@ -69,7 +79,14 @@ public record ProgramIndex(String main, String root, Map<String, Entry> modules)
     @Override
     public String toString() {
         List<String> lines = new ArrayList<>();
-        modules.values().forEach(e -> lines.add(e.key() + " " + e.className() + " " + Arrays.toString(e.exports())));
+        modules.values()
+                .forEach(e ->
+                        lines.add(
+                                e.key()
+                                        + " "
+                                        + e.className()
+                                        + " "
+                                        + Arrays.toString(e.exports())));
         return "main " + main + " " + lines;
     }
 }

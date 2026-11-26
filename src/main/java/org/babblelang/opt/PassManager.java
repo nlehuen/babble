@@ -1,5 +1,6 @@
 package org.babblelang.opt;
 
+import java.util.List;
 import org.babblelang.ir.IrObserver;
 import org.babblelang.ir.IrSnapshot;
 import org.babblelang.ir.IrTier;
@@ -13,29 +14,27 @@ import org.babblelang.opt.hir.HirTryNormalize;
 import org.babblelang.opt.hir.InlinePass;
 import org.babblelang.opt.hir.ScalarReplacePass;
 
-import java.util.List;
-
 /**
  * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-I2, §6.5).
  *
- * <p>At {@code -O0}, runs only mandatory pre-emission normalization ({@link HirTryNormalize}).
- * At {@code -O1} (and as Tier 1 front-end before Tier 2 SSA MIR at {@code -O2}), iterates the
- * HIR Nanopass pipeline up to {@value #MAX_ITERATIONS} rounds, stopping early as soon as a full
- * round performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is
- * true ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every
- * modifying pass.
+ * <p>At {@code -O0}, runs only mandatory pre-emission normalization ({@link HirTryNormalize}). At
+ * {@code -O1} (and as Tier 1 front-end before Tier 2 SSA MIR at {@code -O2}), iterates the HIR
+ * Nanopass pipeline up to {@value #MAX_ITERATIONS} rounds, stopping early as soon as a full round
+ * performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is true
+ * ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every modifying
+ * pass.
  */
 public final class PassManager {
     public static final int MAX_ITERATIONS = 3;
 
-    private static final List<HirPass> O1_PASSES = List.of(
-            new HirEGraphSimplifyPass(),
-            new InlinePass(),
-            new ScalarReplacePass(),
-            new FbipReusePass(),
-            new HirDcePass(),
-            new HirLicmPass()
-    );
+    private static final List<HirPass> O1_PASSES =
+            List.of(
+                    new HirEGraphSimplifyPass(),
+                    new InlinePass(),
+                    new ScalarReplacePass(),
+                    new FbipReusePass(),
+                    new HirDcePass(),
+                    new HirLicmPass());
 
     private final List<HirPass> passes;
 
@@ -54,7 +53,8 @@ public final class PassManager {
         return optimize(module, context, null, null);
     }
 
-    public HirModule optimize(HirModule module, PassContext context, IrObserver observer, String moduleKey) {
+    public HirModule optimize(
+            HirModule module, PassContext context, IrObserver observer, String moduleKey) {
         if (context.verify()) {
             HirVerifier.verify(module);
         }
@@ -71,7 +71,12 @@ public final class PassManager {
                         HirVerifier.verify(current);
                     }
                 }
-                notifyObserver(observer, moduleKey, context.optLevel(), IrSnapshot.afterPass(pass.name()), current);
+                notifyObserver(
+                        observer,
+                        moduleKey,
+                        context.optLevel(),
+                        IrSnapshot.afterPass(pass.name()),
+                        current);
             }
             if (roundRewrites == 0) {
                 break;
@@ -88,9 +93,11 @@ public final class PassManager {
         return current;
     }
 
-    private static void notifyObserver(IrObserver observer, String moduleKey, int optLevel, String stage, HirModule hir) {
+    private static void notifyObserver(
+            IrObserver observer, String moduleKey, int optLevel, String stage, HirModule hir) {
         if (observer != null && observer.wants(IrTier.HIR, optLevel, stage)) {
-            observer.onSnapshot(new IrSnapshot(IrTier.HIR, moduleKey, hir.className(), optLevel, stage, hir));
+            observer.onSnapshot(
+                    new IrSnapshot(IrTier.HIR, moduleKey, hir.className(), optLevel, stage, hir));
         }
     }
 }

@@ -1,17 +1,15 @@
 package org.babblelang.parser;
 
-import org.antlr.v4.runtime.Token;
-
 import java.util.Arrays;
 import java.util.List;
+import org.antlr.v4.runtime.Token;
 
 /**
  * Compile-time validation, JEP 378 dedenting, escape translation, and formatter layout helper for
  * Babble string and character literals ({@code BIP026-D1}–{@code D3}).
  */
 public final class StringLiterals {
-    private StringLiterals() {
-    }
+    private StringLiterals() {}
 
     /**
      * A lexical failure detected when validating a multiline string token (closed or unterminated).
@@ -22,17 +20,13 @@ public final class StringLiterals {
         }
     }
 
-    /**
-     * Parsed line structure of a valid multiline string literal for {@code Formatter}.
-     */
+    /** Parsed line structure of a valid multiline string literal for {@code Formatter}. */
     public record MultilineLayout(
             String openingDelimiter,
             List<String> lines,
             boolean[] blank,
             int minIndent,
-            boolean extraIndentHasTabs
-    ) {
-    }
+            boolean extraIndentHasTabs) {}
 
     public static String decode(BabbleParser.StringContext ctx) {
         return decode(ctx.getStart());
@@ -49,17 +43,13 @@ public final class StringLiterals {
         };
     }
 
-    /**
-     * Decodes a quoted single-line {@code "..."} or {@code '...'} literal.
-     */
+    /** Decodes a quoted single-line {@code "..."} or {@code '...'} literal. */
     public static String unescape(String literal) {
         String body = literal.substring(1, literal.length() - 1);
         return translateEscapes(body, false);
     }
 
-    /**
-     * Decodes a quoted single-line {@code '...'} character literal.
-     */
+    /** Decodes a quoted single-line {@code '...'} character literal. */
     public static char decodeChar(String literal) {
         return unescape(literal).charAt(0);
     }
@@ -73,31 +63,39 @@ public final class StringLiterals {
         int openLen = raw ? 4 : 3;
         int firstNl = text.indexOf('\n', openLen);
         if (firstNl < 0 || !isHorizontalWhitespaceOnly(text, openLen, firstNl)) {
-            return new LexicalError("multiline string opening \"\"\" must be followed by a newline",
-                    token.getLine(), token.getCharPositionInLine(), false);
+            return new LexicalError(
+                    "multiline string opening \"\"\" must be followed by a newline",
+                    token.getLine(),
+                    token.getCharPositionInLine(),
+                    false);
         }
         String body = text.substring(firstNl + 1, text.length() - 3);
         String[] lines = body.split("\n", -1);
         boolean[] blank = new boolean[lines.length];
         int minIndent = computeMinIndent(lines, blank);
         if (minIndent < 0) {
-            return new LexicalError("mixed tabs and spaces in multiline string indentation",
-                    token.getLine(), token.getCharPositionInLine(), false);
+            return new LexicalError(
+                    "mixed tabs and spaces in multiline string indentation",
+                    token.getLine(),
+                    token.getCharPositionInLine(),
+                    false);
         }
         if (!raw) {
             String dedented = dedent(lines, blank, minIndent);
             String escapeError = findEscapeError(dedented, true, false);
             if (escapeError != null) {
-                return new LexicalError(escapeError, token.getLine(), token.getCharPositionInLine(), false);
+                return new LexicalError(
+                        escapeError, token.getLine(), token.getCharPositionInLine(), false);
             }
         }
         return null;
     }
 
     /**
-     * Validates an {@code UNTERMINATED_MULTILINE_STRING} or {@code UNTERMINATED_RAW_MULTILINE_STRING}
-     * token. Always returns a non-null {@link LexicalError}; {@code atEnd} is {@code true} only when
-     * the prefix typed so far is lexically valid and awaits more input (used by {@code BabbleSession.classify}).
+     * Validates an {@code UNTERMINATED_MULTILINE_STRING} or {@code
+     * UNTERMINATED_RAW_MULTILINE_STRING} token. Always returns a non-null {@link LexicalError};
+     * {@code atEnd} is {@code true} only when the prefix typed so far is lexically valid and awaits
+     * more input (used by {@code BabbleSession.classify}).
      */
     public static LexicalError validateUnterminated(Token token, boolean raw) {
         String text = normalizeNewlines(token.getText());
@@ -106,15 +104,24 @@ public final class StringLiterals {
         if (firstNl < 0) {
             boolean validOpeningSoFar = isHorizontalWhitespaceOnly(text, openLen, text.length());
             if (validOpeningSoFar) {
-                return new LexicalError("unterminated multiline string",
-                        token.getLine(), token.getCharPositionInLine(), true);
+                return new LexicalError(
+                        "unterminated multiline string",
+                        token.getLine(),
+                        token.getCharPositionInLine(),
+                        true);
             }
-            return new LexicalError("multiline string opening \"\"\" must be followed by a newline",
-                    token.getLine(), token.getCharPositionInLine(), false);
+            return new LexicalError(
+                    "multiline string opening \"\"\" must be followed by a newline",
+                    token.getLine(),
+                    token.getCharPositionInLine(),
+                    false);
         }
         if (!isHorizontalWhitespaceOnly(text, openLen, firstNl)) {
-            return new LexicalError("multiline string opening \"\"\" must be followed by a newline",
-                    token.getLine(), token.getCharPositionInLine(), false);
+            return new LexicalError(
+                    "multiline string opening \"\"\" must be followed by a newline",
+                    token.getLine(),
+                    token.getCharPositionInLine(),
+                    false);
         }
         String body = text.substring(firstNl + 1);
         String[] lines = body.split("\n", -1);
@@ -135,8 +142,11 @@ public final class StringLiterals {
                 }
             }
             if (hasSpace && hasTab) {
-                return new LexicalError("mixed tabs and spaces in multiline string indentation",
-                        token.getLine(), token.getCharPositionInLine(), false);
+                return new LexicalError(
+                        "mixed tabs and spaces in multiline string indentation",
+                        token.getLine(),
+                        token.getCharPositionInLine(),
+                        false);
             }
         }
         if (!raw) {
@@ -149,21 +159,26 @@ public final class StringLiterals {
                     normalizedCompleted.append(stripTrailingHorizontal(lines[i]));
                 } else {
                     String strippedLast = stripTrailingHorizontal(lines[i]);
-                    normalizedCompleted.append(endsWithOddBackslashes(strippedLast) ? strippedLast : lines[i]);
+                    normalizedCompleted.append(
+                            endsWithOddBackslashes(strippedLast) ? strippedLast : lines[i]);
                 }
             }
             String escapeError = findEscapeError(normalizedCompleted.toString(), true, true);
             if (escapeError != null) {
-                return new LexicalError(escapeError, token.getLine(), token.getCharPositionInLine(), false);
+                return new LexicalError(
+                        escapeError, token.getLine(), token.getCharPositionInLine(), false);
             }
         }
-        return new LexicalError("unterminated multiline string",
-                token.getLine(), token.getCharPositionInLine(), true);
+        return new LexicalError(
+                "unterminated multiline string",
+                token.getLine(),
+                token.getCharPositionInLine(),
+                true);
     }
 
     /**
-     * Computes the indentation layout of a valid {@code MULTILINE_STRING} or
-     * {@code RAW_MULTILINE_STRING} token for {@code Formatter}.
+     * Computes the indentation layout of a valid {@code MULTILINE_STRING} or {@code
+     * RAW_MULTILINE_STRING} token for {@code Formatter}.
      */
     public static MultilineLayout layout(Token token) {
         boolean raw = token.getType() == BabbleLexer.RAW_MULTILINE_STRING;
@@ -178,7 +193,8 @@ public final class StringLiterals {
         boolean[] blank = new boolean[lines.length];
         int minIndent = computeMinIndent(lines, blank);
         if (minIndent < 0) {
-            throw new IllegalArgumentException("Mixed tabs and spaces in multiline string indentation");
+            throw new IllegalArgumentException(
+                    "Mixed tabs and spaces in multiline string indentation");
         }
         boolean extraIndentHasTabs = false;
         for (int i = 0; i < lines.length; i++) {
@@ -189,7 +205,8 @@ public final class StringLiterals {
                 break;
             }
         }
-        return new MultilineLayout(openingDelimiter, Arrays.asList(lines), blank, minIndent, extraIndentHasTabs);
+        return new MultilineLayout(
+                openingDelimiter, Arrays.asList(lines), blank, minIndent, extraIndentHasTabs);
     }
 
     private static boolean endsWithOddBackslashes(String s) {
@@ -218,14 +235,16 @@ public final class StringLiterals {
         int openLen = raw ? 4 : 3;
         int firstNl = text.indexOf('\n', openLen);
         if (firstNl < 0 || !isHorizontalWhitespaceOnly(text, openLen, firstNl)) {
-            throw new IllegalArgumentException("Multiline string opening \"\"\" must be followed by a newline");
+            throw new IllegalArgumentException(
+                    "Multiline string opening \"\"\" must be followed by a newline");
         }
         String body = text.substring(firstNl + 1, text.length() - 3);
         String[] lines = body.split("\n", -1);
         boolean[] blank = new boolean[lines.length];
         int minIndent = computeMinIndent(lines, blank);
         if (minIndent < 0) {
-            throw new IllegalArgumentException("Mixed tabs and spaces in multiline string indentation");
+            throw new IllegalArgumentException(
+                    "Mixed tabs and spaces in multiline string indentation");
         }
         String dedented = dedent(lines, blank, minIndent);
         return raw ? dedented : translateEscapes(dedented, true);
@@ -237,7 +256,8 @@ public final class StringLiterals {
         boolean hasTab = false;
         for (int i = 0; i < lines.length; i++) {
             String line = lines[i];
-            // Closing line (last) always participates even if it contains only horizontal whitespace.
+            // Closing line (last) always participates even if it contains only horizontal
+            // whitespace.
             if (i < lines.length - 1 && isHorizontalWhitespaceOnly(line, 0, line.length())) {
                 blank[i] = true;
                 continue;
@@ -278,7 +298,8 @@ public final class StringLiterals {
         return out.toString();
     }
 
-    private static String findEscapeError(String body, boolean multiline, boolean allowUnfinishedAtEof) {
+    private static String findEscapeError(
+            String body, boolean multiline, boolean allowUnfinishedAtEof) {
         for (int i = 0; i < body.length(); i++) {
             if (body.charAt(i) != '\\') {
                 continue;
@@ -291,8 +312,7 @@ public final class StringLiterals {
             }
             char next = body.charAt(++i);
             switch (next) {
-                case 'b', 't', 'n', 'f', 'r', '"', '\'', '\\', '0' -> {
-                }
+                case 'b', 't', 'n', 'f', 'r', '"', '\'', '\\', '0' -> {}
                 case 's', '\n' -> {
                     if (!multiline) {
                         return "unknown escape sequence : \\" + (next == '\n' ? "newline" : next);
@@ -361,17 +381,20 @@ public final class StringLiterals {
                 }
                 case 'u' -> {
                     if (i + 4 >= body.length()) {
-                        throw new IllegalArgumentException("Unknown escape sequence : \\u" + unicodeSnippet(body, i + 1));
+                        throw new IllegalArgumentException(
+                                "Unknown escape sequence : \\u" + unicodeSnippet(body, i + 1));
                     }
                     for (int k = 1; k <= 4; k++) {
                         if (!isHexDigit(body.charAt(i + k))) {
-                            throw new IllegalArgumentException("Unknown escape sequence : \\u" + unicodeSnippet(body, i + 1));
+                            throw new IllegalArgumentException(
+                                    "Unknown escape sequence : \\u" + unicodeSnippet(body, i + 1));
                         }
                     }
                     out.append((char) Integer.parseInt(body.substring(i + 1, i + 5), 16));
                     i += 4;
                 }
-                default -> throw new IllegalArgumentException("Unknown escape sequence : \\" + next);
+                default ->
+                        throw new IllegalArgumentException("Unknown escape sequence : \\" + next);
             }
         }
         return out.toString();
@@ -391,9 +414,7 @@ public final class StringLiterals {
     }
 
     private static boolean isHexDigit(char c) {
-        return (c >= '0' && c <= '9')
-                || (c >= 'a' && c <= 'f')
-                || (c >= 'A' && c <= 'F');
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
     }
 
     private static boolean isHorizontalWhitespaceOnly(String s, int start, int end) {

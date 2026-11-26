@@ -1,16 +1,5 @@
 package org.babblelang;
 
-import org.babblelang.engine.BabbleScriptEngine;
-import org.babblelang.engine.BabbleScriptEngineFactory;
-import org.babblelang.engine.BabbleSession;
-import org.babblelang.engine.TypeCheckException;
-import org.babblelang.engine.impl.natives.java.JavaObject;
-import org.babblelang.repl.TerminalInput;
-
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptException;
-import javax.script.SimpleScriptContext;
 import java.io.BufferedReader;
 import java.io.Console;
 import java.io.IOException;
@@ -22,9 +11,20 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import javax.script.Bindings;
+import javax.script.ScriptContext;
+import javax.script.ScriptException;
+import javax.script.SimpleScriptContext;
+import org.babblelang.engine.BabbleScriptEngine;
+import org.babblelang.engine.BabbleScriptEngineFactory;
+import org.babblelang.engine.BabbleSession;
+import org.babblelang.engine.TypeCheckException;
+import org.babblelang.engine.impl.natives.java.JavaObject;
+import org.babblelang.repl.TerminalInput;
 
 /**
  * Babble's command line, and the main class of its jar (docs/design/bip004_repl.md) :
+ *
  * <pre>
  * java -jar babble.jar                              the interactive mode
  * java -jar babble.jar script.ba [arguments...]     runs a script
@@ -34,12 +34,13 @@ import java.util.List;
  * java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
  *                                                   formats source files (babblefmt, {@link Babblefmt})
  * </pre>
- * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The
- * mode is the engine's : {@code -Dbabble.mode=interpret} (scripts are compiled by
- * default).
+ *
+ * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The mode is
+ * the engine's : {@code -Dbabble.mode=interpret} (scripts are compiled by default).
  */
 public final class Main {
-    static final String USAGE = """
+    static final String USAGE =
+            """
             Usage : java -jar babble.jar [-keep-alive] [-O0|-O1|-O2] [script.ba [arguments...]]
               Without a script, starts the interactive mode.
               With one, runs it. Its arguments are in the list "args" : args.size(), args.get(0).
@@ -54,18 +55,24 @@ public final class Main {
             Or : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
               Formats source files : see java -jar babble.jar -format -help.
             Or : java -jar babble.jar -axioms [-O0|-O1|-O2] <class-or-package>
-              Prints what Babble assumes (curated or inferred) about a Java class or package.""";
+              Prints what Babble assumes (curated or inferred) about a Java class or package.\
+            """;
 
     /** The exit statuses : a script that failed, and a command line that can't be used. */
     static final int FAILED = 1;
+
     static final int USAGE_ERROR = 2;
 
-    private Main() {
-    }
+    private Main() {}
 
     public static void main(String[] args) throws IOException {
-        int status = run(args, new BufferedReader(new InputStreamReader(System.in)), new PrintWriter(System.out, true),
-                new PrintWriter(System.err, true), isTerminal());
+        int status =
+                run(
+                        args,
+                        new BufferedReader(new InputStreamReader(System.in)),
+                        new PrintWriter(System.out, true),
+                        new PrintWriter(System.err, true),
+                        isTerminal());
         if (status != 0) {
             // Not on success : threads the script started may still be working.
             System.exit(status);
@@ -74,8 +81,8 @@ public final class Main {
 
     /**
      * Whether a person is typing, at a terminal. Since JDK 22, {@code System.console()} also
-     * returns a console when the input is piped in : {@code Console.isTerminal()} tells, where
-     * it exists (the build targets JDK 21, hence the reflection).
+     * returns a console when the input is piped in : {@code Console.isTerminal()} tells, where it
+     * exists (the build targets JDK 21, hence the reflection).
      */
     static boolean isTerminal() {
         Console console = System.console();
@@ -91,11 +98,13 @@ public final class Main {
     }
 
     /**
-     * @param console whether a person is typing : the interactive mode then shows its prompts,
-     *                and edits lines with history and completion (docs/design/bip004_repl.md §9)
+     * @param console whether a person is typing : the interactive mode then shows its prompts, and
+     *     edits lines with history and completion (docs/design/bip004_repl.md §9)
      * @return the exit status
      */
-    public static int run(String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console) throws IOException {
+    public static int run(
+            String[] args, BufferedReader in, PrintWriter out, PrintWriter err, boolean console)
+            throws IOException {
         if (args.length > 0 && (args[0].equals("-compile") || args[0].equals("--compile"))) {
             return compile(args, out, err);
         }
@@ -129,10 +138,12 @@ public final class Main {
             }
         }
         String script = first < args.length ? args[first] : null;
-        List<String> scriptArguments = script == null ? List.of() : Arrays.asList(args).subList(first + 1, args.length);
+        List<String> scriptArguments =
+                script == null ? List.of() : Arrays.asList(args).subList(first + 1, args.length);
         boolean interactive = script == null || keepAlive;
 
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         if (optLevel != null) {
             engine.put(org.babblelang.compiler.BabbleCompiler.OPT_LEVEL, optLevel);
         }
@@ -153,7 +164,11 @@ public final class Main {
             try {
                 source = Files.readString(Path.of(script));
             } catch (IOException e) {
-                err.println("Cannot read " + script + " : " + (e instanceof NoSuchFileException ? "no such file" : e));
+                err.println(
+                        "Cannot read "
+                                + script
+                                + " : "
+                                + (e instanceof NoSuchFileException ? "no such file" : e));
                 err.flush();
                 return USAGE_ERROR;
             }
@@ -169,11 +184,12 @@ public final class Main {
     }
 
     /**
-     * The interactive mode : with the line editor on a terminal, unless
-     * {@code -Dbabble.lineEditing=false} ; with plain lines otherwise, or if the terminal can't
-     * be used.
+     * The interactive mode : with the line editor on a terminal, unless {@code
+     * -Dbabble.lineEditing=false} ; with plain lines otherwise, or if the terminal can't be used.
      */
-    private static void interact(BabbleSession session, BufferedReader in, PrintWriter out, boolean console) throws IOException {
+    private static void interact(
+            BabbleSession session, BufferedReader in, PrintWriter out, boolean console)
+            throws IOException {
         if (console && !"false".equals(System.getProperty("babble.lineEditing"))) {
             TerminalInput terminal = openTerminal(session);
             if (terminal != null) {
@@ -194,19 +210,28 @@ public final class Main {
         }
     }
 
-    /** Where the interactive mode keeps its inputs : {@code -Dbabble.history=file}, else {@code ~/.babble_history}. */
+    /**
+     * Where the interactive mode keeps its inputs : {@code -Dbabble.history=file}, else {@code
+     * ~/.babble_history}.
+     */
     static Path historyFile() {
         String file = System.getProperty("babble.history");
-        return file != null ? Path.of(file) : Path.of(System.getProperty("user.home"), ".babble_history");
+        return file != null
+                ? Path.of(file)
+                : Path.of(System.getProperty("user.home"), ".babble_history");
     }
 
-    /** {@code -compile main.ba [-target jvm|wasm-js|wasm-bare] [-o app.jar|app.wasm] [-root dir] [-O0|-O1|-O2] [-wasm-opt]} : babblec. */
+    /**
+     * {@code -compile main.ba [-target jvm|wasm-js|wasm-bare] [-o app.jar|app.wasm] [-root dir]
+     * [-O0|-O1|-O2] [-wasm-opt]} : babblec.
+     */
     private static int compile(String[] args, PrintWriter out, PrintWriter err) throws IOException {
         Path main = null;
         Path output = null;
         Path root = null;
         Integer optLevel = null;
-        org.babblelang.analysis.CompilationTarget target = org.babblelang.analysis.CompilationTarget.JVM;
+        org.babblelang.analysis.CompilationTarget target =
+                org.babblelang.analysis.CompilationTarget.JVM;
         boolean wasmOpt = false;
         for (int i = 1; i < args.length; i++) {
             String option = args[i];
@@ -217,7 +242,8 @@ public final class Main {
                 } else {
                     root = value;
                 }
-            } else if ((option.equals("-target") || option.equals("--target")) && i + 1 < args.length) {
+            } else if ((option.equals("-target") || option.equals("--target"))
+                    && i + 1 < args.length) {
                 String tVal = args[++i];
                 try {
                     target = org.babblelang.analysis.CompilationTarget.parse(tVal);
@@ -268,11 +294,21 @@ public final class Main {
         context.setErrorWriter(err);
         try {
             if (target.isWasm()) {
-                int count = org.babblelang.compiler.Babblec.compileWasm(main, root, output, target, context, optLevel, wasmOpt);
-                out.println("Wrote " + output + " : " + count + (count == 1 ? " module" : " modules"));
+                int count =
+                        org.babblelang.compiler.Babblec.compileWasm(
+                                main, root, output, target, context, optLevel, wasmOpt);
+                out.println(
+                        "Wrote " + output + " : " + count + (count == 1 ? " module" : " modules"));
             } else {
-                org.babblelang.runtime.ProgramIndex index = org.babblelang.compiler.Babblec.compile(main, root, output, context, optLevel);
-                out.println("Wrote " + output + " : " + index.modules().size() + (index.modules().size() == 1 ? " module" : " modules"));
+                org.babblelang.runtime.ProgramIndex index =
+                        org.babblelang.compiler.Babblec.compile(
+                                main, root, output, context, optLevel);
+                out.println(
+                        "Wrote "
+                                + output
+                                + " : "
+                                + index.modules().size()
+                                + (index.modules().size() == 1 ? " module" : " modules"));
             }
             out.flush();
             return 0;
@@ -292,7 +328,8 @@ public final class Main {
     }
 
     /** Runs a script as the first input of a session, and reports its error, if any. */
-    private static int runScript(BabbleSession session, String source, String name, PrintWriter errors) {
+    private static int runScript(
+            BabbleSession session, String source, String name, PrintWriter errors) {
         if (BabbleSession.classify(source) == BabbleSession.Input.EMPTY) {
             return 0;
         }
@@ -309,7 +346,10 @@ public final class Main {
         return FAILED;
     }
 
-    /** {@code -axioms [-O0|-O1|-O2] <class-or-package>} : dumps assumed/inferred axioms (BIP019 §5.1). */
+    /**
+     * {@code -axioms [-O0|-O1|-O2] <class-or-package>} : dumps assumed/inferred axioms (BIP019
+     * §5.1).
+     */
     private static int dumpAxioms(String[] args, PrintWriter out, PrintWriter err) {
         String target = null;
         for (int i = 1; i < args.length; i++) {
@@ -337,7 +377,8 @@ public final class Main {
             err.flush();
             return USAGE_ERROR;
         }
-        if (!org.babblelang.analysis.AxiomDumper.dumpTarget(target, org.babblelang.analysis.BuiltinAxioms.standard(), out)) {
+        if (!org.babblelang.analysis.AxiomDumper.dumpTarget(
+                target, org.babblelang.analysis.BuiltinAxioms.standard(), out)) {
             err.println("Unknown class or package : " + target);
             err.flush();
             return USAGE_ERROR;

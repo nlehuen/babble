@@ -6,6 +6,5 @@ import org.babblelang.axioms.MeansNullable;
 @Axioms(targetName = "io.micronaut.core.annotation.Nullable")
 @MeansNullable
 public final class NullableAxioms {
-    private NullableAxioms() {
-    }
+    private NullableAxioms() {}
 }

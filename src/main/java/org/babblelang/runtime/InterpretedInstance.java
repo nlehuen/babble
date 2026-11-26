@@ -3,12 +3,13 @@ package org.babblelang.runtime;
 import java.util.Arrays;
 
 /**
- * An instance of a Babble class in the interpreter : its class value, and its member
- * values in an array indexed through the class's shape. Compiled classes are plain JVM
- * classes with fields of their own (BIP020-D18).
+ * An instance of a Babble class in the interpreter : its class value, and its member values in an
+ * array indexed through the class's shape. Compiled classes are plain JVM classes with fields of
+ * their own (BIP020-D18).
  */
 public final class InterpretedInstance implements HasMembers {
-    private static final CallSite TO_STRING = new CallSite("<toString>", -1, "toString", new String[0]);
+    private static final CallSite TO_STRING =
+            new CallSite("<toString>", -1, "toString", new String[0]);
 
     private final BabbleClass babbleClass;
     private final Object[] values;
@@ -50,7 +51,10 @@ public final class InterpretedInstance implements HasMembers {
                 return new BoundMethod((BabbleFunction) inherited, this);
             }
             if (!babbleClass.javaDefaultMethods(name).isEmpty()) {
-                return new JavaDefaultCall(this, babbleClass.javaDefaultMethods(name), babbleClass.name() + "." + name);
+                return new JavaDefaultCall(
+                        this,
+                        babbleClass.javaDefaultMethods(name),
+                        babbleClass.name() + "." + name);
             }
             throw Members.noSuchMember(name);
         }
@@ -75,7 +79,8 @@ public final class InterpretedInstance implements HasMembers {
         ClassShape shape = babbleClass.shape();
         int index = shape.memberIndex(name);
         if (index < 0) {
-            if (babbleClass.defaultMethod(name) != null || !babbleClass.javaDefaultMethods(name).isEmpty()) {
+            if (babbleClass.defaultMethod(name) != null
+                    || !babbleClass.javaDefaultMethods(name).isEmpty()) {
                 throw Members.cannotAssignMethod(name);
             }
             throw Members.noSuchMember(name);
@@ -99,8 +104,8 @@ public final class InterpretedInstance implements HasMembers {
     }
 
     /**
-     * The method a name designates, defined by the class or inherited from an interface,
-     * or null. Private methods are included : this is for the instance's own use.
+     * The method a name designates, defined by the class or inherited from an interface, or null.
+     * Private methods are included : this is for the instance's own use.
      */
     BabbleFunction method(String name) {
         Object m = methodOrOverload(name);
@@ -121,8 +126,8 @@ public final class InterpretedInstance implements HasMembers {
     }
 
     /**
-     * What Java sees of this instance : itself when its class implements no Java
-     * interfaces, otherwise a cached proxy implementing them.
+     * What Java sees of this instance : itself when its class implements no Java interfaces,
+     * otherwise a cached proxy implementing them.
      */
     public Object face() {
         Class<?>[] interfaces = babbleClass.javaInterfaces();
@@ -169,8 +174,8 @@ public final class InterpretedInstance implements HasMembers {
     }
 
     /**
-     * A zero-parameter method {@code toString} when the class has one ; otherwise the
-     * public fields of a value, or the class name and an identity hash.
+     * A zero-parameter method {@code toString} when the class has one ; otherwise the public fields
+     * of a value, or the class name and an identity hash.
      */
     @Override
     public String toString() {

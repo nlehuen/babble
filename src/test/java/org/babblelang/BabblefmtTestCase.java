@@ -1,29 +1,26 @@
 package org.babblelang;
 
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
 import java.io.BufferedReader;
 import java.io.PrintWriter;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
- * The formatter's command line, {@code -format} : the standard input, files and directories,
- * and its options.
+ * The formatter's command line, {@code -format} : the standard input, files and directories, and
+ * its options.
  */
 public class BabblefmtTestCase {
     private static final String UNFORMATTED = "def f=fn (a)->(\na+1\n)\n";
     private static final String FORMATTED = "def f = fn (a) -> (\n    a + 1\n)\n";
 
-    @TempDir
-    Path directory;
+    @TempDir Path directory;
 
-    private record Run(int status, String out, String err) {
-    }
+    private record Run(int status, String out, String err) {}
 
     private static Run run(String input, String... args) throws Exception {
         StringWriter out = new StringWriter();
@@ -31,8 +28,17 @@ public class BabblefmtTestCase {
         String[] command = new String[args.length + 1];
         command[0] = "-format";
         System.arraycopy(args, 0, command, 1, args.length);
-        int status = Main.run(command, new BufferedReader(new StringReader(input)), new PrintWriter(out), new PrintWriter(err), false);
-        return new Run(status, out.toString().replace(System.lineSeparator(), "\n"), err.toString().replace(System.lineSeparator(), "\n"));
+        int status =
+                Main.run(
+                        command,
+                        new BufferedReader(new StringReader(input)),
+                        new PrintWriter(out),
+                        new PrintWriter(err),
+                        false);
+        return new Run(
+                status,
+                out.toString().replace(System.lineSeparator(), "\n"),
+                err.toString().replace(System.lineSeparator(), "\n"));
     }
 
     private Path file(String name, String source) throws Exception {
@@ -48,7 +54,9 @@ public class BabblefmtTestCase {
         Run failed = run("def = 1\n");
         Assertions.assertEquals(Babblefmt.FAILED, failed.status());
         Assertions.assertEquals("", failed.out());
-        Assertions.assertEquals("Error : Syntax error : unexpected '=' in <standard input> at line number 1 at column number 5\n", failed.err());
+        Assertions.assertEquals(
+                "Error : Syntax error : unexpected '=' in <standard input> at line number 1 at column number 5\n",
+                failed.err());
     }
 
     @Test
@@ -82,10 +90,22 @@ public class BabblefmtTestCase {
     public void testAFileThatCannotBeFormattedIsLeftAlone() throws Exception {
         Path broken = file("broken.ba", "def f = (\n");
         Path fine = file("fine.ba", UNFORMATTED);
-        Run run = run("", "-w", broken.toString(), fine.toString(), directory.resolve("missing.ba").toString());
+        Run run =
+                run(
+                        "",
+                        "-w",
+                        broken.toString(),
+                        fine.toString(),
+                        directory.resolve("missing.ba").toString());
         Assertions.assertEquals(Babblefmt.FAILED, run.status());
-        Assertions.assertEquals("Error : Syntax error : unexpected end of input in " + broken + " at line number 2 at column number 1\n"
-                + "Cannot read " + directory.resolve("missing.ba") + " : no such file\n", run.err());
+        Assertions.assertEquals(
+                "Error : Syntax error : unexpected end of input in "
+                        + broken
+                        + " at line number 2 at column number 1\n"
+                        + "Cannot read "
+                        + directory.resolve("missing.ba")
+                        + " : no such file\n",
+                run.err());
         Assertions.assertEquals("def f = (\n", Files.readString(broken));
         Assertions.assertEquals(FORMATTED, Files.readString(fine));
     }

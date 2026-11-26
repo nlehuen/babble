@@ -1,5 +1,15 @@
 package org.babblelang.tests.batest;
 
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.regex.Pattern;
+import javax.script.ScriptContext;
+import javax.script.ScriptException;
+import javax.script.SimpleScriptContext;
 import org.babblelang.compiler.BabbleCompiler;
 import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
@@ -11,35 +21,35 @@ import org.babblelang.ir.IrSnapshot;
 import org.babblelang.ir.IrTier;
 import org.babblelang.runtime.BabbleException;
 
-import javax.script.ScriptContext;
-import javax.script.ScriptException;
-import javax.script.SimpleScriptContext;
-import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.regex.Pattern;
-
 /**
- * Executes a single {@link BatestFile.BatestCase} on a fresh Babble runtime and produces
- * a leak-free normalized {@link CaseOutcome} ({@code BIP009} §4, {@code BIP029-I2}).
+ * Executes a single {@link BatestFile.BatestCase} on a fresh Babble runtime and produces a
+ * leak-free normalized {@link CaseOutcome} ({@code BIP009} §4, {@code BIP029-I2}).
  */
 public final class BatestRunner {
     private static final String BABBLE_EXCEPTION_PREFIX = BabbleException.class.getName() + ": ";
     private static final String SCRIPT_EXCEPTION_PREFIX = ScriptException.class.getName() + ": ";
-    private static final Pattern TRAILING_LOCATION = Pattern.compile(
-            " in \\S+? at line number \\d+(?:(?:, column| at column number| column) \\d+)?$");
-    private static final Pattern LEXICAL_LINE = Pattern.compile("^Lexical error at line \\d+:\\d+ : ");
-    private static final Pattern ASSERTION_LINE = Pattern.compile("^Assertion failed at line -?\\d+ : ");
-    private static final Pattern REASON_LINE = Pattern.compile(" because of the (assignment|call) at line \\d+\\)");
-    private static final Pattern TYPE_ID_PAIR = Pattern.compile(" \\(expected T\\d+, got T\\d+\\)$");
-    /** The operating system's reason, in its locale, that {@code FileInputStream} and friends append to the path. */
-    private static final Pattern OS_FILE_ERROR = Pattern.compile("^(java\\.io\\.FileNotFoundException : .*) \\([^()]*\\)$");
+    private static final Pattern TRAILING_LOCATION =
+            Pattern.compile(
+                    " in \\S+? at line number \\d+(?:(?:, column| at column number| column) \\d+)?$");
+    private static final Pattern LEXICAL_LINE =
+            Pattern.compile("^Lexical error at line \\d+:\\d+ : ");
+    private static final Pattern ASSERTION_LINE =
+            Pattern.compile("^Assertion failed at line -?\\d+ : ");
+    private static final Pattern REASON_LINE =
+            Pattern.compile(" because of the (assignment|call) at line \\d+\\)");
+    private static final Pattern TYPE_ID_PAIR =
+            Pattern.compile(" \\(expected T\\d+, got T\\d+\\)$");
+
+    /**
+     * The operating system's reason, in its locale, that {@code FileInputStream} and friends append
+     * to the path.
+     */
+    private static final Pattern OS_FILE_ERROR =
+            Pattern.compile("^(java\\.io\\.FileNotFoundException : .*) \\([^()]*\\)$");
+
     /** JDK 22+ words a reflective call on a receiver of the wrong class differently from JDK 21. */
-    private static final Pattern WRONG_RECEIVER = Pattern.compile(
-            "object of type \\S+ is not an instance of \\S+$");
+    private static final Pattern WRONG_RECEIVER =
+            Pattern.compile("object of type \\S+ is not an instance of \\S+$");
 
     public enum Kind {
         OK,
@@ -48,13 +58,7 @@ public final class BatestRunner {
     }
 
     public record CaseOutcome(
-            Kind kind,
-            String text,
-            String stdout,
-            String stderr,
-            String error,
-            Throwable crash
-    ) {
+            Kind kind, String text, String stdout, String stderr, String error, Throwable crash) {
         public CaseOutcome {
             text = text != null ? text : "";
             stdout = stdout != null ? stdout : "";
@@ -71,21 +75,20 @@ public final class BatestRunner {
             CaseOutcome outcome,
             List<IrSnapshot> capturedIr,
             int activeOptLevel,
-            boolean compiledMode
-    ) {
+            boolean compiledMode) {
         public RunResult {
             capturedIr = capturedIr != null ? List.copyOf(capturedIr) : List.of();
         }
     }
 
-    private BatestRunner() {
-    }
+    private BatestRunner() {}
 
     public static CaseOutcome run(BatestFile file, BatestFile.BatestCase testCase) {
         return runWithIr(file, testCase, null, null).outcome();
     }
 
-    public static CaseOutcome run(BatestFile file, BatestFile.BatestCase testCase, BabbleScriptEngine.Mode mode) {
+    public static CaseOutcome run(
+            BatestFile file, BatestFile.BatestCase testCase, BabbleScriptEngine.Mode mode) {
         return runWithIr(file, testCase, mode, null).outcome();
     }
 
@@ -93,9 +96,13 @@ public final class BatestRunner {
         return runWithIr(file, testCase, null, null);
     }
 
-    public static RunResult runWithIr(BatestFile file, BatestFile.BatestCase testCase,
-                                      BabbleScriptEngine.Mode mode, Integer optLevelOverride) {
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+    public static RunResult runWithIr(
+            BatestFile file,
+            BatestFile.BatestCase testCase,
+            BabbleScriptEngine.Mode mode,
+            Integer optLevelOverride) {
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         if (mode != null) {
             engine.put(BabbleScriptEngine.MODE, mode.name().toLowerCase(Locale.ROOT));
         }
@@ -115,7 +122,9 @@ public final class BatestRunner {
         int activeOpt = isCompile ? BabbleCompiler.resolveOptLevel(engine) : -1;
         List<IrSnapshot> capturedIr = new ArrayList<>();
         if (isCompile && !testCase.irExpectations().isEmpty()) {
-            engine.put(BabbleCompiler.IR_OBSERVER, new CapturingIrObserver(testCase.irExpectations(), activeOpt, capturedIr));
+            engine.put(
+                    BabbleCompiler.IR_OBSERVER,
+                    new CapturingIrObserver(testCase.irExpectations(), activeOpt, capturedIr));
         }
 
         ScriptContext context = new SimpleScriptContext();
@@ -136,16 +145,23 @@ public final class BatestRunner {
                     session.eval(input);
                 }
             } else {
-                String source = file.preamble().isEmpty()
-                        ? testCase.code()
-                        : file.preamble() + "\n" + testCase.code();
+                String source =
+                        file.preamble().isEmpty()
+                                ? testCase.code()
+                                : file.preamble() + "\n" + testCase.code();
                 engine.eval(source, context);
             }
             List<String> warnings = extractNormalizedWarnings(err.toString());
             String normOut = normalizeStdout(out.toString());
             String normErr = String.join("\n", warnings);
-            CaseOutcome outcome = new CaseOutcome(Kind.OK, combine(warnings, out.toString(), null),
-                    normOut, normErr, null, null);
+            CaseOutcome outcome =
+                    new CaseOutcome(
+                            Kind.OK,
+                            combine(warnings, out.toString(), null),
+                            normOut,
+                            normErr,
+                            null,
+                            null);
             return new RunResult(outcome, capturedIr, activeOpt, isCompile);
         } catch (Throwable t) {
             List<String> warnings = extractNormalizedWarnings(err.toString());
@@ -155,9 +171,11 @@ public final class BatestRunner {
     }
 
     /**
-     * Evaluates behavioral expectations for either v1 ({@code .batest}) or v2 ({@code .batest.md}) cases.
+     * Evaluates behavioral expectations for either v1 ({@code .batest}) or v2 ({@code .batest.md})
+     * cases.
      *
-     * @return {@code null} if all behavioral expectations match, otherwise a descriptive mismatch message
+     * @return {@code null} if all behavioral expectations match, otherwise a descriptive mismatch
+     *     message
      */
     public static String evaluateBehavioral(BatestFile.BatestCase testCase, CaseOutcome outcome) {
         if (outcome.kind() == Kind.INTERNAL_CRASH) {
@@ -167,24 +185,43 @@ public final class BatestRunner {
         List<String> failures = new ArrayList<>();
         if (testCase.expectedError() == null) {
             if (outcome.kind() != Kind.OK) {
-                failures.add("expected success (no error block) but failed with error: <" + outcome.error() + ">");
+                failures.add(
+                        "expected success (no error block) but failed with error: <"
+                                + outcome.error()
+                                + ">");
             }
         } else {
             if (outcome.kind() != Kind.USER_ERROR) {
-                failures.add("expected error: <" + testCase.expectedError().text() + "> but succeeded (stdout: <"
-                        + outcome.stdout() + ">)");
+                failures.add(
+                        "expected error: <"
+                                + testCase.expectedError().text()
+                                + "> but succeeded (stdout: <"
+                                + outcome.stdout()
+                                + ">)");
             } else if (!testCase.expectedError().matches(outcome.error())) {
-                failures.add("error mismatch ==> expected: <" + testCase.expectedError().text()
-                        + "> but was: <" + outcome.error() + ">");
+                failures.add(
+                        "error mismatch ==> expected: <"
+                                + testCase.expectedError().text()
+                                + "> but was: <"
+                                + outcome.error()
+                                + ">");
             }
         }
         if (!testCase.expectedStdout().matches(outcome.stdout())) {
-            failures.add("stdout mismatch ==> expected: <" + testCase.expectedStdout().text()
-                    + "> but was: <" + outcome.stdout() + ">");
+            failures.add(
+                    "stdout mismatch ==> expected: <"
+                            + testCase.expectedStdout().text()
+                            + "> but was: <"
+                            + outcome.stdout()
+                            + ">");
         }
         if (!testCase.expectedStderr().matches(outcome.stderr())) {
-            failures.add("stderr mismatch ==> expected: <" + testCase.expectedStderr().text()
-                    + "> but was: <" + outcome.stderr() + ">");
+            failures.add(
+                    "stderr mismatch ==> expected: <"
+                            + testCase.expectedStderr().text()
+                            + "> but was: <"
+                            + outcome.stderr()
+                            + ">");
         }
         return failures.isEmpty() ? null : String.join("\n", failures);
     }
@@ -193,47 +230,76 @@ public final class BatestRunner {
         String normOut = normalizeStdout(stdout);
         String normErr = String.join("\n", warnings);
         if (t instanceof StackOverflowError || t.getCause() instanceof StackOverflowError) {
-            return new CaseOutcome(Kind.USER_ERROR, combine(warnings, stdout, "Stack overflow"),
-                    normOut, normErr, "Stack overflow", null);
+            return new CaseOutcome(
+                    Kind.USER_ERROR,
+                    combine(warnings, stdout, "Stack overflow"),
+                    normOut,
+                    normErr,
+                    "Stack overflow",
+                    null);
         }
         if (t instanceof BootstrapMethodError bme) {
             BabbleException babble = findCause(bme, BabbleException.class);
             if (babble != null) {
-                String normalized = normalizeMessage(babble.getMessage() != null ? babble.getMessage() : babble.toString());
-                return new CaseOutcome(Kind.USER_ERROR, combine(warnings, stdout, normalized),
-                        normOut, normErr, normalized, null);
+                String normalized =
+                        normalizeMessage(
+                                babble.getMessage() != null
+                                        ? babble.getMessage()
+                                        : babble.toString());
+                return new CaseOutcome(
+                        Kind.USER_ERROR,
+                        combine(warnings, stdout, normalized),
+                        normOut,
+                        normErr,
+                        normalized,
+                        null);
             }
-            return new CaseOutcome(Kind.INTERNAL_CRASH, bme.toString(),
-                    normOut, normErr, null, bme);
+            return new CaseOutcome(
+                    Kind.INTERNAL_CRASH, bme.toString(), normOut, normErr, null, bme);
         }
         if (t instanceof BabbleException babble) {
-            String normalized = normalizeMessage(babble.getMessage() != null ? babble.getMessage() : babble.toString());
-            return new CaseOutcome(Kind.USER_ERROR, combine(warnings, stdout, normalized),
-                    normOut, normErr, normalized, null);
+            String normalized =
+                    normalizeMessage(
+                            babble.getMessage() != null ? babble.getMessage() : babble.toString());
+            return new CaseOutcome(
+                    Kind.USER_ERROR,
+                    combine(warnings, stdout, normalized),
+                    normOut,
+                    normErr,
+                    normalized,
+                    null);
         }
         if (t instanceof ScriptException se) {
             Throwable cause = se.getCause();
             if (cause != null && !(cause instanceof BabbleException)) {
-                return new CaseOutcome(Kind.INTERNAL_CRASH, se.toString(),
-                        normOut, normErr, null, cause);
+                return new CaseOutcome(
+                        Kind.INTERNAL_CRASH, se.toString(), normOut, normErr, null, cause);
             }
             String msg = se.getMessage();
-            boolean isUserError = se instanceof TypeCheckException
-                    || cause instanceof BabbleException
-                    || (msg != null && (msg.startsWith(BABBLE_EXCEPTION_PREFIX)
-                    || msg.startsWith("java.lang.ArrayIndexOutOfBoundsException")
-                    || msg.startsWith("java.lang.NegativeArraySizeException")
-                    || msg.startsWith("java.lang.ArrayStoreException")));
+            boolean isUserError =
+                    se instanceof TypeCheckException
+                            || cause instanceof BabbleException
+                            || (msg != null
+                                    && (msg.startsWith(BABBLE_EXCEPTION_PREFIX)
+                                            || msg.startsWith(
+                                                    "java.lang.ArrayIndexOutOfBoundsException")
+                                            || msg.startsWith(
+                                                    "java.lang.NegativeArraySizeException")
+                                            || msg.startsWith("java.lang.ArrayStoreException")));
             if (!isUserError) {
-                return new CaseOutcome(Kind.INTERNAL_CRASH, se.toString(),
-                        normOut, normErr, null, se);
+                return new CaseOutcome(
+                        Kind.INTERNAL_CRASH, se.toString(), normOut, normErr, null, se);
             }
             String normalized = normalizeMessage(msg);
-            return new CaseOutcome(Kind.USER_ERROR, combine(warnings, stdout, normalized),
-                    normOut, normErr, normalized, null);
+            return new CaseOutcome(
+                    Kind.USER_ERROR,
+                    combine(warnings, stdout, normalized),
+                    normOut,
+                    normErr,
+                    normalized,
+                    null);
         }
-        return new CaseOutcome(Kind.INTERNAL_CRASH, t.toString(),
-                normOut, normErr, null, t);
+        return new CaseOutcome(Kind.INTERNAL_CRASH, t.toString(), normOut, normErr, null, t);
     }
 
     private static final class CapturingIrObserver implements IrObserver {
@@ -241,7 +307,8 @@ public final class BatestRunner {
         private final int activeOpt;
         private final List<IrSnapshot> sink;
 
-        CapturingIrObserver(List<BatestFile.IrExpectation> expectations, int activeOpt, List<IrSnapshot> sink) {
+        CapturingIrObserver(
+                List<BatestFile.IrExpectation> expectations, int activeOpt, List<IrSnapshot> sink) {
             this.expectations = expectations;
             this.activeOpt = activeOpt;
             this.sink = sink;
@@ -298,9 +365,7 @@ public final class BatestRunner {
         return stdout.replace("\r\n", "\n").replace('\r', '\n').strip();
     }
 
-    /**
-     * Applies BIP009-D5 normalization rules to a raw Babble error string.
-     */
+    /** Applies BIP009-D5 normalization rules to a raw Babble error string. */
     public static String normalizeMessage(String raw) {
         if (raw == null) {
             return "";
@@ -325,7 +390,10 @@ public final class BatestRunner {
         text = REASON_LINE.matcher(text).replaceAll(" because of the $1)");
         text = TYPE_ID_PAIR.matcher(text).replaceFirst(" (expected T#, got T#)");
         text = OS_FILE_ERROR.matcher(text).replaceFirst("$1 (<OS error>)");
-        text = WRONG_RECEIVER.matcher(text).replaceFirst("object is not an instance of declaring class");
+        text =
+                WRONG_RECEIVER
+                        .matcher(text)
+                        .replaceFirst("object is not an instance of declaring class");
         return text.strip();
     }
 
@@ -348,7 +416,8 @@ public final class BatestRunner {
             }
             sb.append(warning);
         }
-        String normalizedOut = stdout == null ? "" : stdout.replace("\r\n", "\n").replace('\r', '\n');
+        String normalizedOut =
+                stdout == null ? "" : stdout.replace("\r\n", "\n").replace('\r', '\n');
         if (!normalizedOut.isBlank()) {
             if (!sb.isEmpty()) {
                 sb.append('\n');

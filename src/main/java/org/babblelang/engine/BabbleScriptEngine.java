@@ -1,41 +1,10 @@
 package org.babblelang.engine;
 
-import org.babblelang.runtime.BabbleException;
-import org.antlr.v4.runtime.BailErrorStrategy;
-import org.antlr.v4.runtime.BaseErrorListener;
-import org.antlr.v4.runtime.CharStream;
-import org.antlr.v4.runtime.CharStreams;
-import org.antlr.v4.runtime.CommonTokenStream;
-import org.antlr.v4.runtime.RecognitionException;
-import org.antlr.v4.runtime.Recognizer;
-import org.antlr.v4.runtime.Token;
-import org.antlr.v4.runtime.misc.ParseCancellationException;
-import org.babblelang.analysis.AnalysisSession;
-import org.babblelang.analysis.AnalysisException;
-import org.babblelang.analysis.BlockScopes;
-import org.babblelang.analysis.HostEffects;
-import org.babblelang.analysis.ModuleInterface;
-import org.babblelang.analysis.ModuleLoader;
-import org.babblelang.analysis.ScopeAnalysis;
-import org.babblelang.compiler.BabbleCompiler;
-import org.babblelang.compiler.CompiledBabbleScript;
-import org.babblelang.engine.impl.BabbleCompiledScript;
-import org.babblelang.runtime.Namespace;
-import org.babblelang.parser.BabbleLexer;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.Implicits;
-import org.babblelang.runtime.Module;
-import org.babblelang.runtime.Modules;
-import org.babblelang.runtime.ScriptRuntime;
-
-import javax.script.*;
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 import java.io.Writer;
-import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
-import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -48,17 +17,46 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
+import javax.script.*;
+import org.antlr.v4.runtime.BailErrorStrategy;
+import org.antlr.v4.runtime.BaseErrorListener;
+import org.antlr.v4.runtime.CharStream;
+import org.antlr.v4.runtime.CharStreams;
+import org.antlr.v4.runtime.CommonTokenStream;
+import org.antlr.v4.runtime.RecognitionException;
+import org.antlr.v4.runtime.Recognizer;
+import org.antlr.v4.runtime.Token;
+import org.antlr.v4.runtime.misc.ParseCancellationException;
+import org.babblelang.analysis.AnalysisException;
+import org.babblelang.analysis.AnalysisSession;
+import org.babblelang.analysis.BlockScopes;
+import org.babblelang.analysis.HostEffects;
+import org.babblelang.analysis.ModuleInterface;
+import org.babblelang.analysis.ModuleLoader;
+import org.babblelang.analysis.ScopeAnalysis;
+import org.babblelang.compiler.BabbleCompiler;
+import org.babblelang.compiler.CompiledBabbleScript;
+import org.babblelang.engine.impl.BabbleCompiledScript;
+import org.babblelang.parser.BabbleLexer;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.BabbleException;
+import org.babblelang.runtime.Implicits;
+import org.babblelang.runtime.Module;
+import org.babblelang.runtime.Modules;
+import org.babblelang.runtime.Namespace;
+import org.babblelang.runtime.ScriptRuntime;
 
 public class BabbleScriptEngine extends AbstractScriptEngine implements Compilable {
     /**
-     * The name of the system property, and of the engine attribute, that selects the
-     * {@link Mode}. The attribute wins : {@code engine.put(MODE, "compile")}.
+     * The name of the system property, and of the engine attribute, that selects the {@link Mode}.
+     * The attribute wins : {@code engine.put(MODE, "compile")}.
      */
     public static final String MODE = "babble.mode";
 
     /** How a script is run : by the tree-walking interpreter, or as JVM bytecode. */
     public enum Mode {
-        INTERPRET, COMPILE;
+        INTERPRET,
+        COMPILE;
 
         static Mode parse(Object value) {
             if (value instanceof Mode mode) {
@@ -67,60 +65,88 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             try {
                 return valueOf(String.valueOf(value).trim().toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
-                throw new BabbleException("Unknown " + MODE + " : " + value + " (expected interpret or compile)");
+                throw new BabbleException(
+                        "Unknown " + MODE + " : " + value + " (expected interpret or compile)");
             }
         }
     }
 
-    /** {@code import} takes a name with this extension for a Babble file, any other for a Java package. */
+    /**
+     * {@code import} takes a name with this extension for a Babble file, any other for a Java
+     * package.
+     */
     public static final String MODULE_EXTENSION = Module.EXTENSION;
 
     /**
-     * The name of the engine attribute holding the {@link ModuleSource} imports read modules
-     * from. Without it, modules are files ({@link FileModuleSource}).
+     * The name of the engine attribute holding the {@link ModuleSource} imports read modules from.
+     * Without it, modules are files ({@link FileModuleSource}).
      */
     public static final String MODULE_SOURCE = "babble.moduleSource";
 
     private static final String DEFAULT_SOURCE_NAME = "<input>";
 
-    private static final BaseErrorListener FAIL_ON_LEXICAL_ERROR = new BaseErrorListener() {
-        @Override
-        public void syntaxError(Recognizer<?, ?> recognizer, Object offendingSymbol, int line, int charPositionInLine, String msg, RecognitionException e) {
-            throw new ParseFailure("Lexical error at line " + line + ":" + charPositionInLine + " : " + msg, line, charPositionInLine + 1, true, false);
-        }
-    };
+    private static final BaseErrorListener FAIL_ON_LEXICAL_ERROR =
+            new BaseErrorListener() {
+                @Override
+                public void syntaxError(
+                        Recognizer<?, ?> recognizer,
+                        Object offendingSymbol,
+                        int line,
+                        int charPositionInLine,
+                        String msg,
+                        RecognitionException e) {
+                    throw new ParseFailure(
+                            "Lexical error at line "
+                                    + line
+                                    + ":"
+                                    + charPositionInLine
+                                    + " : "
+                                    + msg,
+                            line,
+                            charPositionInLine + 1,
+                            true,
+                            false);
+                }
+            };
 
     private final BabbleScriptEngineFactory factory;
     private final Namespace implicits;
 
     /**
      * A compiled module, as the cache keeps it (docs/design/bip005_modules.md §9) : for the source
-     * and mode it was compiled with, and the versions of every module its analysis
-     * read, its own included. It is stale when one of them changed.
+     * and mode it was compiled with, and the versions of every module its analysis read, its own
+     * included. It is stale when one of them changed.
      */
-    private record CompiledModule(ModuleSource source, Mode mode, int optLevel, Map<ModuleId, String> versions,
-                                  BabbleScript script, ModuleInterface moduleInterface) {
-    }
+    private record CompiledModule(
+            ModuleSource source,
+            Mode mode,
+            int optLevel,
+            Map<ModuleId, String> versions,
+            BabbleScript script,
+            ModuleInterface moduleInterface) {}
 
     /** A module whose analysis is under way : a module importing it back, in a cycle, gets this. */
-    private record InProgress(ModuleInterface moduleInterface, String version) {
-    }
+    private record InProgress(ModuleInterface moduleInterface, String version) {}
 
     /** Guards the module cache and the analyses in progress : modules compile one at a time. */
     private final Object moduleLock = new Object();
+
     /** By module key. */
     private final Map<String, CompiledModule> moduleCache = new HashMap<>();
+
     private final Map<String, InProgress> inProgress = new HashMap<>();
+
     /**
-     * The identity of each module compiled, by the source name it was compiled with : what
-     * an import inside it, which only knows its file's source name, is resolved from.
+     * The identity of each module compiled, by the source name it was compiled with : what an
+     * import inside it, which only knows its file's source name, is resolved from.
      */
     private final Map<String, ModuleId> compiledAs = new HashMap<>();
 
     private boolean allowAxioms = true;
     private boolean bytecodeEffectAnalysis = true;
     private final HostEffects.Registry hostRegistrations = new HostEffects.Registry();
-    private org.babblelang.analysis.BuiltinAxioms builtinAxioms = org.babblelang.analysis.BuiltinAxioms.standard();
+    private org.babblelang.analysis.BuiltinAxioms builtinAxioms =
+            org.babblelang.analysis.BuiltinAxioms.standard();
 
     BabbleScriptEngine(BabbleScriptEngineFactory factory) {
         super();
@@ -138,7 +164,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * compilation (defaults to {@link org.babblelang.analysis.BuiltinAxioms#standard()}).
      */
     public BabbleScriptEngine setBuiltinAxioms(org.babblelang.analysis.BuiltinAxioms axioms) {
-        org.babblelang.analysis.BuiltinAxioms next = axioms != null ? axioms : org.babblelang.analysis.BuiltinAxioms.standard();
+        org.babblelang.analysis.BuiltinAxioms next =
+                axioms != null ? axioms : org.babblelang.analysis.BuiltinAxioms.standard();
         synchronized (moduleLock) {
             if (this.builtinAxioms != next) {
                 this.builtinAxioms = next;
@@ -155,8 +182,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * Controls whether script-level {@code axiom} and {@code impure} Java target declarations
-     * are accepted during type checking (default {@code true}).
+     * Controls whether script-level {@code axiom} and {@code impure} Java target declarations are
+     * accepted during type checking (default {@code true}).
      */
     public BabbleScriptEngine allowAxioms(boolean allow) {
         synchronized (moduleLock) {
@@ -175,8 +202,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * Opt-in ASM bytecode static effect analysis for unannotated closed Java helper methods
-     * ({@code BIP007-I3}, default {@code false}).
+     * Opt-in ASM bytecode static effect analysis for unannotated closed Java helper methods ({@code
+     * BIP007-I3}, default {@code false}).
      */
     public BabbleScriptEngine enableBytecodeEffectAnalysis(boolean enable) {
         synchronized (moduleLock) {
@@ -194,8 +221,11 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
-    /** Registers a per-engine effect assumption for all methods and constructors of {@code target}. */
-    public BabbleScriptEngine assumeEffects(Class<?> target, org.babblelang.effects.Effect... effects) {
+    /**
+     * Registers a per-engine effect assumption for all methods and constructors of {@code target}.
+     */
+    public BabbleScriptEngine assumeEffects(
+            Class<?> target, org.babblelang.effects.Effect... effects) {
         Objects.requireNonNull(target, "target");
         synchronized (moduleLock) {
             hostRegistrations.assumeClass(target, effects);
@@ -204,12 +234,17 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return this;
     }
 
-    /** Registers a per-engine effect assumption for all overloads of {@code methodName} on {@code owner}. */
-    public BabbleScriptEngine assumeEffects(Class<?> owner, String methodName, org.babblelang.effects.Effect... effects) {
+    /**
+     * Registers a per-engine effect assumption for all overloads of {@code methodName} on {@code
+     * owner}.
+     */
+    public BabbleScriptEngine assumeEffects(
+            Class<?> owner, String methodName, org.babblelang.effects.Effect... effects) {
         Objects.requireNonNull(owner, "owner");
         Objects.requireNonNull(methodName, "methodName");
         if (!HostEffects.hasMethodNamed(owner, methodName)) {
-            throw new IllegalArgumentException("No such method : " + methodName + " on " + owner.getName());
+            throw new IllegalArgumentException(
+                    "No such method : " + methodName + " on " + owner.getName());
         }
         synchronized (moduleLock) {
             hostRegistrations.assumeMethod(owner, methodName, effects);
@@ -219,7 +254,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /** Registers a per-engine effect assumption for constructors of {@code target} only. */
-    public BabbleScriptEngine assumeConstructorEffects(Class<?> target, org.babblelang.effects.Effect... effects) {
+    public BabbleScriptEngine assumeConstructorEffects(
+            Class<?> target, org.babblelang.effects.Effect... effects) {
         Objects.requireNonNull(target, "target");
         synchronized (moduleLock) {
             hostRegistrations.assumeConstructor(target, effects);
@@ -248,7 +284,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         for (String name : methodNames) {
             Objects.requireNonNull(name, "methodName");
             if (!HostEffects.hasMethodNamed(owner, name)) {
-                throw new IllegalArgumentException("No such method : " + name + " on " + owner.getName());
+                throw new IllegalArgumentException(
+                        "No such method : " + name + " on " + owner.getName());
             }
         }
         synchronized (moduleLock) {
@@ -262,14 +299,15 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     HostEffects hostEffects() {
         synchronized (moduleLock) {
-            return hostRegistrations.toHostEffects(allowAxioms, bytecodeEffectAnalysis, builtinAxioms);
+            return hostRegistrations.toHostEffects(
+                    allowAxioms, bytecodeEffectAnalysis, builtinAxioms);
         }
     }
 
     /**
      * The mode {@link #compile} uses : the {@link #MODE} engine attribute, else the system
-     * property, else {@link Mode#COMPILE}. The interpreter is kept as the reference
-     * implementation the test suite checks the compiler against.
+     * property, else {@link Mode#COMPILE}. The interpreter is kept as the reference implementation
+     * the test suite checks the compiler against.
      */
     public Mode getMode() {
         Object mode = get(MODE);
@@ -280,9 +318,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * Builds the namespaces of one eval : the engine's implicits, then a namespace binding
-     * {@code STDOUT} to the context's writer, then the script root, which holds the
-     * ENGINE_SCOPE bindings and the script's own top-level definitions.
+     * Builds the namespaces of one eval : the engine's implicits, then a namespace binding {@code
+     * STDOUT} to the context's writer, then the script root, which holds the ENGINE_SCOPE bindings
+     * and the script's own top-level definitions.
      */
     public ScriptRuntime createRuntime(ScriptContext context) {
         return createRuntime(context, newModules(context));
@@ -292,16 +330,16 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         Namespace root = Implicits.withOutput(implicits, context.getWriter()).enter();
 
         // TODO : handle ScriptContext.GLOBAL_SCOPE
-        for (Map.Entry<String, Object> binding : context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
+        for (Map.Entry<String, Object> binding :
+                context.getBindings(ScriptContext.ENGINE_SCOPE).entrySet()) {
             root.define(binding.getKey(), false).set(binding.getValue());
         }
         return new ScriptRuntime(root, context.getWriter(), modules);
     }
 
     /**
-     * The modules of one eval, or of one interactive session : each module is loaded at most
-     * once, compiled through the engine's cache, and run on a runtime of its own under the
-     * same context.
+     * The modules of one eval, or of one interactive session : each module is loaded at most once,
+     * compiled through the engine's cache, and run on a runtime of its own under the same context.
      */
     Modules newModules(ScriptContext context) {
         return new EvalModules(context);
@@ -321,6 +359,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
 
     private final class EvalModules implements Modules {
         private final ScriptContext context;
+
         /** The modules loaded so far, by key. */
         private final Map<String, Module> loaded = new HashMap<>();
 
@@ -329,10 +368,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
 
         /**
-         * {@code import("x.ba")} : a module runs once per eval, in the mode of the engine, with
-         * a root of its own : every import of it gets the same module. The module is
-         * registered before it runs, so modules may import each other ; what such a cycle
-         * cannot do is read an export before its definition ran.
+         * {@code import("x.ba")} : a module runs once per eval, in the mode of the engine, with a
+         * root of its own : every import of it gets the same module. The module is registered
+         * before it runs, so modules may import each other ; what such a cycle cannot do is read an
+         * export before its definition ran.
          */
         @Override
         public Module load(String name, String importer, ScriptRuntime rt) {
@@ -387,9 +426,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * The identity of the module a source name is : a module this engine compiled under that
-     * name, else what the source resolves the name to, from nowhere (the main script's file),
-     * else none.
+     * The identity of the module a source name is : a module this engine compiled under that name,
+     * else what the source resolves the name to, from nowhere (the main script's file), else none.
      */
     private ModuleId importerId(ModuleSource source, String sourceName) {
         if (sourceName == null) {
@@ -405,16 +443,21 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * The compiled module, from the cache when nothing it was compiled from changed.
-     * Compiling it analyses the modules it imports statically, through this cache.
+     * The compiled module, from the cache when nothing it was compiled from changed. Compiling it
+     * analyses the modules it imports statically, through this cache.
      */
-    private CompiledModule compiledModule(ModuleSource source, String name, ModuleId id, ScriptContext context) throws ScriptException {
+    private CompiledModule compiledModule(
+            ModuleSource source, String name, ModuleId id, ScriptContext context)
+            throws ScriptException {
         synchronized (moduleLock) {
             Mode mode = getMode();
             int optLevel = mode == Mode.COMPILE ? BabbleCompiler.resolveOptLevel(this) : -1;
             CompiledModule cached = moduleCache.get(id.key());
-            if (cached != null && cached.source() == source && cached.mode() == mode
-                    && cached.optLevel() == optLevel && isFresh(cached)) {
+            if (cached != null
+                    && cached.source() == source
+                    && cached.mode() == mode
+                    && cached.optLevel() == optLevel
+                    && isFresh(cached)) {
                 return cached;
             }
             ModuleText text;
@@ -440,34 +483,47 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             }
             loader.versions.put(id, text.version());
             BabbleScript compiledScript = script(file, scopes, sourceName, id);
-            if (compiledScript instanceof CompiledBabbleScript compiled && scopes.moduleInterface() != null) {
-                scopes.moduleInterface().setCompilation(compiled.getScriptClass().getClassLoader(),
-                        compiled.interfaceJvmNames(), compiled.classJvmNames(), compiled.exportedFunctions());
+            if (compiledScript instanceof CompiledBabbleScript compiled
+                    && scopes.moduleInterface() != null) {
+                scopes.moduleInterface()
+                        .setCompilation(
+                                compiled.getScriptClass().getClassLoader(),
+                                compiled.interfaceJvmNames(),
+                                compiled.classJvmNames(),
+                                compiled.exportedFunctions());
             }
-            CompiledModule module = new CompiledModule(source, mode, optLevel, Map.copyOf(loader.versions),
-                    compiledScript, scopes.moduleInterface());
+            CompiledModule module =
+                    new CompiledModule(
+                            source,
+                            mode,
+                            optLevel,
+                            Map.copyOf(loader.versions),
+                            compiledScript,
+                            scopes.moduleInterface());
             moduleCache.put(id.key(), module);
             return module;
         }
     }
 
     /** A module of a program compiled ahead of time : what {@code babblec} writes into the jar. */
-    public record ProgramModule(ModuleId id, String[] exports, CompiledBabbleScript script) {
-    }
+    public record ProgramModule(ModuleId id, String[] exports, CompiledBabbleScript script) {}
 
     /**
      * Compiles a program ahead of time (docs/design/bip006_module-sources-and-aot.md §5) : its main
-     * script, as a module of the source, and every module it imports statically, transitively.
-     * The main module comes first, the others by key. Modules it only imports dynamically
-     * are not compiled.
+     * script, as a module of the source, and every module it imports statically, transitively. The
+     * main module comes first, the others by key. Modules it only imports dynamically are not
+     * compiled.
      */
-    public List<ProgramModule> compileProgram(ModuleSource source, String mainName) throws ScriptException {
+    public List<ProgramModule> compileProgram(ModuleSource source, String mainName)
+            throws ScriptException {
         if (getMode() != Mode.COMPILE) {
-            throw new ScriptException("A program compiles to bytecode : " + MODE + " must be compile");
+            throw new ScriptException(
+                    "A program compiles to bytecode : " + MODE + " must be compile");
         }
         ModuleId main = source.identify(mainName);
         if (main == null) {
-            throw new ScriptException("Cannot compile " + mainName + " : not a module of " + source);
+            throw new ScriptException(
+                    "Cannot compile " + mainName + " : not a module of " + source);
         }
         synchronized (moduleLock) {
             CompiledModule program;
@@ -487,23 +543,24 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     private static ProgramModule programModule(ModuleId id, CompiledModule module) {
-        return new ProgramModule(id, module.script().exports(), (CompiledBabbleScript) module.script());
+        return new ProgramModule(
+                id, module.script().exports(), (CompiledBabbleScript) module.script());
     }
 
     /**
      * A target-neutral HIR module of a program compiled ahead of time ({@code BIP025-I0}).
      *
-     * @param id                module identifier
-     * @param exports           ordered export names
-     * @param hir               optimized {@link org.babblelang.ir.hir.HirModule}
-     * @param staticImportKeys  mapping from each literal {@code import("...")} string in this module to its resolved {@link ModuleId#key()}
+     * @param id module identifier
+     * @param exports ordered export names
+     * @param hir optimized {@link org.babblelang.ir.hir.HirModule}
+     * @param staticImportKeys mapping from each literal {@code import("...")} string in this module
+     *     to its resolved {@link ModuleId#key()}
      */
     public record HirProgramModule(
             ModuleId id,
             String[] exports,
             org.babblelang.ir.hir.HirModule hir,
-            Map<String, String> staticImportKeys
-    ) {
+            Map<String, String> staticImportKeys) {
         public HirProgramModule {
             exports = exports != null ? exports.clone() : new String[0];
             staticImportKeys = staticImportKeys != null ? Map.copyOf(staticImportKeys) : Map.of();
@@ -511,47 +568,50 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * Compiles a single inline Babble script (and any modules statically imported from
-     * {@link #getModuleSource()}) directly to optimized target-neutral {@link HirProgramModule}s
-     * without generating JVM bytecode ({@code BIP025-I0}).
+     * Compiles a single inline Babble script (and any modules statically imported from {@link
+     * #getModuleSource()}) directly to optimized target-neutral {@link HirProgramModule}s without
+     * generating JVM bytecode ({@code BIP025-I0}).
      */
-    public List<HirProgramModule> compileSourceToHir(String code, String sourceName,
-                                                     org.babblelang.analysis.CompilationTarget target) throws ScriptException {
+    public List<HirProgramModule> compileSourceToHir(
+            String code, String sourceName, org.babblelang.analysis.CompilationTarget target)
+            throws ScriptException {
         String entryName = (sourceName != null && !sourceName.isBlank()) ? sourceName : "main.ba";
         ModuleSource existing = getModuleSource();
-        ModuleSource composite = new ModuleSource() {
-            @Override
-            public ModuleId identify(String name) {
-                if (entryName.equals(name)) {
-                    return new ModuleId("mem:" + entryName, entryName);
-                }
-                return existing.identify(name);
-            }
+        ModuleSource composite =
+                new ModuleSource() {
+                    @Override
+                    public ModuleId identify(String name) {
+                        if (entryName.equals(name)) {
+                            return new ModuleId("mem:" + entryName, entryName);
+                        }
+                        return existing.identify(name);
+                    }
 
-            @Override
-            public ModuleId resolve(String importName, ModuleId importer) throws IOException {
-                if (importer != null && ("mem:" + entryName).equals(importer.key())) {
-                    return existing.resolve(importName, null);
-                }
-                return existing.resolve(importName, importer);
-            }
+                    @Override
+                    public ModuleId resolve(String importName, ModuleId importer)
+                            throws IOException {
+                        if (importer != null && ("mem:" + entryName).equals(importer.key())) {
+                            return existing.resolve(importName, null);
+                        }
+                        return existing.resolve(importName, importer);
+                    }
 
-            @Override
-            public ModuleText read(ModuleId id) throws IOException {
-                if (("mem:" + entryName).equals(id.key())) {
-                    return new ModuleText(code, "0");
-                }
-                return existing.read(id);
-            }
+                    @Override
+                    public ModuleText read(ModuleId id) throws IOException {
+                        if (("mem:" + entryName).equals(id.key())) {
+                            return new ModuleText(code, "0");
+                        }
+                        return existing.read(id);
+                    }
 
-            @Override
-            public String version(ModuleId id) throws IOException {
-                if (("mem:" + entryName).equals(id.key())) {
-                    return "0";
-                }
-                return existing.version(id);
-            }
-        };
+                    @Override
+                    public String version(ModuleId id) throws IOException {
+                        if (("mem:" + entryName).equals(id.key())) {
+                            return "0";
+                        }
+                        return existing.version(id);
+                    }
+                };
         return compileProgramToHir(composite, entryName, target);
     }
 
@@ -560,11 +620,13 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * {@link HirProgramModule}s for a given {@link org.babblelang.analysis.CompilationTarget}
      * without emitting JVM class files ({@code BIP025-I0}).
      */
-    public List<HirProgramModule> compileProgramToHir(ModuleSource source, String mainName,
-                                                      org.babblelang.analysis.CompilationTarget target) throws ScriptException {
+    public List<HirProgramModule> compileProgramToHir(
+            ModuleSource source, String mainName, org.babblelang.analysis.CompilationTarget target)
+            throws ScriptException {
         ModuleId main = source.identify(mainName);
         if (main == null) {
-            throw new ScriptException("Cannot compile " + mainName + " : not a module of " + source);
+            throw new ScriptException(
+                    "Cannot compile " + mainName + " : not a module of " + source);
         }
         Map<String, HirProgramModule> built = new LinkedHashMap<>();
         Map<String, ModuleInterface> interfaces = new LinkedHashMap<>();
@@ -596,35 +658,36 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                     throw e.toScriptException(srcName);
                 }
                 Map<String, String> staticImports = new LinkedHashMap<>();
-                ModuleLoader loader = new ModuleLoader() {
-                    @Override
-                    public String moduleKey() {
-                        return id.key();
-                    }
-
-                    @Override
-                    public void started(ModuleInterface module) {
-                        module.setName(srcName);
-                        inProg.put(id.key(), module);
-                    }
-
-                    @Override
-                    public ModuleInterface load(String importName, int line) {
-                        try {
-                            ModuleId dep = resolve(source, importName, id);
-                            staticImports.put(importName, dep.key());
-                            ModuleInterface pending = inProg.get(dep.key());
-                            if (pending != null) {
-                                return pending;
+                ModuleLoader loader =
+                        new ModuleLoader() {
+                            @Override
+                            public String moduleKey() {
+                                return id.key();
                             }
-                            return buildModule(importName, dep);
-                        } catch (BabbleException e) {
-                            throw new AnalysisException(e.getMessage(), line);
-                        } catch (ScriptException e) {
-                            throw new AnalysisException(withoutClassName(e), line);
-                        }
-                    }
-                };
+
+                            @Override
+                            public void started(ModuleInterface module) {
+                                module.setName(srcName);
+                                inProg.put(id.key(), module);
+                            }
+
+                            @Override
+                            public ModuleInterface load(String importName, int line) {
+                                try {
+                                    ModuleId dep = resolve(source, importName, id);
+                                    staticImports.put(importName, dep.key());
+                                    ModuleInterface pending = inProg.get(dep.key());
+                                    if (pending != null) {
+                                        return pending;
+                                    }
+                                    return buildModule(importName, dep);
+                                } catch (BabbleException e) {
+                                    throw new AnalysisException(e.getMessage(), line);
+                                } catch (ScriptException e) {
+                                    throw new AnalysisException(withoutClassName(e), line);
+                                }
+                            }
+                        };
                 ScopeAnalysis scopes;
                 try {
                     scopes = analyze(file, srcName, ctx, null, loader);
@@ -632,15 +695,29 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                     inProg.remove(id.key());
                 }
                 String internalName = BabbleCompiler.className(id.key());
-                org.babblelang.ir.hir.HirModule hir = BabbleCompiler.buildAndOptimizeHir(
-                        BabbleScriptEngine.this, file, scopes, srcName, internalName, id.key(),
-                        knownIfaces, knownClasses, crossModuleInlines, target);
+                org.babblelang.ir.hir.HirModule hir =
+                        BabbleCompiler.buildAndOptimizeHir(
+                                BabbleScriptEngine.this,
+                                file,
+                                scopes,
+                                srcName,
+                                internalName,
+                                id.key(),
+                                knownIfaces,
+                                knownClasses,
+                                crossModuleInlines,
+                                target);
                 knownIfaces.putAll(hir.ownInterfaceJvmNames());
                 knownClasses.putAll(hir.ownClassJvmNames());
-                crossModuleInlines.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir, id.key()));
+                crossModuleInlines.putAll(
+                        org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir, id.key()));
                 ModuleInterface mi = scopes.moduleInterface();
                 if (mi != null) {
-                    mi.setCompilation(null, hir.ownInterfaceJvmNames(), hir.ownClassJvmNames(), hir.ownExportedFunctions());
+                    mi.setCompilation(
+                            null,
+                            hir.ownInterfaceJvmNames(),
+                            hir.ownClassJvmNames(),
+                            hir.ownExportedFunctions());
                 }
                 interfaces.put(id.key(), mi);
                 built.put(id.key(), new HirProgramModule(id, hir.exports(), hir, staticImports));
@@ -680,19 +757,28 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * What the analysis of one file loads its static imports with : names are resolved from
-     * that file's module. It notes the versions of the modules it read, for the cache.
+     * What the analysis of one file loads its static imports with : names are resolved from that
+     * file's module. It notes the versions of the modules it read, for the cache.
      */
     private final class Loader implements ModuleLoader {
         private final String importerName;
         private final ScriptContext context;
         private final ModuleSource source;
-        /** The module being analysed, or null for a script that is not one of the source's modules. */
+
+        /**
+         * The module being analysed, or null for a script that is not one of the source's modules.
+         */
         private final ModuleId self;
+
         private final String selfVersion;
         final Map<ModuleId, String> versions = new HashMap<>();
 
-        Loader(String importerName, ScriptContext context, ModuleSource source, ModuleId self, String selfVersion) {
+        Loader(
+                String importerName,
+                ScriptContext context,
+                ModuleSource source,
+                ModuleId self,
+                String selfVersion) {
             this.importerName = importerName;
             this.context = context;
             this.source = source;
@@ -730,7 +816,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 } catch (BabbleException e) {
                     throw new AnalysisException(e.getMessage(), line);
                 } catch (ScriptException e) {
-                    // The message ends with the module's name and line ; the importing file adds its own.
+                    // The message ends with the module's name and line ; the importing file adds
+                    // its own.
                     throw new AnalysisException(withoutClassName(e), line);
                 }
             }
@@ -738,8 +825,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * The analysis warnings go to the context's error writer before anything runs, and so
-     * do the type checker's diagnostics, as errors.
+     * The analysis warnings go to the context's error writer before anything runs, and so do the
+     * type checker's diagnostics, as errors.
      */
     private static void report(ScopeAnalysis scopes, String sourceName, ScriptContext context) {
         Writer errors = context.getErrorWriter();
@@ -760,13 +847,18 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     private static String line(String label, ScopeAnalysis.Warning warning, String sourceName) {
-        return label + " : " + warning.message() + " in " + sourceName + " at line number " + warning.line()
-                + (warning.column() > 0 ? ", column " + warning.column() : "") + System.lineSeparator();
+        return label
+                + " : "
+                + warning.message()
+                + " in "
+                + sourceName
+                + " at line number "
+                + warning.line()
+                + (warning.column() > 0 ? ", column " + warning.column() : "")
+                + System.lineSeparator();
     }
 
-    /**
-     * Output written through a buffered writer must not be lost when a script fails.
-     */
+    /** Output written through a buffered writer must not be lost when a script fails. */
     public static void flush(ScriptContext context) {
         flush(context.getWriter());
     }
@@ -794,13 +886,21 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return Boolean.parseBoolean(System.getProperty(CHECK_AXIOMS, "false"));
     }
 
-    /** Evaluates {@code script} and runs property-based axiom fuzzing on all top-level {@code axiom} functions. */
-    public org.babblelang.analysis.AxiomChecker.Report checkAxioms(String script) throws ScriptException {
+    /**
+     * Evaluates {@code script} and runs property-based axiom fuzzing on all top-level {@code axiom}
+     * functions.
+     */
+    public org.babblelang.analysis.AxiomChecker.Report checkAxioms(String script)
+            throws ScriptException {
         return checkAxioms(script, new org.babblelang.analysis.AxiomChecker());
     }
 
-    /** Evaluates {@code script} and runs property-based axiom fuzzing using a custom {@link org.babblelang.analysis.AxiomChecker}. */
-    public org.babblelang.analysis.AxiomChecker.Report checkAxioms(String script, org.babblelang.analysis.AxiomChecker checker) throws ScriptException {
+    /**
+     * Evaluates {@code script} and runs property-based axiom fuzzing using a custom {@link
+     * org.babblelang.analysis.AxiomChecker}.
+     */
+    public org.babblelang.analysis.AxiomChecker.Report checkAxioms(
+            String script, org.babblelang.analysis.AxiomChecker checker) throws ScriptException {
         ScriptContext context = getContext();
         String sourceName = sourceName(context);
         BabbleParser.FileContext file = parseSource(script, sourceName);
@@ -830,7 +930,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         BabbleScript compiled = script(file, scopes, sourceName);
         ScriptRuntime runtime = createRuntime(context);
         Object result = compiled.eval(runtime);
-        org.babblelang.analysis.AxiomChecker.Report report = new org.babblelang.analysis.AxiomChecker().check(scopes, file, runtime);
+        org.babblelang.analysis.AxiomChecker.Report report =
+                new org.babblelang.analysis.AxiomChecker().check(scopes, file, runtime);
         if (!report.ok()) {
             throw new ScriptException(report.failures().get(0).toString());
         }
@@ -850,33 +951,50 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         return name != null ? name.toString() : DEFAULT_SOURCE_NAME;
     }
 
-    /** A lexer that fails on the first character it doesn't recognise or invalid multiline string. */
+    /**
+     * A lexer that fails on the first character it doesn't recognise or invalid multiline string.
+     */
     static BabbleLexer lexer(CharStream input) {
-        BabbleLexer lexer = new BabbleLexer(input) {
-            @Override
-            public Token nextToken() {
-                Token token = super.nextToken();
-                switch (token.getType()) {
-                    case BabbleLexer.MULTILINE_STRING, BabbleLexer.RAW_MULTILINE_STRING -> {
-                        boolean raw = token.getType() == BabbleLexer.RAW_MULTILINE_STRING;
-                        org.babblelang.parser.StringLiterals.LexicalError err =
-                                org.babblelang.parser.StringLiterals.validateMultiline(token, raw);
-                        if (err != null) {
-                            throw new ParseFailure(err.formattedMessage(), err.line(), err.charPositionInLine() + 1, true, false);
+        BabbleLexer lexer =
+                new BabbleLexer(input) {
+                    @Override
+                    public Token nextToken() {
+                        Token token = super.nextToken();
+                        switch (token.getType()) {
+                            case BabbleLexer.MULTILINE_STRING, BabbleLexer.RAW_MULTILINE_STRING -> {
+                                boolean raw = token.getType() == BabbleLexer.RAW_MULTILINE_STRING;
+                                org.babblelang.parser.StringLiterals.LexicalError err =
+                                        org.babblelang.parser.StringLiterals.validateMultiline(
+                                                token, raw);
+                                if (err != null) {
+                                    throw new ParseFailure(
+                                            err.formattedMessage(),
+                                            err.line(),
+                                            err.charPositionInLine() + 1,
+                                            true,
+                                            false);
+                                }
+                            }
+                            case BabbleLexer.UNTERMINATED_MULTILINE_STRING,
+                                    BabbleLexer.UNTERMINATED_RAW_MULTILINE_STRING -> {
+                                boolean raw =
+                                        token.getType()
+                                                == BabbleLexer.UNTERMINATED_RAW_MULTILINE_STRING;
+                                org.babblelang.parser.StringLiterals.LexicalError err =
+                                        org.babblelang.parser.StringLiterals.validateUnterminated(
+                                                token, raw);
+                                throw new ParseFailure(
+                                        err.formattedMessage(),
+                                        err.line(),
+                                        err.charPositionInLine() + 1,
+                                        true,
+                                        err.atEnd());
+                            }
+                            default -> {}
                         }
+                        return token;
                     }
-                    case BabbleLexer.UNTERMINATED_MULTILINE_STRING, BabbleLexer.UNTERMINATED_RAW_MULTILINE_STRING -> {
-                        boolean raw = token.getType() == BabbleLexer.UNTERMINATED_RAW_MULTILINE_STRING;
-                        org.babblelang.parser.StringLiterals.LexicalError err =
-                                org.babblelang.parser.StringLiterals.validateUnterminated(token, raw);
-                        throw new ParseFailure(err.formattedMessage(), err.line(), err.charPositionInLine() + 1, true, err.atEnd());
-                    }
-                    default -> {
-                    }
-                }
-                return token;
-            }
-        };
+                };
         // An error strategy only governs the parser : without this the lexer reports to
         // ANTLR's ConsoleErrorListener, which prints to stderr, skips the offending
         // character and lets compilation succeed on a mangled token stream.
@@ -905,26 +1023,35 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             try {
                 return parser.file();
             } catch (ParseCancellationException e) {
-                Token token = e.getCause() instanceof RecognitionException recognition && recognition.getOffendingToken() != null
-                        ? recognition.getOffendingToken() : parser.getCurrentToken();
-                String found = switch (token.getType()) {
-                    case Token.EOF -> "end of input";
-                    case BabbleLexer.NL -> "end of line";
-                    default -> "'" + token.getText() + "'";
-                };
-                throw new ParseFailure("Syntax error : unexpected " + found, token.getLine(), token.getCharPositionInLine() + 1,
-                        false, token.getType() == Token.EOF);
+                Token token =
+                        e.getCause() instanceof RecognitionException recognition
+                                        && recognition.getOffendingToken() != null
+                                ? recognition.getOffendingToken()
+                                : parser.getCurrentToken();
+                String found =
+                        switch (token.getType()) {
+                            case Token.EOF -> "end of input";
+                            case BabbleLexer.NL -> "end of line";
+                            default -> "'" + token.getText() + "'";
+                        };
+                throw new ParseFailure(
+                        "Syntax error : unexpected " + found,
+                        token.getLine(),
+                        token.getCharPositionInLine() + 1,
+                        false,
+                        token.getType() == Token.EOF);
             }
         }
     }
 
     /**
-     * Parses a source text, without analysing it : what tools working on the text, such as
-     * the formatter, start from.
+     * Parses a source text, without analysing it : what tools working on the text, such as the
+     * formatter, start from.
      *
      * @throws ScriptException on a lexical or syntax error, worded as {@code compile} does
      */
-    public static BabbleParser.FileContext parseSource(String text, String sourceName) throws ScriptException {
+    public static BabbleParser.FileContext parseSource(String text, String sourceName)
+            throws ScriptException {
         try {
             return parse(CharStreams.fromString(text, sourceName));
         } catch (ParseFailure e) {
@@ -932,7 +1059,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
-    private CompiledScript compile(Reader script, String sourceName, ScriptContext context) throws ScriptException {
+    private CompiledScript compile(Reader script, String sourceName, ScriptContext context)
+            throws ScriptException {
         BabbleParser.FileContext file;
         try {
             file = parse(CharStreams.fromReader(script));
@@ -949,16 +1077,26 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      *
      * @param session the interactive session the file is an input of, or null
      */
-    ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session) throws ScriptException {
+    ScopeAnalysis analyze(
+            BabbleParser.FileContext file,
+            String sourceName,
+            ScriptContext context,
+            AnalysisSession session)
+            throws ScriptException {
         return analyze(file, sourceName, context, session, null);
     }
 
     /**
-     * @param loader what loads the file's static imports, or null for one relative to
-     *               {@code sourceName}
+     * @param loader what loads the file's static imports, or null for one relative to {@code
+     *     sourceName}
      */
-    private ScopeAnalysis analyze(BabbleParser.FileContext file, String sourceName, ScriptContext context, AnalysisSession session,
-                                  ModuleLoader loader) throws ScriptException {
+    private ScopeAnalysis analyze(
+            BabbleParser.FileContext file,
+            String sourceName,
+            ScriptContext context,
+            AnalysisSession session,
+            ModuleLoader loader)
+            throws ScriptException {
         ScopeAnalysis scopes;
         ModuleSource source;
         try {
@@ -967,27 +1105,45 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             throw new ScriptException(e);
         }
         try {
-            scopes = BlockScopes.analyze(file, session, loader != null ? loader : new Loader(sourceName, context, source, null, null), hostEffects());
+            scopes =
+                    BlockScopes.analyze(
+                            file,
+                            session,
+                            loader != null
+                                    ? loader
+                                    : new Loader(sourceName, context, source, null, null),
+                            hostEffects());
         } catch (AnalysisException e) {
             // Reported exactly like the same error found at runtime.
-            throw new ScriptException(new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
+            throw new ScriptException(
+                    new BabbleException(e.getMessage()).toString(), sourceName, e.getLine());
         }
         report(scopes, sourceName, context);
         if (!scopes.typeDiagnostics().isEmpty()) {
             // Every diagnostic went to the error writer ; the first one fails the compilation.
             ScopeAnalysis.Warning first = scopes.typeDiagnostics().get(0);
-            throw new TypeCheckException(new BabbleException(first.message()).toString(), sourceName, first.line(), first.column());
+            throw new TypeCheckException(
+                    new BabbleException(first.message()).toString(),
+                    sourceName,
+                    first.line(),
+                    first.column());
         }
         return scopes;
     }
 
     /** The script of an analysed file, for the engine's mode. */
-    BabbleScript script(BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName) throws ScriptException {
+    BabbleScript script(BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName)
+            throws ScriptException {
         return script(file, scopes, sourceName, null);
     }
 
-    /** @param module the module compiled, whose key names its classes, or null for a script that is not one */
-    private BabbleScript script(BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName, ModuleId module) throws ScriptException {
+    /**
+     * @param module the module compiled, whose key names its classes, or null for a script that is
+     *     not one
+     */
+    private BabbleScript script(
+            BabbleParser.FileContext file, ScopeAnalysis scopes, String sourceName, ModuleId module)
+            throws ScriptException {
         try {
             return switch (getMode()) {
                 case INTERPRET -> new BabbleCompiledScript(this, file, scopes, sourceName);
@@ -995,12 +1151,24 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                     List<ClassLoader> dependencyLoaders = new ArrayList<>();
                     Map<String, String> knownInterfaceJvmNames = new LinkedHashMap<>();
                     Map<String, String> knownClassJvmNames = new LinkedHashMap<>();
-                    Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports = new LinkedHashMap<>();
-                    collectCompileDependencies(scopes, dependencyLoaders, knownInterfaceJvmNames,
-                            knownClassJvmNames, crossModuleInlineExports);
-                    yield BabbleCompiler.compile(this, file, scopes, sourceName,
-                            module != null ? module.key() : null, dependencyLoaders, knownInterfaceJvmNames,
-                            knownClassJvmNames, crossModuleInlineExports);
+                    Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports =
+                            new LinkedHashMap<>();
+                    collectCompileDependencies(
+                            scopes,
+                            dependencyLoaders,
+                            knownInterfaceJvmNames,
+                            knownClassJvmNames,
+                            crossModuleInlineExports);
+                    yield BabbleCompiler.compile(
+                            this,
+                            file,
+                            scopes,
+                            sourceName,
+                            module != null ? module.key() : null,
+                            dependencyLoaders,
+                            knownInterfaceJvmNames,
+                            knownClassJvmNames,
+                            crossModuleInlineExports);
                 }
             };
         } catch (RuntimeException e) {
@@ -1009,10 +1177,12 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
-    private void collectCompileDependencies(ScopeAnalysis scopes, List<ClassLoader> dependencyLoaders,
-                                            Map<String, String> knownInterfaceJvmNames,
-                                            Map<String, String> knownClassJvmNames,
-                                            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
+    private void collectCompileDependencies(
+            ScopeAnalysis scopes,
+            List<ClassLoader> dependencyLoaders,
+            Map<String, String> knownInterfaceJvmNames,
+            Map<String, String> knownClassJvmNames,
+            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
         Queue<ModuleInterface> queue = new ArrayDeque<>();
         Set<ModuleInterface> visitedModules = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ClassLoader> seenLoaders = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -1040,7 +1210,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 knownClassJvmNames.putAll(mod.classJvmNames());
                 if (mod.moduleKey() != null) {
                     CompiledModule cm = moduleCache.get(mod.moduleKey());
-                    if (cm != null && cm.moduleInterface() == mod
+                    if (cm != null
+                            && cm.moduleInterface() == mod
                             && cm.script() instanceof CompiledBabbleScript compiled) {
                         crossModuleInlineExports.putAll(compiled.crossModuleInlineExports());
                     }
@@ -1064,8 +1235,8 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     }
 
     /**
-     * An interactive session : successive inputs, each seeing the definitions of the
-     * previous ones. Its output goes to the engine's context.
+     * An interactive session : successive inputs, each seeing the definitions of the previous ones.
+     * Its output goes to the engine's context.
      */
     public BabbleSession newSession() {
         return newSession(getContext());
@@ -1082,5 +1253,4 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     public ScriptEngineFactory getFactory() {
         return factory;
     }
-
 }

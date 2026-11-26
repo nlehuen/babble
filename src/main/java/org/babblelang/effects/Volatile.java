@@ -13,5 +13,4 @@ import java.lang.annotation.Target;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ElementType.TYPE, ElementType.METHOD, ElementType.CONSTRUCTOR})
-public @interface Volatile {
-}
+public @interface Volatile {}

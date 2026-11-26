@@ -1,22 +1,22 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
+import org.antlr.v4.runtime.ParserRuleContext;
 
 /**
- * Persistent lexical occurrence-typing environment ({@code docs/design/bip010_type-checker-simplification.md} §4.4):
- * wraps an immutable map of narrowed types for local {@code def} and parameter declarations,
- * with algebraic {@link Refinement} combinators and explicit {@link #evict}, {@link #evictAll},
- * and {@link #enterCallable} barriers.
+ * Persistent lexical occurrence-typing environment ({@code
+ * docs/design/bip010_type-checker-simplification.md} §4.4): wraps an immutable map of narrowed
+ * types for local {@code def} and parameter declarations, with algebraic {@link Refinement}
+ * combinators and explicit {@link #evict}, {@link #evictAll}, and {@link #enterCallable} barriers.
  */
 final class TypeEnv {
     static final TypeEnv EMPTY = new TypeEnv(Collections.emptyMap());
 
-    record Refinement(Map<ParserRuleContext, Type> whenTrue, Map<ParserRuleContext, Type> whenFalse) {
+    record Refinement(
+            Map<ParserRuleContext, Type> whenTrue, Map<ParserRuleContext, Type> whenFalse) {
         static final Refinement EMPTY = new Refinement(Map.of(), Map.of());
 
         Refinement invert() {
@@ -31,9 +31,10 @@ final class TypeEnv {
             return new Refinement(Map.of(), merge(whenFalse, other.whenFalse, combiner));
         }
 
-        private static Map<ParserRuleContext, Type> merge(Map<ParserRuleContext, Type> a,
-                                                          Map<ParserRuleContext, Type> b,
-                                                          java.util.function.BinaryOperator<Type> combiner) {
+        private static Map<ParserRuleContext, Type> merge(
+                Map<ParserRuleContext, Type> a,
+                Map<ParserRuleContext, Type> b,
+                java.util.function.BinaryOperator<Type> combiner) {
             if (a.isEmpty()) {
                 return b;
             }
@@ -119,8 +120,8 @@ final class TypeEnv {
     }
 
     /**
-     * Joins two post-branch environments: evicts any declaration whose narrowing was killed
-     * in either branch relative to {@code base}.
+     * Joins two post-branch environments: evicts any declaration whose narrowing was killed in
+     * either branch relative to {@code base}.
      */
     static TypeEnv joinBranches(TypeEnv base, TypeEnv branchA, TypeEnv branchB) {
         if (base.narrowings.isEmpty()) {

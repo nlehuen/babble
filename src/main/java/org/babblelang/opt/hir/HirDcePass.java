@@ -1,5 +1,11 @@
 package org.babblelang.opt.hir;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.HirClass;
@@ -15,23 +21,16 @@ import org.babblelang.opt.HirPurity;
 import org.babblelang.opt.HirRewriter;
 import org.babblelang.opt.PassContext;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-
 /**
  * {@code O4} — Structured Dead-Code and Dead-Expression Elimination (BIP014-I2).
  *
  * <ul>
- *   <li>Eliminates unreachable statements after {@code return}, {@code break}, or {@code continue}.</li>
- *   <li>Eliminates dead non-final {@code pure nothrow @TERMINATING} expressions (including synthetic
- *       expressions exposed by constant folding or inlining).</li>
- *   <li>Eliminates unused local frame {@code def} bindings whose initializer is
- *       {@code pure nothrow @TERMINATING}.</li>
- *   <li>Flattens single-expression transparent {@link HirExpr.Block} wrappers.</li>
+ *   <li>Eliminates unreachable statements after {@code return}, {@code break}, or {@code continue}.
+ *   <li>Eliminates dead non-final {@code pure nothrow @TERMINATING} expressions (including
+ *       synthetic expressions exposed by constant folding or inlining).
+ *   <li>Eliminates unused local frame {@code def} bindings whose initializer is {@code pure
+ *       nothrow @TERMINATING}.
+ *   <li>Flattens single-expression transparent {@link HirExpr.Block} wrappers.
  * </ul>
  */
 public final class HirDcePass implements HirPass {
@@ -50,7 +49,9 @@ public final class HirDcePass implements HirPass {
         Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
-            List<HirParam> np = HirRewriter.rewriteParams(fn.params(), ex -> dceExpr(ex, Set.of(), module, rewrites));
+            List<HirParam> np =
+                    HirRewriter.rewriteParams(
+                            fn.params(), ex -> dceExpr(ex, Set.of(), module, rewrites));
             List<HirExpr> nb = dceBody(fn.body(), module, rewrites);
             List<HirVar> ndv = pruneUnusedDeclaredVars(fn.declaredVars(), nb);
             if (np != fn.params() || nb != fn.body() || ndv != fn.declaredVars()) {
@@ -63,7 +64,9 @@ public final class HirDcePass implements HirPass {
         Map<Integer, HirClass> newClasses = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirClass> e : module.classes().entrySet()) {
             HirClass cls = e.getValue();
-            List<HirParam> np = HirRewriter.rewriteParams(cls.params(), ex -> dceExpr(ex, Set.of(), module, rewrites));
+            List<HirParam> np =
+                    HirRewriter.rewriteParams(
+                            cls.params(), ex -> dceExpr(ex, Set.of(), module, rewrites));
             List<HirExpr> nb = dceBody(cls.body(), module, rewrites);
             HirStaticBlock ns = cls.staticBlock();
             if (ns != null) {
@@ -100,7 +103,15 @@ public final class HirDcePass implements HirPass {
         if (!changed) {
             return Result.unchanged(module);
         }
-        return new Result(module.withUpdates(newTop, newFns, newClasses, newIfaces, module.nextVarId(), module.nextOwnerId()), rewrites[0]);
+        return new Result(
+                module.withUpdates(
+                        newTop,
+                        newFns,
+                        newClasses,
+                        newIfaces,
+                        module.nextVarId(),
+                        module.nextOwnerId()),
+                rewrites[0]);
     }
 
     private List<HirExpr> dceBody(List<HirExpr> stmts, HirModule module, int[] rewrites) {
@@ -111,7 +122,8 @@ public final class HirDcePass implements HirPass {
         return dceStatements(stmts, usedVars, module, rewrites);
     }
 
-    private List<HirExpr> dceStatements(List<HirExpr> stmts, Set<Integer> usedVars, HirModule module, int[] rewrites) {
+    private List<HirExpr> dceStatements(
+            List<HirExpr> stmts, Set<Integer> usedVars, HirModule module, int[] rewrites) {
         if (stmts.isEmpty()) {
             return stmts;
         }
@@ -132,10 +144,14 @@ public final class HirDcePass implements HirPass {
                 continue;
             }
             // Drop unused local frame def with pure initializer
-            if (!isLast && nw instanceof HirExpr.Def d && d.var() != null && !d.var().isCaptured()
+            if (!isLast
+                    && nw instanceof HirExpr.Def d
+                    && d.var() != null
+                    && !d.var().isCaptured()
                     && d.var().kind() == Resolution.Variable.Kind.DEFINITION
                     && !usedVars.contains(d.var().id())
-                    && (d.value() == null || HirPurity.isPureNothrowTerminating(d.value(), module))) {
+                    && (d.value() == null
+                            || HirPurity.isPureNothrowTerminating(d.value(), module))) {
                 changed = true;
                 rewrites[0]++;
                 continue;
@@ -158,8 +174,16 @@ public final class HirDcePass implements HirPass {
         if (expr instanceof HirExpr.Block b) {
             List<HirExpr> ns = dceStatements(b.statements(), usedVars, module, rewrites);
             List<HirVar> ndv = pruneUnusedDeclaredVars(b.declaredVars(), ns);
-            HirExpr.Block nb = (ns == b.statements() && ndv == b.declaredVars()) ? b
-                    : new HirExpr.Block(ns, b.opensNamespaceScope(), b.declaredNames(), ndv, b.innerWideningRank(), b.meta());
+            HirExpr.Block nb =
+                    (ns == b.statements() && ndv == b.declaredVars())
+                            ? b
+                            : new HirExpr.Block(
+                                    ns,
+                                    b.opensNamespaceScope(),
+                                    b.declaredNames(),
+                                    ndv,
+                                    b.innerWideningRank(),
+                                    b.meta());
             if (nb.isTransparentSingleExpr()) {
                 HirExpr inner = nb.statements().get(0);
                 if (inner.meta().kind() == nb.meta().kind()) {
@@ -170,21 +194,34 @@ public final class HirDcePass implements HirPass {
             return nb;
         }
         if (expr instanceof HirExpr.For f) {
-            HirExpr ni = f.iterable() != null ? dceExpr(f.iterable(), usedVars, module, rewrites) : null;
+            HirExpr ni =
+                    f.iterable() != null ? dceExpr(f.iterable(), usedVars, module, rewrites) : null;
             HirExpr.CountedRangeLoop cr = f.countedRange();
             HirExpr.CountedRangeLoop ncr = cr;
             if (cr != null) {
                 HirExpr ns = dceExpr(cr.start(), usedVars, module, rewrites);
                 HirExpr ne = dceExpr(cr.end(), usedVars, module, rewrites);
-                HirExpr nk = cr.step() != null ? dceExpr(cr.step(), usedVars, module, rewrites) : null;
+                HirExpr nk =
+                        cr.step() != null ? dceExpr(cr.step(), usedVars, module, rewrites) : null;
                 if (ns != cr.start() || ne != cr.end() || nk != cr.step()) {
-                    ncr = new HirExpr.CountedRangeLoop(ns, ne, nk, cr.inclusive(), cr.descending(), cr.elemKind());
+                    ncr =
+                            new HirExpr.CountedRangeLoop(
+                                    ns, ne, nk, cr.inclusive(), cr.descending(), cr.elemKind());
                 }
             }
             List<HirExpr> nb = dceStatements(f.body(), usedVars, module, rewrites);
-            return (ni == f.iterable() && ncr == cr && nb == f.body()) ? f
-                    : new HirExpr.For(ni, f.target(), f.loopVar(), f.bodyDeclaredVars(), nb,
-                            f.bodyWideningRank(), f.elemSamTarget(), ncr, f.meta());
+            return (ni == f.iterable() && ncr == cr && nb == f.body())
+                    ? f
+                    : new HirExpr.For(
+                            ni,
+                            f.target(),
+                            f.loopVar(),
+                            f.bodyDeclaredVars(),
+                            nb,
+                            f.bodyWideningRank(),
+                            f.elemSamTarget(),
+                            ncr,
+                            f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
             List<HirExpr> ntb = dceStatements(t.tryBody(), usedVars, module, rewrites);
@@ -196,13 +233,25 @@ public final class HirDcePass implements HirPass {
             if (!t.tryOpensNamespaceScope() && HirPurity.isPureStatements(ntb, ntdv, module)) {
                 if (!t.hasFinally() || nfb.isEmpty()) {
                     rewrites[0]++;
-                    return new HirExpr.Block(ntb, false, new String[0], ntdv, t.tryWideningRank(), t.meta());
+                    return new HirExpr.Block(
+                            ntb, false, new String[0], ntdv, t.tryWideningRank(), t.meta());
                 }
                 if (!t.catches().isEmpty()) {
                     rewrites[0]++;
-                    return new HirExpr.Try(ntb, ntdv, false, new String[0], t.tryWideningRank(),
-                            List.of(), nfb, nfdv, t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(),
-                            t.finallyNothrow(), true, t.meta());
+                    return new HirExpr.Try(
+                            ntb,
+                            ntdv,
+                            false,
+                            new String[0],
+                            t.tryWideningRank(),
+                            List.of(),
+                            nfb,
+                            nfdv,
+                            t.finallyOpensNamespaceScope(),
+                            t.finallyDeclaredNames(),
+                            t.finallyNothrow(),
+                            true,
+                            t.meta());
                 }
             }
             List<HirExpr.HirCatch> ncs = null;
@@ -214,28 +263,56 @@ public final class HirDcePass implements HirPass {
                     if (ncs == null) {
                         ncs = new ArrayList<>(t.catches());
                     }
-                    ncs.set(i, new HirExpr.HirCatch(cc.var(), cc.target(), ncb, ncdv,
-                            cc.opensNamespaceScope(), cc.declaredNames(), cc.wideningRank(), cc.line()));
+                    ncs.set(
+                            i,
+                            new HirExpr.HirCatch(
+                                    cc.var(),
+                                    cc.target(),
+                                    ncb,
+                                    ncdv,
+                                    cc.opensNamespaceScope(),
+                                    cc.declaredNames(),
+                                    cc.wideningRank(),
+                                    cc.line()));
                 }
             }
-            return (ntb == t.tryBody() && ntdv == t.tryDeclaredVars()
-                    && ncs == null && nfb == t.finallyBody() && nfdv == t.finallyDeclaredVars()) ? t
-                    : new HirExpr.Try(ntb, ntdv, t.tryOpensNamespaceScope(), t.tryDeclaredNames(),
-                            t.tryWideningRank(), ncs != null ? ncs : t.catches(), nfb, nfdv,
-                            t.finallyOpensNamespaceScope(), t.finallyDeclaredNames(),
-                            t.finallyNothrow(), t.hasFinally(), t.meta());
+            return (ntb == t.tryBody()
+                            && ntdv == t.tryDeclaredVars()
+                            && ncs == null
+                            && nfb == t.finallyBody()
+                            && nfdv == t.finallyDeclaredVars())
+                    ? t
+                    : new HirExpr.Try(
+                            ntb,
+                            ntdv,
+                            t.tryOpensNamespaceScope(),
+                            t.tryDeclaredNames(),
+                            t.tryWideningRank(),
+                            ncs != null ? ncs : t.catches(),
+                            nfb,
+                            nfdv,
+                            t.finallyOpensNamespaceScope(),
+                            t.finallyDeclaredNames(),
+                            t.finallyNothrow(),
+                            t.hasFinally(),
+                            t.meta());
         }
-        HirExpr cur = HirRewriter.rewriteChildren(expr, child -> dceExpr(child, usedVars, module, rewrites));
+        HirExpr cur =
+                HirRewriter.rewriteChildren(
+                        expr, child -> dceExpr(child, usedVars, module, rewrites));
 
         // Eliminate discard(pureExpr) when discard is unshadowed at top-level
         if (cur instanceof HirExpr.DynamicCall dc
-                && dc.callee() instanceof HirExpr.NameRead nr && "discard".equals(nr.name())
-                && dc.args().size() == 1 && dc.args().get(0).name() == null
+                && dc.callee() instanceof HirExpr.NameRead nr
+                && "discard".equals(nr.name())
+                && dc.args().size() == 1
+                && dc.args().get(0).name() == null
                 && !isTopLevelDeclared(module, "discard")
                 && dc.meta().checkedType() == null
                 && HirPurity.isPureNothrowTerminating(dc.args().get(0).value(), module)) {
             rewrites[0]++;
-            return new HirExpr.Const(null, dc.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
+            return new HirExpr.Const(
+                    null, dc.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
         }
 
         return cur;
@@ -251,11 +328,14 @@ public final class HirDcePass implements HirPass {
     }
 
     private static boolean isUnconditionalJump(HirExpr expr) {
-        return expr instanceof HirExpr.Return || expr instanceof HirExpr.Break
-                || expr instanceof HirExpr.Continue || expr instanceof HirExpr.Throw;
+        return expr instanceof HirExpr.Return
+                || expr instanceof HirExpr.Break
+                || expr instanceof HirExpr.Continue
+                || expr instanceof HirExpr.Throw;
     }
 
-    private static List<HirVar> pruneUnusedDeclaredVars(List<HirVar> declared, List<HirExpr> stmts) {
+    private static List<HirVar> pruneUnusedDeclaredVars(
+            List<HirVar> declared, List<HirExpr> stmts) {
         if (declared.isEmpty()) {
             return declared;
         }
@@ -266,9 +346,10 @@ public final class HirDcePass implements HirPass {
         List<HirVar> kept = null;
         for (int i = 0; i < declared.size(); i++) {
             HirVar v = declared.get(i);
-            boolean keep = v.isCaptured()
-                    || v.kind() != Resolution.Variable.Kind.DEFINITION
-                    || referenced.contains(v.id());
+            boolean keep =
+                    v.isCaptured()
+                            || v.kind() != Resolution.Variable.Kind.DEFINITION
+                            || referenced.contains(v.id());
             if (!keep) {
                 if (kept == null) {
                     kept = new ArrayList<>(declared.subList(0, i));
@@ -297,15 +378,20 @@ public final class HirDcePass implements HirPass {
             }
             case HirExpr.SuperCall s -> {
                 if (s.thisVar() != null) out.add(s.thisVar().id());
-                HirRewriter.rewriteChildren(expr, c -> {
-                    collectUsedVars(c, out);
-                    return c;
-                });
+                HirRewriter.rewriteChildren(
+                        expr,
+                        c -> {
+                            collectUsedVars(c, out);
+                            return c;
+                        });
             }
-            default -> HirRewriter.rewriteChildren(expr, c -> {
-                collectUsedVars(c, out);
-                return c;
-            });
+            default ->
+                    HirRewriter.rewriteChildren(
+                            expr,
+                            c -> {
+                                collectUsedVars(c, out);
+                                return c;
+                            });
         }
     }
 
@@ -330,10 +416,12 @@ public final class HirDcePass implements HirPass {
             }
             case HirExpr.SuperCall s -> {
                 if (s.thisVar() != null) out.add(s.thisVar().id());
-                HirRewriter.rewriteChildren(expr, c -> {
-                    collectAllVarRefs(c, out);
-                    return c;
-                });
+                HirRewriter.rewriteChildren(
+                        expr,
+                        c -> {
+                            collectAllVarRefs(c, out);
+                            return c;
+                        });
             }
             case HirExpr.Match m -> {
                 if (m.scrutineeVar() != null) out.add(m.scrutineeVar().id());
@@ -345,15 +433,20 @@ public final class HirDcePass implements HirPass {
                 if (m.elseArm() != null && m.elseArm().var() != null) {
                     out.add(m.elseArm().var().id());
                 }
-                HirRewriter.rewriteChildren(expr, c -> {
-                    collectAllVarRefs(c, out);
-                    return c;
-                });
+                HirRewriter.rewriteChildren(
+                        expr,
+                        c -> {
+                            collectAllVarRefs(c, out);
+                            return c;
+                        });
             }
-            default -> HirRewriter.rewriteChildren(expr, c -> {
-                collectAllVarRefs(c, out);
-                return c;
-            });
+            default ->
+                    HirRewriter.rewriteChildren(
+                            expr,
+                            c -> {
+                                collectAllVarRefs(c, out);
+                                return c;
+                            });
         }
     }
 }

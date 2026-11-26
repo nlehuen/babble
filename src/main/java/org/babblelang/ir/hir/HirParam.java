@@ -3,9 +3,7 @@ package org.babblelang.ir.hir;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 
-/**
- * Parameter declaration of a {@link HirFunction} or {@link HirClass} constructor (BIP014-I1).
- */
+/** Parameter declaration of a {@link HirFunction} or {@link HirClass} constructor (BIP014-I1). */
 public record HirParam(
         String name,
         HirVar var,
@@ -17,8 +15,7 @@ public record HirParam(
         LoweringTargets.JavaSamTarget samTarget,
         LoweringTargets.ParamOwnership ownership,
         boolean mutable,
-        int line
-) {
+        int line) {
     public HirParam {
         kind = kind != null ? kind : PrimitiveKind.NONE;
         ownership = ownership != null ? ownership : LoweringTargets.ParamOwnership.DEFAULT;
@@ -34,9 +31,19 @@ public record HirParam(
             HirExpr defaultValue,
             LoweringTargets.JavaSamTarget samTarget,
             LoweringTargets.ParamOwnership ownership,
-            int line
-    ) {
-        this(name, var, kind, wideningRank, checkedType, memberIndex, defaultValue, samTarget, ownership, false, line);
+            int line) {
+        this(
+                name,
+                var,
+                kind,
+                wideningRank,
+                checkedType,
+                memberIndex,
+                defaultValue,
+                samTarget,
+                ownership,
+                false,
+                line);
     }
 
     public HirParam(
@@ -48,10 +55,19 @@ public record HirParam(
             int memberIndex,
             HirExpr defaultValue,
             LoweringTargets.JavaSamTarget samTarget,
-            int line
-    ) {
-        this(name, var, kind, wideningRank, checkedType, memberIndex, defaultValue, samTarget,
-                LoweringTargets.ParamOwnership.DEFAULT, false, line);
+            int line) {
+        this(
+                name,
+                var,
+                kind,
+                wideningRank,
+                checkedType,
+                memberIndex,
+                defaultValue,
+                samTarget,
+                LoweringTargets.ParamOwnership.DEFAULT,
+                false,
+                line);
     }
 
     public HirParam(
@@ -62,10 +78,19 @@ public record HirParam(
             String checkedType,
             int memberIndex,
             HirExpr defaultValue,
-            int line
-    ) {
-        this(name, var, kind, wideningRank, checkedType, memberIndex, defaultValue, null,
-                LoweringTargets.ParamOwnership.DEFAULT, false, line);
+            int line) {
+        this(
+                name,
+                var,
+                kind,
+                wideningRank,
+                checkedType,
+                memberIndex,
+                defaultValue,
+                null,
+                LoweringTargets.ParamOwnership.DEFAULT,
+                false,
+                line);
     }
 
     public boolean isMut() {
@@ -85,7 +110,17 @@ public record HirParam(
     }
 
     public HirParam withDefaultValue(HirExpr newDefault) {
-        return new HirParam(name, var, kind, wideningRank, checkedType, memberIndex, newDefault, samTarget, ownership, mutable, line);
+        return new HirParam(
+                name,
+                var,
+                kind,
+                wideningRank,
+                checkedType,
+                memberIndex,
+                newDefault,
+                samTarget,
+                ownership,
+                mutable,
+                line);
     }
 }
-

@@ -1,8 +1,6 @@
 package org.babblelang.runtime;
 
-/**
- * An unboxed {@code byte} cell for captured lexical variables (BIP011).
- */
+/** An unboxed {@code byte} cell for captured lexical variables (BIP011). */
 public final class ByteCell {
     public byte value;
     private boolean defined;

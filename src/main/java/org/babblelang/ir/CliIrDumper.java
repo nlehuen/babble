@@ -1,19 +1,17 @@
 package org.babblelang.ir;
 
-import org.babblelang.runtime.BabbleException;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
+import org.babblelang.runtime.BabbleException;
 
 /**
- * CLI {@code -Dbabble.dumpIr} observer backed by the unified {@link IrObserver} pipeline
- * ({@code BIP029-I1}, {@code BIP029-D6}).
+ * CLI {@code -Dbabble.dumpIr} observer backed by the unified {@link IrObserver} pipeline ({@code
+ * BIP029-I1}, {@code BIP029-D6}).
  */
 public final class CliIrDumper {
-    private CliIrDumper() {
-    }
+    private CliIrDumper() {}
 
     public static IrObserver forSpec(String spec, String internalName, int optLevel) {
         if (spec == null || spec.isBlank()) {
@@ -21,16 +19,18 @@ public final class CliIrDumper {
         }
         String lower = spec.toLowerCase(Locale.ROOT);
         boolean canonical = lower.endsWith(":canonical") || "canonical".equals(lower);
-        String baseSpec = canonical && lower.endsWith(":canonical")
-                ? spec.substring(0, spec.length() - ":canonical".length())
-                : spec;
+        String baseSpec =
+                canonical && lower.endsWith(":canonical")
+                        ? spec.substring(0, spec.length() - ":canonical".length())
+                        : spec;
         String baseLower = baseSpec.toLowerCase(Locale.ROOT);
         boolean hirOnly = baseLower.startsWith("hir");
         boolean mirOnly = baseLower.startsWith("mir");
         boolean beforeOnly = baseLower.endsWith(":before");
-        String afterPrefix = baseLower.contains(":after:")
-                ? baseSpec.substring(baseLower.indexOf(":after:") + 1)
-                : null;
+        String afterPrefix =
+                baseLower.contains(":after:")
+                        ? baseSpec.substring(baseLower.indexOf(":after:") + 1)
+                        : null;
         return new IrObserver() {
             @Override
             public boolean wants(IrTier tier, int activeOpt, String stage) {
@@ -55,14 +55,16 @@ public final class CliIrDumper {
             @Override
             public void onSnapshot(IrSnapshot snapshot) {
                 String tierPrefix = snapshot.tier().label();
-                String phase = IrSnapshot.STAGE_BEFORE.equals(snapshot.stage())
-                        ? tierPrefix + "-before"
-                        : (IrSnapshot.STAGE_FINAL.equals(snapshot.stage())
-                        ? tierPrefix + "-after"
-                        : tierPrefix + "-" + snapshot.stage().replace(':', '-'));
-                String text = canonical
-                        ? snapshot.ir().printCanonical(new IrTarget.Module())
-                        : snapshot.ir().printRaw();
+                String phase =
+                        IrSnapshot.STAGE_BEFORE.equals(snapshot.stage())
+                                ? tierPrefix + "-before"
+                                : (IrSnapshot.STAGE_FINAL.equals(snapshot.stage())
+                                        ? tierPrefix + "-after"
+                                        : tierPrefix + "-" + snapshot.stage().replace(':', '-'));
+                String text =
+                        canonical
+                                ? snapshot.ir().printCanonical(new IrTarget.Module())
+                                : snapshot.ir().printRaw();
                 writeDump(spec, internalName, phase, text);
             }
         };
@@ -70,8 +72,12 @@ public final class CliIrDumper {
 
     private static void writeDump(String target, String internalName, String phase, String text) {
         String lower = target.toLowerCase(Locale.ROOT);
-        if ("stderr".equals(lower) || "true".equals(lower) || "all".equals(lower)
-                || "canonical".equals(lower) || lower.startsWith("hir") || lower.startsWith("mir")) {
+        if ("stderr".equals(lower)
+                || "true".equals(lower)
+                || "all".equals(lower)
+                || "canonical".equals(lower)
+                || lower.startsWith("hir")
+                || lower.startsWith("mir")) {
             System.err.println("=== " + phase + " : " + internalName + " ===");
             System.err.println(text);
             return;

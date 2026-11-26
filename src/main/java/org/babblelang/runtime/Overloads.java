@@ -1,6 +1,5 @@
 package org.babblelang.runtime;
 
-
 import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
@@ -12,25 +11,23 @@ import java.util.stream.Collectors;
 
 /**
  * Overload resolution for the Java interop.
- * <p>
- * Reflection's own {@code getMethod} / {@code getConstructor} demand an exact
- * parameter-type match, which almost never happens when the arguments come from Babble :
- * "list.add(&quot;a&quot;)" hands a String to add(Object), and "abs(2)" an Integer to abs(int).
- * So candidates are filtered by applicability, as the Java compiler does, and the most
- * specific of them wins.
- * <p>
- * Phases 1–2 (fixed arity) run first; phase 3 (variable-arity {@code isVarArgs()},
- * {@code BIP021-D8}) runs only when no fixed-arity candidate is applicable.
+ *
+ * <p>Reflection's own {@code getMethod} / {@code getConstructor} demand an exact parameter-type
+ * match, which almost never happens when the arguments come from Babble : "list.add(&quot;a&quot;)"
+ * hands a String to add(Object), and "abs(2)" an Integer to abs(int). So candidates are filtered by
+ * applicability, as the Java compiler does, and the most specific of them wins.
+ *
+ * <p>Phases 1–2 (fixed arity) run first; phase 3 (variable-arity {@code isVarArgs()}, {@code
+ * BIP021-D8}) runs only when no fixed-arity candidate is applicable.
  */
 public final class Overloads {
-    private Overloads() {
-    }
+    private Overloads() {}
 
     /** The resolved executable and whether it was matched via phase 3 variable-arity expansion. */
-    public record Resolved<E extends Executable>(E executable, boolean varArgs) {
-    }
+    public record Resolved<E extends Executable>(E executable, boolean varArgs) {}
 
-    public static Resolved<Method> resolveMethodDetailed(Class<?> clazz, String name, Object[] arguments) {
+    public static Resolved<Method> resolveMethodDetailed(
+            Class<?> clazz, String name, Object[] arguments) {
         List<Method> candidates = new ArrayList<>();
         for (Method method : JavaTypes.methods(clazz, name)) {
             // An object of a class Babble can't reach, as Java returns some, is called
@@ -43,15 +40,18 @@ public final class Overloads {
         return resolveDetailed(candidates, clazz.getCanonicalName() + "." + name, arguments);
     }
 
-    public static Resolved<Constructor<?>> resolveConstructorDetailed(Class<?> clazz, Object[] arguments) {
-        return resolveDetailed(Arrays.asList(clazz.getConstructors()), clazz.getCanonicalName(), arguments);
+    public static Resolved<Constructor<?>> resolveConstructorDetailed(
+            Class<?> clazz, Object[] arguments) {
+        return resolveDetailed(
+                Arrays.asList(clazz.getConstructors()), clazz.getCanonicalName(), arguments);
     }
 
     /**
-     * Converts Babble call arguments to Java reflection arguments, packing trailing arguments
-     * into the varargs array when {@code varArgs} is true.
+     * Converts Babble call arguments to Java reflection arguments, packing trailing arguments into
+     * the varargs array when {@code varArgs} is true.
      */
-    public static Object[] toJavaArguments(Executable exec, boolean varArgs, Object[] args, ScriptRuntime rt) {
+    public static Object[] toJavaArguments(
+            Executable exec, boolean varArgs, Object[] args, ScriptRuntime rt) {
         Class<?>[] parameterTypes = exec.getParameterTypes();
         if (!varArgs) {
             return Values.toJava(args, parameterTypes, rt);
@@ -74,15 +74,14 @@ public final class Overloads {
 
     /**
      * The overloads a Java method or constructor resolved to, by the kinds of the arguments
-     * (compiler phase 3, but the interpreter uses it too) : resolution only depends on
-     * them, so a call with arguments of the same kinds as an earlier one picks the same
-     * overload. A kind is the argument's class, or for a Babble instance its class value,
-     * whose Java interfaces it passes for. Errors are not cached, and only the first
-     * {@link #CACHE_SIZE} kinds of argument lists are.
+     * (compiler phase 3, but the interpreter uses it too) : resolution only depends on them, so a
+     * call with arguments of the same kinds as an earlier one picks the same overload. A kind is
+     * the argument's class, or for a Babble instance its class value, whose Java interfaces it
+     * passes for. Errors are not cached, and only the first {@link #CACHE_SIZE} kinds of argument
+     * lists are.
      */
     public static final class Cache<E extends Executable> {
-        private record Entry<E extends Executable>(Object[] kinds, Resolved<E> resolved) {
-        }
+        private record Entry<E extends Executable>(Object[] kinds, Resolved<E> resolved) {}
 
         private volatile Entry<E>[] entries = newEntries(0);
 
@@ -131,7 +130,9 @@ public final class Overloads {
     private static final Object NULL_KIND = new Object();
     private static final Object OBJECT_CLASS_KIND = new Object();
 
-    /** What the applicability of an argument depends on (see {@link #isApplicable(Class, Object)}). */
+    /**
+     * What the applicability of an argument depends on (see {@link #isApplicable(Class, Object)}).
+     */
     private static Object kind(Object argument) {
         if (argument instanceof JavaValue wrapper) {
             argument = wrapper.javaValue();
@@ -150,31 +151,48 @@ public final class Overloads {
         return argument.getClass();
     }
 
-    public static <E extends Executable> E resolve(List<E> candidates, String description, Object[] arguments) {
+    public static <E extends Executable> E resolve(
+            List<E> candidates, String description, Object[] arguments) {
         return resolveDetailed(candidates, description, arguments).executable();
     }
 
-    public static <E extends Executable> Resolved<E> resolveDetailed(List<E> candidates, String description, Object[] arguments) {
-        List<E> applicable = candidates.stream()
-                .filter(candidate -> isApplicable(candidate, arguments))
-                .toList();
+    public static <E extends Executable> Resolved<E> resolveDetailed(
+            List<E> candidates, String description, Object[] arguments) {
+        List<E> applicable =
+                candidates.stream()
+                        .filter(candidate -> isApplicable(candidate, arguments))
+                        .toList();
         boolean varArgs = false;
         if (applicable.isEmpty()) {
-            applicable = candidates.stream()
-                    .filter(candidate -> candidate.isVarArgs() && isVarArgsApplicable(candidate, arguments))
-                    .toList();
+            applicable =
+                    candidates.stream()
+                            .filter(candidate ->
+                                    candidate.isVarArgs()
+                                            && isVarArgsApplicable(candidate, arguments))
+                            .toList();
             varArgs = !applicable.isEmpty();
         }
 
         if (applicable.isEmpty()) {
-            throw new BabbleException("No applicable overload of " + description + " for " + signature(arguments)
-                    + " : candidates are " + describe(candidates));
+            throw new BabbleException(
+                    "No applicable overload of "
+                            + description
+                            + " for "
+                            + signature(arguments)
+                            + " : candidates are "
+                            + describe(candidates));
         }
 
         E best = applicable.get(0);
         for (E candidate : applicable) {
-            boolean more = varArgs ? isVarArgsMoreSpecific(candidate, best) : isMoreSpecific(candidate, best);
-            boolean reverse = varArgs ? isVarArgsMoreSpecific(best, candidate) : isMoreSpecific(best, candidate);
+            boolean more =
+                    varArgs
+                            ? isVarArgsMoreSpecific(candidate, best)
+                            : isMoreSpecific(candidate, best);
+            boolean reverse =
+                    varArgs
+                            ? isVarArgsMoreSpecific(best, candidate)
+                            : isMoreSpecific(best, candidate);
             if (more && !reverse) {
                 best = candidate;
             }
@@ -186,12 +204,24 @@ public final class Overloads {
             if (candidate == best) {
                 continue;
             }
-            boolean bestMore = varArgs ? isVarArgsMoreSpecific(best, candidate) : isMoreSpecific(best, candidate);
-            boolean candMore = varArgs ? isVarArgsMoreSpecific(candidate, best) : isMoreSpecific(candidate, best);
-            boolean sameParams = Arrays.equals(best.getParameterTypes(), candidate.getParameterTypes());
+            boolean bestMore =
+                    varArgs
+                            ? isVarArgsMoreSpecific(best, candidate)
+                            : isMoreSpecific(best, candidate);
+            boolean candMore =
+                    varArgs
+                            ? isVarArgsMoreSpecific(candidate, best)
+                            : isMoreSpecific(candidate, best);
+            boolean sameParams =
+                    Arrays.equals(best.getParameterTypes(), candidate.getParameterTypes());
             if (!bestMore || (varArgs && candMore && !sameParams)) {
-                throw new BabbleException("Ambiguous call to " + description + " for " + signature(arguments)
-                        + " : candidates are " + describe(applicable));
+                throw new BabbleException(
+                        "Ambiguous call to "
+                                + description
+                                + " for "
+                                + signature(arguments)
+                                + " : candidates are "
+                                + describe(applicable));
             }
         }
 
@@ -232,9 +262,9 @@ public final class Overloads {
     }
 
     /**
-     * A null argument is a wildcard : it fits any reference parameter and no primitive
-     * one. It is never dereferenced, so a null never escapes as a bare
-     * NullPointerException from the resolution itself.
+     * A null argument is a wildcard : it fits any reference parameter and no primitive one. It is
+     * never dereferenced, so a null never escapes as a bare NullPointerException from the
+     * resolution itself.
      */
     private static boolean isApplicable(Class<?> parameterType, Object argument) {
         if (argument == null) {
@@ -268,8 +298,8 @@ public final class Overloads {
     }
 
     /**
-     * Whether every parameter of {@code candidate} could be passed on to {@code other},
-     * i.e. whether {@code candidate} is at least as specific as it.
+     * Whether every parameter of {@code candidate} could be passed on to {@code other}, i.e.
+     * whether {@code candidate} is at least as specific as it.
      */
     public static boolean isMoreSpecific(Executable candidate, Executable other) {
         Class<?>[] candidateTypes = candidate.getParameterTypes();
@@ -317,9 +347,10 @@ public final class Overloads {
 
     private static String describe(List<? extends Executable> candidates) {
         return candidates.stream()
-                .map(candidate -> Arrays.stream(candidate.getParameterTypes())
-                        .map(Class::getCanonicalName)
-                        .collect(Collectors.joining(", ", "(", ")")))
+                .map(candidate ->
+                        Arrays.stream(candidate.getParameterTypes())
+                                .map(Class::getCanonicalName)
+                                .collect(Collectors.joining(", ", "(", ")")))
                 .collect(Collectors.joining(", "));
     }
 }

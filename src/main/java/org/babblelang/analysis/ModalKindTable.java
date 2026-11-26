@@ -1,7 +1,5 @@
 package org.babblelang.analysis;
 
-import org.babblelang.runtime.ClassShape;
-
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.IdentityHashMap;
@@ -9,16 +7,18 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
+import org.babblelang.runtime.ClassShape;
 
 /**
- * Modal kinds of types by mode crossing ({@code BIP027-I5}, docs/design/bip027_tackling-complexity-in-the-compiler.md
- * §3.3, after Peters et al., <i>Mode Crossing</i>, ICFP 2026) : the one place that decides whether
- * a value of a type is deeply immutable, for the type checker and the effect checker alike.
+ * Modal kinds of types by mode crossing ({@code BIP027-I5},
+ * docs/design/bip027_tackling-complexity-in-the-compiler.md §3.3, after Peters et al., <i>Mode
+ * Crossing</i>, ICFP 2026) : the one place that decides whether a value of a type is deeply
+ * immutable, for the type checker and the effect checker alike.
  *
  * <p>A type's {@link ModalKind} says which {@link Axis modal axes} its values cross, provided the
  * type variables it {@linkplain ModalKind#deps() depends on} are instantiated with types that cross
- * them too. Core scalars, {@code null}, {@code frozen T} cross everything ; a union crosses what all
- * its members cross ; a Java class the axioms say is {@code immutable} crosses what its type
+ * them too. Core scalars, {@code null}, {@code frozen T} cross everything ; a union crosses what
+ * all its members cross ; a Java class the axioms say is {@code immutable} crosses what its type
  * arguments cross ; an {@code object} with no fields crosses everything ; a record ({@code value}
  * class) crosses what its fields' types cross, so its kind is a dependency on its own type
  * parameters — computed once per {@link TypeNode} and cached, rather than walking the fields of
@@ -34,7 +34,10 @@ final class ModalKindTable {
 
     /** A modal axis a type may cross (OxCaml's modes, BIP027 §3.3). */
     enum Axis {
-        /** Shared reads are safe : the value is deeply immutable ({@code frozen}, BIP019 mutable reads). */
+        /**
+         * Shared reads are safe : the value is deeply immutable ({@code frozen}, BIP019 mutable
+         * reads).
+         */
         CONTENTION,
         /** The value may cross threads : BIP007 §10's {@code threadsafe}, a single modal bit. */
         PORTABILITY
@@ -46,7 +49,8 @@ final class ModalKindTable {
      */
     record ModalKind(Set<Axis> crossed, Set<Type.TypeVar> deps) {
         static final ModalKind NEVER = new ModalKind(Set.of(), Set.of());
-        static final ModalKind ALWAYS = new ModalKind(Collections.unmodifiableSet(EnumSet.allOf(Axis.class)), Set.of());
+        static final ModalKind ALWAYS =
+                new ModalKind(Collections.unmodifiableSet(EnumSet.allOf(Axis.class)), Set.of());
 
         static ModalKind dependingOn(Set<Type.TypeVar> deps) {
             return deps.isEmpty() ? ALWAYS : new ModalKind(ALWAYS.crossed, Set.copyOf(deps));
@@ -79,10 +83,16 @@ final class ModalKindTable {
 
     /** What the table reads of the type checker. */
     interface Types {
-        /** Whether the axioms say instances of {@code cls} are deeply immutable when their type arguments are. */
+        /**
+         * Whether the axioms say instances of {@code cls} are deeply immutable when their type
+         * arguments are.
+         */
         boolean isJavaClassImmutable(Class<?> cls);
 
-        /** The declared or inferred type of a field of {@code node}, in terms of the node's type parameters ; {@link Type#ERROR} if unknown. */
+        /**
+         * The declared or inferred type of a field of {@code node}, in terms of the node's type
+         * parameters ; {@link Type#ERROR} if unknown.
+         */
         Type memberType(TypeNode node, TypeNode.Member member);
 
         /** The bindings of an instance's node's type parameters to its type arguments. */
@@ -91,9 +101,15 @@ final class ModalKindTable {
 
     private final Types types;
     private final Map<TypeNode, ModalKind> nodeKinds = new IdentityHashMap<>();
-    /** The nodes whose kind is being computed : a record reaching itself assumes it crosses (greatest fixpoint). */
+
+    /**
+     * The nodes whose kind is being computed : a record reaching itself assumes it crosses
+     * (greatest fixpoint).
+     */
     private final Set<TypeNode> inProgress = Collections.newSetFromMap(new IdentityHashMap<>());
+
     private boolean caching;
+
     /** Whether the kind being computed relied on the assumption about a node in progress. */
     private boolean assumed;
 
@@ -102,25 +118,28 @@ final class ModalKindTable {
     }
 
     ModalKindTable(Predicate<Class<?>> javaImmutable, TypeChecker checker) {
-        this(new Types() {
-            @Override
-            public boolean isJavaClassImmutable(Class<?> cls) {
-                return javaImmutable.test(cls);
-            }
+        this(
+                new Types() {
+                    @Override
+                    public boolean isJavaClassImmutable(Class<?> cls) {
+                        return javaImmutable.test(cls);
+                    }
 
-            @Override
-            public Type memberType(TypeNode node, TypeNode.Member member) {
-                return checker.memberType(node, member);
-            }
+                    @Override
+                    public Type memberType(TypeNode node, TypeNode.Member member) {
+                        return checker.memberType(node, member);
+                    }
 
-            @Override
-            public Map<Type.TypeVar, Type> instanceEnv(Type.Instance instance) {
-                return checker.algebra().instanceEnv(instance);
-            }
-        });
+                    @Override
+                    public Map<Type.TypeVar, Type> instanceEnv(Type.Instance instance) {
+                        return checker.algebra().instanceEnv(instance);
+                    }
+                });
     }
 
-    /** Turns the per-node cache on (types have settled) or off, dropping what it holds either way. */
+    /**
+     * Turns the per-node cache on (types have settled) or off, dropping what it holds either way.
+     */
     void setCaching(boolean caching) {
         this.caching = caching;
         nodeKinds.clear();
@@ -135,8 +154,12 @@ final class ModalKindTable {
     }
 
     ModalKind kindOf(Type type) {
-        if (type == null || type == Type.ERROR || type == Type.NOTHING || Type.isCoreScalar(type)
-                || type == Type.NULL || type instanceof Type.Frozen) {
+        if (type == null
+                || type == Type.ERROR
+                || type == Type.NOTHING
+                || Type.isCoreScalar(type)
+                || type == Type.NULL
+                || type instanceof Type.Frozen) {
             return ModalKind.ALWAYS;
         }
         if (type instanceof Type.TypeVar tv) {
@@ -174,7 +197,10 @@ final class ModalKindTable {
         return ModalKind.NEVER;
     }
 
-    /** {@code kind} with the type arguments of an instance substituted for its node's type parameters. */
+    /**
+     * {@code kind} with the type arguments of an instance substituted for its node's type
+     * parameters.
+     */
     private ModalKind instantiate(ModalKind kind, Map<Type.TypeVar, Type> env) {
         if (kind.isNever() || kind.deps().isEmpty()) {
             return kind;

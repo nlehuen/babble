@@ -1,5 +1,16 @@
 package org.babblelang.opt.mir;
 
+import java.lang.reflect.Method;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.babblelang.analysis.BuiltinAxioms;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
@@ -14,30 +25,19 @@ import org.babblelang.ir.mir.MirTerminator;
 import org.babblelang.ir.mir.MirVal;
 import org.babblelang.opt.PassContext;
 
-import java.lang.reflect.Method;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-
 /**
  * Sparse Conditional Constant Propagation ({@code O1} + {@code O4}, Wegman–Zadeck {@code [WZ91]})
  * over SSA {@link MirModule} ({@code BIP014-I3} §6.4).
  *
- * <p>Jointly evaluates SSA values and CFG edge reachability over the 3-level lattice
- * ({@code TOP} &lt; {@code CONST(v)} &lt; {@code BOTTOM}), folding scalar arithmetic/comparisons,
- * conversions, string concatenation, {@code BuiltinAxioms}-foldable static JDK calls, and
- * constant {@link MirTerminator.BrIf} branches into unconditional {@link MirTerminator.Br} edges
- * while dropping unreachable blocks.
+ * <p>Jointly evaluates SSA values and CFG edge reachability over the 3-level lattice ({@code TOP}
+ * &lt; {@code CONST(v)} &lt; {@code BOTTOM}), folding scalar arithmetic/comparisons, conversions,
+ * string concatenation, {@code BuiltinAxioms}-foldable static JDK calls, and constant {@link
+ * MirTerminator.BrIf} branches into unconditional {@link MirTerminator.Br} edges while dropping
+ * unreachable blocks.
  */
 public final class SccpPass implements MirPass {
-    private static final LoweringTargets.JavaConstructorTarget ARITH_EXN_CTOR = resolveArithExnCtor();
+    private static final LoweringTargets.JavaConstructorTarget ARITH_EXN_CTOR =
+            resolveArithExnCtor();
 
     private static LoweringTargets.JavaConstructorTarget resolveArithExnCtor() {
         try {
@@ -62,13 +62,18 @@ public final class SccpPass implements MirPass {
             updated.put(e.getKey(), r.fn);
             totalRewrites += r.rewrites;
         }
-        return totalRewrites == 0 ? Result.unchanged(module) : new Result(module.withFunctions(updated), totalRewrites);
+        return totalRewrites == 0
+                ? Result.unchanged(module)
+                : new Result(module.withFunctions(updated), totalRewrites);
     }
 
-    private record FnResult(MirFunction fn, int rewrites) {
-    }
+    private record FnResult(MirFunction fn, int rewrites) {}
 
-    private enum State { TOP, CONST, BOTTOM }
+    private enum State {
+        TOP,
+        CONST,
+        BOTTOM
+    }
 
     private record Lattice(State state, Object value) {
         static final Lattice TOP = new Lattice(State.TOP, null);
@@ -98,8 +103,7 @@ public final class SccpPass implements MirPass {
         return a.equals(b);
     }
 
-    private record EdgeKey(int fromBlock, int toBlock, int edgeIndex) {
-    }
+    private record EdgeKey(int fromBlock, int toBlock, int edgeIndex) {}
 
     private static boolean isIntegralDivOrMod(MirInst.Binary b) {
         PrimitiveKind out = b.result().kind();
@@ -146,15 +150,31 @@ public final class SccpPass implements MirPass {
         }
         for (MirBlock b : fn.blocks()) {
             if (b.terminator() instanceof MirTerminator.Br br) {
-                incomingEdges.get(br.targetBlock()).add(new EdgeInfo(new EdgeKey(b.id(), br.targetBlock(), 0), br.args()));
+                incomingEdges
+                        .get(br.targetBlock())
+                        .add(new EdgeInfo(new EdgeKey(b.id(), br.targetBlock(), 0), br.args()));
             } else if (b.terminator() instanceof MirTerminator.BrIf bi) {
-                incomingEdges.get(bi.thenBlock()).add(new EdgeInfo(new EdgeKey(b.id(), bi.thenBlock(), 0), bi.thenArgs()));
-                incomingEdges.get(bi.elseBlock()).add(new EdgeInfo(new EdgeKey(b.id(), bi.elseBlock(), 1), bi.elseArgs()));
+                incomingEdges
+                        .get(bi.thenBlock())
+                        .add(new EdgeInfo(new EdgeKey(b.id(), bi.thenBlock(), 0), bi.thenArgs()));
+                incomingEdges
+                        .get(bi.elseBlock())
+                        .add(new EdgeInfo(new EdgeKey(b.id(), bi.elseBlock(), 1), bi.elseArgs()));
             } else if (b.terminator() instanceof MirTerminator.Switch sw) {
                 for (int i = 0; i < sw.keys().length; i++) {
-                    incomingEdges.get(sw.targetBlocks()[i]).add(new EdgeInfo(new EdgeKey(b.id(), sw.targetBlocks()[i], i), sw.targetArgs().get(i)));
+                    incomingEdges
+                            .get(sw.targetBlocks()[i])
+                            .add(
+                                    new EdgeInfo(
+                                            new EdgeKey(b.id(), sw.targetBlocks()[i], i),
+                                            sw.targetArgs().get(i)));
                 }
-                incomingEdges.get(sw.defaultBlock()).add(new EdgeInfo(new EdgeKey(b.id(), sw.defaultBlock(), -1), sw.defaultArgs()));
+                incomingEdges
+                        .get(sw.defaultBlock())
+                        .add(
+                                new EdgeInfo(
+                                        new EdgeKey(b.id(), sw.defaultBlock(), -1),
+                                        sw.defaultArgs()));
             }
         }
 
@@ -206,40 +226,96 @@ public final class SccpPass implements MirPass {
             // 3. Evaluate terminator & propagate executable edges.
             MirTerminator term = b.terminator();
             if (term instanceof MirTerminator.Br br) {
-                markEdgeExec(new EdgeKey(bid, br.targetBlock(), 0), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                markEdgeExec(
+                        new EdgeKey(bid, br.targetBlock(), 0),
+                        execEdges,
+                        execBlocks,
+                        blockWorklist,
+                        blockMap,
+                        lattice);
             } else if (term instanceof MirTerminator.BrIf bi) {
                 Lattice cl = lattice.getOrDefault(bi.cond().id(), Lattice.TOP);
                 if (cl.state == State.CONST) {
                     boolean truthy = isTruthy(cl.value);
                     if (truthy) {
-                        markEdgeExec(new EdgeKey(bid, bi.thenBlock(), 0), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(
+                                new EdgeKey(bid, bi.thenBlock(), 0),
+                                execEdges,
+                                execBlocks,
+                                blockWorklist,
+                                blockMap,
+                                lattice);
                     } else {
-                        markEdgeExec(new EdgeKey(bid, bi.elseBlock(), 1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(
+                                new EdgeKey(bid, bi.elseBlock(), 1),
+                                execEdges,
+                                execBlocks,
+                                blockWorklist,
+                                blockMap,
+                                lattice);
                     }
                 } else if (cl.state == State.BOTTOM) {
-                    markEdgeExec(new EdgeKey(bid, bi.thenBlock(), 0), execEdges, execBlocks, blockWorklist, blockMap, lattice);
-                    markEdgeExec(new EdgeKey(bid, bi.elseBlock(), 1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    markEdgeExec(
+                            new EdgeKey(bid, bi.thenBlock(), 0),
+                            execEdges,
+                            execBlocks,
+                            blockWorklist,
+                            blockMap,
+                            lattice);
+                    markEdgeExec(
+                            new EdgeKey(bid, bi.elseBlock(), 1),
+                            execEdges,
+                            execBlocks,
+                            blockWorklist,
+                            blockMap,
+                            lattice);
                 }
             } else if (term instanceof MirTerminator.Switch sw) {
                 Lattice kl = lattice.getOrDefault(sw.key().id(), Lattice.TOP);
-                if (kl.state == State.CONST && (kl.value instanceof Number || kl.value instanceof Character)) {
+                if (kl.state == State.CONST
+                        && (kl.value instanceof Number || kl.value instanceof Character)) {
                     int kv = kl.value instanceof Character ch ? ch : ((Number) kl.value).intValue();
                     int idx = java.util.Arrays.binarySearch(sw.keys(), kv);
                     if (idx >= 0) {
-                        markEdgeExec(new EdgeKey(bid, sw.targetBlocks()[idx], idx), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(
+                                new EdgeKey(bid, sw.targetBlocks()[idx], idx),
+                                execEdges,
+                                execBlocks,
+                                blockWorklist,
+                                blockMap,
+                                lattice);
                     } else {
-                        markEdgeExec(new EdgeKey(bid, sw.defaultBlock(), -1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(
+                                new EdgeKey(bid, sw.defaultBlock(), -1),
+                                execEdges,
+                                execBlocks,
+                                blockWorklist,
+                                blockMap,
+                                lattice);
                     }
                 } else if (kl.state == State.BOTTOM) {
                     for (int i = 0; i < sw.keys().length; i++) {
-                        markEdgeExec(new EdgeKey(bid, sw.targetBlocks()[i], i), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(
+                                new EdgeKey(bid, sw.targetBlocks()[i], i),
+                                execEdges,
+                                execBlocks,
+                                blockWorklist,
+                                blockMap,
+                                lattice);
                     }
-                    markEdgeExec(new EdgeKey(bid, sw.defaultBlock(), -1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    markEdgeExec(
+                            new EdgeKey(bid, sw.defaultBlock(), -1),
+                            execEdges,
+                            execBlocks,
+                            blockWorklist,
+                            blockMap,
+                            lattice);
                 }
             }
         }
 
-        // Rewrite blocks: keep only executable blocks, fold constant pure instructions, zero-divisor
+        // Rewrite blocks: keep only executable blocks, fold constant pure instructions,
+        // zero-divisor
         // throws, non-zero mod/floorDiv identities, and constant BrIfs.
         int rewrites = 0;
         int nextValId = fn.nextValId();
@@ -260,8 +336,16 @@ public final class SccpPass implements MirPass {
                         MirVal msgVal = new MirVal(nextValId++, PrimitiveKind.NONE, null);
                         newInsts.add(new MirInst.Const(msgVal, "/ by zero", bin.line()));
                         MirVal exnVal = new MirVal(nextValId++, PrimitiveKind.NONE, null);
-                        newInsts.add(new MirInst.CallJavaCtor(exnVal, null, "java.lang.ArithmeticException", true,
-                                ARITH_EXN_CTOR, List.of(msgVal), bin.line(), MirEffect.PURE_NOTHROW));
+                        newInsts.add(
+                                new MirInst.CallJavaCtor(
+                                        exnVal,
+                                        null,
+                                        "java.lang.ArithmeticException",
+                                        true,
+                                        ARITH_EXN_CTOR,
+                                        List.of(msgVal),
+                                        bin.line(),
+                                        MirEffect.PURE_NOTHROW));
                         term = new MirTerminator.Throw(exnVal, true, bin.line());
                         rewrites++;
                         truncatedByThrow = true;
@@ -270,36 +354,60 @@ public final class SccpPass implements MirPass {
                     if (rl.state == State.CONST && rl.value instanceof Number rn) {
                         long rv = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
                         Lattice resLat = lattice.get(bin.result().id());
-                        if (resLat != null && resLat.state == State.CONST && isCompatibleConst(resLat.value, out)) {
+                        if (resLat != null
+                                && resLat.state == State.CONST
+                                && isCompatibleConst(resLat.value, out)) {
                             newInsts.add(new MirInst.Const(bin.result(), resLat.value, bin.line()));
                             rewrites++;
                             continue;
                         }
-                        if (bin.op() == HirExpr.BinaryOp.FLOOR_DIV && rv == 1L && bin.left().kind() == out) {
+                        if (bin.op() == HirExpr.BinaryOp.FLOOR_DIV
+                                && rv == 1L
+                                && bin.left().kind() == out) {
                             newInsts.add(new MirInst.Copy(bin.result(), bin.left(), bin.line()));
                             rewrites++;
                             continue;
                         }
-                        if (bin.op() == HirExpr.BinaryOp.FLOOR_DIV && rv == -1L && bin.left().kind() == out) {
-                            newInsts.add(new MirInst.Unary(bin.result(), HirExpr.UnaryOp.NEGATE, bin.left(),
-                                    bin.leftText(), bin.line(), MirEffect.PURE_NOTHROW));
+                        if (bin.op() == HirExpr.BinaryOp.FLOOR_DIV
+                                && rv == -1L
+                                && bin.left().kind() == out) {
+                            newInsts.add(
+                                    new MirInst.Unary(
+                                            bin.result(),
+                                            HirExpr.UnaryOp.NEGATE,
+                                            bin.left(),
+                                            bin.leftText(),
+                                            bin.line(),
+                                            MirEffect.PURE_NOTHROW));
                             rewrites++;
                             continue;
                         }
                         if (!bin.effect().nothrow()) {
-                            newInsts.add(new MirInst.Binary(bin.result(), bin.op(), bin.left(), bin.right(),
-                                    bin.leftText(), bin.rightText(), bin.stringConcat(), bin.line(),
-                                    MirEffect.PURE_NOTHROW));
+                            newInsts.add(
+                                    new MirInst.Binary(
+                                            bin.result(),
+                                            bin.op(),
+                                            bin.left(),
+                                            bin.right(),
+                                            bin.leftText(),
+                                            bin.rightText(),
+                                            bin.stringConcat(),
+                                            bin.line(),
+                                            MirEffect.PURE_NOTHROW));
                             rewrites++;
                             continue;
                         }
                     }
                 }
                 MirVal res = inst.result();
-                if (res != null && !(inst instanceof MirInst.Const) && !(inst instanceof MirInst.Narrow)
+                if (res != null
+                        && !(inst instanceof MirInst.Const)
+                        && !(inst instanceof MirInst.Narrow)
                         && inst.effect().isRemovableIfUnused()) {
                     Lattice l = lattice.get(res.id());
-                    if (l != null && l.state == State.CONST && isCompatibleConst(l.value, res.kind())) {
+                    if (l != null
+                            && l.state == State.CONST
+                            && isCompatibleConst(l.value, res.kind())) {
                         newInsts.add(new MirInst.Const(res, l.value, inst.line()));
                         rewrites++;
                         continue;
@@ -311,30 +419,40 @@ public final class SccpPass implements MirPass {
                 Lattice cl = lattice.getOrDefault(bi.cond().id(), Lattice.BOTTOM);
                 if (cl.state == State.CONST) {
                     boolean truthy = isTruthy(cl.value);
-                    term = truthy
-                            ? new MirTerminator.Br(bi.thenBlock(), bi.thenArgs(), bi.line())
-                            : new MirTerminator.Br(bi.elseBlock(), bi.elseArgs(), bi.line());
+                    term =
+                            truthy
+                                    ? new MirTerminator.Br(bi.thenBlock(), bi.thenArgs(), bi.line())
+                                    : new MirTerminator.Br(
+                                            bi.elseBlock(), bi.elseArgs(), bi.line());
                     rewrites++;
                 }
             } else if (!truncatedByThrow && term instanceof MirTerminator.Switch sw) {
                 Lattice kl = lattice.getOrDefault(sw.key().id(), Lattice.BOTTOM);
-                if (kl.state == State.CONST && (kl.value instanceof Number || kl.value instanceof Character)) {
+                if (kl.state == State.CONST
+                        && (kl.value instanceof Number || kl.value instanceof Character)) {
                     int kv = kl.value instanceof Character ch ? ch : ((Number) kl.value).intValue();
                     int idx = java.util.Arrays.binarySearch(sw.keys(), kv);
-                    term = idx >= 0
-                            ? new MirTerminator.Br(sw.targetBlocks()[idx], sw.targetArgs().get(idx), sw.line())
-                            : new MirTerminator.Br(sw.defaultBlock(), sw.defaultArgs(), sw.line());
+                    term =
+                            idx >= 0
+                                    ? new MirTerminator.Br(
+                                            sw.targetBlocks()[idx],
+                                            sw.targetArgs().get(idx),
+                                            sw.line())
+                                    : new MirTerminator.Br(
+                                            sw.defaultBlock(), sw.defaultArgs(), sw.line());
                     rewrites++;
                 }
             }
-            outBlocks.add(new MirBlock(b.id(), b.params(), newInsts, term, b.handlers(), b.handlerEntry()));
+            outBlocks.add(
+                    new MirBlock(
+                            b.id(), b.params(), newInsts, term, b.handlers(), b.handlerEntry()));
         }
-        return rewrites == 0 ? new FnResult(fn, 0)
+        return rewrites == 0
+                ? new FnResult(fn, 0)
                 : new FnResult(fn.withBlocks(outBlocks, nextValId, fn.nextBlockId()), rewrites);
     }
 
-    private record EdgeInfo(EdgeKey key, List<MirVal> args) {
-    }
+    private record EdgeInfo(EdgeKey key, List<MirVal> args) {}
 
     /**
      * The blocks to evaluate again, each at most once until it is : a block whose inputs change
@@ -359,8 +477,12 @@ public final class SccpPass implements MirPass {
         }
     }
 
-    private static void markBlockExec(int blockId, Set<Integer> execBlocks, Deque<Integer> worklist,
-                                      Map<Integer, MirBlock> blockMap, Map<Integer, Lattice> lattice) {
+    private static void markBlockExec(
+            int blockId,
+            Set<Integer> execBlocks,
+            Deque<Integer> worklist,
+            Map<Integer, MirBlock> blockMap,
+            Map<Integer, Lattice> lattice) {
         if (execBlocks.add(blockId)) {
             worklist.add(blockId);
             MirBlock b = blockMap.get(blockId);
@@ -372,9 +494,13 @@ public final class SccpPass implements MirPass {
         }
     }
 
-    private static void markEdgeExec(EdgeKey edge, Set<EdgeKey> execEdges, Set<Integer> execBlocks,
-                                     Deque<Integer> worklist, Map<Integer, MirBlock> blockMap,
-                                     Map<Integer, Lattice> lattice) {
+    private static void markEdgeExec(
+            EdgeKey edge,
+            Set<EdgeKey> execEdges,
+            Set<Integer> execBlocks,
+            Deque<Integer> worklist,
+            Map<Integer, MirBlock> blockMap,
+            Map<Integer, Lattice> lattice) {
         if (execEdges.add(edge)) {
             if (!execBlocks.contains(edge.toBlock)) {
                 markBlockExec(edge.toBlock, execBlocks, worklist, blockMap, lattice);
@@ -384,9 +510,13 @@ public final class SccpPass implements MirPass {
         }
     }
 
-    private static void updateLattice(int valId, Lattice next, Map<Integer, Lattice> lattice,
-                                      Set<Integer> execBlocks, Map<Integer, List<Integer>> valUseBlocks,
-                                      Deque<Integer> blockWorklist) {
+    private static void updateLattice(
+            int valId,
+            Lattice next,
+            Map<Integer, Lattice> lattice,
+            Set<Integer> execBlocks,
+            Map<Integer, List<Integer>> valUseBlocks,
+            Deque<Integer> blockWorklist) {
         Lattice prev = lattice.getOrDefault(valId, Lattice.TOP);
         Lattice merged = prev.meet(next);
         if (!Objects.equals(prev, merged)) {
@@ -427,8 +557,10 @@ public final class SccpPass implements MirPass {
         return switch (u.result().kind()) {
             case INT -> v instanceof Number n ? Lattice.constant(-n.intValue()) : Lattice.BOTTOM;
             case LONG -> v instanceof Number n ? Lattice.constant(-n.longValue()) : Lattice.BOTTOM;
-            case FLOAT -> v instanceof Number n ? Lattice.constant(-n.floatValue()) : Lattice.BOTTOM;
-            case DOUBLE -> v instanceof Number n ? Lattice.constant(-n.doubleValue()) : Lattice.BOTTOM;
+            case FLOAT ->
+                    v instanceof Number n ? Lattice.constant(-n.floatValue()) : Lattice.BOTTOM;
+            case DOUBLE ->
+                    v instanceof Number n ? Lattice.constant(-n.doubleValue()) : Lattice.BOTTOM;
             default -> Lattice.BOTTOM;
         };
     }
@@ -437,11 +569,15 @@ public final class SccpPass implements MirPass {
         Lattice ll = lat.getOrDefault(b.left().id(), Lattice.TOP);
         Lattice rl = lat.getOrDefault(b.right().id(), Lattice.TOP);
         PrimitiveKind out = b.result().kind();
-        if (b.op() == HirExpr.BinaryOp.MOD && (out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
-                && rl.state == State.CONST && rl.value instanceof Number rn && ll.state != State.TOP) {
+        if (b.op() == HirExpr.BinaryOp.MOD
+                && (out == PrimitiveKind.INT || out == PrimitiveKind.LONG)
+                && rl.state == State.CONST
+                && rl.value instanceof Number rn
+                && ll.state != State.TOP) {
             long rv = out == PrimitiveKind.LONG ? rn.longValue() : rn.intValue();
             if (rv == 1L || rv == -1L) {
-                return Lattice.constant(out == PrimitiveKind.LONG ? (Object) 0L : Integer.valueOf(0));
+                return Lattice.constant(
+                        out == PrimitiveKind.LONG ? (Object) 0L : Integer.valueOf(0));
             }
         }
         if (ll.state == State.BOTTOM || rl.state == State.BOTTOM) return Lattice.BOTTOM;
@@ -459,49 +595,76 @@ public final class SccpPass implements MirPass {
             return Lattice.BOTTOM;
         }
         return switch (out) {
-            case INT -> switch (b.op()) {
-                case ADD -> Lattice.constant(ln.intValue() + rn.intValue());
-                case SUB -> Lattice.constant(ln.intValue() - rn.intValue());
-                case MUL -> Lattice.constant(ln.intValue() * rn.intValue());
-                case FLOOR_DIV -> rn.intValue() != 0 ? Lattice.constant(Math.floorDiv(ln.intValue(), rn.intValue())) : Lattice.BOTTOM;
-                case MOD -> rn.intValue() != 0 ? Lattice.constant(Math.floorMod(ln.intValue(), rn.intValue())) : Lattice.BOTTOM;
-                default -> Lattice.BOTTOM;
-            };
-            case LONG -> switch (b.op()) {
-                case ADD -> Lattice.constant(ln.longValue() + rn.longValue());
-                case SUB -> Lattice.constant(ln.longValue() - rn.longValue());
-                case MUL -> Lattice.constant(ln.longValue() * rn.longValue());
-                case FLOOR_DIV -> rn.longValue() != 0L ? Lattice.constant(Math.floorDiv(ln.longValue(), rn.longValue())) : Lattice.BOTTOM;
-                case MOD -> rn.longValue() != 0L ? Lattice.constant(Math.floorMod(ln.longValue(), rn.longValue())) : Lattice.BOTTOM;
-                default -> Lattice.BOTTOM;
-            };
-            case FLOAT -> switch (b.op()) {
-                case ADD -> Lattice.constant(ln.floatValue() + rn.floatValue());
-                case SUB -> Lattice.constant(ln.floatValue() - rn.floatValue());
-                case MUL -> Lattice.constant(ln.floatValue() * rn.floatValue());
-                case DIV -> Lattice.constant(ln.floatValue() / rn.floatValue());
-                default -> Lattice.BOTTOM;
-            };
-            case DOUBLE -> switch (b.op()) {
-                case ADD -> Lattice.constant(ln.doubleValue() + rn.doubleValue());
-                case SUB -> Lattice.constant(ln.doubleValue() - rn.doubleValue());
-                case MUL -> Lattice.constant(ln.doubleValue() * rn.doubleValue());
-                case DIV -> Lattice.constant(ln.doubleValue() / rn.doubleValue());
-                default -> Lattice.BOTTOM;
-            };
+            case INT ->
+                    switch (b.op()) {
+                        case ADD -> Lattice.constant(ln.intValue() + rn.intValue());
+                        case SUB -> Lattice.constant(ln.intValue() - rn.intValue());
+                        case MUL -> Lattice.constant(ln.intValue() * rn.intValue());
+                        case FLOOR_DIV ->
+                                rn.intValue() != 0
+                                        ? Lattice.constant(
+                                                Math.floorDiv(ln.intValue(), rn.intValue()))
+                                        : Lattice.BOTTOM;
+                        case MOD ->
+                                rn.intValue() != 0
+                                        ? Lattice.constant(
+                                                Math.floorMod(ln.intValue(), rn.intValue()))
+                                        : Lattice.BOTTOM;
+                        default -> Lattice.BOTTOM;
+                    };
+            case LONG ->
+                    switch (b.op()) {
+                        case ADD -> Lattice.constant(ln.longValue() + rn.longValue());
+                        case SUB -> Lattice.constant(ln.longValue() - rn.longValue());
+                        case MUL -> Lattice.constant(ln.longValue() * rn.longValue());
+                        case FLOOR_DIV ->
+                                rn.longValue() != 0L
+                                        ? Lattice.constant(
+                                                Math.floorDiv(ln.longValue(), rn.longValue()))
+                                        : Lattice.BOTTOM;
+                        case MOD ->
+                                rn.longValue() != 0L
+                                        ? Lattice.constant(
+                                                Math.floorMod(ln.longValue(), rn.longValue()))
+                                        : Lattice.BOTTOM;
+                        default -> Lattice.BOTTOM;
+                    };
+            case FLOAT ->
+                    switch (b.op()) {
+                        case ADD -> Lattice.constant(ln.floatValue() + rn.floatValue());
+                        case SUB -> Lattice.constant(ln.floatValue() - rn.floatValue());
+                        case MUL -> Lattice.constant(ln.floatValue() * rn.floatValue());
+                        case DIV -> Lattice.constant(ln.floatValue() / rn.floatValue());
+                        default -> Lattice.BOTTOM;
+                    };
+            case DOUBLE ->
+                    switch (b.op()) {
+                        case ADD -> Lattice.constant(ln.doubleValue() + rn.doubleValue());
+                        case SUB -> Lattice.constant(ln.doubleValue() - rn.doubleValue());
+                        case MUL -> Lattice.constant(ln.doubleValue() * rn.doubleValue());
+                        case DIV -> Lattice.constant(ln.doubleValue() / rn.doubleValue());
+                        default -> Lattice.BOTTOM;
+                    };
             default -> Lattice.BOTTOM;
         };
     }
 
-    private static Lattice evalComparison(HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk, Object lv, Object rv) {
-        if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL && lv instanceof Boolean lb && rv instanceof Boolean rb) {
+    private static Lattice evalComparison(
+            HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk, Object lv, Object rv) {
+        if (lk == PrimitiveKind.BOOL
+                && rk == PrimitiveKind.BOOL
+                && lv instanceof Boolean lb
+                && rv instanceof Boolean rb) {
             return switch (op) {
                 case EQ -> Lattice.constant(lb.booleanValue() == rb.booleanValue());
                 case NEQ -> Lattice.constant(lb.booleanValue() != rb.booleanValue());
                 default -> Lattice.BOTTOM;
             };
         }
-        if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR && lv instanceof Character lc && rv instanceof Character rc) {
+        if (lk == PrimitiveKind.CHAR
+                && rk == PrimitiveKind.CHAR
+                && lv instanceof Character lc
+                && rv instanceof Character rc) {
             return Lattice.constant(applyCmp(op, Character.compare(lc, rc)));
         }
         if (lv instanceof Number ln && rv instanceof Number rn) {
@@ -553,7 +716,8 @@ public final class SccpPass implements MirPass {
             case INT -> v instanceof Number n ? Lattice.constant(n.intValue()) : Lattice.BOTTOM;
             case LONG -> v instanceof Number n ? Lattice.constant(n.longValue()) : Lattice.BOTTOM;
             case FLOAT -> v instanceof Number n ? Lattice.constant(n.floatValue()) : Lattice.BOTTOM;
-            case DOUBLE -> v instanceof Number n ? Lattice.constant(n.doubleValue()) : Lattice.BOTTOM;
+            case DOUBLE ->
+                    v instanceof Number n ? Lattice.constant(n.doubleValue()) : Lattice.BOTTOM;
             case BOOL -> v instanceof Boolean ? Lattice.constant(v) : Lattice.BOTTOM;
             case CHAR -> v instanceof Character ? Lattice.constant(v) : Lattice.BOTTOM;
             case NONE -> Lattice.constant(v);
@@ -562,7 +726,9 @@ public final class SccpPass implements MirPass {
 
     private static Lattice evalCallJava(MirInst.CallJava cj, Map<Integer, Lattice> lat) {
         Method m = cj.target().method();
-        if (!cj.target().isStatic() || !cj.pureStaticReceiver() || cj.target().varArgs()
+        if (!cj.target().isStatic()
+                || !cj.pureStaticReceiver()
+                || cj.target().varArgs()
                 || !BuiltinAxioms.current().isFoldable(m)) {
             return Lattice.BOTTOM;
         }
@@ -581,7 +747,9 @@ public final class SccpPass implements MirPass {
         }
         try {
             Object res = m.invoke(null, javaArgs);
-            return isCompatibleConst(res, cj.result().kind()) ? Lattice.constant(res) : Lattice.BOTTOM;
+            return isCompatibleConst(res, cj.result().kind())
+                    ? Lattice.constant(res)
+                    : Lattice.BOTTOM;
         } catch (Throwable ignored) {
             return Lattice.BOTTOM;
         }
@@ -609,7 +777,11 @@ public final class SccpPass implements MirPass {
 
     private static boolean isCompatibleConst(Object v, PrimitiveKind kind) {
         if (kind == PrimitiveKind.NONE) {
-            return v == null || v instanceof String || v instanceof Boolean || v instanceof Number || v instanceof Character;
+            return v == null
+                    || v instanceof String
+                    || v instanceof Boolean
+                    || v instanceof Number
+                    || v instanceof Character;
         }
         return switch (kind) {
             case BYTE -> v instanceof Byte;

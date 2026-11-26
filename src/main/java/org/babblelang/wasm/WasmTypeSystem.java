@@ -1,20 +1,19 @@
 package org.babblelang.wasm;
 
-import org.babblelang.analysis.CompilationTarget;
-import org.babblelang.analysis.PrimitiveKind;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import org.babblelang.analysis.CompilationTarget;
+import org.babblelang.analysis.PrimitiveKind;
 
 /**
- * Core WebAssembly 3.0 WasmGC type hierarchy and type-interning registry for Babble ({@code BIP025-I1},
- * {@code BIP025-D4}, {@code BIP025-D5}, {@code BIP025-D7}, {@code BIP025-D13}).
+ * Core WebAssembly 3.0 WasmGC type hierarchy and type-interning registry for Babble ({@code
+ * BIP025-I1}, {@code BIP025-D4}, {@code BIP025-D5}, {@code BIP025-D7}, {@code BIP025-D13}).
  *
  * <p>Standalone primitive array types (notably {@code $CharArr = (array (mut i16))}) are declared
- * outside the recursive type group so WasmGC iso-recursive equivalence matches the
- * {@code wasm:js-string} builtin imports directly.
+ * outside the recursive type group so WasmGC iso-recursive equivalence matches the {@code
+ * wasm:js-string} builtin imports directly.
  */
 public final class WasmTypeSystem {
     private final WasmModule module;
@@ -103,15 +102,16 @@ public final class WasmTypeSystem {
     // ---- Interned function signatures ----
     private final Map<FuncSigKey, Integer> internedFuncTypes = new LinkedHashMap<>();
 
-    private record FuncSigKey(List<WasmValType> params, List<WasmValType> results) {
-    }
+    private record FuncSigKey(List<WasmValType> params, List<WasmValType> results) {}
 
     public WasmTypeSystem(WasmModule module, CompilationTarget target) {
         this.module = module;
         this.target = target;
 
-        // 1. Standalone primitive array types (critical: $CharArr must NOT be inside a multi-type rec group
-        // so wasm:js-string fromCharCodeArray/intoCharCodeArray signatures match under iso-recursive rules).
+        // 1. Standalone primitive array types (critical: $CharArr must NOT be inside a multi-type
+        // rec group
+        // so wasm:js-string fromCharCodeArray/intoCharCodeArray signatures match under
+        // iso-recursive rules).
         this.charArrType = module.addArrayType("CharArr", WasmValType.I16, true);
         this.i8ArrType = module.addArrayType("I8Arr", WasmValType.I8, true);
         this.i16ArrType = module.addArrayType("I16Arr", WasmValType.I16, true);
@@ -121,15 +121,72 @@ public final class WasmTypeSystem {
         this.f64ArrType = module.addArrayType("F64Arr", WasmValType.F64, true);
         this.i64ConstArrType = module.addArrayType("I64ConstArr", WasmValType.I64, false);
 
-        // Primitive capture cells (mutable value + defined-flag structs for Name-used-before-definition checks)
-        this.byteCellType = module.addStructType("ByteCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
-        this.shortCellType = module.addStructType("ShortCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
-        this.intCellType = module.addStructType("IntCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
-        this.longCellType = module.addStructType("LongCell", true, -1, List.of(field("v", WasmValType.I64, true), field("defined", WasmValType.I32, true)));
-        this.floatCellType = module.addStructType("FloatCell", true, -1, List.of(field("v", WasmValType.F32, true), field("defined", WasmValType.I32, true)));
-        this.doubleCellType = module.addStructType("DoubleCell", true, -1, List.of(field("v", WasmValType.F64, true), field("defined", WasmValType.I32, true)));
-        this.boolCellType = module.addStructType("BoolCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
-        this.charCellType = module.addStructType("CharCell", true, -1, List.of(field("v", WasmValType.I32, true), field("defined", WasmValType.I32, true)));
+        // Primitive capture cells (mutable value + defined-flag structs for
+        // Name-used-before-definition checks)
+        this.byteCellType =
+                module.addStructType(
+                        "ByteCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.I32, true),
+                                field("defined", WasmValType.I32, true)));
+        this.shortCellType =
+                module.addStructType(
+                        "ShortCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.I32, true),
+                                field("defined", WasmValType.I32, true)));
+        this.intCellType =
+                module.addStructType(
+                        "IntCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.I32, true),
+                                field("defined", WasmValType.I32, true)));
+        this.longCellType =
+                module.addStructType(
+                        "LongCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.I64, true),
+                                field("defined", WasmValType.I32, true)));
+        this.floatCellType =
+                module.addStructType(
+                        "FloatCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.F32, true),
+                                field("defined", WasmValType.I32, true)));
+        this.doubleCellType =
+                module.addStructType(
+                        "DoubleCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.F64, true),
+                                field("defined", WasmValType.I32, true)));
+        this.boolCellType =
+                module.addStructType(
+                        "BoolCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.I32, true),
+                                field("defined", WasmValType.I32, true)));
+        this.charCellType =
+                module.addStructType(
+                        "CharCell",
+                        true,
+                        -1,
+                        List.of(
+                                field("v", WasmValType.I32, true),
+                                field("defined", WasmValType.I32, true)));
 
         // 2. Reserve indices for the core mutually recursive type group
         this.anyType = module.reserveTypeIndex();
@@ -201,16 +258,34 @@ public final class WasmTypeSystem {
 
         List<WasmTypeDef.SubType> rec = new ArrayList<>();
         // $Any (open empty root)
-        rec.add(new WasmTypeDef.SubType(anyType, "Any", false, -1, new WasmTypeDef.StructType(List.of())));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        anyType, "Any", false, -1, new WasmTypeDef.StructType(List.of())));
         // $AnyArr
-        rec.add(new WasmTypeDef.SubType(anyArrType, "AnyArr", true, -1,
-                new WasmTypeDef.ArrayType(field("elem", refAnyNull, true))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        anyArrType,
+                        "AnyArr",
+                        true,
+                        -1,
+                        new WasmTypeDef.ArrayType(field("elem", refAnyNull, true))));
         // $RefCell
-        rec.add(new WasmTypeDef.SubType(refCellType, "RefCell", true, -1,
-                new WasmTypeDef.StructType(List.of(field("v", refAnyNull, true)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        refCellType,
+                        "RefCell",
+                        true,
+                        -1,
+                        new WasmTypeDef.StructType(List.of(field("v", refAnyNull, true)))));
         // $Sentinel (0 = UNDEFINED, 1 = MISSING)
-        rec.add(new WasmTypeDef.SubType(sentinelType, "Sentinel", true, anyType,
-                new WasmTypeDef.StructType(List.of(field("kind", WasmValType.I32, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        sentinelType,
+                        "Sentinel",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(field("kind", WasmValType.I32, false)))));
         // Primitive boxes (BIP025-D5)
         rec.add(boxSub(boxByteType, "BoxByte", WasmValType.I32));
         rec.add(boxSub(boxShortType, "BoxShort", WasmValType.I32));
@@ -221,22 +296,39 @@ public final class WasmTypeSystem {
         rec.add(boxSub(boxBoolType, "BoxBool", WasmValType.I32));
         rec.add(boxSub(boxCharType, "BoxChar", WasmValType.I32));
         // $String (BIP025-D4)
-        rec.add(new WasmTypeDef.SubType(stringType, "String", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("chars", WasmValType.ref(charArrType), false),
-                field("hash", WasmValType.I32, true),
-                field("hasHash", WasmValType.I32, true)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        stringType,
+                        "String",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("chars", WasmValType.ref(charArrType), false),
+                                        field("hash", WasmValType.I32, true),
+                                        field("hasHash", WasmValType.I32, true)))));
         // $TypeDesc (for array runtime element types & covariant store checks)
-        rec.add(new WasmTypeDef.SubType(typeDescType, "TypeDesc", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("id", WasmValType.I32, false),
-                field("elem", refTypeDescNull, false),
-                field("name", refStr, false)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        typeDescType,
+                        "TypeDesc",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("id", WasmValType.I32, false),
+                                        field("elem", refTypeDescNull, false),
+                                        field("name", refStr, false)))));
         // $ArrayBase + typed array wrappers
-        rec.add(new WasmTypeDef.SubType(arrayBaseType, "ArrayBase", false, anyType, new WasmTypeDef.StructType(List.of(
-                field("typeDesc", refTypeDesc, false)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        arrayBaseType,
+                        "ArrayBase",
+                        false,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(field("typeDesc", refTypeDesc, false)))));
         rec.add(arrayWrapSub(byteArrayType, "ByteArray", refTypeDesc, i8ArrType));
         rec.add(arrayWrapSub(shortArrayType, "ShortArray", refTypeDesc, i16ArrType));
         rec.add(arrayWrapSub(intArrayType, "IntArray", refTypeDesc, i32ArrType));
@@ -247,183 +339,384 @@ public final class WasmTypeSystem {
         rec.add(arrayWrapSub(charArrayType, "CharArray", refTypeDesc, charArrType));
         rec.add(arrayWrapSub(refArrayType, "RefArray", refTypeDesc, anyArrType));
         // $BabbleException (BIP025-D13)
-        rec.add(new WasmTypeDef.SubType(babbleExnType, "BabbleException", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("message", refStrNull, false),
-                field("cause", refAnyNull, false),
-                field("suppressed", refAnyArrNull, true),
-                field("suppressedCount", WasmValType.I32, true),
-                field("line", WasmValType.I32, false)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        babbleExnType,
+                        "BabbleException",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("message", refStrNull, false),
+                                        field("cause", refAnyNull, false),
+                                        field("suppressed", refAnyArrNull, true),
+                                        field("suppressedCount", WasmValType.I32, true),
+                                        field("line", WasmValType.I32, false)))));
         // $GenericCallSig & $FnBase & $OverloadSet
-        rec.add(new WasmTypeDef.SubType(genericCallSigType, "GenericCallSig", true, -1, new WasmTypeDef.FuncType(
-                List.of(refFnBase, refAnyArr, refAnyArrNull), List.of(refAnyNull))));
-        rec.add(new WasmTypeDef.SubType(fnBaseType, "FnBase", false, anyType, new WasmTypeDef.StructType(List.of(
-                field("genericCall", refGenericSig, false),
-                field("name", refStr, false),
-                field("fnId", WasmValType.I32, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(overloadSetType, "OverloadSet", true, fnBaseType, new WasmTypeDef.StructType(List.of(
-                field("genericCall", refGenericSig, false),
-                field("name", refStr, false),
-                field("fnId", WasmValType.I32, false),
-                field("alts", refAnyArr, false),
-                field("keys", refAnyArr, false)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        genericCallSigType,
+                        "GenericCallSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(
+                                List.of(refFnBase, refAnyArr, refAnyArrNull),
+                                List.of(refAnyNull))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        fnBaseType,
+                        "FnBase",
+                        false,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("genericCall", refGenericSig, false),
+                                        field("name", refStr, false),
+                                        field("fnId", WasmValType.I32, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        overloadSetType,
+                        "OverloadSet",
+                        true,
+                        fnBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("genericCall", refGenericSig, false),
+                                        field("name", refStr, false),
+                                        field("fnId", WasmValType.I32, false),
+                                        field("alts", refAnyArr, false),
+                                        field("keys", refAnyArr, false)))));
         // Interfaces, VTable, Object, ClassVal, ModuleVal, HostStream
-        rec.add(new WasmTypeDef.SubType(itableBaseType, "ITableBase", false, -1, new WasmTypeDef.StructType(List.of())));
-        rec.add(new WasmTypeDef.SubType(itableArrType, "ITableArr", true, -1,
-                new WasmTypeDef.ArrayType(field("elem", WasmValType.refNull(itableBaseType), false))));
-        rec.add(new WasmTypeDef.SubType(eqFnSigType, "EqFnSig", true, -1,
-                new WasmTypeDef.FuncType(List.of(refObj, refAnyNull), List.of(WasmValType.I32))));
-        rec.add(new WasmTypeDef.SubType(hashFnSigType, "HashFnSig", true, -1,
-                new WasmTypeDef.FuncType(List.of(refObj), List.of(WasmValType.I32))));
-        rec.add(new WasmTypeDef.SubType(toStrFnSigType, "ToStrFnSig", true, -1,
-                new WasmTypeDef.FuncType(List.of(refObj), List.of(refStr))));
-        rec.add(new WasmTypeDef.SubType(getMemFnSigType, "GetMemFnSig", true, -1,
-                new WasmTypeDef.FuncType(List.of(refObj, refStr), List.of(refAnyNull))));
-        rec.add(new WasmTypeDef.SubType(setMemFnSigType, "SetMemFnSig", true, -1,
-                new WasmTypeDef.FuncType(List.of(refObj, refStr, refAnyNull), List.of(refAnyNull))));
-        rec.add(new WasmTypeDef.SubType(opFnSigType, "OpFnSig", true, -1,
-                new WasmTypeDef.FuncType(List.of(refObj, refStr, refAnyNull), List.of(refAnyNull))));
-        rec.add(new WasmTypeDef.SubType(vtableType, "VTable", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("classId", WasmValType.I32, false),
-                field("name", refStr, false),
-                field("ifaceBits", WasmValType.I64, false),
-                field("ifaceWords", WasmValType.refNull(i64ConstArrType), false),
-                field("itables", WasmValType.refNull(itableArrType), false),
-                field("isRecord", WasmValType.I32, false),
-                field("equalsFn", WasmValType.refNull(eqFnSigType), false),
-                field("hashFn", WasmValType.refNull(hashFnSigType), false),
-                field("toStringFn", WasmValType.refNull(toStrFnSigType), false),
-                field("getMemberFn", WasmValType.refNull(getMemFnSigType), false),
-                field("setMemberFn", WasmValType.refNull(setMemFnSigType), false),
-                field("opFn", WasmValType.refNull(opFnSigType), false),
-                field("typeId", refStr, false),
-                field("ifaceCaps", refAnyArrNull, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(objectType, "Object", false, anyType, new WasmTypeDef.StructType(List.of(
-                field("vtable", refVTable, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(classValType, "ClassVal", false, fnBaseType, new WasmTypeDef.StructType(List.of(
-                field("genericCall", refGenericSig, false),
-                field("name", refStr, false),
-                field("fnId", WasmValType.I32, false),
-                field("classId", WasmValType.I32, false),
-                field("vtable", refVTable, false),
-                field("statics", refAnyArrNull, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(ifaceValType, "IfaceVal", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("ifaceIdx", WasmValType.I32, false),
-                field("name", refStr, false),
-                field("statics", refAnyArrNull, false),
-                field("capEnv", refAnyNull, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(boundMethodType, "BoundMethod", true, fnBaseType, new WasmTypeDef.StructType(List.of(
-                field("genericCall", refGenericSig, false),
-                field("name", refStr, false),
-                field("fnId", WasmValType.I32, false),
-                field("recv", refObj, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(moduleValType, "ModuleVal", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("modId", WasmValType.I32, false),
-                field("name", refStr, false),
-                field("exports", refAnyArr, false),
-                field("exportNames", refAnyArr, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(hostStreamType, "HostStream", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        itableBaseType,
+                        "ITableBase",
+                        false,
+                        -1,
+                        new WasmTypeDef.StructType(List.of())));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        itableArrType,
+                        "ITableArr",
+                        true,
+                        -1,
+                        new WasmTypeDef.ArrayType(
+                                field("elem", WasmValType.refNull(itableBaseType), false))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        eqFnSigType,
+                        "EqFnSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(
+                                List.of(refObj, refAnyNull), List.of(WasmValType.I32))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        hashFnSigType,
+                        "HashFnSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(List.of(refObj), List.of(WasmValType.I32))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        toStrFnSigType,
+                        "ToStrFnSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(List.of(refObj), List.of(refStr))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        getMemFnSigType,
+                        "GetMemFnSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(List.of(refObj, refStr), List.of(refAnyNull))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        setMemFnSigType,
+                        "SetMemFnSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(
+                                List.of(refObj, refStr, refAnyNull), List.of(refAnyNull))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        opFnSigType,
+                        "OpFnSig",
+                        true,
+                        -1,
+                        new WasmTypeDef.FuncType(
+                                List.of(refObj, refStr, refAnyNull), List.of(refAnyNull))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        vtableType,
+                        "VTable",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("classId", WasmValType.I32, false),
+                                        field("name", refStr, false),
+                                        field("ifaceBits", WasmValType.I64, false),
+                                        field(
+                                                "ifaceWords",
+                                                WasmValType.refNull(i64ConstArrType),
+                                                false),
+                                        field("itables", WasmValType.refNull(itableArrType), false),
+                                        field("isRecord", WasmValType.I32, false),
+                                        field("equalsFn", WasmValType.refNull(eqFnSigType), false),
+                                        field("hashFn", WasmValType.refNull(hashFnSigType), false),
+                                        field(
+                                                "toStringFn",
+                                                WasmValType.refNull(toStrFnSigType),
+                                                false),
+                                        field(
+                                                "getMemberFn",
+                                                WasmValType.refNull(getMemFnSigType),
+                                                false),
+                                        field(
+                                                "setMemberFn",
+                                                WasmValType.refNull(setMemFnSigType),
+                                                false),
+                                        field("opFn", WasmValType.refNull(opFnSigType), false),
+                                        field("typeId", refStr, false),
+                                        field("ifaceCaps", refAnyArrNull, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        objectType,
+                        "Object",
+                        false,
+                        anyType,
+                        new WasmTypeDef.StructType(List.of(field("vtable", refVTable, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        classValType,
+                        "ClassVal",
+                        false,
+                        fnBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("genericCall", refGenericSig, false),
+                                        field("name", refStr, false),
+                                        field("fnId", WasmValType.I32, false),
+                                        field("classId", WasmValType.I32, false),
+                                        field("vtable", refVTable, false),
+                                        field("statics", refAnyArrNull, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        ifaceValType,
+                        "IfaceVal",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("ifaceIdx", WasmValType.I32, false),
+                                        field("name", refStr, false),
+                                        field("statics", refAnyArrNull, false),
+                                        field("capEnv", refAnyNull, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        boundMethodType,
+                        "BoundMethod",
+                        true,
+                        fnBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("genericCall", refGenericSig, false),
+                                        field("name", refStr, false),
+                                        field("fnId", WasmValType.I32, false),
+                                        field("recv", refObj, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        moduleValType,
+                        "ModuleVal",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("modId", WasmValType.I32, false),
+                                        field("name", refStr, false),
+                                        field("exports", refAnyArr, false),
+                                        field("exportNames", refAnyArr, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        hostStreamType,
+                        "HostStream",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(field("kind", WasmValType.I32, false)))));
         // Portable core collections (BIP025-I3, BIP025-D6)
-        rec.add(new WasmTypeDef.SubType(listType, "List", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("arr", refAnyArr, true),
-                field("size", WasmValType.I32, true),
-                field("parent", WasmValType.refNull(listType), true),
-                field("offset", WasmValType.I32, true)
-        ))));
-        rec.add(new WasmTypeDef.SubType(setType, "Set", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("arr", refAnyArr, true),
-                field("size", WasmValType.I32, true),
-                field("sorted", WasmValType.I32, false),
-                field("parentMap", WasmValType.refNull(mapType), true)
-        ))));
-        rec.add(new WasmTypeDef.SubType(entryType, "Entry", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("key", refAnyNull, false),
-                field("val", refAnyNull, true),
-                field("parentMap", WasmValType.refNull(mapType), false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(mapType, "Map", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("keys", refAnyArr, true),
-                field("vals", refAnyArr, true),
-                field("size", WasmValType.I32, true),
-                field("sorted", WasmValType.I32, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(collectionIterType, "CollectionIter", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("arr", refAnyArr, false),
-                field("size", WasmValType.I32, false),
-                field("pos", WasmValType.I32, true)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        listType,
+                        "List",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("arr", refAnyArr, true),
+                                        field("size", WasmValType.I32, true),
+                                        field("parent", WasmValType.refNull(listType), true),
+                                        field("offset", WasmValType.I32, true)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        setType,
+                        "Set",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("arr", refAnyArr, true),
+                                        field("size", WasmValType.I32, true),
+                                        field("sorted", WasmValType.I32, false),
+                                        field("parentMap", WasmValType.refNull(mapType), true)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        entryType,
+                        "Entry",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("key", refAnyNull, false),
+                                        field("val", refAnyNull, true),
+                                        field("parentMap", WasmValType.refNull(mapType), false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        mapType,
+                        "Map",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("keys", refAnyArr, true),
+                                        field("vals", refAnyArr, true),
+                                        field("size", WasmValType.I32, true),
+                                        field("sorted", WasmValType.I32, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        collectionIterType,
+                        "CollectionIter",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("arr", refAnyArr, false),
+                                        field("size", WasmValType.I32, false),
+                                        field("pos", WasmValType.I32, true)))));
         // Portable core ranges (BIP031)
-        rec.add(new WasmTypeDef.SubType(rangeBaseType, "RangeBase", false, anyType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("inclusive", WasmValType.I32, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(intRangeType, "IntRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("inclusive", WasmValType.I32, false),
-                field("start", WasmValType.I32, false),
-                field("end", WasmValType.I32, false),
-                field("step", WasmValType.I32, false),
-                field("descending", WasmValType.I32, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(longRangeType, "LongRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("inclusive", WasmValType.I32, false),
-                field("start", WasmValType.I64, false),
-                field("end", WasmValType.I64, false),
-                field("step", WasmValType.I64, false),
-                field("descending", WasmValType.I32, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(doubleRangeType, "DoubleRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("inclusive", WasmValType.I32, false),
-                field("start", WasmValType.F64, false),
-                field("end", WasmValType.F64, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(stringRangeType, "StringRange", true, rangeBaseType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("inclusive", WasmValType.I32, false),
-                field("start", refStr, false),
-                field("end", refStr, false)
-        ))));
-        rec.add(new WasmTypeDef.SubType(rangeIterType, "RangeIter", true, anyType, new WasmTypeDef.StructType(List.of(
-                field("kind", WasmValType.I32, false),
-                field("current", WasmValType.I64, true),
-                field("stop", WasmValType.I64, false),
-                field("step", WasmValType.I64, false),
-                field("descending", WasmValType.I32, false),
-                field("hasMore", WasmValType.I32, true)
-        ))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        rangeBaseType,
+                        "RangeBase",
+                        false,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("inclusive", WasmValType.I32, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        intRangeType,
+                        "IntRange",
+                        true,
+                        rangeBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("inclusive", WasmValType.I32, false),
+                                        field("start", WasmValType.I32, false),
+                                        field("end", WasmValType.I32, false),
+                                        field("step", WasmValType.I32, false),
+                                        field("descending", WasmValType.I32, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        longRangeType,
+                        "LongRange",
+                        true,
+                        rangeBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("inclusive", WasmValType.I32, false),
+                                        field("start", WasmValType.I64, false),
+                                        field("end", WasmValType.I64, false),
+                                        field("step", WasmValType.I64, false),
+                                        field("descending", WasmValType.I32, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        doubleRangeType,
+                        "DoubleRange",
+                        true,
+                        rangeBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("inclusive", WasmValType.I32, false),
+                                        field("start", WasmValType.F64, false),
+                                        field("end", WasmValType.F64, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        stringRangeType,
+                        "StringRange",
+                        true,
+                        rangeBaseType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("inclusive", WasmValType.I32, false),
+                                        field("start", refStr, false),
+                                        field("end", refStr, false)))));
+        rec.add(
+                new WasmTypeDef.SubType(
+                        rangeIterType,
+                        "RangeIter",
+                        true,
+                        anyType,
+                        new WasmTypeDef.StructType(
+                                List.of(
+                                        field("kind", WasmValType.I32, false),
+                                        field("current", WasmValType.I64, true),
+                                        field("stop", WasmValType.I64, false),
+                                        field("step", WasmValType.I64, false),
+                                        field("descending", WasmValType.I32, false),
+                                        field("hasMore", WasmValType.I32, true)))));
 
         module.commitRecGroup(rec);
 
         // 3. Exception tag & multi-value catch block types
         WasmValType refAny = WasmValType.ref(anyType);
         this.exnTagType = internFuncType("ExnTagType", List.of(refAny, WasmValType.I32), List.of());
-        this.exnCatchPairType = internFuncType("ExnCatchPair", List.of(), List.of(refAny, WasmValType.I32));
-        this.exnCatchRefTripleType = internFuncType("ExnCatchRefTriple", List.of(),
-                List.of(refAny, WasmValType.I32, WasmValType.NON_NULL_EXN));
+        this.exnCatchPairType =
+                internFuncType("ExnCatchPair", List.of(), List.of(refAny, WasmValType.I32));
+        this.exnCatchRefTripleType =
+                internFuncType(
+                        "ExnCatchRefTriple",
+                        List.of(),
+                        List.of(refAny, WasmValType.I32, WasmValType.NON_NULL_EXN));
     }
 
     private WasmTypeDef.SubType boxSub(int idx, String name, WasmValType valType) {
-        return new WasmTypeDef.SubType(idx, name, true, anyType,
+        return new WasmTypeDef.SubType(
+                idx,
+                name,
+                true,
+                anyType,
                 new WasmTypeDef.StructType(List.of(field("v", valType, false))));
     }
 
-    private WasmTypeDef.SubType arrayWrapSub(int idx, String name, WasmValType refTypeDesc, int arrTypeIdx) {
-        return new WasmTypeDef.SubType(idx, name, true, arrayBaseType, new WasmTypeDef.StructType(List.of(
-                field("typeDesc", refTypeDesc, false),
-                field("data", WasmValType.ref(arrTypeIdx), false)
-        )));
+    private WasmTypeDef.SubType arrayWrapSub(
+            int idx, String name, WasmValType refTypeDesc, int arrTypeIdx) {
+        return new WasmTypeDef.SubType(
+                idx,
+                name,
+                true,
+                arrayBaseType,
+                new WasmTypeDef.StructType(
+                        List.of(
+                                field("typeDesc", refTypeDesc, false),
+                                field("data", WasmValType.ref(arrTypeIdx), false))));
     }
 
     public static WasmTypeDef.Field field(String name, WasmValType type, boolean mutable) {
@@ -490,7 +783,10 @@ public final class WasmTypeSystem {
         };
     }
 
-    /** Creates a concrete closure struct subtype of {@code $FnBase} with immutable captured cell fields. */
+    /**
+     * Creates a concrete closure struct subtype of {@code $FnBase} with immutable captured cell
+     * fields.
+     */
     public int addClosureType(String name, List<WasmValType> captureTypes) {
         List<WasmTypeDef.Field> fields = new ArrayList<>(3 + captureTypes.size());
         fields.add(field("genericCall", WasmValType.ref(genericCallSigType), false));
@@ -506,7 +802,8 @@ public final class WasmTypeSystem {
         return internFuncType(null, params, results);
     }
 
-    public int internFuncType(String debugName, List<WasmValType> params, List<WasmValType> results) {
+    public int internFuncType(
+            String debugName, List<WasmValType> params, List<WasmValType> results) {
         FuncSigKey key = new FuncSigKey(List.copyOf(params), List.copyOf(results));
         Integer existing = internedFuncTypes.get(key);
         if (existing != null) {
@@ -517,7 +814,10 @@ public final class WasmTypeSystem {
         return idx;
     }
 
-    /** Emits a zero/null default constant expression for a Wasm value type (for global initializers). */
+    /**
+     * Emits a zero/null default constant expression for a Wasm value type (for global
+     * initializers).
+     */
     public List<WasmInstr> defaultConstExpr(WasmValType type) {
         if (type == WasmValType.I32) {
             return List.of(new WasmInstr.I32Const(0));
@@ -534,7 +834,8 @@ public final class WasmTypeSystem {
         if (type instanceof WasmValType.Ref r && r.nullable()) {
             return List.of(new WasmInstr.RefNull(r.heapType()));
         }
-        throw new IllegalArgumentException("No default constant expression for non-null type : " + type.wat());
+        throw new IllegalArgumentException(
+                "No default constant expression for non-null type : " + type.wat());
     }
 
     /** Emits a default value onto the stack inside a function body. */
@@ -550,7 +851,8 @@ public final class WasmTypeSystem {
         } else if (type instanceof WasmValType.Ref r && r.nullable()) {
             code.refNull(r.heapType());
         } else {
-            throw new IllegalArgumentException("No default value for non-null type : " + type.wat());
+            throw new IllegalArgumentException(
+                    "No default value for non-null type : " + type.wat());
         }
     }
 }

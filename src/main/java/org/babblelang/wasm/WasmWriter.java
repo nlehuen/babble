@@ -8,18 +8,17 @@ import java.util.Set;
 /**
  * Pure-Java WebAssembly 3.0 binary encoder ({@code BIP025-I0}, {@code BIP025-D2}).
  *
- * <p>Encodes {@link WasmModule} into spec-compliant {@code .wasm} bytes (WasmGC {@code rec}/{@code sub},
- * typed function references, {@code try_table}/{@code exnref} tags, tail calls, passive data segments,
- * and optional {@code name} custom debug section) with zero external dependencies.
+ * <p>Encodes {@link WasmModule} into spec-compliant {@code .wasm} bytes (WasmGC {@code rec}/{@code
+ * sub}, typed function references, {@code try_table}/{@code exnref} tags, tail calls, passive data
+ * segments, and optional {@code name} custom debug section) with zero external dependencies.
  */
 public final class WasmWriter {
     private static final byte[] MAGIC_AND_VERSION = {
-            0x00, 0x61, 0x73, 0x6D,
-            0x01, 0x00, 0x00, 0x00
+        0x00, 0x61, 0x73, 0x6D,
+        0x01, 0x00, 0x00, 0x00
     };
 
-    private WasmWriter() {
-    }
+    private WasmWriter() {}
 
     public static byte[] encode(WasmModule module) {
         return encode(module, Boolean.getBoolean("babble.wasmDebugNames"));
@@ -30,7 +29,8 @@ public final class WasmWriter {
         out.write(MAGIC_AND_VERSION, 0, MAGIC_AND_VERSION.length);
 
         // Wasm 3.0 strict section order:
-        // 1 Type, 2 Import, 3 Function, 13 Tag, 6 Global, 7 Export, 8 Start, 9 Element, 12 DataCount, 10 Code, 11 Data, 0 Custom(name)
+        // 1 Type, 2 Import, 3 Function, 13 Tag, 6 Global, 7 Export, 8 Start, 9 Element, 12
+        // DataCount, 10 Code, 11 Data, 0 Custom(name)
         if (!module.recGroups().isEmpty()) {
             writeSection(out, 1, encodeTypeSection(module));
         }
@@ -305,13 +305,16 @@ public final class WasmWriter {
         for (WasmModule.FuncDef fn : module.definedFuncs()) {
             List<int[]> idxs = new ArrayList<>();
             List<String> names = new ArrayList<>();
-            int paramCount = ((WasmTypeDef.FuncType) module.flatTypes().get(fn.typeIndex()).body()).params().size();
+            int paramCount =
+                    ((WasmTypeDef.FuncType) module.flatTypes().get(fn.typeIndex()).body())
+                            .params()
+                            .size();
             List<String> pNames = fn.paramNames();
             int pLimit = Math.min(pNames.size(), paramCount);
             for (int p = 0; p < pLimit; p++) {
                 String pn = pNames.get(p);
                 if (pn != null && !pn.isEmpty()) {
-                    idxs.add(new int[]{p});
+                    idxs.add(new int[] {p});
                     names.add(pn);
                 }
             }
@@ -319,7 +322,7 @@ public final class WasmWriter {
             for (int l = 0; l < locals.size(); l++) {
                 String ln = locals.get(l).name();
                 if (ln != null && !ln.isEmpty()) {
-                    idxs.add(new int[]{paramCount + l});
+                    idxs.add(new int[] {paramCount + l});
                     names.add(ln);
                 }
             }
@@ -388,7 +391,7 @@ public final class WasmWriter {
                 for (int f = 0; f < fields.size(); f++) {
                     String fn = fields.get(f).name();
                     if (fn != null && !fn.isEmpty()) {
-                        idxs.add(new int[]{f});
+                        idxs.add(new int[] {f});
                         names.add(fn);
                     }
                 }

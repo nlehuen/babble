@@ -1,11 +1,10 @@
 package org.babblelang.tests;
 
-import org.babblelang.engine.BabbleScriptEngineFactory;
-
-import javax.script.Bindings;
-import javax.script.ScriptException;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
+import javax.script.Bindings;
+import javax.script.ScriptException;
+import org.babblelang.engine.BabbleScriptEngineFactory;
 
 public abstract class BabbleTestBase {
     private Bindings buildBindings() {

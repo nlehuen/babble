@@ -1,9 +1,8 @@
 package org.babblelang.runtime;
 
 /**
- * A function written in Babble, interpreted or compiled. Such a function can be called
- * on its own, or as a method through a {@link BoundMethod}, which makes the receiver
- * available as {@code this}.
+ * A function written in Babble, interpreted or compiled. Such a function can be called on its own,
+ * or as a method through a {@link BoundMethod}, which makes the receiver available as {@code this}.
  */
 public interface BabbleFunction extends Callable {
     /**
@@ -28,7 +27,8 @@ public interface BabbleFunction extends Callable {
 
     /**
      * Whether this Babble method can implement/override a Java {@code default} interface overload
-     * with parameter types {@code javaParams} (or whether Java's {@code default} overload should be kept).
+     * with parameter types {@code javaParams} (or whether Java's {@code default} overload should be
+     * kept).
      */
     default boolean acceptsJavaDefaultOverload(Class<?>[] javaParams) {
         int min = minArity();
@@ -45,9 +45,9 @@ public interface BabbleFunction extends Callable {
     }
 
     /**
-     * What {@code recurse} evaluates to inside a call : the function itself, or when it
-     * was called as a method, the method bound to the same receiver, so that a method
-     * that recurses still sees {@code this}.
+     * What {@code recurse} evaluates to inside a call : the function itself, or when it was called
+     * as a method, the method bound to the same receiver, so that a method that recurses still sees
+     * {@code this}.
      */
     default Callable recurseTarget(Object thiz) {
         return thiz == Undefined.UNBOUND ? this : new BoundMethod(this, thiz);

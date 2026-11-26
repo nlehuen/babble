@@ -1,18 +1,15 @@
 package org.babblelang.analysis;
 
-import org.antlr.v4.runtime.ParserRuleContext;
-import org.babblelang.parser.BabbleParser;
-import org.babblelang.runtime.ClassShape;
-
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
+import org.antlr.v4.runtime.ParserRuleContext;
+import org.babblelang.parser.BabbleParser;
+import org.babblelang.runtime.ClassShape;
 
-/**
- * A class, object or interface expression, as the analysis sees it.
- */
+/** A class, object or interface expression, as the analysis sees it. */
 final class TypeNode {
     static final class Member {
         final String name;
@@ -21,17 +18,33 @@ final class TypeNode {
         boolean hasFunction;
         boolean isOverload;
         ParserRuleContext declaration;
+
         /** The function literal of a method or default, or null. */
         BabbleParser.FunctionLiteralContext function;
-        /** Direct function literal operands when this member is an {@code overload (...)} method or default. */
+
+        /**
+         * Direct function literal operands when this member is an {@code overload (...)} method or
+         * default.
+         */
         List<BabbleParser.FunctionLiteralContext> overloadFunctions;
 
-        Member(String name, int flags, int index, ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function) {
+        Member(
+                String name,
+                int flags,
+                int index,
+                ParserRuleContext declaration,
+                BabbleParser.FunctionLiteralContext function) {
             this(name, flags, index, declaration, function, false, List.of());
         }
 
-        Member(String name, int flags, int index, ParserRuleContext declaration, BabbleParser.FunctionLiteralContext function,
-               boolean isOverload, List<BabbleParser.FunctionLiteralContext> overloadFunctions) {
+        Member(
+                String name,
+                int flags,
+                int index,
+                ParserRuleContext declaration,
+                BabbleParser.FunctionLiteralContext function,
+                boolean isOverload,
+                List<BabbleParser.FunctionLiteralContext> overloadFunctions) {
             this.name = name;
             this.flags = flags;
             this.index = index;
@@ -39,7 +52,8 @@ final class TypeNode {
             this.hasFunction = function != null || isOverload;
             this.declaration = declaration;
             this.function = function;
-            this.overloadFunctions = overloadFunctions != null ? List.copyOf(overloadFunctions) : List.of();
+            this.overloadFunctions =
+                    overloadFunctions != null ? List.copyOf(overloadFunctions) : List.of();
         }
 
         void demoteSamField() {
@@ -77,16 +91,20 @@ final class TypeNode {
     }
 
     ParserRuleContext ctx;
+
     /**
      * The nominal type the expression defines (T9). In a module, its key and the type's name,
      * {@code lib/vec3.ba#Vec3}, the same every time the module is compiled ; elsewhere, unique
      * within the JVM (docs/design/bip006_module-sources-and-aot.md §5.2).
      */
     final String id;
+
     final ClassShape.Kind kind;
     final String name;
+
     /** Where the expression is evaluated. */
     ScopeNode scope;
+
     List<BabbleParser.TypeContext> parentTypes;
     final List<String> typeParameters;
 
@@ -99,29 +117,49 @@ final class TypeNode {
 
     /** Resolved parents : TypeNode interfaces or Java interface classes. */
     final List<Object> parents = new ArrayList<>();
+
     /** For interfaces : the defaults it provides, its own and inherited ones. */
     Map<String, TypeChecks.Provider> defaults;
+
     /** The declared types of members and statics, by name, as Types descriptors. */
     final Map<String, String> memberTypes = new LinkedHashMap<>();
+
     final Map<String, String> staticTypes = new LinkedHashMap<>();
-    /** Converged lowering facts preserved across {@code detachAst()} for cross-module direct dispatch ({@code BIP014-I4}). */
+
+    /**
+     * Converged lowering facts preserved across {@code detachAst()} for cross-module direct
+     * dispatch ({@code BIP014-I4}).
+     */
     boolean fastRecord;
+
     PrimitiveKind[] fastRecordParamKinds;
     final Map<String, PrimitiveKind> memberKinds = new LinkedHashMap<>();
     final java.util.Set<String> definiteFields = new java.util.LinkedHashSet<>();
     final Map<String, LoweringTargets.FunctionSignature> methodSignatures = new LinkedHashMap<>();
-    final Map<String, LoweringTargets.FunctionSignature> overloadMethodSignatures = new LinkedHashMap<>();
+    final Map<String, LoweringTargets.FunctionSignature> overloadMethodSignatures =
+            new LinkedHashMap<>();
     boolean resolving;
 
-    TypeNode(ParserRuleContext ctx, String id, ClassShape.Kind kind, String name, ScopeNode scope, List<BabbleParser.TypeContext> parentTypes) {
+    TypeNode(
+            ParserRuleContext ctx,
+            String id,
+            ClassShape.Kind kind,
+            String name,
+            ScopeNode scope,
+            List<BabbleParser.TypeContext> parentTypes) {
         this.ctx = ctx;
         this.id = id;
         this.kind = kind;
         this.name = name;
         this.scope = scope;
         this.parentTypes = parentTypes;
-        if (ctx.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == ctx && def.typeParameters() != null) {
-            this.typeParameters = ScopeAnalysis.typeParamIds(def.typeParameters()).stream().map(Object::toString).toList();
+        if (ctx.getParent() instanceof BabbleParser.DefExpressionContext def
+                && def.value == ctx
+                && def.typeParameters() != null) {
+            this.typeParameters =
+                    ScopeAnalysis.typeParamIds(def.typeParameters()).stream()
+                            .map(Object::toString)
+                            .toList();
         } else {
             this.typeParameters = List.of();
         }
@@ -165,8 +203,19 @@ final class TypeNode {
             staticTypeDescriptors[member.index] = staticTypes.get(member.name);
         }
         int kwStart = keywordOnlyStart >= 0 ? keywordOnlyStart : parameters.size();
-        return new ClassShape(kind, name, memberNames, flags, parameters.toArray(new String[0]),
-                parameterMembers.stream().mapToInt(Integer::intValue).toArray(), requiredParameters, kwStart, staticNames, staticFlags,
-                id, memberTypeDescriptors, staticTypeDescriptors);
+        return new ClassShape(
+                kind,
+                name,
+                memberNames,
+                flags,
+                parameters.toArray(new String[0]),
+                parameterMembers.stream().mapToInt(Integer::intValue).toArray(),
+                requiredParameters,
+                kwStart,
+                staticNames,
+                staticFlags,
+                id,
+                memberTypeDescriptors,
+                staticTypeDescriptors);
     }
 }

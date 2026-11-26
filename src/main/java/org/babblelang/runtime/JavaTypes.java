@@ -7,28 +7,34 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Facts about Java types that the interop needs.
- */
+/** Facts about Java types that the interop needs. */
 public final class JavaTypes {
-    private static final Map<Class<?>, Class<?>> BOXES = Map.of(
-            boolean.class, Boolean.class,
-            byte.class, Byte.class,
-            char.class, Character.class,
-            short.class, Short.class,
-            int.class, Integer.class,
-            long.class, Long.class,
-            float.class, Float.class,
-            double.class, Double.class,
-            void.class, Void.class);
+    private static final Map<Class<?>, Class<?>> BOXES =
+            Map.of(
+                    boolean.class, Boolean.class,
+                    byte.class, Byte.class,
+                    char.class, Character.class,
+                    short.class, Short.class,
+                    int.class, Integer.class,
+                    long.class, Long.class,
+                    float.class, Float.class,
+                    double.class, Double.class,
+                    void.class, Void.class);
 
     /** Widening numeric primitive conversions (BIP011-D4: char is strictly non-numeric). */
-    private static final Map<Class<?>, List<Class<?>>> WIDENINGS = Map.of(
-            Byte.class, List.of(Short.class, Integer.class, Long.class, Float.class, Double.class),
-            Short.class, List.of(Integer.class, Long.class, Float.class, Double.class),
-            Integer.class, List.of(Long.class, Float.class, Double.class),
-            Long.class, List.of(Float.class, Double.class),
-            Float.class, List.of(Double.class));
+    private static final Map<Class<?>, List<Class<?>>> WIDENINGS =
+            Map.of(
+                    Byte.class,
+                            List.of(
+                                    Short.class,
+                                    Integer.class,
+                                    Long.class,
+                                    Float.class,
+                                    Double.class),
+                    Short.class, List.of(Integer.class, Long.class, Float.class, Double.class),
+                    Integer.class, List.of(Long.class, Float.class, Double.class),
+                    Long.class, List.of(Float.class, Double.class),
+                    Float.class, List.of(Double.class));
 
     private static final Map<Class<?>, Method> FUNCTIONAL_METHODS = new ConcurrentHashMap<>();
     private static final Method NONE;
@@ -41,13 +47,12 @@ public final class JavaTypes {
         }
     }
 
-    private JavaTypes() {
-    }
+    private JavaTypes() {}
 
     /**
-     * Whether code outside a class's module can call its public members : the class and
-     * every class enclosing it are public, and its package is exported. Objects Java
-     * returns are often of classes that aren't, as {@code List.of()}'s are.
+     * Whether code outside a class's module can call its public members : the class and every class
+     * enclosing it are public, and its package is exported. Objects Java returns are often of
+     * classes that aren't, as {@code List.of()}'s are.
      */
     public static boolean isAccessible(Class<?> type) {
         for (Class<?> c = type; c != null; c = c.getEnclosingClass()) {
@@ -59,9 +64,9 @@ public final class JavaTypes {
     }
 
     /**
-     * A method that can be invoked from Babble : the method itself when its class is
-     * accessible, else the method it implements or overrides in an accessible superclass or
-     * interface, which dispatches to it. Null when there is none.
+     * A method that can be invoked from Babble : the method itself when its class is accessible,
+     * else the method it implements or overrides in an accessible superclass or interface, which
+     * dispatches to it. Null when there is none.
      */
     public static Method accessible(Method method) {
         if (isAccessible(method.getDeclaringClass())) {
@@ -91,11 +96,11 @@ public final class JavaTypes {
     }
 
     /**
-     * The methods of that name a call may resolve to. Bridge and synthetic methods
-     * duplicate a real one with erased parameters, and would only ever add spurious
-     * ambiguity, except a bridge that makes public a method a non-public superclass declares
-     * ({@code StringBuilder.length()}, from {@code AbstractStringBuilder}) : it is the
-     * method's only accessible form, and no real method of that name has its arity.
+     * The methods of that name a call may resolve to. Bridge and synthetic methods duplicate a real
+     * one with erased parameters, and would only ever add spurious ambiguity, except a bridge that
+     * makes public a method a non-public superclass declares ({@code StringBuilder.length()}, from
+     * {@code AbstractStringBuilder}) : it is the method's only accessible form, and no real method
+     * of that name has its arity.
      */
     public static List<Method> methods(Class<?> type, String name) {
         List<Method> real = new ArrayList<>();
@@ -190,8 +195,8 @@ public final class JavaTypes {
     }
 
     /**
-     * The public methods of Object, which an interface may redeclare without them being
-     * abstract methods an implementation has to provide.
+     * The public methods of Object, which an interface may redeclare without them being abstract
+     * methods an implementation has to provide.
      */
     public static boolean isObjectMethod(Method method) {
         try {
@@ -203,8 +208,8 @@ public final class JavaTypes {
     }
 
     /**
-     * The abstract methods of an interface that an implementation has to provide :
-     * neither default, nor static, nor a public method of Object.
+     * The abstract methods of an interface that an implementation has to provide : neither default,
+     * nor static, nor a public method of Object.
      */
     public static List<Method> abstractMethods(Class<?> type) {
         List<Method> result = new ArrayList<>();
@@ -221,21 +226,25 @@ public final class JavaTypes {
         if (!type.isInterface()) {
             return null;
         }
-        Method method = FUNCTIONAL_METHODS.computeIfAbsent(type, t -> {
-            List<Method> methods = abstractMethods(t);
-            // The same method can be inherited through several superinterfaces.
-            Method single = null;
-            for (Method m : methods) {
-                if (single == null) {
-                    single = m;
-                } else if (!(single.getName().equals(m.getName()) && single.getParameterCount() == m.getParameterCount())) {
-                    return NONE;
-                } else if (isMoreSpecific(m, single)) {
-                    single = m;
-                }
-            }
-            return single == null ? NONE : single;
-        });
+        Method method =
+                FUNCTIONAL_METHODS.computeIfAbsent(
+                        type,
+                        t -> {
+                            List<Method> methods = abstractMethods(t);
+                            // The same method can be inherited through several superinterfaces.
+                            Method single = null;
+                            for (Method m : methods) {
+                                if (single == null) {
+                                    single = m;
+                                } else if (!(single.getName().equals(m.getName())
+                                        && single.getParameterCount() == m.getParameterCount())) {
+                                    return NONE;
+                                } else if (isMoreSpecific(m, single)) {
+                                    single = m;
+                                }
+                            }
+                            return single == null ? NONE : single;
+                        });
         return method == NONE ? null : method;
     }
 
@@ -269,7 +278,8 @@ public final class JavaTypes {
      *
      * @param description what is being returned from, for the error message
      */
-    public static Object convertResult(Object result, Class<?> type, String description, ScriptRuntime rt) {
+    public static Object convertResult(
+            Object result, Class<?> type, String description, ScriptRuntime rt) {
         if (type == void.class) {
             return null;
         }
@@ -285,13 +295,18 @@ public final class JavaTypes {
         } else if (value == null || type.isInstance(value)) {
             return value;
         }
-        throw new org.babblelang.runtime.BabbleException("Type error : " + description + " must return " + type.getSimpleName()
-                + ", got " + (value == null ? "null" : value.getClass().getSimpleName()));
+        throw new org.babblelang.runtime.BabbleException(
+                "Type error : "
+                        + description
+                        + " must return "
+                        + type.getSimpleName()
+                        + ", got "
+                        + (value == null ? "null" : value.getClass().getSimpleName()));
     }
 
     /**
-     * Checks that a value entering a non-nullable Babble type is non-null, throwing the
-     * standard {@code Type error : expected <T>, got null} diagnostic if null.
+     * Checks that a value entering a non-nullable Babble type is non-null, throwing the standard
+     * {@code Type error : expected <T>, got null} diagnostic if null.
      */
     public static Object checkNotNull(Object value, String expectedType) {
         if (value == null) {
@@ -301,8 +316,8 @@ public final class JavaTypes {
     }
 
     /**
-     * Checks a value returned or read from Java against a boxed primitive type that Babble
-     * maps to a non-nullable primitive ({@code int}, {@code double}, {@code bool}).
+     * Checks a value returned or read from Java against a boxed primitive type that Babble maps to
+     * a non-nullable primitive ({@code int}, {@code double}, {@code bool}).
      */
     public static Object checkBoxed(Class<?> returnType, Object value) {
         if (value == null) {
@@ -320,8 +335,8 @@ public final class JavaTypes {
     }
 
     /**
-     * Checks arguments entering Babble from Java through a {@link Faces} adapter against the
-     * Java interface method's parameter types (raw Java calls or {@code null} boxed primitives).
+     * Checks arguments entering Babble from Java through a {@link Faces} adapter against the Java
+     * interface method's parameter types (raw Java calls or {@code null} boxed primitives).
      */
     public static Object[] checkParameters(Object[] args, Class<?>[] parameterTypes) {
         for (int i = 0; i < parameterTypes.length; i++) {
@@ -339,7 +354,8 @@ public final class JavaTypes {
                 return null;
             }
             if (!(value instanceof Integer)) {
-                throw new BabbleException("Type error : expected int, got " + Types.describe(value));
+                throw new BabbleException(
+                        "Type error : expected int, got " + Types.describe(value));
             }
             return value;
         }
@@ -360,13 +376,15 @@ public final class JavaTypes {
                 return null;
             }
             if (!(value instanceof Boolean)) {
-                throw new BabbleException("Type error : expected bool, got " + Types.describe(value));
+                throw new BabbleException(
+                        "Type error : expected bool, got " + Types.describe(value));
             }
             return value;
         }
         if (type == String.class) {
             if (value != null && !(value instanceof String)) {
-                throw new BabbleException("Type error : expected string, got " + Types.describe(value));
+                throw new BabbleException(
+                        "Type error : expected string, got " + Types.describe(value));
             }
             return value;
         }
@@ -379,7 +397,11 @@ public final class JavaTypes {
                 || Values.isBabbleCallable(java) && isFunctionalInterface(expected)) {
             return value;
         }
-        throw new BabbleException("Type error : expected " + expected.getCanonicalName() + ", got " + Types.describe(value));
+        throw new BabbleException(
+                "Type error : expected "
+                        + expected.getCanonicalName()
+                        + ", got "
+                        + Types.describe(value));
     }
 
     static Object widen(Object value, Class<?> to) {
@@ -402,7 +424,11 @@ public final class JavaTypes {
 
     /** {@code Appendable.append(CharSequence, int, int)} */
     public static String signature(Method method) {
-        StringBuilder result = new StringBuilder(method.getDeclaringClass().getSimpleName()).append('.').append(method.getName()).append('(');
+        StringBuilder result =
+                new StringBuilder(method.getDeclaringClass().getSimpleName())
+                        .append('.')
+                        .append(method.getName())
+                        .append('(');
         Class<?>[] parameters = method.getParameterTypes();
         for (int i = 0; i < parameters.length; i++) {
             if (i > 0) {

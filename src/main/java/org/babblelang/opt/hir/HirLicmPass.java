@@ -1,8 +1,14 @@
 package org.babblelang.opt.hir;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirExpr;
@@ -13,13 +19,6 @@ import org.babblelang.opt.HirPass;
 import org.babblelang.opt.HirPurity;
 import org.babblelang.opt.HirRewriter;
 import org.babblelang.opt.PassContext;
-
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * {@code O6} (structured subset) — Loop-Invariant Code Motion over {@code while} and {@code for}
@@ -47,8 +46,10 @@ public final class HirLicmPass implements HirPass {
             HirFunction fn = e.getValue();
             if (!fn.namespaceScope()) {
                 int fnId = fn.id();
-                List<HirExpr> nb = HirRewriter.rewriteList(fn.body(),
-                        stmt -> hoistInExpr(stmt, fnId, module, nextVarId, rewrites));
+                List<HirExpr> nb =
+                        HirRewriter.rewriteList(
+                                fn.body(),
+                                stmt -> hoistInExpr(stmt, fnId, module, nextVarId, rewrites));
                 if (nb != fn.body()) {
                     changed = true;
                     fn = fn.withBody(nb);
@@ -60,13 +61,23 @@ public final class HirLicmPass implements HirPass {
         if (!changed) {
             return Result.unchanged(module);
         }
-        return new Result(module.withUpdates(module.topLevelStatements(), newFns, module.classes(), module.interfaces(),
-                nextVarId[0], module.nextOwnerId()), rewrites[0]);
+        return new Result(
+                module.withUpdates(
+                        module.topLevelStatements(),
+                        newFns,
+                        module.classes(),
+                        module.interfaces(),
+                        nextVarId[0],
+                        module.nextOwnerId()),
+                rewrites[0]);
     }
 
-    private HirExpr hoistInExpr(HirExpr expr, int ownerFnId, HirModule module, int[] nextVarId, int[] rewrites) {
+    private HirExpr hoistInExpr(
+            HirExpr expr, int ownerFnId, HirModule module, int[] nextVarId, int[] rewrites) {
         // Recurse inner loops first (bottom-up), then hoist out of this loop.
-        HirExpr cur = HirRewriter.rewriteChildren(expr, child -> hoistInExpr(child, ownerFnId, module, nextVarId, rewrites));
+        HirExpr cur =
+                HirRewriter.rewriteChildren(
+                        expr, child -> hoistInExpr(child, ownerFnId, module, nextVarId, rewrites));
 
         if (cur instanceof HirExpr.While w) {
             return hoistFromWhile(w, ownerFnId, module, nextVarId, rewrites);
@@ -77,7 +88,8 @@ public final class HirLicmPass implements HirPass {
         return cur;
     }
 
-    private HirExpr hoistFromWhile(HirExpr.While w, int ownerFnId, HirModule module, int[] nextVarId, int[] rewrites) {
+    private HirExpr hoistFromWhile(
+            HirExpr.While w, int ownerFnId, HirModule module, int[] nextVarId, int[] rewrites) {
         Set<Integer> modified = new HashSet<>();
         HirPurity.collectModifiedVars(w.cond(), modified);
         HirPurity.collectModifiedVars(w.body(), modified);
@@ -85,7 +97,9 @@ public final class HirLicmPass implements HirPass {
         List<HirVar> hoistedVars = new ArrayList<>();
         List<HirExpr> hoistedDefs = new ArrayList<>();
 
-        HirExpr newBody = extractInvariants(w.body(), modified, ownerFnId, module, nextVarId, hoistedVars, hoistedDefs);
+        HirExpr newBody =
+                extractInvariants(
+                        w.body(), modified, ownerFnId, module, nextVarId, hoistedVars, hoistedDefs);
         if (hoistedDefs.isEmpty()) {
             return w;
         }
@@ -96,7 +110,8 @@ public final class HirLicmPass implements HirPass {
         return new HirExpr.Block(blockStmts, false, new String[0], hoistedVars, -1, w.meta());
     }
 
-    private HirExpr hoistFromFor(HirExpr.For f, int ownerFnId, HirModule module, int[] nextVarId, int[] rewrites) {
+    private HirExpr hoistFromFor(
+            HirExpr.For f, int ownerFnId, HirModule module, int[] nextVarId, int[] rewrites) {
         Set<Integer> modified = new HashSet<>();
         if (f.loopVar() != null) modified.add(f.loopVar().id());
         for (HirVar v : f.bodyDeclaredVars()) modified.add(v.id());
@@ -105,48 +120,115 @@ public final class HirLicmPass implements HirPass {
         List<HirVar> hoistedVars = new ArrayList<>();
         List<HirExpr> hoistedDefs = new ArrayList<>();
 
-        List<HirExpr> newBody = HirRewriter.rewriteList(f.body(),
-                s -> extractInvariants(s, modified, ownerFnId, module, nextVarId, hoistedVars, hoistedDefs));
+        List<HirExpr> newBody =
+                HirRewriter.rewriteList(
+                        f.body(),
+                        s ->
+                                extractInvariants(
+                                        s,
+                                        modified,
+                                        ownerFnId,
+                                        module,
+                                        nextVarId,
+                                        hoistedVars,
+                                        hoistedDefs));
         if (hoistedDefs.isEmpty()) {
             return f;
         }
         rewrites[0] += hoistedDefs.size();
         List<HirExpr> blockStmts = new ArrayList<>(hoistedDefs.size() + 1);
         blockStmts.addAll(hoistedDefs);
-        blockStmts.add(new HirExpr.For(f.iterable(), f.target(), f.loopVar(), f.bodyDeclaredVars(),
-                newBody, f.bodyWideningRank(), f.elemSamTarget(), f.countedRange(), f.meta()));
+        blockStmts.add(
+                new HirExpr.For(
+                        f.iterable(),
+                        f.target(),
+                        f.loopVar(),
+                        f.bodyDeclaredVars(),
+                        newBody,
+                        f.bodyWideningRank(),
+                        f.elemSamTarget(),
+                        f.countedRange(),
+                        f.meta()));
         return new HirExpr.Block(blockStmts, false, new String[0], hoistedVars, -1, f.meta());
     }
 
-    private HirExpr extractInvariants(HirExpr expr, Set<Integer> modified, int ownerFnId, HirModule module,
-                                      int[] nextVarId, List<HirVar> hoistedVars, List<HirExpr> hoistedDefs) {
+    private HirExpr extractInvariants(
+            HirExpr expr,
+            Set<Integer> modified,
+            int ownerFnId,
+            HirModule module,
+            int[] nextVarId,
+            List<HirVar> hoistedVars,
+            List<HirExpr> hoistedDefs) {
         if (expr == null) {
             return null;
         }
-        // Top-down: if this whole subexpression is a nontrivial loop-invariant pure expression, hoist it as one unit!
+        // Top-down: if this whole subexpression is a nontrivial loop-invariant pure expression,
+        // hoist it as one unit!
         if (isWorthHoisting(expr) && isLoopInvariant(expr, modified, module)) {
             PrimitiveKind varKind = effectiveKind(expr.meta());
             int id = nextVarId[0]++;
             String name = "$licm" + id;
-            HirVar var = new HirVar(id, name, Resolution.Variable.Kind.DEFINITION, ownerFnId,
-                    varKind, false, true, false, true);
+            HirVar var =
+                    new HirVar(
+                            id,
+                            name,
+                            Resolution.Variable.Kind.DEFINITION,
+                            ownerFnId,
+                            varKind,
+                            false,
+                            true,
+                            false,
+                            true);
             hoistedVars.add(var);
-            ExprMeta defMeta = new ExprMeta(expr.meta().line(), varKind, expr.meta().wideningRank(),
-                    null, EffectSet.EMPTY, expr.meta().deeplyImmutable(), expr.meta().stringType());
-            hoistedDefs.add(new HirExpr.Def(name, new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
-                    var, expr, defMeta));
-            ExprMeta readMeta = new ExprMeta(expr.meta().line(), varKind, -1, null,
-                    EffectSet.EMPTY, expr.meta().deeplyImmutable(), expr.meta().stringType());
+            ExprMeta defMeta =
+                    new ExprMeta(
+                            expr.meta().line(),
+                            varKind,
+                            expr.meta().wideningRank(),
+                            null,
+                            EffectSet.EMPTY,
+                            expr.meta().deeplyImmutable(),
+                            expr.meta().stringType());
+            hoistedDefs.add(
+                    new HirExpr.Def(
+                            name,
+                            new LoweringTargets.DefTarget(LoweringTargets.DefKind.LEXICAL, -1),
+                            var,
+                            expr,
+                            defMeta));
+            ExprMeta readMeta =
+                    new ExprMeta(
+                            expr.meta().line(),
+                            varKind,
+                            -1,
+                            null,
+                            EffectSet.EMPTY,
+                            expr.meta().deeplyImmutable(),
+                            expr.meta().stringType());
             return new HirExpr.VarRead(var, readMeta);
         }
 
-        // Do not descend into statements that define/assign to hoist the whole Def/Assign node itself;
+        // Do not descend into statements that define/assign to hoist the whole Def/Assign node
+        // itself;
         // descend into their RHS value and subexpressions.
-        return HirRewriter.rewriteChildren(expr,
-                child -> extractInvariants(child, modified, ownerFnId, module, nextVarId, hoistedVars, hoistedDefs));
+        return HirRewriter.rewriteChildren(
+                expr,
+                child ->
+                        extractInvariants(
+                                child,
+                                modified,
+                                ownerFnId,
+                                module,
+                                nextVarId,
+                                hoistedVars,
+                                hoistedDefs));
     }
 
-    /** Only hoist expressions containing a call, immutable field load, or nontrivial computation (never bare Const/VarRead). */
+    /**
+     * Only hoist expressions containing a call, immutable field load, or nontrivial computation
+     * (never bare Const/VarRead).
+     */
     private static boolean isWorthHoisting(HirExpr expr) {
         if (expr instanceof HirExpr.DirectBabbleCall
                 || expr instanceof HirExpr.DirectThisMethodCall
@@ -156,7 +238,8 @@ public final class HirLicmPass implements HirPass {
             return true;
         }
         if (expr instanceof HirExpr.ThisFieldGet g
-                && ((g.immutableField() && g.definitelyDefined()) || g.receiver().meta().frozen())) {
+                && ((g.immutableField() && g.definitelyDefined())
+                        || g.receiver().meta().frozen())) {
             return true;
         }
         if (expr instanceof HirExpr.Binary || expr instanceof HirExpr.Unary) {
@@ -172,10 +255,14 @@ public final class HirLicmPass implements HirPass {
             case HirExpr.InterfaceCall c -> true;
             case HirExpr.JavaMethodCall c -> true;
             case HirExpr.CoreMethodCall c -> true;
-            case HirExpr.ThisFieldGet g -> (g.immutableField() && g.definitelyDefined()) || g.receiver().meta().frozen();
-            case HirExpr.Binary b -> containsCallOrNestedOp(b.left()) || containsCallOrNestedOp(b.right())
-                    || b.left() instanceof HirExpr.Binary || b.right() instanceof HirExpr.Binary
-                    || b.op() == HirExpr.BinaryOp.DIV;
+            case HirExpr.ThisFieldGet g ->
+                    (g.immutableField() && g.definitelyDefined()) || g.receiver().meta().frozen();
+            case HirExpr.Binary b ->
+                    containsCallOrNestedOp(b.left())
+                            || containsCallOrNestedOp(b.right())
+                            || b.left() instanceof HirExpr.Binary
+                            || b.right() instanceof HirExpr.Binary
+                            || b.op() == HirExpr.BinaryOp.DIV;
             case HirExpr.Unary u -> containsCallOrNestedOp(u.operand());
             default -> false;
         };
@@ -185,7 +272,8 @@ public final class HirLicmPass implements HirPass {
         if (expr.meta().checkedType() != null || !expr.meta().deeplyImmutable()) {
             return false;
         }
-        if (!HirPurity.isPureNothrowTerminating(expr, module) || !HirPurity.isDeterministic(expr, module)) {
+        if (!HirPurity.isPureNothrowTerminating(expr, module)
+                || !HirPurity.isDeterministic(expr, module)) {
             return false;
         }
         boolean[] ok = {true};
@@ -197,7 +285,8 @@ public final class HirLicmPass implements HirPass {
         if (expr == null || !ok[0]) return;
         switch (expr) {
             case HirExpr.VarRead v -> {
-                if (v.var().cell() || modified.contains(v.var().id())
+                if (v.var().cell()
+                        || modified.contains(v.var().id())
                         || (v.var().mayBeUndefined() && !v.var().definitelyDefined())) {
                     ok[0] = false;
                     return;
@@ -216,7 +305,8 @@ public final class HirLicmPass implements HirPass {
                 }
             }
             case HirExpr.DirectBabbleCall c -> {
-                if (!(c.callee() instanceof HirExpr.NameRead || c.callee() instanceof HirExpr.FunctionRef)) {
+                if (!(c.callee() instanceof HirExpr.NameRead
+                        || c.callee() instanceof HirExpr.FunctionRef)) {
                     checkOperandsInvariant(c.callee(), modified, ok);
                 }
                 for (HirExpr arg : c.args()) {

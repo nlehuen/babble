@@ -1,15 +1,5 @@
 package org.babblelang.tests.batest;
 
-import org.babblelang.engine.BabbleScriptEngine;
-import org.babblelang.engine.BabbleScriptEngineFactory;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.DynamicContainer;
-import org.junit.jupiter.api.DynamicNode;
-import org.junit.jupiter.api.DynamicTest;
-import org.junit.jupiter.api.TestFactory;
-import org.opentest4j.AssertionFailedError;
-
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -22,11 +12,21 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
+import org.babblelang.engine.BabbleScriptEngine;
+import org.babblelang.engine.BabbleScriptEngineFactory;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.DynamicContainer;
+import org.junit.jupiter.api.DynamicNode;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
+import org.opentest4j.AssertionFailedError;
 
 /**
  * Discovers and executes all {@code src/test/batest/**&#47;*.batest} (v1, {@code BIP009}) and
  * {@code src/test/batest/**&#47;*.batest.md} (v2, {@code BIP029}) specification files in JUnit 5.
- * Automatically runs in {@code interpret}, {@code compile -O1}, and {@code compile -O0} Surefire executions.
+ * Automatically runs in {@code interpret}, {@code compile -O1}, and {@code compile -O0} Surefire
+ * executions.
  */
 public class BatestTestCase {
     public static final Path BATEST_ROOT = Path.of("src/test/batest");
@@ -39,7 +39,8 @@ public class BatestTestCase {
         BatestFilter filter = BatestFilter.parse(filterRaw);
         String recordDir = System.getProperty("batest.record");
 
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
+        BabbleScriptEngine engine =
+                (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         String mode = engine.getMode().name().toLowerCase(Locale.ROOT);
         if ("compile".equals(mode)) {
             String opt = System.getProperty("babble.opt");
@@ -53,17 +54,27 @@ public class BatestTestCase {
 
         if (!Files.isDirectory(BATEST_ROOT)) {
             if (filter.isActive()) {
-                Assertions.fail("-Dbatest.filter matched no files (directory missing: " + BATEST_ROOT + "): " + filterRaw);
+                Assertions.fail(
+                        "-Dbatest.filter matched no files (directory missing: "
+                                + BATEST_ROOT
+                                + "): "
+                                + filterRaw);
             }
             return Stream.empty();
         }
 
         List<Path> files;
         try (Stream<Path> walk = Files.walk(BATEST_ROOT)) {
-            files = walk.filter(Files::isRegularFile)
-                    .filter(BatestTestCase::isBatestFile)
-                    .sorted(Comparator.comparing(p -> BATEST_ROOT.relativize(p).toString().replace('\\', '/')))
-                    .toList();
+            files =
+                    walk.filter(Files::isRegularFile)
+                            .filter(BatestTestCase::isBatestFile)
+                            .sorted(
+                                    Comparator.comparing(p ->
+                                            BATEST_ROOT
+                                                    .relativize(p)
+                                                    .toString()
+                                                    .replace('\\', '/')))
+                            .toList();
         }
 
         List<DynamicNode> containers = new ArrayList<>();
@@ -81,16 +92,21 @@ public class BatestTestCase {
                     continue;
                 }
                 matchedCases++;
-                caseTests.add(DynamicTest.dynamicTest(testCase.displayName(), path.toUri(),
-                        () -> executeCase(path, batestFile, testCase, recordFile)));
+                caseTests.add(
+                        DynamicTest.dynamicTest(
+                                testCase.displayName(),
+                                path.toUri(),
+                                () -> executeCase(path, batestFile, testCase, recordFile)));
             }
             if (!caseTests.isEmpty()) {
-                containers.add(DynamicContainer.dynamicContainer(rel, path.toUri(), caseTests.stream()));
+                containers.add(
+                        DynamicContainer.dynamicContainer(rel, path.toUri(), caseTests.stream()));
             }
         }
 
         if (filter.isActive() && matchedCases == 0) {
-            Assertions.fail("-Dbatest.filter matched zero .batest / .batest.md cases: " + filterRaw);
+            Assertions.fail(
+                    "-Dbatest.filter matched zero .batest / .batest.md cases: " + filterRaw);
         }
         return containers.stream();
     }
@@ -114,21 +130,30 @@ public class BatestTestCase {
         Path dir = Path.of(recordDir);
         Files.createDirectories(dir);
         Path file = dir.resolve("outcomes-" + mode + ".jsonl");
-        Files.writeString(file, "", StandardCharsets.UTF_8,
-                StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
+        Files.writeString(
+                file,
+                "",
+                StandardCharsets.UTF_8,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING);
         return file;
     }
 
-    private static void executeCase(Path filePath, BatestFile file, BatestFile.BatestCase testCase, Path recordFile) {
+    private static void executeCase(
+            Path filePath, BatestFile file, BatestFile.BatestCase testCase, Path recordFile) {
         BatestRunner.RunResult runResult = BatestRunner.runWithIr(file, testCase);
         BatestRunner.CaseOutcome outcome = runResult.outcome();
         String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
-        boolean behavioralPassed = outcome.kind() != BatestRunner.Kind.INTERNAL_CRASH && behavioralError == null;
+        boolean behavioralPassed =
+                outcome.kind() != BatestRunner.Kind.INTERNAL_CRASH && behavioralError == null;
 
         String irError = null;
         if (behavioralPassed && runResult.compiledMode() && !testCase.irExpectations().isEmpty()) {
-            List<IrAssertionChecker.IrMismatch> mismatches = IrAssertionChecker.checkAll(
-                    testCase.irExpectations(), runResult.capturedIr(), runResult.activeOptLevel());
+            List<IrAssertionChecker.IrMismatch> mismatches =
+                    IrAssertionChecker.checkAll(
+                            testCase.irExpectations(),
+                            runResult.capturedIr(),
+                            runResult.activeOptLevel());
             if (!mismatches.isEmpty()) {
                 List<String> unblessedMessages = new ArrayList<>();
                 boolean updateMode = BatestIrUpdater.isEnabled();
@@ -152,21 +177,50 @@ public class BatestTestCase {
             appendRecord(recordFile, file, testCase, outcome, passed, irError);
         }
         if (outcome.kind() == BatestRunner.Kind.INTERNAL_CRASH) {
-            Assertions.fail("INTERNAL_CRASH in " + file.relativePath() + ":" + testCase.line()
-                    + " (" + testCase.displayName() + ")\n" + stackTrace(outcome.crash()), outcome.crash());
+            Assertions.fail(
+                    "INTERNAL_CRASH in "
+                            + file.relativePath()
+                            + ":"
+                            + testCase.line()
+                            + " ("
+                            + testCase.displayName()
+                            + ")\n"
+                            + stackTrace(outcome.crash()),
+                    outcome.crash());
         }
         if (!behavioralPassed) {
-            throw new AssertionFailedError(file.relativePath() + ":" + testCase.line() + " (" + testCase.displayName()
-                    + ", kind=" + outcome.kind() + ") ==> " + behavioralError, testCase.expected(), outcome.text());
+            throw new AssertionFailedError(
+                    file.relativePath()
+                            + ":"
+                            + testCase.line()
+                            + " ("
+                            + testCase.displayName()
+                            + ", kind="
+                            + outcome.kind()
+                            + ") ==> "
+                            + behavioralError,
+                    testCase.expected(),
+                    outcome.text());
         }
         if (irError != null) {
-            Assertions.fail(file.relativePath() + ":" + testCase.line() + " (" + testCase.displayName()
-                    + ")\n" + irError);
+            Assertions.fail(
+                    file.relativePath()
+                            + ":"
+                            + testCase.line()
+                            + " ("
+                            + testCase.displayName()
+                            + ")\n"
+                            + irError);
         }
     }
 
-    private static synchronized void appendRecord(Path recordFile, BatestFile file, BatestFile.BatestCase testCase,
-                                                  BatestRunner.CaseOutcome outcome, boolean passed, String irError) {
+    private static synchronized void appendRecord(
+            Path recordFile,
+            BatestFile file,
+            BatestFile.BatestCase testCase,
+            BatestRunner.CaseOutcome outcome,
+            boolean passed,
+            String irError) {
         StringBuilder json = new StringBuilder();
         json.append('{');
         json.append("\"file\":\"").append(escapeJson(file.relativePath())).append("\",");
@@ -180,15 +234,21 @@ public class BatestTestCase {
         json.append("\"text\":\"").append(escapeJson(outcome.text())).append("\",");
         json.append("\"passed\":").append(passed);
         if (outcome.crash() != null) {
-            json.append(",\"crash\":\"").append(escapeJson(stackTrace(outcome.crash()))).append('"');
+            json.append(",\"crash\":\"")
+                    .append(escapeJson(stackTrace(outcome.crash())))
+                    .append('"');
         }
         if (irError != null) {
             json.append(",\"irError\":\"").append(escapeJson(irError)).append('"');
         }
         json.append("}\n");
         try {
-            Files.writeString(recordFile, json.toString(), StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            Files.writeString(
+                    recordFile,
+                    json.toString(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.APPEND);
         } catch (IOException e) {
             throw new RuntimeException("Failed to write batest outcome record to " + recordFile, e);
         }
