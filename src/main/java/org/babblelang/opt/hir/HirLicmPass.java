@@ -283,6 +283,14 @@ public final class HirLicmPass implements HirPass {
                 checkOperandsInvariant(g.receiver(), modified, ok);
                 return;
             }
+            case HirExpr.ModuleExportGet g -> {
+                if (!g.target().definitelyInitialized()) {
+                    ok[0] = false;
+                    return;
+                }
+                checkOperandsInvariant(g.receiver(), modified, ok);
+                return;
+            }
             case HirExpr.Move m -> {
                 checkOperandsInvariant(m.operand(), modified, ok);
                 return;

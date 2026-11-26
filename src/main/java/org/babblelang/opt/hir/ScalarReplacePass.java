@@ -533,7 +533,7 @@ public final class ScalarReplacePass implements HirPass {
     private static void scanUnboxCalls(HirExpr expr, Map<Integer, RecordLayout[]> candidates,
                                        HirModule module, Set<String> initBindings, Set<Integer> used) {
         if (expr == null) return;
-        if (expr instanceof HirExpr.DirectBabbleCall c) {
+        if (expr instanceof HirExpr.DirectBabbleCall c && c.targetFunctionId() >= 0) {
             RecordLayout[] plan = candidates.get(c.targetFunctionId());
             if (plan != null && canRewriteCallToUnboxed(c, plan, module, initBindings)) {
                 used.add(c.targetFunctionId());
@@ -745,7 +745,7 @@ public final class ScalarReplacePass implements HirPass {
     private HirExpr rewriteUnboxCallExpr(HirExpr expr, Map<Integer, UnboxPlan> plans, HirModule module,
                                          Set<String> initBindings, int[] rewrites) {
         HirExpr cur = HirRewriter.rewriteChildren(expr, c -> rewriteUnboxCallExpr(c, plans, module, initBindings, rewrites));
-        if (!(cur instanceof HirExpr.DirectBabbleCall c)) {
+        if (!(cur instanceof HirExpr.DirectBabbleCall c) || c.targetFunctionId() < 0) {
             return cur;
         }
         UnboxPlan plan = plans.get(c.targetFunctionId());

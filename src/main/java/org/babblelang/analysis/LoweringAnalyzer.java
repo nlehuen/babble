@@ -448,9 +448,12 @@ final class LoweringAnalyzer {
         }
         String name = ScopeAnalysis.selectorName(selector);
         if (receiver instanceof Type.Module module) {
-            int index = module.module().exportIndex(name);
-            if (module.module().summary() != null && module.module().exports().contains(name) && index >= 0) {
-                pass.analysis.lowering().setModuleExportTarget(selector, new LoweringTargets.ModuleExportTarget(index, name, module.module().name()));
+            ModuleInterface targetMod = module.module();
+            int index = targetMod.exportIndex(name);
+            if (targetMod.summary() != null && targetMod.exports().contains(name) && index >= 0) {
+                pass.analysis.lowering().setModuleExportTarget(selector, new LoweringTargets.ModuleExportTarget(
+                        index, name, targetMod.name(), targetMod.moduleKey(),
+                        pass.analysis.isNonCyclicNonDynamicTarget(targetMod)));
             }
         } else if (receiver instanceof Type.ClassValue cv) {
             TypeNode.Member sm = cv.node().statics.get(name);
@@ -989,12 +992,12 @@ final class LoweringAnalyzer {
             hasPrimitive = true;
         }
         if (slots <= 200) {
+            BabbleParser.ExpressionContext calleeExpr = ctx.expression();
+            while (calleeExpr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
+                calleeExpr = b.block().expression(0);
+            }
             BabbleParser.FunctionLiteralContext lit = checker.functionLiterals().get(function);
             if (lit != null && checker.inFile(lit) && checker.scopeOf(lit).memberOf == null) {
-                BabbleParser.ExpressionContext calleeExpr = ctx.expression();
-                while (calleeExpr instanceof BabbleParser.BlockExpressionContext b && b.block().expression().size() == 1) {
-                    calleeExpr = b.block().expression(0);
-                }
                 if (calleeExpr == lit) {
                     pass.analysis.calls().setBabbleCallFunction(ctx, lit);
                 } else if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
@@ -1002,6 +1005,17 @@ final class LoweringAnalyzer {
                     if (resolved instanceof BabbleParser.DefExpressionContext def
                             && checker.inFile(def) && !checker.isReassigned(def) && TypeChecker.unwrapFunctionLiteral(def.value) == lit) {
                         pass.analysis.calls().setBabbleCallFunction(ctx, lit);
+                    }
+                }
+            } else if (calleeExpr instanceof BabbleParser.SelectorContext sel && sel.safe == null && sel.expression() != null
+                    && types.get(sel.expression()) instanceof Type.Module modType) {
+                ModuleInterface targetMod = modType.module();
+                if (pass.analysis.isNonCyclicModule(targetMod)) {
+                    String exportName = ScopeAnalysis.selectorName(sel);
+                    LoweringTargets.ExportedFunctionTarget ext = targetMod.exportedFunction(exportName);
+                    if (ext != null && binding.paramCount() == ext.signature().parameterKinds().length
+                            && (ext.signature().hasSpec() || ext.signature().isSpread())) {
+                        pass.analysis.lowering().setExternalFunctionTarget(ctx, ext);
                     }
                 }
             }

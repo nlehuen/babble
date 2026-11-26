@@ -125,12 +125,22 @@ public final class HirPurity {
             case HirExpr.TypeApply t -> isPureNothrowTerminating(t.inner(), module, visitingFns);
             case HirExpr.MakeOverloadSet m -> allPureNothrowTerminating(m.operands(), module, visitingFns);
             case HirExpr.OverloadSelect s -> s.exactSet() && isPureNothrowTerminating(s.set(), module, visitingFns);
+            case HirExpr.ModuleExportGet g -> g.target().definitelyInitialized()
+                    && isPureNothrowTerminating(g.receiver(), module, visitingFns);
             case HirExpr.DirectBabbleCall c -> {
                 boolean calleeOk = isPureNothrowTerminating(c.callee(), module, visitingFns)
                         || (c.callee() instanceof HirExpr.NameRead nr
                         && isDefinitelyInitializedTopLevelFn(nr.name(), module));
                 if (!calleeOk || !allPureNothrowTerminating(c.args(), module, visitingFns)) {
                     yield false;
+                }
+                if (c.externalTarget() != null) {
+                    LoweringTargets.ExportedFunctionTarget ext = c.externalTarget();
+                    EffectSet callFx = c.meta().effects();
+                    EffectSet fnFx = ext.effects();
+                    yield !ext.hasMutParam()
+                            && callFx.isPure() && callFx.isNothrow() && callFx.terminating()
+                            && (fnFx == null || (fnFx.isPure() && fnFx.isNothrow() && fnFx.terminating()));
                 }
                 HirFunction fn = module.function(c.targetFunctionId());
                 yield fn != null && isCallSitePure(fn, c.meta().effects())
@@ -403,10 +413,18 @@ public final class HirPurity {
             return true;
         }
         if (expr instanceof HirExpr.DirectBabbleCall c) {
-            HirFunction fn = module.function(c.targetFunctionId());
-            EffectSet fx = fn != null ? fn.effects() : c.meta().effects();
-            if (!fx.isDeterministic()) {
-                return false;
+            EffectSet fx;
+            if (c.externalTarget() != null) {
+                fx = c.externalTarget().effects();
+                if (!fx.isDeterministic() || !c.meta().effects().isDeterministic()) {
+                    return false;
+                }
+            } else {
+                HirFunction fn = module.function(c.targetFunctionId());
+                fx = fn != null ? fn.effects() : c.meta().effects();
+                if (!fx.isDeterministic()) {
+                    return false;
+                }
             }
         } else if (expr instanceof HirExpr.DirectThisMethodCall c) {
             HirFunction fn = c.targetFunctionId() >= 0 ? module.function(c.targetFunctionId()) : null;
@@ -443,6 +461,12 @@ public final class HirPurity {
 
     public static boolean isIdempotentCall(HirExpr expr, HirModule module) {
         if (expr instanceof HirExpr.DirectBabbleCall c) {
+            if (c.externalTarget() != null) {
+                EffectSet fx = c.externalTarget().effects();
+                return !c.externalTarget().hasMutParam()
+                        && ((fx.isPure() && fx.isDeterministic() && fx.has(Effect.IDEMPOTENT))
+                        || (c.meta().isPure() && c.meta().isDeterministic() && c.meta().isIdempotent()));
+            }
             HirFunction fn = module.function(c.targetFunctionId());
             if (fn == null) return false;
             EffectSet fx = fn.effects();

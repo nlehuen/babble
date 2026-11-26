@@ -126,13 +126,19 @@ public final class HirBuilder {
         HirNameInitAnalysis.annotate(topLevel, hirFunctions, hirClasses, hirInterfaces,
                 fileScopeNameReads, nonCyclicImports, publicStaticDefSelects);
 
+        String[] exports = scopes.exports();
+        String[] topDeclared = scopes.declared(file);
+        boolean[] topFinals = scopes.declaredFinals(file);
+        Map<String, LoweringTargets.ExportedFunctionTarget> ownExportedFunctions =
+                collectOwnExportedFunctions(topLevel, hirFunctions, exports, topDeclared, topFinals);
+
         return new HirModule(
                 className,
                 sourceName,
                 file.getStart().getLine(),
-                scopes.exports(),
-                scopes.declared(file),
-                scopes.declaredFinals(file),
+                exports,
+                topDeclared,
+                topFinals,
                 topLevel,
                 hirFunctions,
                 hirClasses,
@@ -142,10 +148,131 @@ public final class HirBuilder {
                 allClassJvmNames,
                 ownInterfaceJvmNames,
                 ownClassJvmNames,
+                ownExportedFunctions,
                 nextVarId,
                 nextOwnerId,
                 scopes.lowering().wasmImports()
         );
+    }
+
+    private Map<String, LoweringTargets.ExportedFunctionTarget> collectOwnExportedFunctions(
+            List<HirExpr> topLevel,
+            Map<Integer, HirFunction> hirFunctions,
+            String[] exports,
+            String[] topDeclared,
+            boolean[] topFinals) {
+        if (exports == null || exports.length == 0) {
+            return Map.of();
+        }
+        Set<String> exportSet = Set.of(exports);
+        Set<String> immutableTopDefs = new LinkedHashSet<>();
+        for (int i = 0; i < topDeclared.length && i < topFinals.length; i++) {
+            if (topFinals[i]) {
+                immutableTopDefs.add(topDeclared[i]);
+            }
+        }
+        Map<String, org.babblelang.analysis.ModuleInterface> importedByKey = new LinkedHashMap<>();
+        java.util.ArrayDeque<org.babblelang.analysis.ModuleInterface> queue = new java.util.ArrayDeque<>();
+        for (org.babblelang.analysis.ModuleInterface mod : scopes.importedModules()) {
+            if (mod != null) {
+                queue.add(mod);
+            }
+        }
+        while (!queue.isEmpty()) {
+            org.babblelang.analysis.ModuleInterface mod = queue.poll();
+            String k = mod.moduleKey() != null ? mod.moduleKey() : mod.name();
+            if (k != null && !importedByKey.containsKey(k)) {
+                importedByKey.put(k, mod);
+                for (org.babblelang.analysis.ModuleInterface dep : mod.dependencies()) {
+                    if (dep != null) {
+                        queue.add(dep);
+                    }
+                }
+            }
+        }
+        String selfKey = scopes.moduleInterface() != null && scopes.moduleInterface().moduleKey() != null
+                ? scopes.moduleInterface().moduleKey() : sourceName;
+
+        // Pass 1: direct FunctionRef defs and cross-module ModuleExportGet re-exports.
+        Map<String, LoweringTargets.ExportedFunctionTarget> defTargets = new LinkedHashMap<>();
+        Map<String, String> localAliases = new LinkedHashMap<>();
+        for (HirExpr stmt : topLevel) {
+            HirExpr u = unwrapTransparent(stmt);
+            if (!(u instanceof HirExpr.Def d) || d.var() != null
+                    || d.target().kind() != LoweringTargets.DefKind.LEXICAL
+                    || !immutableTopDefs.contains(d.name())) {
+                continue;
+            }
+            HirExpr val = unwrapTransparent(d.value());
+            if (val instanceof HirExpr.FunctionRef ref) {
+                HirFunction fn = hirFunctions.get(ref.functionId());
+                if (fn != null && fn.capturedVars().isEmpty() && (fn.hasSpec() || fn.isSpread())) {
+                    defTargets.put(d.name(), buildExportedFunctionTarget(selfKey, d.name(), fn));
+                }
+            } else if (val instanceof HirExpr.ModuleExportGet meg) {
+                String depKey = meg.target().moduleKey() != null ? meg.target().moduleKey() : meg.target().moduleName();
+                org.babblelang.analysis.ModuleInterface depMod = depKey != null ? importedByKey.get(depKey) : null;
+                if (depMod != null) {
+                    LoweringTargets.ExportedFunctionTarget reexp = depMod.exportedFunction(meg.target().name());
+                    if (reexp != null) {
+                        defTargets.put(d.name(), reexp);
+                    }
+                }
+            } else if (val instanceof HirExpr.NameRead nr && immutableTopDefs.contains(nr.name())) {
+                localAliases.put(d.name(), nr.name());
+            }
+        }
+        // Pass 2: resolve local immutable alias chains (`def h = fn ...; export def sq = h`).
+        for (Map.Entry<String, String> e : localAliases.entrySet()) {
+            String name = e.getKey();
+            String cur = e.getValue();
+            int steps = 0;
+            while (cur != null && !defTargets.containsKey(cur) && localAliases.containsKey(cur) && steps++ < 16) {
+                cur = localAliases.get(cur);
+            }
+            LoweringTargets.ExportedFunctionTarget target = cur != null ? defTargets.get(cur) : null;
+            if (target != null) {
+                if (selfKey.equals(target.moduleKey()) && className.equals(target.ownerJvmName())) {
+                    // Local alias to an unexported local helper: publish under this export's own name.
+                    defTargets.put(name, new LoweringTargets.ExportedFunctionTarget(
+                            selfKey, sourceName, name, target.ownerJvmName(), target.jvmMethodName(),
+                            target.signature(), target.hasMutParam(), target.effects()));
+                } else {
+                    defTargets.put(name, target);
+                }
+            }
+        }
+        Map<String, LoweringTargets.ExportedFunctionTarget> result = new LinkedHashMap<>();
+        for (String exp : exportSet) {
+            LoweringTargets.ExportedFunctionTarget t = defTargets.get(exp);
+            if (t != null) {
+                result.put(exp, t);
+            }
+        }
+        return result;
+    }
+
+    private LoweringTargets.ExportedFunctionTarget buildExportedFunctionTarget(String selfKey, String exportName, HirFunction fn) {
+        PrimitiveKind[] paramKinds = new PrimitiveKind[fn.params().size()];
+        boolean hasMutParam = false;
+        for (int i = 0; i < fn.params().size(); i++) {
+            HirParam p = fn.params().get(i);
+            paramKinds[i] = p.kind();
+            if (p.isMut()) {
+                hasMutParam = true;
+            }
+        }
+        LoweringTargets.FunctionSignature sig = new LoweringTargets.FunctionSignature(
+                paramKinds, fn.returnKind(), fn.optionalParamBits(), fn.restIndex());
+        return new LoweringTargets.ExportedFunctionTarget(
+                selfKey, sourceName, exportName, className, fn.jvmMethodName(), sig, hasMutParam, fn.effects());
+    }
+
+    private static HirExpr unwrapTransparent(HirExpr expr) {
+        while (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
+            expr = b.statements().get(0);
+        }
+        return expr;
     }
 
     private Map<String, LoweringTargets.TypeHierarchyInfo> collectAllTypeHierarchies() {
@@ -1536,6 +1663,15 @@ public final class HirBuilder {
                 return new HirExpr.DirectBabbleCall(lowerExpr(ctx.expression()), functionIds.get(targetFn),
                         lowerPositionalArgs(params, spreadAdapts), binding, meta);
             }
+        }
+
+        // 5b. Direct cross-module exported Babble function call
+        LoweringTargets.ExportedFunctionTarget extFn = scopes.lowering().externalFunctionTarget(ctx);
+        if (extFn != null && binding != null
+                && binding.paramCount() == extFn.signature().parameterKinds().length
+                && (extFn.signature().hasSpec() || extFn.signature().isSpread())) {
+            return new HirExpr.DirectBabbleCall(lowerExpr(ctx.expression()), -1, extFn,
+                    lowerPositionalArgs(params, spreadAdapts), binding, meta);
         }
 
         // 6. Direct this.m(...) on compiled class

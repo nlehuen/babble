@@ -98,7 +98,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
      * and mode it was compiled with, and the versions of every module its analysis
      * read, its own included. It is stale when one of them changed.
      */
-    private record CompiledModule(ModuleSource source, Mode mode, Map<ModuleId, String> versions,
+    private record CompiledModule(ModuleSource source, Mode mode, int optLevel, Map<ModuleId, String> versions,
                                   BabbleScript script, ModuleInterface moduleInterface) {
     }
 
@@ -411,8 +411,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
     private CompiledModule compiledModule(ModuleSource source, String name, ModuleId id, ScriptContext context) throws ScriptException {
         synchronized (moduleLock) {
             Mode mode = getMode();
+            int optLevel = mode == Mode.COMPILE ? BabbleCompiler.resolveOptLevel(this) : -1;
             CompiledModule cached = moduleCache.get(id.key());
-            if (cached != null && cached.source() == source && cached.mode() == mode && isFresh(cached)) {
+            if (cached != null && cached.source() == source && cached.mode() == mode
+                    && cached.optLevel() == optLevel && isFresh(cached)) {
                 return cached;
             }
             ModuleText text;
@@ -440,9 +442,9 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
             BabbleScript compiledScript = script(file, scopes, sourceName, id);
             if (compiledScript instanceof CompiledBabbleScript compiled && scopes.moduleInterface() != null) {
                 scopes.moduleInterface().setCompilation(compiled.getScriptClass().getClassLoader(),
-                        compiled.interfaceJvmNames(), compiled.classJvmNames());
+                        compiled.interfaceJvmNames(), compiled.classJvmNames(), compiled.exportedFunctions());
             }
-            CompiledModule module = new CompiledModule(source, mode, Map.copyOf(loader.versions),
+            CompiledModule module = new CompiledModule(source, mode, optLevel, Map.copyOf(loader.versions),
                     compiledScript, scopes.moduleInterface());
             moduleCache.put(id.key(), module);
             return module;
@@ -569,6 +571,7 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         Map<String, ModuleInterface> inProg = new HashMap<>();
         Map<String, String> knownIfaces = new LinkedHashMap<>();
         Map<String, String> knownClasses = new LinkedHashMap<>();
+        Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlines = new LinkedHashMap<>();
         ScriptContext ctx = getContext();
 
         class HirProgramBuilder {
@@ -631,10 +634,14 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 String internalName = BabbleCompiler.className(id.key());
                 org.babblelang.ir.hir.HirModule hir = BabbleCompiler.buildAndOptimizeHir(
                         BabbleScriptEngine.this, file, scopes, srcName, internalName, id.key(),
-                        knownIfaces, knownClasses, target);
+                        knownIfaces, knownClasses, crossModuleInlines, target);
                 knownIfaces.putAll(hir.ownInterfaceJvmNames());
                 knownClasses.putAll(hir.ownClassJvmNames());
+                crossModuleInlines.putAll(org.babblelang.opt.hir.InlinePass.collectCrossModuleExports(hir, id.key()));
                 ModuleInterface mi = scopes.moduleInterface();
+                if (mi != null) {
+                    mi.setCompilation(null, hir.ownInterfaceJvmNames(), hir.ownClassJvmNames(), hir.ownExportedFunctions());
+                }
                 interfaces.put(id.key(), mi);
                 built.put(id.key(), new HirProgramModule(id, hir.exports(), hir, staticImports));
                 return mi;
@@ -988,9 +995,12 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                     List<ClassLoader> dependencyLoaders = new ArrayList<>();
                     Map<String, String> knownInterfaceJvmNames = new LinkedHashMap<>();
                     Map<String, String> knownClassJvmNames = new LinkedHashMap<>();
-                    collectCompileDependencies(scopes, dependencyLoaders, knownInterfaceJvmNames, knownClassJvmNames);
+                    Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports = new LinkedHashMap<>();
+                    collectCompileDependencies(scopes, dependencyLoaders, knownInterfaceJvmNames,
+                            knownClassJvmNames, crossModuleInlineExports);
                     yield BabbleCompiler.compile(this, file, scopes, sourceName,
-                            module != null ? module.key() : null, dependencyLoaders, knownInterfaceJvmNames, knownClassJvmNames);
+                            module != null ? module.key() : null, dependencyLoaders, knownInterfaceJvmNames,
+                            knownClassJvmNames, crossModuleInlineExports);
                 }
             };
         } catch (RuntimeException e) {
@@ -999,9 +1009,10 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
         }
     }
 
-    private static void collectCompileDependencies(ScopeAnalysis scopes, List<ClassLoader> dependencyLoaders,
-                                                   Map<String, String> knownInterfaceJvmNames,
-                                                   Map<String, String> knownClassJvmNames) {
+    private void collectCompileDependencies(ScopeAnalysis scopes, List<ClassLoader> dependencyLoaders,
+                                            Map<String, String> knownInterfaceJvmNames,
+                                            Map<String, String> knownClassJvmNames,
+                                            Map<String, org.babblelang.ir.hir.HirFunction> crossModuleInlineExports) {
         Queue<ModuleInterface> queue = new ArrayDeque<>();
         Set<ModuleInterface> visitedModules = Collections.newSetFromMap(new IdentityHashMap<>());
         Set<ClassLoader> seenLoaders = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -1010,21 +1021,37 @@ public class BabbleScriptEngine extends AbstractScriptEngine implements Compilab
                 queue.add(mod);
             }
         }
-        while (!queue.isEmpty()) {
-            ModuleInterface mod = queue.poll();
-            ClassLoader cl = mod.compiledClassLoader();
-            if (cl != null && seenLoaders.add(cl)) {
-                dependencyLoaders.add(cl);
-            }
-            knownInterfaceJvmNames.putAll(mod.interfaceJvmNames());
-            knownClassJvmNames.putAll(mod.classJvmNames());
-            for (ModuleInterface dep : mod.dependencies()) {
-                if (dep != null && visitedModules.add(dep)) {
-                    queue.add(dep);
+        AnalysisSession session = scopes.session();
+        if (session != null) {
+            for (ModuleInterface mod : session.importedModules()) {
+                if (mod != null && visitedModules.add(mod)) {
+                    queue.add(mod);
                 }
             }
         }
-        AnalysisSession session = scopes.session();
+        synchronized (moduleLock) {
+            while (!queue.isEmpty()) {
+                ModuleInterface mod = queue.poll();
+                ClassLoader cl = mod.compiledClassLoader();
+                if (cl != null && seenLoaders.add(cl)) {
+                    dependencyLoaders.add(cl);
+                }
+                knownInterfaceJvmNames.putAll(mod.interfaceJvmNames());
+                knownClassJvmNames.putAll(mod.classJvmNames());
+                if (mod.moduleKey() != null) {
+                    CompiledModule cm = moduleCache.get(mod.moduleKey());
+                    if (cm != null && cm.moduleInterface() == mod
+                            && cm.script() instanceof CompiledBabbleScript compiled) {
+                        crossModuleInlineExports.putAll(compiled.crossModuleInlineExports());
+                    }
+                }
+                for (ModuleInterface dep : mod.dependencies()) {
+                    if (dep != null && visitedModules.add(dep)) {
+                        queue.add(dep);
+                    }
+                }
+            }
+        }
         if (session != null) {
             for (ClassLoader cl : session.classLoaders()) {
                 if (cl != null && seenLoaders.add(cl)) {

@@ -415,8 +415,13 @@ public final class MirCanonicalPrinter {
             case MirInst.ArrayLen al -> sb.append("array_len ").append(val(vals, al.array()))
                     .append(" {").append(al.effect().canonicalTag()).append('}');
             case MirInst.CallBabble cb -> {
-                HirFunction tgt = hir.function(cb.targetFunctionId());
-                String name = tgt != null ? formatFnName(hir, tgt) : ("fn#" + cb.targetFunctionId());
+                String name;
+                if (cb.externalTarget() != null) {
+                    name = cb.externalTarget().moduleName() + "#" + cb.externalTarget().exportName();
+                } else {
+                    HirFunction tgt = hir.function(cb.targetFunctionId());
+                    name = tgt != null ? formatFnName(hir, tgt) : ("fn#" + cb.targetFunctionId());
+                }
                 sb.append(cb.selfRecurse() ? "call_self " : "call ").append(name).append('(');
                 appendVals(sb, cb.args(), vals);
                 sb.append(") {").append(cb.effect().canonicalTag()).append('}');
@@ -495,6 +500,9 @@ public final class MirCanonicalPrinter {
                     .append(", ").append(val(vals, as.secondary()));
             case MirInst.NameRead nr -> sb.append("name_read ").append(nr.name())
                     .append(" {").append(nr.effect().canonicalTag()).append('}');
+            case MirInst.LoadExport le -> sb.append("export_get ").append(val(vals, le.module()))
+                    .append('.').append(le.target().name())
+                    .append(" {").append(le.effect().canonicalTag()).append('}');
             case MirInst.NameAssign na -> {
                 sb.append("name_assign ").append(na.name());
                 if (na.operator() != null) {

@@ -512,6 +512,7 @@ final class MirEmitter {
             case MirInst.Binary b -> b.left();
             case MirInst.SlotWrite sw -> sw.value();
             case MirInst.LoadField lf -> lf.receiver();
+            case MirInst.LoadExport le -> le.module();
             case MirInst.CallMethod cm -> cm.receiver();
             case MirInst.CallInterface ci -> ci.receiver();
             case MirInst.RecordNew rn -> rn.classRef();
@@ -813,6 +814,7 @@ final class MirEmitter {
             }
             case MirInst.NameRead nr -> emitNameRead(nr);
             case MirInst.NameAssign na -> emitNameAssign(na);
+            case MirInst.LoadExport le -> emitLoadExport(le);
             case MirInst.OpaqueExpr op -> emitOpaque(op);
         }
     }
@@ -1163,6 +1165,16 @@ final class MirEmitter {
         storeResult(al.result());
     }
 
+    private void emitLoadExport(MirInst.LoadExport le) {
+        loadVal(le.module());
+        mv.visitTypeInsn(CHECKCAST, RUNTIME + "Module");
+        ConstantPool.pushInt(mv, le.target().index());
+        ctx.line(le.line());
+        mv.visitMethodInsn(INVOKEVIRTUAL, RUNTIME + "Module", "exportAt", "(I)Ljava/lang/Object;", false);
+        ctx.stackKind = PrimitiveKind.NONE;
+        storeResult(le.result());
+    }
+
     private void emitCallBabble(MirInst.CallBabble cb) {
         Map<HirExpr, MethodEmitContext.MirOperand> ov = new IdentityHashMap<>(1 + cb.args().size());
         List<HirExpr> argPhs = makePlaceholders(cb.args(), cb.line(), ov);
@@ -1174,7 +1186,7 @@ final class MirEmitter {
             HirExpr cPh = placeholder(cb.callee(), cb.line());
             ov.put(cPh, operandOf(cb.callee()));
             withOverrides(ov, () -> emitter.calls.emitDirectBabbleCall(
-                    new HirExpr.DirectBabbleCall(cPh, cb.targetFunctionId(), argPhs, cb.binding(),
+                    new HirExpr.DirectBabbleCall(cPh, cb.targetFunctionId(), cb.externalTarget(), argPhs, cb.binding(),
                             ExprMeta.of(cb.line(), cb.result().kind()))));
         }
         storeResult(cb.result());

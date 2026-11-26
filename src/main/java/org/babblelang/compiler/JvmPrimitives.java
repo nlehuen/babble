@@ -133,6 +133,24 @@ final class JvmPrimitives {
         return sb.toString();
     }
 
+    static String functionSpecDescriptor(LoweringTargets.FunctionSignature sig) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("(L").append(COMPILED_FUNCTION).append(";Ljava/lang/Object;L").append(SCRIPT_RUNTIME).append(';');
+        for (PrimitiveKind pk : sig.parameterKinds()) {
+            sb.append(jvmDescriptor(pk));
+        }
+        if (sig.hasOptionalMask()) {
+            sb.append('I');
+        }
+        sb.append(')').append(jvmDescriptor(sig.returnKind()));
+        return sb.toString();
+    }
+
+    static String functionDirectDescriptor(LoweringTargets.FunctionSignature sig) {
+        return "(L" + COMPILED_FUNCTION + ";Ljava/lang/Object;L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
+                + "Ljava/lang/Object;".repeat(sig.parameterKinds().length) + ")Ljava/lang/Object;";
+    }
+
     static String methodDirectDescriptor(HirFunction fn) {
         return "(L" + COMPILED_METHOD + ";L" + SCRIPT_RUNTIME + ";L" + BINDER + ";"
                 + "Ljava/lang/Object;".repeat(fn.params().size()) + ")Ljava/lang/Object;";

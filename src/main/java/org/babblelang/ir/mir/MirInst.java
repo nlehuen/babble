@@ -50,6 +50,7 @@ public sealed interface MirInst permits
         MirInst.SlotWrite,
         MirInst.NameRead,
         MirInst.NameAssign,
+        MirInst.LoadExport,
         MirInst.ScopeEnter,
         MirInst.ScopeExit,
         MirInst.ForIterInit,
@@ -622,6 +623,7 @@ public sealed interface MirInst permits
             MirVal callee,
             boolean selfRecurse,
             int targetFunctionId,
+            LoweringTargets.ExportedFunctionTarget externalTarget,
             List<MirVal> args,
             LoweringTargets.ArgumentBinding binding,
             boolean commutative,
@@ -633,6 +635,21 @@ public sealed interface MirInst permits
             Objects.requireNonNull(result, "result");
             args = List.copyOf(args);
             Objects.requireNonNull(effect, "effect");
+        }
+
+        public CallBabble(
+                MirVal result,
+                MirVal callee,
+                boolean selfRecurse,
+                int targetFunctionId,
+                List<MirVal> args,
+                LoweringTargets.ArgumentBinding binding,
+                boolean commutative,
+                boolean idempotent,
+                int line,
+                MirEffect effect
+        ) {
+            this(result, callee, selfRecurse, targetFunctionId, null, args, binding, commutative, idempotent, line, effect);
         }
 
         @Override
@@ -649,7 +666,8 @@ public sealed interface MirInst permits
             MirVal nc = callee != null ? fn.apply(callee) : null;
             List<MirVal> na = remapList(args, fn);
             return (nc == callee && na == args) ? this
-                    : new CallBabble(result, nc, selfRecurse, targetFunctionId, na, binding, commutative, idempotent, line, effect);
+                    : new CallBabble(result, nc, selfRecurse, targetFunctionId, externalTarget, na, binding,
+                    commutative, idempotent, line, effect);
         }
     }
 
@@ -1299,11 +1317,37 @@ public sealed interface MirInst permits
         }
     }
 
+    /** First-class indexed module export read ({@code Module.exportAt}). */
+    record LoadExport(
+            MirVal result,
+            MirVal module,
+            LoweringTargets.ModuleExportTarget target,
+            int line,
+            MirEffect effect
+    ) implements MirInst {
+        public LoadExport {
+            Objects.requireNonNull(result, "result");
+            Objects.requireNonNull(module, "module");
+            Objects.requireNonNull(target, "target");
+            Objects.requireNonNull(effect, "effect");
+        }
+
+        @Override
+        public List<MirVal> usedValues() {
+            return List.of(module);
+        }
+
+        @Override
+        public MirInst remapUses(UnaryOperator<MirVal> fn) {
+            MirVal nm = fn.apply(module);
+            return nm == module ? this : new LoadExport(result, nm, target, line, effect);
+        }
+    }
+
     /**
      * Atomic Babble-specific expression whose sub-expressions have already been lowered to SSA
      * {@link #operands()} (e.g., {@code DynamicCall}, {@code SuperCall}, {@code OverloadDispatch},
-     * {@code CoreCollectionCall}, {@code ArrayCreate}, {@code ClassExpr}, {@code FunctionRef},
-     * {@code ModuleExportGet}).
+     * {@code CoreCollectionCall}, {@code ArrayCreate}, {@code ClassExpr}, {@code FunctionRef}).
      */
     record OpaqueExpr(
             MirVal result,

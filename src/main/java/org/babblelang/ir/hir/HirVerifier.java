@@ -214,7 +214,7 @@ public final class HirVerifier {
                 verifyCallArgs(module, c.args(), inFunction, loopDepth);
             }
             case HirExpr.DirectBabbleCall c -> {
-                if (module.function(c.targetFunctionId()) == null) {
+                if (c.externalTarget() == null && module.function(c.targetFunctionId()) == null) {
                     throw new IllegalStateException("HirVerifier : unknown DirectBabbleCall targetFunctionId " + c.targetFunctionId());
                 }
                 verifyExpr(module, c.callee(), inFunction, loopDepth);

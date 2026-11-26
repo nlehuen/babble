@@ -5,9 +5,9 @@ References : `BIP027-D1`, `BIP027-I6`, `org.babblelang.ir.egraph.{EGraph,ENode,A
 ```babble
 ;; babble module=ext_rec.ba
 export def ExtRec = record (v: int) (
-    def getPure = fn nothrow (): int -> (return this.v ; this.v)
+    def getPure = fn nothrow (): int -> (if this.v < 0 then (return this.v) ; this.v)
     def getThrow = fn (): int -> (if this.v < 0 then (throw exception("neg")) ; return this.v ; this.v)
-    def getVol = fn volatile nothrow (): int -> (def n = java.lang.System.lineSeparator().length() ; return this.v + n ; this.v)
+    def getVol = fn volatile nothrow (): int -> (def n = java.lang.System.lineSeparator().length() ; if this.v < 0 then (return this.v + n) ; this.v + n)
 )
 ```
 

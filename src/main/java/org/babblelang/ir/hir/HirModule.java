@@ -30,6 +30,7 @@ public record HirModule(
         Map<String, String> allClassJvmNames,
         Map<String, String> ownInterfaceJvmNames,
         Map<String, String> ownClassJvmNames,
+        Map<String, LoweringTargets.ExportedFunctionTarget> ownExportedFunctions,
         int nextVarId,
         int nextOwnerId,
         List<LoweringTargets.WasmImportSpec> wasmImports
@@ -47,6 +48,8 @@ public record HirModule(
         allClassJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(allClassJvmNames));
         ownInterfaceJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(ownInterfaceJvmNames));
         ownClassJvmNames = Collections.unmodifiableMap(new LinkedHashMap<>(ownClassJvmNames));
+        ownExportedFunctions = ownExportedFunctions != null
+                ? Collections.unmodifiableMap(new LinkedHashMap<>(ownExportedFunctions)) : Map.of();
         wasmImports = wasmImports != null ? List.copyOf(wasmImports) : List.of();
     }
 
@@ -61,7 +64,7 @@ public record HirModule(
     ) {
         this(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelDeclaredFinals,
                 topLevelStatements, functions, classes, interfaces, typeHierarchies, allInterfaceJvmNames,
-                allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames, nextVarId, nextOwnerId, List.of());
+                allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames, Map.of(), nextVarId, nextOwnerId, List.of());
     }
 
     /** Target-neutral module identifier ({@code BIP025-D3}). */
@@ -95,7 +98,7 @@ public record HirModule(
     ) {
         return new HirModule(className, sourceName, startLine, exports, topLevelDeclaredNames, topLevelDeclaredFinals,
                 newTopLevelStatements, newFunctions, newClasses, newInterfaces, typeHierarchies,
-                allInterfaceJvmNames, allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames,
+                allInterfaceJvmNames, allClassJvmNames, ownInterfaceJvmNames, ownClassJvmNames, ownExportedFunctions,
                 newNextVarId, newNextOwnerId, wasmImports);
     }
 

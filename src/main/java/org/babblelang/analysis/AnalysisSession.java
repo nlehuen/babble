@@ -153,4 +153,8 @@ public final class AnalysisSession {
     public LoweringTargets.TypeHierarchyInfo typeHierarchy(String id) {
         return id != null ? typeHierarchies.get(id) : null;
     }
+
+    public java.util.Collection<ModuleInterface> importedModules() {
+        return java.util.Collections.unmodifiableCollection(modules.values());
+    }
 }

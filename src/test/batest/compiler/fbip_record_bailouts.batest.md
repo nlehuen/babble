@@ -200,7 +200,7 @@ fn toExt (h:obj) -> obj {nothrow}
 fn toExt(v0: any [unique]) -> any:
   bb0:
     v1: any = name_read m {pure}
-    v2: any = opaque.ModuleExportGet(v1.ExtHolder) {impure}
+    v2: any = export_get v1.ExtHolder {pure}
     v3: any = load_field v0.items {read:frozen}
     v4: int = load_field v0.count {read:frozen}
     v5: int = const 1

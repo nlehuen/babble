@@ -263,7 +263,7 @@ assert(run(1) == 13.0)
 ```
 
 ```hir
-;; hir -O0,-O1 fn=run
+;; hir -O0 fn=run
 fn run (n:int) -> double {nothrow unique}
   (def a (record-new vec_mod$ba$C0$ExtVec 3.0:double 4.0:double))
   (def b (call-method (record-new vec_mod$ba$C0$ExtVec 1.0:double 2.0:double).neg))
@@ -271,57 +271,57 @@ fn run (n:int) -> double {nothrow unique}
   (+:double (+:double (+:double (get-this-field x) (get-this-field y)) (call-method var(c).mag2)) (call name(double) var(n)))
 ```
 
+```hir
+;; hir -O1 fn=run
+fn run (n:int) -> double {nothrow unique}
+  (block
+    (def $sr_a_0 3.0:double)
+    (def $sr_a_1 4.0:double))
+  (block
+    (block
+      (def $sr_$this_0 1.0:double)
+      (def $sr_$this_1 2.0:double))
+    (block
+      (def $sr_b_0 (neg var($sr_$this_0)))
+      (def $sr_b_1 (neg var($sr_$this_1)))))
+  (block
+    (def $sr_c_0 (+:double var($sr_a_0) var($sr_b_0)))
+    (def $sr_c_1 (+:double var($sr_a_1) var($sr_b_1))))
+  (+:double (+:double (+:double var($sr_c_0) var($sr_c_1)) (+:double (*:double var($sr_c_0) var($sr_c_0)) (*:double var($sr_c_1) var($sr_c_1)))) (call name(double) var(n)))
+```
+
 ```mir
 ;; mir -O2 fn=run stage=before
 fn run(v0: int) -> double:
   bb0:
-    v1: any = name_read m {pure}
-    v2: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
-    v3: double = const 3.0
-    v4: double = const 4.0
-    v5: any = record_new vec_mod$ba$C0$ExtVec[v2](v3, v4) {pure}
-    v6: any = name_read m {pure}
-    v7: any = opaque.ModuleExportGet(v6.ExtVec) {impure}
-    v8: double = const 1.0
-    v9: double = const 2.0
-    v10: any = record_new vec_mod$ba$C0$ExtVec[v7](v8, v9) {pure}
-    v11: any = call_method v10.neg() {impure}
-    v12: any = call_method v5.plus(v11) {impure}
-    v13: double = load_field v12.x {read:frozen}
-    v14: double = load_field v12.y {read:frozen}
-    v15: double = add v13, v14 {pure}
-    v16: double = call_method v12.mag2() {pure}
-    v17: double = add v15, v16 {pure}
-    v18: any = name_read double {pure}
-    v19: double = opaque.DynamicCall(v18, v0) {impure}
-    v20: double = add v17, v19 {pure}
-    ret v20
+    v1: double = const 3.0
+    v2: double = const 4.0
+    v3: double = const 1.0
+    v4: double = const 2.0
+    v5: double = neg v3 {pure}
+    v6: double = neg v4 {pure}
+    v7: double = add v1, v5 {pure}
+    v8: double = add v2, v6 {pure}
+    v9: double = add v7, v8 {pure}
+    v10: double = mul v7, v7 {pure}
+    v11: double = mul v8, v8 {pure}
+    v12: double = add v10, v11 {pure}
+    v13: double = add v9, v12 {pure}
+    v14: any = name_read double {pure}
+    v15: double = opaque.DynamicCall(v14, v0) {impure}
+    v16: double = add v13, v15 {pure}
+    ret v16
 ```
 
 ```mir
 ;; mir -O2 fn=run
 fn run(v0: int) -> double:
   bb0:
-    v1: any = name_read m {pure}
-    v2: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
-    v3: double = const 3.0
-    v4: double = const 4.0
-    v5: any = record_new vec_mod$ba$C0$ExtVec[v2](v3, v4) {pure}
-    v6: any = opaque.ModuleExportGet(v1.ExtVec) {impure}
-    v7: double = const 1.0
-    v8: double = const 2.0
-    v9: any = record_new vec_mod$ba$C0$ExtVec[v6](v7, v8) {pure}
-    v10: any = call_method v9.neg() {impure}
-    v11: any = call_method v5.plus(v10) {impure}
-    v12: double = load_field v11.x {read:frozen}
-    v13: double = load_field v11.y {read:frozen}
-    v14: double = add v12, v13 {pure}
-    v15: double = call_method v11.mag2() {pure}
-    v16: double = add v14, v15 {pure}
-    v17: any = name_read double {pure}
-    v18: double = opaque.DynamicCall(v17, v0) {impure}
-    v19: double = add v16, v18 {pure}
-    ret v19
+    v1: double = const 12.0
+    v2: any = name_read double {pure}
+    v3: double = opaque.DynamicCall(v2, v0) {impure}
+    v4: double = add v1, v3 {pure}
+    ret v4
 ```
 
 ## Overloaded operator methods on a compiled record

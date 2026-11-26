@@ -895,6 +895,7 @@ public final class MirLowerer {
                 case HirExpr.ThisFieldAssign a -> lowerThisFieldAssign(a);
                 case HirExpr.JavaFieldGet g -> lowerJavaFieldGet(g);
                 case HirExpr.JavaFieldAssign a -> lowerJavaFieldAssign(a);
+                case HirExpr.ModuleExportGet g -> lowerModuleExportGet(g);
                 case HirExpr.ArrayOp op -> lowerArrayOp(op);
                 case HirExpr.Unary u -> lowerUnary(u);
                 case HirExpr.Binary b -> lowerBinary(b);
@@ -2190,19 +2191,45 @@ public final class MirLowerer {
             return applyCheckedType(res, c.meta().checkedType(), ln);
         }
 
+        private MirVal lowerModuleExportGet(HirExpr.ModuleExportGet g) {
+            int ln = g.meta().line();
+            MirVal mod = lowerBoxed(g.receiver());
+            if (cur.isTerminated()) return mod;
+            MirEffect fx = (g.target().definitelyInitialized() && g.meta().checkedType() == null)
+                    ? MirEffect.PURE_NOTHROW
+                    : new MirEffect(MirEffect.Kind.READ, MirEffect.AliasClass.SHARED, false, true, true);
+            MirVal res = newVal(PrimitiveKind.NONE, null);
+            emit(new MirInst.LoadExport(res, mod, g.target(), ln, fx));
+            return applyCheckedType(res, g.meta().checkedType(), ln);
+        }
+
         private MirVal lowerDirectBabbleCall(HirExpr.DirectBabbleCall c) {
             int ln = c.meta().line();
-            HirFunction target = module.function(c.targetFunctionId());
+            LoweringTargets.ExportedFunctionTarget ext = c.externalTarget();
+            HirFunction target = ext == null ? module.function(c.targetFunctionId()) : null;
             MirVal callee = lowerBoxed(c.callee());
             if (cur.isTerminated()) return callee;
-            List<MirVal> args = lowerCallExprList(c.args(), target != null ? paramKinds(target) : null, c.binding());
+            PrimitiveKind[] pKinds = ext != null ? ext.signature().parameterKinds()
+                    : (target != null ? paramKinds(target) : null);
+            List<MirVal> args = lowerCallExprList(c.args(), pKinds, c.binding());
             if (cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
-            PrimitiveKind retKind = (target != null && target.hasSpec()) ? target.returnKind() : PrimitiveKind.NONE;
-            MirEffect fx = callEffect(c.meta(), target);
-            boolean comm = c.meta().isCommutative() || (target != null && target.effects().has(Effect.COMMUTATIVE));
-            boolean idem = c.meta().isIdempotent() || (target != null && target.effects().has(Effect.IDEMPOTENT));
+            PrimitiveKind retKind;
+            MirEffect fx;
+            boolean comm;
+            boolean idem;
+            if (ext != null) {
+                retKind = ext.signature().hasSpec() ? ext.signature().returnKind() : PrimitiveKind.NONE;
+                fx = ext.hasMutParam() ? MirEffect.IMPURE_THROW : callEffect(c.meta(), ext.effects());
+                comm = c.meta().isCommutative() || ext.effects().has(Effect.COMMUTATIVE);
+                idem = c.meta().isIdempotent() || ext.effects().has(Effect.IDEMPOTENT);
+            } else {
+                retKind = (target != null && target.hasSpec()) ? target.returnKind() : PrimitiveKind.NONE;
+                fx = callEffect(c.meta(), target);
+                comm = c.meta().isCommutative() || (target != null && target.effects().has(Effect.COMMUTATIVE));
+                idem = c.meta().isIdempotent() || (target != null && target.effects().has(Effect.IDEMPOTENT));
+            }
             MirVal res = newVal(retKind, null);
-            emit(new MirInst.CallBabble(res, callee, false, c.targetFunctionId(), args, c.binding(), comm, idem, ln, fx));
+            emit(new MirInst.CallBabble(res, callee, false, c.targetFunctionId(), ext, args, c.binding(), comm, idem, ln, fx));
             return applyCheckedType(res, c.meta().checkedType(), ln);
         }
 

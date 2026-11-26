@@ -112,7 +112,7 @@ assert(v.sum9(1, 2, 3, 4, 5, 6, 7, 8, 9) == 55)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level
+;; hir -O0 top-level
 top-level:
   (def tests (call name(import) "org.babblelang.tests"))
   (def revInt (fn-ref revInt))
@@ -123,6 +123,30 @@ top-level:
   (call name(assert) (==:bool (get-this-field x) 13:int))
   (call name(assert) (and (==:bool (call-method name(v).inc 2:int) 17:int) (==:bool (call-method name(v).inc 2:int 1:int) 13:int)))
   (call name(assert) (==:bool (call-method name(v).tag "v") "v:10"))
+  (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int))
+```
+
+```hir
+;; hir -O1 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def m (call name(import) "ext_ops.ba"))
+  (def v (record-new ext_ops$ba$C0$Vec 10:int))
+  (call name(assert) (==:bool (block
+        (def $this#1 name(v))
+        (+:int (get-this-field x) 5:int)) 15:int))
+  (call name(assert) (==:bool (block
+        (def $this#2 name(v))
+        (def o (record-new ext_ops$ba$C0$Vec 3:int))
+        (+:int (get-this-field x) (get-this-field x))) 13:int))
+  (call name(assert) (and (==:bool (call-method name(v).inc 2:int) 17:int) (==:bool (block
+          (def $this#3 name(v))
+          (+:int (get-this-field x) 3:int)) 13:int)))
+  (call name(assert) (==:bool (block
+        (def $this#4 name(v))
+        (+:obj "v:" (get-this-field x))) "v:10"))
   (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int))
 ```
 

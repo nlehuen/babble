@@ -503,11 +503,19 @@ public final class GvnCsePass implements MirPass {
         if (inst instanceof MirInst.CallBabble cb && cb.idempotent() && cb.effect().isPureFloatable()
                 && cb.args().size() == 1) {
             MirInst inner = defInst.get(cb.args().get(0).id());
-            if (inner instanceof MirInst.CallBabble innerCb && innerCb.targetFunctionId() == cb.targetFunctionId()) {
+            if (inner instanceof MirInst.CallBabble innerCb && sameCallBabbleTarget(innerCb, cb)) {
                 return innerCb.result();
             }
         }
         return null;
+    }
+
+    private static boolean sameCallBabbleTarget(MirInst.CallBabble a, MirInst.CallBabble b) {
+        if (a.externalTarget() != null || b.externalTarget() != null) {
+            return a.externalTarget() != null && b.externalTarget() != null
+                    && a.externalTarget().canonicalKey().equals(b.externalTarget().canonicalKey());
+        }
+        return a.targetFunctionId() == b.targetFunctionId();
     }
 
     private static Object valueKey(MirInst inst, EpochState epochs) {
@@ -532,9 +540,13 @@ public final class GvnCsePass implements MirPass {
             case MirInst.LoadJavaField lj -> lj.effect().isReadFloatable()
                     ? new JavaFieldKey(lj.receiver() != null ? lj.receiver().id() : -1, lj.target().field(),
                     lj.result().kind(), epochs.epochFor(lj.effect().alias())) : null;
+            case MirInst.LoadExport le -> le.effect().isPureFloatable()
+                    ? new LoadExportKey(le.module().id(), le.target().index(), le.target().name()) : null;
             case MirInst.ArrayLen al -> new ArrayLenKey(al.array().id());
             case MirInst.CallBabble cb -> cb.effect().isPureFloatable()
-                    ? new CallBabbleKey(cb.targetFunctionId(), cb.result().kind(), canonicalArgs(cb.args(), cb.commutative())) : null;
+                    ? new CallBabbleKey(cb.targetFunctionId(),
+                    cb.externalTarget() != null ? cb.externalTarget().canonicalKey() : null,
+                    cb.result().kind(), canonicalArgs(cb.args(), cb.commutative())) : null;
             case MirInst.CallJava cj -> cj.effect().isPureFloatable()
                     ? new CallJavaKey(cj.receiver() != null ? cj.receiver().id() : -1, cj.target().method(),
                     cj.result().kind(), canonicalArgs(cj.args(), cj.commutative())) : null;
@@ -605,8 +617,9 @@ public final class GvnCsePass implements MirPass {
     private record WidenKey(int rank, PrimitiveKind kind, int operandId) {}
     private record FieldKey(int recvId, int classId, int memberIdx, String name, PrimitiveKind kind, int epoch) {}
     private record JavaFieldKey(int recvId, Field field, PrimitiveKind kind, int epoch) {}
+    private record LoadExportKey(int moduleId, int exportIndex, String exportName) {}
     private record ArrayLenKey(int arrayId) {}
-    private record CallBabbleKey(int fnId, PrimitiveKind kind, List<Integer> argIds) {}
+    private record CallBabbleKey(int fnId, String externalKey, PrimitiveKind kind, List<Integer> argIds) {}
     private record CallJavaKey(int recvId, Method method, PrimitiveKind kind, List<Integer> argIds) {}
     private record CallMethodKey(int recvId, int fnId, PrimitiveKind kind, List<Integer> argIds) {}
     private record SlotReadKey(org.babblelang.ir.hir.HirVar var, PrimitiveKind kind) {}
