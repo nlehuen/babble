@@ -47,7 +47,7 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         List<String> failures = new ArrayList<>();
         int checked = 0;
 
-        for (Path root : List.of(Path.of("src/test/babble"), Path.of("examples"))) {
+        for (Path root : List.of(Path.of("examples"))) {
             if (!Files.exists(root)) {
                 continue;
             }

@@ -309,3 +309,62 @@ def vr = fn (n: int, xs: int...): int -> ( if n == 0 then ( var c = 0 ; for x in
 def sp = fn (n: int, xs: list of int): int -> ( if n == 0 then ( xs.size() ) else ( sp(n - 1, ...list(1, 2, 3)) ) )
 assert(vr(3, 1) == 1 and sp(3, list(1)) == 3)
 ```
+
+## Return self tail call inside while true loop
+
+```babble
+def firstOver = fn (n: int, limit: int): int -> (
+    while true then (
+        if n > limit then ( return n )
+        return recurse(n + 1, limit)
+    )
+    0
+)
+assert(firstOver(0, deep) == deep + 1)
+```
+
+## Return self tail call inside for loop
+
+```babble
+def skipAll = fn (n: int, xs: list of int): int -> (
+    for x in xs then (
+        if n > 0 then ( return recurse(n - 1, xs) )
+    )
+    n
+)
+assert(skipAll(deep, list.of(1, 2)) == 0)
+```
+
+## Self tail call by function name with boxed nullable parameter
+
+```babble
+def countDown = fn (n: int?, seen: string): string -> (
+    if n == null or n == 0 then ( seen ) else ( countDown(n - 1, "x") )
+)
+assert(countDown(deep, "") == "x")
+assert(countDown(null, "none") == "none")
+```
+
+## Self tail call with double and bool parameters across else if chain
+
+```babble
+def halve = fn (x: double, steps: int, flip: bool): int -> (
+    if steps == 0 then ( if flip then ( 1 ) else ( 0 ) )
+    else if x > 1.0 then ( recurse(x / 2.0, steps - 1, not flip) )
+    else ( recurse(x * 2.0, steps - 1, not flip) )
+)
+assert(halve(3.0, deep, false) == 0)
+```
+
+## Fresh activation closures collected into a mutable list
+
+```babble
+def collect = fn (n: int, mut out: list of fn (): int): list of fn (): int -> (
+    if n == 0 then ( out ) else (
+        out.add(fn (): int -> ( n ))
+        recurse(n - 1, out)
+    )
+)
+def closures = collect(3, list())
+assert(closures.get(0)() == 3 and closures.get(1)() == 2 and closures.get(2)() == 1)
+```

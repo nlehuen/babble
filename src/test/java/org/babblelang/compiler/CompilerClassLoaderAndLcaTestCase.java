@@ -1,24 +1,30 @@
 package org.babblelang.compiler;
 
-import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
-import org.babblelang.engine.BabbleSession;
-import org.babblelang.engine.MapModuleSource;
+import org.babblelang.runtime.Implicits;
+import org.babblelang.runtime.ScriptRuntime;
+import org.babblelang.runtime.Values;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import javax.script.ScriptEngine;
+import java.io.PrintWriter;
+import java.io.Writer;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /**
- * Unit tests for RM003 Phase 1 compiler infrastructure: {@link CompositeClassLoader},
- * {@link CodeGenerator.ScriptClassWriter} graph LCA, and interface JVM name propagation.
+ * Unit tests for compiler classloader and type-hierarchy internals:
+ * {@link CompositeClassLoader} flattening and precedence, {@link ScriptClassWriter#getCommonSuperClass}
+ * graph LCA, and child-{@link ClassLoader} SAM {@link Proxy} fallback.
  */
-public class Rm003P1CompilerTestCase {
+public class CompilerClassLoaderAndLcaTestCase {
 
     private static byte[] emptyPublicClass(String internalName) {
         ClassWriter cw = new ClassWriter(0);
@@ -45,9 +51,48 @@ public class Rm003P1CompilerTestCase {
         }
     }
 
+    private static final class FacesProbeLoader extends ClassLoader {
+        FacesProbeLoader(ClassLoader parent) {
+            super(parent);
+        }
+
+        Class<?> defineChildSam() {
+            String internalName = "org/babblelang/compiler/dynamic/ChildIntOp";
+            ClassWriter cw = new ClassWriter(0);
+            cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE,
+                    internalName, null, "java/lang/Object", null);
+            MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_ABSTRACT,
+                    "apply", "(I)I", null, null);
+            mv.visitEnd();
+            cw.visitEnd();
+            byte[] bytes = cw.toByteArray();
+            return defineClass("org.babblelang.compiler.dynamic.ChildIntOp", bytes, 0, bytes.length);
+        }
+
+        Class<?> defineChildCaller(Class<?> sam) {
+            String samInternal = sam.getName().replace('.', '/');
+            String internalName = "org/babblelang/compiler/dynamic/ChildCaller";
+            ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
+            cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC | Opcodes.ACC_SUPER,
+                    internalName, null, "java/lang/Object", null);
+            MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                    "call", "(L" + samInternal + ";I)I", null, null);
+            mv.visitCode();
+            mv.visitVarInsn(Opcodes.ALOAD, 0);
+            mv.visitVarInsn(Opcodes.ILOAD, 1);
+            mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, samInternal, "apply", "(I)I", true);
+            mv.visitInsn(Opcodes.IRETURN);
+            mv.visitMaxs(0, 0);
+            mv.visitEnd();
+            cw.visitEnd();
+            byte[] bytes = cw.toByteArray();
+            return defineClass("org.babblelang.compiler.dynamic.ChildCaller", bytes, 0, bytes.length);
+        }
+    }
+
     @Test
     public void testCompositeClassLoaderFlatteningIdentityDeduplicationAndPrecedence() throws Exception {
-        ClassLoader parent = new NamedLoader(Rm003P1CompilerTestCase.class.getClassLoader(),
+        ClassLoader parent = new NamedLoader(CompilerClassLoaderAndLcaTestCase.class.getClassLoader(),
                 Map.of("p.Shared", emptyPublicClass("p/Shared"),
                         "p.ParentOnly", emptyPublicClass("p/ParentOnly")));
 
@@ -62,7 +107,7 @@ public class Rm003P1CompilerTestCase {
 
         CompositeClassLoader inner = new CompositeClassLoader(innerParent, List.of(firstDelegate));
         CompositeClassLoader outer = new CompositeClassLoader(parent,
-                java.util.Arrays.asList(null, parent, inner, firstDelegate, secondDelegate));
+                Arrays.asList(null, parent, inner, firstDelegate, secondDelegate));
 
         // Flattened in order: inner's delegates (firstDelegate), inner's distinct parent (innerParent),
         // then secondDelegate; null, outer's own parent, and duplicate firstDelegate are omitted.
@@ -85,8 +130,8 @@ public class Rm003P1CompilerTestCase {
     public void testScriptClassWriterGraphLcaMatrix() {
         String script = "gen/Script$1";
         String object = "java/lang/Object";
-        Map<String, List<String>> genClasses = new java.util.HashMap<>();
-        Map<String, List<String>> genIfaces = new java.util.HashMap<>();
+        Map<String, List<String>> genClasses = new HashMap<>();
+        Map<String, List<String>> genIfaces = new HashMap<>();
 
         // Diamond of generated Babble interfaces + multiple-inheritance ambiguity
         genIfaces.put("gen/Base", List.of());
@@ -108,7 +153,7 @@ public class Rm003P1CompilerTestCase {
         genClasses.put("gen/NumSub2", List.of("java/lang/Number"));
 
         ScriptClassWriter writer = new ScriptClassWriter(
-                Rm003P1CompilerTestCase.class.getClassLoader(), script, genClasses, genIfaces);
+                CompilerClassLoaderAndLcaTestCase.class.getClassLoader(), script, genClasses, genIfaces);
 
         // Diamond interfaces & direct subtype
         Assertions.assertEquals("gen/Base", writer.getCommonSuperClass("gen/Left", "gen/Right"));
@@ -124,7 +169,7 @@ public class Rm003P1CompilerTestCase {
         Assertions.assertEquals(object, writer.getCommonSuperClass("gen/C1", "gen/C2"));
         Assertions.assertEquals("java/lang/Number", writer.getCommonSuperClass("gen/NumSub1", "gen/NumSub2"));
 
-        // Mixed class & interface: returns interface iff class () implements it, else Object
+        // Mixed class & interface: returns interface iff class implements it, else Object
         Assertions.assertEquals("gen/Left", writer.getCommonSuperClass("gen/C1", "gen/Left"));
         Assertions.assertEquals("gen/Base", writer.getCommonSuperClass("gen/C1", "gen/Base"));
         Assertions.assertEquals("java/lang/Runnable", writer.getCommonSuperClass("gen/C1", "java/lang/Runnable"));
@@ -142,48 +187,22 @@ public class Rm003P1CompilerTestCase {
     }
 
     @Test
-    public void testInterfaceJvmNamesAreDeterministicAndPropagateAcrossModulesAndRepl() throws Exception {
-        String libSource = "export def A = interface ( def x : fn () : int )\n"
-                + "export def inc = fn (v : int) : int -> ( v + 1 )\n"
-                + "export def B = interface extends A ( def y = fn () : int -> ( this.x() ) )\n";
+    public void testChildClassLoaderSamFallsBackToProxyCleanly() throws Exception {
+        // Generate a public functional interface + helper class in an isolated child ClassLoader
+        // invisible to Faces.class.getClassLoader(), proving Faces falls back to Proxy cleanly.
+        ClassLoader parent = FacesProbeLoader.class.getClassLoader();
+        FacesProbeLoader childLoader = new FacesProbeLoader(parent);
+        Class<?> childSam = childLoader.defineChildSam();
+        Class<?> childCaller = childLoader.defineChildCaller(childSam);
+        Method runIt = childCaller.getMethod("call", childSam, int.class);
 
-        MapModuleSource src1 = new MapModuleSource().put("pkg/lib.ba", libSource);
-        BabbleScriptEngine engine1 = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine1.put(BabbleScriptEngine.MODE, "compile");
-        engine1.put(BabbleScriptEngine.MODULE_SOURCE, src1);
-        List<BabbleScriptEngine.ProgramModule> prog1 = engine1.compileProgram(src1, "pkg/lib.ba");
+        Object callable = BabbleScriptEngineFactory.INSTANCE.getScriptEngine().eval("fn (x : int) : int -> ( x + 40 )");
+        ScriptRuntime rt = new ScriptRuntime(Implicits.create(), new PrintWriter(Writer.nullWriter()), null);
+        Object adapted = Values.toJava(callable, childSam, rt);
 
-        MapModuleSource src2 = new MapModuleSource().put("pkg/lib.ba", libSource);
-        BabbleScriptEngine engine2 = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine2.put(BabbleScriptEngine.MODE, "compile");
-        engine2.put(BabbleScriptEngine.MODULE_SOURCE, src2);
-        List<BabbleScriptEngine.ProgramModule> prog2 = engine2.compileProgram(src2, "pkg/lib.ba");
-
-        Map<String, String> ifaces1 = prog1.get(0).script().interfaceJvmNames();
-        Map<String, String> ifaces2 = prog2.get(0).script().interfaceJvmNames();
-        Assertions.assertEquals(Set.of("pkg/lib.ba#A", "pkg/lib.ba#B"), ifaces1.keySet());
-        Assertions.assertEquals("babble/pkg/lib$ba$I0$A", ifaces1.get("pkg/lib.ba#A"));
-        Assertions.assertEquals("babble/pkg/lib$ba$I1$B", ifaces1.get("pkg/lib.ba#B"));
-        Assertions.assertEquals(ifaces1, ifaces2);
-
-        // Multi-hop module compilation + REPL session propagation must succeed cleanly without losing interface JVM names.
-        String midSource = "def lib = import(\"lib.ba\")\nexport def C = interface extends lib.B ( def z : fn () : int )\n";
-        MapModuleSource multiSrc = new MapModuleSource()
-                .put("pkg/lib.ba", libSource)
-                .put("pkg/mid.ba", midSource)
-                .put("main.ba", "def mid = import(\"pkg/mid.ba\") ; def Impl = class () implements mid.C ( def x = fn () : int -> ( 2 ) ; def z = fn () : int -> ( 3 ) ) ; Impl().y() + Impl().z()");
-        BabbleScriptEngine multiEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        multiEngine.put(BabbleScriptEngine.MODE, "compile");
-        multiEngine.put(BabbleScriptEngine.MODULE_SOURCE, multiSrc);
-        List<BabbleScriptEngine.ProgramModule> multiProg = multiEngine.compileProgram(multiSrc, "main.ba");
-        Assertions.assertEquals(5, multiEngine.eval("def mid = import(\"pkg/mid.ba\") ; def Impl = class () implements mid.C ( def x = fn () : int -> ( 2 ) ; def z = fn () : int -> ( 3 ) ) ; Impl().y() + Impl().z()"));
-        Assertions.assertTrue(multiProg.stream().anyMatch(m -> m.id().key().equals("pkg/lib.ba")));
-
-        BabbleScriptEngine replEngine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        replEngine.put(BabbleScriptEngine.MODE, "compile");
-        replEngine.put(ScriptEngine.FILENAME, "repl.ba");
-        BabbleSession session = replEngine.newSession();
-        session.eval("def RepI = interface ( def val = fn () : int -> ( 9 ) )");
-        Assertions.assertEquals(9, session.eval("def RepC = class () implements RepI () ; RepC().val()"));
+        Assertions.assertTrue(childSam.isInstance(adapted));
+        Assertions.assertTrue(Proxy.isProxyClass(adapted.getClass()),
+                "SAM loaded in child ClassLoader invisible to Faces must fall back to Proxy");
+        Assertions.assertEquals(42, runIt.invoke(null, adapted, 2));
     }
 }

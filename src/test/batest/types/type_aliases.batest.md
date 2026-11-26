@@ -183,3 +183,14 @@ Wrong number of type arguments : expected 0, got 1
 ```babble
 assert(string(java.lang.ProcessBuilder.Redirect.INHERIT.type()) == "INHERIT")
 ```
+
+## Multiline type alias spanning union branches
+
+```babble
+def Wide = type
+    Shape & Named |
+    Shape & Label
+def wide: Wide = Tile()
+def wideSign: Wide = Sign()
+assert(wide.area() == 1.5 and wideSign.area() == 2.0)
+```

@@ -352,3 +352,11 @@ def bad = fn (cs: Counter...) -> ( for c in cs then ( c.inc() ) )
 ```error
 Cannot mutate parameter cs (mut method c.inc) : mark parameter as mut cs
 ```
+
+## Spread into builtin print with named to Appendable
+
+```babble
+def sw = java.io.StringWriter()
+print("v=", ...list(1, 2, 3), to: sw)
+assert(sw.toString() == "v=123")
+```

@@ -85,3 +85,46 @@ xs.add("hi")
 assert(xs.size() == 1)
 assert(xs.get(0) == "hi")
 ```
+
+## Mutual recursion across cyclic modules via shared typed holder
+
+```babble
+;; babble module=parity.ba
+export def state = object (
+    var even: (fn volatile (n: int): bool)? = null
+    var odd: (fn volatile (n: int): bool)? = null
+)
+null
+```
+
+```babble
+;; babble module=even.ba
+def parity = import("parity.ba")
+def odd = import("odd.ba")
+export def isEven = fn volatile (n: int): bool -> (
+    if n == 0 then ( true ) else (
+        def f = parity.state.odd
+        if f != null then ( f(n - 1) ) else ( false )
+    )
+)
+parity.state.even = isEven
+```
+
+```babble
+;; babble module=odd.ba
+def parity = import("parity.ba")
+def even = import("even.ba")
+export def isOdd = fn volatile (n: int): bool -> (
+    if n == 0 then ( false ) else (
+        def f = parity.state.even
+        if f != null then ( f(n - 1) ) else ( false )
+    )
+)
+parity.state.odd = isOdd
+```
+
+```babble
+def even = import("even.ba")
+assert(even.isEven(10))
+assert(not even.isEven(7))
+```

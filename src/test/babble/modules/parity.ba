@@ -1,6 +1,0 @@
-;; Shared typed holder so cyclic even/odd modules need not read each other's exports before typing finishes.
-export def state = object (
-    var even: (fn volatile (n: int): bool)? = null
-    var odd: (fn volatile (n: int): bool)? = null
-)
-null

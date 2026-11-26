@@ -65,3 +65,44 @@ print(n?.foo)
 ```error
 Not nullable : n
 ```
+
+## Multiline safe navigation chain and int to double? widening
+
+```babble
+def a1: Node? = Node(10, Node(20))
+def a0: Node? = null
+def chained: int? = a1
+    ?.next
+    ?.add(5)
+    ?.read()
+assert(chained == 25)
+def d1: double? = a1?.read()
+def d0: double? = a0?.read()
+assert(d1 is double and d1 == 10.0)
+assert(d0 == null)
+```
+
+## Safe navigation on a nullable union of Babble classes
+
+```babble
+def VecA = record (x: int, tag: string = "A") ()
+def VecB = record (x: int, tag: string = "B") ()
+def maybeVec: VecA | VecB | null = VecB(7)
+def nullVec: VecA | VecB | null = null
+assert(maybeVec?.tag == "B")
+assert(nullVec?.tag == null)
+```
+
+## Safe navigation producing a nullable generic method reference
+
+```babble
+def Box = class () (
+    def id of T = fn (x: T): T -> ( x )
+)
+def a1: Box? = Box()
+def a0: Box? = null
+def optId: (fn (x: int): int)? = a1?.id
+def nullId: (fn (x: int): int)? = a0?.id
+assert(optId != null and optId(7) == 7)
+assert(nullId == null)
+```

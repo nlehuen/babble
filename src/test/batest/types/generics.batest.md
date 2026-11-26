@@ -229,3 +229,41 @@ def bad = (java.util.ArrayList of int) of string
 ```error
 (java.util.ArrayListofint) is not generic
 ```
+
+## Generic record swap and expected-type int to double widening
+
+```babble
+def Pair of (A, B) = record (a: A, b: B) (
+    def swap = fn (): Pair of (B, A) -> ( Pair(this.b, this.a) )
+)
+def p1 = Pair(1, "two")
+assert(p1 == Pair(1, "two"))
+assert(p1.swap() == Pair("two", 1))
+def pd: Pair of (double, double) = Pair(1, 2)
+assert(pd == Pair(1.0, 2.0))
+```
+
+## Generic method on a non-generic class
+
+```babble
+def Pair of (A, B) = record (a: A, b: B) ()
+def Mapper = class () (
+    def mapPair of (A, B) = fn (p: Pair of (A, B), f: fn (a: A): B): Pair of (B, B) -> ( Pair(f(p.a), p.b) )
+)
+assert(Mapper().mapPair(Pair(4, "4"), fn (n) -> ( "" + n )) == Pair("4", "4"))
+```
+
+## Static block on a generic class and contextual nullable default
+
+```babble
+def Tagged of T = class (def value: T) () static (
+    def label = "tagged"
+)
+assert(Tagged.label == "tagged")
+assert(Tagged(true).value == true)
+
+def optOrNull = fn of T (x: T? = null): T? -> ( x )
+def emptyOpt: int? = optOrNull()
+assert(emptyOpt == null)
+assert(optOrNull(3) == 3)
+```

@@ -590,3 +590,34 @@ fn run(v0: int) -> int:
     v12: any = opaque.CoreCollectionCall(list, v11) {impure}
     ret v8
 ```
+
+## HirPurity : non-inlined calling method with frame-local mutating closure is not dead code
+
+```babble
+def Bag = class (private def xs: list of int = list(1, 2, 3)) (
+    def visit = fn calling f (f: fn (int): any?): any? -> (if this.xs.size() == 0 then (return null) ; for x in this.xs then (f(x)))
+    def countAbove = fn calling p (p: fn (int): bool): int -> (var m = 0 ; this.visit(fn (x: int) -> (if p(x) then (m += 1))) ; m)
+)
+assert(Bag().countAbove(fn (x: int): bool -> (x > 1)) == 2)
+```
+
+```hir
+;; hir -O0,-O1 fn=Bag.countAbove
+fn Bag.countAbove (p:obj) -> int {nothrow unique}
+  (def m 0:int)
+  (call-method this.visit (fn-ref <anon#0>))
+  var(m)
+```
+
+```mir
+;; mir -O2 fn=Bag.countAbove stage=before,final
+fn Bag.countAbove() -> int:
+  bb0:
+    v0: int = const 0
+    slot_init m, v0 {write:shared}
+    v1: any = slot_read this {pure}
+    v2: any = opaque.FunctionRef(<anon>) {read:shared}
+    v3: any = call_method v1.visit(v2) {impure}
+    v4: int = slot_read m {read:shared}
+    ret v4
+```

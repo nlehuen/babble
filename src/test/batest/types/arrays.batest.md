@@ -230,3 +230,58 @@ array.of(1, 2).get(5)
 ```error
 java.lang.ArrayIndexOutOfBoundsException: Index 5 out of bounds for length 2
 ```
+
+## Named index and value arguments on array get and set
+
+```babble
+def bytes = (array of byte)(2)
+bytes.set(0, 7)
+bytes.set(index: 1, value: -3)
+assert(bytes.size() == 2 and bytes.get(0) == 7 and bytes.get(index: 1) == -3)
+def ints = (array of int)(3)
+def setRes: void = ints.set(1, 42)
+assert(setRes == null and ints == array.of(0, 42, 0))
+```
+
+## Intersection element type on array construction
+
+```babble
+def Shape = interface ( def area: fn (): int )
+def Named = interface ( def name: fn (): string )
+def Dot = class (def r: int) implements Shape, Named (
+    def area = fn (): int -> ( this.r * 3 )
+    def name = fn (): string -> ( "c" + this.r )
+)
+def xs: array of (Shape & Named) = (array of (Shape & Named)).of(Dot(3))
+assert(xs.get(0).name() == "c3" and xs.get(0).area() == 9)
+```
+
+## Array construction through generic and plain type aliases
+
+```babble
+def Ints = type array of int
+def Matrix of T = type array of (array of T)
+def viaAlias: Ints = array(3)
+viaAlias.set(2, 9)
+assert(viaAlias == (array of int).of(0, 0, 9))
+def mat: Matrix of double = array.of(array.of(1.0, 2.0), array.of(3.0, 4.0))
+assert(mat.get(1).get(0) == 3.0 and "" + mat == "[[1.0, 2.0], [3.0, 4.0]]")
+```
+
+## Java Arrays.sort and List.toArray round trips
+
+```babble
+def unsorted = array.of(9, 3, 7, 1)
+java.util.Arrays.sort(unsorted)
+assert(unsorted == array.of(1, 3, 7, 9))
+def fromList: array of string = list("p", "q").toArray((array of string).of())
+assert(fromList == array.of("p", "q"))
+```
+
+## Java Arrays.asList and String.format with typed and any arrays
+
+```babble
+def single = java.util.Arrays.asList(array.of("only"))
+assert(single.size() == 1 and single.get(0) == "only")
+assert(java.lang.String.format("%s=%d", (array of any).of("x", 7)) == "x=7")
+```

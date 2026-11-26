@@ -12,8 +12,6 @@ import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.SimpleScriptContext;
 import java.io.StringWriter;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.List;
 
 /**
@@ -22,10 +20,6 @@ import java.util.List;
  */
 public class DifferentialTestCase {
     private record Outcome(String result, String output, String error) {
-    }
-
-    static List<String> files() {
-        return ScriptTestCase.data().stream().toList();
     }
 
     static List<String> snippets() {
@@ -477,15 +471,6 @@ public class DifferentialTestCase {
                         + "def ovGen = overload ( fn of (T : RS) (k : int, shared xs : T...) : int -> ( 0 ), fn of (T : RS) (k : string, shared xs : T...) : int -> ( var c = 0 ; for x in xs then ( assert(x is java.lang.Runnable and x is java.io.Serializable) ; c += 1 ) ; c ) )\n"
                         + "\"\" + ovGenMix(u, existingRS, fn io () -> (), ...fns) + \":\" + genMix(existingRS, fn io () -> (), ...fns) + \":\" + takeT(fnOrRs) + \":\" + takeOptT(optFn) + \":\" + takeOptT(optNull) + \":\" + Demo.runSerializable(nn) + \":\" + Demo.runSerArray(...xs) + \":\" + Demo.runSerVarargs(existingRS, fn () -> ()) + \":\" + Demo.runSerVarargs(MyRunSer(), fn () -> ()) + \":\" + (OpOverloaded() + uMix) + \":\" + Demo.runSerializable(uMix) + \":\" + ovGen(u, MyRunSer(), fn () -> ()) + \":\" + (not (br is int))"
         );
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("files")
-    public void testFile(String file) throws Exception {
-        String script = Files.readString(Path.of(file));
-        Outcome interpreted = run("interpret", script, file);
-        Assertions.assertEquals(interpreted, run("compile", script, file), file);
-        Assertions.assertNull(interpreted.error(), file);
     }
 
     @ParameterizedTest(name = "{0}")

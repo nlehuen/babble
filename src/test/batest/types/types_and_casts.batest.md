@@ -286,3 +286,27 @@ def r : fn () = fn () -> ( )
 def holder = java.lang.Thread(r)
 assert(holder != null)
 ```
+
+## Runtime cast mismatch on plain class reports Type error
+
+```babble
+def Box = class (def s : string) ()
+def castBox = fn (x : any) : Box -> ( x as Box )
+castBox("not a box")
+```
+
+```error
+Type error : expected Box, got string
+```
+
+## Runtime cast of null to non-null plain class reports Type error
+
+```babble
+def Box = class (def s : string) ()
+def castBox = fn (x : any?) : Box -> ( x as Box )
+castBox(null)
+```
+
+```error
+Type error : expected Box, got null
+```

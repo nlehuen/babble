@@ -11,8 +11,6 @@ import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.MethodSource;
 
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
@@ -21,7 +19,6 @@ import javax.script.SimpleScriptContext;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collection;
 import java.util.List;
 
 /**
@@ -49,24 +46,6 @@ public class TypeCheckerTestCase {
 
     private static void assertWarnings(String source, String... expected) {
         Assertions.assertEquals(List.of(expected), warnings(source), source);
-    }
-
-    static Collection<String> scripts() {
-        return ScriptTestCase.data();
-    }
-
-    @ParameterizedTest(name = "{0}")
-    @MethodSource("scripts")
-    public void testTheScriptsCheckCleanly(String file) throws Exception {
-        Path path = Path.of(file).toAbsolutePath().normalize();
-        StringWriter errors = new StringWriter();
-        BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
-        engine.put(BabbleScriptEngine.MODULE_SOURCE, org.babblelang.engine.FileModuleSource.rooted(path.getParent()));
-        engine.getContext().setErrorWriter(errors);
-        engine.getContext().setWriter(new StringWriter());
-        engine.getContext().setAttribute(ScriptEngine.FILENAME, path.toString(), ScriptContext.ENGINE_SCOPE);
-        engine.compile(Files.readString(path));
-        Assertions.assertEquals("", errors.toString(), file);
     }
 
     @Test
@@ -1613,12 +1592,8 @@ public class TypeCheckerTestCase {
 
     @Test
     public void testAllScriptsCompileCleanly() throws Exception {
-        // Every .ba test script and example compiles cleanly with static typing.
-        List<Path> all = new java.util.ArrayList<>();
-        for (String s : ScriptTestCase.data()) {
-            all.add(Path.of(s));
-        }
-        all.addAll(ExamplesTestCase.scripts());
+        // Every example script compiles cleanly with static typing.
+        List<Path> all = ExamplesTestCase.scripts();
 
         int passed = 0;
         List<String> report = new java.util.ArrayList<>();

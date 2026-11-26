@@ -4,6 +4,8 @@ import org.babblelang.engine.BabbleScriptEngine;
 import org.babblelang.engine.BabbleScriptEngineFactory;
 import org.babblelang.engine.BabbleSession;
 import org.babblelang.engine.MapModuleSource;
+import org.babblelang.runtime.BabbleObjects;
+import org.babblelang.runtime.HasMembers;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
@@ -16,16 +18,20 @@ import org.objectweb.asm.util.CheckClassAdapter;
 import javax.script.SimpleBindings;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.function.IntUnaryOperator;
 
 /**
- * Bytecode and classloader verification tests for RM003 Phase 2: Babble interfaces
- * compiled to real JVM interfaces with {@code INVOKEINTERFACE}, {@code INSTANCEOF},
- * and {@code INVOKESPECIAL} lowering.
+ * JVM bytecode, ASM opcode, and reflection verification tests for compiled plain classes,
+ * Babble JVM interfaces, direct Java interface implementation without {@link Proxy} wrappers,
+ * and deterministic cross-module/session JVM interface naming.
  */
-public class Rm003P2CompilerTestCase {
+public class JvmClassAndInterfaceBytecodeTestCase {
 
     private static BabbleScriptEngine compilingEngine() {
         BabbleScriptEngine engine = (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
@@ -35,6 +41,12 @@ public class Rm003P2CompilerTestCase {
 
     private static CompiledBabbleScript compile(String source) throws Exception {
         return (CompiledBabbleScript) compilingEngine().compile(source);
+    }
+
+    private static CompiledBabbleScript compile(String source, String opt) throws Exception {
+        BabbleScriptEngine engine = compilingEngine();
+        engine.put("babble.opt", opt);
+        return (CompiledBabbleScript) engine.compile(source);
     }
 
     private static void assertVerifies(CompiledBabbleScript script) {
@@ -48,6 +60,7 @@ public class Rm003P2CompilerTestCase {
     private record InsnSummary(List<String> invokeInterfaceTargets,
                                List<String> invokeSpecialTargets,
                                List<String> instanceofTargets,
+                               List<String> checkcastTargets,
                                List<String> staticCalls,
                                List<String> indyBootstraps) {
     }
@@ -56,6 +69,7 @@ public class Rm003P2CompilerTestCase {
         List<String> invokeInterfaceTargets = new ArrayList<>();
         List<String> invokeSpecialTargets = new ArrayList<>();
         List<String> instanceofTargets = new ArrayList<>();
+        List<String> checkcastTargets = new ArrayList<>();
         List<String> staticCalls = new ArrayList<>();
         List<String> indyBootstraps = new ArrayList<>();
         new ClassReader(classBytes).accept(new ClassVisitor(Opcodes.ASM9) {
@@ -77,6 +91,8 @@ public class Rm003P2CompilerTestCase {
                     public void visitTypeInsn(int opcode, String type) {
                         if (opcode == Opcodes.INSTANCEOF) {
                             instanceofTargets.add(type);
+                        } else if (opcode == Opcodes.CHECKCAST) {
+                            checkcastTargets.add(type);
                         }
                     }
 
@@ -88,7 +104,107 @@ public class Rm003P2CompilerTestCase {
                 };
             }
         }, 0);
-        return new InsnSummary(invokeInterfaceTargets, invokeSpecialTargets, instanceofTargets, staticCalls, indyBootstraps);
+        return new InsnSummary(invokeInterfaceTargets, invokeSpecialTargets, instanceofTargets, checkcastTargets, staticCalls, indyBootstraps);
+    }
+
+    @Test
+    public void testPlainCompiledClassesHaveObjectSuperclassAndNoRuntimeInterfaces() throws Exception {
+        CompiledBabbleScript script = compile("""
+                def Plain = class (def x : int) ()
+                def Rec = record (x : int) ()
+                def Obj = object (def x = 42)
+                def Iface = interface (def value : fn () : int)
+                def WithIface = class (def x : int) implements Iface (
+                    def value = fn () : int -> ( this.x )
+                )
+                def results = (list of any)()
+                results.add(Plain(1))
+                results.add(Rec(2))
+                results.add(Obj)
+                results.add(WithIface(3))
+                results
+                """, "1");
+        assertVerifies(script);
+
+        @SuppressWarnings("unchecked")
+        List<Object> results = (List<Object>) script.eval(new SimpleBindings());
+        Assertions.assertEquals(4, results.size());
+
+        Object plain = results.get(0);
+        Object rec = results.get(1);
+        Object obj = results.get(2);
+        Object withIface = results.get(3);
+
+        for (Object inst : results) {
+            Assertions.assertTrue(BabbleObjects.isCompiledInstance(inst));
+            Assertions.assertTrue(BabbleObjects.isInstance(inst));
+            Assertions.assertSame(Object.class, inst.getClass().getSuperclass());
+            Assertions.assertFalse(inst instanceof HasMembers);
+        }
+
+        Assertions.assertEquals(0, plain.getClass().getInterfaces().length);
+        Assertions.assertEquals(0, rec.getClass().getInterfaces().length);
+        Assertions.assertEquals(0, obj.getClass().getInterfaces().length);
+        Assertions.assertEquals(1, withIface.getClass().getInterfaces().length);
+        Assertions.assertTrue(withIface.getClass().getInterfaces()[0].isInterface());
+    }
+
+    @Test
+    public void testStaticAsCastEmitsInstanceofAndCheckcast() throws Exception {
+        String source = """
+                def Named = interface (
+                    def label : fn () : string
+                )
+                def Box = class (def s : string) implements Named (
+                    def label = fn () : string -> ( this.s )
+                )
+                def castBox = fn (x : any) : Box -> ( x as Box )
+                def castNamed = fn (x : any) : Named -> ( x as Named )
+                def value : any = Box("hi")
+                castBox(value).s + ":" + castNamed(value).label()
+                """;
+        CompiledBabbleScript script = compile(source, "1");
+        assertVerifies(script);
+
+        List<String> instanceofTargets = new ArrayList<>();
+        List<String> checkcastTargets = new ArrayList<>();
+        for (byte[] bytes : script.getClasses().values()) {
+            InsnSummary insns = inspect(bytes);
+            instanceofTargets.addAll(insns.instanceofTargets());
+            checkcastTargets.addAll(insns.checkcastTargets());
+        }
+        String boxJvm = script.classJvmNames().values().iterator().next();
+        String namedJvm = script.interfaceJvmNames().values().iterator().next();
+        Assertions.assertTrue(instanceofTargets.contains(boxJvm), "Expected INSTANCEOF " + boxJvm + " in " + instanceofTargets);
+        Assertions.assertTrue(checkcastTargets.contains(boxJvm), "Expected CHECKCAST " + boxJvm + " in " + checkcastTargets);
+        Assertions.assertTrue(instanceofTargets.contains(namedJvm), "Expected INSTANCEOF " + namedJvm + " in " + instanceofTargets);
+        Assertions.assertTrue(checkcastTargets.contains(namedJvm), "Expected CHECKCAST " + namedJvm + " in " + checkcastTargets);
+    }
+
+    @Test
+    public void testInterfaceJvmNamesAreDeterministic() throws Exception {
+        String libSource = """
+                export def A = interface ( def x : fn () : int )
+                export def inc = fn (v : int) : int -> ( v + 1 )
+                export def B = interface extends A ( def y = fn () : int -> ( this.x() ) )
+                """;
+
+        MapModuleSource src1 = new MapModuleSource().put("pkg/lib.ba", libSource);
+        BabbleScriptEngine engine1 = compilingEngine();
+        engine1.put(BabbleScriptEngine.MODULE_SOURCE, src1);
+        List<BabbleScriptEngine.ProgramModule> prog1 = engine1.compileProgram(src1, "pkg/lib.ba");
+
+        MapModuleSource src2 = new MapModuleSource().put("pkg/lib.ba", libSource);
+        BabbleScriptEngine engine2 = compilingEngine();
+        engine2.put(BabbleScriptEngine.MODULE_SOURCE, src2);
+        List<BabbleScriptEngine.ProgramModule> prog2 = engine2.compileProgram(src2, "pkg/lib.ba");
+
+        Map<String, String> ifaces1 = prog1.get(0).script().interfaceJvmNames();
+        Map<String, String> ifaces2 = prog2.get(0).script().interfaceJvmNames();
+        Assertions.assertEquals(Set.of("pkg/lib.ba#A", "pkg/lib.ba#B"), ifaces1.keySet());
+        Assertions.assertEquals("babble/pkg/lib$ba$I0$A", ifaces1.get("pkg/lib.ba#A"));
+        Assertions.assertEquals("babble/pkg/lib$ba$I1$B", ifaces1.get("pkg/lib.ba#B"));
+        Assertions.assertEquals(ifaces1, ifaces2);
     }
 
     @Test
@@ -202,9 +318,54 @@ public class Rm003P2CompilerTestCase {
         BabbleSession session = compilingEngine().newSession();
         session.eval("def Counter = interface ( def next : fn () : int )");
         Object c1 = session.eval("def Step = class (n : int) implements Counter ( def next = fn () : int -> ( n + 1 ) ) ; Step(4)");
-        Object res = session.eval("def read = fn (c : Counter) : int -> ( c.next() ) ; fn (c1 : any) -> ( 0 ) ; read(Step(9))");
+        Object res = session.eval("def read = fn (c : Counter) : int -> ( c.next() ) ; read(Step(9))");
         Assertions.assertEquals(10, res);
         Assertions.assertEquals(1, c1.getClass().getInterfaces().length);
         Assertions.assertTrue(c1.getClass().getInterfaces()[0].getName().contains("$I0$Counter"));
+    }
+
+    @Test
+    public void testCompiledInstancesImplementJavaInterfacesDirectlyWithoutProxy() throws Exception {
+        CompiledBabbleScript script = compile("""
+                def Ordered = interface extends java.lang.Comparable of Ordered (
+                    def key : fn () : int
+                    def compareTo = fn (o : Ordered) : int -> ( this.key() - o.key() )
+                )
+                def Node = class (def k : int) implements Ordered, java.util.function.IntUnaryOperator, java.util.Iterator of int (
+                    private var used = false
+                    def key = fn () : int -> ( this.k )
+                    def applyAsInt = fn (x : int) : int -> ( x + this.k )
+                    def hasNext = fn () : bool -> ( not this.used )
+                    def next = fn mut () : int -> ( this.used = true ; this.k )
+                )
+                Node(7)
+                """);
+        assertVerifies(script);
+
+        Object inst = script.eval(new SimpleBindings());
+        Assertions.assertTrue(BabbleObjects.isCompiledInstance(inst));
+        Assertions.assertSame(Object.class, inst.getClass().getSuperclass());
+
+        // Zero Proxy allocation: face() returns the compiled instance itself.
+        Assertions.assertSame(inst, BabbleObjects.face(inst));
+        Assertions.assertFalse(Proxy.isProxyClass(inst.getClass()));
+        Assertions.assertInstanceOf(Comparable.class, inst);
+        Assertions.assertInstanceOf(IntUnaryOperator.class, inst);
+        Assertions.assertInstanceOf(Iterator.class, inst);
+
+        // Generated Babble JVM interface directly extends java.lang.Comparable.
+        ClassLoader loader = script.getScriptClass().getClassLoader();
+        String orderedInternal = script.interfaceJvmNames().values().iterator().next();
+        Class<?> orderedCls = loader.loadClass(orderedInternal.replace('/', '.'));
+        Assertions.assertTrue(orderedCls.isInterface());
+        Assertions.assertTrue(Comparable.class.isAssignableFrom(orderedCls));
+        Assertions.assertTrue(orderedCls.isInstance(inst));
+
+        // Direct Java interface calls work on the instance without reflection or Proxy.
+        Assertions.assertEquals(17, ((IntUnaryOperator) inst).applyAsInt(10));
+        Iterator<?> it = (Iterator<?>) inst;
+        Assertions.assertTrue(it.hasNext());
+        Assertions.assertEquals(7, it.next());
+        Assertions.assertFalse(it.hasNext());
     }
 }
