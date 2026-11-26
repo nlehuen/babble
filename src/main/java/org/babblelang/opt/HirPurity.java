@@ -28,10 +28,7 @@ public final class HirPurity {
     private HirPurity() {}
 
     public static boolean isNumericKind(PrimitiveKind kind) {
-        return switch (kind) {
-            case BYTE, SHORT, INT, LONG, FLOAT, DOUBLE -> true;
-            default -> false;
-        };
+        return kind.isNumeric();
     }
 
     public static boolean isIntegralKind(PrimitiveKind kind) {
@@ -39,15 +36,7 @@ public final class HirPurity {
     }
 
     public static boolean canLowerComparison(HirExpr.Binary b) {
-        PrimitiveKind lk = b.left().meta().kind();
-        PrimitiveKind rk = b.right().meta().kind();
-        if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL) {
-            return b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ;
-        }
-        if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR) {
-            return true;
-        }
-        return isNumericKind(lk) && isNumericKind(rk);
+        return org.babblelang.ir.hir.HirLoweringRules.canLowerComparison(b);
     }
 
     public static boolean isFoldableJava(Method m) {

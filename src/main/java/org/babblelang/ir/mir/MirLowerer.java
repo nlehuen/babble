@@ -24,6 +24,7 @@ import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
+import org.babblelang.ir.hir.HirLoweringRules;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 import org.babblelang.ir.hir.HirPattern;
@@ -910,7 +911,7 @@ public final class MirLowerer {
             if (rank < 0) {
                 return val;
             }
-            PrimitiveKind target = targetKindForRank(rank);
+            PrimitiveKind target = PrimitiveKind.ofNumericRank(rank);
             if (val.kind().isPrimitive() && target != PrimitiveKind.NONE) {
                 return convertVal(val, target, line);
             }
@@ -1106,6 +1107,51 @@ public final class MirLowerer {
             return conv;
         }
 
+        private MirVal lowerCompoundRhs(
+                MirVal oldVal,
+                PrimitiveKind targetKind,
+                String operator,
+                HirExpr rhsExpr,
+                String targetText,
+                String valueText,
+                ExprMeta meta,
+                boolean convertDynamicResult) {
+            int ln = meta.line();
+            HirExpr.BinaryOp bop = HirLoweringRules.compoundOp(operator);
+            if (HirLoweringRules.canLowerPrimitiveCompound(
+                    targetKind, rhsExpr.meta().kind(), operator)) {
+                MirVal rhs = lowerAs(rhsExpr, targetKind);
+                if (cur.isTerminated()) return rhs;
+                MirVal res = newVal(targetKind, null);
+                MirEffect bopFx =
+                        (bop == HirExpr.BinaryOp.FLOOR_DIV
+                                        && !HirLoweringRules.isNonZeroIntegerConst(rhsExpr))
+                                ? MirEffect.PURE_MAY_THROW
+                                : MirEffect.PURE_NOTHROW;
+                emit(
+                        new MirInst.Binary(
+                                res, bop, oldVal, rhs, targetText, valueText, false, ln, bopFx));
+                return res;
+            }
+            MirVal oldBox = convertVal(oldVal, PrimitiveKind.NONE, ln);
+            MirVal rhsBox = lowerBoxed(rhsExpr);
+            if (cur.isTerminated()) return rhsBox;
+            MirVal raw = newVal(PrimitiveKind.NONE, null);
+            emit(
+                    new MirInst.Binary(
+                            raw,
+                            bop,
+                            oldBox,
+                            rhsBox,
+                            targetText,
+                            valueText,
+                            false,
+                            ln,
+                            dynamicBinaryEffect(bop, meta)));
+            raw = applyWideningRank(raw, meta.wideningRank(), ln);
+            return convertDynamicResult ? convertVal(raw, targetKind, ln) : raw;
+        }
+
         private MirVal lowerVarAssign(HirExpr.VarAssign a) {
             int ln = a.meta().line();
             HirVar v = a.var();
@@ -1119,49 +1165,20 @@ public final class MirLowerer {
                 return conv;
             }
             // Compound assignment: evaluate current value, then rhs, apply binary op, then store.
-            HirExpr.BinaryOp bop = compoundOp(a.operator());
             MirVal curVal = readVar(v, ln);
-            if (canLowerPrimitiveCompound(vk, a.value().meta().kind(), a.operator())) {
-                MirVal rhs = lowerAs(a.value(), vk);
-                if (cur.isTerminated()) return rhs;
-                MirVal res = newVal(vk, null);
-                MirEffect bopFx =
-                        (bop == HirExpr.BinaryOp.FLOOR_DIV && !isNonZeroIntegerConst(a.value()))
-                                ? MirEffect.PURE_MAY_THROW
-                                : MirEffect.PURE_NOTHROW;
-                emit(
-                        new MirInst.Binary(
-                                res,
-                                bop,
-                                curVal,
-                                rhs,
-                                a.targetText(),
-                                a.valueText(),
-                                false,
-                                ln,
-                                bopFx));
-                writeVar(v, res, ln);
-                return res;
-            }
-            MirVal curBoxed = convertVal(curVal, PrimitiveKind.NONE, ln);
-            MirVal rhsBoxed = lowerBoxed(a.value());
-            if (cur.isTerminated()) return rhsBoxed;
-            MirVal res = newVal(PrimitiveKind.NONE, null);
-            emit(
-                    new MirInst.Binary(
-                            res,
-                            bop,
-                            curBoxed,
-                            rhsBoxed,
+            MirVal nextVal =
+                    lowerCompoundRhs(
+                            curVal,
+                            vk,
+                            a.operator(),
+                            a.value(),
                             a.targetText(),
                             a.valueText(),
-                            false,
-                            ln,
-                            dynamicBinaryEffect(bop, a.meta())));
-            res = applyWideningRank(res, a.meta().wideningRank(), ln);
-            MirVal conv = convertVal(res, vk, ln);
-            writeVar(v, conv, ln);
-            return conv;
+                            a.meta(),
+                            true);
+            if (cur.isTerminated()) return nextVal;
+            writeVar(v, nextVal, ln);
+            return nextVal;
         }
 
         private MirVal lowerNameRead(HirExpr.NameRead nr) {
@@ -1309,7 +1326,6 @@ public final class MirLowerer {
                 return stored;
             }
             // Compound this.field op= rhs
-            HirExpr.BinaryOp bop = compoundOp(a.operator());
             MirVal oldVal = newVal(mk, a.memberName());
             emit(
                     new MirInst.LoadField(
@@ -1325,45 +1341,17 @@ public final class MirLowerer {
                             false,
                             ln,
                             MirEffect.read(alias, false, true, true)));
-            MirVal nextVal;
-            if (canLowerPrimitiveCompound(mk, a.value().meta().kind(), a.operator())) {
-                MirVal rhs = lowerAs(a.value(), mk);
-                if (cur.isTerminated()) return rhs;
-                nextVal = newVal(mk, null);
-                MirEffect bopFx =
-                        (bop == HirExpr.BinaryOp.FLOOR_DIV && !isNonZeroIntegerConst(a.value()))
-                                ? MirEffect.PURE_MAY_THROW
-                                : MirEffect.PURE_NOTHROW;
-                emit(
-                        new MirInst.Binary(
-                                nextVal,
-                                bop,
-                                oldVal,
-                                rhs,
-                                a.targetText(),
-                                a.valueText(),
-                                false,
-                                ln,
-                                bopFx));
-            } else {
-                MirVal oldBox = convertVal(oldVal, PrimitiveKind.NONE, ln);
-                MirVal rhsBox = lowerBoxed(a.value());
-                if (cur.isTerminated()) return rhsBox;
-                MirVal raw = newVal(PrimitiveKind.NONE, null);
-                emit(
-                        new MirInst.Binary(
-                                raw,
-                                bop,
-                                oldBox,
-                                rhsBox,
-                                a.targetText(),
-                                a.valueText(),
-                                false,
-                                ln,
-                                dynamicBinaryEffect(bop, a.meta())));
-                raw = applyWideningRank(raw, a.meta().wideningRank(), ln);
-                nextVal = convertVal(raw, mk, ln);
-            }
+            MirVal nextVal =
+                    lowerCompoundRhs(
+                            oldVal,
+                            mk,
+                            a.operator(),
+                            a.value(),
+                            a.targetText(),
+                            a.valueText(),
+                            a.meta(),
+                            true);
+            if (cur.isTerminated()) return nextVal;
             emit(
                     new MirInst.StoreField(
                             recv,
@@ -1441,7 +1429,6 @@ public final class MirLowerer {
                                 MirEffect.write(alias, false)));
                 return val;
             }
-            HirExpr.BinaryOp bop = compoundOp(a.operator());
             MirVal oldVal = newVal(fk, field.getName());
             emit(
                     new MirInst.LoadJavaField(
@@ -1452,45 +1439,17 @@ public final class MirLowerer {
                             target,
                             ln,
                             MirEffect.read(alias, false, true, true)));
-            MirVal nextVal;
-            if (canLowerPrimitiveCompound(fk, a.value().meta().kind(), a.operator())) {
-                MirVal rhs = lowerAs(a.value(), fk);
-                if (cur.isTerminated()) return rhs;
-                nextVal = newVal(fk, null);
-                MirEffect bopFx =
-                        (bop == HirExpr.BinaryOp.FLOOR_DIV && !isNonZeroIntegerConst(a.value()))
-                                ? MirEffect.PURE_MAY_THROW
-                                : MirEffect.PURE_NOTHROW;
-                emit(
-                        new MirInst.Binary(
-                                nextVal,
-                                bop,
-                                oldVal,
-                                rhs,
-                                a.targetText(),
-                                a.valueText(),
-                                false,
-                                ln,
-                                bopFx));
-            } else {
-                MirVal oldBox = convertVal(oldVal, PrimitiveKind.NONE, ln);
-                MirVal rhsBox = lowerBoxed(a.value());
-                if (cur.isTerminated()) return rhsBox;
-                MirVal raw = newVal(PrimitiveKind.NONE, null);
-                emit(
-                        new MirInst.Binary(
-                                raw,
-                                bop,
-                                oldBox,
-                                rhsBox,
-                                a.targetText(),
-                                a.valueText(),
-                                false,
-                                ln,
-                                dynamicBinaryEffect(bop, a.meta())));
-                raw = applyWideningRank(raw, a.meta().wideningRank(), ln);
-                nextVal = raw;
-            }
+            MirVal nextVal =
+                    lowerCompoundRhs(
+                            oldVal,
+                            fk,
+                            a.operator(),
+                            a.value(),
+                            a.targetText(),
+                            a.valueText(),
+                            a.meta(),
+                            false);
+            if (cur.isTerminated()) return nextVal;
             emit(
                     new MirInst.StoreJavaField(
                             recv,
@@ -1599,7 +1558,7 @@ public final class MirLowerer {
             }
             PrimitiveKind ok = u.operand().meta().kind();
             PrimitiveKind rk = u.meta().kind();
-            if (rk == PrimitiveKind.INT && isNumericKind(ok) && numericOrder(ok) <= 2) {
+            if (rk == PrimitiveKind.INT && ok.isNumeric() && ok.numericRank() <= 2) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.INT);
                 if (cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.INT, null);
@@ -1613,7 +1572,7 @@ public final class MirLowerer {
                                 MirEffect.PURE_NOTHROW));
                 return res;
             }
-            if (rk == PrimitiveKind.LONG && isNumericKind(ok) && numericOrder(ok) <= 3) {
+            if (rk == PrimitiveKind.LONG && ok.isNumeric() && ok.numericRank() <= 3) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.LONG);
                 if (cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.LONG, null);
@@ -1627,7 +1586,7 @@ public final class MirLowerer {
                                 MirEffect.PURE_NOTHROW));
                 return res;
             }
-            if (rk == PrimitiveKind.FLOAT && isNumericKind(ok) && numericOrder(ok) <= 4) {
+            if (rk == PrimitiveKind.FLOAT && ok.isNumeric() && ok.numericRank() <= 4) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.FLOAT);
                 if (cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.FLOAT, null);
@@ -1641,7 +1600,7 @@ public final class MirLowerer {
                                 MirEffect.PURE_NOTHROW));
                 return res;
             }
-            if (rk == PrimitiveKind.DOUBLE && isNumericKind(ok)) {
+            if (rk == PrimitiveKind.DOUBLE && ok.isNumeric()) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.DOUBLE);
                 if (cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.DOUBLE, null);
@@ -1669,104 +1628,59 @@ public final class MirLowerer {
             return res;
         }
 
+        private MirVal emitPrimitiveBinary(
+                HirExpr.Binary b, PrimitiveKind operandKind, PrimitiveKind resKind, MirEffect fx) {
+            MirVal lhs = lowerAs(b.left(), operandKind);
+            if (cur.isTerminated()) return lhs;
+            MirVal rhs = lowerAs(b.right(), operandKind);
+            if (cur.isTerminated()) return rhs;
+            MirVal res = newVal(resKind, null);
+            emit(
+                    new MirInst.Binary(
+                            res,
+                            b.op(),
+                            lhs,
+                            rhs,
+                            b.leftText(),
+                            b.rightText(),
+                            false,
+                            b.meta().line(),
+                            fx));
+            return res;
+        }
+
         private MirVal lowerBinary(HirExpr.Binary b) {
             int ln = b.meta().line();
             PrimitiveKind lk = b.left().meta().kind();
             PrimitiveKind rk = b.right().meta().kind();
-            if (b.op().isComparison() && canLowerComparison(b.op(), lk, rk)) {
-                PrimitiveKind common;
-                if ((lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
-                        || (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR)) {
-                    common = lk;
-                } else {
-                    common = numericOrder(lk) >= numericOrder(rk) ? lk : rk;
-                }
-                MirVal lhs = lowerAs(b.left(), common);
-                if (cur.isTerminated()) return lhs;
-                MirVal rhs = lowerAs(b.right(), common);
-                if (cur.isTerminated()) return rhs;
-                MirVal res = newVal(PrimitiveKind.BOOL, null);
-                emit(
-                        new MirInst.Binary(
-                                res,
-                                b.op(),
-                                lhs,
-                                rhs,
-                                b.leftText(),
-                                b.rightText(),
-                                false,
-                                ln,
-                                MirEffect.PURE_NOTHROW));
-                return res;
+            if (b.op().isComparison() && HirLoweringRules.canLowerComparison(b.op(), lk, rk)) {
+                PrimitiveKind common =
+                        ((lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
+                                        || (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR))
+                                ? lk
+                                : (lk.numericRank() >= rk.numericRank() ? lk : rk);
+                return emitPrimitiveBinary(b, common, PrimitiveKind.BOOL, MirEffect.PURE_NOTHROW);
             }
             PrimitiveKind resultKind = b.meta().kind();
-            if (isNumericKind(lk) && isNumericKind(rk)) {
+            if (lk.isNumeric() && rk.isNumeric()) {
                 if ((resultKind == PrimitiveKind.INT || resultKind == PrimitiveKind.LONG)
                         && (b.op() == HirExpr.BinaryOp.ADD
                                 || b.op() == HirExpr.BinaryOp.SUB
                                 || b.op() == HirExpr.BinaryOp.MUL)) {
-                    MirVal lhs = lowerAs(b.left(), resultKind);
-                    if (cur.isTerminated()) return lhs;
-                    MirVal rhs = lowerAs(b.right(), resultKind);
-                    if (cur.isTerminated()) return rhs;
-                    MirVal res = newVal(resultKind, null);
-                    emit(
-                            new MirInst.Binary(
-                                    res,
-                                    b.op(),
-                                    lhs,
-                                    rhs,
-                                    b.leftText(),
-                                    b.rightText(),
-                                    false,
-                                    ln,
-                                    MirEffect.PURE_NOTHROW));
-                    return res;
+                    return emitPrimitiveBinary(b, resultKind, resultKind, MirEffect.PURE_NOTHROW);
                 }
                 if ((resultKind == PrimitiveKind.INT || resultKind == PrimitiveKind.LONG)
                         && (b.op() == HirExpr.BinaryOp.MOD
                                 || b.op() == HirExpr.BinaryOp.FLOOR_DIV)) {
-                    MirVal lhs = lowerAs(b.left(), resultKind);
-                    if (cur.isTerminated()) return lhs;
-                    MirVal rhs = lowerAs(b.right(), resultKind);
-                    if (cur.isTerminated()) return rhs;
-                    MirVal res = newVal(resultKind, null);
                     MirEffect fx =
-                            isNonZeroIntegerConst(b.right())
+                            HirLoweringRules.isNonZeroIntegerConst(b.right())
                                     ? MirEffect.PURE_NOTHROW
                                     : MirEffect.PURE_MAY_THROW;
-                    emit(
-                            new MirInst.Binary(
-                                    res,
-                                    b.op(),
-                                    lhs,
-                                    rhs,
-                                    b.leftText(),
-                                    b.rightText(),
-                                    false,
-                                    ln,
-                                    fx));
-                    return res;
+                    return emitPrimitiveBinary(b, resultKind, resultKind, fx);
                 }
                 if ((resultKind == PrimitiveKind.FLOAT || resultKind == PrimitiveKind.DOUBLE)
                         && b.op().isArithmetic()) {
-                    MirVal lhs = lowerAs(b.left(), resultKind);
-                    if (cur.isTerminated()) return lhs;
-                    MirVal rhs = lowerAs(b.right(), resultKind);
-                    if (cur.isTerminated()) return rhs;
-                    MirVal res = newVal(resultKind, null);
-                    emit(
-                            new MirInst.Binary(
-                                    res,
-                                    b.op(),
-                                    lhs,
-                                    rhs,
-                                    b.leftText(),
-                                    b.rightText(),
-                                    false,
-                                    ln,
-                                    MirEffect.PURE_NOTHROW));
-                    return res;
+                    return emitPrimitiveBinary(b, resultKind, resultKind, MirEffect.PURE_NOTHROW);
                 }
             }
             MirVal lhs = lowerBoxed(b.left());
@@ -2319,23 +2233,40 @@ public final class MirLowerer {
             List<HirExpr.MatchArm> arms = m.arms();
             int i = 0;
             while (i < arms.size()) {
-                int intRunEnd = scanMirIntSwitchRun(arms, i, scrutKind);
-                if (intRunEnd > i) {
-                    emitMirIntSwitchRun(arms, i, intRunEnd, scrutVal, targetKind, bbMerge, ln);
-                    i = intRunEnd;
-                    continue;
-                }
-                int strRunEnd = scanMirStringSwitchRun(arms, i, scrutKind);
-                if (strRunEnd > i) {
-                    emitMirStringSwitchRun(
-                            arms, i, strRunEnd, scrutVal, false, targetKind, bbMerge, ln);
-                    i = strRunEnd;
-                    continue;
-                }
-                int enumRunEnd = scanMirEnumSwitchRun(arms, i, scrutKind);
-                if (enumRunEnd > i) {
-                    emitMirEnumSwitchRun(arms, i, enumRunEnd, scrutVal, targetKind, bbMerge, ln);
-                    i = enumRunEnd;
+                HirLoweringRules.MatchConstantRun run =
+                        HirLoweringRules.detectMatchConstantRun(arms, i, scrutKind, false);
+                if (run != null) {
+                    switch (run.kind()) {
+                        case INT_OR_CHAR ->
+                                emitMirIntSwitchRun(
+                                        arms,
+                                        i,
+                                        run.endExclusive(),
+                                        scrutVal,
+                                        targetKind,
+                                        bbMerge,
+                                        ln);
+                        case STRING ->
+                                emitMirStringSwitchRun(
+                                        arms,
+                                        i,
+                                        run.endExclusive(),
+                                        scrutVal,
+                                        false,
+                                        targetKind,
+                                        bbMerge,
+                                        ln);
+                        case ENUM ->
+                                emitMirEnumSwitchRun(
+                                        arms,
+                                        i,
+                                        run.endExclusive(),
+                                        scrutVal,
+                                        targetKind,
+                                        bbMerge,
+                                        ln);
+                    }
+                    i = run.endExclusive();
                     continue;
                 }
                 HirExpr.MatchArm arm = arms.get(i);
@@ -2426,58 +2357,6 @@ public final class MirLowerer {
             }
         }
 
-        private static List<HirPattern.Const> collectMirPureConsts(HirPattern p) {
-            if (p instanceof HirPattern.Const c) return List.of(c);
-            if (p instanceof HirPattern.Or o) {
-                List<HirPattern.Const> out = new ArrayList<>();
-                for (HirPattern alt : o.alternatives()) {
-                    List<HirPattern.Const> sub = collectMirPureConsts(alt);
-                    if (sub == null) return null;
-                    out.addAll(sub);
-                }
-                return out;
-            }
-            return null;
-        }
-
-        private static int scanMirIntSwitchRun(
-                List<HirExpr.MatchArm> arms, int start, PrimitiveKind scrutKind) {
-            if (scrutKind != PrimitiveKind.BYTE
-                    && scrutKind != PrimitiveKind.SHORT
-                    && scrutKind != PrimitiveKind.INT
-                    && scrutKind != PrimitiveKind.CHAR) {
-                return start;
-            }
-            Set<Integer> keys = new HashSet<>();
-            int end = start;
-            while (end < arms.size()) {
-                HirExpr.MatchArm arm = arms.get(end);
-                if (arm.guard() != null || !arm.boundVars().isEmpty()) break;
-                List<HirPattern.Const> cs = collectMirPureConsts(arm.pattern());
-                if (cs == null || cs.isEmpty()) break;
-                boolean ok = true;
-                for (HirPattern.Const c : cs) {
-                    Object v = c.value();
-                    if (!(v instanceof Byte
-                            || v instanceof Short
-                            || v instanceof Integer
-                            || v instanceof Character)) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) break;
-                for (HirPattern.Const c : cs) {
-                    keys.add(
-                            c.value() instanceof Character ch
-                                    ? (int) ch
-                                    : ((Number) c.value()).intValue());
-                }
-                end++;
-            }
-            return keys.size() >= 3 ? end : start;
-        }
-
         private void emitMirIntSwitchRun(
                 List<HirExpr.MatchArm> arms,
                 int start,
@@ -2494,12 +2373,9 @@ public final class MirLowerer {
             BlockBuilder bbAfter = newBlock(List.of(), false, false);
             java.util.TreeMap<Integer, BlockBuilder> keyMap = new java.util.TreeMap<>();
             for (int k = 0; k < armCount; k++) {
-                for (HirPattern.Const c : collectMirPureConsts(arms.get(start + k).pattern())) {
-                    int kv =
-                            c.value() instanceof Character ch
-                                    ? (int) ch
-                                    : ((Number) c.value()).intValue();
-                    keyMap.putIfAbsent(kv, armBlocks[k]);
+                for (HirPattern.Const c :
+                        HirLoweringRules.collectPureConsts(arms.get(start + k).pattern())) {
+                    keyMap.putIfAbsent(HirLoweringRules.intConstValue(c), armBlocks[k]);
                 }
             }
             int[] keys = new int[keyMap.size()];
@@ -2523,34 +2399,6 @@ public final class MirLowerer {
             cur = bbAfter;
         }
 
-        private static int scanMirStringSwitchRun(
-                List<HirExpr.MatchArm> arms, int start, PrimitiveKind scrutKind) {
-            if (scrutKind != PrimitiveKind.NONE) return start;
-            Set<String> strs = new HashSet<>();
-            int end = start;
-            while (end < arms.size()) {
-                HirExpr.MatchArm arm = arms.get(end);
-                if (arm.guard() != null || !arm.boundVars().isEmpty()) break;
-                List<HirPattern.Const> cs = collectMirPureConsts(arm.pattern());
-                if (cs == null || cs.isEmpty()) break;
-                boolean ok = true;
-                for (HirPattern.Const c : cs) {
-                    if (!c.isNull() && !(c.value() instanceof String)) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) break;
-                for (HirPattern.Const c : cs) {
-                    if (c.value() instanceof String s) {
-                        strs.add(s);
-                    }
-                }
-                end++;
-            }
-            return strs.size() >= 3 ? end : start;
-        }
-
         private void emitMirStringSwitchRun(
                 List<HirExpr.MatchArm> arms,
                 int start,
@@ -2570,7 +2418,8 @@ public final class MirLowerer {
             LinkedHashMap<String, Integer> strToArm = new LinkedHashMap<>();
             int nullArm = -1;
             for (int k = 0; k < armCount; k++) {
-                for (HirPattern.Const c : collectMirPureConsts(arms.get(start + k).pattern())) {
+                for (HirPattern.Const c :
+                        HirLoweringRules.collectPureConsts(arms.get(start + k).pattern())) {
                     if (c.isNull()) {
                         if (nullArm < 0) nullArm = k;
                     } else {
@@ -2687,42 +2536,6 @@ public final class MirLowerer {
             cur = bbAfter;
         }
 
-        private static int scanMirEnumSwitchRun(
-                List<HirExpr.MatchArm> arms, int start, PrimitiveKind scrutKind) {
-            if (scrutKind != PrimitiveKind.NONE) return start;
-            Class<?> enumCls = null;
-            Set<String> names = new HashSet<>();
-            int end = start;
-            while (end < arms.size()) {
-                HirExpr.MatchArm arm = arms.get(end);
-                if (arm.guard() != null || !arm.boundVars().isEmpty()) break;
-                List<HirPattern.Const> cs = collectMirPureConsts(arm.pattern());
-                if (cs == null || cs.isEmpty()) break;
-                boolean ok = true;
-                for (HirPattern.Const c : cs) {
-                    if (c.isNull()) continue;
-                    if (!c.isEnum() || !(c.value() instanceof Enum<?>)) {
-                        ok = false;
-                        break;
-                    }
-                    if (enumCls == null) {
-                        enumCls = c.enumClass();
-                    } else if (enumCls != c.enumClass()) {
-                        ok = false;
-                        break;
-                    }
-                }
-                if (!ok) break;
-                for (HirPattern.Const c : cs) {
-                    if (c.isEnum()) {
-                        names.add(c.enumConstantName());
-                    }
-                }
-                end++;
-            }
-            return (enumCls != null && names.size() >= 3) ? end : start;
-        }
-
         private void emitMirEnumSwitchRun(
                 List<HirExpr.MatchArm> arms,
                 int start,
@@ -2742,7 +2555,8 @@ public final class MirLowerer {
             java.util.TreeMap<Integer, BlockBuilder> ordMap = new java.util.TreeMap<>();
             int nullArm = -1;
             for (int k = 0; k < armCount; k++) {
-                for (HirPattern.Const c : collectMirPureConsts(arms.get(start + k).pattern())) {
+                for (HirPattern.Const c :
+                        HirLoweringRules.collectPureConsts(arms.get(start + k).pattern())) {
                     if (c.isNull()) {
                         if (nullArm < 0) nullArm = k;
                     } else if (c.isEnum() && c.value() instanceof Enum<?> ev) {
@@ -3235,11 +3049,11 @@ public final class MirLowerer {
             return emitMirEquality(val, constVal, false, ln);
         }
 
-        private MirVal emitMirEquality(MirVal left, MirVal right, boolean invert, int ln) {
+        private MirVal emitPrimitiveMatchCompare(
+                MirVal left, MirVal right, HirExpr.BinaryOp op, boolean allowBool, int ln) {
             PrimitiveKind lk = left.kind();
             PrimitiveKind rk = right.kind();
-            HirExpr.BinaryOp op = invert ? HirExpr.BinaryOp.NEQ : HirExpr.BinaryOp.EQ;
-            if ((lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
+            if ((allowBool && lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL)
                     || (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR)) {
                 MirVal res = newVal(PrimitiveKind.BOOL, null);
                 emit(
@@ -3255,8 +3069,8 @@ public final class MirLowerer {
                                 MirEffect.PURE_NOTHROW));
                 return res;
             }
-            if (lk.numericRank() >= 0 && rk.numericRank() >= 0) {
-                PrimitiveKind common = promoteMirNumeric(lk, rk);
+            if (lk.isNumeric() && rk.isNumeric()) {
+                PrimitiveKind common = PrimitiveKind.promoteNumeric(lk, rk);
                 MirVal cl = convertVal(left, common, ln);
                 MirVal cr = convertVal(right, common, ln);
                 MirVal res = newVal(PrimitiveKind.BOOL, null);
@@ -3272,6 +3086,15 @@ public final class MirLowerer {
                                 ln,
                                 MirEffect.PURE_NOTHROW));
                 return res;
+            }
+            return null;
+        }
+
+        private MirVal emitMirEquality(MirVal left, MirVal right, boolean invert, int ln) {
+            HirExpr.BinaryOp op = invert ? HirExpr.BinaryOp.NEQ : HirExpr.BinaryOp.EQ;
+            MirVal prim = emitPrimitiveMatchCompare(left, right, op, true, ln);
+            if (prim != null) {
+                return prim;
             }
             MirVal bl = convertVal(left, PrimitiveKind.NONE, ln);
             MirVal br = convertVal(right, PrimitiveKind.NONE, ln);
@@ -3308,40 +3131,9 @@ public final class MirLowerer {
             if (op == HirExpr.BinaryOp.EQ || op == HirExpr.BinaryOp.NEQ) {
                 return emitMirEquality(left, right, op == HirExpr.BinaryOp.NEQ, ln);
             }
-            PrimitiveKind lk = left.kind();
-            PrimitiveKind rk = right.kind();
-            if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR) {
-                MirVal res = newVal(PrimitiveKind.BOOL, null);
-                emit(
-                        new MirInst.Binary(
-                                res,
-                                op,
-                                left,
-                                right,
-                                "match",
-                                "pattern",
-                                false,
-                                ln,
-                                MirEffect.PURE_NOTHROW));
-                return res;
-            }
-            if (lk.numericRank() >= 0 && rk.numericRank() >= 0) {
-                PrimitiveKind common = promoteMirNumeric(lk, rk);
-                MirVal cl = convertVal(left, common, ln);
-                MirVal cr = convertVal(right, common, ln);
-                MirVal res = newVal(PrimitiveKind.BOOL, null);
-                emit(
-                        new MirInst.Binary(
-                                res,
-                                op,
-                                cl,
-                                cr,
-                                "match",
-                                "pattern",
-                                false,
-                                ln,
-                                MirEffect.PURE_NOTHROW));
-                return res;
+            MirVal prim = emitPrimitiveMatchCompare(left, right, op, false, ln);
+            if (prim != null) {
+                return prim;
             }
             int opCode =
                     switch (op) {
@@ -3378,7 +3170,9 @@ public final class MirLowerer {
             PrimitiveKind ek = rt.elemKind();
             if (vk.isPrimitive() && ek.isPrimitive() && ek != PrimitiveKind.BOOL) {
                 PrimitiveKind cmpKind =
-                        ek == PrimitiveKind.CHAR ? PrimitiveKind.CHAR : promoteMirNumeric(vk, ek);
+                        ek == PrimitiveKind.CHAR
+                                ? PrimitiveKind.CHAR
+                                : PrimitiveKind.promoteNumeric(vk, ek);
                 MirVal lo = lowerAs(rt.lo(), cmpKind);
                 if (cur.isTerminated()) return;
                 MirVal hi = lowerAs(rt.hi(), cmpKind);
@@ -3509,13 +3303,6 @@ public final class MirLowerer {
                             ln,
                             MirEffect.IMPURE_THROW));
             branchOnPatternCond(res, bbFail, ln);
-        }
-
-        private static PrimitiveKind promoteMirNumeric(PrimitiveKind a, PrimitiveKind b) {
-            if (a == PrimitiveKind.DOUBLE || b == PrimitiveKind.DOUBLE) return PrimitiveKind.DOUBLE;
-            if (a == PrimitiveKind.FLOAT || b == PrimitiveKind.FLOAT) return PrimitiveKind.FLOAT;
-            if (a == PrimitiveKind.LONG || b == PrimitiveKind.LONG) return PrimitiveKind.LONG;
-            return PrimitiveKind.INT;
         }
 
         private MirVal lowerWhile(HirExpr.While w) {
@@ -5089,15 +4876,7 @@ public final class MirLowerer {
         }
 
         private static PrimitiveKind javaPrimitiveKind(Class<?> c) {
-            if (c == int.class) return PrimitiveKind.INT;
-            if (c == double.class) return PrimitiveKind.DOUBLE;
-            if (c == boolean.class) return PrimitiveKind.BOOL;
-            if (c == long.class) return PrimitiveKind.LONG;
-            if (c == float.class) return PrimitiveKind.FLOAT;
-            if (c == byte.class) return PrimitiveKind.BYTE;
-            if (c == short.class) return PrimitiveKind.SHORT;
-            if (c == char.class) return PrimitiveKind.CHAR;
-            return PrimitiveKind.NONE;
+            return PrimitiveKind.ofJavaClass(c);
         }
 
         private static PrimitiveKind javaArgDesiredKind(Class<?> c) {
@@ -5105,92 +4884,6 @@ public final class MirLowerer {
             if (c == boolean.class) return PrimitiveKind.BOOL;
             if (c == double.class) return PrimitiveKind.DOUBLE;
             return PrimitiveKind.NONE;
-        }
-
-        private static PrimitiveKind targetKindForRank(int rank) {
-            return switch (rank) {
-                case 1 -> PrimitiveKind.SHORT;
-                case 2 -> PrimitiveKind.INT;
-                case 3 -> PrimitiveKind.LONG;
-                case 4 -> PrimitiveKind.FLOAT;
-                case 5 -> PrimitiveKind.DOUBLE;
-                default -> PrimitiveKind.NONE;
-            };
-        }
-
-        private static boolean isNumericKind(PrimitiveKind k) {
-            return switch (k) {
-                case BYTE, SHORT, INT, LONG, FLOAT, DOUBLE -> true;
-                default -> false;
-            };
-        }
-
-        private static int numericOrder(PrimitiveKind k) {
-            return switch (k) {
-                case BYTE -> 0;
-                case SHORT -> 1;
-                case INT -> 2;
-                case LONG -> 3;
-                case FLOAT -> 4;
-                case DOUBLE -> 5;
-                default -> -1;
-            };
-        }
-
-        private static boolean canLowerComparison(
-                HirExpr.BinaryOp op, PrimitiveKind lk, PrimitiveKind rk) {
-            if (lk == PrimitiveKind.BOOL && rk == PrimitiveKind.BOOL) {
-                return op == HirExpr.BinaryOp.EQ || op == HirExpr.BinaryOp.NEQ;
-            }
-            if (lk == PrimitiveKind.CHAR && rk == PrimitiveKind.CHAR) {
-                return true;
-            }
-            return isNumericKind(lk) && isNumericKind(rk);
-        }
-
-        private static boolean canLowerPrimitiveCompound(
-                PrimitiveKind targetKind, PrimitiveKind rhsKind, String op) {
-            if (targetKind == PrimitiveKind.INT) {
-                return (rhsKind == PrimitiveKind.INT
-                                || rhsKind == PrimitiveKind.BYTE
-                                || rhsKind == PrimitiveKind.SHORT)
-                        && !"/".equals(op);
-            }
-            if (targetKind == PrimitiveKind.LONG && "//".equals(op)) {
-                return rhsKind == PrimitiveKind.BYTE
-                        || rhsKind == PrimitiveKind.SHORT
-                        || rhsKind == PrimitiveKind.INT
-                        || rhsKind == PrimitiveKind.LONG;
-            }
-            if (targetKind == PrimitiveKind.DOUBLE) {
-                return (rhsKind == PrimitiveKind.INT || rhsKind == PrimitiveKind.DOUBLE)
-                        && !"//".equals(op);
-            }
-            return false;
-        }
-
-        private static boolean isNonZeroIntegerConst(HirExpr expr) {
-            if (expr instanceof HirExpr.Const c && c.value() instanceof Number n) {
-                return n.longValue() != 0L;
-            }
-            if (expr instanceof HirExpr.Unary u
-                    && u.op() == HirExpr.UnaryOp.NEGATE
-                    && u.operand() instanceof HirExpr.Const c
-                    && c.value() instanceof Number n) {
-                return n.longValue() != 0L;
-            }
-            return false;
-        }
-
-        private static HirExpr.BinaryOp compoundOp(String op) {
-            return switch (op) {
-                case "+" -> HirExpr.BinaryOp.ADD;
-                case "-" -> HirExpr.BinaryOp.SUB;
-                case "*" -> HirExpr.BinaryOp.MUL;
-                case "/" -> HirExpr.BinaryOp.DIV;
-                case "//" -> HirExpr.BinaryOp.FLOOR_DIV;
-                default -> throw new IllegalStateException("Unexpected compound operator : " + op);
-            };
         }
 
         private static PrimitiveKind[] paramKinds(HirFunction f) {

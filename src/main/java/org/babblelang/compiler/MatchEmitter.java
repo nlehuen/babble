@@ -4,7 +4,6 @@ import static org.babblelang.compiler.JvmPrimitives.*;
 import static org.objectweb.asm.Opcodes.*;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -27,7 +26,6 @@ import org.objectweb.asm.MethodVisitor;
 final class MatchEmitter {
     private static final String MATCH_SUPPORT = RUNTIME + "MatchSupport";
     private static final String RANGE_CLASS = RUNTIME + "Range";
-    private static final int MIN_SWITCH_KEYS = 3;
 
     private final HirEmitter emitter;
 
@@ -54,10 +52,12 @@ final class MatchEmitter {
         List<HirExpr.MatchArm> arms = m.arms();
         int i = 0;
         while (i < arms.size()) {
-            ConstantRun run = detectConstantRun(arms, i, scrutKind, false);
+            org.babblelang.ir.hir.HirLoweringRules.MatchConstantRun run =
+                    org.babblelang.ir.hir.HirLoweringRules.detectMatchConstantRun(
+                            arms, i, scrutKind, false);
             if (run != null) {
                 emitConstantRun(run, arms, scrutSlot, scrutKind, targetKind, endLabel);
-                i = run.endExclusive;
+                i = run.endExclusive();
             } else {
                 Label nextArm = new Label();
                 emitGeneralArm(arms.get(i), scrutSlot, scrutKind, targetKind, nextArm, endLabel);
@@ -117,213 +117,8 @@ final class MatchEmitter {
 
     // ---------------------------------------------------------------- jump-table runs
 
-    private enum RunKind {
-        INT_OR_CHAR,
-        ENUM,
-        STRING
-    }
-
-    private record ConstantRun(
-            RunKind kind,
-            int startInclusive,
-            int endExclusive,
-            Class<?> enumClass,
-            boolean scrutineeGuaranteedString,
-            int nullArmIndex,
-            Map<Integer, Integer> intKeysToArm,
-            Map<String, Integer> stringOrEnumKeysToArm) {}
-
-    private ConstantRun detectConstantRun(
-            List<HirExpr.MatchArm> arms,
-            int start,
-            PrimitiveKind scrutKind,
-            boolean scrutIsString) {
-        boolean canIntSwitch =
-                scrutKind == PrimitiveKind.BYTE
-                        || scrutKind == PrimitiveKind.SHORT
-                        || scrutKind == PrimitiveKind.INT
-                        || scrutKind == PrimitiveKind.CHAR;
-        if (canIntSwitch) {
-            ConstantRun intRun = scanIntRun(arms, start);
-            if (intRun != null) {
-                return intRun;
-            }
-        }
-        if (scrutKind == PrimitiveKind.NONE) {
-            ConstantRun enumRun = scanEnumRun(arms, start);
-            if (enumRun != null) {
-                return enumRun;
-            }
-            ConstantRun strRun = scanStringRun(arms, start, scrutIsString);
-            if (strRun != null) {
-                return strRun;
-            }
-        }
-        return null;
-    }
-
-    private static ConstantRun scanIntRun(List<HirExpr.MatchArm> arms, int start) {
-        TreeMap<Integer, Integer> keys = new TreeMap<>();
-        int end = start;
-        while (end < arms.size()) {
-            HirExpr.MatchArm arm = arms.get(end);
-            if (arm.guard() != null || !arm.boundVars().isEmpty()) {
-                break;
-            }
-            List<HirPattern.Const> consts = collectPureConsts(arm.pattern());
-            if (consts == null || consts.isEmpty()) {
-                break;
-            }
-            boolean allInt = true;
-            for (HirPattern.Const c : consts) {
-                if (!isSwitchableIntConst(c)) {
-                    allInt = false;
-                    break;
-                }
-            }
-            if (!allInt) {
-                break;
-            }
-            for (HirPattern.Const c : consts) {
-                keys.putIfAbsent(intConstValue(c), end);
-            }
-            end++;
-        }
-        if (keys.size() < MIN_SWITCH_KEYS) {
-            return null;
-        }
-        return new ConstantRun(RunKind.INT_OR_CHAR, start, end, null, false, -1, keys, Map.of());
-    }
-
-    private static ConstantRun scanEnumRun(List<HirExpr.MatchArm> arms, int start) {
-        Class<?> enumClass = null;
-        LinkedHashMap<String, Integer> constToArm = new LinkedHashMap<>();
-        int nullArm = -1;
-        int end = start;
-        while (end < arms.size()) {
-            HirExpr.MatchArm arm = arms.get(end);
-            if (arm.guard() != null || !arm.boundVars().isEmpty()) {
-                break;
-            }
-            List<HirPattern.Const> consts = collectPureConsts(arm.pattern());
-            if (consts == null || consts.isEmpty()) {
-                break;
-            }
-            boolean ok = true;
-            for (HirPattern.Const c : consts) {
-                if (c.isNull()) {
-                    continue;
-                }
-                if (!c.isEnum()) {
-                    ok = false;
-                    break;
-                }
-                if (enumClass == null) {
-                    enumClass = c.enumClass();
-                } else if (enumClass != c.enumClass()) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok) {
-                break;
-            }
-            for (HirPattern.Const c : consts) {
-                if (c.isNull()) {
-                    if (nullArm < 0) {
-                        nullArm = end;
-                    }
-                } else {
-                    constToArm.putIfAbsent(c.enumConstantName(), end);
-                }
-            }
-            end++;
-        }
-        if (enumClass == null || constToArm.size() < MIN_SWITCH_KEYS) {
-            return null;
-        }
-        return new ConstantRun(
-                RunKind.ENUM, start, end, enumClass, false, nullArm, Map.of(), constToArm);
-    }
-
-    private static ConstantRun scanStringRun(
-            List<HirExpr.MatchArm> arms, int start, boolean scrutIsString) {
-        LinkedHashMap<String, Integer> strToArm = new LinkedHashMap<>();
-        int nullArm = -1;
-        int end = start;
-        while (end < arms.size()) {
-            HirExpr.MatchArm arm = arms.get(end);
-            if (arm.guard() != null || !arm.boundVars().isEmpty()) {
-                break;
-            }
-            List<HirPattern.Const> consts = collectPureConsts(arm.pattern());
-            if (consts == null || consts.isEmpty()) {
-                break;
-            }
-            boolean ok = true;
-            for (HirPattern.Const c : consts) {
-                if (!c.isNull() && !(c.value() instanceof String)) {
-                    ok = false;
-                    break;
-                }
-            }
-            if (!ok) {
-                break;
-            }
-            for (HirPattern.Const c : consts) {
-                if (c.isNull()) {
-                    if (nullArm < 0) {
-                        nullArm = end;
-                    }
-                } else {
-                    strToArm.putIfAbsent((String) c.value(), end);
-                }
-            }
-            end++;
-        }
-        if (strToArm.size() < MIN_SWITCH_KEYS) {
-            return null;
-        }
-        return new ConstantRun(
-                RunKind.STRING, start, end, null, scrutIsString, nullArm, Map.of(), strToArm);
-    }
-
-    private static List<HirPattern.Const> collectPureConsts(HirPattern p) {
-        if (p instanceof HirPattern.Const c) {
-            return List.of(c);
-        }
-        if (p instanceof HirPattern.Or o) {
-            List<HirPattern.Const> out = new ArrayList<>(o.alternatives().size());
-            for (HirPattern alt : o.alternatives()) {
-                List<HirPattern.Const> sub = collectPureConsts(alt);
-                if (sub == null) {
-                    return null;
-                }
-                out.addAll(sub);
-            }
-            return out;
-        }
-        return null;
-    }
-
-    private static boolean isSwitchableIntConst(HirPattern.Const c) {
-        Object v = c.value();
-        return v instanceof Byte
-                || v instanceof Short
-                || v instanceof Integer
-                || v instanceof Character;
-    }
-
-    private static int intConstValue(HirPattern.Const c) {
-        Object v = c.value();
-        if (v instanceof Character ch) {
-            return ch;
-        }
-        return ((Number) v).intValue();
-    }
-
     private void emitConstantRun(
-            ConstantRun run,
+            org.babblelang.ir.hir.HirLoweringRules.MatchConstantRun run,
             List<HirExpr.MatchArm> arms,
             int scrutSlot,
             PrimitiveKind scrutKind,
@@ -331,32 +126,32 @@ final class MatchEmitter {
             Label endLabel) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        int armCount = run.endExclusive - run.startInclusive;
+        int armCount = run.endExclusive() - run.startInclusive();
         Label[] armLabels = new Label[armCount];
         for (int k = 0; k < armCount; k++) {
             armLabels[k] = new Label();
         }
         Label afterRun = new Label();
 
-        switch (run.kind) {
+        switch (run.kind()) {
             case INT_OR_CHAR -> {
                 loadKindOn(mv, scrutKind, scrutSlot);
-                int count = run.intKeysToArm.size();
+                int count = run.intKeysToArm().size();
                 int[] keys = new int[count];
                 Label[] targets = new Label[count];
                 int idx = 0;
-                for (Map.Entry<Integer, Integer> e : run.intKeysToArm.entrySet()) {
+                for (Map.Entry<Integer, Integer> e : run.intKeysToArm().entrySet()) {
                     keys[idx] = e.getKey();
-                    targets[idx] = armLabels[e.getValue() - run.startInclusive];
+                    targets[idx] = armLabels[e.getValue() - run.startInclusive()];
                     idx++;
                 }
                 emitIntSwitch(mv, keys, targets, afterRun);
             }
             case ENUM -> {
-                String enumInternal = run.enumClass.getName().replace('.', '/');
+                String enumInternal = run.enumClass().getName().replace('.', '/');
                 Label nullLabel =
-                        run.nullArmIndex >= 0
-                                ? armLabels[run.nullArmIndex - run.startInclusive]
+                        run.nullArmIndex() >= 0
+                                ? armLabels[run.nullArmIndex() - run.startInclusive()]
                                 : afterRun;
                 mv.visitVarInsn(ALOAD, scrutSlot);
                 mv.visitJumpInsn(IFNULL, nullLabel);
@@ -364,16 +159,16 @@ final class MatchEmitter {
                 mv.visitTypeInsn(INSTANCEOF, enumInternal);
                 mv.visitJumpInsn(IFEQ, afterRun);
 
-                int n = run.stringOrEnumKeysToArm.size();
+                int n = run.stringOrEnumKeysToArm().size();
                 String[] names = new String[n];
                 Label[] denseTargets = new Label[n];
                 int idx = 0;
-                for (Map.Entry<String, Integer> e : run.stringOrEnumKeysToArm.entrySet()) {
+                for (Map.Entry<String, Integer> e : run.stringOrEnumKeysToArm().entrySet()) {
                     names[idx] = e.getKey();
-                    denseTargets[idx] = armLabels[e.getValue() - run.startInclusive];
+                    denseTargets[idx] = armLabels[e.getValue() - run.startInclusive()];
                     idx++;
                 }
-                String mapField = emitter.constantPool.enumSwitchMapField(run.enumClass, names);
+                String mapField = emitter.constantPool.enumSwitchMapField(run.enumClass(), names);
                 mv.visitFieldInsn(GETSTATIC, emitter.className, mapField, "[I");
                 mv.visitVarInsn(ALOAD, scrutSlot);
                 mv.visitTypeInsn(CHECKCAST, enumInternal);
@@ -383,18 +178,18 @@ final class MatchEmitter {
             }
             case STRING -> {
                 Label nullLabel =
-                        run.nullArmIndex >= 0
-                                ? armLabels[run.nullArmIndex - run.startInclusive]
+                        run.nullArmIndex() >= 0
+                                ? armLabels[run.nullArmIndex() - run.startInclusive()]
                                 : afterRun;
                 mv.visitVarInsn(ALOAD, scrutSlot);
                 mv.visitJumpInsn(IFNULL, nullLabel);
-                if (!run.scrutineeGuaranteedString) {
+                if (!run.scrutineeGuaranteedString()) {
                     mv.visitVarInsn(ALOAD, scrutSlot);
                     mv.visitTypeInsn(INSTANCEOF, "java/lang/String");
                     mv.visitJumpInsn(IFEQ, afterRun);
                 }
                 TreeMap<Integer, List<Map.Entry<String, Integer>>> buckets = new TreeMap<>();
-                for (Map.Entry<String, Integer> e : run.stringOrEnumKeysToArm.entrySet()) {
+                for (Map.Entry<String, Integer> e : run.stringOrEnumKeysToArm().entrySet()) {
                     buckets.computeIfAbsent(e.getKey().hashCode(), h -> new ArrayList<>()).add(e);
                 }
                 int bCount = buckets.size();
@@ -423,7 +218,7 @@ final class MatchEmitter {
                                 "equals",
                                 "(Ljava/lang/Object;)Z",
                                 false);
-                        mv.visitJumpInsn(IFNE, armLabels[e.getValue() - run.startInclusive]);
+                        mv.visitJumpInsn(IFNE, armLabels[e.getValue() - run.startInclusive()]);
                     }
                     mv.visitJumpInsn(GOTO, afterRun);
                 }
@@ -431,7 +226,7 @@ final class MatchEmitter {
         }
 
         for (int k = 0; k < armCount; k++) {
-            HirExpr.MatchArm arm = arms.get(run.startInclusive + k);
+            HirExpr.MatchArm arm = arms.get(run.startInclusive() + k);
             mv.visitLabel(armLabels[k]);
             emitArmBody(arm.body(), arm.bodyWideningRank(), targetKind);
             mv.visitJumpInsn(GOTO, endLabel);
@@ -1079,13 +874,7 @@ final class MatchEmitter {
     }
 
     private static PrimitiveKind promoteNumeric(PrimitiveKind a, PrimitiveKind b) {
-        int max = Math.max(numericOrder(a), numericOrder(b));
-        return switch (max) {
-            case 0, 1, 2 -> PrimitiveKind.INT;
-            case 3 -> PrimitiveKind.LONG;
-            case 4 -> PrimitiveKind.FLOAT;
-            default -> PrimitiveKind.DOUBLE;
-        };
+        return PrimitiveKind.promoteNumeric(a, b);
     }
 
     private static void pushNumericConst(MethodVisitor mv, Number n, PrimitiveKind kind) {
