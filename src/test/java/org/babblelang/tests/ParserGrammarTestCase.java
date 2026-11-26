@@ -378,6 +378,76 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         Assertions.assertInstanceOf(BabbleParser.RangeExpressionContext.class, isRangeExpr.left);
     }
 
+    @Test
+    public void testBip038PatternMatchingSllGrammar() {
+        parsePureSll("""
+                def area = fn (s: Shape): double -> (
+                    match s
+                        case is Circle(def r) then (3.14 * r * r)
+                        case is Rect(def w, def h) then (w * h)
+                )
+                def classify = fn (n: int, target: int, specials: set of int): string -> (
+                    match n
+                        case 0 then ("zero")
+                        case 1 | 2 | 3 then ("tiny")
+                        case target + 1 then ("above")
+                        case < 0 then ("neg")
+                        case <= -10 then ("very neg")
+                        case > 100 then ("big")
+                        case >= 50 then ("medium")
+                        case == 42 then ("answer")
+                        case != 99 then ("not99")
+                        case <> 88 then ("not88")
+                        case 4..<10 then ("single")
+                        case 10..99 if n mod 10 == 0 then ("round")
+                        case (3..<10).step(5) then ("stepped")
+                        case in specials then ("special")
+                        case is A & B then ("inter")
+                        case is (A | B) then ("union")
+                        case is A | null then ("or-null")
+                        case def whole: Line(is Point(def x1, _), is Point(x: 0, y: def y2)) if x1 == y2 then ("vert")
+                        case is Point(0, ...) then ("prefix")
+                        case is list() then ("empty")
+                        case is list(def h, ...def t) then ("cons")
+                        case is list(...) then ("anylist")
+                        case is (array of int)(1, 2, ...def rest) then ("arr")
+                        case def u: int | string then ("u")
+                        else def other then ("other : " + other)
+                )
+                def mem = a.match + a.case + f(match: 1, case: 2)
+                def nested = 1 + match x case 1 then (2) else (3)
+                """);
+
+        // Pin SLL alternative order: `case def x if x > 0` parses as `bindingPattern`, not `valuePattern(defExpression)`.
+        BabbleParser.FileContext bindGuard = parsePureSll("match n case def x if x > 0 then (x) else (0)");
+        BabbleParser.MatchExpressionContext matchExpr = Assertions.assertInstanceOf(
+                BabbleParser.MatchExpressionContext.class, bindGuard.expression(0));
+        BabbleParser.CaseClauseContext firstCase = matchExpr.caseClause(0);
+        BabbleParser.BindingPatternContext bindPat = Assertions.assertInstanceOf(
+                BabbleParser.BindingPatternContext.class, firstCase.pattern().atomicPattern(0));
+        Assertions.assertEquals("x", bindPat.name.getText());
+        Assertions.assertNotNull(firstCase.guard);
+
+        // `case is A | is B` parses as OR of two `typeOrDestructurePattern`s (not a union inside `patternType`).
+        BabbleParser.FileContext orTypes = parsePureSll("match x case is A | is B then (1) else (2)");
+        BabbleParser.MatchExpressionContext orMatch = Assertions.assertInstanceOf(
+                BabbleParser.MatchExpressionContext.class, orTypes.expression(0));
+        Assertions.assertEquals(2, orMatch.caseClause(0).pattern().atomicPattern().size());
+        Assertions.assertInstanceOf(BabbleParser.TypeOrDestructurePatternContext.class,
+                orMatch.caseClause(0).pattern().atomicPattern(0));
+        Assertions.assertInstanceOf(BabbleParser.TypeOrDestructurePatternContext.class,
+                orMatch.caseClause(0).pattern().atomicPattern(1));
+
+        // `case def x: A | B` parses as a single `bindingPattern` with a union `patternBindingType`.
+        BabbleParser.FileContext bindUnion = parsePureSll("match x case def v: A | B then (v) else (null)");
+        BabbleParser.MatchExpressionContext bindUnionMatch = Assertions.assertInstanceOf(
+                BabbleParser.MatchExpressionContext.class, bindUnion.expression(0));
+        Assertions.assertEquals(1, bindUnionMatch.caseClause(0).pattern().atomicPattern().size());
+        BabbleParser.BindingPatternContext unionBind = Assertions.assertInstanceOf(
+                BabbleParser.BindingPatternContext.class, bindUnionMatch.caseClause(0).pattern().atomicPattern(0));
+        Assertions.assertEquals(2, unionBind.patternBindingType().type().nullableType().size());
+    }
+
     private void assertTypeCheckFails(String source, String expectedMessage) {
         javax.script.ScriptException ex = Assertions.assertThrows(javax.script.ScriptException.class, () -> interpret(source));
         Assertions.assertTrue(ex.getMessage().contains(expectedMessage),

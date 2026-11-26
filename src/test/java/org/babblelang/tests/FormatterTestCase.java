@@ -976,4 +976,64 @@ public class FormatterTestCase {
                 k//=5
                 """);
     }
+
+    @Test
+    public void testMatchFormatting() throws Exception {
+        assertFormats("""
+                def label = match n
+                    case 0 then ("zero")
+                    case 1 | 2 | 3 then ("small")
+                    case < 0 then ("neg")
+                    case >= 10 then ("big")
+                    case 4..<10 then ("mid")
+                    case in specials then ("special")
+                    case is Point(def x, def y) then ("pt")
+                    case is Point(x: 0, y: def py) then ("axis")
+                    case is list(def h, ...def t) then ("cons")
+                    case is (array of int)(1, ...) then ("arr")
+                    case def k: int if k > 10 then (
+                        def d = k * 2
+                        "big : " + d
+                    )
+                    else def other then (
+                        "other : " + other
+                    )
+                """, """
+                def label = match  n
+                case  0  then  ( "zero" )
+                case 1|2|3 then ("small")
+                case <0 then ("neg")
+                case >=10 then ("big")
+                case 4 ..< 10 then ("mid")
+                case  in  specials  then ("special")
+                case  is  Point ( def x , def y ) then ("pt")
+                case is Point ( x : 0 , y : def py ) then ("axis")
+                case is list ( def h , ... def t ) then ("cons")
+                case is ( array of int ) ( 1 , ... ) then ("arr")
+                case def k : int if k > 10 then
+                (
+                def d = k * 2
+                "big : " + d
+                )
+                else def other then
+                (
+                "other : " + other
+                )
+                """);
+        assertFormats("""
+                def area = fn (s: Shape): double -> (
+                    match s
+                        case is Circle(def r) then (3.14 * r * r)
+                        case is Rect(def w, def h) then (w * h)
+                        else (0.0)
+                )
+                """, """
+                def area = fn (s:Shape):double -> (
+                match s
+                case is Circle ( def r ) then ( 3.14 * r * r )
+                case is Rect ( def w , def h ) then ( w * h )
+                else ( 0.0 )
+                )
+                """);
+    }
 }

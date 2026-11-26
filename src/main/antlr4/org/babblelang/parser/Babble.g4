@@ -19,7 +19,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | RANGE_KW | EXCEPTIO
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR | MOD;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR | MOD | MATCH | CASE;
 
 effectPrefix: effectWord+ callingClause?
             | callingClause;
@@ -44,6 +44,9 @@ axiomMember: DEF (memberName | '*') ':' axiomType;
 
 expression:
           ifExpr                                              # ifExpression
+          | MATCH NL* scrutinee=expression
+            (NL* caseClause)+
+            (NL* elseClause)?                                 # matchExpression
           | (EXPORT | PRIVATE)? (DEF | VAR) name=(ID | MOD) (OF typeParameters)? (':' type)?
                      ('=' NL* value=expression)?   # defExpression
           | EXPORT? AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType   # axiomExpression
@@ -111,6 +114,34 @@ expression:
           ;
 
 catchClause: CATCH (NL* name=ID)? (':' type)? THEN NL* catchBlock=block;
+
+caseClause: CASE NL* pattern (NL* IF NL* guard=expression)? NL* THEN NL* armBlock=block;
+
+elseClause: ELSE (NL* DEF name=ID NL* THEN)? NL* elseBlock=block;
+
+pattern: atomicPattern ('|' NL* atomicPattern)*;
+
+atomicPattern
+    : DEF name=ID (':' patternBindingType patternArgs?)?        # bindingPattern
+    | IS NL* patternType patternArgs?                           # typeOrDestructurePattern
+    | op=('<' | '<=' | '>' | '>=' | '==' | NEQ) NL* rhs=expression # relationalPattern
+    | IN NL* container=expression                               # membershipPattern
+    | expr=expression                                           # valuePattern
+    ;
+
+patternType: nullableType ('&' NL* nullableType)*;
+
+patternBindingType: type;
+
+patternArgs
+    : '(' NL* ')'
+    | '(' NL* patternArg (NL* ',' NL* patternArg)* (NL* ',' NL* restPattern)? NL* ')'
+    | '(' NL* restPattern NL* ')'
+    ;
+
+patternArg: (memberName ':')? pattern;
+
+restPattern: ELLIPSIS (DEF name=ID)?;
 
 ifExpr: IF test=expression THEN NL* thenBlock=block
         (NL* ELSE NL* (elseIf=ifExpr | elseBlock=block))?;
@@ -251,6 +282,8 @@ LPAREN: '(';
 RPAREN: ')';
 COMMA: ',';
 IF: 'if';
+MATCH: 'match';
+CASE: 'case';
 THEN: 'then';
 ELSE: 'else';
 DEF: 'def';

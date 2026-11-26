@@ -578,4 +578,22 @@ public class ReplTestCase {
         Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "ra", 2).candidates().contains("range"));
         Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "mo", 2).candidates().contains("mod"));
     }
+
+    @Test
+    public void testBip038ReplClassifyAndCompletions() {
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x\n"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x case 1"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x case 1 then"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x case 1 then ("));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x case 1 then (1) else"));
+        Assertions.assertEquals(BabbleSession.Input.INCOMPLETE, BabbleSession.classify("match x case 1 then (1) else def y"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("match x case 1 then (1)"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("match x case 1 then (1) else (2)"));
+        Assertions.assertEquals(BabbleSession.Input.COMPLETE, BabbleSession.classify("match x\n    case 1 then (1)\n    else def y then (y)"));
+
+        BabbleSession session = session();
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "ma", 2).candidates().contains("match"));
+        Assertions.assertTrue(org.babblelang.repl.Completions.at(session, "ca", 2).candidates().contains("case"));
+    }
 }
