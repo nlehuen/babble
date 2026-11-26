@@ -648,4 +648,43 @@ public class BatestHarnessTestCase {
                 mirErr.getMessage().contains("oversized_mir.batest.md is too big with 1002 lines"),
                 mirErr.getMessage());
     }
+
+    @Test
+    public void testBatestShardPartitioningAndValidation() {
+        BatestShard inactive = BatestShard.parse(null);
+        Assertions.assertFalse(inactive.isActive());
+        Assertions.assertTrue(inactive.matchesFile("types/arrays.batest.md"));
+        Assertions.assertFalse(BatestShard.parse("   ").isActive());
+
+        List<String> files =
+                List.of(
+                        "types/arrays.batest.md",
+                        "control/loops.batest.md",
+                        "compiler/jvm_interfaces.batest.md",
+                        "objects/records.batest.md",
+                        "effects/pure.batest.md",
+                        "syntax/match.batest.md");
+        int total = 6;
+        for (String file : files) {
+            int hits = 0;
+            for (int i = 0; i < total; i++) {
+                BatestShard shard = BatestShard.parse(i + "/" + total);
+                Assertions.assertTrue(shard.isActive());
+                Assertions.assertEquals(i, shard.index());
+                Assertions.assertEquals(total, shard.total());
+                if (shard.matchesFile(file)) {
+                    hits++;
+                }
+            }
+            Assertions.assertEquals(
+                    1, hits, "Each file must belong to exactly one shard : " + file);
+        }
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("0"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("0/0"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("-1/6"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("6/6"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("a/6"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("0/1/2"));
+    }
 }
