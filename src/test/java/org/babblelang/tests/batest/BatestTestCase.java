@@ -105,7 +105,7 @@ public class BatestTestCase {
             }
         }
 
-        if (filter.isActive() && matchedCases == 0) {
+        if (filter.isActive() && !shard.isActive() && matchedCases == 0) {
             Assertions.fail(
                     "-Dbatest.filter matched zero .batest / .batest.md cases: " + filterRaw);
         }
