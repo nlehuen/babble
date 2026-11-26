@@ -378,7 +378,7 @@ final class WasmMatchEmitter {
         c.localGet(scrLocal).refTest(ts.stringType).if_();
         ctx.pushBlock("mstr_is");
         c.localGet(scrLocal).refCast(ts.stringType).localTee(strLocal)
-                .call(rt.fnStrHash).localSet(hashLocal);
+                .refAsNonNull().call(rt.fnStrHash).localSet(hashLocal);
 
         for (Map.Entry<Integer, List<StringBucketEntry>> bucket : run.buckets.entrySet()) {
             c.localGet(hashLocal).i32Const(bucket.getKey()).op(WasmInstr.SimpleOp.I32_EQ).if_();
@@ -505,7 +505,7 @@ final class WasmMatchEmitter {
         if (!sd.isArray()) {
             int listLocal = ctx.newLocal("$mList", WasmValType.refNull(ts.listType));
             c.localGet(boxLocal).refCast(ts.listType).localTee(listLocal)
-                    .structGet(ts.listType, 1)
+                    .refAsNonNull().structGet(ts.listType, 1)
                     .i32Const(fixed)
                     .op(sd.hasRest() ? WasmInstr.SimpleOp.I32_GE_S : WasmInstr.SimpleOp.I32_EQ)
                     .if_(WasmValType.I32);
@@ -517,7 +517,7 @@ final class WasmMatchEmitter {
         } else {
             int arrLocal = ctx.newLocal("$mArr", WasmValType.refNull(ts.arrayBaseType));
             c.localGet(boxLocal).refCast(ts.arrayBaseType).localTee(arrLocal)
-                    .call(arrOps.fnArraySize)
+                    .refAsNonNull().call(arrOps.fnArraySize)
                     .i32Const(fixed)
                     .op(sd.hasRest() ? WasmInstr.SimpleOp.I32_GE_S : WasmInstr.SimpleOp.I32_EQ)
                     .if_(WasmValType.I32);
