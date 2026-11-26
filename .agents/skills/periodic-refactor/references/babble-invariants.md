@@ -63,6 +63,10 @@ git status -- src/test/batest
 
 ### Milestone / PR gate (end of weekly session)
 ```bash
+# One-command local parallel CI gate (add --container for JDK 21 + Node 22 parity, --argon for raytracer check)
+./src/tools/ci_gate.sh --protect-batest --container
+
+# Or individual steps:
 # Hard-limit & net-LOC audit
 python3 .agents/skills/periodic-refactor/scripts/audit_file_sizes.py --check-hard-limit
 
