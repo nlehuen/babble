@@ -1014,5 +1014,17 @@ public class EffectsTestCase {
                     acc
                 )
                 """, "violates nothrow guarantee");
+
+        // Algebraic E-graph certification for floored mod idempotence and division identity (BIP031)
+        assertClean("""
+                def wrap5 = fn idempotent (x: int): int -> ( x mod 5 )
+                def wrapNeg3 = fn idempotent (x: int): int -> ( x mod -3 )
+                def wrap1 = fn idempotent (x: int): int -> ( x mod 1 )
+                def reconSum = fn commutative (a: int, b: int): int -> ( (5 * (a // 5) + (a mod 5)) + b )
+                assert(wrap5(-7) == 3 and wrapNeg3(7) == -2 and wrap1(42) == 0 and reconSum(-7, 10) == 3)
+                """);
+        assertHasError("""
+                def bad = fn idempotent (x: int): int -> ( x // 2 )
+                """, "violates idempotent guarantee");
     }
 }

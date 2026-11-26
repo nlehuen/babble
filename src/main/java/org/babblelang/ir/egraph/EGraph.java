@@ -302,12 +302,16 @@ public final class EGraph {
                 case ADD -> n0.intValue() + n1.intValue();
                 case SUB -> n0.intValue() - n1.intValue();
                 case MUL -> n0.intValue() * n1.intValue();
+                case FLOOR_DIV -> n1.intValue() != 0 ? Math.floorDiv(n0.intValue(), n1.intValue()) : null;
+                case MOD -> n1.intValue() != 0 ? Math.floorMod(n0.intValue(), n1.intValue()) : null;
                 default -> null;
             };
             case LONG -> switch (op) {
                 case ADD -> n0.longValue() + n1.longValue();
                 case SUB -> n0.longValue() - n1.longValue();
                 case MUL -> n0.longValue() * n1.longValue();
+                case FLOOR_DIV -> n1.longValue() != 0L ? Math.floorDiv(n0.longValue(), n1.longValue()) : null;
+                case MOD -> n1.longValue() != 0L ? Math.floorMod(n0.longValue(), n1.longValue()) : null;
                 default -> null;
             };
             case FLOAT -> switch (op) {
@@ -551,7 +555,7 @@ public final class EGraph {
             case CONST -> 1;
             case OPAQUE -> 2;
             case NOT, NEG -> 3;
-            case ADD, SUB, MUL, DIV, STR_ADD, EQ, NEQ, LT, LTE, GT, GTE, AND, OR -> 4;
+            case ADD, SUB, MUL, DIV, FLOOR_DIV, MOD, STR_ADD, EQ, NEQ, LT, LTE, GT, GTE, AND, OR -> 4;
             case ITE -> 5;
             case CALL -> 10;
         };

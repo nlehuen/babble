@@ -159,6 +159,12 @@ final class ControlAndOpEmitter {
                         c.stackKind = PrimitiveKind.INT;
                         return;
                     }
+                    if (d > 0 && isStaticallyNonNegative(b.left())) {
+                        ConstantPool.pushInt(mv, d);
+                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? IREM : IDIV);
+                        c.stackKind = PrimitiveKind.INT;
+                        return;
+                    }
                 }
                 emitter.emitAs(b.right(), PrimitiveKind.INT);
                 c.line(b.meta().line());
@@ -179,6 +185,12 @@ final class ControlAndOpEmitter {
                             ConstantPool.pushInt(mv, Long.numberOfTrailingZeros(d));
                             mv.visitInsn(LSHR);
                         }
+                        c.stackKind = PrimitiveKind.LONG;
+                        return;
+                    }
+                    if (d > 0L && isStaticallyNonNegative(b.left())) {
+                        mv.visitLdcInsn(d);
+                        mv.visitInsn(b.op() == HirExpr.BinaryOp.MOD ? LREM : LDIV);
                         c.stackKind = PrimitiveKind.LONG;
                         return;
                     }
@@ -896,9 +908,21 @@ final class ControlAndOpEmitter {
         int stopLocal = cr.descending() ? startLocal : lastLocal;
         Label stepLabel = new Label();
 
+        boolean markNonNeg = f.loopVar() != null && !f.loopVar().isCaptured()
+                && (rk == PrimitiveKind.CHAR || isStaticallyNonNegative(cr.start()))
+                && !isVarAssignedIn(f.body(), f.loopVar().id());
+        if (markNonNeg) {
+            c.nonNegativeVars.add(f.loopVar().id());
+        }
         mv.visitLabel(head);
         loadKindOn(mv, loopKind, idxLocal);
-        emitForIterationBody(f, result, end, stepLabel, rk);
+        try {
+            emitForIterationBody(f, result, end, stepLabel, rk);
+        } finally {
+            if (markNonNeg) {
+                c.nonNegativeVars.remove(f.loopVar().id());
+            }
+        }
 
         mv.visitLabel(stepLabel);
         if (isLong) {
@@ -936,6 +960,63 @@ final class ControlAndOpEmitter {
         mv.visitLabel(end);
         mv.visitVarInsn(ALOAD, result);
         c.stackKind = PrimitiveKind.NONE;
+    }
+
+    private boolean isStaticallyNonNegative(HirExpr expr) {
+        while (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
+            expr = b.statements().get(0);
+        }
+        if (expr == null) {
+            return false;
+        }
+        if (expr.meta().kind() == PrimitiveKind.CHAR) {
+            return true;
+        }
+        return switch (expr) {
+            case HirExpr.Const c -> (c.value() instanceof Number n && n.longValue() >= 0L)
+                    || c.value() instanceof Character;
+            case HirExpr.VarRead v -> v.var().primitiveKind() == PrimitiveKind.CHAR
+                    || ctx().nonNegativeVars.contains(v.var().id());
+            case HirExpr.ArrayOp op -> op.kind() == LoweringTargets.ArrayOpKind.SIZE;
+            case HirExpr.CoreMethodCall c -> "size".equals(c.memberName()) || "length".equals(c.memberName());
+            case HirExpr.JavaMethodCall c -> {
+                java.lang.reflect.Method m = c.target().method();
+                yield ("length".equals(m.getName()) && m.getDeclaringClass() == String.class)
+                        || ("size".equals(m.getName())
+                        && (java.util.Collection.class.isAssignableFrom(m.getDeclaringClass())
+                        || java.util.Map.class.isAssignableFrom(m.getDeclaringClass())));
+            }
+            case HirExpr.Binary b -> b.op() == HirExpr.BinaryOp.MOD
+                    && (b.meta().kind() == PrimitiveKind.INT || b.meta().kind() == PrimitiveKind.LONG)
+                    && b.right() instanceof HirExpr.Const rc && rc.value() instanceof Number rn
+                    && (b.meta().kind() == PrimitiveKind.LONG ? rn.longValue() > 0L : rn.intValue() > 0);
+            default -> false;
+        };
+    }
+
+    private static boolean isVarAssignedIn(List<HirExpr> stmts, int varId) {
+        boolean[] assigned = {false};
+        for (HirExpr s : stmts) {
+            checkVarAssigned(s, varId, assigned);
+            if (assigned[0]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void checkVarAssigned(HirExpr expr, int varId, boolean[] assigned) {
+        if (expr == null || assigned[0]) {
+            return;
+        }
+        if (expr instanceof HirExpr.VarAssign a && a.var().id() == varId) {
+            assigned[0] = true;
+            return;
+        }
+        org.babblelang.opt.HirRewriter.rewriteChildren(expr, child -> {
+            checkVarAssigned(child, varId, assigned);
+            return child;
+        });
     }
 
     private void emitArrayFor(HirExpr.For f, Class<?> arrClass, int result, Label head, Label end) {

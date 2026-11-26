@@ -520,6 +520,18 @@ final class EffectAstExtractors {
                     widenIfNeeded(r, resType, resKind, budget),
                     resType, resKind)
                     : null;
+            case "//" -> Type.isIntegralScalar(resType)
+                    ? new AlgebraicVerifier.Binary(ENode.Op.FLOOR_DIV,
+                    widenIfNeeded(l, resType, resKind, budget),
+                    widenIfNeeded(r, resType, resKind, budget),
+                    resType, resKind)
+                    : null;
+            case "mod" -> Type.isIntegralScalar(resType)
+                    ? new AlgebraicVerifier.Binary(ENode.Op.MOD,
+                    widenIfNeeded(l, resType, resKind, budget),
+                    widenIfNeeded(r, resType, resKind, budget),
+                    resType, resKind)
+                    : null;
             case "==" -> new AlgebraicVerifier.Binary(ENode.Op.EQ, l, r, Type.BOOL, PrimitiveKind.BOOL);
             case "!=", "<>" -> new AlgebraicVerifier.Binary(ENode.Op.NEQ, l, r, Type.BOOL, PrimitiveKind.BOOL);
             case "<" -> new AlgebraicVerifier.Binary(ENode.Op.LT, l, r, Type.BOOL, PrimitiveKind.BOOL);

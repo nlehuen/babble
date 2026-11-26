@@ -1809,12 +1809,12 @@ public final class MirLowerer {
                 if (cr.inclusive()) {
                     lastVal = endVal;
                 } else {
-                    MirVal one = emitConst(isLong ? 1L : 1, loopKind, ln);
+                    MirVal one = emitConst(isLong ? (Object) 1L : Integer.valueOf(1), loopKind, ln);
                     lastVal = newVal(loopKind, "$last");
                     emit(new MirInst.Binary(lastVal, HirExpr.BinaryOp.SUB, endVal, one, null, null, false, ln, MirEffect.PURE_NOTHROW));
                 }
             } else {
-                MirVal stepArg = stepVal != null ? stepVal : emitConst(isLong ? constStep : (int) constStep, loopKind, ln);
+                MirVal stepArg = stepVal != null ? stepVal : emitConst(isLong ? (Object) constStep : Integer.valueOf((int) constStep), loopKind, ln);
                 MirVal inclVal = emitConst(cr.inclusive(), PrimitiveKind.BOOL, ln);
                 if (isLong) {
                     lastVal = newVal(PrimitiveKind.LONG, "$last");
@@ -1864,7 +1864,7 @@ public final class MirLowerer {
                 sealBlock(bbNext);
 
                 cur = bbNext;
-                MirVal delta = stepVal != null ? stepVal : emitConst(isLong ? constStep : (int) constStep, loopKind, ln);
+                MirVal delta = stepVal != null ? stepVal : emitConst(isLong ? (Object) constStep : Integer.valueOf((int) constStep), loopKind, ln);
                 MirVal nextIdx = newVal(loopKind, null);
                 emit(new MirInst.Binary(nextIdx, cr.descending() ? HirExpr.BinaryOp.SUB : HirExpr.BinaryOp.ADD,
                         headIdx, delta, null, null, false, ln, MirEffect.PURE_NOTHROW));

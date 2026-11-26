@@ -1813,6 +1813,16 @@ public final class WasmCallEmitter {
             ctx.stackKind = PrimitiveKind.NONE;
             return;
         }
+        if ("java.lang.ArithmeticException".equals(owner) && call.pureStaticCallee() && call.callee() == null) {
+            rt.emitStringLit(c, "java.lang.ArithmeticException : ");
+            if (call.args().size() >= 1) {
+                fe.emitBoxed(call.args().get(0));
+                c.call(rt.fnFormat).call(rt.fnStrConcat);
+            }
+            c.refNull(ts.anyType).i32Const(line).call(rt.fnMakeExn);
+            ctx.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         rt.emitStringLit(c, "Unsupported Java constructor on Wasm : " + owner);
         c.i32Const(line).call(rt.fnThrowMsg).unreachable();
         ctx.stackKind = PrimitiveKind.NONE;

@@ -291,8 +291,10 @@ public final class WasmPortabilityChecker {
                 checkExpr(a.value(), target, topLevelDefined, out);
             }
             case HirExpr.JavaConstructorCall c -> {
-                if (c.target().constructor().getDeclaringClass() != org.babblelang.runtime.BabbleException.class) {
-                    out.add(new Diagnostic(line, c.target().constructor().getDeclaringClass().getName()));
+                Class<?> decl = c.target().constructor().getDeclaringClass();
+                boolean synthArith = c.pureStaticCallee() && c.callee() == null && decl == ArithmeticException.class;
+                if (decl != org.babblelang.runtime.BabbleException.class && !synthArith) {
+                    out.add(new Diagnostic(line, decl.getName()));
                 }
                 if (!c.pureStaticCallee()) {
                     checkExpr(c.callee(), target, topLevelDefined, out);

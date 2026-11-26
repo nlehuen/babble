@@ -22,6 +22,8 @@ public final class ENode {
         SUB,
         MUL,
         DIV,
+        FLOOR_DIV,
+        MOD,
         EQ,
         NEQ,
         LT,

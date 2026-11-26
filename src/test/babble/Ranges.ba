@@ -1,0 +1,120 @@
+;;(
+    End-to-end showcase for BIP031 :
+    first-class ranges (range of T, .., ..<), discrete progressions (.step, .reversed),
+    floored modulo (mod) and integer division (//, //=), operator methods,
+    counted-loop zero-allocation lowering, and effect/algebraic certification.
+;;)
+
+;; 1. Floored integer division and modulo across all four sign combinations
+assert(7 // 3 == 2 and 7 mod 3 == 1)
+assert(-7 // 3 == -3 and -7 mod 3 == 2)
+assert(7 // -3 == -3 and 7 mod -3 == -2)
+assert(-7 // -3 == 2 and -7 mod -3 == -1)
+
+;; Division identity : b * (a // b) + (a mod b) == a
+for a in -10..10 then (
+    for b in list of int(-7, -4, -3, -1, 1, 3, 4, 7) then (
+        assert(b * (a // b) + (a mod b) == a)
+    )
+)
+
+;; Compound floored division assignment //=
+var k = -17
+k //= 4
+assert(k == -5)
+k //= -2
+assert(k == 2)
+
+;; Power-of-two and MIN_VALUE // -1 wrap without trapping
+def minI = -2147483648
+def neg1 = -1
+assert(minI // neg1 == minI and minI mod neg1 == 0)
+assert(-17l // 8l == -3l and -17l mod 8l == 7l)
+
+;; 2. Inclusive (..) and half-open (..<) scalar ranges and membership
+def closed: range of int = 1..5
+def halfOpen: range of int = 0..<5
+assert(closed.start() == 1 and closed.end() == 5 and closed.inclusive())
+assert(halfOpen.start() == 0 and halfOpen.end() == 5 and not halfOpen.inclusive())
+assert(closed.contains(1) and closed.contains(5) and not closed.contains(6))
+assert(halfOpen.contains(0) and halfOpen.contains(4) and not halfOpen.contains(5))
+assert(not closed.isEmpty() and (5..<5).isEmpty() and (6..5).isEmpty())
+
+;; 3. Discrete progressions : .step(k) and .reversed()
+def stepped = (3..<20).step(5)
+def revStepped = stepped.reversed()
+def fwd = list of int()
+for i in stepped then (
+    fwd.add(i)
+)
+assert(fwd == list of int(3, 8, 13, 18))
+
+def rev = list of int()
+for i in revStepped then (
+    rev.add(i)
+)
+assert(rev == list of int(18, 13, 8, 3))
+assert(stepped.contains(13) and not stepped.contains(14))
+assert(revStepped.contains(13) and not revStepped.contains(14))
+assert(stepped.toString() == "(3..<20).step(5)")
+assert(revStepped.toString() == "(3..<20).step(5).reversed()")
+
+;; 4. Char, long, double, and string (Comparable) ranges
+def letters = list of char()
+for c in 'a'..'e' then (
+    letters.add(c)
+)
+assert(letters == list of char('a', 'b', 'c', 'd', 'e'))
+
+var longSum = 0l
+for n in 10000000000l..10000000003l then (
+    longSum += n
+)
+assert(longSum == 40000000006l)
+
+def unitInterval: range of double = 0.0..<1.0
+assert(unitInterval.contains(0.0) and unitInterval.contains(0.5) and not unitInterval.contains(1.0))
+
+def words: range of string = "alpha".."omega"
+assert(words.contains("beta") and words.contains("omega") and not words.contains("zeta"))
+
+;; 5. MAX_VALUE boundary safety in counted loops
+var maxHits = 0
+for i in 2147483646..2147483647 then (
+    maxHits += 1
+)
+assert(maxHits == 2)
+
+;; 6. Covariance, runtime type tests, and Java Iterable interop
+def asAnyRange: range of any = 1..5
+def asNumRange: range of java.lang.Number = 1..5
+assert(asAnyRange is range and asNumRange is range)
+def boxed: any = 1..5
+def castRange = boxed as range
+assert(castRange.equals(1..5))
+
+;; 7. Operator methods : def mod and def floorDiv
+def ModInt = record (v: int) (
+    def mod = fn (other: ModInt): ModInt -> (
+        ModInt(this.v mod other.v)
+    )
+
+    def floorDiv = fn (other: ModInt): ModInt -> (
+        ModInt(this.v // other.v)
+    )
+)
+assert((ModInt(-7) mod ModInt(3)) == ModInt(2))
+assert((ModInt(-7) // ModInt(3)) == ModInt(-3))
+
+;; 8. Pure, nothrow, @TERMINATING, and algebraic effect certification
+def sumSquares = fn nothrow (n: int): int -> (
+    var s = 0
+    for i in 1..n then (
+        s += i * i
+    )
+    s
+)
+
+def bucket = fn idempotent (x: int): int -> (x mod 8)
+
+assert(sumSquares(4) == 30 and bucket(-1) == 7 and bucket(bucket(-1)) == 7)

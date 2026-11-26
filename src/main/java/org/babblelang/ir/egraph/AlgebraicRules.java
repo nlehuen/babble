@@ -23,6 +23,7 @@ public final class AlgebraicRules {
             AlgebraicRules::integralAddRules,
             AlgebraicRules::integralSubRules,
             AlgebraicRules::integralMulRules,
+            AlgebraicRules::integralModRules,
             AlgebraicRules::booleanRules,
             AlgebraicRules::stringAssocRules,
             AlgebraicRules::callAlgebraicRules
@@ -38,6 +39,7 @@ public final class AlgebraicRules {
         List<EGraph.RewriteRule> all = new ArrayList<>(OPTIMIZER_RULES);
         all.add(AlgebraicRules::floatingCommutativityRules);
         all.add(AlgebraicRules::integralDistributivityAndNegRules);
+        all.add(AlgebraicRules::integralDivisionIdentityRule);
         all.add(AlgebraicRules::booleanLogicAndEqRules);
         all.add(AlgebraicRules::iteAndOrderRules);
         all.add(AlgebraicRules::callInvolutionRule);
@@ -55,7 +57,7 @@ public final class AlgebraicRules {
     }
 
     private static ENode integralConst(PrimitiveKind kind, long value) {
-        Object boxed = kind == PrimitiveKind.LONG ? Long.valueOf(value) : Integer.valueOf((int) value);
+        Object boxed = kind == PrimitiveKind.LONG ? (Object) Long.valueOf(value) : Integer.valueOf((int) value);
         return ENode.constVal(boxed, kind);
     }
 
@@ -153,6 +155,161 @@ public final class AlgebraicRules {
             if (right.op() == ENode.Op.MUL && right.kind() == n.kind()) {
                 int xy = g.add(ENode.binary(ENode.Op.MUL, n.kind(), a, right.child(0)));
                 out.addAndUnion(id, ENode.binary(ENode.Op.MUL, n.kind(), xy, right.child(1)));
+            }
+        }
+    }
+
+    private static boolean isNonZeroIntegralConst(EGraph g, int classId) {
+        ENode c = g.constantOf(classId);
+        Long v = c != null ? c.asIntegralLong() : null;
+        return v != null && v != 0L;
+    }
+
+    /**
+     * Soundness guard for {@code (x * b) // b -> x}: returns {@code true} only when {@code x * b}
+     * cannot overflow {@code resultKind} ({@code INT} or {@code LONG}).
+     */
+    private static boolean mulCannotOverflow(EGraph g, PrimitiveKind resultKind, int xClass, int bClass) {
+        ENode cb = g.constantOf(bClass);
+        Long bv = cb != null ? cb.asIntegralLong() : null;
+        if (bv == null || bv == 0L) {
+            return false;
+        }
+        if (bv == 1L) {
+            return true;
+        }
+        ENode cx = g.constantOf(xClass);
+        Long xv = cx != null ? cx.asIntegralLong() : null;
+        if (xv != null) {
+            if (resultKind == PrimitiveKind.INT) {
+                long prod = (long) xv.intValue() * (long) bv.intValue();
+                return prod >= Integer.MIN_VALUE && prod <= Integer.MAX_VALUE;
+            }
+            if (resultKind == PrimitiveKind.LONG) {
+                try {
+                    Math.multiplyExact(xv.longValue(), bv.longValue());
+                    return true;
+                } catch (ArithmeticException overflow) {
+                    return false;
+                }
+            }
+            return false;
+        }
+        // Narrower-origin factors: byte/short in int (|x * b| <= 32768^2 == 2^30 < 2^31),
+        // or byte/short/int in long (|x * b| <= (2^31)^2 == 2^62 < 2^63).
+        if (resultKind == PrimitiveKind.INT) {
+            if (bv < Short.MIN_VALUE || bv > Short.MAX_VALUE) {
+                return false;
+            }
+            for (ENode xn : g.nodesIn(xClass)) {
+                if (xn.kind() == PrimitiveKind.BYTE || xn.kind() == PrimitiveKind.SHORT) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        if (resultKind == PrimitiveKind.LONG) {
+            if (bv < Integer.MIN_VALUE || bv > Integer.MAX_VALUE) {
+                return false;
+            }
+            for (ENode xn : g.nodesIn(xClass)) {
+                if (xn.kind() == PrimitiveKind.BYTE || xn.kind() == PrimitiveKind.SHORT || xn.kind() == PrimitiveKind.INT) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        return false;
+    }
+
+    private static void integralModRules(EGraph g, int id, ENode n, EGraph.MatchRecorder out) {
+        if (!n.isIntegral()) {
+            return;
+        }
+        if (n.op() == ENode.Op.MOD) {
+            int a = n.child(0);
+            int b = n.child(1);
+            // Unit divisor: a mod 1 == 0, a mod -1 == 0 (never throws, no overflow)
+            if (hasIntegralValue(g, b, 1L) || hasIntegralValue(g, b, -1L)) {
+                out.addAndUnion(id, integralConst(n.kind(), 0L));
+            }
+            // Repeated-divisor idempotence: (x mod b) mod b == x mod b
+            for (ENode left : g.nodesIn(a)) {
+                if (left.op() == ENode.Op.MOD && left.kind() == n.kind() && g.find(left.child(1)) == g.find(b)) {
+                    out.union(id, a);
+                }
+            }
+            // Non-zero-guarded zero dividend and self mod: 0 mod b == 0, b mod b == 0
+            if (isNonZeroIntegralConst(g, b)) {
+                if (hasIntegralValue(g, a, 0L) || g.find(a) == g.find(b)) {
+                    out.addAndUnion(id, integralConst(n.kind(), 0L));
+                }
+            }
+            return;
+        }
+        if (n.op() == ENode.Op.FLOOR_DIV) {
+            int a = n.child(0);
+            int b = n.child(1);
+            // Unit divisor: a // 1 == a, a // -1 == -a (wrapping MIN_VALUE // -1 == MIN_VALUE == -MIN_VALUE)
+            if (hasIntegralValue(g, b, 1L)) {
+                out.union(id, a);
+            } else if (hasIntegralValue(g, b, -1L)) {
+                out.addAndUnion(id, ENode.unary(ENode.Op.NEG, n.kind(), a));
+            }
+            // Non-zero-guarded zero dividend, self division, and overflow-guarded factor cancellation
+            if (isNonZeroIntegralConst(g, b)) {
+                if (hasIntegralValue(g, a, 0L)) {
+                    out.addAndUnion(id, integralConst(n.kind(), 0L));
+                } else if (g.find(a) == g.find(b)) {
+                    out.addAndUnion(id, integralConst(n.kind(), 1L));
+                }
+                int fb = g.find(b);
+                for (ENode left : g.nodesIn(a)) {
+                    if (left.op() == ENode.Op.MUL && left.kind() == n.kind()) {
+                        if (g.find(left.child(1)) == fb && mulCannotOverflow(g, n.kind(), left.child(0), b)) {
+                            out.union(id, left.child(0));
+                        } else if (g.find(left.child(0)) == fb && mulCannotOverflow(g, n.kind(), left.child(1), b)) {
+                            out.union(id, left.child(1));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /** Verifier-only division identity: {@code b * (a // b) + (a mod b) == a} for non-zero {@code b}. */
+    private static void integralDivisionIdentityRule(EGraph g, int id, ENode n, EGraph.MatchRecorder out) {
+        if (n.op() != ENode.Op.ADD || !n.isIntegral()) {
+            return;
+        }
+        int lhs = n.child(0);
+        int rhs = n.child(1);
+        for (ENode modNode : g.nodesIn(rhs)) {
+            if (modNode.op() != ENode.Op.MOD || modNode.kind() != n.kind()) {
+                continue;
+            }
+            int a = g.find(modNode.child(0));
+            int b = g.find(modNode.child(1));
+            if (!isNonZeroIntegralConst(g, b)) {
+                continue;
+            }
+            for (ENode mulNode : g.nodesIn(lhs)) {
+                if (mulNode.op() != ENode.Op.MUL || mulNode.kind() != n.kind()) {
+                    continue;
+                }
+                int m0 = g.find(mulNode.child(0));
+                int m1 = g.find(mulNode.child(1));
+                int divClass = m0 == b ? m1 : (m1 == b ? m0 : -1);
+                if (divClass < 0) {
+                    continue;
+                }
+                for (ENode divNode : g.nodesIn(divClass)) {
+                    if (divNode.op() == ENode.Op.FLOOR_DIV && divNode.kind() == n.kind()
+                            && g.find(divNode.child(0)) == a && g.find(divNode.child(1)) == b) {
+                        out.union(id, a);
+                        return;
+                    }
+                }
             }
         }
     }

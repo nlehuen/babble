@@ -1,6 +1,7 @@
 package org.babblelang.opt.hir;
 
 import org.babblelang.analysis.BuiltinAxioms;
+import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.egraph.AlgebraicRules;
 import org.babblelang.ir.egraph.EGraph;
@@ -34,6 +35,15 @@ import java.util.Set;
 public final class HirEGraphSimplifyPass implements HirPass {
     private static final int EGRAPH_MAX_ITERS = 6;
     private static final int EGRAPH_MAX_NODES = 96;
+    private static final LoweringTargets.JavaConstructorTarget ARITH_EXN_CTOR = arithExnCtor();
+
+    private static LoweringTargets.JavaConstructorTarget arithExnCtor() {
+        try {
+            return new LoweringTargets.JavaConstructorTarget(ArithmeticException.class.getConstructor(String.class));
+        } catch (NoSuchMethodException e) {
+            throw new IllegalStateException("Missing ArithmeticException(String)", e);
+        }
+    }
 
     @Override
     public String name() {
@@ -196,9 +206,9 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
         }
 
-        // Whitelisted pure deterministic JDK calls (Math.*, String.*)
+        // Whitelisted pure deterministic JDK calls (Math.*, String.*, Range deforestation)
         if (cur instanceof HirExpr.JavaMethodCall jm) {
-            HirExpr folded = tryFoldJavaCall(jm);
+            HirExpr folded = tryFoldJavaCall(jm, module);
             if (folded != null) {
                 rewrites[0]++;
                 return folded;
@@ -214,7 +224,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
         }
         if (cur instanceof HirExpr.Binary b) {
-            HirExpr folded = tryFoldBinary(b);
+            HirExpr folded = tryFoldBinary(b, module);
             if (folded != null) {
                 rewrites[0]++;
                 return folded;
@@ -339,6 +349,8 @@ public final class HirEGraphSimplifyPass implements HirPass {
                         case ADD -> ENode.Op.ADD;
                         case SUB -> ENode.Op.SUB;
                         case MUL -> ENode.Op.MUL;
+                        case FLOOR_DIV -> ENode.Op.FLOOR_DIV;
+                        case MOD -> ENode.Op.MOD;
                         default -> null;
                     };
                     if (op != null) {
@@ -400,7 +412,8 @@ public final class HirEGraphSimplifyPass implements HirPass {
             if (expr instanceof HirExpr.Binary b && b.meta().wideningRank() < 0 && b.meta().checkedType() == null) {
                 PrimitiveKind rk = b.meta().kind();
                 if ((HirPurity.isIntegralKind(rk) && b.left().meta().kind() == rk && b.right().meta().kind() == rk
-                        && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL))
+                        && (b.op() == HirExpr.BinaryOp.ADD || b.op() == HirExpr.BinaryOp.SUB || b.op() == HirExpr.BinaryOp.MUL
+                        || b.op() == HirExpr.BinaryOp.FLOOR_DIV || b.op() == HirExpr.BinaryOp.MOD))
                         || isLowerableComparison(b)
                         || (b.op() == HirExpr.BinaryOp.ADD && b.left().meta().stringType() && b.right().meta().stringType())) {
                     return 4 + treeCost(b.left()) + treeCost(b.right());
@@ -434,13 +447,15 @@ public final class HirEGraphSimplifyPass implements HirPass {
                     HirExpr op = rebuild(tree.children().get(0), rootMeta);
                     yield new HirExpr.Unary(HirExpr.UnaryOp.NEGATE, op, "", rootMeta.withKind(n.kind()).withWideningRank(-1));
                 }
-                case ADD, SUB, MUL, EQ, NEQ, LT, LTE, GT, GTE -> {
+                case ADD, SUB, MUL, FLOOR_DIV, MOD, EQ, NEQ, LT, LTE, GT, GTE -> {
                     HirExpr l = rebuild(tree.children().get(0), rootMeta);
                     HirExpr r = rebuild(tree.children().get(1), rootMeta);
                     HirExpr.BinaryOp bop = switch (n.op()) {
                         case ADD -> HirExpr.BinaryOp.ADD;
                         case SUB -> HirExpr.BinaryOp.SUB;
                         case MUL -> HirExpr.BinaryOp.MUL;
+                        case FLOOR_DIV -> HirExpr.BinaryOp.FLOOR_DIV;
+                        case MOD -> HirExpr.BinaryOp.MOD;
                         case EQ -> HirExpr.BinaryOp.EQ;
                         case NEQ -> HirExpr.BinaryOp.NEQ;
                         case LT -> HirExpr.BinaryOp.LT;
@@ -584,6 +599,25 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 } else if (b.op() == HirExpr.BinaryOp.MUL) {
                     if (rVal != null && rVal == 1L) return b.left();
                     if (lVal != null && lVal == 1L) return b.right();
+                } else if (b.op() == HirExpr.BinaryOp.FLOOR_DIV) {
+                    if (rVal != null && rVal == 1L) return b.left();
+                    if (rVal != null && rVal == -1L) {
+                        return new HirExpr.Unary(HirExpr.UnaryOp.NEGATE, b.left(), b.leftText(), b.meta());
+                    }
+                } else if (b.op() == HirExpr.BinaryOp.MOD) {
+                    if (rVal != null && (rVal == 1L || rVal == -1L)) {
+                        Object zeroVal = rk == PrimitiveKind.LONG ? (Object) 0L : Integer.valueOf(0);
+                        HirExpr zero = new HirExpr.Const(zeroVal, b.meta());
+                        if (HirPurity.isPureNothrowTerminating(b.left(), module)) {
+                            return zero;
+                        }
+                        return new HirExpr.Block(List.of(b.left(), zero), false, new String[0], List.of(), -1, b.meta());
+                    }
+                    HirExpr innerL = HirRewriter.unwrapTransparent(b.left());
+                    if (innerL instanceof HirExpr.Binary innerMod && innerMod.op() == HirExpr.BinaryOp.MOD
+                            && innerMod.meta().kind() == rk && samePureScalarLeaf(innerMod.right(), b.right(), module)) {
+                        return innerMod;
+                    }
                 }
             }
         }
@@ -670,9 +704,28 @@ public final class HirEGraphSimplifyPass implements HirPass {
         return negated != null ? applyWidening(negated, rk, u.meta()) : null;
     }
 
-    private static HirExpr tryFoldBinary(HirExpr.Binary b) {
+    private static HirExpr tryFoldBinary(HirExpr.Binary b, HirModule module) {
         HirExpr l = HirRewriter.unwrapTransparent(b.left());
         HirExpr r = HirRewriter.unwrapTransparent(b.right());
+        // Zero-divisor throw folding: a mod 0 / a // 0 -> (eval a if impure; throw ArithmeticException("/ by zero"))
+        if ((b.op() == HirExpr.BinaryOp.MOD || b.op() == HirExpr.BinaryOp.FLOOR_DIV)
+                && (b.meta().kind() == PrimitiveKind.INT || b.meta().kind() == PrimitiveKind.LONG)
+                && HirPurity.isNumericKind(b.left().meta().kind())
+                && HirPurity.isNumericKind(b.right().meta().kind())
+                && r instanceof HirExpr.Const rc0 && rc0.value() instanceof Number rn0
+                && rn0.longValue() == 0L) {
+            int ln = b.meta().line();
+            ExprMeta strMeta = new ExprMeta(ln, PrimitiveKind.NONE, -1, null, b.meta().effects(), true, true);
+            HirExpr msg = new HirExpr.Const("/ by zero", strMeta);
+            HirExpr ctorCall = new HirExpr.JavaConstructorCall(null, "java.lang.ArithmeticException", true,
+                    ARITH_EXN_CTOR, List.of(msg), ExprMeta.of(ln, PrimitiveKind.NONE));
+            HirExpr throwExpr = new HirExpr.Throw(ctorCall, true, b.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
+            if (HirPurity.isPureNothrowTerminating(b.left(), module)) {
+                return throwExpr;
+            }
+            return new HirExpr.Block(List.of(b.left(), throwExpr), false, new String[0], List.of(), -1,
+                    b.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));
+        }
         if (!(l instanceof HirExpr.Const lc) || !(r instanceof HirExpr.Const rc) || b.meta().checkedType() != null) {
             return null;
         }
@@ -731,12 +784,16 @@ public final class HirEGraphSimplifyPass implements HirPass {
                 case ADD -> ln.intValue() + rn.intValue();
                 case SUB -> ln.intValue() - rn.intValue();
                 case MUL -> ln.intValue() * rn.intValue();
+                case FLOOR_DIV -> rn.intValue() != 0 ? Math.floorDiv(ln.intValue(), rn.intValue()) : null;
+                case MOD -> rn.intValue() != 0 ? Math.floorMod(ln.intValue(), rn.intValue()) : null;
                 default -> null;
             };
             case LONG -> switch (b.op()) {
                 case ADD -> ln.longValue() + rn.longValue();
                 case SUB -> ln.longValue() - rn.longValue();
                 case MUL -> ln.longValue() * rn.longValue();
+                case FLOOR_DIV -> rn.longValue() != 0L ? Math.floorDiv(ln.longValue(), rn.longValue()) : null;
+                case MOD -> rn.longValue() != 0L ? Math.floorMod(ln.longValue(), rn.longValue()) : null;
                 default -> null;
             };
             case FLOAT -> switch (b.op()) {
@@ -776,7 +833,11 @@ public final class HirEGraphSimplifyPass implements HirPass {
         return (l.right().meta().kind() == PrimitiveKind.BOOL && l.meta().wideningRank() < 0) ? l.right() : null;
     }
 
-    private static HirExpr tryFoldJavaCall(HirExpr.JavaMethodCall c) {
+    private static HirExpr tryFoldJavaCall(HirExpr.JavaMethodCall c, HirModule module) {
+        HirExpr rangeFolded = tryFoldRangeCall(c, module);
+        if (rangeFolded != null) {
+            return rangeFolded;
+        }
         Method m = c.target().method();
         if (c.target().isStatic() && c.pureStaticReceiver() && BuiltinAxioms.current().isFoldable(m)) {
             if (c.meta().checkedType() != null) {
@@ -831,6 +892,159 @@ public final class HirEGraphSimplifyPass implements HirPass {
             }
         }
         return null;
+    }
+
+    /**
+     * Deforests {@code .contains*}, {@code .start*}, {@code .end*}, {@code .inclusive}, and {@code .isEmpty}
+     * on inline {@link HirExpr.Range} expressions (including {@code .step(constPos)} and {@code .reversed()}).
+     */
+    private static HirExpr tryFoldRangeCall(HirExpr.JavaMethodCall c, HirModule module) {
+        if (c.target().isStatic() || c.meta().checkedType() != null || c.meta().wideningRank() >= 0) {
+            return null;
+        }
+        Class<?> owner = c.target().method().getDeclaringClass();
+        if (owner != org.babblelang.runtime.Range.class
+                && owner != org.babblelang.runtime.IntRange.class
+                && owner != org.babblelang.runtime.LongRange.class
+                && owner != org.babblelang.runtime.CharRange.class
+                && owner != org.babblelang.runtime.DoubleRange.class) {
+            return null;
+        }
+        // Unwrap .reversed() and at most one .step(constPos) to reach the underlying HirExpr.Range.
+        long stepVal = 1L;
+        boolean sawStep = false;
+        HirExpr cur = HirRewriter.unwrapTransparent(c.receiver());
+        while (cur instanceof HirExpr.JavaMethodCall inner && !inner.target().isStatic()) {
+            String iname = inner.target().method().getName();
+            if ("reversed".equals(iname) && inner.args().isEmpty()) {
+                cur = HirRewriter.unwrapTransparent(inner.receiver());
+                continue;
+            }
+            if ("step".equals(iname) && inner.args().size() == 1 && !sawStep) {
+                HirExpr sArg = HirRewriter.unwrapTransparent(inner.args().get(0));
+                if (!(sArg instanceof HirExpr.Const sc) || !(sc.value() instanceof Number sn) || sn.longValue() <= 0L) {
+                    return null;
+                }
+                stepVal = sn.longValue();
+                sawStep = true;
+                cur = HirRewriter.unwrapTransparent(inner.receiver());
+                continue;
+            }
+            break;
+        }
+        if (!(cur instanceof HirExpr.Range rng)) {
+            return null;
+        }
+        PrimitiveKind ek = rng.elemKind();
+        if (!ek.isPrimitive()) {
+            return null;
+        }
+        HirExpr lo = HirRewriter.unwrapTransparent(rng.start());
+        HirExpr hi = HirRewriter.unwrapTransparent(rng.end());
+        if (!HirPurity.isPureNothrowTerminating(lo, module) || !HirPurity.isPureNothrowTerminating(hi, module)) {
+            return null;
+        }
+        String name = c.target().method().getName();
+        int ln = c.meta().line();
+        ExprMeta boolMeta = ExprMeta.of(ln, PrimitiveKind.BOOL);
+        if (c.args().isEmpty()) {
+            if ("inclusive".equals(name)) {
+                return new HirExpr.Const(rng.inclusive(), boolMeta);
+            }
+            if (("startInt".equals(name) || "startLong".equals(name) || "startChar".equals(name) || "startDouble".equals(name))
+                    && lo.meta().kind() == c.meta().kind() && lo.meta().wideningRank() < 0) {
+                return lo;
+            }
+            if (("endInt".equals(name) || "endLong".equals(name) || "endChar".equals(name) || "endDouble".equals(name))
+                    && hi.meta().kind() == c.meta().kind() && hi.meta().wideningRank() < 0) {
+                return hi;
+            }
+            if ("isEmpty".equals(name) && lo instanceof HirExpr.Const lc && hi instanceof HirExpr.Const hc) {
+                boolean empty = switch (ek) {
+                    case BYTE, SHORT, INT -> rng.inclusive()
+                            ? ((Number) lc.value()).intValue() > ((Number) hc.value()).intValue()
+                            : ((Number) lc.value()).intValue() >= ((Number) hc.value()).intValue();
+                    case LONG -> rng.inclusive()
+                            ? ((Number) lc.value()).longValue() > ((Number) hc.value()).longValue()
+                            : ((Number) lc.value()).longValue() >= ((Number) hc.value()).longValue();
+                    case CHAR -> rng.inclusive()
+                            ? (Character) lc.value() > (Character) hc.value()
+                            : (Character) lc.value() >= (Character) hc.value();
+                    case FLOAT, DOUBLE -> {
+                        double a = ((Number) lc.value()).doubleValue();
+                        double b = ((Number) hc.value()).doubleValue();
+                        yield rng.inclusive() ? !(a <= b) : !(a < b);
+                    }
+                    default -> false;
+                };
+                return new HirExpr.Const(empty, boolMeta);
+            }
+            return null;
+        }
+        if (c.args().size() == 1 && ("containsInt".equals(name) || "containsLong".equals(name)
+                || "containsChar".equals(name) || "containsDouble".equals(name))) {
+            HirExpr x = HirRewriter.unwrapTransparent(c.args().get(0));
+            if (x.meta().kind() != ek || x.meta().wideningRank() >= 0
+                    || lo.meta().kind() != ek || lo.meta().wideningRank() >= 0
+                    || hi.meta().kind() != ek || hi.meta().wideningRank() >= 0) {
+                return null;
+            }
+            // Only duplicate x/lo if cheap pure leaf (Const or VarRead) so no expression is duplicated!
+            if (!isCheapPureLeaf(x, module) || !isCheapPureLeaf(lo, module) || !isCheapPureLeaf(hi, module)) {
+                return null;
+            }
+            HirExpr loCheck = new HirExpr.Binary(HirExpr.BinaryOp.LTE, lo, x, "", "", boolMeta);
+            HirExpr hiCheck = new HirExpr.Binary(rng.inclusive() ? HirExpr.BinaryOp.LTE : HirExpr.BinaryOp.LT,
+                    x, hi, "", "", boolMeta);
+            HirExpr boundsCheck = new HirExpr.Logic(HirExpr.LogicOp.AND, loCheck, hiCheck, boolMeta);
+            if (stepVal == 1L) {
+                return boundsCheck;
+            }
+            // Stepped contains deforestation: lo <= x and x < hi and (x - lo) mod step == 0 (when x - lo cannot overflow)
+            if (ek == PrimitiveKind.INT && lo instanceof HirExpr.Const lc && hi instanceof HirExpr.Const hc
+                    && lc.value() instanceof Number lNum && hc.value() instanceof Number hNum) {
+                long span = (long) hNum.intValue() - (long) lNum.intValue();
+                if (span >= 0L && span <= Integer.MAX_VALUE) {
+                    ExprMeta intMeta = ExprMeta.of(ln, PrimitiveKind.INT);
+                    HirExpr diff = new HirExpr.Binary(HirExpr.BinaryOp.SUB, x, lo, "", "", intMeta);
+                    HirExpr stepC = new HirExpr.Const((int) stepVal, intMeta);
+                    HirExpr rem = new HirExpr.Binary(HirExpr.BinaryOp.MOD, diff, stepC, "", "", intMeta);
+                    HirExpr zero = new HirExpr.Const(0, intMeta);
+                    HirExpr stepCheck = new HirExpr.Binary(HirExpr.BinaryOp.EQ, rem, zero, "", "", boolMeta);
+                    return new HirExpr.Logic(HirExpr.LogicOp.AND, boundsCheck, stepCheck, boolMeta);
+                }
+            }
+            if (ek == PrimitiveKind.LONG && lo instanceof HirExpr.Const lc && hi instanceof HirExpr.Const hc
+                    && lc.value() instanceof Number lNum && hc.value() instanceof Number hNum
+                    && lNum.longValue() >= 0L && hNum.longValue() >= lNum.longValue()) {
+                ExprMeta longMeta = ExprMeta.of(ln, PrimitiveKind.LONG);
+                HirExpr diff = new HirExpr.Binary(HirExpr.BinaryOp.SUB, x, lo, "", "", longMeta);
+                HirExpr stepC = new HirExpr.Const(stepVal, longMeta);
+                HirExpr rem = new HirExpr.Binary(HirExpr.BinaryOp.MOD, diff, stepC, "", "", longMeta);
+                HirExpr zero = new HirExpr.Const(0L, longMeta);
+                HirExpr stepCheck = new HirExpr.Binary(HirExpr.BinaryOp.EQ, rem, zero, "", "", boolMeta);
+                return new HirExpr.Logic(HirExpr.LogicOp.AND, boundsCheck, stepCheck, boolMeta);
+            }
+        }
+        return null;
+    }
+
+    private static boolean isCheapPureLeaf(HirExpr expr, HirModule module) {
+        if (expr instanceof HirExpr.Const) {
+            return true;
+        }
+        return expr instanceof HirExpr.VarRead v && HirPurity.isPureNothrowTerminating(v, module);
+    }
+
+    private static boolean samePureScalarLeaf(HirExpr a, HirExpr b, HirModule module) {
+        HirExpr ua = HirRewriter.unwrapTransparent(a);
+        HirExpr ub = HirRewriter.unwrapTransparent(b);
+        if (ua instanceof HirExpr.Const ca && ub instanceof HirExpr.Const cb) {
+            return java.util.Objects.equals(ca.value(), cb.value()) && ca.meta().kind() == cb.meta().kind();
+        }
+        return ua instanceof HirExpr.VarRead va && ub instanceof HirExpr.VarRead vb
+                && va.var().id() == vb.var().id()
+                && HirPurity.isPureNothrowTerminating(va, module);
     }
 
     private static Long asIntegral(HirExpr expr) {

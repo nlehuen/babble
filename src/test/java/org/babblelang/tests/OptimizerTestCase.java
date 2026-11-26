@@ -812,6 +812,112 @@ public class OptimizerTestCase {
                 "Expected box(unbox(narrow(a))) eliminated at -O2, got: " + boxUnboxCalls);
     }
 
+    @Test
+    public void testBip031RangesAndFlooredDivisionBytecode() throws Exception {
+        String code = ""
+                + "def sumCounted = fn (n : int) : int -> (\n"
+                + "  var s = 0\n"
+                + "  for i in 0..<n then ( s += i )\n"
+                + "  s\n"
+                + ")\n"
+                + "def sumSteppedRev = fn (n : int) : int -> (\n"
+                + "  var s = 0\n"
+                + "  for i in (3..<n).step(5).reversed() then ( s += i )\n"
+                + "  s\n"
+                + ")\n"
+                + "def inBounds = fn (x : int) : bool -> ( (3..<100).step(5).contains(x) )\n"
+                + "def pow2Ops = fn (x : int, y : long) : long -> (\n"
+                + "  (x mod 8) + (x // 8) + (y mod 16l) + (y // 16l)\n"
+                + ")\n"
+                + "def nonNegOps = fn (n : int, arr : array of int) : int -> (\n"
+                + "  var s = (arr.size() mod 3) + (arr.size() // 3)\n"
+                + "  for i in 0..<n then ( s += (i mod 3) + (i // 3) )\n"
+                + "  s\n"
+                + ")\n"
+                + "def deadAfterDivZero = fn (x : int) : int -> (\n"
+                + "  def d = 0\n"
+                + "  def q = x // d\n"
+                + "  q + 999\n"
+                + ")\n"
+                + "def a = array of int(7)\n"
+                + "sumCounted(10) + sumSteppedRev(20) + (if inBounds(18) and not inBounds(19) then (1) else (0)) + int(pow2Ops(-7, -17l)) + nonNegOps(6, a)\n";
+
+        int expected = ((Number) evalInMode(code, "interpret", 0)).intValue();
+        for (int opt : new int[]{1, 2}) {
+            BabbleScriptEngine engine = newEngine();
+            engine.put(BabbleScriptEngine.MODE, "compile");
+            engine.put(BabbleCompiler.OPT_LEVEL, opt);
+            CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
+            Assertions.assertEquals(expected, ((Number) cs.eval()).intValue(), "Mismatch at -O" + opt);
+
+            ClassNode cn = new ClassNode();
+            new ClassReader(cs.getClassBytes()).accept(cn, 0);
+
+            String sumCountedM = findMethod(cn, "$sumCounted$spec");
+            List<String> sumCountedCalls = methodCalls(cn, sumCountedM);
+            Assertions.assertTrue(sumCountedCalls.stream().noneMatch(c -> c.contains("Range") || c.contains("Iterator")),
+                    "-O" + opt + " sumCounted must allocate zero Range/Iterator, got: " + sumCountedCalls);
+
+            String sumSteppedM = findMethod(cn, "$sumSteppedRev$spec");
+            List<String> sumSteppedCalls = methodCalls(cn, sumSteppedM);
+            Assertions.assertTrue(sumSteppedCalls.stream().noneMatch(c ->
+                            c.contains("IntRange") || c.contains("Range.of") || c.contains("Iterator")),
+                    "-O" + opt + " sumSteppedRev must allocate zero Range/Iterator, got: " + sumSteppedCalls);
+
+            String inBoundsM = findMethod(cn, "$inBounds$spec");
+            List<String> inBoundsCalls = methodCalls(cn, inBoundsM);
+            Assertions.assertTrue(inBoundsCalls.stream().noneMatch(c -> c.contains("Range")),
+                    "-O" + opt + " inBounds must deforest Range.contains completely, got: " + inBoundsCalls);
+
+            String pow2M = findMethod(cn, "$pow2Ops$spec");
+            List<String> pow2Calls = methodCalls(cn, pow2M);
+            Assertions.assertTrue(pow2Calls.stream().noneMatch(c -> c.startsWith("java/lang/Math.floor")),
+                    "-O" + opt + " pow2Ops must not call Math.floor*, got: " + pow2Calls);
+            List<Integer> pow2Ops = methodOpcodes(cn, pow2M);
+            Assertions.assertTrue(pow2Ops.contains(Opcodes.IAND) && pow2Ops.contains(Opcodes.ISHR)
+                            && pow2Ops.contains(Opcodes.LAND) && pow2Ops.contains(Opcodes.LSHR),
+                    "-O" + opt + " pow2Ops must emit IAND/ISHR/LAND/LSHR");
+
+            String nonNegM = findMethod(cn, "$nonNegOps$spec");
+            List<String> nonNegCalls = methodCalls(cn, nonNegM);
+            Assertions.assertTrue(nonNegCalls.stream().noneMatch(c -> c.startsWith("java/lang/Math.floor")),
+                    "-O" + opt + " nonNegOps must emit bare IREM/IDIV without Math.floor*, got: " + nonNegCalls);
+            List<Integer> nonNegOps = methodOpcodes(cn, nonNegM);
+            Assertions.assertTrue(nonNegOps.contains(Opcodes.IREM) && nonNegOps.contains(Opcodes.IDIV),
+                    "-O" + opt + " nonNegOps must emit IREM and IDIV");
+
+            String deadM = findMethod(cn, "$deadAfterDivZero$spec");
+            List<String> deadCalls = methodCalls(cn, deadM);
+            Assertions.assertTrue(deadCalls.stream().noneMatch(c -> c.startsWith("java/lang/Math.floor")),
+                    "-O" + opt + " deadAfterDivZero must fold zero divisor to throw, got: " + deadCalls);
+            Assertions.assertTrue(methodOpcodes(cn, deadM).contains(Opcodes.ATHROW),
+                    "-O" + opt + " deadAfterDivZero must emit ATHROW");
+            MethodNode deadNode = cn.methods.stream().filter(m -> m.name.equals(deadM)).findFirst().orElseThrow();
+            for (var insn = deadNode.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+                if (insn instanceof org.objectweb.asm.tree.IntInsnNode ii) {
+                    Assertions.assertNotEquals(999, ii.operand, "-O" + opt + " dead code +999 must be pruned");
+                }
+            }
+        }
+    }
+
+    private static String findMethod(ClassNode cn, String suffix) {
+        return cn.methods.stream().map(m -> m.name).filter(n -> n.endsWith(suffix)).findFirst()
+                .orElseThrow(() -> new AssertionError("Missing method ending with " + suffix + " in "
+                        + cn.methods.stream().map(m -> m.name).toList()));
+    }
+
+    private static List<Integer> methodOpcodes(ClassNode cn, String methodName) {
+        MethodNode mn = cn.methods.stream().filter(m -> m.name.equals(methodName)).findFirst().orElseThrow();
+        List<Integer> ops = new ArrayList<>();
+        for (var insn = mn.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+            if (insn.getOpcode() >= 0) {
+                ops.add(insn.getOpcode());
+            }
+        }
+        return ops;
+    }
+
     private static List<String> methodCalls(ClassNode cn, String methodName) {
         MethodNode mn = cn.methods.stream().filter(m -> m.name.equals(methodName)).findFirst()
                 .orElseThrow(() -> new AssertionError("Missing method " + methodName + " in "
