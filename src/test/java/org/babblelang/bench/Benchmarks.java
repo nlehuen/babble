@@ -10,7 +10,6 @@ import javax.script.CompiledScript;
 import javax.script.ScriptContext;
 import javax.script.ScriptEngine;
 import javax.script.SimpleBindings;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -21,8 +20,7 @@ import java.util.Map;
  * A plain warm-up and timing harness comparing interpret, compile -O0, compile -O1 and
  * compile -O2 (docs/design/bip001_bytecode-compiler.md §11, docs/design/bip014_optimization-passes.md).
  * Not a test : run its main method from the repository root, with the test class path
- * (it reads {@code src/test/babble/Stack.ba} and imports the modules of
- * {@code examples/raytracer-argon/lib}).
+ * (it imports the modules of {@code examples/raytracer-argon/lib}).
  *
  * <p>Arguments : an optional filter on the benchmark names, then optionally the modes to run,
  * among {@code interpret}, {@code O0}, {@code O1} and {@code O2} (all of them by default) ; a mode
@@ -80,13 +78,82 @@ public final class Benchmarks {
         }
     }
 
+    private static final String STACK_SOURCE = """
+            ;;(
+                Implementation of a simple LIFO stack
+            ;;)
+            def Node of T = class (def value: T, def next: (Node of T)?) ()
+
+            def Stack of T = class () (
+                var size = 0
+                var head: (Node of T)? = null
+
+                def push = fn mut (shared a: T) -> (
+                    this.size = this.size + 1
+                    this.head = Node(a, this.head)
+                )
+
+                def first = fn (): T? -> (
+                    def head = this.head
+                    if head == null then (
+                        null
+                    ) else (
+                        head.value
+                    )
+                )
+
+                def pop = fn mut (): T? -> (
+                    def head = this.head
+                    if head == null then (
+                        null
+                    ) else (
+                        def result = head.value
+                        this.head = head.next
+                        this.size = this.size - 1
+                        result
+                    )
+                )
+
+                ;;(
+                    A recursive method : "recurse" evaluates to the method bound to the
+                    receiver, so that "this" still designates it in the recursive call.
+                ;;)
+                def clear = fn mut () -> (
+                    if this.head == null then (
+                        this.size
+                    ) else (
+                        this.pop()
+                        recurse()
+                    )
+                )
+
+                def join = fn (sep = " ") -> (
+                    var current = this.head
+                    var result = ""
+                    var first = true
+
+                    while current then (
+                        if first then (
+                            first = false
+                        ) else (
+                            result = result + sep
+                        )
+
+                        result = result + current.value
+                        current = current.next
+                    )
+
+                    result
+                )
+            )
+
+            def create of T = fn (): unique Stack of T -> (Stack())
+            """;
+
     private Benchmarks() {
     }
 
     public static void main(String[] args) throws Exception {
-        String stack = Files.readString(Path.of("src/test/babble/Stack.ba"));
-        stack = stack.substring(0, stack.indexOf("def test = "));
-
         Map<String, String> scripts = new LinkedHashMap<>();
         Map<String, Bench> benches = new LinkedHashMap<>();
         scripts.put("fib(25) : calls and arithmetic",
@@ -99,7 +166,7 @@ public final class Benchmarks {
                 "def counter = fn () -> ( var c = 0 ; fn () -> ( c = c + 1 ) ) ; def c = counter() ; var i = 0\n"
                         + "while i < 200000 then ( c() ; i = i + 1 ) ; c()");
         scripts.put("Stack.ba push/pop : objects and methods",
-                stack + "def l : Stack of int = create() ; var i = 0\n"
+                STACK_SOURCE + "def l : Stack of int = create() ; var i = 0\n"
                         + "while i < 20000 then ( l.push(i) ; i = i + 1 )\n"
                         + "while l.size > 0 then ( l.pop() )");
         scripts.put("ArrayList add/get : Java interop",

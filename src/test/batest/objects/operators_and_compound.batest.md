@@ -103,3 +103,23 @@ x += 1
 ```error
 Not a number : x
 ```
+
+## Compound assignment on captured closure variable and record-typed field
+
+```babble
+def counter = fn () -> (
+    var count = 0
+    fn () -> ( count += 1 )
+)
+def next = counter()
+assert(next() == 1 and next() == 2)
+
+def Particle = class () (
+    var position = Vec(0.0, 0.0)
+    def move = fn (d) -> ( this.position += d )
+)
+def p = Particle()
+p.move(Vec(1.0, 1.0))
+p.move(Vec(2.0, 3.0))
+assert(p.position == Vec(3.0, 4.0))
+```

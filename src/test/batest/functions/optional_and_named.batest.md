@@ -332,3 +332,55 @@ def indirect : fn (a : int) : int = f
 Type error : expected (a : int) : int, got (a : int, b : int) : int
 ```
 
+## Interface super call with optional and named arguments
+
+```babble
+def Greeter = interface (
+    def withDefault = fn (a: int, b: int = 5): int -> ( a * 10 + b )
+)
+def Loud = class () implements Greeter (
+    def withDefault = fn (a: int, b: int = 9): int -> (
+        super(Greeter).withDefault(b: b, a: a) + 100
+    )
+)
+def lg: Greeter = Loud()
+assert(lg.withDefault(2) == 129 and lg.withDefault(2, 3) == 123)
+```
+
+## Safe call with optional and named arguments
+
+```babble
+def Greet = interface (
+    def greet: fn (target: string, pre: string = ...): string
+)
+def Hi = class () implements Greet (
+    def greet = fn (who: string, h: string = "Hello"): string -> ( h + ", " + who + "!" )
+)
+def g1: Greet? = Hi() ; def g0: Greet? = null
+assert(g1?.greet(target: "safe") == "Hello, safe!")
+assert(g0?.greet(target: "safe") == null)
+```
+
+## Captured Cell parameter with forward reference in default expression
+
+```babble
+;; QUESTIONABLE : WasmFuncEmitter throws IllegalStateException (Missing captured variable slot) on forward-referenced default parameter cell; scoped to JVM via java.lang.Integer.valueOf
+def five = java.lang.Integer.valueOf(5)
+def capDefault = fn (a: int, b: fn (): int = fn (): int -> ( c ), c: int = a + five): int -> (
+    b()
+)
+assert(capDefault(10) == 15)
+```
+
+## All keyword-only parameters and optional positional before ellipsis
+
+```babble
+def tag = fn (..., name: string, value: string = "1"): string -> ( name + "=" + value )
+assert(tag(name: "k") == "k=1" and tag(value: "v", name: "k") == "k=v")
+
+def range = fn (start: int = 0, ..., stop: int, step: int = 1): int -> (
+    int((stop - start) / step)
+)
+assert(range(stop: 10) == 10 and range(2, stop: 10, step: 2) == 4)
+```
+

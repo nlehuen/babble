@@ -1,12 +1,15 @@
 package org.babblelang.tests;
 
 import org.babblelang.format.Formatter;
+import org.babblelang.tests.batest.BatestFile;
+import org.babblelang.tests.batest.BatestParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
 import javax.script.ScriptException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -448,10 +451,9 @@ public class FormatterTestCase {
     @Test
     public void testEveryScript() throws Exception {
         List<Path> scripts;
-        try (Stream<Path> tests = Files.walk(Path.of("src/test/babble"));
-             Stream<Path> examples = Files.walk(Path.of("examples"));
+        try (Stream<Path> examples = Files.walk(Path.of("examples"));
              Stream<Path> axioms = Files.walk(Path.of("src/main/java/org/babblelang/axioms"))) {
-            scripts = Stream.concat(Stream.concat(tests, examples), axioms)
+            scripts = Stream.concat(examples, axioms)
                     .filter(path -> path.toString().endsWith(".ba")).sorted().toList();
         }
         Assertions.assertFalse(scripts.isEmpty());
@@ -463,6 +465,63 @@ public class FormatterTestCase {
             if (script.startsWith(Path.of("src/main/java/org/babblelang/axioms"))) {
                 Assertions.assertEquals(original, formatted, "Axiom file is not formatter-clean : " + script);
             }
+        }
+    }
+
+    @Test
+    public void testAllBatestSnippetsFormatIdempotently() throws Exception {
+        List<String> failures = new ArrayList<>();
+        int checked = 0;
+
+        Path batestRoot = Path.of("src/test/batest");
+        try (Stream<Path> stream = Files.walk(batestRoot)) {
+            for (Path file : stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
+                String relative = batestRoot.relativize(file).toString();
+                BatestFile parsed = BatestParser.parse(file, relative);
+                if (parsed.preamble() != null && !parsed.preamble().isBlank()) {
+                    checked++;
+                    checkFormatsIdempotently(parsed.preamble(), relative + " preamble", failures);
+                }
+                for (var mod : parsed.modules().entrySet()) {
+                    checked++;
+                    checkFormatsIdempotently(mod.getValue(), relative + " module " + mod.getKey(), failures);
+                }
+                for (BatestFile.BatestCase testCase : parsed.cases()) {
+                    if (testCase.expectedError() != null
+                            && (testCase.expectedError().text().startsWith("Syntax error")
+                            || testCase.expectedError().text().startsWith("Lexical error"))) {
+                        continue;
+                    }
+                    for (var mod : testCase.caseModules().entrySet()) {
+                        checked++;
+                        checkFormatsIdempotently(mod.getValue(),
+                                relative + ":" + testCase.line() + " module " + mod.getKey(), failures);
+                    }
+                    for (int i = 0; i < testCase.inputs().size(); i++) {
+                        checked++;
+                        checkFormatsIdempotently(testCase.inputs().get(i),
+                                relative + ":" + testCase.line() + " input[" + i + "]", failures);
+                    }
+                }
+            }
+        }
+
+        Assertions.assertTrue(checked > 400, "Expected to check >400 .batest.md snippets, checked " + checked);
+        Assertions.assertEquals(List.of(), failures, "Formatter failures:\n" + String.join("\n", failures));
+    }
+
+    private static void checkFormatsIdempotently(String source, String label, List<String> failures) {
+        try {
+            String formatted = Formatter.format(source, label);
+            String second = Formatter.format(formatted, label);
+            if (!formatted.equals(second)) {
+                failures.add(label + " did not reach a fixed point on second format");
+            }
+            if (formatted.lines().anyMatch(line -> line.endsWith(" "))) {
+                failures.add(label + " formatted output has trailing spaces");
+            }
+        } catch (Exception e) {
+            failures.add(label + " failed to format: " + e.getMessage());
         }
     }
 

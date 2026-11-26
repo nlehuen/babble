@@ -52,3 +52,17 @@ def x = java.lang.NoSuchClassHere()
 ```error
 java.lang.NoSuchClassHere is not callable
 ```
+
+## Non-java package root, static inner classes, null argument, and java.sql
+
+```babble
+def org = import("org")
+def fac = org.babblelang.engine.BabbleScriptEngineFactory()
+def Demo = org.babblelang.tests.JavaClassDemo
+def demo = Demo()
+assert(fac != null)
+assert(Demo.Internal1().toString() == "Internal1")
+assert(Demo.Internal3().toString() == "Internal3")
+assert(demo.nullable(null) == "null")
+assert(java.sql.DriverManager.getDrivers() <> null)
+```

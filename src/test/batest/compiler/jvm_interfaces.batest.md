@@ -631,3 +631,92 @@ interface Other
 interface Other:
   (no default methods)
 ```
+
+## Static as cast to plain Babble class and Babble interface
+
+```babble
+def Named = interface (def label: fn (): string)
+def Holder = class (def s: string) implements Named (
+    def label = fn (): string -> (this.s)
+)
+def castBox = fn (x: any): Holder -> (x as Holder)
+def castNamed = fn (x: any): Named -> (x as Named)
+def v: any = Holder("hi")
+assert(castBox(v).s == "hi" and castNamed(v).label() == "hi")
+```
+
+```hir
+;; hir -O0,-O1 fn=castBox
+fn castBox (x:obj) -> obj {pure}
+  (as var(x) babble|Holder)
+```
+
+```hir
+;; hir -O0,-O1 fn=castNamed
+fn castNamed (x:obj) -> obj {pure}
+  (as var(x) babble|Named)
+```
+
+```mir
+;; mir -O2 fn=castBox stage=before,final
+fn castBox(v0: any) -> any:
+  bb0:
+    v1: any = checkcast v0 <babble|Holder>
+    ret v1
+```
+
+```mir
+;; mir -O2 fn=castNamed stage=before,final
+fn castNamed(v0: any) -> any:
+  bb0:
+    v1: any = checkcast v0 <babble|Named>
+    ret v1
+```
+
+## Multi-hop cross-module interface extends propagation
+
+```babble
+;; babble module=pkg/lib.ba
+export def A = interface (def x: fn (): int)
+export def B = interface extends A (def y = fn (): int -> (this.x()))
+```
+
+```babble
+;; babble module=pkg/mid.ba
+def lib = import("lib.ba")
+export def C = interface extends lib.B (def z: fn (): int)
+```
+
+```babble
+def mid = import("pkg/mid.ba")
+def Impl = class () implements mid.C (
+    def x = fn (): int -> (2)
+    def z = fn (): int -> (3)
+)
+def c: mid.C = Impl()
+assert(c.y() + c.z() == 5 and (c is mid.C))
+```
+
+```hir
+;; hir -O0,-O1 class=Impl
+class Impl
+  (def x (fn-ref Impl.x))
+  (def z (fn-ref Impl.z))
+  fn Impl.x () -> int {nothrow unique}
+    2:int
+  fn Impl.z () -> int {nothrow unique}
+    3:int
+```
+
+```mir
+;; mir -O2 class=Impl stage=before,final
+class Impl:
+  fn Impl.x() -> int:
+    bb0:
+      v0: int = const 2
+      ret v0
+  fn Impl.z() -> int:
+    bb0:
+      v0: int = const 3
+      ret v0
+```

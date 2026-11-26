@@ -142,3 +142,44 @@ println(bad(1))
 ```error
 Function bad violates pure guarantee (performs I/O or external mutation) : mark function as io
 ```
+
+## Transitive module class identity and local class alias
+
+```babble
+;; babble module=vectors.ba
+def square = fn (n) -> ( n * n )
+export def Vec = record (x: int, y: int) (
+    def plus = fn (o: Vec): Vec -> ( Vec(this.x + o.x, this.y + o.y) )
+    def lengthSquared = fn () -> ( square(this.x) + square(this.y) )
+)
+export def origin = Vec(0, 0)
+assert(Vec(3, 4).lengthSquared() == 25)
+```
+
+```babble
+;; babble module=shapes.ba
+def vectors = import("vectors.ba")
+def Vec = vectors.Vec
+export def Shape = interface (
+    def area: fn (): double
+    def describe = fn () -> ( "shape of area " + this.area() )
+)
+export def Square = class (def corner: Vec, def side: int) implements Shape (
+    def area = fn (): double -> ( this.side * this.side )
+    def opposite = fn () -> ( this.corner.plus(Vec(this.side, this.side)) )
+)
+var created = 0
+export def unitSquare = fn io () -> ( created += 1 ; Square(vectors.origin, 1) )
+export def count = fn volatile () -> ( created )
+```
+
+```babble
+def shapes = import("shapes.ba")
+def vectors = import("vectors.ba")
+def Vec = vectors.Vec
+def s = shapes.Square(Vec(1, 2), 3)
+assert(s.area() == 9 and s.opposite() == Vec(4, 5) and s is shapes.Shape)
+assert(s.describe() == "shape of area 9.0")
+assert(Vec(1, 1).plus(Vec(2, 2)) == Vec(3, 3))
+assert(shapes.unitSquare().corner is Vec and shapes.count() == 1)
+```

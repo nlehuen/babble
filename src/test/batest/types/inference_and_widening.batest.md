@@ -57,3 +57,32 @@ def unused = fn (x) -> ( x + 1 )
 ```error
 Missing type : x
 ```
+
+## Int to double widening on if and early return joins
+
+```babble
+def pickNumber = fn (c) -> ( if c then ( 1 ) else ( 2.0 ) )
+def w = pickNumber(true)
+assert(w is double and w + w == 2.0)
+
+def pickEarly = fn (c) -> (
+    if c then ( return 1 )
+    2.0
+)
+def w2 = pickEarly(true)
+assert(w2 is double and w2 + w2 == 2.0)
+```
+
+## Reassignment widening from null to int? and double?
+
+```babble
+var infInt = null
+infInt = 7
+assert(infInt == 7)
+
+var infDbl = null
+infDbl = 1
+assert(infDbl is double and infDbl == 1.0)
+infDbl = 2.5
+assert(infDbl == 2.5)
+```
