@@ -1,4 +1,4 @@
-;; Curated axioms for org.babblelang.runtime (BIP031-P1)
+;; Curated axioms for org.babblelang.runtime (BIP031-I1)
 
 axiom org.babblelang.runtime.CharRange: class notnull immutable (
     def contains: fn nothrow (value: any?): bool

@@ -13,7 +13,7 @@ assert(-7 // -3 == 2 and -7 mod -3 == -1)
 
 ;; Division identity : b * (a // b) + (a mod b) == a
 for a in -10..10 then (
-    for b in list of int(-7, -4, -3, -1, 1, 3, 4, 7) then (
+    for b in list of int (-7, -4, -3, -1, 1, 3, 4, 7) then (
         assert(b * (a // b) + (a mod b) == a)
     )
 )
@@ -43,28 +43,28 @@ assert(not closed.isEmpty() and (5..<5).isEmpty() and (6..5).isEmpty())
 ;; 3. Discrete progressions : .step(k) and .reversed()
 def stepped = (3..<20).step(5)
 def revStepped = stepped.reversed()
-def fwd = list of int()
+def fwd = list of int ()
 for i in stepped then (
     fwd.add(i)
 )
-assert(fwd == list of int(3, 8, 13, 18))
+assert(fwd == list of int (3, 8, 13, 18))
 
-def rev = list of int()
+def rev = list of int ()
 for i in revStepped then (
     rev.add(i)
 )
-assert(rev == list of int(18, 13, 8, 3))
+assert(rev == list of int (18, 13, 8, 3))
 assert(stepped.contains(13) and not stepped.contains(14))
 assert(revStepped.contains(13) and not revStepped.contains(14))
 assert(stepped.toString() == "(3..<20).step(5)")
 assert(revStepped.toString() == "(3..<20).step(5).reversed()")
 
 ;; 4. Char, long, double, and string (Comparable) ranges
-def letters = list of char()
+def letters = list of char ()
 for c in 'a'..'e' then (
     letters.add(c)
 )
-assert(letters == list of char('a', 'b', 'c', 'd', 'e'))
+assert(letters == list of char ('a', 'b', 'c', 'd', 'e'))
 
 var longSum = 0l
 for n in 10000000000l..10000000003l then (
