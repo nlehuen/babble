@@ -703,8 +703,10 @@ flowchart TB
     FrontEnd --> HIR["HIR & Nanopass Optimizer (org.babblelang.ir.hir / opt)\nElementwise Fusion · E-Graph View Rewrites · SROA (O9) · FBIP TensorReuse (O10)"]
     HIR --> JvmEmit["JVM Bytecode Backend (ASM / BIP018 Class-File API)"]
     HIR --> WasmEmit["BIP025 WebAssembly 3.0 Backend"]
+    HIR -. "Optional BIP018 FFM\n(pure nothrow regions)" .-> XlaRegion["StableHLO / XLA (PJRT)\nRegion Backend (deferred)"]
     Interp --> Runtime["java.base-only Runtime (org.babblelang.runtime.tensor)\nTensor · DType · TensorStorage · TensorOps · TensorBuilder"]
     JvmEmit --> Runtime
+    XlaRegion -. "opaque buffer handles" .-> Runtime
     Runtime --> SPI["TensorBackend SPI"]
     SPI --> CpuBase["JvmCpuTensorBackend (default, java.base)\nCache-tiled matmul · Contiguous fast-paths"]
     SPI -. "Optional BIP018 target-gated" .-> Simd["VectorApiTensorBackend\n(jdk.incubator.vector SIMD)"]
@@ -745,7 +747,8 @@ public final class Tensor {
   * Deterministic reduction ordering so `Interpreter`, `-O0`, `-O1`, and `-O2` produce bit-identical results.
 * **Pluggable `TensorBackend` SPI:**
   * Internal `TensorBackend` interface (`matmul`, `einsum`, `elementwise`, `reduce`, `conv2d`, `allocate`, `materialize`) discovered via `ServiceLoader` or explicit `BabbleScriptEngine` configuration, defaulting to `JvmCpuTensorBackend`.
-  * Enables `BIP018` editions (`babble-25`, `babble-28`, `babble-29+`) to drop in a `Vector API` SIMD backend or a `java.lang.foreign` (Panama FFM) BLAS / Metal / CUDA backend without altering a single line of Babble syntax or static types.
+  * **Optional compiled-region hook (`supportsRegions`, `compileRegion`, `executeRegion`):** Graph compilers such as **OpenXLA / StableHLO via PJRT** (`[XLA]`, `[SHLO]`) should *not* be invoked op-by-op (which sacrifices cross-op fusion and adds dispatch overhead). Instead, `TensorBackend` exposes an optional region-compilation capability — defaulting to unsupported on `JvmCpuTensorBackend` — that accepts a serialized whole-region tensor IR payload plus an input `unique`-donation bitmask, executes on opaque `TensorStorage` device handles, and materializes lazily back to primitive arrays only on host reads.
+  * Enables `BIP018` editions (`babble-25`, `babble-28`, `babble-29+`) to drop in a `Vector API` SIMD backend, a `java.lang.foreign` (Panama FFM) BLAS / Metal / CUDA backend, or an optional **StableHLO / XLA (PJRT)** region backend without altering a single line of Babble syntax or static types.
 * **WebAssembly 3.0 portability (`BIP025`):** Because `Tensor` is a plain immutable struct over flat primitive arrays (`$FloatArray`, `$ShortArray`, `$IntArray`, etc.) and `JvmCpuTensorBackend` uses zero reflection or native code, `BIP025` can lower `Tensor` directly to WasmGC structs + primitive arrays (and leverage Wasm Relaxed SIMD when enabled).
 
 ### 9.3 Reified runtime `dim` and `shape` parameters
@@ -815,6 +818,8 @@ All nodes integrate with `HirVerifier`, `HirCanonicalPrinter` (`.batest.md` `-O0
    * Sets `reuseFirstUnique = true` on `TensorElemOp` and `TensorFusedKernel` whenever an operand is statically `unique` and dead after the operation (e.g., `move(w) - lr * grad`), reusing the backing primitive array in place with zero heap allocation (`!dst.isView && dst.contiguous`).
 5. **Small fixed-shape SROA (`ScalarReplacePass` `O9`, `-O1`/`-O2`):**
    * Non-escaping small fixed-shape tensors (e.g., `Vec of (double, 3)` or `Mat of (float, 4, 4)` with $\le 16$ static elements) can be scalar-replaced into unboxed primitive locals — giving ray-tracer/physics code `record Vec3`-level performance (`BIP014-I4`) directly with `tensor`.
+6. **Whole-region lowering readiness for StableHLO / XLA (`§9.2`, `§12`):**
+   * Because every structured tensor `HIR` node (§10.1) is pure, alias-free, and statically shaped (or carries explicit symbolic `dim` params), maximal connected `pure nothrow` tensor subgraphs (with any `dyn`/bounds `TensorShapeCheck` hoisted ahead of the region entry to preserve `BIP033-D12` eager error semantics) can be lowered directly to **StableHLO** (`[SHLO]`) and executed through `TensorBackend`'s optional region SPI (`[XLA]`), mapping `EffectChecker`'s static `unique` flags directly to compile-time-verified XLA buffer donation (`SetUpAlias`) with zero runtime tracing and zero graph breaks.
 
 ### 10.3 Functional automatic differentiation readiness (`BIP033-D13`)
 
@@ -845,6 +850,7 @@ Each phase keeps `mvn -B package -PO2` green across all execution modes (`interp
 * **Functional Automatic Differentiation BIP:** Compile-time `HIR` reverse-mode / forward-mode AD (`grad`, `valueAndGrad`, `vjp`, `jvp`, `stopGradient`) leveraging `BIP033`'s immutable pure tensors and structured `HIR` ops.
 * **Quantized & Packed Storage Dtypes:** Adding sub-byte / unsigned storage formats (`uint8`, `int4`, `fp8_e4m3`, `fp8_e5m2`) as tensor dtypes with dequantizing `matmul` kernels for LLM inference.
 * **Accelerated `TensorBackend` Implementations (`BIP018`):** Target-gated `jdk.incubator.vector` SIMD backend (once Vector API graduates post-Valhalla) and `java.lang.foreign` Panama FFM backends (OpenBLAS / Apple Accelerate / cuBLAS / Metal / WebGPU) plugged into `BIP033`'s `TensorBackend` SPI.
+* **Optional StableHLO / XLA (PJRT) Region Backend (`BIP018`):** Target-gated, zero-tracing `HIR`-to-StableHLO lowering (`[SHLO]`) paired with OpenXLA's C-ABI PJRT plugin runtime (`[XLA]`) via `java.lang.foreign` Panama FFM. Compiles maximal `pure nothrow` tensor regions (hoisting `dyn`/bounds checks ahead of region entry to preserve `BIP033-D12` eager parity), specializes symbolic `dim` regions per concrete shape signature, maps static `unique` flags directly to compile-time-verified XLA buffer donation, and keeps heavy native XLA libraries strictly outside core `java.base` Babble and default `babblec` jars.
 * **`std/nn` Standard Library Module:** High-level neural network layers, activations, normalizations, `Conv2d`, losses, and optimizers built in pure Babble on top of `BIP033` once the module search path & `std/` BIP lands.
 * **Indexing & Slicing Sugar (`BIP008` §5.1):** If Babble later adopts concise indexing syntax for `array`, `list`, `map`, and `string`, it lowers uniformly to `tensor.get(...)` / `tensor.slice(...)`.
 
@@ -861,7 +867,7 @@ All external references below were verified against publicly available documenta
 | **`[TFG]`** | `tf.function` & graph semantics | TensorFlow Core Guides — [Introduction to graphs and `tf.function`](https://www.tensorflow.org/guide/intro_to_graphs), [Better performance with `tf.function`](https://www.tensorflow.org/guide/function) |
 | **`[JAX18]`** | JAX tracing JIT design | Frostig, Johnson & Leary, *Compiling machine learning programs via high-level tracing* (SysML 2018) — [PDF](https://cs.stanford.edu/~rfrostig/pubs/jax-mlsys2018.pdf) |
 | **`[JAXD]`** | JAX JIT, `jaxpr`, sharp bits & export | JAX Documentation — [Just-in-time compilation](https://docs.jax.dev/en/latest/201/jit.html), [The Sharp Bits](https://docs.jax.dev/en/latest/notebooks/Common_Gotchas_in_JAX.html), [The jaxpr language](https://docs.jax.dev/en/latest/601/jaxpr.html), [Shape polymorphism](https://docs.jax.dev/en/latest/export/shape_poly.html) |
-| **`[XLA]`** | XLA fusion, passes & aliasing | OpenXLA Documentation — [XLA architecture](https://openxla.org/xla/architecture), [XLA overview & `jit_compile`](https://openxla.org/xla/tf2xla), [HLO Passes](https://openxla.org/xla/hlo_passes), [Aliasing in XLA](https://openxla.org/xla/aliasing) |
+| **`[XLA]`** | XLA fusion, passes, aliasing & PJRT | OpenXLA Documentation — [XLA architecture](https://openxla.org/xla/architecture), [XLA overview & `jit_compile`](https://openxla.org/xla/tf2xla), [HLO Passes](https://openxla.org/xla/hlo_passes), [Aliasing in XLA](https://openxla.org/xla/aliasing), [PJRT - Uniform Device API](https://openxla.org/xla/pjrt) |
 | **`[SHLO]`** | StableHLO portability opset | OpenXLA — [StableHLO Specification](https://openxla.org/stablehlo/spec), [openxla/stablehlo](https://github.com/openxla/stablehlo) |
 | **`[PT24]`** | PyTorch 2 compiler stack | Ansel et al., *PyTorch 2: Faster Machine Learning Through Dynamic Python Bytecode Transformation and Graph Compilation* (ASPLOS 2024) — [PDF](https://docs.pytorch.org/assets/pytorch2-2.pdf) |
 | **`[PTD]`** | TorchDynamo, functionalization, dynamic shapes & Named Tensors | PyTorch Documentation — [Dynamo Core Concepts](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.dynamo_core_concepts.html), [Common Graph Breaks](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/compile/programming_model.common_graph_breaks.html), [Dynamic Shapes](https://docs.pytorch.org/docs/stable/user_guide/torch_compiler/torch.compiler_dynamic_shapes.html), [`torch.func.functionalize`](https://docs.pytorch.org/docs/stable/generated/torch.func.functionalize.html), [Feature classification (Named Tensors Prototype)](https://pytorch.org/blog/pytorch-feature-classification-changes/) |
