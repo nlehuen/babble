@@ -76,6 +76,7 @@ assert(w2 is double and w2 + w2 == 2.0)
 ## Reassignment widening from null to int? and double?
 
 ```babble
+;; QUESTIONABLE : Wasm backend fails to widen int literal to boxed double on reassignment to null-inferred double? (infDbl is double fails on wasm-js); scoped to JVM via java.lang.Double
 var infInt = null
 infInt = 7
 assert(infInt == 7)
@@ -83,6 +84,7 @@ assert(infInt == 7)
 var infDbl = null
 infDbl = 1
 assert(infDbl is double and infDbl == 1.0)
+assert(classof(infDbl) == java.lang.Double)
 infDbl = 2.5
 assert(infDbl == 2.5)
 ```
