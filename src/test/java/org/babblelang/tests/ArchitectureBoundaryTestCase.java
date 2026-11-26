@@ -71,7 +71,6 @@ public class ArchitectureBoundaryTestCase {
                     Map.entry("src/main/java/org/babblelang/wasm/WasmFuncEmitter.java", 2_814),
                     Map.entry("src/main/java/org/babblelang/ir/hir/HirBuilder.java", 2_797),
                     Map.entry("src/main/java/org/babblelang/opt/hir/ScalarReplacePass.java", 2_550),
-                    Map.entry("src/main/java/org/babblelang/compiler/MirEmitter.java", 2_244),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmCoreEmitter.java", 2_463),
                     Map.entry("src/main/java/org/babblelang/analysis/EffectBodyWalker.java", 2_430),
                     Map.entry("src/main/java/org/babblelang/compiler/HirEmitter.java", 2_357),

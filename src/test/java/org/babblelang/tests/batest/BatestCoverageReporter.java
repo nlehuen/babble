@@ -1226,7 +1226,7 @@ public final class BatestCoverageReporter {
         }
         if (qualifiedClass.startsWith("org.babblelang.ir.mir.")
                 || qualifiedClass.startsWith("org.babblelang.opt.mir.")
-                || qualifiedClass.equals("org.babblelang.compiler.MirEmitter")) {
+                || qualifiedClass.startsWith("org.babblelang.compiler.Mir")) {
             return Scope.MIR;
         }
         if (qualifiedClass.startsWith("org.babblelang.opt.")
