@@ -20,6 +20,7 @@ Read this reference before designing decompositions in Phase 2 or executing edit
 - **Hard 2,000-LOC ratchet**: Every `*.java`, `*.g4`, `*.ba` file under `src/main` must be `<= 2,000` physical LOC, except files pinned in `GRANDFATHERED_CEILINGS`. When refactoring shrinks a grandfathered file:
   - If still `> 2,000` LOC: lower its recorded ceiling in `GRANDFATHERED_CEILINGS` to the new line count (slack `> 50` lines fails the test).
   - If `<= 2,000` LOC: delete its entry from `GRANDFATHERED_CEILINGS` (the test fails on stale exemptions).
+- **Adjacent-layer sharing vs. forbidden leaks**: The rules above forbid *reverse* or *leaky* dependencies (parse trees past `HirBuilder`, ASM in `wasm`, compiler types in `runtime`, etc.), not intentional sharing across adjacent pipeline interfaces. When refactoring a layer (e.g., HIR or MIR), check the layers immediately above and below—improving or sharing clean data structures over the interface between adjacent layers is an acceptable trade-off when it eliminates redundant copying or translation boilerplate.
 
 ## 2. Runtime & AOT Boundary (`RuntimeBoundaryTestCase`)
 

@@ -51,6 +51,7 @@ Before proposing concrete edits, analyze and discuss refactoring levers for each
 
 - **Deduplication & consolidation**: Shared abstractions, genericized pipelines, or table-driven logic that reduce **total** codebase LOC, not just per-file LOC.
 - **Data model adjustments**: Cleaner internal representations, algebraic/sealed types, or state simplifications that eliminate defensive branching.
+- **Cross-layer data-structure sharing**: When refactoring a component in one pipeline layer (e.g., analysis, HIR, MIR, or a backend), inspect what the layers immediately above and below are doing and consider improving or sharing data structures across the boundary to reduce copying, re-derivation, or translation boilerplate. A modest amount of coupling between adjacent layers is acceptable as long as it happens cleanly over the explicit interface between layers and respects the isolation rules in [references/babble-invariants.md](./references/babble-invariants.md).
 - **Algorithmic improvements**: More expressive or declarative algorithms that replace sprawling imperative code.
 - **Cohesive decomposition**: Splitting strictly along clear domain or responsibility boundaries only where a file genuinely conflates distinct concerns (checking [references/babble-invariants.md](./references/babble-invariants.md) so new classes respect ANTLR, `ScopeAnalysis`, reflection, Wasm, and runtime boundaries).
 
