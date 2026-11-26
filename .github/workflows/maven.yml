@@ -1,8 +1,10 @@
 # Build Once, Fan Out, Then Gate CI workflow for Babble:
-#   1. build      (1 runner)  : compiles src/main + src/test and packages jars once, uploads target/
-#   2. unit-tests (1 runner)  : downloads target/ and runs src/test/java (excluding batest runners) across interpret, -O1, -O0
-#   3. batest     (6 runners) : downloads target/ and runs -Dbatest.shard=<N>/6 across interpret, -O1 (+ Wasm 3.0), -O0
-#   4. ci         (1 runner)  : single required status-check gate aggregating build, unit-tests, and all batest shards
+#   1. build         (1 runner)  : compiles src/main + src/test and packages jars once, uploads target/
+#   2. unit-tests    (1 runner)  : downloads target/ and runs src/test/java (excluding batest runners) across interpret, -O1, -O0
+#   3. batest        (6 runners) : downloads target/, runs -Pbatest 4-mode JVM specs (interpret, -O1, -O0, -O2 with JaCoCo)
+#                                  and Wasm 3.0 parity for -Dbatest.shard=<N>/6, and uploads per-shard JaCoCo .exec + outcomes
+#   4. batest-report (1 runner)  : merges JaCoCo .exec and outcomes-*.jsonl across all 6 shards and enforces 4-way parity + >= 80% 6-scope coverage gate
+#   5. ci            (1 runner)  : single required status-check gate aggregating build, unit-tests, batest, and batest-report
 
 name: Java CI with Maven
 
@@ -91,18 +93,82 @@ jobs:
       with:
         name: maven-target
         path: target
-    - name: Run batest shard ${{ matrix.shard }}/6 (interpret, -O1 + Wasm, -O0)
+    - name: Run 4-mode JVM batest shard ${{ matrix.shard }}/6 with JaCoCo
       run: |
-        mvn -B --file pom.xml \
+        mvn -B -Pbatest --file pom.xml \
+          jacoco:prepare-agent@prepare-agent-interpret \
+          jacoco:prepare-agent@prepare-agent-compile \
+          jacoco:prepare-agent@prepare-agent-compile-O0 \
+          jacoco:prepare-agent@prepare-agent-compile-O2 \
           surefire:test@default-test \
           surefire:test@compiled-tests \
           surefire:test@compiled-tests-O0 \
-          -Dtest=BatestTestCase,WasmBatestTestCase \
+          surefire:test@compiled-tests-O2 \
           -Dbatest.shard="${{ matrix.shard }}/6"
+    - name: Run WebAssembly 3.0 batest parity shard ${{ matrix.shard }}/6
+      run: |
+        mvn -B --file pom.xml \
+          surefire:test@compiled-tests \
+          -Dtest=WasmBatestTestCase \
+          -Dbatest.shard="${{ matrix.shard }}/6"
+    - name: Upload shard coverage and outcomes
+      uses: actions/upload-artifact@v4
+      with:
+        name: batest-cov-${{ matrix.shard }}
+        path: |
+          target/jacoco-interpret.exec
+          target/jacoco-compile.exec
+          target/jacoco-compile-O0.exec
+          target/jacoco-compile-O2.exec
+          target/batest-report/outcomes-*.jsonl
+        retention-days: 1
+
+  batest-report:
+    name: Batest Coverage & Parity Gate
+    needs: [build, batest]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - name: Set up JDK 21
+      uses: actions/setup-java@v5
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+        cache: maven
+    - name: Download compiled target
+      uses: actions/download-artifact@v4
+      with:
+        name: maven-target
+        path: target
+    - name: Download shard coverage and outcomes
+      uses: actions/download-artifact@v4
+      with:
+        pattern: batest-cov-*
+        path: target/batest-shards
+        merge-multiple: false
+    - name: Merge outcomes and JaCoCo coverage across shards
+      run: |
+        set -euo pipefail
+        mkdir -p target/batest-report
+        for mode in interpret compile compile-O0 compile-O2; do
+          cat target/batest-shards/batest-cov-*/batest-report/outcomes-${mode}.jsonl \
+            > target/batest-report/outcomes-${mode}.jsonl
+        done
+        mvn -B -Pbatest --file pom.xml \
+          jacoco:merge@merge-interpret \
+          jacoco:merge@merge-compile \
+          jacoco:merge@merge-compile-O0 \
+          jacoco:merge@merge-compile-O2 \
+          jacoco:report@report-interpret \
+          jacoco:report@report-compile \
+          jacoco:report@report-opt \
+          jacoco:report@report-compile-O0 \
+          jacoco:report@report-mir \
+          exec:java@batest-report
 
   ci:
     name: CI Gate
-    needs: [build, unit-tests, batest]
+    needs: [build, unit-tests, batest, batest-report]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -111,11 +177,13 @@ jobs:
         BUILD_RESULT: ${{ needs.build.result }}
         UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
         BATEST_RESULT: ${{ needs.batest.result }}
+        BATEST_REPORT_RESULT: ${{ needs.batest-report.result }}
       run: |
-        echo "build:      $BUILD_RESULT"
-        echo "unit-tests: $UNIT_TESTS_RESULT"
-        echo "batest:     $BATEST_RESULT"
-        if [ "$BUILD_RESULT" != "success" ] || [ "$UNIT_TESTS_RESULT" != "success" ] || [ "$BATEST_RESULT" != "success" ]; then
+        echo "build:         $BUILD_RESULT"
+        echo "unit-tests:    $UNIT_TESTS_RESULT"
+        echo "batest:        $BATEST_RESULT"
+        echo "batest-report: $BATEST_REPORT_RESULT"
+        if [ "$BUILD_RESULT" != "success" ] || [ "$UNIT_TESTS_RESULT" != "success" ] || [ "$BATEST_RESULT" != "success" ] || [ "$BATEST_REPORT_RESULT" != "success" ]; then
           echo "::error::One or more CI jobs failed."
           exit 1
         fi

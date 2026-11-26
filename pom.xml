@@ -22,6 +22,7 @@
         <asm.version>9.11.1</asm.version>
         <jline.version>4.7.0</jline.version>
         <batest.filter></batest.filter>
+        <batest.shard></batest.shard>
         <batest.inspect></batest.inspect>
         <batest.top>10</batest.top>
         <batest.sort>score</batest.sort>
@@ -445,6 +446,80 @@
                                     </includes>
                                 </configuration>
                             </execution>
+                            <!-- Explicit-only merge executions (phase=none) for aggregating sharded CI runs
+                                 from target/batest-shards/**/jacoco-*.exec without affecting local mvn verify -Pbatest. -->
+                            <execution>
+                                <id>merge-interpret</id>
+                                <phase>none</phase>
+                                <goals>
+                                    <goal>merge</goal>
+                                </goals>
+                                <configuration>
+                                    <fileSets>
+                                        <fileSet>
+                                            <directory>${project.build.directory}/batest-shards</directory>
+                                            <includes>
+                                                <include>**/jacoco-interpret.exec</include>
+                                            </includes>
+                                        </fileSet>
+                                    </fileSets>
+                                    <destFile>${project.build.directory}/jacoco-interpret.exec</destFile>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>merge-compile</id>
+                                <phase>none</phase>
+                                <goals>
+                                    <goal>merge</goal>
+                                </goals>
+                                <configuration>
+                                    <fileSets>
+                                        <fileSet>
+                                            <directory>${project.build.directory}/batest-shards</directory>
+                                            <includes>
+                                                <include>**/jacoco-compile.exec</include>
+                                            </includes>
+                                        </fileSet>
+                                    </fileSets>
+                                    <destFile>${project.build.directory}/jacoco-compile.exec</destFile>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>merge-compile-O0</id>
+                                <phase>none</phase>
+                                <goals>
+                                    <goal>merge</goal>
+                                </goals>
+                                <configuration>
+                                    <fileSets>
+                                        <fileSet>
+                                            <directory>${project.build.directory}/batest-shards</directory>
+                                            <includes>
+                                                <include>**/jacoco-compile-O0.exec</include>
+                                            </includes>
+                                        </fileSet>
+                                    </fileSets>
+                                    <destFile>${project.build.directory}/jacoco-compile-O0.exec</destFile>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>merge-compile-O2</id>
+                                <phase>none</phase>
+                                <goals>
+                                    <goal>merge</goal>
+                                </goals>
+                                <configuration>
+                                    <fileSets>
+                                        <fileSet>
+                                            <directory>${project.build.directory}/batest-shards</directory>
+                                            <includes>
+                                                <include>**/jacoco-compile-O2.exec</include>
+                                            </includes>
+                                        </fileSet>
+                                    </fileSets>
+                                    <destFile>${project.build.directory}/jacoco-compile-O2.exec</destFile>
+                                </configuration>
+                            </execution>
                         </executions>
                     </plugin>
                     <plugin>
@@ -460,6 +535,7 @@
                             <systemPropertyVariables>
                                 <babble.mode>interpret</babble.mode>
                                 <batest.filter>${batest.filter}</batest.filter>
+                                <batest.shard>${batest.shard}</batest.shard>
                                 <batest.record>${project.build.directory}/batest-report</batest.record>
                             </systemPropertyVariables>
                         </configuration>
@@ -480,6 +556,7 @@
                                         <babble.mode>compile</babble.mode>
                                         <babble.verify>true</babble.verify>
                                         <batest.filter>${batest.filter}</batest.filter>
+                                        <batest.shard>${batest.shard}</batest.shard>
                                         <batest.minDumpSizeForUsingPartialChecks>${batest.minDumpSizeForUsingPartialChecks}</batest.minDumpSizeForUsingPartialChecks>
                                         <batest.record>${project.build.directory}/batest-report</batest.record>
                                     </systemPropertyVariables>
@@ -504,6 +581,7 @@
                                         <babble.opt>0</babble.opt>
                                         <babble.verify>true</babble.verify>
                                         <batest.filter>${batest.filter}</batest.filter>
+                                        <batest.shard>${batest.shard}</batest.shard>
                                         <batest.minDumpSizeForUsingPartialChecks>${batest.minDumpSizeForUsingPartialChecks}</batest.minDumpSizeForUsingPartialChecks>
                                         <batest.record>${project.build.directory}/batest-report</batest.record>
                                     </systemPropertyVariables>
@@ -528,6 +606,7 @@
                                         <babble.opt>2</babble.opt>
                                         <babble.verify>true</babble.verify>
                                         <batest.filter>${batest.filter}</batest.filter>
+                                        <batest.shard>${batest.shard}</batest.shard>
                                         <batest.minDumpSizeForUsingPartialChecks>${batest.minDumpSizeForUsingPartialChecks}</batest.minDumpSizeForUsingPartialChecks>
                                         <batest.record>${project.build.directory}/batest-report</batest.record>
                                     </systemPropertyVariables>
