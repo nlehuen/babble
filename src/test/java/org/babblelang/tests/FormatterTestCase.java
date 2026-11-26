@@ -890,4 +890,31 @@ public class FormatterTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testRangesModAndFloorDivFormatting() throws Exception {
+        assertFormats("""
+                def r1: range of int = 0..<n
+                def r2: range of char = 'a'..'z'
+                def r3 = (a + 1)..(b - 1)
+                def r4 = (3..<10).step(5).reversed()
+                def r5 = -5..5
+                def r6 = 0..-1
+                def m = (i - 1) mod n
+                def q = 7 // 2
+                var k = 17
+                k //= 5
+                """, """
+                def r1 : range  of  int = 0 ..< n
+                def r2 : range  of  char = 'a' .. 'z'
+                def r3 = ( a + 1 ) .. ( b - 1 )
+                def r4 = ( 3 ..< 10 ) . step ( 5 ) . reversed ( )
+                def r5 = - 5 .. 5
+                def r6 = 0 .. - 1
+                def m = ( i - 1 )  mod  n
+                def q = 7//2
+                var k = 17
+                k//=5
+                """);
+    }
 }

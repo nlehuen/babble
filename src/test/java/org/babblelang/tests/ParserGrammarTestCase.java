@@ -309,6 +309,75 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         Assertions.assertEquals("hi", interpret("def x : any? = \"hi\" ; (x as string?)!"));
     }
 
+    @Test
+    public void testBip031RangesModAndFloorDivSllGrammar() {
+        parsePureSll("""
+                def r1: range of int = 0..<10
+                def r2: range of char = 'a'..'z'
+                def r3: range of double = 0.0..<1.0
+                def r4: (range of int)? = null
+                def s = (3..<10).step(5)
+                def rev = (0..<5).reversed()
+                def m1 = 10 mod 3
+                def d1 = 7 // 2
+                var n = 17
+                n //= 5
+                def neg = -5..5
+                def neg2 = 0..-1
+                def mem = a.range + a.mod + f(range: 1, mod: 2)
+                def check = 1..10 is range of int
+                def chained = 7 // 2 * 2 + 1 + 5 mod 3
+                """);
+
+        // Precedence: unary `-` binds tighter than `..` (`-5..5` is `(-5)..5`).
+        BabbleParser.FileContext negRange = parsePureSll("-5..5");
+        BabbleParser.RangeExpressionContext negRangeExpr = Assertions.assertInstanceOf(
+                BabbleParser.RangeExpressionContext.class, negRange.expression(0));
+        Assertions.assertInstanceOf(BabbleParser.NegateContext.class, negRangeExpr.left);
+        Assertions.assertInstanceOf(BabbleParser.IntegerContext.class, negRangeExpr.right);
+
+        // Precedence: `..` binds tighter than `+` (`a + 1..b - 1` is `(a + (1..b)) - 1`).
+        BabbleParser.FileContext arithRange = parsePureSll("a + 1..b - 1");
+        BabbleParser.BinaryOpContext outerSub = Assertions.assertInstanceOf(
+                BabbleParser.BinaryOpContext.class, arithRange.expression(0));
+        Assertions.assertEquals("-", outerSub.op.getText());
+        BabbleParser.BinaryOpContext innerAdd = Assertions.assertInstanceOf(
+                BabbleParser.BinaryOpContext.class, outerSub.left);
+        Assertions.assertEquals("+", innerAdd.op.getText());
+        Assertions.assertInstanceOf(BabbleParser.RangeExpressionContext.class, innerAdd.right);
+
+        // Precedence: `mod` and `//` sit at multiplicative precedence (`1 + 5 mod 3` is `1 + (5 mod 3)`).
+        BabbleParser.FileContext modPrec = parsePureSll("1 + 5 mod 3");
+        BabbleParser.BinaryOpContext modAdd = Assertions.assertInstanceOf(
+                BabbleParser.BinaryOpContext.class, modPrec.expression(0));
+        Assertions.assertEquals("+", modAdd.op.getText());
+        BabbleParser.BinaryOpContext modRight = Assertions.assertInstanceOf(
+                BabbleParser.BinaryOpContext.class, modAdd.right);
+        Assertions.assertEquals("mod", modRight.op.getText());
+
+        // Precedence: `//` and `*` are left-associative (`7 // 2 * 2` is `(7 // 2) * 2`).
+        BabbleParser.FileContext divMul = parsePureSll("7 // 2 * 2");
+        BabbleParser.BinaryOpContext mulTop = Assertions.assertInstanceOf(
+                BabbleParser.BinaryOpContext.class, divMul.expression(0));
+        Assertions.assertEquals("*", mulTop.op.getText());
+        BabbleParser.BinaryOpContext divLeft = Assertions.assertInstanceOf(
+                BabbleParser.BinaryOpContext.class, mulTop.left);
+        Assertions.assertEquals("//", divLeft.op.getText());
+
+        // Precedence: member access binds tighter than `..<` (`3..<10.step(5)` is `3..<(10.step(5))`).
+        BabbleParser.FileContext unparen = parsePureSll("3..<10.step(5)");
+        BabbleParser.RangeExpressionContext unparenRange = Assertions.assertInstanceOf(
+                BabbleParser.RangeExpressionContext.class, unparen.expression(0));
+        Assertions.assertInstanceOf(BabbleParser.IntegerContext.class, unparenRange.left);
+        Assertions.assertInstanceOf(BabbleParser.CallContext.class, unparenRange.right);
+
+        // Precedence: `1..10 is range of int` parses as `(1..10) is range of int`.
+        BabbleParser.FileContext isRange = parsePureSll("1..10 is range of int");
+        BabbleParser.IsExpressionContext isRangeExpr = Assertions.assertInstanceOf(
+                BabbleParser.IsExpressionContext.class, isRange.expression(0));
+        Assertions.assertInstanceOf(BabbleParser.RangeExpressionContext.class, isRangeExpr.left);
+    }
+
     private void assertTypeCheckFails(String source, String expectedMessage) {
         javax.script.ScriptException ex = Assertions.assertThrows(javax.script.ScriptException.class, () -> interpret(source));
         Assertions.assertTrue(ex.getMessage().contains(expectedMessage),

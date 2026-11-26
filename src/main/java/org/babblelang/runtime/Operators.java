@@ -49,6 +49,34 @@ public final class Operators {
         return na.doubleValue() / nb.doubleValue();
     }
 
+    /**
+     * {@code a mod b} : floored integer modulo ({@link Math#floorMod}).
+     * {@code byte}/{@code short}/{@code int} operands yield {@code int}; if either operand
+     * is {@code long}, yields {@code long}. Rejects floating-point and non-integer operands.
+     */
+    public static Object mod(Object a, Object b, OpSite site) {
+        Number na = integer(a, site.leftText());
+        Number nb = integer(b, site.rightText());
+        if (isSubInt(na) && isSubInt(nb)) {
+            return Math.floorMod(na.intValue(), nb.intValue());
+        }
+        return Math.floorMod(na.longValue(), nb.longValue());
+    }
+
+    /**
+     * {@code a // b} : floored integer division ({@link Math#floorDiv}).
+     * {@code byte}/{@code short}/{@code int} operands yield {@code int}; if either operand
+     * is {@code long}, yields {@code long}. Rejects floating-point and non-integer operands.
+     */
+    public static Object floorDiv(Object a, Object b, OpSite site) {
+        Number na = integer(a, site.leftText());
+        Number nb = integer(b, site.rightText());
+        if (isSubInt(na) && isSubInt(nb)) {
+            return Math.floorDiv(na.intValue(), nb.intValue());
+        }
+        return Math.floorDiv(na.longValue(), nb.longValue());
+    }
+
     public static Object add(Object a, Object b, OpSite site) {
         if (a instanceof String sa) {
             return sa + ArraySupport.format(b);
@@ -73,8 +101,8 @@ public final class Operators {
 
     /**
      * The method an arithmetic operator calls when its left operand is a Babble instance :
-     * {@code a + b} is {@code a.plus(b)}, then {@code minus}, {@code times} and {@code div}.
-     * Null for the other operators.
+     * {@code a + b} is {@code a.plus(b)}, then {@code minus}, {@code times}, {@code div},
+     * {@code floorDiv} and {@code mod}. Null for the other operators.
      */
     public static String method(String operator) {
         return switch (operator) {
@@ -82,13 +110,15 @@ public final class Operators {
             case "-" -> "minus";
             case "*" -> "times";
             case "/" -> "div";
+            case "//" -> "floorDiv";
+            case "mod" -> "mod";
             default -> null;
         };
     }
 
     /**
      * The operator a compound assignment applies : {@code x += v} is {@code x = x + v}, then
-     * {@code -=}, {@code *=} and {@code /=}. Null for a plain {@code =}.
+     * {@code -=}, {@code *=}, {@code /=} and {@code //=}. Null for a plain {@code =}.
      */
     public static String compound(String assignment) {
         return switch (assignment) {
@@ -96,17 +126,20 @@ public final class Operators {
             case "-=" -> "-";
             case "*=" -> "*";
             case "/=" -> "/";
+            case "//=" -> "//";
             default -> null;
         };
     }
 
-    /** An arithmetic operator, {@code +}, {@code -}, {@code *} or {@code /}, on two values that aren't Babble instances. */
+    /** An arithmetic operator, {@code +}, {@code -}, {@code *}, {@code /}, {@code //} or {@code mod}, on two values that aren't Babble instances. */
     public static Object arithmetic(String operator, Object a, Object b, OpSite site) {
         return switch (operator) {
             case "+" -> add(a, b, site);
             case "-" -> sub(a, b, site);
             case "*" -> mul(a, b, site);
             case "/" -> div(a, b, site);
+            case "//" -> floorDiv(a, b, site);
+            case "mod" -> mod(a, b, site);
             default -> throw new IllegalArgumentException("Not an arithmetic operator : " + operator);
         };
     }
@@ -221,5 +254,12 @@ public final class Operators {
             return n;
         }
         throw new BabbleException("Not a number : " + text);
+    }
+
+    private static Number integer(Object a, String text) {
+        if (a instanceof Number n && isIntegral(n)) {
+            return n;
+        }
+        throw new BabbleException("Not an integer : " + text);
     }
 }

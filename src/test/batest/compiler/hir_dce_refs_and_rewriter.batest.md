@@ -99,11 +99,11 @@ fn recVal(v0: int) -> int:
 ## HirRewriter : ModuleExportGet, SpreadAdapt, and TypeApply child rewrites
 
 ```babble
-def mod = import("dce_mod.ba")
+def m = import("dce_mod.ba")
 def idG of T = fn (x: T): T -> (x)
 def sumV = fn io (xs: int...): int -> (var s = 0 ; for e in xs then (s += e) ; s)
 def run = fn io (arr: array of int): int -> (
-    (discard(1) ; mod).val + sumV(...(discard(1) ; arr)) + ((discard(1) ; idG) of int)(3)
+    (discard(1) ; m).val + sumV(...(discard(1) ; arr)) + ((discard(1) ; idG) of int)(3)
 )
 assert(run((array of int).of(1, 2)) == 16)
 ```
@@ -113,7 +113,7 @@ assert(run((array of int).of(1, 2)) == 16)
 fn run (arr:obj) -> int {io}
   (+:int (+:int (export (block
           (call name(discard) 1:int)
-          name(mod)).val) (call-fn sumV (block
+          name(m)).val) (call-fn sumV (block
           (call name(discard) 1:int)
           var(arr)))) (call (block (type-apply (block
             (call name(discard) 1:int)
@@ -123,14 +123,14 @@ fn run (arr:obj) -> int {io}
 ```hir
 ;; hir -O1 fn=run
 fn run (arr:obj) -> int {io}
-  (+:int (+:int (export name(mod).val) (call-fn sumV var(arr))) (call (type-apply name(idG)) 3:int))
+  (+:int (+:int (export name(m).val) (call-fn sumV var(arr))) (call (type-apply name(idG)) 3:int))
 ```
 
 ```mir
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: any) -> int:
   bb0:
-    v1: any = name_read mod {pure}
+    v1: any = name_read m {pure}
     v2: any = export_get v1.val {pure}
     v3: int = convert.int v2
     v4: any = name_read sumV {pure}

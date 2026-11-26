@@ -31,6 +31,7 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
 - `java/util/function/curated.ba` — null-marked `java.util.function` functional interfaces
 - `java/util/regex/curated.ba` — `Pattern`
 - `java/util/stream/curated.ba` — `BaseStream`, `Stream`, primitive streams, `StreamSupport`
+- `org/babblelang/runtime/curated.ba` — `Range`, `IntRange`, `LongRange`, `CharRange`, `DoubleRange`, `ComparableRange`
 
 ### Third-Party Nullness Annotation Stubs
 - `android/annotation/NonNullAxioms.java`, `NullableAxioms.java`

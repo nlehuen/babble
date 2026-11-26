@@ -415,6 +415,8 @@ public final class Formatter {
                 || (type == BabbleLexer.COLON && before.getType() != BabbleLexer.CATCH && before.getType() != BabbleLexer.ELLIPSIS)
                 || type == BabbleLexer.DOT || before.getType() == BabbleLexer.DOT
                 || type == BabbleLexer.SAFE_DOT || before.getType() == BabbleLexer.SAFE_DOT
+                || type == BabbleLexer.RANGE || before.getType() == BabbleLexer.RANGE
+                || type == BabbleLexer.RANGE_EXCL || before.getType() == BabbleLexer.RANGE_EXCL
                 || type == BabbleLexer.QUESTION || type == BabbleLexer.BANG
                 || restEllipsis[token.getTokenIndex()] || spreadEllipsis[before.getTokenIndex()]
                 || before.getType() == BabbleLexer.MINUS && unaryMinus[before.getTokenIndex()] && type != BabbleLexer.MINUS) {
