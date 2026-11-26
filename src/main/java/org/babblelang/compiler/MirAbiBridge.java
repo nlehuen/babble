@@ -538,7 +538,7 @@ final class MirAbiBridge {
                 mv.visitVarInsn(ASTORE, dstSlot);
             }
             case BABBLE_TO_JAVA_ITERABLE -> {
-                emitter.controlOps.emitZeroArgBabbleCall(recvSlot, "iterator", null, ln);
+                emitter.controlOps.loops.emitZeroArgBabbleCall(recvSlot, "iterator", null, ln);
                 emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
                 mv.visitMethodInsn(
                         INVOKESTATIC,
@@ -550,7 +550,7 @@ final class MirAbiBridge {
                 mv.visitVarInsn(ASTORE, dstSlot);
             }
             case BABBLE_ITERABLE -> {
-                emitter.controlOps.emitZeroArgBabbleCall(recvSlot, "iterator", null, ln);
+                emitter.controlOps.loops.emitZeroArgBabbleCall(recvSlot, "iterator", null, ln);
                 emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
                 mv.visitVarInsn(ASTORE, dstSlot);
             }
@@ -584,7 +584,7 @@ final class MirAbiBridge {
         }
         if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE
                 || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
-            emitter.controlOps.emitZeroArgBabbleCall(
+            emitter.controlOps.loops.emitZeroArgBabbleCall(
                     plan.slotOf(fh.iterator()), "hasNext", target.hasNextSig(), ln);
             if (ctx.stackKind != PrimitiveKind.BOOL) {
                 emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
@@ -639,7 +639,7 @@ final class MirAbiBridge {
         }
         if (kind == LoweringTargets.ForKind.BABBLE_ITERABLE
                 || kind == LoweringTargets.ForKind.BABBLE_ITERATOR) {
-            emitter.controlOps.emitZeroArgBabbleCall(
+            emitter.controlOps.loops.emitZeroArgBabbleCall(
                     plan.slotOf(fnInst.iterator()), "next", target.nextSig(), ln);
             mirEmitter.storeResult(fnInst.result());
             return;
@@ -657,7 +657,8 @@ final class MirAbiBridge {
     void emitCatchMatch(MirInst.CatchMatch cm) {
         LoweringTargets.CatchTarget ct = cm.target();
         int valSlot = plan.slotOf(cm.value());
-        List<String> directJvms = emitter.controlOps.resolveBabbleCatchJvms(ct.babbleTargets());
+        List<String> directJvms =
+                emitter.controlOps.tryCatch.resolveBabbleCatchJvms(ct.babbleTargets());
         if (!directJvms.isEmpty()) {
             if (directJvms.size() == 1) {
                 mv.visitVarInsn(ALOAD, valSlot);
