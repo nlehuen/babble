@@ -6,17 +6,13 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import org.babblelang.analysis.BuiltinAxioms;
 import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
-import org.babblelang.analysis.Resolution;
 import org.babblelang.effects.Effect;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirCallArg;
@@ -28,6 +24,7 @@ import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
+import org.babblelang.ir.mir.MirSsaBuilder.BlockBuilder;
 import org.babblelang.runtime.MatchSupport;
 import org.babblelang.runtime.Operators;
 import org.babblelang.runtime.Range;
@@ -153,85 +150,12 @@ public final class MirLowerer {
     // ========================================================================= per-function
     // lowerer
 
-    private static final class FunctionLowerer {
-        private final HirModule module;
-        private final HirFunction fn;
-        private Set<Integer> pinnedVarIds = Set.of();
-        private Map<Integer, HirVar> pinnedVarsById = Map.of();
-        private Map<Integer, HirVar> varById = Map.of();
-        private final Map<Integer, MirEffect.AliasClass> valAliases = new HashMap<>();
-        private final List<BlockBuilder> allBlocks = new ArrayList<>();
-        private final Deque<LoopContext> loopStack = new ArrayDeque<>();
-        private final Deque<FinallyContext> finallyStack = new ArrayDeque<>();
-        private final Deque<List<MirHandler>> handlerStack = new ArrayDeque<>();
-
-        private int nextValId = 0;
-        private int nextBlockId = 0;
-        private BlockBuilder cur;
-
-        private record EdgeRef(BlockBuilder from, List<MirVal> args) {}
-
-        private record IncompletePhi(int varId, int paramIndex, MirVal param) {}
-
-        private sealed interface PendingTerm {
-            record Br(BlockBuilder target, EdgeRef edge, int line) implements PendingTerm {}
-
-            record BrIf(
-                    MirVal cond,
-                    BlockBuilder thenTarget,
-                    EdgeRef thenEdge,
-                    BlockBuilder elseTarget,
-                    EdgeRef elseEdge,
-                    int line)
-                    implements PendingTerm {}
-
-            record Switch(
-                    MirVal key,
-                    int[] keys,
-                    BlockBuilder[] targets,
-                    EdgeRef[] edges,
-                    BlockBuilder defaultTarget,
-                    EdgeRef defaultEdge,
-                    int line)
-                    implements PendingTerm {}
-
-            record Fixed(MirTerminator term) implements PendingTerm {}
-        }
-
-        private final class BlockBuilder {
-            final int id;
-            final List<MirVal> params = new ArrayList<>();
-            final List<MirInst> insts = new ArrayList<>();
-            final List<MirHandler> handlers;
-            final boolean handlerEntry;
-            final BlockBuilder handlerDominator;
-            final int explicitParamCount;
-            final List<EdgeRef> incomingEdges = new ArrayList<>();
-            final Map<Integer, MirVal> currentDef = new HashMap<>();
-            final List<IncompletePhi> incompletePhis = new ArrayList<>();
-            boolean sealed;
-            PendingTerm term;
-
-            BlockBuilder(
-                    int id,
-                    List<MirVal> explicitParams,
-                    List<MirHandler> handlers,
-                    boolean handlerEntry,
-                    BlockBuilder handlerDominator,
-                    boolean sealed) {
-                this.id = id;
-                this.params.addAll(explicitParams);
-                this.explicitParamCount = explicitParams.size();
-                this.handlers = List.copyOf(handlers);
-                this.handlerEntry = handlerEntry;
-                this.handlerDominator = handlerDominator;
-                this.sealed = sealed;
-            }
-
-            boolean isTerminated() {
-                return term != null;
-            }
-        }
+    static final class FunctionLowerer {
+        final HirModule module;
+        final HirFunction fn;
+        final MirSsaBuilder ssa;
+        final Deque<LoopContext> loopStack = new ArrayDeque<>();
+        final Deque<FinallyContext> finallyStack = new ArrayDeque<>();
 
         private record LoopContext(
                 BlockBuilder breakBlock,
@@ -249,18 +173,13 @@ public final class MirLowerer {
         FunctionLowerer(HirModule module, HirFunction fn) {
             this.module = module;
             this.fn = fn;
+            this.ssa = new MirSsaBuilder(fn, MirVarPinningScanner.scan(fn));
         }
 
         MirFunction lower() {
-            MirVarPinningScanner.Result scan = MirVarPinningScanner.scan(fn);
-            this.pinnedVarIds = scan.pinnedVarIds();
-            this.pinnedVarsById = scan.pinnedVarsById();
-            this.varById = scan.varById();
-            handlerStack.push(List.of());
-
             // Create entry block (sealed immediately: no predecessors).
-            BlockBuilder entry = newBlock(List.of(), false, true);
-            cur = entry;
+            BlockBuilder entry = ssa.newBlock(List.of(), false, true);
+            ssa.cur = entry;
 
             // Bind function parameters as SSA values (for non-pinned params) or pinned slots.
             List<MirVal> mirParams = new ArrayList<>(fn.params().size());
@@ -269,21 +188,19 @@ public final class MirLowerer {
                 HirParam p = fn.params().get(i);
                 HirVar v = p.var();
                 if (v != null) {
-                    varById.put(v.id(), v);
+                    ssa.varById.put(v.id(), v);
                     paramVars.add(v);
-                    if (!pinnedVarIds.contains(v.id())) {
-                        MirVal pv = newVal(v.primitiveKind(), v.name());
+                    if (!ssa.pinnedVarIds.contains(v.id())) {
+                        MirVal pv = ssa.newVal(v.primitiveKind(), v.name());
                         mirParams.add(pv);
                         entry.currentDef.put(v.id(), pv);
                         if (p.isUnique()) {
-                            valAliases.put(pv.id(), MirEffect.AliasClass.uniqueParam(i));
+                            ssa.valAliases.put(pv.id(), MirEffect.AliasClass.uniqueParam(i));
                         }
                     } else {
-                        // Still record param MirVal placeholder? No — MirFunction.params() holds
-                        // SSA params
-                        // matching paramVars for non-pinned params only, so MirEmitter knows which
-                        // params
-                        // are read via SSA vs pinned slot.
+                        // MirFunction.params() holds SSA params matching paramVars for non-pinned
+                        // params only, so MirEmitter knows which params are read via SSA vs pinned
+                        // slot.
                         paramVars.remove(paramVars.size() - 1);
                     }
                 }
@@ -291,22 +208,13 @@ public final class MirLowerer {
 
             // Lower function body statements.
             MirVal bodyVal = lowerStatements(fn.body(), fn.line());
-            if (!cur.isTerminated()) {
-                bodyVal = applyWideningRank(bodyVal, fn.bodyWideningRank(), fn.line());
-                bodyVal = convertVal(bodyVal, fn.returnKind(), fn.line());
-                terminateFixed(new MirTerminator.Ret(bodyVal, fn.returnKind(), -1, fn.line()));
+            if (!ssa.cur.isTerminated()) {
+                bodyVal = ssa.applyWideningRank(bodyVal, fn.bodyWideningRank(), fn.line());
+                bodyVal = ssa.convertVal(bodyVal, fn.returnKind(), fn.line());
+                ssa.terminateFixed(new MirTerminator.Ret(bodyVal, fn.returnKind(), -1, fn.line()));
             }
 
-            // Seal any remaining unsealed blocks (defensive; normally all are sealed).
-            for (BlockBuilder b : allBlocks) {
-                if (!b.sealed) {
-                    sealBlock(b);
-                }
-            }
-
-            // Finalize immutable MirBlocks and simplify trivial block params.
-            List<MirBlock> built = buildBlocks();
-            built = eliminateTrivialBlockParams(built);
+            List<MirBlock> built = ssa.buildAndFinalizeBlocks();
 
             String ownerClassName = null;
             if (fn.ownerClassId() >= 0) {
@@ -327,30 +235,21 @@ public final class MirLowerer {
                     fn.bodyWideningRank(),
                     entry.id,
                     built,
-                    nextValId,
-                    nextBlockId,
-                    List.copyOf(pinnedVarsById.values()),
-                    valAliases);
+                    ssa.nextValId(),
+                    ssa.nextBlockId(),
+                    List.copyOf(ssa.pinnedVarsById.values()),
+                    ssa.valAliases);
         }
 
-        // ------------------------------------------------------------------ SSA & block builders
+        // ------------------------------------------------------------------ SSA delegators
 
         private MirVal newVal(PrimitiveKind kind, String hint) {
-            return new MirVal(nextValId++, kind != null ? kind : PrimitiveKind.NONE, hint);
+            return ssa.newVal(kind, hint);
         }
 
         private BlockBuilder newBlock(
                 List<MirVal> explicitParams, boolean handlerEntry, boolean sealed) {
-            BlockBuilder b =
-                    new BlockBuilder(
-                            nextBlockId++,
-                            explicitParams,
-                            handlerStack.peek(),
-                            handlerEntry,
-                            null,
-                            sealed);
-            allBlocks.add(b);
-            return b;
+            return ssa.newBlock(explicitParams, handlerEntry, sealed);
         }
 
         private BlockBuilder newBlockWithHandlers(
@@ -358,7 +257,7 @@ public final class MirLowerer {
                 List<MirHandler> handlers,
                 boolean handlerEntry,
                 boolean sealed) {
-            return newBlockWithHandlers(explicitParams, handlers, handlerEntry, null, sealed);
+            return ssa.newBlockWithHandlers(explicitParams, handlers, handlerEntry, sealed);
         }
 
         private BlockBuilder newBlockWithHandlers(
@@ -367,30 +266,16 @@ public final class MirLowerer {
                 boolean handlerEntry,
                 BlockBuilder handlerDominator,
                 boolean sealed) {
-            BlockBuilder b =
-                    new BlockBuilder(
-                            nextBlockId++,
-                            explicitParams,
-                            handlers,
-                            handlerEntry,
-                            handlerDominator,
-                            sealed);
-            allBlocks.add(b);
-            return b;
+            return ssa.newBlockWithHandlers(
+                    explicitParams, handlers, handlerEntry, handlerDominator, sealed);
         }
 
         private void emit(MirInst inst) {
-            if (!cur.isTerminated()) {
-                cur.insts.add(inst);
-            }
+            ssa.emit(inst);
         }
 
         private void terminateBr(BlockBuilder target, List<MirVal> explicitArgs, int line) {
-            if (cur.isTerminated()) {
-                return;
-            }
-            EdgeRef edge = createEdge(cur, target, explicitArgs);
-            cur.term = new PendingTerm.Br(target, edge, line);
+            ssa.terminateBr(target, explicitArgs, line);
         }
 
         private void terminateBrIf(
@@ -400,12 +285,7 @@ public final class MirLowerer {
                 BlockBuilder elseTarget,
                 List<MirVal> elseArgs,
                 int line) {
-            if (cur.isTerminated()) {
-                return;
-            }
-            EdgeRef thenEdge = createEdge(cur, thenTarget, thenArgs);
-            EdgeRef elseEdge = createEdge(cur, elseTarget, elseArgs);
-            cur.term = new PendingTerm.BrIf(cond, thenTarget, thenEdge, elseTarget, elseEdge, line);
+            ssa.terminateBrIf(cond, thenTarget, thenArgs, elseTarget, elseArgs, line);
         }
 
         private void terminateSwitch(
@@ -414,246 +294,55 @@ public final class MirLowerer {
                 BlockBuilder[] targets,
                 BlockBuilder defaultTarget,
                 int line) {
-            if (cur.isTerminated()) {
-                return;
-            }
-            EdgeRef[] edges = new EdgeRef[targets.length];
-            for (int i = 0; i < targets.length; i++) {
-                edges[i] = createEdge(cur, targets[i], List.of());
-            }
-            EdgeRef defEdge = createEdge(cur, defaultTarget, List.of());
-            cur.term =
-                    new PendingTerm.Switch(key, keys, targets, edges, defaultTarget, defEdge, line);
+            ssa.terminateSwitch(key, keys, targets, defaultTarget, line);
         }
 
         private void terminateFixed(MirTerminator term) {
-            if (!cur.isTerminated()) {
-                cur.term = new PendingTerm.Fixed(term);
-            }
-        }
-
-        private EdgeRef createEdge(
-                BlockBuilder from, BlockBuilder target, List<MirVal> explicitArgs) {
-            if (explicitArgs.size() != target.explicitParamCount) {
-                throw new IllegalStateException(
-                        "Explicit arg count mismatch : "
-                                + explicitArgs.size()
-                                + " vs "
-                                + target.explicitParamCount
-                                + " for bb"
-                                + target.id);
-            }
-            List<MirVal> padded = new ArrayList<>(target.params.size());
-            padded.addAll(explicitArgs);
-            while (padded.size() < target.params.size()) {
-                padded.add(null);
-            }
-            EdgeRef edge = new EdgeRef(from, padded);
-            target.incomingEdges.add(edge);
-            return edge;
+            ssa.terminateFixed(term);
         }
 
         private void writeVar(HirVar v, MirVal val, int line) {
-            if (pinnedVarIds.contains(v.id())) {
-                MirVal conv = convertVal(val, v.primitiveKind(), line);
-                emit(
-                        new MirInst.SlotWrite(
-                                v, MirInst.SlotOpKind.ASSIGN, conv, line, slotWriteEffect(v)));
-                return;
-            }
-            MirVal conv = convertVal(val, v.primitiveKind(), line);
-            cur.currentDef.put(v.id(), conv);
+            ssa.writeVar(v, val, line);
         }
 
         private void defVar(HirVar v, MirVal val, int line) {
-            if (pinnedVarIds.contains(v.id())) {
-                MirVal conv = convertVal(val, v.primitiveKind(), line);
-                emit(
-                        new MirInst.SlotWrite(
-                                v, MirInst.SlotOpKind.INIT, conv, line, slotWriteEffect(v)));
-                return;
-            }
-            MirVal conv = convertVal(val, v.primitiveKind(), line);
-            cur.currentDef.put(v.id(), conv);
+            ssa.defVar(v, val, line);
         }
 
         private MirVal readVar(HirVar v, int line) {
-            if (pinnedVarIds.contains(v.id())) {
-                MirVal res = newVal(v.primitiveKind(), v.name());
-                emit(new MirInst.SlotRead(res, v, line, slotReadEffect(v)));
-                return res;
-            }
-            return readSsaVar(v, cur, line);
-        }
-
-        private MirVal readSsaVar(HirVar v, BlockBuilder blk, int line) {
-            MirVal local = blk.currentDef.get(v.id());
-            if (local != null) {
-                return local;
-            }
-            if (!blk.sealed) {
-                MirVal bp = newVal(v.primitiveKind(), v.name());
-                int idx = blk.params.size();
-                blk.params.add(bp);
-                for (EdgeRef e : blk.incomingEdges) {
-                    e.args.add(null);
-                }
-                blk.incompletePhis.add(new IncompletePhi(v.id(), idx, bp));
-                blk.currentDef.put(v.id(), bp);
-                return bp;
-            }
-            if (blk.handlerDominator != null) {
-                MirVal domVal = readSsaVar(v, blk.handlerDominator, line);
-                blk.currentDef.put(v.id(), domVal);
-                return domVal;
-            }
-            if (blk.incomingEdges.isEmpty()) {
-                // Unreachable block or variable not yet defined on entry path: materialize default
-                // constant.
-                MirVal def = emitDefaultConstIn(blk, v.primitiveKind(), line);
-                blk.currentDef.put(v.id(), def);
-                return def;
-            }
-            if (blk.incomingEdges.size() == 1) {
-                MirVal predVal = readSsaVar(v, blk.incomingEdges.get(0).from, line);
-                blk.currentDef.put(v.id(), predVal);
-                return predVal;
-            }
-            // Sealed block with multiple predecessors: reserve block parameter slot first to break
-            // cycles.
-            MirVal bp = newVal(v.primitiveKind(), v.name());
-            int idx = blk.params.size();
-            blk.params.add(bp);
-            for (EdgeRef e : blk.incomingEdges) {
-                e.args.add(null);
-            }
-            blk.currentDef.put(v.id(), bp);
-            for (EdgeRef e : blk.incomingEdges) {
-                MirVal incoming = readSsaVar(v, e.from, line);
-                e.args.set(idx, incoming);
-            }
-            return bp;
+            return ssa.readVar(v, line);
         }
 
         private void sealBlock(BlockBuilder blk) {
-            if (blk.sealed) {
-                return;
-            }
-            blk.sealed = true;
-            for (int i = 0; i < blk.incompletePhis.size(); i++) {
-                IncompletePhi ip = blk.incompletePhis.get(i);
-                HirVar v = varById.get(ip.varId);
-                for (EdgeRef e : blk.incomingEdges) {
-                    MirVal incoming = readSsaVar(v, e.from, fn.line());
-                    e.args.set(ip.paramIndex, incoming);
-                }
-            }
-            blk.incompletePhis.clear();
+            ssa.sealBlock(blk);
         }
 
         private MirVal emitConst(Object value, PrimitiveKind kind, int line) {
-            MirVal v = newVal(kind, null);
-            emit(new MirInst.Const(v, value, line));
-            return v;
-        }
-
-        private MirVal emitDefaultConstIn(BlockBuilder blk, PrimitiveKind kind, int line) {
-            MirVal v = newVal(kind, null);
-            Object def =
-                    switch (kind) {
-                        case BYTE -> (byte) 0;
-                        case SHORT -> (short) 0;
-                        case INT -> 0;
-                        case LONG -> 0L;
-                        case FLOAT -> 0.0f;
-                        case DOUBLE -> 0.0d;
-                        case BOOL -> Boolean.FALSE;
-                        case CHAR -> '\0';
-                        case NONE -> null;
-                    };
-            blk.insts.add(0, new MirInst.Const(v, def, line));
-            return v;
+            return ssa.emitConst(value, kind, line);
         }
 
         private MirVal convertVal(MirVal val, PrimitiveKind target, int line) {
-            if (val.kind() == target) {
-                return val;
-            }
-            MirVal out = newVal(target, null);
-            emit(new MirInst.Convert(out, val, target, line));
-            propagateAlias(val, out);
-            return out;
+            return ssa.convertVal(val, target, line);
         }
 
         private MirVal applyWideningRank(MirVal val, int rank, int line) {
-            if (rank < 0) {
-                return val;
-            }
-            PrimitiveKind target = PrimitiveKind.ofNumericRank(rank);
-            if (val.kind().isPrimitive() && target != PrimitiveKind.NONE) {
-                return convertVal(val, target, line);
-            }
-            if (rank == 5 && val.kind().isPrimitive() && val.kind() != PrimitiveKind.BOOL) {
-                return convertVal(val, PrimitiveKind.DOUBLE, line);
-            }
-            PrimitiveKind outKind =
-                    (rank == 5 && val.kind() != PrimitiveKind.NONE)
-                            ? PrimitiveKind.DOUBLE
-                            : PrimitiveKind.NONE;
-            MirVal out = newVal(outKind, null);
-            emit(new MirInst.Widen(out, val, rank, line));
-            return out;
+            return ssa.applyWideningRank(val, rank, line);
         }
 
         private MirVal applyCheckedType(MirVal val, String checkedType, int line) {
-            if (checkedType == null) {
-                return val;
-            }
-            MirVal boxed = convertVal(val, PrimitiveKind.NONE, line);
-            MirVal checked = newVal(PrimitiveKind.NONE, null);
-            emit(new MirInst.CheckCast(checked, boxed, null, null, checkedType, line));
-            propagateAlias(val, checked);
-            return checked;
+            return ssa.applyCheckedType(val, checkedType, line);
         }
 
         private void propagateAlias(MirVal src, MirVal dst) {
-            MirEffect.AliasClass a = valAliases.get(src.id());
-            if (a != null) {
-                valAliases.put(dst.id(), a);
-            }
+            ssa.propagateAlias(src, dst);
         }
 
         private void recordExprAlias(MirVal val, ExprMeta meta) {
-            if (meta == null || val == null) {
-                return;
-            }
-            if (meta.frozen() || meta.deeplyImmutable()) {
-                valAliases.putIfAbsent(val.id(), MirEffect.AliasClass.FROZEN);
-            }
+            ssa.recordExprAlias(val, meta);
         }
 
         private MirEffect.AliasClass aliasOf(MirVal val, ExprMeta exprMeta) {
-            if (exprMeta != null && (exprMeta.frozen() || exprMeta.deeplyImmutable())) {
-                return MirEffect.AliasClass.FROZEN;
-            }
-            MirEffect.AliasClass a = valAliases.get(val.id());
-            return a != null ? a : MirEffect.AliasClass.SHARED;
-        }
-
-        private MirEffect slotReadEffect(HirVar v) {
-            if (!v.cell()
-                    && ((v.capturedByValue() && v.ownerMethodId() != fn.id())
-                            || v.kind() == Resolution.Variable.Kind.THIS
-                            || v.kind() == Resolution.Variable.Kind.RECURSE)) {
-                return MirEffect.PURE_NOTHROW;
-            }
-            boolean nothrow = !v.mayBeUndefined() || v.definitelyDefined();
-            return MirEffect.read(MirEffect.AliasClass.SHARED, nothrow, true, true);
-        }
-
-        private MirEffect slotWriteEffect(HirVar v) {
-            boolean nothrow = !v.mayBeUndefined() || v.definitelyDefined();
-            return MirEffect.write(MirEffect.AliasClass.SHARED, nothrow);
+            return ssa.aliasOf(val, exprMeta);
         }
 
         // ------------------------------------------------------------------ statement & expression
@@ -665,12 +354,12 @@ public final class MirLowerer {
             }
             int last = stmts.size() - 1;
             for (int i = 0; i < last; i++) {
-                if (cur.isTerminated()) {
+                if (ssa.cur.isTerminated()) {
                     return emitConst(null, PrimitiveKind.NONE, stmts.get(i).meta().line());
                 }
                 lowerExpr(stmts.get(i));
             }
-            if (cur.isTerminated()) {
+            if (ssa.cur.isTerminated()) {
                 return emitConst(null, PrimitiveKind.NONE, stmts.get(last).meta().line());
             }
             return lowerAndWiden(stmts.get(last));
@@ -678,7 +367,7 @@ public final class MirLowerer {
 
         private MirVal lowerAndWiden(HirExpr expr) {
             MirVal v = lowerExpr(expr);
-            if (cur.isTerminated()) {
+            if (ssa.cur.isTerminated()) {
                 return v;
             }
             v = applyWideningRank(v, expr.meta().wideningRank(), expr.meta().line());
@@ -688,7 +377,7 @@ public final class MirLowerer {
 
         private MirVal lowerAs(HirExpr expr, PrimitiveKind desired) {
             MirVal v = lowerAndWiden(expr);
-            if (cur.isTerminated()) {
+            if (ssa.cur.isTerminated()) {
                 return v;
             }
             if (v.kind() == PrimitiveKind.NONE && desired.isPrimitive()) {
@@ -776,7 +465,7 @@ public final class MirLowerer {
                     d.value() != null
                             ? lowerExpr(d.value())
                             : emitConst(null, PrimitiveKind.NONE, ln);
-            if (cur.isTerminated()) {
+            if (ssa.cur.isTerminated()) {
                 return v;
             }
             v = applyWideningRank(v, d.meta().wideningRank(), ln);
@@ -799,7 +488,7 @@ public final class MirLowerer {
             if (HirLoweringRules.canLowerPrimitiveCompound(
                     targetKind, rhsExpr.meta().kind(), operator)) {
                 MirVal rhs = lowerAs(rhsExpr, targetKind);
-                if (cur.isTerminated()) return rhs;
+                if (ssa.cur.isTerminated()) return rhs;
                 MirVal res = newVal(targetKind, null);
                 MirEffect bopFx =
                         (bop == HirExpr.BinaryOp.FLOOR_DIV
@@ -813,7 +502,7 @@ public final class MirLowerer {
             }
             MirVal oldBox = convertVal(oldVal, PrimitiveKind.NONE, ln);
             MirVal rhsBox = lowerBoxed(rhsExpr);
-            if (cur.isTerminated()) return rhsBox;
+            if (ssa.cur.isTerminated()) return rhsBox;
             MirVal raw = newVal(PrimitiveKind.NONE, null);
             emit(
                     new MirInst.Binary(
@@ -836,7 +525,7 @@ public final class MirLowerer {
             PrimitiveKind vk = v.primitiveKind();
             if (a.operator() == null) {
                 MirVal val = lowerAndWiden(a.value());
-                if (cur.isTerminated()) return val;
+                if (ssa.cur.isTerminated()) return val;
                 val = applyWideningRank(val, a.meta().wideningRank(), ln);
                 MirVal conv = convertVal(val, vk, ln);
                 writeVar(v, conv, ln);
@@ -854,7 +543,7 @@ public final class MirLowerer {
                             a.valueText(),
                             a.meta(),
                             true);
-            if (cur.isTerminated()) return nextVal;
+            if (ssa.cur.isTerminated()) return nextVal;
             writeVar(v, nextVal, ln);
             return nextVal;
         }
@@ -876,7 +565,7 @@ public final class MirLowerer {
         private MirVal lowerNameAssign(HirExpr.NameAssign a) {
             int ln = a.meta().line();
             MirVal val = lowerAndWiden(a.value());
-            if (cur.isTerminated()) return val;
+            if (ssa.cur.isTerminated()) return val;
             if (a.operator() == null) {
                 val = applyWideningRank(val, a.meta().wideningRank(), ln);
             }
@@ -903,7 +592,7 @@ public final class MirLowerer {
         private MirVal lowerThisFieldGet(HirExpr.ThisFieldGet g) {
             int ln = g.meta().line();
             MirVal recv = lowerBoxed(g.receiver());
-            if (cur.isTerminated()) return recv;
+            if (ssa.cur.isTerminated()) return recv;
             PrimitiveKind outKind = resolveThisFieldKind(g);
             MirEffect fx = thisFieldReadEffect(g, recv);
             MirVal res = newVal(outKind, g.memberName());
@@ -975,11 +664,11 @@ public final class MirLowerer {
                             ? cls.memberKinds()[a.memberIndex()]
                             : PrimitiveKind.NONE;
             MirVal recv = lowerBoxed(a.receiver());
-            if (cur.isTerminated()) return recv;
+            if (ssa.cur.isTerminated()) return recv;
             MirEffect.AliasClass alias = aliasOf(recv, a.receiver().meta());
             if (a.operator() == null) {
                 MirVal val = lowerAndWiden(a.value());
-                if (cur.isTerminated()) return val;
+                if (ssa.cur.isTerminated()) return val;
                 val = applyWideningRank(val, a.meta().wideningRank(), ln);
                 if (mk.isPrimitive()
                         && val.kind() == PrimitiveKind.NONE
@@ -1029,7 +718,7 @@ public final class MirLowerer {
                             a.valueText(),
                             a.meta(),
                             true);
-            if (cur.isTerminated()) return nextVal;
+            if (ssa.cur.isTerminated()) return nextVal;
             emit(
                     new MirInst.StoreField(
                             recv,
@@ -1050,7 +739,7 @@ public final class MirLowerer {
             MirVal recv = null;
             if (!target.isStatic() || !g.pureStaticReceiver()) {
                 recv = lowerBoxed(g.receiver());
-                if (cur.isTerminated()) return recv;
+                if (ssa.cur.isTerminated()) return recv;
             }
             Field field = target.field();
             PrimitiveKind outKind = javaPrimitiveKind(field.getType());
@@ -1078,7 +767,7 @@ public final class MirLowerer {
             MirVal recv = null;
             if (!target.isStatic() || !a.pureStaticReceiver()) {
                 recv = lowerBoxed(a.receiver());
-                if (cur.isTerminated()) return recv;
+                if (ssa.cur.isTerminated()) return recv;
             }
             MirEffect.AliasClass alias =
                     recv != null ? aliasOf(recv, a.receiver().meta()) : MirEffect.AliasClass.SHARED;
@@ -1093,7 +782,7 @@ public final class MirLowerer {
                 } else {
                     val = lowerBoxed(a.value());
                 }
-                if (cur.isTerminated()) return val;
+                if (ssa.cur.isTerminated()) return val;
                 emit(
                         new MirInst.StoreJavaField(
                                 recv,
@@ -1127,7 +816,7 @@ public final class MirLowerer {
                             a.valueText(),
                             a.meta(),
                             false);
-            if (cur.isTerminated()) return nextVal;
+            if (ssa.cur.isTerminated()) return nextVal;
             emit(
                     new MirInst.StoreJavaField(
                             recv,
@@ -1147,7 +836,7 @@ public final class MirLowerer {
             return switch (op.kind()) {
                 case SIZE -> {
                     MirVal arr = lowerBoxed(op.receiver());
-                    if (cur.isTerminated()) yield arr;
+                    if (ssa.cur.isTerminated()) yield arr;
                     MirVal res = newVal(PrimitiveKind.INT, "len");
                     // Array length is immutable once allocated (only null-check may throw).
                     MirEffect fx = MirEffect.read(MirEffect.AliasClass.FROZEN, false, true, true);
@@ -1165,9 +854,9 @@ public final class MirLowerer {
                 }
                 case GET -> {
                     MirVal arr = lowerBoxed(op.receiver());
-                    if (cur.isTerminated()) yield arr;
+                    if (ssa.cur.isTerminated()) yield arr;
                     MirVal idx = lowerAs(op.args().get(0), PrimitiveKind.INT);
-                    if (cur.isTerminated()) yield idx;
+                    if (ssa.cur.isTerminated()) yield idx;
                     PrimitiveKind outKind =
                             op.elemKind().isPrimitive() ? op.elemKind() : PrimitiveKind.NONE;
                     MirVal res = newVal(outKind, null);
@@ -1188,14 +877,14 @@ public final class MirLowerer {
                 }
                 case SET -> {
                     MirVal arr = lowerBoxed(op.receiver());
-                    if (cur.isTerminated()) yield arr;
+                    if (ssa.cur.isTerminated()) yield arr;
                     MirVal idx = lowerAs(op.args().get(0), PrimitiveKind.INT);
-                    if (cur.isTerminated()) yield idx;
+                    if (ssa.cur.isTerminated()) yield idx;
                     MirVal val =
                             op.elemKind().isPrimitive()
                                     ? lowerAs(op.args().get(1), op.elemKind())
                                     : lowerBoxed(op.args().get(1));
-                    if (cur.isTerminated()) yield val;
+                    if (ssa.cur.isTerminated()) yield val;
                     MirEffect fx = MirEffect.write(aliasOf(arr, op.receiver().meta()), false);
                     emit(
                             new MirInst.ArraySet(
@@ -1222,7 +911,7 @@ public final class MirLowerer {
             int ln = u.meta().line();
             if (u.op() == HirExpr.UnaryOp.NOT) {
                 MirVal operand = lowerExpr(u.operand());
-                if (cur.isTerminated()) return operand;
+                if (ssa.cur.isTerminated()) return operand;
                 MirVal res = newVal(PrimitiveKind.BOOL, null);
                 emit(
                         new MirInst.Unary(
@@ -1238,7 +927,7 @@ public final class MirLowerer {
             PrimitiveKind rk = u.meta().kind();
             if (rk == PrimitiveKind.INT && ok.isNumeric() && ok.numericRank() <= 2) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.INT);
-                if (cur.isTerminated()) return op;
+                if (ssa.cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.INT, null);
                 emit(
                         new MirInst.Unary(
@@ -1252,7 +941,7 @@ public final class MirLowerer {
             }
             if (rk == PrimitiveKind.LONG && ok.isNumeric() && ok.numericRank() <= 3) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.LONG);
-                if (cur.isTerminated()) return op;
+                if (ssa.cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.LONG, null);
                 emit(
                         new MirInst.Unary(
@@ -1266,7 +955,7 @@ public final class MirLowerer {
             }
             if (rk == PrimitiveKind.FLOAT && ok.isNumeric() && ok.numericRank() <= 4) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.FLOAT);
-                if (cur.isTerminated()) return op;
+                if (ssa.cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.FLOAT, null);
                 emit(
                         new MirInst.Unary(
@@ -1280,7 +969,7 @@ public final class MirLowerer {
             }
             if (rk == PrimitiveKind.DOUBLE && ok.isNumeric()) {
                 MirVal op = lowerAs(u.operand(), PrimitiveKind.DOUBLE);
-                if (cur.isTerminated()) return op;
+                if (ssa.cur.isTerminated()) return op;
                 MirVal res = newVal(PrimitiveKind.DOUBLE, null);
                 emit(
                         new MirInst.Unary(
@@ -1293,7 +982,7 @@ public final class MirLowerer {
                 return res;
             }
             MirVal op = lowerBoxed(u.operand());
-            if (cur.isTerminated()) return op;
+            if (ssa.cur.isTerminated()) return op;
             MirVal res = newVal(PrimitiveKind.NONE, null);
             emit(
                     new MirInst.Unary(
@@ -1309,9 +998,9 @@ public final class MirLowerer {
         private MirVal emitPrimitiveBinary(
                 HirExpr.Binary b, PrimitiveKind operandKind, PrimitiveKind resKind, MirEffect fx) {
             MirVal lhs = lowerAs(b.left(), operandKind);
-            if (cur.isTerminated()) return lhs;
+            if (ssa.cur.isTerminated()) return lhs;
             MirVal rhs = lowerAs(b.right(), operandKind);
-            if (cur.isTerminated()) return rhs;
+            if (ssa.cur.isTerminated()) return rhs;
             MirVal res = newVal(resKind, null);
             emit(
                     new MirInst.Binary(
@@ -1362,9 +1051,9 @@ public final class MirLowerer {
                 }
             }
             MirVal lhs = lowerBoxed(b.left());
-            if (cur.isTerminated()) return lhs;
+            if (ssa.cur.isTerminated()) return lhs;
             MirVal rhs = lowerBoxed(b.right());
-            if (cur.isTerminated()) return rhs;
+            if (ssa.cur.isTerminated()) return rhs;
             boolean stringConcat =
                     b.op() == HirExpr.BinaryOp.ADD
                             && b.left().meta().stringType()
@@ -1396,9 +1085,9 @@ public final class MirLowerer {
             int ln = r.meta().line();
             PrimitiveKind ek = r.elemKind();
             MirVal s = ek.isPrimitive() ? lowerAs(r.start(), ek) : lowerBoxed(r.start());
-            if (cur.isTerminated()) return s;
+            if (ssa.cur.isTerminated()) return s;
             MirVal e = ek.isPrimitive() ? lowerAs(r.end(), ek) : lowerBoxed(r.end());
-            if (cur.isTerminated()) return e;
+            if (ssa.cur.isTerminated()) return e;
             MirVal res = newVal(PrimitiveKind.NONE, null);
             MirEffect fx = ek.isPrimitive() ? MirEffect.PURE_NOTHROW : MirEffect.PURE_MAY_THROW;
             emit(new MirInst.RangeNew(res, s, e, r.inclusive(), ek, ln, fx));
@@ -1415,7 +1104,7 @@ public final class MirLowerer {
         private MirVal lowerLogic(HirExpr.Logic l) {
             int ln = l.meta().line();
             MirVal lhs = lowerConditionBool(l.left(), ln);
-            if (cur.isTerminated()) return lhs;
+            if (ssa.cur.isTerminated()) return lhs;
             NarrowHint hint = extractNarrowHint(l.left());
             MirVal mergeParam = newVal(PrimitiveKind.BOOL, null);
             BlockBuilder bbRight = newBlock(List.of(), false, false);
@@ -1428,24 +1117,24 @@ public final class MirLowerer {
                 terminateBrIf(lhs, bbMerge, List.of(trueVal), bbRight, List.of(), ln);
             }
             sealBlock(bbRight);
-            cur = bbRight;
+            ssa.cur = bbRight;
             if (hint != null
                     && ((l.op() == HirExpr.LogicOp.AND && hint.onTrueBranch)
                             || (l.op() == HirExpr.LogicOp.OR && !hint.onTrueBranch))) {
                 emitNarrowAnchor(hint, ln);
             }
             MirVal rhs = lowerConditionBool(l.right(), ln);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(bbMerge, List.of(rhs), ln);
             }
             sealBlock(bbMerge);
-            cur = bbMerge;
+            ssa.cur = bbMerge;
             return mergeParam;
         }
 
         private MirVal lowerConditionBool(HirExpr cond, int ln) {
             MirVal v = lowerExpr(cond);
-            if (cur.isTerminated()) {
+            if (ssa.cur.isTerminated()) {
                 return v;
             }
             if (v.kind() == PrimitiveKind.BOOL) {
@@ -1553,7 +1242,7 @@ public final class MirLowerer {
         private MirVal lowerIs(HirExpr.Is i) {
             int ln = i.meta().line();
             MirVal operand = lowerBoxed(i.left());
-            if (cur.isTerminated()) return operand;
+            if (ssa.cur.isTerminated()) return operand;
             PrimitiveKind outKind = i.builtin() != null ? PrimitiveKind.NONE : PrimitiveKind.BOOL;
             MirVal res = newVal(outKind, null);
             emit(
@@ -1574,7 +1263,7 @@ public final class MirLowerer {
                 return lowerAndWiden(a.left());
             }
             MirVal operand = lowerBoxed(a.left());
-            if (cur.isTerminated()) return operand;
+            if (ssa.cur.isTerminated()) return operand;
             MirVal res = newVal(PrimitiveKind.NONE, null);
             emit(
                     new MirInst.CheckCast(
@@ -1589,7 +1278,7 @@ public final class MirLowerer {
                 return lowerExpr(n.operand());
             }
             MirVal operand = lowerBoxed(n.operand());
-            if (cur.isTerminated()) return operand;
+            if (ssa.cur.isTerminated()) return operand;
             PrimitiveKind targetKind =
                     n.meta().kind().isPrimitive() ? n.meta().kind() : PrimitiveKind.NONE;
             MirVal res = newVal(targetKind, null);
@@ -1601,7 +1290,7 @@ public final class MirLowerer {
         private MirVal lowerMove(HirExpr.Move m) {
             int ln = m.meta().line();
             MirVal op = lowerAndWiden(m.operand());
-            if (cur.isTerminated()) return op;
+            if (ssa.cur.isTerminated()) return op;
             MirVal res = newVal(op.kind(), m.var() != null ? m.var().name() : null);
             emit(new MirInst.Move(res, m.var(), op, ln));
             propagateAlias(op, res);
@@ -1611,10 +1300,10 @@ public final class MirLowerer {
         private MirVal lowerFreeze(HirExpr.Freeze f) {
             int ln = f.meta().line();
             MirVal op = lowerAndWiden(f.operand());
-            if (cur.isTerminated()) return op;
+            if (ssa.cur.isTerminated()) return op;
             MirVal res = newVal(op.kind(), null);
             emit(new MirInst.Freeze(res, op, ln));
-            valAliases.put(res.id(), MirEffect.AliasClass.FROZEN);
+            ssa.valAliases.put(res.id(), MirEffect.AliasClass.FROZEN);
             return res;
         }
 
@@ -1624,12 +1313,12 @@ public final class MirLowerer {
             int ln = b.meta().line();
             if (!b.declaredVars().isEmpty()) {
                 for (HirVar v : b.declaredVars()) {
-                    if (pinnedVarIds.contains(v.id())) {
+                    if (ssa.pinnedVarIds.contains(v.id())) {
                         emit(new MirInst.SlotDecl(v, ln));
                     }
                 }
                 MirVal res = lowerStatements(b.statements(), ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     res = applyWideningRank(res, b.innerWideningRank(), ln);
                 }
                 return res;
@@ -1638,14 +1327,14 @@ public final class MirLowerer {
                 MirVal prevNs = newVal(PrimitiveKind.NONE, "$prevNs");
                 emit(new MirInst.ScopeEnter(prevNs, b.declaredNames(), ln));
                 MirVal res = lowerStatements(b.statements(), ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     emit(new MirInst.ScopeExit(prevNs, ln));
                     res = applyWideningRank(res, b.innerWideningRank(), ln);
                 }
                 return res;
             }
             MirVal res = lowerStatements(b.statements(), ln);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 res = applyWideningRank(res, b.innerWideningRank(), ln);
             }
             return res;
@@ -1655,7 +1344,7 @@ public final class MirLowerer {
             int ln = i.meta().line();
             PrimitiveKind target = i.meta().kind();
             MirVal cond = lowerExpr(i.cond());
-            if (cur.isTerminated()) return cond;
+            if (ssa.cur.isTerminated()) return cond;
             NarrowHint hint = extractNarrowHint(i.cond());
 
             BlockBuilder bbThen = newBlock(List.of(), false, false);
@@ -1668,17 +1357,17 @@ public final class MirLowerer {
             sealBlock(bbElse);
 
             // Then branch
-            cur = bbThen;
+            ssa.cur = bbThen;
             if (hint != null && hint.onTrueBranch) {
                 emitNarrowAnchor(hint, ln);
             }
             MirVal thenVal = lowerAs(i.thenBranch(), target);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(bbMerge, List.of(thenVal), ln);
             }
 
             // Else branch
-            cur = bbElse;
+            ssa.cur = bbElse;
             if (hint != null && !hint.onTrueBranch) {
                 emitNarrowAnchor(hint, ln);
             }
@@ -1688,12 +1377,12 @@ public final class MirLowerer {
             } else {
                 elseVal = convertVal(emitConst(null, PrimitiveKind.NONE, ln), target, ln);
             }
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(bbMerge, List.of(elseVal), ln);
             }
 
             sealBlock(bbMerge);
-            cur = bbMerge;
+            ssa.cur = bbMerge;
             if (bbMerge.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
@@ -1858,7 +1547,7 @@ public final class MirLowerer {
             PrimitiveKind targetKind = m.meta().kind();
             PrimitiveKind scrutKind = m.scrutineeVar().primitiveKind();
             MirVal scrutVal = lowerAs(m.scrutinee(), scrutKind);
-            if (cur.isTerminated()) return scrutVal;
+            if (ssa.cur.isTerminated()) return scrutVal;
             writeVar(m.scrutineeVar(), scrutVal, ln);
 
             MirVal mergeParam = newVal(targetKind, null);
@@ -1906,9 +1595,9 @@ public final class MirLowerer {
                 HirExpr.MatchArm arm = arms.get(i);
                 BlockBuilder bbNext = newBlock(List.of(), false, false);
                 lowerMatchPattern(arm.pattern(), scrutVal, bbNext);
-                if (!cur.isTerminated() && arm.guard() != null) {
+                if (!ssa.cur.isTerminated() && arm.guard() != null) {
                     MirVal gVal = lowerExpr(arm.guard());
-                    if (!cur.isTerminated()) {
+                    if (!ssa.cur.isTerminated()) {
                         BlockBuilder bbBody = newBlock(List.of(), false, false);
                         terminateBrIf(
                                 gVal,
@@ -1918,19 +1607,19 @@ public final class MirLowerer {
                                 List.of(),
                                 arm.guard().meta().line());
                         sealBlock(bbBody);
-                        cur = bbBody;
+                        ssa.cur = bbBody;
                     }
                 }
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     lowerMatchArmBody(
                             arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
                 }
                 sealBlock(bbNext);
-                cur = bbNext;
+                ssa.cur = bbNext;
                 i++;
             }
 
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 if (m.elseArm() != null) {
                     HirExpr.MatchElse elseArm = m.elseArm();
                     if (elseArm.var() != null) {
@@ -1963,7 +1652,7 @@ public final class MirLowerer {
             }
 
             sealBlock(bbMerge);
-            cur = bbMerge;
+            ssa.cur = bbMerge;
             if (bbMerge.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
@@ -1979,14 +1668,14 @@ public final class MirLowerer {
             MirVal v;
             if (wideningRank >= 0) {
                 v = lowerExpr(body);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     v = applyWideningRank(v, wideningRank, ln);
                     v = convertVal(v, targetKind, ln);
                 }
             } else {
                 v = lowerAs(body, targetKind);
             }
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(bbMerge, List.of(v), ln);
             }
         }
@@ -2024,13 +1713,13 @@ public final class MirLowerer {
             terminateSwitch(keyInt, keys, targets, bbAfter, ln);
             for (int k = 0; k < armCount; k++) {
                 sealBlock(armBlocks[k]);
-                cur = armBlocks[k];
+                ssa.cur = armBlocks[k];
                 HirExpr.MatchArm arm = arms.get(start + k);
                 lowerMatchArmBody(
                         arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
             }
             sealBlock(bbAfter);
-            cur = bbAfter;
+            ssa.cur = bbAfter;
         }
 
         private void emitMirStringSwitchRun(
@@ -2083,7 +1772,7 @@ public final class MirLowerer {
                     List.of(),
                     ln);
             sealBlock(bbNonNull);
-            cur = bbNonNull;
+            ssa.cur = bbNonNull;
 
             if (!guaranteedString) {
                 BlockBuilder bbIsStr = newBlock(List.of(), false, false);
@@ -2093,7 +1782,7 @@ public final class MirLowerer {
                                 isStr, scrutVal, null, null, List.of(), "string|string|", ln));
                 terminateBrIf(isStr, bbIsStr, List.of(), bbAfter, List.of(), ln);
                 sealBlock(bbIsStr);
-                cur = bbIsStr;
+                ssa.cur = bbIsStr;
             }
 
             java.util.TreeMap<Integer, List<Map.Entry<String, Integer>>> buckets =
@@ -2130,7 +1819,7 @@ public final class MirLowerer {
 
             for (int b = 0; b < bCount; b++) {
                 sealBlock(bucketBlocks[b]);
-                cur = bucketBlocks[b];
+                ssa.cur = bucketBlocks[b];
                 List<Map.Entry<String, Integer>> entries = bucketEntries.get(b);
                 for (int j = 0; j < entries.size(); j++) {
                     Map.Entry<String, Integer> e = entries.get(j);
@@ -2154,20 +1843,20 @@ public final class MirLowerer {
                     terminateBrIf(eq, armBlocks[e.getValue()], List.of(), bbFail, List.of(), ln);
                     if (bbFail != bbAfter) {
                         sealBlock(bbFail);
-                        cur = bbFail;
+                        ssa.cur = bbFail;
                     }
                 }
             }
 
             for (int k = 0; k < armCount; k++) {
                 sealBlock(armBlocks[k]);
-                cur = armBlocks[k];
+                ssa.cur = armBlocks[k];
                 HirExpr.MatchArm arm = arms.get(start + k);
                 lowerMatchArmBody(
                         arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
             }
             sealBlock(bbAfter);
-            cur = bbAfter;
+            ssa.cur = bbAfter;
         }
 
         private void emitMirEnumSwitchRun(
@@ -2221,7 +1910,7 @@ public final class MirLowerer {
                     List.of(),
                     ln);
             sealBlock(bbNonNull);
-            cur = bbNonNull;
+            ssa.cur = bbNonNull;
 
             BlockBuilder bbIsEnum = newBlock(List.of(), false, false);
             MirVal isEnum = newVal(PrimitiveKind.BOOL, null);
@@ -2237,7 +1926,7 @@ public final class MirLowerer {
                             ln));
             terminateBrIf(isEnum, bbIsEnum, List.of(), bbAfter, List.of(), ln);
             sealBlock(bbIsEnum);
-            cur = bbIsEnum;
+            ssa.cur = bbIsEnum;
 
             int[] keys = new int[ordMap.size()];
             BlockBuilder[] targets = new BlockBuilder[ordMap.size()];
@@ -2265,17 +1954,17 @@ public final class MirLowerer {
 
             for (int k = 0; k < armCount; k++) {
                 sealBlock(armBlocks[k]);
-                cur = armBlocks[k];
+                ssa.cur = armBlocks[k];
                 HirExpr.MatchArm arm = arms.get(start + k);
                 lowerMatchArmBody(
                         arm.body(), arm.bodyWideningRank(), targetKind, bbMerge, arm.line());
             }
             sealBlock(bbAfter);
-            cur = bbAfter;
+            ssa.cur = bbAfter;
         }
 
         private void lowerMatchPattern(HirPattern p, MirVal val, BlockBuilder bbFail) {
-            if (cur.isTerminated()) return;
+            if (ssa.cur.isTerminated()) return;
             int ln = p.line();
             switch (p) {
                 case HirPattern.Wildcard ignored -> {}
@@ -2285,7 +1974,7 @@ public final class MirLowerer {
                 }
                 case HirPattern.ValueExpr ve -> {
                     MirVal rhs = lowerExpr(ve.expr());
-                    if (cur.isTerminated()) return;
+                    if (ssa.cur.isTerminated()) return;
                     MirVal cond = emitMirEquality(val, rhs, false, ln);
                     branchOnPatternCond(cond, bbFail, ln);
                 }
@@ -2308,7 +1997,7 @@ public final class MirLowerer {
                 case HirPattern.Bind b -> {
                     if (b.inner() != null) {
                         lowerMatchPattern(b.inner(), val, bbFail);
-                        if (cur.isTerminated()) return;
+                        if (ssa.cur.isTerminated()) return;
                     }
                     MirVal bound = convertVal(val, b.var().primitiveKind(), ln);
                     writeVar(b.var(), bound, ln);
@@ -2320,20 +2009,20 @@ public final class MirLowerer {
                         BlockBuilder altFail =
                                 (k == alts.size() - 1) ? bbFail : newBlock(List.of(), false, false);
                         lowerMatchPattern(alts.get(k), val, altFail);
-                        if (!cur.isTerminated()) {
+                        if (!ssa.cur.isTerminated()) {
                             terminateBr(bbMatched, List.of(), ln);
                         }
                         if (altFail != bbFail) {
                             sealBlock(altFail);
-                            cur = altFail;
+                            ssa.cur = altFail;
                         }
                     }
                     sealBlock(bbMatched);
-                    cur = bbMatched;
+                    ssa.cur = bbMatched;
                 }
                 case HirPattern.Relational rel -> {
                     MirVal rhs = lowerExpr(rel.rhs());
-                    if (cur.isTerminated()) return;
+                    if (ssa.cur.isTerminated()) return;
                     MirVal cond = emitMirRelational(val, rhs, rel.op(), ln);
                     branchOnPatternCond(cond, bbFail, ln);
                 }
@@ -2342,7 +2031,7 @@ public final class MirLowerer {
                 }
                 case HirPattern.Membership mp -> {
                     MirVal container = lowerBoxed(mp.container());
-                    if (cur.isTerminated()) return;
+                    if (ssa.cur.isTerminated()) return;
                     MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
                     MirVal res = newVal(PrimitiveKind.BOOL, null);
                     emit(
@@ -2370,7 +2059,7 @@ public final class MirLowerer {
                 HirPattern.RecordDestructure rd, MirVal val, BlockBuilder bbFail) {
             int ln = rd.line();
             lowerMatchPattern(rd.typeTest(), val, bbFail);
-            if (cur.isTerminated()) return;
+            if (ssa.cur.isTerminated()) return;
             MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
             if (!rd.isJavaRecord()) {
                 boolean direct = rd.babbleClassId() >= 0 || rd.babbleJvmName() != null;
@@ -2413,7 +2102,7 @@ public final class MirLowerer {
                                         MirEffect.READ_SHARED));
                     }
                     lowerMatchPattern(rd.fieldPatterns().get(i), fv, bbFail);
-                    if (cur.isTerminated()) return;
+                    if (ssa.cur.isTerminated()) return;
                 }
                 return;
             }
@@ -2437,7 +2126,7 @@ public final class MirLowerer {
                                 ln,
                                 MirEffect.IMPURE_THROW));
                 lowerMatchPattern(rd.fieldPatterns().get(i), fv, bbFail);
-                if (cur.isTerminated()) return;
+                if (ssa.cur.isTerminated()) return;
             }
         }
 
@@ -2446,7 +2135,7 @@ public final class MirLowerer {
             int ln = sd.line();
             if (sd.typeTest() != null) {
                 lowerMatchPattern(sd.typeTest(), val, bbFail);
-                if (cur.isTerminated()) return;
+                if (ssa.cur.isTerminated()) return;
             } else if (sd.isArray()) {
                 MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
                 MirVal isArr = newVal(PrimitiveKind.BOOL, null);
@@ -2514,7 +2203,7 @@ public final class MirLowerer {
                                     ln,
                                     MirEffect.READ_SHARED));
                     lowerMatchPattern(sd.elemPatterns().get(i), elem, bbFail);
-                    if (cur.isTerminated()) return;
+                    if (ssa.cur.isTerminated()) return;
                 }
                 if (sd.restVar() != null) {
                     MirVal tail = newVal(PrimitiveKind.NONE, sd.restVar().name());
@@ -2611,7 +2300,7 @@ public final class MirLowerer {
                                     MirEffect.READ_SHARED));
                 }
                 lowerMatchPattern(sd.elemPatterns().get(i), elem, bbFail);
-                if (cur.isTerminated()) return;
+                if (ssa.cur.isTerminated()) return;
             }
             if (sd.restVar() != null) {
                 MirVal tail = newVal(PrimitiveKind.NONE, sd.restVar().name());
@@ -2636,7 +2325,7 @@ public final class MirLowerer {
             BlockBuilder bbPass = newBlock(List.of(), false, false);
             terminateBrIf(cond, bbPass, List.of(), bbFail, List.of(), ln);
             sealBlock(bbPass);
-            cur = bbPass;
+            ssa.cur = bbPass;
         }
 
         private MirVal emitMirConstMatch(HirPattern.Const pc, MirVal val, int ln) {
@@ -2808,15 +2497,15 @@ public final class MirLowerer {
                                 ? PrimitiveKind.CHAR
                                 : PrimitiveKind.promoteNumeric(vk, ek);
                 MirVal lo = lowerAs(rt.lo(), cmpKind);
-                if (cur.isTerminated()) return;
+                if (ssa.cur.isTerminated()) return;
                 MirVal hi = lowerAs(rt.hi(), cmpKind);
-                if (cur.isTerminated()) return;
+                if (ssa.cur.isTerminated()) return;
                 MirVal stepVal = null;
                 PrimitiveKind stepKind =
                         cmpKind == PrimitiveKind.LONG ? PrimitiveKind.LONG : PrimitiveKind.INT;
                 if (rt.step() != null) {
                     MirVal rawStep = lowerAs(rt.step(), stepKind);
-                    if (cur.isTerminated()) return;
+                    if (ssa.cur.isTerminated()) return;
                     stepVal = newVal(stepKind, null);
                     emit(
                             new MirInst.CallJava(
@@ -2913,15 +2602,15 @@ public final class MirLowerer {
             }
             MirVal boxed = convertVal(val, PrimitiveKind.NONE, ln);
             MirVal lo = lowerBoxed(rt.lo());
-            if (cur.isTerminated()) return;
+            if (ssa.cur.isTerminated()) return;
             MirVal hi = lowerBoxed(rt.hi());
-            if (cur.isTerminated()) return;
+            if (ssa.cur.isTerminated()) return;
             MirVal inc = emitConst(rt.inclusive(), PrimitiveKind.BOOL, ln);
             MirVal step =
                     rt.step() != null
                             ? lowerBoxed(rt.step())
                             : emitConst(null, PrimitiveKind.NONE, ln);
-            if (cur.isTerminated()) return;
+            if (ssa.cur.isTerminated()) return;
             MirVal res = newVal(PrimitiveKind.BOOL, null);
             emit(
                     new MirInst.CallJava(
@@ -2951,14 +2640,14 @@ public final class MirLowerer {
 
             terminateBr(bbHead, List.of(initRes), ln);
 
-            cur = bbHead;
+            ssa.cur = bbHead;
             MirVal cond = lowerExpr(w.cond());
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBrIf(cond, bbBody, List.of(), bbExit, List.of(headRes), ln);
             }
             sealBlock(bbBody);
 
-            cur = bbBody;
+            ssa.cur = bbBody;
             loopStack.push(new LoopContext(bbExit, bbHead, true, headRes, loopStack.size() + 1));
             MirVal bodyVal;
             try {
@@ -2966,13 +2655,13 @@ public final class MirLowerer {
             } finally {
                 loopStack.pop();
             }
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(bbHead, List.of(bodyVal), ln);
             }
 
             sealBlock(bbHead);
             sealBlock(bbExit);
-            cur = bbExit;
+            ssa.cur = bbExit;
             if (bbExit.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
@@ -2990,7 +2679,7 @@ public final class MirLowerer {
             boolean isArray = kind == LoweringTargets.ForKind.ARRAY && target.arrayClass() != null;
 
             MirVal iterableVal = lowerBoxed(f.iterable());
-            if (cur.isTerminated()) return iterableVal;
+            if (ssa.cur.isTerminated()) return iterableVal;
 
             MirVal iterState = newVal(PrimitiveKind.NONE, "$iter");
             LoweringTargets.ForLoopTarget effectiveTarget =
@@ -3038,7 +2727,7 @@ public final class MirLowerer {
 
                 terminateBr(bbHead, List.of(initRes, zero), ln);
 
-                cur = bbHead;
+                ssa.cur = bbHead;
                 MirVal hasNext = newVal(PrimitiveKind.BOOL, null);
                 emit(
                         new MirInst.ForIterHasNext(
@@ -3052,7 +2741,7 @@ public final class MirLowerer {
                 terminateBrIf(hasNext, bbBody, List.of(), bbExit, List.of(headRes), ln);
                 sealBlock(bbBody);
 
-                cur = bbBody;
+                ssa.cur = bbBody;
                 PrimitiveKind rawElemKind =
                         javaPrimitiveKind(target.arrayClass().getComponentType());
                 MirVal rawElem = newVal(rawElemKind, "$elem");
@@ -3071,12 +2760,12 @@ public final class MirLowerer {
                                         true)));
 
                 MirVal bodyRes = lowerForBody(f, rawElem, bbExit, bbStep, headRes, ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     terminateBr(bbStep, List.of(bodyRes), ln);
                 }
                 sealBlock(bbStep);
 
-                cur = bbStep;
+                ssa.cur = bbStep;
                 if (bbStep.incomingEdges.isEmpty()) {
                     terminateFixed(new MirTerminator.Unreachable(ln));
                 } else {
@@ -3103,7 +2792,7 @@ public final class MirLowerer {
 
                 terminateBr(bbHead, List.of(initRes), ln);
 
-                cur = bbHead;
+                ssa.cur = bbHead;
                 MirVal hasNext = newVal(PrimitiveKind.BOOL, null);
                 emit(
                         new MirInst.ForIterHasNext(
@@ -3117,7 +2806,7 @@ public final class MirLowerer {
                 terminateBrIf(hasNext, bbBody, List.of(), bbExit, List.of(headRes), ln);
                 sealBlock(bbBody);
 
-                cur = bbBody;
+                ssa.cur = bbBody;
                 PrimitiveKind nextOutKind =
                         (kind == LoweringTargets.ForKind.BABBLE_ITERABLE
                                                 || kind == LoweringTargets.ForKind.BABBLE_ITERATOR)
@@ -3137,14 +2826,14 @@ public final class MirLowerer {
                                 MirEffect.IMPURE_THROW));
 
                 MirVal bodyRes = lowerForBody(f, rawElem, bbExit, bbHead, headRes, ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     terminateBr(bbHead, List.of(bodyRes), ln);
                 }
                 sealBlock(bbHead);
             }
 
             sealBlock(bbExit);
-            cur = bbExit;
+            ssa.cur = bbExit;
             if (bbExit.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
@@ -3158,10 +2847,10 @@ public final class MirLowerer {
             PrimitiveKind loopKind = isLong ? PrimitiveKind.LONG : PrimitiveKind.INT;
 
             MirVal startRaw = lowerAs(cr.start(), rk);
-            if (cur.isTerminated()) return startRaw;
+            if (ssa.cur.isTerminated()) return startRaw;
             MirVal startVal = convertVal(startRaw, loopKind, ln);
             MirVal endRaw = lowerAs(cr.end(), rk);
-            if (cur.isTerminated()) return endRaw;
+            if (ssa.cur.isTerminated()) return endRaw;
             MirVal endVal = convertVal(endRaw, loopKind, ln);
 
             boolean hasConstStep = false;
@@ -3177,7 +2866,7 @@ public final class MirLowerer {
                 constStep = isLong ? sn.longValue() : sn.intValue();
             } else {
                 MirVal rawStep = lowerAs(cr.step(), loopKind);
-                if (cur.isTerminated()) return rawStep;
+                if (ssa.cur.isTerminated()) return rawStep;
                 stepVal = newVal(loopKind, "$step");
                 emit(
                         new MirInst.CallJava(
@@ -3215,7 +2904,7 @@ public final class MirLowerer {
             terminateBrIf(isNonEmpty, bbNonEmpty, List.of(), bbExit, List.of(initRes), ln);
             sealBlock(bbNonEmpty);
 
-            cur = bbNonEmpty;
+            ssa.cur = bbNonEmpty;
             MirVal lastVal;
             if (hasConstStep && constStep == 1L) {
                 if (cr.inclusive()) {
@@ -3309,15 +2998,15 @@ public final class MirLowerer {
 
             terminateBr(bbHead, List.of(initRes, firstIdx), ln);
 
-            cur = bbHead;
+            ssa.cur = bbHead;
             MirVal rawElem = rk == loopKind ? headIdx : convertVal(headIdx, rk, ln);
             MirVal bodyRes = lowerForBody(f, rawElem, bbExit, bbStep, headRes, ln);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(bbStep, List.of(bodyRes), ln);
             }
             sealBlock(bbStep);
 
-            cur = bbStep;
+            ssa.cur = bbStep;
             if (bbStep.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             } else {
@@ -3336,7 +3025,7 @@ public final class MirLowerer {
                 terminateBrIf(done, bbExit, List.of(stepRes), bbNext, List.of(), ln);
                 sealBlock(bbNext);
 
-                cur = bbNext;
+                ssa.cur = bbNext;
                 MirVal delta =
                         stepVal != null
                                 ? stepVal
@@ -3363,7 +3052,7 @@ public final class MirLowerer {
             sealBlock(bbHead);
 
             sealBlock(bbExit);
-            cur = bbExit;
+            ssa.cur = bbExit;
             if (bbExit.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
@@ -3393,7 +3082,7 @@ public final class MirLowerer {
             elem = convertVal(elem, varKind, ln);
 
             for (HirVar v : f.bodyDeclaredVars()) {
-                if (pinnedVarIds.contains(v.id())) {
+                if (ssa.pinnedVarIds.contains(v.id())) {
                     emit(new MirInst.SlotDecl(v, ln));
                 }
             }
@@ -3407,7 +3096,7 @@ public final class MirLowerer {
             MirVal res;
             try {
                 res = lowerStatements(f.body(), ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     res = applyWideningRank(res, f.bodyWideningRank(), ln);
                     res = convertVal(res, PrimitiveKind.NONE, ln);
                 }
@@ -3423,13 +3112,13 @@ public final class MirLowerer {
             MirVal val;
             if (b.value() != null) {
                 val = lowerAndWiden(b.value());
-                if (cur.isTerminated()) return val;
+                if (ssa.cur.isTerminated()) return val;
                 val = convertVal(val, PrimitiveKind.NONE, ln);
             } else {
                 val = emitConst(null, PrimitiveKind.NONE, ln);
             }
             emitUnwindFinallies(loop.loopDepth, ln);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateBr(loop.breakBlock, List.of(val), ln);
             }
             return emitConst(null, PrimitiveKind.NONE, ln);
@@ -3439,7 +3128,7 @@ public final class MirLowerer {
             int ln = c.meta().line();
             LoopContext loop = loopStack.peek();
             emitUnwindFinallies(loop.loopDepth, ln);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 if (loop.passResultOnContinue) {
                     terminateBr(loop.continueBlock, List.of(loop.currentResultVal), ln);
                 } else {
@@ -3452,11 +3141,11 @@ public final class MirLowerer {
         private MirVal lowerReturn(HirExpr.Return r) {
             int ln = r.meta().line();
             MirVal val = lowerAndWiden(r.value());
-            if (cur.isTerminated()) return val;
+            if (ssa.cur.isTerminated()) return val;
             val = applyWideningRank(val, r.meta().wideningRank(), ln);
             val = convertVal(val, fn.returnKind(), ln);
             emitUnwindFinallies(0, ln);
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 terminateFixed(new MirTerminator.Ret(val, fn.returnKind(), -1, ln));
             }
             return emitConst(null, PrimitiveKind.NONE, ln);
@@ -3465,7 +3154,7 @@ public final class MirLowerer {
         private MirVal lowerThrow(HirExpr.Throw th) {
             int ln = th.meta().line();
             MirVal val = lowerBoxed(th.value());
-            if (cur.isTerminated()) return val;
+            if (ssa.cur.isTerminated()) return val;
             terminateFixed(new MirTerminator.Throw(val, th.isJavaThrowable(), ln));
             return emitConst(null, PrimitiveKind.NONE, ln);
         }
@@ -3483,22 +3172,22 @@ public final class MirLowerer {
                     && finallyStack.peek().loopDepthAtEntry >= minLoopDepth) {
                 FinallyContext fc = finallyStack.pop();
                 popped.add(fc);
-                poppedHandlers.add(handlerStack.pop());
-                if (fc.hasNonEmptyFinally && !cur.isTerminated()) {
+                poppedHandlers.add(ssa.handlerStack.pop());
+                if (fc.hasNonEmptyFinally && !ssa.cur.isTerminated()) {
                     // Transition to a fresh block with the outer handler list so this inline
                     // finally
                     // is NOT protected by the try's own catch/finally handlers!
                     BlockBuilder bbFin = newBlock(List.of(), false, false);
                     terminateBr(bbFin, List.of(), ln);
                     sealBlock(bbFin);
-                    cur = bbFin;
+                    ssa.cur = bbFin;
                     lowerTryFinallyBlock(fc.tryNode, ln);
                 }
             }
             // Restore stacks for any subsequent unreachable/sibling lowering in the same lexical
             // scope.
             for (int i = popped.size() - 1; i >= 0; i--) {
-                handlerStack.push(poppedHandlers.get(i));
+                ssa.handlerStack.push(poppedHandlers.get(i));
                 finallyStack.push(popped.get(i));
             }
         }
@@ -3511,7 +3200,7 @@ public final class MirLowerer {
                 int ln) {
             if (!declVars.isEmpty()) {
                 for (HirVar v : declVars) {
-                    if (pinnedVarIds.contains(v.id())) {
+                    if (ssa.pinnedVarIds.contains(v.id())) {
                         emit(new MirInst.SlotDecl(v, ln));
                     }
                 }
@@ -3520,7 +3209,7 @@ public final class MirLowerer {
                 MirVal prevNs = newVal(PrimitiveKind.NONE, "$prevNs");
                 emit(new MirInst.ScopeEnter(prevNs, declNames, ln));
                 lowerStatements(stmts, ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     emit(new MirInst.ScopeExit(prevNs, ln));
                 }
             } else {
@@ -3536,7 +3225,7 @@ public final class MirLowerer {
                 int ln) {
             if (!declVars.isEmpty()) {
                 for (HirVar v : declVars) {
-                    if (pinnedVarIds.contains(v.id())) {
+                    if (ssa.pinnedVarIds.contains(v.id())) {
                         emit(new MirInst.SlotDecl(v, ln));
                     }
                 }
@@ -3546,7 +3235,7 @@ public final class MirLowerer {
                 MirVal prevNs = newVal(PrimitiveKind.NONE, "$prevNs");
                 emit(new MirInst.ScopeEnter(prevNs, declNames, ln));
                 MirVal res = lowerStatements(stmts, ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     emit(new MirInst.ScopeExit(prevNs, ln));
                 }
                 return res;
@@ -3571,8 +3260,8 @@ public final class MirLowerer {
             PrimitiveKind targetKind = t.meta().kind();
             boolean hasNonEmptyFinally = t.hasFinally() && !t.finallyBody().isEmpty();
             List<HirExpr.HirCatch> catches = t.catches();
-            List<MirHandler> outerHandlers = handlerStack.peek();
-            BlockBuilder preTryBlock = cur;
+            List<MirHandler> outerHandlers = ssa.handlerStack.peek();
+            BlockBuilder preTryBlock = ssa.cur;
 
             // 1. Pre-create merge block, handler-entry blocks, catch body blocks, and abnormal
             // finally blocks.
@@ -3678,11 +3367,11 @@ public final class MirLowerer {
             sealBlock(bbTryStart);
 
             // Lower tryBody inside tryHandlerList + finallyStack.
-            handlerStack.push(tryHandlerList);
+            ssa.handlerStack.push(tryHandlerList);
             finallyStack.push(new FinallyContext(t, loopStack.size(), hasNonEmptyFinally));
             MirVal tryVal;
             try {
-                cur = bbTryStart;
+                ssa.cur = bbTryStart;
                 tryVal =
                         lowerScopedValueBody(
                                 t.tryBody(),
@@ -3690,15 +3379,15 @@ public final class MirLowerer {
                                 t.tryOpensNamespaceScope(),
                                 t.tryDeclaredNames(),
                                 ln);
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     tryVal = applyWideningRank(tryVal, t.tryWideningRank(), ln);
                     tryVal = convertVal(tryVal, targetKind, ln);
                 }
             } finally {
                 finallyStack.pop();
-                handlerStack.pop();
+                ssa.handlerStack.pop();
             }
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 if (hasNonEmptyFinally) {
                     // Normal exit from try runs finally outside tryHandlerList (under
                     // outerHandlers).
@@ -3706,10 +3395,10 @@ public final class MirLowerer {
                             newBlockWithHandlers(List.of(), outerHandlers, false, false);
                     terminateBr(bbTryNormalFin, List.of(), ln);
                     sealBlock(bbTryNormalFin);
-                    cur = bbTryNormalFin;
+                    ssa.cur = bbTryNormalFin;
                     lowerTryFinallyBlock(t, ln);
                 }
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     terminateBr(bbMerge, List.of(tryVal), ln);
                 }
             }
@@ -3717,7 +3406,7 @@ public final class MirLowerer {
             // 3. Emit JVM catch trampolines -> catchBodies[i].
             for (int i = 0; i < catches.size(); i++) {
                 if (jvmCatchEntries[i] != null) {
-                    cur = jvmCatchEntries[i];
+                    ssa.cur = jvmCatchEntries[i];
                     terminateBr(catchBodies[i], List.of(jvmCatchParams[i]), catches.get(i).line());
                 }
             }
@@ -3725,7 +3414,7 @@ public final class MirLowerer {
             // 4. Emit ThrownException dispatcher -> catchBodies[i] or finallyAbnormalBody /
             // rethrow.
             if (needsThrownDispatcher) {
-                cur = bbThrownEntry;
+                ssa.cur = bbThrownEntry;
                 MirVal unwrapped = null;
                 boolean guaranteedHandled = false;
                 for (int i = 0; i < catches.size(); i++) {
@@ -3765,10 +3454,10 @@ public final class MirLowerer {
                                 List.of(),
                                 cln);
                         sealBlock(bbNext);
-                        cur = bbNext;
+                        ssa.cur = bbNext;
                     }
                 }
-                if (!guaranteedHandled && !cur.isTerminated()) {
+                if (!guaranteedHandled && !ssa.cur.isTerminated()) {
                     if (hasNonEmptyFinally) {
                         terminateBr(bbFinallyAbnBody, List.of(teParam), ln);
                     } else {
@@ -3782,20 +3471,20 @@ public final class MirLowerer {
                 HirExpr.HirCatch cc = catches.get(i);
                 int cln = cc.line();
                 sealBlock(catchBodies[i]);
-                cur = catchBodies[i];
+                ssa.cur = catchBodies[i];
                 if (catchBodies[i].incomingEdges.isEmpty()) {
                     terminateFixed(new MirTerminator.Unreachable(cln));
                     continue;
                 }
                 if (hasNonEmptyFinally) {
-                    handlerStack.push(catchBodyHandlers);
+                    ssa.handlerStack.push(catchBodyHandlers);
                     finallyStack.push(new FinallyContext(t, loopStack.size(), true));
                 }
                 MirVal catchVal;
                 try {
                     if (!cc.declaredVars().isEmpty()) {
                         for (HirVar v : cc.declaredVars()) {
-                            if (pinnedVarIds.contains(v.id())) {
+                            if (ssa.pinnedVarIds.contains(v.id())) {
                                 emit(new MirInst.SlotDecl(v, cln));
                             }
                         }
@@ -3807,7 +3496,7 @@ public final class MirLowerer {
                         MirVal prevNs = newVal(PrimitiveKind.NONE, "$prevNs");
                         emit(new MirInst.ScopeEnter(prevNs, cc.declaredNames(), cln));
                         catchVal = lowerStatements(cc.body(), cln);
-                        if (!cur.isTerminated()) {
+                        if (!ssa.cur.isTerminated()) {
                             emit(new MirInst.ScopeExit(prevNs, cln));
                         }
                     } else {
@@ -3816,26 +3505,26 @@ public final class MirLowerer {
                         }
                         catchVal = lowerStatements(cc.body(), cln);
                     }
-                    if (!cur.isTerminated()) {
+                    if (!ssa.cur.isTerminated()) {
                         catchVal = applyWideningRank(catchVal, cc.wideningRank(), cln);
                         catchVal = convertVal(catchVal, targetKind, cln);
                     }
                 } finally {
                     if (hasNonEmptyFinally) {
                         finallyStack.pop();
-                        handlerStack.pop();
+                        ssa.handlerStack.pop();
                     }
                 }
-                if (!cur.isTerminated()) {
+                if (!ssa.cur.isTerminated()) {
                     if (hasNonEmptyFinally) {
                         BlockBuilder bbCatchFin =
                                 newBlockWithHandlers(List.of(), outerHandlers, false, false);
                         terminateBr(bbCatchFin, List.of(), cln);
                         sealBlock(bbCatchFin);
-                        cur = bbCatchFin;
+                        ssa.cur = bbCatchFin;
                         lowerTryFinallyBlock(t, cln);
                     }
-                    if (!cur.isTerminated()) {
+                    if (!ssa.cur.isTerminated()) {
                         terminateBr(bbMerge, List.of(catchVal), cln);
                     }
                 }
@@ -3843,13 +3532,13 @@ public final class MirLowerer {
 
             // 6. Emit abnormal finally path (with automatic AddSuppressed when !finallyNothrow).
             if (hasNonEmptyFinally) {
-                cur = bbFinallyAbnEntry;
+                ssa.cur = bbFinallyAbnEntry;
                 terminateBr(bbFinallyAbnBody, List.of(finAbnEntryExn), ln);
                 sealBlock(bbFinallyAbnBody);
-                cur = bbFinallyAbnBody;
+                ssa.cur = bbFinallyAbnBody;
                 if (t.finallyNothrow()) {
                     lowerTryFinallyBlock(t, ln);
-                    if (!cur.isTerminated()) {
+                    if (!ssa.cur.isTerminated()) {
                         terminateFixed(new MirTerminator.Throw(finAbnBodyExn, true, ln));
                     }
                 } else {
@@ -3872,30 +3561,30 @@ public final class MirLowerer {
                     terminateBr(bbFinRun, List.of(), ln);
                     sealBlock(bbFinRun);
 
-                    handlerStack.push(List.copyOf(finHandlers));
+                    ssa.handlerStack.push(List.copyOf(finHandlers));
                     try {
-                        cur = bbFinRun;
+                        ssa.cur = bbFinRun;
                         lowerTryFinallyBlock(t, ln);
-                        if (!cur.isTerminated()) {
+                        if (!ssa.cur.isTerminated()) {
                             terminateBr(bbRethrow, List.of(), ln);
                         }
                     } finally {
-                        handlerStack.pop();
+                        ssa.handlerStack.pop();
                     }
 
-                    cur = bbSuppress;
+                    ssa.cur = bbSuppress;
                     emit(new MirInst.AddSuppressed(finAbnBodyExn, secondaryExn, ln));
                     terminateBr(bbRethrow, List.of(), ln);
 
                     sealBlock(bbRethrow);
-                    cur = bbRethrow;
+                    ssa.cur = bbRethrow;
                     terminateFixed(new MirTerminator.Throw(finAbnBodyExn, true, ln));
                 }
             }
 
             // 7. Continue after try merge.
             sealBlock(bbMerge);
-            cur = bbMerge;
+            ssa.cur = bbMerge;
             if (bbMerge.incomingEdges.isEmpty()) {
                 terminateFixed(new MirTerminator.Unreachable(ln));
             }
@@ -3910,7 +3599,7 @@ public final class MirLowerer {
             List<String> argNames = new ArrayList<>(c.args().size());
             for (HirCallArg a : c.args()) {
                 args.add(lowerAndWiden(a.value()));
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
                 argNames.add(a.name());
             }
             terminateFixed(
@@ -3924,7 +3613,7 @@ public final class MirLowerer {
             List<MirVal> args =
                     lowerCallExprList(
                             c.args(), target != null ? paramKinds(target) : null, c.binding());
-            if (cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
+            if (ssa.cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
             PrimitiveKind retKind =
                     (target != null && target.hasSpec()) ? target.returnKind() : PrimitiveKind.NONE;
             MirEffect fx = callEffect(c.meta(), target);
@@ -3953,7 +3642,7 @@ public final class MirLowerer {
         private MirVal lowerModuleExportGet(HirExpr.ModuleExportGet g) {
             int ln = g.meta().line();
             MirVal mod = lowerBoxed(g.receiver());
-            if (cur.isTerminated()) return mod;
+            if (ssa.cur.isTerminated()) return mod;
             MirEffect fx =
                     (g.target().definitelyInitialized() && g.meta().checkedType() == null)
                             ? MirEffect.PURE_NOTHROW
@@ -3973,13 +3662,13 @@ public final class MirLowerer {
             LoweringTargets.ExportedFunctionTarget ext = c.externalTarget();
             HirFunction target = ext == null ? module.function(c.targetFunctionId()) : null;
             MirVal callee = lowerBoxed(c.callee());
-            if (cur.isTerminated()) return callee;
+            if (ssa.cur.isTerminated()) return callee;
             PrimitiveKind[] pKinds =
                     ext != null
                             ? ext.signature().parameterKinds()
                             : (target != null ? paramKinds(target) : null);
             List<MirVal> args = lowerCallExprList(c.args(), pKinds, c.binding());
-            if (cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
+            if (ssa.cur.isTerminated()) return emitConst(null, PrimitiveKind.NONE, ln);
             PrimitiveKind retKind;
             MirEffect fx;
             boolean comm;
@@ -4028,12 +3717,12 @@ public final class MirLowerer {
         private MirVal lowerDirectThisMethodCall(HirExpr.DirectThisMethodCall c) {
             int ln = c.meta().line();
             MirVal recv = lowerBoxed(c.receiver());
-            if (cur.isTerminated()) return recv;
+            if (ssa.cur.isTerminated()) return recv;
             List<MirVal> args = new ArrayList<>(c.args().size());
             List<String> argNames = new ArrayList<>(c.args().size());
             for (HirCallArg a : c.args()) {
                 args.add(lowerAndWiden(a.value()));
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
                 argNames.add(a.name());
             }
             HirFunction target =
@@ -4080,11 +3769,11 @@ public final class MirLowerer {
         private MirVal lowerInterfaceCall(HirExpr.InterfaceCall c) {
             int ln = c.meta().line();
             MirVal recv = lowerBoxed(c.receiver());
-            if (cur.isTerminated()) return recv;
+            if (ssa.cur.isTerminated()) return recv;
             List<MirVal> args = new ArrayList<>(c.args().size());
             for (HirExpr a : c.args()) {
                 args.add(lowerAndWiden(a));
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
             }
             PrimitiveKind retKind =
                     c.signature() != null ? c.signature().returnKind() : PrimitiveKind.NONE;
@@ -4112,7 +3801,7 @@ public final class MirLowerer {
             MirVal recv = null;
             if (!target.isStatic() || !c.pureStaticReceiver()) {
                 recv = lowerBoxed(c.receiver());
-                if (cur.isTerminated()) return recv;
+                if (ssa.cur.isTerminated()) return recv;
             }
             Method m = target.method();
             Class<?>[] pTypes = m.getParameterTypes();
@@ -4128,7 +3817,7 @@ public final class MirLowerer {
                 } else {
                     args.add(lowerAndWiden(argExpr));
                 }
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
             }
             PrimitiveKind retKind = javaPrimitiveKind(m.getReturnType());
             boolean foldable = BuiltinAxioms.current().isFoldable(m);
@@ -4173,12 +3862,12 @@ public final class MirLowerer {
             MirVal callee = null;
             if (!c.pureStaticCallee()) {
                 callee = lowerBoxed(c.callee());
-                if (cur.isTerminated()) return callee;
+                if (ssa.cur.isTerminated()) return callee;
             }
             List<MirVal> args = new ArrayList<>(c.args().size());
             for (HirExpr a : c.args()) {
                 args.add(lowerAndWiden(a));
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
             }
             MirVal res = newVal(PrimitiveKind.NONE, null);
             emit(
@@ -4198,7 +3887,7 @@ public final class MirLowerer {
             // SafeCall evaluates args ONLY when receiver != null: lower as a CFG diamond!
             int ln = c.meta().line();
             MirVal recv = lowerBoxed(c.receiver());
-            if (cur.isTerminated()) return recv;
+            if (ssa.cur.isTerminated()) return recv;
             MirVal nullConst = emitConst(null, PrimitiveKind.NONE, ln);
             MirVal isNonNull = newVal(PrimitiveKind.BOOL, null);
             emit(
@@ -4219,33 +3908,33 @@ public final class MirLowerer {
             terminateBrIf(isNonNull, bbNonNull, List.of(), bbMerge, List.of(nullConst), ln);
             sealBlock(bbNonNull);
 
-            cur = bbNonNull;
+            ssa.cur = bbNonNull;
             MirVal narrowed = newVal(PrimitiveKind.NONE, null);
             emit(new MirInst.Narrow(narrowed, MirInst.NarrowKind.NON_NULL, recv, "non-null", ln));
             List<MirVal> ops = new ArrayList<>(1 + c.args().size());
             ops.add(narrowed);
             for (HirCallArg a : c.args()) {
                 ops.add(lowerAndWiden(a.value()));
-                if (cur.isTerminated()) break;
+                if (ssa.cur.isTerminated()) break;
             }
-            if (!cur.isTerminated()) {
+            if (!ssa.cur.isTerminated()) {
                 MirVal callRes = newVal(PrimitiveKind.NONE, null);
                 emit(new MirInst.OpaqueExpr(callRes, c, ops, ln, MirEffect.IMPURE_THROW));
                 terminateBr(bbMerge, List.of(callRes), ln);
             }
             sealBlock(bbMerge);
-            cur = bbMerge;
+            ssa.cur = bbMerge;
             return mergeParam;
         }
 
         private MirVal lowerRecordNew(HirExpr.RecordNew r) {
             int ln = r.meta().line();
             MirVal classRef = lowerBoxed(r.classRef());
-            if (cur.isTerminated()) return classRef;
+            if (ssa.cur.isTerminated()) return classRef;
             List<MirVal> args = new ArrayList<>(r.args().size());
             for (HirExpr a : r.args()) {
                 args.add(lowerAndWiden(a));
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
             }
             MirVal res = newVal(PrimitiveKind.NONE, null);
             emit(
@@ -4262,7 +3951,7 @@ public final class MirLowerer {
                             ln,
                             MirEffect.PURE_NOTHROW));
             if (r.meta().frozen() || r.meta().deeplyImmutable()) {
-                valAliases.put(res.id(), MirEffect.AliasClass.FROZEN);
+                ssa.valAliases.put(res.id(), MirEffect.AliasClass.FROZEN);
             }
             return applyCheckedType(res, r.meta().checkedType(), ln);
         }
@@ -4270,11 +3959,11 @@ public final class MirLowerer {
         private MirVal lowerRecordReuse(HirExpr.RecordReuse r) {
             int ln = r.meta().line();
             MirVal target = lowerBoxed(r.target());
-            if (cur.isTerminated()) return target;
+            if (ssa.cur.isTerminated()) return target;
             List<MirVal> args = new ArrayList<>(r.args().size());
             for (HirExpr a : r.args()) {
                 args.add(lowerAndWiden(a));
-                if (cur.isTerminated()) return args.get(args.size() - 1);
+                if (ssa.cur.isTerminated()) return args.get(args.size() - 1);
             }
             MirVal res = newVal(PrimitiveKind.NONE, null);
             MirEffect.AliasClass alias = aliasOf(target, r.target().meta());
@@ -4299,7 +3988,7 @@ public final class MirLowerer {
             List<MirVal> operands = new ArrayList<>(children.size());
             for (HirExpr ch : children) {
                 operands.add(lowerAndWiden(ch));
-                if (cur.isTerminated()) return operands.get(operands.size() - 1);
+                if (ssa.cur.isTerminated()) return operands.get(operands.size() - 1);
             }
             PrimitiveKind outKind = opaqueResultKind(expr);
             MirEffect fx = opaqueEffect(expr, operands);
@@ -4378,7 +4067,7 @@ public final class MirLowerer {
             List<MirVal> out = new ArrayList<>(exprs.size());
             for (int i = 0; i < exprs.size(); i++) {
                 out.add(lowerAndWiden(exprs.get(i)));
-                if (cur.isTerminated()) break;
+                if (ssa.cur.isTerminated()) break;
             }
             return out;
         }
@@ -4408,7 +4097,7 @@ public final class MirLowerer {
                     v = vr.var();
                 }
                 if (v != null
-                        && !pinnedVarIds.contains(v.id())
+                        && !ssa.pinnedVarIds.contains(v.id())
                         && !v.primitiveKind().isPrimitive()) {
                     boolean nonNullOnTrue = (b.op() == HirExpr.BinaryOp.NEQ) ^ negated;
                     return new NarrowHint(
@@ -4417,7 +4106,7 @@ public final class MirLowerer {
             }
             if (unwrapped instanceof HirExpr.Is isExpr) {
                 HirExpr l = unwrapTransparent(isExpr.left());
-                if (l instanceof HirExpr.VarRead vr && !pinnedVarIds.contains(vr.var().id())) {
+                if (l instanceof HirExpr.VarRead vr && !ssa.pinnedVarIds.contains(vr.var().id())) {
                     String desc =
                             isExpr.builtin() != null
                                     ? isExpr.builtin()
@@ -4429,11 +4118,11 @@ public final class MirLowerer {
         }
 
         private void emitNarrowAnchor(NarrowHint hint, int ln) {
-            MirVal base = readSsaVar(hint.var, cur, ln);
+            MirVal base = ssa.readSsaVar(hint.var, ssa.cur, ln);
             MirVal narrowed = newVal(base.kind(), hint.var.name());
             emit(new MirInst.Narrow(narrowed, hint.kind, base, hint.desc, ln));
             propagateAlias(base, narrowed);
-            cur.currentDef.put(hint.var.id(), narrowed);
+            ssa.cur.currentDef.put(hint.var.id(), narrowed);
         }
 
         private static HirExpr unwrapTransparent(HirExpr expr) {
@@ -4524,218 +4213,6 @@ public final class MirLowerer {
             PrimitiveKind[] out = new PrimitiveKind[f.params().size()];
             for (int i = 0; i < out.length; i++) {
                 out[i] = f.params().get(i).kind();
-            }
-            return out;
-        }
-
-        // ------------------------------------------------------------------ finalize & trivial phi
-        // cleanup
-
-        private List<MirBlock> buildBlocks() {
-            List<MirBlock> out = new ArrayList<>(allBlocks.size());
-            for (BlockBuilder b : allBlocks) {
-                MirTerminator term;
-                if (b.term == null) {
-                    term = new MirTerminator.Unreachable(fn.line());
-                } else {
-                    term =
-                            switch (b.term) {
-                                case PendingTerm.Br br ->
-                                        new MirTerminator.Br(br.target.id, br.edge.args, br.line);
-                                case PendingTerm.BrIf bi ->
-                                        new MirTerminator.BrIf(
-                                                bi.cond,
-                                                bi.thenTarget.id,
-                                                bi.thenEdge.args,
-                                                bi.elseTarget.id,
-                                                bi.elseEdge.args,
-                                                bi.line);
-                                case PendingTerm.Switch sw -> {
-                                    int n = sw.keys.length;
-                                    int[] tIds = new int[n];
-                                    List<List<MirVal>> tArgs = new ArrayList<>(n);
-                                    for (int k = 0; k < n; k++) {
-                                        tIds[k] = sw.targets[k].id;
-                                        tArgs.add(sw.edges[k].args);
-                                    }
-                                    yield new MirTerminator.Switch(
-                                            sw.key,
-                                            sw.keys,
-                                            tIds,
-                                            tArgs,
-                                            sw.defaultTarget.id,
-                                            sw.defaultEdge.args,
-                                            sw.line);
-                                }
-                                case PendingTerm.Fixed fx -> fx.term;
-                            };
-                }
-                out.add(new MirBlock(b.id, b.params, b.insts, term, b.handlers, b.handlerEntry));
-            }
-            return out;
-        }
-
-        /**
-         * Removes trivial block parameters (where every incoming argument is either the parameter
-         * itself or one identical SSA value {@code v}), substituting {@code bp -> v} across the
-         * CFG.
-         */
-        private List<MirBlock> eliminateTrivialBlockParams(List<MirBlock> blocks) {
-            boolean changed = true;
-            List<MirBlock> current = blocks;
-            while (changed) {
-                changed = false;
-                // Collect incoming argument lists per blockId.
-                Map<Integer, List<List<MirVal>>> incoming = new HashMap<>();
-                for (MirBlock b : current) {
-                    incoming.put(b.id(), new ArrayList<>());
-                }
-                for (MirBlock b : current) {
-                    if (b.terminator() instanceof MirTerminator.Br br) {
-                        incoming.get(br.targetBlock()).add(br.args());
-                    } else if (b.terminator() instanceof MirTerminator.BrIf bi) {
-                        incoming.get(bi.thenBlock()).add(bi.thenArgs());
-                        incoming.get(bi.elseBlock()).add(bi.elseArgs());
-                    } else if (b.terminator() instanceof MirTerminator.Switch sw) {
-                        for (int k = 0; k < sw.keys().length; k++) {
-                            incoming.get(sw.targetBlocks()[k]).add(sw.targetArgs().get(k));
-                        }
-                        incoming.get(sw.defaultBlock()).add(sw.defaultArgs());
-                    }
-                }
-                Map<Integer, MirVal> subst = new HashMap<>();
-                Map<Integer, Set<Integer>> removeIndices = new HashMap<>();
-                for (MirBlock b : current) {
-                    if (b.handlerEntry() || b.params().isEmpty()) {
-                        continue;
-                    }
-                    List<List<MirVal>> edges = incoming.get(b.id());
-                    if (edges.isEmpty()) {
-                        continue;
-                    }
-                    for (int i = 0; i < b.params().size(); i++) {
-                        MirVal bp = b.params().get(i);
-                        MirVal same = null;
-                        boolean trivial = true;
-                        for (List<MirVal> edgeArgs : edges) {
-                            MirVal arg = edgeArgs.get(i);
-                            if (arg.id() == bp.id()) {
-                                continue;
-                            }
-                            if (same == null) {
-                                same = arg;
-                            } else if (same.id() != arg.id()) {
-                                trivial = false;
-                                break;
-                            }
-                        }
-                        if (trivial && same != null) {
-                            subst.put(bp.id(), same);
-                            removeIndices.computeIfAbsent(b.id(), k -> new HashSet<>()).add(i);
-                        }
-                    }
-                }
-                if (subst.isEmpty()) {
-                    break;
-                }
-                changed = true;
-                // Resolve transitive substitutions (a -> b -> c).
-                Map<Integer, MirVal> resolved = new HashMap<>(subst.size() * 2);
-                for (Map.Entry<Integer, MirVal> e : subst.entrySet()) {
-                    MirVal v = e.getValue();
-                    Set<Integer> seen = new HashSet<>();
-                    seen.add(e.getKey());
-                    while (subst.containsKey(v.id()) && seen.add(v.id())) {
-                        v = subst.get(v.id());
-                    }
-                    resolved.put(e.getKey(), v);
-                }
-                List<MirBlock> next = new ArrayList<>(current.size());
-                for (MirBlock b : current) {
-                    Set<Integer> drop = removeIndices.getOrDefault(b.id(), Set.of());
-                    List<MirVal> newParams =
-                            drop.isEmpty() ? b.params() : filterOut(b.params(), drop);
-                    List<MirInst> newInsts = new ArrayList<>(b.insts().size());
-                    for (MirInst inst : b.insts()) {
-                        newInsts.add(inst.remapUses(v -> resolved.getOrDefault(v.id(), v)));
-                    }
-                    MirTerminator term =
-                            b.terminator().remapUses(v -> resolved.getOrDefault(v.id(), v));
-                    if (term instanceof MirTerminator.Br br) {
-                        Set<Integer> td = removeIndices.getOrDefault(br.targetBlock(), Set.of());
-                        if (!td.isEmpty()) {
-                            term =
-                                    new MirTerminator.Br(
-                                            br.targetBlock(), filterOut(br.args(), td), br.line());
-                        }
-                    } else if (term instanceof MirTerminator.BrIf bi) {
-                        Set<Integer> td = removeIndices.getOrDefault(bi.thenBlock(), Set.of());
-                        Set<Integer> ed = removeIndices.getOrDefault(bi.elseBlock(), Set.of());
-                        if (!td.isEmpty() || !ed.isEmpty()) {
-                            term =
-                                    new MirTerminator.BrIf(
-                                            bi.cond(),
-                                            bi.thenBlock(),
-                                            td.isEmpty()
-                                                    ? bi.thenArgs()
-                                                    : filterOut(bi.thenArgs(), td),
-                                            bi.elseBlock(),
-                                            ed.isEmpty()
-                                                    ? bi.elseArgs()
-                                                    : filterOut(bi.elseArgs(), ed),
-                                            bi.line());
-                        }
-                    } else if (term instanceof MirTerminator.Switch sw) {
-                        boolean swChanged = false;
-                        List<List<MirVal>> nta = new ArrayList<>(sw.keys().length);
-                        for (int k = 0; k < sw.keys().length; k++) {
-                            Set<Integer> td =
-                                    removeIndices.getOrDefault(sw.targetBlocks()[k], Set.of());
-                            if (!td.isEmpty()) {
-                                nta.add(filterOut(sw.targetArgs().get(k), td));
-                                swChanged = true;
-                            } else {
-                                nta.add(sw.targetArgs().get(k));
-                            }
-                        }
-                        Set<Integer> dd = removeIndices.getOrDefault(sw.defaultBlock(), Set.of());
-                        List<MirVal> nda =
-                                dd.isEmpty() ? sw.defaultArgs() : filterOut(sw.defaultArgs(), dd);
-                        if (!dd.isEmpty()) {
-                            swChanged = true;
-                        }
-                        if (swChanged) {
-                            term =
-                                    new MirTerminator.Switch(
-                                            sw.key(),
-                                            sw.keys(),
-                                            sw.targetBlocks(),
-                                            nta,
-                                            sw.defaultBlock(),
-                                            nda,
-                                            sw.line());
-                        }
-                    }
-                    next.add(
-                            new MirBlock(
-                                    b.id(),
-                                    newParams,
-                                    newInsts,
-                                    term,
-                                    b.handlers(),
-                                    b.handlerEntry()));
-                }
-                current = next;
-            }
-            return current;
-        }
-
-        private static List<MirVal> filterOut(List<MirVal> list, Set<Integer> dropIndices) {
-            List<MirVal> out = new ArrayList<>(list.size() - dropIndices.size());
-            for (int i = 0; i < list.size(); i++) {
-                if (!dropIndices.contains(i)) {
-                    out.add(list.get(i));
-                }
             }
             return out;
         }
