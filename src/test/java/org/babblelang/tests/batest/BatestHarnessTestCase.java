@@ -653,31 +653,37 @@ public class BatestHarnessTestCase {
     public void testBatestShardPartitioningAndValidation() {
         BatestShard inactive = BatestShard.parse(null);
         Assertions.assertFalse(inactive.isActive());
-        Assertions.assertTrue(inactive.matchesFile("types/arrays.batest.md"));
+        Assertions.assertTrue(inactive.matchesCase("types/arrays.batest.md", 1));
         Assertions.assertFalse(BatestShard.parse("   ").isActive());
 
         List<String> files =
                 List.of(
                         "types/arrays.batest.md",
                         "control/loops.batest.md",
-                        "compiler/jvm_interfaces.batest.md",
-                        "objects/records.batest.md",
-                        "effects/pure.batest.md",
-                        "syntax/match.batest.md");
+                        "functions/tail_calls.batest.md");
         int total = 6;
         for (String file : files) {
-            int hits = 0;
-            for (int i = 0; i < total; i++) {
-                BatestShard shard = BatestShard.parse(i + "/" + total);
-                Assertions.assertTrue(shard.isActive());
-                Assertions.assertEquals(i, shard.index());
-                Assertions.assertEquals(total, shard.total());
-                if (shard.matchesFile(file)) {
-                    hits++;
+            java.util.Set<Integer> shardsSeen = new java.util.HashSet<>();
+            for (int caseIdx = 1; caseIdx <= 24; caseIdx++) {
+                int hits = 0;
+                for (int i = 0; i < total; i++) {
+                    BatestShard shard = BatestShard.parse(i + "/" + total);
+                    Assertions.assertTrue(shard.isActive());
+                    Assertions.assertEquals(i, shard.index());
+                    Assertions.assertEquals(total, shard.total());
+                    if (shard.matchesCase(file, caseIdx)) {
+                        hits++;
+                        shardsSeen.add(i);
+                    }
                 }
+                Assertions.assertEquals(
+                        1,
+                        hits,
+                        "Each case must belong to exactly one shard : " + file + "#" + caseIdx);
             }
-            Assertions.assertEquals(
-                    1, hits, "Each file must belong to exactly one shard : " + file);
+            Assertions.assertTrue(
+                    shardsSeen.size() >= 4,
+                    "Cases within one file should spread across shards : " + file);
         }
 
         Assertions.assertThrows(IllegalArgumentException.class, () -> BatestShard.parse("0"));

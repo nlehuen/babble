@@ -1,12 +1,15 @@
 package org.babblelang.tests.batest;
 
+import java.nio.charset.StandardCharsets;
+import java.util.zip.CRC32;
+
 /**
  * Parses and evaluates {@code -Dbatest.shard=<N>/<M>} expressions for deterministic CI sharding of
- * {@code .batest.md} files.
+ * {@code .batest.md} cases.
  *
  * <p>{@code N} is a zero-based shard index ({@code 0 <= N < M}) and {@code M >= 1} is the total
- * number of shards. When active, a file with normalized relative path {@code rel} belongs to shard
- * {@code N} iff {@code Math.floorMod(rel.hashCode(), M) == N}.
+ * number of shards. When active, a case with normalized file path {@code rel} and 1-based {@code
+ * caseIndex} belongs to shard {@code N} iff {@code CRC32(rel + "#" + caseIndex) % M == N}.
  */
 public final class BatestShard {
     private static final BatestShard ALL = new BatestShard(-1, 0);
@@ -57,10 +60,12 @@ public final class BatestShard {
         return total;
     }
 
-    public boolean matchesFile(String relativePath) {
+    public boolean matchesCase(String relativePath, int caseIndex) {
         if (!isActive()) {
             return true;
         }
-        return Math.floorMod(relativePath.hashCode(), total) == index;
+        CRC32 crc = new CRC32();
+        crc.update((relativePath + "#" + caseIndex).getBytes(StandardCharsets.UTF_8));
+        return (int) (crc.getValue() % total) == index;
     }
 }
