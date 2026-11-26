@@ -41,8 +41,16 @@ import java.util.Set;
  * {@code Interpreter}.
  */
 public final class InlinePass implements HirPass {
-    public static final int MAX_INLINE_NODES = 35;
-    public static final int MAX_CROSS_MODULE_NODES = 25;
+    /** The system property overriding {@link #MAX_INLINE_NODES} (read once per JVM ; {@code 0} disables inlining). */
+    public static final String MAX_NODES_PROPERTY = "babble.inlineNodes";
+    /**
+     * The largest callee body, in HIR nodes, inlined within a module. On argon, {@code 35} beat
+     * {@code 0}, {@code 10} and {@code 60} (BIP014 §9.4) : HotSpot's C2 inlines what is hot
+     * anyway, so a larger limit only grows callers past C2's own size limits.
+     */
+    public static final int MAX_INLINE_NODES = Math.max(0, Integer.getInteger(MAX_NODES_PROPERTY, 35));
+    /** The same for {@code babblec} cross-module inlining, in the same proportion ({@code 25} by default). */
+    public static final int MAX_CROSS_MODULE_NODES = MAX_INLINE_NODES * 25 / 35;
     private static final int MAX_INLINES_PER_OWNER = 32;
     private static final String METHOD_KEY_PREFIX = "@method:";
 
