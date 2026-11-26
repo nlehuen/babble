@@ -96,6 +96,19 @@ public final class CoreCollections {
         return list;
     }
 
+    /** Fresh {@link ArrayList} tail slice starting at {@code start} ({@code BIP038-D7}). */
+    public static List<Object> listSlice(List<?> list, int start) {
+        int size = list.size();
+        if (start >= size) {
+            return new ArrayList<>(0);
+        }
+        ArrayList<Object> result = new ArrayList<>(size - start);
+        for (int i = start; i < size; i++) {
+            result.add(list.get(i));
+        }
+        return result;
+    }
+
     public static Set<Object> setEmpty() {
         return new LinkedHashSet<>();
     }

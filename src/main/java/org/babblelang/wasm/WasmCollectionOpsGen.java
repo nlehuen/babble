@@ -26,6 +26,7 @@ public final class WasmCollectionOpsGen {
     public final int fnListClear;
     public final int fnListAddAll;
     public final int fnListSubList;
+    public final int fnListSlice;
     public final int fnListIter;
 
     // Set / SortedSet
@@ -95,6 +96,7 @@ public final class WasmCollectionOpsGen {
         WasmModule.FuncDef dListClear = mod.addFunction("list_clear", ts.internFuncType(List.of(refList), List.of()), List.of("l"));
         WasmModule.FuncDef dListAddAll = mod.addFunction("list_addAll", ts.internFuncType(List.of(refList, refAny, WasmValType.I32), List.of(WasmValType.I32)), List.of("l", "src", "line"));
         WasmModule.FuncDef dListSub = mod.addFunction("list_subList", ts.internFuncType(List.of(refList, WasmValType.I32, WasmValType.I32, WasmValType.I32), List.of(refList)), List.of("l", "from", "to", "line"));
+        WasmModule.FuncDef dListSlice = mod.addFunction("list_slice", ts.internFuncType(List.of(refList, WasmValType.I32), List.of(refList)), List.of("l", "from"));
         WasmModule.FuncDef dListIter = mod.addFunction("list_iter", ts.internFuncType(List.of(refList), List.of(refIter)), List.of("l"));
 
         WasmModule.FuncDef dSetNew = mod.addFunction("set_new", ts.internFuncType(List.of(WasmValType.I32), List.of(refSet)), List.of("sorted"));
@@ -145,6 +147,7 @@ public final class WasmCollectionOpsGen {
         this.fnListClear = dListClear.funcIndex();
         this.fnListAddAll = dListAddAll.funcIndex();
         this.fnListSubList = dListSub.funcIndex();
+        this.fnListSlice = dListSlice.funcIndex();
         this.fnListIter = dListIter.funcIndex();
 
         this.fnSetNew = dSetNew.funcIndex();
@@ -184,7 +187,7 @@ public final class WasmCollectionOpsGen {
 
         // Emit bodies
         emitListOps(dListNew, dListAdd, dListAddAt, dListGet, dListSet, dListRemAt, dListRemVal,
-                dListIdx, dListLastIdx, dListContains, dListClear, dListAddAll, dListSub, dListIter);
+                dListIdx, dListLastIdx, dListContains, dListClear, dListAddAll, dListSub, dListSlice, dListIter);
         emitSetOps(dSetNew, dSetAdd, dSetContains, dSetRem, dSetClear, dSetFirst, dSetLast, dSetAddAll, dSetIter);
         emitEntryNew(dEntryNew);
         emitEntrySetValue(dEntrySetVal);
@@ -202,7 +205,7 @@ public final class WasmCollectionOpsGen {
                              WasmModule.FuncDef dGet, WasmModule.FuncDef dSet, WasmModule.FuncDef dRemAt,
                              WasmModule.FuncDef dRemVal, WasmModule.FuncDef dIdx, WasmModule.FuncDef dLastIdx,
                              WasmModule.FuncDef dContains, WasmModule.FuncDef dClear, WasmModule.FuncDef dAddAll,
-                             WasmModule.FuncDef dSub, WasmModule.FuncDef dIter) {
+                             WasmModule.FuncDef dSub, WasmModule.FuncDef dSlice, WasmModule.FuncDef dIter) {
         // list_new(cap)
         {
             WasmCodeBuilder c = dNew.code();
@@ -417,6 +420,29 @@ public final class WasmCollectionOpsGen {
             // Link live backing parent & offset AFTER initial copy
             c.localGet(res).refAsNonNull().localGet(0).structSet(ts.listType, 2);
             c.localGet(res).refAsNonNull().localGet(1).structSet(ts.listType, 3);
+            c.localGet(res).refAsNonNull();
+        }
+        // list_slice(l, from) -> fresh independent $List containing l[from..size)
+        {
+            WasmCodeBuilder c = dSlice.code();
+            int sz = dSlice.addLocal("sz", WasmValType.I32, 2);
+            int n = dSlice.addLocal("n", WasmValType.I32, 2);
+            int res = dSlice.addLocal("res", WasmValType.refNull(ts.listType), 2);
+            int i = dSlice.addLocal("i", WasmValType.I32, 2);
+            c.localGet(0).structGet(ts.listType, 1).localTee(sz)
+                    .localGet(1).op(WasmInstr.SimpleOp.I32_SUB).localTee(n)
+                    .i32Const(0).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                    .i32Const(0).localSet(n)
+                    .end();
+            c.localGet(n).call(fnListNew).localSet(res);
+            c.localGet(1).localSet(i);
+            c.loop()
+                    .localGet(i).localGet(sz).op(WasmInstr.SimpleOp.I32_LT_S).if_()
+                    .localGet(res).refAsNonNull()
+                    .localGet(0).structGet(ts.listType, 0).localGet(i).arrayGet(ts.anyArrType)
+                    .call(fnListAdd).drop()
+                    .localGet(i).i32Const(1).op(WasmInstr.SimpleOp.I32_ADD).localSet(i)
+                    .br(1).end().end();
             c.localGet(res).refAsNonNull();
         }
         // list_iter(l)

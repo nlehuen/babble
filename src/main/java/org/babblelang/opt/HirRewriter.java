@@ -7,6 +7,7 @@ import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirInterface;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
+import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirStaticBlock;
 import org.babblelang.ir.hir.HirVar;
 
@@ -163,6 +164,31 @@ public final class HirRewriter {
                 HirExpr ne = i.elseBranch() != null ? transform.apply(i.elseBranch()) : null;
                 yield (nc == i.cond() && nt == i.thenBranch() && ne == i.elseBranch()) ? i
                         : new HirExpr.If(nc, nt, ne, i.meta());
+            }
+            case HirExpr.Match m -> {
+                HirExpr ns = transform.apply(m.scrutinee());
+                List<HirExpr.MatchArm> narms = null;
+                for (int idx = 0; idx < m.arms().size(); idx++) {
+                    HirExpr.MatchArm arm = m.arms().get(idx);
+                    HirPattern np = rewritePattern(arm.pattern(), transform);
+                    HirExpr ng = arm.guard() != null ? transform.apply(arm.guard()) : null;
+                    HirExpr nb = transform.apply(arm.body());
+                    if (np != arm.pattern() || ng != arm.guard() || nb != arm.body()) {
+                        if (narms == null) {
+                            narms = new ArrayList<>(m.arms());
+                        }
+                        narms.set(idx, new HirExpr.MatchArm(np, arm.boundVars(), ng, nb, arm.bodyWideningRank(), arm.line()));
+                    }
+                }
+                HirExpr.MatchElse ne = m.elseArm();
+                if (ne != null) {
+                    HirExpr neb = transform.apply(ne.body());
+                    if (neb != ne.body()) {
+                        ne = new HirExpr.MatchElse(ne.var(), neb, ne.bodyWideningRank(), ne.line());
+                    }
+                }
+                yield (ns == m.scrutinee() && narms == null && ne == m.elseArm()) ? m
+                        : new HirExpr.Match(ns, m.scrutineeVar(), narms != null ? narms : m.arms(), ne, m.exhaustive(), m.meta());
             }
             case HirExpr.While w -> {
                 HirExpr nc = transform.apply(w.cond());
@@ -321,6 +347,51 @@ public final class HirRewriter {
             case HirExpr.Freeze f -> {
                 HirExpr no = transform.apply(f.operand());
                 yield no == f.operand() ? f : new HirExpr.Freeze(no, f.meta());
+            }
+        };
+    }
+
+    public static HirPattern rewritePattern(HirPattern pattern, UnaryOperator<HirExpr> transform) {
+        return switch (pattern) {
+            case HirPattern.Const c -> c;
+            case HirPattern.Wildcard w -> w;
+            case HirPattern.TypeTest t -> t;
+            case HirPattern.ValueExpr v -> {
+                HirExpr ne = transform.apply(v.expr());
+                yield ne == v.expr() ? v : new HirPattern.ValueExpr(ne, v.line());
+            }
+            case HirPattern.Bind b -> {
+                HirPattern ni = b.inner() != null ? rewritePattern(b.inner(), transform) : null;
+                yield ni == b.inner() ? b : new HirPattern.Bind(b.var(), ni, b.line());
+            }
+            case HirPattern.Or o -> {
+                List<HirPattern> nalts = null;
+                for (int i = 0; i < o.alternatives().size(); i++) {
+                    HirPattern orig = o.alternatives().get(i);
+                    HirPattern next = rewritePattern(orig, transform);
+                    if (next != orig) {
+                        if (nalts == null) {
+                            nalts = new ArrayList<>(o.alternatives());
+                        }
+                        nalts.set(i, next);
+                    }
+                }
+                yield nalts == null ? o : new HirPattern.Or(nalts, o.line());
+            }
+            case HirPattern.Relational r -> {
+                HirExpr nr = transform.apply(r.rhs());
+                yield nr == r.rhs() ? r : new HirPattern.Relational(r.op(), nr, r.scrutineeKind(), r.line());
+            }
+            case HirPattern.RangeTest r -> {
+                HirExpr nlo = transform.apply(r.lo());
+                HirExpr nhi = transform.apply(r.hi());
+                HirExpr ns = r.step() != null ? transform.apply(r.step()) : null;
+                yield (nlo == r.lo() && nhi == r.hi() && ns == r.step()) ? r
+                        : new HirPattern.RangeTest(nlo, nhi, ns, r.inclusive(), r.elemKind(), r.stringElement(), r.line());
+            }
+            case HirPattern.Membership m -> {
+                HirExpr nc = transform.apply(m.container());
+                yield nc == m.container() ? m : new HirPattern.Membership(nc, m.kind(), m.elemKind(), m.line());
             }
         };
     }

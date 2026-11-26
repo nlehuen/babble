@@ -9,6 +9,7 @@ import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
 import org.babblelang.ir.hir.HirModule;
+import org.babblelang.ir.hir.HirPattern;
 import org.babblelang.ir.hir.HirVar;
 
 import java.lang.reflect.Method;
@@ -128,6 +129,7 @@ public final class HirPurity {
             case HirExpr.If i -> isPureNothrowTerminating(i.cond(), module, visitingFns)
                     && isPureNothrowTerminating(i.thenBranch(), module, visitingFns)
                     && (i.elseBranch() == null || isPureNothrowTerminating(i.elseBranch(), module, visitingFns));
+            case HirExpr.Match m -> isMatchPureNothrowTerminating(m, module, visitingFns);
             case HirExpr.Try t -> isTryPureNothrowTerminating(t, Set.of(), module, visitingFns);
             case HirExpr.Throw th -> false;
             case HirExpr.As a -> a.targetDescriptor() == null && a.samTarget() == null
@@ -504,6 +506,51 @@ public final class HirPurity {
                     || (c.meta().isPure() && c.meta().isDeterministic() && c.meta().isIdempotent());
         }
         return false;
+    }
+
+    private static boolean isMatchPureNothrowTerminating(HirExpr.Match m, HirModule module, Set<Integer> visitingFns) {
+        if (!m.exhaustive() && m.elseArm() == null) {
+            return false;
+        }
+        if (!isPureNothrowTerminating(m.scrutinee(), module, visitingFns)) {
+            return false;
+        }
+        for (HirExpr.MatchArm arm : m.arms()) {
+            if (!isPatternPureNothrowTerminating(arm.pattern(), module, visitingFns)) {
+                return false;
+            }
+            if (arm.guard() != null && !isPureNothrowTerminating(arm.guard(), module, visitingFns)) {
+                return false;
+            }
+            if (!isPureNothrowTerminating(arm.body(), module, visitingFns)) {
+                return false;
+            }
+        }
+        return m.elseArm() == null || isPureNothrowTerminating(m.elseArm().body(), module, visitingFns);
+    }
+
+    private static boolean isPatternPureNothrowTerminating(HirPattern pattern, HirModule module, Set<Integer> visitingFns) {
+        return switch (pattern) {
+            case HirPattern.Const ignored -> true;
+            case HirPattern.Wildcard ignored -> true;
+            case HirPattern.TypeTest ignored -> true;
+            case HirPattern.ValueExpr v -> isPureNothrowTerminating(v.expr(), module, visitingFns);
+            case HirPattern.Bind b -> b.inner() == null || isPatternPureNothrowTerminating(b.inner(), module, visitingFns);
+            case HirPattern.Or o -> {
+                for (HirPattern alt : o.alternatives()) {
+                    if (!isPatternPureNothrowTerminating(alt, module, visitingFns)) {
+                        yield false;
+                    }
+                }
+                yield true;
+            }
+            case HirPattern.Relational r -> (r.op() == HirExpr.BinaryOp.EQ || r.op() == HirExpr.BinaryOp.NEQ
+                    || r.scrutineeKind().isPrimitive()) && isPureNothrowTerminating(r.rhs(), module, visitingFns);
+            case HirPattern.RangeTest r -> r.step() == null && (r.elemKind().isPrimitive() || r.stringElement())
+                    && isPureNothrowTerminating(r.lo(), module, visitingFns)
+                    && isPureNothrowTerminating(r.hi(), module, visitingFns);
+            case HirPattern.Membership m -> false;
+        };
     }
 
     private static boolean allPureNothrowTerminating(List<HirExpr> exprs, HirModule module, Set<Integer> visitingFns) {

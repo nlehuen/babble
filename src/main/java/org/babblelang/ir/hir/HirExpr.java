@@ -45,6 +45,7 @@ public sealed interface HirExpr permits
         HirExpr.JavaSamAdapt,
         HirExpr.Block,
         HirExpr.If,
+        HirExpr.Match,
         HirExpr.While,
         HirExpr.For,
         HirExpr.Try,
@@ -457,6 +458,40 @@ public sealed interface HirExpr permits
             HirExpr elseBranch,
             ExprMeta meta
     ) implements HirExpr {
+    }
+
+    record MatchArm(
+            HirPattern pattern,
+            List<HirVar> boundVars,
+            HirExpr guard,
+            HirExpr body,
+            int bodyWideningRank,
+            int line
+    ) {
+        public MatchArm {
+            boundVars = List.copyOf(boundVars);
+        }
+    }
+
+    record MatchElse(
+            HirVar var,
+            HirExpr body,
+            int bodyWideningRank,
+            int line
+    ) {
+    }
+
+    record Match(
+            HirExpr scrutinee,
+            HirVar scrutineeVar,
+            List<MatchArm> arms,
+            MatchElse elseArm,
+            boolean exhaustive,
+            ExprMeta meta
+    ) implements HirExpr {
+        public Match {
+            arms = List.copyOf(arms);
+        }
     }
 
     record While(

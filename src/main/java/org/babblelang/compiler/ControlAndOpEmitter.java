@@ -593,7 +593,7 @@ final class ControlAndOpEmitter {
         c.stackKind = PrimitiveKind.BOOL;
     }
 
-    private String resolveIsTargetJvm(LoweringTargets.IsTarget target) {
+    String resolveIsTargetJvm(LoweringTargets.IsTarget target) {
         if (target == null) {
             return null;
         }

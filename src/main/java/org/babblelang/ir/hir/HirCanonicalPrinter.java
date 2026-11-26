@@ -649,6 +649,35 @@ public final class HirCanonicalPrinter {
                 }
                 sb.append(')');
             }
+            case HirExpr.Match m -> {
+                sb.append("(match ");
+                printExpr(sb, m.scrutinee(), norm, indent + 1);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    sb.append('\n');
+                    indent(sb, indent + 1);
+                    sb.append("(case ");
+                    printPattern(sb, arm.pattern(), norm, indent + 2);
+                    if (arm.guard() != null) {
+                        sb.append(" if ");
+                        printExpr(sb, arm.guard(), norm, indent + 2);
+                    }
+                    sb.append(' ');
+                    printExpr(sb, arm.body(), norm, indent + 2);
+                    sb.append(')');
+                }
+                if (m.elseArm() != null) {
+                    sb.append('\n');
+                    indent(sb, indent + 1);
+                    sb.append("(else");
+                    if (m.elseArm().var() != null) {
+                        sb.append(' ').append(norm.varName(m.elseArm().var()));
+                    }
+                    sb.append(' ');
+                    printExpr(sb, m.elseArm().body(), norm, indent + 2);
+                    sb.append(')');
+                }
+                sb.append(')');
+            }
             case HirExpr.While w -> {
                 sb.append("(while ");
                 printExpr(sb, w.cond(), norm, indent + 1);
@@ -885,9 +914,80 @@ public final class HirCanonicalPrinter {
             case HirExpr.While ignored -> true;
             case HirExpr.For ignored -> true;
             case HirExpr.Try ignored -> true;
+            case HirExpr.Match ignored -> true;
             case HirExpr.If i -> isMultiline(i.thenBranch()) || isMultiline(i.elseBranch());
             default -> false;
         };
+    }
+
+    private static void printPattern(StringBuilder sb, HirPattern pattern, ScopeNormalizer norm, int indent) {
+        switch (pattern) {
+            case HirPattern.Const c -> {
+                if (c.isEnum()) {
+                    sb.append(c.enumClass().getSimpleName()).append('.').append(c.enumConstantName());
+                } else if (c.value() == null) {
+                    sb.append("null");
+                } else if (c.value() instanceof String s) {
+                    sb.append('"').append(escape(s)).append('"');
+                } else if (c.value() instanceof Character ch) {
+                    sb.append('\'').append(escape(String.valueOf(ch))).append('\'');
+                } else {
+                    sb.append(c.value()).append(':').append(kindTag(c.kind()));
+                }
+            }
+            case HirPattern.Wildcard ignored -> sb.append('_');
+            case HirPattern.ValueExpr v -> printExpr(sb, v.expr(), norm, indent);
+            case HirPattern.TypeTest t -> {
+                sb.append("(is ");
+                if (t.builtin() != null) {
+                    sb.append(t.builtin());
+                } else if (t.target() != null && t.target().typeId() != null) {
+                    sb.append(norm.normalizeType(t.target().typeId()));
+                } else if (t.descriptor() != null) {
+                    sb.append(norm.normalizeType(t.descriptor()));
+                } else {
+                    sb.append("?");
+                }
+                sb.append(')');
+            }
+            case HirPattern.Bind b -> {
+                sb.append("(bind ").append(b.var() != null ? norm.varName(b.var()) : "_");
+                if (b.inner() != null) {
+                    sb.append(' ');
+                    printPattern(sb, b.inner(), norm, indent);
+                }
+                sb.append(')');
+            }
+            case HirPattern.Or o -> {
+                sb.append("(or");
+                for (HirPattern alt : o.alternatives()) {
+                    sb.append(' ');
+                    printPattern(sb, alt, norm, indent);
+                }
+                sb.append(')');
+            }
+            case HirPattern.Relational r -> {
+                sb.append('(').append(r.op().symbol()).append(' ');
+                printExpr(sb, r.rhs(), norm, indent);
+                sb.append(')');
+            }
+            case HirPattern.RangeTest r -> {
+                sb.append(r.inclusive() ? "(range-pat .. " : "(range-pat ..< ");
+                printExpr(sb, r.lo(), norm, indent);
+                sb.append(' ');
+                printExpr(sb, r.hi(), norm, indent);
+                if (r.step() != null) {
+                    sb.append(" step ");
+                    printExpr(sb, r.step(), norm, indent);
+                }
+                sb.append(')');
+            }
+            case HirPattern.Membership m -> {
+                sb.append("(in ");
+                printExpr(sb, m.container(), norm, indent);
+                sb.append(')');
+            }
+        }
     }
 
     private static void printArgs(StringBuilder sb, List<HirExpr> args, ScopeNormalizer norm, int indent) {
@@ -951,6 +1051,34 @@ public final class HirCanonicalPrinter {
         private void scanCallArgs(List<HirCallArg> args) {
             for (HirCallArg a : args) {
                 scanExpr(a.value());
+            }
+        }
+
+        private void scanPattern(HirPattern pattern) {
+            if (pattern == null) {
+                return;
+            }
+            switch (pattern) {
+                case HirPattern.Const ignored -> {}
+                case HirPattern.Wildcard ignored -> {}
+                case HirPattern.TypeTest ignored -> {}
+                case HirPattern.ValueExpr v -> scanExpr(v.expr());
+                case HirPattern.Bind b -> {
+                    recordVar(b.var());
+                    scanPattern(b.inner());
+                }
+                case HirPattern.Or o -> {
+                    for (HirPattern alt : o.alternatives()) {
+                        scanPattern(alt);
+                    }
+                }
+                case HirPattern.Relational r -> scanExpr(r.rhs());
+                case HirPattern.RangeTest r -> {
+                    scanExpr(r.lo());
+                    scanExpr(r.hi());
+                    scanExpr(r.step());
+                }
+                case HirPattern.Membership m -> scanExpr(m.container());
             }
         }
 
@@ -1022,6 +1150,20 @@ public final class HirCanonicalPrinter {
                     scanExpr(i.cond());
                     scanExpr(i.thenBranch());
                     scanExpr(i.elseBranch());
+                }
+                case HirExpr.Match m -> {
+                    recordVar(m.scrutineeVar());
+                    scanExpr(m.scrutinee());
+                    for (HirExpr.MatchArm arm : m.arms()) {
+                        scanVars(arm.boundVars());
+                        scanPattern(arm.pattern());
+                        scanExpr(arm.guard());
+                        scanExpr(arm.body());
+                    }
+                    if (m.elseArm() != null) {
+                        recordVar(m.elseArm().var());
+                        scanExpr(m.elseArm().body());
+                    }
                 }
                 case HirExpr.While w -> {
                     scanExpr(w.cond());

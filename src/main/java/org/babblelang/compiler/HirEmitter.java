@@ -67,6 +67,7 @@ final class HirEmitter {
     final BridgeHelpers bridges;
     final AssignAndMemberEmitter assigns;
     final ControlAndOpEmitter controlOps;
+    final MatchEmitter matchEmitter;
     final CallEmitter calls;
 
     private final ClassWriter classWriter;
@@ -106,6 +107,7 @@ final class HirEmitter {
         this.bridges = new BridgeHelpers(this);
         this.assigns = new AssignAndMemberEmitter(this);
         this.controlOps = new ControlAndOpEmitter(this);
+        this.matchEmitter = new MatchEmitter(this);
         this.calls = new CallEmitter(this);
     }
 
@@ -326,6 +328,16 @@ final class HirEmitter {
             case HirExpr.Throw th -> 1 + countNodes(th.value());
             case HirExpr.Block b -> 1 + countList(b.statements());
             case HirExpr.If i -> 1 + countNodes(i.cond()) + countNodes(i.thenBranch()) + countNodes(i.elseBranch());
+            case HirExpr.Match m -> {
+                int n = 1 + countNodes(m.scrutinee());
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    n += 1 + countNodes(arm.guard()) + countNodes(arm.body());
+                }
+                if (m.elseArm() != null) {
+                    n += countNodes(m.elseArm().body());
+                }
+                yield n;
+            }
             case HirExpr.While w -> 1 + countNodes(w.cond()) + countNodes(w.body());
             case HirExpr.For f -> 2 + (f.countedRange() != null
                     ? countNodes(f.countedRange().start()) + countNodes(f.countedRange().end()) + countNodes(f.countedRange().step())
@@ -1338,6 +1350,7 @@ final class HirEmitter {
             case HirExpr.JavaSamAdapt j -> controlOps.emitJavaSamAdapt(j);
             case HirExpr.Block b -> controlOps.emitBlock(b);
             case HirExpr.If i -> controlOps.emitIf(i);
+            case HirExpr.Match m -> matchEmitter.emitMatch(m);
             case HirExpr.While w -> controlOps.emitWhile(w);
             case HirExpr.For f -> controlOps.emitFor(f);
             case HirExpr.Try t -> controlOps.emitTry(t);

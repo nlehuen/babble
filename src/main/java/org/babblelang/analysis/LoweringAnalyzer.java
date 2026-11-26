@@ -138,6 +138,13 @@ final class LoweringAnalyzer {
                 if (t != null) {
                     pass.analysis.lowering().setDeclarationKind(forExpr, PrimitiveKind.of(t));
                 }
+            } else if (decl instanceof BabbleParser.BindingPatternContext
+                    || decl instanceof BabbleParser.RestPatternContext
+                    || decl instanceof BabbleParser.ElseClauseContext) {
+                Type t = declarationTypes.get(decl);
+                if (t != null) {
+                    pass.analysis.lowering().setDeclarationKind(decl, PrimitiveKind.of(t));
+                }
             }
         }
         for (Map.Entry<ParserRuleContext, Type> entry : types.entrySet()) {
@@ -159,6 +166,7 @@ final class LoweringAnalyzer {
                 }
             }
         }
+        publishMatchTargets();
         for (TypeNode typeNode : pass.types) {
             if (!checker.inFile(typeNode.ctx)) {
                 continue;
@@ -1844,6 +1852,61 @@ final class LoweringAnalyzer {
             return false;
         }
         return false;
+    }
+
+    private void publishMatchTargets() {
+        MatchTyper mt = checker.matchTyper();
+        for (Map.Entry<BabbleParser.MatchExpressionContext, Boolean> e : mt.matchExhaustive().entrySet()) {
+            if (checker.inFile(e.getKey())) {
+                pass.analysis.lowering().setMatchExhaustive(e.getKey(), Boolean.TRUE.equals(e.getValue()));
+            }
+        }
+        for (Map.Entry<ParserRuleContext, LoweringTargets.PatternConst> e : mt.patternConsts().entrySet()) {
+            if (checker.inFile(e.getKey())) {
+                pass.analysis.lowering().setPatternConst(e.getKey(), e.getValue());
+            }
+        }
+        for (Map.Entry<BabbleParser.ValuePatternContext, LoweringMetadata.RangePatternSource> e : mt.rangePatterns().entrySet()) {
+            if (checker.inFile(e.getKey())) {
+                pass.analysis.lowering().setRangePatternSource(e.getKey(), e.getValue());
+            }
+        }
+        for (Map.Entry<BabbleParser.MembershipPatternContext, LoweringTargets.MembershipTarget> e : mt.membershipTargets().entrySet()) {
+            if (checker.inFile(e.getKey())) {
+                pass.analysis.lowering().setMembershipTarget(e.getKey(), e.getValue());
+            }
+        }
+        for (Map.Entry<BabbleParser.RelationalPatternContext, PrimitiveKind> e : mt.relationalKinds().entrySet()) {
+            if (checker.inFile(e.getKey())) {
+                pass.analysis.lowering().setRelationalScrutineeKind(e.getKey(), e.getValue());
+            }
+        }
+        for (Map.Entry<ParserRuleContext, Type> e : mt.patternTargetTypes().entrySet()) {
+            ParserRuleContext owner = e.getKey();
+            if (!checker.inFile(owner)) {
+                continue;
+            }
+            Type target = e.getValue();
+            if (target == null || target == Type.ERROR) {
+                continue;
+            }
+            String builtin = mt.patternBuiltins().get(owner);
+            LoweringTargets.IsTarget isTarget = null;
+            List<LoweringTargets.IsTarget> intersectionTargets = List.of();
+            if (target instanceof Type.Instance inst
+                    && (inst.node().ctx == null || StaticRefs.isStaticTopLevelTypeExpr(inst.node().ctx))) {
+                isTarget = new LoweringTargets.IsTarget(inst.node().id, inst.node().kind);
+            } else if (target instanceof Type.Array array) {
+                Class<?> checked = JavaTypeBridge.checkedArrayClass(array);
+                if (JavaTypeBridge.isBytecodeAccessible(checked)) {
+                    isTarget = new LoweringTargets.IsTarget(null, null, checked.getName().replace('.', '/'));
+                }
+            } else if (target instanceof Type.Intersection inter) {
+                intersectionTargets = intersectionIsTargets(inter);
+            }
+            pass.analysis.lowering().setPatternTypeTarget(owner,
+                    new LoweringTargets.PatternTypeTarget(builtin, isTarget, intersectionTargets, descriptor(target)));
+        }
     }
 
     private LoweringTargets.CatchTarget buildCatchTarget(BabbleParser.CatchClauseContext cc) {

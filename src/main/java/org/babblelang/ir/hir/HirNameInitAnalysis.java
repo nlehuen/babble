@@ -331,6 +331,51 @@ final class HirNameInitAnalysis {
             return out != null ? out : params;
         }
 
+        private HirPattern rewritePattern(HirPattern pattern, java.util.function.UnaryOperator<HirExpr> fn) {
+            return switch (pattern) {
+                case HirPattern.Const c -> c;
+                case HirPattern.Wildcard w -> w;
+                case HirPattern.TypeTest t -> t;
+                case HirPattern.ValueExpr v -> {
+                    HirExpr ne = fn.apply(v.expr());
+                    yield ne == v.expr() ? v : new HirPattern.ValueExpr(ne, v.line());
+                }
+                case HirPattern.Bind b -> {
+                    HirPattern ni = b.inner() != null ? rewritePattern(b.inner(), fn) : null;
+                    yield ni == b.inner() ? b : new HirPattern.Bind(b.var(), ni, b.line());
+                }
+                case HirPattern.Or o -> {
+                    List<HirPattern> nalts = null;
+                    for (int i = 0; i < o.alternatives().size(); i++) {
+                        HirPattern orig = o.alternatives().get(i);
+                        HirPattern next = rewritePattern(orig, fn);
+                        if (next != orig) {
+                            if (nalts == null) {
+                                nalts = new ArrayList<>(o.alternatives());
+                            }
+                            nalts.set(i, next);
+                        }
+                    }
+                    yield nalts == null ? o : new HirPattern.Or(nalts, o.line());
+                }
+                case HirPattern.Relational r -> {
+                    HirExpr nr = fn.apply(r.rhs());
+                    yield nr == r.rhs() ? r : new HirPattern.Relational(r.op(), nr, r.scrutineeKind(), r.line());
+                }
+                case HirPattern.RangeTest r -> {
+                    HirExpr nlo = fn.apply(r.lo());
+                    HirExpr nhi = fn.apply(r.hi());
+                    HirExpr ns = r.step() != null ? fn.apply(r.step()) : null;
+                    yield (nlo == r.lo() && nhi == r.hi() && ns == r.step()) ? r
+                            : new HirPattern.RangeTest(nlo, nhi, ns, r.inclusive(), r.elemKind(), r.stringElement(), r.line());
+                }
+                case HirPattern.Membership m -> {
+                    HirExpr nc = fn.apply(m.container());
+                    yield nc == m.container() ? m : new HirPattern.Membership(nc, m.kind(), m.elemKind(), m.line());
+                }
+            };
+        }
+
         private List<HirExpr> rewriteList(List<HirExpr> list, Set<String> guaranteed) {
             List<HirExpr> out = null;
             for (int i = 0; i < list.size(); i++) {
@@ -496,6 +541,31 @@ final class HirNameInitAnalysis {
                     HirExpr ne = i.elseBranch() != null ? fn.apply(i.elseBranch()) : null;
                     yield (nc == i.cond() && nt == i.thenBranch() && ne == i.elseBranch()) ? i
                             : new HirExpr.If(nc, nt, ne, i.meta());
+                }
+                case HirExpr.Match m -> {
+                    HirExpr ns = fn.apply(m.scrutinee());
+                    List<HirExpr.MatchArm> narms = null;
+                    for (int idx = 0; idx < m.arms().size(); idx++) {
+                        HirExpr.MatchArm arm = m.arms().get(idx);
+                        HirPattern np = rewritePattern(arm.pattern(), fn);
+                        HirExpr ng = arm.guard() != null ? fn.apply(arm.guard()) : null;
+                        HirExpr nb = fn.apply(arm.body());
+                        if (np != arm.pattern() || ng != arm.guard() || nb != arm.body()) {
+                            if (narms == null) {
+                                narms = new ArrayList<>(m.arms());
+                            }
+                            narms.set(idx, new HirExpr.MatchArm(np, arm.boundVars(), ng, nb, arm.bodyWideningRank(), arm.line()));
+                        }
+                    }
+                    HirExpr.MatchElse ne = m.elseArm();
+                    if (ne != null) {
+                        HirExpr neb = fn.apply(ne.body());
+                        if (neb != ne.body()) {
+                            ne = new HirExpr.MatchElse(ne.var(), neb, ne.bodyWideningRank(), ne.line());
+                        }
+                    }
+                    yield (ns == m.scrutinee() && narms == null && ne == m.elseArm()) ? m
+                            : new HirExpr.Match(ns, m.scrutineeVar(), narms != null ? narms : m.arms(), ne, m.exhaustive(), m.meta());
                 }
                 case HirExpr.While w -> {
                     HirExpr nc = fn.apply(w.cond());

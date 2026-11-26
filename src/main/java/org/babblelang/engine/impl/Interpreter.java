@@ -423,6 +423,126 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         return result;
     }
 
+    @Override
+    public Object visitMatchExpression(BabbleParser.MatchExpressionContext ctx) {
+        last = ctx;
+        Object scrutinee = visit(ctx.scrutinee);
+        for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
+            last = cc;
+            java.util.LinkedHashMap<String, Object> bindings = new java.util.LinkedHashMap<>();
+            if (!matchPattern(scrutinee, cc.pattern(), bindings)) {
+                continue;
+            }
+            Namespace before = namespace;
+            if (!bindings.isEmpty()) {
+                namespace = namespace.child(new String[0], new boolean[0]);
+                for (java.util.Map.Entry<String, Object> entry : bindings.entrySet()) {
+                    namespace.define(entry.getKey(), true).set(entry.getValue());
+                }
+            }
+            try {
+                if (cc.guard != null && !Truth.test(visit(cc.guard))) {
+                    continue;
+                }
+                Object value = visit(cc.armBlock);
+                return widen(cc.armBlock, value);
+            } finally {
+                namespace = before;
+            }
+        }
+        if (ctx.elseClause() != null) {
+            BabbleParser.ElseClauseContext ec = ctx.elseClause();
+            last = ec;
+            Namespace before = namespace;
+            if (ec.name != null) {
+                namespace = namespace.child(new String[0], new boolean[0]);
+                namespace.define(ec.name.getText(), true).set(scrutinee);
+            }
+            try {
+                Object value = visit(ec.elseBlock);
+                return widen(ec.elseBlock, value);
+            } finally {
+                namespace = before;
+            }
+        }
+        throw org.babblelang.runtime.MatchSupport.noMatchingCase(scrutinee);
+    }
+
+    private boolean matchPattern(Object value, BabbleParser.PatternContext pat,
+                                 java.util.LinkedHashMap<String, Object> bindings) {
+        for (BabbleParser.AtomicPatternContext atom : pat.atomicPattern()) {
+            if (matchAtomicPattern(value, atom, bindings)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean matchAtomicPattern(Object value, BabbleParser.AtomicPatternContext atom,
+                                       java.util.LinkedHashMap<String, Object> bindings) {
+        return switch (atom) {
+            case BabbleParser.ValuePatternContext vp -> {
+                if (vp.expr instanceof BabbleParser.SelectorContext sel
+                        && sel.expression() == null && "_".equals(sel.ID().getText())) {
+                    yield true;
+                }
+                var rangeSrc = scopes.lowering().rangePatternSource(vp);
+                if (rangeSrc != null) {
+                    Object lo = visit(rangeSrc.lo());
+                    Object hi = visit(rangeSrc.hi());
+                    Object step = rangeSrc.step() != null ? visit(rangeSrc.step()) : null;
+                    yield org.babblelang.runtime.MatchSupport.rangeMatch(value, lo, hi, rangeSrc.inclusive(), step);
+                }
+                Object target = visit(vp.expr);
+                yield Operators.equal(value, target);
+            }
+            case BabbleParser.RelationalPatternContext rp -> {
+                Object rhs = visit(rp.rhs);
+                yield switch (rp.op.getType()) {
+                    case BabbleLexer.EQ -> Operators.equal(value, rhs);
+                    case BabbleLexer.NEQ -> !Operators.equal(value, rhs);
+                    case BabbleLexer.LT -> org.babblelang.runtime.MatchSupport.relational(value, rhs, org.babblelang.runtime.MatchSupport.OP_LT);
+                    case BabbleLexer.LTE -> org.babblelang.runtime.MatchSupport.relational(value, rhs, org.babblelang.runtime.MatchSupport.OP_LTE);
+                    case BabbleLexer.GT -> org.babblelang.runtime.MatchSupport.relational(value, rhs, org.babblelang.runtime.MatchSupport.OP_GT);
+                    case BabbleLexer.GTE -> org.babblelang.runtime.MatchSupport.relational(value, rhs, org.babblelang.runtime.MatchSupport.OP_GTE);
+                    default -> false;
+                };
+            }
+            case BabbleParser.MembershipPatternContext mp -> {
+                Object container = visit(mp.container);
+                yield org.babblelang.runtime.MatchSupport.inContainer(value, container);
+            }
+            case BabbleParser.TypeOrDestructurePatternContext tp -> {
+                LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(tp);
+                yield matchesPatternType(value, target);
+            }
+            case BabbleParser.BindingPatternContext bp -> {
+                if (bp.patternBindingType() != null) {
+                    LoweringTargets.PatternTypeTarget target = scopes.lowering().patternTypeTarget(bp);
+                    if (!matchesPatternType(value, target)) {
+                        yield false;
+                    }
+                }
+                bindings.put(bp.name.getText(), value);
+                yield true;
+            }
+            default -> false;
+        };
+    }
+
+    private static boolean matchesPatternType(Object value, LoweringTargets.PatternTypeTarget target) {
+        if (target == null) {
+            return true;
+        }
+        if (target.descriptor() != null) {
+            return Types.matches(value, target.descriptor());
+        }
+        if (target.builtin() != null) {
+            return Types.matches(value, target.builtin());
+        }
+        return true;
+    }
+
     private Object runCatchBlock(BabbleParser.CatchClauseContext cc, Object bound) {
         Namespace before = namespace;
         String[] declared = scopes.declared(cc.catchBlock);

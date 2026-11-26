@@ -58,6 +58,23 @@ public final class LoweringMetadata {
     private final Set<BabbleParser.SelectorContext> publicStaticDefSelects = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<BabbleParser.RangeExpressionContext, LoweringTargets.RangeTarget> rangeTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.ForExpressionContext, CountedRangeSource> countedRangeSources = new IdentityHashMap<>();
+    private final Map<BabbleParser.MatchExpressionContext, Boolean> matchExhaustive = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.PatternConst> patternConsts = new IdentityHashMap<>();
+    private final Map<ParserRuleContext, LoweringTargets.PatternTypeTarget> patternTypeTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.ValuePatternContext, RangePatternSource> rangePatternSources = new IdentityHashMap<>();
+    private final Map<BabbleParser.MembershipPatternContext, LoweringTargets.MembershipTarget> membershipTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.RelationalPatternContext, PrimitiveKind> relationalScrutineeKinds = new IdentityHashMap<>();
+
+    /** AST-level range-membership pattern decomposition for {@code case lo..hi} / {@code (lo..<hi).step(k)} ({@code BIP038}). */
+    public record RangePatternSource(
+            BabbleParser.ExpressionContext lo,
+            BabbleParser.ExpressionContext hi,
+            BabbleParser.ExpressionContext step,
+            boolean inclusive,
+            PrimitiveKind elemKind,
+            boolean stringElement
+    ) {
+    }
 
     /** AST-level counted-range decomposition computed once by {@link LoweringAnalyzer} and consumed by {@code HirBuilder}. */
     public record CountedRangeSource(
@@ -87,6 +104,65 @@ public final class LoweringMetadata {
 
     public CountedRangeSource countedRangeSource(BabbleParser.ForExpressionContext ctx) {
         return countedRangeSources.get(ctx);
+    }
+
+    void setMatchExhaustive(BabbleParser.MatchExpressionContext ctx, boolean exhaustive) {
+        matchExhaustive.put(ctx, exhaustive);
+    }
+
+    public boolean isMatchExhaustive(BabbleParser.MatchExpressionContext ctx) {
+        return Boolean.TRUE.equals(matchExhaustive.get(ctx));
+    }
+
+    void setPatternConst(ParserRuleContext ctx, LoweringTargets.PatternConst constant) {
+        if (constant != null) {
+            patternConsts.put(ctx, constant);
+        }
+    }
+
+    public LoweringTargets.PatternConst patternConst(ParserRuleContext ctx) {
+        return patternConsts.get(ctx);
+    }
+
+    void setPatternTypeTarget(ParserRuleContext ctx, LoweringTargets.PatternTypeTarget target) {
+        if (target != null) {
+            patternTypeTargets.put(ctx, target);
+        }
+    }
+
+    public LoweringTargets.PatternTypeTarget patternTypeTarget(ParserRuleContext ctx) {
+        return patternTypeTargets.get(ctx);
+    }
+
+    void setRangePatternSource(BabbleParser.ValuePatternContext ctx, RangePatternSource source) {
+        if (source != null) {
+            rangePatternSources.put(ctx, source);
+        }
+    }
+
+    public RangePatternSource rangePatternSource(BabbleParser.ValuePatternContext ctx) {
+        return rangePatternSources.get(ctx);
+    }
+
+    void setMembershipTarget(BabbleParser.MembershipPatternContext ctx, LoweringTargets.MembershipTarget target) {
+        if (target != null) {
+            membershipTargets.put(ctx, target);
+        }
+    }
+
+    public LoweringTargets.MembershipTarget membershipTarget(BabbleParser.MembershipPatternContext ctx) {
+        return membershipTargets.get(ctx);
+    }
+
+    void setRelationalScrutineeKind(BabbleParser.RelationalPatternContext ctx, PrimitiveKind kind) {
+        if (kind != null && kind != PrimitiveKind.NONE) {
+            relationalScrutineeKinds.put(ctx, kind);
+        }
+    }
+
+    public PrimitiveKind relationalScrutineeKind(BabbleParser.RelationalPatternContext ctx) {
+        PrimitiveKind kind = relationalScrutineeKinds.get(ctx);
+        return kind != null ? kind : PrimitiveKind.NONE;
     }
 
     void setDefTarget(BabbleParser.DefExpressionContext def, LoweringTargets.DefTarget target) {

@@ -98,7 +98,7 @@ public final class SccpPass implements MirPass {
         return a.equals(b);
     }
 
-    private record EdgeKey(int fromBlock, int toBlock, boolean isElseEdge) {
+    private record EdgeKey(int fromBlock, int toBlock, int edgeIndex) {
     }
 
     private static boolean isIntegralDivOrMod(MirInst.Binary b) {
@@ -146,10 +146,15 @@ public final class SccpPass implements MirPass {
         }
         for (MirBlock b : fn.blocks()) {
             if (b.terminator() instanceof MirTerminator.Br br) {
-                incomingEdges.get(br.targetBlock()).add(new EdgeInfo(new EdgeKey(b.id(), br.targetBlock(), false), br.args()));
+                incomingEdges.get(br.targetBlock()).add(new EdgeInfo(new EdgeKey(b.id(), br.targetBlock(), 0), br.args()));
             } else if (b.terminator() instanceof MirTerminator.BrIf bi) {
-                incomingEdges.get(bi.thenBlock()).add(new EdgeInfo(new EdgeKey(b.id(), bi.thenBlock(), false), bi.thenArgs()));
-                incomingEdges.get(bi.elseBlock()).add(new EdgeInfo(new EdgeKey(b.id(), bi.elseBlock(), true), bi.elseArgs()));
+                incomingEdges.get(bi.thenBlock()).add(new EdgeInfo(new EdgeKey(b.id(), bi.thenBlock(), 0), bi.thenArgs()));
+                incomingEdges.get(bi.elseBlock()).add(new EdgeInfo(new EdgeKey(b.id(), bi.elseBlock(), 1), bi.elseArgs()));
+            } else if (b.terminator() instanceof MirTerminator.Switch sw) {
+                for (int i = 0; i < sw.keys().length; i++) {
+                    incomingEdges.get(sw.targetBlocks()[i]).add(new EdgeInfo(new EdgeKey(b.id(), sw.targetBlocks()[i], i), sw.targetArgs().get(i)));
+                }
+                incomingEdges.get(sw.defaultBlock()).add(new EdgeInfo(new EdgeKey(b.id(), sw.defaultBlock(), -1), sw.defaultArgs()));
             }
         }
 
@@ -201,19 +206,35 @@ public final class SccpPass implements MirPass {
             // 3. Evaluate terminator & propagate executable edges.
             MirTerminator term = b.terminator();
             if (term instanceof MirTerminator.Br br) {
-                markEdgeExec(new EdgeKey(bid, br.targetBlock(), false), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                markEdgeExec(new EdgeKey(bid, br.targetBlock(), 0), execEdges, execBlocks, blockWorklist, blockMap, lattice);
             } else if (term instanceof MirTerminator.BrIf bi) {
                 Lattice cl = lattice.getOrDefault(bi.cond().id(), Lattice.TOP);
                 if (cl.state == State.CONST) {
                     boolean truthy = isTruthy(cl.value);
                     if (truthy) {
-                        markEdgeExec(new EdgeKey(bid, bi.thenBlock(), false), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(new EdgeKey(bid, bi.thenBlock(), 0), execEdges, execBlocks, blockWorklist, blockMap, lattice);
                     } else {
-                        markEdgeExec(new EdgeKey(bid, bi.elseBlock(), true), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                        markEdgeExec(new EdgeKey(bid, bi.elseBlock(), 1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
                     }
                 } else if (cl.state == State.BOTTOM) {
-                    markEdgeExec(new EdgeKey(bid, bi.thenBlock(), false), execEdges, execBlocks, blockWorklist, blockMap, lattice);
-                    markEdgeExec(new EdgeKey(bid, bi.elseBlock(), true), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    markEdgeExec(new EdgeKey(bid, bi.thenBlock(), 0), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    markEdgeExec(new EdgeKey(bid, bi.elseBlock(), 1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                }
+            } else if (term instanceof MirTerminator.Switch sw) {
+                Lattice kl = lattice.getOrDefault(sw.key().id(), Lattice.TOP);
+                if (kl.state == State.CONST && (kl.value instanceof Number || kl.value instanceof Character)) {
+                    int kv = kl.value instanceof Character ch ? ch : ((Number) kl.value).intValue();
+                    int idx = java.util.Arrays.binarySearch(sw.keys(), kv);
+                    if (idx >= 0) {
+                        markEdgeExec(new EdgeKey(bid, sw.targetBlocks()[idx], idx), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    } else {
+                        markEdgeExec(new EdgeKey(bid, sw.defaultBlock(), -1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    }
+                } else if (kl.state == State.BOTTOM) {
+                    for (int i = 0; i < sw.keys().length; i++) {
+                        markEdgeExec(new EdgeKey(bid, sw.targetBlocks()[i], i), execEdges, execBlocks, blockWorklist, blockMap, lattice);
+                    }
+                    markEdgeExec(new EdgeKey(bid, sw.defaultBlock(), -1), execEdges, execBlocks, blockWorklist, blockMap, lattice);
                 }
             }
         }
@@ -293,6 +314,16 @@ public final class SccpPass implements MirPass {
                     term = truthy
                             ? new MirTerminator.Br(bi.thenBlock(), bi.thenArgs(), bi.line())
                             : new MirTerminator.Br(bi.elseBlock(), bi.elseArgs(), bi.line());
+                    rewrites++;
+                }
+            } else if (!truncatedByThrow && term instanceof MirTerminator.Switch sw) {
+                Lattice kl = lattice.getOrDefault(sw.key().id(), Lattice.BOTTOM);
+                if (kl.state == State.CONST && (kl.value instanceof Number || kl.value instanceof Character)) {
+                    int kv = kl.value instanceof Character ch ? ch : ((Number) kl.value).intValue();
+                    int idx = java.util.Arrays.binarySearch(sw.keys(), kv);
+                    term = idx >= 0
+                            ? new MirTerminator.Br(sw.targetBlocks()[idx], sw.targetArgs().get(idx), sw.line())
+                            : new MirTerminator.Br(sw.defaultBlock(), sw.defaultArgs(), sw.line());
                     rewrites++;
                 }
             }

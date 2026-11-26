@@ -50,6 +50,12 @@ final class Resolver {
                         ? forExpr.name.getText()
                         : definition.getKey() instanceof BabbleParser.CatchClauseContext cc
                         ? cc.name.getText()
+                        : definition.getKey() instanceof BabbleParser.BindingPatternContext bp
+                        ? bp.name.getText()
+                        : definition.getKey() instanceof BabbleParser.RestPatternContext rp
+                        ? rp.name.getText()
+                        : definition.getKey() instanceof BabbleParser.ElseClauseContext ec
+                        ? ec.name.getText()
                         : ScopeAnalysis.paramId(definition.getKey()).getText();
                 resolution.bindings.put(definition.getKey(), declaredHere.get(name));
             }
@@ -192,7 +198,11 @@ final class Resolver {
             return false;
         }
         if (kind == Resolution.Variable.Kind.PARAMETER) {
-            if (decl instanceof BabbleParser.ForExpressionContext || decl instanceof BabbleParser.CatchClauseContext) {
+            if (decl instanceof BabbleParser.ForExpressionContext
+                    || decl instanceof BabbleParser.CatchClauseContext
+                    || decl instanceof BabbleParser.BindingPatternContext
+                    || decl instanceof BabbleParser.RestPatternContext
+                    || decl instanceof BabbleParser.ElseClauseContext) {
                 return true;
             }
             if (ScopeAnalysis.isParamDecl(decl)) {

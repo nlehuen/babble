@@ -1072,6 +1072,19 @@ public final class ScalarReplacePass implements HirPass {
                     verifyExpr(i.elseBranch(), valueUsed, candidates, localLayouts, module, bad);
                 }
             }
+            case HirExpr.Match m -> {
+                verifyExpr(m.scrutinee(), true, candidates, localLayouts, module, bad);
+                for (HirExpr.MatchArm arm : m.arms()) {
+                    verifyPattern(arm.pattern(), candidates, localLayouts, module, bad);
+                    if (arm.guard() != null) {
+                        verifyExpr(arm.guard(), true, candidates, localLayouts, module, bad);
+                    }
+                    verifyExpr(arm.body(), valueUsed, candidates, localLayouts, module, bad);
+                }
+                if (m.elseArm() != null) {
+                    verifyExpr(m.elseArm().body(), valueUsed, candidates, localLayouts, module, bad);
+                }
+            }
             case HirExpr.While w -> {
                 verifyExpr(w.cond(), true, candidates, localLayouts, module, bad);
                 verifyExpr(w.body(), false, candidates, localLayouts, module, bad);
@@ -1155,6 +1168,40 @@ public final class ScalarReplacePass implements HirPass {
         }
         verifyExpr(rhs, true, candidates, localLayouts, module, bad);
         return false;
+    }
+
+    private static void verifyPattern(org.babblelang.ir.hir.HirPattern pattern,
+                                      Map<Integer, RecordLayout> candidates,
+                                      Map<String, RecordLayout> localLayouts,
+                                      HirModule module, Set<Integer> bad) {
+        if (pattern == null) {
+            return;
+        }
+        switch (pattern) {
+            case org.babblelang.ir.hir.HirPattern.Const ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.Wildcard ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.TypeTest ignored -> {}
+            case org.babblelang.ir.hir.HirPattern.ValueExpr v ->
+                    verifyExpr(v.expr(), true, candidates, localLayouts, module, bad);
+            case org.babblelang.ir.hir.HirPattern.Bind b ->
+                    verifyPattern(b.inner(), candidates, localLayouts, module, bad);
+            case org.babblelang.ir.hir.HirPattern.Or o -> {
+                for (org.babblelang.ir.hir.HirPattern alt : o.alternatives()) {
+                    verifyPattern(alt, candidates, localLayouts, module, bad);
+                }
+            }
+            case org.babblelang.ir.hir.HirPattern.Relational r ->
+                    verifyExpr(r.rhs(), true, candidates, localLayouts, module, bad);
+            case org.babblelang.ir.hir.HirPattern.RangeTest r -> {
+                verifyExpr(r.lo(), true, candidates, localLayouts, module, bad);
+                verifyExpr(r.hi(), true, candidates, localLayouts, module, bad);
+                if (r.step() != null) {
+                    verifyExpr(r.step(), true, candidates, localLayouts, module, bad);
+                }
+            }
+            case org.babblelang.ir.hir.HirPattern.Membership m ->
+                    verifyExpr(m.container(), true, candidates, localLayouts, module, bad);
+        }
     }
 
     private static List<HirVar> expandDeclaredVars(List<HirVar> orig, Map<Integer, HirVar[]> scalarVars) {

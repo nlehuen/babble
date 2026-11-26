@@ -346,6 +346,53 @@ public final class LoweringTargets {
     public record RangeTarget(PrimitiveKind elemKind, boolean stringElement) {
     }
 
+    /** Compile-time constant for a {@code match} value pattern ({@code BIP038}). */
+    public record PatternConst(
+            Object value,
+            Class<?> enumClass,
+            String enumConstantName,
+            PrimitiveKind kind
+    ) {
+        public PatternConst {
+            kind = kind != null ? kind : PrimitiveKind.NONE;
+        }
+
+        public boolean isEnum() {
+            return enumClass != null && enumConstantName != null;
+        }
+
+        public boolean isNull() {
+            return value == null && enumClass == null;
+        }
+    }
+
+    /** Type-test lowering info for {@code is T} and {@code def x: T} patterns ({@code BIP038}). */
+    public record PatternTypeTarget(
+            String builtin,
+            IsTarget target,
+            List<IsTarget> intersectionTargets,
+            String descriptor
+    ) {
+        public PatternTypeTarget {
+            intersectionTargets = intersectionTargets == null ? List.of() : List.copyOf(intersectionTargets);
+        }
+    }
+
+    /** Container classification for {@code case in container} patterns ({@code BIP038}). */
+    public enum MembershipKind {
+        RANGE,
+        COLLECTION,
+        MAP,
+        ARRAY,
+        DYNAMIC
+    }
+
+    public record MembershipTarget(MembershipKind kind, PrimitiveKind elemKind) {
+        public MembershipTarget {
+            elemKind = elemKind != null ? elemKind : PrimitiveKind.NONE;
+        }
+    }
+
     public record ForLoopTarget(
             ForKind kind,
             Class<?> arrayClass,

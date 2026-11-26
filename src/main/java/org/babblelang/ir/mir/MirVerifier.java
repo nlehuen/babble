@@ -158,6 +158,14 @@ public final class MirVerifier {
         } else if (term instanceof MirTerminator.BrIf brIf) {
             verifyEdge(label, b.id(), brIf.thenBlock(), brIf.thenArgs(), blockMap);
             verifyEdge(label, b.id(), brIf.elseBlock(), brIf.elseArgs(), blockMap);
+        } else if (term instanceof MirTerminator.Switch sw) {
+            for (int i = 0; i < sw.keys().length; i++) {
+                if (i > 0 && sw.keys()[i] <= sw.keys()[i - 1]) {
+                    throw fail(label, "bb" + b.id() + " switch keys must be strictly ascending");
+                }
+                verifyEdge(label, b.id(), sw.targetBlocks()[i], sw.targetArgs().get(i), blockMap);
+            }
+            verifyEdge(label, b.id(), sw.defaultBlock(), sw.defaultArgs(), blockMap);
         }
     }
 

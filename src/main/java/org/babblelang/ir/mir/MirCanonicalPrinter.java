@@ -605,6 +605,18 @@ public final class MirCanonicalPrinter {
                 sb.append(", ").append(blocks.getOrDefault(bi.elseBlock(), "bb?"));
                 appendEdgeArgs(sb, bi.elseArgs(), vals);
             }
+            case MirTerminator.Switch sw -> {
+                sb.append("switch ").append(val(vals, sw.key())).append(" [");
+                for (int i = 0; i < sw.keys().length; i++) {
+                    if (i > 0) {
+                        sb.append(", ");
+                    }
+                    sb.append(sw.keys()[i]).append(" -> ").append(blocks.getOrDefault(sw.targetBlocks()[i], "bb?"));
+                    appendEdgeArgs(sb, sw.targetArgs().get(i), vals);
+                }
+                sb.append("] default -> ").append(blocks.getOrDefault(sw.defaultBlock(), "bb?"));
+                appendEdgeArgs(sb, sw.defaultArgs(), vals);
+            }
             case MirTerminator.Ret ret -> sb.append("ret ").append(val(vals, ret.value()));
             case MirTerminator.Throw th -> sb.append(th.isJavaThrowable() ? "rethrow " : "throw ").append(val(vals, th.value()));
             case MirTerminator.TailCall tc -> {
