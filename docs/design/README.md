@@ -73,12 +73,13 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 |---|---|---|---|---|
 | **BIP014** | [Compiler optimization passes](bip014_optimization-passes.md) | 2026-11-19 | Partially implemented | `HIR` and the `-O1` optimizer (`RM010`), the e-graph core (`RM012`), and `record` optimizations and the `-O2` SSA `MIR` tier (`RM013`) landed. Only `BIP014-P5` Half B, pipeline rewrites over an SSA `aegraph`, remains (`RM015`). |
 | **BIP015** | [Down with the ants](bip015_down-with-the-ants.md) | 2026-11-19 | Draft (`BIP015-Q1`–`Q8` open) | Whether to keep ANTLR4, put a Babble-owned AST behind it, or replace it, for example with a hand-written parser. Decided first in `RM014`. |
-| **BIP018** | [Tracking Java improvements](bip018_tracking-java-improvements.md) | 2026-11-20 | Decided (`BIP018-P0`–`P4` planned) | Babble editions that track JDK LTS releases, a multi-module split, a Class-File API backend and `babblec -target N`. Starts once `BIP014` is complete (`RM016`, `RM017`). |
+| **BIP018** | [Tracking Java improvements](bip018_tracking-java-improvements.md) | 2026-11-20 | Decided (`BIP018-P0`–`P4` planned) | Babble editions that track JDK LTS releases, a multi-module split, a Class-File API backend and `babblec -target N`. `BIP018-P0` (CI legs) can land at any time (`RM025`); the rest starts once `BIP014` is complete (`RM016`, `RM017`). |
 | **BIP026** | [Multiline strings and string templates](bip026_multiline-strings-and-string-templates.md) | 2026-11-22 | Partially implemented | Multiline and raw strings landed (`BIP026-I1`). String templates (`t"..."`, lazy placeholders, evaluation policies) are open (`BIP026-Q4`–`Q10` → `BIP026-P2`–`P5`, `RM014`). |
 | **BIP032** | [The Great Escape — adversarial search for inconsistencies in Babble types and effects](bip032_the-great-escape.md) | 2026-11-24 | Decided (`BIP032-P1`–`P4` planned) | Red-team probes, white-box property tests, runtime canary oracles and a delta-minimizing soundness fuzzer across types, effects, ownership, optimizer/Wasm parity, axioms and verifiers (`RM021`). |
 | **BIP033** | [Tensors as core types with dimensional safety](bip033_tensors.md) | 2026-11-25 | Decided (`BIP033-P1`–`P6` planned) | Core `float16`/`bfloat16` scalars and immutable `tensor of (DType, ...)` types with static/symbolic/dynamic/labeled shapes, E-graph algebraic dim solving, scalar + labeled-subset broadcasting, `matmul`/`einsum`, `unique` FBIP reuse, and a `java.base` strided runtime behind `TensorBackend` SPI (with a compiled-region hook for optional StableHLO/XLA PJRT backends) (`RM023`). |
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
 | **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`–`P9` planned) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of every monolith and god class (JVM and Wasm backends included), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
+| **BIP038** | [Pattern matching (`match`)](bip038_pattern-matching.md) | 2026-11-25 | Decided (`BIP038-P1`–`P5` planned) | `match x case <pattern> [if <guard>] then (...) else (...)` with explicit `def` bindings, value, relational, range and `in` patterns, `record` and `list`/`array` destructuring, and compile-time exhaustiveness (`RM024`). |
 
 ## Milestones done
 
@@ -176,36 +177,39 @@ First-class immutable covariant `range of T` (`lo..hi`, `lo..<hi`), stepped and 
 
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, `BIP036-P1`–`P9`, and `BIP038-P1`–`P5`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
 
 The order follows constraints recorded in the BIPs:
 
-- **Simplify before replacing the AST.** `BIP036` (`RM020`) retires `TypeChecker`'s mutable blackboard and splits every god class under 1,500 lines, giving `BIP015` Option 2 clean seams.
-- **Harden soundness early.** `BIP032` (`RM021`) can run now, catching type, effect, ownership, optimizer and Wasm escapes before `BIP014-P5` pipeline rewrites and `RM017` parallelism rely on stronger static guarantees.
-- **Measure, then optimize.** Only `BIP014-P5` Half B remains, and it needs a standard library to rewrite.
-- **Choose the parser before the largest grammar change.** `BIP026-P2` splits `Babble.g4` into lexer modes, and `BIP015-Q3` asks whether a parser change should come first.
-- **`BIP018` after `BIP014`** (`BIP018-D4`).
+- **Simplify before large front-end work.** `BIP036` (`RM020`) retires `TypeChecker`'s mutable blackboard and splits every god class under 1,500 lines, giving `BIP015` Option 2 and large front-end additions (`BIP038`, `BIP033`) clean seams.
+- **Pattern matching builds directly on landed ranges (`RM019`).** `BIP038` (`RM024`) is decided and waits for nothing: it is a pure-`SLL` addition to the current ANTLR4 grammar (answering `BIP015-Q3` for it — a later parser migration ports it with the rest of the grammar), and landing it ahead of `RM015` gives the standard library both ranges and `match`.
+- **Harden soundness early.** `BIP032` (`RM021`) can run now, catching type, effect, ownership, optimizer and Wasm escapes before `BIP014-P5` pipeline rewrites (`RM015`) and `RM017` parallelism rely on stronger static guarantees.
+- **Safety nets at any time.** The JDK 25 and 27 CI legs (`BIP018-P0`, `RM025`, exempt from `BIP018-D4`) and a thread-safe `Interpreter` depend on nothing.
+- **The standard library is on the critical path.** `RM015` gives `BIP014-P5` Half B something to rewrite, completing `BIP014`, which opens `BIP018-P1` onward (`RM016`, `BIP018-D4`), on which `RM017` parallelism builds. Written in Babble, `std/...` wants ranges (`RM019`) and `match` (`RM024`) first.
+- **Choose the parser before string templates.** `BIP026-P2` splits `Babble.g4` into lexer modes, so `BIP015` is settled first (`RM014`). Neither is on the critical path to `BIP018`, so `RM014` can run alongside `RM015`.
 - **Tensors and `babblebabble` are independent.** `BIP033` (`RM023`) is a predicate-free grammar addition independent of `BIP015` and `BIP018` (plugging into `BIP018` SIMD/FFM and optional StableHLO/XLA PJRT region backends later via its `TensorBackend` SPI); `BIP035` (`RM022`) builds on the landed `BIP025` Wasm backend and `BIP034` bindings as an independent differential oracle and symbolic benchmark.
 
 | Milestone | Slice | Remaining BIP work | Prerequisites | Notes |
 |---|---|---|---|---|
-| **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` (`RM020` recommended ahead of `BIP015` Option 2) | A parser migration, if chosen, lands before `BIP026-P2`. |
-| **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`; a standard library BIP | Completes `BIP014`, which opens `BIP018`. |
-| **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P0`–`P2` | `RM015` | See the note on `BIP018-P0`. |
+| **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` (`RM020` recommended ahead of `BIP015` Option 2) | Can run alongside `RM015`. A parser migration, if chosen, lands before `BIP026-P2`. |
+| **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`, `RM019` (`RM024` recommended so `std/...` uses `match`); a standard library BIP | Completes `BIP014`, which opens `BIP018-P1` (`RM016`). |
+| **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P1`–`P2` | `RM015`, `RM025` | |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
-| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2). |
+| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2), `RM023` and `RM024`. |
 | **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others; hardens soundness ahead of `RM015` and `RM017`. |
 | **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
 | **RM023** | Tensors with dimensional safety | `BIP033-P1`–`P6` | `RM013`, `RM018` | Independent of `BIP015` and `BIP018` (`RM020` recommended ahead of large front-end additions). |
+| **RM024** | Pattern matching (`match`) | `BIP038-P1`–`P5` | `RM013`, `RM019` | Can run now (`RM020` recommended ahead of large front-end additions); pure-`SLL` addition ahead of `RM015`. |
+| **RM025** | JDK 25 & 27 CI legs | `BIP018-P0` | — | Any time (exempt from `BIP018-D4`). |
 
 ### RM014 — Front-end decision & string templates
 
-Settle [BIP015](bip015_down-with-the-ants.md) before the largest grammar change, then build string templates on the chosen front end.
+Settle [BIP015](bip015_down-with-the-ants.md) before the lexer-mode split, then build string templates on the chosen front end.
 
 - **Spans:** `BIP015`, `BIP026`, `BIP012`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP029`
-- **Decision first:** settle `BIP015-Q1`–`Q8`: keep ANTLR4, put a Babble-owned AST behind it (building on `RM020`'s `BIP036` seams), or replace it. A migration, if chosen, lands first, with identical parses and `BabbleSession.classify` results on every source, so `BIP026-P2` is written once.
+- **Decision first:** settle `BIP015-Q1`–`Q8`: keep ANTLR4, put a Babble-owned AST behind it (building on `RM020`'s `BIP036` seams), or replace it. A migration, if chosen, lands first, with identical parses and `BabbleSession.classify` results on every source (`RM019`'s ranges and `RM024`'s `match` included, if landed), so `BIP026-P2` is written once.
 - **Deliverables:**
   - `BIP026-P2`: template syntax (`t"..."`, `t"""..."""`, `rt"..."`, `t$$"""..."""`, `$(expr)`) through lexer modes, with formatter and `classify` support.
   - `BIP026-P3`–`P4`: `java.base`-only `Template` and `Placeholder` with lazy memoization, `template`/`placeholder` core types, evaluation policies (`tmpl.eval(policy)`) and effect tracking.
@@ -214,10 +218,10 @@ Settle [BIP015](bip015_down-with-the-ants.md) before the largest grammar change,
 
 ### RM015 — Standard library & pipeline rewrites
 
-Give `BIP014-P5` something to rewrite: an effect-annotated `std/...` library of higher-order combinators. This completes `BIP014`.
+Give `BIP014-P5` something to rewrite: an effect-annotated `std/...` library of higher-order combinators, written with ranges (`RM019`) and `match` (`RM024`). This completes `BIP014`.
 
-- **Spans:** `BIP014`, `BIP005`, `BIP006`, `BIP007`, `BIP011`, `BIP016`, `BIP017`, `BIP031`
-- **Depends on:** `RM013`, and a standard library BIP covering `std/...` and the module search path (`BIP005-D5`).
+- **Spans:** `BIP014`, `BIP005`, `BIP006`, `BIP007`, `BIP011`, `BIP016`, `BIP017`, `BIP031`, `BIP038`
+- **Depends on:** `RM013`, `RM019` (`RM024` recommended), and a standard library BIP covering `std/...` and the module search path (`BIP005-D5`).
 - **Deliverables:**
   - The standard library: `babble.path` search roots and `std/...` modules (`map`, `filter`, `flatMap`, `reduce`, `groupBy`, `zip`, `forEach`, range combinators, math and I/O helpers) with effect and algebraic contracts.
   - `BIP014-P5` Half B: an SSA `aegraph` over `MIR` and a `PipelineRewritePass` (`O12`) for filter fusion, push-downs, `monotone` range pruning and `associative` fold reassociation.
@@ -225,14 +229,13 @@ Give `BIP014-P5` something to rewrite: an effect-annotated `std/...` library of 
 
 ### RM016 — `Babble 21` & `Babble 25` editions
 
-Start [BIP018](bip018_tracking-java-improvements.md) once `BIP014` is complete: a multi-JDK CI matrix, the module split, and a `Babble 25` edition without ASM.
+Continue [BIP018](bip018_tracking-java-improvements.md) once `BIP014` is complete: the module split, and a `Babble 25` edition without ASM.
 
 - **Spans:** `BIP018`, `BIP006`, `BIP014`, `BIP019`, `BIP034`
+- **Depends on:** `RM025` (the CI legs), and `RM015` (`BIP014` complete, `BIP018-D4`).
 - **Deliverables:**
-  - `BIP018-P0`: JDK 25 and JDK 27 CI legs, and axioms for `java.lang.IO`, `Gatherer`s and `java.lang.foreign`.
   - `BIP018-P1`: the `babble-runtime` / `babble-core` / `babble-backend-asm` / `babble-21` split behind SPIs, with no change in behavior, and `babblec -target N`.
   - `BIP018-P2`: a Class-File API backend, `ScopedValue`, `lazy def`, `scoped def`, target-gated `std/foreign`, and JEP 500 trusted-final `ACC_FINAL` on immutable fields (building on `BIP034-I5`).
-- **Note on `BIP018-P0`:** JDK 27 already changed what the bytecode analyzer infers: since JDK 22, `Throwable` constructors read a Flight Recorder field, which made every exception constructor `io` until curated axioms restored the JDK 21 effects. A JDK 25/27 CI leg would have caught this at once, which argues for pulling `BIP018-P0` ahead of `RM015`.
 - **Exit criteria:** identical results across `interpret`, `babble-21`, `babble-25` and `babble-25 -target 21`, and a boundary test per module.
 
 ### RM017 — Verified parallelism, `Babble 28` & Valhalla
@@ -295,6 +298,26 @@ Deliver [BIP033](bip033_tensors.md), adding ML-first core `float16`/`bfloat16` s
   - `BIP033-P2`–`P4`: predicate-free pure-`SLL` `tensor` grammar & unified `of (...)` type/shape application, `DimAlgebra` (polynomial + `org.babblelang.ir.egraph` solver with `D == H * K` constraints), directional label-preserving axis labels, `dyn` narrowing / `withDims`, `java.base`-only strided runtime & `TensorBackend` SPI (including its optional compiled-region hook), strict linear `unique` tracking on immutable tensors, scalar + labeled-subset broadcasting, reductions, `matmul`/`matmulAccum`, and compile-time checked `einsum`/`contract`.
   - `BIP033-P5`–`P6`: structured `HIR` tensor nodes, `-O1`/`-O2` elementwise loop fusion, E-graph view simplification, small-tensor SROA (`O9`), FBIP `TensorReuse` (`O10`), pure-region lowering readiness for optional StableHLO/XLA backends, and a dimensionally-safe micro-Transformer forward-pass milestone in `examples/`.
 - **Exit criteria:** 100% pure-`SLL` parsing, `.batest.md` differential & `HIR`/`MIR` goldens across all modes, `RuntimeBoundaryTestCase` (`java.base`-only), and byte-identical micro-Transformer output across `interpret`, `-O0`, `-O1`, `-O2`, and `babblec` AOT jar.
+
+### RM024 — Pattern matching (`match`)
+
+Deliver [BIP038](bip038_pattern-matching.md) on top of landed ranges ([BIP031](bip031_ranges.md), `RM019`) and immutable `def` bindings ([BIP034](bip034_immutable-def-and-mutable-var.md)).
+
+- **Spans:** `BIP038`, `BIP002`, `BIP008`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP019`, `BIP024`, `BIP025`, `BIP027`, `BIP029`, `BIP031`, `BIP034`, `BIP037`
+- **Depends on:** `RM013`, `RM019` (`RM020` recommended ahead of large front-end additions). Independent of `BIP015` (a later parser migration ports this grammar) and of `BIP018`.
+- **Deliverables:**
+  - `BIP038-P1`–`P3`: the `match` grammar, formatter and REPL `classify`, typing and narrowing, `record` and `list`/`array` destructuring, `HirExpr.Match` with jump tables, `MirTerminator.Switch`, and Wasm `br_table`.
+  - `BIP038-P4`–`P5`: Maranget exhaustiveness and reachability checking, effect/ownership/`SizeChangeTermination` integration, `-O1`/`-O2` optimizations (`ScalarReplacePass` SROA, `SccpPass` constant `Switch` folding), and `.batest.md` specs with `HIR`, `MIR` and `wat` goldens.
+- **Exit criteria:** `match` specifications in every mode, exhaustiveness diagnostics, and `HIR`, `MIR` and `wat` goldens.
+
+### RM025 — JDK 25 & 27 CI legs
+
+Catch drift on newer JDKs as soon as it appears, without waiting for the editions. JDK 27 already changed what the bytecode analyzer infers: since JDK 22, `Throwable` constructors read a Flight Recorder field, which made every exception constructor `io` until curated axioms restored the JDK 21 effects. A JDK 25/27 leg would have caught that at once, which is why `BIP018-D4` exempts `BIP018-P0`.
+
+- **Spans:** `BIP018`, `BIP019`, `BIP030`
+- **Deliverables:** `BIP018-P0`: JDK 25 and JDK 27 CI legs, and axioms for `java.lang.IO`, `Gatherer`s and `java.lang.foreign`.
+- **Exit criteria:** the suite green on JDK 21, 25 and 27, and `babble.axioms.report` reviewed on each.
+
 ### Backlog awaiting a BIP
 
 Planned work no BIP specifies yet, gathered from decisions of implemented BIPs, the [README](../../README.md)'s planned features and ray-tracer lessons, and [AGENTS.md](../../AGENTS.md)'s known issues. An item a milestone needs gets its BIP when that milestone starts; the others can be proposed at any time.
@@ -304,7 +327,8 @@ Planned work no BIP specifies yet, gathered from decisions of implemented BIPs, 
 | Standard library `std/...` and a module search path (`babble.path`) | `BIP005-D5`, `BIP006-I3`, [README](../../README.md) | `RM015`, `RM016` (`std/foreign`), `RM017` |
 | `threadsafe` effect and parallel combinators | `BIP007` §10 | `RM017` |
 | Thread-safe `Interpreter` | [AGENTS.md](../../AGENTS.md) known issues | `RM017` (any time) |
-| Destructuring definitions, including `for (k, v) in m` | `BIP005-D3`, `BIP013` §8 | — |
+| Destructuring definitions, including `for (k, v) in m` | `BIP005-D3`, `BIP013` §8 (can reuse `BIP038` patterns) | — |
+| Babble `sealed interface` and `enum` declarations | `BIP038-D3` (the `permittedSubtypes` hook of its exhaustiveness checker) | — |
 | `yield` generator functions | `BIP013`, [README](../../README.md) | — |
 | Bare names for a class's own members in its body | [README](../../README.md) ray-tracer lessons | — |
 | Structural object types | `BIP003` §6, `BIP002-D13` | — |
