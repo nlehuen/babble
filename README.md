@@ -966,6 +966,9 @@ Language features :
 
 - [ ] better, more user-friendly error reports.
 - [ ] structural object types.
+- [ ] pattern matching : `match x case <pattern> [if <guard>] then (...) else (...)` with value,
+  relational, range and `in` patterns, `def` bindings, `record` and `list` / `array` destructuring,
+  and compile-time exhaustiveness (see [BIP038](docs/design/bip038_pattern-matching.md)).
 - [ ] destructuring definitions : `def (Circle, unit) = import("shapes.ba")` binds the named members of
   a module or an object, instead of one `def` per name.
 - [ ] `yield` keyword : transform functions/method into iterators.

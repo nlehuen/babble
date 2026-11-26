@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 018 |
 | **Date** | 2026-11-20 |
-| **Status** | Decided / Draft (`BIP018-Q1`–`Q8` → `BIP018-D1`–`D8` decided; sequenced strictly after `BIP014` completes) |
+| **Status** | Decided / Draft (`BIP018-Q1`–`Q8` → `BIP018-D1`–`D8` decided; `BIP018-P1` onward sequenced strictly after `BIP014` completes, `BIP018-P0` at any time) |
 | **Depends on** | Bytecode compiler (`RM001`/`RM003`, [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md)), object model & `record`s ([bip002_object-model.md](bip002_object-model.md)), module sources, `java.base`-only runtime boundary & `babblec` ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static effects, ownership & algebraic properties (`RM002`/`RM007`/`RM008`/`RM009`, [bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), static typing & core types (`RM005`, [bip008_static-typing.md](bip008_static-typing.md), [bip011_core-types.md](bip011_core-types.md)), `.batest` differential parity harness ([bip009_test-coverage.md](bip009_test-coverage.md)), compiler IR & `CodeGenerator` decomposition ([bip014_optimization-passes.md](bip014_optimization-passes.md) `BIP014-I0`–`I2`, `BIP014-I3`, `BIP014-I4`, `BIP014-P5`), and parser dependency evaluation ([bip015_down-with-the-ants.md](bip015_down-with-the-ants.md)) |
 | **Scope** | Release-by-release audit of JDK 22 through JDK 28 (plus the JDK 29 LTS+ horizon) classified into **Migrate** (mandatory migration), **Adopt** (optional leverage), and **Extend** (Babble capabilities beyond Java unlocked by new JVM/JDK features); explicit portability vs. modernity trade-offs; a **`Babble N` ↔ `JDK N` release scheme**; a **branchless multi-module SPI monorepo** with `babblec -target N` cross-targeting; and concrete surface-language specifications for `lazy def`, `scoped def` + `with ... then (...)`, and target-gated `std/foreign` |
 
@@ -27,7 +27,7 @@ This proposal settles `BIP018-D1`–`D8` across five pillars:
 1. **A three-way JEP audit (§3–§4)** across **JDK 22 → JDK 28** and the **JDK 29+ horizon**, classifying every significant feature as **Migrate** (mandatory migration), **Adopt** (optional leverage), or **Extend** (Babble beyond Java).
 2. **An explicit trade-off analysis (§5)** establishing the guiding rule: **One Core Language, Progressive Lowering, Additive Capability Tiers**.
 3. **A `Babble N` release scheme (§6, `BIP018-D2`, `D3`, `D5`)** — active tiers (`Babble 21` Baseline LTS, `Babble 25` Modern LTS, `Babble 27`/`28` + `28-preview` Frontier/EA) with sparse floor inheritance, edition-qualified SemVer artifacts (`babble-21`, `babble-25`, `babble-28`, `babble-28-preview`), and upstream-JDK LTS EOL tracking.
-4. **A branchless multi-module SPI monorepo (§7, `BIP018-D1`, `D4`, `D6`)** — sequenced strictly after `BIP014` completes, with zero-ASM `babble-25`/`babble-28` and `babblec -target N` cross-targeting (`BIP018-D8`'s field-free `abstract class BabbleInstance` was superseded by [`BIP020-D18`](bip020_array-types.md), which already made compiled classes and records extend `java.lang.Object` directly).
+4. **A branchless multi-module SPI monorepo (§7, `BIP018-D1`, `D4`, `D6`)** — sequenced strictly after `BIP014` completes (`BIP018-P1` onward), with zero-ASM `babble-25`/`babble-28` and `babblec -target N` cross-targeting (`BIP018-D8`'s field-free `abstract class BabbleInstance` was superseded by [`BIP020-D18`](bip020_array-types.md), which already made compiled classes and records extend `java.lang.Object` directly).
 5. **Surface-language & stdlib "Extend" specifications (§8, `BIP018-D7`)** — predicate-free pure-`SLL` `lazy def` and `scoped def` + `with ... then (...)` polyfilled on `Babble 21` via `PlatformRuntime` (upgrading transparently to `ScopedValue` on 25+ and `LazyConstant` once final), plus target-gated `std/foreign` FFM wrappers (`-target 22+`).
 
 ---
@@ -41,7 +41,7 @@ Every JDK feature reviewed in this document is assigned one (or more, when a fea
 | Category | Meaning | Impact on Babble Users |
 |---|---|---|
 | **Migrate** *(Mandatory Migration)* | Breaking API removals, stricter JVM defaults (`Integrity by Default`), bytecode verifier changes, or semantic shifts in `java.base` classes that Babble *must* handle to compile, pass tests, and run warning-free on JDK $N$. | Invisible when handled cleanly; prevents runtime warnings, `IdentityException`, or `IllegalAccessException` failures on newer JVMs. |
-| **Adopt** *(Optional)* | New JDK APIs, compiler/runtime primitives, or JVM optimizations that Babble can optionally use inside its own implementation (compiler, runtime, `babblec`, `BytecodeEffectAnalyzer`, REPL) or map cleanly in Java interop (`HostEffects`, `JavaNullability`). | Smaller dependencies (dropping ASM), faster startup/warmup (Leyden), lower memory (Lilliput), cleaner Java interop — with **zero** change to Babble's core semantics. |
+| **Adopt** *(Optional)* | New JDK APIs, compiler/runtime primitives, or JVM optimizations that Babble can optionally use inside its own implementation (compiler, runtime, `babblec`, `BytecodeEffectAnalyzer`, REPL) or map cleanly in Java interop (through axioms in `src/main/java/org/babblelang/axioms/`). | Smaller dependencies (dropping ASM), faster startup/warmup (Leyden), lower memory (Lilliput), cleaner Java interop — with **zero** change to Babble's core semantics. |
 | **Extend** *(Beyond Java)* | Capabilities Babble can deliver to Babble programmers that **do not exist in Java** (or that Java cannot statically enforce / ergonomically emit) by combining new JVM primitives with Babble's static type, ownership, and effect systems (`BIP002`, `BIP007`, `BIP008`, `BIP011`, `BIP016`, `BIP017`). | Makes Babble strictly safer or faster than equivalent idiomatic Java — e.g., automatic Valhalla `value class` lowering for `record`s, `ACC_STRICT_INIT` on normal classes, or compile-time race-free structured concurrency. |
 
 ### 2.2 Babble's Current JDK 21 Footprint (Baseline Audit)
@@ -75,7 +75,7 @@ Each release below summarizes its release date, LTS/support status, and every JE
 * **Migrate (Mandatory):** None for Babble's codebase. (`JEP 423` G1 region pinning is transparent.)
 * **Adopt (Optional):**
   * **`[JEP454]` Foreign Function & Memory (FFM) API *(Final)*:** Replaces fragile JNI with `java.lang.foreign` (`Arena`, `MemorySegment`, `Linker`) inside `java.base`.
-    * *Interop:* Add `java.lang.foreign.*` nullability and `io`/`mut` effect profiles to `JavaNullability` and `HostEffects`.
+    * *Interop:* Declare `java.lang.foreign.*` nullability and `io`/`mut` effects as axioms in a new `src/main/java/org/babblelang/axioms/java/lang/foreign/curated.ba`.
     * *Tooling:* Unblocks pure-JDK native integration where needed (e.g., raw terminal line-editing in `Repl` without JNI, or `BIP015` Option 4 Tree-sitter if ever revisited — noting `java-tree-sitter` targets JDK 23+ FFM).
   * **`[JEP456]` Unnamed Variables & Patterns (`_`) *(Final)*:** Cleanups across Babble's own Java implementation (unused catch parameters, pattern-matching switch bindings in `TypeChecker`, `EffectChecker`, and `BIP014` HIR passes).
   * **`[JEP458]` Launch Multi-File Source-Code Programs *(Final)*:** No direct Babble requirement (`babble` already has `BIP005` modules).
@@ -105,7 +105,7 @@ Each release below summarizes its release date, LTS/support status, and every JE
 JDK 24 is the **first major architectural inflection point** after JDK 21.
 
 * **Migrate (Mandatory):**
-  * **`[JEP486]` Permanently Disable the Security Manager:** Babble uses zero `SecurityManager` APIs; audit `HostEffects`/`JavaNullability` and any Java-interop tests to ensure nothing references `System.setSecurityManager` or `AccessController`.
+  * **`[JEP486]` Permanently Disable the Security Manager:** Babble uses zero `SecurityManager` APIs; audit the axioms (`src/main/java/org/babblelang/axioms/`) and any Java-interop tests to ensure nothing references `System.setSecurityManager` or `AccessController`.
   * **`[JEP472]` Prepare to Restrict the Use of JNI** & **`[JEP498]` Warn upon Use of Memory-Access Methods in `sun.misc.Unsafe`:** Babble itself is 100% clean (zero JNI, zero `Unsafe`); verify CI logs stay warning-free across transitive dependencies.
 * **Adopt (Optional):**
   * **`[JEP484]` Class-File API (`java.lang.classfile`) *(Final)* — HIGHEST-VALUE `ADOPT` IN JDK 22–25:**
@@ -117,7 +117,7 @@ JDK 24 is the **first major architectural inflection point** after JDK 21.
     * **Synergy with `BIP015`:** If `BIP015` ever replaces ANTLR4 with a hand-written parser *and* `BIP018` replaces ASM with `JEP 484` on Babble 24+/25+, **Babble 25+ becomes a 100% zero-third-party-dependency pure-JDK compiler and runtime**.
   * **`[JEP491]` Synchronize Virtual Threads without Pinning *(Final)*:** Eliminates carrier-thread pinning on `synchronized` monitors — immediately making Babble's existing `synchronized` blocks (`Bootstrap.relink`, `Overloads.Cache.put`, `Launcher.loaded`, `BabbleScriptEngine.moduleLock`) virtual-thread-friendly with zero lock rewrites!
   * **`[JEP483]` Ahead-of-Time Class Loading & Linking *(Final, Project Leyden)*:** First production Leyden release; `babblec` (`BIP006`) jars have deterministic class names and zero ANTLR/ASM/reflection startup overhead, making them ideal for AOT class-loading caches.
-  * **`[JEP485]` Stream Gatherers *(Final)*:** Add `java.util.stream.Gatherer` and `Gatherers` to `JavaNullability` (parametric nullness) and `HostEffects`.
+  * **`[JEP485]` Stream Gatherers *(Final)*:** Declare `java.util.stream.Gatherer` and `Gatherers` (parametric nullness and effects) as axioms in `src/main/java/org/babblelang/axioms/java/util/stream/curated.ba`.
   * **`[JEP493]` Linking Run-Time Images without JMODs *(Final)*:** Pairs cleanly with `babblec` (`BIP006` §5) + Babble's `java.base`-only runtime to produce self-contained `jlink` distributions of compiled Babble applications from a standard JRE installation.
 * **Extend (Babble Beyond Java):**
   * **Statically verified `pure` stateful Gatherers:** Java's `Gatherer<T, A, R>` allows arbitrary side effects inside `initializer`, `integrator`, and `finisher`, relying on programmer discipline. Babble's `BIP016`/`BIP017` `fn calling f` + `unique` local accumulator ownership lets Babble expose custom stream/iterator gatherers whose local mutable state is **statically verified not to escape**, preserving `pure` / `@HERMETIC` contracts across pipeline stages (directly feeding `BIP014` `O12` pipeline rewrites).
@@ -131,7 +131,7 @@ JDK 24 is the **first major architectural inflection point** after JDK 21.
 **JDK 25 is the first Long-Term Support release since JDK 21.** It rolls up every finalized feature of JDK 22–24 (`FFM`, `Unnamed Patterns`, `Class-File API`, `Stream Gatherers`, `Virtual Thread non-pinning`, `Leyden AOT Class Loading`) and adds several high-impact capabilities of its own.
 
 * **Migrate (Mandatory):**
-  * **New `java.base` I/O entry point (`[JEP512]` `java.lang.IO`):** JDK 25 adds `java.lang.IO` (`println`, `print`, `readln`) to `java.base`. Babble's `HostEffects` and `JavaNullability` must register `java.lang.IO` methods as `io` (and `readln` as nullable `string?`) so Babble code calling `java.lang.IO` cannot bypass `BIP016` purity checks!
+  * **New `java.base` I/O entry point (`[JEP512]` `java.lang.IO`):** JDK 25 adds `java.lang.IO` (`println`, `print`, `readln`) to `java.base`. Babble's axioms (`src/main/java/org/babblelang/axioms/java/lang/curated.ba`) must declare `java.lang.IO` methods as `io` (and `readln` as nullable `string?`) so Babble code calling `java.lang.IO` cannot bypass `BIP016` purity checks!
   * *Cumulative JDK 22–25 hygiene:* Security Manager permanently disabled (`JEP 486`), `Unsafe` warnings (`JEP 498`), JNI preparation (`JEP 472`) — all already clean in Babble.
 * **Adopt (Optional):**
   * **`[JEP506]` Scoped Values *(Final)*:** Lightweight, immutable, bounded-lifetime dynamic context propagation optimized for virtual threads and structured tasks.
@@ -248,7 +248,7 @@ Tracking OpenJDK's active projects reveals why laying clean multi-JDK groundwork
 | **25** | Sep 2025 · **LTS** | `JEP 506` **Scoped Values** | **Adopt / Extend** | Ambient `ScriptRuntime`/interpreter context; `frozen`-only effect-tracked `scoped` bindings |
 | **25** | Sep 2025 · **LTS** | `JEP 514`/`515` Leyden AOT Ergonomics & Method Profiling | **Adopt** | 1-step `babblec` AOT cache training (`-XX:AOTCacheOutput`) |
 | **25** | Sep 2025 · **LTS** | `JEP 519` Compact Object Headers; `JEP 513` Flexible Ctors | **Adopt** | Smaller `BabbleInstance`/`Cell` footprint; cleaner Java ctor validation |
-| **25** | Sep 2025 · **LTS** | `JEP 512` `java.lang.IO` in `java.base` | **Migrate** | Register `java.lang.IO.*` as `io` in `HostEffects` & nullable `readln` in `JavaNullability` |
+| **25** | Sep 2025 · **LTS** | `JEP 512` `java.lang.IO` in `java.base` | **Migrate** | Declare `java.lang.IO.*` as `io` and `readln` as nullable in `axioms/java/lang/curated.ba` |
 | **26** | Mar 2026 | `JEP 500` **Prepare to Make Final Mean Final** | **Migrate / Extend** | Gate CI with `--illegal-final-field-mutation=deny`; emit `ACC_FINAL` on all immutable Babble fields |
 | **26** | Mar 2026 | `JEP 504` Remove Applet; `JEP 516` AOT Any GC; `JEP 517` HTTP/3 | **Migrate / Adopt** | Verified 0 Applet refs; Leyden AOT works with ZGC/Shenandoah |
 | **27** | Sep 2026 | `JEP 534` Compact Object Headers Default; `JEP 523` G1 Default | **Adopt** | Free memory/GC win; no bespoke `Babble 27` overlay needed |
@@ -367,6 +367,7 @@ babble/                                      (parent/aggregator pom.xml)
 │   ├── src/main/antlr4/                     (Babble.g4 — or hand-written parser post-BIP015)
 │   └── src/main/java/
 │       ├── org/babblelang/analysis/         (BlockScopes, TypeChecker, EffectChecker, HostEffects, JavaNullability, BytecodeInspector SPI)
+│       ├── org/babblelang/axioms/           (curated.ba, builtins.ba : every built-in assumption about Java and Babble)
 │       ├── org/babblelang/ir/               (BIP014 HIR / MIR — 100% backend-agnostic!)
 │       ├── org/babblelang/opt/              (BIP014 Nanopass optimizer — 100% backend-agnostic!)
 │       ├── org/babblelang/compiler/         (BabbleCompiler, Babblec, TargetProfile, BytecodeBackend SPI)
@@ -392,7 +393,7 @@ babble/                                      (parent/aggregator pom.xml)
 Notice how cleanly every architectural constraint snaps into place:
 
 1. **Zero front-end duplication:** `babble-core` stays at `--release 21` and holds the grammar/parser, all of `org.babblelang.analysis`, `Formatter`, `Interpreter`, `BabbleSession`/`Repl`, `BIP014` HIR/MIR and optimizer passes, and `Babblec`.
-2. **Exact alignment with `BIP014` (`BIP018-D4`):** Because `BIP018` starts strictly after `BIP014` completes, `BytecodeBackend` consumes `BIP014`'s self-contained `HirModule`/`MirModule` directly — both `AsmBytecodeBackend` (JDK 21) and `ClassFileBytecodeBackend` (JDK 24+) lower the exact same verified IR!
+2. **Exact alignment with `BIP014` (`BIP018-D4`):** Because `BIP018-P1` onward starts strictly after `BIP014` completes, `BytecodeBackend` consumes `BIP014`'s self-contained `HirModule`/`MirModule` directly — both `AsmBytecodeBackend` (JDK 21) and `ClassFileBytecodeBackend` (JDK 24+) lower the exact same verified IR!
 3. **Clean dependency pruning:** `org.ow2.asm:asm` and `asm-util` exist **only** in `babble-backend-asm`. `babble-25` and `babble-28` do not even have ASM on their classpath.
 4. **Universal `BabbleInstance` refactoring (`BIP018-D8`, superseded by [`BIP020-D18`](bip020_array-types.md)):** *Superseded : compiled classes extend no runtime class at all, and `BabbleInstance` becomes the interpreter's alone (BIP020 §2.10).* Refactoring `BabbleInstance` in `babble-runtime` into a **field-free `abstract class BabbleInstance implements HasMembers`** (moving `Object[] values` and mutable `Object face` into subclasses, while compiled `record`s hold only their payload fields + `static final BabbleClass`) saves 8–16 bytes per compiled `record` immediately on `Babble 21`/`25` and keeps all ~22 `instanceof BabbleInstance` checks across `runtime/` and `Interpreter` untouched when `babble-runtime-valhalla` promotes `BabbleInstance` to `abstract value class BabbleInstance`.
 5. **Strict preview isolation:** `babble-runtime-valhalla` and `babble-backend-valhalla` compile only under `-Pjdk28-preview`, so `72.65535` preview classfiles can never leak into `babble-21`, `babble-25`, or non-preview `babble-28`.
@@ -451,7 +452,7 @@ Four narrow SPI interfaces (discovered via `java.util.ServiceLoader`, already us
   * On JDK 21: `mvn package` builds and tests `babble-21` cleanly with zero extra setup.
   * On JDK 25+: `mvn -Pjdk25 package` (or automatic `<jdk>[25,)</jdk>` activation) builds and tests both `babble-21` (`--release 21`) and `babble-25` (`--release 25`, zero ASM).
   * On JDK 28 EA: `mvn -Pjdk25,jdk28,jdk28-preview test` exercises `StructuredTaskScope` and Valhalla preview lowering.
-* **GitHub Actions CI Matrix (`.github/workflows/maven.yml`, activated after `BIP014` completes per `BIP018-D4`):**
+* **GitHub Actions CI Matrix (`.github/workflows/maven.yml`, added by `BIP018-P0`, which `BIP018-D4` lets land at any time):**
 
 ```yaml
 strategy:
@@ -591,7 +592,7 @@ All new syntax introduced by `BIP018` preserves Babble's `BIP012` (`RM006`) gram
 ## 9. Interaction with Existing & Draft BIPs
 
 * **`BIP006` (`BIP006-D1` Single-Module Preference & `babblec`):** `BIP006-D1` kept Babble as a single Maven module when there was only one JDK target and one bytecode backend. `BIP018-D1` revisits `BIP006-D1` cleanly once `BIP018-P1` begins, preserving `BIP006`'s `java.base`-only runtime boundary and deterministic `babblec` AOT jars while adding `-target N` cross-targeting (`BIP018-D6`).
-* **`BIP014` (Compiler Optimization Passes — `BIP018-D4`):** **Strict sequencing gate!** All of `BIP018` (including `P0`) begins strictly **after `BIP014` completes**, keeping CI focused on JDK 21 during `BIP014` and letting `AsmBytecodeBackend` (JDK 21) and `ClassFileBytecodeBackend` (JDK 24+) both lower `BIP014`'s finalized, self-contained `HirModule`/`MirModule`.
+* **`BIP014` (Compiler Optimization Passes — `BIP018-D4`):** **Sequencing gate.** `BIP018-P1` onward begins strictly **after `BIP014` completes**, so that `AsmBytecodeBackend` (JDK 21) and `ClassFileBytecodeBackend` (JDK 24+) both lower `BIP014`'s finalized, self-contained `HirModule`/`MirModule`. `BIP018-P0` is exempt and may land at any time: it adds CI legs and axioms but touches no IR, and a JDK 25/27 leg catches drift in what the bytecode analyzer infers as soon as it appears (since JDK 22, `Throwable` constructors read a Flight Recorder field, which made every exception constructor `io` on newer JDKs until curated axioms restored the JDK 21 effects).
 * **`BIP015` (Down with the Ants):** Complementary dependency reduction. Together, `BIP015` (if a non-ANTLR parser is chosen) + `BIP018` (`babble-25`+ dropping ASM via `JEP 484`) reduce Babble's entire compiler, formatter, REPL, and runtime to **zero third-party dependencies**.
 * **`BIP007` §10 & `BIP016`/`BIP017` (Verified Parallelism):** `Babble 25` (`ScopedValue`) + `Babble 28` (`StructuredTaskScope`) transparently back `BIP007` §10's `std/` parallel combinators via `PlatformRuntime`, with virtual-thread executor fallback on `Babble 21`.
 * **`BIP002` (`record`), `BIP011` (`T` vs. `T?`) & `BIP020` (`BIP020-D18`):** Because `BIP020-I1` (`BIP020-D18`, superseding `BIP018-D8`) already removed any runtime base class from compiled classes and records (`extends java.lang.Object`, with `InterpretedInstance` interpreter-only), compiled `record`s are already ready for zero-source-change Valhalla `value class` lowering (`JEP 401`/`539`) and future null-restricted storage (`JEP draft 8316779`).
@@ -600,11 +601,11 @@ All new syntax introduced by `BIP018` preserves Babble's `BIP012` (`RM006`) gram
 
 ## 10. Phased Rollout Plan (`BIP018-P0`–`P4`)
 
-Per `BIP018-D4`, **`BIP018` begins strictly after `BIP014` completes**. Each phase is independently verifiable, keeps `babble-21` 100% green, and passes full dual-mode parity:
+Per `BIP018-D4`, **`BIP018-P1` onward begins strictly after `BIP014` completes**, while `BIP018-P0` may land at any time. Each phase is independently verifiable, keeps `babble-21` 100% green, and passes full dual-mode parity:
 
-* **`BIP018-P0` — Multi-JDK CI Matrix & Interop Profiles *(First PR after `BIP014`)*:**
+* **`BIP018-P0` — Multi-JDK CI Matrix & Interop Profiles *(any time, `BIP018-D4`)*:**
   * Add JDK 25 LTS and JDK 27 GA legs to [`.github/workflows/maven.yml`](../../.github/workflows/maven.yml) running with `--illegal-final-field-mutation=deny` on JDK 26+ (`JEP 500`).
-  * Add `java.lang.IO` (`JEP 512`), `java.util.stream.Gatherer`/`Gatherers` (`JEP 485`), and `java.lang.foreign.*` (`JEP 454`) entries to `HostEffects` and `JavaNullability`.
+  * Add `java.lang.IO` (`JEP 512`), `java.util.stream.Gatherer`/`Gatherers` (`JEP 485`), and `java.lang.foreign.*` (`JEP 454`) axioms to `src/main/java/org/babblelang/axioms/` (`curated.ba`, where every built-in assumption about a Java class lives).
   * Document Leyden AOT cache usage (`-XX:AOTCacheOutput=app.aot`) with `babblec` jars on JDK 25+.
 * **`BIP018-P1` — Multi-Module Monorepo Split & SPIs (`BIP018-D1`, `D2` ; `BIP018-D8` superseded by `BIP020-D18`):**
   * Split into `babble-runtime`, `babble-core`, `babble-backend-asm`, `babble-21`, and `babble-tests` with `TargetProfile`, `BytecodeBackend`, `BytecodeInspector`, and `PlatformRuntime` SPIs — **zero behavioral change** on JDK 21 (plain compiled classes without `BabbleInstance` already landed in `BIP020-I1`).
@@ -630,7 +631,7 @@ Per `BIP018-D4`, **`BIP018` begins strictly after `BIP014` completes**. Each pha
 | `BIP018-Q1` | **`BIP018-D1`** | **Multi-module Maven monorepo with capability SPIs (`Option B`):** Split into `babble-runtime`, `babble-core` (`--release 21`), sparse JDK overlay modules (`babble-backend-asm`, `babble-backend-classfile`, `babble-runtime-jdk25`, `babble-runtime-jdk28`, profile-gated `babble-runtime-valhalla` / `babble-backend-valhalla`), and thin per-edition distributions (`babble-21`, `babble-25`, `babble-28`, `babble-28-preview`). Gives `babble-25`/`28` zero ASM dependency and isolates `--enable-preview` cleanly; a universal MRJAR assembly (`Option C`) remains a purely additive option later if desired. |
 | `BIP018-Q2` | **`BIP018-D2`** | **Edition-qualified artifact IDs with shared SemVer:** `org.babblelang:babble-21:<ver>`, `babble-25:<ver>`, `babble-28:<ver>`, `babble-28-preview:<ver>`. Builds cleanly in a single Maven reactor, preserves standard SemVer ordering, and keeps per-edition POM dependencies exact. |
 | `BIP018-Q3` | **`BIP018-D3`** | **Active tiers only with sparse floor inheritance:** Actively build, test, and publish Baseline LTS (`Babble 21`), Modern LTS (`Babble 25`), and Current Frontier / EA (`Babble 27` / `28` + `28-preview`). EOL non-LTS editions (`22`, `23`, `24`, `26`) require no separate releases or CI legs; overlays exist only for JDKs that introduce real capabilities (`21`, `22` `std/foreign`, `24` Class-File API, `25` `ScopedValue`, `28` `StructuredTaskScope`, `28-preview` Valhalla). |
-| `BIP018-Q4` | **`BIP018-D4`** | **Sequenced strictly after `BIP014` completes:** Bundle all of `BIP018` (including `BIP018-P0` CI matrix & host profiles) strictly after `BIP014` finishes, keeping CI on JDK 21 during `BIP014` and ensuring `ClassFileBytecodeBackend` lowers `BIP014`'s finalized `HirModule`/`MirModule` directly. |
+| `BIP018-Q4` | **`BIP018-D4`** | **Sequenced after `BIP014` completes, except `BIP018-P0`:** `BIP018-P1` onward starts strictly after `BIP014` finishes, so that `ClassFileBytecodeBackend` lowers `BIP014`'s finalized `HirModule`/`MirModule` directly. `BIP018-P0` (the JDK 25/27 CI legs and axioms for new JDK APIs) may land at any time, since it touches no IR; amended 2026-11-25 after JDK 22+ `Throwable` constructors silently changed what the bytecode analyzer inferred. |
 | `BIP018-Q5` | **`BIP018-D5`** | **Track upstream OpenJDK LTS End-of-Life:** Keep each Baseline LTS edition supported for as long as its upstream OpenJDK / Eclipse Temurin LTS update train (`jdk21u`, `jdk25u`, `jdk29u`, …) remains actively maintained, retiring `Babble N` (and legacy-only backends such as `babble-backend-asm` for `Babble 21`) once JDK $N$ reaches upstream EOL. |
 | `BIP018-Q6` | **`BIP018-D6`** | **Support `babblec -target N` cross-targeting:** Newer editions (e.g., `babble-25`) support `-target 21` (emitting `V21` bytecode via `java.lang.classfile` with zero ASM, bundling only `babble-runtime`, and rejecting `22+`/`25+`-only target-gated stdlib calls statically at compile time). |
 | `BIP018-Q7` | **`BIP018-D7`** | **Include polyfilled core grammar additions + target-gated `std/foreign` in `BIP018`:** Design predicate-free pure-`SLL` **`lazy def`** (pure `@HERMETIC @DETERMINISTIC`, deeply immutable, top-level/class-object/local blocks; DCL holder on 21 → `LazyConstant` once final) and **`scoped def` + `with ... then (...)`** (deeply immutable/`frozen`-only, mandatory default or nullable `T?` preventing `NoSuchElementException`, reads tracked via existing `BIP016` `volatile` effect; `ThreadLocal` stack on 21 → `ScopedValue` on 25+) with full `Babble 21` polyfills via `PlatformRuntime`, plus target-gated **`std/foreign`** (`-target 22+`, `@BORROWED`/`unique` lifetime-checked `Arena`/`MemorySegment`). `StructuredTaskScope` (JDK 28+) backs `BIP007` §10's `std/` parallel combinators transparently with no new `parallel` block syntax in `BIP018`. |
