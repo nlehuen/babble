@@ -9,8 +9,11 @@ import java.net.URISyntaxException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.stream.Stream;
 
 /**
@@ -26,11 +29,16 @@ import java.util.stream.Stream;
  *   <li>{@code ScopeAnalysis} isolation: zero {@code ScopeAnalysis} references in {@code ir}
  *       (outside {@code HirBuilder}), {@code opt}, or {@code compiler} (outside
  *       {@code BabbleCompiler}).</li>
- *   <li>File-size ceilings (≤ {@value #MAX_REFACTORED_LOC} LOC) on refactored compiler classes.</li>
+ *   <li>Universal hard physical-LOC ceiling (≤ {@value #HARD_MAX_LOC} LOC) across all production
+ *       source files under {@code src/main}, with a shrinking grandfather ratchet for pre-existing
+ *       oversized files.</li>
  * </ol>
  */
 public class ArchitectureBoundaryTestCase {
-    static final int MAX_REFACTORED_LOC = 2_000;
+    static final int HARD_MAX_LOC = 2_000;
+    static final int MAX_GRANDFATHERED_SLACK = 50;
+
+    private static final Set<String> SOURCE_EXTENSIONS = Set.of(".java", ".g4", ".ba");
 
     private static final Set<String> ANTLR_FREE_ANALYSIS_CORES = Set.of(
             "org/babblelang/analysis/CompilationTarget",
@@ -53,14 +61,19 @@ public class ArchitectureBoundaryTestCase {
     );
 
     /**
-     * Refactored compiler classes that must remain at or below {@value #MAX_REFACTORED_LOC} LOC.
-     * Extended as each {@code BIP027} phase lands ({@code CallSolver} in P1, {@code HirEmitter}
-     * in P2, {@code EffectChecker} in P3).
+     * Temporary high-water-mark ceilings for pre-existing {@code src/main} files above
+     * {@value #HARD_MAX_LOC} physical LOC. Periodic refactorings may only lower or remove entries;
+     * once a file drops to ≤ {@value #HARD_MAX_LOC} LOC, {@link #productionSourcesRespectHardSizeCeiling()}
+     * fails until its stale exemption is removed.
      */
-    private static final List<String> SIZE_CAPPED_SOURCES = List.of(
-            "src/main/java/org/babblelang/analysis/CallSolver.java",
-            "src/main/java/org/babblelang/compiler/HirEmitter.java",
-            "src/main/java/org/babblelang/analysis/EffectChecker.java"
+    private static final Map<String, Integer> GRANDFATHERED_CEILINGS = Map.of(
+            "src/main/java/org/babblelang/analysis/TypeChecker.java", 3_969,
+            "src/main/java/org/babblelang/ir/mir/MirLowerer.java", 3_943,
+            "src/main/java/org/babblelang/wasm/WasmFuncEmitter.java", 2_414,
+            "src/main/java/org/babblelang/ir/hir/HirBuilder.java", 2_335,
+            "src/main/java/org/babblelang/analysis/EffectBodyWalker.java", 2_083,
+            "src/main/java/org/babblelang/compiler/MirEmitter.java", 2_053,
+            "src/main/java/org/babblelang/analysis/LoweringAnalyzer.java", 2_040
     );
 
     private static Path classesDirectory() throws URISyntaxException {
@@ -181,18 +194,62 @@ public class ArchitectureBoundaryTestCase {
         Assertions.assertEquals(List.of(), violations);
     }
 
-    @Test
-    public void refactoredCompilerClassesRespectSizeCeiling() throws Exception {
-        List<String> violations = new ArrayList<>();
-        for (String relativePath : SIZE_CAPPED_SOURCES) {
-            Path path = Path.of(relativePath);
-            Assertions.assertTrue(Files.isRegularFile(path), "Missing source file : " + relativePath);
-            long lines;
-            try (Stream<String> stream = Files.lines(path)) {
-                lines = stream.count();
+    private static boolean isProductionSource(Path path) {
+        String name = path.getFileName().toString();
+        for (String ext : SOURCE_EXTENSIONS) {
+            if (name.endsWith(ext)) {
+                return true;
             }
-            if (lines > MAX_REFACTORED_LOC) {
-                violations.add(relativePath + " has " + lines + " LOC (ceiling is " + MAX_REFACTORED_LOC + ")");
+        }
+        return false;
+    }
+
+    @Test
+    public void productionSourcesRespectHardSizeCeiling() throws Exception {
+        Path srcMain = Path.of("src/main");
+        Assertions.assertTrue(Files.isDirectory(srcMain), "Missing source root : " + srcMain);
+
+        Map<String, Long> lineCounts = new TreeMap<>();
+        try (Stream<Path> files = Files.walk(srcMain)) {
+            files.filter(Files::isRegularFile)
+                    .filter(ArchitectureBoundaryTestCase::isProductionSource)
+                    .sorted(Comparator.comparing(Path::toString))
+                    .forEach(path -> {
+                        String rel = path.toString().replace('\\', '/');
+                        try (Stream<String> stream = Files.lines(path)) {
+                            lineCounts.put(rel, stream.count());
+                        } catch (Exception e) {
+                            throw new RuntimeException("Failed to read " + rel, e);
+                        }
+                    });
+        }
+        Assertions.assertFalse(lineCounts.isEmpty());
+
+        List<String> violations = new ArrayList<>();
+        for (Map.Entry<String, Long> entry : lineCounts.entrySet()) {
+            String rel = entry.getKey();
+            long lines = entry.getValue();
+            int ceiling = GRANDFATHERED_CEILINGS.getOrDefault(rel, HARD_MAX_LOC);
+            if (lines > ceiling) {
+                String label = GRANDFATHERED_CEILINGS.containsKey(rel) ? "grandfathered ceiling" : "hard limit";
+                violations.add(rel + " has " + lines + " LOC (" + label + " is " + ceiling + ")");
+            }
+        }
+        for (Map.Entry<String, Integer> entry : new TreeMap<>(GRANDFATHERED_CEILINGS).entrySet()) {
+            String rel = entry.getKey();
+            int ceiling = entry.getValue();
+            Long lines = lineCounts.get(rel);
+            if (lines == null) {
+                violations.add("Stale GRANDFATHERED_CEILINGS entry (missing file) : " + rel);
+            } else if (lines <= HARD_MAX_LOC) {
+                violations.add("Stale GRANDFATHERED_CEILINGS entry (" + lines + " <= " + HARD_MAX_LOC
+                        + " LOC, remove exemption) : " + rel);
+            } else if (ceiling <= HARD_MAX_LOC) {
+                violations.add("Invalid GRANDFATHERED_CEILINGS entry (ceiling " + ceiling
+                        + " <= " + HARD_MAX_LOC + ") : " + rel);
+            } else if (ceiling - lines > MAX_GRANDFATHERED_SLACK) {
+                violations.add("Loose GRANDFATHERED_CEILINGS entry (" + lines + " LOC vs ceiling " + ceiling
+                        + ", slack > " + MAX_GRANDFATHERED_SLACK + "; tighten ceiling to " + lines + ") : " + rel);
             }
         }
         Assertions.assertEquals(List.of(), violations);
