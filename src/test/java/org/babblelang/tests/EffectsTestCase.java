@@ -41,6 +41,15 @@ public class EffectsTestCase {
 
     // ---------------------------------------------------------------- Java host fixtures
 
+    public sealed interface SealedExpr permits SealedNum, SealedAdd {
+    }
+
+    public record SealedNum(int value) implements SealedExpr {
+    }
+
+    public record SealedAdd(int left, int right) implements SealedExpr {
+    }
+
     public static class HostFixtures {
         public static int mutableStatic = 1;
         public static final int FINAL_STATIC = 42;
@@ -964,5 +973,87 @@ public class EffectsTestCase {
                     def bad = fn (): int -> ( this.s )
                 )
                 """, "violates deterministic guarantee");
+    }
+
+    @Test
+    public void testBip038MatchEffectsOwnershipAndTermination() {
+        // 1. Recursive ADT evaluator and recursive integer match are certified @TERMINATING (pure nothrow)
+        String adtSrc = """
+                def Num = record (n: int) ()
+                def Add = record (l: Num | Add, r: Num | Add) ()
+                def eval = fn (e: Num | Add): int -> (
+                    match e
+                    case is Num(def n) then (n)
+                    case is Add(def l, def r) then (recurse(l) + recurse(r))
+                )
+                def sumDown = fn (n: int, acc: int): int -> (
+                    match n
+                    case <= 0 then (acc)
+                    else (recurse(n - 1, acc + n))
+                )
+                assert(eval(Add(Num(2), Num(3))) == 5 and sumDown(10, 0) == 55)
+                """;
+        BabbleParser adtParser = new BabbleParser(new CommonTokenStream(new BabbleLexer(CharStreams.fromString(adtSrc))));
+        adtParser.setErrorHandler(new BailErrorStrategy());
+        BabbleParser.FileContext adtFile = adtParser.file();
+        ScopeAnalysis adtAnalysis = BlockScopes.analyze(adtFile);
+        Assertions.assertTrue(adtAnalysis.typeDiagnostics().isEmpty(), () -> adtAnalysis.typeDiagnostics().toString());
+        BabbleParser.FunctionLiteralContext evalFn = (BabbleParser.FunctionLiteralContext)
+                ((BabbleParser.DefExpressionContext) adtFile.expression(2)).value;
+        BabbleParser.FunctionLiteralContext sumDownFn = (BabbleParser.FunctionLiteralContext)
+                ((BabbleParser.DefExpressionContext) adtFile.expression(3)).value;
+        Assertions.assertTrue(adtAnalysis.effects().callableEffects(evalFn).terminating(),
+                "Recursive ADT match eval should be certified @TERMINATING");
+        Assertions.assertTrue(adtAnalysis.effects().callableEffects(evalFn).isPure()
+                        && adtAnalysis.effects().callableEffects(evalFn).isNothrow(),
+                "Recursive ADT match eval should be pure nothrow");
+        Assertions.assertTrue(adtAnalysis.effects().callableEffects(sumDownFn).terminating(),
+                "Recursive integer match sumDown should be certified @TERMINATING");
+
+        // 2. Discarded pure match emits Unused pure expression diagnostic
+        assertHasError("""
+                def f = fn (b: bool): int -> (
+                    match b
+                    case true then (1)
+                    case false then (2)
+                    0
+                )
+                """, "Unused pure expression");
+
+        // 3. Borrowing `match x` keeps `x` live, while `match move(x)` consumes `x` and transfers @UNIQUE
+        assertClean("""
+                def take = fn (unique xs: list of int): int -> ( xs.size() )
+                def okBorrow = fn (): int -> (
+                    def xs = list(1, 2)
+                    def h = match xs case is list(def a, ...) then (a) else (0)
+                    h + take(move(xs))
+                )
+                def okConsume = fn (b: bool): int -> (
+                    def xs = list(1, 2, 3)
+                    match move(xs)
+                    case def ys if b then (take(move(ys)))
+                    else def zs then (take(move(zs)))
+                )
+                assert(okBorrow() == 3 and okConsume(true) == 3 and okConsume(false) == 3)
+                """);
+        assertHasError("""
+                def take = fn (unique xs: list of int): int -> ( xs.size() )
+                def badAfterMove = fn (): int -> (
+                    def xs = list(1, 2)
+                    def n = match move(xs) case def ys if true then (ys.size()) else (0)
+                    n + take(move(xs))
+                )
+                """, "Use of moved variable xs");
+
+        // 4. Exhaustive match over external Java enum without `else` is NOT `nothrow` (runtime defense-in-depth)
+        assertHasError("""
+                def AM = java.nio.file.AccessMode
+                def code = fn nothrow (m: java.nio.file.AccessMode): int -> (
+                    match m
+                    case AM.READ then (1)
+                    case AM.WRITE then (2)
+                    case AM.EXECUTE then (4)
+                )
+                """, "violates nothrow guarantee");
     }
 }
