@@ -2,10 +2,10 @@
     Baby Triceratops in Babble, rendered with the fable ray tracer.
 
     Approximates examples/raytracer-fable/triceratops.jpg at 160x160 using genuine 3D
-    primitives (Sphere, rotated Ellipsoid, tapered RoundCone, 3D Bezier chains, and
-    Fourier-contoured 3D SculptedLobe cushions) accelerated by BVHNode and shaded with
-    inset 3D outline shells, directional studio cel lighting, and Monte Carlo ambient
-    occlusion, without modifying any of the existing fable renderer modules.
+    primitives (Sphere, oriented Ellipsoid, tapered RoundCone, quadratic 3D Bezier
+    tubes, and Fourier-contoured 3D SculptedLobe cushions) accelerated by BVHNode and
+    shaded with inset 3D outline shells, directional Toon cel lighting, and Emissive
+    ink details over a SolidBackground white studio backdrop.
 
     Run from the root of the repository (after "mvn package") :
         java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/triceratops.ba [output.png]
@@ -36,21 +36,23 @@ def hittable = import("hittable.ba")
 def Hittable = hittable.Hittable
 def HitRecord = hittable.HitRecord
 def Sphere = import("sphere.ba").Sphere
+def Ellipsoid = import("ellipsoid.ba").Ellipsoid
+def roundCone = import("round_cone.ba")
+def RoundCone = roundCone.RoundCone
+def addQuadraticBezierTube = roundCone.addQuadraticBezierTube
 def HittableList = import("hittable_list.ba").HittableList
 def BVHNode = import("bvh.ba").BVHNode
 def material = import("material.ba")
 def Material = material.Material
-def Scatter = material.Scatter
-def Camera = import("camera.ba").Camera
+def Emissive = material.Emissive
+def Toon = material.Toon
+def cam = import("camera.ba")
+def Camera = cam.Camera
+def SolidBackground = cam.SolidBackground
 
 ;; ---------------------------------------------------------------- Colors (sRGB -> gamma-2 linear)
 
-def srgb = fn (r: int, g: int, b: int): Vec3 -> (
-    def rf: double = r / 255.0
-    def gf: double = g / 255.0
-    def bf: double = b / 255.0
-    Vec3(rf * rf, gf * gf, bf * bf)
-)
+def srgb = Vec3.srgb
 
 def colOutline: Vec3 = srgb(58, 18, 80)
 def colBody: Vec3 = srgb(164, 68, 135)
@@ -72,261 +74,7 @@ def colPacifierDark: Vec3 = srgb(104, 182, 24)
 def colWhite: Vec3 = Vec3(1.0, 1.0, 1.0)
 def colEyeDark: Vec3 = srgb(54, 24, 90)
 
-;; ---------------------------------------------------------------- Studio backdrop & materials
-
-;; Redirects escaped rays straight down (y = -1) from outside the scene so camera.ba's sky
-;; evaluates to a = 0 -> exact pure white (1, 1, 1), without modifying camera.ba.
-def StudioLight = class () implements Material (
-    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
-        Scatter(Vec3(1.0, 1.0, 1.0), Ray(Vec3(0.0, -10000.0, 0.0), Vec3(0.0, -1.0, 0.0)))
-    )
-)
-
-def StudioWorld = class (def scene: Hittable, def backdrop: Material) implements Hittable (
-    private def bbox: AABB = AABB(-2000.0, 2000.0, -2000.0, 2000.0, -2000.0, 2000.0)
-
-    def boundingBox = fn (): AABB -> (this.bbox)
-
-    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
-        if r.origin.y < -5000.0 then (return null)
-        def rec: HitRecord? = this.scene.hit(r, tmin, tmax)
-        if rec <> null then (return rec)
-        HitRecord(r, r.at(1000.0), 1000.0, -r.direction.unit(), this.backdrop)
-    )
-)
-
-;; 3D cartoon material : 2-band directional studio cel shading and probabilistic indirect AO.
-def ToonMaterial = class (
-    def baseColor: Vec3,
-    def shadowColor: Vec3,
-    def lightDir: Vec3,
-    def aoProb: double = 0.08,
-    def rampLow: double = -0.25,
-    def rampHigh: double = 0.70
-) implements Material (
-    private def ldir: Vec3 = this.lightDir.unit()
-    private def invSpan: double = 1.0 / Math.max(0.01, this.rampHigh - this.rampLow)
-
-    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
-        def isPrimary: bool = rIn.origin.z > 5.0
-        def ndotl: double = rec.normal.dot(this.ldir)
-        def t: double = Math.max(0.0, Math.min(1.0, (ndotl - this.rampLow) * this.invSpan))
-        def shaded: Vec3 = this.shadowColor * (1.0 - t) + this.baseColor * t
-
-        if isPrimary and rng.nextDouble() < this.aoProb then (
-            var direction: Vec3 = rec.normal + Vec3.randomUnit(rng)
-            if direction.nearZero() then (direction = rec.normal)
-            return Scatter(shaded, Ray(rec.p, direction))
-        )
-        Scatter(shaded, Ray(Vec3(0.0, -10000.0, 0.0), Vec3(0.0, -1.0, 0.0)))
-    )
-)
-
-;; Flat ink/highlight material for outline shells and crisp facial details.
-def FlatMaterial = class (def color: Vec3) implements Material (
-    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
-        Scatter(this.color, Ray(Vec3(0.0, -10000.0, 0.0), Vec3(0.0, -1.0, 0.0)))
-    )
-)
-
-;; ---------------------------------------------------------------- 3D Analytic Primitives
-
-;; Oriented 3D ellipsoid with exact tight AABB and quadratic ray intersection.
-def Ellipsoid = class (
-    def center: Vec3,
-    def u: Vec3,
-    def v: Vec3,
-    def w: Vec3,
-    def rx: double,
-    def ry: double,
-    def rz: double,
-    def material: Material
-) implements Hittable (
-    private def invRx: double = 1.0 / this.rx
-    private def invRy: double = 1.0 / this.ry
-    private def invRz: double = 1.0 / this.rz
-
-    private def bbox: AABB = (
-        def ux: double = this.u.x * this.rx
-        def vx: double = this.v.x * this.ry
-        def wx: double = this.w.x * this.rz
-        def ex: double = Math.sqrt(ux * ux + vx * vx + wx * wx)
-
-        def uy: double = this.u.y * this.rx
-        def vy: double = this.v.y * this.ry
-        def wy: double = this.w.y * this.rz
-        def ey: double = Math.sqrt(uy * uy + vy * vy + wy * wy)
-
-        def uz: double = this.u.z * this.rx
-        def vz: double = this.v.z * this.ry
-        def wz: double = this.w.z * this.rz
-        def ez: double = Math.sqrt(uz * uz + vz * vz + wz * wz)
-
-        AABB(
-            this.center.x - ex, this.center.x + ex,
-            this.center.y - ey, this.center.y + ey,
-            this.center.z - ez, this.center.z + ez
-        )
-    )
-
-    def boundingBox = fn (): AABB -> (this.bbox)
-
-    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
-        def oc: Vec3 = r.origin - this.center
-        def ox: double = oc.dot(this.u) * this.invRx
-        def oy: double = oc.dot(this.v) * this.invRy
-        def oz: double = oc.dot(this.w) * this.invRz
-
-        def dx: double = r.direction.dot(this.u) * this.invRx
-        def dy: double = r.direction.dot(this.v) * this.invRy
-        def dz: double = r.direction.dot(this.w) * this.invRz
-
-        def a: double = dx * dx + dy * dy + dz * dz
-        def h: double = -(ox * dx + oy * dy + oz * dz)
-        def c: double = ox * ox + oy * oy + oz * oz - 1.0
-
-        def disc: double = h * h - a * c
-        if disc < 0.0 then (return null)
-
-        def sqrtd: double = Math.sqrt(disc)
-        var root: double = (h - sqrtd) / a
-        if root <= tmin or tmax <= root then (
-            root = (h + sqrtd) / a
-            if root <= tmin or tmax <= root then (return null)
-        )
-
-        def lx: double = ox + root * dx
-        def ly: double = oy + root * dy
-        def lz: double = oz + root * dz
-
-        def nx: double = lx * this.invRx
-        def ny: double = ly * this.invRy
-        def nz: double = lz * this.invRz
-        def outward: Vec3 = (this.u * nx + this.v * ny + this.w * nz).unit()
-
-        HitRecord(r, r.at(root), root, outward, this.material)
-    )
-) static (
-    def rotatedZ = fn (center: Vec3, rx: double, ry: double, rz: double, angleDeg: double, mat: Material): Ellipsoid -> (
-        def rad: double = degreesToRadians(angleDeg)
-        def ca: double = Math.cos(rad)
-        def sa: double = Math.sin(rad)
-        this(center, Vec3(ca, sa, 0.0), Vec3(-sa, ca, 0.0), Vec3(0.0, 0.0, 1.0), rx, ry, rz, mat)
-    )
-)
-
-;; Analytic sphere-swept tapered capsule (rounded cone) from pa (ra) to pb (rb).
-def RoundCone = class (
-    def pa: Vec3,
-    def pb: Vec3,
-    def ra: double,
-    def rb: double,
-    def material: Material
-) implements Hittable (
-    private def ba: Vec3 = this.pb - this.pa
-    private def len: double = this.ba.length()
-    private def ax: Vec3 = if this.len > 0.000001 then (this.ba / this.len) else (Vec3(0.0, 1.0, 0.0))
-    private def sinA: double = if this.len > 0.000001 then (
-        Math.max(-0.999, Math.min(0.999, (this.ra - this.rb) / this.len))
-    ) else (0.0)
-    private def cosA2: double = 1.0 - this.sinA * this.sinA
-    private def hMin: double = this.ra * this.sinA
-    private def hMax: double = this.len + this.rb * this.sinA
-
-    private def bbox: AABB = AABB(
-        Math.min(this.pa.x - this.ra, this.pb.x - this.rb),
-        Math.max(this.pa.x + this.ra, this.pb.x + this.rb),
-        Math.min(this.pa.y - this.ra, this.pb.y - this.rb),
-        Math.max(this.pa.y + this.ra, this.pb.y + this.rb),
-        Math.min(this.pa.z - this.ra, this.pb.z - this.rb),
-        Math.max(this.pa.z + this.ra, this.pb.z + this.rb)
-    )
-
-    def boundingBox = fn (): AABB -> (this.bbox)
-
-    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
-        def dirLen: double = r.direction.length()
-        def invDirLen: double = 1.0 / dirLen
-        def rd: Vec3 = r.direction * invDirLen
-        def tminL: double = tmin * dirLen
-        var bestT: double = tmax * dirLen
-        var bestNormal: Vec3 = Vec3(0.0, 1.0, 0.0)
-        var found: bool = false
-
-        def oa: Vec3 = r.origin - this.pa
-
-        ;; 1. Tapered cone lateral surface
-        if this.len > 0.000001 and this.cosA2 > 0.000001 then (
-            def h0: double = oa.dot(this.ax)
-            def hd: double = rd.dot(this.ax)
-            def qa: double = this.cosA2 - hd * hd
-            def qb: double = this.cosA2 * oa.dot(rd) - h0 * hd + this.ra * this.sinA * hd
-            def qc: double = this.cosA2 * oa.dot(oa) - h0 * h0 + 2.0 * this.ra * this.sinA * h0 - this.ra * this.ra
-
-            if Math.abs(qa) > 0.00000001 then (
-                def disc: double = qb * qb - qa * qc
-                if disc >= 0.0 then (
-                    def sq: double = Math.sqrt(disc)
-                    def t1: double = (-qb - sq) / qa
-                    if t1 > tminL and t1 < bestT then (
-                        def hh1: double = h0 + t1 * hd
-                        if hh1 >= this.hMin and hh1 <= this.hMax then (
-                            bestT = t1
-                            def p1: Vec3 = oa + rd * t1
-                            bestNormal = (p1 * this.cosA2 - this.ax * (hh1 - this.ra * this.sinA)).unit()
-                            found = true
-                        )
-                    )
-                    def t2: double = (-qb + sq) / qa
-                    if t2 > tminL and t2 < bestT then (
-                        def hh2: double = h0 + t2 * hd
-                        if hh2 >= this.hMin and hh2 <= this.hMax then (
-                            bestT = t2
-                            def p2: Vec3 = oa + rd * t2
-                            bestNormal = (p2 * this.cosA2 - this.ax * (hh2 - this.ra * this.sinA)).unit()
-                            found = true
-                        )
-                    )
-                )
-            )
-        )
-
-        ;; 2. Sphere cap at pa
-        def ba1: double = oa.dot(rd)
-        def ca1: double = oa.dot(oa) - this.ra * this.ra
-        def da1: double = ba1 * ba1 - ca1
-        if da1 >= 0.0 then (
-            def sqa: double = Math.sqrt(da1)
-            var ta: double = -ba1 - sqa
-            if ta <= tminL or ta >= bestT then (ta = -ba1 + sqa)
-            if ta > tminL and ta < bestT then (
-                bestT = ta
-                bestNormal = (oa + rd * ta) / this.ra
-                found = true
-            )
-        )
-
-        ;; 3. Sphere cap at pb
-        def ob: Vec3 = r.origin - this.pb
-        def bb1: double = ob.dot(rd)
-        def cb1: double = ob.dot(ob) - this.rb * this.rb
-        def db1: double = bb1 * bb1 - cb1
-        if db1 >= 0.0 then (
-            def sqb: double = Math.sqrt(db1)
-            var tb: double = -bb1 - sqb
-            if tb <= tminL or tb >= bestT then (tb = -bb1 + sqb)
-            if tb > tminL and tb < bestT then (
-                bestT = tb
-                bestNormal = (ob + rd * tb) / this.rb
-                found = true
-            )
-        )
-
-        if not found then (return null)
-        def worldT: double = bestT * invDirLen
-        HitRecord(r, r.at(worldT), worldT, bestNormal, this.material)
-    )
-)
+;; ---------------------------------------------------------------- Scene-Specific 3D Cushion Primitive
 
 ;; 3D Fourier-contoured star-convex cushion :
 ;;   f(x, y, z) = (r / R(theta))^2 + ((z - cz) / rz)^2 - 1 <= 0
@@ -343,7 +91,7 @@ def SculptedLobe = class (
     def inkMat: Material,
     def border: double,
     def rimWidth: double = 0.0,
-    def rimMat: Material = FlatMaterial(colOutline),
+    def rimMat: Material = Emissive(colOutline),
     def openTop: double = 10.0,
     def openRight: double = 10.0
 ) implements Hittable (
@@ -521,27 +269,27 @@ def lightFrontRightLeg: Vec3 = Vec3(0.68, 0.25, 0.69)
 def lightHorn: Vec3 = Vec3(-0.55, 0.50, 0.67)
 def lightFrill: Vec3 = Vec3(-0.15, 0.40, 0.90)
 
-def matBody = ToonMaterial(colBody, srgb(154, 58, 132), lightBody, 0.05, -0.15, 0.55)
-def matBackLeftLeg = ToonMaterial(colBody, colBodyShadow, lightBackLeftLeg, 0.04, 0.22, 0.58)
-def matFrontLeftLeg = ToonMaterial(colBody, colBodyShadow, lightFrontLeftLeg, 0.04, 0.02, 0.54)
-def matFrontRightLeg = ToonMaterial(colBody, colBodyShadow, lightFrontRightLeg, 0.04, 0.22, 0.58)
-def matHead = ToonMaterial(colBody, colBodyShadow, lightHead, 0.04, 0.25, 0.58)
-def matBodyDark = ToonMaterial(colBodyDeep, colBodyDeep, lightBody, 0.08)
-def matFrill = ToonMaterial(colFrill, colFrillShadow, lightFrill, 0.04)
-def matFrillRim = FlatMaterial(colFrillRim)
-def matFrillCrease = FlatMaterial(srgb(156, 86, 178))
-def matSoftCrease = FlatMaterial(srgb(96, 30, 102))
-def matBelly = ToonMaterial(colBelly, colBellyShadow, lightBelly, 0.03, 0.16, 0.52)
-def matBellyShadow = FlatMaterial(colBellyShadow)
-def matLowerBelly = ToonMaterial(colBelly, colBellyShadow, lightLowerBelly, 0.03, 0.22, 0.62)
-def matHorn = ToonMaterial(colHorn, colHornShadow, lightHorn, 0.04, 0.22, 0.62)
-def matCream = ToonMaterial(colCream, colCreamShadow, lightHorn, 0.05)
-def matPacifier = ToonMaterial(colPacifier, colPacifierShadow, lightHorn, 0.05)
-def matPacifierDark = FlatMaterial(colPacifierDark)
-def matCheek = FlatMaterial(colCheek)
-def matWhite = FlatMaterial(colWhite)
-def matEyeDark = FlatMaterial(colEyeDark)
-def matInk = FlatMaterial(colOutline)
+def matBody = Toon(colBody, srgb(154, 58, 132), lightBody, 0.05, -0.15, 0.55)
+def matBackLeftLeg = Toon(colBody, colBodyShadow, lightBackLeftLeg, 0.04, 0.22, 0.58)
+def matFrontLeftLeg = Toon(colBody, colBodyShadow, lightFrontLeftLeg, 0.04, 0.02, 0.54)
+def matFrontRightLeg = Toon(colBody, colBodyShadow, lightFrontRightLeg, 0.04, 0.22, 0.58)
+def matHead = Toon(colBody, colBodyShadow, lightHead, 0.04, 0.25, 0.58)
+def matBodyDark = Toon(colBodyDeep, colBodyDeep, lightBody, 0.08)
+def matFrill = Toon(colFrill, colFrillShadow, lightFrill, 0.04)
+def matFrillRim = Emissive(colFrillRim)
+def matFrillCrease = Emissive(srgb(156, 86, 178))
+def matSoftCrease = Emissive(srgb(96, 30, 102))
+def matBelly = Toon(colBelly, colBellyShadow, lightBelly, 0.03, 0.16, 0.52)
+def matBellyShadow = Emissive(colBellyShadow)
+def matLowerBelly = Toon(colBelly, colBellyShadow, lightLowerBelly, 0.03, 0.22, 0.62)
+def matHorn = Toon(colHorn, colHornShadow, lightHorn, 0.04, 0.22, 0.62)
+def matCream = Toon(colCream, colCreamShadow, lightHorn, 0.05)
+def matPacifier = Toon(colPacifier, colPacifierShadow, lightHorn, 0.05)
+def matPacifierDark = Emissive(colPacifierDark)
+def matCheek = Emissive(colCheek)
+def matWhite = Emissive(colWhite)
+def matEyeDark = Emissive(colEyeDark)
+def matInk = Emissive(colOutline)
 
 def world = HittableList()
 
@@ -586,22 +334,27 @@ def addBezier = fn io (
     x2: double, y2: double, z2: double, r2: double,
     segs: int, shared mat: Material, border: double, zBack: double = 0.04
 ): null -> (
-    var i: int = 0
-    while i < segs then (
-        def t0: double = i / double(segs)
-        def t1: double = (i + 1) / double(segs)
-        def u0: double = 1.0 - t0
-        def u1: double = 1.0 - t1
-        def ax: double = u0 * u0 * x0 + 2.0 * u0 * t0 * x1 + t0 * t0 * x2
-        def ay: double = u0 * u0 * y0 + 2.0 * u0 * t0 * y1 + t0 * t0 * y2
-        def az: double = u0 * u0 * z0 + 2.0 * u0 * t0 * z1 + t0 * t0 * z2
-        def ar: double = u0 * u0 * r0 + 2.0 * u0 * t0 * r1 + t0 * t0 * r2
-        def bx: double = u1 * u1 * x0 + 2.0 * u1 * t1 * x1 + t1 * t1 * x2
-        def by: double = u1 * u1 * y0 + 2.0 * u1 * t1 * y1 + t1 * t1 * y2
-        def bz: double = u1 * u1 * z0 + 2.0 * u1 * t1 * z1 + t1 * t1 * z2
-        def br: double = u1 * u1 * r0 + 2.0 * u1 * t1 * r1 + t1 * t1 * r2
-        addCone(ax, ay, az, bx, by, bz, ar, br, mat, border, zBack)
-        i += 1
+    def ir0: double = Math.max(0.004, r0 - border)
+    def ir1: double = Math.max(0.004, r1 - border)
+    def ir2: double = Math.max(0.004, r2 - border)
+    addQuadraticBezierTube(
+        world,
+        pt(x0, y0, z0), sc(ir0, z0),
+        pt(x1, y1, z1), sc(ir1, z1),
+        pt(x2, y2, z2), sc(ir2, z2),
+        segs, mat
+    )
+    if border > 0.0 then (
+        def zb0: double = z0 - zBack
+        def zb1: double = z1 - zBack
+        def zb2: double = z2 - zBack
+        addQuadraticBezierTube(
+            world,
+            pt(x0, y0, zb0), sc(r0, zb0),
+            pt(x1, y1, zb1), sc(r1, zb1),
+            pt(x2, y2, zb2), sc(r2, zb2),
+            segs, matInk
+        )
     )
     null
 )
@@ -866,7 +619,6 @@ while ri < ringSegs then (
 ;; ---------------------------------------------------------------- Render
 
 def bvh: Hittable = BVHNode.fromList(world)
-def studio: Hittable = StudioWorld(bvh, StudioLight())
 
 def camera = Camera(
     aspectRatio: 1.0,
@@ -878,11 +630,12 @@ def camera = Camera(
     lookAt: Vec3(0.0, 0.0, 0.0),
     vup: Vec3(0.0, 1.0, 0.0),
     defocusAngle: 0.0,
-    focusDist: 10.0
+    focusDist: 10.0,
+    background: SolidBackground(colWhite)
 )
 
 def started = java.lang.System.currentTimeMillis()
-def image = camera.render(studio, threads)
+def image = camera.render(bvh, threads, 42)
 javax.imageio.ImageIO.write(image, "png", java.io.File(output))
 def elapsedMs = java.lang.System.currentTimeMillis() - started
 println("Rendered ", output, " (", camera.imageWidth, "x", camera.imageHeight, ", ", samplesPerPixel, " spp) in ", elapsedMs, " ms")

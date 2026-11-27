@@ -13,6 +13,27 @@ def material = import("material.ba")
 def Material = material.Material
 def Scatter = material.Scatter
 
+;; Background evaluated when a ray misses the scene.
+export def Background = interface (
+    def sample: fn (r: Ray): Vec3
+)
+
+;; Vertical gradient sky (Ray Tracing in One Weekend default).
+export def SkyBackground = class (
+    def bottom: Vec3 = Vec3(1.0, 1.0, 1.0),
+    def top: Vec3 = Vec3(0.5, 0.7, 1.0)
+) implements Background (
+    def sample = fn (r: Ray): Vec3 -> (
+        def a: double = 0.5 * (r.direction.unit().y + 1.0)
+        this.bottom * (1.0 - a) + this.top * a
+    )
+)
+
+;; Uniform solid-color backdrop (e.g. white studio cyclorama or black night sky).
+export def SolidBackground = class (def color: Vec3) implements Background (
+    def sample = fn (r: Ray): Vec3 -> (this.color)
+)
+
 export def Camera = class (
     def aspectRatio: double = 1.0,             ;; ratio of image width over height
     def imageWidth: int = 100,                 ;; rendered image width in pixel count
@@ -23,7 +44,8 @@ export def Camera = class (
     def lookAt: Vec3 = Vec3(0.0, 0.0, -1.0),   ;; point camera is looking at
     def vup: Vec3 = Vec3(0.0, 1.0, 0.0),       ;; camera-relative "up" direction
     def defocusAngle: double = 0.0,            ;; variation angle of rays through each pixel
-    def focusDist: double = 10.0               ;; distance from lookFrom to plane of perfect focus
+    def focusDist: double = 10.0,              ;; distance from lookFrom to plane of perfect focus
+    def background: Background = SkyBackground()
 ) (
     def imageHeight: int
     private def center: Vec3
@@ -91,12 +113,12 @@ export def Camera = class (
         if rec <> null then (
             def s: Scatter? = (rec.material as Material).scatter(r, rec, rng)
             if s == null then (return Vec3(0.0, 0.0, 0.0))
-            return s.attenuation * this.rayColor(s.scattered, depth - 1, world, rng)
+            def next: Ray? = s.scattered
+            if next == null then (return s.emission)
+            return s.emission + s.attenuation * this.rayColor(next, depth - 1, world, rng)
         )
 
-        ;; the sky
-        def a: double = 0.5 * (r.direction.unit().y + 1.0)
-        Vec3(1.0, 1.0, 1.0) * (1.0 - a) + Vec3(0.5, 0.7, 1.0) * a
+        this.background.sample(r)
     )
 
     ;; a linear color component as a gamma 2 byte
@@ -106,15 +128,17 @@ export def Camera = class (
     )
 
     ;; Renders the world to a java.awt.image.BufferedImage. The threads take scanlines
-    ;; from a shared counter until none is left.
-    def render = fn io shared (shared world: Hittable, threads: int = 1): java.awt.image.BufferedImage -> (
+    ;; from a shared counter until none is left. Passing a non-null seed makes output
+    ;; deterministic per scanline regardless of thread count.
+    def render = fn io shared (shared world: Hittable, threads: int = 1, seed: int? = null): java.awt.image.BufferedImage -> (
         def image = java.awt.image.BufferedImage(this.imageWidth, this.imageHeight, java.awt.image.BufferedImage.TYPE_INT_RGB)
         def nextLine = java.util.concurrent.atomic.AtomicInteger()
 
         def renderLines = fn io (): null -> (
-            def rng = java.util.Random()
+            var rng = java.util.Random()
             var j: int = nextLine.getAndIncrement()
             while j < this.imageHeight then (
+                if seed <> null then (rng = java.util.Random(seed + j * 1000003))
                 var i: int = 0
                 while i < this.imageWidth then (
                     var color = Vec3(0.0, 0.0, 0.0)

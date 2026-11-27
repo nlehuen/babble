@@ -58,4 +58,13 @@ export def Vec3 = record (x: double, y: double, z: double) (
         def p: Vec3 = Vec3(randomDouble(rng, -1.0, 1.0), randomDouble(rng, -1.0, 1.0), 0.0)
         if p.lengthSquared() < 1.0 then (p) else (recurse(rng))
     )
+
+    ;; Converts 8-bit sRGB channels [0, 255] into fable's gamma-2 linear color space
+    ;; (matching Camera.toByte's sqrt gamma encoding).
+    def srgb = fn (r: int, g: int, b: int): Vec3 -> (
+        def rf: double = r / 255.0
+        def gf: double = g / 255.0
+        def bf: double = b / 255.0
+        Vec3(rf * rf, gf * gf, bf * bf)
+    )
 )
