@@ -20,7 +20,7 @@ def output: string = if args.size() > 0 then (
 ) else (defaultOutput)
 
 def imageWidth: int = 160
-def samplesPerPixel: int = 32
+def samplesPerPixel: int = 64
 def maxDepth: int = 5
 def threads: int = 16
 
@@ -52,12 +52,12 @@ def srgb = fn (r: int, g: int, b: int): Vec3 -> (
     Vec3(rf * rf, gf * gf, bf * bf)
 )
 
-def colOutline: Vec3 = srgb(50, 10, 72)
-def colBody: Vec3 = srgb(172, 68, 143)
+def colOutline: Vec3 = srgb(58, 18, 80)
+def colBody: Vec3 = srgb(164, 68, 135)
 def colBodyShadow: Vec3 = srgb(132, 46, 117)
 def colBodyDeep: Vec3 = srgb(104, 36, 106)
 def colFrill: Vec3 = srgb(213, 145, 230)
-def colFrillShadow: Vec3 = srgb(196, 126, 218)
+def colFrillShadow: Vec3 = srgb(196, 126, 210)
 def colFrillRim: Vec3 = srgb(242, 196, 255)
 def colBelly: Vec3 = srgb(229, 176, 246)
 def colBellyShadow: Vec3 = srgb(190, 132, 208)
@@ -511,17 +511,19 @@ def sc = fn (r: double, z: double): double -> (
     r * (10.0 - z) / 10.0
 )
 
-def lightBody: Vec3 = Vec3(0.20, 0.45, 0.87)
+def lightBody: Vec3 = Vec3(0.20, 0.63, 0.87)
 def lightHead: Vec3 = Vec3(0.05, 0.72, 0.69)
-def lightBelly: Vec3 = Vec3(0.05, -0.92, 0.39)
+def lightBelly: Vec3 = Vec3(0.00, 0.88, 0.47)
 def lightLowerBelly: Vec3 = Vec3(0.00, 0.78, 0.62)
 def lightBackLeftLeg: Vec3 = Vec3(-0.68, 0.25, 0.69)
+def lightFrontLeftLeg: Vec3 = Vec3(0.66, 0.24, 0.71)
 def lightFrontRightLeg: Vec3 = Vec3(0.68, 0.25, 0.69)
 def lightHorn: Vec3 = Vec3(-0.55, 0.50, 0.67)
 def lightFrill: Vec3 = Vec3(-0.15, 0.40, 0.90)
 
 def matBody = ToonMaterial(colBody, srgb(154, 58, 132), lightBody, 0.05, -0.15, 0.55)
 def matBackLeftLeg = ToonMaterial(colBody, colBodyShadow, lightBackLeftLeg, 0.04, 0.22, 0.58)
+def matFrontLeftLeg = ToonMaterial(colBody, colBodyShadow, lightFrontLeftLeg, 0.04, 0.02, 0.54)
 def matFrontRightLeg = ToonMaterial(colBody, colBodyShadow, lightFrontRightLeg, 0.04, 0.22, 0.58)
 def matHead = ToonMaterial(colBody, colBodyShadow, lightHead, 0.04, 0.25, 0.58)
 def matBodyDark = ToonMaterial(colBodyDeep, colBodyDeep, lightBody, 0.08)
@@ -529,7 +531,8 @@ def matFrill = ToonMaterial(colFrill, colFrillShadow, lightFrill, 0.04)
 def matFrillRim = FlatMaterial(colFrillRim)
 def matFrillCrease = FlatMaterial(srgb(156, 86, 178))
 def matSoftCrease = FlatMaterial(srgb(96, 30, 102))
-def matBelly = ToonMaterial(colBelly, colBellyShadow, lightBelly, 0.03, 0.08, 0.42)
+def matBelly = ToonMaterial(colBelly, colBellyShadow, lightBelly, 0.03, 0.16, 0.52)
+def matBellyShadow = FlatMaterial(colBellyShadow)
 def matLowerBelly = ToonMaterial(colBelly, colBellyShadow, lightLowerBelly, 0.03, 0.22, 0.62)
 def matHorn = ToonMaterial(colHorn, colHornShadow, lightHorn, 0.04, 0.22, 0.62)
 def matCream = ToonMaterial(colCream, colCreamShadow, lightHorn, 0.05)
@@ -673,26 +676,28 @@ def frontRightLegCoeffs: array of double = (array of double).of(
     0.00342, 0.00378
 )
 world.add(SculptedLobe(pt(0.425, -0.467, 0.02), 0.07, sc(1.0, 0.02), frontRightLegCoeffs, 0.31, matFrontRightLeg, matInk, 0.023, 0.0, matInk, 0.24))
-addEll(0.399, -0.652, 0.10, 0.035, 0.034, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(0.407, -0.652, 0.10, 0.035, 0.034, 0.028, 0.0, matCream, 0.016, 0.022)
 addEll(0.469, -0.650, 0.11, 0.038, 0.036, 0.028, 0.0, matCream, 0.016, 0.022)
 addEll(0.528, -0.637, 0.10, 0.033, 0.033, 0.028, 0.0, matCream, 0.016, 0.022)
 
 ;; Smooth 3D anatomical pastel lavender chest (0.27 px RMS, tucked naturally behind head, shoulder & front-left leg)
-addEll(0.185, -0.282, 0.12, 0.325, 0.245, 0.065, 23.0, matBelly, 0.023, 0.035)
+addEll(0.185, -0.282, 0.11, 0.325, 0.245, 0.065, 23.0, matBelly, 0.023, 0.035)
+;; Soft chin cast shadow hugging upper chest directly beneath the jawline (in front of chest, behind head & shoulder)
+world.add(Ellipsoid.rotatedZ(pt(0.32, -0.205, 0.182), sc(0.165, 0.182), sc(0.064, 0.182), 0.022, -6.0, matBellyShadow))
 ;; Anatomical front-left shoulder bridge connecting torso smoothly to front-left leg in front of chest
-world.add(Ellipsoid.rotatedZ(pt(-0.02, -0.2, 0.16), sc(0.18, 0.16), sc(0.17, 0.16), 0.065, 12.0, matBody))
+world.add(Ellipsoid.rotatedZ(pt(-0.015, -0.20, 0.195), sc(0.195, 0.195), sc(0.17, 0.195), 0.055, 12.0, matBody))
 ;; Crisp shoulder-to-chest ink contour separating right side of front-left shoulder from lavender chest
 addBezier(0.178, -0.215, 0.28, 0.010, 0.158, -0.300, 0.28, 0.010, 0.132, -0.400, 0.28, 0.010, 3, matInk, 0.0, 0.0)
 
-;; Smooth sweeping curved lower belly crescent (0.13 px RMS, tucked behind back-left & front-left legs)
+;; Smooth sweeping curved lower belly crescent (tucked behind back-left & front-left legs)
 addBezier(
-    -0.361, -0.298, 0.03, 0.014,
-    -0.290, -0.405, 0.04, 0.053,
-    -0.126, -0.434, 0.04, 0.073,
+    -0.365, -0.308, 0.03, 0.014,
+    -0.295, -0.416, 0.04, 0.052,
+    -0.130, -0.448, 0.04, 0.070,
     5, matLowerBelly, 0.021, 0.03
 )
 
-;; Front-left leg (smooth foreground leg)
+;; Front-left leg (smooth foreground leg with cylindrical directional volume)
 def frontLeftLegCoeffs: array of double = (array of double).of(
     0.21150,
     -0.01508, 0.01839,
@@ -704,7 +709,7 @@ def frontLeftLegCoeffs: array of double = (array of double).of(
     0.00288, 0.00480,
     -0.00176, -0.00241
 )
-world.add(SculptedLobe(pt(0.005, -0.495, 0.20), 0.10, sc(1.0, 0.20), frontLeftLegCoeffs, 0.34, matBody, matInk, 0.02, 0.0, matInk, 0.19))
+world.add(SculptedLobe(pt(0.005, -0.495, 0.20), 0.10, sc(1.0, 0.20), frontLeftLegCoeffs, 0.34, matFrontLeftLeg, matInk, 0.02, 0.0, matInk, 0.19))
 ;; Curved shoulder crease on left side of front-left leg
 addBezier(-0.144, -0.27, 0.32, 0.009, -0.145, -0.36, 0.32, 0.009, -0.136, -0.46, 0.32, 0.009, 2, matInk, 0.0, 0.0)
 ;; 3 flush dome toes aligned to exact 320px centroids
@@ -728,19 +733,19 @@ def frillCoeffs: array of double = (array of double).of(
     0.00151, -0.00097,
     0.00270, -0.00299
 )
-world.add(SculptedLobe(pt(0.28, 0.254, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.52, matFrill, matInk, 0.023, 0.018, matFrillRim))
+world.add(SculptedLobe(pt(0.28, 0.254, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.52, matFrill, matInk, 0.0215, 0.018, matFrillRim))
 addEll(-0.082, 0.068, 0.066, 0.064, 0.062, 0.042, 0.0, matFrill, 0.022, 0.03)
 
 ;; 9 Flush oval cream osteoderm scallops aligned to exact 320px measured centroids
-addEll(-0.155, 0.042, 0.055, 0.034, 0.027, 0.035, 72.0, matCream, 0.017, 0.025)
+addEll(-0.155, 0.042, 0.055, 0.034, 0.032, 0.035, 72.0, matCream, 0.017, 0.025)
 addEll(-0.184, 0.221, 0.055, 0.039, 0.030, 0.035, 85.0, matCream, 0.017, 0.025)
-addEll(-0.166, 0.404, 0.055, 0.041, 0.031, 0.035, 68.0, matCream, 0.017, 0.025)
+addEll(-0.166, 0.404, 0.055, 0.046, 0.031, 0.035, 68.0, matCream, 0.017, 0.025)
 addEll(-0.033, 0.596, 0.055, 0.042, 0.030, 0.035, 36.0, matCream, 0.017, 0.025)
 addEll(0.242, 0.707, 0.055, 0.044, 0.031, 0.035, -2.0, matCream, 0.018, 0.025)
 addEll(0.496, 0.654, 0.055, 0.042, 0.029, 0.035, -34.0, matCream, 0.017, 0.025)
 addEll(0.647, 0.524, 0.055, 0.040, 0.029, 0.035, -52.0, matCream, 0.017, 0.025)
 addEll(0.737, 0.377, 0.055, 0.038, 0.029, 0.035, -72.0, matCream, 0.017, 0.025)
-addEll(0.748, 0.162, 0.055, 0.034, 0.026, 0.035, -76.0, matCream, 0.017, 0.025)
+addEll(0.752, 0.160, 0.055, 0.034, 0.026, 0.035, -76.0, matCream, 0.017, 0.025)
 
 ;; Curved radial fold creases aligned to exact X-ray reference ink lines
 addBezier(-0.10, 0.166, 0.14, 0.008, -0.02, 0.165, 0.14, 0.008, 0.04, 0.166, 0.14, 0.007, 2, matInk, 0.0, 0.0)
@@ -773,7 +778,7 @@ def leftHornCoeffs: array of double = (array of double).of(
     0.00650, 0.00434,
     -0.00261, 0.00314
 )
-world.add(SculptedLobe(pt(0.222, 0.378, 0.36), 0.07, sc(1.0, 0.36), leftHornCoeffs, 0.17, matHorn, matInk, 0.020))
+world.add(SculptedLobe(pt(0.222, 0.372, 0.36), 0.07, sc(1.0, 0.36), leftHornCoeffs, 0.17, matHorn, matInk, 0.020))
 
 def rightHornCoeffs: array of double = (array of double).of(
     0.08050,
@@ -784,7 +789,7 @@ def rightHornCoeffs: array of double = (array of double).of(
     0.00504, 0.00007,
     -0.00174, 0.00627
 )
-world.add(SculptedLobe(pt(0.542, 0.408, 0.35), 0.07, sc(1.0, 0.35), rightHornCoeffs, 0.16, matHorn, matInk, 0.020))
+world.add(SculptedLobe(pt(0.548, 0.402, 0.35), 0.07, sc(1.0, 0.35), rightHornCoeffs, 0.16, matHorn, matInk, 0.020))
 
 def noseHornCoeffs: array of double = (array of double).of(
     0.07050,
@@ -834,17 +839,17 @@ addEll(0.482, -0.118, 0.52, 0.072, 0.07, 0.032, -14.0, matPacifier, 0.020, 0.035
 addEll(0.598, -0.105, 0.52, 0.068, 0.072, 0.032, 14.0, matPacifier, 0.020, 0.035)
 addEll(0.544, -0.124, 0.525, 0.056, 0.042, 0.030, 0.0, matPacifier, 0.019, 0.035)
 ;; Shaded inner guard & neck/jaw backdrop behind the hanging ring (eliminates white hole)
-addEll(0.564, -0.175, 0.54, 0.040, 0.030, 0.024, 0.0, matPacifierDark, 0.016, 0.025)
-world.add(Ellipsoid.rotatedZ(pt(0.564, -0.205, 0.50), sc(0.044, 0.50), sc(0.030, 0.50), 0.02, 0.0, matBodyDark))
+addEll(0.562, -0.172, 0.54, 0.038, 0.028, 0.024, 0.0, matPacifierDark, 0.015, 0.025)
+world.add(Ellipsoid.rotatedZ(pt(0.562, -0.205, 0.50), sc(0.044, 0.50), sc(0.030, 0.50), 0.02, 0.0, matBodyDark))
 ;; Upright center knob
-addEll(0.564, -0.140, 0.57, 0.037, 0.040, 0.030, 0.0, matPacifier, 0.016, 0.03)
+addEll(0.562, -0.126, 0.57, 0.033, 0.035, 0.030, 0.0, matPacifier, 0.015, 0.03)
 
-;; Circular pacifier ring (16 segments centered at (+0.564, -0.195), r=0.056)
-def ringCx: double = 0.564
-def ringCy: double = -0.195
+;; Circular pacifier ring (16 segments centered at (+0.562, -0.194), r=0.054)
+def ringCx: double = 0.562
+def ringCy: double = -0.194
 def ringZ: double = 0.58
-def ringR: double = 0.056
-def ringTube: double = 0.025
+def ringR: double = 0.058
+def ringTube: double = 0.023
 def ringSegs: int = 16
 var ri: int = 0
 while ri < ringSegs then (
@@ -853,7 +858,7 @@ while ri < ringSegs then (
     addCone(
         ringCx + ringR * Math.cos(a0), ringCy + ringR * Math.sin(a0), ringZ,
         ringCx + ringR * Math.cos(a1), ringCy + ringR * Math.sin(a1), ringZ,
-        ringTube, ringTube, matPacifier, 0.0155, 0.03
+        ringTube, ringTube, matPacifier, 0.0145, 0.03
     )
     ri += 1
 )
