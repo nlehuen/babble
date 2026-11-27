@@ -490,7 +490,6 @@ fn Box.run (n:int) -> double {nothrow unique}
 fn Box.run (n:int) -> double {nothrow unique}
   (def a 0.0:double)
   (def i 0:int)
-  (def fv (fn-ref fv))
   (block
     (def $licm0 (+:double (/:double (jcall Math.sin (get-this-field x)) 2.0:double) (neg (jcall Math.toRadians (get-this-field x)))))
     (def $licm1 (get-this-field x))
@@ -509,34 +508,33 @@ fn Box.run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
-    v3: any = opaque.FunctionRef(fv) {pure}
-    v4: any = slot_read this {pure}
-    v5: double = load_field v4.x {read:frozen}
-    v6: double = call_java Math.sin(v5) {pure}
-    v7: double = const 2.0
-    v8: double = div v6, v7 {pure}
-    v9: any = slot_read this {pure}
-    v10: double = load_field v9.x {read:frozen}
-    v11: double = call_java Math.toRadians(v10) {pure}
-    v12: double = neg v11 {pure}
-    v13: double = add v8, v12 {pure}
-    v14: any = slot_read this {pure}
-    v15: double = load_field v14.x {read:frozen}
-    v16: any = const null
-    br bb1(v16, v2, v1)
-  bb1(v17: any, v18: int, v19: double):
-    v20: bool = lt v18, v0 {pure}
-    br_if v20, bb3, bb2
+    v3: any = slot_read this {pure}
+    v4: double = load_field v3.x {read:frozen}
+    v5: double = call_java Math.sin(v4) {pure}
+    v6: double = const 2.0
+    v7: double = div v5, v6 {pure}
+    v8: any = slot_read this {pure}
+    v9: double = load_field v8.x {read:frozen}
+    v10: double = call_java Math.toRadians(v9) {pure}
+    v11: double = neg v10 {pure}
+    v12: double = add v7, v11 {pure}
+    v13: any = slot_read this {pure}
+    v14: double = load_field v13.x {read:frozen}
+    v15: any = const null
+    br bb1(v15, v2, v1)
+  bb1(v16: any, v17: int, v18: double):
+    v19: bool = lt v17, v0 {pure}
+    br_if v19, bb3, bb2
   bb2:
-    ret v19
+    ret v18
   bb3:
-    v21: double = call_java Math.sin(v15) {pure}
-    v22: double = add v13, v21 {pure}
-    v23: double = add v19, v22 {pure}
-    v24: int = const 1
-    v25: int = add v18, v24 {pure}
-    v26: any = convert.any v25
-    br bb1(v26, v25, v23)
+    v20: double = call_java Math.sin(v14) {pure}
+    v21: double = add v12, v20 {pure}
+    v22: double = add v18, v21 {pure}
+    v23: int = const 1
+    v24: int = add v17, v23 {pure}
+    v25: any = convert.any v24
+    br bb1(v25, v24, v22)
 ```
 
 ```mir

@@ -231,7 +231,7 @@ assert(smallIface(1) == 1 and smallBlkCell(4) == 5)
 ```
 
 ```hir
-;; hir -O0,-O1 top-level
+;; hir -O0 top-level
 top-level:
   (def addMul (fn-ref addMul))
   (def fib (fn-ref fib))
@@ -239,6 +239,17 @@ top-level:
   (def smallIface (fn-ref smallIface))
   (def smallBlkCell (fn-ref smallBlkCell))
   (call name(assert) (and (==:bool (call-fn smallIface (box 1:int)) 1:int) (==:bool (call-fn smallBlkCell 4:int) 5:int)))
+```
+
+```hir
+;; hir -O1 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def smallIface (fn-ref smallIface))
+  (def smallBlkCell (fn-ref smallBlkCell))
+  (call name(assert) (and (==:bool (call-fn smallBlkCell 4:int) 5:int) (==:bool (call-fn smallIface (box 1:int)) 1:int)))
 ```
 
 ```mir
@@ -360,7 +371,7 @@ fn run (b:byte, i:int, f:float) -> bool {pure unique}
 fn run (b:byte, i:int, f:float) -> bool {pure unique}
   (and (and (and (and (and (and (and (==:bool (widen[short] var(b)) (call name(short) 2:int)) (==:bool (block
                     (def x (call name(byte) 3:int))
-                    (widen[short] var(x))) (call name(short) 3:int))) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) true:bool) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) true:bool) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double)) true:bool)
+                    (widen[short] var(x))) (call name(short) 3:int))) true:bool) true:bool) true:bool) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double))
 ```
 
 ```mir
@@ -388,49 +399,49 @@ fn run(v0: byte, v1: int, v2: float) -> bool:
     v18: bool = const false
     br_if v17, bb3, bb4(v18)
   bb3:
-    v19: long = convert.long v1
-    v20: long = const 1L
-    v21: long = add v19, v20 {pure}
-    v22: long = const 5L
-    v23: bool = eq v21, v22 {pure}
-    br bb4(v23)
-  bb4(v24: bool):
-    v25: bool = const false
-    br_if v24, bb5, bb6(v25)
+    v19: bool = const true
+    br bb4(v19)
+  bb4(v20: bool):
+    v21: bool = const false
+    br_if v20, bb5, bb6(v21)
   bb5:
-    v26: bool = const true
-    br bb6(v26)
-  bb6(v27: bool):
-    v28: bool = const false
-    br_if v27, bb7, bb8(v28)
+    v22: bool = const true
+    br bb6(v22)
+  bb6(v23: bool):
+    v24: bool = const false
+    br_if v23, bb7, bb8(v24)
   bb7:
-    v29: float = convert.float v1
-    v30: float = const 1.5f
-    v31: float = add v29, v30 {pure}
-    v32: float = const 5.5f
-    v33: bool = eq v31, v32 {pure}
-    br bb8(v33)
-  bb8(v34: bool):
-    v35: bool = const false
-    br_if v34, bb9, bb10(v35)
+    v25: bool = const true
+    br bb8(v25)
+  bb8(v26: bool):
+    v27: bool = const false
+    br_if v26, bb9, bb10(v27)
   bb9:
-    v36: bool = const true
-    br bb10(v36)
-  bb10(v37: bool):
-    v38: bool = const false
-    br_if v37, bb11, bb12(v38)
+    v28: long = convert.long v1
+    v29: long = const 1L
+    v30: long = add v28, v29 {pure}
+    v31: long = const 5L
+    v32: bool = eq v30, v31 {pure}
+    br bb10(v32)
+  bb10(v33: bool):
+    v34: bool = const false
+    br_if v33, bb11, bb12(v34)
   bb11:
-    v39: double = convert.double v2
-    v40: double = const 0.5
-    v41: double = add v39, v40 {pure}
-    v42: double = const 2.0
-    v43: bool = eq v41, v42 {pure}
-    br bb12(v43)
-  bb12(v44: bool):
-    v45: bool = const false
-    br_if v44, bb13, bb14(v45)
+    v35: float = convert.float v1
+    v36: float = const 1.5f
+    v37: float = add v35, v36 {pure}
+    v38: float = const 5.5f
+    v39: bool = eq v37, v38 {pure}
+    br bb12(v39)
+  bb12(v40: bool):
+    v41: bool = const false
+    br_if v40, bb13, bb14(v41)
   bb13:
-    v46: bool = const true
+    v42: double = convert.double v2
+    v43: double = const 0.5
+    v44: double = add v42, v43 {pure}
+    v45: double = const 2.0
+    v46: bool = eq v44, v45 {pure}
     br bb14(v46)
   bb14(v47: bool):
     ret v47
@@ -458,44 +469,44 @@ fn run(v0: byte, v1: int, v2: float) -> bool:
   bb2(v15: bool):
     br_if v15, bb3, bb4(v8)
   bb3:
-    v16: long = convert.long v1
-    v17: long = const 1L
-    v18: long = add v16, v17 {pure}
-    v19: long = const 5L
-    v20: bool = eq v18, v19 {pure}
-    br bb4(v20)
-  bb4(v21: bool):
-    br_if v21, bb5, bb6(v8)
+    v16: bool = const true
+    br bb4(v16)
+  bb4(v17: bool):
+    br_if v17, bb5, bb6(v8)
   bb5:
-    v22: bool = const true
-    br bb6(v22)
-  bb6(v23: bool):
-    br_if v23, bb7, bb8(v8)
+    v18: bool = const true
+    br bb6(v18)
+  bb6(v19: bool):
+    br_if v19, bb7, bb8(v8)
   bb7:
-    v24: float = convert.float v1
-    v25: float = const 1.5f
-    v26: float = add v24, v25 {pure}
-    v27: float = const 5.5f
-    v28: bool = eq v26, v27 {pure}
-    br bb8(v28)
-  bb8(v29: bool):
-    br_if v29, bb9, bb10(v8)
+    v20: bool = const true
+    br bb8(v20)
+  bb8(v21: bool):
+    br_if v21, bb9, bb10(v8)
   bb9:
-    v30: bool = const true
-    br bb10(v30)
-  bb10(v31: bool):
-    br_if v31, bb11, bb12(v8)
+    v22: long = convert.long v1
+    v23: long = const 1L
+    v24: long = add v22, v23 {pure}
+    v25: long = const 5L
+    v26: bool = eq v24, v25 {pure}
+    br bb10(v26)
+  bb10(v27: bool):
+    br_if v27, bb11, bb12(v8)
   bb11:
-    v32: double = convert.double v2
-    v33: double = const 0.5
-    v34: double = add v32, v33 {pure}
-    v35: double = const 2.0
-    v36: bool = eq v34, v35 {pure}
-    br bb12(v36)
-  bb12(v37: bool):
-    br_if v37, bb13, bb14(v8)
+    v28: float = convert.float v1
+    v29: float = const 1.5f
+    v30: float = add v28, v29 {pure}
+    v31: float = const 5.5f
+    v32: bool = eq v30, v31 {pure}
+    br bb12(v32)
+  bb12(v33: bool):
+    br_if v33, bb13, bb14(v8)
   bb13:
-    v38: bool = const true
+    v34: double = convert.double v2
+    v35: double = const 0.5
+    v36: double = add v34, v35 {pure}
+    v37: double = const 2.0
+    v38: bool = eq v36, v37 {pure}
     br bb14(v38)
   bb14(v39: bool):
     ret v39

@@ -245,7 +245,7 @@ assert(r() == 15)
 ```
 
 ```hir
-;; hir -O0,-O1 fn=r
+;; hir -O0 fn=r
 fn r () -> int {nothrow unique}
   (def f (freeze (call name(X) 5:int)))
   (def s 0:int)
@@ -254,6 +254,21 @@ fn r () -> int {nothrow unique}
     (block
       (set s (+:int var(s) (get-this-field v)))
       (set i (+:int var(i) 1:int))))
+  var(s)
+```
+
+```hir
+;; hir -O1 fn=r
+fn r () -> int {nothrow unique}
+  (def f (freeze (call name(X) 5:int)))
+  (def s 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (get-this-field v))
+    (while (<:bool var(i) 3:int)
+      (block
+        (set s (+:int var(s) var($licm0)))
+        (set i (+:int var(i) 1:int)))))
   var(s)
 ```
 
@@ -267,19 +282,19 @@ fn r() -> int:
     v3: any = freeze v2
     v4: int = const 0
     v5: int = const 0
-    v6: any = const null
-    br bb1(v6, v5, v4)
-  bb1(v7: any, v8: int, v9: int):
-    v10: int = const 3
-    v11: bool = lt v8, v10 {pure}
-    br_if v11, bb3, bb2
+    v6: int = load_field v3.v {read:frozen,throws}
+    v7: any = const null
+    br bb1(v7, v5, v4)
+  bb1(v8: any, v9: int, v10: int):
+    v11: int = const 3
+    v12: bool = lt v9, v11 {pure}
+    br_if v12, bb3, bb2
   bb2:
-    ret v9
+    ret v10
   bb3:
-    v12: int = load_field v3.v {read:frozen,throws}
-    v13: int = add v9, v12 {pure}
+    v13: int = add v10, v6 {pure}
     v14: int = const 1
-    v15: int = add v8, v14 {pure}
+    v15: int = add v9, v14 {pure}
     v16: any = convert.any v15
     br bb1(v16, v15, v13)
 ```
@@ -293,18 +308,18 @@ fn r() -> int:
     v2: any = opaque.DynamicCall(v0, v1) {impure}
     v3: any = freeze v2
     v4: int = const 0
+    v5: int = load_field v3.v {read:frozen,throws}
     br bb1(v4, v4)
-  bb1(v5: int, v6: int):
-    v7: int = const 3
-    v8: bool = lt v5, v7 {pure}
-    br_if v8, bb3, bb2
+  bb1(v6: int, v7: int):
+    v8: int = const 3
+    v9: bool = lt v6, v8 {pure}
+    br_if v9, bb3, bb2
   bb2:
-    ret v6
+    ret v7
   bb3:
-    v9: int = load_field v3.v {read:frozen,throws}
-    v10: int = add v6, v9 {pure}
+    v10: int = add v7, v5 {pure}
     v11: int = const 1
-    v12: int = add v5, v11 {pure}
+    v12: int = add v6, v11 {pure}
     br bb1(v12, v10)
 ```
 

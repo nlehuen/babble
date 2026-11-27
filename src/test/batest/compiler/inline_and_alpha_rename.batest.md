@@ -561,7 +561,6 @@ fn run (p:int, fl:bool) -> double {pure unique}
 ;; hir -O1 fn=run
 fn run (p:int, fl:bool) -> double {pure unique}
   (+:double (+:double (convert[double] var(p)) 0.5:double) (call name(double) (+:int (block
-          (def y null)
           (if var(fl) (set y (box var(p))) (set y (box 9:int)))
           (nonnull var(y))) (block
           (def xs (core-new list 1:int 2:int))
@@ -581,43 +580,42 @@ fn run(v0: int, v1: bool) -> double:
     v3: double = const 0.5
     v4: double = add v2, v3 {pure}
     v5: any = name_read double {pure}
-    v6: any = const null
     br_if v1, bb2, bb1
   bb1:
-    v7: int = const 9
-    v8: any = convert.any v7
-    v9: int = convert.int v8
-    br bb3(v9, v8)
+    v6: int = const 9
+    v7: any = convert.any v6
+    v8: int = convert.int v7
+    br bb3(v8, v7)
   bb2:
-    v10: any = convert.any v0
-    v11: int = convert.int v10
-    br bb3(v11, v10)
-  bb3(v12: int, v13: any):
-    v14: int = nonnull v13
-    v15: int = const 1
-    v16: int = const 2
-    v17: any = opaque.CoreCollectionCall(list, v15, v16) {impure}
-    v18: int = const 0
-    v19: any = for_init.java_iterable v17
-    v20: any = const null
-    br bb4(v20, v18)
-  bb4(v21: any, v22: int):
-    v23: bool = for_has_next v19
-    br_if v23, bb6, bb5
+    v9: any = convert.any v0
+    v10: int = convert.int v9
+    br bb3(v10, v9)
+  bb3(v11: int, v12: any):
+    v13: int = nonnull v12
+    v14: int = const 1
+    v15: int = const 2
+    v16: any = opaque.CoreCollectionCall(list, v14, v15) {impure}
+    v17: int = const 0
+    v18: any = for_init.java_iterable v16
+    v19: any = const null
+    br bb4(v19, v17)
+  bb4(v20: any, v21: int):
+    v22: bool = for_has_next v18
+    br_if v22, bb6, bb5
   bb5:
-    v24: int = add v14, v22 {pure}
-    v25: double = opaque.DynamicCall(v5, v24) {impure}
-    v26: double = add v4, v25 {pure}
-    ret v26
+    v23: int = add v13, v21 {pure}
+    v24: double = opaque.DynamicCall(v5, v23) {impure}
+    v25: double = add v4, v24 {pure}
+    ret v25
   bb6:
-    v27: any = for_next v19
-    v28: any = checkcast v27 <int|int|>
-    v29: int = convert.int v28
-    v30: int = const 2
-    v31: int = mul v29, v30 {pure}
-    v32: int = add v22, v31 {pure}
-    v33: any = convert.any v32
-    br bb4(v33, v32)
+    v26: any = for_next v18
+    v27: any = checkcast v26 <int|int|>
+    v28: int = convert.int v27
+    v29: int = const 2
+    v30: int = mul v28, v29 {pure}
+    v31: int = add v21, v30 {pure}
+    v32: any = convert.any v31
+    br bb4(v32, v31)
 ```
 
 ```mir
@@ -895,7 +893,6 @@ fn run (n:int, fl:bool) -> int {nothrow unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (n:int, fl:bool) -> int {nothrow unique}
-  (def loc (fn-ref loc))
   (def cond (fn-ref cond))
   (+:int (+:int var(n) 1:int) (call-fn cond var(n)))
 ```
@@ -904,15 +901,14 @@ fn run (n:int, fl:bool) -> int {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.FunctionRef(loc) {pure}
-    v2: any = opaque.FunctionRef(cond) {read:shared}
-    slot_init cond, v2 {write:shared,throws}
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
-    v5: any = slot_read cond {read:shared,throws}
-    v6: int = call cond(v0) {impure}
-    v7: int = add v4, v6 {pure}
-    ret v7
+    v1: any = opaque.FunctionRef(cond) {read:shared}
+    slot_init cond, v1 {write:shared,throws}
+    v2: int = const 1
+    v3: int = add v0, v2 {pure}
+    v4: any = slot_read cond {read:shared,throws}
+    v5: int = call cond(v0) {impure}
+    v6: int = add v3, v5 {pure}
+    ret v6
 ```
 
 ```mir

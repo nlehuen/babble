@@ -546,9 +546,8 @@ fn run () -> int {io}
   (while (<:bool var(i) 2:int)
     (block
       (def sb (jnew StringBuilder "x"))
-      (def fnL (fn-ref fnL))
       (def ClsL (class-ref ClsL))
-      (def IfcL (iface-ref IfcL))
+      (iface-ref IfcL)
       (def av var(sb))
       (set s += (+:int (+:int (+:int (+:int (jcall StringBuilder.length var(sb)) (jcall List.size (core-new list 1:int 2:int))) 2:int) (get-this-field v)) (if (is var(av) babble|IfcL) 1:int 0:int)))
       (set i += 1:int)))
@@ -572,37 +571,36 @@ fn run() -> int:
   bb3:
     v8: any = const "x"
     v9: any = new_java StringBuilder(v8) {impure}
-    v10: any = opaque.FunctionRef(fnL) {pure}
-    v11: any = opaque.ClassExpr(ClsL) {impure}
-    v12: any = opaque.InterfaceExpr(IfcL) {impure}
-    v13: int = call_java v9.length() {pure,throws}
-    v14: int = const 1
-    v15: int = const 2
-    v16: any = opaque.CoreCollectionCall(list, v14, v15) {impure}
-    v17: int = call_java v16.size() {pure,throws}
-    v18: int = add v13, v17 {pure}
-    v19: int = const 2
-    v20: int = add v18, v19 {pure}
-    v21: int = const 3
-    v22: any = opaque.DynamicCall(v11, v21) {impure}
-    v23: int = load_field v22.v {read:frozen,throws}
-    v24: int = add v20, v23 {pure}
-    v25: bool = is v9 <babble|IfcL>
-    br_if v25, bb5, bb4
+    v10: any = opaque.ClassExpr(ClsL) {impure}
+    v11: any = opaque.InterfaceExpr(IfcL) {impure}
+    v12: int = call_java v9.length() {pure,throws}
+    v13: int = const 1
+    v14: int = const 2
+    v15: any = opaque.CoreCollectionCall(list, v13, v14) {impure}
+    v16: int = call_java v15.size() {pure,throws}
+    v17: int = add v12, v16 {pure}
+    v18: int = const 2
+    v19: int = add v17, v18 {pure}
+    v20: int = const 3
+    v21: any = opaque.DynamicCall(v10, v20) {impure}
+    v22: int = load_field v21.v {read:frozen,throws}
+    v23: int = add v19, v22 {pure}
+    v24: bool = is v9 <babble|IfcL>
+    br_if v24, bb5, bb4
   bb4:
-    v26: int = const 0
-    br bb6(v26)
+    v25: int = const 0
+    br bb6(v25)
   bb5:
-    v27: any = narrow.is v9 <babble|IfcL>
-    v28: int = const 1
-    br bb6(v28)
-  bb6(v29: int):
-    v30: int = add v24, v29 {pure}
-    v31: int = add v5, v30 {pure}
-    v32: int = const 1
-    v33: int = add v4, v32 {pure}
-    v34: any = convert.any v33
-    br bb1(v34, v33, v31)
+    v26: any = narrow.is v9 <babble|IfcL>
+    v27: int = const 1
+    br bb6(v27)
+  bb6(v28: int):
+    v29: int = add v23, v28 {pure}
+    v30: int = add v5, v29 {pure}
+    v31: int = const 1
+    v32: int = add v4, v31 {pure}
+    v33: any = convert.any v32
+    br bb1(v33, v32, v30)
 ```
 
 ```mir

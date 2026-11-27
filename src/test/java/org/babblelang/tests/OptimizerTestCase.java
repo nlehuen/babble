@@ -326,8 +326,8 @@ public class OptimizerTestCase {
                 callerIr.contains("deadSum"),
                 "Finite-collection sumList(xs) dead local should be eliminated:\n" + callerIr);
         Assertions.assertTrue(
-                callerIr.contains("maybeInf"),
-                "Non-terminating unguarded(0) dead local must be preserved:\n" + callerIr);
+                callerIr.contains("(call-fn #3 0:int)"),
+                "Non-terminating unguarded(0) call must be preserved:\n" + callerIr);
     }
 
     // ------------------------------------------------------------------ O6 : HirLicmPass

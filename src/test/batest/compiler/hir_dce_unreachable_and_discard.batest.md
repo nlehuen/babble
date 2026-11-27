@@ -205,8 +205,7 @@ fn run (x:int) -> int {pure unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (x:int) -> int {pure unique}
-  (def d2 (fn-ref d2))
-  (def d4 (as var(x) double|double|))
+  (as var(x) double|double|)
   (+:int var(x) 1:int)
 ```
 
@@ -214,13 +213,11 @@ fn run (x:int) -> int {pure unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int) -> int:
   bb0:
-    v1: any = opaque.FunctionRef(d2) {pure}
-    v2: any = convert.any v0
-    v3: any = checkcast v2 <double|double|>
-    v4: double = convert.double v3
-    v5: int = const 1
-    v6: int = add v0, v5 {pure}
-    ret v6
+    v1: any = convert.any v0
+    v2: any = checkcast v1 <double|double|>
+    v3: int = const 1
+    v4: int = add v0, v3 {pure}
+    ret v4
 ```
 
 ```mir
@@ -301,15 +298,13 @@ fn run (b:obj, xs:obj) -> int {unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (b:obj, xs:obj) -> int {unique}
-  (def d1
+  (block
+    (set-field var(b).v 1:int)
+    (get-this-field v))
+  (for x in var(xs)
     (block
-      (set-field var(b).v 1:int)
-      (get-this-field v)))
-  (def d2
-    (for x in var(xs)
-      (block
-        (call name(assert) (>:bool var(x) 0:int))
-        var(x))))
+      (call name(assert) (>:bool var(x) 0:int))
+      var(x)))
   (get-this-field v)
 ```
 

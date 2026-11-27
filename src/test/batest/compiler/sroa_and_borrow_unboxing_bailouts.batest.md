@@ -132,7 +132,7 @@ fn run () -> double {io}
       name(Vec3))
     (def $sr_v_0 4.0:double)
     (def $sr_v_2 6.0:double))
-  (def R (class-ref R))
+  (class-ref R)
   (call name(assert) (==:bool (jcall StringBuilder.toString var(log)) "CS"))
   (+:double (+:double var(a) var($sr_v_0)) (call name(double) 13:int))
 ```
@@ -838,10 +838,9 @@ fn work (a:obj, b:obj) -> double {nothrow unique}
 ;; hir -O1 fn=work
 fn work (a:obj, b:obj) -> double {nothrow unique}
   (if (<:bool (get-this-field x) -999.0:double) (return 0.0:double))
-  (def tmp null)
   (def xs (core-new list var(a)))
   (block
-    (def $sr_h_0 (core-new list 1:int))
+    (core-new list 1:int)
     (def $sr_h_1 2:int))
   (block (def $sr_h2_1 var($sr_h_1)))
   (set tmp (box (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int var($sr_h2_1) (jcall List.size var(xs)))))))
@@ -865,51 +864,50 @@ fn work(v0: any, v1: any) -> double:
     v5: any = const null
     br bb2
   bb2:
-    v6: any = const null
-    v7: any = opaque.CoreCollectionCall(list, v0) {impure}
-    v8: int = const 1
-    v9: any = opaque.CoreCollectionCall(list, v8) {impure}
-    v10: int = const 2
-    v11: double = load_field v0.x {read:frozen}
-    v12: double = load_field v1.y {read:frozen}
-    v13: double = add v11, v12 {pure}
-    v14: any = name_read double {pure}
-    v15: int = call_java v7.size() {pure,throws}
-    v16: int = add v10, v15 {pure}
-    v17: double = opaque.DynamicCall(v14, v16) {impure}
-    v18: double = add v13, v17 {pure}
-    v19: any = convert.any v18
+    v6: any = opaque.CoreCollectionCall(list, v0) {impure}
+    v7: int = const 1
+    v8: any = opaque.CoreCollectionCall(list, v7) {impure}
+    v9: int = const 2
+    v10: double = load_field v0.x {read:frozen}
+    v11: double = load_field v1.y {read:frozen}
+    v12: double = add v10, v11 {pure}
+    v13: any = name_read double {pure}
+    v14: int = call_java v6.size() {pure,throws}
+    v15: int = add v9, v14 {pure}
+    v16: double = opaque.DynamicCall(v13, v15) {impure}
+    v17: double = add v12, v16 {pure}
+    v18: any = convert.any v17
     br bb3
   bb3 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v20: double = nonnull v19
-    v21: double = const 0.0
-    v22: bool = lt v20, v21 {pure}
-    br_if v22, bb5, bb4
+    v19: double = nonnull v18
+    v20: double = const 0.0
+    v21: bool = lt v19, v20 {pure}
+    br_if v21, bb5, bb4
   bb4 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v23: any = const null
-    br bb6(v23)
+    v22: any = const null
+    br bb6(v22)
   bb5 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v24: any = name_read assert {pure}
-    v25: bool = const false
-    v26: bool = opaque.DynamicCall(v24, v25) {impure}
-    v27: any = convert.any v26
-    br bb6(v27)
-  bb6(v28: any) [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v29: double = nonnull v19
-    br bb10(v29)
-  bb7(v30: any) [handler]:
-    br bb9(v30)
-  bb8(v31: any) [handler]:
-    v32: any = unwrap_thrown v31
-    br bb9(v32)
-  bb9(v33: any):
-    v34: double = const 0.0
-    br bb10(v34)
-  bb10(v35: double):
-    ret v35
+    v23: any = name_read assert {pure}
+    v24: bool = const false
+    v25: bool = opaque.DynamicCall(v23, v24) {impure}
+    v26: any = convert.any v25
+    br bb6(v26)
+  bb6(v27: any) [unwind: ThrownException -> bb8, Exception -> bb7]:
+    v28: double = nonnull v18
+    br bb10(v28)
+  bb7(v29: any) [handler]:
+    br bb9(v29)
+  bb8(v30: any) [handler]:
+    v31: any = unwrap_thrown v30
+    br bb9(v31)
+  bb9(v32: any):
+    v33: double = const 0.0
+    br bb10(v33)
+  bb10(v34: double):
+    ret v34
   bb11:
-    v36: double = const 0.0
-    ret v36
+    v35: double = const 0.0
+    ret v35
 ```
 
 ```mir

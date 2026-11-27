@@ -128,10 +128,12 @@ fn sumToBound (lim:obj, a:int, b:int) -> int {nothrow unique}
 fn sumToBound (lim:obj, a:int, b:int) -> int {nothrow unique}
   (def i 0:int)
   (def acc 0:int)
-  (while (<:bool var(i) (+:int (*:int var(a) var(b)) (get-this-field k)))
-    (block
-      (set acc += var(i))
-      (set i += 1:int)))
+  (block
+    (def $licm0 (+:int (*:int var(a) var(b)) (get-this-field k)))
+    (while (<:bool var(i) var($licm0))
+      (block
+        (set acc += var(i))
+        (set i += 1:int))))
   var(acc)
 ```
 
@@ -141,20 +143,20 @@ fn sumToBound(v0: any, v1: int, v2: int) -> int:
   bb0:
     v3: int = const 0
     v4: int = const 0
-    v5: any = const null
-    br bb1(v5, v3, v4)
-  bb1(v6: any, v7: int, v8: int):
-    v9: int = mul v1, v2 {pure}
-    v10: int = load_field v0.k {read:frozen}
-    v11: int = add v9, v10 {pure}
-    v12: bool = lt v7, v11 {pure}
+    v5: int = mul v1, v2 {pure}
+    v6: int = load_field v0.k {read:frozen}
+    v7: int = add v5, v6 {pure}
+    v8: any = const null
+    br bb1(v8, v3, v4)
+  bb1(v9: any, v10: int, v11: int):
+    v12: bool = lt v10, v7 {pure}
     br_if v12, bb3, bb2
   bb2:
-    ret v8
+    ret v11
   bb3:
-    v13: int = add v8, v7 {pure}
+    v13: int = add v11, v10 {pure}
     v14: int = const 1
-    v15: int = add v7, v14 {pure}
+    v15: int = add v10, v14 {pure}
     v16: any = convert.any v15
     br bb1(v16, v15, v13)
 ```
@@ -341,23 +343,23 @@ fn reorderPure (x:double, limit:int) -> int {nothrow}
 ```hir
 ;; hir -O1 fn=reorderPure
 fn reorderPure (x:double, limit:int) -> int {nothrow}
-  (if (and (>:bool (+:double (jcall Math.sin var(x)) (jcall Math.cos var(x))) 0.0:double) (>:bool var(limit) 0:int)) 1:int 0:int)
+  (if (and (>:bool var(limit) 0:int) (>:bool (+:double (jcall Math.sin var(x)) (jcall Math.cos var(x))) 0.0:double)) 1:int 0:int)
 ```
 
 ```mir
 ;; mir -O2 fn=reorderPure stage=before
 fn reorderPure(v0: double, v1: int) -> int:
   bb0:
-    v2: double = call_java Math.sin(v0) {pure}
-    v3: double = call_java Math.cos(v0) {pure}
-    v4: double = add v2, v3 {pure}
-    v5: double = const 0.0
-    v6: bool = gt v4, v5 {pure}
-    v7: bool = const false
-    br_if v6, bb1, bb2(v7)
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const false
+    br_if v3, bb1, bb2(v4)
   bb1:
-    v8: int = const 0
-    v9: bool = gt v1, v8 {pure}
+    v5: double = call_java Math.sin(v0) {pure}
+    v6: double = call_java Math.cos(v0) {pure}
+    v7: double = add v5, v6 {pure}
+    v8: double = const 0.0
+    v9: bool = gt v7, v8 {pure}
     br bb2(v9)
   bb2(v10: bool):
     br_if v10, bb4, bb3
@@ -375,10 +377,10 @@ fn reorderPure(v0: double, v1: int) -> int:
 ;; mir -O2 fn=reorderPure stage=after:PredicateReorderPass
 fn reorderPure(v0: double, v1: int) -> int:
   bb0:
-    v2: bool = const false
-    v3: int = const 0
-    v4: bool = gt v1, v3 {pure}
-    br_if v4, bb1, bb2(v2)
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const false
+    br_if v3, bb1, bb2(v4)
   bb1:
     v5: double = call_java Math.sin(v0) {pure}
     v6: double = call_java Math.cos(v0) {pure}
@@ -389,7 +391,7 @@ fn reorderPure(v0: double, v1: int) -> int:
   bb2(v10: bool):
     br_if v10, bb4, bb3
   bb3:
-    br bb5(v3)
+    br bb5(v2)
   bb4:
     v11: int = const 1
     br bb5(v11)
@@ -401,10 +403,10 @@ fn reorderPure(v0: double, v1: int) -> int:
 ;; mir -O2 fn=reorderPure
 fn reorderPure(v0: double, v1: int) -> int:
   bb0:
-    v2: bool = const false
-    v3: int = const 0
-    v4: bool = gt v1, v3 {pure}
-    br_if v4, bb1, bb2(v2)
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const false
+    br_if v3, bb1, bb2(v4)
   bb1:
     v5: double = call_java Math.sin(v0) {pure}
     v6: double = call_java Math.cos(v0) {pure}
@@ -415,7 +417,7 @@ fn reorderPure(v0: double, v1: int) -> int:
   bb2(v10: bool):
     br_if v10, bb4, bb3
   bb3:
-    br bb5(v3)
+    br bb5(v2)
   bb4:
     v11: int = const 1
     br bb5(v11)
@@ -492,23 +494,23 @@ fn reorderOr (x:double, limit:int) -> int {nothrow}
 ```hir
 ;; hir -O1 fn=reorderOr
 fn reorderOr (x:double, limit:int) -> int {nothrow}
-  (if (or (>:bool (+:double (jcall Math.sin var(x)) (jcall Math.cos var(x))) 1.5:double) (>:bool var(limit) 0:int)) 1:int 0:int)
+  (if (or (>:bool var(limit) 0:int) (>:bool (+:double (jcall Math.sin var(x)) (jcall Math.cos var(x))) 1.5:double)) 1:int 0:int)
 ```
 
 ```mir
 ;; mir -O2 fn=reorderOr stage=before
 fn reorderOr(v0: double, v1: int) -> int:
   bb0:
-    v2: double = call_java Math.sin(v0) {pure}
-    v3: double = call_java Math.cos(v0) {pure}
-    v4: double = add v2, v3 {pure}
-    v5: double = const 1.5
-    v6: bool = gt v4, v5 {pure}
-    v7: bool = const true
-    br_if v6, bb2(v7), bb1
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const true
+    br_if v3, bb2(v4), bb1
   bb1:
-    v8: int = const 0
-    v9: bool = gt v1, v8 {pure}
+    v5: double = call_java Math.sin(v0) {pure}
+    v6: double = call_java Math.cos(v0) {pure}
+    v7: double = add v5, v6 {pure}
+    v8: double = const 1.5
+    v9: bool = gt v7, v8 {pure}
     br bb2(v9)
   bb2(v10: bool):
     br_if v10, bb4, bb3
@@ -526,10 +528,10 @@ fn reorderOr(v0: double, v1: int) -> int:
 ;; mir -O2 fn=reorderOr stage=after:PredicateReorderPass
 fn reorderOr(v0: double, v1: int) -> int:
   bb0:
-    v2: bool = const true
-    v3: int = const 0
-    v4: bool = gt v1, v3 {pure}
-    br_if v4, bb2(v2), bb1
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const true
+    br_if v3, bb2(v4), bb1
   bb1:
     v5: double = call_java Math.sin(v0) {pure}
     v6: double = call_java Math.cos(v0) {pure}
@@ -540,7 +542,7 @@ fn reorderOr(v0: double, v1: int) -> int:
   bb2(v10: bool):
     br_if v10, bb4, bb3
   bb3:
-    br bb5(v3)
+    br bb5(v2)
   bb4:
     v11: int = const 1
     br bb5(v11)
@@ -552,10 +554,10 @@ fn reorderOr(v0: double, v1: int) -> int:
 ;; mir -O2 fn=reorderOr
 fn reorderOr(v0: double, v1: int) -> int:
   bb0:
-    v2: bool = const true
-    v3: int = const 0
-    v4: bool = gt v1, v3 {pure}
-    br_if v4, bb2(v2), bb1
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const true
+    br_if v3, bb2(v4), bb1
   bb1:
     v5: double = call_java Math.sin(v0) {pure}
     v6: double = call_java Math.cos(v0) {pure}
@@ -566,7 +568,7 @@ fn reorderOr(v0: double, v1: int) -> int:
   bb2(v10: bool):
     br_if v10, bb4, bb3
   bb3:
-    br bb5(v3)
+    br bb5(v2)
   bb4:
     v11: int = const 1
     br bb5(v11)
@@ -593,21 +595,21 @@ fn rankCost (p:obj, lim:int) -> int {nothrow}
 ```hir
 ;; hir -O1 fn=rankCost
 fn rankCost (p:obj, lim:int) -> int {nothrow}
-  (if (and (>:bool (get-this-field x) 0:int) (>:bool var(lim) 0:int)) 1:int 0:int)
+  (if (and (>:bool var(lim) 0:int) (>:bool (get-this-field x) 0:int)) 1:int 0:int)
 ```
 
 ```mir
 ;; mir -O2 fn=rankCost stage=before
 fn rankCost(v0: any, v1: int) -> int:
   bb0:
-    v2: int = load_field v0.x {read:frozen}
-    v3: int = const 0
-    v4: bool = gt v2, v3 {pure}
-    v5: bool = const false
-    br_if v4, bb1, bb2(v5)
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const false
+    br_if v3, bb1, bb2(v4)
   bb1:
+    v5: int = load_field v0.x {read:frozen}
     v6: int = const 0
-    v7: bool = gt v1, v6 {pure}
+    v7: bool = gt v5, v6 {pure}
     br bb2(v7)
   bb2(v8: bool):
     br_if v8, bb4, bb3
@@ -625,18 +627,18 @@ fn rankCost(v0: any, v1: int) -> int:
 ;; mir -O2 fn=rankCost
 fn rankCost(v0: any, v1: int) -> int:
   bb0:
-    v2: int = load_field v0.x {read:frozen}
-    v3: int = const 0
-    v4: bool = gt v2, v3 {pure}
-    v5: bool = const false
-    br_if v4, bb1, bb2(v5)
+    v2: int = const 0
+    v3: bool = gt v1, v2 {pure}
+    v4: bool = const false
+    br_if v3, bb1, bb2(v4)
   bb1:
-    v6: bool = gt v1, v3 {pure}
+    v5: int = load_field v0.x {read:frozen}
+    v6: bool = gt v5, v2 {pure}
     br bb2(v6)
   bb2(v7: bool):
     br_if v7, bb4, bb3
   bb3:
-    br bb5(v3)
+    br bb5(v2)
   bb4:
     v8: int = const 1
     br bb5(v8)
@@ -681,10 +683,12 @@ fn guardedCond (flag:bool, a:int, b:int) -> int {nothrow unique}
   (def i 0:int)
   (def acc 0:int)
   (if var(flag)
-    (while (<:bool var(i) (+:int (*:int var(a) var(b)) 1:int))
-      (block
-        (set acc += var(i))
-        (set i += 1:int))))
+    (block
+      (def $licm0 (+:int (*:int var(a) var(b)) 1:int))
+      (while (<:bool var(i) var($licm0))
+        (block
+          (set acc += var(i))
+          (set i += 1:int)))))
   var(acc)
 ```
 
@@ -699,22 +703,22 @@ fn guardedCond(v0: bool, v1: int, v2: int) -> int:
     v5: any = const null
     br bb5(v5, v4)
   bb2:
-    v6: any = const null
-    br bb3(v6, v3, v4)
-  bb3(v7: any, v8: int, v9: int):
-    v10: int = mul v1, v2 {pure}
-    v11: int = const 1
-    v12: int = add v10, v11 {pure}
-    v13: bool = lt v8, v12 {pure}
+    v6: int = mul v1, v2 {pure}
+    v7: int = const 1
+    v8: int = add v6, v7 {pure}
+    v9: any = const null
+    br bb3(v9, v3, v4)
+  bb3(v10: any, v11: int, v12: int):
+    v13: bool = lt v11, v8 {pure}
     br_if v13, bb6, bb4
   bb4:
-    br bb5(v7, v9)
+    br bb5(v10, v12)
   bb5(v14: any, v15: int):
     ret v15
   bb6:
-    v16: int = add v9, v8 {pure}
+    v16: int = add v12, v11 {pure}
     v17: int = const 1
-    v18: int = add v8, v17 {pure}
+    v18: int = add v11, v17 {pure}
     v19: any = convert.any v18
     br bb3(v19, v18, v16)
 ```

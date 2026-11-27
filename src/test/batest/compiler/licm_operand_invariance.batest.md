@@ -453,7 +453,6 @@ fn C.run (n:int) -> int {nothrow unique}
 ```hir
 ;; hir -O1 fn=C.run
 fn C.run (n:int) -> int {nothrow unique}
-  (def loc (fn-ref loc))
   (def a 0:int)
   (def k 0:int)
   (block
@@ -469,27 +468,26 @@ fn C.run (n:int) -> int {nothrow unique}
 ;; mir -O2 fn=C.run stage=before
 fn C.run(v0: int) -> int:
   bb0:
-    v1: any = opaque.FunctionRef(loc) {pure}
+    v1: int = const 0
     v2: int = const 0
-    v3: int = const 0
-    v4: int = const 1
-    v5: int = add v0, v4 {pure}
-    v6: any = slot_read this {pure}
-    v7: int = load_field v6.v {read:frozen}
-    v8: int = add v5, v7 {pure}
-    v9: any = const null
-    br bb1(v9, v3, v2)
-  bb1(v10: any, v11: int, v12: int):
-    v13: bool = lt v11, v0 {pure}
-    br_if v13, bb3, bb2
+    v3: int = const 1
+    v4: int = add v0, v3 {pure}
+    v5: any = slot_read this {pure}
+    v6: int = load_field v5.v {read:frozen}
+    v7: int = add v4, v6 {pure}
+    v8: any = const null
+    br bb1(v8, v2, v1)
+  bb1(v9: any, v10: int, v11: int):
+    v12: bool = lt v10, v0 {pure}
+    br_if v12, bb3, bb2
   bb2:
-    ret v12
+    ret v11
   bb3:
-    v14: int = add v12, v8 {pure}
-    v15: int = const 1
-    v16: int = add v11, v15 {pure}
-    v17: any = convert.any v16
-    br bb1(v17, v16, v14)
+    v13: int = add v11, v7 {pure}
+    v14: int = const 1
+    v15: int = add v10, v14 {pure}
+    v16: any = convert.any v15
+    br bb1(v16, v15, v13)
 ```
 
 ```mir

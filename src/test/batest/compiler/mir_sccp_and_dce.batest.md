@@ -223,12 +223,10 @@ fn deadLoopParam (n:int) -> int {nothrow unique}
 ;; hir -O1 fn=deadLoopParam
 fn deadLoopParam (n:int) -> int {nothrow unique}
   (def live 0:int)
-  (def dead 1:int)
   (def i 0:int)
   (while (<:bool var(i) var(n))
     (block
       (set live += var(i))
-      (set dead (+:int (*:int var(dead) 3:int) 1:int))
       (set i += 1:int)))
   var(live)
 ```
@@ -238,25 +236,20 @@ fn deadLoopParam (n:int) -> int {nothrow unique}
 fn deadLoopParam(v0: int) -> int:
   bb0:
     v1: int = const 0
-    v2: int = const 1
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v1, v2)
-  bb1(v5: any, v6: int, v7: int, v8: int):
-    v9: bool = lt v6, v0 {pure}
-    br_if v9, bb3, bb2
+    v2: int = const 0
+    v3: any = const null
+    br bb1(v3, v2, v1)
+  bb1(v4: any, v5: int, v6: int):
+    v7: bool = lt v5, v0 {pure}
+    br_if v7, bb3, bb2
   bb2:
-    ret v7
+    ret v6
   bb3:
-    v10: int = add v7, v6 {pure}
-    v11: int = const 3
-    v12: int = mul v8, v11 {pure}
-    v13: int = const 1
-    v14: int = add v12, v13 {pure}
-    v15: int = const 1
-    v16: int = add v6, v15 {pure}
-    v17: any = convert.any v16
-    br bb1(v17, v16, v10, v14)
+    v8: int = add v6, v5 {pure}
+    v9: int = const 1
+    v10: int = add v5, v9 {pure}
+    v11: any = convert.any v10
+    br bb1(v11, v10, v8)
 ```
 
 ```mir
@@ -264,17 +257,17 @@ fn deadLoopParam(v0: int) -> int:
 fn deadLoopParam(v0: int) -> int:
   bb0:
     v1: int = const 0
-    v2: int = const 1
     br bb1(v1, v1)
-  bb1(v3: int, v4: int):
-    v5: bool = lt v3, v0 {pure}
-    br_if v5, bb3, bb2
+  bb1(v2: int, v3: int):
+    v4: bool = lt v2, v0 {pure}
+    br_if v4, bb3, bb2
   bb2:
-    ret v4
+    ret v3
   bb3:
-    v6: int = add v4, v3 {pure}
-    v7: int = add v3, v2 {pure}
-    br bb1(v7, v6)
+    v5: int = add v3, v2 {pure}
+    v6: int = const 1
+    v7: int = add v2, v6 {pure}
+    br bb1(v7, v5)
 ```
 
 ## SCCP folds unary negation and arithmetic across long, float, and double

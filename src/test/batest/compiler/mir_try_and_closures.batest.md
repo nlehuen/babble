@@ -255,7 +255,6 @@ fn supTest () -> int {volatile unique}
 ```hir
 ;; hir -O1 fn=supTest
 fn supTest () -> int {volatile unique}
-  (def n 0:int)
   (try
     (block
       (try
@@ -272,38 +271,37 @@ fn supTest () -> int {volatile unique}
 ;; mir -O2 fn=supTest stage=before
 fn supTest() -> int:
   bb0:
-    v0: int = const 0
     br bb1
   bb1 [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
     br bb2
   bb2 [unwind: * -> bb3, ThrownException -> bb11, RuntimeException -> bb8]:
-    v1: any = const "p"
-    v2: any = new_java RuntimeException(v1) {pure!}
-    rethrow v2
-  bb3(v3: any) [handler] [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
+    v0: any = const "p"
+    v1: any = new_java RuntimeException(v0) {pure!}
+    rethrow v1
+  bb3(v2: any) [handler] [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
     br bb4
   bb4 [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
     br bb5
   bb5 [unwind: Throwable -> bb6, ThrownException -> bb11, RuntimeException -> bb8]:
-    v4: any = const "s"
-    v5: any = new_java IllegalArgumentException(v4) {pure!}
-    rethrow v5
-  bb6(v6: any) [handler] [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
-    add_suppressed v3, v6
+    v3: any = const "s"
+    v4: any = new_java IllegalArgumentException(v3) {pure!}
+    rethrow v4
+  bb6(v5: any) [handler] [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
+    add_suppressed v2, v5
     br bb7
   bb7 [unwind: ThrownException -> bb11, RuntimeException -> bb8]:
-    rethrow v3
-  bb8(v7: any) [handler]:
+    rethrow v2
+  bb8(v6: any) [handler]:
     br bb9
   bb9:
-    v8: any = call_java v7.getSuppressed() {impure}
-    v9: any = checkcast v8 <java|array of java.lang.Throwable?|[Ljava.lang.Throwable;>
-    v10: int = array_len v9 {read:frozen,throws}
+    v7: any = call_java v6.getSuppressed() {impure}
+    v8: any = checkcast v7 <java|array of java.lang.Throwable?|[Ljava.lang.Throwable;>
+    v9: int = array_len v8 {read:frozen,throws}
     br bb10
   bb10:
-    ret v10
-  bb11(v11: any) [handler]:
-    rethrow v11
+    ret v9
+  bb11(v10: any) [handler]:
+    rethrow v10
 ```
 
 ```mir

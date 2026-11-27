@@ -10,6 +10,7 @@ import org.babblelang.opt.hir.FbipReusePass;
 import org.babblelang.opt.hir.HirDcePass;
 import org.babblelang.opt.hir.HirEGraphSimplifyPass;
 import org.babblelang.opt.hir.HirLicmPass;
+import org.babblelang.opt.hir.HirPredicateReorderPass;
 import org.babblelang.opt.hir.HirTryNormalize;
 import org.babblelang.opt.hir.InlinePass;
 import org.babblelang.opt.hir.ScalarReplacePass;
@@ -34,7 +35,8 @@ public final class PassManager {
                     new ScalarReplacePass(),
                     new FbipReusePass(),
                     new HirDcePass(),
-                    new HirLicmPass());
+                    new HirLicmPass(),
+                    new HirPredicateReorderPass());
 
     private final List<HirPass> passes;
 

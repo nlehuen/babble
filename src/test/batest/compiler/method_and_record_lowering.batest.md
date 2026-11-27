@@ -786,10 +786,7 @@ class C
 ;; hir -O1 class=C
 class C
   (def r1 7:int)
-  (def r2
-    (block
-      (def loc (overload (fn-ref loc#1) (fn-ref loc#2)))
-      12:int))
+  (def r2 12:int)
 ```
 
 ```mir

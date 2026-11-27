@@ -38,7 +38,7 @@ fn run (n:int, mc:obj, fmc:obj) -> double {nothrow unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (n:int, mc:obj, fmc:obj) -> double {nothrow unique}
-  (def mCls (select (select name(java).lang).Math))
+  (select (select name(java).lang).Math)
   (def a 0.0:double)
   (def i 0:int)
   (block

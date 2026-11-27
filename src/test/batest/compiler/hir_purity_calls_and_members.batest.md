@@ -55,7 +55,6 @@ fn run (n:int) -> int {io}
   (def pt (jnew Point 1:int 2:int))
   (def a 0:int)
   (def i 0:int)
-  (def u2 (jcall String.equals "ab" var(pt)))
   (block
     (def $licm0 (jcall String.equals "ab" "ab"))
     (while (<:bool var(i) var(n))
@@ -75,39 +74,37 @@ fn run(v0: int) -> int:
     v4: int = const 0
     v5: int = const 0
     v6: any = const "ab"
-    v7: bool = call_java v6.equals(v3) {pure!}
-    v8: any = const "ab"
-    v9: any = const "ab"
-    v10: bool = call_java v8.equals(v9) {pure}
-    v11: any = const null
-    br bb1(v11, v5, v4)
-  bb1(v12: any, v13: int, v14: int):
-    v15: bool = lt v13, v0 {pure}
-    br_if v15, bb3, bb2
+    v7: any = const "ab"
+    v8: bool = call_java v6.equals(v7) {pure}
+    v9: any = const null
+    br bb1(v9, v5, v4)
+  bb1(v10: any, v11: int, v12: int):
+    v13: bool = lt v11, v0 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    ret v14
+    ret v12
   bb3:
-    v16: bool = const false
-    br_if v10, bb4, bb5(v16)
+    v14: bool = const false
+    br_if v8, bb4, bb5(v14)
   bb4:
-    v17: any = const "ab"
-    v18: bool = call_java v17.equals(v3) {pure!}
-    v19: bool = not v18 {pure}
-    br bb5(v19)
-  bb5(v20: bool):
-    br_if v20, bb7, bb6
+    v15: any = const "ab"
+    v16: bool = call_java v15.equals(v3) {pure!}
+    v17: bool = not v16 {pure}
+    br bb5(v17)
+  bb5(v18: bool):
+    br_if v18, bb7, bb6
   bb6:
-    v21: int = const 0
-    br bb8(v21)
+    v19: int = const 0
+    br bb8(v19)
   bb7:
-    v22: int = const 1
-    br bb8(v22)
-  bb8(v23: int):
-    v24: int = add v14, v23 {pure}
-    v25: int = const 1
-    v26: int = add v13, v25 {pure}
-    v27: any = convert.any v26
-    br bb1(v27, v26, v24)
+    v20: int = const 1
+    br bb8(v20)
+  bb8(v21: int):
+    v22: int = add v12, v21 {pure}
+    v23: int = const 1
+    v24: int = add v11, v23 {pure}
+    v25: any = convert.any v24
+    br bb1(v25, v24, v22)
 ```
 
 ```mir
@@ -170,7 +167,7 @@ fn run (ji:int, chOpt:obj) -> int {nothrow unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (ji:int, chOpt:obj) -> int {nothrow unique}
-  (def uC (==:bool 'a' var(chOpt)))
+  (==:bool 'a' var(chOpt))
   1:int
 ```
 
@@ -181,9 +178,8 @@ fn run(v0: int, v1: any) -> int:
     v2: char = const 'a'
     v3: any = convert.any v2
     v4: any = eq v3, v1 {pure,throws}
-    v5: bool = convert.bool v4
-    v6: int = const 1
-    ret v6
+    v5: int = const 1
+    ret v5
 ```
 
 ```mir
@@ -223,9 +219,8 @@ fn run () -> int {io}
 ```hir
 ;; hir -O1 fn=run
 fn run () -> int {io}
-  (def ov (overload (fn-ref ov#1) (fn-ref ov#2)))
-  (def m (select (select name(java).lang).Math))
-  (def uM2 (jcall Math.abs -5:int))
+  (select (select name(java).lang).Math)
+  (jcall Math.abs -5:int)
   1:int
 ```
 
@@ -233,21 +228,18 @@ fn run () -> int {io}
 ;; mir -O2 fn=run stage=before
 fn run() -> int:
   bb0:
-    v0: any = opaque.FunctionRef(ov) {pure}
-    v1: any = opaque.FunctionRef(ov) {pure}
-    v2: any = opaque.MakeOverloadSet(v0, v1) {pure}
-    v3: any = name_read java {pure}
-    v4: any = opaque.DynamicSelect(v3.lang) {impure}
-    v5: any = opaque.DynamicSelect(v4.Math) {impure}
-    v6: any = name_read bump {pure}
-    v7: int = call bump() {impure}
-    v8: any = name_read java {pure}
-    v9: any = opaque.DynamicSelect(v8.lang) {impure}
-    v10: any = opaque.DynamicSelect(v9.Math) {impure}
-    v11: int = const -5
-    v12: int = call_java v10.abs(v11) {impure}
-    v13: int = const 1
-    ret v13
+    v0: any = name_read java {pure}
+    v1: any = opaque.DynamicSelect(v0.lang) {impure}
+    v2: any = opaque.DynamicSelect(v1.Math) {impure}
+    v3: any = name_read bump {pure}
+    v4: int = call bump() {impure}
+    v5: any = name_read java {pure}
+    v6: any = opaque.DynamicSelect(v5.lang) {impure}
+    v7: any = opaque.DynamicSelect(v6.Math) {impure}
+    v8: int = const -5
+    v9: int = call_java v7.abs(v8) {impure}
+    v10: int = const 1
+    ret v10
 ```
 
 ```mir
@@ -298,7 +290,7 @@ fn run (er:obj) -> int {volatile unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (er:obj) -> int {volatile unique}
-  (def u2 (call-method var(er).getThrow))
+  (call-method var(er).getThrow)
   (def a 0:int)
   (def i 0:int)
   (block
@@ -385,8 +377,8 @@ fn run (vi:obj) -> int {io}
 ```hir
 ;; hir -O1 fn=run
 fn run (vi:obj) -> int {io}
-  (def u1 (call (select (record-new R 1:int).b)))
-  (def u3 (call-iface var(vi).imp))
+  (call (select (record-new R 1:int).b))
+  (call-iface var(vi).imp)
   1:int
 ```
 
@@ -442,14 +434,13 @@ fn run () -> int {nothrow unique}
 ```hir
 ;; hir -O1 fn=run
 fn run () -> int {nothrow unique}
-  (def LR (class-ref LR))
+  (class-ref LR)
   (block (def $sr_u0_0 1:int))
-  (def u1 (get-this-field x))
-  (def u2
-    (block
-      (def $this (call name(R) 3:int))
-      (def u (get-this-field y))
-      (get-this-field x)))
+  (get-this-field x)
+  (block
+    (def $this (call name(R) 3:int))
+    (get-this-field y)
+    (get-this-field x))
   1:int
 ```
 
@@ -528,19 +519,16 @@ fn run (k:int) -> int {io}
   (block
     name(LateR)
     (def $sr_u0_0 1:int))
-  (def u1
-    (block
-      name(fUninit)
-      (def u null)
-      (set u (box (+:int var(k) 1:int)))
-      (nonnull var(u))))
+  (block
+    name(fUninit)
+    (set u (box (+:int var(k) 1:int)))
+    (nonnull var(u)))
   (def u2 (call-fn cl))
-  (def u3
-    (block
-      (def cap 1:int)
-      (def c2 (fn-ref c2))
-      (call-fn c2)))
-  (def r (core-new list 2:int))
+  (block
+    (def cap 1:int)
+    (def c2 (fn-ref c2))
+    (call-fn c2))
+  (core-new list 2:int)
   var(u2)
 ```
 
@@ -553,20 +541,19 @@ fn run(v0: int) -> int:
     v2: any = name_read LateR {pure,throws}
     v3: int = const 1
     v4: any = name_read fUninit {pure,throws}
-    v5: any = const null
-    v6: int = const 1
-    v7: int = add v0, v6 {pure}
-    v8: any = convert.any v7
-    v9: int = nonnull v8
-    v10: int = call cl() {impure}
+    v5: int = const 1
+    v6: int = add v0, v5 {pure}
+    v7: any = convert.any v6
+    v8: int = nonnull v7
+    v9: int = call cl() {impure}
     slot_decl cap
-    v11: int = const 1
-    slot_init cap, v11 {write:shared}
-    v12: any = opaque.FunctionRef(c2) {read:shared}
-    v13: int = call c2() {impure}
-    v14: int = const 2
-    v15: any = opaque.CoreCollectionCall(list, v14) {impure}
-    ret v10
+    v10: int = const 1
+    slot_init cap, v10 {write:shared}
+    v11: any = opaque.FunctionRef(c2) {read:shared}
+    v12: int = call c2() {impure}
+    v13: int = const 2
+    v14: any = opaque.CoreCollectionCall(list, v13) {impure}
+    ret v9
 ```
 
 ```mir
