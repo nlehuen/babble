@@ -5,7 +5,7 @@
 | **BIP** | 040 |
 | **Date** | 2026-11-27 |
 | **Status** | Decided (`BIP040-D1`–`BIP040-D10` settled; `BIP040-P1`–`BIP040-P5` planned) |
-| **Depends on** | Object model & `record`s ([bip002_object-model.md](bip002_object-model.md), `RM003`, `RM006`), interactive mode ([bip004_repl.md](bip004_repl.md)), modules & AOT ([bip005_modules.md](bip005_modules.md), [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static typing & generics ([bip008_static-typing.md](bip008_static-typing.md), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), predicate-free single-bracket `()` grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md), `RM006`), decoupled `HIR`, `-O1` Nanopass & `-O2` SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md)), pure-by-default effects & higher-order `calling` ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), optional/named/variadic/overloaded calls ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), WebAssembly 3.0 backend ([bip025_compile-to-wasm.md](bip025_compile-to-wasm.md), `RM018`), immutable `def` & mutable `var` bindings ([bip034_immutable-def-and-mutable-var.md](bip034_immutable-def-and-mutable-var.md)), pattern matching ([bip038_pattern-matching.md](bip038_pattern-matching.md), `RM024`) |
+| **Depends on** | Object model & `record`s ([bip002_object-model.md](bip002_object-model.md), `RM003`, `RM006`), interactive mode ([bip004_repl.md](bip004_repl.md)), modules & AOT ([bip005_modules.md](bip005_modules.md), [bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)), static typing & generics ([bip008_static-typing.md](bip008_static-typing.md), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), predicate-free single-bracket `()` grammar ([bip012_grammar-improvements.md](bip012_grammar-improvements.md), `RM006`), unified structured `HIR` & `-O1`/`-O2` optimizer ([bip014_optimization-passes.md](bip014_optimization-passes.md), [bip039_mir-deorbitation.md](bip039_mir-deorbitation.md)), pure-by-default effects & higher-order `calling` ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), optional/named/variadic/overloaded calls ([bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md)), WebAssembly 3.0 backend ([bip025_compile-to-wasm.md](bip025_compile-to-wasm.md), `RM018`), immutable `def` & mutable `var` bindings ([bip034_immutable-def-and-mutable-var.md](bip034_immutable-def-and-mutable-var.md)), pattern matching ([bip038_pattern-matching.md](bip038_pattern-matching.md), `RM024`) |
 | **Scope** | Dedicated `init` constructor syntax (`[private] init [effectPrefix] [(fnParameters) ->] ( body )`), declarative `class`/`record`/`object` bodies with uninitialized `def`/`var` fields, primary/explicit/overloaded constructors and `this(...)` delegation with pre-delegation local statements, static definite-initialization and single-assignment `FieldInitAnalysis`, pure-by-default `init` effects (`io`, `volatile`, `nothrow`, `calling f`), `record` & `object` rules, `ClassShape`/`TypedModuleSummary`/`Interpreter` support, `HirClass`/`HirConstructor` lowering, JVM `<init>` emission with `ACC_FINAL` on all `def` fields, `-O1`/`-O2` interaction, and WebAssembly 3.0 local-staged immutable `(field T)` lowering |
 
 ---
@@ -154,7 +154,7 @@ Key lessons adopted for Babble:
 
 | Token | Lexeme | Grammar role | In `memberName`? | Corpus collisions |
 |---|---|---|---|---|
-| `INIT` | `'init'` | Starts `initExpression` | Yes | **0** in `examples/` and `axioms/`; **6** local/param identifiers in `src/test/batest/` (`call_lowering.batest.md` ×1, `mir_gvn_and_alias_rle.batest.md` ×3, `member_and_iterable_typing.batest.md` ×1, plus 1 `.init` member access in `call_lowering.batest.md` which remains valid via `memberName`) |
+| `INIT` | `'init'` | Starts `initExpression` | Yes | **0** in `examples/` and `axioms/`; **6** occurrences in `src/test/batest/` (`call_lowering.batest.md` ×1 local, `opt_gvn_and_alias_rle.batest.md` ×3 params, `member_and_iterable_typing.batest.md` ×1 param, plus 1 `.init` member access in `call_lowering.batest.md` which remains valid via `memberName`) |
 
 Including `INIT` in `memberName` ensures that Java methods/fields named `.init(...)` and Babble named call arguments `foo(init: 1)` continue parsing without change. Because `def` takes `name=(ID | MOD)`, declaring a field or method named `init` (`def init = ...`) is automatically rejected as a syntax error, preventing any collision with constructors.
 
@@ -380,7 +380,7 @@ Following Babble's space-before-colon convention:
 
 ---
 
-## 6. Runtime, HIR, JVM, MIR & WebAssembly 3.0 Lowering
+## 6. Runtime, Unified HIR, JVM & WebAssembly 3.0 Lowering
 
 ### 6.1 `ClassShape` & `TypedModuleSummary`
 
@@ -427,7 +427,7 @@ And on `HirClass`:
   - `HirExpr.DirectCtorCall(int classId, int ctorIndex, HirExpr classVal, List<HirCallArg> args, ...)` (or extending `RecordNew` + `DirectBabbleCall`) statically dispatches directly to the chosen constructor overload with unboxed primitive arguments and zero `Object[]` boxing.
 - **`HirVerifier`:** verifies valid `delegateIndex` (acyclic, `< constructors.size()`), ensures `ThisFieldInit` never appears outside constructors/fieldInits, and checks type/kind consistency of every constructor parameter and delegation argument.
 
-### 6.4 JVM bytecode lowering (`ClassGen`, `HirEmitter`, `MirLowerer`, `MirEmitter`) (`BIP040-D10`)
+### 6.4 JVM bytecode lowering (`ClassGen`, `HirEmitter`, `HirSlotAllocator`) (`BIP040-D10`)
 
 ```mermaid
 flowchart TD
@@ -452,10 +452,10 @@ flowchart TD
 3. **Zero-overhead `this(...)` delegation:** `this(args)` compiles directly to JVM `INVOKESPECIAL C.<init>(...)V`. Because JVM bytecode verification (`V21`) permits arbitrary local-variable operations before `INVOKESPECIAL <init>` as long as `uninitializedThis` is not read or escaped, pre-delegation statements compile straight into `<init>` without synthetic helper methods!
 4. **Overload descriptor disambiguation:** If two Babble constructors share the same erased JVM primitive/reference descriptor (e.g., `init (a: list of int)` vs `init (a: list of string)`, or different named/optional arities with matching erased types), `ClassGen` appends a dummy disambiguator tag parameter (`int $ctorTag` or a static `$new$<k>` factory pair) so JVM method descriptors never collide.
 5. **Captured outer variables:** Stored on `BabbleClass.captured()` (passed via `BabbleClass` parameter 1 to `<init>`), identical to today — constructor locals remain strictly JVM method locals (slots in `<init>`), never fields on `C` unless captured by a method of `C` (and header-only plain params used only in `init` are no longer stored as hidden fields!).
-6. **`-O1` Nanopass & `-O2` SSA `MIR`:**
-   - `fastRecord` (`HirBuilder.isFastRecordClass`) continues to trigger for method-only records with no `init` (and extends cleanly to records whose `init` is pure/nothrow with no `this` escape so `ScalarReplacePass` / SROA can scalar-replace derived fields too!).
-   - All body `def` fields are permanently `READ_FROZEN` (`MirEffect.READ_FROZEN`) in `MirLowerer`, `AliasRlePass`, and `HirLicmPass`.
-   - At `-O2`, call sites lower `DirectCtorCall` cleanly in `MirLowerer` / `MirEmitter` to direct typed `<init>` / `$new$<k>` calls, and constructor bodies themselves lower through `MirLowerer` (or `HirEmitter` for `<init>` when `INVOKESPECIAL` uninitialized-this tracking is required, with `-O1` HIR passes optimizing every constructor body).
+6. **Unified structured `HIR` `-O1` & `-O2` optimization (`BIP039`):**
+   - `fastRecord` (`HirDeclLowerer.isFastRecordClass`) continues to trigger for method-only records with no `init` (and extends cleanly to records whose `init` is pure/nothrow with no `this` escape so `ScalarReplacePass` / SROA can scalar-replace derived fields too!).
+   - All body `def` fields carry `IrEffect.READ_FROZEN` (`AliasClass.Frozen`), unlocking epoch-free GVN/CSE, alias RLE, and loop-invariant hoisting across `HirLicmPass`, `HirSccpPass`, and `HirAeGraphPass` at `-O1` and `-O2` (for both JVM and WebAssembly 3.0).
+   - Every constructor body and call site (`DirectCtorCall`) flows directly through the single unified structured `HIR` pipeline (`HirSlotAllocator`, `HirSccpPass`, `HirAeGraphPass`, and `HirEmitter`).
 
 ### 6.5 WebAssembly 3.0 lowering (`WasmObjectSystem`, `BIP040-D10`)
 
@@ -474,7 +474,7 @@ Auditing the entire repository reveals a small, cleanly bounded migration surfac
 
 1. **Identifier `init` collisions (`6` occurrences, all in tests):**
    - `examples/` and `src/main/java/org/babblelang/axioms/`: **0** collisions.
-   - `src/test/batest/`: rename 5 local/param bindings named `init` (`call_lowering.batest.md:20`, `mir_gvn_and_alias_rle.batest.md:151,233,479`, `member_and_iterable_typing.batest.md:11`). The single `.init` member access (`call_lowering.batest.md:165`) stays valid because `INIT` is in `memberName`.
+   - `src/test/batest/`: rename 5 local/param bindings named `init` (`call_lowering.batest.md:20`, `opt_gvn_and_alias_rle.batest.md:85,136,244`, `member_and_iterable_typing.batest.md:11`). The single `.init` member access (`call_lowering.batest.md:210`) stays valid because `INIT` is in `memberName`.
 2. **Bare executable statements in existing `class`/`record`/`object` bodies:**
    - Wrap bare setup/validation statements in existing `.batest.md` tests (e.g. `def RBody = record (x: int) ( assert(this.x >= 0) ; def y = this.x + 1 )` → `def RBody = record (x: int) ( init ( assert(this.x >= 0) ) ; def y = this.x + 1 )`) inside `init (...)`.
    - Update existing error-message expectations where `Declaration requires an initializer` or `return in a class body` are tested on classes.
@@ -488,7 +488,7 @@ Auditing the entire repository reveals a small, cleanly bounded migration surfac
 
 ## 8. Phased Implementation Plan (`BIP040-P1`–`BIP040-P5`)
 
-Each phase keeps `mvn -B package -PO2` green across all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `FormatterTestCase`, `ArchitectureBoundaryTestCase`, `RuntimeBoundaryTestCase`, and `-format -check`:
+Each phase keeps `mvn -B package -PO2` green across all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`, `wasm-js -O2`), `ParserGrammarTestCase`, `FormatterTestCase`, `ArchitectureBoundaryTestCase`, `RuntimeBoundaryTestCase`, and `-format -check`:
 
 1. **`BIP040-P1` — Grammar, `Formatter`, REPL `classify` & keyword migration:**
    - Add `INIT: 'init'` to `Babble.g4`, exempt `INIT` in `memberName`, and add `# initExpression` (`PRIVATE? INIT effectPrefix? (fnParameters '->' NL*)? initBlock=block`).
@@ -503,18 +503,17 @@ Each phase keeps `mvn -B package -PO2` green across all execution modes (`interp
    - Integrate `init` into `EffectChecker` and `EffectBodyWalker` (`BIP040-D9`): pure-by-default `init`, `io`/`volatile`/`nothrow`/`calling f`, `record` purity enforcement, per-constructor `CallableSummary`, and `@UNIQUE` return inference.
    - Migrate existing `.batest.md` tests that put bare statements in class/record/object bodies to `init (...)`.
 
-3. **`BIP040-P3` — `Interpreter`, `HIR`, JVM `<init>` (`ACC_FINAL`) & `-O2` `MIR`:**
+3. **`BIP040-P3` — `Interpreter`, unified `HIR`, and JVM `<init>` (`ACC_FINAL`):**
    - Implement multi-constructor / delegating / `init`-body execution in `Interpreter` and `InterpretedInstance` (with `initializing` phase enforcement).
-   - Refactor `HirClass` (`HirConstructor`, `fieldInits`, `ThisFieldInit`, `DirectCtorCall`), `HirBuilder`, `HirVerifier`, `HirPrinter`, and `HirCanonicalPrinter`.
-   - Update `ClassGen` and `HirEmitter` to emit constructors directly inside JVM `<init>` with `INVOKESPECIAL` delegation, marking **all** `def` fields (header and body) `ACC_FINAL` (except `fbipReused` records) and retiring `$defined$` bitmasks / `Undefined.UNDEFINED` sentinel loops (`BIP040-D10`).
-   - Update `MirLowerer`, `MirEmitter`, and `MirCanonicalPrinter` for direct constructor calls and `READ_FROZEN` body `def` fields.
+   - Refactor `HirClass` (`HirConstructor`, `fieldInits`, `ThisFieldInit`, `DirectCtorCall`), `HirBuilder`, `HirDeclLowerer`, `HirCallLowerer`, `HirVerifier`, `HirPrinter`, and `HirCanonicalPrinter`.
+   - Update `ClassGen`, `HirEmitter`, and `HirSlotAllocator` to emit constructors directly inside JVM `<init>` with `INVOKESPECIAL` delegation, marking **all** `def` fields (header and body) `ACC_FINAL` (except `fbipReused` records) and retiring `$defined$` bitmasks / `Undefined.UNDEFINED` sentinel loops (`BIP040-D10`).
 
-4. **`BIP040-P4` — WebAssembly 3.0 backend & `-O1`/`-O2` optimizations:**
+4. **`BIP040-P4` — WebAssembly 3.0 backend & unified `-O1`/`-O2` HIR optimizations:**
    - Update `WasmObjectSystem`, `WasmFuncEmitter`, `WasmMemberEmitter`, and `WasmProgramLinker` to emit typed `$ctor_<cls>_<k>` functions, delegation calls, and local-staged `struct.new` so **all** `def` fields become immutable WasmGC `(field T)` whenever `this` does not escape (`BIP040-D10`).
-   - Update `HirDcePass`, `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, and `HirPurity` for `HirConstructor`, `ThisFieldInit`, and `DirectCtorCall`, preserving `fastRecord` SROA and extending it cleanly where applicable.
+   - Update `IrEffect` (`READ_FROZEN` for all `def` fields), `HirDcePass`, `HirLicmPass`, `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, `HirSccpPass`, `HirAeGraphPass`, and `HirPurity` for `HirConstructor`, `ThisFieldInit`, and `DirectCtorCall`, preserving `fastRecord` SROA and extending it cleanly where applicable.
 
 5. **`BIP040-P5` — Specification suite, ray tracer refactor, coverage gate & documentation:**
-   - Author comprehensive `.batest.md` specifications under `src/test/batest/objects/constructors.batest.md` (primary `init`, explicit `init` on `class ()`, overloaded constructors, `this(...)` delegation with pre-delegation locals, `private init`, `record` & `object` `init`, generics, effects/`calling f`/`@UNIQUE`, all definite-init/single-assignment/cycle/escape compile errors) and `src/test/batest/compiler/constructor_lowering.batest.md` (`hir`/`mir`/`wat` goldens + JVM `ACC_FINAL` reflection check in `BabbleCompilerTestCase`).
+   - Author comprehensive `.batest.md` specifications under `src/test/batest/objects/constructors.batest.md` (primary `init`, explicit `init` on `class ()`, overloaded constructors, `this(...)` delegation with pre-delegation locals, `private init`, `record` & `object` `init`, generics, effects/`calling f`/`@UNIQUE`, all definite-init/single-assignment/cycle/escape compile errors) and `src/test/batest/compiler/constructor_lowering.batest.md` (`hir`/`wat` goldens across `-O0`/`-O1`/`-O2` + JVM `ACC_FINAL` reflection check in `BabbleCompilerTestCase`).
    - Refactor `examples/raytracer-argon/` and `examples/raytracer-fable/` (`Camera`, `Sphere`, `HitRecord`) to use `init` constructors and verify byte-identical `examples/raytracer-argon/scene.ppm`.
    - Pass `mvn -B package -PO2` and `mvn -q verify -Pbatest` (`>= 80%` line & branch coverage across all 6 scopes).
    - Update `README.md`, `AGENTS.md`, `docs/ARCHITECTURE.md`, `docs/design/bip002_object-model.md`, `docs/design/bip034_immutable-def-and-mutable-var.md`, and promote `BIP040-P1`..`P5` to `BIP040-I1`..`I5` via `src/tools/mark_bip_implemented.py`.
