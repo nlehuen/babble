@@ -19,7 +19,7 @@ coreTypeKeyword: coreScalarKeyword | coreCollectionKeyword | RANGE_KW | EXCEPTIO
 effectModifier: PURE | VOLATILE | IO | MUT | SHARED | NOTHROW
               | IDEMPOTENT | COMMUTATIVE | ASSOCIATIVE | MONOTONE | INJECTIVE;
 
-memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR | MOD | MATCH | CASE;
+memberName: ID | coreTypeKeyword | effectModifier | AXIOM | RECORD | OF | UNIQUE | FROZEN | IN | BREAK | CONTINUE | CALLING | TYPE | OVERLOAD | AND | OR | NOT | FOREVER | TRY | CATCH | FINALLY | THROW | VAR | MOD | MATCH | CASE | INIT;
 
 effectPrefix: effectWord+ callingClause?
             | callingClause;
@@ -49,6 +49,7 @@ expression:
             (NL* elseClause)?                                 # matchExpression
           | (EXPORT | PRIVATE)? (DEF | VAR) name=(ID | MOD) (OF typeParameters)? (':' type)?
                      ('=' NL* value=expression)?   # defExpression
+          | PRIVATE? INIT effectPrefix? (fnParameters '->')? NL* initBlock=block   # initExpression
           | EXPORT? AXIOM target=axiomTarget (OF typeParameters)? ':' axiomType   # axiomExpression
           | TYPE NL* aliased=type                             # typeAliasExpression
           | WHILE test=expression THEN NL* whileBlock=block   # whileExpression
@@ -309,6 +310,7 @@ RECURSE: 'recurse';
 OBJECT: 'object';
 CLASS: 'class';
 RECORD: 'record';
+INIT: 'init';
 TYPE: 'type';
 INTERFACE: 'interface';
 IMPLEMENTS: 'implements';

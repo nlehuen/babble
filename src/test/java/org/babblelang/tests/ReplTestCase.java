@@ -963,4 +963,32 @@ public class ReplTestCase {
         Assertions.assertTrue(
                 org.babblelang.repl.Completions.at(session, "ca", 2).candidates().contains("case"));
     }
+
+    @Test
+    public void testBip040ReplClassifyAndCompletions() {
+        Assertions.assertEquals(
+                BabbleSession.Input.INCOMPLETE, BabbleSession.classify("def C = class () (\ninit"));
+        Assertions.assertEquals(
+                BabbleSession.Input.INCOMPLETE,
+                BabbleSession.classify("def C = class () (\nprivate init"));
+        Assertions.assertEquals(
+                BabbleSession.Input.INCOMPLETE,
+                BabbleSession.classify("def C = class () (\ninit io"));
+        Assertions.assertEquals(
+                BabbleSession.Input.INCOMPLETE,
+                BabbleSession.classify("def C = class () (\ninit (x: int) ->"));
+        Assertions.assertEquals(
+                BabbleSession.Input.INCOMPLETE,
+                BabbleSession.classify("def C = class () (\ninit (x: int) -> ("));
+        Assertions.assertEquals(
+                BabbleSession.Input.COMPLETE,
+                BabbleSession.classify("def C = class () ( init () -> ( () ) )"));
+        Assertions.assertEquals(
+                BabbleSession.Input.COMPLETE,
+                BabbleSession.classify("def C = class (def x: int) ( init ( () ) )"));
+
+        BabbleSession session = session();
+        Assertions.assertTrue(
+                org.babblelang.repl.Completions.at(session, "in", 2).candidates().contains("init"));
+    }
 }
