@@ -293,6 +293,21 @@ final class WasmVarAndDefEmitter {
                     }
                     int fi = ci.memberToStructField[mIdx];
                     PrimitiveKind fk = ci.memberKinds[mIdx];
+                    if (ctx.stagedFieldLocals != null
+                            && mIdx >= 0
+                            && mIdx < ctx.stagedFieldLocals.length
+                            && ctx.stagedFieldLocals[mIdx] >= 0) {
+                        if (d.value() != null) {
+                            fn.emitAndWiden(d.value());
+                            fn.widenStackRank(d.meta().wideningRank(), d.meta().line());
+                            fn.convertStack(ctx.stackKind, fk, d.meta().line());
+                        } else {
+                            ts.emitDefaultValue(c, ts.valTypeFor(fk));
+                        }
+                        c.localTee(ctx.stagedFieldLocals[mIdx]);
+                        ctx.stackKind = fk;
+                        return;
+                    }
                     if (!ci.fieldMutable[mIdx]) {
                         // Strictly immutable record field already initialized in struct.new
                         c.localGet(ctx.thisLocal).refAsNonNull().structGet(ci.structTypeIdx, fi);

@@ -284,7 +284,6 @@ fn run () -> int {nothrow unique}
   (get-this-field x)
   (block
     (def $this (call name(R) 3:int))
-    (get-this-field y)
     (get-this-field x))
   1:int
 ```
@@ -294,10 +293,7 @@ fn run () -> int {nothrow unique}
 fn run () -> int {nothrow unique}
   (class-ref LR)
   (block
-    (def $cse0 (call name(R) 3:int))
-    (block
-      (get-this-field y)
-      (get-this-field x))
+    (call name(R) 3:int)
     1:int)
 ```
 

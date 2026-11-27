@@ -1131,8 +1131,11 @@ public final class InlinePass implements HirPass {
                                 receiverCls.shape().isValue()
                                         || !receiverCls.shape().isMutable(g.memberIndex());
                         boolean isDef =
-                                receiverCls.shape().isHeaderParameterMember(g.memberIndex())
-                                        && (g.memberIndex() >= receiverCls.primDefBits().length
+                                (receiverCls.shape().isHeaderParameterMember(g.memberIndex())
+                                                || (isImm && receiverCls.allDefFieldsFinalSafe()))
+                                        && (receiverCls.allDefFieldsFinalSafe()
+                                                || g.memberIndex()
+                                                        >= receiverCls.primDefBits().length
                                                 || receiverCls.primDefBits()[g.memberIndex()] < 0);
                         String rt = receiverText != null ? receiverText : g.receiverText();
                         yield new HirExpr.ThisFieldGet(

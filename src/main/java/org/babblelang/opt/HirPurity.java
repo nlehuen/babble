@@ -208,7 +208,8 @@ public final class HirPurity {
                     yield cls != null
                             && g.immutableField()
                             && g.definitelyDefined()
-                            && (g.memberIndex() >= cls.primDefBits().length
+                            && (cls.allDefFieldsFinalSafe()
+                                    || g.memberIndex() >= cls.primDefBits().length
                                     || cls.primDefBits()[g.memberIndex()] < 0)
                             && isPureNothrowTerminating(g.receiver(), module, visitingFns);
                 }

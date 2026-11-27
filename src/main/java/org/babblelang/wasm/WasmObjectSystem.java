@@ -80,6 +80,7 @@ public final class WasmObjectSystem {
         public final Map<Integer, Integer> valueHiddenVarToField = new LinkedHashMap<>();
         public final boolean hasCaptures;
         public final boolean hasCapturingIfaces;
+        public final boolean localStagedCtor;
         public final long ifaceBits;
         public final long[] ifaceWords; // null if <= 64 interfaces
         public final Set<IfaceInfo> implementedIfaces = new LinkedHashSet<>();
@@ -90,6 +91,7 @@ public final class WasmObjectSystem {
         public int singletonObjGlobalIdx = -1; // >= 0 for `object`
         public int staticInitDoneGlobalIdx = -1;
 
+        public final List<WasmConstructorEmitter.CtorInfo> ctors = new ArrayList<>();
         public WasmModule.FuncDef directCtorDef;
         public int directCtorIdx;
         public WasmModule.FuncDef genericCtorDef;
@@ -124,6 +126,7 @@ public final class WasmObjectSystem {
                 int hiddenCellBaseFieldIdx,
                 List<HirVar> hiddenCells,
                 boolean hasCapturingIfaces,
+                boolean localStagedCtor,
                 long ifaceBits,
                 long[] ifaceWords) {
             this.classId = classId;
@@ -147,6 +150,7 @@ public final class WasmObjectSystem {
             }
             this.hasCaptures = !hir.capturedVars().isEmpty();
             this.hasCapturingIfaces = hasCapturingIfaces;
+            this.localStagedCtor = localStagedCtor;
             this.ifaceBits = ifaceBits;
             this.ifaceWords = ifaceWords;
         }
@@ -396,6 +400,7 @@ public final class WasmObjectSystem {
                 int capBase,
                 int hiddenBase,
                 List<HirVar> hiddenCells,
+                boolean localStagedCtor,
                 String cname) {}
         List<PendingClass> pending = new ArrayList<>();
         for (WasmProgramLinker.ModuleLinkInfo m : modules) {
@@ -403,6 +408,7 @@ public final class WasmObjectSystem {
                 int classId = pending.size();
                 ClassShape shape = hc.shape();
                 boolean isRecord = shape.isValue();
+                boolean localStaged = WasmConstructorEmitter.canLocalStageClass(hc);
 
                 boolean[] isParamMember = new boolean[shape.memberCount()];
                 for (int p = 0; p < shape.parameters().length; p++) {
@@ -438,12 +444,15 @@ public final class WasmObjectSystem {
                         fieldMutable[i] = false;
                     } else {
                         memberToField[i] = structFields.size();
-                        // BIP025-D11 + BIP034-I5: record fields AND header `def` parameter fields
-                        // on regular
-                        // classes are initialized directly in struct.new and strictly immutable in
-                        // WasmGC!
+                        // BIP025-D11 + BIP034-I5 + BIP040-D10: record fields, header `def` fields,
+                        // and local-staged body `def` fields are initialized in struct.new and
+                        // strictly immutable in WasmGC!
                         boolean immutableHeaderParam = isParamMember[i] && !shape.isMutable(i);
-                        boolean mut = !immutableHeaderParam && !(isRecord && hc.fastRecord());
+                        boolean immutableStagedDef = localStaged && !shape.isMutable(i);
+                        boolean mut =
+                                !immutableHeaderParam
+                                        && !immutableStagedDef
+                                        && !(isRecord && hc.fastRecord());
                         fieldMutable[i] = mut;
                         structFields.add(
                                 WasmTypeSystem.field("f_" + mname, ts.valTypeFor(mk), mut));
@@ -523,6 +532,7 @@ public final class WasmObjectSystem {
                                 capBase,
                                 hiddenBase,
                                 hiddenCells,
+                                localStaged,
                                 cname));
             }
         }
@@ -543,6 +553,7 @@ public final class WasmObjectSystem {
                     pc.capBase,
                     pc.hiddenBase,
                     pc.hiddenCells,
+                    pc.localStagedCtor,
                     pc.cname);
         }
     }
@@ -583,6 +594,7 @@ public final class WasmObjectSystem {
             int capBase,
             int hiddenBase,
             List<HirVar> hiddenCells,
+            boolean localStagedCtor,
             String cname) {
         ClassShape shape = hc.shape();
 
@@ -627,6 +639,7 @@ public final class WasmObjectSystem {
                         hiddenBase,
                         hiddenCells,
                         hasCapIfaces,
+                        localStagedCtor,
                         bits,
                         words);
         ci.implementedIfaces.addAll(implSet);
@@ -700,45 +713,8 @@ public final class WasmObjectSystem {
                             ts.defaultConstExpr(WasmValType.refNull(structTypeIdx)));
         }
 
-        // Constructor signatures
-        int optCount = 0;
-        for (HirParam p : hc.params()) {
-            if (p.defaultValue() != null) optCount++;
-        }
-        ci.ctorHasOptMask = optCount > 0 && optCount <= 32 && hc.params().size() <= 32;
-        List<WasmValType> ctorParams = new ArrayList<>();
-        List<String> ctorParamNames = new ArrayList<>();
-        if (ci.hasCapturingIfaces) {
-            ctorParams.add(WasmValType.ref(ts.vtableType));
-            ctorParamNames.add("$vtable");
-        }
-        for (int i = 0; i < hc.capturedVars().size(); i++) {
-            HirVar cv = hc.capturedVars().get(i);
-            ctorParams.add(
-                    WasmProgramLinker.isValueCapture(cv)
-                            ? ts.valTypeFor(cv.primitiveKind())
-                            : WasmValType.ref(ts.cellTypeFor(cv.primitiveKind())));
-            ctorParamNames.add("$cap" + i);
-        }
-        for (HirParam p : hc.params()) {
-            ctorParams.add(ts.valTypeFor(p.kind()));
-            ctorParamNames.add(p.name());
-        }
-        if (ci.ctorHasOptMask) {
-            ctorParams.add(WasmValType.I32);
-            ctorParamNames.add("$optMask");
-        }
-        int ctorSig = ts.internFuncType(ctorParams, List.of(WasmValType.ref(structTypeIdx)));
-        ci.directCtorDef = mod.addFunction(cname + "$new", ctorSig, ctorParamNames);
-        ci.directCtorIdx = ci.directCtorDef.funcIndex();
-
-        ci.genericCtorDef =
-                mod.addFunction(
-                        cname + "$ctor_generic",
-                        ts.genericCallSigType,
-                        List.of("self", "args", "names"));
-        ci.genericCtorIdx = ci.genericCtorDef.funcIndex();
-        mod.declareFuncRef(ci.genericCtorIdx);
+        // Constructor signatures (BIP040)
+        WasmConstructorEmitter.declareConstructors(linker, ci, cname);
 
         // VTable virtual hooks
         ci.equalsDef = mod.addFunction(cname + "$equals", ts.eqFnSigType, List.of("self", "other"));
@@ -768,7 +744,10 @@ public final class WasmObjectSystem {
         ClassShape shape = hc.shape();
         boolean[] guaranteed = new boolean[shape.memberCount()];
         for (int i = 0; i < shape.memberCount(); i++) {
-            if (memberToField[i] >= 0 && (!fieldMutable[i] || shape.isHeaderParameterMember(i))) {
+            if (memberToField[i] >= 0
+                    && (!fieldMutable[i]
+                            || shape.isHeaderParameterMember(i)
+                            || (hc.allDefFieldsFinalSafe() && !shape.isMutable(i)))) {
                 guaranteed[i] = true;
             }
         }
@@ -917,8 +896,8 @@ public final class WasmObjectSystem {
     public void emitAll(WasmFuncEmitter fe, WasmCallEmitter ce) {
         for (ClassInfo ci : allClasses) {
             emitClassBoundMethods(ci, ce);
-            emitClassConstructor(ci, fe);
-            emitGenericCtorTrampoline(ci);
+            fe.constructors().emitClassConstructors(ci);
+            fe.constructors().emitGenericCtorTrampoline(ci);
             emitEqualsHook(ci);
             emitHashCodeHook(ci);
             emitToStringHook(ci);
@@ -1001,129 +980,6 @@ public final class WasmObjectSystem {
             if (name.equals(shape.member(i))) return i;
         }
         return -1;
-    }
-
-    private void emitClassConstructor(ClassInfo ci, WasmFuncEmitter fe) {
-        fe.emitClassConstructorBody(ci);
-    }
-
-    private void emitGenericCtorTrampoline(ClassInfo ci) {
-        WasmModule.FuncDef fn = ci.genericCtorDef;
-        WasmCodeBuilder c = fn.code();
-        if (ci.hir.isObject()) {
-            rt.emitStringLit(c, "Cannot instantiate object : " + ci.shape.name());
-            c.i32Const(ci.hir.line()).call(rt.fnThrowMsg).unreachable();
-            return;
-        }
-        int paramCount = ci.hir.params().size();
-        int argLen = fn.addLocal("argLen", WasmValType.I32, 3);
-        int optMask = fn.addLocal("optMask", WasmValType.I32, 3);
-        c.localGet(1).arrayLen().localSet(argLen);
-
-        int[] pLocals = new int[paramCount];
-        for (int p = 0; p < paramCount; p++) {
-            pLocals[p] = fn.addLocal("p" + p, ts.anyRef(), 3);
-            c.globalGet(rt.gMissing).localSet(pLocals[p]);
-        }
-
-        int idx = fn.addLocal("idx", WasmValType.I32, 3);
-        int nameAny = fn.addLocal("nameAny", ts.anyRef(), 3);
-        int valAny = fn.addLocal("valAny", ts.anyRef(), 3);
-        c.localGet(2).refIsNull().if_();
-        for (int p = 0; p < paramCount; p++) {
-            c.i32Const(p)
-                    .localGet(argLen)
-                    .op(WasmInstr.SimpleOp.I32_LT_S)
-                    .if_()
-                    .localGet(1)
-                    .i32Const(p)
-                    .arrayGet(ts.anyArrType)
-                    .localSet(pLocals[p])
-                    .end();
-        }
-        c.else_();
-        c.i32Const(0).localSet(idx);
-        c.loop()
-                .localGet(idx)
-                .localGet(argLen)
-                .op(WasmInstr.SimpleOp.I32_LT_S)
-                .if_()
-                .localGet(1)
-                .localGet(idx)
-                .arrayGet(ts.anyArrType)
-                .localSet(valAny)
-                .localGet(2)
-                .refAsNonNull()
-                .localGet(idx)
-                .arrayGet(ts.anyArrType)
-                .localTee(nameAny)
-                .refIsNull()
-                .if_();
-        for (int p = 0; p < paramCount; p++) {
-            c.localGet(idx)
-                    .i32Const(p)
-                    .op(WasmInstr.SimpleOp.I32_EQ)
-                    .if_()
-                    .localGet(valAny)
-                    .localSet(pLocals[p])
-                    .end();
-        }
-        c.else_();
-        for (int p = 0; p < paramCount; p++) {
-            c.localGet(nameAny).refCast(ts.stringType);
-            rt.emitStringLit(c, ci.hir.params().get(p).name());
-            c.call(rt.fnStrEq).if_().localGet(valAny).localSet(pLocals[p]).end();
-        }
-        c.end()
-                .localGet(idx)
-                .i32Const(1)
-                .op(WasmInstr.SimpleOp.I32_ADD)
-                .localSet(idx)
-                .br(1)
-                .end()
-                .end();
-        c.end();
-
-        if (ci.hasCapturingIfaces) {
-            c.localGet(0).refCast(ts.classValType).structGet(ts.classValType, 4);
-        }
-        if (ci.hasCaptures) {
-            int cvSelf = fn.addLocal("cvSelf", WasmValType.refNull(ci.classValStructType), 3);
-            c.localGet(0).refCast(ci.classValStructType).localSet(cvSelf);
-            for (int i = 0; i < ci.hir.capturedVars().size(); i++) {
-                c.localGet(cvSelf).refAsNonNull().structGet(ci.classValStructType, 6 + i);
-            }
-        }
-
-        int optBit = 0;
-        for (int p = 0; p < paramCount; p++) {
-            HirParam hp = ci.hir.params().get(p);
-            if (hp.defaultValue() != null) {
-                c.localGet(pLocals[p])
-                        .globalGet(rt.gMissing)
-                        .refEq()
-                        .if_(ts.valTypeFor(hp.kind()))
-                        .localGet(optMask)
-                        .i32Const(1 << optBit)
-                        .op(WasmInstr.SimpleOp.I32_OR)
-                        .localSet(optMask);
-                ts.emitDefaultValue(c, ts.valTypeFor(hp.kind()));
-                c.else_();
-                c.localGet(pLocals[p]);
-                if (hp.kind().isPrimitive())
-                    c.i32Const(ci.hir.line()).call(rt.unboxFuncFor(hp.kind()));
-                c.end();
-                optBit++;
-            } else {
-                c.localGet(pLocals[p]);
-                if (hp.kind().isPrimitive())
-                    c.i32Const(ci.hir.line()).call(rt.unboxFuncFor(hp.kind()));
-            }
-        }
-        if (ci.ctorHasOptMask) {
-            c.localGet(optMask);
-        }
-        c.call(ci.directCtorIdx);
     }
 
     private void emitEqualsHook(ClassInfo ci) {

@@ -33,193 +33,6 @@ public final class WasmMemberEmitter {
         this.calls = calls;
     }
 
-    // ---------------------------------------------------------------- Class / Record / Object
-    // Constructor Body
-
-    public void emitClassConstructorBody(WasmObjectSystem.ClassInfo ci) {
-        WasmModule.FuncDef fn = ci.directCtorDef;
-        int paramIdx = 0;
-        int vtableParamIdx = ci.hasCapturingIfaces ? paramIdx++ : -1;
-        int capStart = paramIdx;
-        paramIdx += ci.hir.capturedVars().size();
-        int firstParamIdx = paramIdx;
-        paramIdx += ci.hir.params().size();
-        int optMaskLocal = ci.ctorHasOptMask ? paramIdx++ : -1;
-
-        WasmFuncEmitter.EmitCtx prev = fe.ctx();
-        WasmFuncEmitter.EmitCtx cctx =
-                new WasmFuncEmitter.EmitCtx(
-                        ci.modInfo, null, fn, paramIdx, PrimitiveKind.NONE, -1, optMaskLocal);
-        cctx.ownerClass = ci;
-        cctx.currentTopLevelStmtIdx =
-                ci.modInfo.classOwnerTopLevelStmtIdx.getOrDefault(ci.hir.id(), -1);
-        fe.setCtx(cctx);
-        try {
-            WasmCodeBuilder c = cctx.code;
-
-            // 1. Register captured variables (available via constructor's $cap params)
-            for (int i = 0; i < ci.hir.capturedVars().size(); i++) {
-                HirVar cv = ci.hir.capturedVars().get(i);
-                boolean valCap = WasmProgramLinker.isValueCapture(cv);
-                int cellType = valCap ? -1 : ts.cellTypeFor(cv.primitiveKind());
-                cctx.vars.put(
-                        cv.id(),
-                        new WasmFuncEmitter.VarSlot(
-                                capStart + i, cv.primitiveKind(), !valCap, cellType, false, -1));
-            }
-
-            // 2. Evaluate optional parameter defaults and immediately wrap cell-captured params
-            int optBit = 0;
-            for (int i = 0; i < ci.hir.params().size(); i++) {
-                HirParam p = ci.hir.params().get(i);
-                int pLocal = firstParamIdx + i;
-                if (ci.ctorHasOptMask && p.defaultValue() != null) {
-                    c.localGet(optMaskLocal)
-                            .i32Const(1 << optBit)
-                            .op(WasmInstr.SimpleOp.I32_AND)
-                            .if_();
-                    cctx.pushBlock("ctor_opt");
-                    bindCtorParam(cctx, p, pLocal);
-                    fe.emitAs(p.defaultValue(), p.kind());
-                    c.localSet(pLocal);
-                    cctx.popBlock();
-                    c.end();
-                    optBit++;
-                }
-                bindCtorParam(cctx, p, pLocal);
-                HirVar pv = p.var();
-                if (pv != null && pv.cell()) {
-                    int cellType = ts.cellTypeFor(pv.primitiveKind());
-                    int cellLocal = cctx.newLocal("cell_" + pv.name(), WasmValType.ref(cellType));
-                    c.localGet(pLocal);
-                    fe.convertRawValue(p.kind(), pv.primitiveKind(), ci.hir.line());
-                    if (pv.primitiveKind().isPrimitive()) {
-                        c.i32Const(1);
-                    }
-                    c.structNew(cellType).localSet(cellLocal);
-                    cctx.vars.put(
-                            pv.id(),
-                            new WasmFuncEmitter.VarSlot(
-                                    cellLocal, pv.primitiveKind(), true, cellType, false, -1));
-                }
-            }
-
-            // 4. Allocate the WasmGC struct instance (records have immutable param fields filled
-            // directly!)
-            int[] memberParamIdx = new int[ci.shape.memberCount()];
-            java.util.Arrays.fill(memberParamIdx, -1);
-            for (int p = 0; p < ci.shape.parameters().length; p++) {
-                int mi = ci.shape.parameterMember(p);
-                if (mi >= 0 && mi < memberParamIdx.length) {
-                    memberParamIdx[mi] = p;
-                }
-            }
-
-            int thisLocal = cctx.newLocal("$this", WasmValType.refNull(ci.structTypeIdx));
-            cctx.thisLocal = thisLocal;
-
-            if (vtableParamIdx >= 0) {
-                c.localGet(vtableParamIdx);
-            } else {
-                c.globalGet(ci.vtableGlobalIdx).refAsNonNull();
-            }
-            for (int i = 0; i < ci.shape.memberCount(); i++) {
-                if (ci.memberToStructField[i] < 0) continue;
-                int pi = memberParamIdx[i];
-                if (pi >= 0) {
-                    HirParam hp = ci.hir.params().get(pi);
-                    HirVar pv = hp.var();
-                    WasmFuncEmitter.VarSlot pvSlot = pv != null ? cctx.vars.get(pv.id()) : null;
-                    if (pvSlot != null && pvSlot.isCell()) {
-                        c.localGet(pvSlot.localIdx())
-                                .refAsNonNull()
-                                .structGet(pvSlot.cellTypeIdx(), 0);
-                        fe.convertRawValue(pvSlot.kind(), ci.memberKinds[i], ci.hir.line());
-                    } else {
-                        c.localGet(firstParamIdx + pi);
-                        fe.convertRawValue(hp.kind(), ci.memberKinds[i], ci.hir.line());
-                    }
-                } else if (ci.memberKinds[i] == PrimitiveKind.NONE) {
-                    c.globalGet(rt.gUndefined);
-                } else {
-                    ts.emitDefaultValue(c, ts.valTypeFor(ci.memberKinds[i]));
-                }
-            }
-            if (ci.defMaskFieldIdx >= 0) {
-                int initMask = 0;
-                for (int i = 0; i < ci.shape.memberCount(); i++) {
-                    if (memberParamIdx[i] >= 0
-                            && i < ci.hir.primDefBits().length
-                            && ci.hir.primDefBits()[i] >= 0) {
-                        initMask |= (1 << ci.hir.primDefBits()[i]);
-                    }
-                }
-                c.i32Const(initMask);
-            }
-            for (int i = 0; i < ci.hir.capturedVars().size(); i++) {
-                c.localGet(capStart + i);
-            }
-            for (int i = 0; i < ci.hiddenCells.size(); i++) {
-                HirVar hv = ci.hiddenCells.get(i);
-                if (WasmProgramLinker.isValueCapture(hv)) {
-                    WasmFuncEmitter.VarSlot slot = cctx.vars.get(hv.id());
-                    if (slot != null && !slot.isCell()) {
-                        c.localGet(slot.localIdx());
-                        fe.convertRawValue(slot.kind(), hv.primitiveKind(), ci.hir.line());
-                    } else {
-                        ts.emitDefaultValue(c, ts.valTypeFor(hv.primitiveKind()));
-                    }
-                } else {
-                    c.refNull(ts.cellTypeFor(hv.primitiveKind()));
-                }
-            }
-            c.structNew(ci.structTypeIdx).localSet(thisLocal);
-
-            // 5. Allocate local vars declared in constructor body and run constructor body
-            for (HirVar v : ci.hir.declaredVars()) {
-                fe.allocateLocalVar(v);
-                if (v.kind() == org.babblelang.analysis.Resolution.Variable.Kind.THIS
-                        || "this".equals(v.name())) {
-                    WasmFuncEmitter.VarSlot slot = cctx.vars.get(v.id());
-                    if (slot != null) {
-                        c.localGet(thisLocal);
-                        fe.storeVarSlotAndKeep(slot);
-                        c.drop();
-                    }
-                }
-            }
-            for (int i = 0; i < ci.hiddenCells.size(); i++) {
-                HirVar hv = ci.hiddenCells.get(i);
-                WasmFuncEmitter.VarSlot slot = cctx.vars.get(hv.id());
-                if (slot != null && slot.isCell()) {
-                    c.localGet(thisLocal)
-                            .refAsNonNull()
-                            .localGet(slot.localIdx())
-                            .structSet(ci.structTypeIdx, ci.hiddenCellBaseFieldIdx + i);
-                } else if (slot != null && WasmProgramLinker.isValueCapture(hv)) {
-                    c.localGet(thisLocal).refAsNonNull().localGet(slot.localIdx());
-                    fe.convertRawValue(slot.kind(), hv.primitiveKind(), ci.hir.line());
-                    c.structSet(ci.structTypeIdx, ci.hiddenCellBaseFieldIdx + i);
-                }
-            }
-            for (HirExpr stmt : ci.hir.body()) {
-                fe.emitVoid(stmt);
-            }
-
-            c.localGet(thisLocal).refAsNonNull();
-        } finally {
-            fe.setCtx(prev);
-        }
-    }
-
-    private void bindCtorParam(WasmFuncEmitter.EmitCtx cctx, HirParam p, int pLocal) {
-        HirVar pv = p.var();
-        if (pv != null && !cctx.vars.containsKey(pv.id())) {
-            cctx.vars.put(
-                    pv.id(), new WasmFuncEmitter.VarSlot(pLocal, p.kind(), false, -1, false, -1));
-        }
-    }
-
     // ---------------------------------------------------------------- ClassExpr & InterfaceExpr &
     // Static Blocks
 
@@ -480,6 +293,9 @@ public final class WasmMemberEmitter {
         if (!(receiver instanceof HirExpr.ThisRef t)) {
             return false;
         }
+        if (ctx.stagedFieldLocals != null) {
+            return t.enclosingClassId() == ci.hir.id() || t.enclosingClassId() < 0;
+        }
         if (t.var() == null) {
             return true;
         }
@@ -514,6 +330,15 @@ public final class WasmMemberEmitter {
             return;
         }
         boolean directThis = isDirectOwnerThis(g.receiver(), ci);
+        if (directThis
+                && ctx.stagedFieldLocals != null
+                && g.memberIndex() >= 0
+                && g.memberIndex() < ctx.stagedFieldLocals.length
+                && ctx.stagedFieldLocals[g.memberIndex()] >= 0) {
+            c.localGet(ctx.stagedFieldLocals[g.memberIndex()]);
+            ctx.stackKind = ci.memberKinds[g.memberIndex()];
+            return;
+        }
         if (directThis) {
             c.localGet(ctx.thisLocal);
         } else {
@@ -573,6 +398,32 @@ public final class WasmMemberEmitter {
         }
         int fi = ci.memberToStructField[a.memberIndex()];
         PrimitiveKind fk = ci.memberKinds[a.memberIndex()];
+        if (ctx.stagedFieldLocals != null
+                && isDirectOwnerThis(a.receiver(), ci)
+                && a.memberIndex() >= 0
+                && a.memberIndex() < ctx.stagedFieldLocals.length
+                && ctx.stagedFieldLocals[a.memberIndex()] >= 0) {
+            int stagedLocal = ctx.stagedFieldLocals[a.memberIndex()];
+            if (a.operator() == null || "=".equals(a.operator())) {
+                fe.emitAs(a.value(), fk);
+            } else {
+                fe.emitCompoundValue(
+                        fk,
+                        () -> {
+                            c.localGet(stagedLocal);
+                            ctx.stackKind = fk;
+                        },
+                        a.operator(),
+                        a.value(),
+                        a.targetText(),
+                        a.valueText(),
+                        a.meta().line());
+                fe.convertStack(ctx.stackKind, fk, a.meta().line());
+            }
+            c.localTee(stagedLocal);
+            ctx.stackKind = fk;
+            return;
+        }
         if (!ci.fieldMutable[a.memberIndex()]) {
             String msg =
                     ci.shape.isValue()
@@ -1710,6 +1561,9 @@ public final class WasmMemberEmitter {
         HirExpr u = expr;
         while (u instanceof HirExpr.TypeApply ta) {
             u = ta.inner();
+        }
+        if (u instanceof HirExpr.ThisRef && ctx.staticOwnerClass != null) {
+            return ctx.staticOwnerClass;
         }
         if (u instanceof HirExpr.NameRead nr && !fe.isShadowedInNsScope(nr.name())) {
             boolean defined =
