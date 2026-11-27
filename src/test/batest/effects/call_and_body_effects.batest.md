@@ -307,7 +307,7 @@ assert(f(ll) == 1)
 ```babble
 axiom java.util.Objects.requireNonNullElse: fn of T pure (obj: T, defaultObj: T): T
 def pick = fn (a: Box, b: Box): Box -> ( java.util.Objects.requireNonNullElse(a, b) )
-def fmt = fn (): string -> ( java.lang.String.format("%s", "ok") )
+def fmt = fn volatile (): string -> ( java.lang.String.format("%s", "ok") )
 assert(pick(Box(3), Box(4)).v == 3 and fmt() == "ok")
 ```
 
