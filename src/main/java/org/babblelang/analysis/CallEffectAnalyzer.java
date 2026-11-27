@@ -738,17 +738,8 @@ final class CallEffectAnalyzer {
                 if (ec.javaResolver.isDeeplyImmutable(resType)) {
                     yield Reachability.Origin.IMMUTABLE;
                 }
-                Reachability.Origin flat = recvOrig.flattenElements();
-                yield new Reachability.Origin(
-                        flat.params,
-                        flat.aliasesThis,
-                        flat.external,
-                        false,
-                        null,
-                        false,
-                        null,
-                        Set.of(call),
-                        new Reachability.PathKey(call, List.of()));
+                yield recvOrig.deriveIndexedProjection(
+                        InitEffectAnalyzer.literalIndexSegment(argExprs), false);
             }
             case "set" -> {
                 w.nothrow = false;
@@ -1140,7 +1131,22 @@ final class CallEffectAnalyzer {
             return Reachability.Origin.ofUnique(call, null, false);
         }
         if (receiverExpr != null && profile.view()) {
-            return recvOrig.deriveMember("$" + methodName, false);
+            return recvOrig.deriveProjection(false);
+        }
+        if (receiverExpr != null
+                && argExprs.length >= 1
+                && ("get".equals(methodName) || "getOrDefault".equals(methodName))
+                && (java.util.List.class.isAssignableFrom(owner)
+                        || java.util.Map.class.isAssignableFrom(owner))) {
+            Reachability.Origin proj =
+                    recvOrig.deriveIndexedProjection(
+                            InitEffectAnalyzer.literalIndexSegment(argExprs), false);
+            if ("getOrDefault".equals(methodName)
+                    && argOrigins.length >= 2
+                    && argOrigins[1] != Reachability.Origin.IMMUTABLE) {
+                proj = proj.join(argOrigins[1].deriveProjection(false));
+            }
+            return proj.owned() ? proj.withoutUnique() : proj;
         }
         boolean deterministicCall =
                 profile.effects().isHermetic() && profile.effects().isDeterministic();
@@ -1164,14 +1170,13 @@ final class CallEffectAnalyzer {
         if (deterministicCall) {
             Reachability.Origin out = Reachability.Origin.IMMUTABLE;
             if (receiverExpr != null && recvOrig != Reachability.Origin.IMMUTABLE) {
-                Reachability.Origin flatRecv = recvOrig.flattenElements();
-                out = flatRecv.stripDirectIdentity(false);
+                out = recvOrig.flattenElements().deriveProjection(false);
             }
             for (int i = 0; i < argOrigins.length; i++) {
                 if (argOrigins[i] != Reachability.Origin.IMMUTABLE) {
-                    Reachability.Origin flatArg = argOrigins[i].flattenElements();
-                    Reachability.Origin stripped = flatArg.stripDirectIdentity(false);
-                    out = out == Reachability.Origin.IMMUTABLE ? stripped : out.join(stripped);
+                    Reachability.Origin proj =
+                            argOrigins[i].flattenElements().deriveProjection(false);
+                    out = out == Reachability.Origin.IMMUTABLE ? proj : out.join(proj);
                 }
             }
             if (out == Reachability.Origin.IMMUTABLE) {
@@ -1184,12 +1189,12 @@ final class CallEffectAnalyzer {
         }
         Reachability.Origin out = Reachability.Origin.ofExternal(call, false);
         if (receiverExpr != null) {
-            out = out.join(recvOrig.stripDirectIdentity(false));
+            out = out.join(recvOrig.deriveProjection(false));
         }
         for (int i = 0; i < argOrigins.length; i++) {
             boolean borrowP = i < profile.borrowParams().length && profile.borrowParams()[i];
             if (!borrowP) {
-                out = out.join(argOrigins[i].stripDirectIdentity(false));
+                out = out.join(argOrigins[i].deriveProjection(false));
             }
         }
         return out;
@@ -2060,7 +2065,8 @@ final class CallEffectAnalyzer {
                     false,
                     null,
                     Set.of(),
-                    null);
+                    out.paths,
+                    out.elementPaths);
         }
         if (out.owned()) {
             out = out.withoutUnique();

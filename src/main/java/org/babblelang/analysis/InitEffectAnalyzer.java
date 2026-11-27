@@ -419,6 +419,14 @@ final class InitEffectAnalyzer {
             if (orig == null) {
                 continue;
             }
+            if (orig.moved) {
+                w.reportOnce("Use of moved variable " + cap.name(), site);
+                continue;
+            }
+            if (orig.unique && orig.uniqueOwner != null) {
+                w.demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
+                orig = w.env.getOrDefault(decl, orig.withoutUnique());
+            }
             if (w.paramIndex.containsKey(decl) || w.pseudoForwarded.containsKey(decl)) {
                 Reachability.Origin flat = orig.flattenElements();
                 Reachability.Origin alias = flat.stripDirectIdentity(false);
@@ -428,6 +436,101 @@ final class InitEffectAnalyzer {
             }
         }
         return captured;
+    }
+
+    /**
+     * The origin of a closure value (BIP017-D6) : capturing a parameter or {@code this} aliases it,
+     * like returning it does (BIP016-D10), so the closure carries their provenance and escapes only
+     * where the closure itself is stored. Captured locals are still stored on capture, their later
+     * assignments being outer-variable stores. Any capture of a {@code unique} variable invalidates
+     * its uniqueness ({@code BIP032}).
+     */
+    static Reachability.Origin checkClosureCaptureEscape(
+            EffectChecker ec, EffectBodyWalker w, BabbleParser.FunctionLiteralContext inner) {
+        boolean frameLocal = ec.frameLocalOwner.get(inner) == w.owner;
+        EffectChecker.CallableSummary innerSum = ec.summaries.get(inner);
+        Resolution res = ec.pass.analysis.resolution();
+        if (res == null) {
+            return Reachability.Origin.IMMUTABLE;
+        }
+        Reachability.Origin closure = Reachability.Origin.IMMUTABLE;
+        if (w.innerContainsThis(inner)) {
+            if (!frameLocal) {
+                closure =
+                        Reachability.Origin.ofThis(Reachability.THIS_KEY, false)
+                                .stripDirectIdentity(false);
+            }
+            if (innerSum != null && innerSum.effects().mutThis() && !w.mutThis) {
+                if (w.inferMut) {
+                    w.mutThis = true;
+                } else {
+                    w.reportOnce(
+                            "Inner closure mutates this : enclosing function is not declared mut",
+                            inner);
+                }
+            }
+        }
+        for (Resolution.Variable cap : res.captured(inner)) {
+            ParserRuleContext decl = cap.declaration();
+            if (decl == null) {
+                continue;
+            }
+            Reachability.Origin orig = w.env.get(decl);
+            if (orig == null && w.paramIndex.containsKey(decl)) {
+                orig =
+                        Reachability.Origin.ofParam(
+                                w.paramIndex.get(decl),
+                                decl,
+                                ec.javaResolver.isDeeplyImmutable(
+                                        ec.checker.typeOfDeclarationForEffects(decl)));
+            } else if (orig == null && w.pseudoForwarded.containsKey(decl)) {
+                orig = Reachability.Origin.ofParam(w.pseudoForwarded.get(decl), decl, false);
+            }
+            if (orig == null) {
+                continue;
+            }
+            if (orig.moved) {
+                w.reportOnce("Use of moved variable " + cap.name(), inner);
+                continue;
+            }
+            if (orig.unique && orig.uniqueOwner != null) {
+                if (frameLocal) {
+                    w.dropUniqueKeepFresh(orig.uniqueOwner);
+                } else {
+                    w.demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
+                }
+                orig = w.env.getOrDefault(decl, orig.withoutUnique());
+            }
+            if (frameLocal) {
+                continue;
+            }
+            if (w.paramIndex.containsKey(decl) || w.pseudoForwarded.containsKey(decl)) {
+                Reachability.Origin flat = orig.flattenElements();
+                Reachability.Origin alias = flat.stripDirectIdentity(false);
+                closure = closure == Reachability.Origin.IMMUTABLE ? alias : closure.join(alias);
+            } else {
+                w.markStoredOrigin(orig, "captured closure", inner);
+            }
+        }
+        return closure;
+    }
+
+    static String literalIndexSegment(BabbleParser.ExpressionContext[] argExprs) {
+        if (argExprs == null || argExprs.length == 0 || argExprs[0] == null) {
+            return null;
+        }
+        BabbleParser.ExpressionContext expr = EffectBodyWalker.unwrapParens(argExprs[0]);
+        Long iv = EffectBodyWalker.tryEvalIntegerConstant(expr);
+        if (iv != null) {
+            return "[lit:i:" + iv + "]";
+        }
+        if (expr instanceof BabbleParser.StringContext
+                || expr instanceof BabbleParser.CharLiteralContext
+                || expr instanceof BabbleParser.BooleanContext
+                || expr instanceof BabbleParser.NullContext) {
+            return "[lit:" + expr.getText() + "]";
+        }
+        return null;
     }
 
     private static Reachability.Origin joinOrigins(Reachability.Origin a, Reachability.Origin b) {

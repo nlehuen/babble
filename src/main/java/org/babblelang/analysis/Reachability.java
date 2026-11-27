@@ -48,9 +48,29 @@ final class Reachability {
     static final class Origin {
         static final BitSet EMPTY_BITS = new BitSet(0);
         static final Origin IMMUTABLE =
-                new Origin(EMPTY_BITS, false, false, false, null, false, null, Set.of(), null);
+                new Origin(
+                        EMPTY_BITS,
+                        false,
+                        false,
+                        false,
+                        null,
+                        false,
+                        null,
+                        Set.of(),
+                        Set.of(),
+                        Set.of());
         static final Origin MOVED =
-                new Origin(EMPTY_BITS, false, false, false, null, true, null, Set.of(), null);
+                new Origin(
+                        EMPTY_BITS,
+                        false,
+                        false,
+                        false,
+                        null,
+                        true,
+                        null,
+                        Set.of(),
+                        Set.of(),
+                        Set.of());
 
         final BitSet params;
         final boolean aliasesThis;
@@ -79,8 +99,37 @@ final class Reachability {
          */
         final Set<Object> directKeys;
 
-        /** Pure member path key when an expression is {@code base.f1.f2} without calls. */
-        final PathKey pathKey;
+        /** Access-path set (multi-path across branches and projections, {@code BIP032}). */
+        final Set<PathKey> paths;
+
+        /**
+         * Truncated paths of elements stored into this container (propagated on collection/array
+         * projections, kept separate from named class/record field derivations).
+         */
+        final Set<PathKey> elementPaths;
+
+        Origin(
+                BitSet params,
+                boolean aliasesThis,
+                boolean external,
+                boolean unique,
+                Provenance shallow,
+                boolean moved,
+                Object uniqueOwner,
+                Set<Object> directKeys,
+                Set<PathKey> paths,
+                Set<PathKey> elementPaths) {
+            this.params = params;
+            this.aliasesThis = aliasesThis;
+            this.external = external;
+            this.unique = unique;
+            this.shallow = shallow;
+            this.moved = moved;
+            this.uniqueOwner = uniqueOwner;
+            this.directKeys = directKeys;
+            this.paths = paths;
+            this.elementPaths = elementPaths;
+        }
 
         Origin(
                 BitSet params,
@@ -92,15 +141,17 @@ final class Reachability {
                 Object uniqueOwner,
                 Set<Object> directKeys,
                 PathKey pathKey) {
-            this.params = params;
-            this.aliasesThis = aliasesThis;
-            this.external = external;
-            this.unique = unique;
-            this.shallow = shallow;
-            this.moved = moved;
-            this.uniqueOwner = uniqueOwner;
-            this.directKeys = directKeys;
-            this.pathKey = pathKey;
+            this(
+                    params,
+                    aliasesThis,
+                    external,
+                    unique,
+                    shallow,
+                    moved,
+                    uniqueOwner,
+                    directKeys,
+                    pathKey != null ? Set.of(pathKey) : Set.of(),
+                    Set.of());
         }
 
         Origin(
@@ -127,7 +178,8 @@ final class Reachability {
                     false,
                     null,
                     Set.of(key),
-                    new PathKey(key, List.of()));
+                    Set.of(new PathKey(key, List.of())),
+                    Set.of());
         }
 
         static Origin ofUniqueParam(int index, Object key, boolean immutable, boolean borrowed) {
@@ -147,7 +199,8 @@ final class Reachability {
                     false,
                     key,
                     Set.of(key),
-                    new PathKey(key, List.of()));
+                    Set.of(new PathKey(key, List.of())),
+                    Set.of());
         }
 
         static Origin ofUnique(Object key, Object uniqueOwner, boolean immutable) {
@@ -155,7 +208,7 @@ final class Reachability {
                 return IMMUTABLE;
             }
             Set<Object> keys = key != null ? Set.of(key) : Set.of();
-            PathKey pk = key != null ? new PathKey(key, List.of()) : null;
+            Set<PathKey> pks = key != null ? Set.of(new PathKey(key, List.of())) : Set.of();
             return new Origin(
                     new BitSet(0),
                     false,
@@ -165,7 +218,8 @@ final class Reachability {
                     false,
                     uniqueOwner,
                     keys,
-                    pk);
+                    pks,
+                    Set.of());
         }
 
         static Origin ofThis(Object key, boolean immutable) {
@@ -181,7 +235,8 @@ final class Reachability {
                     false,
                     null,
                     Set.of(key),
-                    new PathKey(key, List.of()));
+                    Set.of(new PathKey(key, List.of())),
+                    Set.of());
         }
 
         static Origin ofExternal(Object key, boolean immutable) {
@@ -189,8 +244,9 @@ final class Reachability {
                 return IMMUTABLE;
             }
             Set<Object> keys = key != null ? Set.of(key) : Set.of();
-            PathKey pk = key != null ? new PathKey(key, List.of()) : null;
-            return new Origin(new BitSet(0), false, true, false, null, false, null, keys, pk);
+            Set<PathKey> pks = key != null ? Set.of(new PathKey(key, List.of())) : Set.of();
+            return new Origin(
+                    new BitSet(0), false, true, false, null, false, null, keys, pks, Set.of());
         }
 
         /** A fresh local container whose shell has not escaped (the shallow modality). */
@@ -250,25 +306,47 @@ final class Reachability {
                     moved,
                     null,
                     directKeys,
-                    pathKey);
+                    paths,
+                    elementPaths);
         }
 
         Origin deriveMember(String field, boolean immutable) {
             if (immutable) {
                 return IMMUTABLE;
             }
-            PathKey nextPath = pathKey != null ? pathKey.append(field) : null;
-            return derived(Set.of(), nextPath);
+            Set<PathKey> nextPaths = appendPaths(paths, field);
+            return derived(Set.of(), nextPaths, Set.of());
+        }
+
+        Origin deriveProjection(boolean immutable) {
+            if (immutable) {
+                return IMMUTABLE;
+            }
+            Set<PathKey> nextPaths = unionPaths(truncatePaths(paths, directKeys), elementPaths);
+            return derived(Set.of(), nextPaths, Set.of());
+        }
+
+        Origin deriveIndexedProjection(String indexSeg, boolean immutable) {
+            if (immutable) {
+                return IMMUTABLE;
+            }
+            if (indexSeg == null) {
+                return deriveProjection(false);
+            }
+            Set<PathKey> base = paths.isEmpty() ? rootPathsFromKeys(directKeys, false) : paths;
+            Set<PathKey> nextPaths = unionPaths(appendPaths(base, indexSeg), elementPaths);
+            return derived(Set.of(), nextPaths, Set.of());
         }
 
         Origin stripDirectIdentity(boolean immutable) {
             if (immutable) {
                 return IMMUTABLE;
             }
-            return derived(Set.of(), null);
+            return derived(Set.of(), Set.of(), Set.of());
         }
 
-        private Origin derived(Set<Object> keys, PathKey path) {
+        private Origin derived(
+                Set<Object> keys, Set<PathKey> nextPaths, Set<PathKey> nextElemPaths) {
             if (hasElementTaint()) {
                 Provenance flat = deep(null);
                 return new Origin(
@@ -280,7 +358,8 @@ final class Reachability {
                         false,
                         null,
                         keys,
-                        path);
+                        nextPaths,
+                        nextElemPaths);
             }
             return new Origin(
                     (BitSet) params.clone(),
@@ -291,7 +370,29 @@ final class Reachability {
                     false,
                     unique ? uniqueOwner : null,
                     keys,
-                    path);
+                    nextPaths,
+                    nextElemPaths);
+        }
+
+        /**
+         * Drops {@code unique} while preserving the shallow local-fresh shell (used when a
+         * frame-local closure captures a fresh local container, {@code BIP032}).
+         */
+        Origin dropUniqueKeepFresh() {
+            if (!unique) {
+                return this;
+            }
+            return new Origin(
+                    (BitSet) params.clone(),
+                    aliasesThis,
+                    external,
+                    false,
+                    cloned(shallow),
+                    moved,
+                    shallow != null ? uniqueOwner : null,
+                    directKeys,
+                    paths,
+                    elementPaths);
         }
 
         /**
@@ -300,10 +401,15 @@ final class Reachability {
          */
         Origin absorbElement(Origin taint) {
             Provenance elems = elements();
+            Set<PathKey> nextElemPaths = elementPaths;
             if (taint != null && taint != IMMUTABLE) {
                 elems =
                         elems.union(new Provenance(taint.params, taint.aliasesThis, taint.external))
                                 .union(taint.elements());
+                Set<PathKey> taintPaths =
+                        unionPaths(
+                                truncatePaths(taint.paths, taint.directKeys), taint.elementPaths);
+                nextElemPaths = unionPaths(nextElemPaths, taintPaths);
             }
             return new Origin(
                     (BitSet) params.clone(),
@@ -314,7 +420,8 @@ final class Reachability {
                     false,
                     uniqueOwner,
                     directKeys,
-                    pathKey);
+                    paths,
+                    nextElemPaths);
         }
 
         Origin withoutUnique() {
@@ -332,7 +439,8 @@ final class Reachability {
                     false,
                     null,
                     directKeys,
-                    pathKey);
+                    paths,
+                    elementPaths);
         }
 
         Origin demoteToExternal(Origin taint) {
@@ -346,7 +454,8 @@ final class Reachability {
                     false,
                     null,
                     directKeys,
-                    pathKey);
+                    paths,
+                    elementPaths);
         }
 
         Origin join(Origin other) {
@@ -370,7 +479,8 @@ final class Reachability {
                 union.addAll(other.directKeys);
                 keys = Set.copyOf(union);
             }
-            PathKey pk = Objects.equals(pathKey, other.pathKey) ? pathKey : null;
+            Set<PathKey> mergedPaths = unionPaths(this.paths, other.paths);
+            Set<PathKey> mergedElemPaths = unionPaths(this.elementPaths, other.elementPaths);
             boolean mergedThis = aliasesThis || other.aliasesThis;
             boolean confined = !this.external && !other.external && !mergedThis && merged.isEmpty();
             boolean mergedUnique = this.unique && other.unique && confined;
@@ -398,7 +508,8 @@ final class Reachability {
                         false,
                         null,
                         keys,
-                        pk);
+                        mergedPaths,
+                        mergedElemPaths);
             }
             return new Origin(
                     merged,
@@ -409,7 +520,8 @@ final class Reachability {
                     false,
                     mergedOwner,
                     keys,
-                    pk);
+                    mergedPaths,
+                    mergedElemPaths);
         }
 
         Origin widen(Origin other) {
@@ -417,11 +529,9 @@ final class Reachability {
             if (joined == MOVED || joined == IMMUTABLE) {
                 return joined;
             }
-            PathKey widenedPath =
-                    this.pathKey != null && other.pathKey != null
-                            ? this.pathKey.widen(other.pathKey)
-                            : null;
-            if (Objects.equals(widenedPath, joined.pathKey)) {
+            Set<PathKey> widenedPaths = widenPaths(this.paths, other.paths);
+            Set<PathKey> widenedElemPaths = widenPaths(this.elementPaths, other.elementPaths);
+            if (widenedPaths.equals(joined.paths) && widenedElemPaths.equals(joined.elementPaths)) {
                 return joined;
             }
             return new Origin(
@@ -433,7 +543,8 @@ final class Reachability {
                     joined.moved,
                     joined.uniqueOwner,
                     joined.directKeys,
-                    widenedPath);
+                    widenedPaths,
+                    widenedElemPaths);
         }
 
         private Origin withoutExactSingleKey() {
@@ -446,7 +557,8 @@ final class Reachability {
                     moved,
                     uniqueOwner,
                     directKeys,
-                    pathKey);
+                    paths,
+                    elementPaths);
         }
 
         private static Provenance cloned(Provenance p) {
@@ -471,7 +583,8 @@ final class Reachability {
                     && Objects.equals(uniqueOwner, that.uniqueOwner)
                     && params.equals(that.params)
                     && directKeys.equals(that.directKeys)
-                    && Objects.equals(pathKey, that.pathKey);
+                    && paths.equals(that.paths)
+                    && elementPaths.equals(that.elementPaths);
         }
 
         @Override
@@ -485,7 +598,8 @@ final class Reachability {
                     moved,
                     uniqueOwner,
                     directKeys,
-                    pathKey);
+                    paths,
+                    elementPaths);
         }
     }
 
@@ -505,6 +619,10 @@ final class Reachability {
             next.addAll(segments);
             next.add(field);
             return new PathKey(root, List.copyOf(next), false);
+        }
+
+        PathKey truncate() {
+            return truncated ? this : new PathKey(root, segments, true);
         }
 
         /**
@@ -547,6 +665,66 @@ final class Reachability {
         }
     }
 
+    private static Set<PathKey> appendPaths(Set<PathKey> paths, String seg) {
+        if (paths.isEmpty()) {
+            return Set.of();
+        }
+        Set<PathKey> out = new HashSet<>(paths.size());
+        for (PathKey p : paths) {
+            out.add(p.append(seg));
+        }
+        return Set.copyOf(out);
+    }
+
+    private static Set<PathKey> rootPathsFromKeys(Set<Object> keys, boolean truncated) {
+        if (keys.isEmpty()) {
+            return Set.of();
+        }
+        Set<PathKey> out = new HashSet<>(keys.size());
+        for (Object k : keys) {
+            out.add(new PathKey(k, List.of(), truncated));
+        }
+        return Set.copyOf(out);
+    }
+
+    private static Set<PathKey> truncatePaths(Set<PathKey> paths, Set<Object> fallbackKeys) {
+        if (paths.isEmpty()) {
+            return rootPathsFromKeys(fallbackKeys, true);
+        }
+        Set<PathKey> out = new HashSet<>(paths.size());
+        for (PathKey p : paths) {
+            out.add(p.truncate());
+        }
+        return Set.copyOf(out);
+    }
+
+    static Set<PathKey> unionPaths(Set<PathKey> a, Set<PathKey> b) {
+        if (a.isEmpty()) {
+            return b;
+        }
+        if (b.isEmpty()) {
+            return a;
+        }
+        Set<PathKey> out = new HashSet<>(a.size() + b.size());
+        out.addAll(a);
+        out.addAll(b);
+        return Set.copyOf(out);
+    }
+
+    private static Set<PathKey> widenPaths(Set<PathKey> a, Set<PathKey> b) {
+        if (a.isEmpty() && b.isEmpty()) {
+            return Set.of();
+        }
+        java.util.Map<Object, PathKey> byRoot = new java.util.HashMap<>();
+        for (PathKey p : a) {
+            byRoot.merge(p.root(), p, PathKey::widen);
+        }
+        for (PathKey p : b) {
+            byRoot.merge(p.root(), p, PathKey::widen);
+        }
+        return Set.copyOf(byRoot.values());
+    }
+
     static boolean staticallySameObject(Origin a, Origin b) {
         if (a == Origin.IMMUTABLE || b == Origin.IMMUTABLE) {
             return false;
@@ -558,12 +736,29 @@ final class Reachability {
                 }
             }
         }
-        if (a.pathKey != null && b.pathKey != null && a.pathKey.overlaps(b.pathKey)) {
-            return true;
+        if (!a.paths.isEmpty() && !b.paths.isEmpty()) {
+            for (PathKey pa : a.paths) {
+                for (PathKey pb : b.paths) {
+                    if (pa.overlaps(pb)) {
+                        return true;
+                    }
+                }
+            }
         }
-        if (a.pathKey != null && b.directKeys.contains(a.pathKey.root())) {
-            return true;
+        if (!a.paths.isEmpty() && !b.directKeys.isEmpty()) {
+            for (PathKey pa : a.paths) {
+                if (b.directKeys.contains(pa.root())) {
+                    return true;
+                }
+            }
         }
-        return b.pathKey != null && a.directKeys.contains(b.pathKey.root());
+        if (!b.paths.isEmpty() && !a.directKeys.isEmpty()) {
+            for (PathKey pb : b.paths) {
+                if (a.directKeys.contains(pb.root())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 }

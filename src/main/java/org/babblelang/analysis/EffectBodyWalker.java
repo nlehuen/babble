@@ -287,6 +287,15 @@ final class EffectBodyWalker {
         }
     }
 
+    void dropUniqueKeepFresh(Object ownerKey) {
+        if (ownerKey instanceof ParserRuleContext decl) {
+            Reachability.Origin cur = env.get(decl);
+            if (cur != null && cur.unique) {
+                env.put(decl, cur.dropUniqueKeepFresh());
+            }
+        }
+    }
+
     void absorbElementIntoLocalContainer(Object ownerKey, Reachability.Origin taint) {
         if (ownerKey instanceof ParserRuleContext decl) {
             Reachability.Origin cur = env.get(decl);
@@ -357,7 +366,8 @@ final class EffectBodyWalker {
                     false,
                     decl,
                     Set.of(decl),
-                    new Reachability.PathKey(decl, List.of()));
+                    Set.of(new Reachability.PathKey(decl, List.of())),
+                    rhs.elementPaths);
         }
         if (rhs.owned() && rhs.uniqueOwner != null) {
             // Aliasing a live unique/localFresh local without move(...) drops uniqueness while
@@ -781,14 +791,21 @@ final class EffectBodyWalker {
         }
         Set<Object> keys = new HashSet<>(base.directKeys);
         keys.add(localKey);
+        Set<Reachability.PathKey> nextPaths =
+                base.paths.isEmpty()
+                        ? Set.of(new Reachability.PathKey(localKey, List.of()))
+                        : base.paths;
         return new Reachability.Origin(
                 (BitSet) base.params.clone(),
                 base.aliasesThis,
                 base.external,
+                false,
+                null,
+                false,
+                null,
                 Set.copyOf(keys),
-                base.pathKey != null
-                        ? base.pathKey
-                        : new Reachability.PathKey(localKey, List.of()));
+                nextPaths,
+                base.elementPaths);
     }
 
     Reachability.Origin evalAssign(BabbleParser.AssignExpressionContext assign) {
@@ -1404,65 +1421,8 @@ final class EffectBodyWalker {
         }
     }
 
-    /**
-     * The origin of a closure value (BIP017-D6) : capturing a parameter or {@code this} aliases it,
-     * like returning it does (BIP016-D10), so the closure carries their provenance and escapes only
-     * where the closure itself is stored. Captured locals are still stored on capture, their later
-     * assignments being outer-variable stores.
-     */
     Reachability.Origin checkClosureCaptureEscape(BabbleParser.FunctionLiteralContext inner) {
-        boolean frameLocal = ec.frameLocalOwner.get(inner) == owner;
-        EffectChecker.CallableSummary innerSum = ec.summaries.get(inner);
-        Resolution res = ec.pass.analysis.resolution();
-        if (res == null) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        Reachability.Origin closure = Reachability.Origin.IMMUTABLE;
-        boolean capturesThis = innerContainsThis(inner);
-        if (capturesThis) {
-            if (!frameLocal) {
-                closure =
-                        Reachability.Origin.ofThis(Reachability.THIS_KEY, false)
-                                .stripDirectIdentity(false);
-            }
-            if (innerSum != null && innerSum.effects().mutThis() && !mutThis) {
-                if (inferMut) {
-                    mutThis = true;
-                } else {
-                    reportOnce(
-                            "Inner closure mutates this : enclosing function is not declared mut",
-                            inner);
-                }
-            }
-        }
-        for (Resolution.Variable cap : res.captured(inner)) {
-            ParserRuleContext decl = cap.declaration();
-            if (decl == null) {
-                continue;
-            }
-            Reachability.Origin orig = env.get(decl);
-            if (orig == null && paramIndex.containsKey(decl)) {
-                orig =
-                        Reachability.Origin.ofParam(
-                                paramIndex.get(decl),
-                                decl,
-                                ec.javaResolver.isDeeplyImmutable(
-                                        ec.checker.typeOfDeclarationForEffects(decl)));
-            } else if (orig == null && pseudoForwarded.containsKey(decl)) {
-                orig = Reachability.Origin.ofParam(pseudoForwarded.get(decl), decl, false);
-            }
-            if (orig == null || frameLocal) {
-                continue;
-            }
-            if (paramIndex.containsKey(decl) || pseudoForwarded.containsKey(decl)) {
-                Reachability.Origin flat = orig.flattenElements();
-                Reachability.Origin alias = flat.stripDirectIdentity(false);
-                closure = closure == Reachability.Origin.IMMUTABLE ? alias : closure.join(alias);
-            } else {
-                markStoredOrigin(orig, "captured closure", inner);
-            }
-        }
-        return closure;
+        return InitEffectAnalyzer.checkClosureCaptureEscape(ec, this, inner);
     }
 
     boolean innerContainsThis(ParseTree tree) {
