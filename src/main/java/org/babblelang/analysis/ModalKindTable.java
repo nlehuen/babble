@@ -97,6 +97,13 @@ final class ModalKindTable {
 
         /** The bindings of an instance's node's type parameters to its type arguments. */
         Map<Type.TypeVar, Type> instanceEnv(Type.Instance instance);
+
+        /**
+         * Whether {@code node} captures any enclosing lexical variables (e.g. local object/record).
+         */
+        default boolean capturesEnclosing(TypeNode node) {
+            return false;
+        }
     }
 
     private final Types types;
@@ -133,6 +140,11 @@ final class ModalKindTable {
                     @Override
                     public Map<Type.TypeVar, Type> instanceEnv(Type.Instance instance) {
                         return checker.algebra().instanceEnv(instance);
+                    }
+
+                    @Override
+                    public boolean capturesEnclosing(TypeNode node) {
+                        return checker.capturesEnclosing(node);
                     }
                 });
     }
@@ -188,7 +200,9 @@ final class ModalKindTable {
         }
         if (type instanceof Type.Instance inst) {
             if (inst.node().kind == ClassShape.Kind.OBJECT) {
-                return hasFields(inst.node()) ? ModalKind.NEVER : ModalKind.ALWAYS;
+                return (hasFields(inst.node()) || types.capturesEnclosing(inst.node()))
+                        ? ModalKind.NEVER
+                        : ModalKind.ALWAYS;
             }
             if (inst.node().kind == ClassShape.Kind.VALUE_CLASS) {
                 return instantiate(nodeKind(inst.node()), types.instanceEnv(inst));
@@ -221,6 +235,12 @@ final class ModalKindTable {
         ModalKind cached = nodeKinds.get(node);
         if (cached != null) {
             return cached;
+        }
+        if (types.capturesEnclosing(node)) {
+            if (caching) {
+                nodeKinds.put(node, ModalKind.NEVER);
+            }
+            return ModalKind.NEVER;
         }
         if (inProgress.contains(node)) {
             assumed = true;

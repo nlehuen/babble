@@ -532,9 +532,11 @@ final class EffectBodyWalker {
         if (ctx instanceof BabbleParser.FunctionLiteralContext lit) {
             return checkClosureCaptureEscape(lit);
         }
-        if (ctx instanceof BabbleParser.ClassExpressionContext
-                || ctx instanceof BabbleParser.InterfaceExpressionContext) {
-            return Reachability.Origin.IMMUTABLE;
+        if (ctx instanceof BabbleParser.ClassExpressionContext cls) {
+            return InitEffectAnalyzer.evalClassExpression(ec, this, cls);
+        }
+        if (ctx instanceof BabbleParser.InterfaceExpressionContext iface) {
+            return InitEffectAnalyzer.evalInterfaceExpression(ec, this, iface);
         }
         if (ctx instanceof BabbleParser.ObjectExpressionContext obj) {
             return InitEffectAnalyzer.evalObjectExpression(ec, this, obj);
@@ -599,10 +601,14 @@ final class EffectBodyWalker {
             return ec.javaResolver.isDeeplyImmutable(dst) ? Reachability.Origin.IMMUTABLE : orig;
         }
         if (ctx instanceof BabbleParser.OverloadExpressionContext ov) {
+            Reachability.Origin joined = Reachability.Origin.IMMUTABLE;
             for (BabbleParser.ExpressionContext op : ov.expression()) {
-                eval(op);
+                Reachability.Origin arm = eval(op);
+                if (arm != Reachability.Origin.IMMUTABLE) {
+                    joined = joined == Reachability.Origin.IMMUTABLE ? arm : joined.join(arm);
+                }
             }
-            return Reachability.Origin.IMMUTABLE;
+            return joined;
         }
         if (ctx instanceof BabbleParser.TypeApplyContext ta) {
             return eval(ta.expression());

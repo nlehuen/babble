@@ -301,6 +301,11 @@ final class TypeChecker {
         return modalKinds.isDeeplyImmutable(type);
     }
 
+    boolean capturesEnclosing(TypeNode node) {
+        Resolution res = pass.analysis.resolution();
+        return res != null && node != null && node.ctx != null && !res.captured(node.ctx).isEmpty();
+    }
+
     ModalKindTable modalKinds() {
         return modalKinds;
     }

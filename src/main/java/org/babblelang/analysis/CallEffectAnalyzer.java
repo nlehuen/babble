@@ -1551,6 +1551,12 @@ final class CallEffectAnalyzer {
             return new EffectChecker.CallableSummary(pureModForward, mp, bp, up);
         }
 
+        EffectChecker.CallableSummary unforwarded =
+                EffectModifiers.unforwardedEnclosingCallingSummary(ec, w, fn, calleeExpr);
+        if (unforwarded != null) {
+            return unforwarded;
+        }
+
         // Single-pass symbolic callback parameter invocation (BIP027-I4): record C_called &
         // Flow[i][m],
         // keeping residual effects clean of the callback's pessimistic default type.
