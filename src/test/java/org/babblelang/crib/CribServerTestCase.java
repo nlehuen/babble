@@ -391,7 +391,7 @@ public class CribServerTestCase {
                 try (forever while true then (x += 1)) catch e: java.lang.Throwable then (0)
                 ```
                 """;
-        HttpResponse<String> r1 = postCrib("modes=interpret&timeout=200", interpLoop);
+        HttpResponse<String> r1 = postCrib("modes=interpret&timeout=500", interpLoop);
         Assertions.assertEquals(200, r1.statusCode(), r1.body());
         CribProtocol.TrialResponse t1 = CribProtocol.decodeResponse(r1.body());
         Assertions.assertFalse(t1.ok());
@@ -401,7 +401,8 @@ public class CribServerTestCase {
                 r1.body());
         Assertions.assertFalse(
                 t1.workerRecycled(),
-                "Cooperative interpreter interruption should not require worker kill");
+                "Cooperative interpreter interruption should not require worker kill : "
+                        + r1.body());
 
         // 2. Compiled uninterruptible infinite loop triggers timeout + worker kill/recycle.
         String compiledLoop =

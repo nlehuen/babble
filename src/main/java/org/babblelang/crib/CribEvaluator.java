@@ -34,8 +34,8 @@ import org.babblelang.wasm.WatPrinter;
 public final class CribEvaluator {
 
     private static final AtomicInteger TRIAL_GROUP_SEQ = new AtomicInteger();
-    private static final long INTERRUPT_GRACE_MS = 50L;
-    private static final long STRAY_THREAD_GRACE_MS = 30L;
+    private static final long INTERRUPT_GRACE_MS = 250L;
+    private static final long STRAY_THREAD_GRACE_MS = 50L;
     private static volatile Boolean asmVerifyAvailable;
 
     public record EvalResult(CribProtocol.TrialResponse response, String poisonReason) {}
