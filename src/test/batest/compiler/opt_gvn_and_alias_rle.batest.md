@@ -82,8 +82,8 @@ fn absTwice (x:double, xs:obj) -> double {nothrow unique}
 ## AliasRLE forwards StoreField to LoadField and preserves frozen reads across writes
 
 ```babble
-def Box = class (init: int) (
-    var v = init
+def Box = class (v0: int) (
+    var v = v0
     def setAndRead = fn mut (nv: int): int -> (
         this.v = nv
         this.v + this.v
@@ -133,7 +133,7 @@ fn frozenAcrossWrite (p:obj, b:obj, k:int) -> int {nothrow unique}
 ## AliasRLE preserves reads of one unique parameter across writes to another unique parameter
 
 ```babble
-def Cell = class (init: int) (var v = init)
+def Cell = class (v0: int) (var v = v0)
 def disjointUnique = fn (unique a: Cell, unique b: Cell): int -> (
     def x = a.v
     b.v = 99
@@ -241,7 +241,7 @@ fn gvnCalls (a:int, b:int) -> int {nothrow unique}
 ## GVN invalidates unique epochs across control-flow merge after conditional write
 
 ```babble
-def Box = class (init: int) (var v = init)
+def Box = class (v0: int) (var v = v0)
 def condWrite = fn (flag: bool, unique b: Box): int -> (
     def before = b.v
     if flag then (b.v = 10)

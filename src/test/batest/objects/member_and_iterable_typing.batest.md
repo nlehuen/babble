@@ -8,7 +8,7 @@ def tests = import("org.babblelang.tests")
 def HasVal = interface ( def x: int )
 def SubHasVal = interface extends HasVal ()
 def Holder = class (var x: int, private def secret: int) implements SubHasVal ()
-def GenBox of T = class (init: T) ( var val = init )
+def GenBox of T = class (v0: T) ( var val = v0 )
 def CntIter = class (private var i: int) (
     def hasNext = fn (): bool -> ( this.i < 2 )
     def next = fn mut (): int -> ( this.i += 1 ; this.i )

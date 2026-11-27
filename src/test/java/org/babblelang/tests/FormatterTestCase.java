@@ -1145,4 +1145,57 @@ public class FormatterTestCase {
                 )
                 """);
     }
+
+    @Test
+    public void testBip040ConstructorsFormatting() throws Exception {
+        assertFormats(
+                """
+                def Vec2 = class () (
+                    def x: double
+                    def y: double
+
+                    init (x: double, y: double) -> (
+                        this.x = x
+                        this.y = y
+                    )
+
+                    private init io (v: double) -> (
+                        this(v, v)
+                    )
+                )
+                def Sphere = class (def r: double) (
+                    private def area: double
+
+                    init (
+                        this.area = 3.14 * this.r * this.r
+                    )
+                )
+                def m = a.init + f(init: 1)
+                """,
+                """
+                def Vec2 = class ( ) (
+                def x : double
+                def y : double
+
+                init ( x : double , y : double ) ->
+                (
+                this.x=x
+                this.y=y
+                )
+
+                private  init  io ( v : double ) -> (
+                this ( v , v )
+                )
+                )
+                def Sphere = class ( def r : double ) (
+                private def area : double
+
+                init
+                (
+                this.area = 3.14 * this.r * this.r
+                )
+                )
+                def m = a . init + f ( init : 1 )
+                """);
+    }
 }

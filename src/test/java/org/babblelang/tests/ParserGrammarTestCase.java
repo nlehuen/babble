@@ -548,6 +548,98 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         Assertions.assertEquals(2, unionBind.patternBindingType().type().nullableType().size());
     }
 
+    @Test
+    public void testBip040ConstructorsSllGrammar() {
+        BabbleParser.FileContext file =
+                parsePureSll(
+                        """
+                        def Sphere = class (def radius: double) (
+                            private def area: double
+
+                            init (
+                                def r = this.radius
+                                this.area = 3.14 * r * r
+                            )
+                        )
+                        def Vec2 = class () (
+                            def x: double
+                            def y: double
+
+                            init (x: double, y: double) -> (
+                                this.x = x
+                                this.y = y
+                            )
+
+                            private init io (v: double) -> (
+                                this(v, v)
+                            )
+
+                            init nothrow () -> (
+                                this(0.0, 0.0)
+                            )
+
+                            init calling f (f: fn (): double) -> (
+                                def v = f()
+                                this(v, v)
+                            )
+                        )
+                        def R = record (x: int, y: int) (
+                            init (
+                                if this.x < 0 then (throw exception("neg"))
+                            )
+                            init (v: int) -> (
+                                this(v, v)
+                            )
+                        )
+                        def O = object (
+                            def k: int
+                            init io (
+                                this.k = 1
+                            )
+                        )
+                        def mem = a.init + f(init: 1)
+                        """);
+
+        // Verify AST shape: parameterless `init (...)` has null `fnParameters()`,
+        // parameterized `init (...) -> (...)` has non-null `fnParameters()`.
+        BabbleParser.DefExpressionContext sphereDef =
+                Assertions.assertInstanceOf(
+                        BabbleParser.DefExpressionContext.class, file.expression(0));
+        BabbleParser.ClassExpressionContext sphereCls =
+                Assertions.assertInstanceOf(
+                        BabbleParser.ClassExpressionContext.class, sphereDef.value);
+        BabbleParser.InitExpressionContext paramlessInit =
+                Assertions.assertInstanceOf(
+                        BabbleParser.InitExpressionContext.class,
+                        sphereCls.classBlock.expression(1));
+        Assertions.assertNull(paramlessInit.fnParameters());
+        Assertions.assertNull(paramlessInit.PRIVATE());
+        Assertions.assertNotNull(paramlessInit.initBlock);
+
+        BabbleParser.DefExpressionContext vecDef =
+                Assertions.assertInstanceOf(
+                        BabbleParser.DefExpressionContext.class, file.expression(1));
+        BabbleParser.ClassExpressionContext vecCls =
+                Assertions.assertInstanceOf(
+                        BabbleParser.ClassExpressionContext.class, vecDef.value);
+        BabbleParser.InitExpressionContext paramInit =
+                Assertions.assertInstanceOf(
+                        BabbleParser.InitExpressionContext.class, vecCls.classBlock.expression(2));
+        Assertions.assertNotNull(paramInit.fnParameters());
+        Assertions.assertEquals(2, paramInit.fnParameters().fnParam().size());
+
+        BabbleParser.InitExpressionContext privIoInit =
+                Assertions.assertInstanceOf(
+                        BabbleParser.InitExpressionContext.class, vecCls.classBlock.expression(3));
+        Assertions.assertNotNull(privIoInit.PRIVATE());
+        Assertions.assertNotNull(privIoInit.effectPrefix());
+        Assertions.assertNotNull(privIoInit.fnParameters());
+
+        // `def init = 1` is rejected as a syntax error (reserved keyword).
+        Assertions.assertThrows(
+                ParseCancellationException.class, () -> parsePureSll("def init = 1"));
+    }
+
     private void assertTypeCheckFails(String source, String expectedMessage) {
         javax.script.ScriptException ex =
                 Assertions.assertThrows(

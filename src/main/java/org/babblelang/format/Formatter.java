@@ -287,6 +287,7 @@ public final class Formatter {
                 || parent instanceof BabbleParser.InterfaceExpressionContext
                 || parent instanceof BabbleParser.ObjectExpressionContext
                 || parent instanceof BabbleParser.FunctionLiteralContext
+                || parent instanceof BabbleParser.InitExpressionContext
                 || parent instanceof BabbleParser.AxiomTypeContext) {
             return JOINS;
         }

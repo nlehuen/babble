@@ -17,7 +17,7 @@ export def Vec = record (x : int) (
 )
 export def LateBox = class () (
     def peek = fn () : int -> ( 1 )
-    def init = this.peek()
+    def first = this.peek()
     def late : int = 42
 )
 ```
@@ -207,7 +207,7 @@ def eo = import("ext_ops.ba")
 def hm = import("hier_mid.ba")
 def lb = eo.LateBox()
 def Impl = class () implements hm.A2 ()
-assert(eo.Vec(7).x == 7 and lb.init == 1 and lb.late == 42 and Impl().a2() == 3)
+assert(eo.Vec(7).x == 7 and lb.first == 1 and lb.late == 42 and Impl().a2() == 3)
 ```
 
 ```hir
@@ -220,7 +220,7 @@ top-level:
   (def hm (call name(import) "hier_mid.ba"))
   (def lb (call (export name(eo).LateBox)))
   (def Impl (class-ref Impl))
-  (call name(assert) (and (and (and (==:bool (get-this-field x) 7:int) (==:bool (select name(lb).init) 1:int)) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
+  (call name(assert) (and (and (and (==:bool (get-this-field x) 7:int) (==:bool (select name(lb).first) 1:int)) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
 ```hir
@@ -233,7 +233,7 @@ top-level:
   (def hm (call name(import) "hier_mid.ba"))
   (def lb (call (export name(eo).LateBox)))
   (def Impl (class-ref Impl))
-  (call name(assert) (and (and (==:bool (select name(lb).init) 1:int) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
+  (call name(assert) (and (and (==:bool (select name(lb).first) 1:int) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
 ```hir
@@ -250,7 +250,7 @@ top-level:
     (def lb (call (export var($cse1).LateBox)))
     (def Impl (class-ref Impl))
     (def $cse2 name(lb))
-    (call name(assert) (and (and (==:bool (select var($cse2).init) 1:int) (==:bool (select var($cse2).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int))))
+    (call name(assert) (and (and (==:bool (select var($cse2).first) 1:int) (==:bool (select var($cse2).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int))))
 ```
 
 ## Dynamic function-typed call with >8 arguments (positional and named)
