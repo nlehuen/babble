@@ -18,14 +18,15 @@ import org.babblelang.opt.hir.InlinePass;
 import org.babblelang.opt.hir.ScalarReplacePass;
 
 /**
- * Bounded fixed-point Nanopass driver over {@link HirModule} (BIP014-I2, §6.5).
+ * Bounded fixed-point Nanopass driver over {@link HirModule} ({@code BIP014-I2}, {@code BIP039}).
  *
  * <p>At {@code -O0}, runs only mandatory pre-emission normalization ({@link HirTryNormalize}). At
- * {@code -O1} (and as Tier 1 front-end before Tier 2 SSA MIR at {@code -O2}), iterates the HIR
- * Nanopass pipeline up to {@value #MAX_ITERATIONS} rounds, stopping early as soon as a full round
- * performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is true
- * ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every modifying
- * pass.
+ * {@code -O1}, iterates the fast linear-time HIR Nanopass pipeline up to {@value #MAX_ITERATIONS}
+ * rounds; at {@code -O2}, runs the enriched unified HIR pipeline ({@link HirSccpPass} + {@link
+ * HirAeGraphPass} + inlining, scalar replacement, FBIP reuse, backward-liveness DCE, LICM, and
+ * predicate reordering), stopping early as soon as a full round performs zero rewrites, followed by
+ * {@link HirTryNormalize}. Whenever {@code verify} is true ({@code -Dbabble.verify=true}), runs
+ * {@link HirVerifier#verify(HirModule)} after every modifying pass.
  */
 public final class PassManager {
     public static final int MAX_ITERATIONS = 3;
@@ -40,7 +41,7 @@ public final class PassManager {
                     new HirLicmPass(),
                     new HirPredicateReorderPass());
 
-    private static final List<HirPass> O2_HIR_PASSES =
+    private static final List<HirPass> O2_PASSES =
             List.of(
                     new HirSccpPass(),
                     new HirAeGraphPass(),
@@ -58,15 +59,11 @@ public final class PassManager {
     }
 
     public static PassManager defaultFor(int optLevel) {
-        return defaultFor(optLevel, false);
-    }
-
-    public static PassManager defaultFor(int optLevel, boolean hirO2) {
         if (optLevel <= 0) {
             return new PassManager(List.of());
         }
-        if (optLevel >= 2 && hirO2) {
-            return new PassManager(O2_HIR_PASSES);
+        if (optLevel >= 2) {
+            return new PassManager(O2_PASSES);
         }
         return new PassManager(O1_PASSES);
     }

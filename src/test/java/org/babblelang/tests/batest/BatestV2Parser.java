@@ -106,7 +106,7 @@ final class BatestV2Parser {
                                     + lineNum
                                     + ": unknown fenced block kind '"
                                     + kind
-                                    + "' (expected babble, stdout, stderr, error, hir, or mir)");
+                                    + "' (expected babble, stdout, stderr, error, hir, or wat)");
                 }
                 if (!rest.isEmpty()) {
                     throw new IllegalArgumentException(
@@ -246,7 +246,7 @@ final class BatestV2Parser {
                         sourceName
                                 + ":"
                                 + lineNum
-                                + ": fenced block is missing a kind (expected babble, stdout, stderr, error, hir, or mir)");
+                                + ": fenced block is missing a kind (expected babble, stdout, stderr, error, hir, or wat)");
             }
 
             Matcher heading = CASE_HEADING.matcher(line);
@@ -285,7 +285,7 @@ final class BatestV2Parser {
 
     private static String commentTokenFor(String kind) {
         return switch (kind) {
-            case "babble", "hir", "mir", "wat" -> ";;";
+            case "babble", "hir", "wat" -> ";;";
             case "stdout", "stderr", "error" -> "#";
             default -> null;
         };
@@ -419,7 +419,7 @@ final class BatestV2Parser {
                 c.hasError = true;
                 c.expectedError = new BatestFile.TextExpectation(body, regex);
             }
-            case "hir", "mir", "wat" -> {
+            case "hir", "wat" -> {
                 IrTier tier = IrTier.parse(kind);
                 BatestFile.IrExpectation ir =
                         parseIrBlock(
@@ -462,7 +462,7 @@ final class BatestV2Parser {
                                     + headerLine
                                     + ": unknown fenced block kind '"
                                     + kind
-                                    + "' (expected babble, stdout, stderr, error, hir, mir, or wat)");
+                                    + "' (expected babble, stdout, stderr, error, hir, or wat)");
         }
     }
 
@@ -865,23 +865,19 @@ final class BatestV2Parser {
                     && !session) {
                 boolean hasHirO0 = false;
                 boolean hasHirO1 = false;
-                boolean hasMirO2Before = false;
-                boolean hasMirO2Final = false;
+                boolean hasHirO2 = false;
                 for (BatestFile.IrExpectation ir : irExpectations) {
                     if (ir.tier() == IrTier.HIR) {
                         if (ir.appliesTo(0)) hasHirO0 = true;
                         if (ir.appliesTo(1)) hasHirO1 = true;
-                    } else if (ir.tier() == IrTier.MIR && ir.appliesTo(2)) {
-                        if (ir.matchesStage("before")) hasMirO2Before = true;
-                        if (ir.matchesStage("final")) hasMirO2Final = true;
+                        if (ir.appliesTo(2)) hasHirO2 = true;
                     }
                 }
-                if (!hasHirO0 || !hasHirO1 || !hasMirO2Before || !hasMirO2Final) {
+                if (!hasHirO0 || !hasHirO1 || !hasHirO2) {
                     List<String> missing = new ArrayList<>();
                     if (!hasHirO0) missing.add("hir -O0");
                     if (!hasHirO1) missing.add("hir -O1");
-                    if (!hasMirO2Before) missing.add("mir -O2 stage=before");
-                    if (!hasMirO2Final) missing.add("mir -O2 stage=final");
+                    if (!hasHirO2) missing.add("hir -O2");
                     throw new IllegalArgumentException(
                             sourceName
                                     + ":"

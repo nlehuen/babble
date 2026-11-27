@@ -732,7 +732,7 @@ public class OptimizerTestCase {
     }
 
     @Test
-    public void testO2SsaMirPipelineAndBytecode() throws Exception {
+    public void testO2UnifiedHirPipelineAndBytecode() throws Exception {
         String code =
                 ""
                         + "def f = fn (flag : bool, x : double) : double -> (\n"
@@ -742,20 +742,20 @@ public class OptimizerTestCase {
                         + "  b + (k * 10 + 2)\n"
                         + ")\n"
                         + "f(true, -3.5)\n";
-        List<String> mirStages = new ArrayList<>();
+        List<String> hirStages = new ArrayList<>();
         org.babblelang.ir.IrObserver obs =
                 new org.babblelang.ir.IrObserver() {
                     @Override
                     public void onSnapshot(org.babblelang.ir.IrSnapshot snap) {
-                        if (snap.tier() == org.babblelang.ir.IrTier.MIR) {
-                            mirStages.add(snap.stage());
+                        if (snap.tier() == org.babblelang.ir.IrTier.HIR) {
+                            hirStages.add(snap.stage());
                         }
                     }
 
                     @Override
                     public boolean wants(
                             org.babblelang.ir.IrTier tier, int optLevel, String stage) {
-                        return tier == org.babblelang.ir.IrTier.MIR;
+                        return tier == org.babblelang.ir.IrTier.HIR;
                     }
                 };
         BabbleScriptEngine engine = newEngine();
@@ -764,12 +764,15 @@ public class OptimizerTestCase {
         engine.put(BabbleCompiler.IR_OBSERVER, obs);
         CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
         Assertions.assertTrue(
-                mirStages.contains("before"), "Expected MIR before snapshot: " + mirStages);
+                hirStages.contains("before"), "Expected HIR before snapshot: " + hirStages);
         Assertions.assertTrue(
-                mirStages.contains("after:SccpPass"),
-                "Expected MIR after:SccpPass snapshot: " + mirStages);
+                hirStages.contains("after:HirSccp"),
+                "Expected HIR after:HirSccp snapshot: " + hirStages);
         Assertions.assertTrue(
-                mirStages.contains("final"), "Expected MIR final snapshot: " + mirStages);
+                hirStages.contains("after:HirAeGraph"),
+                "Expected HIR after:HirAeGraph snapshot: " + hirStages);
+        Assertions.assertTrue(
+                hirStages.contains("final"), "Expected HIR final snapshot: " + hirStages);
         Object res = cs.eval();
         Assertions.assertEquals(45.5, ((Number) res).doubleValue(), 1e-9);
         ClassNode cn = new ClassNode();
@@ -779,7 +782,7 @@ public class OptimizerTestCase {
         Assertions.assertEquals(
                 1,
                 absCalls,
-                "Expected -O2 GvnCsePass to collapse Math.abs(Math.abs(x)) to 1 call, got: "
+                "Expected -O2 HirAeGraphPass to collapse Math.abs(Math.abs(x)) to 1 call, got: "
                         + calls);
     }
 

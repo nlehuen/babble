@@ -838,20 +838,20 @@ public class ReplTestCase {
                 (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         engine.put(BabbleScriptEngine.MODE, "compile");
         engine.put(org.babblelang.compiler.BabbleCompiler.OPT_LEVEL, 2);
-        org.babblelang.ir.mir.MirModule[] captured = new org.babblelang.ir.mir.MirModule[1];
+        org.babblelang.ir.hir.HirModule[] captured = new org.babblelang.ir.hir.HirModule[1];
         engine.put(
                 org.babblelang.compiler.BabbleCompiler.IR_OBSERVER,
                 new org.babblelang.ir.IrObserver() {
                     @Override
                     public boolean wants(org.babblelang.ir.IrTier tier, int opt, String stage) {
-                        return tier == org.babblelang.ir.IrTier.MIR
+                        return tier == org.babblelang.ir.IrTier.HIR
                                 && org.babblelang.ir.IrSnapshot.STAGE_BEFORE.equals(stage);
                     }
 
                     @Override
                     public void onSnapshot(org.babblelang.ir.IrSnapshot snapshot) {
-                        if (snapshot.ir() instanceof org.babblelang.ir.mir.MirModule mm) {
-                            captured[0] = mm;
+                        if (snapshot.ir() instanceof org.babblelang.ir.hir.HirModule hm) {
+                            captured[0] = hm;
                         }
                     }
                 });
@@ -861,16 +861,24 @@ public class ReplTestCase {
         ctx.setErrorWriter(new StringWriter());
         BabbleSession session = engine.newSession(ctx);
 
-        // 1. Clean earlier REPL `def` is definitely defined -> `name_read k {pure}`.
+        // 1. Clean earlier REPL `def` is definitely defined -> `PURE_NOTHROW`.
         session.eval("def k = 42");
         session.eval("def readK = fn (): int -> ( k )");
         Assertions.assertNotNull(captured[0]);
-        String readKDump = captured[0].printCanonical(org.babblelang.ir.IrTarget.parse("fn=readK"));
-        Assertions.assertTrue(readKDump.contains("name_read k {pure}"), readKDump);
+        org.babblelang.ir.hir.HirFunction readKFn =
+                captured[0].functions().values().stream()
+                        .filter(f -> "readK".equals(f.name()))
+                        .findFirst()
+                        .orElseThrow();
+        org.babblelang.ir.hir.HirExpr readKBody = readKFn.body().get(0);
+        org.babblelang.opt.HirEffectAnalysis fxK =
+                org.babblelang.opt.HirEffectAnalysis.forFunction(readKFn, captured[0]);
+        Assertions.assertTrue(
+                fxK.effectOf(readKBody).isPureFloatable(),
+                "Expected clean REPL def read to be pure nothrow, got: " + fxK.effectOf(readKBody));
         Assertions.assertEquals(42, session.eval("readK()"));
 
-        // 2. Failed earlier REPL input leaves `broken` uninitialized -> `name_read broken
-        // {pure,throws}`
+        // 2. Failed earlier REPL input leaves `broken` uninitialized -> throws on read
         //    and calling readBroken() throws `Name used before definition : broken`.
         Assertions.assertThrows(
                 ScriptException.class,
@@ -880,10 +888,18 @@ public class ReplTestCase {
         captured[0] = null;
         session.eval("def readBroken = fn (): int -> ( broken )");
         Assertions.assertNotNull(captured[0]);
-        String readBrokenDump =
-                captured[0].printCanonical(org.babblelang.ir.IrTarget.parse("fn=readBroken"));
-        Assertions.assertTrue(
-                readBrokenDump.contains("name_read broken {pure,throws}"), readBrokenDump);
+        org.babblelang.ir.hir.HirFunction readBrokenFn =
+                captured[0].functions().values().stream()
+                        .filter(f -> "readBroken".equals(f.name()))
+                        .findFirst()
+                        .orElseThrow();
+        org.babblelang.ir.hir.HirExpr readBrokenBody = readBrokenFn.body().get(0);
+        org.babblelang.opt.HirEffectAnalysis fxBroken =
+                org.babblelang.opt.HirEffectAnalysis.forFunction(readBrokenFn, captured[0]);
+        Assertions.assertFalse(
+                fxBroken.effectOf(readBrokenBody).nothrow(),
+                "Expected failed REPL def read to remain may-throw, got: "
+                        + fxBroken.effectOf(readBrokenBody));
         ScriptException tdz =
                 Assertions.assertThrows(ScriptException.class, () -> session.eval("readBroken()"));
         Assertions.assertTrue(

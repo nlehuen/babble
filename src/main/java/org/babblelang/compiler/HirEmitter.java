@@ -60,7 +60,6 @@ final class HirEmitter {
 
     final MethodEmitContext ctx = new MethodEmitContext();
     final ClassWriter classWriter;
-    final org.babblelang.ir.mir.MirModule mirModule;
     final MethodEntryEmitter entries;
     final FrameVarEmitter frameVars;
     final BridgeHelpers bridges;
@@ -75,10 +74,6 @@ final class HirEmitter {
 
     private int superHelperCount = 0;
 
-    HirEmitter(HirModule module, ClassLoader runtimeLoader) {
-        this(module, null, runtimeLoader);
-    }
-
     /**
      * Whether the bodies of functions and methods read names through caching {@code Bootstrap.name}
      * sites (from {@code -O1}) : their namespace is the same closure from call to call, unlike
@@ -86,12 +81,8 @@ final class HirEmitter {
      */
     boolean cacheNameReadsInBodies;
 
-    HirEmitter(
-            HirModule module,
-            org.babblelang.ir.mir.MirModule mirModule,
-            ClassLoader runtimeLoader) {
+    HirEmitter(HirModule module, ClassLoader runtimeLoader) {
         this.module = module;
-        this.mirModule = mirModule;
         this.className = module.className();
         this.sourceName = module.sourceName();
         this.runtimeLoader = runtimeLoader;
@@ -532,11 +523,6 @@ final class HirEmitter {
      * slots.
      */
     void emitStmt(HirExpr expr) {
-        if (ctx.mirOverrides != null && ctx.mirOverrides.containsKey(expr)) {
-            emitExpr(expr);
-            popOn(ctx.mv, ctx.stackKind);
-            return;
-        }
         ctx.stackKind = PrimitiveKind.NONE;
         switch (expr) {
             case HirExpr.Const ignored -> {}
@@ -567,13 +553,6 @@ final class HirEmitter {
     }
 
     void emitExpr(HirExpr expr) {
-        if (ctx.mirOverrides != null) {
-            MethodEmitContext.MirOperand op = ctx.mirOverrides.get(expr);
-            if (op != null) {
-                loadMirOperand(op);
-                return;
-            }
-        }
         ctx.stackKind = PrimitiveKind.NONE;
         switch (expr) {
             case HirExpr.Const c -> emitConst(c);
@@ -653,26 +632,7 @@ final class HirEmitter {
         }
     }
 
-    private void loadMirOperand(MethodEmitContext.MirOperand op) {
-        if (op.isStacked()) {
-            // Already on the operand stack, left there by the immediately preceding MIR
-            // instruction.
-        } else if (op.isConstant()) {
-            JvmOpEmitter.pushConstant(ctx.mv, op.constant());
-        } else {
-            loadKindOn(ctx.mv, op.kind(), op.slot());
-        }
-        ctx.stackKind = op.kind();
-    }
-
     void emitAndWiden(HirExpr expr) {
-        if (ctx.mirOverrides != null) {
-            MethodEmitContext.MirOperand op = ctx.mirOverrides.get(expr);
-            if (op != null) {
-                loadMirOperand(op);
-                return;
-            }
-        }
         emitExpr(expr);
         widenStackRank(expr.meta().wideningRank());
     }

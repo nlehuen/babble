@@ -21,30 +21,6 @@ final class MethodEmitContext {
 
     record TailLoop(Label head, int[] paramSlots, int maskSlot) {}
 
-    /**
-     * Pre-evaluated SSA operand slot injected by {@link MirEmitter} when delegating ABI emission to
-     * {@link HirEmitter}.
-     */
-    record MirOperand(
-            int slot, PrimitiveKind kind, boolean isConstant, Object constant, boolean isStacked) {
-        MirOperand(int slot, PrimitiveKind kind) {
-            this(slot, kind, false, null, false);
-        }
-
-        /** A rematerialized constant : pushed where the operand is read, in no local. */
-        static MirOperand constant(Object value, PrimitiveKind kind) {
-            return new MirOperand(-1, kind, true, value, false);
-        }
-
-        /**
-         * A single-use value left on the operand stack by the immediately preceding MIR
-         * instruction.
-         */
-        static MirOperand stacked(PrimitiveKind kind) {
-            return new MirOperand(-1, kind, false, null, true);
-        }
-    }
-
     static final class ActiveFinally {
         final org.babblelang.ir.hir.HirExpr.Try tryNode;
         final int loopDepthAtEntry;
@@ -114,12 +90,8 @@ final class MethodEmitContext {
     final Deque<LoopTarget> loopTargets = new ArrayDeque<>();
     final Deque<ActiveFinally> activeFinallies = new ArrayDeque<>();
     final java.util.Set<Integer> nonNegativeVars = new java.util.HashSet<>();
-    Map<org.babblelang.ir.hir.HirExpr, MirOperand> mirOverrides;
 
-    /**
-     * Whether name reads go through caching {@code Bootstrap.name} sites ({@link MirEmitter}, at
-     * {@code -O2}).
-     */
+    /** Whether name reads go through caching {@code Bootstrap.name} sites (from {@code -O1}). */
     boolean cacheNameReads;
 
     void reset(
@@ -156,7 +128,6 @@ final class MethodEmitContext {
         this.loopTargets.clear();
         this.activeFinallies.clear();
         this.nonNegativeVars.clear();
-        this.mirOverrides = null;
         this.cacheNameReads = false;
     }
 
