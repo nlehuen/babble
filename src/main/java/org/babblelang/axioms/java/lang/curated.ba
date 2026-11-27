@@ -165,7 +165,7 @@ axiom java.lang.String: class notnull (
     def endsWith: fn nothrow
     def equals: fn nothrow (anObject: any?): bool
     def equalsIgnoreCase: fn nothrow (anotherString: string?): bool
-    def formatted: fn (args: (array of any?)!): string!
+    def formatted: fn volatile (args: (array of any?)!): string!
     def hashCode: fn nothrow
     def indexOf: fn nothrow
     def isBlank: fn nothrow
@@ -184,8 +184,8 @@ axiom java.lang.String: class notnull (
 ) static (
     def *: fn pure
     def new: fn pure
-    def format: fn (format: string!, args: (array of any?)!): string!
-    def format: fn (l: java.util.Locale?, format: string!, args: (array of any?)!): string!
+    def format: fn volatile (format: string!, args: (array of any?)!): string!
+    def format: fn volatile (l: java.util.Locale?, format: string!, args: (array of any?)!): string!
     def valueOf: fn volatile (obj: any?): string!
 )
 

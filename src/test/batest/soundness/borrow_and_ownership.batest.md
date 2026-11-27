@@ -1,6 +1,6 @@
-# Soundness regressions : `ownership` (`O3`, `O4`) unique capture & projection exclusivity
+# Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection & exclusivity
 
-Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `Reachability`, and `CallEffectAnalyzer`.
+Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, and `CallEffectAnalyzer`.
 
 ```babble
 ;; babble preamble
@@ -240,3 +240,165 @@ def arr = (array of Box).of(Box(1), Box(2))
 swap(arr.get(0), arr.get(1))
 assert(arr.get(0).x == 2 and arr.get(1).x == 1)
 ```
+
+## Two fields of the same record aliasing one mutable instance must fail exclusivity
+
+```babble
+def Pair = record (a: Box, b: Box) ()
+def b = Box(1)
+def p = Pair(b, b)
+swap(p.a, p.b)
+```
+
+```error
+Exclusivity error : mut target p.a aliases argument p.b
+```
+
+## Record field aliasing an outer mutable local must fail exclusivity against that local
+
+```babble
+def Pair = record (a: Box, b: Box) ()
+def b = Box(1)
+def p = Pair(b, Box(2))
+swap(p.a, b)
+```
+
+```error
+Exclusivity error : mut target p.a aliases argument b
+```
+
+## Mutating class fields to alias the same mutable local must fail exclusivity
+
+```babble
+def Pair = class (var a: Box, var b: Box) ()
+def b = Box(1)
+def p = Pair(Box(2), Box(3))
+p.a = b
+p.b = b
+swap(p.a, p.b)
+```
+
+```error
+Exclusivity error : mut target p.a aliases argument p.b
+```
+
+## Disjoint record fields from fresh or distinct boxes remain allowed
+
+```babble
+def Pair = record (a: Box, b: Box) ()
+def p1 = Pair(Box(1), Box(2))
+swap(p1.a, p1.b)
+def x = Box(3)
+def y = Box(4)
+def p2 = Pair(x, y)
+swap(p2.a, p2.b)
+assert(p1.a.x == 2 and p1.b.x == 1 and p2.a.x == 4 and p2.b.x == 3)
+```
+
+## Closure reading a mutable local must fail exclusivity alongside mut borrow of same local
+
+```babble
+def run = fn volatile calling f (f: fn volatile (): int, mut b: Box): bool -> (
+    def v1 = f()
+    b.x = 99
+    def v2 = f()
+    v1 != v2
+)
+def b = Box(1)
+run(fn volatile (): int -> (b.x), b)
+```
+
+```error
+Exclusivity error : mut target b aliases argument fnvolatile():int->(b.x)
+```
+
+## Closure mutating a mutable local must fail exclusivity alongside mut borrow of same local
+
+```babble
+def run = fn io calling f (f: fn io (), mut b: Box): int -> (
+    b.x = 1
+    f()
+    b.x
+)
+def b = Box(0)
+run(fn io () -> (b.x = 99), b)
+```
+
+```error
+Exclusivity error : mut target b aliases argument fnio()->(b.x=99)
+```
+
+## Local closure variable capturing mutable local fails exclusivity inside function
+
+```babble
+def run = fn volatile calling f (f: fn volatile (): int, mut b: Box): int -> (
+    b.x = 99
+    f()
+)
+def bad = fn io (): int -> (
+    def b = Box(1)
+    def reader = fn volatile (): int -> (b.x)
+    run(reader, b)
+)
+bad()
+```
+
+```error
+Exclusivity error : mut target b aliases argument reader
+```
+
+## Closure capturing a disjoint mutable local remains allowed alongside mut borrow
+
+```babble
+def run = fn volatile calling f (f: fn volatile (): int, mut b: Box): int -> (
+    b.x = 99
+    f() + b.x
+)
+def test = fn volatile (): int -> (
+    def a = Box(1)
+    def b = Box(2)
+    run(fn volatile (): int -> (a.x), b)
+)
+assert(test() == 100)
+```
+
+## List match rest slice element must fail exclusivity against original list element
+
+```babble
+def xs = list of Box (Box(0), Box(1))
+match xs
+case is list(_, ...def tail) then (swap(tail.get(0), xs.get(1)))
+else ()
+```
+
+```error
+Exclusivity error : mut target tail.get(0) aliases argument xs.get(1)
+```
+
+## Array match rest slice element must fail exclusivity against original array element
+
+```babble
+def arr = (array of Box).of(Box(0), Box(1))
+match arr
+case is array(_, ...def tail) then (swap(tail.get(0), arr.get(1)))
+else ()
+```
+
+```error
+Exclusivity error : mut target tail.get(0) aliases argument arr.get(1)
+```
+
+## Freezing a borrowed mutable-element list match rest slice must be rejected
+
+```babble
+def b = Box(1)
+def xs = list of Box (b, b)
+match xs
+case is list(_, ...def tail) then (freeze(tail))
+else (null)
+```
+
+```error
+Cannot freeze expression : value is not unique or deeply immutable
+```
+

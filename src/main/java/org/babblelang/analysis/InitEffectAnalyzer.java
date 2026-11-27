@@ -454,7 +454,9 @@ final class InitEffectAnalyzer {
             return Reachability.Origin.IMMUTABLE;
         }
         Reachability.Origin closure = Reachability.Origin.IMMUTABLE;
+        Set<Reachability.PathKey> capturedPaths = new java.util.HashSet<>();
         if (w.innerContainsThis(inner)) {
+            capturedPaths.add(new Reachability.PathKey(Reachability.THIS_KEY, List.of(), true));
             if (!frameLocal) {
                 closure =
                         Reachability.Origin.ofThis(Reachability.THIS_KEY, false)
@@ -501,6 +503,14 @@ final class InitEffectAnalyzer {
                 }
                 orig = w.env.getOrDefault(decl, orig.withoutUnique());
             }
+            if (orig != Reachability.Origin.IMMUTABLE) {
+                Set<Reachability.PathKey> capPaths = orig.allReachablePaths();
+                if (capPaths.isEmpty()) {
+                    capturedPaths.add(new Reachability.PathKey(decl, List.of(), true));
+                } else {
+                    capturedPaths.addAll(capPaths);
+                }
+            }
             if (frameLocal) {
                 continue;
             }
@@ -512,7 +522,66 @@ final class InitEffectAnalyzer {
                 w.markStoredOrigin(orig, "captured closure", inner);
             }
         }
-        return closure;
+        collectOuterRefPaths(ec, w, inner, inner, capturedPaths);
+        return capturedPaths.isEmpty()
+                ? closure
+                : closure.withAddedPaths(Set.copyOf(capturedPaths));
+    }
+
+    private static void collectOuterRefPaths(
+            EffectChecker ec,
+            EffectBodyWalker w,
+            BabbleParser.FunctionLiteralContext inner,
+            org.antlr.v4.runtime.tree.ParseTree tree,
+            Set<Reachability.PathKey> out) {
+        if (tree == null) {
+            return;
+        }
+        ParserRuleContext refDecl = null;
+        if (tree instanceof BabbleParser.SelectorContext sel && sel.expression() == null) {
+            ScopeNode occScope = ec.checker.occurrenceScopeOf(sel);
+            Object resolved = ec.checker.resolveNameForEffects(sel.ID().getText(), occScope);
+            if (resolved instanceof ParserRuleContext prc) {
+                refDecl = prc;
+            }
+        } else if (tree instanceof BabbleParser.AssignExpressionContext assign
+                && ScopeAnalysis.assignReceiver(assign) == null) {
+            String name = ScopeAnalysis.assignName(assign);
+            if (name != null) {
+                ScopeNode occScope = ec.checker.occurrenceScopeOf(assign);
+                Object resolved = ec.checker.resolveNameForEffects(name, occScope);
+                if (resolved instanceof ParserRuleContext prc) {
+                    refDecl = prc;
+                }
+            }
+        }
+        if (refDecl != null && !MatchEffectAnalyzer.isInsideSubtree(refDecl, inner)) {
+            Reachability.Origin orig = w.env.get(refDecl);
+            if (orig != null) {
+                if (orig != Reachability.Origin.IMMUTABLE && !orig.moved) {
+                    Set<Reachability.PathKey> paths = orig.allReachablePaths();
+                    if (paths.isEmpty()) {
+                        out.add(new Reachability.PathKey(refDecl, List.of(), true));
+                    } else {
+                        out.addAll(paths);
+                    }
+                }
+            } else {
+                Type declType = ec.checker.typeOfDeclarationForEffects(refDecl);
+                if (declType != null
+                        && declType != Type.ERROR
+                        && !ec.javaResolver.isDeeplyImmutable(declType)
+                        && !(declType instanceof Type.ClassValue)
+                        && !(declType instanceof Type.JavaClassValue)
+                        && !(declType instanceof Type.JavaPackage)
+                        && !(declType instanceof Type.Module)) {
+                    out.add(new Reachability.PathKey(refDecl, List.of(), true));
+                }
+            }
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            collectOuterRefPaths(ec, w, inner, tree.getChild(i), out);
+        }
     }
 
     static String literalIndexSegment(BabbleParser.ExpressionContext[] argExprs) {
@@ -637,6 +706,7 @@ final class InitEffectAnalyzer {
             w.applyEffects(cs.effects());
             List<Type.Parameter> cParams =
                     ec.checker.constructorParamsForEffects(cv.node(), ctorIdx);
+            boolean directPrimaryFields = isDirectPrimaryFieldConstructor(cv.node(), ctorIdx);
             for (int i = 0; i < args.size(); i++) {
                 int pIdx = ec.checker.parameterIndexForArg(cParams, args, args.get(i));
                 boolean storedInSelf = pIdx >= 0 && cs.ctorStoredParams().get(pIdx);
@@ -652,8 +722,15 @@ final class InitEffectAnalyzer {
                         w.demoteUniqueOwner(
                                 argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
                     }
-                    if (ctorFresh && !imm) {
-                        ctorOrigin = ctorOrigin.absorbElement(argOrigins[i]);
+                    if (!imm) {
+                        String fieldName =
+                                (directPrimaryFields && pIdx >= 0 && pIdx < cParams.size())
+                                        ? cParams.get(pIdx).name()
+                                        : Reachability.ANY_FIELD;
+                        ctorOrigin =
+                                ctorFresh
+                                        ? ctorOrigin.absorbField(fieldName, argOrigins[i])
+                                        : ctorOrigin.withFieldPaths(fieldName, argOrigins[i]);
                     }
                 }
             }
@@ -677,6 +754,26 @@ final class InitEffectAnalyzer {
                     calls, cv.node(), ctorIdx, cParams, call, args, argExprs, argOrigins);
         }
         return ctorOrigin;
+    }
+
+    private static boolean isDirectPrimaryFieldConstructor(TypeNode node, int ctorIdx) {
+        if (node == null
+                || ctorIdx != 0
+                || !(node.ctx instanceof BabbleParser.ClassExpressionContext cls)) {
+            return false;
+        }
+        if (cls.classBlock == null) {
+            return true;
+        }
+        for (BabbleParser.ExpressionContext stmt : cls.classBlock.expression()) {
+            if (stmt instanceof BabbleParser.DefExpressionContext def
+                    && (def.value instanceof BabbleParser.FunctionLiteralContext
+                            || def.value instanceof BabbleParser.OverloadExpressionContext)) {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 
     static boolean isDirectThisExpr(BabbleParser.ExpressionContext expr) {

@@ -16,6 +16,9 @@ final class Reachability {
 
     static final Object THIS_KEY = new Object();
 
+    /** Wildcard field key used when a stored object may inhabit any field of a container. */
+    static final String ANY_FIELD = "*";
+
     /**
      * What a value reaches : parameters (by index), {@code this}, or state external to the frame.
      * {@link Origin} holds one for the value itself and, under the shallow modality, one for the
@@ -58,7 +61,8 @@ final class Reachability {
                         null,
                         Set.of(),
                         Set.of(),
-                        Set.of());
+                        Set.of(),
+                        java.util.Map.of());
         static final Origin MOVED =
                 new Origin(
                         EMPTY_BITS,
@@ -70,7 +74,8 @@ final class Reachability {
                         null,
                         Set.of(),
                         Set.of(),
-                        Set.of());
+                        Set.of(),
+                        java.util.Map.of());
 
         final BitSet params;
         final boolean aliasesThis;
@@ -108,6 +113,37 @@ final class Reachability {
          */
         final Set<PathKey> elementPaths;
 
+        /**
+         * Per-field paths of non-unique values stored into named fields of this object (or {@link
+         * #ANY_FIELD} when the target field is statically unknown).
+         */
+        final java.util.Map<String, Set<PathKey>> fieldPaths;
+
+        Origin(
+                BitSet params,
+                boolean aliasesThis,
+                boolean external,
+                boolean unique,
+                Provenance shallow,
+                boolean moved,
+                Object uniqueOwner,
+                Set<Object> directKeys,
+                Set<PathKey> paths,
+                Set<PathKey> elementPaths,
+                java.util.Map<String, Set<PathKey>> fieldPaths) {
+            this.params = params;
+            this.aliasesThis = aliasesThis;
+            this.external = external;
+            this.unique = unique;
+            this.shallow = shallow;
+            this.moved = moved;
+            this.uniqueOwner = uniqueOwner;
+            this.directKeys = directKeys;
+            this.paths = paths;
+            this.elementPaths = elementPaths;
+            this.fieldPaths = fieldPaths;
+        }
+
         Origin(
                 BitSet params,
                 boolean aliasesThis,
@@ -119,16 +155,18 @@ final class Reachability {
                 Set<Object> directKeys,
                 Set<PathKey> paths,
                 Set<PathKey> elementPaths) {
-            this.params = params;
-            this.aliasesThis = aliasesThis;
-            this.external = external;
-            this.unique = unique;
-            this.shallow = shallow;
-            this.moved = moved;
-            this.uniqueOwner = uniqueOwner;
-            this.directKeys = directKeys;
-            this.paths = paths;
-            this.elementPaths = elementPaths;
+            this(
+                    params,
+                    aliasesThis,
+                    external,
+                    unique,
+                    shallow,
+                    moved,
+                    uniqueOwner,
+                    directKeys,
+                    paths,
+                    elementPaths,
+                    java.util.Map.of());
         }
 
         Origin(
@@ -151,7 +189,8 @@ final class Reachability {
                     uniqueOwner,
                     directKeys,
                     pathKey != null ? Set.of(pathKey) : Set.of(),
-                    Set.of());
+                    Set.of(),
+                    java.util.Map.of());
         }
 
         Origin(
@@ -307,7 +346,8 @@ final class Reachability {
                     null,
                     directKeys,
                     paths,
-                    elementPaths);
+                    elementPaths,
+                    fieldPaths);
         }
 
         Origin deriveMember(String field, boolean immutable) {
@@ -315,6 +355,14 @@ final class Reachability {
                 return IMMUTABLE;
             }
             Set<PathKey> nextPaths = appendPaths(paths, field);
+            Set<PathKey> stored = fieldPaths.get(field);
+            if (stored != null) {
+                nextPaths = unionPaths(nextPaths, stored);
+            }
+            Set<PathKey> anyStored = fieldPaths.get(ANY_FIELD);
+            if (anyStored != null) {
+                nextPaths = unionPaths(nextPaths, anyStored);
+            }
             return derived(Set.of(), nextPaths, Set.of());
         }
 
@@ -359,7 +407,8 @@ final class Reachability {
                         null,
                         keys,
                         nextPaths,
-                        nextElemPaths);
+                        nextElemPaths,
+                        java.util.Map.of());
             }
             return new Origin(
                     (BitSet) params.clone(),
@@ -371,7 +420,8 @@ final class Reachability {
                     unique ? uniqueOwner : null,
                     keys,
                     nextPaths,
-                    nextElemPaths);
+                    nextElemPaths,
+                    java.util.Map.of());
         }
 
         /**
@@ -392,7 +442,8 @@ final class Reachability {
                     shallow != null ? uniqueOwner : null,
                     directKeys,
                     paths,
-                    elementPaths);
+                    elementPaths,
+                    fieldPaths);
         }
 
         /**
@@ -408,7 +459,8 @@ final class Reachability {
                                 .union(taint.elements());
                 Set<PathKey> taintPaths =
                         unionPaths(
-                                truncatePaths(taint.paths, taint.directKeys), taint.elementPaths);
+                                truncatePaths(taint.paths, taint.directKeys),
+                                unionPaths(taint.elementPaths, taint.allFieldPaths()));
                 nextElemPaths = unionPaths(nextElemPaths, taintPaths);
             }
             return new Origin(
@@ -421,7 +473,105 @@ final class Reachability {
                     uniqueOwner,
                     directKeys,
                     paths,
-                    nextElemPaths);
+                    nextElemPaths,
+                    fieldPaths);
+        }
+
+        /**
+         * Stores a non-unique value into named field {@code fieldName} (or {@link #ANY_FIELD}) of a
+         * fresh local object, updating both element provenance and per-field alias paths.
+         */
+        Origin absorbField(String fieldName, Origin taint) {
+            Origin absorbed = absorbElement(taint);
+            if (taint == null || taint == IMMUTABLE) {
+                return absorbed;
+            }
+            Set<PathKey> storedPaths = taint.exactAndInnerPaths();
+            if (storedPaths.isEmpty()) {
+                return absorbed;
+            }
+            String key = fieldName != null ? fieldName : ANY_FIELD;
+            java.util.Map<String, Set<PathKey>> nextFields =
+                    putFieldPaths(absorbed.fieldPaths, key, storedPaths);
+            return new Origin(
+                    (BitSet) absorbed.params.clone(),
+                    absorbed.aliasesThis,
+                    absorbed.external,
+                    absorbed.unique,
+                    cloned(absorbed.shallow),
+                    absorbed.moved,
+                    absorbed.uniqueOwner,
+                    absorbed.directKeys,
+                    absorbed.paths,
+                    absorbed.elementPaths,
+                    nextFields);
+        }
+
+        /** Records per-field stored alias paths without altering ownership/freshness flags. */
+        Origin withFieldPaths(String fieldName, Origin value) {
+            if (this == IMMUTABLE || this == MOVED || value == null || value == IMMUTABLE) {
+                return this;
+            }
+            Set<PathKey> storedPaths = value.exactAndInnerPaths();
+            if (storedPaths.isEmpty()) {
+                return this;
+            }
+            String key = fieldName != null ? fieldName : ANY_FIELD;
+            java.util.Map<String, Set<PathKey>> nextFields =
+                    putFieldPaths(fieldPaths, key, storedPaths);
+            return new Origin(
+                    (BitSet) params.clone(),
+                    aliasesThis,
+                    external,
+                    unique,
+                    cloned(shallow),
+                    moved,
+                    uniqueOwner,
+                    directKeys,
+                    paths,
+                    elementPaths,
+                    nextFields);
+        }
+
+        /** Attaches additional alias paths (e.g. closure capture paths for exclusivity checks). */
+        Origin withAddedPaths(Set<PathKey> extraPaths) {
+            if (extraPaths == null || extraPaths.isEmpty() || this == MOVED) {
+                return this;
+            }
+            Set<PathKey> nextPaths = unionPaths(paths, extraPaths);
+            return new Origin(
+                    (BitSet) params.clone(),
+                    aliasesThis,
+                    external,
+                    unique,
+                    cloned(shallow),
+                    moved,
+                    uniqueOwner,
+                    directKeys,
+                    nextPaths,
+                    elementPaths,
+                    fieldPaths);
+        }
+
+        Set<PathKey> exactAndInnerPaths() {
+            Set<PathKey> base = paths.isEmpty() ? rootPathsFromKeys(directKeys, false) : paths;
+            return unionPaths(base, unionPaths(elementPaths, allFieldPaths()));
+        }
+
+        Set<PathKey> allReachablePaths() {
+            return unionPaths(
+                    truncatePaths(paths, directKeys), unionPaths(elementPaths, allFieldPaths()));
+        }
+
+        Set<PathKey> allFieldPaths() {
+            if (fieldPaths.isEmpty()) {
+                return Set.of();
+            }
+            Set<PathKey> out = new HashSet<>();
+            for (Set<PathKey> s : fieldPaths.values()) {
+                out.addAll(s);
+            }
+            return Set.copyOf(out);
         }
 
         Origin withoutUnique() {
@@ -440,7 +590,8 @@ final class Reachability {
                     null,
                     directKeys,
                     paths,
-                    elementPaths);
+                    elementPaths,
+                    fieldPaths);
         }
 
         Origin demoteToExternal(Origin taint) {
@@ -455,7 +606,8 @@ final class Reachability {
                     null,
                     directKeys,
                     paths,
-                    elementPaths);
+                    elementPaths,
+                    fieldPaths);
         }
 
         Origin join(Origin other) {
@@ -481,6 +633,8 @@ final class Reachability {
             }
             Set<PathKey> mergedPaths = unionPaths(this.paths, other.paths);
             Set<PathKey> mergedElemPaths = unionPaths(this.elementPaths, other.elementPaths);
+            java.util.Map<String, Set<PathKey>> mergedFieldPaths =
+                    unionFieldPaths(this.fieldPaths, other.fieldPaths);
             boolean mergedThis = aliasesThis || other.aliasesThis;
             boolean confined = !this.external && !other.external && !mergedThis && merged.isEmpty();
             boolean mergedUnique = this.unique && other.unique && confined;
@@ -509,7 +663,8 @@ final class Reachability {
                         null,
                         keys,
                         mergedPaths,
-                        mergedElemPaths);
+                        mergedElemPaths,
+                        mergedFieldPaths);
             }
             return new Origin(
                     merged,
@@ -521,7 +676,8 @@ final class Reachability {
                     mergedOwner,
                     keys,
                     mergedPaths,
-                    mergedElemPaths);
+                    mergedElemPaths,
+                    mergedFieldPaths);
         }
 
         Origin widen(Origin other) {
@@ -531,7 +687,11 @@ final class Reachability {
             }
             Set<PathKey> widenedPaths = widenPaths(this.paths, other.paths);
             Set<PathKey> widenedElemPaths = widenPaths(this.elementPaths, other.elementPaths);
-            if (widenedPaths.equals(joined.paths) && widenedElemPaths.equals(joined.elementPaths)) {
+            java.util.Map<String, Set<PathKey>> widenedFieldPaths =
+                    widenFieldPaths(this.fieldPaths, other.fieldPaths);
+            if (widenedPaths.equals(joined.paths)
+                    && widenedElemPaths.equals(joined.elementPaths)
+                    && widenedFieldPaths.equals(joined.fieldPaths)) {
                 return joined;
             }
             return new Origin(
@@ -544,7 +704,8 @@ final class Reachability {
                     joined.uniqueOwner,
                     joined.directKeys,
                     widenedPaths,
-                    widenedElemPaths);
+                    widenedElemPaths,
+                    widenedFieldPaths);
         }
 
         private Origin withoutExactSingleKey() {
@@ -558,7 +719,8 @@ final class Reachability {
                     uniqueOwner,
                     directKeys,
                     paths,
-                    elementPaths);
+                    elementPaths,
+                    fieldPaths);
         }
 
         private static Provenance cloned(Provenance p) {
@@ -584,7 +746,8 @@ final class Reachability {
                     && params.equals(that.params)
                     && directKeys.equals(that.directKeys)
                     && paths.equals(that.paths)
-                    && elementPaths.equals(that.elementPaths);
+                    && elementPaths.equals(that.elementPaths)
+                    && fieldPaths.equals(that.fieldPaths);
         }
 
         @Override
@@ -599,7 +762,8 @@ final class Reachability {
                     uniqueOwner,
                     directKeys,
                     paths,
-                    elementPaths);
+                    elementPaths,
+                    fieldPaths);
         }
     }
 
@@ -687,7 +851,7 @@ final class Reachability {
         return Set.copyOf(out);
     }
 
-    private static Set<PathKey> truncatePaths(Set<PathKey> paths, Set<Object> fallbackKeys) {
+    static Set<PathKey> truncatePaths(Set<PathKey> paths, Set<Object> fallbackKeys) {
         if (paths.isEmpty()) {
             return rootPathsFromKeys(fallbackKeys, true);
         }
@@ -709,6 +873,40 @@ final class Reachability {
         out.addAll(a);
         out.addAll(b);
         return Set.copyOf(out);
+    }
+
+    private static java.util.Map<String, Set<PathKey>> putFieldPaths(
+            java.util.Map<String, Set<PathKey>> existing, String field, Set<PathKey> added) {
+        java.util.Map<String, Set<PathKey>> copy = new java.util.HashMap<>(existing);
+        copy.merge(field, added, Reachability::unionPaths);
+        return java.util.Map.copyOf(copy);
+    }
+
+    private static java.util.Map<String, Set<PathKey>> unionFieldPaths(
+            java.util.Map<String, Set<PathKey>> a, java.util.Map<String, Set<PathKey>> b) {
+        if (a.isEmpty()) {
+            return b;
+        }
+        if (b.isEmpty()) {
+            return a;
+        }
+        java.util.Map<String, Set<PathKey>> out = new java.util.HashMap<>(a);
+        for (java.util.Map.Entry<String, Set<PathKey>> e : b.entrySet()) {
+            out.merge(e.getKey(), e.getValue(), Reachability::unionPaths);
+        }
+        return java.util.Map.copyOf(out);
+    }
+
+    private static java.util.Map<String, Set<PathKey>> widenFieldPaths(
+            java.util.Map<String, Set<PathKey>> a, java.util.Map<String, Set<PathKey>> b) {
+        if (a.isEmpty() && b.isEmpty()) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, Set<PathKey>> out = new java.util.HashMap<>(a);
+        for (java.util.Map.Entry<String, Set<PathKey>> e : b.entrySet()) {
+            out.merge(e.getKey(), e.getValue(), Reachability::widenPaths);
+        }
+        return java.util.Map.copyOf(out);
     }
 
     private static Set<PathKey> widenPaths(Set<PathKey> a, Set<PathKey> b) {

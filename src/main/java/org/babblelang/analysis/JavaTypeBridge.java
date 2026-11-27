@@ -922,14 +922,31 @@ final class JavaTypeBridge {
         java.lang.reflect.Type[] genericParams = exec.getGenericParameterTypes();
         AnnotatedType[] annParams = exec.getAnnotatedParameterTypes();
         AnnotatedType ann = index < annParams.length ? annParams[index] : null;
-        return fromJavaType(
-                genericParams[index],
-                ann,
-                env,
-                false,
-                true,
-                JavaNullability.parameterNullness(exec, index),
-                JavaNullability.isNullMarked(exec));
+        Type param =
+                fromJavaType(
+                        genericParams[index],
+                        ann,
+                        env,
+                        false,
+                        true,
+                        JavaNullability.parameterNullness(exec, index),
+                        JavaNullability.isNullMarked(exec));
+        JavaNullability.Nullness elemNullness =
+                JavaNullability.parameterElementNullness(exec, index);
+        if (elemNullness != null
+                && elemNullness != JavaNullability.Nullness.UNSPECIFIED
+                && Type.withoutNull(param) instanceof Type.Array arr
+                && !Type.isPrimitiveScalar(arr.element())) {
+            Type nextElem =
+                    elemNullness == JavaNullability.Nullness.NULLABLE
+                            ? Type.nullable(arr.element())
+                            : Type.withoutNull(arr.element());
+            if (!nextElem.equals(arr.element())) {
+                Type rebuilt = new Type.Array(nextElem);
+                param = Type.containsNull(param) ? Type.nullable(rebuilt) : rebuilt;
+            }
+        }
+        return param;
     }
 
     /**

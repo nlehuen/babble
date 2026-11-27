@@ -303,10 +303,17 @@ final class MatchEffectAnalyzer {
         if (args.restPattern() != null && args.restPattern().name != null) {
             BabbleParser.RestPatternContext rp = args.restPattern();
             Reachability.Provenance elemProv = Reachability.Provenance.EMPTY;
+            Set<Reachability.PathKey> restElemPaths = Set.of();
+            boolean restUnique = true;
             if (seqInfo != null && !w.ec.javaResolver.isDeeplyImmutable(seqInfo.elemType())) {
                 Reachability.Origin flat = scrutOrig.flattenElements();
                 elemProv =
                         new Reachability.Provenance(flat.params, flat.aliasesThis, flat.external);
+                restElemPaths =
+                        Reachability.unionPaths(
+                                Reachability.truncatePaths(scrutOrig.paths, scrutOrig.directKeys),
+                                scrutOrig.elementPaths);
+                restUnique = scrutOrig.unique && scrutOrig.uniqueOwner == null;
             }
             w.env.put(
                     rp,
@@ -314,12 +321,13 @@ final class MatchEffectAnalyzer {
                             Reachability.Origin.EMPTY_BITS,
                             false,
                             false,
-                            true,
+                            restUnique,
                             elemProv,
                             false,
                             rp,
                             Set.of(rp),
-                            new Reachability.PathKey(rp, List.of())));
+                            Set.of(new Reachability.PathKey(rp, List.of())),
+                            restElemPaths));
         }
     }
 

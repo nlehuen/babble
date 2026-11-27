@@ -309,6 +309,20 @@ final class EffectBodyWalker {
         }
     }
 
+    void absorbFieldIntoLocalContainer(
+            Object ownerKey, String fieldName, Reachability.Origin taint) {
+        if (ownerKey instanceof ParserRuleContext decl) {
+            Reachability.Origin cur = env.get(decl);
+            if (cur != null
+                    && cur.owned()
+                    && !cur.external
+                    && !cur.aliasesThis
+                    && cur.params.isEmpty()) {
+                env.put(decl, cur.absorbField(fieldName, taint));
+            }
+        }
+    }
+
     boolean isUnattachedUniqueOrImmutable(Reachability.Origin orig, Type type) {
         return orig == Reachability.Origin.IMMUTABLE
                 || ec.javaResolver.isDeeplyImmutable(type)
@@ -367,7 +381,8 @@ final class EffectBodyWalker {
                     decl,
                     Set.of(decl),
                     Set.of(new Reachability.PathKey(decl, List.of())),
-                    rhs.elementPaths);
+                    rhs.elementPaths,
+                    rhs.fieldPaths);
         }
         if (rhs.owned() && rhs.uniqueOwner != null) {
             // Aliasing a live unique/localFresh local without move(...) drops uniqueness while
@@ -805,7 +820,8 @@ final class EffectBodyWalker {
                 null,
                 Set.copyOf(keys),
                 nextPaths,
-                base.elementPaths);
+                base.elementPaths,
+                base.fieldPaths);
     }
 
     Reachability.Origin evalAssign(BabbleParser.AssignExpressionContext assign) {
@@ -1255,12 +1271,22 @@ final class EffectBodyWalker {
         if (target.owned() && !target.external && target.params.isEmpty() && !target.aliasesThis) {
             // Storing into a fresh local container: absorb element provenance without escaping yet!
             if (!isUnattachedUniqueOrImmutable(value, valueType)) {
-                absorbElementIntoLocalContainer(target.uniqueOwner, value);
+                absorbFieldIntoLocalContainer(target.uniqueOwner, fieldName, value);
                 if (value.owned() && value.uniqueOwner != null) {
                     demoteUniqueOwner(value.uniqueOwner, Reachability.Origin.IMMUTABLE);
                 }
             }
             return;
+        }
+        if (fieldName != null && !isUnattachedUniqueOrImmutable(value, valueType)) {
+            for (Object key : target.directKeys) {
+                if (key instanceof ParserRuleContext decl) {
+                    Reachability.Origin cur = env.get(decl);
+                    if (cur != null) {
+                        env.put(decl, cur.withFieldPaths(fieldName, value));
+                    }
+                }
+            }
         }
         if (constructingSelf && target.aliasesThis && target.params.isEmpty() && !target.external) {
             // Storing into `this`'s own fields during construction stays confined inside the new

@@ -31,6 +31,40 @@ final class TypeEnv {
             return new Refinement(Map.of(), merge(whenFalse, other.whenFalse, combiner));
         }
 
+        Refinement without(Set<ParserRuleContext> excluded) {
+            if (excluded == null
+                    || excluded.isEmpty()
+                    || (whenTrue.isEmpty() && whenFalse.isEmpty())) {
+                return this;
+            }
+            Map<ParserRuleContext, Type> nextTrue = strip(whenTrue, excluded);
+            Map<ParserRuleContext, Type> nextFalse = strip(whenFalse, excluded);
+            if (nextTrue == whenTrue && nextFalse == whenFalse) {
+                return this;
+            }
+            return new Refinement(nextTrue, nextFalse);
+        }
+
+        private static Map<ParserRuleContext, Type> strip(
+                Map<ParserRuleContext, Type> map, Set<ParserRuleContext> excluded) {
+            if (map.isEmpty()) {
+                return map;
+            }
+            Map<ParserRuleContext, Type> copy = null;
+            for (ParserRuleContext decl : map.keySet()) {
+                if (excluded.contains(decl)) {
+                    if (copy == null) {
+                        copy = new IdentityHashMap<>(map);
+                    }
+                    copy.remove(decl);
+                }
+            }
+            if (copy == null) {
+                return map;
+            }
+            return copy.isEmpty() ? Map.of() : Collections.unmodifiableMap(copy);
+        }
+
         private static Map<ParserRuleContext, Type> merge(
                 Map<ParserRuleContext, Type> a,
                 Map<ParserRuleContext, Type> b,

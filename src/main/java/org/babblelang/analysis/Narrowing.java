@@ -83,6 +83,10 @@ final class Narrowing {
         if (expr instanceof BabbleParser.BooleanOpContext opCtx) {
             TypeEnv.Refinement left = extractRefinement(opCtx.left);
             TypeEnv.Refinement right = extractRefinement(opCtx.right);
+            Set<ParserRuleContext> rightAssigned = assignedLocals(opCtx.right);
+            if (!rightAssigned.isEmpty()) {
+                left = left.without(rightAssigned);
+            }
             return opCtx.op.getType() == BabbleLexer.AND
                     ? left.and(right, this::preferMoreSpecific)
                     : left.or(right, this::preferMoreSpecific);

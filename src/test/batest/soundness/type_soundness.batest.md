@@ -1,6 +1,6 @@
-# Soundness regressions : `types` (`T1`) generic variance and borrow covariance
+# Soundness regressions : `types` (`T1`, `T3`) generic variance, borrow covariance & flow narrowing
 
-Promoted from `BIP032` quarantine (`types_t1_record_covariance_mutable_field.batest.md`, `types_t1_borrow_covariance_contravariant_method.batest.md`) and sister variance vectors covering `TypeVariance` and `TypeAlgebra`.
+Promoted from `BIP032` quarantine (`types_t1_record_covariance_mutable_field.batest.md`, `types_t1_borrow_covariance_contravariant_method.batest.md`, `types_t3_flow_narrowing_shortcircuit_reassign.batest.md`) and sister vectors covering `TypeVariance`, `TypeAlgebra`, `Narrowing`, and `ExpressionTyper`.
 
 ```babble
 ;; babble preamble
@@ -142,3 +142,87 @@ assert(readWrap(Wrap of string ("a")) == "a")
 assert(checkBox(RoBox of string ("b")))
 assert(checkList(list of string ("c")))
 ```
+
+## Short-circuit and reassigning type-narrowed var must invalidate narrowing
+
+```babble
+def f = fn (var x: string | int): int -> (
+    if x is string and (x = 42; true) then (x.length()) else (0)
+)
+f("hi")
+```
+
+```error
+Not a scope : x
+```
+
+## Short-circuit or reassigning null-narrowed var must invalidate else narrowing
+
+```babble
+def f = fn (var x: string?): int -> (
+    if x == null or (x = null; false) then (0) else (x.length())
+)
+f("hi")
+```
+
+```error
+Not a scope : x
+```
+
+## While condition short-circuit and reassigning narrowed var must invalidate body narrowing
+
+```babble
+def f = fn (var x: string?): int -> (
+    var r = 0
+    while x != null and (x = null; true) then (
+        r = x.length()
+    )
+    r
+)
+f("hi")
+```
+
+```error
+Not a scope : x
+```
+
+## Early-exit if reassigning var in surviving else branch must invalidate post-if narrowing
+
+```babble
+def f = fn (var x: string?): int -> (
+    if x == null then (return 0) else (x = null)
+    x.length()
+)
+f("hi")
+```
+
+```error
+Not a scope : x
+```
+
+## Early-exit if reassigning var in surviving then branch must invalidate post-if narrowing
+
+```babble
+def f = fn (var x: string?): int -> (
+    if x != null then (x = null) else (return 0)
+    x.length()
+)
+f("hi")
+```
+
+```error
+Not a scope : x
+```
+
+## Short-circuit narrowing without reassignment and post-reassignment narrowing remain valid
+
+```babble
+def f = fn (var x: string | int): int -> (
+    if x is string and x.length() > 0 then (x.length()) else (0)
+)
+def g = fn (var x: string | int): int -> (
+    if (x = "ok"; true) and x is string then (x.length()) else (0)
+)
+assert(f("hello") == 5 and f(1) == 0 and g(99) == 2)
+```
+
