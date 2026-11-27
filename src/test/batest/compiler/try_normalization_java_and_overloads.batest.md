@@ -77,30 +77,28 @@ fn run (s:obj, f:bool) -> int {io}
 ```hir
 ;; hir -O2 fn=run
 fn run (s:obj, f:bool) -> int {io}
-  (block
-    (def $cse0 name(java))
-    (def p1
-      (block
-        (def $try0 1:int)
-        (def $try1
-          (try
-            (block
-              (call-fn parse var(s)))
-            (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-              2:int)))
-        (jnew Point var($try0) var($try1))))
-    (def p2
-      (block
-        (def $try2 (if var(f) (select (select var($cse0).awt).Point) (select (select var($cse0).awt).Point)))
-        (def $try3 3:int)
-        (def $try4
-          (try
-            (block
-              (call-fn parse var(s)))
-            (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
-              4:int)))
-        (jnew Point var($try3) var($try4))))
-    (+:int (get-jfield Point.y var(p1)) (get-jfield Point.y var(p2))))
+  (def p1
+    (block
+      (def $try0 1:int)
+      (def $try1
+        (try
+          (block
+            (call-fn parse var(s)))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            2:int)))
+      (jnew Point var($try0) var($try1))))
+  (def p2
+    (block
+      (def $try2 (if var(f) (select (select name(java).awt).Point) (select (select name(java).awt).Point)))
+      (def $try3 3:int)
+      (def $try4
+        (try
+          (block
+            (call-fn parse var(s)))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            4:int)))
+      (jnew Point var($try3) var($try4))))
+  (+:int (get-jfield Point.y var(p1)) (get-jfield Point.y var(p2)))
 ```
 
 ## JavaConstructorCall : dynamic callee containing try (lastTry < 0)

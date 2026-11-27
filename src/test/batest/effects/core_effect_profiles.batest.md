@@ -19,13 +19,13 @@ assert(fScalar(byte(2), 'A') == 68.5 and fEntry("hi", 5) == 7)
 ## Case 2
 
 ```babble
-def fStr = fn nothrow (s : string) : int -> (
-    def t = s.trim().toUpperCase()
+def fStr = fn nothrow (s : string, l : java.util.Locale) : int -> (
+    def t = s.trim().toUpperCase(l)
     if t.isEmpty() or t.isBlank() then ( 0 )
     else if t.startsWith("A") then ( t.length() + string(42).length() )
     else ( t.length() )
 )
-assert(fStr("  abc ") == 5)
+assert(fStr("  abc ", java.util.Locale.ROOT) == 5)
 ```
 
 ## Error : Function badParse declared nothrow violates nothrow guarantee

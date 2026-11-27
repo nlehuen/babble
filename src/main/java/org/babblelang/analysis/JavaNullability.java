@@ -155,6 +155,29 @@ final class JavaNullability {
     }
 
     /**
+     * Array-element nullness of a Java method's array return type from local or curated axioms, or
+     * {@code null}.
+     */
+    static Nullness returnElementNullness(Method method) {
+        if (method == null || !method.getReturnType().isArray()) {
+            return null;
+        }
+        AxiomData.AxiomTable local = LOCAL_AXIOMS.get();
+        if (local != null && !local.isEmpty()) {
+            AxiomData.MemberAxiom ax =
+                    AxiomData.lookupMethod(
+                            method.getDeclaringClass(),
+                            method.getName(),
+                            method,
+                            local::directMembers);
+            if (ax != null && ax.hasSignature() && ax.returnElementNullness() != null) {
+                return ax.returnElementNullness();
+            }
+        }
+        return BuiltinAxioms.current().returnElementNullness(method);
+    }
+
+    /**
      * Array-element nullness of a Java executable's array parameter from local or curated axioms,
      * or {@code null}.
      */

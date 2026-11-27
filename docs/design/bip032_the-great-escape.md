@@ -43,6 +43,8 @@ To verify that adversarial scrutiny pays off immediately, a read-only code audit
 5. **`opt` (`S0` — Optimizer amplification of `unique` escapes) in [`FbipReusePass.java`](../../src/main/java/org/babblelang/opt/hir/FbipReusePass.java) (`#L77-L100`, `#L225-L250`) and [`HirAeGraphPass.java`](../../src/main/java/org/babblelang/opt/hir/HirAeGraphPass.java):**
    * `FbipReusePass` lowers `list(from: move(xs))` to `list$reuse` and tail `RecordNew` to `RecordReuse` directly on the assumption that `EffectChecker` ruled out all aliases, and `-O2` `HirAeGraphPass` assumes writes to one `UniqueParam(k)` parameter never invalidate reads of another `UniqueParam(j)` parameter or `Frozen` record. Any `unique`-aliasing crack in the `ownership` surface immediately manifests as an observable `-O0` vs `-O1`/`-O2` (or Wasm `-O1`/`-O2`) data-corruption divergence.
 
+All five have since been reproduced in `-crib`, remediated, and locked into `src/test/batest/soundness/` by the `BIP032-P1` red-team rounds; finding 2 turned out to be a spurious rejection rather than a hole (the join of a variadic and a non-variadic function is the non-variadic one, still a sound upper bound) and was fixed by keeping `rest` when both sides are variadic (`Type.Parameter.withModes` now preserves it wherever a parameter's modes are rewritten).
+
 `BIP032` (*The Great Escape*) turns this kind of ad-hoc bug hunting into a **repeatable, automated, permanent adversarial defense layer** for Babble.
 
 ---

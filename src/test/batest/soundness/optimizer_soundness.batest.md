@@ -1,6 +1,6 @@
-# Soundness regressions : `opt` (`R4`, `R5`) LICM, SCCP, AEGraph, and liveness
+# Soundness regressions : `opt` (`R4`, `R5`) LICM, SCCP, AEGraph, liveness, and Wasm parity
 
-Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`) and sister optimizer vectors covering `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, and `AeGraphBuilder`.
+Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`, `opt_r5_wasm_o2_byte_range_error_message.batest.md`) and sister optimizer vectors covering `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, and `AeGraphBuilder`.
 
 ## For-loop with mutating iterable and loop-invariant body arithmetic verifies and matches interpret
 
@@ -279,3 +279,24 @@ def test = fn (unique a: Box, mut b: Box, flag: bool): int -> (
 assert(test(Box(3), Box(4), true) == 377)
 ```
 
+## Byte conversion range error names its operand in every mode
+
+```babble
+def f = fn (b: byte): byte -> (byte(b + 1))
+println(f(byte(127)))
+```
+
+```error
+Out of the byte range : b+1 = 128
+```
+
+## Repeated builtin conversions are not hoisted into a temp at -O2
+
+```babble
+def f = fn (b: byte, c: byte): int -> (int(byte(b + 1)) + int(byte(c + 1)))
+println(f(byte(1), byte(127)))
+```
+
+```error
+Out of the byte range : c+1 = 128
+```

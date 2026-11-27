@@ -288,11 +288,10 @@ fn run (x:int) -> double {pure unique}
   (def i 0:int)
   (while (<:bool var(i) 3:int)
     (block
-      (def $cse0 name(double))
       (block
-        (def $sr_v_0 (call var($cse0) var(x)))
+        (def $sr_v_0 (call name(double) var(x)))
         (def $sr_v_2 0.0:double))
-      (set s (+:double (+:double (+:double var(s) (call var($cse0) name(TOP_K))) (as var(x) double|double|)) var($sr_v_0)))
+      (set s (+:double (+:double (+:double var(s) (call name(double) name(TOP_K))) (as var(x) double|double|)) var($sr_v_0)))
       (set i (+:int var(i) 1:int))))
   var(s)
 ```

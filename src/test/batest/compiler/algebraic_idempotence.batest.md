@@ -54,13 +54,13 @@ fn checkIntIdem (x:int, ec:int, ea:int) -> bool {pure unique}
 fn checkIntIdem (x:int, ec:int, ea:int) -> bool {pure unique}
   (def lc name(bigClamp))
   (block
-    (def $cse0 name(assert))
-    (def $cse2 (<:bool var(x) 0:int))
-    (call var($cse0) (and (and (==:bool (if var($cse2) 0:int var(x)) var(ec)) (==:bool (block
-              (def r (if var($cse2) 0:int var(x)))
+    (def $cse0 (<:bool var(x) 0:int))
+    (call name(assert) (and (and (==:bool (if var($cse0) 0:int var(x)) var(ec)) (==:bool (block
+              (def r (if var($cse0) 0:int var(x)))
               var(r)) var(ec))) (==:bool (call var(lc) (call var(lc) var(x))) var(ec))))
-    (def $cse1 (jcall Math.abs var(x)))
-    (call var($cse0) (==:bool var($cse1) var(ea))))
+    (block
+      (def $cse1 (jcall Math.abs var(x)))
+      (call name(assert) (==:bool var($cse1) var(ea)))))
 ```
 
 ## Idempotent Math.floor preserving NaN and IEEE-754 -0.0 (checked by raw bits since +0.0 == -0.0)
@@ -126,11 +126,8 @@ fn checkStrIdem (s:obj, ch:char, es:obj, ech:char) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=checkStrIdem
 fn checkStrIdem (s:obj, ch:char, es:obj, ech:char) -> bool {pure unique}
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (==:bool (jcall String.trim var(s)) var(es)))
-    (def $cse1 name(java))
-    (call var($cse0) (==:bool (call (select (select (select var($cse1).lang).Character).toLowerCase) (call (select (select (select var($cse1).lang).Character).toLowerCase) var(ch))) var(ech))))
+  (call name(assert) (==:bool (jcall String.trim var(s)) var(es)))
+  (call name(assert) (==:bool (call (select (select (select name(java).lang).Character).toLowerCase) (call (select (select (select name(java).lang).Character).toLowerCase) var(ch))) var(ech)))
 ```
 
 ## Widened idempotent Java call (wideningRank >= 0) and non-prefix Babble idempotent call stay intact
@@ -173,7 +170,10 @@ fn checkGuard (x:int) -> bool {pure unique}
     (def wd (widen[double] var($cse0)))
     (call name(assert) (and (==:bool var(wd) 5.0:double) (==:bool (block
             name(lateClamp)
-            (def x#2 (if (<:bool var(x#1) 0:int) 0:int var(x#1)))
+            (def x#2
+              (block
+                name(lateClamp)
+                (if (<:bool var(x#1) 0:int) 0:int var(x#1))))
             (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 0:int))))
 ```
 
@@ -227,17 +227,14 @@ top-level:
   (def tick 0:int)
   (def bump (fn-ref bump))
   (def bumpStr (fn-ref bumpStr))
-  (block
-    (def $cse0 name(bump))
-    (def a
-      (block
-        (def x (-:int (call-fn bump) 10:int))
-        (def r (if (<:bool var(x) 0:int) 0:int var(x)))
-        var(r)))
-    (def b (jcall Math.abs (-:int (call-fn bump) 10:int)))
-    (def $cse1 name(bumpStr))
-    (def s (jcall String.trim (call-fn bumpStr)))
-    (call name(assert) (and (and (and (==:bool name(a) 0:int) (==:bool name(b) 8:int)) (==:bool name(s) "ok")) (==:bool name(tick) 3:int))))
+  (def a
+    (block
+      (def x (-:int (call-fn bump) 10:int))
+      (def r (if (<:bool var(x) 0:int) 0:int var(x)))
+      var(r)))
+  (def b (jcall Math.abs (-:int (call-fn bump) 10:int)))
+  (def s (jcall String.trim (call-fn bumpStr)))
+  (call name(assert) (and (and (and (==:bool name(a) 0:int) (==:bool name(b) 8:int)) (==:bool name(s) "ok")) (==:bool name(tick) 3:int)))
 ```
 
 ## Idempotent collapse on complex deterministic expressions (HirPurity.isDeterministic)
@@ -275,14 +272,13 @@ fn checkDet (arr:obj, s:obj, flag:bool) -> int {pure unique}
 ```hir
 ;; hir -O2 fn=checkDet
 fn checkDet (arr:obj, s:obj, flag:bool) -> int {pure unique}
+  (def a
+    (block
+      (def x (if (and var(flag) true:bool) (+:int (array-op SIZE var(arr)) (jcall String.length var(s))) (call (type-apply name(idT)) 1:int)))
+      (def r (if (<:bool var(x) 0:int) 0:int var(x)))
+      var(r)))
   (block
-    (def a
-      (block
-        (def x (if (and var(flag) true:bool) (+:int (array-op SIZE var(arr)) (jcall String.length var(s))) (call (type-apply name(idT)) 1:int)))
-        (def r (if (<:bool var(x) 0:int) 0:int var(x)))
-        var(r)))
-    (def $cse0 name(int))
-    (def $cse1 (array-op SIZE var(arr)))
-    (def b (jcall Math.abs (call var($cse0) (as var($cse1) double|double|))))
+    (def $cse0 (array-op SIZE var(arr)))
+    (def b (jcall Math.abs (call name(int) (as var($cse0) double|double|))))
     (+:int var(a) var(b)))
 ```

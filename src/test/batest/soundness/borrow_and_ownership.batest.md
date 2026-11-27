@@ -1,6 +1,6 @@
-# Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection & exclusivity
+# Soundness regressions : `ownership` (`O2`, `O3`, `O4`) unique capture, projection, fresh containers & exclusivity
 
-Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, and `CallEffectAnalyzer`.
+Promoted from `BIP032` quarantine (`ownership_o3_closure_capture_unique_fbip.batest.md`, `ownership_o4_collection_get_mut_exclusivity.batest.md`, `ownership_o4_mut_exclusivity_field_alias.batest.md`, `ownership_o4_mut_exclusivity_closure_capture.batest.md`, `ownership_o4_mut_exclusivity_match_rest_slice.batest.md`, `ownership_o3_fresh_container_view_aliases_shared_arg.batest.md`) and sister vectors covering `InitEffectAnalyzer`, `MatchEffectAnalyzer`, `Reachability`, `EffectBodyWalker`, and `CallEffectAnalyzer`.
 
 ```babble
 ;; babble preamble
@@ -402,3 +402,57 @@ else (null)
 Cannot freeze expression : value is not unique or deeply immutable
 ```
 
+## View of fresh Optional holding a live local must not be unique
+
+```babble
+def addL = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def t = fn (): string -> (
+    def a = list(1, 2)
+    def c = addL(java.util.Optional.of(a).get())
+    string(a) + string(c)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## Record field of a view of a fresh Optional must not be unique
+
+```babble
+def addL = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def R = record (xs: list of int) ()
+def t = fn (): string -> (
+    def a = list(1, 2)
+    def c = addL(java.util.Optional.of(R(a)).orElseThrow().xs)
+    string(a) + string(c)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## View returning its argument must not be unique
+
+```babble
+def addL = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def t = fn (): string -> (
+    def a = list(1, 2)
+    def e: java.util.Optional of (list of int) = java.util.Optional.empty()
+    def c = addL(e.orElse(a))
+    string(a) + string(c)
+)
+```
+
+```error
+Argument for unique parameter xs must be unique
+```
+
+## View of a fresh Optional of a fresh list stays unique
+
+```babble
+def addL = fn (unique xs: list of int): list of int -> (def r = list(from: move(xs)) ; r.add(9) ; r)
+def t = fn (): string -> (string(addL(java.util.Optional.of(list(1, 2)).get())))
+assert(t() == "[1, 2, 9]")
+```

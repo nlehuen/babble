@@ -83,13 +83,12 @@ top-level:
   (def readB (fn-ref readB))
   (def safeRead (fn-ref safeRead))
   (def ok (call name(B) false:bool))
-  (block
-    (def $cse0 name(assert))
-    (def $cse1 name(ok))
-    (def $cse2 (get-this-field x))
-    (def $cse3 (==:bool var($cse2) 9:int))
-    (call var($cse0) var($cse3))
-    (call var($cse0) var($cse3)))
+  (call name(assert) (==:bool (block
+        (def b#1 name(ok))
+        (get-this-field x)) 9:int))
+  (call name(assert) (==:bool (block
+        (def b#2 name(ok))
+        (get-this-field x)) 9:int))
 ```
 
 ## Warm SelectCache on B.x before triggering requireMemberDefined during construction

@@ -220,22 +220,21 @@ fn gvnCalls (a:int, b:int) -> int {nothrow unique}
 ;; hir -O2 fn=gvnCalls
 fn gvnCalls (a:int, b:int) -> int {nothrow unique}
   (def m (+:int (jcall Math.max var(a#1) var(b)) (jcall Math.max var(b) var(a#1))))
-  (block
-    (def c
-      (block
-        (def x
-          (block
-            (def r#2 var(a#1))
-            (if (<:bool var(a#1) 0:int) (box (set r#2 0:int)))
-            (if (>:bool var(r#2) 10:int) (box (set r#2 10:int)))
-            (def a#3 (-:int (+:int var(r#2) 1:int) 1:int))
-            (if (<:bool var(a#3) 0:int) 0:int var(a#3))))
-        (def r#1 var(x))
-        (if (<:bool var(x) 0:int) (box (set r#1 0:int)))
-        (if (>:bool var(r#1) 10:int) (box (set r#1 10:int)))
-        (def a#2 (-:int (+:int var(r#1) 1:int) 1:int))
-        (if (<:bool var(a#2) 0:int) 0:int var(a#2))))
-    (+:int var(m) var(c)))
+  (def c
+    (block
+      (def x
+        (block
+          (def r#2 var(a#1))
+          (if (<:bool var(a#1) 0:int) (box (set r#2 0:int)))
+          (if (>:bool var(r#2) 10:int) (box (set r#2 10:int)))
+          (def a#3 (-:int (+:int var(r#2) 1:int) 1:int))
+          (if (<:bool var(a#3) 0:int) 0:int var(a#3))))
+      (def r#1 var(x))
+      (if (<:bool var(x) 0:int) (box (set r#1 0:int)))
+      (if (>:bool var(r#1) 10:int) (box (set r#1 10:int)))
+      (def a#2 (-:int (+:int var(r#1) 1:int) 1:int))
+      (if (<:bool var(a#2) 0:int) 0:int var(a#2))))
+  (+:int var(m) var(c))
 ```
 
 ## GVN invalidates unique epochs across control-flow merge after conditional write

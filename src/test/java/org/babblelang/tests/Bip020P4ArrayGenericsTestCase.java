@@ -307,7 +307,7 @@ public class Bip020P4ArrayGenericsTestCase {
                 println(boxed)
 
                 def ss = list("u", "v")
-                def sArr: array of string = ss.toArray((array of string).of())
+                def sArr: array of string? = ss.toArray((array of string?).of())
                 println(sArr)
 
                 def copied = java.util.Arrays.copyOf(sArr, 3)

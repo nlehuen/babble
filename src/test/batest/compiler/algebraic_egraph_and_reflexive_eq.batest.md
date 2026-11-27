@@ -273,15 +273,11 @@ top-level:
   (def bumpBool (fn-ref bumpBool))
   (def bumpOpt (fn-ref bumpOpt))
   (def bumpL (fn-ref bumpL))
-  (block
-    (def $cse0 name(bumpBool))
-    (def b1 (call-fn bumpBool))
-    (def b2 (not (not (call-fn bumpOpt))))
-    (def $cse1 name(bump))
-    (def b3 (<>:bool (neg (call-fn bump)) 0:int))
-    (def $cse2 name(bumpL))
-    (def lv (+:long (+:long (+:long (+:long (+:long (call-fn bumpL) (call-fn bumpL)) (call-fn bumpL)) (neg (call-fn bumpL))) (call-fn bumpL)) (call-fn bumpL)))
-    (call name(assert) (and (and (and (and name(b1) name(b2)) name(b3)) (==:bool name(lv) 8:long)) (==:bool name(tick) 9:int))))
+  (def b1 (call-fn bumpBool))
+  (def b2 (not (not (call-fn bumpOpt))))
+  (def b3 (<>:bool (neg (call-fn bump)) 0:int))
+  (def lv (+:long (+:long (+:long (+:long (+:long (call-fn bumpL) (call-fn bumpL)) (call-fn bumpL)) (neg (call-fn bumpL))) (call-fn bumpL)) (call-fn bumpL)))
+  (call name(assert) (and (and (and (and name(b1) name(b2)) name(b3)) (==:bool name(lv) 8:long)) (==:bool name(tick) 9:int)))
 ```
 
 ## Idempotent Java eligibility guards : axiom String.toUpperCase and String.toLowerCase with arg

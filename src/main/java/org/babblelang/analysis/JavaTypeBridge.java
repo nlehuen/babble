@@ -914,7 +914,31 @@ final class JavaTypeBridge {
                         false,
                         JavaNullability.returnNullness(method),
                         JavaNullability.isNullMarked(method));
-        return makeAccessible(raw, algebra);
+        return makeAccessible(
+                withArrayElementNullness(raw, JavaNullability.returnElementNullness(method)),
+                algebra);
+    }
+
+    /**
+     * {@code type} (an array, or a nullable array) with its reference elements made nullable or
+     * non-null as an axiom states ; other types, primitive elements and {@code null} unchanged.
+     */
+    static Type withArrayElementNullness(Type type, JavaNullability.Nullness elementNullness) {
+        if (elementNullness != JavaNullability.Nullness.NULLABLE
+                && elementNullness != JavaNullability.Nullness.NON_NULL) {
+            return type;
+        }
+        boolean nullable = Type.containsNull(type);
+        if (!(Type.withoutNull(type) instanceof Type.Array array)
+                || Type.isPrimitiveScalar(array.element())) {
+            return type;
+        }
+        Type element =
+                elementNullness == JavaNullability.Nullness.NULLABLE
+                        ? Type.nullable(array.element())
+                        : Type.withoutNull(array.element());
+        Type result = new Type.Array(element);
+        return nullable ? Type.nullable(result) : result;
     }
 
     static Type javaExecutableParamType(

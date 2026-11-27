@@ -168,26 +168,23 @@ top-level:
   (def bigInt (fn-ref bigInt))
   (def volLen (fn-ref volLen))
   (block
-    (def $cse0 name(discard))
-    (call var($cse0) 1:int)
-    (block
-      (def $try0
-        (try
-          (block
-            1:int)
-          (finally
-            (call var($cse0) 2:int))))
-      (def r1 var($try0)))
-    (block
-      (def $try1
-        (try
-          (block
-            1:int)
-          (finally
-            (call var($cse0) 2:int))))
-      (def r2 var($try1)))
-    (def r3 1:int)
-    (call name(assert) (and (and (==:bool name(r1) 1:int) (==:bool name(r2) 1:int)) (==:bool name(r3) 1:int))))
+    (def $try0
+      (try
+        (block
+          1:int)
+        (finally
+          null)))
+    (def r1 var($try0)))
+  (block
+    (def $try1
+      (try
+        (block
+          1:int)
+        (finally
+          null)))
+    (def r2 var($try1)))
+  (def r3 1:int)
+  (call name(assert) (and (and (==:bool name(r1) 1:int) (==:bool name(r2) 1:int)) (==:bool name(r3) 1:int)))
 ```
 
 ## HirPurity.isDeterministic : volatile nothrow record and interface methods in while

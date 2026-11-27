@@ -107,12 +107,10 @@ fn run () -> double {pure unique}
 ```hir
 ;; hir -O2 fn=run
 fn run () -> double {pure unique}
+  (def a (record-new Vec3 2.0:double 3.0:double 4.0:double))
   (block
-    (def $cse0 name(Vec3))
-    (def a (record-new Vec3 2.0:double 3.0:double 4.0:double))
-    (block
-      (def xs (core-new list var(a)))
-      (+:double (+:double (get-this-field x) 6.0:double) 7.0:double)))
+    (def xs (core-new list var(a)))
+    (+:double (+:double (get-this-field x) 6.0:double) 7.0:double))
 ```
 
 ## Borrow-lambda higher-order devirtualization and inlining
@@ -235,10 +233,9 @@ fn run (x:int) -> int {nothrow unique}
 ;; hir -O2 fn=run
 fn run (x:int) -> int {nothrow unique}
   (block
-    (block
-      (def $sr_$this_0 (+:int var(x) 3:int))
-      (def $sr_b_0 (+:int var($sr_$this_0) 4:int)))
-    var($sr_b_0))
+    (def $sr_$this_0 (+:int var(x) 3:int))
+    (def $sr_b_0 (+:int var($sr_$this_0) 4:int)))
+  var($sr_b_0)
 ```
 
 ## Unboxed borrow entry point with local vars, for-loop, try, and non-record scalar param
@@ -304,8 +301,7 @@ fn heavyLoop (a:obj, s:int) -> double {nothrow unique}
     (for k in (core-new list 1:int 2:int)
       (block
         (block
-          (def $cse0 name(double))
-          (def t (+:double (*:double (+:double var($licm0) (call var($cse0) var(k))) (call var($cse0) var(s))) (*:double var($licm1) var($licm2))))
+          (def t (+:double (*:double (+:double var($licm0) (call name(double) var(k))) (call name(double) var(s))) (*:double var($licm1) var($licm2))))
           (set acc (+:double (-:double (+:double (+:double var(acc) var(t)) var($licm0)) var($licm1)) var($licm2)))))))
   (try
     (block
@@ -490,16 +486,14 @@ fn r () -> int {nothrow unique}
 ```hir
 ;; hir -O2 fn=r
 fn r () -> int {nothrow unique}
-  (block
-    (def $cse0 name(Box))
-    (def b (call var($cse0) 10:int))
-    (def k 5:int)
-    (+:int (+:int (block
-          (def $this var(b))
-          (block
-            (set b (call var($cse0) 20:int))
-            1:int)
-          (+:int (get-this-field v) 1:int)) (get-this-field v)) (block
-        (def f (fn-ref <anon#0>))
-        (call var(f) 3:int 2:int))))
+  (def b (call name(Box) 10:int))
+  (def k 5:int)
+  (+:int (+:int (block
+        (def $this var(b))
+        (block
+          (set b (call name(Box) 20:int))
+          1:int)
+        (+:int (get-this-field v) 1:int)) (get-this-field v)) (block
+      (def f (fn-ref <anon#0>))
+      (call var(f) 3:int 2:int)))
 ```

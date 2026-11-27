@@ -360,11 +360,9 @@ fn run (b:byte, i:int, f:float) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=run
 fn run (b:byte, i:int, f:float) -> bool {pure unique}
-  (block
-    (def $cse0 name(short))
-    (and (and (and (and (and (and (and (==:bool (widen[short] var(b)) (call var($cse0) 2:int)) (==:bool (block
-                      (def x (call name(byte) 3:int))
-                      (widen[short] var(x))) (call var($cse0) 3:int))) true:bool) true:bool) true:bool) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double)))
+  (and (and (and (and (and (and (and (==:bool (widen[short] var(b)) (call name(short) 2:int)) (==:bool (block
+                    (def x (call name(byte) 3:int))
+                    (widen[short] var(x))) (call name(short) 3:int))) true:bool) true:bool) true:bool) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double))
 ```
 
 ## InlinePass : widened single-stmt inline call and trailing-return callee

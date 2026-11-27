@@ -51,11 +51,9 @@ fn f () -> bool {pure unique}
 ;; hir -O2 fn=f
 fn f () -> bool {pure unique}
   (def s (widen[short] (call name(byte) 7:int)))
-  (block
-    (def $cse0 name(short))
-    (def i (widen[int] (call var($cse0) 7:int)))
-    (def fl (call name(float) 4:int))
-    (and (and (and (and (and (==:bool null null) (==:bool var(s) (call var($cse0) 7:int))) true:bool) true:bool) (==:bool var(i) 7:int)) (==:bool var(fl) 4.0:float)))
+  (def i (widen[int] (call name(short) 7:int)))
+  (def fl (call name(float) 4:int))
+  (and (and (and (and (and (==:bool null null) (==:bool var(s) (call name(short) 7:int))) true:bool) true:bool) (==:bool var(i) 7:int)) (==:bool var(fl) 4.0:float))
 ```
 
 ## Constant if-pruning with folded arithmetic branches and multi-statement blocks

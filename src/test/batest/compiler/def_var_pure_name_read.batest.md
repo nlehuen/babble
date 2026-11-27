@@ -76,7 +76,6 @@ fn buildMany (n:int) -> int {io}
   (def i 0:int)
   (while (<:bool var(i) var(n))
     (block
-      (def $cse0 name(touch))
       (set acc += (+:int (call-fn touch$unboxed var(i)) (call-fn touch$unboxed (+:int var(i) 1:int))))
       (set i += 1:int)))
   var(acc)
@@ -106,9 +105,7 @@ fn sumLate () -> int {nothrow unique}
 ```hir
 ;; hir -O2 fn=sumLate
 fn sumLate () -> int {nothrow unique}
-  (block
-    (def $cse0 name(lv))
-    (+:int var($cse0) var($cse0)))
+  (+:int name(lv) name(lv))
 ```
 
 ```hir

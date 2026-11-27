@@ -13,6 +13,9 @@ axiom java.util.stream.LongStream: class notnull (
 )
 
 axiom java.util.stream.Stream of T: class notnull (
+    ;; Elements may be null (a stream of nullable elements)
+    def toArray: fn ... (): (array of any?)!
+    def toArray: fn of A ... (generator: (java.util.function.IntFunction of ((array of A?)!))!): (array of A?)!
 )
 
 axiom java.util.stream.StreamSupport: class notnull (

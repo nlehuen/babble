@@ -70,12 +70,8 @@ top-level:
   (def revStr (fn-ref revStr))
   (def ss (core-new sortedset from=(core-new list 3:int 1:int 2:int)))
   (def sm (core-new sortedmap from=(core-new map (core-new entry "b" 2:int) (core-new entry "a" 1:int))))
-  (block
-    (def $cse0 name(ss))
-    (def $cse1 name(assert))
-    (call var($cse1) (and (and (==:bool (jcall Set.size var($cse0)) 3:int) (==:bool (jcall SortedSet.first var($cse0)) 1:int)) (==:bool (jcall SortedSet.last var($cse0)) 3:int)))
-    (def $cse2 name(sm))
-    (call var($cse1) (and (and (==:bool (jcall Map.size var($cse2)) 2:int) (==:bool (jcall SortedMap.firstKey var($cse2)) "a")) (==:bool (jcall Map.get var($cse2) "b") 2:int))))
+  (call name(assert) (and (and (==:bool (jcall Set.size name(ss)) 3:int) (==:bool (jcall SortedSet.first name(ss)) 1:int)) (==:bool (jcall SortedSet.last name(ss)) 3:int)))
+  (call name(assert) (and (and (==:bool (jcall Map.size name(sm)) 2:int) (==:bool (jcall SortedMap.firstKey name(sm)) "a")) (==:bool (jcall Map.get name(sm) "b") 2:int)))
 ```
 
 ## Core sortedset and sortedmap from-plus-comparator in both argument orders
@@ -113,16 +109,11 @@ top-level:
   (def revStr (fn-ref revStr))
   (def xs (core-new list 1:int 3:int 2:int))
   (def m (core-new map (core-new entry "a" 1:int) (core-new entry "c" 3:int) (core-new entry "b" 2:int)))
-  (block
-    (def $cse0 name(revInt))
-    (def $cse1 name(xs))
-    (def ss1 (core-new sortedset from=var($cse1) comparator=(java-sam Comparator var($cse0))))
-    (def ss2 (core-new sortedset comparator=(java-sam Comparator var($cse0)) from=var($cse1)))
-    (def $cse2 name(revStr))
-    (def $cse3 name(m))
-    (def sm1 (core-new sortedmap from=var($cse3) comparator=(java-sam Comparator var($cse2))))
-    (def sm2 (core-new sortedmap comparator=(java-sam Comparator var($cse2)) from=var($cse3)))
-    (call name(assert) (and (and (and (==:bool (jcall SortedSet.first name(ss1)) 3:int) (==:bool (jcall SortedSet.first name(ss2)) 3:int)) (==:bool (jcall SortedMap.firstKey name(sm1)) "c")) (==:bool (jcall SortedMap.firstKey name(sm2)) "c"))))
+  (def ss1 (core-new sortedset from=name(xs) comparator=(java-sam Comparator name(revInt))))
+  (def ss2 (core-new sortedset comparator=(java-sam Comparator name(revInt)) from=name(xs)))
+  (def sm1 (core-new sortedmap from=name(m) comparator=(java-sam Comparator name(revStr))))
+  (def sm2 (core-new sortedmap comparator=(java-sam Comparator name(revStr)) from=name(m)))
+  (call name(assert) (and (and (and (==:bool (jcall SortedSet.first name(ss1)) 3:int) (==:bool (jcall SortedSet.first name(ss2)) 3:int)) (==:bool (jcall SortedMap.firstKey name(sm1)) "c")) (==:bool (jcall SortedMap.firstKey name(sm2)) "c")))
 ```
 
 ## Cross-module direct overloaded operator, optional spec method, and >8-param fallback
@@ -179,25 +170,28 @@ top-level:
 ```hir
 ;; hir -O2 top-level
 top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def m (call name(import) "ext_ops.ba"))
   (block
-    (def $cse0 name(import))
-    (def tests (call var($cse0) "org.babblelang.tests"))
-    (def revInt (fn-ref revInt))
-    (def revStr (fn-ref revStr))
-    (def m (call var($cse0) "ext_ops.ba"))
-    (def $cse3 name(m))
-    (def $cse4 (export var($cse3).Vec))
+    (def $cse0 (export name(m).Vec))
     (def v (record-new ext_ops$ba$C0$Vec 10:int))
-    (def $cse1 name(assert))
-    (def $cse2 name(v))
-    (def $cse5 (get-this-field x))
-    (call var($cse1) (==:bool (+:int var($cse5) 5:int) 15:int))
-    (call var($cse1) (==:bool (block
+    (call name(assert) (==:bool (block
+          (def $this#1 name(v))
+          (+:int (get-this-field x) 5:int)) 15:int))
+    (call name(assert) (==:bool (block
+          (def $this#2 name(v))
           (def o (record-new ext_ops$ba$C0$Vec 3:int))
-          (+:int var($cse5) (get-this-field x))) 13:int))
-    (call var($cse1) (and (==:bool (+:int var($cse5) 3:int) 13:int) (==:bool (call-method var($cse2).inc 2:int) 17:int)))
-    (call var($cse1) (==:bool (+:obj "v:" var($cse5)) "v:10"))
-    (call var($cse1) (==:bool (call (select var($cse2).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int)))
+          (+:int (get-this-field x) (get-this-field x))) 13:int))
+    (call name(assert) (and (==:bool (block
+            (def $this#3 name(v))
+            (def $cse1 (get-this-field x))
+            (+:int var($cse1) 3:int)) 13:int) (==:bool (call-method name(v).inc 2:int) 17:int)))
+    (call name(assert) (==:bool (block
+          (def $this#4 name(v))
+          (+:obj "v:" (get-this-field x))) "v:10"))
+    (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int)))
 ```
 
 ## Cross-module definite and non-definite field reads plus transitive interface hierarchy
@@ -239,18 +233,14 @@ top-level:
 ```hir
 ;; hir -O2 top-level
 top-level:
-  (block
-    (def $cse0 name(import))
-    (def tests (call var($cse0) "org.babblelang.tests"))
-    (def revInt (fn-ref revInt))
-    (def revStr (fn-ref revStr))
-    (def eo (call var($cse0) "ext_ops.ba"))
-    (def hm (call var($cse0) "hier_mid.ba"))
-    (def $cse1 name(eo))
-    (def lb (call (export var($cse1).LateBox)))
-    (def Impl (class-ref Impl))
-    (def $cse2 name(lb))
-    (call name(assert) (and (and (==:bool (select var($cse2).first) 1:int) (==:bool (select var($cse2).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int))))
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def eo (call name(import) "ext_ops.ba"))
+  (def hm (call name(import) "hier_mid.ba"))
+  (def lb (call (export name(eo).LateBox)))
+  (def Impl (class-ref Impl))
+  (call name(assert) (and (and (==:bool (select name(lb).first) 1:int) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
 ## Dynamic function-typed call with >8 arguments (positional and named)
@@ -319,13 +309,10 @@ top-level:
   (def revInt (fn-ref revInt))
   (def revStr (fn-ref revStr))
   (def big (overload (fn-ref big#1) (fn-ref big#2)))
-  (block
-    (def $cse0 name(big))
-    (def $cse1 name(assert))
-    (call var($cse1) (and (==:bool (call (overload-select #0 var($cse0)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) true:bool))
-    (call var($cse1) (==:bool (block
-          (overload-select #0 (overload (fn-ref <anon#0>) (fn-ref <anon#1>)))
-          6:int) 6:int)))
+  (call name(assert) (and (==:bool (call (overload-select #0 name(big)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) true:bool))
+  (call name(assert) (==:bool (block
+        (overload-select #0 (overload (fn-ref <anon#0>) (fn-ref <anon#1>)))
+        6:int) 6:int))
 ```
 
 ## Union-split overload dispatch with optional primitive and reference defaults

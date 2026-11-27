@@ -1,6 +1,6 @@
-# Soundness regressions : `types` (`T1`, `T3`) generic variance, borrow covariance & flow narrowing
+# Soundness regressions : `types` (`T1`, `T2`, `T3`, `T5`) generic & array variance, flow narrowing & variadic joins
 
-Promoted from `BIP032` quarantine (`types_t1_record_covariance_mutable_field.batest.md`, `types_t1_borrow_covariance_contravariant_method.batest.md`, `types_t3_flow_narrowing_shortcircuit_reassign.batest.md`) and sister vectors covering `TypeVariance`, `TypeAlgebra`, `Narrowing`, and `ExpressionTyper`.
+Promoted from `BIP032` quarantine (`types_t1_record_covariance_mutable_field.batest.md`, `types_t1_borrow_covariance_contravariant_method.batest.md`, `types_t3_flow_narrowing_shortcircuit_reassign.batest.md`, `types_t2_array_covariance_erased_generic_element.batest.md`, `types_t5_variadic_join_drops_rest.batest.md`) and sister vectors covering `TypeVariance`, `TypeAlgebra`, `Narrowing`, and `ExpressionTyper`.
 
 ```babble
 ;; babble preamble
@@ -226,3 +226,62 @@ def g = fn (var x: string | int): int -> (
 assert(f("hello") == 5 and f(1) == 0 and g(99) == 2)
 ```
 
+## Array of a parameterized element type must not be covariant
+
+```babble
+def a = array.of(list of string ("x"))
+def b: array of any = a
+b.set(0, list of int (42))
+def s: string = a.get(0).get(0)
+println(s.length())
+```
+
+```error
+Type error : expected array of any, got array of (list(string))
+```
+
+## Array of a generic Babble class must not be covariant to array of any
+
+```babble
+def a = array.of(Cell of string ("x"))
+def b: array of any = a
+```
+
+```error
+Type error : expected array of any, got array of (Cell(string))
+```
+
+## Arrays of non-generic classes and of arrays of them stay covariant
+
+```babble
+def Shape = interface (def area: fn (): int)
+def Sq = class (def s: int) implements Shape (def area = fn (): int -> (this.s))
+def shapes: array of Shape = array.of(Sq(2))
+def rows: array of any = array.of(array.of(Sq(3)))
+assert(shapes.get(0).area() == 2 and rows.size() == 1)
+```
+
+## Joining two variadic functions keeps the rest parameter
+
+```babble
+def a = fn (xs: int...): int -> (var s = 0 ; for x in xs then (s += x) ; s)
+def b = fn (xs: int...): int -> (7)
+var k = 0
+def c = if k == 0 then (a) else (b)
+assert(c(1, 2, 3) == 6 and c() == 0)
+```
+
+## Joining a variadic with a single-parameter function takes one argument
+
+```babble
+def a = fn (xs: int...): int -> (var s = 0 ; for x in xs then (s += x) ; s)
+def b = fn (xs: int): int -> (xs)
+var k = 0
+def c = if k == 0 then (a) else (b)
+assert(c(5) == 5)
+c(1, 2)
+```
+
+```error
+Too many parameters : 1 declared, 2 given
+```

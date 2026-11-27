@@ -179,6 +179,19 @@ public final class BuiltinAxioms {
     }
 
     /**
+     * Curated element nullness of a Java method's array return type ({@code (array of T?)!} in an
+     * axiom), or {@code null} if no curated signature states it.
+     */
+    JavaNullability.Nullness returnElementNullness(Method method) {
+        if (isEmpty() || method == null) {
+            return null;
+        }
+        AxiomData.MemberAxiom ax =
+                methodAxiom(method.getDeclaringClass(), method.getName(), method);
+        return ax != null && ax.hasSignature() ? ax.returnElementNullness() : null;
+    }
+
+    /**
      * Curated parameter nullness for a Java method/constructor, or {@code null} if none specifies
      * it.
      */

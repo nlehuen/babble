@@ -66,13 +66,11 @@ fn run (fl:bool) -> int {pure unique}
 ```hir
 ;; hir -O2 fn=run
 fn run (fl:bool) -> int {pure unique}
-  (block
-    (def $cse0 name(Vec3))
-    (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
-    (if var(fl) (set p (record-new Pair 4:int 5:int)))
-    (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
-    (set tmp (box 1:int))
-    (+:int (+:int (+:int (if (is var(p) Pair) (get-this-field a) 0:int) (call name(int) (get-this-field x))) (nonnull var(tmp))) (if (==:bool null null) 0:int 1:int)))
+  (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (set p (record-new Pair 4:int 5:int)))
+  (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
+  (set tmp (box 1:int))
+  (+:int (+:int (+:int (if (is var(p) Pair) (get-this-field a) 0:int) (call name(int) (get-this-field x))) (nonnull var(tmp))) (if (==:bool null null) 0:int 1:int))
 ```
 
 ## SROA verification bailouts : typed def/assign, value-used assign, and statement if/else
@@ -116,17 +114,15 @@ fn run (fl:bool) -> double {nothrow unique}
 ```hir
 ;; hir -O2 fn=run
 fn run (fl:bool) -> double {nothrow unique}
-  (block
-    (def $cse0 name(Vec3))
-    (set t (record-new Vec3 2.0:double 3.0:double 4.0:double))
-    (if var(fl)
-      (block
-        (set $sr_s_0 1.0:double)
-        (set $sr_s_2 3.0:double))
-      (block
-        (set $sr_s_0 4.0:double)
-        (set $sr_s_2 6.0:double)))
-    (+:double (get-this-field x) var($sr_s_0)))
+  (set t (record-new Vec3 2.0:double 3.0:double 4.0:double))
+  (if var(fl)
+    (block
+      (set $sr_s_0 1.0:double)
+      (set $sr_s_2 3.0:double))
+    (block
+      (set $sr_s_0 4.0:double)
+      (set $sr_s_2 6.0:double)))
+  (+:double (get-this-field x) var($sr_s_0))
 ```
 
 ## SROA destructured RHS bailouts : mixed if/else with non-inlined call and assign to call
@@ -213,15 +209,13 @@ fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
 ```hir
 ;; hir -O2 fn=run
 fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
-  (block
-    (def $cse0 name(Vec3))
-    (set p (as var(x) babble|Vec3))
-    (def q (record-new Vec3 1.0:double 2.0:double 3.0:double))
-    (if var(fl) (set q var(pv)))
-    (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
-    (def b (record-new Pair 4:int 5:int))
-    (def m (if var(fl) var(a) var(b)))
-    (+:double (+:double (get-this-field x) (get-this-field x)) (if (is var(m) Pair) (call name(double) (get-this-field a)) (get-this-field x))))
+  (set p (as var(x) babble|Vec3))
+  (def q (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (if var(fl) (set q var(pv)))
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Pair 4:int 5:int))
+  (def m (if var(fl) var(a) var(b)))
+  (+:double (+:double (get-this-field x) (get-this-field x)) (if (is var(m) Pair) (call name(double) (get-this-field a)) (get-this-field x)))
 ```
 
 ## SROA destructured RHS bailouts : mismatched RecordNew, empty block, and one-armed if

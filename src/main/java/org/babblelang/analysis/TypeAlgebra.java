@@ -594,7 +594,8 @@ final class TypeAlgebra {
                 if (!waiveArrayNullness && Type.containsNull(se) != Type.containsNull(te)) {
                     return false;
                 }
-                if (isErasedToObjectArray(unwrapFrozen(Type.withoutNull(se)))) {
+                Type seBase = unwrapFrozen(Type.withoutNull(se));
+                if (isErasedToObjectArray(seBase) || !isReifiableArrayElement(seBase)) {
                     Type srcCheck = waiveArrayNullness ? Type.withoutNull(se) : se;
                     Type tgtCheck = waiveArrayNullness ? Type.withoutNull(te) : te;
                     return srcCheck.equals(tgtCheck)
@@ -1126,6 +1127,26 @@ final class TypeAlgebra {
         return !(base instanceof Type.Instance) && !(base instanceof Type.Array);
     }
 
+    /**
+     * Whether the JVM array store check on an array of {@code base} checks the whole static element
+     * type : a non-generic class or Java type, or an array of one. An element type with type
+     * arguments ({@code list of string}, {@code Box of T}) erases to its raw class, so a covariant
+     * view of such an array would accept {@code list of int} without an {@code
+     * ArrayStoreException}.
+     */
+    static boolean isReifiableArrayElement(Type base) {
+        return switch (base) {
+            case Type.Instance i -> i.typeArguments().isEmpty();
+            case Type.JavaInstance ji -> ji.typeArguments().isEmpty();
+            case Type.Array a -> {
+                Type inner = a.element();
+                yield Type.isPrimitiveScalar(inner)
+                        || isReifiableArrayElement(unwrapFrozen(Type.withoutNull(inner)));
+            }
+            default -> true;
+        };
+    }
+
     private static Class<?> jvmRefElemClass(Type base) {
         if (base instanceof Type.Simple simple) {
             return simple.javaClass();
@@ -1465,8 +1486,10 @@ final class TypeAlgebra {
 
     /**
      * The function type both {@code first} and {@code second} can stand for : the first's
-     * signature, a parameter {@code mut} if either mutates it and borrowed if both borrow it, and
-     * the effects both guarantee (not {@code pure} once a parameter is mutated).
+     * signature, a parameter {@code rest} only if both are (a variadic function also accepts a
+     * single argument, not the other way round), {@code mut} if either mutates it and borrowed if
+     * both borrow it, and the effects both guarantee (not {@code pure} once a parameter is
+     * mutated).
      */
     private static Type.Function mergeFunctions(Type.Function first, Type.Function second) {
         List<Type.Parameter> params = new ArrayList<>(first.parameters().size());
@@ -1482,6 +1505,7 @@ final class TypeAlgebra {
                             a.type(),
                             a.optional() && b.optional(),
                             a.keywordOnly() || b.keywordOnly(),
+                            a.rest() && b.rest(),
                             mut,
                             a.borrow() && b.borrow(),
                             a.explicitShared() || b.explicitShared(),

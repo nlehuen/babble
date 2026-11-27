@@ -87,9 +87,7 @@ fn run (a:int) -> int {nothrow unique}
 ```hir
 ;; hir -O2 fn=run
 fn run (a:int) -> int {nothrow unique}
-  (block
-    (def $cse0 name(Point))
-    (def p1 (call var($cse0) var(a) (+:int var(a) 1:int)))
-    (def p2 (call var($cse0) var(a)))
-    (+:int (+:int (+:int (get-this-field x) (get-this-field y)) (get-this-field x)) (get-this-field y)))
+  (def p1 (call name(Point) var(a) (+:int var(a) 1:int)))
+  (def p2 (call name(Point) var(a)))
+  (+:int (+:int (+:int (get-this-field x) (get-this-field y)) (get-this-field x)) (get-this-field y))
 ```

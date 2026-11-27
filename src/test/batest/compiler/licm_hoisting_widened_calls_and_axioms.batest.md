@@ -259,8 +259,7 @@ fn run (ro:int) -> double {nothrow unique}
     (def $licm0 (/:double 10.0:double (convert[double] var(ro))))
     (while (<:bool var(k) 2:int)
       (block
-        (def $cse0 name(double))
-        (set a += (+:double (+:double (call var($cse0) 2:int) (jcall Math.sin var(ml))) (call var($cse0) var($licm0))))
+        (set a += (+:double (+:double (call name(double) 2:int) (jcall Math.sin var(ml))) (call name(double) var($licm0))))
         (set ml += 0.5:double)
         (set k += 1:int))))
   var(a)

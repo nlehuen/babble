@@ -519,12 +519,9 @@ top-level:
   (def Tag (iface-ref Tag))
   (def Good (class-ref Good))
   (def Leak2 (class-ref Leak2))
-  (block
-    (def $cse0 name(Good))
-    (def $cse1 name(Pair))
-    (call name(assert) (==:bool (+:int (+:int (block
-              (def $this (call var($cse0) (record-new Pair 3:int 0:int)))
-              (get-this-field y)) (call (select (call var($cse0) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int)))
+  (call name(assert) (==:bool (+:int (+:int (block
+            (def $this (call name(Good) (record-new Pair 3:int 0:int)))
+            (get-this-field y)) (call (select (call name(Good) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int))
 ```
 
 ## InlinePass.isDefinitelyDefinedPureCallee : local definitely-defined vs forward-referenced function

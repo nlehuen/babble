@@ -1122,82 +1122,18 @@ final class CallEffectAnalyzer {
         checkCallExclusivity(
                 receiverExpr, recvOrig, effectiveMutRecv, argExprs, argOrigins, argIsMut, call);
 
-        // Result origin (BIP019 §4.1: w.deterministic callees return fresh or
-        // argument/receiver-derived results):
-        if (ec.javaResolver.isDeeplyImmutable(resType)) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        if (profile.fresh() || profile.effects().uniqueResult()) {
-            return Reachability.Origin.ofUnique(call, null, false);
-        }
-        if (receiverExpr != null && profile.view()) {
-            return recvOrig.deriveProjection(false);
-        }
-        if (receiverExpr != null
-                && argExprs.length >= 1
-                && ("get".equals(methodName) || "getOrDefault".equals(methodName))
-                && (java.util.List.class.isAssignableFrom(owner)
-                        || java.util.Map.class.isAssignableFrom(owner))) {
-            Reachability.Origin proj =
-                    recvOrig.deriveIndexedProjection(
-                            InitEffectAnalyzer.literalIndexSegment(argExprs), false);
-            if ("getOrDefault".equals(methodName)
-                    && argOrigins.length >= 2
-                    && argOrigins[1] != Reachability.Origin.IMMUTABLE) {
-                proj = proj.join(argOrigins[1].deriveProjection(false));
-            }
-            return proj.owned() ? proj.withoutUnique() : proj;
-        }
-        boolean deterministicCall =
-                profile.effects().isHermetic() && profile.effects().isDeterministic();
-        if ("<init>".equals(methodName)
-                || JavaEffectResolver.isCollectionFactoryMethod(owner, methodName)) {
-            if (deterministicCall) {
-                Reachability.Origin fresh = Reachability.Origin.ofUnique(call, null, false);
-                boolean staysUnique = true;
-                for (int i = 0; i < argOrigins.length; i++) {
-                    Type argType = w.effectiveType(argExprs[i]);
-                    if (!ec.javaResolver.isDeeplyImmutable(argType)
-                            && !w.isUnattachedUniqueOrImmutable(argOrigins[i], argType)) {
-                        staysUnique = false;
-                        fresh = fresh.absorbElement(argOrigins[i]);
-                    }
-                }
-                return staysUnique ? Reachability.Origin.ofUnique(call, null, false) : fresh;
-            }
-            return Reachability.Origin.ofExternal(call, false);
-        }
-        if (deterministicCall) {
-            Reachability.Origin out = Reachability.Origin.IMMUTABLE;
-            if (receiverExpr != null && recvOrig != Reachability.Origin.IMMUTABLE) {
-                out = recvOrig.flattenElements().deriveProjection(false);
-            }
-            for (int i = 0; i < argOrigins.length; i++) {
-                if (argOrigins[i] != Reachability.Origin.IMMUTABLE) {
-                    Reachability.Origin proj =
-                            argOrigins[i].flattenElements().deriveProjection(false);
-                    out = out == Reachability.Origin.IMMUTABLE ? proj : out.join(proj);
-                }
-            }
-            if (out == Reachability.Origin.IMMUTABLE) {
-                return Reachability.Origin.ofUnique(call, null, false);
-            }
-            if (out.owned()) {
-                out = out.withoutUnique();
-            }
-            return out;
-        }
-        Reachability.Origin out = Reachability.Origin.ofExternal(call, false);
-        if (receiverExpr != null) {
-            out = out.join(recvOrig.deriveProjection(false));
-        }
-        for (int i = 0; i < argOrigins.length; i++) {
-            boolean borrowP = i < profile.borrowParams().length && profile.borrowParams()[i];
-            if (!borrowP) {
-                out = out.join(argOrigins[i].deriveProjection(false));
-            }
-        }
-        return out;
+        return JavaCallResultOrigins.of(
+                ec,
+                w,
+                call,
+                profile,
+                owner,
+                methodName,
+                receiverExpr,
+                recvOrig,
+                argExprs,
+                argOrigins,
+                resType);
     }
 
     private void propagateSamCallbackEffects(Type argType, Class<?> samClass) {
