@@ -1224,6 +1224,7 @@ public final class BatestCoverageReporter {
                 || qualifiedClass.startsWith("org.babblelang.format.")
                 || qualifiedClass.startsWith("org.babblelang.batest.")
                 || qualifiedClass.startsWith("org.babblelang.crib.")
+                || qualifiedClass.startsWith("org.babblelang.devserver.")
                 || EXCLUDED_CLASSES.contains(qualifiedClass)) {
             return Scope.EXCLUDED;
         }

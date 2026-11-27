@@ -89,8 +89,8 @@ node raytracer.mjs triceratops 160 16 > triceratops.ppm
 java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js \
     examples/raytracer/raytracer_wasm.ba \
     -o examples/raytracer/raytracer_wasm.wasm
-python3 -m http.server -d examples/raytracer 8080
-# Open http://localhost:8080/wasm_canvas.html and pick Cover, Three Spheres, or Baby Triceratops
+java -jar target/babble-1.0-SNAPSHOT.jar -dev-server -d examples/raytracer -p 8080
+# Open http://127.0.0.1:8080/wasm_canvas.html and pick Cover, Three Spheres, or Baby Triceratops
 ```
 
 ### 4. Pure-Babble Self-Test Suite (`selftest.ba`)

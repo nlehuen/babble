@@ -801,6 +801,7 @@ Hello, Ada
 
 $ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-bare pure.ba          # zero-import standalone .wasm
 $ java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js -wasm-opt hello.ba # optional Binaryen wasm-opt -O3
+$ java -jar target/babble-1.0-SNAPSHOT.jar -dev-server -d examples/raytracer -p 8080   # serve browser Wasm demos with proper MIME types
 ```
 
 The jar holds the program's classes and a copy of Babble's runtime (about 120 KB), and
@@ -961,6 +962,7 @@ Implementation features :
 - [x] syntax errors that say what was unexpected, and where.
 - [x] a code formatter : `java -jar babble.jar -format`.
 - [x] a fast, isolated HTTP `.batest.md` runner : `java -jar babble.jar -crib` serves `POST /crib?<options>`, `GET /health`, and `POST /recycle` over `jdk.httpserver` backed by a warm, poison-audited, killable worker JVM pool (~10–50 ms per 4-mode verified trial with automatic cross-mode parity diffing and optional isolated `wasm-O1`/`wasm-O2` execution; see [BIP041](docs/design/bip041_crib-server.md)).
+- [x] a static HTTP dev server : `java -jar babble.jar -dev-server [-b addr] [-p port] [-d dir] [-o none|info|verbose] [dir]` wraps JDK 21's `SimpleFileServer` (`jdk.httpserver`), accepting relative directories and serving `.html`, `.js`, `.mjs`, `.wasm`, and other web assets with proper MIME types for browser WebAssembly demos.
 
 Planned features
 ----------------
