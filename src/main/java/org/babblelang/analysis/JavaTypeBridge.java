@@ -163,6 +163,54 @@ final class JavaTypeBridge {
         return found;
     }
 
+    /**
+     * Resolves a unique public overload of {@code owner.name} matching {@code targetParams} (using
+     * Java overload specificity when multiple overloads share the arity, e.g. {@code
+     * String.valueOf} assigned to {@code fn (n: int): string}).
+     */
+    static Method resolveMethodForTarget(
+            Class<?> owner,
+            String name,
+            List<Type.Parameter> targetParams,
+            java.util.function.BiPredicate<Type, Type> assignable) {
+        int arity = targetParams.size();
+        Method byArity = uniqueArityMethod(owner, name, arity);
+        if (byArity != null) {
+            return byArity;
+        }
+        List<Method> applicable = new ArrayList<>();
+        for (Method m : owner.getMethods()) {
+            if (!m.getName().equals(name)
+                    || m.getParameterCount() != arity
+                    || m.isBridge()
+                    || m.isSynthetic()) {
+                continue;
+            }
+            Class<?>[] pts = m.getParameterTypes();
+            boolean ok = true;
+            for (int i = 0; i < arity; i++) {
+                Type argType = targetParams.get(i).type();
+                if (argType == null || argType == Type.ERROR) {
+                    ok = false;
+                    break;
+                }
+                Type paramType =
+                        pts[i].isPrimitive() ? fromJava(pts[i]) : Type.nullable(fromJava(pts[i]));
+                if (!assignable.test(argType, paramType)) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                applicable.add(m);
+            }
+        }
+        if (applicable.size() == 1) {
+            return applicable.get(0);
+        }
+        return applicable.isEmpty() ? null : mostSpecific(applicable);
+    }
+
     static int checkJavaTypeArguments(Class<?> java, List<Type> args, TypeAlgebra algebra) {
         TypeVariable<?>[] params = java.getTypeParameters();
         Map<TypeVariable<?>, Type> env = javaTypeEnv(java, args);
