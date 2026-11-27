@@ -87,6 +87,10 @@ final class ControlAndOpEmitter {
             JvmOpEmitter.emitBoolFromJump(mv, c, isTrue -> emitComparison(b, true, isTrue));
             return;
         }
+        if (isRefNullComparison(b)) {
+            JvmOpEmitter.emitBoolFromJump(mv, c, isTrue -> emitNullComparison(b, true, isTrue));
+            return;
+        }
 
         PrimitiveKind resultKind = b.meta().kind();
         PrimitiveKind lk = b.left().meta().kind();
@@ -402,6 +406,10 @@ final class ControlAndOpEmitter {
             emitComparison(b, branchIfTrue, target);
             return;
         }
+        if (expr instanceof HirExpr.Binary b && isRefNullComparison(b)) {
+            emitNullComparison(b, branchIfTrue, target);
+            return;
+        }
         emitter.emitExpr(expr);
         switch (c.stackKind) {
             case BOOL, BYTE, SHORT, INT, CHAR ->
@@ -443,6 +451,27 @@ final class ControlAndOpEmitter {
                 target,
                 kind -> emitter.emitAs(b.left(), kind),
                 kind -> emitter.emitAs(b.right(), kind));
+    }
+
+    private boolean isNullConst(HirExpr e) {
+        return e instanceof HirExpr.Const c
+                && c.value() == null
+                && (ctx().mirOverrides == null || !ctx().mirOverrides.containsKey(e));
+    }
+
+    private boolean isRefNullComparison(HirExpr.Binary b) {
+        if (b.op() != HirExpr.BinaryOp.EQ && b.op() != HirExpr.BinaryOp.NEQ) {
+            return false;
+        }
+        return (isNullConst(b.right()) && b.left().meta().kind() == PrimitiveKind.NONE)
+                || (isNullConst(b.left()) && b.right().meta().kind() == PrimitiveKind.NONE);
+    }
+
+    private void emitNullComparison(HirExpr.Binary b, boolean branchIfTrue, Label target) {
+        HirExpr ref = isNullConst(b.right()) ? b.left() : b.right();
+        emitter.emitBoxed(ref);
+        boolean jumpOnNull = (b.op() == HirExpr.BinaryOp.EQ) == branchIfTrue;
+        ctx().mv.visitJumpInsn(jumpOnNull ? IFNULL : IFNONNULL, target);
     }
 
     // ---------------------------------------------------------------- type operations
@@ -698,12 +727,20 @@ final class ControlAndOpEmitter {
     // ---------------------------------------------------------------- control flow
 
     void emitBlock(HirExpr.Block b) {
+        emitBlock(b, true);
+    }
+
+    void emitBlock(HirExpr.Block b, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
+        Runnable body =
+                valueNeeded
+                        ? () -> emitter.statements(b.statements())
+                        : () -> emitter.statementsVoid(b.statements());
         if (!b.declaredVars().isEmpty()) {
             emitter.inFrameScope(() -> {
                 emitter.declareVariables(b.declaredVars());
-                emitter.statements(b.statements());
+                body.run();
             });
         } else if (b.opensNamespaceScope()) {
             mv.visitVarInsn(ALOAD, c.nsLocal);
@@ -716,16 +753,40 @@ final class ControlAndOpEmitter {
                     false);
             int namespace = c.newLocal();
             mv.visitVarInsn(ASTORE, namespace);
-            emitter.withNamespace(namespace, () -> emitter.statements(b.statements()));
+            emitter.withNamespace(namespace, body);
         } else {
-            emitter.statements(b.statements());
+            body.run();
         }
-        emitter.widenStackRank(b.innerWideningRank());
+        if (valueNeeded) {
+            emitter.widenStackRank(b.innerWideningRank());
+        } else {
+            c.stackKind = PrimitiveKind.NONE;
+        }
     }
 
     void emitIf(HirExpr.If i) {
+        emitIf(i, true);
+    }
+
+    void emitIf(HirExpr.If i, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
+        if (!valueNeeded) {
+            Label otherwise = new Label();
+            emitCondition(i.cond(), false, otherwise);
+            emitter.emitStmt(i.thenBranch());
+            if (i.elseBranch() != null) {
+                Label end = new Label();
+                mv.visitJumpInsn(GOTO, end);
+                mv.visitLabel(otherwise);
+                emitter.emitStmt(i.elseBranch());
+                mv.visitLabel(end);
+            } else {
+                mv.visitLabel(otherwise);
+            }
+            c.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         PrimitiveKind target = i.meta().kind();
         Label otherwise = new Label();
         Label end = new Label();

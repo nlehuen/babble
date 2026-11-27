@@ -372,7 +372,14 @@ final class AeGraphState {
 
     record ArrayLenKey(int arrayValId) implements ValueKey {}
 
-    record FieldKey(int recvValId, int classId, int memberIndex, PrimitiveKind kind, int memEpoch)
+    record FieldKey(
+            int recvValId,
+            int classId,
+            String externalClassJvmName,
+            int memberIndex,
+            String memberName,
+            PrimitiveKind kind,
+            int memEpoch)
             implements ValueKey {}
 
     record JavaFieldKey(int recvValId, Field field, PrimitiveKind kind, int memEpoch)

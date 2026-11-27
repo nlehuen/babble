@@ -31,29 +31,48 @@ final class LoopEmitter {
     }
 
     void emitWhile(HirExpr.While w) {
+        emitWhile(w, true);
+    }
+
+    void emitWhile(HirExpr.While w, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         Label head = new Label();
         Label end = new Label();
-        int result = c.newLocal();
-        mv.visitInsn(ACONST_NULL);
-        mv.visitVarInsn(ASTORE, result);
+        int result = -1;
+        if (valueNeeded) {
+            result = c.newLocal();
+            mv.visitInsn(ACONST_NULL);
+            mv.visitVarInsn(ASTORE, result);
+        }
         mv.visitLabel(head);
         controlOps.emitCondition(w.cond(), false, end);
         c.loopTargets.push(new MethodEmitContext.LoopTarget(end, head, result));
         try {
-            emitter.emitBoxed(w.body());
+            if (valueNeeded) {
+                emitter.emitBoxed(w.body());
+            } else {
+                emitter.emitStmt(w.body());
+            }
         } finally {
             c.loopTargets.pop();
         }
-        mv.visitVarInsn(ASTORE, result);
+        if (valueNeeded) {
+            mv.visitVarInsn(ASTORE, result);
+        }
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);
-        mv.visitVarInsn(ALOAD, result);
+        if (valueNeeded) {
+            mv.visitVarInsn(ALOAD, result);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
     void emitFor(HirExpr.For f) {
+        emitFor(f, true);
+    }
+
+    void emitFor(HirExpr.For f, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         int ln = f.meta().line();
@@ -62,9 +81,12 @@ final class LoopEmitter {
                 target != null ? target.kind() : LoweringTargets.ForKind.DYNAMIC_UNION;
         Label head = new Label();
         Label end = new Label();
-        int result = c.newLocal();
-        mv.visitInsn(ACONST_NULL);
-        mv.visitVarInsn(ASTORE, result);
+        int result = -1;
+        if (valueNeeded) {
+            result = c.newLocal();
+            mv.visitInsn(ACONST_NULL);
+            mv.visitVarInsn(ASTORE, result);
+        }
 
         if (kind == LoweringTargets.ForKind.COUNTED_RANGE && f.countedRange() != null) {
             emitCountedRangeFor(f, result, head, end, ln);
@@ -228,7 +250,9 @@ final class LoopEmitter {
         mv.visitJumpInsn(GOTO, head);
 
         mv.visitLabel(end);
-        mv.visitVarInsn(ALOAD, result);
+        if (result >= 0) {
+            mv.visitVarInsn(ALOAD, result);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -357,7 +381,9 @@ final class LoopEmitter {
         mv.visitIincInsn(idxLocal, 1);
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);
-        mv.visitVarInsn(ALOAD, result);
+        if (result >= 0) {
+            mv.visitVarInsn(ALOAD, result);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -420,7 +446,9 @@ final class LoopEmitter {
         emitForIterationBody(f, result, end, head, PrimitiveKind.NONE);
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);
-        mv.visitVarInsn(ALOAD, result);
+        if (result >= 0) {
+            mv.visitVarInsn(ALOAD, result);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -457,7 +485,9 @@ final class LoopEmitter {
         emitForIterationBody(f, result, end, head, c.stackKind);
         mv.visitJumpInsn(GOTO, head);
         mv.visitLabel(end);
-        mv.visitVarInsn(ALOAD, result);
+        if (result >= 0) {
+            mv.visitVarInsn(ALOAD, result);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -542,7 +572,9 @@ final class LoopEmitter {
         mv.visitJumpInsn(GOTO, iterLoop);
 
         mv.visitLabel(end);
-        mv.visitVarInsn(ALOAD, result);
+        if (result >= 0) {
+            mv.visitVarInsn(ALOAD, result);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -581,10 +613,14 @@ final class LoopEmitter {
                     loadKindOn(mv, varKind, elemTmp);
                     emitter.initVariable(f.loopVar(), varKind);
                 }
-                emitter.statements(f.body());
-                emitter.widenStackRank(f.bodyWideningRank());
-                emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
-                mv.visitVarInsn(ASTORE, resultSlot);
+                if (resultSlot >= 0) {
+                    emitter.statements(f.body());
+                    emitter.widenStackRank(f.bodyWideningRank());
+                    emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
+                    mv.visitVarInsn(ASTORE, resultSlot);
+                } else {
+                    emitter.statementsVoid(f.body());
+                }
             });
         } finally {
             c.loopTargets.pop();
@@ -653,13 +689,17 @@ final class LoopEmitter {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         MethodEmitContext.LoopTarget loop = c.loopTargets.peek();
-        if (b.value() != null) {
-            emitter.emitAndWiden(b.value());
-            emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
-        } else {
-            mv.visitInsn(ACONST_NULL);
+        if (loop.resultSlot() >= 0) {
+            if (b.value() != null) {
+                emitter.emitAndWiden(b.value());
+                emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
+            } else {
+                mv.visitInsn(ACONST_NULL);
+            }
+            mv.visitVarInsn(ASTORE, loop.resultSlot());
+        } else if (b.value() != null) {
+            emitter.emitStmt(b.value());
         }
-        mv.visitVarInsn(ASTORE, loop.resultSlot());
         int currentLoopDepth = c.loopTargets.size();
         List<MethodEmitContext.ActiveFinally> popped =
                 controlOps.tryCatch.unwindFinallies(currentLoopDepth);

@@ -43,18 +43,24 @@ final class AssignAndMemberEmitter {
     }
 
     void emitDef(HirExpr.Def d) {
+        emitDef(d, true);
+    }
+
+    void emitDef(HirExpr.Def d, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         LoweringTargets.DefTarget target = d.target();
         if (target.kind() == LoweringTargets.DefKind.REQUIRED) {
-            mv.visitInsn(ACONST_NULL);
+            if (valueNeeded) {
+                mv.visitInsn(ACONST_NULL);
+            }
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
         if (d.var() != null) {
             PrimitiveKind vk = d.var().primitiveKind();
             defValueAs(d, vk);
-            emitter.storeVariable(d.var(), true, vk, d.meta().line());
+            emitter.storeVariable(d.var(), true, vk, d.meta().line(), valueNeeded);
             return;
         }
         if (target.kind() == LoweringTargets.DefKind.MEMBER) {
@@ -65,6 +71,15 @@ final class AssignAndMemberEmitter {
             int idx = target.index();
             PrimitiveKind mk = c.constructorClass.memberKinds[idx];
             if (mk.isPrimitive()) {
+                if (!valueNeeded) {
+                    mv.visitVarInsn(ALOAD, c.typedThisLocal);
+                    defValueAs(d, mk);
+                    mv.visitFieldInsn(
+                            PUTFIELD, c.constructorClass.name, d.name(), jvmDescriptor(mk));
+                    c.constructorClass.emitMarkDefined(mv, c.typedThisLocal, idx);
+                    c.stackKind = PrimitiveKind.NONE;
+                    return;
+                }
                 int tmp = c.newLocal(mk);
                 defValueAs(d, mk);
                 storeKindOn(mv, mk, tmp);
@@ -79,12 +94,17 @@ final class AssignAndMemberEmitter {
             if (c.constructorClass.isStaticMethodMember(idx)) {
                 // A per-class constant : the instance has no field to set.
                 defValueAs(d, PrimitiveKind.NONE);
+                if (!valueNeeded) {
+                    mv.visitInsn(POP);
+                }
                 c.stackKind = PrimitiveKind.NONE;
                 return;
             }
             mv.visitVarInsn(ALOAD, c.typedThisLocal);
             defValueAs(d, PrimitiveKind.NONE);
-            mv.visitInsn(DUP_X1);
+            if (valueNeeded) {
+                mv.visitInsn(DUP_X1);
+            }
             mv.visitFieldInsn(PUTFIELD, c.constructorClass.name, d.name(), "Ljava/lang/Object;");
             c.stackKind = PrimitiveKind.NONE;
             return;
@@ -123,6 +143,9 @@ final class AssignAndMemberEmitter {
                             "(L" + NAMESPACE + ";ILjava/lang/Object;)Ljava/lang/Object;",
                             false);
         }
+        if (!valueNeeded) {
+            mv.visitInsn(POP);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
@@ -133,20 +156,14 @@ final class AssignAndMemberEmitter {
     }
 
     /**
-     * Given the current primitive value of {@code kind} already on top of the JVM stack, saves it,
-     * evaluates {@code rhs} as {@code kind}, applies {@code op}, and leaves the resulting {@code
-     * kind} on the stack.
+     * Given the current primitive value of {@code kind} already on top of the JVM stack, evaluates
+     * {@code rhs} as {@code kind}, applies {@code op}, and leaves the resulting {@code kind} on the
+     * stack.
      */
     private void emitPrimitiveCompoundArith(PrimitiveKind kind, String op, HirExpr rhsExpr) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        int cur = c.newLocal(kind);
-        storeKindOn(mv, kind, cur);
         emitter.emitAs(rhsExpr, kind);
-        int rhs = c.newLocal(kind);
-        storeKindOn(mv, kind, rhs);
-        loadKindOn(mv, kind, cur);
-        loadKindOn(mv, kind, rhs);
         if ("//".equals(op)) {
             c.line(rhsExpr.meta().line());
             mv.visitMethodInsn(
@@ -182,6 +199,10 @@ final class AssignAndMemberEmitter {
     }
 
     void emitVarAssign(HirExpr.VarAssign a) {
+        emitVarAssign(a, true);
+    }
+
+    void emitVarAssign(HirExpr.VarAssign a, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         HirVar variable = a.var();
@@ -191,14 +212,31 @@ final class AssignAndMemberEmitter {
             emitter.emitAndWiden(a.value());
             emitter.widenStackRank(a.meta().wideningRank());
             emitter.convertStack(c.stackKind, vk);
-            emitter.storeVariable(variable, false, vk, ln);
+            emitter.storeVariable(variable, false, vk, ln, valueNeeded);
             return;
         }
         String op = a.operator();
+        if (!valueNeeded
+                && vk == PrimitiveKind.INT
+                && !variable.cell()
+                && !variable.isCaptured()
+                && c.definedSlots.get(variable.id()) == null
+                && a.meta().wideningRank() < 0
+                && ("+".equals(op) || "-".equals(op))
+                && a.value() instanceof HirExpr.Const rc
+                && rc.meta().kind() == PrimitiveKind.INT
+                && rc.value() instanceof Integer delta) {
+            int inc = "+".equals(op) ? delta : -delta;
+            if (inc >= Short.MIN_VALUE && inc <= Short.MAX_VALUE) {
+                mv.visitIincInsn(c.slots.get(variable.id()), inc);
+                c.stackKind = PrimitiveKind.NONE;
+                return;
+            }
+        }
         if (canLowerPrimitiveCompound(vk, a.value().meta().kind(), op)) {
             emitter.loadVariable(variable, ln);
             emitPrimitiveCompoundArith(vk, op, a.value());
-            emitter.storeVariable(variable, false, vk, ln);
+            emitter.storeVariable(variable, false, vk, ln, valueNeeded);
             return;
         }
         int current = c.newLocal();
@@ -208,7 +246,7 @@ final class AssignAndMemberEmitter {
         emitCompound(ln, op, a.targetText(), a.value(), a.valueText(), current);
         emitter.widenStackRank(a.meta().wideningRank());
         emitter.convertStack(c.stackKind, vk);
-        emitter.storeVariable(variable, false, vk, ln);
+        emitter.storeVariable(variable, false, vk, ln, valueNeeded);
     }
 
     void emitNameAssign(HirExpr.NameAssign a) {
@@ -252,6 +290,10 @@ final class AssignAndMemberEmitter {
     }
 
     void emitThisFieldAssign(HirExpr.ThisFieldAssign a) {
+        emitThisFieldAssign(a, true);
+    }
+
+    void emitThisFieldAssign(HirExpr.ThisFieldAssign a, boolean valueNeeded) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         int ln = a.meta().line();
@@ -284,8 +326,12 @@ final class AssignAndMemberEmitter {
                     mv.visitVarInsn(ALOAD, recv);
                     loadKindOn(mv, mk, val);
                     mv.visitFieldInsn(PUTFIELD, gen.name, name, jvmDescriptor(mk));
-                    loadKindOn(mv, mk, val);
-                    c.stackKind = mk;
+                    if (valueNeeded) {
+                        loadKindOn(mv, mk, val);
+                        c.stackKind = mk;
+                    } else {
+                        c.stackKind = PrimitiveKind.NONE;
+                    }
                     return;
                 }
                 loadThisAs(a.receiver(), gen);
@@ -304,7 +350,9 @@ final class AssignAndMemberEmitter {
                 mv.visitInsn(POP);
                 mv.visitInsn(SWAP);
                 emitter.widenStackRank(a.meta().wideningRank());
-                mv.visitInsn(DUP_X1);
+                if (valueNeeded) {
+                    mv.visitInsn(DUP_X1);
+                }
                 mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
                 c.stackKind = PrimitiveKind.NONE;
                 return;
@@ -321,6 +369,9 @@ final class AssignAndMemberEmitter {
                     "assignOwn",
                     "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
                     false);
+            if (!valueNeeded) {
+                mv.visitInsn(POP);
+            }
             c.stackKind = PrimitiveKind.NONE;
             return;
         }
@@ -338,6 +389,15 @@ final class AssignAndMemberEmitter {
                 mv.visitVarInsn(ALOAD, recv);
                 mv.visitFieldInsn(GETFIELD, gen.name, name, jvmDescriptor(mk));
                 emitPrimitiveCompoundArith(mk, op, a.value());
+                if (!valueNeeded) {
+                    int res = c.newLocal(mk);
+                    storeKindOn(mv, mk, res);
+                    mv.visitVarInsn(ALOAD, recv);
+                    loadKindOn(mv, mk, res);
+                    mv.visitFieldInsn(PUTFIELD, gen.name, name, jvmDescriptor(mk));
+                    c.stackKind = PrimitiveKind.NONE;
+                    return;
+                }
                 int res = c.newLocal(mk);
                 storeKindOn(mv, mk, res);
                 mv.visitVarInsn(ALOAD, recv);
@@ -364,8 +424,12 @@ final class AssignAndMemberEmitter {
                 mv.visitVarInsn(ALOAD, recv);
                 loadKindOn(mv, mk, res);
                 mv.visitFieldInsn(PUTFIELD, gen.name, name, jvmDescriptor(mk));
-                loadKindOn(mv, mk, res);
-                c.stackKind = mk;
+                if (valueNeeded) {
+                    loadKindOn(mv, mk, res);
+                    c.stackKind = mk;
+                } else {
+                    c.stackKind = PrimitiveKind.NONE;
+                }
                 return;
             }
             loadThisAs(a.receiver(), gen);
@@ -383,7 +447,9 @@ final class AssignAndMemberEmitter {
             emitter.widenStackRank(a.meta().wideningRank());
             loadThisAs(a.receiver(), gen);
             mv.visitInsn(SWAP);
-            mv.visitInsn(DUP_X1);
+            if (valueNeeded) {
+                mv.visitInsn(DUP_X1);
+            }
             mv.visitFieldInsn(PUTFIELD, gen.name, name, "Ljava/lang/Object;");
             c.stackKind = PrimitiveKind.NONE;
             return;
@@ -413,10 +479,72 @@ final class AssignAndMemberEmitter {
                 "assignOwn",
                 "(Ljava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/Object;",
                 false);
+        if (!valueNeeded) {
+            mv.visitInsn(POP);
+        }
         c.stackKind = PrimitiveKind.NONE;
     }
 
     void emitJavaFieldAssignExpr(HirExpr.JavaFieldAssign a) {
+        emitJavaFieldAssignExpr(a, true);
+    }
+
+    void emitJavaFieldAssignExpr(HirExpr.JavaFieldAssign a, boolean valueNeeded) {
+        if (!valueNeeded) {
+            MethodEmitContext c = ctx();
+            LoweringTargets.JavaFieldTarget target = a.target();
+            Field field = target.field();
+            Class<?> fieldType = field.getType();
+            if (a.operator() == null
+                    && (fieldType == int.class
+                            || fieldType == boolean.class
+                            || fieldType == double.class)) {
+                MethodVisitor mv = c.mv;
+                int ln = a.meta().line();
+                String owner = Type.getInternalName(field.getDeclaringClass());
+                String desc = Type.getDescriptor(fieldType);
+                int recvLocal = -1;
+                if (target.isStatic()) {
+                    if (!a.pureStaticReceiver()) {
+                        emitter.emitCheckedJavaReceiver(
+                                a.receiver(),
+                                a.receiverText(),
+                                ln,
+                                false,
+                                OBJECT,
+                                "notAssignable",
+                                null);
+                        mv.visitInsn(POP);
+                    }
+                } else {
+                    emitter.emitCheckedJavaReceiver(
+                            a.receiver(),
+                            a.receiverText(),
+                            ln,
+                            target.unwrapReceiver(),
+                            owner,
+                            "notAssignable",
+                            null);
+                    recvLocal = c.newLocal();
+                    mv.visitVarInsn(ASTORE, recvLocal);
+                }
+                PrimitiveKind pk =
+                        fieldType == double.class
+                                ? PrimitiveKind.DOUBLE
+                                : (fieldType == int.class ? PrimitiveKind.INT : PrimitiveKind.BOOL);
+                if (!target.isStatic()) mv.visitVarInsn(ALOAD, recvLocal);
+                emitter.emitAs(a.value(), pk);
+                c.line(ln);
+                mv.visitFieldInsn(
+                        target.isStatic() ? PUTSTATIC : PUTFIELD, owner, field.getName(), desc);
+                c.stackKind = PrimitiveKind.NONE;
+                return;
+            }
+            emitJavaFieldAssignExpr(a, true);
+            popOn(c.mv, c.stackKind);
+            c.stackKind = PrimitiveKind.NONE;
+            return;
+        }
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
         int ln = a.meta().line();

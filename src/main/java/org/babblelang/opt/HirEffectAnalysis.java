@@ -177,7 +177,11 @@ public final class HirEffectAnalysis {
                     r.var() != null ? varReadEffect(r.var(), hasCheck) : IrEffect.READ_SHARED_THROW;
             case HirExpr.VarRead v -> varReadEffect(v.var(), hasCheck);
             case HirExpr.NameRead nr -> {
-                boolean nothrow = nr.definitelyDefined() && !hasCheck;
+                boolean nothrow =
+                        (nr.definitelyDefined()
+                                        || HirPurity.isDefinitelyInitializedTopLevelFn(
+                                                nr.name(), module))
+                                && !hasCheck;
                 if (nr.finalBinding()) {
                     yield nothrow ? IrEffect.PURE_NOTHROW : IrEffect.PURE_MAY_THROW;
                 }
@@ -327,67 +331,99 @@ public final class HirEffectAnalysis {
 
     /**
      * Computes the conservative deep {@link IrEffect} of evaluating {@code expr} and all of its
-     * sub-expressions.
+     * sub-expressions. Writes to non-cell local variables declared inside a nested {@link
+     * HirExpr.Block} are invisible outside that block and do not taint its external purity.
      */
     public IrEffect effectOf(HirExpr expr) {
+        return effectOf(expr, null);
+    }
+
+    private IrEffect effectOf(HirExpr expr, Set<Integer> localDeclared) {
         if (expr == null) {
             return IrEffect.PURE_NOTHROW;
         }
         IrEffect own = shallowEffectOf(expr);
+        if (localDeclared != null) {
+            if (expr instanceof HirExpr.Def d
+                    && d.var() != null
+                    && !d.var().cell()
+                    && localDeclared.contains(d.var().id())) {
+                own = IrEffect.PURE_NOTHROW;
+            } else if (expr instanceof HirExpr.VarAssign a
+                    && a.operator() == null
+                    && !a.var().cell()
+                    && localDeclared.contains(a.var().id())) {
+                own = IrEffect.PURE_NOTHROW;
+            }
+        }
         if (own == IrEffect.IMPURE_THROW) {
             return own;
         }
         IrEffect[] acc = {own};
         switch (expr) {
+            case HirExpr.Block b -> {
+                Set<Integer> innerDeclared = localDeclared;
+                if (!b.declaredVars().isEmpty()) {
+                    innerDeclared =
+                            localDeclared != null ? new HashSet<>(localDeclared) : new HashSet<>();
+                    for (HirVar v : b.declaredVars()) {
+                        if (!v.cell()) {
+                            innerDeclared.add(v.id());
+                        }
+                    }
+                }
+                for (HirExpr s : b.statements()) {
+                    acc[0] = IrEffect.combine(acc[0], effectOf(s, innerDeclared));
+                }
+            }
             case HirExpr.JavaMethodCall c -> {
                 if (!c.target().isStatic() || !c.pureStaticReceiver()) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(c.receiver()));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(c.receiver(), localDeclared));
                 }
                 for (HirExpr a : c.args()) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(a));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(a, localDeclared));
                 }
             }
             case HirExpr.JavaConstructorCall c -> {
                 if (!c.pureStaticCallee() && c.callee() != null) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(c.callee()));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(c.callee(), localDeclared));
                 }
                 for (HirExpr a : c.args()) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(a));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(a, localDeclared));
                 }
             }
             case HirExpr.JavaFieldGet g -> {
                 if (!g.target().isStatic() || !g.pureStaticReceiver()) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(g.receiver()));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(g.receiver(), localDeclared));
                 }
             }
             case HirExpr.DirectBabbleCall c -> {
-                // Direct static call only evaluates callee when it is non-trivial/not definitely
-                // initialized; combine callee effect conservatively unless it is a pure NameRead of
-                // a definitely-initialized top-level function.
                 if (!(c.callee() instanceof HirExpr.NameRead nr
                         && HirPurity.isDefinitelyInitializedTopLevelFn(nr.name(), module))) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(c.callee()));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(c.callee(), localDeclared));
                 }
                 for (HirExpr a : c.args()) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(a));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(a, localDeclared));
                 }
             }
             case HirExpr.RecordNew r -> {
                 if (!(r.classRef() instanceof HirExpr.NameRead nr
                         && HirPurity.isDefinitelyInitializedTopLevelBinding(nr.name(), module))) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(r.classRef()));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(r.classRef(), localDeclared));
                 }
                 for (HirExpr a : r.args()) {
-                    acc[0] = IrEffect.combine(acc[0], effectOf(a));
+                    acc[0] = IrEffect.combine(acc[0], effectOf(a, localDeclared));
                 }
             }
-            default ->
-                    HirRewriter.rewriteChildren(
-                            expr,
-                            child -> {
-                                acc[0] = IrEffect.combine(acc[0], effectOf(child));
-                                return child;
-                            });
+            default -> {
+                Set<Integer> scoped = localDeclared;
+                HirRewriter.rewriteChildren(
+                        expr,
+                        child -> {
+                            acc[0] = IrEffect.combine(acc[0], effectOf(child, scoped));
+                            return child;
+                        });
+            }
         }
         return acc[0];
     }
@@ -428,16 +464,22 @@ public final class HirEffectAnalysis {
     }
 
     private IrEffect thisFieldGetEffect(HirExpr.ThisFieldGet g, boolean hasCheck) {
-        if (g.classId() < 0 || g.memberIndex() < 0) {
-            return IrEffect.IMPURE_THROW;
-        }
-        HirClass cls = module.clazz(g.classId());
-        if (cls == null || !cls.hasCompiledClass()) {
-            return IrEffect.IMPURE_THROW;
+        boolean isExternal =
+                g.classId() < 0 && g.externalClassJvmName() != null && g.memberName() != null;
+        boolean isValue = false;
+        if (!isExternal) {
+            if (g.classId() < 0 || g.memberIndex() < 0) {
+                return IrEffect.IMPURE_THROW;
+            }
+            HirClass cls = module.clazz(g.classId());
+            if (cls == null || !cls.hasCompiledClass()) {
+                return IrEffect.IMPURE_THROW;
+            }
+            isValue = cls.shape().isValue();
         }
         boolean isFinal =
                 g.immutableField()
-                        || cls.shape().isValue()
+                        || isValue
                         || g.receiver().meta().frozen()
                         || g.receiver().meta().deeplyImmutable();
         IrEffect.AliasClass alias = isFinal ? IrEffect.AliasClass.FROZEN : aliasOf(g.receiver());
