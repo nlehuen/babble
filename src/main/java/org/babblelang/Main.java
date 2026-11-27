@@ -33,6 +33,7 @@ import org.babblelang.repl.TerminalInput;
  *                                                   compiles a program into a jar (babblec)
  * java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
  *                                                   formats source files (babblefmt, {@link Babblefmt})
+ * java -jar babble.jar -crib [options]              starts the isolated HTTP .batest.md runner (BIP041)
  * </pre>
  *
  * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The mode is
@@ -55,7 +56,9 @@ public final class Main {
             Or : java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
               Formats source files : see java -jar babble.jar -format -help.
             Or : java -jar babble.jar -axioms [-O0|-O1|-O2] <class-or-package>
-              Prints what Babble assumes (curated or inferred) about a Java class or package.\
+              Prints what Babble assumes (curated or inferred) about a Java class or package.
+            Or : java -jar babble.jar -crib [options]
+              Starts a fast, isolated HTTP .batest.md runner : see java -jar babble.jar -crib -help.\
             """;
 
     /** The exit statuses : a script that failed, and a command line that can't be used. */
@@ -113,6 +116,10 @@ public final class Main {
         }
         if (args.length > 0 && (args[0].equals("-axioms") || args[0].equals("--axioms"))) {
             return dumpAxioms(args, out, err);
+        }
+        if (args.length > 0 && (args[0].equals("-crib") || args[0].equals("--crib"))) {
+            return org.babblelang.crib.CribCli.run(
+                    Arrays.copyOfRange(args, 1, args.length), out, err);
         }
         boolean keepAlive = false;
         Integer optLevel = null;
