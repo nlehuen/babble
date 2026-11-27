@@ -192,7 +192,8 @@ fn f (x:int) -> int {nothrow unique}
     (def $cse9 (+:int var($cse8) var($cse0)))
     (def $cse10 (+:int var($cse9) var($cse0)))
     (def a (+:int var($cse10) var($cse0)))
-    (+:int (+:int var(a) var(a)) var($cse9)))
+    (def c var($cse9)))
+  (+:int (+:int var(a) var(a)) var(c))
 ```
 
 ## InlinePass.inlineExpr : identity-order named args on record method skip inlining

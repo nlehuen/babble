@@ -43,8 +43,8 @@ fn fold (x:int) -> bool {pure unique}
   (block
     (def $cse0 (==:bool var(x) 5:int))
     (call name(assert) (and (and var($cse0) var($cse0)) var($cse0)))
-    (call name(assert) (and var($cse0) var($cse0)))
-    (call name(assert) true:bool))
+    (call name(assert) (and var($cse0) var($cse0))))
+  (call name(assert) true:bool)
 ```
 
 ## evalIntConstant nested unary minus including 32-bit Integer.MIN_VALUE negation wrap, plus mixed widening
@@ -92,12 +92,12 @@ top-level:
   (def x 4:int)
   (block
     (def $cse0 (neg name(x)))
-    (def z (+:int (+:int var($cse0) -2147483624:int) (neg var($cse0))))
-    (def dm 3.0:double)
-    (def dmin -2.147483648E9:double)
-    (call name(assert) (==:bool name(z) -2147483624:int))
-    (call name(assert) (==:bool name(dm) 3.0:double))
-    (call name(assert) (==:bool name(dmin) -2.147483648E9:double)))
+    (def z (+:int (+:int var($cse0) -2147483624:int) (neg var($cse0)))))
+  (def dm 3.0:double)
+  (def dmin -2.147483648E9:double)
+  (call name(assert) (==:bool name(z) -2147483624:int))
+  (call name(assert) (==:bool name(dm) 3.0:double))
+  (call name(assert) (==:bool name(dmin) -2.147483648E9:double))
 ```
 
 ## Boolean equality, not/or/and conditions, mixed comparisons, and parenthesized condition
@@ -151,8 +151,8 @@ top-level:
     (call name(assert) (and var($cse0) var($cse0)))
     (def $cse1 (<:bool name(x) 5:int))
     (call name(assert) (if (>=:bool name(x) 5:int) true:bool false:bool))
-    (call name(assert) (if (or var($cse1) (<:bool name(y) 5:int)) false:bool true:bool))
-    (call name(assert) (and name(b1) name(b1))))
+    (call name(assert) (if (or var($cse1) (<:bool name(y) 5:int)) false:bool true:bool)))
+  (call name(assert) (and name(b1) name(b1)))
 ```
 
 ## Numeric truthiness in if conditions (int and double)

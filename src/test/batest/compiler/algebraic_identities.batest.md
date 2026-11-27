@@ -56,12 +56,11 @@ fn checkBool (b:bool) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=checkBool
 fn checkBool (b:bool) -> bool {pure unique}
-  (block
-    (call name(assert) true:bool)
-    (call name(assert) true:bool)
-    (call name(assert) true:bool)
-    (call name(assert) true:bool)
-    (call name(assert) true:bool))
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
 ```
 
 ## Case 2

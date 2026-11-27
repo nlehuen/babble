@@ -231,8 +231,8 @@ fn C.run () -> bool {mut unique}
     (set-this-field n *= 2:int)
     (set-this-field n -= 1:int)
     (set-this-field d /= 2:int)
-    (set-this-field d += var($cse0))
-    (call name(assert) (and (and (==:bool var(loc) 6.5:double) (==:bool (get-this-field n) 17:int)) (==:bool (get-this-field d) 5.0:double))))
+    (set-this-field d += var($cse0)))
+  (call name(assert) (and (and (==:bool var(loc) 6.5:double) (==:bool (get-this-field n) 17:int)) (==:bool (get-this-field d) 5.0:double)))
 ```
 
 ## Boxed/fallback compound assignment on static union field

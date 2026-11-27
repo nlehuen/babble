@@ -33,8 +33,8 @@ fn arith (x:int) -> int {nothrow unique}
 fn arith (x:int) -> int {nothrow unique}
   (block
     (def $cse0 (mod:int var(x) 5:int))
-    (def id (+:int (+:int var(x) var($cse0)) 1:int))
-    (+:int (+:int var(id) -1:int) (neg var(x))))
+    (def id (+:int (+:int var(x) var($cse0)) 1:int)))
+  (+:int (+:int var(id) -1:int) (neg var(x)))
 ```
 
 ## Zero-divisor throw folding and dead-code pruning

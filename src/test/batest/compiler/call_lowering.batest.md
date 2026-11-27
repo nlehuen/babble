@@ -183,15 +183,15 @@ top-level:
     (call name(assert) (==:bool (block
           (def $this#2 name(v))
           (def o (record-new ext_ops$ba$C0$Vec 3:int))
-          (+:int (get-this-field x) (get-this-field x))) 13:int))
-    (call name(assert) (and (==:bool (block
-            (def $this#3 name(v))
-            (def $cse1 (get-this-field x))
-            (+:int var($cse1) 3:int)) 13:int) (==:bool (call-method name(v).inc 2:int) 17:int)))
-    (call name(assert) (==:bool (block
-          (def $this#4 name(v))
-          (+:obj "v:" (get-this-field x))) "v:10"))
-    (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int)))
+          (+:int (get-this-field x) (get-this-field x))) 13:int)))
+  (call name(assert) (and (==:bool (block
+          (def $this#3 name(v))
+          (def $cse1 (get-this-field x))
+          (+:int var($cse1) 3:int)) 13:int) (==:bool (call-method name(v).inc 2:int) 17:int)))
+  (call name(assert) (==:bool (block
+        (def $this#4 name(v))
+        (+:obj "v:" (get-this-field x))) "v:10"))
+  (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int))
 ```
 
 ## Cross-module definite and non-definite field reads plus transitive interface hierarchy

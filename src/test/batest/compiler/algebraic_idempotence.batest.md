@@ -57,10 +57,10 @@ fn checkIntIdem (x:int, ec:int, ea:int) -> bool {pure unique}
     (def $cse0 (<:bool var(x) 0:int))
     (call name(assert) (and (and (==:bool (if var($cse0) 0:int var(x)) var(ec)) (==:bool (block
               (def r (if var($cse0) 0:int var(x)))
-              var(r)) var(ec))) (==:bool (call var(lc) (call var(lc) var(x))) var(ec))))
-    (block
-      (def $cse1 (jcall Math.abs var(x)))
-      (call name(assert) (==:bool var($cse1) var(ea)))))
+              var(r)) var(ec))) (==:bool (call var(lc) (call var(lc) var(x))) var(ec)))))
+  (block
+    (def $cse1 (jcall Math.abs var(x)))
+    (call name(assert) (==:bool var($cse1) var(ea))))
 ```
 
 ## Idempotent Math.floor preserving NaN and IEEE-754 -0.0 (checked by raw bits since +0.0 == -0.0)
@@ -94,7 +94,8 @@ fn checkFloor (d:double) -> bool {pure unique}
 fn checkFloor (d:double) -> bool {pure unique}
   (block
     (def $cse0 (jcall Math.floor var(d)))
-    (call name(assert) (if (jcall Double.isNaN var(d)) (jcall Double.isNaN var($cse0)) (==:bool (jcall Double.doubleToRawLongBits var($cse0)) (jcall Double.doubleToRawLongBits var(d))))))
+    (def fl var($cse0)))
+  (call name(assert) (if (jcall Double.isNaN var(d)) (jcall Double.isNaN var(fl)) (==:bool (jcall Double.doubleToRawLongBits var(fl)) (jcall Double.doubleToRawLongBits var(d)))))
 ```
 
 ## Idempotent String.trim and Character.toLowerCase calls
@@ -167,14 +168,14 @@ fn checkGuard (x:int) -> bool {pure unique}
 fn checkGuard (x:int) -> bool {pure unique}
   (block
     (def $cse0 (jcall Math.abs var(x#1)))
-    (def wd (widen[double] var($cse0)))
-    (call name(assert) (and (==:bool var(wd) 5.0:double) (==:bool (block
-            name(lateClamp)
-            (def x#2
-              (block
-                name(lateClamp)
-                (if (<:bool var(x#1) 0:int) 0:int var(x#1))))
-            (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 0:int))))
+    (def wd (widen[double] var($cse0))))
+  (call name(assert) (and (==:bool var(wd) 5.0:double) (==:bool (block
+          name(lateClamp)
+          (def x#2
+            (block
+              name(lateClamp)
+              (if (<:bool var(x#1) 0:int) 0:int var(x#1))))
+          (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 0:int)))
 ```
 
 ## Non-dropping idempotent collapse on impure arguments (`f(f(impure())) -> f(impure())`)
@@ -279,6 +280,6 @@ fn checkDet (arr:obj, s:obj, flag:bool) -> int {pure unique}
       var(r)))
   (block
     (def $cse0 (array-op SIZE var(arr)))
-    (def b (jcall Math.abs (call name(int) (as var($cse0) double|double|))))
-    (+:int var(a) var(b)))
+    (def b (jcall Math.abs (call name(int) (as var($cse0) double|double|)))))
+  (+:int var(a) var(b))
 ```
