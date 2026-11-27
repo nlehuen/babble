@@ -224,7 +224,10 @@ public final class HirEffectAnalysis {
                             ? IrEffect.write(IrEffect.AliasClass.NONE, true)
                             : IrEffect.IMPURE_THROW;
             case HirExpr.NameAssign ignored -> IrEffect.IMPURE_THROW;
-            case HirExpr.DynamicFieldAssign ignored -> IrEffect.IMPURE_THROW;
+            case HirExpr.DynamicFieldAssign a ->
+                    a.operator() == null
+                            ? IrEffect.write(aliasOf(a.receiver()), false)
+                            : IrEffect.IMPURE_THROW;
             case HirExpr.DynamicSelect ignored -> IrEffect.IMPURE_THROW;
             case HirExpr.ArrayCreate ignored -> IrEffect.PURE_MAY_THROW;
             case HirExpr.Unary u -> {

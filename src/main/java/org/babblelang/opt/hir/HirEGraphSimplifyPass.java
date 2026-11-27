@@ -332,7 +332,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
     /**
      * Single-node order-preserving identities safe even when an operand may throw or have effects.
      */
-    private static HirExpr tryNonDroppingIdentity(HirExpr cur, HirModule module) {
+    static HirExpr tryNonDroppingIdentity(HirExpr cur, HirModule module) {
         if (cur instanceof HirExpr.Unary u
                 && u.op() == HirExpr.UnaryOp.NOT
                 && u.meta().wideningRank() < 0
