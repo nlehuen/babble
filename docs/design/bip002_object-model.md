@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **BIP** | 002 |
-| **Status** | Implemented (`BIP002-I1`–`BIP002-I6`, §12, through compiler `BIP001-I1`), in both the interpreter and the compiler. §13 lists what the implementation decided where this text was silent. |
+| **Status** | Implemented (`BIP002-I1`–`BIP002-I6`, §12, through compiler `BIP001-I1`), in both the interpreter and the compiler. §13 lists what the implementation decided where this text was silent. Constructor syntax and declarative class/record/object bodies were subsequently extended by [BIP040](bip040_constructors.md). |
 | **Date** | 2026-10-11 |
 | **Depends on** | [bip001_bytecode-compiler.md](bip001_bytecode-compiler.md): block scope (§8.1), the shared runtime (§5), type checking (§10) |
 | **Unblocks** | Compiler `BIP001-I2` (§7), object and package types `BIP001-Q5` / `BIP003-D5` (§10.4) |
