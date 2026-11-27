@@ -1,9 +1,11 @@
 package org.babblelang.opt.hir;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
@@ -163,16 +165,35 @@ final class AeGraphExtractor {
             return spliced;
         }
 
-        // Prefix statements before the first hoist remain untouched in the outer list.
+        // Prefix statements before the first hoist remain untouched in the outer list, and so do
+        // the statements after the last one reading a hoisted var : the block spans only the
+        // hoists' live range, so a module's top level stays a list of statements the emitter can
+        // split into several run$N methods.
         for (int i = 0; i < firstHoistIdx; i++) {
             spliced.add(stmts.get(i));
         }
-        List<HirExpr> tail =
-                new ArrayList<>(stmts.size() - firstHoistIdx + scope.allHoistedVars.size());
+        List<HirExpr> rewritten = new ArrayList<>(stmts.size() - firstHoistIdx);
         for (int i = firstHoistIdx; i < stmts.size(); i++) {
-            appendHoistsAndStmt(tail, stmts.get(i), scope.hoistsByStmt.get(i), scope);
+            rewritten.add(replaceFirstOccurrences(stmts.get(i), scope.firstOccReplacements, null));
         }
-        HirExpr last = stmts.get(stmts.size() - 1);
+        Set<Integer> hoistedIds = new HashSet<>();
+        for (HirVar v : scope.allHoistedVars) {
+            hoistedIds.add(v.id());
+        }
+        int lastUse = 0;
+        for (int i = rewritten.size() - 1; i > 0; i--) {
+            if (scope.hoistsByStmt.get(firstHoistIdx + i) != null
+                    || readsAnyVar(rewritten.get(i), hoistedIds)) {
+                lastUse = i;
+                break;
+            }
+        }
+        List<HirExpr> tail = new ArrayList<>(lastUse + 1 + scope.allHoistedVars.size());
+        for (int i = 0; i <= lastUse; i++) {
+            appendHoists(tail, scope.hoistsByStmt.get(firstHoistIdx + i), scope);
+            tail.add(rewritten.get(i));
+        }
+        HirExpr last = rewritten.get(lastUse);
         ExprMeta blockMeta = last.meta().withWideningRank(-1);
         spliced.add(
                 new HirExpr.Block(
@@ -182,11 +203,37 @@ final class AeGraphExtractor {
                         List.copyOf(scope.allHoistedVars),
                         -1,
                         blockMeta));
+        spliced.addAll(rewritten.subList(lastUse + 1, rewritten.size()));
         return spliced;
+    }
+
+    /** Whether {@code expr} reads one of the vars {@code ids} names. */
+    private static boolean readsAnyVar(HirExpr expr, Set<Integer> ids) {
+        if (expr == null) {
+            return false;
+        }
+        if (expr instanceof HirExpr.VarRead vr && ids.contains(vr.var().id())) {
+            return true;
+        }
+        boolean[] found = {false};
+        HirRewriter.rewriteChildren(
+                expr,
+                c -> {
+                    if (!found[0] && readsAnyVar(c, ids)) {
+                        found[0] = true;
+                    }
+                    return c;
+                });
+        return found[0];
     }
 
     private static void appendHoistsAndStmt(
             List<HirExpr> out, HirExpr stmt, List<HoistEntry> hoists, StmtScope scope) {
+        appendHoists(out, hoists, scope);
+        out.add(replaceFirstOccurrences(stmt, scope.firstOccReplacements, null));
+    }
+
+    private static void appendHoists(List<HirExpr> out, List<HoistEntry> hoists, StmtScope scope) {
         if (hoists != null) {
             for (HoistEntry h : hoists) {
                 // Rewrite nested earlier hoists inside h.origExpr() if any!
@@ -202,7 +249,6 @@ final class AeGraphExtractor {
                                 rhs.meta().withWideningRank(-1)));
             }
         }
-        out.add(replaceFirstOccurrences(stmt, scope.firstOccReplacements, null));
     }
 
     private static HirExpr replaceFirstOccurrences(

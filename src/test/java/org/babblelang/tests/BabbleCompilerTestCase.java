@@ -621,7 +621,13 @@ public class BabbleCompilerTestCase {
         }
         Assertions.assertEquals(15.0, checked.eval(new SimpleBindings()));
 
-        CompiledBabbleScript cast = compile("def id = fn (x : any) : any -> ( x ) ; id(7) as int");
+        // The cast's operand is a parameter, so no optimization level can prove it an int (-O2
+        // inlines id and folds a cast of a constant such as id(7) as int away).
+        CompiledBabbleScript cast =
+                compile(
+                        "def id = fn (x : any) : any -> ( x )\n"
+                                + "def g = fn (y : any) : int -> ( id(y) as int )\n"
+                                + "g(7)");
         assertVerifies(cast);
         Assertions.assertTrue(
                 typesCalls(cast).stream().anyMatch(c -> c.endsWith("->check")),

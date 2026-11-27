@@ -1,7 +1,7 @@
 # Build Once, Fan Out, Then Gate CI workflow for Babble:
 #   0. changes       (1 runner)  : checks whether all changed files live under docs/ or root README.md; if so, skips build/tests/batest
 #   1. build         (1 runner)  : compiles src/main + src/test and packages jars once, uploads target/
-#   2. unit-tests    (1 runner)  : downloads target/ and runs src/test/java (excluding batest runners) across interpret, -O1, -O0
+#   2. unit-tests    (4 runners) : downloads target/ and runs src/test/java (excluding batest runners), one runner per mode : interpret, -O1, -O0, -O2
 #   3. batest        (6 runners) : downloads target/, runs -Pbatest 4-mode JVM specs (interpret, -O1, -O0, -O2 with JaCoCo)
 #                                  and Wasm 3.0 parity for -Dbatest.shard=<N>/6, and uploads per-shard JaCoCo .exec + outcomes
 #   4. batest-report (1 runner)  : merges JaCoCo .exec and outcomes-*.jsonl across all 6 shards and enforces 4-way parity + >= 80% 6-scope coverage gate
@@ -91,9 +91,25 @@ jobs:
         retention-days: 1
 
   unit-tests:
-    name: Unit Tests
+    name: Unit Tests (${{ matrix.mode }})
     needs: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: interpret
+            execution: default-test
+            profile: ''
+          - mode: O1
+            execution: compiled-tests
+            profile: ''
+          - mode: O0
+            execution: compiled-tests-O0
+            profile: ''
+          - mode: O2
+            execution: compiled-tests-O2
+            profile: '-PO2'
     steps:
     - uses: actions/checkout@v7
     - name: Set up JDK 21
@@ -111,12 +127,10 @@ jobs:
       with:
         name: maven-target
         path: target
-    - name: Run Java unit tests (interpret, -O1, -O0)
+    - name: Run Java unit tests (${{ matrix.mode }})
       run: |
-        mvn -B --file pom.xml \
-          org.apache.maven.plugins:maven-surefire-plugin:test@default-test \
-          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests \
-          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests-O0 \
+        mvn -B ${{ matrix.profile }} --file pom.xml \
+          org.apache.maven.plugins:maven-surefire-plugin:test@${{ matrix.execution }} \
           -Dtest='!BatestTestCase,!WasmBatestTestCase'
 
   batest:
