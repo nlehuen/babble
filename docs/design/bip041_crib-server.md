@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 041 |
 | **Date** | 2026-11-27 |
-| **Status** | Decided / Planned (`BIP041-Q1`–`Q8` → `BIP041-D1`–`D8` settled ; `BIP041-P1`–`P4` planned) |
+| **Status** | Implemented (`BIP041-Q1`–`Q8` → `BIP041-D1`–`D8` settled ; `BIP041-I1`–`I4` implemented) |
 | **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), `.batest.md` v2 format & unified IR goldens ([bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)), adversarial soundness campaign ([bip032_the-great-escape.md](bip032_the-great-escape.md)), unified `HIR` `-O0`/`-O1`/`-O2` & MIR deorbitation ([bip039_mir-deorbitation.md](bip039_mir-deorbitation.md), [bip014_optimization-passes.md](bip014_optimization-passes.md)), WebAssembly 3.0 backend ([bip025_compile-to-wasm.md](bip025_compile-to-wasm.md), `RM018`), and `java.base`-only runtime boundary ([bip006_module-sources-and-aot.md](bip006_module-sources-and-aot.md)) |
 | **Scope** | A `-crib` CLI subcommand on `org.babblelang.Main` serving a loopback HTTP API (`POST /crib?<options>`, `GET /health`, `POST /recycle`) that executes `.batest.md` payloads across `interpret`, `compile -O0`, `compile -O1`, unified `HIR` `compile -O2`, and optional WebAssembly 3.0 (`wasm-O1`, `wasm-O2`) inside a warm, pre-JITted worker JVM pool (~10–50 ms per trial instead of ~15–30 s via Maven) ; defense-in-depth adversarial isolation (dedicated-FD worker IPC, per-trial fresh engine/ClassLoader/module/writer state, static cache-leak fixes, cooperative `Interpreter` interruption, post-trial JVM poison auditing, and hard wall-clock watchdog kill/respawn) ; automatic cross-mode differential parity diffing (`S0` oracle) ; JUnit-free `org.babblelang.batest` extraction into `src/main` without touching `org.babblelang.runtime` ; zero new Maven dependencies (`jdk.httpserver` only). |
 
@@ -153,7 +153,7 @@ Because `BIP032` trials intentionally probe corner cases across types, effects, 
 
 A read-only audit of `src/main/java/org/babblelang/` identified every piece of static mutable state, global property read, `ThreadLocal`, and cache that affects long-running in-process isolation:
 
-| Component & Location | Current State | Hazard in Persistent `-crib` Worker | Required Fix (`BIP041-P1`) |
+| Component & Location | Current State | Hazard in Persistent `-crib` Worker | Required Fix (`BIP041-I1`) |
 |---|---|---|---|
 | [`BabbleCompiler.java`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java#L240), [`#L355`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java#L355) | Reads `Boolean.getBoolean(VERIFY)` directly from `System` properties | Cannot toggle `verify=true`/`false` per trial without mutating global `System` properties (also blocks `BIP032-P2`) | Add `BabbleCompiler.resolveVerify(BabbleScriptEngine)` checking `engine.get(VERIFY)` before `System.getProperty(VERIFY)` |
 | [`JavaClass.java`](../../src/main/java/org/babblelang/engine/impl/natives/java/JavaClass.java#L30) | `ConcurrentHashMap<Class<?>, JavaClass> CLASSES` | Strong key reference pins dynamically generated `ScriptClassLoader` classes forever if `classof(...)` / reflection touches them | Migrate to `ClassValue<JavaClass>` (matching `BabbleObjects.COMPILED` and `Faces.SAM_FACTORIES`) |
@@ -405,9 +405,9 @@ src/test/java/org/babblelang/tests/
 
 ---
 
-## 7. Phased Implementation Plan (`BIP041-P1`–`P4`)
+## 7. Phased Implementation Plan (`BIP041-I1`–`I4`)
 
-### `BIP041-P1` — In-process isolation hardening & `org.babblelang.batest` extraction
+### `BIP041-I1` — In-process isolation hardening & `org.babblelang.batest` extraction
 
 - **Deliverables:**
   1. Add `BabbleCompiler.resolveVerify(BabbleScriptEngine)` checking `engine.get(VERIFY)` before `System.getProperty(VERIFY)` and use it at both [`BabbleCompiler.java#L240`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java#L240) and [`#L355`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java#L355) (also directly benefiting `BIP032-P2`).
@@ -416,7 +416,7 @@ src/test/java/org/babblelang/tests/
   4. Extract JUnit-free `BatestFile`, `BatestParser` (with `ParseOptions(boolean enforceBudgets)`), `BatestV2Parser`, `BatestRunner` (with `verifyOverride`), `BatestFilter`, and `IrAssertionChecker` into `src/main/java/org/babblelang/batest/`, updating `src/test/java/org/babblelang/tests/batest/` imports and `-Pbatest` JaCoCo excludes.
 - **Exit criteria:** Full `mvn -B package -PO2`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, and `mvn -q verify -Pbatest` green with zero behavioral or coverage regressions.
 
-### `BIP041-P2` — Warm worker JVM runtime, poison auditor & `CribWorkerPool`
+### `BIP041-I2` — Warm worker JVM runtime, poison auditor & `CribWorkerPool`
 
 - **Deliverables:**
   1. Implement `CribConfig`, `CribProtocol` (length-prefixed or NDJSON framing + self-contained JSON codec), and `CribEvaluator` (fresh per-`(case, mode)` engines, `hir` IR checking, automatic cross-mode behavioral parity diffing, and `try/finally` `ThreadLocal` / TCCL / interrupt cleanup).
@@ -424,14 +424,14 @@ src/test/java/org/babblelang/tests/
   3. Implement `CribWorkerPool` with warm worker pre-spawning, hard wall-clock watchdog (`Process.destroyForcibly()`), transparent async replacement, `--max-requests-per-worker` recycling, `?fresh=true` support, and JVM shutdown-hook cleanup.
 - **Exit criteria:** Unit tests verifying normal warm evaluation, cross-mode parity diff detection, `System.exit` recovery, compiled & interpreted infinite-loop timeouts, `System.setProperty`/`Locale`/`System.out` poison detection + automatic recycle, and leaked-thread cleanup.
 
-### `BIP041-P3` — `CribServer` HTTP API & `Main -crib` CLI integration
+### `BIP041-I3` — `CribServer` HTTP API & `Main -crib` CLI integration
 
 - **Deliverables:**
   1. Implement `CribServer` over `com.sun.net.httpserver.HttpServer` serving `POST /crib?<options>`, `GET /health`, and `POST /recycle` with loopback-only default bind, body-size limits (`413`), query validation (`400`), concurrency backpressure (`503`), and both JSON and `?format=text` formatters.
   2. Implement `CribCli` and wire `-crib` / `--crib` into `org.babblelang.Main` (and update `Main.USAGE` and `MainTestCase`).
 - **Exit criteria:** End-to-end HTTP tests (`java.net.http.HttpClient` against `--port 0`) passing for all endpoints, query parameters, error codes, and response formats.
 
-### `BIP041-P4` — Optional isolated Wasm modes, soak testing & documentation
+### `BIP041-I4` — Optional isolated Wasm modes, soak testing & documentation
 
 - **Deliverables:**
   1. Implement `WasmExecWorker` (hardened Node.js V8 subprocess with bounded `mjsCache`, per-case timeout, and kill/respawn recovery) supporting `wasm` (`wasm-O1`), `wasm-O2`, and `wat` IR assertions (`SKIPPED_NON_PORTABLE` for JVM-only cases).
