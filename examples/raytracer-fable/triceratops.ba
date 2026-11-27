@@ -86,7 +86,7 @@ def SculptedLobe = class (
     def rz: double,
     def scale: double,
     def coeffs: array of double,
-    def rMax: double,
+    rMax: double,
     def fillMat: Material,
     def inkMat: Material,
     def border: double,
@@ -95,14 +95,21 @@ def SculptedLobe = class (
     def openTop: double = 10.0,
     def openRight: double = 10.0
 ) implements Hittable (
-    private def invRz: double = 1.0 / this.rz
-    private def invScale: double = 1.0 / this.scale
-    private def maxExtent: double = this.rMax * this.scale
-    private def kCount: int = (this.coeffs.size() - 1) // 2
-    private def bbox: AABB = AABB(
-        this.center.x - this.maxExtent, this.center.x + this.maxExtent,
-        this.center.y - this.maxExtent, this.center.y + this.maxExtent,
-        this.center.z - this.rz, this.center.z + this.rz
+    private def invRz: double
+    private def invScale: double
+    private def kCount: int
+    private def bbox: AABB
+
+    init (
+        this.invRz = 1.0 / this.rz
+        this.invScale = 1.0 / this.scale
+        this.kCount = (this.coeffs.size() - 1) // 2
+        def maxExtent: double = rMax * this.scale
+        this.bbox = AABB(
+            this.center.x - maxExtent, this.center.x + maxExtent,
+            this.center.y - maxExtent, this.center.y + maxExtent,
+            this.center.z - this.rz, this.center.z + this.rz
+        )
     )
 
     def boundingBox = fn (): AABB -> (this.bbox)
