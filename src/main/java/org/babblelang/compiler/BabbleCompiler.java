@@ -41,6 +41,12 @@ public final class BabbleCompiler {
     public static final String DUMP_IR = "babble.dumpIr";
 
     /**
+     * Temporary toggle ({@code BIP039-P3}–{@code BIP039-P5}) selecting the unified HIR {@code -O2}
+     * pipeline instead of legacy SSA MIR. Removed on cutover in {@code BIP039-P6}.
+     */
+    public static final String HIR_O2 = "babble.hirO2";
+
+    /**
      * Per-engine {@link org.babblelang.ir.IrObserver} binding key for parallel-safe IR capture
      * (BIP029-I1).
      */
@@ -84,6 +90,15 @@ public final class BabbleCompiler {
             throw new IllegalArgumentException("Invalid optimization level : " + value);
         }
         return parsed;
+    }
+
+    /** Returns true when the unified HIR {@code -O2} pipeline toggle is enabled. */
+    public static boolean isHirO2(BabbleScriptEngine engine) {
+        Object value = engine != null ? engine.get(HIR_O2) : null;
+        if (value == null) {
+            value = System.getProperty(HIR_O2);
+        }
+        return value != null && Boolean.parseBoolean(value.toString().trim());
     }
 
     /** Resolves the IR dump target ({@code "hir"}, {@code "all"}, {@code "true"}, or null). */
@@ -215,7 +230,7 @@ public final class BabbleCompiler {
                         org.babblelang.analysis.CompilationTarget.JVM);
         org.babblelang.ir.hir.HirModule hir = hirRes.hir();
         org.babblelang.ir.mir.MirModule mir = null;
-        if (hirRes.passCtx().optLevel() >= 2) {
+        if (hirRes.passCtx().optLevel() >= 2 && !isHirO2(engine)) {
             org.babblelang.ir.hir.HirModule optimizedHir = hir;
             mir =
                     org.babblelang.analysis.BuiltinAxioms.withCurrent(
@@ -391,11 +406,12 @@ public final class BabbleCompiler {
                 new org.babblelang.opt.PassContext(
                         optLevel, verify, dumpIr, !inlineMap.isEmpty(), inlineMap, target);
         org.babblelang.ir.hir.HirModule unoptimized = hir;
+        boolean hirO2 = isHirO2(engine);
         hir =
                 org.babblelang.analysis.BuiltinAxioms.withCurrent(
                         activeAxioms,
                         () ->
-                                org.babblelang.opt.PassManager.defaultFor(optLevel)
+                                org.babblelang.opt.PassManager.defaultFor(optLevel, hirO2)
                                         .optimize(unoptimized, passCtx, observer, moduleKey));
         return new HirPipelineResult(hir, passCtx, observer, activeAxioms);
     }

@@ -6,7 +6,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import org.babblelang.analysis.LoweringTargets;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.hir.ExprMeta;
 import org.babblelang.ir.hir.HirExpr;
@@ -127,7 +126,7 @@ public final class HirEGraphSimplifyPass implements HirPass {
                     (nc == i.cond() && nt == i.thenBranch() && ne == i.elseBranch())
                             ? i
                             : new HirExpr.If(nc, nt, ne, i.meta());
-            HirExpr pruned = tryPruneIf(rebuilt);
+            HirExpr pruned = HirConstFolder.tryPruneIf(rebuilt);
             if (pruned != null) {
                 rewrites[0]++;
                 return pruned;
@@ -456,63 +455,8 @@ public final class HirEGraphSimplifyPass implements HirPass {
         return null;
     }
 
-    // ---------------------------------------------------------------- constant folding & pruning
-
-    private static HirExpr tryPruneIf(HirExpr.If i) {
-        if (!(i.cond() instanceof HirExpr.Const condConst)) {
-            return null;
-        }
-        boolean takeThen = Truth.test(condConst.value());
-        HirExpr chosen = takeThen ? i.thenBranch() : i.elseBranch();
-        ExprMeta ifMeta = i.meta();
-        if (chosen == null) {
-            if (ifMeta.kind() == PrimitiveKind.NONE && ifMeta.wideningRank() < 0) {
-                return new HirExpr.Const(null, ifMeta);
-            }
-            return null;
-        }
-        HirExpr unwrapped = HirRewriter.unwrapTransparent(chosen);
-        if (unwrapped instanceof HirExpr.Const c
-                && chosen instanceof HirExpr.Block blk
-                && !blk.opensNamespaceScope()
-                && blk.declaredVars().isEmpty()
-                && blk.innerWideningRank() < 0) {
-            HirExpr.Const converted =
-                    HirConstFolder.convertConstToKind(
-                            c.value(), c.meta().kind(), ifMeta.kind(), ifMeta);
-            if (converted != null) {
-                return converted;
-            }
-        }
-        if (chosen.meta().kind() == ifMeta.kind()
-                && chosen.meta().wideningRank() < 0
-                && ifMeta.wideningRank() < 0) {
-            return chosen;
-        }
-        if (chosen.meta().kind() == ifMeta.kind()
-                && ifMeta.wideningRank() >= 0
-                && chosen instanceof HirExpr.Block b
-                && b.innerWideningRank() < 0
-                && b.meta().wideningRank() < 0) {
-            return new HirExpr.Block(
-                    b.statements(),
-                    b.opensNamespaceScope(),
-                    b.declaredNames(),
-                    b.declaredVars(),
-                    -1,
-                    b.meta().withWideningRank(ifMeta.wideningRank()));
-        }
-        return null;
-    }
-
     // ---------------------------------------------------------------- match folding & guard
     // pruning (BIP038-I5)
-
-    private enum ConstMatch {
-        YES,
-        NO,
-        UNKNOWN
-    }
 
     private HirExpr simplifyMatch(
             HirExpr.Match m,
@@ -582,220 +526,13 @@ public final class HirEGraphSimplifyPass implements HirPass {
         // Constant-scrutinee folding
         HirExpr unwrappedScrut = HirRewriter.unwrapTransparent(rebuilt.scrutinee());
         if (unwrappedScrut instanceof HirExpr.Const sc && rebuilt.meta().checkedType() == null) {
-            HirExpr folded = tryFoldConstMatch(sc, rebuilt, module);
+            HirExpr folded = HirConstFolder.tryFoldConstMatch(sc, rebuilt, module);
             if (folded != null) {
                 rewrites[0]++;
                 return folded;
             }
         }
         return rebuilt;
-    }
-
-    private static HirExpr tryFoldConstMatch(HirExpr.Const sc, HirExpr.Match m, HirModule module) {
-        List<HirExpr.MatchArm> arms = m.arms();
-        int firstSurviving = 0;
-        for (int i = 0; i < arms.size(); i++) {
-            HirExpr.MatchArm arm = arms.get(i);
-            ConstMatch res = matchConstPattern(arm.pattern(), sc.value());
-            if (res == ConstMatch.NO) {
-                if (HirPurity.isPatternPureNothrowTerminating(arm.pattern(), module)) {
-                    firstSurviving = i + 1;
-                    continue;
-                }
-                break;
-            }
-            if (res == ConstMatch.YES && arm.guard() == null) {
-                if (arm.boundVars().isEmpty()) {
-                    return adaptMatchArmBody(arm.body(), arm.bodyWideningRank(), m.meta());
-                }
-                if (arm.pattern() instanceof HirPattern.Bind bp
-                        && bp.inner() == null
-                        && !bp.var().isCaptured()
-                        && arm.boundVars().size() == 1
-                        && bp.var().primitiveKind() == sc.meta().kind()) {
-                    HirExpr.Const boundConst = HirConstFolder.coerceConstForVar(sc, bp.var(), -1);
-                    if (boundConst != null) {
-                        HirExpr.Def def =
-                                new HirExpr.Def(
-                                        bp.var().name(),
-                                        new LoweringTargets.DefTarget(
-                                                LoweringTargets.DefKind.LEXICAL, -1),
-                                        bp.var(),
-                                        boundConst,
-                                        boundConst.meta());
-                        return new HirExpr.Block(
-                                List.of(def, arm.body()),
-                                false,
-                                new String[0],
-                                arm.boundVars(),
-                                arm.bodyWideningRank(),
-                                m.meta());
-                    }
-                }
-                break;
-            }
-            break;
-        }
-        if (firstSurviving == arms.size() && m.elseArm() != null) {
-            HirExpr.MatchElse ea = m.elseArm();
-            if (ea.var() == null) {
-                return adaptMatchArmBody(ea.body(), ea.bodyWideningRank(), m.meta());
-            }
-            if (!ea.var().isCaptured() && ea.var().primitiveKind() == sc.meta().kind()) {
-                HirExpr.Const boundConst = HirConstFolder.coerceConstForVar(sc, ea.var(), -1);
-                if (boundConst != null) {
-                    HirExpr.Def def =
-                            new HirExpr.Def(
-                                    ea.var().name(),
-                                    new LoweringTargets.DefTarget(
-                                            LoweringTargets.DefKind.LEXICAL, -1),
-                                    ea.var(),
-                                    boundConst,
-                                    boundConst.meta());
-                    return new HirExpr.Block(
-                            List.of(def, ea.body()),
-                            false,
-                            new String[0],
-                            List.of(ea.var()),
-                            ea.bodyWideningRank(),
-                            m.meta());
-                }
-            }
-        }
-        if (firstSurviving > 0) {
-            return new HirExpr.Match(
-                    m.scrutinee(),
-                    m.scrutineeVar(),
-                    new ArrayList<>(arms.subList(firstSurviving, arms.size())),
-                    m.elseArm(),
-                    m.exhaustive(),
-                    m.meta());
-        }
-        return null;
-    }
-
-    private static HirExpr adaptMatchArmBody(
-            HirExpr body, int bodyWideningRank, ExprMeta matchMeta) {
-        HirExpr unwrapped = HirRewriter.unwrapTransparent(body);
-        if (unwrapped instanceof HirExpr.Const c && bodyWideningRank < 0) {
-            HirExpr.Const converted =
-                    HirConstFolder.convertConstToKind(
-                            c.value(), c.meta().kind(), matchMeta.kind(), matchMeta);
-            if (converted != null) {
-                return converted;
-            }
-        }
-        if (bodyWideningRank < 0
-                && body.meta().kind() == matchMeta.kind()
-                && body.meta().wideningRank() < 0
-                && matchMeta.wideningRank() < 0) {
-            return body;
-        }
-        return new HirExpr.Block(
-                List.of(body), false, new String[0], List.of(), bodyWideningRank, matchMeta);
-    }
-
-    private static ConstMatch matchConstPattern(HirPattern pat, Object scrutVal) {
-        return switch (pat) {
-            case HirPattern.Wildcard ignored -> ConstMatch.YES;
-            case HirPattern.Const pc -> {
-                if (pc.isEnum()) {
-                    yield ConstMatch.UNKNOWN;
-                }
-                yield HirConstFolder.constPatternEquals(scrutVal, pc.value())
-                        ? ConstMatch.YES
-                        : ConstMatch.NO;
-            }
-            case HirPattern.Bind b ->
-                    b.inner() == null ? ConstMatch.YES : matchConstPattern(b.inner(), scrutVal);
-            case HirPattern.Or o -> {
-                boolean anyUnknown = false;
-                for (HirPattern alt : o.alternatives()) {
-                    ConstMatch r = matchConstPattern(alt, scrutVal);
-                    if (r == ConstMatch.YES) {
-                        yield ConstMatch.YES;
-                    }
-                    if (r == ConstMatch.UNKNOWN) {
-                        anyUnknown = true;
-                    }
-                }
-                yield anyUnknown ? ConstMatch.UNKNOWN : ConstMatch.NO;
-            }
-            case HirPattern.Relational rel -> {
-                HirExpr rhsU = HirRewriter.unwrapTransparent(rel.rhs());
-                if (!(rhsU instanceof HirExpr.Const rc)) {
-                    yield ConstMatch.UNKNOWN;
-                }
-                if (rel.op() == HirExpr.BinaryOp.EQ) {
-                    yield HirConstFolder.constPatternEquals(scrutVal, rc.value())
-                            ? ConstMatch.YES
-                            : ConstMatch.NO;
-                }
-                if (rel.op() == HirExpr.BinaryOp.NEQ) {
-                    yield HirConstFolder.constPatternEquals(scrutVal, rc.value())
-                            ? ConstMatch.NO
-                            : ConstMatch.YES;
-                }
-                if (scrutVal == null || rc.value() == null) {
-                    yield ConstMatch.NO;
-                }
-                Integer cmp = HirConstFolder.compareConstScalars(scrutVal, rc.value());
-                if (cmp == null) {
-                    yield ConstMatch.UNKNOWN;
-                }
-                boolean ok =
-                        switch (rel.op()) {
-                            case LT -> cmp < 0;
-                            case LTE -> cmp <= 0;
-                            case GT -> cmp > 0;
-                            case GTE -> cmp >= 0;
-                            default -> false;
-                        };
-                yield ok ? ConstMatch.YES : ConstMatch.NO;
-            }
-            case HirPattern.RangeTest rt -> {
-                if (scrutVal == null) {
-                    yield ConstMatch.NO;
-                }
-                HirExpr loU = HirRewriter.unwrapTransparent(rt.lo());
-                HirExpr hiU = HirRewriter.unwrapTransparent(rt.hi());
-                if (!(loU instanceof HirExpr.Const loC) || !(hiU instanceof HirExpr.Const hiC)) {
-                    yield ConstMatch.UNKNOWN;
-                }
-                long step = 1L;
-                if (rt.step() != null) {
-                    HirExpr stU = HirRewriter.unwrapTransparent(rt.step());
-                    if (!(stU instanceof HirExpr.Const stC)
-                            || !(stC.value() instanceof Number sn)
-                            || sn.longValue() <= 0L) {
-                        yield ConstMatch.UNKNOWN;
-                    }
-                    step = sn.longValue();
-                }
-                Integer cLo = HirConstFolder.compareConstScalars(scrutVal, loC.value());
-                Integer cHi = HirConstFolder.compareConstScalars(scrutVal, hiC.value());
-                if (cLo == null || cHi == null) {
-                    yield ConstMatch.UNKNOWN;
-                }
-                boolean inBounds = cLo >= 0 && (rt.inclusive() ? cHi <= 0 : cHi < 0);
-                if (!inBounds) {
-                    yield ConstMatch.NO;
-                }
-                if (step == 1L) {
-                    yield ConstMatch.YES;
-                }
-                if (scrutVal instanceof Number vn && loC.value() instanceof Number ln) {
-                    yield ((vn.longValue() - ln.longValue()) % step == 0L)
-                            ? ConstMatch.YES
-                            : ConstMatch.NO;
-                }
-                if (scrutVal instanceof Character vc && loC.value() instanceof Character lc) {
-                    yield (((long) vc - (long) lc) % step == 0L) ? ConstMatch.YES : ConstMatch.NO;
-                }
-                yield ConstMatch.UNKNOWN;
-            }
-            default -> ConstMatch.UNKNOWN;
-        };
     }
 
     static HirExpr.Const applyWidening(Object value, PrimitiveKind currentKind, ExprMeta meta) {

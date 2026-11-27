@@ -11,6 +11,7 @@ import org.babblelang.opt.hir.HirDcePass;
 import org.babblelang.opt.hir.HirEGraphSimplifyPass;
 import org.babblelang.opt.hir.HirLicmPass;
 import org.babblelang.opt.hir.HirPredicateReorderPass;
+import org.babblelang.opt.hir.HirSccpPass;
 import org.babblelang.opt.hir.HirTryNormalize;
 import org.babblelang.opt.hir.InlinePass;
 import org.babblelang.opt.hir.ScalarReplacePass;
@@ -38,6 +39,17 @@ public final class PassManager {
                     new HirLicmPass(),
                     new HirPredicateReorderPass());
 
+    private static final List<HirPass> O2_HIR_PASSES =
+            List.of(
+                    new HirSccpPass(),
+                    new HirEGraphSimplifyPass(),
+                    new InlinePass(),
+                    new ScalarReplacePass(),
+                    new FbipReusePass(),
+                    new HirDcePass(),
+                    new HirLicmPass(),
+                    new HirPredicateReorderPass());
+
     private final List<HirPass> passes;
 
     public PassManager(List<HirPass> passes) {
@@ -45,8 +57,15 @@ public final class PassManager {
     }
 
     public static PassManager defaultFor(int optLevel) {
+        return defaultFor(optLevel, false);
+    }
+
+    public static PassManager defaultFor(int optLevel, boolean hirO2) {
         if (optLevel <= 0) {
             return new PassManager(List.of());
+        }
+        if (optLevel >= 2 && hirO2) {
+            return new PassManager(O2_HIR_PASSES);
         }
         return new PassManager(O1_PASSES);
     }
