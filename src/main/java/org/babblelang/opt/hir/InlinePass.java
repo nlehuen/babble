@@ -1254,7 +1254,13 @@ public final class InlinePass implements HirPass {
                 yield (nc == dc.callee() && na == dc.args())
                         ? dc
                         : new HirExpr.DynamicCall(
-                                nc, na, dc.binding(), dc.babbleSig(), dc.callSite(), dc.meta());
+                                nc,
+                                na,
+                                dc.binding(),
+                                dc.babbleSig(),
+                                dc.callSite(),
+                                dc.constructorIndex(),
+                                dc.meta());
             }
             case HirExpr.Def d -> {
                 HirVar mapped = d.var() != null ? varMap.get(d.var().id()) : null;

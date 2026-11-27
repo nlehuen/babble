@@ -666,6 +666,9 @@ public final class WasmConstructorEmitter {
         if (ci == null || ci.ctors.isEmpty()) {
             return false;
         }
+        if (ci.ctors.size() > 1 && call.constructorIndex() < 0) {
+            return false;
+        }
         int ctorIdx = call.constructorIndex() >= 0 ? call.constructorIndex() : 0;
         if (ctorIdx >= ci.ctors.size()) {
             return false;

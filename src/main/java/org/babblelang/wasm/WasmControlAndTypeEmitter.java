@@ -690,6 +690,8 @@ final class WasmControlAndTypeEmitter {
                     .i32Const(1)
                     .localSet(outerFin.exitKindLocal())
                     .br(ctx.relDepth(outerFin.normalDepth()));
+        } else if (ctx.ownerClass != null && ctx.funcInfo == null) {
+            c.unreachable();
         } else {
             c.localGet(retValLocal).return_();
         }

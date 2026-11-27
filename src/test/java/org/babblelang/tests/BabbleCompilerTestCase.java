@@ -1696,4 +1696,94 @@ public class BabbleCompilerTestCase {
                         .anyMatch(m -> m.name.equals("<init>") && m.desc.endsWith(";III)V")),
                 "Expected Counter typed <init>(BabbleClass, ScriptRuntime, int, int, int)V");
     }
+
+    @Test
+    public void testBip040InitAccFinalBodyDefFieldsAndDirectJvmConstructors() throws Exception {
+        CompiledBabbleScript script =
+                compile(
+                        """
+                        def Sphere = class (def radius: double) (
+                            def area: double
+                            var label: string
+                            init (
+                                def r2 = this.radius * this.radius
+                                this.area = 12.0 * r2
+                                this.label = "s"
+                            )
+                        )
+                        def PureBox = class () (
+                            def x: int
+                            def y: int
+                            init (x: int, y: int) -> (
+                                this.x = x
+                                this.y = y
+                            )
+                            init (v: int) -> (
+                                this(v, v)
+                            )
+                        )
+                        def s = Sphere(2.0)
+                        def b = PureBox(7)
+                        int(s.area) + b.x + b.y
+                        """);
+        assertVerifies(script);
+        Assertions.assertEquals(62, script.eval(new SimpleBindings()));
+
+        byte[] sphereBytes =
+                script.getClasses().entrySet().stream()
+                        .filter(e -> e.getKey().endsWith("$Sphere"))
+                        .map(java.util.Map.Entry::getValue)
+                        .findFirst()
+                        .orElseThrow();
+        org.objectweb.asm.tree.ClassNode sphereNode = new org.objectweb.asm.tree.ClassNode();
+        new ClassReader(sphereBytes).accept(sphereNode, 0);
+        for (String fName : List.of("radius", "area")) {
+            org.objectweb.asm.tree.FieldNode fn =
+                    sphereNode.fields.stream()
+                            .filter(f -> f.name.equals(fName))
+                            .findFirst()
+                            .orElseThrow();
+            Assertions.assertTrue(
+                    (fn.access & Opcodes.ACC_FINAL) != 0,
+                    "Expected Sphere." + fName + " to be ACC_FINAL");
+        }
+        org.objectweb.asm.tree.FieldNode labelField =
+                sphereNode.fields.stream()
+                        .filter(f -> f.name.equals("label"))
+                        .findFirst()
+                        .orElseThrow();
+        Assertions.assertEquals(
+                0,
+                labelField.access & Opcodes.ACC_FINAL,
+                "Expected Sphere.label (var) NOT to be ACC_FINAL");
+        Assertions.assertTrue(
+                sphereNode.fields.stream().noneMatch(f -> f.name.startsWith("$defined$")),
+                "Expected zero $defined$ bitset fields on Sphere");
+
+        byte[] boxBytes =
+                script.getClasses().entrySet().stream()
+                        .filter(e -> e.getKey().endsWith("$PureBox"))
+                        .map(java.util.Map.Entry::getValue)
+                        .findFirst()
+                        .orElseThrow();
+        org.objectweb.asm.tree.ClassNode boxNode = new org.objectweb.asm.tree.ClassNode();
+        new ClassReader(boxBytes).accept(boxNode, 0);
+        for (String fName : List.of("x", "y")) {
+            org.objectweb.asm.tree.FieldNode fn =
+                    boxNode.fields.stream()
+                            .filter(f -> f.name.equals(fName))
+                            .findFirst()
+                            .orElseThrow();
+            Assertions.assertTrue(
+                    (fn.access & Opcodes.ACC_FINAL) != 0,
+                    "Expected PureBox." + fName + " to be ACC_FINAL");
+        }
+        Assertions.assertTrue(
+                boxNode.fields.stream().noneMatch(f -> f.name.startsWith("$defined$")),
+                "Expected zero $defined$ bitset fields on PureBox");
+        Assertions.assertTrue(
+                boxNode.methods.stream()
+                        .anyMatch(m -> m.name.equals("<init>") && m.desc.endsWith(";II)V")),
+                "Expected PureBox typed <init>(BabbleClass, ScriptRuntime, int, int)V");
+    }
 }

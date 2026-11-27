@@ -25,36 +25,46 @@ export def Camera = class (
     def defocusAngle: double = 0.0,            ;; variation angle of rays through each pixel
     def focusDist: double = 10.0               ;; distance from lookFrom to plane of perfect focus
 ) (
-    def imageHeight: int = Math.max(1, int(this.imageWidth / this.aspectRatio))
-    private def center: Vec3 = this.lookFrom
+    def imageHeight: int
+    private def center: Vec3
+    private def pixelDeltaU: Vec3
+    private def pixelDeltaV: Vec3
+    private def pixel00: Vec3
+    private def defocusDiskU: Vec3
+    private def defocusDiskV: Vec3
 
-    ;; determine viewport dimensions
-    private def theta: double = degreesToRadians(this.vfov)
-    private def viewportHeight: double = 2 * Math.tan(this.theta / 2) * this.focusDist
-    private def viewportWidth: double = this.viewportHeight * this.imageWidth / this.imageHeight
+    init (
+        this.imageHeight = Math.max(1, int(this.imageWidth / this.aspectRatio))
+        this.center = this.lookFrom
 
-    ;; calculate the u,v,w unit basis vectors for the camera coordinate frame
-    private def w: Vec3 = (this.lookFrom - this.lookAt).unit()
-    private def u: Vec3 = this.vup.cross(this.w).unit()
-    private def v: Vec3 = this.w.cross(this.u)
+        ;; determine viewport dimensions
+        def theta: double = degreesToRadians(this.vfov)
+        def viewportHeight: double = 2 * Math.tan(theta / 2) * this.focusDist
+        def viewportWidth: double = viewportHeight * this.imageWidth / this.imageHeight
 
-    ;; calculate the vectors across the horizontal and down the vertical viewport edges
-    private def viewportU: Vec3 = this.u * this.viewportWidth
-    private def viewportV: Vec3 = -this.v * this.viewportHeight
+        ;; calculate the u,v,w unit basis vectors for the camera coordinate frame
+        def w: Vec3 = (this.lookFrom - this.lookAt).unit()
+        def u: Vec3 = this.vup.cross(w).unit()
+        def v: Vec3 = w.cross(u)
 
-    ;; calculate the horizontal and vertical delta vectors from pixel to pixel
-    private def pixelDeltaU: Vec3 = this.viewportU / this.imageWidth
-    private def pixelDeltaV: Vec3 = this.viewportV / this.imageHeight
+        ;; calculate the vectors across the horizontal and down the vertical viewport edges
+        def viewportU: Vec3 = u * viewportWidth
+        def viewportV: Vec3 = -v * viewportHeight
 
-    ;; calculate the location of the upper left pixel
-    private def viewportUpperLeft: Vec3 = this.center - this.w * this.focusDist -
-        this.viewportU / 2 - this.viewportV / 2
-    private def pixel00: Vec3 = this.viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
+        ;; calculate the horizontal and vertical delta vectors from pixel to pixel
+        this.pixelDeltaU = viewportU / this.imageWidth
+        this.pixelDeltaV = viewportV / this.imageHeight
 
-    ;; calculate the camera defocus disk basis vectors
-    private def defocusRadius: double = this.focusDist * Math.tan(degreesToRadians(this.defocusAngle / 2))
-    private def defocusDiskU: Vec3 = this.u * this.defocusRadius
-    private def defocusDiskV: Vec3 = this.v * this.defocusRadius
+        ;; calculate the location of the upper left pixel
+        def viewportUpperLeft: Vec3 = this.center - w * this.focusDist -
+            viewportU / 2 - viewportV / 2
+        this.pixel00 = viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
+
+        ;; calculate the camera defocus disk basis vectors
+        def defocusRadius: double = this.focusDist * Math.tan(degreesToRadians(this.defocusAngle / 2))
+        this.defocusDiskU = u * defocusRadius
+        this.defocusDiskV = v * defocusRadius
+    )
 
     ;; a random point in the camera defocus disk
     private def defocusDiskSample = fn (mut rng): Vec3 -> (

@@ -571,13 +571,36 @@ final class LoweringAnalyzer {
                 String descriptor = descriptor(type);
                 pass.analysis.lowering().setCheckedType(parameter, descriptor);
                 if (parameter.getParent().getParent()
-                                instanceof BabbleParser.ClassExpressionContext cls
-                        && (ScopeAnalysis.paramIsMember(parameter)
-                                || pass.typeNodes.get(cls).kind == ClassShape.Kind.VALUE_CLASS)) {
-                    putType(
-                            pass.typeNodes.get(cls).memberTypes,
-                            ScopeAnalysis.paramId(parameter).getText(),
-                            descriptor);
+                        instanceof BabbleParser.ClassExpressionContext cls) {
+                    TypeNode clsNode = pass.typeNodes.get(cls);
+                    if (ScopeAnalysis.paramIsMember(parameter)
+                            || clsNode.kind == ClassShape.Kind.VALUE_CLASS) {
+                        putType(
+                                clsNode.memberTypes,
+                                ScopeAnalysis.paramId(parameter).getText(),
+                                descriptor);
+                    }
+                    if (!clsNode.constructors.isEmpty() && clsNode.constructors.get(0).isPrimary) {
+                        int pIdx = cls.classParameters().classParam().indexOf(parameter);
+                        TypeNode.Constructor primary = clsNode.constructors.get(0);
+                        if (pIdx >= 0 && pIdx < primary.paramTypes.length) {
+                            primary.paramTypes[pIdx] = descriptor;
+                        }
+                    }
+                } else if (parameter.getParent().getParent()
+                        instanceof BabbleParser.InitExpressionContext initCtx) {
+                    ScopeNode initScope = checker.scopeOf(initCtx);
+                    if (initScope != null && initScope.type != null) {
+                        int pIdx = initCtx.fnParameters().fnParam().indexOf(parameter);
+                        for (TypeNode.Constructor ctor : initScope.type.constructors) {
+                            if (ctor.initBlock == initCtx
+                                    && pIdx >= 0
+                                    && pIdx < ctor.paramTypes.length) {
+                                ctor.paramTypes[pIdx] = descriptor;
+                                break;
+                            }
+                        }
+                    }
                 }
             }
             if (type != null && pass.analysis.lowering().javaSamTarget(parameter) == null) {

@@ -16,6 +16,39 @@ import org.babblelang.runtime.ClassShape;
 final class InitEffectAnalyzer {
     private InitEffectAnalyzer() {}
 
+    static boolean isInitOwnedLocal(
+            ParserRuleContext owner,
+            ParserRuleContext decl,
+            BabbleParser.FunctionLiteralContext declFn,
+            BabbleParser.FunctionLiteralContext ownerFn) {
+        if (!(owner instanceof BabbleParser.InitExpressionContext
+                        || owner instanceof BabbleParser.ClassExpressionContext)
+                || declFn != ownerFn) {
+            return false;
+        }
+        for (ParserRuleContext p = decl; p != null; p = p.getParent()) {
+            if (p == owner) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static Reachability.Origin recordConstructingFieldStore(
+            EffectBodyWalker w,
+            Reachability.Origin rhs,
+            Type valueType,
+            String fieldName,
+            ParserRuleContext at) {
+        w.markStoredIntoTarget(
+                Reachability.Origin.ofThis(Reachability.THIS_KEY, false),
+                rhs,
+                valueType,
+                fieldName,
+                at);
+        return rhs;
+    }
+
     static EffectChecker.CallableSummary initialInitSummary(
             EffectChecker ec, BabbleParser.InitExpressionContext init) {
         ScopeNode initScope = ec.checker.scopeOf(init);

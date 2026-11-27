@@ -213,7 +213,9 @@ final class TypeAnnotations {
             }
         }
         for (ScopeNode s = scope; s != null; s = s.parent) {
-            if ((s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY)
+            if ((s.kind == ScopeNode.Kind.CLASS_BODY
+                            || s.kind == ScopeNode.Kind.INTERFACE_BODY
+                            || s.kind == ScopeNode.Kind.INIT_BODY)
                     && s.type != null) {
                 for (Type.TypeVar tv : typeVarsOf(s.type)) {
                     if (tv.name().equals(name)) {

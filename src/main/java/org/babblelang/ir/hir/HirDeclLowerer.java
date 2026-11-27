@@ -3,6 +3,7 @@ package org.babblelang.ir.hir;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -461,10 +462,7 @@ final class HirDeclLowerer {
             List<BabbleParser.InitExpressionContext> explicitInits,
             boolean allDefFinalSafe) {
         if (isObject) {
-            List<HirVar> initVars =
-                    primaryInit != null
-                            ? builder.hirVars(builder.resolution.declared(primaryInit))
-                            : List.of();
+            List<HirVar> initVars = initDeclaredVars(primaryInit);
             List<HirExpr> initBody =
                     primaryInit != null
                             ? lowerExprList(primaryInit.initBlock.expression())
@@ -496,10 +494,7 @@ final class HirDeclLowerer {
         for (int k = 0; k < ctorCount; k++) {
             ClassShape.ConstructorShape cs = shape.constructor(k);
             if (cs.isPrimary()) {
-                List<HirVar> initVars =
-                        primaryInit != null
-                                ? builder.hirVars(builder.resolution.declared(primaryInit))
-                                : List.of();
+                List<HirVar> initVars = initDeclaredVars(primaryInit);
                 List<HirExpr> initBody =
                         primaryInit != null
                                 ? lowerExprList(primaryInit.initBlock.expression())
@@ -581,7 +576,7 @@ final class HirDeclLowerer {
                                 initOwnerId,
                                 false,
                                 cs.isPrivate(),
-                                builder.hirVars(builder.resolution.declared(initCtx)),
+                                initDeclaredVars(initCtx),
                                 ctorParams,
                                 cs.requiredParameters(),
                                 cs.keywordOnlyStart(),
@@ -596,6 +591,27 @@ final class HirDeclLowerer {
             }
         }
         return result;
+    }
+
+    private List<HirVar> initDeclaredVars(BabbleParser.InitExpressionContext initCtx) {
+        if (initCtx == null) {
+            return List.of();
+        }
+        List<HirVar> out = new ArrayList<>();
+        Set<Integer> seen = new HashSet<>();
+        for (HirVar v : builder.hirVars(builder.resolution.declared(initCtx))) {
+            if (seen.add(v.id())) {
+                out.add(v);
+            }
+        }
+        if (initCtx.initBlock != null) {
+            for (HirVar v : builder.hirVars(builder.resolution.declared(initCtx.initBlock))) {
+                if (seen.add(v.id())) {
+                    out.add(v);
+                }
+            }
+        }
+        return out;
     }
 
     private List<HirExpr> lowerExprList(List<BabbleParser.ExpressionContext> exprs) {

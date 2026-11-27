@@ -9,11 +9,15 @@ def hittable = import("hittable.ba")
 def HitRecord = hittable.HitRecord
 
 export def Sphere = class (def center: Vec3, def radius: double, def material: Material) implements hittable.Hittable (
-    private def radiusSq: double = this.radius * this.radius
-    private def invRadius: double = 1.0 / this.radius
-    private def bbox: AABB = (
+    private def radiusSq: double
+    private def invRadius: double
+    private def bbox: AABB
+
+    init (
+        this.radiusSq = this.radius * this.radius
+        this.invRadius = 1.0 / this.radius
         def r: double = Math.abs(this.radius)
-        AABB(
+        this.bbox = AABB(
             this.center.x - r, this.center.x + r,
             this.center.y - r, this.center.y + r,
             this.center.z - r, this.center.z + r
