@@ -27,10 +27,10 @@
 #   --workflow <file>    GitHub Actions workflow to dispatch when delegating (default: maven.yml).
 #   --ref <branch>       Git branch/ref to dispatch when delegating (default: current branch).
 #   --rebuild-image      Force rebuilding the CI container image.
-#   --fast               Skip JaCoCo instrumentation/coverage report (still runs all 3 unit modes,
+#   --fast               Skip JaCoCo instrumentation/coverage report (still runs all 4 unit modes,
 #                        4 JVM batest modes at -PO2, and Wasm 3.0 batest in parallel).
 #   --batest-filter <pat> Run only 4-mode JVM + Wasm batest matching <pat> (no coverage gate).
-#   --unit-only          Run only the 3 Java unit-test modes in parallel (skip batest).
+#   --unit-only          Run only the 4 Java unit-test modes in parallel (skip batest).
 #   --batest-only        Run only the 4-mode JVM + Wasm batest and coverage gate (skip unit tests).
 #   --skip-wasm          Skip WasmBatestTestCase and WasmCompilerTestCase (useful on host Node != 22).
 #   --protect-batest     Fail if src/test/batest has any working-tree or branch diff vs origin/master.
@@ -505,7 +505,7 @@ if [[ -n "${BATEST_FILTER}" ]]; then
     [[ "${SKIP_WASM}" -eq 0 ]] && PLANNED_JOBS+=(wasm-batest)
 else
     if [[ "${BATEST_ONLY}" -eq 0 ]]; then
-        PLANNED_JOBS+=(unit-interpret unit-compile unit-compile-O0)
+        PLANNED_JOBS+=(unit-interpret unit-compile unit-compile-O0 unit-compile-O2)
     fi
     if [[ "${UNIT_ONLY}" -eq 0 ]]; then
         PLANNED_JOBS+=(batest-interpret batest-compile batest-compile-O0 batest-compile-O2)
@@ -639,6 +639,11 @@ run_job_cmd() {
             ;;
         unit-compile-O0)
             "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@compiled-tests-O0" \
+                -Dtest="${UNIT_EXCLUDES}" \
+                -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
+            ;;
+        unit-compile-O2)
+            "${MVN_BASE[@]}" -PO2 "${SUREFIRE_PLUGIN}:test@compiled-tests-O2" \
                 -Dtest="${UNIT_EXCLUDES}" \
                 -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             ;;
