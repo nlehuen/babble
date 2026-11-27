@@ -113,9 +113,9 @@ jobs:
     - name: Run Java unit tests (interpret, -O1, -O0)
       run: |
         mvn -B --file pom.xml \
-          surefire:test@default-test \
-          surefire:test@compiled-tests \
-          surefire:test@compiled-tests-O0 \
+          org.apache.maven.plugins:maven-surefire-plugin:test@default-test \
+          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests \
+          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests-O0 \
           -Dtest='!BatestTestCase,!WasmBatestTestCase'
 
   batest:
@@ -146,19 +146,19 @@ jobs:
     - name: Run 4-mode JVM batest shard ${{ matrix.shard }}/6 with JaCoCo
       run: |
         mvn -B -Pbatest --file pom.xml \
-          jacoco:prepare-agent@prepare-agent-interpret \
-          jacoco:prepare-agent@prepare-agent-compile \
-          jacoco:prepare-agent@prepare-agent-compile-O0 \
-          jacoco:prepare-agent@prepare-agent-compile-O2 \
-          surefire:test@default-test \
-          surefire:test@compiled-tests \
-          surefire:test@compiled-tests-O0 \
-          surefire:test@compiled-tests-O2 \
+          org.jacoco:jacoco-maven-plugin:prepare-agent@prepare-agent-interpret \
+          org.jacoco:jacoco-maven-plugin:prepare-agent@prepare-agent-compile \
+          org.jacoco:jacoco-maven-plugin:prepare-agent@prepare-agent-compile-O0 \
+          org.jacoco:jacoco-maven-plugin:prepare-agent@prepare-agent-compile-O2 \
+          org.apache.maven.plugins:maven-surefire-plugin:test@default-test \
+          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests \
+          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests-O0 \
+          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests-O2 \
           -Dbatest.shard="${{ matrix.shard }}/6"
     - name: Run WebAssembly 3.0 batest parity shard ${{ matrix.shard }}/6
       run: |
         mvn -B --file pom.xml \
-          surefire:test@compiled-tests \
+          org.apache.maven.plugins:maven-surefire-plugin:test@compiled-tests \
           -Dtest=WasmBatestTestCase \
           -Dbatest.shard="${{ matrix.shard }}/6"
     - name: Upload shard coverage and outcomes
@@ -205,16 +205,16 @@ jobs:
             > target/batest-report/outcomes-${mode}.jsonl
         done
         mvn -B -Pbatest --file pom.xml \
-          jacoco:merge@merge-interpret \
-          jacoco:merge@merge-compile \
-          jacoco:merge@merge-compile-O0 \
-          jacoco:merge@merge-compile-O2 \
-          jacoco:report@report-interpret \
-          jacoco:report@report-compile \
-          jacoco:report@report-opt \
-          jacoco:report@report-compile-O0 \
-          jacoco:report@report-opt-O2 \
-          exec:java@batest-report
+          org.jacoco:jacoco-maven-plugin:merge@merge-interpret \
+          org.jacoco:jacoco-maven-plugin:merge@merge-compile \
+          org.jacoco:jacoco-maven-plugin:merge@merge-compile-O0 \
+          org.jacoco:jacoco-maven-plugin:merge@merge-compile-O2 \
+          org.jacoco:jacoco-maven-plugin:report@report-interpret \
+          org.jacoco:jacoco-maven-plugin:report@report-compile \
+          org.jacoco:jacoco-maven-plugin:report@report-opt \
+          org.jacoco:jacoco-maven-plugin:report@report-compile-O0 \
+          org.jacoco:jacoco-maven-plugin:report@report-opt-O2 \
+          org.codehaus.mojo:exec-maven-plugin:java@batest-report
 
   ci:
     name: CI Gate
