@@ -440,8 +440,8 @@ Cannot mutate parameter b (mut method h.bumpChild) : mark parameter as mut b
 ## Constructors : body field store and unique parameter store
 
 ```babble
-def Wrap = class (b: Box) ( var slot: Box? = null ; this.slot = b )
-def WrapU = class (unique u: Box) ( var slot: Box? = null ; this.slot = u )
+def Wrap = class (b: Box) ( var slot: Box? = null ; init ( this.slot = b ) )
+def WrapU = class (unique u: Box) ( var slot: Box? = null ; init ( this.slot = u ) )
 def WrapUField = class (unique u: Box) ( def slot = u )
 def w = WrapU(Box(2)) ; def wf = WrapUField(Box(3)) ; def w2 = Wrap(Box(1))
 assert(wf.slot.v == 3 and w.slot != null and w2.slot != null)
@@ -451,7 +451,7 @@ assert(wf.slot.v == 3 and w.slot != null and w2.slot != null)
 
 ```babble
 def ReadOnly = class (b: Box) ( var v: int = b.v )
-def Loud = class (def b: Box) ( println(this.b.v) )
+def Loud = class (def b: Box) ( init io ( println(this.b.v) ) )
 def f = fn (b: Box): int -> ( ReadOnly(b).v )
 def g = fn io (b: Box): int -> ( Loud(b).b.v )
 assert(f(Box(4)) == 4 and g(Box(5)) == 5)

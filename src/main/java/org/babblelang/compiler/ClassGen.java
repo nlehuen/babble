@@ -43,6 +43,9 @@ final class ClassGen {
     final int primDefCount;
     final int[] finalHeaderMemberIndices;
     final boolean[] finalMemberFlags;
+    final boolean directCtorInit;
+    final String[] rootInitDescriptors;
+    final int[] rootInitTagCount;
     final String initDescriptor;
     final Map<String, String> superHelpers = new HashMap<>();
 
@@ -66,10 +69,23 @@ final class ClassGen {
             }
         }
         this.memberKinds = cls.memberKinds();
-        this.primDefBits = cls.primDefBits();
-        this.primDefCount = cls.primDefCount();
         this.finalMemberFlags = new boolean[shape.memberCount()];
-        if (!cls.isObject() && !fbipReused && canUseFinalHeaderInit(cls)) {
+        boolean canDirectInit =
+                !cls.isObject()
+                        && !fbipReused
+                        && !cls.fastRecord()
+                        && cls.allDefFieldsFinalSafe()
+                        && !cls.constructors().isEmpty()
+                        && canUseFinalHeaderInit(cls);
+        this.directCtorInit = canDirectInit;
+        if (canDirectInit) {
+            for (int i = 0; i < shape.memberCount(); i++) {
+                if (!shape.isMutable(i) && !isStaticMethodMember(i)) {
+                    finalMemberFlags[i] = true;
+                }
+            }
+            this.finalHeaderMemberIndices = new int[0];
+        } else if (!cls.isObject() && !fbipReused && canUseFinalHeaderInit(cls)) {
             List<Integer> finals = new ArrayList<>();
             for (HirParam p : cls.params()) {
                 int idx = p.memberIndex();
@@ -81,6 +97,51 @@ final class ClassGen {
             this.finalHeaderMemberIndices = finals.stream().mapToInt(Integer::intValue).toArray();
         } else {
             this.finalHeaderMemberIndices = new int[0];
+        }
+        int[] rawPrimBits = cls.primDefBits();
+        int[] adjPrimBits = new int[rawPrimBits.length];
+        java.util.Arrays.fill(adjPrimBits, -1);
+        int bitCursor = 0;
+        for (int i = 0; i < rawPrimBits.length; i++) {
+            if (rawPrimBits[i] >= 0 && !isFinalField(i)) {
+                adjPrimBits[i] = bitCursor++;
+            }
+        }
+        this.primDefBits = adjPrimBits;
+        this.primDefCount = bitCursor;
+
+        if (canDirectInit) {
+            int nCtors = cls.constructors().size();
+            this.rootInitDescriptors = new String[nCtors];
+            this.rootInitTagCount = new int[nCtors];
+            java.util.Set<String> usedDescs = new java.util.HashSet<>();
+            for (int k = 0; k < nCtors; k++) {
+                org.babblelang.ir.hir.HirConstructor ctor = cls.constructors().get(k);
+                if (ctor.isDelegating()) {
+                    continue;
+                }
+                StringBuilder d =
+                        new StringBuilder("(L")
+                                .append(BABBLE_CLASS)
+                                .append(";L")
+                                .append(SCRIPT_RUNTIME)
+                                .append(';');
+                for (HirParam p : ctor.params()) {
+                    d.append(jvmDescriptor(p.kind()));
+                }
+                String cand = d.toString() + ")V";
+                int tags = 0;
+                while (!usedDescs.add(cand)) {
+                    d.append('I');
+                    tags++;
+                    cand = d.toString() + ")V";
+                }
+                this.rootInitTagCount[k] = tags;
+                this.rootInitDescriptors[k] = cand;
+            }
+        } else {
+            this.rootInitDescriptors = new String[0];
+            this.rootInitTagCount = new int[0];
         }
         StringBuilder initDesc =
                 new StringBuilder("(L")
@@ -96,6 +157,18 @@ final class ClassGen {
 
     boolean hasFinalHeaderFields() {
         return finalHeaderMemberIndices.length > 0;
+    }
+
+    boolean usesDirectCtorInit() {
+        return directCtorInit;
+    }
+
+    String rootInitDescriptor(int ctorIndex) {
+        return rootInitDescriptors[ctorIndex];
+    }
+
+    int rootInitTagCount(int ctorIndex) {
+        return rootInitTagCount[ctorIndex];
     }
 
     boolean isFinalField(int memberIndex) {
@@ -186,6 +259,13 @@ final class ClassGen {
         for (HirParam p : cls.params()) {
             if (p.defaultValue() != null && referencesThis(p.defaultValue())) {
                 return false;
+            }
+        }
+        for (org.babblelang.ir.hir.HirConstructor ctor : cls.constructors()) {
+            for (HirParam p : ctor.params()) {
+                if (p.defaultValue() != null && referencesThis(p.defaultValue())) {
+                    return false;
+                }
             }
         }
         return true;
@@ -290,38 +370,41 @@ final class ClassGen {
             writer.visitField(0, "$defined$" + w, "I", null, null).visitEnd();
         }
 
-        MethodVisitor init = writer.visitMethod(ACC_PUBLIC, "<init>", initDescriptor, null, null);
-        init.visitCode();
-        init.visitVarInsn(ALOAD, 0);
-        init.visitMethodInsn(INVOKESPECIAL, OBJECT, "<init>", "()V", false);
-        init.visitVarInsn(ALOAD, 0);
-        init.visitVarInsn(ALOAD, 1);
-        init.visitFieldInsn(PUTFIELD, name, "$babble$class", "L" + BABBLE_CLASS + ";");
-        init.visitVarInsn(ALOAD, 0);
-        init.visitVarInsn(ALOAD, 2);
-        init.visitFieldInsn(PUTFIELD, name, "$babble$rt", "L" + SCRIPT_RUNTIME + ";");
-        int paramSlot = 3;
-        for (int idx : finalHeaderMemberIndices) {
-            PrimitiveKind mk = memberKinds[idx];
+        if (!directCtorInit) {
+            MethodVisitor init =
+                    writer.visitMethod(ACC_PUBLIC, "<init>", initDescriptor, null, null);
+            init.visitCode();
             init.visitVarInsn(ALOAD, 0);
-            loadKindOn(init, mk, paramSlot);
-            init.visitFieldInsn(PUTFIELD, name, shape.member(idx), jvmDescriptor(mk));
-            paramSlot += mk.slots();
-        }
-        for (int i = 0; i < shape.memberCount(); i++) {
-            if (!isFinalField(i) && !memberKinds[i].isPrimitive() && !isStaticMethodMember(i)) {
+            init.visitMethodInsn(INVOKESPECIAL, OBJECT, "<init>", "()V", false);
+            init.visitVarInsn(ALOAD, 0);
+            init.visitVarInsn(ALOAD, 1);
+            init.visitFieldInsn(PUTFIELD, name, "$babble$class", "L" + BABBLE_CLASS + ";");
+            init.visitVarInsn(ALOAD, 0);
+            init.visitVarInsn(ALOAD, 2);
+            init.visitFieldInsn(PUTFIELD, name, "$babble$rt", "L" + SCRIPT_RUNTIME + ";");
+            int paramSlot = 3;
+            for (int idx : finalHeaderMemberIndices) {
+                PrimitiveKind mk = memberKinds[idx];
                 init.visitVarInsn(ALOAD, 0);
-                init.visitFieldInsn(
-                        GETSTATIC,
-                        RUNTIME + "Undefined",
-                        "UNDEFINED",
-                        "L" + RUNTIME + "Undefined;");
-                init.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
+                loadKindOn(init, mk, paramSlot);
+                init.visitFieldInsn(PUTFIELD, name, shape.member(idx), jvmDescriptor(mk));
+                paramSlot += mk.slots();
             }
+            for (int i = 0; i < shape.memberCount(); i++) {
+                if (!isFinalField(i) && !memberKinds[i].isPrimitive() && !isStaticMethodMember(i)) {
+                    init.visitVarInsn(ALOAD, 0);
+                    init.visitFieldInsn(
+                            GETSTATIC,
+                            RUNTIME + "Undefined",
+                            "UNDEFINED",
+                            "L" + RUNTIME + "Undefined;");
+                    init.visitFieldInsn(PUTFIELD, name, shape.member(i), "Ljava/lang/Object;");
+                }
+            }
+            init.visitInsn(RETURN);
+            init.visitMaxs(0, 0);
+            init.visitEnd();
         }
-        init.visitInsn(RETURN);
-        init.visitMaxs(0, 0);
-        init.visitEnd();
 
         if (!javaInterfaces.isEmpty()) {
             MethodVisitor lookupMv =

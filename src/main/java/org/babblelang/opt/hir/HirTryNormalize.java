@@ -78,6 +78,17 @@ public final class HirTryNormalize {
                 }
                 yield a;
             }
+            case HirExpr.ThisFieldInit a -> {
+                if (containsTry(a.value())) {
+                    Spill s = new Spill(ownerId, nextVarId);
+                    HirExpr valRef = s.hoist(a.value());
+                    yield s.wrap(
+                            new HirExpr.ThisFieldInit(
+                                    a.classId(), a.memberIndex(), a.memberName(), valRef, a.meta()),
+                            a.meta());
+                }
+                yield a;
+            }
             case HirExpr.ThisFieldAssign a -> {
                 if (a.operator() == null && containsTry(a.value())) {
                     Spill s = new Spill(ownerId, nextVarId);
@@ -642,6 +653,7 @@ public final class HirTryNormalize {
             case HirExpr.Def d -> containsTry(d.value());
             case HirExpr.VarAssign a -> containsTry(a.value());
             case HirExpr.NameAssign a -> containsTry(a.value());
+            case HirExpr.ThisFieldInit a -> containsTry(a.value());
             case HirExpr.ThisFieldAssign a -> containsTry(a.receiver()) || containsTry(a.value());
             case HirExpr.JavaFieldAssign a -> containsTry(a.receiver()) || containsTry(a.value());
             case HirExpr.DynamicFieldAssign a ->

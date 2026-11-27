@@ -199,6 +199,20 @@ final class HirEmitter {
             for (HirExpr e : cls.body()) {
                 scanRecordReuse(e, reused);
             }
+            for (org.babblelang.ir.hir.HirConstructor ctor : cls.constructors()) {
+                for (HirParam p : ctor.params()) {
+                    scanRecordReuse(p.defaultValue(), reused);
+                }
+                for (HirExpr e : ctor.preDelegateBody()) {
+                    scanRecordReuse(e, reused);
+                }
+                for (org.babblelang.ir.hir.HirCallArg a : ctor.delegateArgs()) {
+                    scanRecordReuse(a.value(), reused);
+                }
+                for (HirExpr e : ctor.body()) {
+                    scanRecordReuse(e, reused);
+                }
+            }
             if (cls.staticBlock() != null) {
                 for (HirExpr e : cls.staticBlock().body()) {
                     scanRecordReuse(e, reused);
@@ -303,6 +317,7 @@ final class HirEmitter {
             case HirExpr.Def d -> 1 + countNodes(d.value());
             case HirExpr.VarAssign a -> 1 + countNodes(a.value());
             case HirExpr.NameAssign a -> 1 + countNodes(a.value());
+            case HirExpr.ThisFieldInit a -> 1 + countNodes(a.value());
             case HirExpr.ThisFieldAssign a -> 1 + countNodes(a.receiver()) + countNodes(a.value());
             case HirExpr.JavaFieldAssign a -> 1 + countNodes(a.receiver()) + countNodes(a.value());
             case HirExpr.DynamicFieldAssign a ->
@@ -528,6 +543,7 @@ final class HirEmitter {
             case HirExpr.Const ignored -> {}
             case HirExpr.Def d -> assigns.emitDef(d, false);
             case HirExpr.VarAssign a -> assigns.emitVarAssign(a, false);
+            case HirExpr.ThisFieldInit a -> assigns.emitThisFieldInit(a, false);
             case HirExpr.ThisFieldAssign a -> assigns.emitThisFieldAssign(a, false);
             case HirExpr.JavaFieldAssign a -> assigns.emitJavaFieldAssignExpr(a, false);
             case HirExpr.While w -> controlOps.loops.emitWhile(w, false);
@@ -567,6 +583,7 @@ final class HirEmitter {
             case HirExpr.Def d -> assigns.emitDef(d);
             case HirExpr.VarAssign a -> assigns.emitVarAssign(a);
             case HirExpr.NameAssign a -> assigns.emitNameAssign(a);
+            case HirExpr.ThisFieldInit a -> assigns.emitThisFieldInit(a);
             case HirExpr.ThisFieldAssign a -> assigns.emitThisFieldAssign(a);
             case HirExpr.JavaFieldAssign a -> assigns.emitJavaFieldAssignExpr(a);
             case HirExpr.DynamicFieldAssign a -> assigns.emitDynamicFieldAssign(a);
@@ -856,7 +873,12 @@ final class HirEmitter {
         MethodVisitor mv = ctx.mv;
         HirClass cls = module.clazz(expr.classId());
         ClassGen gen = classGens.get(cls.id());
-        classValueArguments(cls);
+        boolean multiCtor = !cls.isObject() && cls.constructors().size() > 1;
+        if (multiCtor) {
+            classValueMultiCtorArguments(cls);
+        } else {
+            classValueArguments(cls);
+        }
         emitTypeRefs(cls.implementedTypes());
         if (cls.isObject()) {
             if (gen != null) {
@@ -880,9 +902,32 @@ final class HirEmitter {
                             + SCRIPT_RUNTIME
                             + ";)Ljava/lang/Object;",
                     false);
+        } else if (multiCtor) {
+            if (gen != null && !gen.usesDirectCtorInit() && !gen.hasFinalHeaderFields()) {
+                emitInstanceFactory(gen);
+            } else {
+                mv.visitInsn(ACONST_NULL);
+            }
+            mv.visitMethodInsn(
+                    INVOKESTATIC,
+                    CLASSES,
+                    "newClass",
+                    "(L"
+                            + CLASS_SHAPE
+                            + ";L"
+                            + NAMESPACE
+                            + ";[Ljava/lang/Object;[L"
+                            + CLASS_BODY
+                            + ";[Ljava/lang/Object;L"
+                            + INSTANCE_FACTORY
+                            + ";)L"
+                            + BABBLE_CLASS
+                            + ";",
+                    false);
+            emitStaticBlock(cls.staticBlock());
         } else {
             if (gen != null) {
-                if (gen.hasFinalHeaderFields()) {
+                if (gen.usesDirectCtorInit() || gen.hasFinalHeaderFields()) {
                     mv.visitInsn(ACONST_NULL);
                 } else {
                     emitInstanceFactory(gen);
@@ -927,7 +972,8 @@ final class HirEmitter {
     private void classValueArguments(HirClass cls) {
         MethodVisitor mv = ctx.mv;
         ClassShape shape = cls.shape();
-        String method = entries.scheduleClassBody(cls);
+        String[] methods = entries.scheduleClassConstructors(cls);
+        String method = methods[0];
 
         mv.visitFieldInsn(
                 GETSTATIC, className, constantPool.shapeField(shape), "L" + CLASS_SHAPE + ";");
@@ -941,6 +987,32 @@ final class HirEmitter {
                 bodyType,
                 new Handle(H_INVOKESTATIC, className, method, CLASS_BODY_DESCRIPTOR, false),
                 bodyType);
+    }
+
+    private void classValueMultiCtorArguments(HirClass cls) {
+        MethodVisitor mv = ctx.mv;
+        ClassShape shape = cls.shape();
+        String[] methods = entries.scheduleClassConstructors(cls);
+
+        mv.visitFieldInsn(
+                GETSTATIC, className, constantPool.shapeField(shape), "L" + CLASS_SHAPE + ";");
+        mv.visitVarInsn(ALOAD, ctx.nsLocal);
+        frameVars.capturedCells(cls.capturedVars());
+        ConstantPool.pushInt(mv, methods.length);
+        mv.visitTypeInsn(ANEWARRAY, CLASS_BODY);
+        Type bodyType = Type.getMethodType(CLASS_BODY_DESCRIPTOR);
+        for (int k = 0; k < methods.length; k++) {
+            mv.visitInsn(DUP);
+            ConstantPool.pushInt(mv, k);
+            mv.visitInvokeDynamicInsn(
+                    "construct",
+                    "()L" + CLASS_BODY + ";",
+                    METAFACTORY,
+                    bodyType,
+                    new Handle(H_INVOKESTATIC, className, methods[k], CLASS_BODY_DESCRIPTOR, false),
+                    bodyType);
+            mv.visitInsn(AASTORE);
+        }
     }
 
     private void emitInstanceFactory(ClassGen gen) {

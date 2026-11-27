@@ -43,6 +43,7 @@ final class MethodEntryEmitter {
     private final Set<Integer> scheduledFunctions = new HashSet<>();
     private final Map<Integer, String> compiledMethodFields = new HashMap<>();
     private final Map<String, String> cachedMethodOverloads = new HashMap<>();
+    private final Map<Integer, String[]> scheduledClassConstructors = new HashMap<>();
     private int classBodyCount = 0;
 
     MethodEntryEmitter(HirEmitter emitter) {
@@ -55,10 +56,80 @@ final class MethodEntryEmitter {
         }
     }
 
-    String scheduleClassBody(HirClass cls) {
-        String method = "cls$" + (classBodyCount++) + "$" + cls.shape().name();
-        pendingMethods.add(() -> generateClassBody(cls, method));
-        return method;
+    String[] scheduleClassConstructors(HirClass cls) {
+        String[] existing = scheduledClassConstructors.get(cls.id());
+        if (existing != null) {
+            return existing;
+        }
+        ClassGen gen = emitter.classGen(cls.id());
+        List<org.babblelang.ir.hir.HirConstructor> ctors = cls.constructors();
+        if (ctors.isEmpty()) {
+            String method = "cls$" + (classBodyCount++) + "$" + cls.shape().name();
+            pendingMethods.add(() -> generateClassBody(cls, null, method));
+            String[] single = new String[] {method};
+            scheduledClassConstructors.put(cls.id(), single);
+            return single;
+        }
+        int baseIdx = classBodyCount++;
+        String[] methods = new String[ctors.size()];
+        for (int k = 0; k < ctors.size(); k++) {
+            methods[k] =
+                    ctors.size() == 1
+                            ? "cls$" + baseIdx + "$" + cls.shape().name()
+                            : "cls$" + baseIdx + "$" + cls.shape().name() + "$" + k;
+        }
+        scheduledClassConstructors.put(cls.id(), methods);
+        for (int k = 0; k < ctors.size(); k++) {
+            org.babblelang.ir.hir.HirConstructor ctor = ctors.get(k);
+            String method = methods[k];
+            if (ctor.isDelegating()) {
+                String targetMethod = methods[ctor.delegateIndex()];
+                pendingMethods.add(
+                        () -> generateDelegatingWrapper(cls, gen, ctor, method, targetMethod));
+            } else if (gen != null && gen.usesDirectCtorInit()) {
+                pendingMethods.add(() -> generateRootJvmInit(cls, gen, ctor));
+                pendingMethods.add(() -> generateDirectRootWrapper(cls, gen, ctor, method));
+            } else {
+                pendingMethods.add(() -> generateClassBody(cls, ctor, method));
+            }
+        }
+        return methods;
+    }
+
+    void emitBabbleConstructorCall(HirExpr.DynamicCall c) {
+        MethodEmitContext mc = emitter.ctx;
+        MethodVisitor mv = mc.mv;
+        String site = emitter.constantPool.callSiteField(c.callSite());
+        emitter.emitBoxed(c.callee());
+        mv.visitTypeInsn(CHECKCAST, BABBLE_CLASS);
+        ConstantPool.pushInt(mv, c.constructorIndex());
+        mv.visitVarInsn(ALOAD, mc.rtLocal);
+        if (c.binding() != null) {
+            emitter.calls.emitBoundArgumentsArray(CallEmitter.callArgExprs(c.args()), c.binding());
+            mv.visitInsn(ACONST_NULL);
+        } else {
+            emitter.calls.emitArgumentsArray(c.args());
+            String[] names = callArgNames(c.args());
+            if (names != null) {
+                emitter.getStringArray(names);
+            } else {
+                mv.visitInsn(ACONST_NULL);
+            }
+        }
+        mv.visitFieldInsn(GETSTATIC, emitter.className, site, "L" + CALL_SITE + ";");
+        mc.line(c.meta().line());
+        mv.visitMethodInsn(
+                INVOKEVIRTUAL,
+                BABBLE_CLASS,
+                "constructWithIndex",
+                "(IL"
+                        + SCRIPT_RUNTIME
+                        + ";[Ljava/lang/Object;[Ljava/lang/String;L"
+                        + CALL_SITE
+                        + ";)Ljava/lang/Object;",
+                false);
+        mc.stackKind = PrimitiveKind.NONE;
+        emitter.calls.finishCallCheck(c.meta());
     }
 
     void ensureFunctionScheduled(HirFunction fn) {
@@ -573,14 +644,286 @@ final class MethodEntryEmitter {
         ctx.finish();
     }
 
-    private void generateClassBody(HirClass cls, String method) {
+    private void generateDirectRootWrapper(
+            HirClass cls, ClassGen gen, org.babblelang.ir.hir.HirConstructor ctor, String method) {
+        MethodEmitContext ctx = emitter.ctx;
+        emitter.beginMethod(
+                emitter.classWriter,
+                ctor.ownerId(),
+                ACC_STATIC | ACC_SYNTHETIC,
+                method,
+                CLASS_BODY_DESCRIPTOR,
+                FN_NS + 1,
+                FN_RT,
+                FN_NS,
+                cls.capturedVars());
+        MethodVisitor mv = ctx.mv;
+        emitter.frameVars.loadCapturedCells(BABBLE_CLASS);
+        mv.visitVarInsn(ALOAD, SELF);
+        mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
+        mv.visitVarInsn(ASTORE, FN_NS);
+
+        List<HirVar> paramVars = new ArrayList<>();
+        for (HirParam p : ctor.params()) {
+            if (p.var() != null) {
+                paramVars.add(p.var());
+            }
+        }
+        if (!paramVars.isEmpty()) {
+            emitter.declareVariables(paramVars);
+        }
+
+        int[] boundSlots = new int[ctor.params().size()];
+        bindParameters(
+                emitter.constantPool.stringArrayField(ctor.paramNames()),
+                ctor.params(),
+                ctor.keywordOnlyStart(),
+                ctor.restIndex(),
+                null,
+                null,
+                boundSlots);
+
+        mv.visitTypeInsn(NEW, gen.name);
+        mv.visitInsn(DUP);
+        mv.visitVarInsn(ALOAD, SELF);
+        mv.visitVarInsn(ALOAD, FN_RT);
+        for (int i = 0; i < ctor.params().size(); i++) {
+            loadKindOn(mv, ctor.params().get(i).kind(), boundSlots[i]);
+        }
+        for (int t = 0; t < gen.rootInitTagCount(ctor.index()); t++) {
+            mv.visitInsn(ICONST_0);
+        }
+        mv.visitMethodInsn(
+                INVOKESPECIAL, gen.name, "<init>", gen.rootInitDescriptor(ctor.index()), false);
+        mv.visitInsn(ARETURN);
+        ctx.finish();
+    }
+
+    private void generateRootJvmInit(
+            HirClass cls, ClassGen gen, org.babblelang.ir.hir.HirConstructor ctor) {
+        int[] paramSlots = new int[ctor.params().size()];
+        int nextSlot = 3;
+        for (int i = 0; i < ctor.params().size(); i++) {
+            paramSlots[i] = nextSlot;
+            nextSlot += ctor.params().get(i).kind().slots();
+        }
+        nextSlot += gen.rootInitTagCount(ctor.index());
+        int nsSlot = nextSlot;
+
+        emitter.beginMethod(
+                gen.writer,
+                ctor.ownerId(),
+                ACC_PUBLIC,
+                "<init>",
+                gen.rootInitDescriptor(ctor.index()),
+                nsSlot + 1,
+                2,
+                nsSlot,
+                cls.capturedVars());
+        MethodEmitContext ctx = emitter.ctx;
+        MethodVisitor mv = ctx.mv;
+        ctx.selfLocal = 1;
+        ctx.thizLocal = 0;
+        ctx.typedThisLocal = 0;
+        ctx.constructorClass = gen;
+        ctx.methodClass = null;
+
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitMethodInsn(INVOKESPECIAL, OBJECT, "<init>", "()V", false);
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitFieldInsn(PUTFIELD, gen.name, "$babble$class", "L" + BABBLE_CLASS + ";");
+        mv.visitVarInsn(ALOAD, 0);
+        mv.visitVarInsn(ALOAD, 2);
+        mv.visitFieldInsn(PUTFIELD, gen.name, "$babble$rt", "L" + SCRIPT_RUNTIME + ";");
+        for (int i = 0; i < gen.shape.memberCount(); i++) {
+            if (!gen.isFinalField(i)
+                    && !gen.memberKinds[i].isPrimitive()
+                    && !gen.isStaticMethodMember(i)) {
+                mv.visitVarInsn(ALOAD, 0);
+                mv.visitFieldInsn(
+                        GETSTATIC,
+                        RUNTIME + "Undefined",
+                        "UNDEFINED",
+                        "L" + RUNTIME + "Undefined;");
+                mv.visitFieldInsn(PUTFIELD, gen.name, gen.shape.member(i), "Ljava/lang/Object;");
+            }
+        }
+
+        emitter.frameVars.loadCapturedCells(BABBLE_CLASS);
+        mv.visitVarInsn(ALOAD, 1);
+        mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
+        mv.visitVarInsn(ASTORE, nsSlot);
+
+        List<HirVar> allDeclared = new ArrayList<>();
+        Set<Integer> seenIds = new HashSet<>();
+        for (HirVar v : cls.declaredVars()) {
+            if (seenIds.add(v.id())) {
+                allDeclared.add(v);
+            }
+        }
+        for (HirVar v : ctor.declaredVars()) {
+            if (seenIds.add(v.id())) {
+                allDeclared.add(v);
+            }
+        }
+        for (HirVar variable : emitter.declareVariables(allDeclared)) {
+            if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
+                mv.visitVarInsn(ALOAD, 0);
+                emitter.initVariable(variable, PrimitiveKind.NONE);
+            }
+        }
+
+        for (int i = 0; i < ctor.params().size(); i++) {
+            HirParam param = ctor.params().get(i);
+            int member = param.memberIndex();
+            if (member >= 0) {
+                PrimitiveKind mk = gen.memberKinds[member];
+                mv.visitVarInsn(ALOAD, 0);
+                loadKindOn(mv, param.kind(), paramSlots[i]);
+                ctx.stackKind = param.kind();
+                emitter.convertStack(param.kind(), mk);
+                mv.visitFieldInsn(PUTFIELD, gen.name, gen.shape.member(member), jvmDescriptor(mk));
+                ctx.stackKind = PrimitiveKind.NONE;
+            } else if (param.var() != null) {
+                HirVar variable = param.var();
+                PrimitiveKind vk = variable.primitiveKind();
+                loadKindOn(mv, param.kind(), paramSlots[i]);
+                ctx.stackKind = param.kind();
+                emitter.convertStack(param.kind(), vk);
+                if (variable.cell()) {
+                    emitter.storeVariable(variable, true, vk, param.line());
+                    popOn(mv, vk);
+                } else {
+                    emitter.initVariable(variable, vk);
+                    if (gen.hasHiddenField(variable)) {
+                        emitter.frameVars.publishHidden(variable);
+                    }
+                }
+                ctx.stackKind = PrimitiveKind.NONE;
+            } else {
+                mv.visitVarInsn(ALOAD, ctx.frameNs);
+                mv.visitLdcInsn(param.name());
+                loadKindOn(mv, param.kind(), paramSlots[i]);
+                boxOn(mv, param.kind());
+                mv.visitInsn(param.mutable() ? ICONST_0 : ICONST_1);
+                mv.visitMethodInsn(
+                        INVOKEVIRTUAL,
+                        NAMESPACE,
+                        "defineParameter",
+                        "(Ljava/lang/String;Ljava/lang/Object;Z)V",
+                        false);
+            }
+        }
+
+        if (!cls.body().isEmpty()) {
+            emitter.statements(cls.body());
+            popOn(mv, ctx.stackKind);
+        }
+        if (!ctor.body().isEmpty()) {
+            emitter.statements(ctor.body());
+            popOn(mv, ctx.stackKind);
+        }
+        mv.visitInsn(RETURN);
+        ctx.finish();
+    }
+
+    private void generateDelegatingWrapper(
+            HirClass cls,
+            ClassGen gen,
+            org.babblelang.ir.hir.HirConstructor ctor,
+            String method,
+            String targetMethod) {
+        MethodEmitContext ctx = emitter.ctx;
+        emitter.beginMethod(
+                emitter.classWriter,
+                ctor.ownerId(),
+                ACC_STATIC | ACC_SYNTHETIC,
+                method,
+                CLASS_BODY_DESCRIPTOR,
+                FN_NS + 1,
+                FN_RT,
+                FN_NS,
+                cls.capturedVars());
+        MethodVisitor mv = ctx.mv;
+        emitter.frameVars.loadCapturedCells(BABBLE_CLASS);
+        mv.visitVarInsn(ALOAD, SELF);
+        mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
+        mv.visitVarInsn(ASTORE, FN_NS);
+
+        emitter.declareVariables(ctor.declaredVars());
+        bindParameters(
+                emitter.constantPool.stringArrayField(ctor.paramNames()),
+                ctor.params(),
+                ctor.keywordOnlyStart(),
+                ctor.restIndex(),
+                null,
+                null,
+                null);
+
+        if (!ctor.preDelegateBody().isEmpty()) {
+            emitter.statements(ctor.preDelegateBody());
+            popOn(mv, ctx.stackKind);
+        }
+
+        mv.visitVarInsn(ALOAD, SELF);
+        mv.visitVarInsn(ALOAD, INSTANCE);
+        mv.visitVarInsn(ALOAD, FN_RT);
+        if (ctor.delegateBinding() != null) {
+            emitter.calls.emitBoundArgumentsArray(
+                    CallEmitter.callArgExprs(ctor.delegateArgs()), ctor.delegateBinding());
+            mv.visitInsn(ACONST_NULL);
+        } else {
+            emitter.calls.emitArgumentsArray(ctor.delegateArgs());
+            String[] delNames = callArgNames(ctor.delegateArgs());
+            if (delNames != null) {
+                emitter.getStringArray(delNames);
+            } else {
+                mv.visitInsn(ACONST_NULL);
+            }
+        }
+        mv.visitVarInsn(ALOAD, 5); // forward CallSite
+        mv.visitMethodInsn(
+                INVOKESTATIC, emitter.className, targetMethod, CLASS_BODY_DESCRIPTOR, false);
+
+        if (ctor.body().isEmpty()) {
+            mv.visitInsn(ARETURN);
+            ctx.finish();
+            return;
+        }
+        ctx.constructorClass = gen;
+        ctx.typedThisLocal = ctx.newLocal();
+        if (gen != null) {
+            mv.visitTypeInsn(CHECKCAST, gen.name);
+        }
+        mv.visitVarInsn(ASTORE, ctx.typedThisLocal);
+        for (HirVar variable : ctor.declaredVars()) {
+            if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
+                mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
+                emitter.initVariable(variable, PrimitiveKind.NONE);
+            }
+        }
+        emitter.statements(ctor.body());
+        popOn(mv, ctx.stackKind);
+        mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
+        mv.visitInsn(ARETURN);
+        ctx.finish();
+    }
+
+    private void generateClassBody(
+            HirClass cls, org.babblelang.ir.hir.HirConstructor ctor, String method) {
         MethodEmitContext ctx = emitter.ctx;
         ClassShape shape = cls.shape();
+        int ownerId = ctor != null ? ctor.ownerId() : cls.id();
+        List<HirParam> ctorParams = ctor != null ? ctor.params() : cls.params();
+        String[] paramNames = ctor != null ? ctor.paramNames() : shape.parameters();
+        int kwStart = ctor != null ? ctor.keywordOnlyStart() : shape.keywordOnlyStart();
+        int restIndex = ctor != null ? ctor.restIndex() : -1;
         // Package-private so compiled sibling class/interface bodies in this script can adapt
         // cls$... via LambdaMetafactory.
         emitter.beginMethod(
                 emitter.classWriter,
-                cls.id(),
+                ownerId,
                 ACC_STATIC | ACC_SYNTHETIC,
                 method,
                 CLASS_BODY_DESCRIPTOR,
@@ -605,7 +948,21 @@ final class MethodEntryEmitter {
         mv.visitVarInsn(ALOAD, SELF);
         mv.visitMethodInsn(INVOKEVIRTUAL, BABBLE_CLASS, "closure", "()L" + NAMESPACE + ";", false);
         mv.visitVarInsn(ASTORE, FN_NS);
-        for (HirVar variable : emitter.declareVariables(cls.declaredVars())) {
+        List<HirVar> allDeclared = new ArrayList<>();
+        Set<Integer> seenIds = new HashSet<>();
+        for (HirVar v : cls.declaredVars()) {
+            if (seenIds.add(v.id())) {
+                allDeclared.add(v);
+            }
+        }
+        if (ctor != null) {
+            for (HirVar v : ctor.declaredVars()) {
+                if (seenIds.add(v.id())) {
+                    allDeclared.add(v);
+                }
+            }
+        }
+        for (HirVar variable : emitter.declareVariables(allDeclared)) {
             if (!deferredInit
                     && variable.kind() == Resolution.Variable.Kind.THIS
                     && variable.used()) {
@@ -617,12 +974,13 @@ final class MethodEntryEmitter {
         Map<Integer, Integer> deferredMembers =
                 deferredInit ? new java.util.LinkedHashMap<>() : null;
         bindParameters(
-                emitter.constantPool.stringArrayField(shape.parameters()),
-                cls.params(),
-                shape.keywordOnlyStart(),
-                -1,
+                emitter.constantPool.stringArrayField(paramNames),
+                ctorParams,
+                kwStart,
+                restIndex,
                 shape,
-                deferredMembers);
+                deferredMembers,
+                null);
         if (deferredInit) {
             ctx.typedThisLocal = ctx.newLocal();
             mv.visitTypeInsn(NEW, gen.name);
@@ -634,7 +992,7 @@ final class MethodEntryEmitter {
             }
             mv.visitMethodInsn(INVOKESPECIAL, gen.name, "<init>", gen.initDescriptor, false);
             mv.visitVarInsn(ASTORE, ctx.typedThisLocal);
-            for (HirVar variable : cls.declaredVars()) {
+            for (HirVar variable : allDeclared) {
                 if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
                     mv.visitVarInsn(ALOAD, ctx.typedThisLocal);
                     emitter.initVariable(variable, PrimitiveKind.NONE);
@@ -655,6 +1013,10 @@ final class MethodEntryEmitter {
         }
         emitter.statements(cls.body());
         popOn(mv, ctx.stackKind);
+        if (ctor != null && !ctor.body().isEmpty()) {
+            emitter.statements(ctor.body());
+            popOn(mv, ctx.stackKind);
+        }
         mv.visitVarInsn(ALOAD, deferredInit ? ctx.typedThisLocal : INSTANCE);
         mv.visitInsn(ARETURN);
         ctx.finish();
@@ -666,7 +1028,7 @@ final class MethodEntryEmitter {
             int kwStart,
             int restIndex,
             ClassShape shape) {
-        bindParameters(paramsField, params, kwStart, restIndex, shape, null);
+        bindParameters(paramsField, params, kwStart, restIndex, shape, null, null);
     }
 
     private void bindParameters(
@@ -675,7 +1037,8 @@ final class MethodEntryEmitter {
             int kwStart,
             int restIndex,
             ClassShape shape,
-            Map<Integer, Integer> deferredMembers) {
+            Map<Integer, Integer> deferredMembers,
+            int[] outParamSlots) {
         MethodEmitContext ctx = emitter.ctx;
         MethodVisitor mv = ctx.mv;
         boolean spread = ctx.parameterBase >= 0;
@@ -778,6 +1141,30 @@ final class MethodEntryEmitter {
                 emitter.controlOps.emitToJavaSamOnStack(param.samTarget(), param.line());
                 mv.visitVarInsn(ASTORE, value);
             }
+            if (outParamSlots != null) {
+                PrimitiveKind pk = param.kind();
+                mv.visitVarInsn(ALOAD, value);
+                ctx.stackKind = PrimitiveKind.NONE;
+                emitter.convertStack(PrimitiveKind.NONE, pk);
+                int slot = ctx.newLocal(pk);
+                storeKindOn(mv, pk, slot);
+                outParamSlots[i] = slot;
+                if (param.var() != null) {
+                    HirVar variable = param.var();
+                    PrimitiveKind vk = variable.primitiveKind();
+                    loadKindOn(mv, pk, slot);
+                    ctx.stackKind = pk;
+                    emitter.convertStack(pk, vk);
+                    if (variable.cell()) {
+                        emitter.storeVariable(variable, true, vk, param.line());
+                        popOn(mv, vk);
+                    } else {
+                        emitter.initVariable(variable, vk);
+                    }
+                }
+                ctx.stackKind = PrimitiveKind.NONE;
+                continue;
+            }
             int member = shape != null ? param.memberIndex() : -1;
             if (member >= 0 && ctx.constructorClass != null) {
                 PrimitiveKind mk = ctx.constructorClass.memberKinds[member];
@@ -834,5 +1221,19 @@ final class MethodEntryEmitter {
         mv.visitVarInsn(ALOAD, binder);
         mv.visitMethodInsn(INVOKEVIRTUAL, BINDER, "rejectLeftovers", "()V", false);
         mv.visitLabel(bound);
+    }
+
+    static String[] callArgNames(List<org.babblelang.ir.hir.HirCallArg> parameters) {
+        String[] names = null;
+        for (int i = 0; i < parameters.size(); i++) {
+            String name = parameters.get(i).name();
+            if (name != null) {
+                if (names == null) {
+                    names = new String[parameters.size()];
+                }
+                names[i] = name;
+            }
+        }
+        return names;
     }
 }

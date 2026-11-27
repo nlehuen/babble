@@ -234,6 +234,57 @@ final class AssignAndMemberEmitter {
         c.stackKind = kind;
     }
 
+    void emitThisFieldInit(HirExpr.ThisFieldInit a) {
+        emitThisFieldInit(a, true);
+    }
+
+    void emitThisFieldInit(HirExpr.ThisFieldInit a, boolean valueNeeded) {
+        MethodEmitContext c = ctx();
+        MethodVisitor mv = c.mv;
+        if (c.constructorClass == null) {
+            throw new IllegalStateException(
+                    "Unexpected ThisFieldInit outside compiled class constructor : "
+                            + a.memberName());
+        }
+        int idx = a.memberIndex();
+        PrimitiveKind mk = c.constructorClass.memberKinds[idx];
+        c.line(a.meta().line());
+        if (mk.isPrimitive()) {
+            if (!valueNeeded) {
+                mv.visitVarInsn(ALOAD, c.typedThisLocal);
+                emitter.emitExpr(a.value());
+                emitter.widenStackRank(a.meta().wideningRank());
+                emitter.convertStack(c.stackKind, mk);
+                mv.visitFieldInsn(
+                        PUTFIELD, c.constructorClass.name, a.memberName(), jvmDescriptor(mk));
+                c.constructorClass.emitMarkDefined(mv, c.typedThisLocal, idx);
+                c.stackKind = PrimitiveKind.NONE;
+                return;
+            }
+            int tmp = c.newLocal(mk);
+            emitter.emitExpr(a.value());
+            emitter.widenStackRank(a.meta().wideningRank());
+            emitter.convertStack(c.stackKind, mk);
+            storeKindOn(mv, mk, tmp);
+            mv.visitVarInsn(ALOAD, c.typedThisLocal);
+            loadKindOn(mv, mk, tmp);
+            mv.visitFieldInsn(PUTFIELD, c.constructorClass.name, a.memberName(), jvmDescriptor(mk));
+            c.constructorClass.emitMarkDefined(mv, c.typedThisLocal, idx);
+            loadKindOn(mv, mk, tmp);
+            c.stackKind = mk;
+            return;
+        }
+        mv.visitVarInsn(ALOAD, c.typedThisLocal);
+        emitter.emitExpr(a.value());
+        emitter.widenStackRank(a.meta().wideningRank());
+        emitter.convertStack(c.stackKind, PrimitiveKind.NONE);
+        if (valueNeeded) {
+            mv.visitInsn(DUP_X1);
+        }
+        mv.visitFieldInsn(PUTFIELD, c.constructorClass.name, a.memberName(), "Ljava/lang/Object;");
+        c.stackKind = PrimitiveKind.NONE;
+    }
+
     void emitVarAssign(HirExpr.VarAssign a) {
         emitVarAssign(a, true);
     }

@@ -15,12 +15,21 @@ public final class InterpretedInstance implements HasMembers {
     private final Object[] values;
     private final ScriptRuntime runtime;
     private Object face;
+    private boolean initializing = true;
 
     public InterpretedInstance(BabbleClass babbleClass, ScriptRuntime runtime) {
         this.babbleClass = babbleClass;
         this.values = new Object[babbleClass.shape().memberCount()];
         this.runtime = runtime;
         Arrays.fill(values, Undefined.UNDEFINED);
+    }
+
+    public void finishInit() {
+        this.initializing = false;
+    }
+
+    public boolean isInitializing() {
+        return initializing;
     }
 
     public BabbleClass babbleClass() {
@@ -90,6 +99,10 @@ public final class InterpretedInstance implements HasMembers {
         }
         if (shape.isMethod(index)) {
             throw Members.cannotAssignMethod(name);
+        }
+        if (own && initializing) {
+            values[index] = Types.check(value, shape.memberType(index));
+            return;
         }
         if (shape.isValue()) {
             throw Members.readOnly(name);

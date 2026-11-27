@@ -32,6 +32,18 @@ public final class HirVerifier {
                 }
             }
             verifyStatements(module, cls.body(), false, 0);
+            for (HirConstructor ctor : cls.constructors()) {
+                for (HirParam param : ctor.params()) {
+                    if (param.defaultValue() != null) {
+                        verifyExpr(module, param.defaultValue(), false, 0);
+                    }
+                }
+                verifyStatements(module, ctor.preDelegateBody(), false, 0);
+                for (HirCallArg arg : ctor.delegateArgs()) {
+                    verifyExpr(module, arg.value(), false, 0);
+                }
+                verifyStatements(module, ctor.body(), false, 0);
+            }
             if (cls.staticBlock() != null) {
                 verifyStatements(module, cls.staticBlock().body(), false, 0);
             }
@@ -102,6 +114,12 @@ public final class HirVerifier {
                 verifyExpr(module, a.value(), inFunction, loopDepth);
             }
             case HirExpr.NameAssign a -> verifyExpr(module, a.value(), inFunction, loopDepth);
+            case HirExpr.ThisFieldInit a -> {
+                verifyExpr(module, a.value(), inFunction, loopDepth);
+                if (a.classId() >= 0 && module.clazz(a.classId()) == null) {
+                    throw new IllegalStateException("HirVerifier : unknown classId " + a.classId());
+                }
+            }
             case HirExpr.ThisFieldAssign a -> {
                 verifyExpr(module, a.receiver(), inFunction, loopDepth);
                 verifyExpr(module, a.value(), inFunction, loopDepth);

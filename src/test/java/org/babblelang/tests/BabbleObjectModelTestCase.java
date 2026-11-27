@@ -93,10 +93,11 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 interpret(
                         "def R = class (def w : int, def h : int) ( def area = this.w * this.h ) ; R(2, 3).area"));
         assertFails(
-                "def C = class (n : int) ( if n < 0 then ( suppose(false, \"negative\") ) ) ; C(0 - 1)",
+                "def C = class (n : int) ( init ( if n < 0 then ( suppose(false, \"negative\") ) ) ) ; C(0 - 1)",
                 "negative");
         // The construction yields the instance, not the body's last value.
-        Assertions.assertEquals(true, interpret("def C = class () ( discard(42) ) ; C() is C"));
+        Assertions.assertEquals(
+                true, interpret("def C = class () ( init ( discard(42) ) ) ; C() is C"));
     }
 
     @Test
@@ -152,7 +153,7 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
     public void testThisAndReturnPlacement() {
         assertFails("this", "this outside of a class");
         assertFails("def f = fn () -> ( this ) ; 1", "this outside of a class");
-        assertFails("def C = class () ( return 1 )", "return in a class body");
+        assertFails("def C = class () ( init ( return 1 ) )", "return in an init constructor");
         assertFails("def C = class () () static ( return 1 )", "return in a class body");
     }
 
@@ -457,10 +458,10 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 "def P = record (x : int) ( def hashCode = fn () -> ( 1 ) )",
                 "hashCode is generated for value classes");
         assertFails(
-                "def P = record (x : int) ( println(this) )",
+                "def P = record (x : int) ( init ( println(this) ) )",
                 "this cannot escape a value class under construction");
         assertFails(
-                "def P = record (x : int) ( def m = fn () -> ( 1 ) ; this.m() )",
+                "def P = record (x : int) ( def m = fn () -> ( 1 ) ; init ( this.m() ) )",
                 "this cannot escape a value class under construction");
         Assertions.assertDoesNotThrow(() ->
                 interpret(
@@ -623,7 +624,8 @@ public class BabbleObjectModelTestCase extends BabbleTestBase {
                 3);
         assertFails("super.x()", "super outside of a method");
         assertFails(
-                two + "def C = class () implements A ( def r = fn () -> ( 1 ) ; super.d() )",
+                two
+                        + "def C = class () implements A ( def r = fn () -> ( 1 ) ; init ( super.d() ) )",
                 "super outside of a method",
                 3);
     }

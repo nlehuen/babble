@@ -192,6 +192,13 @@ final class HirTreeRewrite {
                                 a.valueText(),
                                 a.meta());
             }
+            case HirExpr.ThisFieldInit a -> {
+                HirExpr nv = fn.apply(a.value());
+                yield nv == a.value()
+                        ? a
+                        : new HirExpr.ThisFieldInit(
+                                a.classId(), a.memberIndex(), a.memberName(), nv, a.meta());
+            }
             case HirExpr.ThisFieldAssign a -> {
                 HirExpr nr = fn.apply(a.receiver());
                 HirExpr nv = fn.apply(a.value());
@@ -754,6 +761,9 @@ final class HirTreeRewrite {
             case HirExpr.NameAssign a ->
                     new HirExpr.NameAssign(
                             a.name(), a.operator(), a.value(), a.targetText(), a.valueText(), meta);
+            case HirExpr.ThisFieldInit a ->
+                    new HirExpr.ThisFieldInit(
+                            a.classId(), a.memberIndex(), a.memberName(), a.value(), meta);
             case HirExpr.ThisFieldAssign a ->
                     new HirExpr.ThisFieldAssign(
                             a.receiver(),

@@ -481,6 +481,7 @@ final class HirCallLowerer {
                                 ? builder.scopes.calls().babbleCallSignature(ctx)
                                 : null,
                         SyntaxText.callSite(ctx, builder.sourceName),
+                        builder.scopes.calls().constructorIndex(ctx),
                         meta);
         if (builder.scopes.isNonCyclicStaticImport(ctx)) {
             builder.nonCyclicImports.add(dc);
@@ -500,7 +501,7 @@ final class HirCallLowerer {
         return expr;
     }
 
-    private List<HirCallArg> lowerCallArgs(
+    List<HirCallArg> lowerCallArgs(
             List<BabbleParser.CallParameterContext> params, LoweringTargets.SpreadAdapt[] adapts) {
         if (params.isEmpty()) {
             return List.of();

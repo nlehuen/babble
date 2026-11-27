@@ -523,6 +523,7 @@ public final class WasmPortabilityChecker {
             case HirExpr.Def d -> checkExpr(d.value(), target, topLevelDefined, out);
             case HirExpr.VarAssign a -> checkExpr(a.value(), target, topLevelDefined, out);
             case HirExpr.NameAssign a -> checkExpr(a.value(), target, topLevelDefined, out);
+            case HirExpr.ThisFieldInit a -> checkExpr(a.value(), target, topLevelDefined, out);
             case HirExpr.ThisFieldAssign a -> {
                 checkExpr(a.receiver(), target, topLevelDefined, out);
                 checkExpr(a.value(), target, topLevelDefined, out);

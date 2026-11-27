@@ -75,6 +75,26 @@ public final class HirPrinter {
                 printExpr(sb, stmt, 2);
                 sb.append('\n');
             }
+            for (HirConstructor ctor : cls.constructors()) {
+                if (ctor.isPrimary() && ctor.body().isEmpty() && !ctor.isDelegating()) {
+                    continue;
+                }
+                sb.append("    init#").append(ctor.index());
+                if (ctor.isDelegating()) {
+                    sb.append(" -> init#").append(ctor.delegateIndex());
+                }
+                sb.append('\n');
+                for (HirExpr stmt : ctor.preDelegateBody()) {
+                    sb.append("      ");
+                    printExpr(sb, stmt, 3);
+                    sb.append('\n');
+                }
+                for (HirExpr stmt : ctor.body()) {
+                    sb.append("      ");
+                    printExpr(sb, stmt, 3);
+                    sb.append('\n');
+                }
+            }
         }
         for (HirInterface iface : module.interfaces().values()) {
             sb.append("  interface #")
@@ -152,6 +172,11 @@ public final class HirPrinter {
                 sb.append("(set-name ").append(a.name());
                 if (a.operator() != null) sb.append(' ').append(a.operator()).append('=');
                 sb.append(' ');
+                printExpr(sb, a.value(), depth + 1);
+                sb.append(')');
+            }
+            case HirExpr.ThisFieldInit a -> {
+                sb.append("(init-this-field ").append(a.memberName()).append(' ');
                 printExpr(sb, a.value(), depth + 1);
                 sb.append(')');
             }

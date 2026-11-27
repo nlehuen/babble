@@ -112,6 +112,7 @@ final class AeGraphBuilder {
             case HirExpr.ThisRef t -> visitThisRef(t, state);
             case HirExpr.Def d -> visitDef(d, state);
             case HirExpr.VarAssign a -> visitVarAssign(a, state);
+            case HirExpr.ThisFieldInit a -> visitGeneric(a, state);
             case HirExpr.ThisFieldAssign a -> visitThisFieldAssign(a, state);
             case HirExpr.JavaFieldAssign a -> visitJavaFieldAssign(a, state);
             case HirExpr.ThisFieldGet g -> visitThisFieldGet(g, state);

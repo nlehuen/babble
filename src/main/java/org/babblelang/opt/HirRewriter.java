@@ -72,6 +72,13 @@ public final class HirRewriter {
                                 a.valueText(),
                                 a.meta());
             }
+            case HirExpr.ThisFieldInit a -> {
+                HirExpr nv = transform.apply(a.value());
+                yield nv == a.value()
+                        ? a
+                        : new HirExpr.ThisFieldInit(
+                                a.classId(), a.memberIndex(), a.memberName(), nv, a.meta());
+            }
             case HirExpr.ThisFieldAssign a -> {
                 HirExpr nr = transform.apply(a.receiver());
                 HirExpr nv = transform.apply(a.value());
@@ -840,6 +847,52 @@ public final class HirRewriter {
                             ? rewriteParams(cls.params(), paramDefaultRewriter)
                             : cls.params();
             List<HirExpr> nb = bodyRewriter.rewrite(cls.id(), -1, cls.body());
+            List<org.babblelang.ir.hir.HirConstructor> newCtors = cls.constructors();
+            boolean ctorsChanged = false;
+            if (!cls.constructors().isEmpty()) {
+                List<org.babblelang.ir.hir.HirConstructor> ctorsCopy =
+                        new ArrayList<>(cls.constructors().size());
+                for (org.babblelang.ir.hir.HirConstructor ctor : cls.constructors()) {
+                    List<HirParam> cnp =
+                            paramDefaultRewriter != null
+                                    ? rewriteParams(ctor.params(), paramDefaultRewriter)
+                                    : ctor.params();
+                    List<HirExpr> cPre =
+                            bodyRewriter.rewrite(ctor.ownerId(), -1, ctor.preDelegateBody());
+                    List<HirCallArg> cDel = ctor.delegateArgs();
+                    if (!cDel.isEmpty()) {
+                        List<HirCallArg> delCopy = null;
+                        for (int di = 0; di < cDel.size(); di++) {
+                            HirCallArg da = cDel.get(di);
+                            List<HirExpr> rw =
+                                    bodyRewriter.rewrite(ctor.ownerId(), -1, List.of(da.value()));
+                            HirExpr nv = rw.size() == 1 ? rw.get(0) : da.value();
+                            if (nv != da.value()) {
+                                if (delCopy == null) {
+                                    delCopy = new ArrayList<>(cDel);
+                                }
+                                delCopy.set(di, new HirCallArg(da.name(), nv));
+                            }
+                        }
+                        if (delCopy != null) {
+                            cDel = delCopy;
+                        }
+                    }
+                    List<HirExpr> cBody = bodyRewriter.rewrite(ctor.ownerId(), -1, ctor.body());
+                    if (cnp != ctor.params()
+                            || cPre != ctor.preDelegateBody()
+                            || cDel != ctor.delegateArgs()
+                            || cBody != ctor.body()) {
+                        ctorsChanged = true;
+                        ctorsCopy.add(ctor.withBodies(cnp, cPre, cDel, cBody));
+                    } else {
+                        ctorsCopy.add(ctor);
+                    }
+                }
+                if (ctorsChanged) {
+                    newCtors = ctorsCopy;
+                }
+            }
             HirStaticBlock ns = cls.staticBlock();
             if (ns != null) {
                 List<HirExpr> nsb = bodyRewriter.rewrite(cls.id(), -1, ns.body());
@@ -847,9 +900,9 @@ public final class HirRewriter {
                     ns = ns.withBody(nsb);
                 }
             }
-            if (np != cls.params() || nb != cls.body() || ns != cls.staticBlock()) {
+            if (np != cls.params() || nb != cls.body() || ctorsChanged || ns != cls.staticBlock()) {
                 changed = true;
-                cls = cls.withBodyAndStatic(np, nb, ns);
+                cls = cls.withBodyAndStatic(np, nb, newCtors, ns);
             }
             newClasses.put(e.getKey(), cls);
         }

@@ -84,6 +84,14 @@ final class HirDeclLowerer {
                 builder.orderedFunctions.add(ctx);
                 return super.visitFunctionLiteral(ctx);
             }
+
+            @Override
+            public Void visitInitExpression(BabbleParser.InitExpressionContext ctx) {
+                if (ctx.fnParameters() != null) {
+                    builder.initIds.put(ctx, builder.nextOwnerId++);
+                }
+                return super.visitInitExpression(ctx);
+            }
         }.visit(file);
 
         // Compute compiled JVM names and implemented interfaces for every class/object.
@@ -376,13 +384,45 @@ final class HirDeclLowerer {
             }
 
             List<HirExpr> body = new ArrayList<>(bodyBlock.expression().size());
+            BabbleParser.InitExpressionContext primaryInit = null;
+            List<BabbleParser.InitExpressionContext> explicitInits = new ArrayList<>();
             for (BabbleParser.ExpressionContext e : bodyBlock.expression()) {
+                if (e instanceof BabbleParser.InitExpressionContext initCtx) {
+                    if (initCtx.fnParameters() == null) {
+                        primaryInit = initCtx;
+                    } else {
+                        explicitInits.add(initCtx);
+                    }
+                    continue;
+                }
+                if (e instanceof BabbleParser.DefExpressionContext def
+                        && def.value == null
+                        && builder.scopes.lowering().defTarget(def).kind()
+                                == LoweringTargets.DefKind.MEMBER) {
+                    continue;
+                }
                 body.add(builder.lowerExpr(e));
             }
 
+            boolean allDefFinalSafe =
+                    !isObject && builder.scopes.lowering().isAllDefFieldsFinalSafe(ctx);
+            List<HirConstructor> constructors =
+                    lowerConstructors(
+                            ctx,
+                            id,
+                            isObject,
+                            shape,
+                            params,
+                            primaryInit,
+                            explicitInits,
+                            allDefFinalSafe);
+
             List<HirVar> declared = builder.hirVars(builder.resolution.declared(ctx));
             List<HirVar> captured = builder.hirVars(builder.resolution.captured(ctx));
-            boolean fastRecord = isFastRecordClass(shape, declared, captured, params, body);
+            boolean fastRecord =
+                    primaryInit == null
+                            && explicitInits.isEmpty()
+                            && isFastRecordClass(shape, declared, captured, params, body);
 
             return new HirClass(
                     id,
@@ -401,12 +441,172 @@ final class HirDeclLowerer {
                     overloadMethodFnIds,
                     lowerTypeList(typeList),
                     body,
+                    constructors,
+                    allDefFinalSafe,
                     lowerStaticBlock(staticBlk),
                     fastRecord,
                     ctx.getStart().getLine());
         } finally {
             builder.currentFunction = savedFn;
         }
+    }
+
+    private List<HirConstructor> lowerConstructors(
+            ParserRuleContext ctx,
+            int classId,
+            boolean isObject,
+            ClassShape shape,
+            List<HirParam> primaryParams,
+            BabbleParser.InitExpressionContext primaryInit,
+            List<BabbleParser.InitExpressionContext> explicitInits,
+            boolean allDefFinalSafe) {
+        if (isObject) {
+            List<HirVar> initVars =
+                    primaryInit != null
+                            ? builder.hirVars(builder.resolution.declared(primaryInit))
+                            : List.of();
+            List<HirExpr> initBody =
+                    primaryInit != null
+                            ? lowerExprList(primaryInit.initBlock.expression())
+                            : List.of();
+            return List.of(
+                    new HirConstructor(
+                            0,
+                            classId,
+                            true,
+                            false,
+                            initVars,
+                            List.of(),
+                            0,
+                            0,
+                            -1,
+                            -1,
+                            List.of(),
+                            List.of(),
+                            null,
+                            initBody,
+                            false,
+                            primaryInit != null
+                                    ? primaryInit.getStart().getLine()
+                                    : ctx.getStart().getLine()));
+        }
+        int ctorCount = shape.constructorCount();
+        List<HirConstructor> result = new ArrayList<>(ctorCount);
+        int explicitCursor = 0;
+        for (int k = 0; k < ctorCount; k++) {
+            ClassShape.ConstructorShape cs = shape.constructor(k);
+            if (cs.isPrimary()) {
+                List<HirVar> initVars =
+                        primaryInit != null
+                                ? builder.hirVars(builder.resolution.declared(primaryInit))
+                                : List.of();
+                List<HirExpr> initBody =
+                        primaryInit != null
+                                ? lowerExprList(primaryInit.initBlock.expression())
+                                : List.of();
+                result.add(
+                        new HirConstructor(
+                                k,
+                                classId,
+                                true,
+                                cs.isPrivate(),
+                                initVars,
+                                primaryParams,
+                                cs.requiredParameters(),
+                                cs.keywordOnlyStart(),
+                                cs.restIndex(),
+                                -1,
+                                List.of(),
+                                List.of(),
+                                null,
+                                initBody,
+                                allDefFinalSafe,
+                                primaryInit != null
+                                        ? primaryInit.getStart().getLine()
+                                        : ctx.getStart().getLine()));
+            } else {
+                BabbleParser.InitExpressionContext initCtx = explicitInits.get(explicitCursor++);
+                int initOwnerId = builder.initIds.getOrDefault(initCtx, classId);
+                List<BabbleParser.FnParamContext> fnParams = initCtx.fnParameters().fnParam();
+                List<HirParam> ctorParams = new ArrayList<>(fnParams.size());
+                String[] paramNames = cs.parameters();
+                for (int i = 0; i < fnParams.size(); i++) {
+                    BabbleParser.FnParamContext p = fnParams.get(i);
+                    BabbleParser.ExpressionContext defVal = ScopeAnalysis.paramDefault(p);
+                    ctorParams.add(
+                            new HirParam(
+                                    paramNames[i],
+                                    builder.hirVar(builder.resolution.variable(p)),
+                                    builder.scopes.lowering().declarationKind(p),
+                                    builder.scopes.lowering().numericWideningRank(p),
+                                    builder.scopes.lowering().checkedType(p),
+                                    -1,
+                                    defVal != null ? builder.lowerExpr(defVal) : null,
+                                    builder.scopes.lowering().javaSamTarget(p),
+                                    builder.scopes.lowering().paramOwnership(p),
+                                    ScopeAnalysis.isVar(p),
+                                    p.getStart().getLine()));
+                }
+                List<BabbleParser.ExpressionContext> exprs = initCtx.initBlock.expression();
+                int delPos = -1;
+                BabbleParser.CallContext delCall = null;
+                for (int i = 0; i < exprs.size(); i++) {
+                    if (exprs.get(i) instanceof BabbleParser.CallContext cc
+                            && builder.scopes.calls().isDelegatingThisCall(cc)) {
+                        delPos = i;
+                        delCall = cc;
+                        break;
+                    }
+                }
+                int delegateIndex = -1;
+                List<HirExpr> preDelegate = List.of();
+                List<HirCallArg> delegateArgs = List.of();
+                LoweringTargets.ArgumentBinding delegateBinding = null;
+                List<HirExpr> initBody;
+                if (delCall != null) {
+                    delegateIndex = builder.scopes.calls().constructorIndex(delCall);
+                    preDelegate = lowerExprList(exprs.subList(0, delPos));
+                    delegateArgs =
+                            builder.callLowerer.lowerCallArgs(
+                                    delCall.callParameters().callParameter(),
+                                    builder.scopes.calls().callSpreadAdapts(delCall));
+                    delegateBinding = builder.scopes.calls().argumentBinding(delCall);
+                    initBody = lowerExprList(exprs.subList(delPos + 1, exprs.size()));
+                } else {
+                    initBody = lowerExprList(exprs);
+                }
+                result.add(
+                        new HirConstructor(
+                                k,
+                                initOwnerId,
+                                false,
+                                cs.isPrivate(),
+                                builder.hirVars(builder.resolution.declared(initCtx)),
+                                ctorParams,
+                                cs.requiredParameters(),
+                                cs.keywordOnlyStart(),
+                                cs.restIndex(),
+                                delegateIndex,
+                                preDelegate,
+                                delegateArgs,
+                                delegateBinding,
+                                initBody,
+                                allDefFinalSafe,
+                                initCtx.getStart().getLine()));
+            }
+        }
+        return result;
+    }
+
+    private List<HirExpr> lowerExprList(List<BabbleParser.ExpressionContext> exprs) {
+        if (exprs.isEmpty()) {
+            return List.of();
+        }
+        List<HirExpr> out = new ArrayList<>(exprs.size());
+        for (BabbleParser.ExpressionContext e : exprs) {
+            out.add(builder.lowerExpr(e));
+        }
+        return out;
     }
 
     private static boolean isFastRecordClass(

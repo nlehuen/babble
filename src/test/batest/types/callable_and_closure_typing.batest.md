@@ -497,7 +497,7 @@ def Runner = class () (
     def go = fn (mut b : InitBox) -> ( b.x = 1 )
 )
 def InitBox = class () (
-    Runner().go(this)
+    def trigger = Runner().go(this)
     var x = 0
 )
 InitBox()
