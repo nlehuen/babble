@@ -51,8 +51,8 @@ curl -sS -X POST "http://127.0.0.1:7331/crib?modes=interpret,O0,O1,O2" \
 
 Running untrusted or adversarial Babble probes inside a long-lived JVM introduces isolation hazards that one-shot Surefire JVMs mask:
 
-1. **Non-termination & uninterruptible compiled loops:** `BIP032` Surface 6 (`A3`) explicitly probes `@TERMINATING` escapes and infinite loops (`while true then ()`, diverging tail recursion). `Thread.stop()` throws `UnsupportedOperationException` on JDK 21+, and instrumenting compiled `-O0`/`-O1`/`-O2` bytecode with cancellation polls would alter the exact bytecode and IR under test.
-2. **Process-global JVM mutations via Java interop:** Babble has full `java.*` interop (essential for `BIP032` Surface 5 axiom/bridge probes). A trial can call `java.lang.System.setProperty(...)`, `System.setOut(...)`, `System.exit(0)`, `Locale.setDefault(...)`, mutate static JDK state, allocate until `OutOfMemoryError`, or spawn stray background threads. `SecurityManager` is deprecated in JDK 21 and permanently disabled in JDK 24+ (JEP 486), so it cannot be relied on.
+1. **Non-termination & uninterruptible compiled loops:** `BIP032` `verifiers` (`A3`) explicitly probes `@TERMINATING` escapes and infinite loops (`while true then ()`, diverging tail recursion). `Thread.stop()` throws `UnsupportedOperationException` on JDK 21+, and instrumenting compiled `-O0`/`-O1`/`-O2` bytecode with cancellation polls would alter the exact bytecode and IR under test.
+2. **Process-global JVM mutations via Java interop:** Babble has full `java.*` interop (essential for `BIP032` `interop` axiom/bridge probes). A trial can call `java.lang.System.setProperty(...)`, `System.setOut(...)`, `System.exit(0)`, `Locale.setDefault(...)`, mutate static JDK state, allocate until `OutOfMemoryError`, or spawn stray background threads. `SecurityManager` is deprecated in JDK 21 and permanently disabled in JDK 24+ (JEP 486), so it cannot be relied on.
 3. **Long-lived Metaspace & cache leaks:** Auditing `src/main/java/org/babblelang/` revealed real static caches that are harmless in short-lived test JVMs but leak across thousands of trials in a persistent server: strong `Class<?>` keys in `JavaClass.CLASSES` and `JavaTypes.FUNCTIONAL_METHODS` pin `ScriptClassLoader`s, unbounded ephemeral `babble|<Name>|T<N>` keys accumulate in `Types.PARSED`, and `BabbleCompiler.VERIFY` currently reads process-global `System` properties instead of per-engine bindings.
 4. **Protocol corruption via `System.out`:** A script calling `java.lang.System.out.println(...)` directly bypasses `ScriptContext.getWriter()` and would corrupt naive stdout-framed worker IPC.
 
@@ -182,7 +182,7 @@ A read-only audit of `src/main/java/org/babblelang/` identified every piece of s
 
 Like `BIP032-D5`, `-crib` is a **local developer and red-team agent soundness tool**, not a multi-tenant untrusted-code sandbox:
 - It binds to `127.0.0.1` by default and refuses silent exposure on `0.0.0.0` (passing a non-loopback `--host` logs a loud warning to stderr).
-- Because `BIP032` Surface 5 probes legitimate `java.*` APIs, `-crib` does **not** restrict arbitrary JDK classes like `java.io.File` or `java.lang.ProcessBuilder`. If an automated agent runs completely untrusted external prompts, run `-crib` inside the existing CI container (`podman run --rm ...`, `src/tools/Containerfile.ci`) for OS/filesystem/network sandboxing.
+- Because `BIP032` `interop` probes legitimate `java.*` APIs, `-crib` does **not** restrict arbitrary JDK classes like `java.io.File` or `java.lang.ProcessBuilder`. If an automated agent runs completely untrusted external prompts, run `-crib` inside the existing CI container (`podman run --rm ...`, `src/tools/Containerfile.ci`) for OS/filesystem/network sandboxing.
 
 ---
 

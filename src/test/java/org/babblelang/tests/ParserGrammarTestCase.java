@@ -72,7 +72,12 @@ public class ParserGrammarTestCase extends BabbleTestBase {
         Path batestRoot = Path.of("src/test/batest");
         try (Stream<Path> stream = Files.walk(batestRoot)) {
             for (Path file :
-                    stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
+                    stream.filter(p -> p.toString().endsWith(".batest.md"))
+                            .filter(p ->
+                                    !org.babblelang.tests.batest.BatestTestCase
+                                            .isQuarantinedJailbreak(p))
+                            .sorted()
+                            .toList()) {
                 BatestFile parsed =
                         org.babblelang.batest.BatestParser.parse(
                                 file, batestRoot.relativize(file).toString());

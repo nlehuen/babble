@@ -560,4 +560,27 @@ public class BatestV2HarnessTestCase {
         Assertions.assertTrue(o2.matchesStage("final"));
         Assertions.assertFalse(o2.matchesStage("after:HirSccp"));
     }
+
+    @Test
+    public void testQuarantinedJailbreaksExcludedFromNormalDiscovery() {
+        Path quarantined =
+                BatestTestCase.BATEST_ROOT.resolve(
+                        "jailbreaks/effects_e2_object_calling_io_exit.batest.md");
+        Path quarantinedNested =
+                BatestTestCase.BATEST_ROOT.resolve("jailbreaks/sub/nested.batest.md");
+        Path permanentSoundness =
+                BatestTestCase.BATEST_ROOT.resolve("soundness/type_soundness.batest.md");
+        Path regularSpec = BatestTestCase.BATEST_ROOT.resolve("types/type_aliases.batest.md");
+
+        Assertions.assertTrue(BatestTestCase.isQuarantinedJailbreak(quarantined));
+        Assertions.assertTrue(BatestTestCase.isQuarantinedJailbreak(quarantinedNested));
+        Assertions.assertFalse(BatestTestCase.isQuarantinedJailbreak(permanentSoundness));
+        Assertions.assertFalse(BatestTestCase.isQuarantinedJailbreak(regularSpec));
+        Assertions.assertFalse(BatestTestCase.isQuarantinedJailbreak(null));
+
+        Assertions.assertFalse(BatestTestCase.isBatestFile(quarantined));
+        Assertions.assertFalse(BatestTestCase.isBatestFile(quarantinedNested));
+        Assertions.assertTrue(BatestTestCase.isBatestFile(permanentSoundness));
+        Assertions.assertTrue(BatestTestCase.isBatestFile(regularSpec));
+    }
 }
