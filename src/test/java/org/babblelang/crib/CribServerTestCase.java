@@ -292,6 +292,32 @@ public class CribServerTestCase {
         Assertions.assertNull(CribEvaluator.computeParityDiff(agreeing));
     }
 
+    private static CribProtocol.ModeVerdict failedWith(String error) {
+        return new CribProtocol.ModeVerdict(
+                CribProtocol.STATUS_PASS, "USER_ERROR", "", "", error, null, List.of(), null, 1);
+    }
+
+    @Test
+    public void testParityDiffSkipsOnlyDeclaredBackendScopedChannelsAcrossBackends() {
+        Map<String, CribProtocol.ModeVerdict> declared = new LinkedHashMap<>();
+        declared.put("interpret", failedWith("jvm text"));
+        declared.put("O1", failedWith("jvm text"));
+        declared.put("wasm-O1", failedWith("wasm text"));
+        declared.put("wasm-O2", failedWith("wasm text"));
+        // Without a declaration the JVM/Wasm difference is a parity divergence ...
+        Assertions.assertNotNull(CribEvaluator.computeParityDiff(declared));
+        // ... with backend-scoped error blocks it is expected.
+        Assertions.assertNull(CribEvaluator.computeParityDiff(declared, java.util.Set.of("error")));
+        // Declaring another channel does not hide it.
+        Assertions.assertNotNull(
+                CribEvaluator.computeParityDiff(declared, java.util.Set.of("stdout")));
+        // Modes of one backend must still agree among themselves on a declared channel.
+        declared.put("wasm-O2", failedWith("other wasm text"));
+        String diff = CribEvaluator.computeParityDiff(declared, java.util.Set.of("error"));
+        Assertions.assertNotNull(diff);
+        Assertions.assertTrue(diff.contains("wasm-O1") && diff.contains("wasm-O2"), diff);
+    }
+
     @Test
     public void testAdversarialIsolationSystemOutAndPropertiesAndLocaleAndExit() throws Exception {
         // 1. Direct java.lang.System.out writes must never corrupt worker IPC framing.

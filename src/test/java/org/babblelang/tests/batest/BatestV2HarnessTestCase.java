@@ -583,4 +583,110 @@ public class BatestV2HarnessTestCase {
         Assertions.assertTrue(BatestTestCase.isBatestFile(permanentSoundness));
         Assertions.assertTrue(BatestTestCase.isBatestFile(regularSpec));
     }
+
+    private static final String SCOPED_CASE =
+            "## A\n```babble\n1\n```\n"
+                    + "```error\n# error backend:jvm\njvm text\n```\n"
+                    + "```error\n# error backend:wasm\nwasm text\n```\n";
+
+    private static BatestRunner.CaseOutcome failedWith(String error) {
+        return new BatestRunner.CaseOutcome(
+                BatestRunner.Kind.USER_ERROR, error, "", "", error, null);
+    }
+
+    @Test
+    public void testBackendScopedOutcomeBlocksParseAndSelectPerBackend() {
+        BatestFile.BatestCase c =
+                BatestParser.parseString(SCOPED_CASE, "scoped.batest.md").cases().get(0);
+        Assertions.assertNull(c.expectedError());
+        Assertions.assertEquals(java.util.Set.of("error"), c.backendScopedChannels());
+        Assertions.assertEquals(
+                "jvm text", c.forBackend(BatestFile.Backend.JVM).expectedError().text());
+        Assertions.assertEquals(
+                "wasm text", c.forBackend(BatestFile.Backend.WASM).expectedError().text());
+
+        // Each backend is checked against its own block, and the default overload means the JVM.
+        Assertions.assertNull(BatestRunner.evaluateBehavioral(c, failedWith("jvm text")));
+        Assertions.assertNotNull(BatestRunner.evaluateBehavioral(c, failedWith("wasm text")));
+        Assertions.assertNull(
+                BatestRunner.evaluateBehavioral(
+                        c, failedWith("wasm text"), BatestFile.Backend.WASM));
+        Assertions.assertNotNull(
+                BatestRunner.evaluateBehavioral(
+                        c, failedWith("jvm text"), BatestFile.Backend.WASM));
+
+        // A Wasm outcome that also satisfies the JVM's blocks means the divergence is gone.
+        BatestFile.BatestCase stale =
+                BatestParser.parseString(
+                                "## A\n```babble\n1\n```\n"
+                                        + "```error\n# error backend:jvm regex\n.* text\n```\n"
+                                        + "```error\n# error backend:wasm\nwasm text\n```\n",
+                                "stale.batest.md")
+                        .cases()
+                        .get(0);
+        String staleError =
+                BatestRunner.evaluateBehavioral(
+                        stale, failedWith("wasm text"), BatestFile.Backend.WASM);
+        Assertions.assertNotNull(staleError);
+        Assertions.assertTrue(staleError.contains("no longer differ"), staleError);
+
+        // A block for one backend only : the other backend gets the channel's default (success).
+        BatestFile.BatestCase wasmOnly =
+                BatestParser.parseString(
+                                "## A\n```babble\n1\n```\n```error\n# error backend:wasm regex\nw.*\n```\n",
+                                "wasm_only.batest.md")
+                        .cases()
+                        .get(0);
+        Assertions.assertNull(wasmOnly.forBackend(BatestFile.Backend.JVM).expectedError());
+        Assertions.assertTrue(wasmOnly.forBackend(BatestFile.Backend.WASM).expectedError().regex());
+        Assertions.assertNull(
+                BatestRunner.evaluateBehavioral(
+                        wasmOnly,
+                        new BatestRunner.CaseOutcome(
+                                BatestRunner.Kind.OK, "", "", "", null, null)));
+    }
+
+    @Test
+    public void testBackendScopedOutcomeBlocksRejectBadSelectorsAndOverlaps() {
+        String babble = "## A\n```babble\n1\n```\n";
+        // {expected message fragment, outcome blocks}
+        List<String[]> rejected =
+                List.of(
+                        new String[] {
+                            "unknown backend 'js'", "```stdout\n# stdout backend:js\nx\n```\n"
+                        },
+                        new String[] {
+                            "unknown backend '-wasm'", "```stdout\n# stdout backend:-wasm\nx\n```\n"
+                        },
+                        new String[] {
+                            "unknown backend 'jvm,wasm'",
+                            "```stdout\n# stdout backend:jvm,wasm\nx\n```\n"
+                        },
+                        new String[] {
+                            "overlaps a backend-scoped one",
+                            "```stdout\n# stdout backend:wasm\nx\n```\n```stdout\ny\n```\n"
+                        },
+                        new String[] {
+                            "overlaps a block without backend",
+                            "```stdout\ny\n```\n```stdout\n# stdout backend:wasm\nx\n```\n"
+                        },
+                        new String[] {
+                            "duplicate 'stderr' block for backend:jvm",
+                            "```stderr\n# stderr backend:jvm\nx\n```\n"
+                                    + "```stderr\n# stderr backend:jvm\ny\n```\n"
+                        },
+                        new String[] {
+                            "identical",
+                            "```error\n# error backend:jvm\nx\n```\n"
+                                    + "```error\n# error backend:wasm\nx\n```\n"
+                        });
+        for (String[] r : rejected) {
+            IllegalArgumentException ex =
+                    Assertions.assertThrows(
+                            IllegalArgumentException.class,
+                            () -> BatestParser.parseString(babble + r[1], "bad.batest.md"),
+                            r[0]);
+            Assertions.assertTrue(ex.getMessage().contains(r[0]), ex.getMessage());
+        }
+    }
 }

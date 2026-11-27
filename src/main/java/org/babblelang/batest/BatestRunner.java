@@ -192,6 +192,35 @@ public final class BatestRunner {
      *     message
      */
     public static String evaluateBehavioral(BatestFile.BatestCase testCase, CaseOutcome outcome) {
+        return evaluateBehavioral(testCase, outcome, BatestFile.Backend.JVM);
+    }
+
+    /**
+     * Evaluates behavioral expectations as {@code backend} sees them ({@code BIP029-D11}) : its
+     * {@code backend:} blocks replace the unscoped ones. On Wasm, a case whose backend-scoped
+     * blocks no longer differ in practice (the Wasm outcome also satisfies the JVM's) fails, so a
+     * fixed divergence cannot stay declared.
+     *
+     * @return {@code null} if all behavioral expectations match, otherwise a descriptive mismatch
+     *     message
+     */
+    public static String evaluateBehavioral(
+            BatestFile.BatestCase testCase, CaseOutcome outcome, BatestFile.Backend backend) {
+        String own = evaluateExpectations(testCase.forBackend(backend), outcome);
+        if (own != null
+                || backend != BatestFile.Backend.WASM
+                || testCase.backendScopedChannels().isEmpty()) {
+            return own;
+        }
+        if (evaluateExpectations(testCase.forBackend(BatestFile.Backend.JVM), outcome) == null) {
+            return "Backend-specific expectations no longer differ : merge the backend: blocks"
+                    + " into one";
+        }
+        return null;
+    }
+
+    private static String evaluateExpectations(
+            BatestFile.BatestCase testCase, CaseOutcome outcome) {
         if (outcome.kind() == Kind.INTERNAL_CRASH) {
             return "INTERNAL_CRASH";
         }

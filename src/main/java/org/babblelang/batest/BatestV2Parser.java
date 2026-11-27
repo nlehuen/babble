@@ -388,45 +388,8 @@ public final class BatestV2Parser {
                     c.inputs.add(code);
                 }
             }
-            case "stdout" -> {
-                if (c.hasStdout) {
-                    throw new IllegalArgumentException(
-                            sourceName + ":" + headerLine + ": duplicate 'stdout' block in case");
-                }
-                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
-                String body = rawBody.strip();
-                if (regex) {
-                    validateRegex(body, sourceName, headerLine, "stdout");
-                }
-                c.hasStdout = true;
-                c.expectedStdout = new BatestFile.TextExpectation(body, regex);
-            }
-            case "stderr" -> {
-                if (c.hasStderr) {
-                    throw new IllegalArgumentException(
-                            sourceName + ":" + headerLine + ": duplicate 'stderr' block in case");
-                }
-                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
-                String body = rawBody.strip();
-                if (regex) {
-                    validateRegex(body, sourceName, headerLine, "stderr");
-                }
-                c.hasStderr = true;
-                c.expectedStderr = new BatestFile.TextExpectation(body, regex);
-            }
-            case "error" -> {
-                if (c.hasError) {
-                    throw new IllegalArgumentException(
-                            sourceName + ":" + headerLine + ": duplicate 'error' block in case");
-                }
-                boolean regex = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
-                String body = rawBody.strip();
-                if (regex) {
-                    validateRegex(body, sourceName, headerLine, "error");
-                }
-                c.hasError = true;
-                c.expectedError = new BatestFile.TextExpectation(body, regex);
-            }
+            case "stdout", "stderr", "error" ->
+                    addOutcomeBlock(c, kind, tokens, rawBody, sourceName, headerLine, optionsLine);
             case "hir", "wat" -> {
                 IrTier tier = IrTier.parse(kind);
                 BatestFile.IrExpectation ir =
@@ -474,12 +437,35 @@ public final class BatestV2Parser {
         }
     }
 
-    private static boolean parseOutcomeFlags(
+    /** The options of a {@code stdout}, {@code stderr} or {@code error} block. */
+    private record OutcomeOptions(boolean regex, BatestFile.Backend backend) {}
+
+    private static OutcomeOptions parseOutcomeFlags(
             List<String> tokens, String kind, String sourceName, int lineNum) {
         boolean regex = false;
+        BatestFile.Backend backend = null;
         for (String tok : tokens) {
             if ("regex".equals(tok) && !regex) {
                 regex = true;
+            } else if (tok.startsWith("backend:") && backend == null) {
+                String value = tok.substring("backend:".length());
+                backend =
+                        switch (value) {
+                            case "jvm" -> BatestFile.Backend.JVM;
+                            case "wasm" -> BatestFile.Backend.WASM;
+                            default ->
+                                    throw new IllegalArgumentException(
+                                            sourceName
+                                                    + ":"
+                                                    + lineNum
+                                                    + ": unknown backend '"
+                                                    + value
+                                                    + "' on '"
+                                                    + kind
+                                                    + "' block (expected backend:jvm or"
+                                                    + " backend:wasm ; a block without backend:"
+                                                    + " applies to both)");
+                        };
             } else {
                 throw new IllegalArgumentException(
                         sourceName
@@ -489,10 +475,74 @@ public final class BatestV2Parser {
                                 + tok
                                 + "' on '"
                                 + kind
-                                + "' block (only 'regex' is supported)");
+                                + "' block (only 'regex' and 'backend:<jvm|wasm>' are supported)");
             }
         }
-        return regex;
+        return new OutcomeOptions(regex, backend);
+    }
+
+    /**
+     * Records a {@code stdout}, {@code stderr} or {@code error} block, unscoped or for one backend
+     * ({@code BIP029-D11}) : at most one block of a kind may apply to each backend.
+     */
+    private static void addOutcomeBlock(
+            CaseBuilder c,
+            String kind,
+            List<String> tokens,
+            String rawBody,
+            String sourceName,
+            int headerLine,
+            int optionsLine) {
+        OutcomeOptions opts = parseOutcomeFlags(tokens, kind, sourceName, optionsLine);
+        String body = rawBody.strip();
+        if (opts.regex()) {
+            validateRegex(body, sourceName, headerLine, kind);
+        }
+        BatestFile.TextExpectation expectation = new BatestFile.TextExpectation(body, opts.regex());
+        int k = CaseBuilder.kindIndex(kind);
+        boolean unscopedTaken = c.unscoped[k] != null;
+        boolean jvmTaken = c.jvmOnly[k] != null;
+        boolean wasmTaken = c.wasmOnly[k] != null;
+        String clash = null;
+        if (opts.backend() == null) {
+            if (unscopedTaken) {
+                clash = "duplicate '" + kind + "' block in case";
+            } else if (jvmTaken || wasmTaken) {
+                clash = "'" + kind + "' block without backend: overlaps a backend-scoped one";
+            }
+        } else {
+            boolean sameTaken = opts.backend() == BatestFile.Backend.JVM ? jvmTaken : wasmTaken;
+            if (unscopedTaken) {
+                clash =
+                        "'"
+                                + kind
+                                + "' block for backend:"
+                                + opts.backend().spelling()
+                                + " overlaps a block without backend:";
+            } else if (sameTaken) {
+                clash = "duplicate '" + kind + "' block for backend:" + opts.backend().spelling();
+            }
+        }
+        if (clash != null) {
+            throw new IllegalArgumentException(sourceName + ":" + headerLine + ": " + clash);
+        }
+        if (opts.backend() == null) {
+            c.unscoped[k] = expectation;
+        } else if (opts.backend() == BatestFile.Backend.JVM) {
+            c.jvmOnly[k] = expectation;
+        } else {
+            c.wasmOnly[k] = expectation;
+        }
+        if (c.jvmOnly[k] != null && c.jvmOnly[k].equals(c.wasmOnly[k])) {
+            throw new IllegalArgumentException(
+                    sourceName
+                            + ":"
+                            + headerLine
+                            + ": '"
+                            + kind
+                            + "' blocks for backend:jvm and backend:wasm are identical : write"
+                            + " one block without backend:");
+        }
     }
 
     private static BatestFile.IrExpectation parseIrBlock(
@@ -824,12 +874,24 @@ public final class BatestV2Parser {
         final Set<String> seenIrKeys = new HashSet<>();
         boolean session;
         boolean allowLarge;
-        boolean hasStdout;
-        boolean hasStderr;
-        boolean hasError;
-        BatestFile.TextExpectation expectedStdout = BatestFile.TextExpectation.EMPTY;
-        BatestFile.TextExpectation expectedStderr = BatestFile.TextExpectation.EMPTY;
-        BatestFile.TextExpectation expectedError;
+
+        /** The outcome blocks by kind ({@link #kindIndex}) : unscoped, JVM-only, Wasm-only. */
+        final BatestFile.TextExpectation[] unscoped = new BatestFile.TextExpectation[3];
+
+        final BatestFile.TextExpectation[] jvmOnly = new BatestFile.TextExpectation[3];
+        final BatestFile.TextExpectation[] wasmOnly = new BatestFile.TextExpectation[3];
+
+        static int kindIndex(String kind) {
+            return switch (kind) {
+                case "stdout" -> 0;
+                case "stderr" -> 1;
+                default -> 2;
+            };
+        }
+
+        static BatestFile.BackendExpectations scoped(BatestFile.TextExpectation[] blocks) {
+            return new BatestFile.BackendExpectations(blocks[0], blocks[1], blocks[2]);
+        }
 
         CaseBuilder(int index, int line, String name) {
             this.index = index;
@@ -838,6 +900,13 @@ public final class BatestV2Parser {
         }
 
         BatestFile.BatestCase build(String sourceName, boolean enforceBudgets) {
+            BatestFile.TextExpectation expectedStdout =
+                    unscoped[0] != null ? unscoped[0] : BatestFile.TextExpectation.EMPTY;
+            BatestFile.TextExpectation expectedStderr =
+                    unscoped[1] != null ? unscoped[1] : BatestFile.TextExpectation.EMPTY;
+            BatestFile.TextExpectation expectedError = unscoped[2];
+            boolean expectsAnyError =
+                    expectedError != null || jvmOnly[2] != null || wasmOnly[2] != null;
             if (inputs.isEmpty()) {
                 throw new IllegalArgumentException(
                         sourceName
@@ -869,7 +938,7 @@ public final class BatestV2Parser {
                                 + " chars, comments excluded) : split it or add large=\"<reason>\"");
             }
             if ((sourceName.startsWith("compiler/") || sourceName.contains("/compiler/"))
-                    && expectedError == null
+                    && !expectsAnyError
                     && !session) {
                 boolean hasHirO0 = false;
                 boolean hasHirO1 = false;
@@ -910,7 +979,9 @@ public final class BatestV2Parser {
                     expectedStdout,
                     expectedStderr,
                     expectedError,
-                    irExpectations);
+                    irExpectations,
+                    scoped(jvmOnly),
+                    scoped(wasmOnly));
         }
 
         private static String summarizeExpected(
