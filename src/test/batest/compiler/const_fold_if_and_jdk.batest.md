@@ -171,10 +171,10 @@ fn checkIf (p:int) -> bool {nothrow unique}
 fn checkIf (p:int) -> bool {nothrow unique}
   (block
     (def $cse0 (+:int var(p) 1:int))
-    (def wBl (widen[double] var($cse0)))
-    (def wArg (+:double var(wBl) 0.5:double))
-    (def nc (if (>:bool var(p) 0:int) 1:int 2:int))
-    (and (and (==:bool var(wBl) 3.0:double) (==:bool var(wArg) 3.5:double)) (==:bool var(nc) 1:int)))
+    (def wBl (widen[double] var($cse0))))
+  (def wArg (+:double var(wBl) 0.5:double))
+  (def nc (if (>:bool var(p) 0:int) 1:int 2:int))
+  (and (and (==:bool var(wBl) 3.0:double) (==:bool var(wArg) 3.5:double)) (==:bool var(nc) 1:int))
 ```
 
 ## Whitelisted foldable String and Math calls, plus non-folding Math.floorDiv

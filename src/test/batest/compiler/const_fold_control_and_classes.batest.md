@@ -482,8 +482,8 @@ fn widenIf (p:int, x:double) -> double {nothrow unique}
     (def $cse0 (+:int var(p) 1:int))
     (def a (+:double (convert[double] var($cse0)) var(x)))
     (def b (widen[double] var(p)))
-    (def c (widen[double] var($cse0)))
-    (+:double (+:double var(a) var(b)) var(c)))
+    (def c (widen[double] var($cse0))))
+  (+:double (+:double var(a) var(b)) var(c))
 ```
 
 ## String concatenation exceeding MAX_FOLDED_STRING_LENGTH stays unfolded

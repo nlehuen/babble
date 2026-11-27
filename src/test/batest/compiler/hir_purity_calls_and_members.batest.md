@@ -291,8 +291,9 @@ fn run () -> int {nothrow unique}
 fn run () -> int {nothrow unique}
   (class-ref LR)
   (block
-    (call name(R) 3:int)
-    1:int)
+    (def $cse0 (call name(R) 3:int))
+    (def u2 (get-this-field x)))
+  1:int
 ```
 
 ## HirPurity : uninitialized Def, captured cell local, capturing closure, Move, and late RecordNew

@@ -61,8 +61,9 @@ fn run (n:int, k:int) -> double {pure unique}
 fn run (n:int, k:int) -> double {pure unique}
   (block
     (def $cse0 (widen[double] var(k)))
-    (def w2 (+:double (convert[double] var(n)) 1.5:double))
-    (+:double (+:double var($cse0) var(w2)) (call name(double) var(n))))
+    (def w1 var($cse0))
+    (def w2 (+:double (convert[double] var(n)) 1.5:double)))
+  (+:double (+:double var(w1) var(w2)) (call name(double) var(n)))
 ```
 
 ## Projection beta-reduction and SROA with impure, local, and anonymous record class refs
@@ -545,11 +546,11 @@ fn work (a:obj, b:obj) -> double {nothrow unique}
     (block
       (core-new list 1:int)
       (def $sr_h_1 2:int))
-    (set tmp (box (+:double (+:double var($cse0) (get-this-field y)) (call name(double) (+:int 2:int (jcall List.size var(xs)))))))
-    (try
-      (block
-        (if (<:bool (nonnull var(tmp)) 0.0:double) (box (call name(assert) false:bool)))
-        (nonnull var(tmp)))
-      (catch _
-        0.0:double)))
+    (set tmp (box (+:double (+:double var($cse0) (get-this-field y)) (call name(double) (+:int 2:int (jcall List.size var(xs))))))))
+  (try
+    (block
+      (if (<:bool (nonnull var(tmp)) 0.0:double) (box (call name(assert) false:bool)))
+      (nonnull var(tmp)))
+    (catch _
+      0.0:double))
 ```

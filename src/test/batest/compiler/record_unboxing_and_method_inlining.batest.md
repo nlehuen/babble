@@ -65,8 +65,8 @@ fn heavy (a:obj, b:obj) -> double {nothrow unique}
     (def $cse5 (get-this-field z))
     (def d1 (+:double (+:double (*:double var($cse0) var($cse1)) (*:double var($cse2) var($cse3))) (*:double var($cse4) var($cse5))))
     (def d2 (+:double (+:double (*:double (+:double var($cse0) 1.0:double) var($cse1)) (*:double (+:double var($cse2) 2.0:double) var($cse3))) (*:double (+:double var($cse4) 3.0:double) var($cse5))))
-    (def d3 (+:double (*:double (-:double var($cse0) var($cse2)) (-:double var($cse1) var($cse3))) (*:double (-:double var($cse2) var($cse4)) (-:double var($cse3) var($cse5)))))
-    (+:double (+:double var(d1) var(d2)) var(d3)))
+    (def d3 (+:double (*:double (-:double var($cse0) var($cse2)) (-:double var($cse1) var($cse3))) (*:double (-:double var($cse2) var($cse4)) (-:double var($cse3) var($cse5))))))
+  (+:double (+:double var(d1) var(d2)) var(d3))
 ```
 
 ## Borrow param that escapes inside callee must not break $unboxed analysis
@@ -187,9 +187,8 @@ fn run (n:int) -> double {nothrow unique}
 ```hir
 ;; hir -O2 fn=run
 fn run (n:int) -> double {nothrow unique}
-  (block
-    (block (def $sr_b_1 -2.0:double))
-    (+:double 12.0:double (call name(double) var(n))))
+  (block (def $sr_b_1 -2.0:double))
+  (+:double 12.0:double (call name(double) var(n)))
 ```
 
 ## Overloaded operator methods on a compiled record
