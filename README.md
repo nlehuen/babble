@@ -964,7 +964,7 @@ Implementation features :
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker, with line editing, history and completion on a terminal, `:type` and `:load` (see [BIP004](docs/design/bip004_repl.md)).
 - [x] command line : `java -jar babble.jar [-O0|-O1|-O2] script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
-- [x] ahead-of-time compilation : `-compile [-O0|-O1|-O2] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)), or with `-target wasm-js` / `-target wasm-bare` (plus optional `-wasm-opt`) compiles directly from target-neutral `HIR` to WebAssembly 3.0 (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, `return_call` tail calls, closed-world interface bitsets & itables, strictly immutable `record` structs and `BIP034` header `def` fields, `Cell`-free value captures, portable strings/arrays/collections, and `axiom wasm.<mod>.<name>` host imports) with zero new Maven dependencies, 4-mode `.batest.md` parity + `wat` goldens, and byte-identical `examples/raytracer-argon/scene.ppm` rendering on Node.js V8 and browser `<canvas>` (see [BIP025](docs/design/bip025_compile-to-wasm.md)).
+- [x] ahead-of-time compilation : `-compile [-O0|-O1|-O2] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)), or with `-target wasm-js` / `-target wasm-bare` (plus optional `-wasm-opt`) compiles directly from target-neutral `HIR` to WebAssembly 3.0 (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, `return_call` tail calls, closed-world interface bitsets & itables, strictly immutable `record` structs and `BIP034` header `def` fields, `Cell`-free value captures, portable strings/arrays/collections, and `axiom wasm.<mod>.<name>` host imports) with zero new Maven dependencies, `-O1`/`-O2` `.batest.md` parity + `wat` goldens, and byte-identical `examples/raytracer-argon/scene.ppm` rendering on Node.js V8 and browser `<canvas>` (see [BIP025](docs/design/bip025_compile-to-wasm.md) and [BIP039](docs/design/bip039_mir-deorbitation.md)).
 - [x] syntax errors that say what was unexpected, and where.
 - [x] a code formatter : `java -jar babble.jar -format`.
 - [x] a fast, isolated HTTP `.batest.md` runner : `java -jar babble.jar -crib` serves `POST /crib?<options>`, `GET /health`, and `POST /recycle` over `jdk.httpserver` backed by a warm, poison-audited, killable worker JVM pool (~10–50 ms per 4-mode verified trial with automatic cross-mode parity diffing and optional isolated `wasm-O1`/`wasm-O2` execution; see [BIP041](docs/design/bip041_crib-server.md)).
@@ -983,7 +983,7 @@ Language features :
 
 Implementation features :
 
-- [ ] deeper effect- and ownership-driven optimizations (`BIP014-P5` Half B : SSA `aegraph` pipeline rewrites over `std/...`).
+- [ ] deeper effect- and ownership-driven optimizations (`BIP014-P5` Half B : `O12` pipeline rewrites over `HirAeGraphPass` for `std/...`).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer

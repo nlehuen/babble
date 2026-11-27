@@ -82,7 +82,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP032** | [The Great Escape — adversarial search for inconsistencies in Babble types and effects](bip032_the-great-escape.md) | 2026-11-24 | Decided (`BIP032-P1`–`P4` planned) | Red-team probes, white-box property tests, runtime canary oracles and a delta-minimizing soundness fuzzer across types, effects, ownership, optimizer/Wasm parity, axioms and verifiers (`RM021`). |
 | **BIP033** | [Tensors as core types with dimensional safety](bip033_tensors.md) | 2026-11-25 | Decided (`BIP033-P1`–`P6` planned) | Core `float16`/`bfloat16` scalars and immutable `tensor of (DType, ...)` types with static/symbolic/dynamic/labeled shapes, E-graph algebraic dim solving, scalar + labeled-subset broadcasting, `matmul`/`einsum`, `unique` FBIP reuse, and a `java.base` strided runtime behind `TensorBackend` SPI (with a compiled-region hook for optional StableHLO/XLA PJRT backends) (`RM023`). |
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
-| **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`–`P9` planned) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of every monolith and god class (JVM and Wasm backends included), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
+| **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`, `P6`–`P9` remaining; `P2`/`P4` retired by `BIP039`; `P3`/`P5` splits landed) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of the remaining oversized classes (`EffectBodyWalker`, `CallEffectAnalyzer`, `EffectAstExtractors`, `CallEmitter`, `WasmCoreEmitter`, `WasmCallEmitter`, `WasmObjectSystem`, `AxiomData`), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
 
 ## Milestones done
 
@@ -186,9 +186,9 @@ Expression-oriented `match x case <pattern> [if <guard>] then (...) else (...)` 
 
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, `BIP036-P1`–`P9`, and `BIP040-P1`–`P5`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`, `P6`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
-Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
+Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`/`-O2`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
 
 The order follows constraints recorded in the BIPs:
 
@@ -205,8 +205,8 @@ The order follows constraints recorded in the BIPs:
 | **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`, `RM019`, `RM024`; a standard library BIP | Completes `BIP014`, which opens `BIP018-P1` (`RM016`). |
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P1`–`P2` | `RM015`, `RM025` | |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
-| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`–`P9` | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2) and `RM023`. |
-| **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Can run now, alongside the others (accelerated by landed `BIP041` `-crib`); hardens soundness ahead of `RM015` and `RM017`. |
+| **RM020** | Compiler simplification & god-class splits | `BIP036-P1`, `P6`–`P9` (`P2`/`P4` retired by `BIP039`; `P3`/`P5` splits landed) | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2) and `RM023`. |
+| **RM021** | Adversarial soundness (*The Great Escape*) | `BIP032-P1`–`P4` | `RM013`, `RM018` | Actively underway (accelerated by landed `BIP041` `-crib`); hardens soundness ahead of `RM015` and `RM017`. |
 | **RM022** | `babblebabble` pure-Babble interpreter | `BIP035-Q1`–`Q11` → `BIP035-P1`–`P6` | `RM018` | Draft; independent of `BIP015` and `BIP018`, can run alongside the others. |
 | **RM023** | Tensors with dimensional safety | `BIP033-P1`–`P6` | `RM013`, `RM018` | Independent of `BIP015` and `BIP018` (`RM020` recommended ahead of large front-end additions). |
 | **RM025** | JDK 25 & 27 CI legs | `BIP018-P0` | — | Any time (exempt from `BIP018-D4`). |
@@ -227,11 +227,11 @@ Settle [BIP015](bip015_down-with-the-ants.md) before the lexer-mode split, then 
 
 Give `BIP014-P5` something to rewrite: an effect-annotated `std/...` library of higher-order combinators, written with ranges (`RM019`) and `match` (`RM024`). This completes `BIP014`.
 
-- **Spans:** `BIP014`, `BIP005`, `BIP006`, `BIP007`, `BIP011`, `BIP016`, `BIP017`, `BIP031`, `BIP038`
-- **Depends on:** `RM013`, `RM019` (`RM024` recommended), and a standard library BIP covering `std/...` and the module search path (`BIP005-D5`).
+- **Spans:** `BIP014`, `BIP005`, `BIP006`, `BIP007`, `BIP011`, `BIP016`, `BIP017`, `BIP031`, `BIP038`, `BIP039`
+- **Depends on:** `RM013`, `RM019`, `RM024`, and a standard library BIP covering `std/...` and the module search path (`BIP005-D5`).
 - **Deliverables:**
   - The standard library: `babble.path` search roots and `std/...` modules (`map`, `filter`, `flatMap`, `reduce`, `groupBy`, `zip`, `forEach`, range combinators, math and I/O helpers) with effect and algebraic contracts.
-  - `BIP014-P5` Half B: an SSA `aegraph` over `MIR` and a `PipelineRewritePass` (`O12`) for filter fusion, push-downs, `monotone` range pruning and `associative` fold reassociation.
+  - `BIP014-P5` Half B: `PipelineRewritePass` (`O12`) over unified structured `HIR`'s `HirAeGraphPass` (`BIP039`) for filter fusion, push-downs, `monotone` range pruning and `associative` fold reassociation.
 - **Exit criteria:** `std/...` specifications, `babble.path` tests in `FileModulesTestCase` and `BabblecTestCase`, an `OptimizerTestCase` per rewrite, and benchmarks of fused pipelines.
 
 ### RM016 — `Babble 21` & `Babble 25` editions
@@ -262,12 +262,12 @@ Make Babble safe on several threads in both backends, add effect-verified parall
 
 Deliver [BIP036](bip036_compiler-simplification-and-god-class-splits.md) with zero behavioral change, dismantling every remaining compiler god class and tightening the repository-wide file ceiling to 1,500 lines ahead of `BIP015` Option 2.
 
-- **Spans:** `BIP036`, `BIP010`, `BIP014`, `BIP015`, `BIP019`, `BIP025`, `BIP027`
+- **Spans:** `BIP036`, `BIP010`, `BIP014`, `BIP015`, `BIP019`, `BIP025`, `BIP027`, `BIP039`
 - **Depends on:** `RM013`, `RM018`.
 - **Deliverables:**
-  - `BIP036-P1`: lifetime-separated `TypeChecker` data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) retiring `TypeChecker.resetPass()`.
-  - `BIP036-P2`–`P7`: pure structural splits of `MirLowerer`, `HirBuilder`, `MirEmitter`, `LoweringAnalyzer`, `EffectBodyWalker`/`CallEffectAnalyzer`/`EffectAstExtractors`, and `CallEmitter`/`HirEmitter`.
-  - `BIP036-P8`–`P9`: Wasm backend splits (`WasmFuncEmitter`, `WasmCallEmitter`, `WasmObjectSystem`, `WasmRuntimeGen`), `AxiomParser`/`AxiomData` AST isolation, `ScalarReplacePass` split, and repository-wide `<= 1,500`-line lock-in.
+  - `BIP036-P1`: lifetime-separated `TypeChecker` data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) retiring `TypeChecker.resetPass()` (collaborators `ExpressionTyper`, `ExceptionTyper`, `CallableTyper`, `TypeCheckDiagnostics` already landed).
+  - `BIP036-P6`–`P7`: pure structural splits of `EffectBodyWalker`/`CallEffectAnalyzer`/`EffectAstExtractors` and `CallEmitter` (`BIP036-P2`/`P4` retired when `BIP039` deorbited MIR; `BIP036-P3` `HirBuilder`, `BIP036-P5` `LoweringAnalyzer`/`DispatchTargetDeriver`, and `HirEmitter` splits already landed).
+  - `BIP036-P8`–`P9`: remaining Wasm backend splits (`WasmCoreEmitter`, `WasmCallEmitter`, `WasmObjectSystem`; `WasmFuncEmitter` and `WasmRuntimeGen` splits already landed), `AxiomParser`/`AxiomData` AST isolation (`ScalarReplacePass` already split in `BIP039-I0`), and tightening `ArchitectureBoundaryTestCase` from `<= 2,000` (with 5 grandfathered exemptions) to a universal `<= 1,500`-line lock-in.
 - **Exit criteria:** `ArchitectureBoundaryTestCase` enforcing `<= 1,500` LOC on every `.java` file in `src/main/java` and `AxiomData` in `ANTLR_FREE_ANALYSIS_CORES`, with zero semantic regressions.
 
 ### RM021 — Adversarial soundness (*The Great Escape*)
@@ -287,25 +287,25 @@ Deliver [BIP032](bip032_the-great-escape.md) and its fast isolated HTTP `.batest
 
 Settle [BIP035](bip035_babblebabble.md) (`BIP035-Q1`–`Q11`) and build a first-class pure-Babble interpreter under `src/main/babble/babblebabble/` as a symbolic compiler stress test, independent differential oracle and browser Wasm playground.
 
-- **Spans:** `BIP035`, `BIP012`, `BIP013`, `BIP015`, `BIP020`, `BIP021`, `BIP024`, `BIP025`, `BIP026`, `BIP028`, `BIP029`, `BIP034`
+- **Spans:** `BIP035`, `BIP012`, `BIP013`, `BIP015`, `BIP020`, `BIP021`, `BIP024`, `BIP025`, `BIP026`, `BIP028`, `BIP029`, `BIP031`, `BIP034`, `BIP038`, `BIP040`
 - **Depends on:** `RM018` (`BIP025` Wasm portability & backend). Independent of `RM014` and `RM016`.
 - **Deliverables:**
-  - `BIP035-P1`–`P3`: zero-`java.*` hand-written lexer, JEP 378 string decoder, LL(1)/LL(2) recursive-descent + Pratt parser, pre-evaluation scope/tail-call pass, and evaluator covering Babble's full pure-Babble runtime semantics (`BIP002`–`BIP034`).
+  - `BIP035-P1`–`P3`: zero-`java.*` hand-written lexer, JEP 378 string decoder, LL(1)/LL(2) recursive-descent + Pratt parser, pre-evaluation scope/tail-call pass, and evaluator covering Babble's full pure-Babble runtime semantics (`BIP002`–`BIP040`).
   - `BIP035-P4`–`P5`: modules, sessions, `BabbleScriptEngine.Mode.BABBLEBABBLE` host adapter (keeping `babble-runtime.jar` untouched), `DifferentialTestCase`/`BatestTestCase` integration, byte-identical Argon rendered by `babblebabble`, meta-circular "`babblebabblebabble`" self-hosting, and `babblec -target wasm-js` playground compilation.
   - `BIP035-P6` *(optional)*: self-hosted static type checker (`typechecker.ba`).
 - **Exit criteria:** `BabbleBabblePortabilityTestCase` (0 `java.*` imports, `WasmPortabilityChecker` clean), 100% parse parity across all `.ba` and `.batest.md` sources, `0` divergences on portable specs, byte-identical Argon via `babblebabble`, and verified meta-circular & Wasm playground runs.
 
 ### RM023 — Tensors with dimensional safety
 
-Deliver [BIP033](bip033_tensors.md), adding ML-first core `float16`/`bfloat16` scalars and immutable, dimensionally-safe `tensor of (DType, ...)` types across Babble's front end, `java.base`-only runtime, and `HIR`/`MIR`/Wasm backends.
+Deliver [BIP033](bip033_tensors.md), adding ML-first core `float16`/`bfloat16` scalars and immutable, dimensionally-safe `tensor of (DType, ...)` types across Babble's front end, `java.base`-only runtime, and unified `HIR`/JVM/Wasm backends.
 
-- **Spans:** `BIP033`, `BIP011`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP020`, `BIP021`, `BIP023`, `BIP025`, `BIP027`, `BIP028`, `BIP029`, `BIP034`
+- **Spans:** `BIP033`, `BIP011`, `BIP012`, `BIP013`, `BIP014`, `BIP016`, `BIP017`, `BIP019`, `BIP020`, `BIP021`, `BIP023`, `BIP025`, `BIP027`, `BIP028`, `BIP029`, `BIP034`, `BIP039`
 - **Depends on:** `RM013`, `RM018` (`RM020` recommended ahead of large front-end additions). Independent of `BIP015` and `BIP018`.
 - **Deliverables:**
   - `BIP033-P1`: full core `float16` & `bfloat16` scalars (`Float16`/`BFloat16 extends Number`, `PrimitiveKind.binaryPromote` DAG, unboxed `short` carrier with `Bootstrap.typedCallTagged` disambiguation, contextual & suffix literals, axioms).
   - `BIP033-P2`–`P4`: predicate-free pure-`SLL` `tensor` grammar & unified `of (...)` type/shape application, `DimAlgebra` (polynomial + `org.babblelang.ir.egraph` solver with `D == H * K` constraints), directional label-preserving axis labels, `dyn` narrowing / `withDims`, `java.base`-only strided runtime & `TensorBackend` SPI (including its optional compiled-region hook), strict linear `unique` tracking on immutable tensors, scalar + labeled-subset broadcasting, reductions, `matmul`/`matmulAccum`, and compile-time checked `einsum`/`contract`.
   - `BIP033-P5`–`P6`: structured `HIR` tensor nodes, `-O1`/`-O2` elementwise loop fusion, E-graph view simplification, small-tensor SROA (`O9`), FBIP `TensorReuse` (`O10`), pure-region lowering readiness for optional StableHLO/XLA backends, and a dimensionally-safe micro-Transformer forward-pass milestone in `examples/`.
-- **Exit criteria:** 100% pure-`SLL` parsing, `.batest.md` differential & `HIR`/`MIR` goldens across all modes, `RuntimeBoundaryTestCase` (`java.base`-only), and byte-identical micro-Transformer output across `interpret`, `-O0`, `-O1`, `-O2`, and `babblec` AOT jar.
+- **Exit criteria:** 100% pure-`SLL` parsing, `.batest.md` differential & `HIR`/`wat` goldens across all modes, `RuntimeBoundaryTestCase` (`java.base`-only), and byte-identical micro-Transformer output across `interpret`, `-O0`, `-O1`, `-O2`, and `babblec` AOT jar.
 
 ### RM025 — JDK 25 & 27 CI legs
 
