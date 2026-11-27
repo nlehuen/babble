@@ -28,6 +28,8 @@ public record HirClass(
         Map<String, List<Integer>> overloadMethodFunctionIds,
         List<HirTypeRef> implementedTypes,
         List<HirExpr> body,
+        List<HirConstructor> constructors,
+        boolean allDefFieldsFinalSafe,
         HirStaticBlock staticBlock,
         boolean fastRecord,
         int line) {
@@ -47,6 +49,19 @@ public record HirClass(
         overloadMethodFunctionIds = Collections.unmodifiableMap(ovCopy);
         implementedTypes = List.copyOf(implementedTypes);
         body = List.copyOf(body);
+        constructors = constructors != null ? List.copyOf(constructors) : List.of();
+    }
+
+    /** Whether any constructor has an explicit {@code init} block or multiple overloads. */
+    public boolean hasExplicitConstructors() {
+        if (constructors.size() > 1) {
+            return true;
+        }
+        if (constructors.size() == 1) {
+            HirConstructor c = constructors.get(0);
+            return !c.isPrimary() || !c.body().isEmpty() || c.isDelegating();
+        }
+        return false;
     }
 
     /** Stable target-neutral Babble type identifier ({@code BIP025-D3}). */
@@ -65,6 +80,14 @@ public record HirClass(
 
     public HirClass withBodyAndStatic(
             List<HirParam> newParams, List<HirExpr> newBody, HirStaticBlock newStatic) {
+        return withBodyAndStatic(newParams, newBody, constructors, newStatic);
+    }
+
+    public HirClass withBodyAndStatic(
+            List<HirParam> newParams,
+            List<HirExpr> newBody,
+            List<HirConstructor> newConstructors,
+            HirStaticBlock newStatic) {
         return new HirClass(
                 id,
                 isObject,
@@ -82,6 +105,8 @@ public record HirClass(
                 overloadMethodFunctionIds,
                 implementedTypes,
                 newBody,
+                newConstructors,
+                allDefFieldsFinalSafe,
                 newStatic,
                 fastRecord,
                 line);

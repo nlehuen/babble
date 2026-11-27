@@ -797,6 +797,7 @@ public final class WasmProgramLinker {
             case HirExpr.Def d -> walkExpr(d.value(), visitor);
             case HirExpr.VarAssign a -> walkExpr(a.value(), visitor);
             case HirExpr.NameAssign a -> walkExpr(a.value(), visitor);
+            case HirExpr.ThisFieldInit a -> walkExpr(a.value(), visitor);
             case HirExpr.ThisFieldAssign a -> {
                 walkExpr(a.receiver(), visitor);
                 walkExpr(a.value(), visitor);
@@ -1250,6 +1251,7 @@ public final class WasmProgramLinker {
             case HirExpr.Def d -> collectOverloadMetas(d.value(), out);
             case HirExpr.VarAssign a -> collectOverloadMetas(a.value(), out);
             case HirExpr.NameAssign a -> collectOverloadMetas(a.value(), out);
+            case HirExpr.ThisFieldInit a -> collectOverloadMetas(a.value(), out);
             case HirExpr.ThisFieldAssign a -> {
                 collectOverloadMetas(a.receiver(), out);
                 collectOverloadMetas(a.value(), out);

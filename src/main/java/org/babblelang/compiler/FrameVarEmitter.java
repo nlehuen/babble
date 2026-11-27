@@ -1,6 +1,5 @@
 package org.babblelang.compiler;
 
-import static org.babblelang.compiler.HirEmitter.SELF;
 import static org.babblelang.compiler.JvmPrimitives.*;
 import static org.objectweb.asm.Opcodes.*;
 
@@ -39,7 +38,7 @@ final class FrameVarEmitter {
             mv.visitFieldInsn(
                     GETFIELD, ctx.methodClass.name, "$babble$class", "L" + BABBLE_CLASS + ";");
         } else {
-            mv.visitVarInsn(ALOAD, SELF);
+            mv.visitVarInsn(ALOAD, ctx.selfLocal);
         }
         mv.visitMethodInsn(INVOKEVIRTUAL, ownerType, "captured", "()[Ljava/lang/Object;", false);
         mv.visitVarInsn(ASTORE, ctx.capturedLocal);

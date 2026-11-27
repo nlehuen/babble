@@ -473,7 +473,7 @@ fn run (x:int, dyn:obj) -> int {pure unique}
 ```babble
 def Tag = interface (def tag = fn (): int -> (7))
 def Good = class (p: Pair) implements Tag (
-    assert(p.x > 0) ; def y = p.x + 1 ; def get = fn (): int -> (this.y)
+    def y = p.x + 1 ; init ( assert(p.x > 0) ) ; def get = fn (): int -> (this.y)
 )
 def Leak2 = class (var x: int) (
     def box = list(this, 1) ; def get = fn (): int -> (this.x)
@@ -522,7 +522,9 @@ top-level:
   (block
     (def $cse0 name(Good))
     (def $cse1 name(Pair))
-    (call name(assert) (==:bool (+:int (+:int (call-method (call var($cse0) (record-new Pair 3:int 0:int)).get) (call (select (call var($cse0) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int)))
+    (call name(assert) (==:bool (+:int (+:int (block
+              (def $this (call var($cse0) (record-new Pair 3:int 0:int)))
+              (get-this-field y)) (call (select (call var($cse0) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int)))
 ```
 
 ## InlinePass.isDefinitelyDefinedPureCallee : local definitely-defined vs forward-referenced function

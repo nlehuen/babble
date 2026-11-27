@@ -448,7 +448,9 @@ public class WasmCompilerTestCase {
                 """
                 def Counter = class (start: int = 0) (
                     var value = start
-                    Counter.bumpTotal(1)
+                    init io (
+                        Counter.bumpTotal(1)
+                    )
                     def inc = fn mut (by: int = 1): int -> (
                         this.value += by
                         this.value
@@ -1345,7 +1347,9 @@ public class WasmCompilerTestCase {
 
                 ;; Same for class constructor field + closure
                 def Holder = class (var x: int = 2) (
-                    this.x = this.x + 20
+                    init (
+                        this.x = this.x + 20
+                    )
                     def getter = fn volatile (): int -> (this.x)
                 )
                 def h = Holder(3)

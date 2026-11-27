@@ -49,7 +49,7 @@ public class InterpreterNamespaceTest {
 
     @Test
     public void testObjectBodyFailureRestoresNamespace() {
-        assertNamespaceRestored("def o = object ( nosuchname )");
+        assertNamespaceRestored("def o = object ( init ( nosuchname ) )");
     }
 
     @Test

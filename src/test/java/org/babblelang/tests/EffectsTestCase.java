@@ -900,7 +900,9 @@ public class EffectsTestCase {
         assertHasError(
                 """
                 def BadVal = record (x: int) (
-                    println(x)
+                    init (
+                        println(x)
+                    )
                 )
                 """,
                 "value class");
@@ -910,7 +912,9 @@ public class EffectsTestCase {
                 """
                 def f = fn (): any -> (
                     object (
-                        println("side effect")
+                        init (
+                            println("side effect")
+                        )
                     )
                 )
                 """,

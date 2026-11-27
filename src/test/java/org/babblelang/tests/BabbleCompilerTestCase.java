@@ -1693,7 +1693,7 @@ public class BabbleCompilerTestCase {
                 "Expected value-captured class param $v$secret to have raw int descriptor");
         Assertions.assertTrue(
                 counterNode.methods.stream()
-                        .anyMatch(m -> m.name.equals("<init>") && m.desc.endsWith(";I)V")),
-                "Expected Counter typed <init>(BabbleClass, ScriptRuntime, int)V");
+                        .anyMatch(m -> m.name.equals("<init>") && m.desc.endsWith(";III)V")),
+                "Expected Counter typed <init>(BabbleClass, ScriptRuntime, int, int, int)V");
     }
 }

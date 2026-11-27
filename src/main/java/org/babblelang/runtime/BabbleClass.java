@@ -17,6 +17,7 @@ public final class BabbleClass extends BabbleType implements Callable {
     private final Namespace closure;
     private final Object[] captured;
     private final ClassBody body;
+    private final ClassBody[] constructors;
     private final InstanceFactory factory;
     private final Object[] interfaces;
     private final Map<String, BabbleInterface> babbleInterfaces;
@@ -57,10 +58,22 @@ public final class BabbleClass extends BabbleType implements Callable {
             ClassBody body,
             Object[] interfaces,
             InstanceFactory factory) {
+        this(shape, closure, captured, body, null, interfaces, factory);
+    }
+
+    public BabbleClass(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody body,
+            ClassBody[] constructors,
+            Object[] interfaces,
+            InstanceFactory factory) {
         super(shape);
         this.closure = closure;
         this.captured = captured;
         this.body = body;
+        this.constructors = constructors != null ? constructors.clone() : null;
         this.factory = factory;
         this.interfaces = interfaces;
 
@@ -98,12 +111,70 @@ public final class BabbleClass extends BabbleType implements Callable {
         if (shape.kind() == ClassShape.Kind.OBJECT) {
             throw new BabbleException("object literals cannot be constructed again");
         }
+        if (constructors != null && constructors.length > 1) {
+            int chosen = selectDynamicConstructor(args, names);
+            return constructWithIndex(chosen, rt, args, names, site);
+        }
         return construct(rt, args, names, site);
     }
 
     public Object construct(ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         Object instance = factory != null ? factory.create(this, rt) : null;
         return body.construct(this, instance, rt, args, names, site);
+    }
+
+    public Object constructWithIndex(
+            int ctorIndex, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
+        if (shape.kind() == ClassShape.Kind.OBJECT) {
+            throw new BabbleException("object literals cannot be constructed again");
+        }
+        ClassBody chosen =
+                constructors != null && ctorIndex >= 0 && ctorIndex < constructors.length
+                        ? constructors[ctorIndex]
+                        : body;
+        Object instance = factory != null ? factory.create(this, rt) : null;
+        return chosen.construct(this, instance, rt, args, names, site);
+    }
+
+    private int selectDynamicConstructor(Object[] args, String[] names) {
+        int count = shape.constructorCount();
+        for (int k = 0; k < count; k++) {
+            ClassShape.ConstructorShape cs = shape.constructor(k);
+            if (matchesConstructorShape(cs, args, names)) {
+                return k;
+            }
+        }
+        throw new BabbleException("No applicable constructor of " + name());
+    }
+
+    private static boolean matchesConstructorShape(
+            ClassShape.ConstructorShape cs, Object[] args, String[] names) {
+        String[] params = cs.parameters();
+        Arguments.Binder binder;
+        try {
+            binder =
+                    cs.restIndex() >= 0
+                            ? Arguments.binder(
+                                    params, cs.keywordOnlyStart(), cs.restIndex(), args, names)
+                            : Arguments.binder(params, cs.keywordOnlyStart(), args, names);
+            for (int i = 0; i < params.length; i++) {
+                Object val = binder.take(i);
+                if (val == Arguments.MISSING) {
+                    if (i < cs.requiredParameters()) {
+                        return false;
+                    }
+                    continue;
+                }
+                String desc = i < cs.paramTypes().length ? cs.paramTypes()[i] : null;
+                if (desc != null && i != cs.restIndex() && !Types.matches(val, desc)) {
+                    return false;
+                }
+            }
+            binder.rejectLeftovers();
+            return true;
+        } catch (BabbleException ignored) {
+            return false;
+        }
     }
 
     /** Creates the single instance of an object literal. */

@@ -169,6 +169,15 @@ public final class HirCanonicalPrinter {
         norm.scanVars(cls.declaredVars());
         norm.scanParams(cls.params());
         norm.scanList(cls.body());
+        for (HirConstructor ctor : cls.constructors()) {
+            norm.scanVars(ctor.declaredVars());
+            norm.scanParams(ctor.params());
+            norm.scanList(ctor.preDelegateBody());
+            for (HirCallArg a : ctor.delegateArgs()) {
+                norm.scanExpr(a.value());
+            }
+            norm.scanList(ctor.body());
+        }
         if (cls.staticBlock() != null) {
             norm.scanList(cls.staticBlock().body());
         }
@@ -193,6 +202,47 @@ public final class HirCanonicalPrinter {
             sb.append('\n');
             indent(sb, indent + 1);
             printExpr(sb, stmt, norm, indent + 1);
+        }
+        for (HirConstructor ctor : cls.constructors()) {
+            if (ctor.isPrimary() && ctor.body().isEmpty() && !ctor.isDelegating()) {
+                continue;
+            }
+            sb.append('\n');
+            indent(sb, indent + 1);
+            sb.append("init");
+            if (!ctor.isPrimary() || !ctor.params().isEmpty()) {
+                sb.append(" (");
+                for (int i = 0; i < ctor.params().size(); i++) {
+                    if (i > 0) sb.append(", ");
+                    HirParam p = ctor.params().get(i);
+                    sb.append(p.name()).append(':').append(kindTag(p.kind()));
+                }
+                sb.append(')');
+            }
+            if (ctor.isDelegating()) {
+                sb.append(" -> #").append(ctor.delegateIndex());
+            }
+            sb.append(':');
+            for (HirExpr stmt : ctor.preDelegateBody()) {
+                sb.append('\n');
+                indent(sb, indent + 2);
+                printExpr(sb, stmt, norm, indent + 2);
+            }
+            if (ctor.isDelegating()) {
+                sb.append('\n');
+                indent(sb, indent + 2);
+                sb.append("(delegate #").append(ctor.delegateIndex());
+                for (HirCallArg a : ctor.delegateArgs()) {
+                    sb.append(' ');
+                    printExpr(sb, a.value(), norm, indent + 2);
+                }
+                sb.append(')');
+            }
+            for (HirExpr stmt : ctor.body()) {
+                sb.append('\n');
+                indent(sb, indent + 2);
+                printExpr(sb, stmt, norm, indent + 2);
+            }
         }
         if (cls.staticBlock() != null && !cls.staticBlock().body().isEmpty()) {
             sb.append('\n');
@@ -394,6 +444,11 @@ public final class HirCanonicalPrinter {
                 sb.append("(set-name ").append(a.name());
                 if (a.operator() != null) sb.append(' ').append(a.operator()).append('=');
                 sb.append(' ');
+                printExpr(sb, a.value(), norm, indent + 1);
+                sb.append(')');
+            }
+            case HirExpr.ThisFieldInit a -> {
+                sb.append("(init-this-field ").append(a.memberName()).append(' ');
                 printExpr(sb, a.value(), norm, indent + 1);
                 sb.append(')');
             }
@@ -1110,6 +1165,7 @@ public final class HirCanonicalPrinter {
                     scanExpr(a.value());
                 }
                 case HirExpr.NameAssign a -> scanExpr(a.value());
+                case HirExpr.ThisFieldInit a -> scanExpr(a.value());
                 case HirExpr.ThisFieldAssign a -> scanExpr(a.value());
                 case HirExpr.JavaFieldAssign a -> {
                     scanExpr(a.receiver());

@@ -1,5 +1,6 @@
 package org.babblelang.engine.impl;
 
+import java.util.ArrayList;
 import java.util.List;
 import javax.script.SimpleScriptContext;
 import org.antlr.v4.runtime.ParserRuleContext;
@@ -40,6 +41,9 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     private ScopeAnalysis scopes;
     private Namespace namespace;
     private ParserRuleContext last;
+    private BabbleClass activeCtorClass;
+    private InterpretedClassBody activeCtorBody;
+    private InterpretedInstance activeCtorInstance;
 
     // Static descriptions of the sites, built the first time each one runs.
     private final ParseTreeProperty<OpSite> opSites = new ParseTreeProperty<>();
@@ -130,12 +134,37 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
         last = ctx;
         Object[] interfaces = types(ctx.typeList());
-        BabbleClass babbleClass =
-                Classes.newClass(
-                        scopes.hierarchy().shape(ctx),
-                        namespace,
-                        new InterpretedClassBody(ctx),
-                        interfaces);
+        ClassShape shape = scopes.hierarchy().shape(ctx);
+        InterpretedClassBody body = new InterpretedClassBody(ctx);
+        BabbleClass babbleClass;
+        int ctorCount = shape.constructorCount();
+        if (ctorCount > 1) {
+            ClassBody[] ctors = new ClassBody[ctorCount];
+            for (int k = 0; k < ctorCount; k++) {
+                final int idx = k;
+                ctors[k] =
+                        (bc, inst, rt, args, names, site) ->
+                                body.constructAt(
+                                        bc,
+                                        (InterpretedInstance) inst,
+                                        idx,
+                                        rt,
+                                        args,
+                                        names,
+                                        site,
+                                        true);
+            }
+            babbleClass =
+                    Classes.newClass(
+                            shape,
+                            namespace,
+                            Arguments.NONE,
+                            ctors,
+                            interfaces,
+                            InterpretedInstance::new);
+        } else {
+            babbleClass = Classes.newClass(shape, namespace, body, interfaces);
+        }
         if (ctx.staticBlock != null) {
             runIn(Classes.staticScope(namespace, babbleClass), ctx.staticBlock.expression());
         }
@@ -217,9 +246,30 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
      */
     private final class InterpretedClassBody implements ClassBody {
         private final ParserRuleContext ctx;
+        private final BabbleParser.InitExpressionContext primaryInit;
+        private final List<BabbleParser.InitExpressionContext> explicitInits;
 
         InterpretedClassBody(ParserRuleContext ctx) {
             this.ctx = ctx;
+            BabbleParser.InitExpressionContext pInit = null;
+            List<BabbleParser.InitExpressionContext> eInits = new ArrayList<>();
+            BabbleParser.BlockContext bodyBlock =
+                    ctx instanceof BabbleParser.ClassExpressionContext c
+                            ? c.classBlock
+                            : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
+            if (bodyBlock != null) {
+                for (BabbleParser.ExpressionContext stmt : bodyBlock.expression()) {
+                    if (stmt instanceof BabbleParser.InitExpressionContext initCtx) {
+                        if (initCtx.fnParameters() == null) {
+                            pInit = initCtx;
+                        } else {
+                            eInits.add(initCtx);
+                        }
+                    }
+                }
+            }
+            this.primaryInit = pInit;
+            this.explicitInits = List.copyOf(eInits);
         }
 
         @Override
@@ -230,45 +280,168 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                 Object[] args,
                 String[] names,
                 CallSite site) {
-            Namespace scope = Classes.constructorScope(babbleClass, instance);
-            ClassShape shape = babbleClass.shape();
-            String[] parameters = shape.parameters();
-            Arguments.Binder binder =
-                    Arguments.binder(parameters, shape.keywordOnlyStart(), args, names);
-            for (int i = 0; i < parameters.length; i++) {
-                Object value = binder.take(i);
-                if (value == Arguments.MISSING) {
-                    BabbleParser.ExpressionContext defaultValue =
-                            ((BabbleParser.ClassExpressionContext) ctx)
-                                    .classParameters()
-                                    .classParam(i)
-                                    .defaultValue;
-                    if (defaultValue == null) {
-                        throw binder.missing(i);
+            return constructAt(
+                    babbleClass, (InterpretedInstance) instance, 0, rt, args, names, site, true);
+        }
+
+        Object constructAt(
+                BabbleClass babbleClass,
+                InterpretedInstance inst,
+                int ctorIndex,
+                ScriptRuntime rt,
+                Object[] args,
+                String[] names,
+                CallSite site,
+                boolean outermost) {
+            BabbleClass prevClass = activeCtorClass;
+            InterpretedClassBody prevBody = activeCtorBody;
+            InterpretedInstance prevInst = activeCtorInstance;
+            activeCtorClass = babbleClass;
+            activeCtorBody = this;
+            activeCtorInstance = inst;
+            try {
+                if (ctx instanceof BabbleParser.ObjectExpressionContext obj) {
+                    Namespace scope = Classes.constructorScope(babbleClass, inst);
+                    runClassFieldAndMethodDefs(scope, obj.createBlock);
+                    if (primaryInit != null) {
+                        Namespace initScope =
+                                scope.child(
+                                        scopes.declared(primaryInit),
+                                        scopes.declaredFinals(primaryInit));
+                        runIn(initScope, primaryInit.initBlock.expression());
                     }
-                    value = evaluateDefault(scope, defaultValue);
+                    return inst;
                 }
-                value =
-                        widen(
-                                ((BabbleParser.ClassExpressionContext) ctx)
-                                        .classParameters()
-                                        .classParam(i),
-                                value);
-                int member = shape.parameterMember(i);
-                if (member >= 0) {
-                    ((InterpretedInstance) instance).initMember(member, value);
-                } else {
-                    scope.defineParameter(parameters[i], value);
+                BabbleParser.ClassExpressionContext cls = (BabbleParser.ClassExpressionContext) ctx;
+                ClassShape shape = babbleClass.shape();
+                ClassShape.ConstructorShape cs = shape.constructor(ctorIndex);
+                Namespace scope = Classes.constructorScope(babbleClass, inst);
+                BabbleParser.InitExpressionContext initCtx = initContextFor(cs, ctorIndex);
+                if (!cs.isPrimary() && initCtx != null) {
+                    scope.declare(scopes.declared(initCtx), scopes.declaredFinals(initCtx));
+                }
+                String[] parameters = cs.parameters();
+                Arguments.Binder binder =
+                        cs.restIndex() >= 0
+                                ? Arguments.binder(
+                                        parameters,
+                                        cs.keywordOnlyStart(),
+                                        cs.restIndex(),
+                                        args,
+                                        names)
+                                : Arguments.binder(parameters, cs.keywordOnlyStart(), args, names);
+                for (int i = 0; i < parameters.length; i++) {
+                    Object value = binder.take(i);
+                    ParserRuleContext paramDecl =
+                            cs.isPrimary()
+                                    ? cls.classParameters().classParam(i)
+                                    : initCtx.fnParameters().fnParam(i);
+                    if (value == Arguments.MISSING) {
+                        BabbleParser.ExpressionContext defaultValue =
+                                ScopeAnalysis.paramDefault(paramDecl);
+                        if (defaultValue == null) {
+                            throw binder.missing(i);
+                        }
+                        value = evaluateDefault(scope, defaultValue);
+                    }
+                    value = widen(paramDecl, value);
+                    LoweringTargets.JavaSamTarget paramSam =
+                            scopes.lowering().javaSamTarget(paramDecl);
+                    if (paramSam != null) {
+                        value =
+                                Values.toJavaSam(
+                                        value, paramSam.samInterface(), paramSam.markers(), rt);
+                    }
+                    value = Types.check(value, scopes.lowering().checkedType(paramDecl));
+                    int member =
+                            cs.isPrimary() && i < cs.parameterMembers().length
+                                    ? cs.parameterMembers()[i]
+                                    : -1;
+                    if (member >= 0) {
+                        inst.initMember(member, value);
+                    } else {
+                        scope.defineParameter(
+                                parameters[i], value, !ScopeAnalysis.isVar(paramDecl));
+                    }
+                }
+                binder.rejectLeftovers();
+                boolean delegating = initCtx != null && containsDelegatingCall(initCtx.initBlock);
+                if (!delegating) {
+                    runClassFieldAndMethodDefs(scope, cls.classBlock);
+                }
+                if (initCtx != null) {
+                    Namespace initScope =
+                            cs.isPrimary()
+                                    ? scope.child(
+                                            scopes.declared(initCtx),
+                                            scopes.declaredFinals(initCtx))
+                                    : scope;
+                    runIn(initScope, initCtx.initBlock.expression());
+                }
+                return inst;
+            } finally {
+                if (outermost) {
+                    inst.finishInit();
+                }
+                activeCtorClass = prevClass;
+                activeCtorBody = prevBody;
+                activeCtorInstance = prevInst;
+            }
+        }
+
+        private BabbleParser.InitExpressionContext initContextFor(
+                ClassShape.ConstructorShape cs, int ctorIndex) {
+            if (cs.isPrimary()) {
+                return primaryInit;
+            }
+            int explicitIdx =
+                    ((BabbleParser.ClassExpressionContext) ctx).classParameters() != null
+                                    && !((BabbleParser.ClassExpressionContext) ctx)
+                                            .classParameters()
+                                            .classParam()
+                                            .isEmpty()
+                            ? ctorIndex - 1
+                            : ctorIndex;
+            return explicitIdx >= 0 && explicitIdx < explicitInits.size()
+                    ? explicitInits.get(explicitIdx)
+                    : null;
+        }
+
+        private boolean containsDelegatingCall(BabbleParser.BlockContext block) {
+            if (block == null) {
+                return false;
+            }
+            for (BabbleParser.ExpressionContext stmt : block.expression()) {
+                if (stmt instanceof BabbleParser.CallContext cc
+                        && scopes.calls().isDelegatingThisCall(cc)) {
+                    return true;
                 }
             }
-            binder.rejectLeftovers();
-            BabbleParser.BlockContext body =
-                    ctx instanceof BabbleParser.ClassExpressionContext c
-                            ? c.classBlock
-                            : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
-            runIn(scope, body.expression());
-            return instance;
+            return false;
         }
+
+        private void runClassFieldAndMethodDefs(Namespace scope, BabbleParser.BlockContext block) {
+            if (block == null) {
+                return;
+            }
+            Namespace before = namespace;
+            namespace = scope;
+            try {
+                for (BabbleParser.ExpressionContext stmt : block.expression()) {
+                    if (stmt instanceof BabbleParser.InitExpressionContext) {
+                        continue;
+                    }
+                    visit(stmt);
+                }
+            } finally {
+                namespace = before;
+            }
+        }
+    }
+
+    @Override
+    public Object visitInitExpression(BabbleParser.InitExpressionContext ctx) {
+        return null;
     }
 
     @Override
@@ -332,13 +505,17 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
     public Object visitDefExpression(BabbleParser.DefExpressionContext ctx) {
         last = ctx;
         String id = ctx.name.getText();
+        LoweringTargets.DefTarget target = scopes.lowering().defTarget(ctx);
+        if (target.kind() == LoweringTargets.DefKind.MEMBER && ctx.value == null) {
+            // Uninitialized field declaration (`def x: T` / `var y: T`) : leave UNDEFINED for init.
+            return null;
+        }
         Object value = null;
         if (ctx.value != null) {
             value = visit(ctx.value);
         }
         last = ctx;
         value = widen(ctx, value);
-        LoweringTargets.DefTarget target = scopes.lowering().defTarget(ctx);
         return switch (target.kind()) {
             case LEXICAL -> namespace.initialize(id, value);
             case MEMBER -> Classes.initMember(namespace, target.index(), value);
@@ -1453,6 +1630,22 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                     callable.call(runtime, args, callNames.get(ctx), site),
                     scopes.lowering().checkedType(ctx));
         }
+        if (scopes.calls().isDelegatingThisCall(ctx)) {
+            int targetIdx = scopes.calls().constructorIndex(ctx);
+            CallSite site = callSite(ctx);
+            Object[] args = bindStaticArguments(ctx, arguments(ctx));
+            last = ctx;
+            activeCtorBody.constructAt(
+                    activeCtorClass,
+                    activeCtorInstance,
+                    targetIdx,
+                    runtime,
+                    args,
+                    effectiveCallNames(ctx),
+                    site,
+                    false);
+            return null;
+        }
         if (scopes.calls().isSelfTailCall(ctx)) {
             // The callee is the running function itself (recurse, its own def, or this.m) : BIP024.
             Object[] args = bindStaticArguments(ctx, arguments(ctx));
@@ -1462,6 +1655,14 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         Object callee = visit(ctx.expression());
         last = ctx;
         CallSite site = callSite(ctx);
+        if (callee instanceof BabbleClass bc && scopes.calls().constructorIndex(ctx) >= 0) {
+            int ctorIdx = scopes.calls().constructorIndex(ctx);
+            Object[] args = bindStaticArguments(ctx, arguments(ctx));
+            last = ctx;
+            return Types.check(
+                    bc.constructWithIndex(ctorIdx, runtime, args, effectiveCallNames(ctx), site),
+                    scopes.lowering().checkedType(ctx));
+        }
         var callable = Calls.callable(callee, site);
         Object[] args = bindStaticArguments(ctx, arguments(ctx));
         last = ctx;

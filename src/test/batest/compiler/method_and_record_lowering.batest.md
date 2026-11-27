@@ -422,7 +422,7 @@ record CellRec (x:int)
 ## Record fast-class disqualifiers : body assert, body field, and nested overload
 
 ```babble
-def ChkR = record (x: int) ( assert(this.x >= 0) )
+def ChkR = record (x: int) ( init ( assert(this.x >= 0) ) )
 def FldR = record (x: int) ( def dbl: int = this.x * 2 )
 def OvR = record (x: int) (
     def f = overload ( fn (n: int): int -> ( this.x + n ), overload ( fn (b: bool): int -> ( 1 ), fn (s: string): int -> ( s.length() ) ) )
@@ -433,7 +433,8 @@ assert(ChkR(5).x == 5 and FldR(3).dbl == 6 and OvR(4).f(2) == 6 and OvR(4).f("hi
 ```hir
 ;; hir -O0,-O1 record=ChkR
 record ChkR (x:int)
-  (call name(assert) (>=:bool (get-this-field x) 0:int))
+  init (x:int):
+    (call name(assert) (>=:bool (get-this-field x) 0:int))
 ```
 
 ```hir

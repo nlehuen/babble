@@ -497,6 +497,18 @@ public final class WasmFuncEmitter {
             case HirExpr.VarAssign a -> varDefs.emitVarAssign(a);
             case HirExpr.NameAssign a -> varDefs.emitNameAssign(a);
             case HirExpr.ThisFieldGet g -> members.emitThisFieldGet(g);
+            case HirExpr.ThisFieldInit a ->
+                    members.emitThisFieldAssign(
+                            new HirExpr.ThisFieldAssign(
+                                    new HirExpr.ThisRef(null, a.classId(), a.meta()),
+                                    a.classId(),
+                                    a.memberIndex(),
+                                    a.memberName(),
+                                    null,
+                                    a.value(),
+                                    "this." + a.memberName(),
+                                    "",
+                                    a.meta()));
             case HirExpr.ThisFieldAssign a -> members.emitThisFieldAssign(a);
             case HirExpr.DynamicFieldAssign a -> members.emitDynamicFieldAssign(a);
             case HirExpr.ArrayCreate ac -> arrOps.emitArrayCreate(this, ac);

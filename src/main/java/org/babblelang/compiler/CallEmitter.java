@@ -1,6 +1,7 @@
 package org.babblelang.compiler;
 
 import static org.babblelang.compiler.JvmPrimitives.*;
+import static org.babblelang.compiler.MethodEntryEmitter.callArgNames;
 import static org.objectweb.asm.Opcodes.*;
 
 import java.lang.reflect.Constructor;
@@ -1103,7 +1104,7 @@ final class CallEmitter {
         emitCallWithCallee(
                 c.meta().line(),
                 emitter.constantPool.callSiteField(c.callSite()),
-                c.binding() != null ? null : callArgNames(c.args()),
+                c.binding() != null ? null : MethodEntryEmitter.callArgNames(c.args()),
                 c.args(),
                 c.binding(),
                 c.babbleSig());
@@ -1117,11 +1118,15 @@ final class CallEmitter {
     }
 
     void emitDynamicCall(HirExpr.DynamicCall c) {
+        if (c.constructorIndex() >= 0) {
+            emitter.entries.emitBabbleConstructorCall(c);
+            return;
+        }
         emitter.emitBoxed(c.callee());
         emitCallWithCallee(
                 c.meta().line(),
                 emitter.constantPool.callSiteField(c.callSite()),
-                c.binding() != null ? null : callArgNames(c.args()),
+                c.binding() != null ? null : MethodEntryEmitter.callArgNames(c.args()),
                 c.args(),
                 c.binding(),
                 c.babbleSig());
@@ -1385,7 +1390,7 @@ final class CallEmitter {
         }
     }
 
-    private void emitBoundArgumentsArray(
+    void emitBoundArgumentsArray(
             List<HirExpr> sourceArgs, LoweringTargets.ArgumentBinding binding) {
         MethodVisitor mv = ctx().mv;
         int effective = effectiveParamCount(binding);
@@ -2066,7 +2071,7 @@ final class CallEmitter {
 
     // ---------------------------------------------------------------- small helpers
 
-    private void emitArgumentsArray(List<HirCallArg> parameters) {
+    void emitArgumentsArray(List<HirCallArg> parameters) {
         MethodVisitor mv = ctx().mv;
         if (parameters.isEmpty()) {
             mv.visitFieldInsn(GETSTATIC, ARGUMENTS, "NONE", "[Ljava/lang/Object;");
@@ -2082,7 +2087,7 @@ final class CallEmitter {
         }
     }
 
-    private static List<HirExpr> callArgExprs(List<HirCallArg> args) {
+    static List<HirExpr> callArgExprs(List<HirCallArg> args) {
         if (args.isEmpty()) {
             return List.of();
         }
@@ -2122,20 +2127,6 @@ final class CallEmitter {
             }
         }
         return false;
-    }
-
-    private static String[] callArgNames(List<HirCallArg> parameters) {
-        String[] names = null;
-        for (int i = 0; i < parameters.size(); i++) {
-            String name = parameters.get(i).name();
-            if (name != null) {
-                if (names == null) {
-                    names = new String[parameters.size()];
-                }
-                names[i] = name;
-            }
-        }
-        return names;
     }
 
     private static int primArrayNewArrayType(PrimitiveKind kind) {

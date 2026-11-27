@@ -22,7 +22,7 @@ def OvSub = interface extends OvBase ()
 ```babble
 def ext = 5
 def RCap = record (x: int) ( def get = fn volatile (): int -> ( this.x + ext ) )
-def RBody = record (x: int) ( assert(this.x >= 0) ; def y = this.x + 1 )
+def RBody = record (x: int) ( def y = this.x + 1 ; init ( assert(this.x >= 0) ) )
 assert(RCap(2).get() == 7 and RBody(3).y == 4)
 ```
 

@@ -597,7 +597,7 @@ final class DispatchTargetDeriver {
                     fn.parameters(), arguments, restKind, spreadAdapts);
         }
         if (callee instanceof Type.ClassValue cv && !cv.node().isInterface()) {
-            int ctorIdx = pass.analysis.calls().constructorIndex(call);
+            int ctorIdx = Math.max(0, pass.analysis.calls().constructorIndex(call));
             List<Type.Parameter> params = checker.constructorParameters(cv.node(), ctorIdx);
             return params != null
                     ? CallSolver.computeArgumentBinding(params, arguments, restKind, spreadAdapts)

@@ -207,6 +207,7 @@ public final class HirEffectAnalysis {
                         case SET -> IrEffect.write(aliasOf(op.receiver()), false);
                         case EQUALS, HASH_CODE, TO_STRING -> IrEffect.IMPURE_THROW;
                     };
+            case HirExpr.ThisFieldInit a -> IrEffect.write(IrEffect.AliasClass.SHARED, true);
             case HirExpr.ThisFieldAssign a ->
                     (a.operator() == null && a.classId() >= 0 && a.memberIndex() >= 0)
                             ? IrEffect.write(aliasOf(a.receiver()), false)

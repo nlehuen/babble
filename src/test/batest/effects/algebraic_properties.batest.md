@@ -425,7 +425,7 @@ value class constructor parameter cannot be mut : x
 
 ```babble
 def BadV2 = record (x : int) (
-    println(x)
+    init ( println(x) )
 )
 ```
 
@@ -489,7 +489,7 @@ Warning : Redundant cast : int
 var outer = 0
 def badObj = fn () -> (
     def o = object (
-        outer = 1
+        init io ( outer = 1 )
     )
     ()
 )

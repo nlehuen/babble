@@ -54,6 +54,7 @@ public final class HirBuilder {
     final Map<ParserRuleContext, List<String>> classImplementedJvm = new IdentityHashMap<>();
     final Map<BabbleParser.FunctionLiteralContext, Integer> methodOwnerClassIds =
             new IdentityHashMap<>();
+    final Map<BabbleParser.InitExpressionContext, Integer> initIds = new IdentityHashMap<>();
     final Map<BabbleParser.FunctionLiteralContext, String> methodMemberNames =
             new IdentityHashMap<>();
     final Map<BabbleParser.FunctionLiteralContext, String> functionJvmNames =
@@ -196,6 +197,10 @@ public final class HirBuilder {
         Integer clsId = classIds.get(owner);
         if (clsId != null) {
             return clsId;
+        }
+        Integer initId = initIds.get(owner);
+        if (initId != null) {
+            return initId;
         }
         Integer ifaceId = interfaceIds.get(owner);
         if (ifaceId != null) {
@@ -713,6 +718,9 @@ public final class HirBuilder {
         if (ctx instanceof BabbleParser.InterfaceExpressionContext iface) {
             return new HirExpr.InterfaceExpr(interfaceIds.get(iface), metaOf(iface));
         }
+        if (ctx instanceof BabbleParser.InitExpressionContext initCtx) {
+            return new HirExpr.Const(null, metaOf(initCtx).withKind(PrimitiveKind.NONE));
+        }
         if (ctx instanceof BabbleParser.SuperExpressionContext) {
             throw new IllegalStateException("super must be called directly");
         }
@@ -1010,6 +1018,10 @@ public final class HirBuilder {
         }
         if (recv instanceof BabbleParser.ThisExpressionContext thisExpr) {
             int clsId = thisCompiledClassIdAt(thisExpr);
+            int initMember = scopes.lowering().thisFieldInitMember(ctx);
+            if (initMember >= 0 && operator == null && clsId >= 0) {
+                return new HirExpr.ThisFieldInit(clsId, initMember, name, value, meta);
+            }
             int fieldIdx = compiledFieldIndex(thisExpr, name);
             // Value classes / records are read-only; keep fallback to Members.assignOwn just like
             // CodeGenerator.

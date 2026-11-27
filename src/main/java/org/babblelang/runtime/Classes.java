@@ -36,6 +36,19 @@ public final class Classes {
         return new BabbleClass(shape, closure, captured, body, interfaces, factory);
     }
 
+    public static BabbleClass newClass(
+            ClassShape shape,
+            Namespace closure,
+            Object[] captured,
+            ClassBody[] constructors,
+            Object[] interfaces,
+            InstanceFactory factory) {
+        ClassBody primary =
+                constructors != null && constructors.length > 0 ? constructors[0] : null;
+        return new BabbleClass(
+                shape, closure, captured, primary, constructors, interfaces, factory);
+    }
+
     /**
      * Reads a member field of a compiled class directly ({@code this.x}) : using it before its def
      * has run is an error, as through {@link Members}.

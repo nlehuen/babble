@@ -159,7 +159,7 @@ def caught = try ( throw Item(5) ) catch e then (
 )
 var done = false
 while not done then (
-    def o = object ( var k = 1 ; this.k = 2 )
+    def o = object ( var k = 1 ; init ( this.k = 2 ) )
     done = true
 )
 assert(sum == 4 and caught == 5)

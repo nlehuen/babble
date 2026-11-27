@@ -24,6 +24,7 @@ public sealed interface HirExpr
                 HirExpr.Def,
                 HirExpr.VarAssign,
                 HirExpr.NameAssign,
+                HirExpr.ThisFieldInit,
                 HirExpr.ThisFieldAssign,
                 HirExpr.JavaFieldAssign,
                 HirExpr.DynamicFieldAssign,
@@ -192,6 +193,15 @@ public sealed interface HirExpr
             String targetText,
             String valueText,
             ExprMeta meta)
+            implements HirExpr {}
+
+    /**
+     * One-time initialization of a declared field of {@code this} inside an {@code init} block
+     * ({@code BIP040-D10}). Emitted as {@code PUTFIELD} inside JVM {@code <init>} (legal on {@code
+     * ACC_FINAL} fields) or local staging in Wasm 3.0.
+     */
+    record ThisFieldInit(
+            int classId, int memberIndex, String memberName, HirExpr value, ExprMeta meta)
             implements HirExpr {}
 
     record ThisFieldAssign(
@@ -831,10 +841,21 @@ public sealed interface HirExpr
             LoweringTargets.ArgumentBinding binding,
             LoweringTargets.FunctionSignature babbleSig,
             CallSite callSite,
+            int constructorIndex,
             ExprMeta meta)
             implements HirExpr {
         public DynamicCall {
             args = List.copyOf(args);
+        }
+
+        public DynamicCall(
+                HirExpr callee,
+                List<HirCallArg> args,
+                LoweringTargets.ArgumentBinding binding,
+                LoweringTargets.FunctionSignature babbleSig,
+                CallSite callSite,
+                ExprMeta meta) {
+            this(callee, args, binding, babbleSig, callSite, -1, meta);
         }
     }
 

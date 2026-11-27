@@ -168,6 +168,37 @@ final class HirNameInitAnalysis {
                         ctorDefs.isEmpty() ? cls.params() : rewriteParams(cls.params(), ctorDefs);
                 List<HirExpr> newBody =
                         ctorDefs.isEmpty() ? cls.body() : rewriteList(cls.body(), ctorDefs);
+                List<HirConstructor> newCtors = cls.constructors();
+                if (!ctorDefs.isEmpty() && !cls.constructors().isEmpty()) {
+                    List<HirConstructor> copy = null;
+                    for (int ci = 0; ci < cls.constructors().size(); ci++) {
+                        HirConstructor c = cls.constructors().get(ci);
+                        List<HirParam> cnp = rewriteParams(c.params(), ctorDefs);
+                        List<HirExpr> cPre = rewriteList(c.preDelegateBody(), ctorDefs);
+                        List<HirCallArg> cDel = c.delegateArgs();
+                        List<HirCallArg> delCopy = null;
+                        for (int di = 0; di < cDel.size(); di++) {
+                            HirCallArg a = cDel.get(di);
+                            HirExpr nv = rewriteExpr(a.value(), ctorDefs);
+                            if (nv != a.value()) {
+                                if (delCopy == null) delCopy = new ArrayList<>(cDel);
+                                delCopy.set(di, new HirCallArg(a.name(), nv));
+                            }
+                        }
+                        if (delCopy != null) cDel = delCopy;
+                        List<HirExpr> cBody = rewriteList(c.body(), ctorDefs);
+                        if (cnp != c.params()
+                                || cPre != c.preDelegateBody()
+                                || cDel != c.delegateArgs()
+                                || cBody != c.body()) {
+                            if (copy == null) copy = new ArrayList<>(cls.constructors());
+                            copy.set(ci, c.withBodies(cnp, cPre, cDel, cBody));
+                        }
+                    }
+                    if (copy != null) {
+                        newCtors = copy;
+                    }
+                }
                 HirStaticBlock newStatic = cls.staticBlock();
                 if (newStatic != null && !staticDefs.isEmpty()) {
                     List<HirExpr> sb = rewriteList(newStatic.body(), staticDefs);
@@ -177,8 +208,11 @@ final class HirNameInitAnalysis {
                 }
                 if (newParams != cls.params()
                         || newBody != cls.body()
+                        || newCtors != cls.constructors()
                         || newStatic != cls.staticBlock()) {
-                    classesMap.put(cls.id(), cls.withBodyAndStatic(newParams, newBody, newStatic));
+                    classesMap.put(
+                            cls.id(),
+                            cls.withBodyAndStatic(newParams, newBody, newCtors, newStatic));
                 }
             }
 
@@ -556,6 +590,13 @@ final class HirNameInitAnalysis {
                                     a.targetText(),
                                     a.valueText(),
                                     a.meta());
+                }
+                case HirExpr.ThisFieldInit a -> {
+                    HirExpr nv = fn.apply(a.value());
+                    yield nv == a.value()
+                            ? a
+                            : new HirExpr.ThisFieldInit(
+                                    a.classId(), a.memberIndex(), a.memberName(), nv, a.meta());
                 }
                 case HirExpr.ThisFieldAssign a -> {
                     HirExpr nr = fn.apply(a.receiver());

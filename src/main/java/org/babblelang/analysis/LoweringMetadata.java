@@ -107,6 +107,8 @@ public final class LoweringMetadata {
             sequenceDestructureTargets = new IdentityHashMap<>();
     private final Map<BabbleParser.AssignExpressionContext, Integer> thisFieldInitMembers =
             new IdentityHashMap<>();
+    private final Set<ParserRuleContext> allDefFieldsFinalSafeClasses =
+            Collections.newSetFromMap(new IdentityHashMap<>());
 
     /**
      * AST-level range-membership pattern decomposition for {@code case lo..hi} / {@code
@@ -650,5 +652,13 @@ public final class LoweringMetadata {
 
     public boolean isPublicStaticDefSelect(BabbleParser.SelectorContext ctx) {
         return publicStaticDefSelects.contains(ctx);
+    }
+
+    void markAllDefFieldsFinalSafe(ParserRuleContext classCtx) {
+        allDefFieldsFinalSafeClasses.add(classCtx);
+    }
+
+    public boolean isAllDefFieldsFinalSafe(ParserRuleContext classCtx) {
+        return allDefFieldsFinalSafeClasses.contains(classCtx);
     }
 }

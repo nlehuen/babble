@@ -149,12 +149,79 @@ final class FieldInitAnalysis {
                     }
                     ctor.allDefFieldsFinalSafe = defFinalSafe[0] && !thisUsedBeforeAll[0];
                 } else {
-                    // Header/inline-only constructor (no `init` block): check inline initializers
-                    // didn't leave any uninitialized field (already guarded in BlockScopes).
+                    // Header/inline-only constructor (no `init` block): safe unless inline
+                    // initializers touch `this` before all fields are initialized.
                     ctor.allDefFieldsFinalSafe = true;
                 }
             }
         }
+        BabbleParser.ClassExpressionContext clsCtx =
+                node.ctx instanceof BabbleParser.ClassExpressionContext c ? c : null;
+        boolean inlineSafe = clsCtx == null || isInlineDefFinalSafe(node, fm, clsCtx.classBlock);
+        boolean allSafe = inlineSafe;
+        for (TypeNode.Constructor ctor : node.constructors) {
+            if (!ctor.allDefFieldsFinalSafe) {
+                allSafe = false;
+                break;
+            }
+        }
+        if (allSafe && clsCtx != null && checker.inFile(clsCtx)) {
+            pass.analysis.lowering().markAllDefFieldsFinalSafe(clsCtx);
+        }
+    }
+
+    private boolean isInlineDefFinalSafe(
+            TypeNode node, FieldMap fm, BabbleParser.BlockContext classBlock) {
+        if (classBlock == null) {
+            return true;
+        }
+        BitSet initialized = new BitSet(fm.count);
+        for (int i = 0; i < fm.count; i++) {
+            if (node.parameterMembers.contains(fm.memberIndex[i])) {
+                initialized.set(i);
+            }
+        }
+        for (BabbleParser.ExpressionContext stmt : classBlock.expression()) {
+            if (!(stmt instanceof BabbleParser.DefExpressionContext def)
+                    || def.value == null
+                    || def.value instanceof BabbleParser.FunctionLiteralContext
+                    || def.value instanceof BabbleParser.OverloadExpressionContext) {
+                continue;
+            }
+            if (exprUsesUnsafeThis(def.value, fm, initialized)) {
+                return false;
+            }
+            Integer slot = fm.fieldBit.get(def.name.getText());
+            if (slot != null) {
+                initialized.set(slot);
+            }
+        }
+        return true;
+    }
+
+    private boolean exprUsesUnsafeThis(
+            org.antlr.v4.runtime.tree.ParseTree tree, FieldMap fm, BitSet initialized) {
+        if (tree == null
+                || tree instanceof BabbleParser.FunctionLiteralContext
+                || tree instanceof BabbleParser.ClassExpressionContext
+                || tree instanceof BabbleParser.ObjectExpressionContext
+                || tree instanceof BabbleParser.InterfaceExpressionContext) {
+            return false;
+        }
+        if (tree instanceof BabbleParser.SelectorContext sel
+                && sel.expression() instanceof BabbleParser.ThisExpressionContext) {
+            Integer slot = fm.fieldBit.get(ScopeAnalysis.selectorName(sel));
+            return slot == null || !initialized.get(slot);
+        }
+        if (tree instanceof BabbleParser.ThisExpressionContext) {
+            return true;
+        }
+        for (int i = 0; i < tree.getChildCount(); i++) {
+            if (exprUsesUnsafeThis(tree.getChild(i), fm, initialized)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void checkDelegationCycle(TypeNode node, int idx, int[] color) {

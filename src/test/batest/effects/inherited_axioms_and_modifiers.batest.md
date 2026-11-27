@@ -9,7 +9,7 @@ def HF = tests.EffectsTestCase.HostFixtures
 def MH = tests.EffectsTestCase.MutableHolder
 def MHT = type tests.EffectsTestCase.MutableHolder
 def Box = class (var v: int) ()
-def MutCtor = class (mut b: Box) ( b.v += 1 )
+def MutCtor = class (mut b: Box) ( init ( b.v += 1 ) )
 def RetainCtor = class (shared b: Box) ()
 ```
 

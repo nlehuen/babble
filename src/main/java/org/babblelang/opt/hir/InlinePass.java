@@ -318,6 +318,10 @@ public final class InlinePass implements HirPass {
                 ok[0] = false;
                 return;
             }
+            case HirExpr.ThisFieldInit a -> {
+                ok[0] = false;
+                return;
+            }
             case HirExpr.ThisFieldAssign a -> {
                 ok[0] = false;
                 return;
@@ -527,6 +531,10 @@ public final class InlinePass implements HirPass {
                     ok[0] = false;
                     return;
                 }
+            }
+            case HirExpr.ThisFieldInit a -> {
+                ok[0] = false;
+                return;
             }
             case HirExpr.ThisFieldAssign a -> {
                 if (allowedThisClassId < 0 || a.classId() != allowedThisClassId) {

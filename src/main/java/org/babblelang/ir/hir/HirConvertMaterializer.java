@@ -42,11 +42,13 @@ final class HirConvertMaterializer {
             HirClass cls = entry.getValue();
             List<HirParam> newParams = m.materializeParams(cls.params());
             List<HirExpr> newBody = m.materializeList(cls.body(), true);
+            List<HirConstructor> newCtors = m.materializeConstructors(cls.constructors());
             HirStaticBlock newStatic = m.materializeStaticBlock(cls.staticBlock());
             if (newParams != cls.params()
                     || newBody != cls.body()
+                    || newCtors != cls.constructors()
                     || newStatic != cls.staticBlock()) {
-                entry.setValue(cls.withBodyAndStatic(newParams, newBody, newStatic));
+                entry.setValue(cls.withBodyAndStatic(newParams, newBody, newCtors, newStatic));
             }
         }
         for (Map.Entry<Integer, HirInterface> entry : interfaces.entrySet()) {
@@ -74,6 +76,46 @@ final class HirConvertMaterializer {
             }
         }
         return copy != null ? copy : params;
+    }
+
+    private List<HirConstructor> materializeConstructors(List<HirConstructor> ctors) {
+        if (ctors.isEmpty()) {
+            return ctors;
+        }
+        List<HirConstructor> copy = null;
+        for (int i = 0; i < ctors.size(); i++) {
+            HirConstructor c = ctors.get(i);
+            List<HirParam> np = materializeParams(c.params());
+            List<HirExpr> nPre = materializeList(c.preDelegateBody(), true);
+            List<HirCallArg> nDel = c.delegateArgs();
+            if (!nDel.isEmpty()) {
+                List<HirCallArg> delCopy = null;
+                for (int di = 0; di < nDel.size(); di++) {
+                    HirCallArg da = nDel.get(di);
+                    HirExpr nv = materializeExpr(da.value());
+                    if (nv != da.value()) {
+                        if (delCopy == null) {
+                            delCopy = new ArrayList<>(nDel);
+                        }
+                        delCopy.set(di, new HirCallArg(da.name(), nv));
+                    }
+                }
+                if (delCopy != null) {
+                    nDel = delCopy;
+                }
+            }
+            List<HirExpr> nBody = materializeList(c.body(), true);
+            if (np != c.params()
+                    || nPre != c.preDelegateBody()
+                    || nDel != c.delegateArgs()
+                    || nBody != c.body()) {
+                if (copy == null) {
+                    copy = new ArrayList<>(ctors);
+                }
+                copy.set(i, c.withBodies(np, nPre, nDel, nBody));
+            }
+        }
+        return copy != null ? copy : ctors;
     }
 
     private HirStaticBlock materializeStaticBlock(HirStaticBlock sb) {
@@ -219,6 +261,18 @@ final class HirConvertMaterializer {
                         ? a
                         : new HirExpr.NameAssign(
                                 a.name(), a.operator(), nv, a.targetText(), a.valueText(), meta);
+            }
+            case HirExpr.ThisFieldInit a -> {
+                HirExpr nv = materializeExpr(a.value());
+                ExprMeta meta = a.meta();
+                if (meta.wideningRank() >= 0) {
+                    nv = wrapWiden(nv, meta.wideningRank());
+                    meta = meta.withWideningRank(-1);
+                }
+                yield (nv == a.value() && meta == a.meta())
+                        ? a
+                        : new HirExpr.ThisFieldInit(
+                                a.classId(), a.memberIndex(), a.memberName(), nv, meta);
             }
             case HirExpr.ThisFieldAssign a -> {
                 HirExpr nr = materializeExpr(a.receiver());
