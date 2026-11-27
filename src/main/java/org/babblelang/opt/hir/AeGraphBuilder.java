@@ -1069,6 +1069,16 @@ final class AeGraphBuilder {
         if (f.loopVar() != null) loopMod.add(f.loopVar().id());
         for (HirExpr s : f.body()) HirPurity.collectModifiedVars(s, loopMod);
         state.bumpVars(loopMod);
+        if (f.countedRange() == null
+                && f.target() != null
+                && f.target().kind() != org.babblelang.analysis.LoweringTargets.ForKind.ARRAY
+                && f.target().kind()
+                        != org.babblelang.analysis.LoweringTargets.ForKind.COUNTED_RANGE
+                && (!f.meta().effects().isHermetic()
+                        || f.target().kind()
+                                != org.babblelang.analysis.LoweringTargets.ForKind.JAVA_ITERABLE)) {
+            noteEffect(IrEffect.IMPURE_THROW, state);
+        }
         for (HirExpr s : f.body()) AeGraphExtractor.applySubtreeWriteBarriers(s, fx, state);
 
         AeGraphState loopState = state.childScope();

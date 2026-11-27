@@ -569,23 +569,31 @@ final class AlgebraicVerifier {
         }
         if (b.kind() == PrimitiveKind.DOUBLE || b.kind() == PrimitiveKind.FLOAT) {
             if (b.op() == ENode.Op.ADD) {
+                if (isNonFiniteConst(b.left()) || isNonFiniteConst(b.right())) {
+                    return RelVal.TOP;
+                }
                 return new RelVal(Sign.add(l.sign(), r.sign()), false);
             }
             if (b.op() == ENode.Op.SUB) {
+                if (isNonFiniteConst(b.left()) || isNonFiniteConst(b.right())) {
+                    return RelVal.TOP;
+                }
                 return new RelVal(Sign.add(l.sign(), r.sign().negate()), false);
             }
             if (b.op() == ENode.Op.MUL) {
                 if (l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
                     Double k = evalConstDouble(b.right());
-                    return new RelVal(
-                            k == null ? Sign.TOP : (k >= 0.0 ? l.sign() : l.sign().negate()),
-                            false);
+                    if (k != null && k != 0.0) {
+                        return new RelVal(k > 0.0 ? l.sign() : l.sign().negate(), false);
+                    }
+                    return RelVal.TOP;
                 }
                 if (l.sign() == Sign.CONST && r.sign() != Sign.CONST) {
                     Double k = evalConstDouble(b.left());
-                    return new RelVal(
-                            k == null ? Sign.TOP : (k >= 0.0 ? r.sign() : r.sign().negate()),
-                            false);
+                    if (k != null && k != 0.0) {
+                        return new RelVal(k > 0.0 ? r.sign() : r.sign().negate(), false);
+                    }
+                    return RelVal.TOP;
                 }
             }
             if (b.op() == ENode.Op.DIV && l.sign() != Sign.CONST && r.sign() == Sign.CONST) {
@@ -759,6 +767,11 @@ final class AlgebraicVerifier {
         }
         double d = n.doubleValue();
         return Double.isFinite(d) ? d : null;
+    }
+
+    private static boolean isNonFiniteConst(Term term) {
+        Number n = evalConstNumber(term);
+        return n != null && !Double.isFinite(n.doubleValue());
     }
 
     private static Number evalConstNumber(Term term) {
