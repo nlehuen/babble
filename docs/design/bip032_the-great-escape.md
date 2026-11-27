@@ -5,8 +5,8 @@
 | **BIP** | 032 |
 | **Date** | 2026-11-24 |
 | **Status** | Decided / Planned (`BIP032-Q1`–`Q7` → `BIP032-D1`–`D7` settled; `BIP032-P1`–`P4` planned) |
-| **Depends on** | Static typing & modular front end ([bip008_static-typing.md](bip008_static-typing.md), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), core types & Java nullability ([bip011_core-types.md](bip011_core-types.md)), effects, ownership & pure-by-default contracts ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), structured axioms & `BytecodeEffectAnalyzer` ([bip019_refactoring-axioms.md](bip019_refactoring-axioms.md), [bip030_axiom-nullability-and-inferred-effects.md](bip030_axiom-nullability-and-inferred-effects.md)), arrays, overloads, intersections & tail calls ([bip020_array-types.md](bip020_array-types.md), [bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md), [bip022_intersection-types.md](bip022_intersection-types.md), [bip024_tail-calls.md](bip024_tail-calls.md)), E-graph verifier & `SCP` termination ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md)), exception handling ([bip028_exception-handling.md](bip028_exception-handling.md)), HIR/optimizer passes ([bip014_optimization-passes.md](bip014_optimization-passes.md)), and `.batest.md` v2 testing ([bip009_test-coverage.md](bip009_test-coverage.md), [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)) |
-| **Scope** | A systematic, adversarial soundness campaign and automated fuzzing harness spanning all 6 Babble soundness surfaces (static types, effects/`nothrow`, ownership/`@BORROWED`/`frozen`/`mut`-exclusivity, optimizer & 4-mode parity, Java interop & axioms, and algebraic/termination verifiers); a 3-tier soundness oracle suite (runtime witness/canary oracles for silent escapes, 4-mode differential across `interpret`/`-O0`/`-O1`/`-O2` + `HirVerifier`/`MirVerifier`/`CheckClassAdapter` checks, and white-box static-algebra/axiom property tests); a layered generator (combinatorial escape-channel × boundary matrix, type/effect-directed random AST generator with adversarial mutators, and corpus/EMI mutator) with deterministic seeds and parse-tree-guided delta-minimization; permanent `.batest.md` regressions under `src/test/batest/soundness/`; and dual-tier Maven integration (fast deterministic smoke tests in `mvn test` plus opt-in `-Pescape` soak fuzzing). Zero production runtime or bytecode-footprint overhead (white-box property tests in `src/test/java/org/babblelang/analysis/` preserving `BIP010-D1` encapsulation; black-box escape harness in `src/test/java/org/babblelang/tests/escape/`). |
+| **Depends on** | Static typing & modular front end ([bip008_static-typing.md](bip008_static-typing.md), [bip010_type-checker-simplification.md](bip010_type-checker-simplification.md)), core types & Java nullability ([bip011_core-types.md](bip011_core-types.md)), effects, ownership & pure-by-default contracts ([bip007_effects.md](bip007_effects.md), [bip016_consolidating-effect-annotations.md](bip016_consolidating-effect-annotations.md), [bip017_higher-order-function-effects.md](bip017_higher-order-function-effects.md)), structured axioms & `BytecodeEffectAnalyzer` ([bip019_refactoring-axioms.md](bip019_refactoring-axioms.md), [bip030_axiom-nullability-and-inferred-effects.md](bip030_axiom-nullability-and-inferred-effects.md)), arrays, overloads, intersections & tail calls ([bip020_array-types.md](bip020_array-types.md), [bip021_optional-variadic-overloaded-arguments.md](bip021_optional-variadic-overloaded-arguments.md), [bip022_intersection-types.md](bip022_intersection-types.md), [bip024_tail-calls.md](bip024_tail-calls.md)), E-graph verifier & `SCP` termination ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md)), exception handling ([bip028_exception-handling.md](bip028_exception-handling.md)), `def`/`var` & pattern matching ([bip034_immutable-def-and-mutable-var.md](bip034_immutable-def-and-mutable-var.md), [bip038_pattern-matching.md](bip038_pattern-matching.md)), unified `HIR` `-O0`/`-O1`/`-O2` optimizer & WebAssembly 3.0 backend ([bip014_optimization-passes.md](bip014_optimization-passes.md), [bip025_compile-to-wasm.md](bip025_compile-to-wasm.md), [bip039_mir-deorbitation.md](bip039_mir-deorbitation.md)), `.batest.md` v2 testing ([bip009_test-coverage.md](bip009_test-coverage.md), [bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)), and `-crib` fast isolated HTTP `.batest.md` runner ([bip041_crib-server.md](bip041_crib-server.md), `BIP041-I1`–`I4`) |
+| **Scope** | A systematic, adversarial soundness campaign and automated fuzzing harness spanning all 6 Babble soundness surfaces (static types, effects/`nothrow`, ownership/`@BORROWED`/`frozen`/`mut`-exclusivity, optimizer & multi-mode JVM/Wasm parity, Java interop & axioms, and algebraic/termination verifiers); a 3-tier soundness oracle suite (runtime witness/canary oracles for silent escapes, multi-mode differential across `interpret`/`-O0`/`-O1`/`-O2` + portable `wasm-O1`/`wasm-O2` with `HirVerifier`/`CheckClassAdapter`/`WasmVerifier` checks, and white-box static-algebra/axiom property tests); a fast interactive jailbreaking and shrinking workflow built on `-crib` (`BIP041-I1`–`I4`, ~10–50 ms isolated warm-JVM trials over loopback HTTP) that quarantines confirmed jailbreaks under `src/test/batest/jailbreaks/*.batest.md` (explicitly excluded from normal CI `batest` runs) for a separate analyze → reproduce-in-`-crib` → fix → promote remediation pipeline; a layered automated generator (combinatorial escape-channel × boundary matrix, type/effect-directed random AST generator with adversarial mutators, and corpus/EMI mutator) with deterministic seeds and parse-tree-guided delta-minimization; permanent fixed `.batest.md` regressions under `src/test/batest/soundness/` (or the matching normal feature suite); and dual-tier Maven integration (fast deterministic smoke tests in `mvn test` plus opt-in `-Pescape` soak fuzzing). Zero production runtime or bytecode-footprint overhead (white-box property tests in `src/test/java/org/babblelang/analysis/` preserving `BIP010-D1` encapsulation; black-box escape harness in `src/test/java/org/babblelang/tests/escape/`). |
 
 ---
 
@@ -18,13 +18,13 @@ Babble's static discipline has grown remarkably rich across 30 BIPs (`RM001`–`
 
 * **Type system (`BIP008`, `BIP010`, `BIP011`, `BIP020`–`BIP023`):** non-null-by-default types, `T?`, `T!`, `any`/`any?`, unions `A | B`, intersections `A & B`, flow-sensitive narrowing (`is`, `== null`, `!= null`, truthiness), generics (`of`) with bounds and F-bounds, mutable invariance + `borrow` covariance + `record` covariance + covariant `array of T`, closed `overload` sets, optional/named/variadic arguments, type aliases, and cross-module/REPL `TypedModuleSummary` persistence.
 * **Effect, ownership & borrow system (`BIP007`, `BIP016`, `BIP017`, `BIP027`, `BIP028`):** pure-by-default functions (`{@HERMETIC, @DETERMINISTIC, @CONST, @BORROWED}`), opt-out `io`/`volatile`/`mut`/`shared`, opt-in `nothrow`, `unique`/`@MOVED` affine tracking with `move`/`freeze`/`discard`, deeply immutable `frozen T`, return-through-borrow provenance (`BIP016-D10`), `fn calling f` callback-effect forwarding (`BIP017`), bounded `AccessPath` `mut` exclusivity (`BIP027-D5`), and `try`/`catch`/`finally` local-catch provenance & `nothrow` restoration (`BIP028-D7`–`D8`).
-* **Verifiers, axioms & optimizer (`BIP014`, `BIP019`, `BIP027`, `BIP030`):** curated axioms (`src/main/java/org/babblelang/axioms/`), tier-7 ASM `BytecodeEffectAnalyzer`, E-graph `AlgebraicVerifier` (including its `Sign`/`RelVal` partial-derivative domain for `commutative`, `associative`, `idempotent`, `monotone`, `injective`), polynomial `[BAL07]` `SizeChangeTermination`, `-O1` HIR passes (`HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`, `ScalarReplacePass`, `FbipReusePass`), and `-O2` SSA `MIR` passes (`BIP014-I3`: `SccpPass`, `GvnCsePass`, `AliasRlePass`, `LicmPass`, `MirDcePass`, `PredicateReorderPass`) that actively **exploit** static type, purity, `nothrow`, `@TERMINATING`, `frozen`, and `unique` proofs to rewrite bytecode.
+* **Verifiers, axioms & optimizer (`BIP014`, `BIP019`, `BIP025`, `BIP027`, `BIP030`, `BIP039`):** curated axioms (`src/main/java/org/babblelang/axioms/`), tier-7 ASM `BytecodeEffectAnalyzer`, E-graph `AlgebraicVerifier` (including its `Sign`/`RelVal` partial-derivative domain for `commutative`, `associative`, `idempotent`, `monotone`, `injective`), polynomial `[BAL07]` `SizeChangeTermination`, unified structured `HIR` `-O1` passes (`HirEGraphSimplifyPass`, `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, `HirPredicateReorderPass`, `HirLicmPass`, `HirDcePass`, `HirSlotAllocator`) and `-O2` passes (`BIP039-I0`–`I7`: `HirSccpPass` and dominator-scoped `HirAeGraphPass` combining GVN/CSE, `idempotent` collapse, and alias-aware RLE/store-to-load forwarding), feeding both JVM bytecode (`HirEmitter`) and WebAssembly 3.0 (`wasm-O1`/`wasm-O2`) — all of which actively **exploit** static type, purity, `nothrow`, `@TERMINATING`, `frozen`, and `unique` proofs to rewrite code.
 
 Each individual feature is well tested on its own (`>= 80%` line and branch coverage across all 6 JaCoCo scopes in `-Pbatest`). Yet **coverage testing is fundamentally non-adversarial**:
 
-1. **Soundness bugs hide at feature intersections**, not inside single-feature happy paths — e.g., `record` covariance × mutable container fields, `borrow` covariance × contravariant methods, `try/catch` `nothrow` restoration × `java.lang.Error`, closure capture × `@BORROWED` × `fn calling f`, or `unique` aliasing × `FbipReusePass` / `AliasRlePass`.
-2. **Effect and ownership escapes are silent at runtime.** Because Babble erases `pure`, `@BORROWED`, `frozen`, `unique`, and `mut` exclusivity before execution, an unsound rule in `EffectChecker` does not crash a normal test — it silently permits a jailbreak that later turns into a subtle **optimizer miscompilation** (under `-O1`, `-O2` SSA `MIR` `BIP014-I3`, `BIP014-P5` `aegraph`, or future parallelism under `BIP007` §10).
-3. **Trustworthy optimizations demand airtight proofs.** Once `FbipReusePass` mutates a `unique` list or `record` in place, `AliasRlePass` eliminates redundant loads on `unique mut` state, `PredicateReorderPass` hoists a floatable predicate ahead of a guard, `HirDcePass`/`MirDcePass` deletes a `pure nothrow @TERMINATING` call, or `HirLicmPass`/`LicmPass` hoists a `frozen` read out of a loop, *any* soundness crack in the front end immediately becomes a wrong-code bug in the back end.
+1. **Soundness bugs hide at feature intersections**, not inside single-feature happy paths — e.g., `record` covariance × mutable container fields, `borrow` covariance × contravariant methods, `try/catch` `nothrow` restoration × `java.lang.Error`, closure capture × `@BORROWED` × `fn calling f`, or `unique` aliasing × `FbipReusePass` / `HirAeGraphPass`.
+2. **Effect and ownership escapes are silent at runtime.** Because Babble erases `pure`, `@BORROWED`, `frozen`, `unique`, and `mut` exclusivity before execution, an unsound rule in `EffectChecker` does not crash a normal test — it silently permits a jailbreak that later turns into a subtle **optimizer miscompilation** (under unified `HIR` `-O1`/`-O2`, WebAssembly 3.0 `-O1`/`-O2`, or future parallelism under `BIP007` §10).
+3. **Trustworthy optimizations demand airtight proofs.** Once `FbipReusePass` mutates a `unique` list or `record` in place, `HirAeGraphPass` eliminates redundant loads or forwards stores on `UniqueParam(k)`/`Frozen` state, `HirPredicateReorderPass` hoists a floatable predicate ahead of a guard, `HirDcePass` deletes a `pure nothrow @TERMINATING` call, or `HirLicmPass` hoists a `frozen` read out of a loop, *any* soundness crack in the front end immediately becomes a wrong-code bug in the back end.
 
 ### 1.2 Preliminary static code-audit findings
 
@@ -35,13 +35,13 @@ To verify that adversarial scrutiny pays off immediately, a read-only code audit
    * Likewise, `borrowCovariant = true` at line 372 (entered from [`CallSolver.java`](../../src/main/java/org/babblelang/analysis/CallSolver.java) `#L697`, `#L709` → [`TypeChecker.java`](../../src/main/java/org/babblelang/analysis/TypeChecker.java) `#L1640-L1645`) switches `argMode` from `INVARIANT_ARG` to `SUBTYPE` for *all* parameterized types on non-`mut` `@BORROWED` parameters — even when `T` appears in a **contravariant** parameter position of a pure, non-`mut` method (e.g., `class Sink of T (def push = fn (x: T): int -> (...))` or `java.util.function.Predicate of T` / `Comparator of T`). Passing `Sink of string` to a borrowed `s: Sink of any` and calling `s.push(42)` invokes `push(x: string)` with an `int` — pure, non-`mut`, cast-free `ClassCastException`.
 2. **Surface 1 (`S1` — Variadic `rest` flag silently dropped in function joins) in [`TypeAlgebra.java`](../../src/main/java/org/babblelang/analysis/TypeAlgebra.java) (`#L1146-L1178`):**
    * `sameParameters(fa, fb)` compares parameter `name`, `type`, `optional`, and `keywordOnly`, but ignores `Parameter.rest()` ([`Type.java`](../../src/main/java/org/babblelang/analysis/Type.java) `#L299`), and `mergeFunctions(first, second)` calls the 8-argument `Type.Parameter` constructor which sets `rest = false`. Joining two variadic functions (or a variadic and a non-variadic function with matching parameter type) across `if`/`else` silently strips `rest = true`, mis-typing call sites and arity checks.
-3. **Surface 2 (`S2`, escalating to `S0` under `-O1`/`-O2` DCE/LICM/`PredicateReorderPass` — `nothrow` restoration vs. `java.lang.Error`) in [`EffectBodyWalker.java`](../../src/main/java/org/babblelang/analysis/EffectBodyWalker.java) (`#L1394-L1395`, `#L1491-L1548`):**
+3. **Surface 2 (`S2`, escalating to `S0` under `-O1`/`-O2` `HirDcePass`/`HirLicmPass`/`HirPredicateReorderPass` — `nothrow` restoration vs. `java.lang.Error`) in [`EffectBodyWalker.java`](../../src/main/java/org/babblelang/analysis/EffectBodyWalker.java) (`#L1394-L1395`, `#L1491-L1548`):**
    * `evalThrow` correctly computes `matches = !TypeChecker.mayBeJavaError(exprType)` for untyped `catch e then (...)` (matching runtime semantics where untyped `catch` excludes `java.lang.Error`, `BIP028-D4`; note that Babble's `assert(...)` throws `BabbleException` and *is* caught, whereas `java.lang.Error` / `java.lang.AssertionError` is not).
-   * However, `evalTry` line 1491 unconditionally sets `hasExhaustiveCatchAll = true` whenever `cc.type() == null`, and line 1548 restores `nothrow = true`. Consequently, `fn nothrow (): int -> (try (throw java.lang.Error("boom")) catch e then (0))` (or `throw java.lang.AssertionError("boom")`) is statically certified **`nothrow`** while throwing uncaught at runtime — allowing `HirDcePass`/`MirDcePass`, `HirLicmPass`/`LicmPass`, or `-O2` `PredicateReorderPass` to delete, hoist, or reorder the call.
+   * However, `evalTry` line 1491 unconditionally sets `hasExhaustiveCatchAll = true` whenever `cc.type() == null`, and line 1548 restores `nothrow = true`. Consequently, `fn nothrow (): int -> (try (throw java.lang.Error("boom")) catch e then (0))` (or `throw java.lang.AssertionError("boom")`) is statically certified **`nothrow`** while throwing uncaught at runtime — allowing `HirDcePass`, `HirLicmPass`, or `HirPredicateReorderPass` to delete, hoist, or reorder the call.
 4. **Surface 6 (`S3` — `AlgebraicVerifier` IEEE-754 `monotone` edge case) in [`AlgebraicVerifier.java`](../../src/main/java/org/babblelang/analysis/AlgebraicVerifier.java) (`#L530-L539`):**
    * `evalBinaryRel` certifies `x * k` on `double`/`float` as `l.sign()` whenever `k >= 0.0`. Because Java evaluates `-0.0 >= 0.0` as `true` (and `0.0 >= 0.0` as `true`), `fn monotone (x: double): double -> (x * (-0.0))` and `fn monotone (x: double): double -> (x * 0.0)` are certified `monotone` (`INC`), even though `(-1.0) * (-0.0) == +0.0 > -0.0 == (+1.0) * (-0.0)` under `Double.compare`, and `(-Infinity) * 0.0 == NaN`.
-5. **Surface 4 (`S0` — Optimizer amplification of `unique` escapes) in [`FbipReusePass.java`](../../src/main/java/org/babblelang/opt/hir/FbipReusePass.java) (`#L77-L100`, `#L225-L250`) and [`AliasRlePass.java`](../../src/main/java/org/babblelang/opt/mir/AliasRlePass.java) (`#L29-L30`):**
-   * `FbipReusePass` lowers `list(from: move(xs))` to `list$reuse` and tail `RecordNew` to `RecordReuse` directly on the assumption that `EffectChecker` ruled out all aliases, and `-O2` `AliasRlePass` assumes writes to one `unique` parameter never invalidate reads of another `unique` parameter or `frozen` record. Any `unique`-aliasing crack in Surface 3 immediately manifests as an observable `-O0` vs `-O1`/`-O2` data-corruption divergence.
+5. **Surface 4 (`S0` — Optimizer amplification of `unique` escapes) in [`FbipReusePass.java`](../../src/main/java/org/babblelang/opt/hir/FbipReusePass.java) (`#L77-L100`, `#L225-L250`) and [`HirAeGraphPass.java`](../../src/main/java/org/babblelang/opt/hir/HirAeGraphPass.java):**
+   * `FbipReusePass` lowers `list(from: move(xs))` to `list$reuse` and tail `RecordNew` to `RecordReuse` directly on the assumption that `EffectChecker` ruled out all aliases, and `-O2` `HirAeGraphPass` assumes writes to one `UniqueParam(k)` parameter never invalidate reads of another `UniqueParam(j)` parameter or `Frozen` record. Any `unique`-aliasing crack in Surface 3 immediately manifests as an observable `-O0` vs `-O1`/`-O2` (or Wasm `-O1`/`-O2`) data-corruption divergence.
 
 `BIP032` (*The Great Escape*) turns this kind of ad-hoc bug hunting into a **repeatable, automated, permanent adversarial defense layer** for Babble.
 
@@ -52,12 +52,12 @@ To verify that adversarial scrutiny pays off immediately, a read-only code audit
 Adversarial soundness testing for type checkers, effect/ownership analyzers, and optimizing compilers has a strong body of proven techniques:
 
 * **Type-checker fuzzing (`Hephaestus`, Chaliasos et al., OOPSLA 2022; `Xsmith`, Hatch et al.):** Generates well-typed and *near-well-typed* programs in languages with generics, variance, overloading, flow typing, and subtyping (Java, Kotlin, Groovy, Scala), discovering hundreds of soundness, crash, and type-inference bugs via *type-erasure/cast-insertion* and *differential* oracles. Crucially, Hephaestus showed that **cross-feature combinations** (generics + lambdas + variance + wildcards/unions) trigger far more soundness bugs than random grammar fuzzing alone.
-* **Compiler differential & Equivalence Modulo Inputs (`CSmith`, `YARPGen`, `EMI` by Le et al.):** Compares unoptimized vs. optimized outputs (Babble's `interpret` vs `-O0` vs `-O1` vs `-O2` SSA `MIR`) while mutating existing real-world test programs (dead-branch injection, expression wrapping, control-flow perturbation) to catch miscompilations with high syntactic validity and low generator maintenance cost.
+* **Compiler differential & Equivalence Modulo Inputs (`CSmith`, `YARPGen`, `EMI` by Le et al.):** Compares unoptimized vs. optimized outputs (Babble's `interpret` vs `-O0` vs `-O1` vs unified `HIR` `-O2`, plus portable WebAssembly 3.0 `wasm-O1`/`wasm-O2`) while mutating existing real-world test programs (dead-branch injection, expression wrapping, control-flow perturbation) to catch miscompilations with high syntactic validity and low generator maintenance cost.
 * **Ownership & borrow-checker soundness suites (Rust `I-unsound` + `Miri` / Stacked Borrows, Swift exclusivity runtime checks, Kotlin/TypeScript variance & narrowing regression suites):** Because static ownership/borrow/immutability guarantees are erased in release code, verifying them requires **runtime instrumentation / witness canaries** (checking reference identity, mutation snapshots, aliasing conflicts, and unexpected throws) paired with permanent regression tests for every historical jailbreak pattern.
 * **Static-algebra & bytecode-analyzer property testing (QuickCheck / jqwik style + OPAL purity validation):** Checking algebraic laws directly on `TypeAlgebra` (reflexivity, transitivity, join/assignability coherence, `Frozen` preservation, narrowing soundness) and comparing `BytecodeEffectAnalyzer` + curated axioms against live JDK execution (extending Babble's existing `AxiomChecker`, `BIP007-I3`) catches inconsistencies even before a full Babble exploit program is crafted.
 * **Hierarchical delta minimization (`ddmin` / Perses):** Automatically shrinks any randomly generated failing program along parse-tree boundaries down to a minimal reproducer ready to drop directly into a `.batest.md` file, preventing fuzzer findings from becoming unmaintainable noise.
 
-Babble is unusually well positioned to combine all four: it already has a reference `Interpreter`, `-O0`, `-O1`, and `-O2` compilers with `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter`, `AxiomChecker`, `.batest.md` v2 multi-mode specs (`BIP029`), and a modular, ANTLR-free analysis core (`BIP010`, `BIP027`).
+Babble is unusually well positioned to combine all four: it already has a reference `Interpreter`, unified `HIR` `-O0`/`-O1`/`-O2` JVM and WebAssembly 3.0 (`wasm-O1`/`wasm-O2`) compilers with `HirVerifier`, ASM `CheckClassAdapter`, and `WasmVerifier`, `AxiomChecker`, `.batest.md` v2 multi-mode specs (`BIP029`), a fast isolated warm-JVM HTTP `.batest.md` runner (`-crib`, `BIP041-I1`–`I4`), and a modular, ANTLR-free analysis core (`BIP010`, `BIP027`).
 
 ---
 
@@ -67,11 +67,11 @@ All seven design questions were resolved during the `BIP032` design review:
 
 * **`BIP032-Q1` → `BIP032-D1` (Hybrid campaign + automated harness):** Deliver *both* a structured red-team attack taxonomy & permanent adversarial `.batest.md` regression corpus **and** an automated type/effect-directed soundness fuzzer, oracle harness, and delta-minimizer (`src/test/java/org/babblelang/tests/escape/` for black-box harness + `src/test/java/org/babblelang/analysis/` for package-private white-box property tests).
 * **`BIP032-Q2` → `BIP032-D2` (All 6 soundness surfaces, tiered by severity):** Scope covers all 6 surfaces: (1) Type soundness, (2) Effect/purity/`nothrow`, (3) Ownership/`@BORROWED`/`frozen`/`unique`/`mut`-exclusivity, (4) Optimizer & 4-mode parity (`interpret`/`-O0`/`-O1`/`-O2`), (5) Java interop & axioms/`BytecodeEffectAnalyzer`, and (6) Algebraic & termination verifiers — prioritized by severity (`S0`–`S3`).
-* **`BIP032-Q3` → `BIP032-D3` (Three-tier soundness oracles):** Combine (Tier 1) runtime witness/canary oracles for silent escapes, (Tier 2) 4-mode differential (`interpret` / `-O0` / `-O1` / `-O2`) + `HirVerifier`/`MirVerifier`/`CheckClassAdapter` + unexpected-crash oracles, and (Tier 3) white-box static-algebra & axiom property tests (`TypeAlgebra`, `EffectSet`/`Reachability.Origin`, `BytecodeEffectAnalyzer`/`AxiomChecker`).
+* **`BIP032-Q3` → `BIP032-D3` (Three-tier soundness oracles):** Combine (Tier 1) runtime witness/canary oracles for silent escapes, (Tier 2) multi-mode differential (`interpret` / `-O0` / `-O1` / `-O2` + portable `wasm-O1`/`wasm-O2`) + `HirVerifier`/`CheckClassAdapter`/`WasmVerifier` + unexpected-crash oracles, and (Tier 3) white-box static-algebra & axiom property tests (`TypeAlgebra`, `EffectSet`/`Reachability.Origin`, `BytecodeEffectAnalyzer`/`AxiomChecker`).
 * **`BIP032-Q4` → `BIP032-D4` (Layered automated generator + delta-minimizer):** Combine three generation layers — (1) combinatorial escape-channel × protection-boundary matrix generator, (2) type/effect-directed random AST generator with adversarial boundary-downgrade mutators, and (3) corpus/EMI mutator over existing `.batest.md`/`.ba` tests — all sharing a deterministic PRNG seed and an automatic parse-tree-guided delta-minimizer outputting `.batest.md`-ready reproducers.
-* **`BIP032-Q5` → `BIP032-D5` (Standard trust boundary):** Explicitly exclude out-of-bounds trusted escape hatches (unchecked `as` casts emitting `Unchecked cast`, user-written `axiom` declarations, `java.lang.VirtualMachineError` under `nothrow`, Java reflection/`Unsafe`/JNI bypassing Babble visibility, and known single-threaded `Interpreter`), while keeping Babble's built-in `src/main/java/org/babblelang/axioms/`, `BytecodeEffectAnalyzer`, reifiable `as`/`e!` checks, and ordinary Babble + JDK APIs strictly in-bounds.
-* **`BIP032-Q6` → `BIP032-D6` (Dual-tier CI & Maven integration):** Keep permanent adversarial `.batest.md` regressions in `src/test/batest/soundness/` plus a fast deterministic fixed-seed fuzz smoke test (`<= 5s` total, running once per build without 3–4× Surefire duplication) and white-box `TypeAlgebra`/`EffectSet` property tests in standard `mvn test`; provide an opt-in deep/soak Maven profile `-Pescape` (`-Descape.seconds`, `-Descape.seed`, `-Descape.surfaces`) that writes minimized `.batest.md`-ready reproducers on failure.
-* **`BIP032-Q7` → `BIP032-D7` (Red-team-first 4-phase delivery & remediation policy):** Execute manual/agent red-team probes + white-box property tests first (`BIP032-P1`) so concrete blind spots directly shape the combinatorial matrix (`BIP032-P2`) and random/EMI fuzzer (`BIP032-P3`), followed by a deep soak & remediation pass (`BIP032-P4`). Every confirmed escape is either fixed with a permanent `.batest.md` regression test or explicitly tracked in a GitHub issue / BIP decision if it requires a language-design trade-off.
+* **`BIP032-Q5` → `BIP032-D5` (Standard trust boundary & `io` CTF rules of engagement):** The security boundary is `io`, not the JVM sandbox (`io`-annotated functions are expected to perform arbitrary JVM/OS I/O; we never explore JVM/host exploitation from `io` code), and **`java.lang.System.exit(0)` is the sole permitted `io` payload (the CTF flag)** — probes must never write files, spawn shell scripts/processes, or open network connections. During Stage 1 discovery, **the adversary's only execution surface is `-crib` over HTTP** (`POST /crib`); the adversary must **never modify Babble's source code, axioms, build files, or `-crib` server whatsoever** (only saving confirmed reproducers under `src/test/batest/jailbreaks/*.batest.md`). Explicitly exclude out-of-bounds trusted escape hatches (unchecked `as` casts emitting `Unchecked cast`, user-written `axiom` declarations, `java.lang.VirtualMachineError` under `nothrow`, Java reflection/`Unsafe`/JNI bypassing Babble visibility, and known single-threaded `Interpreter`), while keeping Babble's built-in `src/main/java/org/babblelang/axioms/`, `BytecodeEffectAnalyzer`, reifiable `as`/`e!` checks, and ordinary in-memory Babble + JDK APIs strictly in-bounds.
+* **`BIP032-Q6` → `BIP032-D6` (Dual-tier CI, quarantined `jailbreaks/` & interactive `-crib` runner):** Keep permanent fixed adversarial `.batest.md` regressions in `src/test/batest/soundness/` (or the relevant normal `.batest.md` suite) plus a fast deterministic fixed-seed fuzz smoke test (`<= 5s` total, running once per build without 3–4× Surefire duplication) and white-box `TypeAlgebra`/`EffectSet` property tests in standard `mvn test`; quarantine unfixed confirmed jailbreaks in `src/test/batest/jailbreaks/*.batest.md` **excluded from normal CI `batest` runs** (since unfixed jailbreaks are potentially dangerous in CI); provide `-crib` (`BIP041-I1`–`I4`, `POST /crib`) for ~10–50 ms interactive red-team discovery, confirmation, and remediation; and provide an opt-in deep/soak Maven profile `-Pescape` (`-Descape.seconds`, `-Descape.seed`, `-Descape.surfaces`) that writes minimized `.batest.md`-ready reproducers on failure.
+* **`BIP032-Q7` → `BIP032-D7` (Red-team-first 4-phase delivery & decoupled quarantine/remediation policy):** Execute manual/agent red-team probes + white-box property tests first (`BIP032-P1`) so concrete blind spots directly shape the combinatorial matrix (`BIP032-P2`) and random/EMI fuzzer (`BIP032-P3`), followed by a deep soak & remediation pass (`BIP032-P4`). Adversaries confirm jailbreaks in `-crib` and save them to quarantined `src/test/batest/jailbreaks/*.batest.md`; a separate remediation process analyzes each quarantined jailbreak, reproduces it safely in `-crib`, fixes the underlying bug, and moves the fixed, safe version into a normal CI-executed `.batest.md` suite (or records an explicit GitHub issue / BIP decision if it requires a language-design trade-off).
 
 ---
 
@@ -84,7 +84,7 @@ All seven design questions were resolved during the `BIP032` design review:
 | **1. Type Soundness** | `TypeChecker`, `TypeAlgebra`, `Narrowing`, `CallSolver`, `OverloadSolver`, `SlotInference`, `LoweringAnalyzer` | Cast-free Babble code obeys progress & preservation: no unexpected `ClassCastException`, `NullPointerException` on non-null `T`, `VerifyError`, or silent heap pollution. | `null` leaking into `T`; variance hole polluting `list of string` with `int`; stale narrowed variable mutated via closure or loop; broken `A & B` / `overload` / variadic-join dispatch. |
 | **2. Effect, Purity & `nothrow`** | `EffectChecker`, `EffectBodyWalker`, `CallEffectAnalyzer`, `SymbolicEffectSummary`, `TypedModuleSummary` | Pure functions (`@HERMETIC`, `@DETERMINISTIC`, `@CONST`) perform no `io`, read no unowned mutable/volatile state, and mutate no non-local state; `nothrow` never throws synchronous exceptions; `fn calling f` forwards all callback effects. | Smuggling `io`/`volatile`/`mut` via interface overrides, overloads, default args, constructors, or `fn calling f`; a `nothrow` function throwing uncaught at runtime (e.g., `Error` escaping untyped `catch`). |
 | **3. Ownership, Borrow, `frozen` & `mut` Exclusivity** | `EffectChecker`, `EffectBodyWalker`, `CallEffectAnalyzer`, `Reachability`, `Type.Frozen` | `@BORROWED` values never outlive their call frame (except via tracked return-origin provenance); `frozen T` values are deeply immutable; `unique` values have a single live owner and cannot be used after `move`; call-site `mut` arguments cannot alias each other or any concurrently read argument. | Escaping a `@BORROWED` param into a closure/field/collection/exception/Java SAM; mutating a `frozen` value via alias or covariance; double-using a `unique` value across branches/`try`/`finally`; bypassing `mut` exclusivity via deep paths (`k > 3`) or collection views. |
-| **4. Optimizer & 4-Mode Parity** | `HirPurity`, `HirEGraphSimplifyPass`, `InlinePass`, `HirDcePass`, `HirLicmPass`, `ScalarReplacePass`, `FbipReusePass`, `HirTryNormalize`, `HirVerifier`, and `-O2` SSA `MIR` (`BIP014-I3`: `MirLowerer`, `MirVerifier`, `SccpPass`, `GvnCsePass`, `AliasRlePass`, `LicmPass`, `MirDcePass`, `PredicateReorderPass`, `MirEmitter`) | `interpret`, `compile -O0`, `compile -O1`, and `compile -O2` produce identical observable values, output, side effects, and uncaught exceptions, and pass `HirVerifier`, `MirVerifier` (`-O2`), and ASM `CheckClassAdapter`. | `FbipReusePass` mutating an aliased list/record in place; `AliasRlePass` reusing a stale load on aliased `unique mut` state; `PredicateReorderPass` moving a predicate ahead of its guard; `HirDcePass`/`MirDcePass` deleting a throwing or diverging call; `HirEGraphSimplifyPass` violating IEEE-754 `NaN`/`-0.0`. |
+| **4. Optimizer & Multi-Mode Parity** | `HirPurity`, `HirEffectAnalysis`, `HirEGraphSimplifyPass`, `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, `HirPredicateReorderPass`, `HirLicmPass`, `HirDcePass`, `HirSlotAllocator`, `HirTryNormalize`, `HirVerifier`, unified `-O2` (`BIP039`: `HirSccpPass`, `HirAeGraphPass`), and WebAssembly 3.0 (`WasmProgramLinker`, `WasmVerifier`, `wasm-O1`/`wasm-O2`) | `interpret`, `compile -O0`, `compile -O1`, `compile -O2`, and (for portable programs) `wasm-O1`/`wasm-O2` produce identical observable values, output, side effects, and uncaught exceptions, and pass `HirVerifier`, ASM `CheckClassAdapter`, and `WasmVerifier`. | `FbipReusePass` mutating an aliased list/record in place; `HirAeGraphPass` reusing a stale load on aliased `UniqueParam(k)` state; `HirPredicateReorderPass` moving a predicate ahead of a `HirExpr.Narrow` guard; `HirDcePass` deleting a throwing or diverging call; `HirEGraphSimplifyPass` violating IEEE-754 `NaN`/`-0.0`; `wasm-O1`/`wasm-O2` diverging from JVM. |
 | **5. Java Interop & Axiom Boundary** | `src/main/java/org/babblelang/axioms/`, `BytecodeEffectAnalyzer`, `JavaEffectResolver`, `JavaNullability`, `JavaTypeBridge`, `ClassGen` bridges, `Faces` SAM adapters | Built-in curated axioms and tier-7 `BytecodeEffectAnalyzer` profiles never over-claim purity, `nothrow`, `fresh`, `immutable`, or non-nullness; Java interface bridges & SAM adapters reject invalid inbound types/nulls and never leak `@BORROWED` refs. | `BytecodeEffectAnalyzer` certifying an overridable or state-reading Java method `pure`/`fresh`/`notnull`; curated axiom drifting across JDK versions; Java bridge/SAM missing an inbound `null` or generic check. |
 | **6. Algebraic & Termination Verifiers** | `AlgebraicVerifier` (E-graph & `Sign`/`RelVal` partial-derivative domain), `AlgebraicRules`, `SizeChangeTermination`, `TailCalls`, `EffectAstExtractors` | Every function accepted as `commutative`, `associative`, `idempotent`, `monotone`, or `injective` satisfies its mathematical law on the full runtime domain (including `NaN`, `-0.0`, `±Infinity`, `MIN_VALUE`); every `@TERMINATING` function terminates on all valid inputs. | `AlgebraicVerifier` certifying `x * (-0.0)` as `monotone` or an overflowing `int` op as `monotone`; `SizeChangeTermination` certifying a `MIN_VALUE`-looping recursion or mutated-collection `for` loop as `@TERMINATING`. |
 
@@ -94,20 +94,31 @@ To keep adversarial results high-signal and unambiguous, `BIP032` draws a crisp 
 
 | Category | In-Bounds (Bug if Violated) | Out-of-Bounds (Trusted Escape Hatch) |
 |---|---|---|
+| **JVM / `io` security boundary** | Executing `io` (specifically invoking `java.lang.System.exit(0)`) from a Babble function **not** annotated `io` (i.e., statically accepted as `@HERMETIC` / pure). | Any side effect performed inside a function **already annotated `io`** (including `System.exit(0)`, arbitrary JDK I/O, or OS access): `BIP032` is **not** trying to jailbreak the JVM sandbox, and we do not enumerate ways low-level JVM access inside `io` can cause harm (such as writing and executing shell scripts). |
 | **Casts & null assertions** | Cast-free code; reifiable `as` casts (`x as int`, `x as Foo`, `x as A & B`) failing to check at the cast site; `e!` allowing `null` through without throwing NPE at the `!` site. | Explicit unchecked generic `as` casts that emit `Warning : Unchecked cast` (`BIP011-D8`), when the runtime failure originates from the caller's unchecked cast. |
 | **Axioms** | Babble's own built-in `src/main/java/org/babblelang/axioms/` (`curated.ba`, `builtins.ba`, `@Axioms` stubs) and tier-7 `BytecodeEffectAnalyzer` inference. | User-written `axiom` declarations (`axiom pure`, custom user Java `axiom`s) that intentionally assert unchecked assumptions. |
 | **JVM asynchronous errors** | Synchronous throws (`throw ...`, `assert(...)`, `NullPointerException`, `ArithmeticException`, `IndexOutOfBoundsException`, `ClassCastException`, explicit `throw java.lang.Error(...)` / `java.lang.AssertionError(...)`) inside `nothrow`. | Asynchronous `java.lang.VirtualMachineError` (`StackOverflowError`, `OutOfMemoryError`, `InternalError`) under `nothrow`. |
-| **JVM reflection & native code** | All ordinary public JDK/Java APIs callable from Babble, `RM003` Java interface bridges, `LambdaMetafactory` SAM adapters, Java generics & arrays. | Reflective/unsafe mutation (`Field.setAccessible`, `sun.misc.Unsafe`, JNI) bypassing Babble/Java encapsulation behind the type/effect checker's back. |
+| **JVM reflection & native code** | All ordinary public in-memory JDK/Java APIs callable from Babble, `RM003` Java interface bridges, `LambdaMetafactory` SAM adapters, Java generics & arrays. | Reflective/unsafe mutation (`Field.setAccessible`, `sun.misc.Unsafe`, JNI) bypassing Babble/Java encapsulation behind the type/effect checker's back. |
 | **Concurrency** | Single-threaded execution in `interpret`, `-O0`, `-O1`, and `-O2` (and multi-threaded compiled execution once `BIP007` §10 / thread-safe `Interpreter` lands). | Known single-threaded `Interpreter` limitation documented in `AGENTS.md`. |
+
+#### Rules of Engagement — `io` is the Security Boundary & `System.exit(0)` is the Flag
+
+> [!IMPORTANT]
+> **We are not trying to jailbreak the JVM.** Once a Babble function is marked `io`, arbitrary JVM/OS side effects (including `java.lang.System.exit(0)`) are expected and in-policy. The security boundary under test is the **`io` annotation itself**: demonstrating that a Babble function **not** annotated `io` can still cause `io` to execute is sufficient.
+>
+> Because arbitrary `io` can leave the JVM and its shared host environment in an unpredictable state, all adversarial probes must follow strict rules of engagement:
+> * **HTTP `-crib` is the adversary's *only* execution surface — never modify Babble's source code:** during Stage 1 discovery, the adversary submits probes exclusively to the running `-crib` server over HTTP (`POST /crib`, `GET /health`, `POST /recycle`) and may write files *only* to save confirmed jailbreaks under `src/test/batest/jailbreaks/*.batest.md`. Modifying Babble's source code, built-in axioms, build configuration, test harness, or `-crib` server whatsoever is strictly forbidden — that would be cheating. (All code fixes belong exclusively to the separate Stage 2 remediation process.)
+> * **The only permitted `io` payload is `java.lang.System.exit(0)` — that is the flag to capture.** A non-`io` Babble function that succeeds in calling `java.lang.System.exit(0)` inside `-crib` terminates the isolated worker JVM (`status: "WORKER_CRASHED"`, `workerRecycled: true`), giving an unambiguous, zero-filesystem-footprint proof of an `io` escape.
+> * **Never touch persistent host state:** probes must **never** write, create, modify, or delete files on disk, generate or execute shell scripts / OS processes (`ProcessBuilder`, `Runtime.exec`), or open network sockets. Non-`io` surfaces (`S1` types, `S3` ownership, `S4` optimizer parity, `S6` algebraic/termination) use pure in-memory witnesses and captured `println` output only.
 
 ### 4.3 Severity classification (`S0`–`S3`)
 
 Every confirmed escape is assigned one severity level during triage:
 
 * **`S0` — Critical (Silent Corruption / Wrong Code / Bytecode Invalidity):**
-  * Optimizer divergence (`interpret`, `-O0`, `-O1`, and `-O2` produce different observable results or exceptions).
-  * `HirVerifier`, `MirVerifier`, or ASM `CheckClassAdapter` failure, or JVM `VerifyError` / `ClassFormatError`.
-  * In-place corruption of aliased or `frozen` data (e.g., via `FbipReusePass`, `ScalarReplacePass`, `AliasRlePass`, or `PredicateReorderPass`).
+  * Optimizer or backend divergence (`interpret`, `-O0`, `-O1`, `-O2`, or portable `wasm-O1`/`wasm-O2` produce different observable results or exceptions).
+  * `HirVerifier`, ASM `CheckClassAdapter`, or `WasmVerifier` failure, or JVM `VerifyError` / `ClassFormatError` / WebAssembly validation failure.
+  * In-place corruption of aliased or `frozen` data (e.g., via `FbipReusePass`, `ScalarReplacePass`, `HirAeGraphPass`, or `HirPredicateReorderPass`).
 * **`S1` — High (Type Soundness Crash / Heap Pollution):**
   * Unexpected `ClassCastException`, `NullPointerException` on a statically non-null `T`, or silent heap pollution in cast-free Babble code (or at a reifiable `as`/`e!` or Java-bridge boundary).
 * **`S2` — High (Effect, Ownership or Borrow Escape):**
@@ -150,7 +161,7 @@ flowchart LR
         C3["Captured Closure / Escaping Lambda"]
         C4["Thrown Exception / Catch Variable"]
         C5["Java Call / SAM Adapter / Bridge Boundary"]
-        C6["Optimizer Rewrite (-O1 HIR / -O2 SSA MIR)"]
+        C6["Optimizer Rewrite (-O1 / -O2 HIR & Wasm)"]
     end
 
     Boundaries --> Wrappers --> Channels
@@ -188,15 +199,15 @@ Below is the structured red-team catalog across all 6 surfaces that drives `BIP0
 | `O3` | **`unique` aliasing & use-after-`move`** | Using a moved `unique` variable across: `if`/`else` joins, `while`/`for` back-edges, short-circuit `and`/`or`, `try` → `catch` → `finally` unwind paths, closure capture before `move`, aliasing into a `record`/`list` then moving the container, self-tail-call `recurse(move(x))` | Two live aliases to a supposedly `unique` object, or read after `move` |
 | `O4` | **`mut` exclusivity bypass** | Passing aliased mutable state to `(mut a, mut b)` or `(mut a, b)` via: `AccessPath` depth `> 3` loop widening (`BIP027-D5`), array/list element aliasing (`xs.get(0)` vs `xs`), collection views (`xs.subList(0, 1)` vs `xs`), bound method `xs.add` passed alongside `xs` into `fn calling f`, interface/super dispatch aliasing `this` and an argument | Concurrent `mut` + `mut` or `mut` + read on the exact same object at one call site |
 
-### 5.4 Surface 4 — Optimizer & 4-mode parity attack vectors
+### 5.4 Surface 4 — Optimizer & multi-mode parity attack vectors
 
 | ID | Attack Vector | Feature Intersection | Target Failure |
 |---|---|---|---|
-| `R1` | **FBIP reuse (`FbipReusePass`)** | `list(from: move(xs))` / `set`/`map` reuse and tail `RecordReuse` combined with `try`/`finally`, loops, conditional returns, exception thrown mid-argument evaluation, or Surface 3 `unique` leaks | `-O1`/`-O2` mutates an aliased collection/record while `interpret` and `-O0` do not (`S0`) |
-| `R2` | **Scalar replacement (`ScalarReplacePass`)** | Non-escaping local `record` SROA and `$unboxed` `borrow` flattening with: `null`/union joins, `is`/`as`, `same(...)` identity checks, `try`/`catch`/`finally`, field mutation, 2-slot `long`/`double` primitives | `-O1`/`-O2` disagrees with `-O0`/`interpret`, or fails `HirVerifier`/`MirVerifier`/`CheckClassAdapter` (`S0`) |
+| `R1` | **FBIP reuse (`FbipReusePass`)** | `list(from: move(xs))` / `set`/`map` reuse and tail `RecordReuse` combined with `try`/`finally`, loops, conditional returns, exception thrown mid-argument evaluation, or Surface 3 `unique` leaks | `-O1`/`-O2` (JVM or Wasm) mutates an aliased collection/record while `interpret` and `-O0` do not (`S0`) |
+| `R2` | **Scalar replacement (`ScalarReplacePass`)** | Non-escaping local `record` SROA and `$unboxed` `borrow` flattening with: `null`/union joins, `is`/`as`, `same(...)` identity checks, `try`/`catch`/`finally`, field mutation, 2-slot `long`/`double` primitives | `-O1`/`-O2` disagrees with `-O0`/`interpret`, or fails `HirVerifier`/`CheckClassAdapter`/`WasmVerifier` (`S0`) |
 | `R3` | **E-graph simplification (`HirEGraphSimplifyPass`)** | `a == a -> true` / `a != a -> false` on `double`/`float` `NaN` or custom `equals`; integer overflow (`MIN_VALUE / -1`, `MIN_VALUE * -1`); `-0.0` vs `+0.0`; `idempotent` / `commutative` rewrites changing exception or evaluation order | `-O1`/`-O2` produces wrong value or drops exception (`S0`) |
-| `R4` | **HIR LICM, DCE & Inlining (`HirLicmPass`, `HirDcePass`, `InlinePass`)** | Zero-trip loops guarding division-by-zero / `null` dereference / out-of-bounds; hoisting reads of mutated locals/fields/views; DCE deleting calls falsely marked `pure nothrow @TERMINATING`; `InlinePass` duplicating side-effecting arguments, losing line numbers in stack traces, or crossing AOT module boundaries (`babblec`) | `-O1`/`-O2` crashes where `-O0` did not, swallows an exception/infinite loop, or prints wrong result (`S0`) |
-| `R5` | **SSA `MIR` `-O2` passes (`BIP014-I3`)** | `AliasRlePass` redundant-load elimination on `unique mut` state when aliased or across calls/exceptions; `PredicateReorderPass` reordering `and`/`or` predicates ahead of `!= null` / `is T` narrowing guards (`BIP007-D1`); `SccpPass`/`GvnCsePass`/`LicmPass`/`MirDcePass` across `try`/`catch`/`finally`, `SelfTailCall` loops, and 2-slot primitives; `MirEmitter` typed-call unboxing | `-O2` diverges from `interpret`/`-O0`/`-O1`, or fails `MirVerifier`/`CheckClassAdapter` (`S0`) |
+| `R4` | **HIR LICM, DCE, Predicate Reordering & Inlining (`HirLicmPass`, `HirDcePass`, `HirPredicateReorderPass`, `InlinePass`)** | Zero-trip loops guarding division-by-zero / `null` dereference / out-of-bounds; hoisting reads of mutated locals/fields/views; reordering `and`/`or` predicates ahead of `HirExpr.Narrow` (`!= null` / `is T`) guards (`BIP007-D1`, `BIP039-D3`); DCE deleting calls falsely marked `pure nothrow @TERMINATING`; `InlinePass` duplicating side-effecting arguments, losing line numbers in stack traces, or crossing AOT module boundaries (`babblec`) | `-O1`/`-O2` crashes where `-O0` did not, swallows an exception/infinite loop, or prints wrong result (`S0`) |
+| `R5` | **Unified `HIR` `-O2` & WebAssembly 3.0 parity (`BIP039`, `BIP025`)** | `HirAeGraphPass` dominator-scoped GVN/CSE, `Convert`/`Widen`/`CheckCast` folding, and alias-aware RLE / store-to-load forwarding on `UniqueParam(k)`/`Frozen` across calls, exceptions, and `var` epochs; `HirSccpPass` constant propagation across `if`/`match`/`while`/`try`; `HirSlotAllocator` slot coloring; `wasm-O1`/`wasm-O2` (`WasmGC`, `try_table`, `return_call`) behavioral parity against JVM | `-O2` or `wasm-O1`/`wasm-O2` diverges from `interpret`/`-O0`/`-O1`, or fails `HirVerifier`/`CheckClassAdapter`/`WasmVerifier` (`S0`) |
 
 ### 5.5 Surface 5 — Java interop & axiom boundary attack vectors
 
@@ -212,11 +223,11 @@ Below is the structured red-team catalog across all 6 surfaces that drives `BIP0
 |---|---|---|---|
 | `A1` | **E-graph algebraic laws (`AlgebraicVerifier`)** | `commutative`, `associative`, `idempotent` on `double`/`float` (`NaN`, `-0.0`, `±Infinity`, non-associative rounding), `int`/`long` wrap, `string` concatenation, `mut` `FieldTransition` with aliased target/value or throwing sub-expressions | Function accepted with algebraic modifier, falsified by `AxiomChecker` counterexample |
 | `A2` | **Partial-derivative sign & bijectivity (`AlgebraicVerifier` `Sign`/`RelVal`)** | `monotone` on `double`/`float` (`x * 0.0`, `x * (-0.0)`, `x + Infinity`, `min`/`max` with `NaN`), `int`/`long` overflow, `char`/narrowing casts; `injective` on lossy widening (`int -> float`, `long -> double`), `STR_ADD` with ambiguous multi-param concatenation, triangular `record` recovery with non-injective components | Function accepted as `monotone` or `injective`, falsified by explicit `x1 < x2` or `f(x1) == f(x2)` counterexample |
-| `A3` | **Termination (`SizeChangeTermination` & `for`-loop certification)** | Guarded integer decreases around `Integer.MIN_VALUE` / `Long.MIN_VALUE` (`-n`, `abs(n)`, `n - k` underflow, `floorDiv`/`floorMod`), mutual recursion with subtle parameter swaps, recursive calls hidden in closures/interfaces/fields, `for` loops over custom/mutated `Collection` iterators falsely certified `@TERMINATING` | Non-terminating function certified `@TERMINATING` (and potentially deleted by `HirDcePass`/`MirDcePass`!) |
+| `A3` | **Termination (`SizeChangeTermination` & `for`-loop certification)** | Guarded integer decreases around `Integer.MIN_VALUE` / `Long.MIN_VALUE` (`-n`, `abs(n)`, `n - k` underflow, `floorDiv`/`floorMod`), mutual recursion with subtle parameter swaps, recursive calls hidden in closures/interfaces/fields, `for` loops over custom/mutated `Collection` iterators falsely certified `@TERMINATING` | Non-terminating function certified `@TERMINATING` (and potentially deleted by `HirDcePass`!) |
 
 ### 5.7 Surface coverage for `BIP034` (`def` vs. `var`)
 
-With [BIP034](bip034_immutable-def-and-mutable-var.md) (`BIP034-I1`–`I5`, splitting non-reassignable `def` from mutable `var`) implemented, the attack catalog and Layer 1/2 mutators directly probe: per-field `def` `READ_FROZEN` immutability vs. mutable nested containers on regular `class`es, value-capture of `def` locals vs. cell-capture of `var` locals, sequential TDZ / pure `name_read {pure}` MIR hoisting (`R5`), `private var` static field purity, `ACC_FINAL` header `def` constructors, and `fn (var ...)` local parameters.
+With [BIP034](bip034_immutable-def-and-mutable-var.md) (`BIP034-I1`–`I5`, splitting non-reassignable `def` from mutable `var`) implemented, the attack catalog and Layer 1/2 mutators directly probe: per-field `def` `READ_FROZEN` immutability vs. mutable nested containers on regular `class`es, value-capture of `def` locals vs. cell-capture of `var` locals, sequential TDZ / pure `name_read` `HirLicmPass`/`HirAeGraphPass` hoisting (`R4`/`R5`), `private var` static field purity, `ACC_FINAL` header `def` constructors, and `fn (var ...)` local parameters.
 
 ---
 
@@ -239,22 +250,23 @@ flowchart TD
     NegCheck -->|"Expected rejection"| Pass1["OK (Defense Held)"]
 
     Front -->|"Accepted"| T1["Tier 1: Runtime Witness/Canary Oracle\n(pure/det, frozen diff, @BORROWED same,\nnothrow catch, unique alias, algebraic)"]
-    Front -->|"Accepted"| T2["Tier 2: 4-Mode Differential & Verifier Oracle\n(interpret vs -O0 vs -O1 vs -O2,\nHirVerifier, MirVerifier, CheckClassAdapter, crash check)"]
+    Front -->|"Accepted"| T2["Tier 2: Multi-Mode Differential & Verifier Oracle\n(interpret vs -O0 vs -O1 vs -O2 + wasm-O1/O2,\nHirVerifier, CheckClassAdapter, WasmVerifier, crash check)"]
 
     T3["Tier 3: White-Box Static Property Oracles\n(TypeAlgebra laws, EffectSet lattice,\nBytecodeEffectAnalyzer vs live JDK / AxiomChecker)"]
 
     T1 -->|"Canary Triggered!"| Min["Delta-Minimizer (ddmin)\nDeterministic Seed + Shrinking"]
     T2 -->|"Divergence / Crash / VerifyError!"| Min
     T3 -->|"Law Violation / Axiom Falsified!"| Report["Minimized Counterexample Report"]
-    Min --> Repro["Minimal .batest.md Reproducer\n-> target/escape-repros/ -> src/test/batest/soundness/"]
+    Min --> Repro["Minimal .batest.md Reproducer\n-> src/test/batest/jailbreaks/ (quarantined)\n-> fix in -crib -> normal src/test/batest/"]
 ```
 
 ### 6.1 Tier 1 — Runtime witness & canary oracles (detecting silent escapes)
 
 Each generated adversarial probe wraps the target function in a lightweight Babble witness harness that converts a *silent* static soundness violation into a loud, deterministic assertion failure (`ESCAPE:<KIND>:<detail>`):
 
-1. **Purity / determinism canary (`ESCAPE:PURE`):**
+1. **Purity / determinism & `io`-CTF canary (`ESCAPE:PURE` / `System.exit(0)`):**
    * Respecting `BIP019` §4.1 (reads of mutable `@BORROWED` arguments are deterministic when arguments are unchanged), evaluates a statically `pure` function `f(args)` twice with freshly cloned equal argument snapshots — mutating *unrelated* external witness state between the two calls. Any mismatch in result or any observable mutation of external witness state triggers `ESCAPE:PURE`.
+   * For interactive `io`-escape hunting inside `-crib` (§4.2, §8.2), the sole permitted `io` payload is `java.lang.System.exit(0)`: if a Babble function **not** annotated `io` causes `java.lang.System.exit(0)` to execute, the worker JVM exits immediately and `-crib` reports `status: "WORKER_CRASHED"` (`workerRecycled: true`) — capturing the flag cleanly without touching disk or the shared host environment.
 2. **`frozen` / `@CONST` mutation canary (`ESCAPE:FROZEN` / `ESCAPE:CONST`):**
    * Before calling a function taking a `frozen T` or non-`mut` `@BORROWED` parameter `w`, snapshots `w`'s deep Babble-observable state (fields, collection sizes/contents, array elements, `equals`/`toString` — ignoring benign internal JVM caches such as `String.hashCode`). After the call returns (or unwinds via `try/finally`), re-snapshots `w`; any difference triggers `ESCAPE:FROZEN` or `ESCAPE:CONST`.
 3. **`@BORROWED` reference-retention canary (`ESCAPE:BORROW`):**
@@ -267,26 +279,26 @@ Each generated adversarial probe wraps the target function in a lightweight Babb
    * Inside a function taking `(mut a, mut b)` or `(mut a, b)` on mutable reference types, asserts `not same(a, b)` (and for containers/views, probes whether mutating `a` mutates `b` before `b` is written); any overlap triggers `ESCAPE:MUT_ALIAS`.
 7. **Algebraic & termination canary (`ESCAPE:ALGEBRAIC` / `ESCAPE:TERMINATION`):**
    * Reuses and extends [`AxiomChecker`](../../src/main/java/org/babblelang/analysis/AxiomChecker.java) with adversarial boundary domains (`0`, `-1`, `1`, `Integer.MIN_VALUE`, `Integer.MAX_VALUE`, `Long.MIN_VALUE`, `Long.MAX_VALUE`, `-0.0`, `+0.0`, `Double.NaN`, `Double.POSITIVE_INFINITY`, `Double.NEGATIVE_INFINITY`, subnormals, `""`, surrogate chars, empty/singleton collections) to falsify `commutative`, `associative`, `idempotent`, `monotone`, and `injective`.
-   * For deterministic CI (`mvn test`), tests `@TERMINATING` probes over small finite boundary domains and explicit Babble step-counter harnesses (zero wall-clock flakiness); in opt-in `-Pescape` soak runs, also enforces a generous worker-thread timeout watchdog (reporting `ESCAPE:TERMINATION` if a certified `@TERMINATING` probe hangs).
+   * For deterministic CI (`mvn test`), tests `@TERMINATING` probes over small finite boundary domains and explicit Babble step-counter harnesses (zero wall-clock flakiness); in interactive red-team sessions via `-crib` (`BIP041`), passing `?timeout=<ms>` provides an instant, isolated wall-clock timeout oracle (cooperative `ExecutionInterruptedError` in `interpret`, hard `Process.destroyForcibly()` + async worker respawn in compiled JVM and Wasm modes, returning `status: "TIMEOUT"`); in opt-in `-Pescape` soak runs, also enforces a generous worker-thread timeout watchdog (reporting `ESCAPE:TERMINATION` if a certified `@TERMINATING` probe hangs).
 
-### 6.2 Tier 2 — 4-mode differential, verifier & crash oracle
+### 6.2 Tier 2 — Multi-mode differential, verifier & crash oracle
 
-Every program accepted by the front end (single-file script, multi-module `MapModuleSource` graph for `T6`/`E5`, or multi-input `BabbleSession` transcript for `T6`/`E5`) runs through Babble's full 4-mode execution matrix using per-engine bindings (zero process-global `System.setProperty` mutation, fully parallel-safe with no `@ResourceLock(Resources.GLOBAL)` needed):
+Every program accepted by the front end (single-file script, multi-module `MapModuleSource` graph for `T6`/`E5`, or multi-input `BabbleSession` transcript for `T6`/`E5`) runs through Babble's full execution matrix using per-engine bindings (zero process-global `System.setProperty` mutation, fully parallel-safe with no `@ResourceLock(Resources.GLOBAL)` needed):
 
 * `interpret` (`engine.put(BabbleScriptEngine.MODE, "interpret")`)
 * `compile -O0` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 0`, `VERIFY = true`)
 * `compile -O1` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 1`, `VERIFY = true`)
-* `compile -O2` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 2`, `VERIFY = true`, SSA `MIR` via `BIP014-I3`)
-* Plus portable-program parity against `wasm-js -O1` (`BIP025-I0`–`I5`, `RM018`, with `WasmVerifier` and `NodeWasmRunner` when Node.js is available)
+* `compile -O2` (`MODE = "compile"`, `BabbleCompiler.OPT_LEVEL = 2`, `VERIFY = true`, unified `HIR` `-O2` via `BIP039`)
+* Plus portable-program parity against WebAssembly 3.0 `wasm-O1` and `wasm-O2` (`BIP025-I0`–`I5`, `RM018`, `BIP039-I6`, with `WasmVerifier` and Node.js V8 when available)
 
-*(Implementation note for `BIP032-P2`: [`BabbleCompiler.java`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java) `#L140` currently reads `Boolean.getBoolean(VERIFY)` directly; `BIP032-P2` adds a tiny `BabbleCompiler.resolveVerify(engine)` helper matching `resolveOptLevel(engine)` (`#L57`) and `IR_OBSERVER` (`#L42`), so per-engine verification runs `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter` in any Surefire leg without mutating `System` properties.)*
+*(Already landed in `BIP041-I1`: [`BabbleCompiler.resolveVerify(engine)`](../../src/main/java/org/babblelang/compiler/BabbleCompiler.java) reads per-engine `engine.get(VERIFY)` before `System.getProperty(VERIFY)`, and the JUnit-free `.batest.md` parser/runner/verifier core lives in `org.babblelang.batest` — so both `-crib` and `BIP032-P2`'s `EscapeOracle` run `HirVerifier`, ASM `CheckClassAdapter`, and `WasmVerifier` in parallel without mutating `System` properties.)*
 
 The oracle flags a violation on any of:
 
-1. **Bytecode / IR verifier failure (`S0`):** `HirVerifier`, `MirVerifier` (`-O2`), or ASM `CheckClassAdapter` failure, or JVM `VerifyError` / `ClassFormatError` / `IncompatibleClassChangeError` / `AbstractMethodError` / `NoSuchMethodError`.
+1. **Bytecode / IR verifier failure (`S0`):** `HirVerifier`, ASM `CheckClassAdapter`, or `WasmVerifier` failure, or JVM `VerifyError` / `ClassFormatError` / `IncompatibleClassChangeError` / `AbstractMethodError` / `NoSuchMethodError` / Wasm module validation failure.
 2. **Type-soundness runtime crash (`S1`):** Unexpected `ClassCastException`, `NullPointerException` on a statically non-null `T` (in `e!`-free code), or `ArrayStoreException` (in code without covariant array widening). Ordinary Babble runtime errors (`ArithmeticException`, `IndexOutOfBoundsException`, `IllegalArgumentException`, explicit `throw` / `BabbleException`) are *not* flagged as `S1` unless they violate `nothrow` (`ESCAPE:NOTHROW`) or diverge across modes (`S0`).
-3. **Cross-mode behavioral divergence (`S0`):** Any difference across `interpret`, `-O0`, `-O1`, and `-O2` in return value, stdout, stderr, or thrown exception class/message.
-4. **Internal compiler crash (`S0`):** Any uncaught runtime exception (`NullPointerException`, `IllegalStateException`, `AssertionError`, `ClassCastException`, `IndexOutOfBoundsException`) escaping `org.babblelang.{analysis,ir,opt,compiler}.*` instead of a clean `TypeCheckException` / `AnalysisException` / `ScriptException`.
+3. **Cross-mode behavioral divergence (`S0`):** Any difference across `interpret`, `-O0`, `-O1`, `-O2`, and (for portable programs) `wasm-O1`/`wasm-O2` in return value, stdout, stderr, or thrown exception class/message.
+4. **Internal compiler crash (`S0`):** Any uncaught runtime exception (`NullPointerException`, `IllegalStateException`, `AssertionError`, `ClassCastException`, `IndexOutOfBoundsException`) escaping `org.babblelang.{analysis,ir,opt,compiler,wasm}.*` instead of a clean `TypeCheckException` / `AnalysisException` / `ScriptException`.
 
 ### 6.3 Tier 3 — White-box static-algebra & axiom property oracles
 
@@ -358,7 +370,7 @@ Every mutated program that *compiles* is immediately executed against Tier 1 + T
 
 Loads existing valid `.batest.md` and `.ba` programs from `src/test/batest/` and `src/test/babble/` and applies semantics-preserving and boundary-probing transformations:
 
-* **Dead-code & guard wrapping (EMI):** wraps sub-expressions in opaque false-branch `if`, single-iteration `while`/`for`, `try (...) finally (0)`, or helper functions (both pure and `fn calling f`) to stress `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, `HirLicmPass`, `HirDcePass`, `HirEGraphSimplifyPass`, and `-O2` SSA `MIR` passes (`SccpPass`, `GvnCsePass`, `AliasRlePass`, `LicmPass`, `MirDcePass`, `PredicateReorderPass`).
+* **Dead-code & guard wrapping (EMI):** wraps sub-expressions in opaque false-branch `if`, single-iteration `while`/`for`, `try (...) finally (0)`, or helper functions (both pure and `fn calling f`) to stress `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, `HirPredicateReorderPass`, `HirLicmPass`, `HirDcePass`, `HirEGraphSimplifyPass`, and unified `HIR` `-O2` passes (`HirSccpPass`, `HirAeGraphPass`, `HirSlotAllocator`) across both JVM and WebAssembly 3.0 backends.
 * **Contract-strengthening probes:** on pure/helper functions in real tests, opportunistically adds `nothrow`, `unique`, or `freeze(...)` and checks whether accepted mutations break any Tier 1/Tier 2 oracle.
 
 ### 7.5 Deterministic seeding & parse-tree-guided delta-minimization (`EscapeMinimizer`)
@@ -369,42 +381,197 @@ Whenever any generator layer discovers a violation:
 2. `EscapeMinimizer` runs a bounded **parse-tree-guided hierarchical `ddmin`** loop using `BabbleScriptEngine.parseSource` (typically `< 2s`), deleting only syntactically valid AST regions rather than arbitrary lines:
    * Removes unused top-level declarations, classes, virtual modules, and functions.
    * Simplifies blocks (dropping non-essential statements), `if`/`try`/`for`/closure wrappers, effect modifiers, and unused parameters.
-   * Preserves the **exact same failure predicate** (same oracle tag `ESCAPE:<KIND>`, same unexpected exception class, or same 4-mode divergence signature — never shrinking one bug into a different unrelated error!).
-3. Writes the minimized reproducer to `target/escape-repros/<surface>_<severity>_<seed>.batest.md` in valid `.batest.md` v2 format (`BIP029`), targeting `BatestParser.MAX_CASE_CODE_CHARS` (`< 400` non-comment code chars; emitting `;; babble large="minimized adversarial reproducer"` automatically if a multi-declaration reproducer genuinely exceeds 400 chars), complete with repro seed metadata and expected error/assertion structure so a developer can triage, fix, and move it straight into `src/test/batest/soundness/`.
+   * Preserves the **exact same failure predicate** (same oracle tag `ESCAPE:<KIND>`, same unexpected exception class, or same multi-mode divergence signature — never shrinking one bug into a different unrelated error!).
+3. Writes the minimized reproducer to `target/escape-repros/<surface>_<severity>_<seed>.batest.md` in valid `.batest.md` v2 format (`BIP029`), targeting `BatestParser.MAX_CASE_CODE_CHARS` (`< 400` non-comment code chars; emitting `;; babble large="minimized adversarial reproducer"` automatically if a multi-declaration reproducer genuinely exceeds 400 chars), complete with repro seed metadata and expected error/assertion structure so it can be confirmed in `-crib`, quarantined in `src/test/batest/jailbreaks/`, and moved into a normal `.batest.md` suite once fixed.
+4. **Interactive / agentic shrinking over `-crib` (`BIP041`):** During `BIP032-P1` red-team sessions — or from any external Python/shell/LLM red-team driver before `EscapeMinimizer` lands in `BIP032-P3` — the exact same shrinking loop drives `POST http://127.0.0.1:7331/crib?strict=false` at ~20–50 trials/s, holding the failure predicate steady (`parityDiff`, `INTERNAL_CRASH`, `TIMEOUT`, or `ESCAPE:*` output) until confirmed with `?fresh=true&modes=all` and saved to `src/test/batest/jailbreaks/*.batest.md` (see §8.2).
 
 ---
 
-## 8. Repository Layout, Maven Profiles & CI Integration
+## 8. Repository Layout, Fast `-crib` Jailbreaking Workflow & CI Integration
 
-### 8.1 Permanent adversarial `.batest.md` corpus
+### 8.1 Quarantined `jailbreaks/` staging vs. permanent CI `.batest.md` corpus
 
-Confirmed escapes and red-team regressions live under a dedicated `src/test/batest/soundness/` directory (registered in `src/test/batest/AGENTS.md`), organized by surface and strictly obeying `BatestParser`'s three readability budgets (`MAX_FILE_LINES = 1,000`, `MAX_PREAMBLE_CODE_CHARS = 800`, `MAX_CASE_CODE_CHARS = 400`, with explicit `large="<reason>"` only where genuinely unavoidable):
+`BIP032` separates **unfixed confirmed jailbreaks** (quarantined) from **fixed permanent regressions** (executed in CI):
 
 ```text
-src/test/batest/soundness/
-├── type_soundness.batest.md                 # Surface 1: variance, narrowing, unions/intersections, overloads, init
-├── effect_escapes.batest.md                 # Surface 2: purity, nothrow, fn calling f, overrides, hidden eval sites
-├── borrow_and_ownership.batest.md           # Surface 3: @BORROWED escapes, frozen mutation, unique/move, mut exclusivity
-├── optimizer_soundness.batest.md            # Surface 4: FBIP, SROA, E-graph, HIR/MIR -O2 passes (+ optional HIR/MIR goldens)
-├── java_axiom_soundness.batest.md           # Surface 5: curated axioms, BytecodeEffectAnalyzer, RM003 bridges & SAMs
-└── algebraic_termination_soundness.batest.md # Surface 6: AlgebraicVerifier (E-graph & Sign/RelVal), SizeChangeTermination
+src/test/batest/
+├── jailbreaks/                              # QUARANTINED — EXCLUDED from normal CI batest runs!
+│   └── <surface>_<slug>.batest.md           # Confirmed unfixed jailbreaks saved by adversaries;
+│                                            # reproduced & analyzed ONLY inside isolated -crib
+└── soundness/                               # PERMANENT CI REGRESSIONS — promoted here (or to the
+    ├── type_soundness.batest.md             # matching feature directory under src/test/batest/)
+    ├── effect_escapes.batest.md             # once fixed and verified safe!
+    ├── borrow_and_ownership.batest.md
+    ├── optimizer_soundness.batest.md
+    ├── java_axiom_soundness.batest.md
+    └── algebraic_termination_soundness.batest.md
 ```
 
-Because `BatestTestCase` automatically discovers every `.batest.md` file under `src/test/batest/`, every regression added here runs automatically across:
+#### Why `src/test/batest/jailbreaks/` is excluded from normal `batest` runs
 
-* `mvn package` (Surefire legs: `interpret`, `compile -O1`, `compile -O0`, plus `compile -O2` under `-PO2`, with `HirVerifier`, `MirVerifier`, and `CheckClassAdapter`)
-* `mvn -q verify -Pbatest` (4-JVM 6-scope JaCoCo coverage report: `Interpreter`, `Compiler (-O0)`, `Optimizer (-O1)`, `SSA MIR (-O2)`, `Shared Front-End`, and `Shared Runtime`)
-* `WasmBatestTestCase` (`BIP025-I0`–`I5`, `RM018`) for all portable cases, with zero extra wiring.
+Confirmed unfixed jailbreaks are **potentially dangerous** to execute inside normal CI Surefire JVMs: an unfixed `io` jailbreak intentionally calls the CTF flag `java.lang.System.exit(0)` (which would silently kill a Surefire JVM with exit code `0`!), an unfixed `A3` termination jailbreak hangs a CI worker indefinitely, a Surface 5 probe may exhaust heap, leak stray threads, or mutate in-memory `System` properties / `Locale` / `TimeZone`, an `S0` bug may crash the compiler or emit unverifiable bytecode, and an unshrunk exploit may intentionally violate `BatestParser`'s strict readability budgets before remediation.
 
-### 8.2 Standard `mvn test` vs. opt-in `-Pescape` profile (`BIP032-D6`)
+Therefore, every automated CI scanner that walks `src/test/batest/` **explicitly excludes `src/test/batest/jailbreaks/`** (sharing one canonical predicate, e.g., `BatestTestCase.isQuarantinedJailbreak(Path)`):
+
+* `BatestTestCase` (`interpret`, `-O0`, `-O1`, `-O2`, and `-Pbatest` JaCoCo runs)
+* `WasmBatestTestCase` (`wasm-O1` and `wasm-O2` parity runs)
+* `FormatterTestCase` (`testAllBatestSnippetsFormatIdempotently`)
+* `ParserGrammarTestCase` (pure-`SLL` grammar verification across `.batest.md` snippets)
+
+This decouples adversarial discovery from remediation cleanly: an adversary can stockpile confirmed, reproducible jailbreaks in `src/test/batest/jailbreaks/` without breaking or endangering normal CI, while a separate remediation process safely reproduces them inside `-crib`, fixes the underlying bugs, and moves each fixed test out of quarantine into a normal `.batest.md` suite.
+
+#### Permanent CI regressions (`src/test/batest/soundness/` & normal feature suites)
+
+Once a jailbreak is fixed and verified safe, its `.batest.md` case is moved out of `src/test/batest/jailbreaks/` into either `src/test/batest/soundness/` (registered in `src/test/batest/AGENTS.md`, organized by surface) or the matching feature suite under `src/test/batest/`, strictly obeying `BatestParser`'s three readability budgets (`MAX_FILE_LINES = 1,000`, `MAX_PREAMBLE_CODE_CHARS = 800`, `MAX_CASE_CODE_CHARS = 400`, with explicit `large="<reason>"` only where genuinely unavoidable). Every promoted regression then runs automatically across:
+
+* `mvn package` (Surefire legs: `interpret`, `compile -O1`, `compile -O0`, plus unified `HIR` `compile -O2` under `-PO2`, with `HirVerifier` and ASM `CheckClassAdapter`)
+* `mvn -q verify -Pbatest` (4-JVM 6-scope JaCoCo coverage report: `Interpreter`, `Compiler (-O0)`, `Optimizer (-O1)`, `Optimizer (-O2)`, `Shared Front-End`, and `Shared Runtime`)
+* `WasmBatestTestCase` (`BIP025-I0`–`I5`, `RM018`, `BIP039-I6`) at both `wasm-O1` and `wasm-O2` for all portable cases, plus `ParserGrammarTestCase` and `FormatterTestCase`, with zero extra wiring.
+
+### 8.2 Fast interactive jailbreaking & remediation workflow with `-crib` ([BIP041](bip041_crib-server.md))
+
+Running a single exploratory `.batest.md` probe through Maven + Surefire costs **~15–30 seconds** per iteration (Maven bootstrap + four cold JVMs + cold ANTLR/axiom/JIT warmup). With [`BIP041`](bip041_crib-server.md) (`BIP041-I1`–`I4`) landed, `-crib` cuts that inner loop to **~10–50 ms** (~27 ms warm for a full verified 4-mode `interpret,O0,O1,O2` trial — a ~500× speedup), powering both halves of a clean **two-stage quarantine-and-remediation workflow**:
+
+```mermaid
+flowchart LR
+    subgraph Stage1["Stage 1 : Adversarial Discovery (Offense)"]
+        direction LR
+        Probe["Draft / Mutate .batest.md\nProbe (strict=false)"] --> Post["POST /crib?modes=all\n(~10-50 ms warm)"]
+        Post --> Verdict{"Verdict"}
+        Verdict -->|"Defense held (ok=true)"| Probe
+        Verdict -->|"Hit: parityDiff / CRASH /\nTIMEOUT / ESCAPE:*"| Shrink["Shrink & Confirm in -crib\n(?fresh=true&modes=all)"]
+        Shrink --> Quarantine["Save to Quarantined\nsrc/test/batest/jailbreaks/*.batest.md\n(Excluded from normal CI)"]
+    end
+
+    subgraph Stage2["Stage 2 : Separate Remediation Process (Defense)"]
+        direction LR
+        Repro["Analyze & Reproduce\nin isolated -crib"] --> Fix["Fix Compiler / Analysis /\nAxiom Bug & Rebuild"]
+        Fix --> Verify["Verify Fix in -crib\n(?fresh=true&strict=true&modes=all)"]
+        Verify --> Promote["Move Fixed Test to Normal\nsrc/test/batest/ (e.g. soundness/)"]
+    end
+
+    Quarantine --> Repro
+```
+
+#### Starting the `-crib` enclosure
+
+Build once (`mvn -q package -DskipTests`) and keep one local `-crib` daemon running for the whole red-team or remediation session (default loopback `127.0.0.1:7331`; use `--workers 2`–`4` if fanning out parallel red-team agents, or run inside `src/tools/Containerfile.ci` if probing untrusted external prompts):
+
+```bash
+java -jar target/babble-1.0-SNAPSHOT.jar -crib --port 7331
+# Check readiness, Wasm availability, and recycle telemetry at any time:
+curl -sS http://127.0.0.1:7331/health
+```
+
+#### Rules of Engagement in `-crib`
+
+* **`-crib` over HTTP is the adversary's *only* surface — do not change Babble's source code:** the adversary may inspect Babble's source code read-only to find flaws, but must execute all trials solely through `-crib`'s HTTP endpoints (`POST /crib`, `GET /health`, `POST /recycle`) and write output *only* as confirmed reproducers under `src/test/batest/jailbreaks/*.batest.md`. Do **not** alter Babble's source code, built-in axioms, build files, or `-crib` server whatsoever — that would be cheating.
+* **The security boundary is `io`, not the JVM:** functions annotated `io` are trusted to perform arbitrary JVM I/O; we never spend effort trying to break out of the JVM from an `io` function (e.g. writing shell scripts or spawning processes).
+* **`java.lang.System.exit(0)` is the sole permitted `io` payload (the CTF flag):** for `io`-escape hunting, the objective is making a Babble function **not** annotated `io` execute `java.lang.System.exit(0)`. Probes must **never** write files to disk, spawn OS processes/shell scripts, or open network connections in the shared environment.
+
+#### Stage 1 — Adversarial discovery & quarantine playbooks (all 6 surfaces)
+
+1. **`io`-boundary CTF jailbreaking (`java.lang.System.exit(0)`, Surface 2 `E2`–`E5` & Surface 5):**
+   * Attempt to smuggle a call to `java.lang.System.exit(0)` through a Babble function that is **not** annotated `io` (e.g., via interface overrides, overloads, `fn calling f`, default arguments, operator methods, constructors, or mis-annotated Java axioms/bridges):
+     ````markdown
+     # Jailbreak: Surface 2 E2 smuggled System.exit(0) without io
+     <!-- Severity: S2 (io CTF flag) | Repro: POST /crib?modes=interpret,O0,O1,O2&fresh=true -->
+
+     ## non-io function must not be able to invoke System.exit(0)
+     ```babble
+     def trigger = fn (): int -> (
+         ;; ... adversarial smuggling path ending in java.lang.System.exit(0) ...
+         0
+     )
+     trigger()
+     ```
+     ```error
+     io
+     ```
+     ````
+   * If Babble's effect checker rejects `trigger`, `-crib` returns `PASS` (defense held, `System.exit(0)` never runs). If the non-`io` function compiles and triggers `java.lang.System.exit(0)`, the isolated worker JVM terminates immediately without touching disk or the coordinator, `-crib` returns HTTP `200` with `status: "WORKER_CRASHED"` and `workerRecycled: true` (**flag captured!**), and transparently respawns a clean warm replacement worker.
+2. **Expectation-free `S0` optimizer & Wasm parity hunting (Surface 4, `R1`–`R5`):**
+   * Because `-crib` defaults to `verify=true` and `parity=true`, a probe does **not** even need `stdout`/`error` expectation blocks to catch an `S0` wrong-code or verifier bug. Post any `.batest.md` snippet that prints its observable state and check `parityOk` / `summary.parityDivergences` / `summary.internalCrashes`:
+     ```bash
+     curl -sS -X POST "http://127.0.0.1:7331/crib?modes=all&format=text" \
+       --data-binary @probe.batest.md
+     ```
+   * Any disagreement across `interpret`, `-O0`, `-O1`, `-O2`, `wasm-O1`, and `wasm-O2` — or any `HirVerifier`, ASM `CheckClassAdapter`, or `WasmVerifier` failure — surfaces immediately in `parityDiff` or `status: "INTERNAL_CRASH"`. Non-portable JVM-interop cases automatically report `SKIPPED_NON_PORTABLE` on Wasm without failing the JVM modes.
+3. **Runtime canary jailbreak probes for silent non-`io` escapes (Surfaces 1, 2 `nothrow`, 3, 6):**
+   * For silent static violations (`T1`–`T6`, `E1`, `O1`–`O4`, `A1`–`A2`), embed the pure in-memory Tier 1 witness/canary pattern from §6.1 directly in a `.batest.md` probe and assert that the illegal jailbreak is rejected (or assert the invariant holds at runtime). If the front end lets an unsound program slip through, the canary triggers loudly across all modes in one ~25 ms request:
+     ````markdown
+     # Jailbreak: Surface 2 E1 nothrow vs java.lang.Error
+     <!-- Severity: S2 (escalates to S0 under HirDcePass) | Repro: POST /crib?modes=interpret,O0,O1,O2&fresh=true -->
+
+     ## untyped catch must not certify throwing java.lang.Error as nothrow
+     ```babble
+     def sneaky = fn nothrow (): int -> (
+         try (throw java.lang.Error("boom"))
+         catch e then (0)
+     )
+     try (sneaky(); println("OK"))
+     catch t: java.lang.Throwable then (println("ESCAPE:NOTHROW:" + t.getMessage()))
+     ```
+     ```error
+     nothrow
+     ```
+     ````
+   * Posting this payload to `POST /crib?modes=interpret,O0,O1,O2` returns `FAIL` with `stdout: "ESCAPE:NOTHROW:boom"` (or an optimizer divergence if `HirDcePass` deletes `sneaky()` in `-O1`/`-O2`) — immediately distinguishing "defense held (`PASS`)" from "silent escape (`S2`)" and "optimizer amplification (`S0`)".
+4. **Safe `@TERMINATING` & infinite-loop jailbreaking (Surface 6 `A3`):**
+   * Pass a tight per-`(case, mode)` budget such as `?timeout=300` (clamped to `[50, --max-timeout]`):
+     ```bash
+     curl -sS -X POST "http://127.0.0.1:7331/crib?modes=all&timeout=300" \
+       --data-binary @termination_probe.batest.md
+     ```
+   * In `interpret`, `-crib` cancels tight loops and tail recursion cooperatively via `ExecutionInterruptedError` (uncatchable by `try ... catch e: java.lang.Throwable`) without even recycling the worker; in compiled JVM (`-O0`/`-O1`/`-O2`) and Wasm (`wasm-O1`/`wasm-O2`) modes, the coordinator watchdog forcibly terminates (`Process.destroyForcibly`) and asynchronously respawns a clean warm worker, returning HTTP `200` with `status: "TIMEOUT"` and `workerRecycled: true`.
+   * Combined with `parity=true`, this also catches **DCE-deleted non-termination (`S0`)**: if `SizeChangeTermination` falsely certifies a diverging function `@TERMINATING`, `interpret` and `-O0` return `TIMEOUT` while `-O1`/`-O2` (`HirDcePass`) deletes the dead call and finishes `OK` — flagged instantly as a parity divergence!
+5. **In-memory Java interop & axiom probing (Surface 5 `J1`–`J3`):**
+   * Staying strictly within the Rules of Engagement (no disk writes, no process spawning, no network), Surface 5 probes can safely exercise in-memory JDK APIs, `System.exit(0)` (the `io` CTF flag), `System.setProperty` / `Locale.setDefault` / `TimeZone.setDefault`, `System.out`, stray threads, or heap limits (`--worker-xmx 512m`) when auditing `curated.ba`, `BytecodeEffectAnalyzer`, and `RM003` bridges.
+   * Because `-crib` binds worker IPC to dedicated saved file descriptors, runs each `(case, mode)` in a fresh `BabbleScriptEngine` / `MapModuleSource` / `ScriptClassLoader` / child `ThreadGroup`, and runs a post-trial poison audit, any in-memory JVM mutation or `System.exit(0)` never corrupts IPC framing or leaks into the next trial — the response reports `workerRecycled: true` with `poisonReason` (or `status: "WORKER_CRASHED"`) while a fresh warm worker replaces it behind the scenes.
+6. **Confirm & save to quarantine (`src/test/batest/jailbreaks/*.batest.md`):**
+   * Keep `?strict=false` (the default) during exploratory probing and shrinking so `BatestParser`'s 400-char case / 800-char preamble / 1,000-line file budgets never block an oversized exploit before minimization, and use `?filter=@case_name` (or `#N` / `:line`) to re-test a single case in a scratch file.
+   * Before saving a finding, the adversary **must confirm** it on a pristine worker JVM with `?fresh=true&modes=all` (and `?timeout=<ms>` for hangs) to rule out any residual static JDK state or JIT artifact:
+     ```bash
+     curl -sS -X POST "http://127.0.0.1:7331/crib?modes=all&fresh=true&format=text" \
+       --data-binary @probe.batest.md
+     ```
+   * Once confirmed, save the minimized reproducer under **`src/test/batest/jailbreaks/<surface>_<slug>.batest.md`** (with a short header note recording surface/vector ID, severity `S0`–`S3`, the `-crib` query flags used, and the observed failure mode — e.g. `WORKER_CRASHED` for `System.exit(0)`, `parityDiff`, `TIMEOUT`, `INTERNAL_CRASH`, `ESCAPE:*`, or `poisonReason`). Because `src/test/batest/jailbreaks/` is excluded from normal CI runs, committing confirmed jailbreaks never breaks or endangers `mvn test` / `ci_gate.sh`.
+
+#### Stage 2 — Separate remediation, fix & promotion workflow
+
+A separate remediation session (human or defender agent) drains `src/test/batest/jailbreaks/*.batest.md` one jailbreak at a time:
+
+1. **Analyze & reproduce safely inside `-crib`:** never run a quarantined jailbreak directly in an unguarded JVM or Surefire fork (an unfixed `io` jailbreak will call `System.exit(0)`!). Always reproduce it inside `-crib`'s isolated worker pool first:
+   ```bash
+   curl -sS -X POST "http://127.0.0.1:7331/crib?modes=all&fresh=true&timeout=2000&format=text" \
+     --data-binary @src/test/batest/jailbreaks/s2_e2_smuggled_exit.batest.md
+   ```
+2. **Fix the root cause and rebuild:** implement the compiler, analysis, axiom, or optimizer fix, rebuild (`mvn -q package -DskipTests`), and restart `-crib` so workers load the updated jar (use `POST /recycle` only when resetting worker JVM state without changing the jar).
+3. **Verify the fix & CI readiness inside `-crib`:** verify the fixed `.batest.md` with `?modes=all&fresh=true&strict=true`:
+   ```bash
+   curl -sS -X POST "http://127.0.0.1:7331/crib?modes=all&fresh=true&strict=true&format=text" \
+     --data-binary @src/test/batest/jailbreaks/s2_e2_smuggled_exit.batest.md
+   ```
+   Confirm `ok: true`, `parityOk: true`, `workerRecycled: false`, `poisonReason: null`, and strict `BatestParser` readability budgets pass. Once the static check rejects a non-`io` `System.exit(0)` probe at compile time (`;; error`), `System.exit(0)` is never executed and the test is completely safe for normal CI (for any promoted test that executes at runtime rather than failing compilation, never leave a reachable `System.exit(0)` or global-JVM mutation in the promoted case).
+4. **Promote out of quarantine into a normal `.batest.md` suite:** move (or merge) the verified, safe test from `src/test/batest/jailbreaks/` into `src/test/batest/soundness/*.batest.md` (or the appropriate topic directory under `src/test/batest/`), delete the quarantined file from `src/test/batest/jailbreaks/`, and run `mvn test` / `./src/tools/ci_gate.sh` to lock the regression permanently into CI.
+
+#### Division of labor : `-crib` vs. `mvn test` vs. `-Pescape`
+
+| Workflow | Runner | Latency / Throughput | Best Used For |
+|---|---|---|---|
+| **Interactive red-teaming & quarantine remediation (`BIP032-P1`, `jailbreaks/`)** | `babble.jar -crib` (`BIP041`) | ~10–50 ms/trial (~20–50 trials/s warm over HTTP) | Hypothesis testing across all 6 surfaces, expectation-free `S0` parity hunting, safe `A3` timeout probes, hostile Surface 5 probes, interactive shrinking, `?fresh=true` confirmation into `src/test/batest/jailbreaks/`, and safe reproduction + `?strict=true` fix verification before promotion. |
+| **CI regression & deterministic smoke (`mvn test` / `mvn package`)** | `BatestTestCase` + `WasmBatestTestCase` + `EscapeSmokeTestCase` + Tier 3 white-box suites | `<= 5s` smoke + full permanent `src/test/batest/` suite (`jailbreaks/` excluded) | Enforcing zero regressions on every PR across all 6 JaCoCo scopes, package-private `TypeAlgebra`/`EffectSet` laws, and deterministic Layer 1/2/3 smoke coverage. |
+| **Deep unattended soak fuzzing (`BIP032-P3`/`P4`)** | `mvn exec:java@escape-soak -Pescape` | Hundreds–thousands of in-JVM generated programs/s (no HTTP/Markdown round-trip) | Multi-minute seeded random AST, EMI, and `BytecodeEffectAnalyzer` soak campaigns that auto-minimize findings into `target/escape-repros/` for confirmation in `-crib` and quarantine/remediation. |
+
+### 8.3 Standard `mvn test` vs. opt-in `-Pescape` profile (`BIP032-D6`)
 
 * **Standard `mvn test` / `mvn package` (always on, fast, zero 3–4× Surefire duplication & 100% deterministic):**
-  * `BatestTestCase` executes `src/test/batest/soundness/*.batest.md` in every active Surefire leg.
-  * Mode-independent suites (`TypeAlgebraPropertyTestCase`, `EffectLatticePropertyTestCase`, `AxiomSoundnessTestCase`, and `EscapeSmokeTestCase` which internally runs all 4 modes) execute **once** per Maven build — gated to run on the default leg (or when invoked standalone via `-Dtest=...`), avoiding 3–4× redundant runs across `default-test`, `compiled-tests`, `compiled-tests-O0`, and `compiled-tests-O2`:
+  * `BatestTestCase` executes `src/test/batest/soundness/*.batest.md` (and all other normal `.batest.md` suites, explicitly skipping `src/test/batest/jailbreaks/`) in every active Surefire leg, and `WasmBatestTestCase` executes portable cases at `wasm-O1` and `wasm-O2`.
+  * Mode-independent suites (`TypeAlgebraPropertyTestCase`, `EffectLatticePropertyTestCase`, `AxiomSoundnessTestCase`, and `EscapeSmokeTestCase` which internally runs all modes) execute **once** per Maven build — gated to run on the default leg (or when invoked standalone via `-Dtest=...`), avoiding 3–4× redundant runs across `default-test`, `compiled-tests`, `compiled-tests-O0`, and `compiled-tests-O2`:
     * Tier 3 white-box property sweeps: `<= 2s` total.
     * `EscapeSmokeTestCase` (full Layer 1 combinatorial matrix + bounded fixed-seed sweep of Layers 2 and 3): `<= 5s` total wall time, zero flakiness.
-* **Fast interactive adversarial trials via `-crib` ([BIP041](bip041_crib-server.md)):**
-  * During manual or LLM-driven red-team campaigns and shrinking loops, start `java -jar target/babble-1.0-SNAPSHOT.jar -crib --port 7331` once after `mvn package` and post candidate `.batest.md` probes directly to `POST http://127.0.0.1:7331/crib?modes=interpret,O0,O1,O2` (or `modes=all`) for ~10–50 ms isolated warm-JVM trials with `verify=true`, automatic cross-mode parity diffing (`S0`), and automatic worker kill/respawn on hangs, `System.exit`, or JVM-global poisoning.
+* **Fast interactive adversarial discovery & remediation via `-crib` ([BIP041](bip041_crib-server.md)):**
+  * See §8.2 for the full two-stage loop (adversary confirms & saves into quarantined `src/test/batest/jailbreaks/*.batest.md`; separate defender process reproduces in `-crib`, fixes, verifies with `?fresh=true&strict=true&modes=all`, and moves the fixed test back into a normal `.batest.md` suite).
 * **Opt-in deep/soak profile `-Pescape`:**
   * Configured in `pom.xml` via `exec-maven-plugin` (`EscapeSoakRunner`, matching `mvn -q exec:java@batest-report -Pbatest` so soak fuzzing runs cleanly in a dedicated JVM without Surefire's multi-execution duplication or parallel-test contention):
     ```bash
@@ -416,11 +583,11 @@ Because `BatestTestCase` automatically discovers every `.batest.md` file under `
     ```
   * Emits a structured summary (programs generated, accepted rate, oracles executed, unique minimized failures by severity `S0`–`S3`) and writes every minimized reproducer to `target/escape-repros/`.
 
-### 8.3 Triage & remediation policy (`BIP032-D7`)
+### 8.4 Triage & remediation policy (`BIP032-D7`)
 
-1. **No silent ignores.** Every confirmed escape produced by either the red-team audit or `-Pescape` must be triaged as `S0`–`S3`.
-2. **Fix + regress by default.** Bugs in existing rules (like the `TypeAlgebra` variance and variadic-join holes, `EffectBodyWalker` `Error`/`nothrow` restoration, or `AlgebraicVerifier` `-0.0` monotonicity) are fixed in the corresponding remediation phase alongside a permanent `.batest.md` regression in `src/test/batest/soundness/`.
-3. **Design trade-offs tracked explicitly.** If a discovered escape exposes an intentional language-design trade-off or requires a breaking syntax/semantics change beyond a localized bug fix, it is recorded as a GitHub issue and/or follow-up BIP decision — never quietly suppressed in the fuzzer.
+1. **Quarantine first, never ignore.** Every confirmed escape discovered via `-crib` red-team probing, Tier 3 property suites, or `-Pescape` is triaged as `S0`–`S3` and saved under `src/test/batest/jailbreaks/*.batest.md` until resolved.
+2. **Separate fix + promote workflow.** The remediation process picks up quarantined files from `src/test/batest/jailbreaks/`, reproduces them safely inside `-crib`, fixes the underlying bug (such as the `TypeAlgebra` variance and variadic-join holes, `EffectBodyWalker` `Error`/`nothrow` restoration, or `AlgebraicVerifier` `-0.0` monotonicity), verifies the fixed case with `?modes=all&fresh=true&strict=true`, and moves the fixed regression out of `jailbreaks/` into a normal CI-executed `.batest.md` suite (typically `src/test/batest/soundness/`).
+3. **Design trade-offs tracked explicitly.** If a quarantined jailbreak exposes an intentional language-design trade-off or requires a breaking syntax/semantics change beyond a localized bug fix, it is recorded as a GitHub issue and/or follow-up BIP decision — never quietly deleted or suppressed.
 
 ---
 
@@ -428,19 +595,20 @@ Because `BatestTestCase` automatically discovers every `.batest.md` file under `
 
 `BIP032` is sequenced into four phases (`BIP032-P1`–`P4`), starting with manual/agent red-team auditing and white-box property tests so real compiler blind spots directly inform the automated generators (`BIP032-D7`):
 
-### `BIP032-P1` — Red-team Wave 1, white-box static property tests & initial remediation
+### `BIP032-P1` — Quarantine plumbing, Red-team Wave 1 (via `-crib`), white-box property tests & initial remediation
 
 * **Deliverables:**
-  1. Implement Tier 3 white-box property suites (`TypeAlgebraPropertyTestCase` and `EffectLatticePropertyTestCase` in `src/test/java/org/babblelang/analysis/`, plus `AxiomSoundnessTestCase` in `src/test/java/org/babblelang/tests/escape/`).
-  2. Conduct a systematic manual/agent red-team audit across all 6 surfaces using the §5 Attack Catalog, starting by verifying and fixing the five preliminary audit findings from §1.2 (`TypeAlgebra` `record`/`borrowCovariant` variance holes, `TypeAlgebra.sameParameters`/`mergeFunctions` dropped `rest`, `EffectBodyWalker` `Error` vs untyped `catch` `nothrow` restoration, `AlgebraicVerifier` `x * (-0.0)` / `x * 0.0` `monotone` check) and probing every remaining row (`T1`–`T6`, `E1`–`E5`, `O1`–`O4`, `R1`–`R5`, `J1`–`J3`, `A1`–`A3`).
-  3. Create `src/test/batest/soundness/*.batest.md` (and register `soundness/` in `src/test/batest/AGENTS.md`) with permanent regressions for every Wave-1 escape (both compile-rejection cases and runtime canary cases).
-* **Exit criteria:** All Wave-1 `S0`–`S3` findings fixed (or explicitly tracked as design issues), `TypeAlgebraPropertyTestCase`, `EffectLatticePropertyTestCase`, and `AxiomSoundnessTestCase` green, `mvn -B package` and `-PO2` green across `interpret`/`-O0`/`-O1`/`-O2`, `mvn -q verify -Pbatest` passing the 80% line/branch gate across all 6 scopes, and `examples/raytracer-argon/scene.ppm` byte-identical at `-O0`, `-O1`, and `-O2`.
+  1. Exclude `src/test/batest/jailbreaks/` from normal CI `batest` discovery (`BatestTestCase`, `WasmBatestTestCase`, `FormatterTestCase`, `ParserGrammarTestCase`, with a unit test confirming quarantined files are skipped) and register both `jailbreaks/` (quarantined) and `soundness/` (permanent CI regressions) in `src/test/batest/AGENTS.md`.
+  2. Implement Tier 3 white-box property suites (`TypeAlgebraPropertyTestCase` and `EffectLatticePropertyTestCase` in `src/test/java/org/babblelang/analysis/`, plus `AxiomSoundnessTestCase` in `src/test/java/org/babblelang/tests/escape/`).
+  3. Conduct a systematic manual/agent red-team audit across all 6 surfaces using the §5 Attack Catalog and the `-crib` Stage 1 discovery loop (§8.2, `BIP041-I1`–`I4`): probe the five preliminary audit findings from §1.2 and every remaining row (`T1`–`T6`, `E1`–`E5`, `O1`–`O4`, `R1`–`R5`, `J1`–`J3`, `A1`–`A3`), confirm each hit with `?fresh=true&modes=all`, and save confirmed jailbreaks under `src/test/batest/jailbreaks/*.batest.md`.
+  4. Run the Stage 2 remediation process: analyze and reproduce each quarantined jailbreak inside `-crib`, fix the underlying bug, verify with `?fresh=true&strict=true&modes=all`, and move the fixed version out of `src/test/batest/jailbreaks/` into a normal CI-executed `.batest.md` suite (`src/test/batest/soundness/*.batest.md` or the matching feature suite).
+* **Exit criteria:** `src/test/batest/jailbreaks/` is excluded from all normal CI `batest` runners; all Wave-1 `S0`–`S3` findings are fixed and promoted out of `jailbreaks/` (or explicitly tracked as design issues); `TypeAlgebraPropertyTestCase`, `EffectLatticePropertyTestCase`, and `AxiomSoundnessTestCase` green; `mvn -B package` and `-PO2` green across `interpret`/`-O0`/`-O1`/`-O2` + `WasmBatestTestCase` (`wasm-O1`/`wasm-O2`); `mvn -q verify -Pbatest` passing the 80% line/branch gate across all 6 scopes; and `examples/raytracer-argon/scene.ppm` byte-identical at `-O0`, `-O1`, and `-O2`.
 
 ### `BIP032-P2` — Combinatorial escape matrix & Tier 1/Tier 2 canary oracle harness
 
 * **Deliverables:**
-  1. Add parallel-safe `BabbleCompiler.resolveVerify(engine)` (reading `engine.get(VERIFY)` before `System.getProperty(VERIFY)`) so per-engine verification requires no global property mutation.
-  2. Implement `EscapeConfig`, `EscapeSeverity`, and `EscapeOracle` (all 7 Tier 1 runtime witness/canary templates + Tier 2 4-mode differential across `interpret`/`-O0`/`-O1`/`-O2`, `HirVerifier`/`MirVerifier`/`CheckClassAdapter`, unexpected-crash checks, plus multi-module `MapModuleSource` and `BabbleSession` harnesses).
+  1. Reuse the parallel-safe `BabbleCompiler.resolveVerify(engine)` and JUnit-free `org.babblelang.batest` infrastructure already landed in `BIP041-I1` (zero `System.setProperty` mutation).
+  2. Implement `EscapeConfig`, `EscapeSeverity`, and `EscapeOracle` (all 7 Tier 1 runtime witness/canary templates + Tier 2 multi-mode differential across `interpret`/`-O0`/`-O1`/`-O2` + portable `wasm-O1`/`wasm-O2`, `HirVerifier`/`CheckClassAdapter`/`WasmVerifier`, unexpected-crash checks, plus multi-module `MapModuleSource` and `BabbleSession` harnesses).
   3. Implement Layer 1 `MatrixEscapeGenerator` covering the Boundary × Wrapper × Channel Cartesian product across Surfaces 1–4 and Java SAM/collection boundaries in Surface 5.
   4. Wire Layer 1 into `EscapeSmokeTestCase` (single-leg guarded in `mvn test`), triage and fix any newly discovered escapes, and promote minimized reproducers into `src/test/batest/soundness/`.
 * **Exit criteria:** Full Layer 1 matrix runs cleanly once per build in `<= 2s` inside `mvn test` with `0` unfixed escapes; `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase` green.
@@ -457,10 +625,10 @@ Because `BatestTestCase` automatically discovers every `.batest.md` file under `
 ### `BIP032-P4` — Deep soak campaign, full remediation & documentation hardening
 
 * **Deliverables:**
-  1. Run an extended `-Pescape` soak campaign across all 6 surfaces (multiple seeds, multi-minute budgets per surface).
+  1. Run an extended `-Pescape` soak campaign across all 6 surfaces (multiple seeds, multi-minute budgets per surface), using `-crib` (`?fresh=true&strict=true&modes=all`) for fast interactive triage and reproduction of soak findings.
   2. Triage, fix, and regress all discovered `S0`–`S3` escapes into `src/test/batest/soundness/*.batest.md` (keeping every file within `BatestParser`'s 1,000-line / 800-char preamble / 400-char case budgets).
   3. Update `AGENTS.md`, `docs/ARCHITECTURE.md`, `README.md`, and `docs/design/README.md` with `-Pescape` usage, the `src/test/batest/soundness/` corpus, and a final campaign summary section in `BIP032` recording bugs found & fixed per surface and severity.
-* **Exit criteria:** Zero open unfixed `S0`/`S1`/`S2` escapes from the soak campaign; full `mvn -B package` + `-PO2` (4 modes), `mvn -q verify -Pbatest` (`>= 80%` line & branch across all 6 scopes), `-format -check`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, and byte-identical `examples/raytracer-argon/scene.ppm` at `-O0`/`-O1`/`-O2` all green.
+* **Exit criteria:** Zero open unfixed `S0`/`S1`/`S2` escapes from the soak campaign; full `mvn -B package` + `-PO2` (4 JVM modes) + `WasmBatestTestCase` (`wasm-O1`/`wasm-O2`), `mvn -q verify -Pbatest` (`>= 80%` line & branch across all 6 scopes), `-format -check`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, and byte-identical `examples/raytracer-argon/scene.ppm` at `-O0`/`-O1`/`-O2` all green.
 
 ---
 
@@ -469,9 +637,9 @@ Because `BatestTestCase` automatically discovers every `.batest.md` file under `
 | Decision | Resolves | Choice |
 |---|---|---|
 | **`BIP032-D1`** | `BIP032-Q1` | Hybrid: structured red-team taxonomy & permanent `.batest.md` corpus + automated type/effect-directed soundness fuzzer and oracle harness (`src/test/java/org/babblelang/tests/escape/` + package-private white-box suites in `src/test/java/org/babblelang/analysis/`). |
-| **`BIP032-D2`** | `BIP032-Q2` | Full 6-surface threat model (Types, Effects/`nothrow`, Ownership/Borrow/`frozen`/`mut`, Optimizer/4-mode parity, Java interop/axioms/`BytecodeEffectAnalyzer`, Algebraic/Termination verifiers), tiered by severity `S0`–`S3`. |
-| **`BIP032-D3`** | `BIP032-Q3` | Three-tier oracles: Tier 1 runtime witness/canary oracles for silent escapes, Tier 2 4-mode differential (`interpret`/`-O0`/`-O1`/`-O2`) + `HirVerifier`/`MirVerifier`/`CheckClassAdapter` + unexpected crash checks, Tier 3 white-box `TypeAlgebra`/`EffectSet`/`Reachability.Origin`/`BytecodeEffectAnalyzer` property tests. |
+| **`BIP032-D2`** | `BIP032-Q2` | Full 6-surface threat model (Types, Effects/`nothrow`, Ownership/Borrow/`frozen`/`mut`, Optimizer/multi-mode JVM & Wasm parity, Java interop/axioms/`BytecodeEffectAnalyzer`, Algebraic/Termination verifiers), tiered by severity `S0`–`S3`. |
+| **`BIP032-D3`** | `BIP032-Q3` | Three-tier oracles: Tier 1 runtime witness/canary oracles for silent escapes, Tier 2 multi-mode differential (`interpret`/`-O0`/`-O1`/`-O2` + portable `wasm-O1`/`wasm-O2`) + `HirVerifier`/`CheckClassAdapter`/`WasmVerifier` + unexpected crash checks, Tier 3 white-box `TypeAlgebra`/`EffectSet`/`Reachability.Origin`/`BytecodeEffectAnalyzer` property tests. |
 | **`BIP032-D4`** | `BIP032-Q4` | Layered generator (combinatorial matrix + type/effect-directed random AST with adversarial mutators + `.batest.md`/`.ba` corpus/EMI mutator) with deterministic PRNG seeds and parse-tree-guided hierarchical delta-minimization emitting `.batest.md` reproducers. |
-| **`BIP032-D5`** | `BIP032-Q5` | Standard trust boundary: unchecked `as` (`Unchecked cast`), user `axiom`, `VirtualMachineError` under `nothrow`, Java reflection/`Unsafe`/JNI, and single-threaded `Interpreter` are out-of-bounds; built-in `axioms/`, `BytecodeEffectAnalyzer`, reifiable `as`/`e!`, and ordinary Babble + JDK APIs are in-bounds. |
-| **`BIP032-D6`** | `BIP032-Q6` | Dual-tier CI: `src/test/batest/soundness/` + fast single-leg deterministic smoke test (`<= 5s`) + white-box property tests in `mvn test`; opt-in `-Pescape` `exec-maven-plugin` soak profile with `-Descape.seconds` / `-Descape.seed` / `-Descape.surfaces`. |
-| **`BIP032-D7`** | `BIP032-Q7` | Red-team-first 4-phase delivery (`BIP032-P1`–`P4`); every confirmed escape is fixed with a permanent `.batest.md` regression (or explicitly tracked as a GitHub issue / BIP decision if it requires a language-design trade-off). |
+| **`BIP032-D5`** | `BIP032-Q5` | Standard trust boundary & CTF rules of engagement: `-crib` over HTTP is the adversary's sole execution surface and Babble's source code must never be modified during Stage 1 discovery (only saving confirmed reproducers under `src/test/batest/jailbreaks/`); the security boundary is `io` (not the JVM sandbox — `io`-annotated functions are expected to perform arbitrary JVM/OS I/O), and `java.lang.System.exit(0)` is the **sole permitted `io` flag** (no writing files, spawning shell scripts/processes, or network access); unchecked `as` (`Unchecked cast`), user `axiom`, `VirtualMachineError` under `nothrow`, Java reflection/`Unsafe`/JNI, and single-threaded `Interpreter` are out-of-bounds; built-in `axioms/`, `BytecodeEffectAnalyzer`, reifiable `as`/`e!`, and ordinary in-memory Babble + JDK APIs are in-bounds. |
+| **`BIP032-D6`** | `BIP032-Q6` | Dual-tier CI, quarantined `jailbreaks/` & interactive `-crib`: permanent fixed regressions in `src/test/batest/soundness/` (or normal feature suites) + fast single-leg deterministic smoke test (`<= 5s`) + white-box property tests in `mvn test`; unfixed confirmed jailbreaks quarantined in `src/test/batest/jailbreaks/*.batest.md` (excluded from normal CI `batest` runs); `-crib` (`BIP041-I1`–`I4`) for ~10–50 ms interactive discovery, confirmation, and safe remediation; opt-in `-Pescape` `exec-maven-plugin` soak profile with `-Descape.seconds` / `-Descape.seed` / `-Descape.surfaces`. |
+| **`BIP032-D7`** | `BIP032-Q7` | Red-team-first 4-phase delivery (`BIP032-P1`–`P4`) with decoupled offense/defense: adversaries confirm jailbreaks in `-crib` and save them to quarantined `src/test/batest/jailbreaks/`; a separate remediation process analyzes and reproduces them in `-crib`, fixes them, and moves each fixed test into a normal CI-executed `.batest.md` suite (or tracks an explicit GitHub issue / BIP decision for language-design trade-offs). |
