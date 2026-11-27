@@ -12,7 +12,7 @@ import org.babblelang.opt.PassContext;
 /**
  * Dominator-scoped Acyclic E-Graph ({@code HirAeGraphPass}) unifying algebraic simplification,
  * GVN/CSE, alias-partitioned store-to-load forwarding, idempotent call collapsing, and conversion
- * simplification directly on structured {@link HirModule} ({@code BIP039-D6}, {@code BIP039-P4}).
+ * simplification directly on structured {@link HirModule} ({@code BIP039-D6}, {@code BIP039-I4}).
  *
  * <p>Replaces expression-local {@link HirEGraphSimplifyPass} at {@code -O2}.
  */

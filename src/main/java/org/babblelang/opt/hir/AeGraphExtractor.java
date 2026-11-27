@@ -14,7 +14,7 @@ import org.babblelang.opt.HirRewriter;
 
 /**
  * Dominating-value extraction and lazy {@code $cseN} materializer for {@link HirAeGraphPass}
- * ({@code BIP039-D6}, {@code BIP039-P4}).
+ * ({@code BIP039-D6}, {@code BIP039-I4}).
  *
  * <p>Prefers zero-cost constants and already-live dominating {@link HirExpr.VarRead}s; only
  * allocates a fresh {@code $cseN} local and hoists {@code (def $cseN expr)} before the dominating

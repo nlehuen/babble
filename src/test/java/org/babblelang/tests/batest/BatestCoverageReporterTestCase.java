@@ -1455,8 +1455,8 @@ public class BatestCoverageReporterTestCase {
     }
 
     @Test
-    public void testMirO2ScopeAndFourWayParity(@TempDir Path tmp) throws Exception {
-        Path reportDir = tmp.resolve("report-mir");
+    public void testOptimizerO2ScopeAndFourWayParity(@TempDir Path tmp) throws Exception {
+        Path reportDir = tmp.resolve("report-opt-O2");
         writePassingOutcomes(reportDir);
         Files.writeString(
                 reportDir.resolve("outcomes-compile-O2.jsonl"),
@@ -1467,7 +1467,7 @@ public class BatestCoverageReporterTestCase {
         Path xmlC = tmp.resolve("compile.xml");
         Path xmlC0 = tmp.resolve("compile-O0.xml");
         Path xmlOpt = tmp.resolve("opt.xml");
-        Path xmlMir = tmp.resolve("mir.xml");
+        Path xmlOptO2 = tmp.resolve("opt-O2.xml");
         Files.writeString(
                 xmlI,
                 xmlWithSingleClass(
@@ -1487,21 +1487,19 @@ public class BatestCoverageReporterTestCase {
                 xmlWithSingleClass("opt", "org/babblelang/opt", "PassManager", 0, 5, 0, 4),
                 StandardCharsets.UTF_8);
         Files.writeString(
-                xmlMir,
+                xmlOptO2,
                 """
                 <?xml version="1.0" encoding="UTF-8"?>
-                <report name="mir">
-                  <package name="org/babblelang/opt/mir">
-                    <class name="org/babblelang/opt/mir/SccpPass" sourcefilename="SccpPass.java"/>
-                    <sourcefile name="SccpPass.java">
+                <report name="opt-O2">
+                  <package name="org/babblelang/opt/hir">
+                    <class name="org/babblelang/opt/hir/HirSccpPass" sourcefilename="HirSccpPass.java"/>
+                    <sourcefile name="HirSccpPass.java">
                       <line nr="10" mi="0" ci="2" mb="0" cb="2"/>
                       <counter type="LINE" missed="1" covered="9"/>
                       <counter type="BRANCH" missed="1" covered="9"/>
                     </sourcefile>
-                  </package>
-                  <package name="org/babblelang/compiler">
-                    <class name="org/babblelang/compiler/MirEmitter" sourcefilename="MirEmitter.java"/>
-                    <sourcefile name="MirEmitter.java">
+                    <class name="org/babblelang/opt/hir/AeGraphBuilder" sourcefilename="AeGraphBuilder.java"/>
+                    <sourcefile name="AeGraphBuilder.java">
                       <line nr="20" mi="0" ci="2" mb="0" cb="2"/>
                       <counter type="LINE" missed="1" covered="9"/>
                       <counter type="BRANCH" missed="1" covered="9"/>
@@ -1518,7 +1516,7 @@ public class BatestCoverageReporterTestCase {
                 xmlC,
                 xmlC0,
                 xmlOpt,
-                xmlMir,
+                xmlOptO2,
                 tmp.resolve("src"),
                 "",
                 "",
@@ -1528,12 +1526,13 @@ public class BatestCoverageReporterTestCase {
                 BatestCoverageReporter.SortMode.SCORE,
                 new PrintStream(buf, true, StandardCharsets.UTF_8));
         String console = buf.toString(StandardCharsets.UTF_8);
-        Assertions.assertTrue(console.contains("SSA MIR (-O2)"), console);
+        Assertions.assertTrue(console.contains("Optimizer (-O2)"), console);
         Assertions.assertTrue(console.contains("0 divergences"), console);
         String summary =
                 Files.readString(reportDir.resolve("summary.json"), StandardCharsets.UTF_8);
         Assertions.assertTrue(
-                summary.contains("\"mir\": {\"linesCovered\": 18, \"linesTotal\": 20"), summary);
+                summary.contains("\"optimizerO2\": {\"linesCovered\": 18, \"linesTotal\": 20"),
+                summary);
 
         // Divergence in -O2 must be flagged by 4-way parity check.
         Files.writeString(
@@ -1550,7 +1549,7 @@ public class BatestCoverageReporterTestCase {
                                 xmlC,
                                 xmlC0,
                                 xmlOpt,
-                                xmlMir,
+                                xmlOptO2,
                                 tmp.resolve("src"),
                                 "",
                                 "",

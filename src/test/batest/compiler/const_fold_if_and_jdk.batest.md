@@ -47,111 +47,15 @@ fn f () -> bool {pure unique}
   (and (and (and (and (and (==:bool null null) (==:bool var(s) (call name(short) 7:int))) true:bool) true:bool) (==:bool var(i) 7:int)) (==:bool var(fl) 4.0:float))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 7
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: short = convert.short v2
-    v4: any = name_read short {pure}
-    v5: int = const 7
-    v6: short = opaque.DynamicCall(v4, v5) {impure}
-    v7: int = convert.int v6
-    v8: any = name_read float {pure}
-    v9: int = const 4
-    v10: float = opaque.DynamicCall(v8, v9) {impure}
-    v11: any = const null
-    v12: any = const null
-    v13: any = eq v11, v12 {pure,throws}
-    v14: bool = not v13 {pure}
-    v15: bool = not v14 {pure}
-    v16: bool = const false
-    br_if v15, bb1, bb2(v16)
-  bb1:
-    v17: any = name_read short {pure}
-    v18: int = const 7
-    v19: short = opaque.DynamicCall(v17, v18) {impure}
-    v20: bool = eq v3, v19 {pure}
-    br bb2(v20)
-  bb2(v21: bool):
-    v22: bool = const false
-    br_if v21, bb3, bb4(v22)
-  bb3:
-    v23: bool = const true
-    br bb4(v23)
-  bb4(v24: bool):
-    v25: bool = const false
-    br_if v24, bb5, bb6(v25)
-  bb5:
-    v26: bool = const true
-    br bb6(v26)
-  bb6(v27: bool):
-    v28: bool = const false
-    br_if v27, bb7, bb8(v28)
-  bb7:
-    v29: int = const 7
-    v30: bool = eq v7, v29 {pure}
-    br bb8(v30)
-  bb8(v31: bool):
-    v32: bool = const false
-    br_if v31, bb9, bb10(v32)
-  bb9:
-    v33: float = const 4.0f
-    v34: bool = eq v10, v33 {pure}
-    br bb10(v34)
-  bb10(v35: bool):
-    ret v35
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 7
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: short = convert.short v2
-    v4: any = name_read short {pure}
-    v5: short = opaque.DynamicCall(v4, v1) {impure}
-    v6: int = convert.int v5
-    v7: any = name_read float {pure}
-    v8: int = const 4
-    v9: float = opaque.DynamicCall(v7, v8) {impure}
-    v10: any = const null
-    v11: any = eq v10, v10 {pure,throws}
-    v12: bool = not v11 {pure}
-    v13: bool = not v12 {pure}
-    v14: bool = const false
-    br_if v13, bb1, bb2(v14)
-  bb1:
-    v15: short = opaque.DynamicCall(v4, v1) {impure}
-    v16: bool = eq v3, v15 {pure}
-    br bb2(v16)
-  bb2(v17: bool):
-    br_if v17, bb3, bb4(v14)
-  bb3:
-    v18: bool = const true
-    br bb4(v18)
-  bb4(v19: bool):
-    br_if v19, bb5, bb6(v14)
-  bb5:
-    v20: bool = const true
-    br bb6(v20)
-  bb6(v21: bool):
-    br_if v21, bb7, bb8(v14)
-  bb7:
-    v22: bool = eq v6, v1 {pure}
-    br bb8(v22)
-  bb8(v23: bool):
-    br_if v23, bb9, bb10(v14)
-  bb9:
-    v24: float = const 4.0f
-    v25: bool = eq v9, v24 {pure}
-    br bb10(v25)
-  bb10(v26: bool):
-    ret v26
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {pure unique}
+  (def s (widen[short] (call name(byte) 7:int)))
+  (block
+    (def $cse0 name(short))
+    (def i (widen[int] (call var($cse0) 7:int)))
+    (def fl (call name(float) 4:int))
+    (and (and (and (and (and (==:bool null null) (==:bool var(s) (call var($cse0) 7:int))) true:bool) true:bool) (==:bool var(i) 7:int)) (==:bool var(fl) 4.0:float)))
 ```
 
 ## Constant if-pruning with folded arithmetic branches and multi-statement blocks
@@ -190,20 +94,10 @@ fn f () -> bool {nothrow unique}
   true:bool
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Constant if-pruning with literal/folded branches and target widening
@@ -235,20 +129,10 @@ fn f () -> bool {nothrow unique}
   true:bool
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Constant if-pruning with non-constant widened branches and non-constant if
@@ -284,80 +168,15 @@ fn checkIf (p:int) -> bool {nothrow unique}
   (and (and (==:bool var(wBl) 3.0:double) (==:bool var(wArg) 3.5:double)) (==:bool var(nc) 1:int))
 ```
 
-```mir
-;; mir -O2 fn=checkIf stage=before
-fn checkIf(v0: int) -> bool:
-  bb0:
-    v1: int = const 1
-    v2: int = add v0, v1 {pure}
-    v3: double = convert.double v2
-    v4: int = const 1
-    v5: int = add v0, v4 {pure}
-    v6: double = convert.double v5
-    v7: double = const 0.5
-    v8: double = add v6, v7 {pure}
-    v9: int = const 0
-    v10: bool = gt v0, v9 {pure}
-    br_if v10, bb2, bb1
-  bb1:
-    v11: int = const 2
-    br bb3(v11)
-  bb2:
-    v12: int = const 1
-    br bb3(v12)
-  bb3(v13: int):
-    v14: double = const 3.0
-    v15: bool = eq v3, v14 {pure}
-    v16: bool = const false
-    br_if v15, bb4, bb5(v16)
-  bb4:
-    v17: double = const 3.5
-    v18: bool = eq v8, v17 {pure}
-    br bb5(v18)
-  bb5(v19: bool):
-    v20: bool = const false
-    br_if v19, bb6, bb7(v20)
-  bb6:
-    v21: int = const 1
-    v22: bool = eq v13, v21 {pure}
-    br bb7(v22)
-  bb7(v23: bool):
-    ret v23
-```
-
-```mir
-;; mir -O2 fn=checkIf
-fn checkIf(v0: int) -> bool:
-  bb0:
-    v1: int = const 1
-    v2: int = add v0, v1 {pure}
-    v3: double = convert.double v2
-    v4: double = const 0.5
-    v5: double = add v3, v4 {pure}
-    v6: int = const 0
-    v7: bool = gt v0, v6 {pure}
-    br_if v7, bb2, bb1
-  bb1:
-    v8: int = const 2
-    br bb3(v8)
-  bb2:
-    br bb3(v1)
-  bb3(v9: int):
-    v10: double = const 3.0
-    v11: bool = eq v3, v10 {pure}
-    v12: bool = const false
-    br_if v11, bb4, bb5(v12)
-  bb4:
-    v13: double = const 3.5
-    v14: bool = eq v5, v13 {pure}
-    br bb5(v14)
-  bb5(v15: bool):
-    br_if v15, bb6, bb7(v12)
-  bb6:
-    v16: bool = eq v9, v1 {pure}
-    br bb7(v16)
-  bb7(v17: bool):
-    ret v17
+```hir
+;; hir -O2 fn=checkIf
+fn checkIf (p:int) -> bool {nothrow unique}
+  (block
+    (def $cse0 (+:int var(p) 1:int))
+    (def wBl (widen[double] var($cse0)))
+    (def wArg (+:double var(wBl) 0.5:double))
+    (def nc (if (>:bool var(p) 0:int) 1:int 2:int))
+    (and (and (==:bool var(wBl) 3.0:double) (==:bool var(wArg) 3.5:double)) (==:bool var(nc) 1:int)))
 ```
 
 ## Whitelisted foldable String and Math calls, plus non-folding Math.floorDiv
@@ -384,27 +203,10 @@ fn f () -> bool {pure unique}
   (==:bool (jcall Math.floorDiv 10:int 3:int) 3:int)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: int = const 10
-    v1: int = const 3
-    v2: int = call_java Math.floorDiv(v0, v1) {pure,throws}
-    v3: int = const 3
-    v4: bool = eq v2, v3 {pure}
-    ret v4
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: int = const 10
-    v1: int = const 3
-    v2: int = call_java Math.floorDiv(v0, v1) {pure,throws}
-    v3: bool = eq v2, v1 {pure}
-    ret v3
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {pure unique}
+  (==:bool (jcall Math.floorDiv 10:int 3:int) 3:int)
 ```
 
 ## Whitelisted foldable Math.abs/min/max across int, long, float, and double
@@ -431,10 +233,8 @@ fn f () -> bool {nothrow unique}
   true:bool
 ```
 
-```mir
-;; mir -O2 fn=f stage=before,final
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```

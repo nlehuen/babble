@@ -39,51 +39,10 @@ fn C.run () -> bool {pure unique}
   (call name(assert) (and (==:bool (call-method this.optM 2:int) 12:int) (==:bool (call-method this.optM a=3:int) 13:int)))
 ```
 
-```mir
-;; mir -O2 fn=C.run stage=before
-fn C.run() -> bool:
-  bb0:
-    v0: any = name_read assert {pure}
-    v1: any = slot_read this {pure}
-    v2: int = const 2
-    v3: int = call_method v1.optM(v2) {pure}
-    v4: int = const 12
-    v5: bool = eq v3, v4 {pure}
-    v6: bool = const false
-    br_if v5, bb1, bb2(v6)
-  bb1:
-    v7: any = slot_read this {pure}
-    v8: int = const 3
-    v9: int = call_method v7.optM(v8) {pure}
-    v10: int = const 13
-    v11: bool = eq v9, v10 {pure}
-    br bb2(v11)
-  bb2(v12: bool):
-    v13: bool = opaque.DynamicCall(v0, v12) {impure}
-    ret v13
-```
-
-```mir
-;; mir -O2 fn=C.run
-fn C.run() -> bool:
-  bb0:
-    v0: any = name_read assert {pure}
-    v1: any = slot_read this {pure}
-    v2: int = const 2
-    v3: int = call_method v1.optM(v2) {pure}
-    v4: int = const 12
-    v5: bool = eq v3, v4 {pure}
-    v6: bool = const false
-    br_if v5, bb1, bb2(v6)
-  bb1:
-    v7: int = const 3
-    v8: int = call_method v1.optM(v7) {pure}
-    v9: int = const 13
-    v10: bool = eq v8, v9 {pure}
-    br bb2(v10)
-  bb2(v11: bool):
-    v12: bool = opaque.DynamicCall(v0, v11) {impure}
-    ret v12
+```hir
+;; hir -O2 fn=C.run
+fn C.run () -> bool {pure unique}
+  (call name(assert) (and (==:bool (call-method this.optM 2:int) 12:int) (==:bool (call-method this.optM a=3:int) 13:int)))
 ```
 
 ## this.field assign, compound assign, and spread-to-double field assign
@@ -110,98 +69,16 @@ fn C.run () -> bool {mut unique}
   (call name(assert) (and (and (==:bool (get-this-field d) 11.0:double) (==:bool (get-this-field label) "abc!")) (==:bool (get-this-field n) 15:int)))
 ```
 
-```mir
-;; mir -O2 fn=C.run stage=before
-fn C.run() -> bool:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: any = const "abc"
-    store_field v0.label, v1 {write:shared,throws}
-    v2: any = slot_read this {pure}
-    v3: any = load_field v2.label {read:shared,throws}
-    v4: any = const "!"
-    v5: any = add v3, v4 {impure}
-    store_field v2.label, v5 {write:shared,throws}
-    v6: any = slot_read this {pure}
-    v7: int = load_field v6.n {read:shared,throws}
-    v8: int = const 5
-    v9: int = add v7, v8 {pure}
-    store_field v6.n, v9 {write:shared,throws}
-    v10: any = slot_read this {pure}
-    v11: any = slot_read this {pure}
-    v12: int = const 1
-    v13: int = call_method v11.optM(v12) {pure}
-    v14: double = convert.double v13
-    store_field v10.d, v14 {write:shared,throws}
-    v15: any = name_read assert {pure}
-    v16: any = slot_read this {pure}
-    v17: double = load_field v16.d {read:shared,throws}
-    v18: double = const 11.0
-    v19: bool = eq v17, v18 {pure}
-    v20: bool = const false
-    br_if v19, bb1, bb2(v20)
-  bb1:
-    v21: any = slot_read this {pure}
-    v22: any = load_field v21.label {read:shared,throws}
-    v23: any = const "abc!"
-    v24: any = eq v22, v23 {pure}
-    v25: bool = not v24 {pure}
-    v26: bool = not v25 {pure}
-    br bb2(v26)
-  bb2(v27: bool):
-    v28: bool = const false
-    br_if v27, bb3, bb4(v28)
-  bb3:
-    v29: any = slot_read this {pure}
-    v30: int = load_field v29.n {read:shared,throws}
-    v31: int = const 15
-    v32: bool = eq v30, v31 {pure}
-    br bb4(v32)
-  bb4(v33: bool):
-    v34: bool = opaque.DynamicCall(v15, v33) {impure}
-    ret v34
-```
-
-```mir
-;; mir -O2 fn=C.run
-fn C.run() -> bool:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: any = const "abc"
-    store_field v0.label, v1 {write:shared,throws}
-    v2: any = const "!"
-    v3: any = add v1, v2 {impure}
-    store_field v0.label, v3 {write:shared,throws}
-    v4: int = load_field v0.n {read:shared,throws}
-    v5: int = const 5
-    v6: int = add v4, v5 {pure}
-    store_field v0.n, v6 {write:shared,throws}
-    v7: int = const 1
-    v8: int = call_method v0.optM(v7) {pure}
-    v9: double = convert.double v8
-    store_field v0.d, v9 {write:shared,throws}
-    v10: any = name_read assert {pure}
-    v11: double = const 11.0
-    v12: bool = eq v9, v11 {pure}
-    v13: bool = const false
-    br_if v12, bb1, bb2(v13)
-  bb1:
-    v14: any = load_field v0.label {read:shared,throws}
-    v15: any = const "abc!"
-    v16: any = eq v14, v15 {pure}
-    v17: bool = not v16 {pure}
-    v18: bool = not v17 {pure}
-    br bb2(v18)
-  bb2(v19: bool):
-    br_if v19, bb3, bb4(v13)
-  bb3:
-    v20: int = load_field v0.n {read:shared,throws}
-    v21: int = const 15
-    v22: bool = eq v20, v21 {pure}
-    br bb4(v22)
-  bb4(v23: bool):
-    v24: bool = opaque.DynamicCall(v10, v23) {impure}
-    ret v24
+```hir
+;; hir -O2 fn=C.run
+fn C.run () -> bool {mut unique}
+  (set-this-field label "abc")
+  (set-this-field label += "!")
+  (set-this-field n += 5:int)
+  (block
+    (def $cse0 (widen[double] (call-method this.optM 1:int)))
+    (set-this-field d var($cse0))
+    (call name(assert) (and (and (==:bool var($cse0) 11.0:double) (==:bool (get-this-field label) "abc!")) (==:bool (get-this-field n) 15:int))))
 ```
 
 ## recurse with omitted optional arg inside class method and top-level function, plus enclosing captured cell
@@ -228,43 +105,10 @@ fn sumDown (n:int, step:int=2:int) -> int {nothrow}
   (if (<=:bool var(n) 0:int) 0:int (+:int var(step) (self-recurse sumDown (-:int var(n) 1:int))))
 ```
 
-```mir
-;; mir -O2 fn=sumDown stage=before
-fn sumDown(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = const 0
-    v3: bool = lte v0, v2 {pure}
-    br_if v3, bb2, bb1
-  bb1:
-    v4: int = const 1
-    v5: int = sub v0, v4 {pure}
-    v6: int = call_self sumDown(v5) {pure}
-    v7: int = add v1, v6 {pure}
-    br bb3(v7)
-  bb2:
-    v8: int = const 0
-    br bb3(v8)
-  bb3(v9: int):
-    ret v9
-```
-
-```mir
-;; mir -O2 fn=sumDown
-fn sumDown(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = const 0
-    v3: bool = lte v0, v2 {pure}
-    br_if v3, bb2, bb1
-  bb1:
-    v4: int = const 1
-    v5: int = sub v0, v4 {pure}
-    v6: int = call_self sumDown(v5) {pure}
-    v7: int = add v1, v6 {pure}
-    br bb3(v7)
-  bb2:
-    br bb3(v2)
-  bb3(v8: int):
-    ret v8
+```hir
+;; hir -O2 fn=sumDown
+fn sumDown (n:int, step:int=2:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int) 0:int (+:int var(step) (self-recurse sumDown (-:int var(n) 1:int))))
 ```
 
 ## Captured outer and class-constructor double cells inside enclosing function (DoubleCell.of)
@@ -289,18 +133,11 @@ fn C.bump () -> double {io}
   (+:double var(outer) var(p))
 ```
 
-```mir
-;; mir -O2 fn=C.bump stage=before,final
-fn C.bump() -> double:
-  bb0:
-    v0: double = slot_read outer {read:shared}
-    v1: double = const 1.0
-    v2: double = add v0, v1 {pure}
-    slot_write outer, v2 {write:shared}
-    v3: double = slot_read outer {read:shared}
-    v4: double = slot_read p {pure}
-    v5: double = add v3, v4 {pure}
-    ret v5
+```hir
+;; hir -O2 fn=C.bump
+fn C.bump () -> double {io}
+  (set outer += 1.0:double)
+  (+:double var(outer) var(p))
 ```
 
 ## Static block this assign, compound assign, and this reference
@@ -324,40 +161,12 @@ fn bump () -> int {io}
   (get-this-field x)
 ```
 
-```mir
-;; mir -O2 fn=bump stage=before
-fn bump() -> int:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: int = const 2
-    v2: any = convert.any v1
-    store_field v0.x, v2 {write:shared,throws}
-    v3: any = slot_read this {pure}
-    v4: any = load_field v3.x {read:shared,throws}
-    v5: int = const 3
-    v6: any = convert.any v5
-    v7: any = add v4, v6 {impure}
-    store_field v3.x, v7 {write:shared,throws}
-    v8: any = slot_read this {pure}
-    v9: any = load_field v8.x {read:shared,throws}
-    v10: int = convert.int v9
-    ret v10
-```
-
-```mir
-;; mir -O2 fn=bump
-fn bump() -> int:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: any = const 2
-    store_field v0.x, v1 {write:shared,throws}
-    v2: any = load_field v0.x {read:shared,throws}
-    v3: any = const 3
-    v4: any = add v2, v3 {impure}
-    store_field v0.x, v4 {write:shared,throws}
-    v5: any = load_field v0.x {read:shared,throws}
-    v6: int = convert.int v5
-    ret v6
+```hir
+;; hir -O2 fn=bump
+fn bump () -> int {io}
+  (set-this-field x 2:int)
+  (set-this-field x += 3:int)
+  (get-this-field x)
 ```
 
 ## Paren-wrapped class expression with method recurse and interface default
@@ -380,13 +189,12 @@ interface IWithConst
     3:int
 ```
 
-```mir
-;; mir -O2 interface=IWithConst stage=before,final
-interface IWithConst:
-  fn get() -> int:
-    bb0:
-      v0: int = const 3
-      ret v0
+```hir
+;; hir -O2 interface=IWithConst
+interface IWithConst
+  (def get (fn-ref get))
+  fn get () -> int {pure}
+    3:int
 ```
 
 ## BabbleInstance operator methods (neg, plus, minus, times, div, compound +=) and folded unary minus
@@ -419,9 +227,20 @@ top-level:
   (call name(assert) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (block
+    (def $cse0 name(Vec))
+    (def v (call var($cse0) 10:int))
+    (def c (call var($cse0) 5:int))
+    (set-name c += 3:int)
+    (def $cse1 name(v))
+    (def $cse2 name(assert))
+    (def $cse3 (get-this-field n))
+    (call var($cse2) (and (and (and (==:bool (get-this-field n) -10:int) true:bool) (==:bool (get-this-field n) 12:int)) (==:bool (get-this-field n) 7:int)))
+    (call var($cse2) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int))))
 ```
 
 ## Non-tail recurse in reference-only function and class method
@@ -446,25 +265,10 @@ fn rep (s:obj) -> obj {nothrow}
   (if (>=:bool (jcall String.length var(s)) 4:int) var(s) (+:obj "a" (self-recurse rep (+:obj var(s) "b"))))
 ```
 
-```mir
-;; mir -O2 fn=rep stage=before,final
-fn rep(v0: any) -> any:
-  bb0:
-    v1: int = call_java v0.length() {pure,throws}
-    v2: int = const 4
-    v3: bool = gte v1, v2 {pure}
-    br_if v3, bb2, bb1
-  bb1:
-    v4: any = const "a"
-    v5: any = const "b"
-    v6: any = strcat v0, v5 {pure}
-    v7: any = call_self rep(v6) {pure!}
-    v8: any = strcat v4, v7 {pure}
-    br bb3(v8)
-  bb2:
-    br bb3(v0)
-  bb3(v9: any):
-    ret v9
+```hir
+;; hir -O2 fn=rep
+fn rep (s:obj) -> obj {nothrow}
+  (if (>=:bool (jcall String.length var(s)) 4:int) var(s) (+:obj "a" (self-recurse rep (+:obj var(s) "b"))))
 ```
 
 ## Non-tail recurse with >8 primitive parameters
@@ -488,46 +292,10 @@ fn r9 (n:int, a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int) -> int {no
   (if (<=:bool var(n) 0:int) 0:int (+:int 1:int (call recurse (-:int var(n) 1:int) var(a) var(b) var(c) var(d) var(e) var(f) var(g) var(h))))
 ```
 
-```mir
-;; mir -O2 fn=r9 stage=before
-fn r9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: int) -> int:
-  bb0:
-    v9: int = const 0
-    v10: bool = lte v0, v9 {pure}
-    br_if v10, bb2, bb1
-  bb1:
-    v11: int = const 1
-    v12: any = slot_read $recurse {pure}
-    v13: int = const 1
-    v14: int = sub v0, v13 {pure}
-    v15: int = opaque.DynamicCall(v12, v14, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
-    v16: int = add v11, v15 {pure}
-    br bb3(v16)
-  bb2:
-    v17: int = const 0
-    br bb3(v17)
-  bb3(v18: int):
-    ret v18
-```
-
-```mir
-;; mir -O2 fn=r9
-fn r9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: int) -> int:
-  bb0:
-    v9: int = const 0
-    v10: bool = lte v0, v9 {pure}
-    br_if v10, bb2, bb1
-  bb1:
-    v11: int = const 1
-    v12: any = slot_read $recurse {pure}
-    v13: int = sub v0, v11 {pure}
-    v14: int = opaque.DynamicCall(v12, v13, v1, v2, v3, v4, v5, v6, v7, v8) {impure}
-    v15: int = add v11, v14 {pure}
-    br bb3(v15)
-  bb2:
-    br bb3(v9)
-  bb3(v16: int):
-    ret v16
+```hir
+;; hir -O2 fn=r9
+fn r9 (n:int, a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int) 0:int (+:int 1:int (call recurse (-:int var(n) 1:int) var(a) var(b) var(c) var(d) var(e) var(f) var(g) var(h))))
 ```
 
 ## Direct this.method call with >8 default params (0 args, positional, and reordered named args)
@@ -554,33 +322,10 @@ fn Big.run () -> int {nothrow unique}
   (+:int (+:int (call-method this.s9) 18:int) (call-method this.s9 i=10:int))
 ```
 
-```mir
-;; mir -O2 fn=Big.run stage=before
-fn Big.run() -> int:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: int = call_method v0.s9() {pure}
-    v2: int = const 18
-    v3: int = add v1, v2 {pure}
-    v4: any = slot_read this {pure}
-    v5: int = const 10
-    v6: int = call_method v4.s9(v5) {pure}
-    v7: int = add v3, v6 {pure}
-    ret v7
-```
-
-```mir
-;; mir -O2 fn=Big.run
-fn Big.run() -> int:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: int = call_method v0.s9() {pure}
-    v2: int = const 18
-    v3: int = add v1, v2 {pure}
-    v4: int = const 10
-    v5: int = call_method v0.s9(v4) {pure}
-    v6: int = add v3, v5 {pure}
-    ret v6
+```hir
+;; hir -O2 fn=Big.run
+fn Big.run () -> int {nothrow unique}
+  (+:int (+:int (call-method this.s9) 18:int) (call-method this.s9 i=10:int))
 ```
 
 ## this.field callable, inherited interface default via this, and overloaded this operator
@@ -606,42 +351,10 @@ fn C.run () -> int {pure unique}
   (+:int (+:int (call (get-this-field cb) 3:int) (call (get-this-field greet))) (+:int (get-this-field n) 2:int))
 ```
 
-```mir
-;; mir -O2 fn=C.run stage=before
-fn C.run() -> int:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: any = load_field v0.cb {read:frozen}
-    v2: int = const 3
-    v3: int = opaque.DynamicCall(v1, v2) {impure}
-    v4: any = slot_read this {pure}
-    v5: any = load_field v4.greet {read:shared,throws}
-    v6: int = opaque.DynamicCall(v5) {impure}
-    v7: int = add v3, v6 {pure}
-    v8: any = slot_read this {pure}
-    v9: int = load_field v8.n {read:frozen}
-    v10: int = const 2
-    v11: int = add v9, v10 {pure}
-    v12: int = add v7, v11 {pure}
-    ret v12
-```
-
-```mir
-;; mir -O2 fn=C.run
-fn C.run() -> int:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: any = load_field v0.cb {read:frozen}
-    v2: int = const 3
-    v3: int = opaque.DynamicCall(v1, v2) {impure}
-    v4: any = load_field v0.greet {read:shared,throws}
-    v5: int = opaque.DynamicCall(v4) {impure}
-    v6: int = add v3, v5 {pure}
-    v7: int = load_field v0.n {read:frozen}
-    v8: int = const 2
-    v9: int = add v7, v8 {pure}
-    v10: int = add v6, v9 {pure}
-    ret v10
+```hir
+;; hir -O2 fn=C.run
+fn C.run () -> int {pure unique}
+  (+:int (+:int (call (get-this-field cb) 3:int) (call (get-this-field greet))) (+:int (get-this-field n) 2:int))
 ```
 
 ## Object literal this.method dispatch
@@ -667,9 +380,12 @@ top-level:
   (call name(assert) true:bool)
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def obj (class-ref object))
+  (call name(assert) true:bool)
 ```
 
 ## Record fast-class disqualifiers : >8 fields, captured outer cell, and Java SAM param
@@ -695,17 +411,12 @@ record CellRec (x:int)
     (+:int (get-this-field x) name(k))
 ```
 
-```mir
-;; mir -O2 record=CellRec stage=before,final
-record CellRec:
-  fn CellRec.get() -> int:
-    bb0:
-      v0: any = slot_read this {pure}
-      v1: int = load_field v0.x {read:frozen}
-      v2: any = name_read k {pure}
-      v3: int = convert.int v2
-      v4: int = add v1, v3 {pure}
-      ret v4
+```hir
+;; hir -O2 record=CellRec
+record CellRec (x:int)
+  (def get (fn-ref CellRec.get))
+  fn CellRec.get () -> int {nothrow unique}
+    (+:int (get-this-field x) name(k))
 ```
 
 ## Record fast-class disqualifiers : body assert, body field, and nested overload
@@ -737,23 +448,16 @@ record OvR (x:int)
     (jcall String.length var(s))
 ```
 
-```mir
-;; mir -O2 record=OvR stage=before,final
-record OvR:
-  fn OvR.f(v0: int) -> int:
-    bb0:
-      v1: any = slot_read this {pure}
-      v2: int = load_field v1.x {read:frozen}
-      v3: int = add v2, v0 {pure}
-      ret v3
-  fn OvR.f(v0: bool) -> int:
-    bb0:
-      v1: int = const 1
-      ret v1
-  fn OvR.f(v0: any) -> int:
-    bb0:
-      v1: int = call_java v0.length() {pure,throws}
-      ret v1
+```hir
+;; hir -O2 record=OvR
+record OvR (x:int)
+  (def f (overload (fn-ref OvR.f#1) (overload (fn-ref OvR.f#2) (fn-ref OvR.f#3))))
+  fn OvR.f (n:int) -> int {nothrow unique}
+    (+:int (get-this-field x) var(n))
+  fn OvR.f (b:bool) -> int {nothrow unique}
+    1:int
+  fn OvR.f (s:obj) -> int {nothrow unique}
+    (jcall String.length var(s))
 ```
 
 ## Class constructor non-method and non-FunctionRef overload sets (isAllMethodRefsOf)
@@ -789,8 +493,9 @@ class C
   (def r2 12:int)
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  (no methods)
+```hir
+;; hir -O2 class=C
+class C
+  (def r1 7:int)
+  (def r2 12:int)
 ```

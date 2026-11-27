@@ -32,16 +32,11 @@ fn make (k:int) -> int {nothrow unique}
   (call-method (call var(Local) 3:int).addK 4:int)
 ```
 
-```mir
-;; mir -O2 fn=make stage=before,final
-fn make() -> int:
-  bb0:
-    v0: any = opaque.ClassExpr(Local) {impure}
-    v1: int = const 3
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: int = const 4
-    v4: int = call_method v2.addK(v3) {impure}
-    ret v4
+```hir
+;; hir -O2 fn=make
+fn make (k:int) -> int {nothrow unique}
+  (def Local (class-ref Local))
+  (call-method (call var(Local) 3:int).addK 4:int)
 ```
 
 ## InlinePass.checkParamsAndBody : Java SAM parameter disqualifies inlining
@@ -58,15 +53,10 @@ fn run (n:int) -> int {io}
   (call-fn applyOp var(n) (java-sam IntUnaryOperator (fn-ref <anon#0>)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read applyOp {pure}
-    v2: any = opaque.FunctionRef(<anon>) {pure}
-    v3: any = opaque.JavaSamAdapt(v2) {impure}
-    v4: int = call applyOp(v0, v3) {impure}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (n:int) -> int {io}
+  (call-fn applyOp var(n) (java-sam IntUnaryOperator (fn-ref <anon#0>)))
 ```
 
 ## InlinePass.scanCalleeBody : self-recursive method call and for-body cell capture
@@ -99,27 +89,12 @@ record Counter (n:int)
     (if (<=:bool var(k) 0:int) (get-this-field n) (+:int var(k) (call-method this.sum (-:int var(k) 1:int))))
 ```
 
-```mir
-;; mir -O2 record=Counter stage=before,final
-record Counter:
-  fn Counter.sum(v0: int) -> int:
-    bb0:
-      v1: int = const 0
-      v2: bool = lte v0, v1 {pure}
-      br_if v2, bb2, bb1
-    bb1:
-      v3: any = slot_read this {pure}
-      v4: int = const 1
-      v5: int = sub v0, v4 {pure}
-      v6: int = call_method v3.sum(v5) {pure}
-      v7: int = add v0, v6 {pure}
-      br bb3(v7)
-    bb2:
-      v8: any = slot_read this {pure}
-      v9: int = load_field v8.n {read:frozen}
-      br bb3(v9)
-    bb3(v10: int):
-      ret v10
+```hir
+;; hir -O2 record=Counter
+record Counter (n:int)
+  (def sum (fn-ref Counter.sum))
+  fn Counter.sum (k:int) -> int {nothrow}
+    (if (<=:bool var(k) 0:int) (get-this-field n) (+:int var(k) (call-method this.sum (-:int var(k) 1:int))))
 ```
 
 ## InlinePass.scanCalleeBody and alphaRename : mutable class method ThisFieldAssign inlined
@@ -160,34 +135,15 @@ fn run (n:int) -> int {nothrow unique}
       (+:int var($sr_$this_0) var($sr_o_1))))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read MutBox {pure}
-    v2: int = const 1
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
-    store_field v3.x, v0 {write:shared,throws}
-    v4: int = load_field v3.x {read:shared,throws}
-    v5: int = const 2
-    v6: int = const 3
-    v7: int = const 5
-    v8: int = add v5, v7 {pure}
-    v9: int = add v4, v8 {pure}
-    ret v9
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read MutBox {pure}
-    v2: int = const 1
-    v3: any = opaque.DynamicCall(v1, v2) {impure}
-    store_field v3.x, v0 {write:shared,throws}
-    v4: int = const 7
-    v5: int = add v0, v4 {pure}
-    ret v5
+```hir
+;; hir -O2 fn=run
+fn run (n:int) -> int {nothrow unique}
+  (def b (call name(MutBox) 1:int))
+  (def a
+    (block
+      (set-this-field x var(n))
+      var(n)))
+  (+:int var(a) 7:int)
 ```
 
 ## InlinePass.inlineExpr : per-owner inline budget exhaustion (>32 calls)
@@ -220,124 +176,23 @@ fn f (x:int) -> int {nothrow unique}
   (+:int (+:int var(a) var(b)) var(c))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: int) -> int:
-  bb0:
-    v1: int = add v0, v0 {pure}
-    v2: int = const 3
-    v3: int = add v1, v2 {pure}
-    v4: int = add v3, v0 {pure}
-    v5: int = const 1
-    v6: int = add v0, v5 {pure}
-    v7: int = add v4, v6 {pure}
-    v8: int = const 1
-    v9: int = add v0, v8 {pure}
-    v10: int = add v7, v9 {pure}
-    v11: int = const 1
-    v12: int = add v0, v11 {pure}
-    v13: int = add v10, v12 {pure}
-    v14: int = const 1
-    v15: int = add v0, v14 {pure}
-    v16: int = add v13, v15 {pure}
-    v17: int = const 1
-    v18: int = add v0, v17 {pure}
-    v19: int = add v16, v18 {pure}
-    v20: int = const 1
-    v21: int = add v0, v20 {pure}
-    v22: int = add v19, v21 {pure}
-    v23: int = const 1
-    v24: int = add v0, v23 {pure}
-    v25: int = add v22, v24 {pure}
-    v26: int = const 1
-    v27: int = add v0, v26 {pure}
-    v28: int = add v25, v27 {pure}
-    v29: int = const 1
-    v30: int = add v0, v29 {pure}
-    v31: int = add v28, v30 {pure}
-    v32: int = add v0, v0 {pure}
-    v33: int = const 3
-    v34: int = add v32, v33 {pure}
-    v35: int = add v34, v0 {pure}
-    v36: int = const 1
-    v37: int = add v0, v36 {pure}
-    v38: int = add v35, v37 {pure}
-    v39: int = const 1
-    v40: int = add v0, v39 {pure}
-    v41: int = add v38, v40 {pure}
-    v42: int = const 1
-    v43: int = add v0, v42 {pure}
-    v44: int = add v41, v43 {pure}
-    v45: int = const 1
-    v46: int = add v0, v45 {pure}
-    v47: int = add v44, v46 {pure}
-    v48: int = const 1
-    v49: int = add v0, v48 {pure}
-    v50: int = add v47, v49 {pure}
-    v51: int = const 1
-    v52: int = add v0, v51 {pure}
-    v53: int = add v50, v52 {pure}
-    v54: int = const 1
-    v55: int = add v0, v54 {pure}
-    v56: int = add v53, v55 {pure}
-    v57: int = const 1
-    v58: int = add v0, v57 {pure}
-    v59: int = add v56, v58 {pure}
-    v60: int = const 1
-    v61: int = add v0, v60 {pure}
-    v62: int = add v59, v61 {pure}
-    v63: int = add v0, v0 {pure}
-    v64: int = const 3
-    v65: int = add v63, v64 {pure}
-    v66: int = add v65, v0 {pure}
-    v67: int = const 1
-    v68: int = add v0, v67 {pure}
-    v69: int = add v66, v68 {pure}
-    v70: int = const 1
-    v71: int = add v0, v70 {pure}
-    v72: int = add v69, v71 {pure}
-    v73: int = const 1
-    v74: int = add v0, v73 {pure}
-    v75: int = add v72, v74 {pure}
-    v76: int = const 1
-    v77: int = add v0, v76 {pure}
-    v78: int = add v75, v77 {pure}
-    v79: int = const 1
-    v80: int = add v0, v79 {pure}
-    v81: int = add v78, v80 {pure}
-    v82: int = const 1
-    v83: int = add v0, v82 {pure}
-    v84: int = add v81, v83 {pure}
-    v85: int = const 1
-    v86: int = add v0, v85 {pure}
-    v87: int = add v84, v86 {pure}
-    v88: int = add v31, v62 {pure}
-    v89: int = add v88, v87 {pure}
-    ret v89
-```
-
-```mir
-;; mir -O2 fn=f
-fn f(v0: int) -> int:
-  bb0:
-    v1: int = add v0, v0 {pure}
-    v2: int = const 3
-    v3: int = add v1, v2 {pure}
-    v4: int = add v3, v0 {pure}
-    v5: int = const 1
-    v6: int = add v0, v5 {pure}
-    v7: int = add v4, v6 {pure}
-    v8: int = add v7, v6 {pure}
-    v9: int = add v8, v6 {pure}
-    v10: int = add v9, v6 {pure}
-    v11: int = add v10, v6 {pure}
-    v12: int = add v11, v6 {pure}
-    v13: int = add v12, v6 {pure}
-    v14: int = add v13, v6 {pure}
-    v15: int = add v14, v6 {pure}
-    v16: int = add v15, v15 {pure}
-    v17: int = add v16, v13 {pure}
-    ret v17
+```hir
+;; hir -O2 fn=f
+fn f (x:int) -> int {nothrow unique}
+  (block
+    (def $cse0 (+:int var(x) 1:int))
+    (def $cse1 (+:int var($cse0) var($cse0)))
+    (def $cse2 (+:int var($cse1) var($cse0)))
+    (def $cse3 (+:int var($cse2) var($cse0)))
+    (def $cse4 (+:int var($cse3) var($cse0)))
+    (def $cse5 (+:int var($cse4) var($cse0)))
+    (def $cse6 (+:int var($cse5) var($cse0)))
+    (def $cse7 (+:int var($cse6) var($cse0)))
+    (def $cse8 (+:int var($cse7) var($cse0)))
+    (def $cse9 (+:int var($cse8) var($cse0)))
+    (def $cse10 (+:int var($cse9) var($cse0)))
+    (def a (+:int var($cse10) var($cse0)))
+    (+:int (+:int var(a) var(a)) var($cse9)))
 ```
 
 ## InlinePass.inlineExpr : identity-order named args on record method skip inlining
@@ -357,16 +212,11 @@ fn run (x:int, y:int) -> int {nothrow unique}
   (call-method var(p).add a=var(x) b=var(y))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int, v1: int) -> int:
-  bb0:
-    v2: any = name_read Pair {pure}
-    v3: int = const 10
-    v4: int = const 0
-    v5: any = record_new Pair[v2](v3, v4) {pure}
-    v6: int = call_method v5.add(v0, v1) {pure}
-    ret v6
+```hir
+;; hir -O2 fn=run
+fn run (x:int, y:int) -> int {nothrow unique}
+  (def p (record-new Pair 10:int 0:int))
+  (call-method var(p).add a=var(x) b=var(y))
 ```
 
 ## InlinePass.canInlineReturnKind and performInline : generic return kind mismatch and boxed any result
@@ -396,31 +246,12 @@ fn run (p:int) -> int {pure unique}
   (+:int var(g) (as var(boxed) int|int|))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read idG {pure}
-    v2: int = opaque.DynamicCall(v1, v0) {impure}
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
-    v5: any = convert.any v4
-    v6: any = checkcast v5 <int|int|>
-    v7: int = convert.int v6
-    v8: int = add v2, v7 {pure}
-    ret v8
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read idG {pure}
-    v2: int = opaque.DynamicCall(v1, v0) {impure}
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
-    v5: int = add v2, v4 {pure}
-    ret v5
+```hir
+;; hir -O2 fn=run
+fn run (p:int) -> int {pure unique}
+  (def g (call (type-apply name(idG)) var(p)))
+  (def boxed (box (+:int var(p) 1:int)))
+  (+:int var(g) (as var(boxed) int|int|))
 ```
 
 ## InlinePass.performInline : cell receiver spill, arg mutated in later arg, and conditional local
@@ -471,73 +302,22 @@ fn run (n:int, fl:bool) -> int {nothrow unique}
         (+:int (+:int (get-this-field x) 1:int) var(b#2)))) (call-fn cap))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: bool) -> int:
-  bb0:
-    v2: any = name_read Pair {pure}
-    v3: int = const 0
-    v4: any = record_new Pair[v2](v0, v3) {pure}
-    slot_init p, v4 {write:shared}
-    v5: any = opaque.FunctionRef(cap) {read:shared}
-    v6: int = const 1
-    v7: int = add v0, v6 {pure}
-    v8: int = const 10
-    v9: int = mul v0, v8 {pure}
-    v10: int = add v9, v7 {pure}
-    br_if v1, bb2, bb1
-  bb1:
-    v11: int = const 3
-    br bb3(v11)
-  bb2:
-    v12: int = const 2
-    br bb3(v12)
-  bb3(v13: int):
-    slot_init y, v13 {write:shared,throws}
-    v14: int = slot_read y {read:shared,throws}
-    v15: any = slot_read p {read:shared}
-    v16: int = load_field v15.x {read:frozen}
-    v17: int = const 1
-    v18: int = add v16, v17 {pure}
-    v19: int = add v18, v14 {pure}
-    v20: int = add v10, v19 {pure}
-    v21: int = call cap() {impure}
-    v22: int = add v20, v21 {pure}
-    ret v22
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: bool) -> int:
-  bb0:
-    v2: any = name_read Pair {pure}
-    v3: int = const 0
-    v4: any = record_new Pair[v2](v0, v3) {pure}
-    slot_init p, v4 {write:shared}
-    v5: any = opaque.FunctionRef(cap) {read:shared}
-    v6: int = const 1
-    v7: int = add v0, v6 {pure}
-    v8: int = const 10
-    v9: int = mul v0, v8 {pure}
-    v10: int = add v9, v7 {pure}
-    br_if v1, bb2, bb1
-  bb1:
-    v11: int = const 3
-    br bb3(v11)
-  bb2:
-    v12: int = const 2
-    br bb3(v12)
-  bb3(v13: int):
-    slot_init y, v13 {write:shared,throws}
-    v14: int = slot_read y {read:shared,throws}
-    v15: any = slot_read p {read:shared}
-    v16: int = load_field v15.x {read:frozen}
-    v17: int = add v16, v6 {pure}
-    v18: int = add v17, v14 {pure}
-    v19: int = add v10, v18 {pure}
-    v20: int = call cap() {impure}
-    v21: int = add v19, v20 {pure}
-    ret v21
+```hir
+;; hir -O2 fn=run
+fn run (n:int, fl:bool) -> int {nothrow unique}
+  (def p (record-new Pair var(n) 0:int))
+  (def cap (fn-ref cap))
+  (def r1
+    (block
+      (def b#1
+        (block
+          (set x (+:int var(n) 1:int))
+          var(x)))
+      (+:int (*:int var(n) 10:int) var(b#1))))
+  (def y (if var(fl) 2:int 3:int))
+  (+:int (+:int var(r1) (block
+        (def b#2 var(y))
+        (+:int (+:int (get-this-field x) 1:int) var(b#2)))) (call-fn cap))
 ```
 
 ## InlinePass.alphaRename : VarRead widening substitution, uninitialized Def, and for-body local def
@@ -572,90 +352,19 @@ fn run (p:int, fl:bool) -> double {pure unique}
           var(s)))))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: bool) -> double:
-  bb0:
-    v2: double = convert.double v0
-    v3: double = const 0.5
-    v4: double = add v2, v3 {pure}
-    v5: any = name_read double {pure}
-    br_if v1, bb2, bb1
-  bb1:
-    v6: int = const 9
-    v7: any = convert.any v6
-    v8: int = convert.int v7
-    br bb3(v8, v7)
-  bb2:
-    v9: any = convert.any v0
-    v10: int = convert.int v9
-    br bb3(v10, v9)
-  bb3(v11: int, v12: any):
-    v13: int = nonnull v12
-    v14: int = const 1
-    v15: int = const 2
-    v16: any = opaque.CoreCollectionCall(list, v14, v15) {impure}
-    v17: int = const 0
-    v18: any = for_init.java_iterable v16
-    v19: any = const null
-    br bb4(v19, v17)
-  bb4(v20: any, v21: int):
-    v22: bool = for_has_next v18
-    br_if v22, bb6, bb5
-  bb5:
-    v23: int = add v13, v21 {pure}
-    v24: double = opaque.DynamicCall(v5, v23) {impure}
-    v25: double = add v4, v24 {pure}
-    ret v25
-  bb6:
-    v26: any = for_next v18
-    v27: any = checkcast v26 <int|int|>
-    v28: int = convert.int v27
-    v29: int = const 2
-    v30: int = mul v28, v29 {pure}
-    v31: int = add v21, v30 {pure}
-    v32: any = convert.any v31
-    br bb4(v32, v31)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: bool) -> double:
-  bb0:
-    v2: double = convert.double v0
-    v3: double = const 0.5
-    v4: double = add v2, v3 {pure}
-    v5: any = name_read double {pure}
-    br_if v1, bb2, bb1
-  bb1:
-    v6: any = const 9
-    br bb3(v6)
-  bb2:
-    v7: any = convert.any v0
-    br bb3(v7)
-  bb3(v8: any):
-    v9: int = nonnull v8
-    v10: int = const 1
-    v11: int = const 2
-    v12: any = opaque.CoreCollectionCall(list, v10, v11) {impure}
-    v13: int = const 0
-    v14: any = for_init.java_iterable v12
-    br bb4(v13)
-  bb4(v15: int):
-    v16: bool = for_has_next v14
-    br_if v16, bb6, bb5
-  bb5:
-    v17: int = add v9, v15 {pure}
-    v18: double = opaque.DynamicCall(v5, v17) {impure}
-    v19: double = add v4, v18 {pure}
-    ret v19
-  bb6:
-    v20: any = for_next v14
-    v21: any = checkcast v20 <int|int|>
-    v22: int = convert.int v21
-    v23: int = mul v22, v11 {pure}
-    v24: int = add v15, v23 {pure}
-    br bb4(v24)
+```hir
+;; hir -O2 fn=run
+fn run (p:int, fl:bool) -> double {pure unique}
+  (+:double (+:double (convert[double] var(p)) 0.5:double) (call name(double) (+:int (block
+          (if var(fl) (set y (box var(p))) (set y (box 9:int)))
+          (nonnull var(y))) (block
+          (def xs (core-new list 1:int 2:int))
+          (def s 0:int)
+          (for e in var(xs)
+            (block
+              (def d (*:int var(e) 2:int))
+              (set s += var(d))))
+          var(s)))))
 ```
 
 ## InlinePass.alphaRename : Move with unique parameter substitution
@@ -690,66 +399,15 @@ fn run (n:int) -> int {pure unique}
   (+:int (+:int (jcall List.get var(xs#1) 0:int) (jcall List.get var(xs#1) 1:int)) (if (==:bool var(nl) null) 0:int 1:int))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = add v0, v1 {pure}
-    v3: any = opaque.CoreCollectionCall(list, v0, v2) {impure}
-    v4: any = move v3
-    v5: any = const null
-    v6: any = move v5
-    v7: int = const 0
-    v8: any = call_java v4.get(v7) {impure}
-    v9: any = checkcast v8 <int|int|>
-    v10: int = convert.int v9
-    v11: int = const 1
-    v12: any = call_java v4.get(v11) {impure}
-    v13: any = checkcast v12 <int|int|>
-    v14: int = convert.int v13
-    v15: int = add v10, v14 {pure}
-    v16: any = const null
-    v17: any = eq v6, v16 {pure,throws}
-    br_if v17, bb2, bb1
-  bb1:
-    v18: any = narrow.nonnull v6 <non-null>
-    v19: int = const 1
-    br bb3(v19)
-  bb2:
-    v20: int = const 0
-    br bb3(v20)
-  bb3(v21: int):
-    v22: int = add v15, v21 {pure}
-    ret v22
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = add v0, v1 {pure}
-    v3: any = opaque.CoreCollectionCall(list, v0, v2) {impure}
-    v4: any = move v3
-    v5: any = const null
-    v6: int = const 0
-    v7: any = call_java v4.get(v6) {impure}
-    v8: any = checkcast v7 <int|int|>
-    v9: int = convert.int v8
-    v10: any = call_java v4.get(v1) {impure}
-    v11: any = checkcast v10 <int|int|>
-    v12: int = convert.int v11
-    v13: int = add v9, v12 {pure}
-    v14: any = eq v5, v5 {pure,throws}
-    br_if v14, bb2, bb1
-  bb1:
-    br bb3(v1)
-  bb2:
-    br bb3(v6)
-  bb3(v15: int):
-    v16: int = add v13, v15 {pure}
-    ret v16
+```hir
+;; hir -O2 fn=run
+fn run (n:int) -> int {pure unique}
+  (def xs#1
+    (block
+      (def xs#2 (core-new list var(n) (+:int var(n) 1:int)))
+      (move var(xs#2))))
+  (def nl (move null))
+  (+:int (+:int (jcall List.get var(xs#1) 0:int) (jcall List.get var(xs#1) 1:int)) (if (==:bool var(nl) null) 0:int 1:int))
 ```
 
 ## InlinePass.alphaRename : borrow-lambda devirtualization guards for named arguments
@@ -776,18 +434,10 @@ fn run (x:int) -> int {nothrow unique}
   (+:int (call (fn-ref <anon#0>) b=2:int a=var(x)) (call (fn-ref <anon#1>) a=var(x) b=3:int))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = opaque.FunctionRef(<anon>) {pure}
-    v2: int = const 2
-    v3: int = opaque.DynamicCall(v1, v2, v0) {impure}
-    v4: any = opaque.FunctionRef(<anon>) {pure}
-    v5: int = const 3
-    v6: int = opaque.DynamicCall(v4, v0, v5) {impure}
-    v7: int = add v3, v6 {pure}
-    ret v7
+```hir
+;; hir -O2 fn=run
+fn run (x:int) -> int {nothrow unique}
+  (+:int (call (fn-ref <anon#0>) b=2:int a=var(x)) (call (fn-ref <anon#1>) a=var(x) b=3:int))
 ```
 
 ## InlinePass.alphaRename : borrow-lambda devirtualization guards for arity mismatch and non-literal callee
@@ -812,15 +462,10 @@ fn run (x:int, dyn:obj) -> int {pure unique}
   (+:int (call (fn-ref <anon#0>) var(x)) (call var(dyn) var(x)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int, v1: any) -> int:
-  bb0:
-    v2: any = opaque.FunctionRef(<anon>) {pure}
-    v3: int = opaque.DynamicCall(v2, v0) {impure}
-    v4: int = opaque.DynamicCall(v1, v0) {impure}
-    v5: int = add v3, v4 {pure}
-    ret v5
+```hir
+;; hir -O2 fn=run
+fn run (x:int, dyn:obj) -> int {pure unique}
+  (+:int (call (fn-ref <anon#0>) var(x)) (call var(dyn) var(x)))
 ```
 
 ## InlinePass.isMethodDefinitelyDefinedForInline and scanThisLeak : statements, default method, and sibling leak
@@ -864,9 +509,20 @@ top-level:
             (get-this-field y)) (call (select (call name(Good) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Pair (class-ref Pair))
+  (def inc (fn-ref inc))
+  (def widen (fn-ref widen))
+  (def idG (fn-ref idG))
+  (def Tag (iface-ref Tag))
+  (def Good (class-ref Good))
+  (def Leak2 (class-ref Leak2))
+  (block
+    (def $cse0 name(Good))
+    (def $cse1 name(Pair))
+    (call name(assert) (==:bool (+:int (+:int (call-method (call var($cse0) (record-new Pair 3:int 0:int)).get) (call (select (call var($cse0) (record-new Pair 3:int 0:int)).tag))) (call-method (call name(Leak2) 3:int).get)) 14:int)))
 ```
 
 ## InlinePass.isDefinitelyDefinedPureCallee : local definitely-defined vs forward-referenced function
@@ -897,30 +553,11 @@ fn run (n:int, fl:bool) -> int {nothrow unique}
   (+:int (+:int var(n) 1:int) (call-fn cond var(n)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = opaque.FunctionRef(cond) {read:shared}
-    slot_init cond, v1 {write:shared,throws}
-    v2: int = const 1
-    v3: int = add v0, v2 {pure}
-    v4: any = slot_read cond {read:shared,throws}
-    v5: int = call cond(v0) {impure}
-    v6: int = add v3, v5 {pure}
-    ret v6
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = opaque.FunctionRef(cond) {read:shared}
-    slot_init cond, v1 {write:shared,throws}
-    v2: int = const 1
-    v3: int = add v0, v2 {pure}
-    v4: any = slot_read cond {read:shared,throws}
-    v5: int = call cond(v0) {impure}
-    v6: int = add v3, v5 {pure}
-    ret v6
+```hir
+;; hir -O2 fn=run
+fn run (n:int, fl:bool) -> int {nothrow unique}
+  (def cond (fn-ref cond))
+  (block
+    (def $cse0 (+:int var(n) 1:int))
+    (+:int var($cse0) (call-fn cond var(n))))
 ```

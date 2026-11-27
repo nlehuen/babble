@@ -38,7 +38,7 @@ public final class BatestCoverageReporter {
         INTERPRETER("Interpreter (impl.*)", "interpreter"),
         COMPILER("Compiler (-O0)", "compiler"),
         OPTIMIZER("Optimizer (-O1)", "optimizer"),
-        MIR("SSA MIR (-O2)", "mir"),
+        OPTIMIZER_O2("Optimizer (-O2)", "optimizerO2"),
         FRONT_END("Shared Front-End (analysis)", "frontEnd"),
         SHARED_RUNTIME("Shared Runtime (combined)", "sharedRuntime"),
         EXCLUDED("Excluded", "excluded");
@@ -57,7 +57,7 @@ public final class BatestCoverageReporter {
                     Scope.INTERPRETER,
                     Scope.COMPILER,
                     Scope.OPTIMIZER,
-                    Scope.MIR,
+                    Scope.OPTIMIZER_O2,
                     Scope.FRONT_END,
                     Scope.SHARED_RUNTIME);
 
@@ -101,14 +101,13 @@ public final class BatestCoverageReporter {
                     "org.babblelang.compiler.FileModuleCompiler",
                     "org.babblelang.compiler.Debugging",
                     "org.babblelang.ir.CliIrDumper",
+                    "org.babblelang.ir.IrCanonicalSupport",
                     "org.babblelang.ir.IrObserver",
                     "org.babblelang.ir.IrSnapshot",
                     "org.babblelang.ir.IrTarget",
                     "org.babblelang.ir.IrTier",
                     "org.babblelang.ir.hir.HirPrinter",
                     "org.babblelang.ir.hir.HirCanonicalPrinter",
-                    "org.babblelang.ir.mir.MirPrinter",
-                    "org.babblelang.ir.mir.MirCanonicalPrinter",
                     "org.babblelang.runtime.Launcher",
                     "org.babblelang.runtime.ProgramIndex",
                     "org.babblelang.engine.FileModuleSource",
@@ -376,10 +375,10 @@ public final class BatestCoverageReporter {
                 Path.of(
                         System.getProperty(
                                 "batest.jacocoOpt", "target/site/jacoco-opt/jacoco.xml"));
-        Path xmlMir =
+        Path xmlOptO2 =
                 Path.of(
                         System.getProperty(
-                                "batest.jacocoMir", "target/site/jacoco-mir/jacoco.xml"));
+                                "batest.jacocoOptO2", "target/site/jacoco-opt-O2/jacoco.xml"));
         Path sourceRoot = Path.of(System.getProperty("batest.sourceRoot", "src/main/java"));
         String filter = System.getProperty("batest.filter", "").trim();
         String inspect = System.getProperty("batest.inspect", "").trim();
@@ -404,7 +403,7 @@ public final class BatestCoverageReporter {
                 xmlCompile,
                 xmlCompileO0,
                 xmlOpt,
-                xmlMir,
+                xmlOptO2,
                 sourceRoot,
                 filter,
                 inspect,
@@ -850,7 +849,7 @@ public final class BatestCoverageReporter {
         }
 
         for (FileCoverage fc : mirCov.values()) {
-            if (fc.scope == Scope.MIR) {
+            if (fc.scope == Scope.OPTIMIZER_O2) {
                 scopeMirLines[0] = scopeMirLines[0].plus(fc.lines);
                 scopeMirBranches[0] = scopeMirBranches[0].plus(fc.branches);
             }
@@ -924,7 +923,7 @@ public final class BatestCoverageReporter {
             }
         }
         for (FileCoverage fc : mirCov.values()) {
-            if (fc.scope == Scope.MIR) {
+            if (fc.scope == Scope.OPTIMIZER_O2) {
                 canonicalClasses.add(fc);
             }
         }
@@ -943,8 +942,8 @@ public final class BatestCoverageReporter {
         scopeBranches.put(Scope.COMPILER, scopeCompileBranches[0]);
         scopeLines.put(Scope.OPTIMIZER, scopeOptLines[0]);
         scopeBranches.put(Scope.OPTIMIZER, scopeOptBranches[0]);
-        scopeLines.put(Scope.MIR, scopeMirLines[0]);
-        scopeBranches.put(Scope.MIR, scopeMirBranches[0]);
+        scopeLines.put(Scope.OPTIMIZER_O2, scopeMirLines[0]);
+        scopeBranches.put(Scope.OPTIMIZER_O2, scopeMirBranches[0]);
         scopeLines.put(Scope.FRONT_END, scopeFrontLines[0]);
         scopeBranches.put(Scope.FRONT_END, scopeFrontBranches[0]);
         scopeLines.put(Scope.SHARED_RUNTIME, sharedUnionLines[0]);
@@ -1212,6 +1211,14 @@ public final class BatestCoverageReporter {
         return union;
     }
 
+    private static final Set<String> O2_OPTIMIZER_CLASSES =
+            Set.of(
+                    "org.babblelang.opt.hir.HirSccpPass",
+                    "org.babblelang.opt.hir.HirAeGraphPass",
+                    "org.babblelang.opt.hir.AeGraphState",
+                    "org.babblelang.opt.hir.AeGraphBuilder",
+                    "org.babblelang.opt.hir.AeGraphExtractor");
+
     static Scope scopeOf(String qualifiedClass) {
         if (qualifiedClass.startsWith("org.babblelang.parser.")
                 || qualifiedClass.startsWith("org.babblelang.format.")
@@ -1224,13 +1231,15 @@ public final class BatestCoverageReporter {
         if (qualifiedClass.startsWith("org.babblelang.engine.impl.")) {
             return Scope.INTERPRETER;
         }
-        if (qualifiedClass.startsWith("org.babblelang.ir.mir.")
-                || qualifiedClass.startsWith("org.babblelang.opt.mir.")
-                || qualifiedClass.startsWith("org.babblelang.compiler.Mir")) {
-            return Scope.MIR;
+        int dollar = qualifiedClass.indexOf('$');
+        String topClass = dollar >= 0 ? qualifiedClass.substring(0, dollar) : qualifiedClass;
+        if (O2_OPTIMIZER_CLASSES.contains(topClass)) {
+            return Scope.OPTIMIZER_O2;
         }
         if (qualifiedClass.startsWith("org.babblelang.opt.")
-                || qualifiedClass.startsWith("org.babblelang.ir.egraph.")) {
+                || qualifiedClass.startsWith("org.babblelang.ir.egraph.")
+                || "org.babblelang.ir.hir.IrEffect".equals(topClass)
+                || "org.babblelang.compiler.HirSlotAllocator".equals(topClass)) {
             return Scope.OPTIMIZER;
         }
         if (qualifiedClass.startsWith("org.babblelang.compiler.")
@@ -1565,9 +1574,9 @@ public final class BatestCoverageReporter {
         if (hasMirCov) {
             printScopeRow(
                     out,
-                    Scope.MIR.label,
-                    scopeLines.get(Scope.MIR),
-                    scopeBranches.get(Scope.MIR),
+                    Scope.OPTIMIZER_O2.label,
+                    scopeLines.get(Scope.OPTIMIZER_O2),
+                    scopeBranches.get(Scope.OPTIMIZER_O2),
                     enforceGate,
                     minLinePct,
                     minBranchPct);
@@ -2176,7 +2185,7 @@ public final class BatestCoverageReporter {
         sb.append("    \"compiler\": ").append(scopeJson(compL, compB)).append(",\n");
         sb.append("    \"optimizer\": ").append(scopeJson(optL, optB)).append(",\n");
         if (hasMirCov) {
-            sb.append("    \"mir\": ").append(scopeJson(mirL, mirB)).append(",\n");
+            sb.append("    \"optimizerO2\": ").append(scopeJson(mirL, mirB)).append(",\n");
         }
         sb.append("    \"frontEnd\": ").append(scopeJson(frontL, frontB)).append(",\n");
         sb.append("    \"sharedRuntimeInterpret\": ")

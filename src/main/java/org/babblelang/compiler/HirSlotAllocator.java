@@ -18,7 +18,7 @@ import org.babblelang.opt.HirRewriter;
 
 /**
  * JVM-category-segregated local-slot allocator over structured {@link HirFunction}s ({@code
- * BIP039-D6}, {@code BIP039-P5}).
+ * BIP039-D6}, {@code BIP039-I5}).
  *
  * <p>Consumes {@link HirLiveness#analyze(HirFunction)} to build an exact interference graph over
  * non-pinned frame locals and greedily colors non-interfering locals of the same JVM verification

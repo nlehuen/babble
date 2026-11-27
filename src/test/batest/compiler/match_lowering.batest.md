@@ -38,52 +38,15 @@ fn classify (n:int) -> int {nothrow}
     (else 0:int))
 ```
 
-```mir
-;; mir -O2 fn=classify stage=before
-fn classify(v0: int) -> int:
-  bb0:
-    switch v0 [0 -> bb5, 1 -> bb4, 2 -> bb3, 3 -> bb2] default -> bb1
-  bb1:
-    v1: int = const 0
-    br bb6(v1)
-  bb2:
-    v2: int = const 40
-    br bb6(v2)
-  bb3:
-    v3: int = const 30
-    br bb6(v3)
-  bb4:
-    v4: int = const 20
-    br bb6(v4)
-  bb5:
-    v5: int = const 10
-    br bb6(v5)
-  bb6(v6: int):
-    ret v6
-```
-
-```mir
-;; mir -O2 fn=classify
-fn classify(v0: int) -> int:
-  bb0:
-    switch v0 [0 -> bb5, 1 -> bb4, 2 -> bb3, 3 -> bb2] default -> bb1
-  bb1:
-    v1: int = const 0
-    br bb6(v1)
-  bb2:
-    v2: int = const 40
-    br bb6(v2)
-  bb3:
-    v3: int = const 30
-    br bb6(v3)
-  bb4:
-    v4: int = const 20
-    br bb6(v4)
-  bb5:
-    v5: int = const 10
-    br bb6(v5)
-  bb6(v6: int):
-    ret v6
+```hir
+;; hir -O2 fn=classify
+fn classify (n:int) -> int {nothrow}
+  (match var(n)
+    (case 0:int 10:int)
+    (case 1:int 20:int)
+    (case 2:int 30:int)
+    (case 3:int 40:int)
+    (else 0:int))
 ```
 
 ```wat
@@ -118,20 +81,10 @@ fn pick () -> int {nothrow}
   42:int
 ```
 
-```mir
-;; mir -O2 fn=pick stage=before
-fn pick() -> int:
-  bb0:
-    v0: int = const 42
-    ret v0
-```
-
-```mir
-;; mir -O2 fn=pick
-fn pick() -> int:
-  bb0:
-    v0: int = const 42
-    ret v0
+```hir
+;; hir -O2 fn=pick
+fn pick () -> int {nothrow}
+  42:int
 ```
 
 ## Constant guards drop true and prune false arms at -O1
@@ -163,38 +116,12 @@ fn guarded (n:int) -> int {nothrow}
     (else 0:int))
 ```
 
-```mir
-;; mir -O2 fn=guarded stage=before
-fn guarded(v0: int) -> int:
-  bb0:
-    v1: int = const 2
-    v2: bool = eq v0, v1 {pure}
-    br_if v2, bb2, bb1
-  bb1:
-    v3: int = const 0
-    br bb3(v3)
-  bb2:
-    v4: int = const 20
-    br bb3(v4)
-  bb3(v5: int):
-    ret v5
-```
-
-```mir
-;; mir -O2 fn=guarded
-fn guarded(v0: int) -> int:
-  bb0:
-    v1: int = const 2
-    v2: bool = eq v0, v1 {pure}
-    br_if v2, bb2, bb1
-  bb1:
-    v3: int = const 0
-    br bb3(v3)
-  bb2:
-    v4: int = const 20
-    br bb3(v4)
-  bb3(v5: int):
-    ret v5
+```hir
+;; hir -O2 fn=guarded
+fn guarded (n:int) -> int {nothrow}
+  (match var(n)
+    (case 2:int 20:int)
+    (else 0:int))
 ```
 
 ## Inlined match on fresh record SROA eliminates allocation
@@ -227,24 +154,12 @@ fn circleArea (r:int) -> int {nothrow unique}
       (*:int (*:int var(r#2) var(r#2)) 3:int)))
 ```
 
-```mir
-;; mir -O2 fn=circleArea stage=before
-fn circleArea(v0: int) -> int:
-  bb0:
-    v1: int = mul v0, v0 {pure}
-    v2: int = const 3
-    v3: int = mul v1, v2 {pure}
-    ret v3
-```
-
-```mir
-;; mir -O2 fn=circleArea
-fn circleArea(v0: int) -> int:
-  bb0:
-    v1: int = mul v0, v0 {pure}
-    v2: int = const 3
-    v3: int = mul v1, v2 {pure}
-    ret v3
+```hir
+;; hir -O2 fn=circleArea
+fn circleArea (r:int) -> int {nothrow unique}
+  (block
+    (def r#2 var(r#1))
+    (*:int (*:int var(r#1) var(r#1)) 3:int))
 ```
 
 ## Direct match on RecordNew folds without allocation
@@ -274,18 +189,11 @@ fn sumPt (a:int, b:int) -> int {nothrow unique}
     (+:int var(x) var(y)))
 ```
 
-```mir
-;; mir -O2 fn=sumPt stage=before
-fn sumPt(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = add v0, v1 {pure}
-    ret v2
-```
-
-```mir
-;; mir -O2 fn=sumPt
-fn sumPt(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = add v0, v1 {pure}
-    ret v2
+```hir
+;; hir -O2 fn=sumPt
+fn sumPt (a:int, b:int) -> int {nothrow unique}
+  (block
+    (def x var(a))
+    (def y var(b))
+    (+:int var(a) var(b)))
 ```

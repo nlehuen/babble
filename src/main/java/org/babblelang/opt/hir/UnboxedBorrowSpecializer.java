@@ -54,7 +54,7 @@ final class UnboxedBorrowSpecializer {
                     || fn.jvmMethodName().endsWith("$unboxed")) {
                 continue;
             }
-            if (containsSelfRecursion(fn.body())) {
+            if (containsSelfRecursion(fn.body()) || hasCapturedLocals(fn, module)) {
                 continue;
             }
             RecordLayout[] plan = analyzeBorrowParams(fn, localLayouts);
@@ -116,6 +116,56 @@ final class UnboxedBorrowSpecializer {
             scanSelfRecursion(s, found);
         }
         return found[0];
+    }
+
+    /**
+     * Cloning a function into a new owner with remapped variable IDs would break any nested closure
+     * or class expression that still captures the original function's {@link HirVar} IDs.
+     */
+    private static boolean hasCapturedLocals(HirFunction fn, HirModule module) {
+        for (HirParam p : fn.params()) {
+            if (p.var() != null && (p.var().isCaptured() || p.var().cell())) {
+                return true;
+            }
+        }
+        for (HirVar v : fn.declaredVars()) {
+            if (v.isCaptured() || v.cell()) {
+                return true;
+            }
+        }
+        boolean[] found = {false};
+        for (HirExpr s : fn.body()) {
+            scanNestedCaptures(s, module, found);
+            if (found[0]) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void scanNestedCaptures(HirExpr expr, HirModule module, boolean[] found) {
+        if (expr == null || found[0]) {
+            return;
+        }
+        if (expr instanceof HirExpr.FunctionRef fr) {
+            HirFunction inner = module.function(fr.functionId());
+            if (inner != null && !inner.capturedVars().isEmpty()) {
+                found[0] = true;
+                return;
+            }
+        } else if (expr instanceof HirExpr.ClassExpr ce) {
+            var cls = module.classes().get(ce.classId());
+            if (cls != null && !cls.capturedVars().isEmpty()) {
+                found[0] = true;
+                return;
+            }
+        }
+        HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    scanNestedCaptures(child, module, found);
+                    return child;
+                });
     }
 
     private static void scanSelfRecursion(HirExpr expr, boolean[] found) {

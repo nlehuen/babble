@@ -27,18 +27,13 @@ fn make () -> obj {nothrow unique}
   (fn-ref <anon#0>)
 ```
 
-```mir
-;; mir -O2 fn=make stage=before,final
-fn make() -> any:
-  bb0:
-    v0: byte = const 1
-    slot_init b, v0 {write:shared}
-    v1: short = const 10
-    slot_init s, v1 {write:shared}
-    v2: char = const 'a'
-    slot_init c, v2 {write:shared}
-    v3: any = opaque.FunctionRef(<anon>) {read:shared}
-    ret v3
+```hir
+;; hir -O2 fn=make
+fn make () -> obj {nothrow unique}
+  (def b 1:byte)
+  (def s 10:short)
+  (def c 'a')
+  (fn-ref <anon#0>)
 ```
 
 ## Captured mutable LongCell and FloatCell
@@ -63,16 +58,12 @@ fn make () -> obj {nothrow unique}
   (fn-ref <anon#0>)
 ```
 
-```mir
-;; mir -O2 fn=make stage=before,final
-fn make() -> any:
-  bb0:
-    v0: long = const 100L
-    slot_init l, v0 {write:shared}
-    v1: float = const 1.5f
-    slot_init f, v1 {write:shared}
-    v2: any = opaque.FunctionRef(<anon>) {read:shared}
-    ret v2
+```hir
+;; hir -O2 fn=make
+fn make () -> obj {nothrow unique}
+  (def l 100:long)
+  (def f 1.5:float)
+  (fn-ref <anon#0>)
 ```
 
 ## Error : Name used before definition : x

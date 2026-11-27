@@ -17,7 +17,7 @@ import org.babblelang.opt.PassContext;
 
 /**
  * {@code O11} — Narrowing-safe Pure Predicate Reordering over structured {@link HirExpr.Logic}
- * chains and nested pure {@link HirExpr.If} guards ({@code BIP039-D6}, {@code BIP039-P2}).
+ * chains and nested pure {@link HirExpr.If} guards ({@code BIP039-D6}, {@code BIP039-I2}).
  *
  * <p>Flattens same-operator {@code and}/{@code or} chains into individual predicate atoms and
  * stably moves cheaper {@code pure nothrow @TERMINATING deterministic} atoms ahead of more

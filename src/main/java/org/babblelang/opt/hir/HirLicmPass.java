@@ -25,7 +25,7 @@ import org.babblelang.opt.PassContext;
 
 /**
  * {@code O6} — Full Loop-Invariant Code Motion over {@code while} (both header condition and body)
- * and {@code for} loops inside frame-scoped functions ({@code BIP014-I2}, {@code BIP039-P2}).
+ * and {@code for} loops inside frame-scoped functions ({@code BIP014-I2}, {@code BIP039-I2}).
  *
  * <p>Uses {@link HirEffectAnalysis} and {@link IrEffect} to hoist:
  *

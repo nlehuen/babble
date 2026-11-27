@@ -76,43 +76,31 @@ fn run (b:byte, sh:short, s:obj) -> int {io}
   (+:int var(r1) var(r2))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: byte, v1: short, v2: any) -> int:
-  bb0:
-    v3: any = name_read addSh {pure}
-    v4: short = convert.short v0
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v5: any = name_read short {pure}
-    v6: any = name_read parse {pure}
-    v7: int = call parse(v2) {impure}
-    v8: short = opaque.DynamicCall(v5, v7) {impure}
-    br bb4(v8)
-  bb2(v9: any) [handler]:
-    br bb3
-  bb3:
-    v10: any = name_read short {pure}
-    v11: int = const 1
-    v12: short = opaque.DynamicCall(v10, v11) {impure}
-    br bb4(v12)
-  bb4(v13: short):
-    v14: int = call addSh(v4, v13) {impure}
-    v15: int = convert.int v1
-    br bb5
-  bb5 [unwind: BabbleException -> bb6]:
-    v16: any = name_read parse {pure}
-    v17: int = call parse(v2) {impure}
-    br bb8(v17)
-  bb6(v18: any) [handler]:
-    br bb7
-  bb7:
-    v19: int = const 1
-    br bb8(v19)
-  bb8(v20: int):
-    v21: int = add v15, v20 {pure}
-    v22: int = add v14, v21 {pure}
-    ret v22
+```hir
+;; hir -O2 fn=run
+fn run (b:byte, sh:short, s:obj) -> int {io}
+  (def r1
+    (block
+      (def $try0 name(addSh))
+      (def $try1 (widen[short] var(b)))
+      (def $try2
+        (try
+          (block
+            (call name(short) (call-fn parse var(s))))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            (call name(short) 1:int))))
+      (call-fn addSh var($try1) var($try2))))
+  (def r2
+    (block
+      (def $try3 (convert[int] var(sh)))
+      (def $try4
+        (try
+          (block
+            (call-fn parse var(s)))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            1:int)))
+      (+:int var($try3) var($try4))))
+  (+:int var(r1) var(r2))
 ```
 
 ## Effective widening rank 3 (int->long) during try spilling
@@ -153,26 +141,18 @@ fn run (n:int, s:obj) -> long {io}
     (+:long var($try0) var($try1)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int, v1: any) -> long:
-  bb0:
-    v2: long = convert.long v0
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v3: any = name_read long {pure}
-    v4: any = name_read parse {pure}
-    v5: int = call parse(v1) {impure}
-    v6: long = opaque.DynamicCall(v3, v5) {impure}
-    br bb4(v6)
-  bb2(v7: any) [handler]:
-    br bb3
-  bb3:
-    v8: long = const 1L
-    br bb4(v8)
-  bb4(v9: long):
-    v10: long = add v2, v9 {pure}
-    ret v10
+```hir
+;; hir -O2 fn=run
+fn run (n:int, s:obj) -> long {io}
+  (block
+    (def $try0 (convert[long] var(n)))
+    (def $try1
+      (try
+        (block
+          (call name(long) (call-fn parse var(s))))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          1:long)))
+    (+:long var($try0) var($try1)))
 ```
 
 ## Effective widening ranks 4..5 (int->float, int->double) during try spilling
@@ -240,44 +220,30 @@ fn run (n:int, s:obj) -> double {io}
   (+:double (call name(double) var(r4)) var(r5))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int, v1: any) -> double:
-  bb0:
-    v2: float = convert.float v0
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v3: any = name_read float {pure}
-    v4: any = name_read parse {pure}
-    v5: int = call parse(v1) {impure}
-    v6: float = opaque.DynamicCall(v3, v5) {impure}
-    br bb4(v6)
-  bb2(v7: any) [handler]:
-    br bb3
-  bb3:
-    v8: float = const 1.0f
-    br bb4(v8)
-  bb4(v9: float):
-    v10: float = add v2, v9 {pure}
-    v11: double = convert.double v0
-    br bb5
-  bb5 [unwind: BabbleException -> bb6]:
-    v12: any = name_read double {pure}
-    v13: any = name_read parse {pure}
-    v14: int = call parse(v1) {impure}
-    v15: double = opaque.DynamicCall(v12, v14) {impure}
-    br bb8(v15)
-  bb6(v16: any) [handler]:
-    br bb7
-  bb7:
-    v17: double = const 1.0
-    br bb8(v17)
-  bb8(v18: double):
-    v19: double = add v11, v18 {pure}
-    v20: any = name_read double {pure}
-    v21: double = opaque.DynamicCall(v20, v10) {impure}
-    v22: double = add v21, v19 {pure}
-    ret v22
+```hir
+;; hir -O2 fn=run
+fn run (n:int, s:obj) -> double {io}
+  (def r4
+    (block
+      (def $try0 (convert[float] var(n)))
+      (def $try1
+        (try
+          (block
+            (call name(float) (call-fn parse var(s))))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            1.0:float)))
+      (+:float var($try0) var($try1))))
+  (def r5
+    (block
+      (def $try2 (convert[double] var(n)))
+      (def $try3
+        (try
+          (block
+            (call name(double) (call-fn parse var(s))))
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            1.0:double)))
+      (+:double var($try2) var($try3))))
+  (+:double (call name(double) var(r4)) var(r5))
 ```
 
 ## Control-flow containsTry : If (cond, then, else)
@@ -340,118 +306,27 @@ fn run (s:obj, f:bool) -> int {io}
   (+:int var(i1) var(i2))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any, v1: bool) -> int:
-  bb0:
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v2: any = name_read parse {pure}
-    v3: int = call parse(v0) {impure}
-    v4: int = const 0
-    v5: bool = gt v3, v4 {pure}
-    br bb4(v5)
-  bb2(v6: any) [handler]:
-    br bb3
-  bb3:
-    v7: bool = const false
-    br bb4(v7)
-  bb4(v8: bool):
-    br_if v8, bb6, bb5
-  bb5:
-    v9: int = const 2
-    br bb7(v9)
-  bb6:
-    v10: int = const 1
-    br bb7(v10)
-  bb7(v11: int):
-    br_if v1, bb13, bb8
-  bb8:
-    br bb9
-  bb9 [unwind: BabbleException -> bb10]:
-    v12: any = name_read parse {pure}
-    v13: int = call parse(v0) {impure}
-    v14: int = const 1
-    v15: int = add v13, v14 {pure}
-    br bb12(v15)
-  bb10(v16: any) [handler]:
-    br bb11
-  bb11:
-    v17: int = const 4
-    br bb12(v17)
-  bb12(v18: int):
-    br bb18(v18)
-  bb13:
-    br bb14
-  bb14 [unwind: BabbleException -> bb15]:
-    v19: any = name_read parse {pure}
-    v20: int = call parse(v0) {impure}
-    br bb17(v20)
-  bb15(v21: any) [handler]:
-    br bb16
-  bb16:
-    v22: int = const 3
-    br bb17(v22)
-  bb17(v23: int):
-    br bb18(v23)
-  bb18(v24: int):
-    v25: int = add v11, v24 {pure}
-    ret v25
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any, v1: bool) -> int:
-  bb0:
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v2: any = name_read parse {pure}
-    v3: int = call parse(v0) {impure}
-    v4: int = const 0
-    v5: bool = gt v3, v4 {pure}
-    br bb4(v5)
-  bb2(v6: any) [handler]:
-    br bb3
-  bb3:
-    v7: bool = const false
-    br bb4(v7)
-  bb4(v8: bool):
-    br_if v8, bb6, bb5
-  bb5:
-    v9: int = const 2
-    br bb7(v9)
-  bb6:
-    v10: int = const 1
-    br bb7(v10)
-  bb7(v11: int):
-    br_if v1, bb12, bb8
-  bb8 [unwind: BabbleException -> bb9]:
-    v12: any = name_read parse {pure}
-    v13: int = call parse(v0) {impure}
-    v14: int = const 1
-    v15: int = add v13, v14 {pure}
-    br bb11(v15)
-  bb9(v16: any) [handler]:
-    br bb10
-  bb10:
-    v17: int = const 4
-    br bb11(v17)
-  bb11(v18: int):
-    br bb16(v18)
-  bb12 [unwind: BabbleException -> bb13]:
-    v19: any = name_read parse {pure}
-    v20: int = call parse(v0) {impure}
-    br bb15(v20)
-  bb13(v21: any) [handler]:
-    br bb14
-  bb14:
-    v22: int = const 3
-    br bb15(v22)
-  bb15(v23: int):
-    br bb16(v23)
-  bb16(v24: int):
-    v25: int = add v11, v24 {pure}
-    ret v25
+```hir
+;; hir -O2 fn=run
+fn run (s:obj, f:bool) -> int {io}
+  (def i1 (if (try
+        (block
+          (>:bool (call-fn parse var(s)) 0:int))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          false:bool)) 1:int 2:int))
+  (def i2
+    (if var(f)
+      (try
+        (block
+          (call-fn parse var(s)))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          3:int))
+      (try
+        (block
+          (+:int (call-fn parse var(s)) 1:int))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          4:int))))
+  (+:int var(i1) var(i2))
 ```
 
 ## Control-flow containsTry : While (cond, body)
@@ -508,103 +383,25 @@ fn run (s:obj) -> int {io}
   (+:int var(w) var(wb))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any) -> int:
-  bb0:
-    v1: int = const 0
-    v2: any = const null
-    br bb1(v2, v1)
-  bb1(v3: any, v4: int):
-    br bb2
-  bb2 [unwind: BabbleException -> bb3]:
-    v5: any = name_read parse {pure}
-    v6: int = call parse(v0) {impure}
-    v7: bool = gt v6, v4 {pure}
-    br bb5(v7)
-  bb3(v8: any) [handler]:
-    br bb4
-  bb4:
-    v9: bool = const false
-    br bb5(v9)
-  bb5(v10: bool):
-    br_if v10, bb14, bb6
-  bb6:
-    v11: int = const 0
-    v12: any = const null
-    br bb7(v12, v11)
-  bb7(v13: any, v14: int):
-    v15: int = const 1
-    v16: bool = lt v14, v15 {pure}
-    br_if v16, bb9, bb8
-  bb8:
-    v17: int = add v4, v14 {pure}
-    ret v17
-  bb9:
-    br bb10
-  bb10 [unwind: BabbleException -> bb11]:
-    v18: any = name_read parse {pure}
-    v19: int = call parse(v0) {impure}
-    br bb13(v19)
-  bb11(v20: any) [handler]:
-    br bb12
-  bb12:
-    v21: int = const 1
-    br bb13(v21)
-  bb13(v22: int):
-    v23: int = add v14, v22 {pure}
-    v24: any = convert.any v23
-    br bb7(v24, v23)
-  bb14:
-    v25: int = const 1
-    v26: int = add v4, v25 {pure}
-    v27: any = convert.any v26
-    br bb1(v27, v26)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any) -> int:
-  bb0:
-    v1: int = const 0
-    v2: any = name_read parse {pure}
-    br bb1(v1)
-  bb1(v3: int):
-    br bb2
-  bb2 [unwind: BabbleException -> bb3]:
-    v4: int = call parse(v0) {impure}
-    v5: bool = gt v4, v3 {pure}
-    br bb5(v5)
-  bb3(v6: any) [handler]:
-    br bb4
-  bb4:
-    v7: bool = const false
-    br bb5(v7)
-  bb5(v8: bool):
-    br_if v8, bb13, bb6
-  bb6:
-    br bb7(v1)
-  bb7(v9: int):
-    v10: int = const 1
-    v11: bool = lt v9, v10 {pure}
-    br_if v11, bb9, bb8
-  bb8:
-    v12: int = add v3, v9 {pure}
-    ret v12
-  bb9 [unwind: BabbleException -> bb10]:
-    v13: int = call parse(v0) {impure}
-    br bb12(v13)
-  bb10(v14: any) [handler]:
-    br bb11
-  bb11:
-    br bb12(v10)
-  bb12(v15: int):
-    v16: int = add v9, v15 {pure}
-    br bb7(v16)
-  bb13:
-    v17: int = const 1
-    v18: int = add v3, v17 {pure}
-    br bb1(v18)
+```hir
+;; hir -O2 fn=run
+fn run (s:obj) -> int {io}
+  (def w 0:int)
+  (while (try
+      (block
+        (>:bool (call-fn parse var(s)) var(w)))
+      (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+        false:bool))
+    (set w += 1:int))
+  (def wb 0:int)
+  (while (<:bool var(wb) 1:int)
+    (set wb +=
+      (try
+        (block
+          (call-fn parse var(s)))
+        (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+          1:int))))
+  (+:int var(w) var(wb))
 ```
 
 ## Control-flow containsTry : For (iterable, body) and RecordNew classRef
@@ -660,124 +457,32 @@ fn run (s:obj, f:bool) -> int {io}
   (+:int (+:int var(fs) var($sr_p_0)) var($sr_p_1))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any, v1: bool) -> int:
-  bb0:
-    v2: int = const 0
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v3: any = name_read fail {pure}
-    v4: int = const 1
-    v5: int = const 2
-    v6: any = opaque.CoreCollectionCall(list, v4, v5) {impure}
-    v7: any = opaque.DynamicCall(v3, v1, v6) {impure}
-    br bb4(v7)
-  bb2(v8: any) [handler]:
-    br bb3
-  bb3:
-    v9: int = const 3
-    v10: any = opaque.CoreCollectionCall(list, v9) {impure}
-    br bb4(v10)
-  bb4(v11: any):
-    v12: any = for_init.java_iterable v11
-    v13: any = const null
-    br bb5(v13, v2)
-  bb5(v14: any, v15: int):
-    v16: bool = for_has_next v12
-    br_if v16, bb11, bb6
-  bb6:
-    br bb7
-  bb7 [unwind: BabbleException -> bb8]:
-    v17: any = name_read fail {pure}
-    v18: any = name_read Pair {pure}
-    v19: any = opaque.DynamicCall(v17, v1, v18) {impure}
-    br bb10(v19)
-  bb8(v20: any) [handler]:
-    br bb9
-  bb9:
-    v21: any = name_read Pair {pure}
-    br bb10(v21)
-  bb10(v22: any):
-    v23: int = const 1
-    v24: int = const 2
-    v25: int = add v15, v23 {pure}
-    v26: int = add v25, v24 {pure}
-    ret v26
-  bb11:
-    v27: any = for_next v12
-    v28: any = checkcast v27 <int|int|>
-    v29: int = convert.int v28
-    br bb12
-  bb12 [unwind: BabbleException -> bb13]:
-    v30: any = name_read parse {pure}
-    v31: int = call parse(v0) {impure}
-    br bb15(v31)
-  bb13(v32: any) [handler]:
-    br bb14
-  bb14:
-    v33: int = const 0
-    br bb15(v33)
-  bb15(v34: int):
-    v35: int = add v29, v34 {pure}
-    v36: int = add v15, v35 {pure}
-    v37: any = convert.any v36
-    br bb5(v37, v36)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any, v1: bool) -> int:
-  bb0:
-    v2: int = const 0
-    br bb1
-  bb1 [unwind: BabbleException -> bb2]:
-    v3: any = name_read fail {pure}
-    v4: int = const 1
-    v5: int = const 2
-    v6: any = opaque.CoreCollectionCall(list, v4, v5) {impure}
-    v7: any = opaque.DynamicCall(v3, v1, v6) {impure}
-    br bb4(v7)
-  bb2(v8: any) [handler]:
-    br bb3
-  bb3:
-    v9: int = const 3
-    v10: any = opaque.CoreCollectionCall(list, v9) {impure}
-    br bb4(v10)
-  bb4(v11: any):
-    v12: any = for_init.java_iterable v11
-    v13: any = name_read parse {pure}
-    br bb5(v2)
-  bb5(v14: int):
-    v15: bool = for_has_next v12
-    br_if v15, bb9, bb6
-  bb6 [unwind: BabbleException -> bb7]:
-    v16: any = name_read fail {pure}
-    v17: any = name_read Pair {pure}
-    v18: any = opaque.DynamicCall(v16, v1, v17) {impure}
-    br bb8
-  bb7(v19: any) [handler]:
-    br bb8
-  bb8:
-    v20: int = const 1
-    v21: int = const 2
-    v22: int = add v14, v20 {pure}
-    v23: int = add v22, v21 {pure}
-    ret v23
-  bb9:
-    v24: any = for_next v12
-    v25: any = checkcast v24 <int|int|>
-    v26: int = convert.int v25
-    br bb10
-  bb10 [unwind: BabbleException -> bb11]:
-    v27: int = call parse(v0) {impure}
-    br bb13(v27)
-  bb11(v28: any) [handler]:
-    br bb12
-  bb12:
-    br bb13(v2)
-  bb13(v29: int):
-    v30: int = add v26, v29 {pure}
-    v31: int = add v14, v30 {pure}
-    br bb5(v31)
+```hir
+;; hir -O2 fn=run
+fn run (s:obj, f:bool) -> int {io}
+  (def fs 0:int)
+  (for e in (try
+      (block
+        (call name(fail) var(f) (core-new list 1:int 2:int)))
+      (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+        (core-new list 3:int)))
+    (block
+      (set fs +=
+        (block
+          (def $try0 var(e))
+          (def $try1
+            (try
+              (block
+                (call-fn parse var(s)))
+              (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+                0:int)))
+          (+:int var($try0) var($try1))))))
+  (block
+    (try
+      (block
+        (call name(fail) var(f) name(Pair)))
+      (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+        name(Pair)))
+    (def $sr_p_1 2:int))
+  (+:int var(fs) 3:int)
 ```

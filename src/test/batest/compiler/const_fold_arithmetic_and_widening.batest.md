@@ -37,12 +37,10 @@ fn f () -> bool {nothrow unique}
   true:bool
 ```
 
-```mir
-;; mir -O2 fn=f stage=before,final
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Case 2
@@ -68,52 +66,12 @@ fn f () -> bool {pure unique}
   (and (<:bool (call name(byte) 1:int) (call name(byte) 2:int)) (<:bool (call name(short) 1:int) (call name(short) 2:int)))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 1
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = name_read byte {pure}
-    v4: int = const 2
-    v5: byte = opaque.DynamicCall(v3, v4) {impure}
-    v6: bool = lt v2, v5 {pure}
-    v7: bool = const false
-    br_if v6, bb1, bb2(v7)
-  bb1:
-    v8: any = name_read short {pure}
-    v9: int = const 1
-    v10: short = opaque.DynamicCall(v8, v9) {impure}
-    v11: any = name_read short {pure}
-    v12: int = const 2
-    v13: short = opaque.DynamicCall(v11, v12) {impure}
-    v14: bool = lt v10, v13 {pure}
-    br bb2(v14)
-  bb2(v15: bool):
-    ret v15
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 1
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: int = const 2
-    v4: byte = opaque.DynamicCall(v0, v3) {impure}
-    v5: bool = lt v2, v4 {pure}
-    v6: bool = const false
-    br_if v5, bb1, bb2(v6)
-  bb1:
-    v7: any = name_read short {pure}
-    v8: short = opaque.DynamicCall(v7, v1) {impure}
-    v9: short = opaque.DynamicCall(v7, v3) {impure}
-    v10: bool = lt v8, v9 {pure}
-    br bb2(v10)
-  bb2(v11: bool):
-    ret v11
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {pure unique}
+  (block
+    (def $cse0 name(byte))
+    (and (<:bool (call var($cse0) 1:int) (call var($cse0) 2:int)) (<:bool (call name(short) 1:int) (call name(short) 2:int))))
 ```
 
 ## Case 3
@@ -138,12 +96,10 @@ fn f () -> bool {nothrow unique}
   true:bool
 ```
 
-```mir
-;; mir -O2 fn=f stage=before,final
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Case 4
@@ -171,12 +127,10 @@ fn f () -> bool {nothrow unique}
   true:bool
 ```
 
-```mir
-;; mir -O2 fn=f stage=before,final
-fn f() -> bool:
-  bb0:
-    v0: bool = const true
-    ret v0
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {nothrow unique}
+  true:bool
 ```
 
 ## Local constant propagation across primitive widening chains
@@ -216,32 +170,14 @@ fn f () -> bool {pure unique}
   (==:bool var(lConst) 3:long)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 3
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: short = convert.short v2
-    v4: int = convert.int v3
-    v5: long = convert.long v4
-    v6: long = const 3L
-    v7: bool = eq v5, v6 {pure}
-    ret v7
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 3
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: long = convert.long v2
-    v4: long = const 3L
-    v5: bool = eq v3, v4 {pure}
-    ret v5
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {pure unique}
+  (def bConst (call name(byte) 3:int))
+  (def sConst (widen[short] var(bConst)))
+  (def iConst (widen[int] var(sConst)))
+  (def lConst (widen[long] var(iConst)))
+  (==:bool var(lConst) 3:long)
 ```
 
 ## Direct literal widening conversions, string, and null constants
@@ -281,114 +217,12 @@ fn f () -> bool {pure unique}
   (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) true:bool) true:bool) true:bool) true:bool) (==:bool var(sl) 4:long)) (==:bool null null))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 3
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: short = convert.short v2
-    v4: any = name_read short {pure}
-    v5: int = const 4
-    v6: short = opaque.DynamicCall(v4, v5) {impure}
-    v7: long = convert.long v6
-    v8: any = name_read short {pure}
-    v9: int = const 3
-    v10: short = opaque.DynamicCall(v8, v9) {impure}
-    v11: bool = eq v3, v10 {pure}
-    v12: bool = const false
-    br_if v11, bb1, bb2(v12)
-  bb1:
-    v13: bool = const true
-    br bb2(v13)
-  bb2(v14: bool):
-    v15: bool = const false
-    br_if v14, bb3, bb4(v15)
-  bb3:
-    v16: bool = const true
-    br bb4(v16)
-  bb4(v17: bool):
-    v18: bool = const false
-    br_if v17, bb5, bb6(v18)
-  bb5:
-    v19: bool = const true
-    br bb6(v19)
-  bb6(v20: bool):
-    v21: bool = const false
-    br_if v20, bb7, bb8(v21)
-  bb7:
-    v22: bool = const true
-    br bb8(v22)
-  bb8(v23: bool):
-    v24: bool = const false
-    br_if v23, bb9, bb10(v24)
-  bb9:
-    v25: long = const 4L
-    v26: bool = eq v7, v25 {pure}
-    br bb10(v26)
-  bb10(v27: bool):
-    v28: bool = const false
-    br_if v27, bb11, bb12(v28)
-  bb11:
-    v29: any = const null
-    v30: any = const null
-    v31: any = eq v29, v30 {pure,throws}
-    v32: bool = not v31 {pure}
-    v33: bool = not v32 {pure}
-    br bb12(v33)
-  bb12(v34: bool):
-    ret v34
-```
-
-```mir
-;; mir -O2 fn=f
-fn f() -> bool:
-  bb0:
-    v0: any = name_read byte {pure}
-    v1: int = const 3
-    v2: byte = opaque.DynamicCall(v0, v1) {impure}
-    v3: short = convert.short v2
-    v4: any = name_read short {pure}
-    v5: int = const 4
-    v6: short = opaque.DynamicCall(v4, v5) {impure}
-    v7: long = convert.long v6
-    v8: short = opaque.DynamicCall(v4, v1) {impure}
-    v9: bool = eq v3, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb1, bb2(v10)
-  bb1:
-    v11: bool = const true
-    br bb2(v11)
-  bb2(v12: bool):
-    br_if v12, bb3, bb4(v10)
-  bb3:
-    v13: bool = const true
-    br bb4(v13)
-  bb4(v14: bool):
-    br_if v14, bb5, bb6(v10)
-  bb5:
-    v15: bool = const true
-    br bb6(v15)
-  bb6(v16: bool):
-    br_if v16, bb7, bb8(v10)
-  bb7:
-    v17: bool = const true
-    br bb8(v17)
-  bb8(v18: bool):
-    br_if v18, bb9, bb10(v10)
-  bb9:
-    v19: long = const 4L
-    v20: bool = eq v7, v19 {pure}
-    br bb10(v20)
-  bb10(v21: bool):
-    br_if v21, bb11, bb12(v10)
-  bb11:
-    v22: any = const null
-    v23: any = eq v22, v22 {pure,throws}
-    v24: bool = not v23 {pure}
-    v25: bool = not v24 {pure}
-    br bb12(v25)
-  bb12(v26: bool):
-    ret v26
+```hir
+;; hir -O2 fn=f
+fn f () -> bool {pure unique}
+  (def bs (widen[short] (call name(byte) 3:int)))
+  (block
+    (def $cse0 name(short))
+    (def sl (widen[long] (call var($cse0) 4:int)))
+    (and (and (and (and (and (and (==:bool var(bs) (call var($cse0) 3:int)) true:bool) true:bool) true:bool) true:bool) (==:bool var(sl) 4:long)) (==:bool null null)))
 ```

@@ -56,24 +56,10 @@ fn f (a:double) -> double {nothrow unique}
   (+:double (*:double var(a) var(a)) 1.0:double)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: double = mul v0, v0 {pure}
-    v2: double = const 1.0
-    v3: double = add v1, v2 {pure}
-    ret v3
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: double = mul v0, v0 {pure}
-    v2: double = const 1.0
-    v3: double = add v1, v2 {pure}
-    ret v3
+```hir
+;; hir -O2 fn=f
+fn f (a:double) -> double {nothrow unique}
+  (+:double (*:double var(a) var(a)) 1.0:double)
 ```
 
 ## Cross-module function call
@@ -100,24 +86,10 @@ fn f (a:double) -> double {nothrow unique}
   (+:double (*:double var(a) var(a)) 1.0:double)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: double = mul v0, v0 {pure}
-    v2: double = const 1.0
-    v3: double = add v1, v2 {pure}
-    ret v3
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: double = mul v0, v0 {pure}
-    v2: double = const 1.0
-    v3: double = add v1, v2 {pure}
-    ret v3
+```hir
+;; hir -O2 fn=f
+fn f (a:double) -> double {nothrow unique}
+  (+:double (*:double var(a) var(a)) 1.0:double)
 ```
 
 ## In-module call in a loop
@@ -164,46 +136,16 @@ fn f (a:double, n:int) -> double {nothrow unique}
   var(s)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v2)
-  bb1(v5: any, v6: int, v7: double):
-    v8: bool = lt v6, v1 {pure}
-    br_if v8, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v9: double = mul v0, v0 {pure}
-    v10: double = add v7, v9 {pure}
-    v11: int = const 1
-    v12: int = add v6, v11 {pure}
-    v13: any = convert.any v12
-    br bb1(v13, v12, v10)
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: double = mul v0, v0 {pure}
-    br bb1(v3, v2)
-  bb1(v5: int, v6: double):
-    v7: bool = lt v5, v1 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v6
-  bb3:
-    v8: double = add v6, v4 {pure}
-    v9: int = const 1
-    v10: int = add v5, v9 {pure}
-    br bb1(v10, v8)
+```hir
+;; hir -O2 fn=f
+fn f (a:double, n:int) -> double {nothrow unique}
+  (def s 0.0:double)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set s += (*:double var(a) var(a)))
+      (set i += 1:int)))
+  var(s)
 ```
 
 ## Cross-module call in a loop
@@ -250,46 +192,16 @@ fn f (a:double, n:int) -> double {nothrow unique}
   var(s)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v2)
-  bb1(v5: any, v6: int, v7: double):
-    v8: bool = lt v6, v1 {pure}
-    br_if v8, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v9: double = mul v0, v0 {pure}
-    v10: double = add v7, v9 {pure}
-    v11: int = const 1
-    v12: int = add v6, v11 {pure}
-    v13: any = convert.any v12
-    br bb1(v13, v12, v10)
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: double = mul v0, v0 {pure}
-    br bb1(v3, v2)
-  bb1(v5: int, v6: double):
-    v7: bool = lt v5, v1 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v6
-  bb3:
-    v8: double = add v6, v4 {pure}
-    v9: int = const 1
-    v10: int = add v5, v9 {pure}
-    br bb1(v10, v8)
+```hir
+;; hir -O2 fn=f
+fn f (a:double, n:int) -> double {nothrow unique}
+  (def s 0.0:double)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set s += (*:double var(a) var(a)))
+      (set i += 1:int)))
+  var(s)
 ```
 
 ## Non-inlineable cross-module call (direct INVOKESTATIC, pure export_get and CSE)
@@ -306,29 +218,14 @@ fn f (a:double) -> double {nothrow unique}
   (+:double (call-fn geo.ba#bigSq var(a)) (call-fn geo.ba#bigSq var(a)))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read geo {pure}
-    v2: any = export_get v1.bigSq {pure}
-    v3: double = call geo.ba#bigSq(v0) {pure}
-    v4: any = name_read geo {pure}
-    v5: any = export_get v4.bigSq {pure}
-    v6: double = call geo.ba#bigSq(v0) {pure}
-    v7: double = add v3, v6 {pure}
-    ret v7
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read geo {pure}
-    v2: any = export_get v1.bigSq {pure}
-    v3: double = call geo.ba#bigSq(v0) {pure}
-    v4: double = add v3, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=f
+fn f (a:double) -> double {nothrow unique}
+  (block
+    (def $cse0 name(geo))
+    (def $cse1 (export var($cse0).bigSq))
+    (def $cse2 (call-fn geo.ba#bigSq var(a)))
+    (+:double var($cse2) var($cse2)))
 ```
 
 ## Non-inlineable cross-module call in a loop (LICM hoisting)
@@ -371,50 +268,16 @@ fn f (a:double, n:int) -> double {nothrow unique}
   var(s)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v2)
-  bb1(v5: any, v6: int, v7: double):
-    v8: bool = lt v6, v1 {pure}
-    br_if v8, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v9: any = name_read geo {pure}
-    v10: any = export_get v9.bigSq {pure}
-    v11: double = call geo.ba#bigSq(v0) {pure}
-    v12: double = add v7, v11 {pure}
-    v13: int = const 1
-    v14: int = add v6, v13 {pure}
-    v15: any = convert.any v14
-    br bb1(v15, v14, v12)
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: any = name_read geo {pure}
-    v5: any = export_get v4.bigSq {pure}
-    v6: double = call geo.ba#bigSq(v0) {pure}
-    br bb1(v3, v2)
-  bb1(v7: int, v8: double):
-    v9: bool = lt v7, v1 {pure}
-    br_if v9, bb3, bb2
-  bb2:
-    ret v8
-  bb3:
-    v10: double = add v8, v6 {pure}
-    v11: int = const 1
-    v12: int = add v7, v11 {pure}
-    br bb1(v12, v10)
+```hir
+;; hir -O2 fn=f
+fn f (a:double, n:int) -> double {nothrow unique}
+  (def s 0.0:double)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set s += (call-fn geo.ba#bigSq var(a)))
+      (set i += 1:int)))
+  var(s)
 ```
 
 ## Cross-module alias and transitive re-export
@@ -438,31 +301,13 @@ fn f (a:double) -> double {nothrow unique}
   (+:double (+:double (*:double var(a) var(a)) (*:double var(a) var(a))) (call-fn geo.ba#bigSq var(a)))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: double = mul v0, v0 {pure}
-    v2: double = mul v0, v0 {pure}
-    v3: double = add v1, v2 {pure}
-    v4: any = name_read fac {pure}
-    v5: any = export_get v4.bigSq {pure}
-    v6: double = call geo.ba#bigSq(v0) {pure}
-    v7: double = add v3, v6 {pure}
-    ret v7
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: double = mul v0, v0 {pure}
-    v2: double = add v1, v1 {pure}
-    v3: any = name_read fac {pure}
-    v4: any = export_get v3.bigSq {pure}
-    v5: double = call geo.ba#bigSq(v0) {pure}
-    v6: double = add v2, v5 {pure}
-    ret v6
+```hir
+;; hir -O2 fn=f
+fn f (a:double) -> double {nothrow unique}
+  (block
+    (def $cse0 name(fac))
+    (def $cse1 (*:double var(a) var(a)))
+    (+:double (+:double var($cse1) var($cse1)) (call-fn geo.ba#bigSq var(a))))
 ```
 
 ## Dynamic-import module keeps export_get conservatively throwing
@@ -479,24 +324,10 @@ fn f (a:double) -> double {nothrow unique}
   (call-fn dyn_mod.ba#bigSq var(a))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read dyn {pure}
-    v2: any = export_get v1.bigSq {read:shared,throws}
-    v3: double = call dyn_mod.ba#bigSq(v0) {pure}
-    ret v3
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read dyn {pure}
-    v2: any = export_get v1.bigSq {read:shared,throws}
-    v3: double = call dyn_mod.ba#bigSq(v0) {pure}
-    ret v3
+```hir
+;; hir -O2 fn=f
+fn f (a:double) -> double {nothrow unique}
+  (call-fn dyn_mod.ba#bigSq var(a))
 ```
 
 ## In-module static method
@@ -528,26 +359,10 @@ fn f (k:double) -> double {nothrow unique}
   (get-this-field x)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read P {pure}
-    v2: any = opaque.DynamicSelect(v1.make) {impure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
-    v4: double = load_field v3.x {read:frozen,throws}
-    ret v4
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read P {pure}
-    v2: any = opaque.DynamicSelect(v1.make) {impure}
-    v3: any = opaque.DynamicCall(v2, v0) {impure}
-    v4: double = load_field v3.x {read:frozen,throws}
-    ret v4
+```hir
+;; hir -O2 fn=f
+fn f (k:double) -> double {nothrow unique}
+  (get-this-field x)
 ```
 
 ## Cross-module static method
@@ -574,26 +389,8 @@ fn f (k:double) -> double {nothrow unique}
   (get-this-field x)
 ```
 
-```mir
-;; mir -O2 fn=f stage=before
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read geo {pure}
-    v2: any = export_get v1.P {pure}
-    v3: any = opaque.DynamicSelect(v2.make) {impure}
-    v4: any = opaque.DynamicCall(v3, v0) {impure}
-    v5: double = load_field v4.x {read:frozen,throws}
-    ret v5
-```
-
-```mir
-;; mir -O2 fn=f stage=final
-fn f(v0: double) -> double:
-  bb0:
-    v1: any = name_read geo {pure}
-    v2: any = export_get v1.P {pure}
-    v3: any = opaque.DynamicSelect(v2.make) {impure}
-    v4: any = opaque.DynamicCall(v3, v0) {impure}
-    v5: double = load_field v4.x {read:frozen,throws}
-    ret v5
+```hir
+;; hir -O2 fn=f
+fn f (k:double) -> double {nothrow unique}
+  (get-this-field x)
 ```

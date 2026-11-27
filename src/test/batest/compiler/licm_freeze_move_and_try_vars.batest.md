@@ -52,65 +52,20 @@ fn run (n:int, mc:obj, fmc:obj) -> double {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: any, v2: any) -> double:
-  bb0:
-    v3: any = name_read java {pure}
-    v4: any = opaque.DynamicSelect(v3.lang) {impure}
-    v5: any = opaque.DynamicSelect(v4.Math) {impure}
-    v6: double = const 0.0
-    v7: int = const 0
-    v8: int = const 2
-    v9: int = add v0, v8 {pure}
-    v10: int = const 2
-    v11: int = add v0, v10 {pure}
-    v12: int = add v11, v9 {pure}
-    v13: any = const null
-    br bb1(v13, v7, v6)
-  bb1(v14: any, v15: int, v16: double):
-    v17: bool = lt v15, v0 {pure}
-    br_if v17, bb3, bb2
-  bb2:
-    ret v16
-  bb3:
-    v18: any = name_read double {pure}
-    v19: double = opaque.DynamicCall(v18, v12) {impure}
-    v20: double = const 0.0
-    v21: double = add v19, v20 {pure}
-    v22: double = add v16, v21 {pure}
-    v23: int = const 1
-    v24: int = add v15, v23 {pure}
-    v25: any = convert.any v24
-    br bb1(v25, v24, v22)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: any, v2: any) -> double:
-  bb0:
-    v3: any = name_read java {pure}
-    v4: any = opaque.DynamicSelect(v3.lang) {impure}
-    v5: any = opaque.DynamicSelect(v4.Math) {impure}
-    v6: double = const 0.0
-    v7: int = const 0
-    v8: int = const 2
-    v9: int = add v0, v8 {pure}
-    v10: int = add v9, v9 {pure}
-    v11: any = name_read double {pure}
-    br bb1(v7, v6)
-  bb1(v12: int, v13: double):
-    v14: bool = lt v12, v0 {pure}
-    br_if v14, bb3, bb2
-  bb2:
-    ret v13
-  bb3:
-    v15: double = opaque.DynamicCall(v11, v10) {impure}
-    v16: double = add v15, v6 {pure}
-    v17: double = add v13, v16 {pure}
-    v18: int = const 1
-    v19: int = add v12, v18 {pure}
-    br bb1(v19, v17)
+```hir
+;; hir -O2 fn=run
+fn run (n:int, mc:obj, fmc:obj) -> double {nothrow unique}
+  (select (select name(java).lang).Math)
+  (def a 0.0:double)
+  (def i 0:int)
+  (block
+    (def $cse0 (+:int var(n) 2:int))
+    (def $licm0 (+:int var($cse0) var($cse0)))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += (+:double (call name(double) var($licm0)) 0.0:double))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirLicmPass : InterfaceCall on mutable, frozen, and record receivers
@@ -152,55 +107,18 @@ fn run (n:int, vi:obj, fvi:obj, pr:obj) -> int {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: any, v2: any, v3: any) -> int:
-  bb0:
-    v4: int = const 0
-    v5: int = const 0
-    v6: int = call_iface v2.m(v0) {pure}
-    v7: any = const null
-    br bb1(v7, v5, v4)
-  bb1(v8: any, v9: int, v10: int):
-    v11: bool = lt v9, v0 {pure}
-    br_if v11, bb3, bb2
-  bb2:
-    ret v10
-  bb3:
-    v12: int = call_iface v1.m(v0) {pure!}
-    v13: int = add v12, v6 {pure}
-    v14: any = opaque.DynamicSelect(v3.m) {impure}
-    v15: int = opaque.DynamicCall(v14, v0) {impure}
-    v16: int = add v13, v15 {pure}
-    v17: int = add v10, v16 {pure}
-    v18: int = const 1
-    v19: int = add v9, v18 {pure}
-    v20: any = convert.any v19
-    br bb1(v20, v19, v17)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: any, v2: any, v3: any) -> int:
-  bb0:
-    v4: int = const 0
-    v5: int = call_iface v2.m(v0) {pure}
-    br bb1(v4, v4)
-  bb1(v6: int, v7: int):
-    v8: bool = lt v6, v0 {pure}
-    br_if v8, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v9: int = call_iface v1.m(v0) {pure!}
-    v10: int = add v9, v5 {pure}
-    v11: any = opaque.DynamicSelect(v3.m) {impure}
-    v12: int = opaque.DynamicCall(v11, v0) {impure}
-    v13: int = add v10, v12 {pure}
-    v14: int = add v7, v13 {pure}
-    v15: int = const 1
-    v16: int = add v6, v15 {pure}
-    br bb1(v16, v14)
+```hir
+;; hir -O2 fn=run
+fn run (n:int, vi:obj, fvi:obj, pr:obj) -> int {nothrow unique}
+  (def a 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (call-iface var(fvi).m var(n)))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += (+:int (+:int (call-iface var(vi).m var(n)) var($licm0)) (call (select var(pr).m) var(n))))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirLicmPass and HirPurity : Move, Freeze, and widened transparent Block inside while
@@ -255,73 +173,24 @@ fn run (n:int, x:int) -> double {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: int = const 1
-    v5: int = add v1, v4 {pure}
-    v6: double = convert.double v5
-    v7: any = const null
-    br bb1(v7, v3, v2)
-  bb1(v8: any, v9: int, v10: double):
-    v11: bool = lt v9, v0 {pure}
-    br_if v11, bb3, bb2
-  bb2:
-    ret v10
-  bb3:
-    v12: int = const 1
-    v13: any = opaque.CoreCollectionCall(list, v12) {impure}
-    v14: int = const 1
-    v15: int = const 2
-    v16: any = opaque.ArrayCreate(v14, v15) {impure}
-    v17: any = name_read double {pure}
-    v18: any = move v13
-    v19: int = call_java v18.size() {pure,throws}
-    v20: any = freeze v16
-    v21: int = array_len v20 {read:frozen,throws}
-    v22: int = add v19, v21 {pure}
-    v23: double = opaque.DynamicCall(v17, v22) {impure}
-    v24: double = add v23, v6 {pure}
-    v25: double = add v10, v24 {pure}
-    v26: int = const 1
-    v27: int = add v9, v26 {pure}
-    v28: any = convert.any v27
-    br bb1(v28, v27, v25)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: int = const 1
-    v5: int = add v1, v4 {pure}
-    v6: double = convert.double v5
-    v7: any = name_read double {pure}
-    br bb1(v3, v2)
-  bb1(v8: int, v9: double):
-    v10: bool = lt v8, v0 {pure}
-    br_if v10, bb3, bb2
-  bb2:
-    ret v9
-  bb3:
-    v11: any = opaque.CoreCollectionCall(list, v4) {impure}
-    v12: int = const 2
-    v13: any = opaque.ArrayCreate(v4, v12) {impure}
-    v14: any = move v11
-    v15: int = call_java v14.size() {pure,throws}
-    v16: any = freeze v13
-    v17: int = array_len v16 {read:frozen,throws}
-    v18: int = add v15, v17 {pure}
-    v19: double = opaque.DynamicCall(v7, v18) {impure}
-    v20: double = add v19, v6 {pure}
-    v21: double = add v9, v20 {pure}
-    v22: int = add v8, v4 {pure}
-    br bb1(v22, v21)
+```hir
+;; hir -O2 fn=run
+fn run (n:int, x:int) -> double {nothrow unique}
+  (def a 0.0:double)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (def s#1 (core-new list 1:int))
+      (def r (array-new OF 1:int 2:int))
+      (set a += (+:double (call name(double) (+:int (block
+                (def s#2 (move var(s#1)))
+                (jcall List.size var(s#2))) (block
+                (def s#3 (freeze var(r)))
+                (array-op SIZE var(s#3))))) (block
+            (def x#2 (widen[double] (+:int var(x#1) 1:int)))
+            var(x#2))))
+      (set i += 1:int)))
+  var(a)
 ```
 
 ## HirLicmPass and HirPurity : unchecked As (x as any?) hoisted out of while
@@ -365,47 +234,18 @@ fn run (n:int, x:int) -> int {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = const 0
-    v3: int = const 0
-    v4: any = name_read bigAny {pure}
-    v5: int = call bigAny(v1) {pure}
-    v6: any = const null
-    br bb1(v6, v3, v2)
-  bb1(v7: any, v8: int, v9: int):
-    v10: bool = lt v8, v0 {pure}
-    br_if v10, bb3, bb2
-  bb2:
-    ret v9
-  bb3:
-    v11: int = add v9, v5 {pure}
-    v12: int = const 1
-    v13: int = add v8, v12 {pure}
-    v14: any = convert.any v13
-    br bb1(v14, v13, v11)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = const 0
-    v3: any = name_read bigAny {pure}
-    v4: int = call bigAny(v1) {pure}
-    br bb1(v2, v2)
-  bb1(v5: int, v6: int):
-    v7: bool = lt v5, v0 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v6
-  bb3:
-    v8: int = add v6, v4 {pure}
-    v9: int = const 1
-    v10: int = add v5, v9 {pure}
-    br bb1(v10, v8)
+```hir
+;; hir -O2 fn=run
+fn run (n:int, x:int) -> int {nothrow unique}
+  (def a 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (call-fn bigAny (as var(x) any)))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += var($licm0))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirPurity.collectModifiedVars : try with named/unnamed catch and finally defs inside while
@@ -475,113 +315,25 @@ fn run (n:int) -> int {pure unique}
   var(s)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 0
-    v3: any = const null
-    br bb1(v3, v2, v1)
-  bb1(v4: any, v5: int, v6: int):
-    v7: bool = lt v5, v0 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v6
-  bb3:
-    br bb4
-  bb4 [unwind: ArithmeticException -> bb12, BabbleException -> bb9, * -> bb14]:
-    v8: int = const 0
-    v9: bool = lt v5, v8 {pure}
-    br_if v9, bb8, bb5
-  bb5 [unwind: ArithmeticException -> bb12, BabbleException -> bb9, * -> bb14]:
-    v10: any = const null
-    br bb6
-  bb6 [unwind: ArithmeticException -> bb12, BabbleException -> bb9, * -> bb14]:
-    v11: int = const 1
-    v12: int = add v5, v11 {pure}
-    br bb7
-  bb7:
-    v13: any = const null
-    br bb17(v12)
-  bb8 [unwind: ArithmeticException -> bb12, BabbleException -> bb9, * -> bb14]:
-    v14: any = const "x"
-    v15: any = new_java ArithmeticException(v14) {pure!}
-    rethrow v15
-  bb9(v16: any) [handler]:
-    br bb10
-  bb10 [unwind: * -> bb14]:
-    v17: int = const 2
-    br bb11
-  bb11:
-    v18: any = const null
-    br bb17(v17)
-  bb12(v19: any) [handler]:
-    br bb13
-  bb13 [unwind: * -> bb14]:
-    v20: int = const 1
-    br bb16
-  bb14(v21: any) [handler]:
-    br bb15
-  bb15:
-    v22: any = const null
-    rethrow v21
-  bb16:
-    v23: any = const null
-    br bb17(v20)
-  bb17(v24: int):
-    v25: int = add v6, v24 {pure}
-    v26: int = const 1
-    v27: int = add v5, v26 {pure}
-    v28: any = convert.any v27
-    br bb1(v28, v27, v25)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    br bb1(v1, v1)
-  bb1(v2: int, v3: int):
-    v4: bool = lt v2, v0 {pure}
-    br_if v4, bb3, bb2
-  bb2:
-    ret v3
-  bb3 [unwind: ArithmeticException -> bb10, BabbleException -> bb7, * -> bb12]:
-    v5: bool = lt v2, v1 {pure}
-    br_if v5, bb6, bb4
-  bb4 [unwind: ArithmeticException -> bb10, BabbleException -> bb7, * -> bb12]:
-    v6: int = const 1
-    v7: int = add v2, v6 {pure}
-    br bb5
-  bb5:
-    br bb15(v7)
-  bb6 [unwind: ArithmeticException -> bb10, BabbleException -> bb7, * -> bb12]:
-    v8: any = const "x"
-    v9: any = new_java ArithmeticException(v8) {pure!}
-    rethrow v9
-  bb7(v10: any) [handler]:
-    br bb8
-  bb8 [unwind: * -> bb12]:
-    v11: int = const 2
-    br bb9
-  bb9:
-    br bb15(v11)
-  bb10(v12: any) [handler]:
-    br bb11
-  bb11 [unwind: * -> bb12]:
-    v13: int = const 1
-    br bb14
-  bb12(v14: any) [handler]:
-    br bb13
-  bb13:
-    rethrow v14
-  bb14:
-    br bb15(v13)
-  bb15(v15: int):
-    v16: int = add v3, v15 {pure}
-    v17: int = const 1
-    v18: int = add v2, v17 {pure}
-    br bb1(v18, v16)
+```hir
+;; hir -O2 fn=run
+fn run (n:int) -> int {pure unique}
+  (def s 0:int)
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set s +=
+        (try
+          (block
+            (if (<:bool var(i) 0:int) (throw (jnew ArithmeticException "x")))
+            (def t (+:int var(i) 1:int))
+            var(t))
+          (catch e:java|java.lang.ArithmeticException|java.lang.ArithmeticException
+            1:int)
+          (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
+            2:int)
+          (finally
+            null)))
+      (set i += 1:int)))
+  var(s)
 ```

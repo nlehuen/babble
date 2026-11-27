@@ -54,10 +54,17 @@ class Calc (n:int)
     (def TAG 32:int)
 ```
 
-```mir
-;; mir -O2 class=Calc stage=before,final
-class Calc:
-  (no methods)
+```hir
+;; hir -O2 class=Calc
+class Calc (n:int)
+  (def bodyVal
+    (block
+      (def a (get-this-field n))
+      (def s (+:int var(a) 1:int))
+      (def d (-:int var(a) 1:int))
+      (*:int var(s) var(d))))
+  static:
+    (def TAG 32:int)
 ```
 
 ## InlinePass error line-number preservation (inlined cast failure vs interpreter)
@@ -137,9 +144,33 @@ top-level:
           var(i)) 3:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def inlBlocks (fn-ref inlBlocks))
+  (def smallWhile (fn-ref smallWhile))
+  (call name(assert) (and (and (==:bool (block
+            (def xs#1 (core-new list 1:int 2:int))
+            (def res#1 0:int)
+            (set res#1 6:int)
+            (for e#1 in var(xs#1)
+              (block
+                (set res#1 += var(e#1))))
+            var(res#1)) 9:int) (==:bool (block
+            (def xs#2 (core-new list 4:int))
+            (def res#2 0:int)
+            (set res#2 1:int)
+            (for e#2 in var(xs#2)
+              (block
+                (set res#2 += var(e#2))))
+            var(res#2)) 5:int)) (==:bool (block
+          (def i 2:int)
+          (while (<:bool var(i) 3:int)
+            (set i += 1:int))
+          var(i)) 3:int)))
 ```
 
 ## HirDcePass top-level user discard shadowing + InlinePass parameter widening and RecurseRef scan
@@ -180,46 +211,14 @@ fn passRec (n:int) -> int {nothrow}
       (+:int (call var(r) (-:int var(n) 1:int)) 1:int)))
 ```
 
-```mir
-;; mir -O2 fn=passRec stage=before
-fn passRec(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = lte v0, v1 {pure}
-    br_if v2, bb2, bb1
-  bb1:
-    v3: any = slot_read $recurse {pure}
-    v4: int = const 1
-    v5: int = sub v0, v4 {pure}
-    v6: int = opaque.DynamicCall(v3, v5) {impure}
-    v7: int = const 1
-    v8: int = add v6, v7 {pure}
-    br bb3(v8)
-  bb2:
-    v9: int = const 0
-    br bb3(v9)
-  bb3(v10: int):
-    ret v10
-```
-
-```mir
-;; mir -O2 fn=passRec
-fn passRec(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = lte v0, v1 {pure}
-    br_if v2, bb2, bb1
-  bb1:
-    v3: any = slot_read $recurse {pure}
-    v4: int = const 1
-    v5: int = sub v0, v4 {pure}
-    v6: int = opaque.DynamicCall(v3, v5) {impure}
-    v7: int = add v6, v4 {pure}
-    br bb3(v7)
-  bb2:
-    br bb3(v1)
-  bb3(v8: int):
-    ret v8
+```hir
+;; hir -O2 fn=passRec
+fn passRec (n:int) -> int {nothrow}
+  (if (<=:bool var(n) 0:int)
+    0:int
+    (block
+      (def r recurse)
+      (+:int (call var(r) (-:int var(n) 1:int)) 1:int)))
 ```
 
 ## InlinePass.scanCalleeBody guards : local interface and block cell capture
@@ -252,9 +251,15 @@ top-level:
   (call name(assert) (and (==:bool (call-fn smallBlkCell 4:int) 5:int) (==:bool (call-fn smallIface (box 1:int)) 1:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def smallIface (fn-ref smallIface))
+  (def smallBlkCell (fn-ref smallBlkCell))
+  (call name(assert) (and (==:bool (call-fn smallBlkCell 4:int) 5:int) (==:bool (call-fn smallIface (box 1:int)) 1:int)))
 ```
 
 ## InlinePass.scanCalleeBody guard : for-loop cell capture
@@ -278,9 +283,14 @@ top-level:
   (call name(assert) (==:bool (call-fn smallForCell (core-new list 9:int 10:int)) 9:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def addMul (fn-ref addMul))
+  (def fib (fn-ref fib))
+  (def pick (fn-ref pick))
+  (def smallForCell (fn-ref smallForCell))
+  (call name(assert) (==:bool (call-fn smallForCell (core-new list 9:int 10:int)) 9:int))
 ```
 
 ## InlinePass : reassigned parameter in callee (freshParam allocation) and self-recursion by name
@@ -310,40 +320,13 @@ fn run (v:int) -> int {io}
         (*:int var(x#2) 2:int))) (call-fn selfByName var(v)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = add v0, v1 {pure}
-    v3: int = const 2
-    v4: int = mul v2, v3 {pure}
-    v5: int = const 4
-    v6: int = const 1
-    v7: int = add v5, v6 {pure}
-    v8: int = const 2
-    v9: int = mul v7, v8 {pure}
-    v10: int = add v4, v9 {pure}
-    v11: any = name_read selfByName {pure}
-    v12: int = call selfByName(v0) {pure}
-    v13: int = add v10, v12 {pure}
-    ret v13
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = add v0, v1 {pure}
-    v3: int = const 2
-    v4: int = mul v2, v3 {pure}
-    v5: int = const 10
-    v6: int = add v4, v5 {pure}
-    v7: any = name_read selfByName {pure}
-    v8: int = call selfByName(v0) {pure}
-    v9: int = add v6, v8 {pure}
-    ret v9
+```hir
+;; hir -O2 fn=run
+fn run (v:int) -> int {io}
+  (+:int (+:int (block
+        (def x var(v))
+        (set x (+:int var(x) 1:int))
+        (*:int var(x) 2:int)) 10:int) (call-fn selfByName var(v)))
 ```
 
 ## InlinePass : isNoOpWidening across ranks 1/3/4/5 and alphaRename widened Const substitution
@@ -374,142 +357,14 @@ fn run (b:byte, i:int, f:float) -> bool {pure unique}
                     (widen[short] var(x))) (call name(short) 3:int))) true:bool) true:bool) true:bool) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: byte, v1: int, v2: float) -> bool:
-  bb0:
-    v3: short = convert.short v0
-    v4: any = name_read short {pure}
-    v5: int = const 2
-    v6: short = opaque.DynamicCall(v4, v5) {impure}
-    v7: bool = eq v3, v6 {pure}
-    v8: bool = const false
-    br_if v7, bb1, bb2(v8)
-  bb1:
-    v9: any = name_read byte {pure}
-    v10: int = const 3
-    v11: byte = opaque.DynamicCall(v9, v10) {impure}
-    v12: short = convert.short v11
-    v13: any = name_read short {pure}
-    v14: int = const 3
-    v15: short = opaque.DynamicCall(v13, v14) {impure}
-    v16: bool = eq v12, v15 {pure}
-    br bb2(v16)
-  bb2(v17: bool):
-    v18: bool = const false
-    br_if v17, bb3, bb4(v18)
-  bb3:
-    v19: bool = const true
-    br bb4(v19)
-  bb4(v20: bool):
-    v21: bool = const false
-    br_if v20, bb5, bb6(v21)
-  bb5:
-    v22: bool = const true
-    br bb6(v22)
-  bb6(v23: bool):
-    v24: bool = const false
-    br_if v23, bb7, bb8(v24)
-  bb7:
-    v25: bool = const true
-    br bb8(v25)
-  bb8(v26: bool):
-    v27: bool = const false
-    br_if v26, bb9, bb10(v27)
-  bb9:
-    v28: long = convert.long v1
-    v29: long = const 1L
-    v30: long = add v28, v29 {pure}
-    v31: long = const 5L
-    v32: bool = eq v30, v31 {pure}
-    br bb10(v32)
-  bb10(v33: bool):
-    v34: bool = const false
-    br_if v33, bb11, bb12(v34)
-  bb11:
-    v35: float = convert.float v1
-    v36: float = const 1.5f
-    v37: float = add v35, v36 {pure}
-    v38: float = const 5.5f
-    v39: bool = eq v37, v38 {pure}
-    br bb12(v39)
-  bb12(v40: bool):
-    v41: bool = const false
-    br_if v40, bb13, bb14(v41)
-  bb13:
-    v42: double = convert.double v2
-    v43: double = const 0.5
-    v44: double = add v42, v43 {pure}
-    v45: double = const 2.0
-    v46: bool = eq v44, v45 {pure}
-    br bb14(v46)
-  bb14(v47: bool):
-    ret v47
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: byte, v1: int, v2: float) -> bool:
-  bb0:
-    v3: short = convert.short v0
-    v4: any = name_read short {pure}
-    v5: int = const 2
-    v6: short = opaque.DynamicCall(v4, v5) {impure}
-    v7: bool = eq v3, v6 {pure}
-    v8: bool = const false
-    br_if v7, bb1, bb2(v8)
-  bb1:
-    v9: any = name_read byte {pure}
-    v10: int = const 3
-    v11: byte = opaque.DynamicCall(v9, v10) {impure}
-    v12: short = convert.short v11
-    v13: short = opaque.DynamicCall(v4, v10) {impure}
-    v14: bool = eq v12, v13 {pure}
-    br bb2(v14)
-  bb2(v15: bool):
-    br_if v15, bb3, bb4(v8)
-  bb3:
-    v16: bool = const true
-    br bb4(v16)
-  bb4(v17: bool):
-    br_if v17, bb5, bb6(v8)
-  bb5:
-    v18: bool = const true
-    br bb6(v18)
-  bb6(v19: bool):
-    br_if v19, bb7, bb8(v8)
-  bb7:
-    v20: bool = const true
-    br bb8(v20)
-  bb8(v21: bool):
-    br_if v21, bb9, bb10(v8)
-  bb9:
-    v22: long = convert.long v1
-    v23: long = const 1L
-    v24: long = add v22, v23 {pure}
-    v25: long = const 5L
-    v26: bool = eq v24, v25 {pure}
-    br bb10(v26)
-  bb10(v27: bool):
-    br_if v27, bb11, bb12(v8)
-  bb11:
-    v28: float = convert.float v1
-    v29: float = const 1.5f
-    v30: float = add v28, v29 {pure}
-    v31: float = const 5.5f
-    v32: bool = eq v30, v31 {pure}
-    br bb12(v32)
-  bb12(v33: bool):
-    br_if v33, bb13, bb14(v8)
-  bb13:
-    v34: double = convert.double v2
-    v35: double = const 0.5
-    v36: double = add v34, v35 {pure}
-    v37: double = const 2.0
-    v38: bool = eq v36, v37 {pure}
-    br bb14(v38)
-  bb14(v39: bool):
-    ret v39
+```hir
+;; hir -O2 fn=run
+fn run (b:byte, i:int, f:float) -> bool {pure unique}
+  (block
+    (def $cse0 name(short))
+    (and (and (and (and (and (and (and (==:bool (widen[short] var(b)) (call var($cse0) 2:int)) (==:bool (block
+                      (def x (call name(byte) 3:int))
+                      (widen[short] var(x))) (call var($cse0) 3:int))) true:bool) true:bool) true:bool) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double)))
 ```
 
 ## InlinePass : widened single-stmt inline call and trailing-return callee
@@ -538,15 +393,11 @@ fn run (p:int) -> double {nothrow monotone unique}
   (+:double var(d) (call name(double) var(p)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int) -> double:
-  bb0:
-    v1: double = convert.double v0
-    v2: any = name_read double {pure}
-    v3: double = opaque.DynamicCall(v2, v0) {impure}
-    v4: double = add v1, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (p:int) -> double {nothrow monotone unique}
+  (def d (widen[double] var(p)))
+  (+:double var(d) (call name(double) var(p)))
 ```
 
 ## Canonical HIR golden : small-function inlining and dead-code elimination (-O0 vs -O1)
@@ -579,25 +430,11 @@ fn caller (x:int) -> int {nothrow unique}
       (*:int var(s) var(d))))
 ```
 
-```mir
-;; mir -O2 fn=caller stage=before
-fn caller(v0: int) -> int:
-  bb0:
-    v1: int = const 2
-    v2: int = add v0, v1 {pure}
-    v3: int = const 2
-    v4: int = sub v0, v3 {pure}
-    v5: int = mul v2, v4 {pure}
-    ret v5
-```
-
-```mir
-;; mir -O2 fn=caller
-fn caller(v0: int) -> int:
-  bb0:
-    v1: int = const 2
-    v2: int = add v0, v1 {pure}
-    v3: int = sub v0, v1 {pure}
-    v4: int = mul v2, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=caller
+fn caller (x:int) -> int {nothrow unique}
+  (return (block
+      (def s (+:int var(x) 2:int))
+      (def d (-:int var(x) 2:int))
+      (*:int var(s) var(d))))
 ```

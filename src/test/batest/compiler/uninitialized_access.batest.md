@@ -76,9 +76,20 @@ top-level:
         (get-this-field x)) 9:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (def ok (call name(B) false:bool))
+  (block
+    (def $cse0 name(assert))
+    (def $cse1 name(ok))
+    (def $cse2 (get-this-field x))
+    (def $cse3 (==:bool var($cse2) 9:int))
+    (call var($cse0) var($cse3))
+    (call var($cse0) var($cse3)))
 ```
 
 ## Warm SelectCache on B.x before triggering requireMemberDefined during construction
@@ -360,9 +371,13 @@ top-level:
         var(x)) 7:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def B (class-ref B))
+  (def readB (fn-ref readB))
+  (def safeRead (fn-ref safeRead))
+  (call name(assert) true:bool)
 ```
 
 ## Uncaptured int local read before definition
@@ -491,14 +506,14 @@ class UA (early:bool)
     (select var(u).late)
 ```
 
-```mir
-;; mir -O2 class=UA stage=before,final
-class UA:
-  fn UA.peek(v0: any) -> int:
-    bb0:
-      v1: any = opaque.DynamicSelect(v0.late) {impure}
-      v2: int = convert.int v1
-      ret v2
+```hir
+;; hir -O2 class=UA
+class UA (early:bool)
+  (def peek (fn-ref UA.peek))
+  (def v (if var(early) (call-method this.peek this) 0:int))
+  (def late 5:int)
+  fn UA.peek (u:obj) -> int {nothrow unique}
+    (select var(u).late)
 ```
 
 ## SelectCache requireMemberDefined throws on warmed union primitive field during construction

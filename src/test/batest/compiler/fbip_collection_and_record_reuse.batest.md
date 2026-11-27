@@ -64,15 +64,12 @@ fn addS (s:obj) -> obj {pure unique}
   var(r)
 ```
 
-```mir
-;; mir -O2 fn=addS stage=before,final
-fn addS(v0: any [unique]) -> any:
-  bb0:
-    v1: any = move v0
-    v2: any = opaque.CoreCollectionCall(set$reuse, v1) {impure}
-    v3: int = const 9
-    v4: bool = call_java v2.add(v3) {impure}
-    ret v2
+```hir
+;; hir -O2 fn=addS
+fn addS (s:obj) -> obj {pure unique}
+  (def r (core-new set$reuse from=(move var(s))))
+  (jcall Set.add var(r) 9:int)
+  var(r)
 ```
 
 ## FBIP collection reuse for map (exact mutable type) and fallback on TreeMap
@@ -105,16 +102,12 @@ fn addM (m:obj) -> obj {pure unique}
   var(r)
 ```
 
-```mir
-;; mir -O2 fn=addM stage=before,final
-fn addM(v0: any [unique]) -> any:
-  bb0:
-    v1: any = move v0
-    v2: any = opaque.CoreCollectionCall(map$reuse, v1) {impure}
-    v3: any = const "b"
-    v4: int = const 2
-    v5: any = call_java v2.put(v3, v4) {impure}
-    ret v2
+```hir
+;; hir -O2 fn=addM
+fn addM (m:obj) -> obj {pure unique}
+  (def r (core-new map$reuse from=(move var(m))))
+  (jcall Map.put var(r) "b" 2:int)
+  var(r)
 ```
 
 ## FBIP list/set reuse falls back cleanly on non-ArrayList/LinkedHashSet inputs
@@ -142,15 +135,12 @@ fn copyL (xs:obj) -> obj {pure unique}
   var(r)
 ```
 
-```mir
-;; mir -O2 fn=copyL stage=before,final
-fn copyL(v0: any [unique]) -> any:
-  bb0:
-    v1: any = move v0
-    v2: any = opaque.CoreCollectionCall(list$reuse, v1) {impure}
-    v3: int = const 4
-    v4: bool = call_java v2.add(v3) {impure}
-    ret v2
+```hir
+;; hir -O2 fn=copyL
+fn copyL (xs:obj) -> obj {pure unique}
+  (def r (core-new list$reuse from=(move var(xs))))
+  (jcall List.add var(r) 4:int)
+  var(r)
 ```
 
 ## FBIP mutable record in-place reuse vs aliased deeply immutable record safety
@@ -186,18 +176,10 @@ fn bumpV (v:obj) -> obj {nothrow unique}
   (record-new Vec3 (+:double (get-this-field x) 1.0:double) (get-this-field y) (get-this-field z))
 ```
 
-```mir
-;; mir -O2 fn=bumpV stage=before,final
-fn bumpV(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read Vec3 {pure}
-    v2: double = load_field v0.x {read:frozen}
-    v3: double = const 1.0
-    v4: double = add v2, v3 {pure}
-    v5: double = load_field v0.y {read:frozen}
-    v6: double = load_field v0.z {read:frozen}
-    v7: any = record_new Vec3[v1](v4, v5, v6) {pure}
-    ret v7
+```hir
+;; hir -O2 fn=bumpV
+fn bumpV (v:obj) -> obj {nothrow unique}
+  (record-new Vec3 (+:double (get-this-field x) 1.0:double) (get-this-field y) (get-this-field z))
 ```
 
 ## FBIP record reuse via explicit return and block tail
@@ -234,16 +216,11 @@ fn bumpBlk (h:obj) -> obj {nothrow}
   (record-reuse var(h) Holder (get-this-field items) var(n))
 ```
 
-```mir
-;; mir -O2 fn=bumpBlk stage=before,final
-fn bumpBlk(v0: any [unique]) -> any:
-  bb0:
-    v1: int = load_field v0.count {read:frozen}
-    v2: int = const 2
-    v3: int = add v1, v2 {pure}
-    v4: any = load_field v0.items {read:frozen}
-    v5: any = record_reuse v0 as Holder(v4, v3) {write:unique#0}
-    ret v5
+```hir
+;; hir -O2 fn=bumpBlk
+fn bumpBlk (h:obj) -> obj {nothrow}
+  (def n (+:int (get-this-field count) 2:int))
+  (record-reuse var(h) Holder (get-this-field items) var(n))
 ```
 
 ## FBIP record reuse disqualifier when unique parameter escapes before tail construction
@@ -260,21 +237,11 @@ fn esc (h:obj) -> obj {pure}
   (record-new Holder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
-```mir
-;; mir -O2 fn=esc stage=before,final
-fn esc(v0: any [unique]) -> any:
-  bb0:
-    v1: any = opaque.CoreCollectionCall(list, v0) {impure}
-    v2: any = name_read Holder {pure}
-    v3: int = const 0
-    v4: any = call_java v1.get(v3) {impure}
-    v5: any = checkcast v4 <babble|Holder>
-    v6: any = load_field v5.items {read:frozen,throws}
-    v7: int = load_field v0.count {read:frozen}
-    v8: int = const 1
-    v9: int = add v7, v8 {pure}
-    v10: any = record_new Holder[v2](v6, v9) {pure}
-    ret v10
+```hir
+;; hir -O2 fn=esc
+fn esc (h:obj) -> obj {pure}
+  (def xs (core-new list var(h)))
+  (record-new Holder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
 ## FBIP reuse disqualifiers : reassigned unique param and reordered named args
@@ -298,17 +265,10 @@ fn f2 (h:obj) -> obj {nothrow}
   (return (record-new Holder (+:int (get-this-field count) 1:int) (get-this-field items)))
 ```
 
-```mir
-;; mir -O2 fn=f2 stage=before,final
-fn f2(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read Holder {pure}
-    v2: int = load_field v0.count {read:frozen}
-    v3: int = const 1
-    v4: int = add v2, v3 {pure}
-    v5: any = load_field v0.items {read:frozen}
-    v6: any = record_new Holder[v1](v4, v5) {pure}
-    ret v6
+```hir
+;; hir -O2 fn=f2
+fn f2 (h:obj) -> obj {nothrow}
+  (return (record-new Holder (+:int (get-this-field count) 1:int) (get-this-field items)))
 ```
 
 ## FBIP reuse disqualifier : non-reuse branches and mismatched record type
@@ -326,17 +286,10 @@ fn f2 (h:obj) -> obj {nothrow}
   (record-new O (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
-```mir
-;; mir -O2 fn=f2 stage=before,final
-fn f2(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read O {pure}
-    v2: any = load_field v0.items {read:frozen}
-    v3: int = load_field v0.count {read:frozen}
-    v4: int = const 1
-    v5: int = add v3, v4 {pure}
-    v6: any = record_new O[v1](v2, v5) {pure}
-    ret v6
+```hir
+;; hir -O2 fn=f2
+fn f2 (h:obj) -> obj {nothrow}
+  (record-new O (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
 ## FBIP reuse disqualifier : cross-module unique record parameter
@@ -353,16 +306,8 @@ fn f (v:obj) -> obj {nothrow unique}
   (record-new vec_mod$ba$C0$ExtVec (+:double (get-this-field x) 1.0:double) (get-this-field y))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before,final
-fn f(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read m {pure}
-    v2: any = export_get v1.ExtVec {pure}
-    v3: double = load_field v0.x {read:frozen}
-    v4: double = const 1.0
-    v5: double = add v3, v4 {pure}
-    v6: double = load_field v0.y {read:frozen}
-    v7: any = record_new vec_mod$ba$C0$ExtVec[v2](v5, v6) {pure}
-    ret v7
+```hir
+;; hir -O2 fn=f
+fn f (v:obj) -> obj {nothrow unique}
+  (record-new vec_mod$ba$C0$ExtVec (+:double (get-this-field x) 1.0:double) (get-this-field y))
 ```

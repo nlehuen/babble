@@ -54,22 +54,12 @@ fn merge (a:obj, b:obj, v:obj) -> obj {pure}
   (record-reuse var(a) Holder (get-this-field items) var(c))
 ```
 
-```mir
-;; mir -O2 fn=merge stage=before,final
-fn merge(v0: any [unique], v1: any [unique], v2: any) -> any:
-  bb0:
-    v3: int = load_field v0.count {read:frozen}
-    v4: int = load_field v1.count {read:frozen}
-    v5: int = add v3, v4 {pure}
-    v6: any = name_read int {pure}
-    v7: double = load_field v2.x {read:frozen}
-    v8: int = opaque.DynamicCall(v6, v7) {impure}
-    v9: int = add v5, v8 {pure}
-    v10: int = const 1
-    v11: int = add v9, v10 {pure}
-    v12: any = load_field v0.items {read:frozen}
-    v13: any = record_reuse v0 as Holder(v12, v11) {write:unique#0}
-    ret v13
+```hir
+;; hir -O2 fn=merge
+fn merge (a:obj, b:obj, v:obj) -> obj {pure}
+  (def c (+:int (+:int (get-this-field count) (get-this-field count)) (call name(int) (get-this-field x))))
+  (set c (+:int var(c) 1:int))
+  (record-reuse var(a) Holder (get-this-field items) var(c))
 ```
 
 ## FBIP record reuse tail shapes : one-armed if and empty block else
@@ -108,23 +98,10 @@ fn emptyElse (h:obj, fl:bool) -> obj {nothrow}
   (if var(fl) (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 1:int)) (block))
 ```
 
-```mir
-;; mir -O2 fn=emptyElse stage=before,final
-fn emptyElse(v0: any [unique], v1: bool) -> any:
-  bb0:
-    br_if v1, bb2, bb1
-  bb1:
-    v2: any = const null
-    br bb3(v2)
-  bb2:
-    v3: any = load_field v0.items {read:frozen}
-    v4: int = load_field v0.count {read:frozen}
-    v5: int = const 1
-    v6: int = add v4, v5 {pure}
-    v7: any = record_reuse v0 as Holder(v3, v6) {write:unique#0}
-    br bb3(v7)
-  bb3(v8: any):
-    ret v8
+```hir
+;; hir -O2 fn=emptyElse
+fn emptyElse (h:obj, fl:bool) -> obj {nothrow}
+  (if var(fl) (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 1:int)) (block))
 ```
 
 ## FBIP record reuse tail shapes : else-only reuse branch
@@ -148,23 +125,10 @@ fn onlyElse (h:obj, fl:bool) -> obj {nothrow}
   (if var(fl) null (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 2:int)))
 ```
 
-```mir
-;; mir -O2 fn=onlyElse stage=before,final
-fn onlyElse(v0: any [unique], v1: bool) -> any:
-  bb0:
-    br_if v1, bb2, bb1
-  bb1:
-    v2: any = load_field v0.items {read:frozen}
-    v3: int = load_field v0.count {read:frozen}
-    v4: int = const 2
-    v5: int = add v3, v4 {pure}
-    v6: any = record_reuse v0 as Holder(v2, v5) {write:unique#0}
-    br bb3(v6)
-  bb2:
-    v7: any = const null
-    br bb3(v7)
-  bb3(v8: any):
-    ret v8
+```hir
+;; hir -O2 fn=onlyElse
+fn onlyElse (h:obj, fl:bool) -> obj {nothrow}
+  (if var(fl) null (record-reuse var(h) Holder (get-this-field items) (+:int (get-this-field count) 2:int)))
 ```
 
 ## FBIP record reuse disqualifiers : captured unique param and cross-module mutable record
@@ -195,18 +159,10 @@ fn toExt (h:obj) -> obj {nothrow}
   (record-new ext_rec$ba$C1$ExtHolder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
-```mir
-;; mir -O2 fn=toExt stage=before,final
-fn toExt(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read m {pure}
-    v2: any = export_get v1.ExtHolder {pure}
-    v3: any = load_field v0.items {read:frozen}
-    v4: int = load_field v0.count {read:frozen}
-    v5: int = const 1
-    v6: int = add v4, v5 {pure}
-    v7: any = record_new ext_rec$ba$C1$ExtHolder[v2](v3, v6) {pure}
-    ret v7
+```hir
+;; hir -O2 fn=toExt
+fn toExt (h:obj) -> obj {nothrow}
+  (record-new ext_rec$ba$C1$ExtHolder (get-this-field items) (+:int (get-this-field count) 1:int))
 ```
 
 ## FBIP record reuse classRef purity : local alias reuses while mutable alias bails out
@@ -237,17 +193,10 @@ fn nonInitRef (h:obj) -> obj {volatile nothrow}
   (record-new Holder (get-this-field items) (+:int (get-this-field count) 2:int))
 ```
 
-```mir
-;; mir -O2 fn=nonInitRef stage=before,final
-fn nonInitRef(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read HRef {read:shared}
-    v2: any = load_field v0.items {read:frozen}
-    v3: int = load_field v0.count {read:frozen}
-    v4: int = const 2
-    v5: int = add v3, v4 {pure}
-    v6: any = record_new Holder[v1](v2, v5) {pure}
-    ret v6
+```hir
+;; hir -O2 fn=nonInitRef
+fn nonInitRef (h:obj) -> obj {volatile nothrow}
+  (record-new Holder (get-this-field items) (+:int (get-this-field count) 2:int))
 ```
 
 ## FBIP record reuse classRef purity : impure block classRef bails out
@@ -266,19 +215,8 @@ fn impureRef (h:obj) -> obj {io}
   (record-new Holder (get-this-field items) (+:int (get-this-field count) 3:int))
 ```
 
-```mir
-;; mir -O2 fn=impureRef stage=before,final
-fn impureRef(v0: any [unique]) -> any:
-  bb0:
-    v1: any = name_read log {pure,throws}
-    v2: any = const "H"
-    v3: any = call_java v1.append(v2) {impure}
-    v4: any = checkcast v3 <java|java.lang.StringBuilder|java.lang.StringBuilder>
-    v5: any = name_read Holder {pure}
-    v6: any = load_field v0.items {read:frozen}
-    v7: int = load_field v0.count {read:frozen}
-    v8: int = const 3
-    v9: int = add v7, v8 {pure}
-    v10: any = record_new Holder[v5](v6, v9) {pure}
-    ret v10
+```hir
+;; hir -O2 fn=impureRef
+fn impureRef (h:obj) -> obj {io}
+  (record-new Holder (get-this-field items) (+:int (get-this-field count) 3:int))
 ```

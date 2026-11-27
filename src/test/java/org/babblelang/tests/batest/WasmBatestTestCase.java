@@ -45,7 +45,7 @@ public class WasmBatestTestCase {
         BabbleScriptEngine probe =
                 (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         if (probe.getMode() != BabbleScriptEngine.Mode.COMPILE
-                || BabbleCompiler.resolveOptLevel(probe) != 1) {
+                || BabbleCompiler.resolveOptLevel(probe) == 0) {
             return Stream.empty();
         }
         if (!NodeWasmRunner.isNodeAvailable()) {
