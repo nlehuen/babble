@@ -309,11 +309,9 @@ fn pick (flag:bool) -> double {nothrow unique}
   (if var(flag)
     (block
       (def $sr_t0 var($sr_p_2))
-      (def $sr_t1 var($sr_p_1))
-      (def $sr_t2 var($sr_p_0))
+      (def $sr_t1 var($sr_p_0))
       (set $sr_p_0 var($sr_t0))
-      (set $sr_p_1 var($sr_t1))
-      (set $sr_p_2 var($sr_t2))))
+      (set $sr_p_2 var($sr_t1))))
   (+:double (+:double var($sr_p_0) var($sr_q_1)) var($sr_p_2))
 ```
 
@@ -883,7 +881,7 @@ fn r (p:obj, fl:bool) -> double {nothrow unique}
     (def $sr_a_1 2.0:double)
     (def $sr_a_2 3.0:double))
   (block
-    (def $sr_h_0 (core-new list 1:int))
+    (core-new list 1:int)
     (def $sr_h_1 4:int))
   (block (def $sr_b_1 var($sr_h_1)))
   (def c var(p))

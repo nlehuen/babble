@@ -44,7 +44,7 @@ fn f () -> bool {pure unique}
   (def s (widen[short] (call name(byte) 7:int)))
   (def i (widen[int] (call name(short) 7:int)))
   (def fl (call name(float) 4:int))
-  (and (and (and (and (and (==:bool null null) (==:bool var(s) (call name(short) 7:int))) (==:bool var(i) 7:int)) true:bool) (==:bool var(fl) 4.0:float)) true:bool)
+  (and (and (and (and (and (==:bool null null) (==:bool var(s) (call name(short) 7:int))) true:bool) true:bool) (==:bool var(i) 7:int)) (==:bool var(fl) 4.0:float))
 ```
 
 ```mir
@@ -79,27 +79,27 @@ fn f() -> bool:
     v22: bool = const false
     br_if v21, bb3, bb4(v22)
   bb3:
-    v23: int = const 7
-    v24: bool = eq v7, v23 {pure}
-    br bb4(v24)
-  bb4(v25: bool):
-    v26: bool = const false
-    br_if v25, bb5, bb6(v26)
+    v23: bool = const true
+    br bb4(v23)
+  bb4(v24: bool):
+    v25: bool = const false
+    br_if v24, bb5, bb6(v25)
   bb5:
-    v27: bool = const true
-    br bb6(v27)
-  bb6(v28: bool):
-    v29: bool = const false
-    br_if v28, bb7, bb8(v29)
+    v26: bool = const true
+    br bb6(v26)
+  bb6(v27: bool):
+    v28: bool = const false
+    br_if v27, bb7, bb8(v28)
   bb7:
-    v30: float = const 4.0f
-    v31: bool = eq v10, v30 {pure}
-    br bb8(v31)
-  bb8(v32: bool):
-    v33: bool = const false
-    br_if v32, bb9, bb10(v33)
+    v29: int = const 7
+    v30: bool = eq v7, v29 {pure}
+    br bb8(v30)
+  bb8(v31: bool):
+    v32: bool = const false
+    br_if v31, bb9, bb10(v32)
   bb9:
-    v34: bool = const true
+    v33: float = const 4.0f
+    v34: bool = eq v10, v33 {pure}
     br bb10(v34)
   bb10(v35: bool):
     ret v35
@@ -132,7 +132,7 @@ fn f() -> bool:
   bb2(v17: bool):
     br_if v17, bb3, bb4(v14)
   bb3:
-    v18: bool = eq v6, v1 {pure}
+    v18: bool = const true
     br bb4(v18)
   bb4(v19: bool):
     br_if v19, bb5, bb6(v14)
@@ -142,13 +142,13 @@ fn f() -> bool:
   bb6(v21: bool):
     br_if v21, bb7, bb8(v14)
   bb7:
-    v22: float = const 4.0f
-    v23: bool = eq v9, v22 {pure}
-    br bb8(v23)
-  bb8(v24: bool):
-    br_if v24, bb9, bb10(v14)
+    v22: bool = eq v6, v1 {pure}
+    br bb8(v22)
+  bb8(v23: bool):
+    br_if v23, bb9, bb10(v14)
   bb9:
-    v25: bool = const true
+    v24: float = const 4.0f
+    v25: bool = eq v9, v24 {pure}
     br bb10(v25)
   bb10(v26: bool):
     ret v26

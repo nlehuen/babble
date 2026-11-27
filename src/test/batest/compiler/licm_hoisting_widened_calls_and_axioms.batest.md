@@ -534,7 +534,6 @@ fn run () -> int {io}
 fn run () -> int {io}
   (def a 0:int)
   (def cap 2:int)
-  (def bump (fn-ref bump))
   (def k 0:int)
   (while (<:bool var(k) 2:int)
     (block
@@ -553,23 +552,22 @@ fn run() -> int:
     v0: int = const 0
     v1: int = const 2
     slot_init cap, v1 {write:shared}
-    v2: any = opaque.FunctionRef(bump) {read:shared}
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v0)
-  bb1(v5: any, v6: int, v7: int):
-    v8: int = const 2
-    v9: bool = lt v6, v8 {pure}
-    br_if v9, bb3, bb2
+    v2: int = const 0
+    v3: any = const null
+    br bb1(v3, v2, v0)
+  bb1(v4: any, v5: int, v6: int):
+    v7: int = const 2
+    v8: bool = lt v5, v7 {pure}
+    br_if v8, bb3, bb2
   bb2:
-    ret v7
+    ret v6
   bb3:
-    v10: int = slot_read cap {read:shared}
-    v11: int = add v7, v10 {pure}
-    v12: int = const 1
-    v13: int = add v6, v12 {pure}
-    v14: any = convert.any v13
-    br bb1(v14, v13, v11)
+    v9: int = slot_read cap {read:shared}
+    v10: int = add v6, v9 {pure}
+    v11: int = const 1
+    v12: int = add v5, v11 {pure}
+    v13: any = convert.any v12
+    br bb1(v13, v12, v10)
 ```
 
 ```mir

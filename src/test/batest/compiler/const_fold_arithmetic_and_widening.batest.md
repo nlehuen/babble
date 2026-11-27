@@ -213,7 +213,7 @@ fn f () -> bool {pure unique}
   (def sConst (widen[short] var(bConst)))
   (def iConst (widen[int] var(sConst)))
   (def lConst (widen[long] var(iConst)))
-  (and (==:bool var(lConst) 3:long) true:bool)
+  (==:bool var(lConst) 3:long)
 ```
 
 ```mir
@@ -228,13 +228,7 @@ fn f() -> bool:
     v5: long = convert.long v4
     v6: long = const 3L
     v7: bool = eq v5, v6 {pure}
-    v8: bool = const false
-    br_if v7, bb1, bb2(v8)
-  bb1:
-    v9: bool = const true
-    br bb2(v9)
-  bb2(v10: bool):
-    ret v10
+    ret v7
 ```
 
 ```mir
@@ -247,13 +241,7 @@ fn f() -> bool:
     v3: long = convert.long v2
     v4: long = const 3L
     v5: bool = eq v3, v4 {pure}
-    v6: bool = const false
-    br_if v5, bb1, bb2(v6)
-  bb1:
-    v7: bool = const true
-    br bb2(v7)
-  bb2(v8: bool):
-    ret v8
+    ret v5
 ```
 
 ## Direct literal widening conversions, string, and null constants
@@ -290,7 +278,7 @@ fn f () -> bool {pure unique}
 fn f () -> bool {pure unique}
   (def bs (widen[short] (call name(byte) 3:int)))
   (def sl (widen[long] (call name(short) 4:int)))
-  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) (==:bool var(sl) 4:long)) true:bool) true:bool) true:bool) true:bool) (==:bool null null))
+  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) true:bool) true:bool) true:bool) true:bool) (==:bool var(sl) 4:long)) (==:bool null null))
 ```
 
 ```mir
@@ -312,32 +300,32 @@ fn f() -> bool:
     v12: bool = const false
     br_if v11, bb1, bb2(v12)
   bb1:
-    v13: long = const 4L
-    v14: bool = eq v7, v13 {pure}
-    br bb2(v14)
-  bb2(v15: bool):
-    v16: bool = const false
-    br_if v15, bb3, bb4(v16)
+    v13: bool = const true
+    br bb2(v13)
+  bb2(v14: bool):
+    v15: bool = const false
+    br_if v14, bb3, bb4(v15)
   bb3:
-    v17: bool = const true
-    br bb4(v17)
-  bb4(v18: bool):
-    v19: bool = const false
-    br_if v18, bb5, bb6(v19)
+    v16: bool = const true
+    br bb4(v16)
+  bb4(v17: bool):
+    v18: bool = const false
+    br_if v17, bb5, bb6(v18)
   bb5:
-    v20: bool = const true
-    br bb6(v20)
-  bb6(v21: bool):
-    v22: bool = const false
-    br_if v21, bb7, bb8(v22)
+    v19: bool = const true
+    br bb6(v19)
+  bb6(v20: bool):
+    v21: bool = const false
+    br_if v20, bb7, bb8(v21)
   bb7:
-    v23: bool = const true
-    br bb8(v23)
-  bb8(v24: bool):
-    v25: bool = const false
-    br_if v24, bb9, bb10(v25)
+    v22: bool = const true
+    br bb8(v22)
+  bb8(v23: bool):
+    v24: bool = const false
+    br_if v23, bb9, bb10(v24)
   bb9:
-    v26: bool = const true
+    v25: long = const 4L
+    v26: bool = eq v7, v25 {pure}
     br bb10(v26)
   bb10(v27: bool):
     v28: bool = const false
@@ -370,28 +358,28 @@ fn f() -> bool:
     v10: bool = const false
     br_if v9, bb1, bb2(v10)
   bb1:
-    v11: long = const 4L
-    v12: bool = eq v7, v11 {pure}
-    br bb2(v12)
-  bb2(v13: bool):
-    br_if v13, bb3, bb4(v10)
+    v11: bool = const true
+    br bb2(v11)
+  bb2(v12: bool):
+    br_if v12, bb3, bb4(v10)
   bb3:
-    v14: bool = const true
-    br bb4(v14)
-  bb4(v15: bool):
-    br_if v15, bb5, bb6(v10)
+    v13: bool = const true
+    br bb4(v13)
+  bb4(v14: bool):
+    br_if v14, bb5, bb6(v10)
   bb5:
-    v16: bool = const true
-    br bb6(v16)
-  bb6(v17: bool):
-    br_if v17, bb7, bb8(v10)
+    v15: bool = const true
+    br bb6(v15)
+  bb6(v16: bool):
+    br_if v16, bb7, bb8(v10)
   bb7:
-    v18: bool = const true
-    br bb8(v18)
-  bb8(v19: bool):
-    br_if v19, bb9, bb10(v10)
+    v17: bool = const true
+    br bb8(v17)
+  bb8(v18: bool):
+    br_if v18, bb9, bb10(v10)
   bb9:
-    v20: bool = const true
+    v19: long = const 4L
+    v20: bool = eq v7, v19 {pure}
     br bb10(v20)
   bb10(v21: bool):
     br_if v21, bb11, bb12(v10)

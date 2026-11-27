@@ -16,21 +16,27 @@ import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirParam;
 import org.babblelang.ir.hir.HirStaticBlock;
 import org.babblelang.ir.hir.HirVar;
+import org.babblelang.opt.HirEffectAnalysis;
+import org.babblelang.opt.HirLiveness;
 import org.babblelang.opt.HirPass;
 import org.babblelang.opt.HirPurity;
 import org.babblelang.opt.HirRewriter;
 import org.babblelang.opt.PassContext;
 
 /**
- * {@code O4} — Structured Dead-Code and Dead-Expression Elimination (BIP014-I2).
+ * {@code O4} — Structured Backward-Liveness Dead-Code and Dead-Store Elimination ({@code
+ * BIP014-I2}, {@code BIP039-P2}).
  *
  * <ul>
- *   <li>Eliminates unreachable statements after {@code return}, {@code break}, or {@code continue}.
- *   <li>Eliminates dead non-final {@code pure nothrow @TERMINATING} expressions (including
- *       synthetic expressions exposed by constant folding or inlining).
- *   <li>Eliminates unused local frame {@code def} bindings whose initializer is {@code pure
- *       nothrow @TERMINATING}.
- *   <li>Flattens single-expression transparent {@link HirExpr.Block} wrappers.
+ *   <li>Uses {@link HirLiveness} and {@link HirEffectAnalysis} on frame-scoped functions to
+ *       eliminate dead {@code VarAssign} stores (including dead loop-carried accumulators) and dead
+ *       local {@code Def}s while preserving impure RHS expressions.
+ *   <li>Eliminates unreachable statements after {@code return}, {@code break}, {@code continue}, or
+ *       {@code throw}.
+ *   <li>Eliminates dead non-final pure expressions, dead {@code catch} clauses on pure {@code try}
+ *       blocks, and pure {@code discard(...)} calls.
+ *   <li>Flattens single-expression transparent {@link HirExpr.Block} wrappers and prunes
+ *       unreferenced {@code declaredVars}.
  * </ul>
  */
 public final class HirDcePass implements HirPass {
@@ -43,16 +49,23 @@ public final class HirDcePass implements HirPass {
     public Result run(HirModule module, PassContext context) {
         int[] rewrites = {0};
 
-        List<HirExpr> newTop = dceBody(module.topLevelStatements(), module, rewrites);
+        HirEffectAnalysis modFx = HirEffectAnalysis.forModule(module);
+        List<HirExpr> newTop = dceBody(module.topLevelStatements(), null, modFx, module, rewrites);
         boolean changed = newTop != module.topLevelStatements();
 
         Map<Integer, HirFunction> newFns = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirFunction> e : module.functions().entrySet()) {
             HirFunction fn = e.getValue();
+            HirEffectAnalysis fnFx = HirEffectAnalysis.forFunction(fn, module);
+            HirLiveness liveness =
+                    fn.namespaceScope()
+                            ? null
+                            : HirLiveness.analyzeForDce(
+                                    fn, stmt -> isDeadStoreRemovable(stmt, fnFx, module));
             List<HirParam> np =
                     HirRewriter.rewriteParams(
-                            fn.params(), ex -> dceExpr(ex, Set.of(), module, rewrites));
-            List<HirExpr> nb = dceBody(fn.body(), module, rewrites);
+                            fn.params(), ex -> dceExpr(ex, Set.of(), null, fnFx, module, rewrites));
+            List<HirExpr> nb = dceBody(fn.body(), liveness, fnFx, module, rewrites);
             List<HirVar> ndv = pruneUnusedDeclaredVars(fn.declaredVars(), nb);
             if (np != fn.params() || nb != fn.body() || ndv != fn.declaredVars()) {
                 changed = true;
@@ -66,11 +79,12 @@ public final class HirDcePass implements HirPass {
             HirClass cls = e.getValue();
             List<HirParam> np =
                     HirRewriter.rewriteParams(
-                            cls.params(), ex -> dceExpr(ex, Set.of(), module, rewrites));
-            List<HirExpr> nb = dceBody(cls.body(), module, rewrites);
+                            cls.params(),
+                            ex -> dceExpr(ex, Set.of(), null, modFx, module, rewrites));
+            List<HirExpr> nb = dceBody(cls.body(), null, modFx, module, rewrites);
             HirStaticBlock ns = cls.staticBlock();
             if (ns != null) {
-                List<HirExpr> nsb = dceBody(ns.body(), module, rewrites);
+                List<HirExpr> nsb = dceBody(ns.body(), null, modFx, module, rewrites);
                 if (nsb != ns.body()) {
                     ns = ns.withBody(nsb);
                 }
@@ -85,10 +99,10 @@ public final class HirDcePass implements HirPass {
         Map<Integer, HirInterface> newIfaces = new LinkedHashMap<>();
         for (Map.Entry<Integer, HirInterface> e : module.interfaces().entrySet()) {
             HirInterface iface = e.getValue();
-            List<HirExpr> nb = dceBody(iface.body(), module, rewrites);
+            List<HirExpr> nb = dceBody(iface.body(), null, modFx, module, rewrites);
             HirStaticBlock ns = iface.staticBlock();
             if (ns != null) {
-                List<HirExpr> nsb = dceBody(ns.body(), module, rewrites);
+                List<HirExpr> nsb = dceBody(ns.body(), null, modFx, module, rewrites);
                 if (nsb != ns.body()) {
                     ns = ns.withBody(nsb);
                 }
@@ -114,16 +128,26 @@ public final class HirDcePass implements HirPass {
                 rewrites[0]);
     }
 
-    private List<HirExpr> dceBody(List<HirExpr> stmts, HirModule module, int[] rewrites) {
+    private List<HirExpr> dceBody(
+            List<HirExpr> stmts,
+            HirLiveness liveness,
+            HirEffectAnalysis fx,
+            HirModule module,
+            int[] rewrites) {
         Set<Integer> usedVars = new HashSet<>();
         for (HirExpr s : stmts) {
             collectUsedVars(s, usedVars);
         }
-        return dceStatements(stmts, usedVars, module, rewrites);
+        return dceStatements(stmts, usedVars, liveness, fx, module, rewrites);
     }
 
     private List<HirExpr> dceStatements(
-            List<HirExpr> stmts, Set<Integer> usedVars, HirModule module, int[] rewrites) {
+            List<HirExpr> stmts,
+            Set<Integer> usedVars,
+            HirLiveness liveness,
+            HirEffectAnalysis fx,
+            HirModule module,
+            int[] rewrites) {
         if (stmts.isEmpty()) {
             return stmts;
         }
@@ -132,32 +156,77 @@ public final class HirDcePass implements HirPass {
         int lastIdx = stmts.size() - 1;
         for (int i = 0; i < stmts.size(); i++) {
             HirExpr old = stmts.get(i);
-            HirExpr nw = dceExpr(old, usedVars, module, rewrites);
+            boolean isLast = (i == lastIdx);
+
+            // Backward-liveness dead store / dead def elimination (using original AST node identity
+            // in HirLiveness before rewriting children).
+            if (liveness != null && !isLast) {
+                if (old instanceof HirExpr.VarAssign a
+                        && !a.var().cell()
+                        && !a.var().isCaptured()
+                        && (!a.var().mayBeUndefined() || a.var().definitelyDefined())
+                        && !liveness.isLiveOut(old, a.var().id())) {
+                    if (a.operator() == null) {
+                        HirExpr rhs = dceExpr(a.value(), usedVars, liveness, fx, module, rewrites);
+                        changed = true;
+                        rewrites[0]++;
+                        if (!isRemovableExpr(rhs, fx, module)) {
+                            out.add(rhs);
+                        }
+                        continue;
+                    }
+                    // Dead compound assign (e.g. dead += 1 inside a loop) when the op is removable.
+                    if (isRemovableCompoundAssign(a, fx, module)) {
+                        changed = true;
+                        rewrites[0]++;
+                        continue;
+                    }
+                }
+                if (old instanceof HirExpr.Def d
+                        && d.var() != null
+                        && !d.var().cell()
+                        && !d.var().isCaptured()
+                        && d.var().kind() == Resolution.Variable.Kind.DEFINITION
+                        && !liveness.isLiveOut(old, d.var().id())) {
+                    HirExpr rhs =
+                            d.value() != null
+                                    ? dceExpr(d.value(), usedVars, liveness, fx, module, rewrites)
+                                    : null;
+                    changed = true;
+                    rewrites[0]++;
+                    if (rhs != null && !isRemovableExpr(rhs, fx, module)) {
+                        out.add(rhs);
+                    }
+                    continue;
+                }
+            }
+
+            HirExpr nw = dceExpr(old, usedVars, liveness, fx, module, rewrites);
             if (nw != old) {
                 changed = true;
             }
-            boolean isLast = (i == lastIdx);
             // Drop dead pure non-final expressions
-            if (!isLast && HirPurity.isPureNothrowTerminating(nw, module)) {
+            if (!isLast && isRemovableExpr(nw, fx, module)) {
                 changed = true;
                 rewrites[0]++;
                 continue;
             }
-            // Drop unused local frame def with pure initializer
+            // Fallback (top-level / class / interface bodies without liveness): drop unused local
+            // frame def with pure initializer.
             if (!isLast
                     && nw instanceof HirExpr.Def d
                     && d.var() != null
                     && !d.var().isCaptured()
                     && d.var().kind() == Resolution.Variable.Kind.DEFINITION
                     && !usedVars.contains(d.var().id())
-                    && (d.value() == null
-                            || HirPurity.isPureNothrowTerminating(d.value(), module))) {
+                    && (d.value() == null || isRemovableExpr(d.value(), fx, module))) {
                 changed = true;
                 rewrites[0]++;
                 continue;
             }
             out.add(nw);
-            // Truncate unreachable statements after unconditional jump (return / break / continue)
+            // Truncate unreachable statements after unconditional jump (return / break / continue /
+            // throw)
             if (!isLast && isUnconditionalJump(nw)) {
                 changed = true;
                 rewrites[0] += (stmts.size() - 1 - i);
@@ -167,12 +236,66 @@ public final class HirDcePass implements HirPass {
         return changed ? out : stmts;
     }
 
-    private HirExpr dceExpr(HirExpr expr, Set<Integer> usedVars, HirModule module, int[] rewrites) {
+    private static boolean isDeadStoreRemovable(
+            HirExpr stmt, HirEffectAnalysis fx, HirModule module) {
+        if (stmt instanceof HirExpr.VarAssign a) {
+            if (a.var().mayBeUndefined() && !a.var().definitelyDefined()) {
+                return false;
+            }
+            if (a.operator() == null) {
+                return isRemovableExpr(a.value(), fx, module);
+            }
+            return isRemovableCompoundAssign(a, fx, module);
+        }
+        if (stmt instanceof HirExpr.Def d) {
+            return d.var() != null
+                    && d.var().kind() == Resolution.Variable.Kind.DEFINITION
+                    && (d.value() == null || isRemovableExpr(d.value(), fx, module));
+        }
+        return false;
+    }
+
+    private static boolean isRemovableExpr(HirExpr expr, HirEffectAnalysis fx, HirModule module) {
+        if (expr == null) {
+            return true;
+        }
+        return HirPurity.isPureNothrowTerminating(expr, module)
+                || fx.effectOf(expr).isRemovableIfUnused();
+    }
+
+    private static boolean isRemovableCompoundAssign(
+            HirExpr.VarAssign a, HirEffectAnalysis fx, HirModule module) {
+        PrimitiveKind vk = a.var().primitiveKind();
+        if (!vk.isPrimitive() || !a.value().meta().kind().isNumeric()) {
+            return false;
+        }
+        if ("//".equals(a.operator()) || "mod".equals(a.operator())) {
+            HirExpr rhs = HirRewriter.unwrapTransparent(a.value());
+            if (!(rhs instanceof HirExpr.Const c
+                    && c.value() instanceof Number n
+                    && n.longValue() != 0L)) {
+                return false;
+            }
+        }
+        if (a.var().mayBeUndefined() && !a.var().definitelyDefined()) {
+            return false;
+        }
+        return isRemovableExpr(a.value(), fx, module);
+    }
+
+    private HirExpr dceExpr(
+            HirExpr expr,
+            Set<Integer> usedVars,
+            HirLiveness liveness,
+            HirEffectAnalysis fx,
+            HirModule module,
+            int[] rewrites) {
         if (expr == null) {
             return null;
         }
         if (expr instanceof HirExpr.Block b) {
-            List<HirExpr> ns = dceStatements(b.statements(), usedVars, module, rewrites);
+            List<HirExpr> ns =
+                    dceStatements(b.statements(), usedVars, liveness, fx, module, rewrites);
             List<HirVar> ndv = pruneUnusedDeclaredVars(b.declaredVars(), ns);
             HirExpr.Block nb =
                     (ns == b.statements() && ndv == b.declaredVars())
@@ -195,28 +318,36 @@ public final class HirDcePass implements HirPass {
         }
         if (expr instanceof HirExpr.For f) {
             HirExpr ni =
-                    f.iterable() != null ? dceExpr(f.iterable(), usedVars, module, rewrites) : null;
+                    f.iterable() != null
+                            ? dceExpr(f.iterable(), usedVars, liveness, fx, module, rewrites)
+                            : null;
             HirExpr.CountedRangeLoop cr = f.countedRange();
             HirExpr.CountedRangeLoop ncr = cr;
             if (cr != null) {
-                HirExpr ns = dceExpr(cr.start(), usedVars, module, rewrites);
-                HirExpr ne = dceExpr(cr.end(), usedVars, module, rewrites);
+                HirExpr ns = dceExpr(cr.start(), usedVars, liveness, fx, module, rewrites);
+                HirExpr ne = dceExpr(cr.end(), usedVars, liveness, fx, module, rewrites);
                 HirExpr nk =
-                        cr.step() != null ? dceExpr(cr.step(), usedVars, module, rewrites) : null;
+                        cr.step() != null
+                                ? dceExpr(cr.step(), usedVars, liveness, fx, module, rewrites)
+                                : null;
                 if (ns != cr.start() || ne != cr.end() || nk != cr.step()) {
                     ncr =
                             new HirExpr.CountedRangeLoop(
                                     ns, ne, nk, cr.inclusive(), cr.descending(), cr.elemKind());
                 }
             }
-            List<HirExpr> nb = dceStatements(f.body(), usedVars, module, rewrites);
-            return (ni == f.iterable() && ncr == cr && nb == f.body())
+            List<HirExpr> nb = dceStatements(f.body(), usedVars, liveness, fx, module, rewrites);
+            List<HirVar> nbdv = pruneUnusedDeclaredVars(f.bodyDeclaredVars(), nb);
+            return (ni == f.iterable()
+                            && ncr == cr
+                            && nb == f.body()
+                            && nbdv == f.bodyDeclaredVars())
                     ? f
                     : new HirExpr.For(
                             ni,
                             f.target(),
                             f.loopVar(),
-                            f.bodyDeclaredVars(),
+                            nbdv,
                             nb,
                             f.bodyWideningRank(),
                             f.elemSamTarget(),
@@ -224,9 +355,11 @@ public final class HirDcePass implements HirPass {
                             f.meta());
         }
         if (expr instanceof HirExpr.Try t) {
-            List<HirExpr> ntb = dceStatements(t.tryBody(), usedVars, module, rewrites);
+            List<HirExpr> ntb =
+                    dceStatements(t.tryBody(), usedVars, liveness, fx, module, rewrites);
             List<HirVar> ntdv = pruneUnusedDeclaredVars(t.tryDeclaredVars(), ntb);
-            List<HirExpr> nfb = dceStatements(t.finallyBody(), usedVars, module, rewrites);
+            List<HirExpr> nfb =
+                    dceStatements(t.finallyBody(), usedVars, liveness, fx, module, rewrites);
             List<HirVar> nfdv = pruneUnusedDeclaredVars(t.finallyDeclaredVars(), nfb);
             // Dead-catch elimination (BIP028 §7.4): when tryBody is pure+nothrow+terminating,
             // no exception can ever be thrown from tryBody.
@@ -257,7 +390,8 @@ public final class HirDcePass implements HirPass {
             List<HirExpr.HirCatch> ncs = null;
             for (int i = 0; i < t.catches().size(); i++) {
                 HirExpr.HirCatch cc = t.catches().get(i);
-                List<HirExpr> ncb = dceStatements(cc.body(), usedVars, module, rewrites);
+                List<HirExpr> ncb =
+                        dceStatements(cc.body(), usedVars, liveness, fx, module, rewrites);
                 List<HirVar> ncdv = pruneUnusedDeclaredVars(cc.declaredVars(), ncb);
                 if (ncb != cc.body() || ncdv != cc.declaredVars()) {
                     if (ncs == null) {
@@ -299,7 +433,7 @@ public final class HirDcePass implements HirPass {
         }
         HirExpr cur =
                 HirRewriter.rewriteChildren(
-                        expr, child -> dceExpr(child, usedVars, module, rewrites));
+                        expr, child -> dceExpr(child, usedVars, liveness, fx, module, rewrites));
 
         // Eliminate discard(pureExpr) when discard is unshadowed at top-level
         if (cur instanceof HirExpr.DynamicCall dc
@@ -309,7 +443,7 @@ public final class HirDcePass implements HirPass {
                 && dc.args().get(0).name() == null
                 && !isTopLevelDeclared(module, "discard")
                 && dc.meta().checkedType() == null
-                && HirPurity.isPureNothrowTerminating(dc.args().get(0).value(), module)) {
+                && isRemovableExpr(dc.args().get(0).value(), fx, module)) {
             rewrites[0]++;
             return new HirExpr.Const(
                     null, dc.meta().withKind(PrimitiveKind.NONE).withWideningRank(-1));

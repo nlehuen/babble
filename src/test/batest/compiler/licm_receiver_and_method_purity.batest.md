@@ -37,7 +37,6 @@ fn run (a:int, b:int, flag:bool, xs:obj) -> double {nothrow unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (a:int, b:int, flag:bool, xs:obj) -> double {nothrow unique}
-  (def unusedOv (overload (fn-ref unusedOv#1) (fn-ref unusedOv#2)))
   (def acc 0.0:double)
   (block
     (def $licm0 (+:double (/:double (convert[double] var(a)) (convert[double] var(b))) (convert[double] (+:int var(a) var(b)))))
@@ -51,47 +50,44 @@ fn run (a:int, b:int, flag:bool, xs:obj) -> double {nothrow unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: int, v1: int, v2: bool, v3: any) -> double:
   bb0:
-    v4: any = opaque.FunctionRef(unusedOv) {pure}
-    v5: any = opaque.FunctionRef(unusedOv) {pure}
-    v6: any = opaque.MakeOverloadSet(v4, v5) {pure}
-    v7: double = const 0.0
-    v8: double = convert.double v0
-    v9: double = convert.double v1
-    v10: double = div v8, v9 {pure}
-    v11: int = add v0, v1 {pure}
-    v12: double = convert.double v11
-    v13: double = add v10, v12 {pure}
-    v14: any = for_init.java_iterable v3
-    v15: any = const null
-    br bb1(v15, v7)
-  bb1(v16: any, v17: double):
-    v18: bool = for_has_next v14
-    br_if v18, bb3, bb2
+    v4: double = const 0.0
+    v5: double = convert.double v0
+    v6: double = convert.double v1
+    v7: double = div v5, v6 {pure}
+    v8: int = add v0, v1 {pure}
+    v9: double = convert.double v8
+    v10: double = add v7, v9 {pure}
+    v11: any = for_init.java_iterable v3
+    v12: any = const null
+    br bb1(v12, v4)
+  bb1(v13: any, v14: double):
+    v15: bool = for_has_next v11
+    br_if v15, bb3, bb2
   bb2:
-    ret v17
+    ret v14
   bb3:
-    v19: any = for_next v14
-    v20: any = checkcast v19 <int|int|>
-    v21: int = convert.int v20
-    v22: bool = const false
-    br_if v2, bb4, bb5(v22)
+    v16: any = for_next v11
+    v17: any = checkcast v16 <int|int|>
+    v18: int = convert.int v17
+    v19: bool = const false
+    br_if v2, bb4, bb5(v19)
   bb4:
-    v23: int = const 0
-    v24: bool = gt v0, v23 {pure}
-    br bb5(v24)
-  bb5(v25: bool):
-    br_if v25, bb7, bb6
+    v20: int = const 0
+    v21: bool = gt v0, v20 {pure}
+    br bb5(v21)
+  bb5(v22: bool):
+    br_if v22, bb7, bb6
   bb6:
-    v26: any = const null
-    br bb8(v26, v17)
+    v23: any = const null
+    br bb8(v23, v14)
   bb7:
-    v27: double = convert.double v21
-    v28: double = add v13, v27 {pure}
-    v29: double = add v17, v28 {pure}
-    v30: any = convert.any v29
-    br bb8(v30, v29)
-  bb8(v31: any, v32: double):
-    br bb1(v31, v32)
+    v24: double = convert.double v18
+    v25: double = add v10, v24 {pure}
+    v26: double = add v14, v25 {pure}
+    v27: any = convert.any v26
+    br bb8(v27, v26)
+  bb8(v28: any, v29: double):
+    br bb1(v28, v29)
 ```
 
 ```mir
@@ -532,13 +528,11 @@ fn CR.run (n:int) -> int {nothrow unique}
   (def a 0:int)
   (def i 0:int)
   (block
-    (def $licm0 (get-this-field x))
-    (block
-      (def $licm1 (+:int var($licm0) (+:int var(n) 1:int)))
-      (while (<:bool var(i) var(n))
-        (block
-          (set a += var($licm1))
-          (set i += 1:int)))))
+    (def $licm0 (+:int (get-this-field x) (+:int var(n) 1:int)))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += var($licm0))
+        (set i += 1:int))))
   (+:int var(a) (call-fn cap))
 ```
 

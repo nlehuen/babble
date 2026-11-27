@@ -256,7 +256,6 @@ fn run (s:obj, n:int) -> int {pure unique}
 fn run (s:obj, n:int) -> int {pure unique}
   (def l1 (safe-call var(s)?.length))
   (def l2 (safe-call (safe-call var(s)?.substring 1:int)?.length))
-  (def ov (overload (fn-ref <anon#0>) (fn-ref ov)))
   (+:int (+:int (if (<>:bool var(l1) null) (narrow.nonnull var(l1)) 0:int) (if (<>:bool var(l2) null) (narrow.nonnull var(l2)) 0:int)) (+:int var(n) 1:int))
 ```
 
@@ -289,36 +288,33 @@ fn run(v0: any, v1: int) -> int:
     v16: any = opaque.SafeCall(v15?.length) {impure}
     br bb6(v16)
   bb6(v17: any):
-    v18: any = opaque.FunctionRef(<anon>) {pure}
-    v19: any = opaque.FunctionRef(ov) {pure}
-    v20: any = opaque.MakeOverloadSet(v18, v19) {pure}
-    v21: any = const null
-    v22: any = neq v6, v21 {pure,throws}
-    br_if v22, bb8, bb7
+    v18: any = const null
+    v19: any = neq v6, v18 {pure,throws}
+    br_if v19, bb8, bb7
   bb7:
-    v23: int = const 0
-    br bb9(v23)
+    v20: int = const 0
+    br bb9(v20)
   bb8:
-    v24: any = narrow.nonnull v6 <non-null>
-    v25: int = convert.int v24
-    br bb9(v25)
-  bb9(v26: int):
-    v27: any = const null
-    v28: any = neq v17, v27 {pure,throws}
-    br_if v28, bb11, bb10
+    v21: any = narrow.nonnull v6 <non-null>
+    v22: int = convert.int v21
+    br bb9(v22)
+  bb9(v23: int):
+    v24: any = const null
+    v25: any = neq v17, v24 {pure,throws}
+    br_if v25, bb11, bb10
   bb10:
-    v29: int = const 0
-    br bb12(v29)
+    v26: int = const 0
+    br bb12(v26)
   bb11:
-    v30: any = narrow.nonnull v17 <non-null>
-    v31: int = convert.int v30
-    br bb12(v31)
-  bb12(v32: int):
-    v33: int = add v26, v32 {pure}
-    v34: int = const 1
-    v35: int = add v1, v34 {pure}
-    v36: int = add v33, v35 {pure}
-    ret v36
+    v27: any = narrow.nonnull v17 <non-null>
+    v28: int = convert.int v27
+    br bb12(v28)
+  bb12(v29: int):
+    v30: int = add v23, v29 {pure}
+    v31: int = const 1
+    v32: int = add v1, v31 {pure}
+    v33: int = add v30, v32 {pure}
+    ret v33
 ```
 
 ```mir

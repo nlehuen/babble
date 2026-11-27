@@ -217,11 +217,11 @@ public final class HirEffectAnalysis {
                             : IrEffect.IMPURE_THROW;
             case HirExpr.Def d ->
                     (d.var() != null && !d.var().cell())
-                            ? IrEffect.PURE_NOTHROW
+                            ? IrEffect.write(IrEffect.AliasClass.NONE, true)
                             : IrEffect.WRITE_SHARED_THROW;
             case HirExpr.VarAssign a ->
                     (a.operator() == null && !a.var().cell())
-                            ? IrEffect.PURE_NOTHROW
+                            ? IrEffect.write(IrEffect.AliasClass.NONE, true)
                             : IrEffect.IMPURE_THROW;
             case HirExpr.NameAssign ignored -> IrEffect.IMPURE_THROW;
             case HirExpr.DynamicFieldAssign ignored -> IrEffect.IMPURE_THROW;
@@ -276,8 +276,28 @@ public final class HirEffectAnalysis {
                             ? (hasCheck ? IrEffect.PURE_MAY_THROW : IrEffect.PURE_NOTHROW)
                             : IrEffect.IMPURE_THROW;
             case HirExpr.RecordReuse ignored -> IrEffect.IMPURE_THROW;
-            case HirExpr.DirectBabbleCall c -> callEffect(c.meta().effects(), hasCheck);
-            case HirExpr.DirectThisMethodCall c -> callEffect(c.meta().effects(), hasCheck);
+            case HirExpr.DirectBabbleCall c -> {
+                EffectSet fx = c.meta().effects();
+                if (c.targetFunctionId() >= 0) {
+                    HirFunction target = module.function(c.targetFunctionId());
+                    if (target != null
+                            && (!target.effects().isPure() || target.effects().mutThis())) {
+                        yield effectFromEffectSet(target.effects(), hasCheck);
+                    }
+                }
+                yield callEffect(fx, hasCheck);
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                EffectSet fx = c.meta().effects();
+                if (c.targetFunctionId() >= 0) {
+                    HirFunction target = module.function(c.targetFunctionId());
+                    if (target != null
+                            && (!target.effects().isPure() || target.effects().mutThis())) {
+                        yield effectFromEffectSet(target.effects(), hasCheck);
+                    }
+                }
+                yield callEffect(fx, hasCheck);
+            }
             case HirExpr.JavaMethodCall c -> {
                 EffectSet fx = c.meta().effects();
                 boolean staticOrNonNull =
@@ -418,8 +438,17 @@ public final class HirEffectAnalysis {
                         || g.receiver().meta().frozen()
                         || g.receiver().meta().deeplyImmutable();
         IrEffect.AliasClass alias = isFinal ? IrEffect.AliasClass.FROZEN : aliasOf(g.receiver());
-        boolean nothrow = !hasCheck && g.definitelyDefined() && isNonNull(g.receiver());
+        boolean nothrow = !hasCheck && g.definitelyDefined() && isNonNullReceiver(g.receiver());
         return IrEffect.read(alias, nothrow, true, true);
+    }
+
+    /**
+     * True if {@code receiver} of a compiled Babble member/method access is statically guaranteed
+     * non-null (in Babble's strict non-null type system, a non-nullable local {@code VarRead}
+     * passed to a direct {@code ThisFieldGet} cannot be null).
+     */
+    private static boolean isNonNullReceiver(HirExpr receiver) {
+        return isNonNull(receiver) || receiver instanceof HirExpr.VarRead;
     }
 
     private IrEffect javaFieldGetEffect(HirExpr.JavaFieldGet g, boolean hasCheck) {
@@ -495,16 +524,12 @@ public final class HirEffectAnalysis {
             return new IrEffect(
                     IrEffect.Kind.IMPURE, IrEffect.AliasClass.SHARED, nothrow, terminates, det);
         }
-        if (fx.mutThis()) {
-            return new IrEffect(
-                    IrEffect.Kind.WRITE, IrEffect.AliasClass.SHARED, nothrow, terminates, det);
-        }
-        if (fx.isPure()) {
+        if (fx.isPure() && !fx.mutThis()) {
             return new IrEffect(
                     IrEffect.Kind.PURE, IrEffect.AliasClass.NONE, nothrow, terminates, det);
         }
         return new IrEffect(
-                IrEffect.Kind.READ, IrEffect.AliasClass.SHARED, nothrow, terminates, det);
+                IrEffect.Kind.WRITE, IrEffect.AliasClass.SHARED, nothrow, terminates, det);
     }
 
     private static boolean isNonZeroIntegerConst(HirExpr expr) {

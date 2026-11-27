@@ -58,9 +58,7 @@ fn run (fl:bool) -> int {pure unique}
   (def u (block))
   (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
   (if var(fl) (set p (record-new Pair 4:int 5:int)))
-  (def q null)
   (set q (record-new Vec3 2.0:double 3.0:double 4.0:double))
-  (def tmp null)
   (set tmp (box 1:int))
   (+:int (+:int (+:int (if (is var(p) Pair) (get-this-field a) 0:int) (call name(int) (get-this-field x))) (nonnull var(tmp))) (if (==:bool var(u) null) 0:int 1:int))
 ```
@@ -86,45 +84,43 @@ fn run(v0: bool) -> int:
     v11: any = record_new Pair[v8](v9, v10) {pure}
     br bb3(v11, v11)
   bb3(v12: any, v13: any):
-    v14: any = const null
-    v15: any = name_read Vec3 {pure}
-    v16: double = const 2.0
-    v17: double = const 3.0
-    v18: double = const 4.0
-    v19: any = record_new Vec3[v15](v16, v17, v18) {pure}
-    v20: any = const null
-    v21: int = const 1
-    v22: any = convert.any v21
-    v23: bool = is v13 <babble|Pair>
-    br_if v23, bb5, bb4
+    v14: any = name_read Vec3 {pure}
+    v15: double = const 2.0
+    v16: double = const 3.0
+    v17: double = const 4.0
+    v18: any = record_new Vec3[v14](v15, v16, v17) {pure}
+    v19: int = const 1
+    v20: any = convert.any v19
+    v21: bool = is v13 <babble|Pair>
+    br_if v21, bb5, bb4
   bb4:
-    v24: int = const 0
-    br bb6(v24)
+    v22: int = const 0
+    br bb6(v22)
   bb5:
-    v25: any = narrow.is v13 <babble|Pair>
-    v26: int = load_field v25.a {read:frozen}
-    br bb6(v26)
-  bb6(v27: int):
-    v28: any = name_read int {pure}
-    v29: any = nonnull v19
-    v30: double = load_field v29.x {read:frozen,throws}
-    v31: int = opaque.DynamicCall(v28, v30) {impure}
-    v32: int = add v27, v31 {pure}
-    v33: int = nonnull v22
-    v34: int = add v32, v33 {pure}
-    v35: any = const null
-    v36: any = eq v1, v35 {pure,throws}
-    br_if v36, bb8, bb7
+    v23: any = narrow.is v13 <babble|Pair>
+    v24: int = load_field v23.a {read:frozen}
+    br bb6(v24)
+  bb6(v25: int):
+    v26: any = name_read int {pure}
+    v27: any = nonnull v18
+    v28: double = load_field v27.x {read:frozen,throws}
+    v29: int = opaque.DynamicCall(v26, v28) {impure}
+    v30: int = add v25, v29 {pure}
+    v31: int = nonnull v20
+    v32: int = add v30, v31 {pure}
+    v33: any = const null
+    v34: any = eq v1, v33 {pure,throws}
+    br_if v34, bb8, bb7
   bb7:
-    v37: any = narrow.nonnull v1 <non-null>
-    v38: int = const 1
-    br bb9(v38)
+    v35: any = narrow.nonnull v1 <non-null>
+    v36: int = const 1
+    br bb9(v36)
   bb8:
-    v39: int = const 0
-    br bb9(v39)
-  bb9(v40: int):
-    v41: int = add v34, v40 {pure}
-    ret v41
+    v37: int = const 0
+    br bb9(v37)
+  bb9(v38: int):
+    v39: int = add v32, v38 {pure}
+    ret v39
 ```
 
 ```mir
@@ -206,20 +202,14 @@ fn run (fl:bool) -> double {nothrow unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (fl:bool) -> double {nothrow unique}
-  (def t (record-new Vec3 1.0:double 2.0:double 3.0:double))
   (set t (record-new Vec3 2.0:double 3.0:double 4.0:double))
-  (block
-    (def $sr_s_0 0.0:double)
-    (def $sr_s_1 0.0:double)
-    (def $sr_s_2 0.0:double))
+  (block (def $sr_s_2 0.0:double))
   (if var(fl)
     (block
       (set $sr_s_0 1.0:double)
-      (set $sr_s_1 2.0:double)
       (set $sr_s_2 3.0:double))
     (block
       (set $sr_s_0 4.0:double)
-      (set $sr_s_1 5.0:double)
       (set $sr_s_2 6.0:double)))
   (+:double (get-this-field x) var($sr_s_0))
 ```
@@ -229,35 +219,26 @@ fn run (fl:bool) -> double {nothrow unique}
 fn run(v0: bool) -> double:
   bb0:
     v1: any = name_read Vec3 {pure}
-    v2: double = const 1.0
-    v3: double = const 2.0
-    v4: double = const 3.0
+    v2: double = const 2.0
+    v3: double = const 3.0
+    v4: double = const 4.0
     v5: any = record_new Vec3[v1](v2, v3, v4) {pure}
-    v6: any = name_read Vec3 {pure}
-    v7: double = const 2.0
-    v8: double = const 3.0
-    v9: double = const 4.0
-    v10: any = record_new Vec3[v6](v7, v8, v9) {pure}
-    v11: double = const 0.0
-    v12: double = const 0.0
-    v13: double = const 0.0
+    v6: double = const 0.0
     br_if v0, bb2, bb1
   bb1:
-    v14: double = const 4.0
-    v15: double = const 5.0
-    v16: double = const 6.0
-    v17: any = convert.any v16
-    br bb3(v17, v14)
+    v7: double = const 4.0
+    v8: double = const 6.0
+    v9: any = convert.any v8
+    br bb3(v9, v7)
   bb2:
-    v18: double = const 1.0
-    v19: double = const 2.0
-    v20: double = const 3.0
-    v21: any = convert.any v20
-    br bb3(v21, v18)
-  bb3(v22: any, v23: double):
-    v24: double = load_field v10.x {read:frozen}
-    v25: double = add v24, v23 {pure}
-    ret v25
+    v10: double = const 1.0
+    v11: double = const 3.0
+    v12: any = convert.any v11
+    br bb3(v12, v10)
+  bb3(v13: any, v14: double):
+    v15: double = load_field v5.x {read:frozen}
+    v16: double = add v15, v14 {pure}
+    ret v16
 ```
 
 ```mir
@@ -265,18 +246,18 @@ fn run(v0: bool) -> double:
 fn run(v0: bool) -> double:
   bb0:
     v1: any = name_read Vec3 {pure}
-    v2: double = const 1.0
-    v3: double = const 2.0
-    v4: double = const 3.0
-    v5: double = const 4.0
-    v6: any = record_new Vec3[v1](v3, v4, v5) {pure}
+    v2: double = const 2.0
+    v3: double = const 3.0
+    v4: double = const 4.0
+    v5: any = record_new Vec3[v1](v2, v3, v4) {pure}
     br_if v0, bb2, bb1
   bb1:
-    br bb3(v5)
+    br bb3(v4)
   bb2:
-    br bb3(v2)
+    v6: double = const 1.0
+    br bb3(v6)
   bb3(v7: double):
-    v8: double = load_field v6.x {read:frozen}
+    v8: double = load_field v5.x {read:frozen}
     v9: double = add v8, v7 {pure}
     ret v9
 ```
@@ -452,7 +433,6 @@ fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
-  (def p (record-new Vec3 1.0:double 2.0:double 3.0:double))
   (set p (as var(x) babble|Vec3))
   (def q (record-new Vec3 1.0:double 2.0:double 3.0:double))
   (if var(fl) (set q var(pv)))
@@ -466,75 +446,70 @@ fn run (x:obj, pv:obj, fl:bool) -> double {pure unique}
 ;; mir -O2 fn=run stage=before
 fn run(v0: any, v1: any, v2: bool) -> double:
   bb0:
-    v3: any = name_read Vec3 {pure}
-    v4: double = const 1.0
-    v5: double = const 2.0
-    v6: double = const 3.0
-    v7: any = record_new Vec3[v3](v4, v5, v6) {pure}
-    v8: any = checkcast v0 <babble|Vec3>
-    v9: any = name_read Vec3 {pure}
-    v10: double = const 1.0
-    v11: double = const 2.0
-    v12: double = const 3.0
-    v13: any = record_new Vec3[v9](v10, v11, v12) {pure}
+    v3: any = checkcast v0 <babble|Vec3>
+    v4: any = name_read Vec3 {pure}
+    v5: double = const 1.0
+    v6: double = const 2.0
+    v7: double = const 3.0
+    v8: any = record_new Vec3[v4](v5, v6, v7) {pure}
     br_if v2, bb2, bb1
   bb1:
-    v14: any = const null
-    br bb3(v14, v13)
+    v9: any = const null
+    br bb3(v9, v8)
   bb2:
     br bb3(v1, v1)
-  bb3(v15: any, v16: any):
-    v17: any = name_read Vec3 {pure}
-    v18: double = const 1.0
-    v19: double = const 2.0
-    v20: double = const 3.0
-    v21: any = record_new Vec3[v17](v18, v19, v20) {pure}
-    v22: any = name_read Pair {pure}
-    v23: int = const 4
-    v24: int = const 5
-    v25: any = record_new Pair[v22](v23, v24) {pure}
+  bb3(v10: any, v11: any):
+    v12: any = name_read Vec3 {pure}
+    v13: double = const 1.0
+    v14: double = const 2.0
+    v15: double = const 3.0
+    v16: any = record_new Vec3[v12](v13, v14, v15) {pure}
+    v17: any = name_read Pair {pure}
+    v18: int = const 4
+    v19: int = const 5
+    v20: any = record_new Pair[v17](v18, v19) {pure}
     br_if v2, bb5, bb4
   bb4:
-    br bb6(v25)
+    br bb6(v20)
   bb5:
-    br bb6(v21)
-  bb6(v26: any):
-    v27: double = load_field v8.x {read:frozen}
-    v28: double = load_field v16.x {read:frozen}
-    v29: double = add v27, v28 {pure}
-    v30: bool = is v26 <babble|Pair>
-    br_if v30, bb8, bb7
+    br bb6(v16)
+  bb6(v21: any):
+    v22: double = load_field v3.x {read:frozen}
+    v23: double = load_field v11.x {read:frozen}
+    v24: double = add v22, v23 {pure}
+    v25: bool = is v21 <babble|Pair>
+    br_if v25, bb8, bb7
   bb7:
-    v31: double = load_field v21.x {read:frozen}
-    br bb9(v31)
+    v26: double = load_field v16.x {read:frozen}
+    br bb9(v26)
   bb8:
-    v32: any = narrow.is v26 <babble|Pair>
-    v33: any = name_read double {pure}
-    v34: int = load_field v32.a {read:frozen}
-    v35: double = opaque.DynamicCall(v33, v34) {impure}
-    br bb9(v35)
-  bb9(v36: double):
-    v37: double = add v29, v36 {pure}
-    ret v37
+    v27: any = narrow.is v21 <babble|Pair>
+    v28: any = name_read double {pure}
+    v29: int = load_field v27.a {read:frozen}
+    v30: double = opaque.DynamicCall(v28, v29) {impure}
+    br bb9(v30)
+  bb9(v31: double):
+    v32: double = add v24, v31 {pure}
+    ret v32
 ```
 
 ```mir
 ;; mir -O2 fn=run
 fn run(v0: any, v1: any, v2: bool) -> double:
   bb0:
-    v3: any = name_read Vec3 {pure}
-    v4: double = const 1.0
-    v5: double = const 2.0
-    v6: double = const 3.0
-    v7: any = checkcast v0 <babble|Vec3>
-    v8: any = record_new Vec3[v3](v4, v5, v6) {pure}
+    v3: any = checkcast v0 <babble|Vec3>
+    v4: any = name_read Vec3 {pure}
+    v5: double = const 1.0
+    v6: double = const 2.0
+    v7: double = const 3.0
+    v8: any = record_new Vec3[v4](v5, v6, v7) {pure}
     br_if v2, bb2, bb1
   bb1:
     br bb3(v8)
   bb2:
     br bb3(v1)
   bb3(v9: any):
-    v10: any = record_new Vec3[v3](v4, v5, v6) {pure}
+    v10: any = record_new Vec3[v4](v5, v6, v7) {pure}
     v11: any = name_read Pair {pure}
     v12: int = const 4
     v13: int = const 5
@@ -545,7 +520,7 @@ fn run(v0: any, v1: any, v2: bool) -> double:
   bb5:
     br bb6(v10)
   bb6(v15: any):
-    v16: double = load_field v7.x {read:frozen}
+    v16: double = load_field v3.x {read:frozen}
     v17: double = load_field v9.x {read:frozen}
     v18: double = add v16, v17 {pure}
     v19: bool = is v15 <babble|Pair>

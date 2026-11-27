@@ -297,10 +297,17 @@ Name used before definition : s
 ```
 
 ```hir
-;; hir -O0,-O1 fn=readRef
+;; hir -O0 fn=readRef
 fn readRef () -> obj {nothrow unique}
   (def x var(s))
   (def s "hi")
+  var(x)
+```
+
+```hir
+;; hir -O1 fn=readRef
+fn readRef () -> obj {nothrow unique}
+  (def x var(s))
   var(x)
 ```
 

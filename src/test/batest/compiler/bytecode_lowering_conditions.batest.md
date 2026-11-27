@@ -181,7 +181,7 @@ top-level:
   (call name(assert) (and (<>:bool name(b1) name(b2)) (<>:bool name(b1) name(b2))))
   (call name(assert) (if (>=:bool name(x) 5:int) true:bool false:bool))
   (call name(assert) (if (or (<:bool name(x) 5:int) (<:bool name(y) 5:int)) false:bool true:bool))
-  (call name(assert) (and (and name(b1) name(b1)) true:bool))
+  (call name(assert) (and name(b1) name(b1)))
 ```
 
 ```mir

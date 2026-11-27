@@ -364,12 +364,10 @@ fn f (a:double, n:int) -> double {nothrow unique}
 fn f (a:double, n:int) -> double {nothrow unique}
   (def s 0.0:double)
   (def i 0:int)
-  (block
-    (def $licm0 (call-fn geo.ba#bigSq var(a)))
-    (while (<:bool var(i) var(n))
-      (block
-        (set s += var($licm0))
-        (set i += 1:int))))
+  (while (<:bool var(i) var(n))
+    (block
+      (set s += (call-fn geo.ba#bigSq var(a)))
+      (set i += 1:int)))
   var(s)
 ```
 
@@ -379,20 +377,20 @@ fn f(v0: double, v1: int) -> double:
   bb0:
     v2: double = const 0.0
     v3: int = const 0
-    v4: any = name_read geo {pure}
-    v5: any = export_get v4.bigSq {pure}
-    v6: double = call geo.ba#bigSq(v0) {pure}
-    v7: any = const null
-    br bb1(v7, v3, v2)
-  bb1(v8: any, v9: int, v10: double):
-    v11: bool = lt v9, v1 {pure}
-    br_if v11, bb3, bb2
+    v4: any = const null
+    br bb1(v4, v3, v2)
+  bb1(v5: any, v6: int, v7: double):
+    v8: bool = lt v6, v1 {pure}
+    br_if v8, bb3, bb2
   bb2:
-    ret v10
+    ret v7
   bb3:
-    v12: double = add v10, v6 {pure}
+    v9: any = name_read geo {pure}
+    v10: any = export_get v9.bigSq {pure}
+    v11: double = call geo.ba#bigSq(v0) {pure}
+    v12: double = add v7, v11 {pure}
     v13: int = const 1
-    v14: int = add v9, v13 {pure}
+    v14: int = add v6, v13 {pure}
     v15: any = convert.any v14
     br bb1(v15, v14, v12)
 ```

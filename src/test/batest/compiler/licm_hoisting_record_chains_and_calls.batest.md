@@ -184,7 +184,7 @@ fn RV.run (n:int) -> double {pure unique}
       (block
         (set r +=
           (block
-            (def x (+:double (as var($licm0) double|double|) (if (or (and var($licm1) var($licm2)) var($licm3)) 1.0:double 2.0:double)))
+            (def x (+:double (as var($licm0) double|double|) (if (or var($licm3) (and var($licm1) var($licm2))) 1.0:double 2.0:double)))
             var(x)))
         (set k += 1:int))))
   var(r)
@@ -218,15 +218,15 @@ fn RV.run(v0: int) -> double:
     v19: any = convert.any v4
     v20: any = checkcast v19 <double|double|>
     v21: double = convert.double v20
-    v22: bool = const false
-    br_if v6, bb4, bb5(v22)
+    v22: bool = const true
+    br_if v13, bb7(v22), bb4
   bb4:
-    br bb5(v10)
-  bb5(v23: bool):
-    v24: bool = const true
-    br_if v23, bb7(v24), bb6
-  bb6:
-    br bb7(v13)
+    v23: bool = const false
+    br_if v6, bb5, bb6(v23)
+  bb5:
+    br bb6(v10)
+  bb6(v24: bool):
+    br bb7(v24)
   bb7(v25: bool):
     br_if v25, bb9, bb8
   bb8:
@@ -266,15 +266,15 @@ fn RV.run(v0: int) -> double:
   bb3:
     v13: any = checkcast v9 <double|double|>
     v14: double = convert.double v13
-    v15: bool = const false
-    br_if v5, bb4, bb5(v15)
+    v15: bool = const true
+    br_if v8, bb7(v15), bb4
   bb4:
-    br bb5(v7)
-  bb5(v16: bool):
-    v17: bool = const true
-    br_if v16, bb7(v17), bb6
-  bb6:
-    br bb7(v8)
+    v16: bool = const false
+    br_if v5, bb5, bb6(v16)
+  bb5:
+    br bb6(v7)
+  bb6(v17: bool):
+    br bb7(v17)
   bb7(v18: bool):
     br_if v18, bb9, bb8
   bb8:

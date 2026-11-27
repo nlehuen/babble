@@ -425,7 +425,6 @@ fn RV.run (n:int) -> double {nothrow unique}
 fn RV.run (n:int) -> double {nothrow unique}
   (def a 0.0:double)
   (def k 0:int)
-  (def fnD (fn-ref fnD))
   (block
     (def $licm0 (get-this-field d))
     (def $licm1 (get-this-field f))
@@ -445,44 +444,43 @@ fn RV.run(v0: int) -> double:
   bb0:
     v1: double = const 0.0
     v2: int = const 0
-    v3: any = opaque.FunctionRef(fnD) {pure}
-    v4: any = slot_read this {pure}
-    v5: double = load_field v4.d {read:frozen}
-    v6: any = slot_read this {pure}
-    v7: bool = load_field v6.f {read:frozen}
-    v8: any = slot_read this {pure}
-    v9: any = load_field v8.xs {read:frozen}
-    v10: any = const null
-    br bb1(v10, v2, v1)
-  bb1(v11: any, v12: int, v13: double):
-    v14: bool = lt v12, v0 {pure}
-    br_if v14, bb3, bb2
+    v3: any = slot_read this {pure}
+    v4: double = load_field v3.d {read:frozen}
+    v5: any = slot_read this {pure}
+    v6: bool = load_field v5.f {read:frozen}
+    v7: any = slot_read this {pure}
+    v8: any = load_field v7.xs {read:frozen}
+    v9: any = const null
+    br bb1(v9, v2, v1)
+  bb1(v10: any, v11: int, v12: double):
+    v13: bool = lt v11, v0 {pure}
+    br_if v13, bb3, bb2
   bb2:
-    ret v13
+    ret v12
   bb3:
-    v15: double = call_java Math.sin(v5) {pure}
-    v16: bool = const false
-    br_if v7, bb4, bb5(v16)
+    v14: double = call_java Math.sin(v4) {pure}
+    v15: bool = const false
+    br_if v6, bb4, bb5(v15)
   bb4:
-    v17: int = array_len v9 {read:frozen,throws}
-    v18: int = const 0
-    v19: bool = gt v17, v18 {pure}
-    br bb5(v19)
-  bb5(v20: bool):
-    br_if v20, bb7, bb6
+    v16: int = array_len v8 {read:frozen,throws}
+    v17: int = const 0
+    v18: bool = gt v16, v17 {pure}
+    br bb5(v18)
+  bb5(v19: bool):
+    br_if v19, bb7, bb6
   bb6:
-    v21: double = const 2.0
-    br bb8(v21)
+    v20: double = const 2.0
+    br bb8(v20)
   bb7:
-    v22: double = const 1.0
-    br bb8(v22)
-  bb8(v23: double):
-    v24: double = add v15, v23 {pure}
-    v25: double = add v13, v24 {pure}
-    v26: int = const 1
-    v27: int = add v12, v26 {pure}
-    v28: any = convert.any v27
-    br bb1(v28, v27, v25)
+    v21: double = const 1.0
+    br bb8(v21)
+  bb8(v22: double):
+    v23: double = add v14, v22 {pure}
+    v24: double = add v12, v23 {pure}
+    v25: int = const 1
+    v26: int = add v11, v25 {pure}
+    v27: any = convert.any v26
+    br bb1(v27, v26, v24)
 ```
 
 ```mir
