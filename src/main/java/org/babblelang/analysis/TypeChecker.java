@@ -374,9 +374,9 @@ final class TypeChecker {
             return ax.effects().mutThis();
         }
         if (pass.hostEffects.bytecodeEffectAnalysis()) {
-            return BytecodeEffectAnalyzer.analyze(method, pass.hostEffects.builtinAxioms())
-                    .effects()
-                    .mutThis();
+            BytecodeEffectAnalyzer.Result r =
+                    BytecodeEffectAnalyzer.analyze(method, pass.hostEffects.builtinAxioms());
+            return !r.effects().isUnconstrained() && r.effects().mutThis();
         }
         return false;
     }
