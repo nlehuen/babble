@@ -58,6 +58,12 @@ final class AssignAndMemberEmitter {
             return;
         }
         if (d.var() != null) {
+            if (!d.var().mutable()
+                    && !d.var().cell()
+                    && d.value() != null
+                    && emitter.controlOps.loops.isStaticallyNonNegative(d.value())) {
+                c.nonNegativeVars.add(d.var().id());
+            }
             PrimitiveKind vk = d.var().primitiveKind();
             defValueAs(d, vk);
             emitter.storeVariable(d.var(), true, vk, d.meta().line(), valueNeeded);
@@ -155,15 +161,45 @@ final class AssignAndMemberEmitter {
                 targetKind, rhsKind, op);
     }
 
+    private static boolean containsTry(HirExpr expr) {
+        if (expr == null) {
+            return false;
+        }
+        if (expr instanceof HirExpr.Try) {
+            return true;
+        }
+        boolean[] found = {false};
+        org.babblelang.opt.HirRewriter.rewriteChildren(
+                expr,
+                child -> {
+                    if (!found[0] && containsTry(child)) {
+                        found[0] = true;
+                    }
+                    return child;
+                });
+        return found[0];
+    }
+
     /**
      * Given the current primitive value of {@code kind} already on top of the JVM stack, evaluates
      * {@code rhs} as {@code kind}, applies {@code op}, and leaves the resulting {@code kind} on the
-     * stack.
+     * stack. Spills {@code cur} to a local only when {@code rhsExpr} contains a {@code try} (whose
+     * exception handler clears the JVM operand stack).
      */
     private void emitPrimitiveCompoundArith(PrimitiveKind kind, String op, HirExpr rhsExpr) {
         MethodEmitContext c = ctx();
         MethodVisitor mv = c.mv;
-        emitter.emitAs(rhsExpr, kind);
+        if (containsTry(rhsExpr)) {
+            int cur = c.newLocal(kind);
+            storeKindOn(mv, kind, cur);
+            emitter.emitAs(rhsExpr, kind);
+            int rhs = c.newLocal(kind);
+            storeKindOn(mv, kind, rhs);
+            loadKindOn(mv, kind, cur);
+            loadKindOn(mv, kind, rhs);
+        } else {
+            emitter.emitAs(rhsExpr, kind);
+        }
         if ("//".equals(op)) {
             c.line(rhsExpr.meta().line());
             mv.visitMethodInsn(

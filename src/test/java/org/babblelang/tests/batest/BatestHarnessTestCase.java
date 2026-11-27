@@ -576,7 +576,7 @@ public class BatestHarnessTestCase {
                         + "\n```\n## Ok\n```babble\nassert(true)\n```\n",
                 "mod_large.batest.md");
 
-        // Output and IR blocks (stdout, stderr, error, hir, mir) do NOT count toward the 400-char
+        // Output and IR blocks (stdout, stderr, error, hir, wat) do NOT count toward the 400-char
         // case input budget
         String bigOut = "x".repeat(600);
         String withLargeOutputs =
@@ -595,8 +595,8 @@ public class BatestHarnessTestCase {
                 ;; hir -O1 fn=f
                 %s
                 ```
-                ```mir
-                ;; mir -O2 fn=f stage=before
+                ```hir
+                ;; hir -O2 fn=f stage=before
                 %s
                 ```
                 """
@@ -634,19 +634,19 @@ public class BatestHarnessTestCase {
         Assertions.assertTrue(err.getMessage().contains("foo_1.batest.md"), err.getMessage());
 
         // Lines inside output/IR blocks DO count toward the 1000-line whole-file limit
-        String tooBigWithMir =
+        String tooBigWithHir =
                 header
                         + caseBlock
-                        + "```mir\n;; mir -O2 fn=f\n"
-                        + "v0 = const.int 1\n".repeat(994)
+                        + "```hir\n;; hir -O2 fn=f\n"
+                        + "  1:int\n".repeat(994)
                         + "```\n";
-        IllegalArgumentException mirErr =
+        IllegalArgumentException hirErr =
                 Assertions.assertThrows(
                         IllegalArgumentException.class,
-                        () -> BatestParser.parseString(tooBigWithMir, "oversized_mir.batest.md"));
+                        () -> BatestParser.parseString(tooBigWithHir, "oversized_hir.batest.md"));
         Assertions.assertTrue(
-                mirErr.getMessage().contains("oversized_mir.batest.md is too big with 1002 lines"),
-                mirErr.getMessage());
+                hirErr.getMessage().contains("oversized_hir.batest.md is too big with 1002 lines"),
+                hirErr.getMessage());
     }
 
     @Test

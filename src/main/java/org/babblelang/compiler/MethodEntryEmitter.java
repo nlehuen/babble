@@ -461,8 +461,7 @@ final class MethodEntryEmitter {
                 false);
     }
 
-    private void initFrameLocals(
-            HirFunction fn, String selfType, org.babblelang.ir.mir.MirFunction mirFn) {
+    private void initFrameLocals(HirFunction fn, String selfType) {
         MethodEmitContext ctx = emitter.ctx;
         MethodVisitor mv = ctx.mv;
         if (fn.namespaceScope()) {
@@ -486,34 +485,10 @@ final class MethodEntryEmitter {
         } else {
             loadClosure();
             mv.visitVarInsn(ASTORE, ctx.frameNs);
-            List<HirVar> toDeclare = fn.declaredVars();
-            if (mirFn != null) {
-                Set<Integer> needed = new HashSet<>();
-                for (HirVar pv : mirFn.paramVars()) {
-                    needed.add(pv.id());
-                }
-                for (HirVar pv : mirFn.pinnedVars()) {
-                    needed.add(pv.id());
-                }
-                for (HirParam p : fn.params()) {
-                    if (p.var() != null) {
-                        needed.add(p.var().id());
-                    }
-                }
-                List<HirVar> filtered = new ArrayList<>(toDeclare.size());
-                for (HirVar v : toDeclare) {
-                    if (needed.contains(v.id())
-                            || v.kind() == Resolution.Variable.Kind.THIS
-                            || v.kind() == Resolution.Variable.Kind.RECURSE) {
-                        filtered.add(v);
-                    }
-                }
-                toDeclare = filtered;
-            }
-            if (mirFn == null && emitter.cacheNameReadsInBodies) {
+            if (emitter.cacheNameReadsInBodies) {
                 HirSlotAllocator.allocate(fn, ctx);
             }
-            for (HirVar variable : emitter.declareVariables(toDeclare)) {
+            for (HirVar variable : emitter.declareVariables(fn.declaredVars())) {
                 if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
                     mv.visitVarInsn(ALOAD, ctx.thizLocal);
                     emitter.initVariable(variable, PrimitiveKind.NONE);
@@ -529,15 +504,8 @@ final class MethodEntryEmitter {
         MethodEmitContext ctx = emitter.ctx;
         ctx.cacheNameReads = emitter.cacheNameReadsInBodies && !fn.namespaceScope();
         ctx.beginTailLoop(null, -1);
-        org.babblelang.ir.mir.MirFunction mirFn =
-                emitter.mirModule != null ? emitter.mirModule.function(fn.id()) : null;
-        initFrameLocals(fn, selfType, mirFn);
+        initFrameLocals(fn, selfType);
         bindParameters(paramsField, fn.params(), fn.keywordOnlyStart(), fn.restIndex(), null);
-        if (mirFn != null) {
-            new MirEmitter(emitter, mirFn, fn, PrimitiveKind.NONE).emit();
-            ctx.finish();
-            return;
-        }
         emitter.statements(fn.body());
         emitter.widenStackRank(fn.bodyWideningRank());
         emitter.convertStack(ctx.stackKind, PrimitiveKind.NONE);
@@ -550,9 +518,7 @@ final class MethodEntryEmitter {
         ctx.cacheNameReads = emitter.cacheNameReadsInBodies && !fn.namespaceScope();
         MethodVisitor mv = ctx.mv;
         ctx.beginTailLoop(paramSlots, maskSlot);
-        org.babblelang.ir.mir.MirFunction mirFn =
-                emitter.mirModule != null ? emitter.mirModule.function(fn.id()) : null;
-        initFrameLocals(fn, selfType, mirFn);
+        initFrameLocals(fn, selfType);
         List<HirParam> params = fn.params();
         int optBit = 0;
         for (int i = 0; i < params.size(); i++) {
@@ -599,11 +565,6 @@ final class MethodEntryEmitter {
                         "(Ljava/lang/String;Ljava/lang/Object;Z)V",
                         false);
             }
-        }
-        if (mirFn != null) {
-            new MirEmitter(emitter, mirFn, fn, ctx.methodReturnKind).emit();
-            ctx.finish();
-            return;
         }
         emitter.statements(fn.body());
         emitter.widenStackRank(fn.bodyWideningRank());

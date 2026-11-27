@@ -54,7 +54,19 @@ public class HirCanonicalPrinterTestCase {
     @Test
     public void testIrTierTargetAndSnapshotValidation() {
         Assertions.assertEquals(IrTier.HIR, IrTier.parse("hir"));
-        Assertions.assertEquals(IrTier.MIR, IrTier.parse("MIR"));
+        Assertions.assertEquals(IrTier.WAT, IrTier.parse("WAT"));
+        IllegalArgumentException mirErr =
+                Assertions.assertThrows(IllegalArgumentException.class, () -> IrTier.parse("mir"));
+        Assertions.assertTrue(
+                mirErr.getMessage().contains("Unknown IR tier : mir (expected hir or wat)"),
+                mirErr.getMessage());
+        IllegalArgumentException cliMirErr =
+                Assertions.assertThrows(
+                        IllegalArgumentException.class,
+                        () -> org.babblelang.ir.CliIrDumper.forSpec("mir", "Test", 2));
+        Assertions.assertTrue(
+                cliMirErr.getMessage().contains("Unknown IR tier : mir (expected hir or wat)"),
+                cliMirErr.getMessage());
         Assertions.assertThrows(IllegalArgumentException.class, () -> IrTier.parse("llvm"));
 
         Assertions.assertEquals(new IrTarget.Fn("norm"), IrTarget.parse("fn=norm"));

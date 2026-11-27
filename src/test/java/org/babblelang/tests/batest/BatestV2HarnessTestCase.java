@@ -474,19 +474,12 @@ public class BatestV2HarnessTestCase {
                                     .anyMatch(e ->
                                             e.tier() == org.babblelang.ir.IrTier.HIR
                                                     && e.appliesTo(1));
-                    boolean hasMirBefore =
+                    boolean hasO2 =
                             c.irExpectations().stream()
                                     .anyMatch(e ->
-                                            e.tier() == org.babblelang.ir.IrTier.MIR
-                                                    && e.appliesTo(2)
-                                                    && e.matchesStage("before"));
-                    boolean hasMirFinal =
-                            c.irExpectations().stream()
-                                    .anyMatch(e ->
-                                            e.tier() == org.babblelang.ir.IrTier.MIR
-                                                    && e.appliesTo(2)
-                                                    && e.matchesStage("final"));
-                    if (!hasO0 || !hasO1 || !hasMirBefore || !hasMirFinal) {
+                                            e.tier() == org.babblelang.ir.IrTier.HIR
+                                                    && e.appliesTo(2));
+                    if (!hasO0 || !hasO1 || !hasO2) {
                         violations.add(
                                 rel
                                         + ":"
@@ -496,8 +489,7 @@ public class BatestV2HarnessTestCase {
                                         + ") missing"
                                         + (!hasO0 ? " hir -O0" : "")
                                         + (!hasO1 ? " hir -O1" : "")
-                                        + (!hasMirBefore ? " mir -O2 stage=before" : "")
-                                        + (!hasMirFinal ? " mir -O2 stage=final" : ""));
+                                        + (!hasO2 ? " hir -O2" : ""));
                     }
                 }
             }
@@ -507,17 +499,17 @@ public class BatestV2HarnessTestCase {
         Assertions.assertEquals(
                 List.of(),
                 violations,
-                "Every non-error compiler batest case must assert hir -O0, hir -O1, mir -O2 stage=before, and mir -O2 stage=final:\n"
+                "Every non-error compiler batest case must assert hir -O0, hir -O1, and hir -O2:\n"
                         + String.join("\n", violations));
     }
 
     @Test
     public void testCompilerSuiteParserEnforcementAndMultiStage() {
-        String missingMir =
+        String missingO2 =
                 """
                 # Demo
 
-                ## Missing MIR
+                ## Missing O2
                 ```babble
                 def f = fn (x: int): int -> (x + 1)
                 assert(f(1) == 2)
@@ -531,9 +523,8 @@ public class BatestV2HarnessTestCase {
         IllegalArgumentException ex =
                 Assertions.assertThrows(
                         IllegalArgumentException.class,
-                        () -> BatestV2Parser.parseString(missingMir, "compiler/demo.batest.md"));
-        Assertions.assertTrue(ex.getMessage().contains("mir -O2 stage=before"), ex.getMessage());
-        Assertions.assertTrue(ex.getMessage().contains("mir -O2 stage=final"), ex.getMessage());
+                        () -> BatestV2Parser.parseString(missingO2, "compiler/demo.batest.md"));
+        Assertions.assertTrue(ex.getMessage().contains("hir -O2"), ex.getMessage());
 
         String validCombined =
                 """
@@ -549,21 +540,18 @@ public class BatestV2HarnessTestCase {
                 fn f (x:int) -> int
                   (+:int var(x) 1:int)
                 ```
-                ```mir
-                ;; mir -O2 fn=f stage=before,final
-                fn f(v0: int) -> int:
-                  bb0:
-                    v1: int = const 1
-                    v2: int = add v0, v1 {pure}
-                    ret v2
+                ```hir
+                ;; hir -O2 fn=f stage=before,final
+                fn f (x:int) -> int
+                  (+:int var(x) 1:int)
                 ```
                 """;
         BatestFile parsed = BatestV2Parser.parseString(validCombined, "compiler/demo.batest.md");
-        BatestFile.IrExpectation mir = parsed.cases().get(0).irExpectations().get(1);
-        Assertions.assertEquals(org.babblelang.ir.IrTier.MIR, mir.tier());
-        Assertions.assertTrue(mir.appliesTo(2));
-        Assertions.assertTrue(mir.matchesStage("before"));
-        Assertions.assertTrue(mir.matchesStage("final"));
-        Assertions.assertFalse(mir.matchesStage("after:SccpPass"));
+        BatestFile.IrExpectation o2 = parsed.cases().get(0).irExpectations().get(1);
+        Assertions.assertEquals(org.babblelang.ir.IrTier.HIR, o2.tier());
+        Assertions.assertTrue(o2.appliesTo(2));
+        Assertions.assertTrue(o2.matchesStage("before"));
+        Assertions.assertTrue(o2.matchesStage("final"));
+        Assertions.assertFalse(o2.matchesStage("after:HirSccp"));
     }
 }

@@ -24,8 +24,10 @@ public final class CliIrDumper {
                         ? spec.substring(0, spec.length() - ":canonical".length())
                         : spec;
         String baseLower = baseSpec.toLowerCase(Locale.ROOT);
+        if (baseLower.equals("mir") || baseLower.startsWith("mir:")) {
+            throw new IllegalArgumentException("Unknown IR tier : mir (expected hir or wat)");
+        }
         boolean hirOnly = baseLower.startsWith("hir");
-        boolean mirOnly = baseLower.startsWith("mir");
         boolean beforeOnly = baseLower.endsWith(":before");
         String afterPrefix =
                 baseLower.contains(":after:")
@@ -35,9 +37,6 @@ public final class CliIrDumper {
             @Override
             public boolean wants(IrTier tier, int activeOpt, String stage) {
                 if (hirOnly && tier != IrTier.HIR) {
-                    return false;
-                }
-                if (mirOnly && tier != IrTier.MIR) {
                     return false;
                 }
                 if (afterPrefix != null) {
@@ -76,8 +75,7 @@ public final class CliIrDumper {
                 || "true".equals(lower)
                 || "all".equals(lower)
                 || "canonical".equals(lower)
-                || lower.startsWith("hir")
-                || lower.startsWith("mir")) {
+                || lower.startsWith("hir")) {
             System.err.println("=== " + phase + " : " + internalName + " ===");
             System.err.println(text);
             return;

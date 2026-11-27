@@ -453,13 +453,11 @@ final class ControlAndOpEmitter {
                 kind -> emitter.emitAs(b.right(), kind));
     }
 
-    private boolean isNullConst(HirExpr e) {
-        return e instanceof HirExpr.Const c
-                && c.value() == null
-                && (ctx().mirOverrides == null || !ctx().mirOverrides.containsKey(e));
+    private static boolean isNullConst(HirExpr e) {
+        return e instanceof HirExpr.Const c && c.value() == null;
     }
 
-    private boolean isRefNullComparison(HirExpr.Binary b) {
+    private static boolean isRefNullComparison(HirExpr.Binary b) {
         if (b.op() != HirExpr.BinaryOp.EQ && b.op() != HirExpr.BinaryOp.NEQ) {
             return false;
         }
