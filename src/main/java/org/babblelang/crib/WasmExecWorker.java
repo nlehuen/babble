@@ -203,8 +203,13 @@ public final class WasmExecWorker implements Closeable {
             }
 
             if (line == null) {
+                Integer exitCode = waitExitCodeBriefly(process);
                 destroyProcess();
-                return new RunOutcome(false, false, "", "", "Wasm worker exited unexpectedly");
+                String detail =
+                        exitCode != null
+                                ? "Wasm worker exited unexpectedly (exit code " + exitCode + ")"
+                                : "Wasm worker exited unexpectedly";
+                return new RunOutcome(false, false, "", "", detail);
             }
             Map<String, Object> map = CribProtocol.parseObject(line);
             boolean ok = Boolean.TRUE.equals(map.get("ok"));
@@ -217,6 +222,20 @@ public final class WasmExecWorker implements Closeable {
             return new RunOutcome(
                     false, false, "", "", "Wasm worker I/O error : " + e.getMessage());
         }
+    }
+
+    private static Integer waitExitCodeBriefly(Process p) {
+        if (p == null) {
+            return null;
+        }
+        try {
+            if (p.waitFor(200, TimeUnit.MILLISECONDS)) {
+                return p.exitValue();
+            }
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+        return null;
     }
 
     private void ensureAlive() throws IOException {
@@ -236,14 +255,34 @@ public final class WasmExecWorker implements Closeable {
     }
 
     private void destroyProcess() {
-        if (process != null) {
-            if (process.isAlive()) {
-                process.destroyForcibly();
-            }
-            process = null;
-        }
+        Process p = process;
+        process = null;
+        BufferedWriter w = in;
         in = null;
+        BufferedReader r = out;
         out = null;
+        if (p != null) {
+            if (p.isAlive()) {
+                p.destroyForcibly();
+                try {
+                    p.waitFor(200, TimeUnit.MILLISECONDS);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        if (w != null) {
+            try {
+                w.close();
+            } catch (IOException ignored) {
+            }
+        }
+        if (r != null) {
+            try {
+                r.close();
+            } catch (IOException ignored) {
+            }
+        }
     }
 
     @Override

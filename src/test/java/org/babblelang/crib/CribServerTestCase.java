@@ -521,16 +521,29 @@ public class CribServerTestCase {
                 CribProtocol.STATUS_SKIPPED_NON_PORTABLE,
                 resp.cases().get(1).modes().get("wasm-O1").status());
 
-        // Wasm infinite loop times out cleanly and next Wasm trial succeeds.
+        // Wasm infinite loop times out cleanly and next Wasm trial succeeds (use an unboxed
+        // local loop inside a function so V8 WasmGC does not crash on boxed-global allocation
+        // before the crib wall-clock timeout fires).
         String wasmLoop =
-                "## Wasm infinite loop\n```babble\nvar x = 0\nforever while true then (x += 1)\n```\n";
+                """
+                ## Wasm infinite loop
+                ```babble
+                def spin = fn (): int -> (
+                    var x = 0
+                    forever while true then (x += 1)
+                    x
+                )
+                spin()
+                ```
+                """;
         HttpResponse<String> timeoutHttp = postCrib("modes=wasm-O1&timeout=250", wasmLoop);
         Assertions.assertEquals(200, timeoutHttp.statusCode(), timeoutHttp.body());
         CribProtocol.TrialResponse timeoutResp = CribProtocol.decodeResponse(timeoutHttp.body());
         Assertions.assertFalse(timeoutResp.ok());
         Assertions.assertEquals(
                 CribProtocol.STATUS_TIMEOUT,
-                timeoutResp.cases().get(0).modes().get("wasm-O1").status());
+                timeoutResp.cases().get(0).modes().get("wasm-O1").status(),
+                timeoutHttp.body());
 
         HttpResponse<String> afterWasmTimeout =
                 postCrib(
