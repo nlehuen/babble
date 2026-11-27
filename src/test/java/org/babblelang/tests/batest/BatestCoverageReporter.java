@@ -1217,7 +1217,12 @@ public final class BatestCoverageReporter {
                     "org.babblelang.opt.hir.HirAeGraphPass",
                     "org.babblelang.opt.hir.AeGraphState",
                     "org.babblelang.opt.hir.AeGraphBuilder",
-                    "org.babblelang.opt.hir.AeGraphExtractor");
+                    "org.babblelang.opt.hir.AeGraphExtractor",
+                    "org.babblelang.ir.egraph.PipelineRules",
+                    "org.babblelang.opt.hir.PipelineRewritePass",
+                    "org.babblelang.opt.hir.HirPipelineLifter",
+                    "org.babblelang.opt.hir.HirPipelineAnalysis",
+                    "org.babblelang.opt.hir.HirPipelineLowerer");
 
     static Scope scopeOf(String qualifiedClass) {
         if (qualifiedClass.startsWith("org.babblelang.parser.")
