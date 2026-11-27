@@ -23,12 +23,15 @@ import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 
 /**
  * End-to-end HTTP, CLI, parity, Wasm, and adversarial isolation tests for {@code -crib} ({@code
- * BIP041-I1}–{@code P4}).
+ * BIP041-I1}–{@code I4}).
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@Execution(ExecutionMode.SAME_THREAD)
 public class CribServerTestCase {
 
     private CribServer server;
