@@ -394,7 +394,7 @@ public class CribServerTestCase {
                 try (forever while true then (x += 1)) catch e: java.lang.Throwable then (0)
                 ```
                 """;
-        HttpResponse<String> r1 = postCrib("modes=interpret&timeout=500", interpLoop);
+        HttpResponse<String> r1 = postCrib("modes=interpret&timeout=1500", interpLoop);
         Assertions.assertEquals(200, r1.statusCode(), r1.body());
         CribProtocol.TrialResponse t1 = CribProtocol.decodeResponse(r1.body());
         Assertions.assertFalse(t1.ok());
@@ -536,7 +536,7 @@ public class CribServerTestCase {
                 spin()
                 ```
                 """;
-        HttpResponse<String> timeoutHttp = postCrib("modes=wasm-O1&timeout=250", wasmLoop);
+        HttpResponse<String> timeoutHttp = postCrib("modes=wasm-O1&timeout=500", wasmLoop);
         Assertions.assertEquals(200, timeoutHttp.statusCode(), timeoutHttp.body());
         CribProtocol.TrialResponse timeoutResp = CribProtocol.decodeResponse(timeoutHttp.body());
         Assertions.assertFalse(timeoutResp.ok());
