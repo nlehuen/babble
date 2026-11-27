@@ -29,6 +29,18 @@ public class ExamplesTestCase {
         }
     }
 
+    static Path projectRoot(Path script) {
+        Path examplesRoot = Path.of("examples").toAbsolutePath().normalize();
+        Path file = script.toAbsolutePath().normalize();
+        if (file.startsWith(examplesRoot)) {
+            Path relative = examplesRoot.relativize(file);
+            if (relative.getNameCount() >= 2) {
+                return examplesRoot.resolve(relative.getName(0));
+            }
+        }
+        return file.getParent();
+    }
+
     @ParameterizedTest
     @MethodSource("scripts")
     public void testCompiles(Path script) throws Exception {
@@ -36,16 +48,11 @@ public class ExamplesTestCase {
                 (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         StringWriter errors = new StringWriter();
         engine.getContext().setErrorWriter(errors);
-        Path examplesRoot = Path.of("examples").toAbsolutePath().normalize();
         Path file = script.toAbsolutePath().normalize();
-        Path relative = examplesRoot.relativize(file);
-        Path projectRoot =
-                relative.getNameCount() >= 2
-                        ? examplesRoot.resolve(relative.getName(0))
-                        : file.getParent();
         if (engine.getMode() == BabbleScriptEngine.Mode.COMPILE) {
             List<BabbleScriptEngine.ProgramModule> modules =
-                    engine.compileProgram(FileModuleSource.rooted(projectRoot), file.toString());
+                    engine.compileProgram(
+                            FileModuleSource.rooted(projectRoot(file)), file.toString());
             Assertions.assertFalse(modules.isEmpty(), script.toString());
         } else {
             engine.getContext()
