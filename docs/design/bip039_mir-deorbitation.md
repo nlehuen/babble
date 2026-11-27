@@ -4,9 +4,9 @@
 |---|---|
 | **BIP** | 039 |
 | **Date** | 2026-11-26 |
-| **Status** | Decided (`BIP039-D1`–`D10` settled ; `BIP039-P1`–`P7` planned) |
+| **Status** | Decided (`BIP039-D1`–`D10` settled ; `BIP039-I0`, `BIP039-P1`–`P7` planned) |
 | **Depends on** | Typed `HIR`, `-O1` Nanopass & `-O2` SSA `MIR` (`RM010`, `RM012`, `RM013`, [bip014_optimization-passes.md](bip014_optimization-passes.md)), WebAssembly 3.0 backend (`RM018`, [bip025_compile-to-wasm.md](bip025_compile-to-wasm.md)), compiler modularity & shared `egraph` ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md)), exception handling ([bip028_exception-handling.md](bip028_exception-handling.md)), `.batest.md` v2 & IR goldens ([bip029_batest-v2-and-ir-goldens.md](bip029_batest-v2-and-ir-goldens.md)), ranges & `mod`/`//` (`RM019`, [bip031_ranges.md](bip031_ranges.md)), immutable `def` & mutable `var` ([bip034_immutable-def-and-mutable-var.md](bip034_immutable-def-and-mutable-var.md)), compiler simplification ([bip036_compiler-simplification-and-god-class-splits.md](bip036_compiler-simplification-and-god-class-splits.md)), test hygiene ([bip037_babble-test-hygiene.md](bip037_babble-test-hygiene.md)), pattern matching (`RM024`, [bip038_pattern-matching.md](bip038_pattern-matching.md)) |
-| **Scope** | Unifying Babble's two compiler IRs (`HIR` and `MIR`) into a single enriched structured `HIR` : promoting `IrEffect`/`AliasClass`, `HirExpr.Narrow` guard anchors, and explicit `HirExpr.Convert`/`HirExpr.Widen` nodes into `HIR` at all `-O` levels ; promoting linear-time wins (`HirSlotAllocator` local-slot coloring, `valueNeeded` dead-result suppression, `HirPredicateReorderPass`, upgraded header/alias `HirLicmPass`, and backward-liveness `HirDcePass`) to default `-O1` ; building a dominator-scoped `HirAeGraphPass` (unifying algebraic rules, `Convert`/`Widen`/`CheckCast` folding, GVN/CSE, `idempotent` collapse, and alias-aware RLE + store-to-load forwarding in one dominator walk) alongside `HirSccpPass` at `-O2` ; unlocking `-O2` optimizations and `-PO2` parity testing for WebAssembly 3.0 ; delivering the `aegraph` engine half of `BIP014-P5` Half B on structured `HIR` ; cancelling `BIP036-P4` (`MirEmitter` split) ahead of `BIP036` ; and cleanly deorbiting `org.babblelang.ir.mir.*`, `org.babblelang.opt.mir.*`, `MirEmitter`, and `IrTier.MIR` after a same-commit A/B parity and benchmark gate (~10,900 net LOC removed). |
+| **Scope** | Unifying Babble's two compiler IRs (`HIR` and `MIR`) into a single enriched structured `HIR` : first executing pure pre-`BIP039` structural decompositions (`BIP039-I0`) to bring every `BIP039-P1` grandfathered touchpoint (`HirBuilder`, `HirEmitter`, `ScalarReplacePass`, `WasmFuncEmitter`, plus shared `HirConstFolder`/`HirEGraphCodec` from `HirEGraphSimplifyPass`) below the 1,250-LOC soft / 2,000-LOC hard limits ; promoting `IrEffect`/`AliasClass`, `HirExpr.Narrow` guard anchors, and explicit `HirExpr.Convert`/`HirExpr.Widen` nodes into `HIR` at all `-O` levels ; promoting linear-time wins (`HirSlotAllocator` local-slot coloring, `valueNeeded` dead-result suppression, `HirPredicateReorderPass`, upgraded header/alias `HirLicmPass`, and backward-liveness `HirDcePass`) to default `-O1` ; building a dominator-scoped `HirAeGraphPass` (unifying algebraic rules, `Convert`/`Widen`/`CheckCast` folding, GVN/CSE, `idempotent` collapse, and alias-aware RLE + store-to-load forwarding in one dominator walk) alongside `HirSccpPass` at `-O2` ; unlocking `-O2` optimizations and `-PO2` parity testing for WebAssembly 3.0 ; delivering the `aegraph` engine half of `BIP014-P5` Half B on structured `HIR` ; and cleanly deorbiting all 29 MIR files (`org.babblelang.ir.mir.*`, `org.babblelang.opt.mir.*`, `MirEmitter`, `MirSlotAllocator`, `MirAbiBridge`, and `IrTier.MIR`, while retaining shared `JvmOpEmitter` and `IrCanonicalSupport`) after a same-commit A/B parity and benchmark gate (~10,900 net LOC removed). |
 
 ---
 
@@ -14,26 +14,26 @@
 
 ### 1.1 The Dual-IR Asymmetry Today
 
-`BIP014` introduced a progressive two-tier compiler IR: structured high-level `HIR` (`RM010`, `-O0`/`-O1`) followed by a per-function flat SSA CFG `MIR` (`RM013`, `-O2`). Since then, Babble added `BIP025` WebAssembly 3.0 (`RM018`), `BIP028` `try`/`catch`/`finally`/`throw`, `BIP031` ranges and floored `mod`/`//` (`RM019`), `BIP034` immutable `def` / mutable `var`, and `BIP038` `match` pattern matching (`RM024`). Measuring the actual codebase today (post-Spotless `AOSP` formatting on `master`) reveals a stark structural asymmetry:
+`BIP014` introduced a progressive two-tier compiler IR: structured high-level `HIR` (`RM010`, `-O0`/`-O1`) followed by a per-function flat SSA CFG `MIR` (`RM013`, `-O2`). Since then, Babble added `BIP025` WebAssembly 3.0 (`RM018`), `BIP028` `try`/`catch`/`finally`/`throw`, `BIP031` ranges and floored `mod`/`//` (`RM019`), `BIP034` immutable `def` / mutable `var`, and `BIP038` `match` pattern matching (`RM024`). Measuring the actual codebase today (`c69bd78`, post-Spotless `AOSP` formatting and recent structural splits on `master`) reveals a stark structural asymmetry:
 
 | Subsystem | Files | LOC | Role today |
 |---|---:|---:|---|
 | `org.babblelang.ir.hir` | 19 | 8,941 | Structured typed IR (`HirExpr`, `HirBuilder`, `HirVerifier`, printers, `HirNameInitAnalysis`) |
 | `org.babblelang.opt` + `opt.hir` | 12 | 10,099 | `-O1` passes (`HirEGraphSimplify`, `Inline`, `ScalarReplace`, `FbipReuse`, `HirDce`, `HirLicm`, `HirTryNormalize`) |
-| `HirEmitter` + 6 sub-emitters | 7 | 9,879 | JVM bytecode emitter (**still mandatory at `-O2`** for namespace scopes & ABI delegation) |
+| `HirEmitter` + HIR sub-emitters | 10 | 10,200 | JVM bytecode emitter (`HirEmitter`, `CallEmitter`, `AssignAndMemberEmitter`, `MatchEmitter`, `JvmPrimitives`, `ControlAndOpEmitter`, `LoopEmitter`, `TryCatchEmitter`, `MethodEmitContext`, shared `JvmOpEmitter` — **still mandatory at `-O2`** for namespace scopes & ABI delegation) |
 | `org.babblelang.wasm` | 31 | 31,736 | WebAssembly 3.0 backend (**consumes structured HIR directly**, never sees MIR) |
 | **`org.babblelang.ir.mir`** | **18** | **8,849** | Flat SSA CFG IR (`MirLowerer` + 5 lowerer collaborators 5,115, `MirInst` 1,586, `MirCanonicalPrinter` 747, `MirCfg` 295, `MirTerminator` 294, `MirVerifier` 267, `MirEffect` 158, …) |
 | **`org.babblelang.opt.mir`** | **8** | **2,786** | The 6 actual `-O2` optimization passes |
-| **`MirEmitter.java`** | **1** | **2,472** | Second JVM emitter (delegates ABI ops back to `HirEmitter` via `MethodEmitContext.mirOverrides`) |
+| **`MirEmitter` + `MirSlotAllocator` + `MirAbiBridge`** | **3** | **2,279** | Second JVM emitter (`MirEmitter` 647, `MirSlotAllocator` 874, `MirAbiBridge` 758; delegates ABI ops back to `HirEmitter` via `MethodEmitContext.mirOverrides`) |
 
-The **6 MIR optimization passes are only 2,786 LOC**, while the **scaffolding required to sustain MIR** (`ir.mir` + `MirEmitter`) is **11,321 LOC** — a **4.1 : 1 scaffolding-to-pass ratio**, totaling **14,107 LOC** across 27 files (plus `MethodEmitContext.mirOverrides`, `MirCanonicalPrinterTestCase`, and parallel `;; mir` goldens across 62 `.batest.md` files).
+The **6 MIR optimization passes are only 2,786 LOC**, while the **scaffolding required to sustain MIR** (`ir.mir` + `MirEmitter`/`MirSlotAllocator`/`MirAbiBridge`) is **11,128 LOC** — a **4.0 : 1 scaffolding-to-pass ratio**, totaling **13,914 LOC** across 29 files (9.1% of the entire 153,177-LOC `src/main` tree, plus `MethodEmitContext.mirOverrides`, `MirCanonicalPrinterTestCase`, and parallel `;; mir` goldens across 62 `.batest.md` files).
 
 ### 1.2 Four Compounding Costs of Keeping Two IRs
 
-1. **Double lowering tax on every new language feature :** Every construct added to Babble (`try`/`catch`/`finally`, `range`, counted `for`, `def`/`var` init tracking, `match` jump tables, and upcoming `BIP026-P2`–`P5` string templates and `BIP033-P1`–`P6` tensors) must be implemented and maintained in both `HirBuilder` → `HirEmitter` and `MirLowerer` (6 files) → `MirEmitter`, plus `Wasm*Emitter` and `Interpreter`.
-2. **Unremovable duplication in the JVM backend :** `MirEmitter` cannot replace `HirEmitter`. `MirLowerer` skips all `namespace-scoped` functions (top-level `run()`, class constructors, static blocks, interface bodies) and wraps 22 `HirExpr` variants in `MirInst.OpaqueExpr` that delegate right back into `HirEmitter` via `MethodEmitContext.mirOverrides`. Meanwhile, `MirEmitter` had to re-implement comparison branch fusion, `IAND`/`ISHR`/`IREM`/`IDIV` non-negative strength reduction, constant rematerialization, and stack forwarding just to recover parity with `HirEmitter`'s natural tree-based stack emission (`BIP014` §9.4).
+1. **Double lowering tax on every new language feature :** Every construct added to Babble (`try`/`catch`/`finally`, `range`, counted `for`, `def`/`var` init tracking, `match` jump tables, and upcoming `BIP026-P2`–`P5` string templates and `BIP033-P1`–`P6` tensors) must be implemented and maintained in both `HirBuilder` → `HirEmitter` and `MirLowerer` (6 files) → `MirEmitter`/`MirAbiBridge`, plus `Wasm*Emitter` and `Interpreter`.
+2. **Unremovable duplication in the JVM backend :** `MirEmitter` cannot replace `HirEmitter`. `MirLowerer` skips all `namespace-scoped` functions (top-level `run()`, class constructors, static blocks, interface bodies) and wraps 22 `HirExpr` variants in `MirInst.OpaqueExpr` that delegate right back into `HirEmitter` via `MirAbiBridge` and `MethodEmitContext.mirOverrides`. Meanwhile, `MirEmitter`/`MirSlotAllocator` had to re-implement comparison branch fusion, non-negative strength reduction, constant rematerialization, and stack forwarding just to recover parity with `HirEmitter`'s natural tree-based stack emission (`BIP014` §9.4).
 3. **WebAssembly 3.0 is locked out of `-O2` :** WebAssembly 3.0 is a structured-control-flow target (`block`/`loop`/`if`/`br`/`br_table`/`try_table`), so `org.babblelang.wasm` (31,736 LOC) compiles directly from `HIR`. Keeping SCCP, GVN/CSE, Alias RLE, full LICM, liveness DCE, and Predicate Reordering on flat-CFG `MIR` means WebAssembly gets none of them without writing a Relooper/Stackifier and rewriting the Wasm backend.
-4. **Maintenance surface, compile time, and test friction :** `MirEmitter` (2,472 LOC) remains a >2,000-LOC monolith (driving `BIP036-P4`), and `MirLowerer` plus its 5 extracted collaborators total 5,115 LOC solely to convert `HIR` into `MIR`. Lowering a second IR adds ~25–30% warm compile time on Argon (`BIP014` §9.4 : `152.1 ms` vs `117.8 ms`) and requires maintaining dual `hir` + `mir` goldens in 62 compiler `.batest.md` files.
+4. **Maintenance surface, compile time, and test friction :** Even after recent decompositions (`MirLowerer` into 6 files, `MirEmitter` into 3 files), the MIR stack still comprises **29 files and 13,914 LOC** solely to convert, optimize, and re-emit a second IR. Lowering a second IR adds ~25–30% warm compile time on Argon (`BIP014` §9.4 : `152.1 ms` vs `117.8 ms`) and requires maintaining dual `hir` + `mir` goldens in 62 compiler `.batest.md` files.
 
 ### 1.3 Why Structured HIR Can Absorb All of MIR
 
@@ -48,11 +48,11 @@ flowchart TB
         direction TB
         B_SRC["Babble AST + Analysis"] --> B_HIR["HirBuilder → HIR (8.9k LOC)"]
         B_HIR --> B_HOPT["HIR Passes (-O1, 10.1k LOC)"]
-        B_HOPT -->|"-O0 / -O1 / non-MIR"| B_HEMIT["HirEmitter (9.9k LOC) → JVM"]
+        B_HOPT -->|"-O0 / -O1 / non-MIR"| B_HEMIT["HirEmitter + sub-emitters (10.2k LOC) → JVM"]
         B_HOPT -->|"Wasm (no -O2!)"| B_WASM["WasmProgramLinker (31.7k LOC) → .wasm"]
-        B_HOPT -->|"-O2 only"| B_MLOW["MirLowerer (5.1k LOC) → MIR (3.7k LOC)"]
+        B_HOPT -->|"-O2 only"| B_MLOW["MirLowerer (6 files, 5.1k) → MIR (3.7k)"]
         B_MLOW --> B_MOPT["MIR Passes (2.8k LOC)"]
-        B_MOPT --> B_MEMIT["MirEmitter (2.5k LOC) + mirOverrides → JVM"]
+        B_MOPT --> B_MEMIT["MirEmitter/SlotAllocator/AbiBridge (2.3k) → JVM"]
     end
 
     subgraph After["Unified Single-IR Pipeline (BIP039)"]
@@ -129,14 +129,14 @@ Confirming what we are **not** giving up:
   - scoped e-class hash-consing for pure ops, commutative ops/calls, `Convert`/`Widen`/`CheckCast` chains, cross-statement `idempotent` collapse, and alias-epoch-protected loads (`ThisFieldGet`, `JavaFieldGet`, `ArrayLen`, `NameRead`, `LoadExport`),
   - **unified store-to-load forwarding** (`ThisFieldAssign`/`JavaFieldAssign` recording `(eclass(recv), field) -> eclass(rhs)` right in the dominator walk and invalidating overlapping entries via `IrEffect.isMemoryBarrierFor`), so store-forwarded values immediately join e-classes and unlock algebraic simplification in a single saturation round, and
   - **sound lazy `$cse` materialization** inserting `Def($cseN, expr)` before the dominating first occurrence only when a dominated second hit occurs (never hoisting out of short-circuit RHS or non-dominating sub-scopes).
-  To respect `BIP036`'s `<= 1,500`-LOC ceiling from day one, `HirAeGraphPass` is decomposed into cohesive package-private collaborators (`AeGraphState`, `AeGraphBuilder`, `AeGraphExtractor`).
+  To respect Babble's `1,250`-LOC soft limit (`ArchitectureBoundaryTestCase` 2,000-LOC hard limit) from day one, `HirAeGraphPass` shares `HirConstFolder` and `HirEGraphCodec` with `-O1` `HirEGraphSimplifyPass` (and `HirConstFolder` with `HirSccpPass`) and decomposes its dominator-scoped engine into cohesive package-private collaborators (`AeGraphState`, `AeGraphBuilder`, `AeGraphExtractor`), each targeting `<= 1,000–1,250` LOC.
 - **`BIP039-D6` *(resolves `BIP039-Q2`)* — Three clean optimization tiers on one IR :**
   - **`-O0` :** Unoptimized `HIR` + mandatory `HirTryNormalize`.
   - **`-O1` (default) :** Fast linear-time `HIR` Nanopass pipeline — `HirEGraphSimplify` (expression-local), `Inline`, `ScalarReplace`, `FbipReuse`, upgraded backward-liveness `HirDce`, upgraded header/alias `HirLicm`, and `HirPredicateReorder`, plus `HirEmitter`'s `HirSlotAllocator` slot coloring and `valueNeeded` dead-result suppression.
   - **`-O2` :** Full `HIR` pipeline — replaces expression-local `HirEGraphSimplify` with `HirSccp` + dominator-scoped `HirAeGraph` (GVN/CSE + Alias RLE + store-to-load forwarding) alongside `Inline`, `ScalarReplace`, `FbipReuse`, liveness `HirDce`, full `HirLicm`, and `HirPredicateReorder`, followed by `HirEmitter` (`HirSlotAllocator` + `valueNeeded`) or `WasmProgramLinker`.
-- **`BIP039-D7` — Re-target `BIP014-P5` Half B and simplify `BIP036` :**
+- **`BIP039-D7` — Re-target `BIP014-P5` Half B and align with `BIP036` / `periodic-refactor` :**
   - `BIP039` delivers the dominator-scoped `aegraph` engine of `BIP014-P5` Half B directly on `HIR`; `BIP014-P5` Half B then reduces purely to adding `O12` `PipelineRewritePass` rules over `std/` combinators (benefiting both JVM and WebAssembly).
-  - `BIP039` lands **before** `BIP036`, deleting `MirEmitter` (2,472 LOC) and the 6-file `MirLowerer` subsystem (5,115 LOC) outright and cancelling `BIP036-P4` (`MirEmitter` split). Every new class introduced by `BIP039` adheres to `BIP036`'s `<= 1,500`-LOC ceiling.
+  - `BIP039-I0` clears all four 0-headroom grandfathered `BIP039-P1` touchpoints (`HirBuilder`, `HirEmitter`, `ScalarReplacePass`, `WasmFuncEmitter`, plus `HirEGraphSimplifyPass` shared cores) via pure refactoring with `src/test/batest` untouched before `BIP039-P1` begins. Every new file introduced by `BIP039` targets the `<= 1,250`-LOC soft limit (`<= 2,000`-LOC hard limit). `BIP039-P6` deletes all 29 MIR files (including `MirEmitter`/`MirSlotAllocator`/`MirAbiBridge` and the 6-file `MirLowerer` subsystem) while retaining shared `JvmOpEmitter` and `IrCanonicalSupport`.
 - **`BIP039-D8` *(resolves `BIP039-Q3`, `BIP039-Q4`)* — Hard removal of `IrTier.MIR`, updated goldens, Wasm `-O2` CI, and 6 JaCoCo scopes :**
   - **Hard-remove `IrTier.MIR`** (and `-Dbabble.dumpIr=mir...` in `CliIrDumper`); `IrTier.parse("mir")` fails cleanly with `Unknown IR tier : mir (expected hir or wat)`.
   - **Mandatory `compiler/*.batest.md` golden rule :** Every non-error, non-session case under `src/test/batest/compiler/` must assert `hir -O0`, `hir -O1`, and `hir -O2` (allowing combined headers such as `;; hir -O0,-O1`, `;; hir -O1,-O2`, or `;; hir -O0,-O1,-O2` when outputs match, plus `stage=after:<Pass>` in dedicated optimization suites). Migrate all 62 files with `;; mir` blocks to `;; hir -O2` and rename the 6 `mir_*.batest.md` suites to `opt_*.batest.md`.
@@ -146,7 +146,7 @@ Confirming what we are **not** giving up:
   1. 100% 4-mode differential parity (`interpret`, `-O0`, `-O1`, unified HIR `-O2`) + Wasm 3.0 `-O1` & `-O2` parity (`WasmBatestTestCase`), all with `babble.verify=true` (`HirVerifier` + ASM `CheckClassAdapter` + `WasmVerifier`).
   2. Byte-identical `examples/raytracer-argon/scene.ppm` across `-O0`, `-O1`, unified HIR `-O2`, and `wasm-js -O1`/`-O2`.
   3. Same-commit A/B benchmarks on `org.babblelang.bench.Benchmarks` (separate JVMs, `-Xms1g -Xmx1g -XX:+UseParallelGC`): unified HIR `-O2` matches or beats legacy MIR `-O2` (within noise) on `opt : record Vec3 dot loop`, `mir : header LICM + GVN/CSE + predicate reorder`, `Stack.ba`, `ArrayList`, and `argon` render time + total emitted bytecode size, while strictly beating legacy MIR `-O2` on compile time.
-- **`BIP039-D10` — Sequencing ahead of `BIP036` :** Execute `BIP039-P1`–`P7` before starting `BIP036` so no effort is spent splitting `MirLowerer` or `MirEmitter` before deletion, and enforce `<= 1,500` LOC on every file created or refactored in `BIP039`.
+- **`BIP039-D10` — Pure pre-`BIP039` refactoring (`BIP039-I0`) ahead of `BIP039-P1` :** Run `BIP039-I0` (pure structural decomposition with `src/test/batest` untouched) to remove `HirBuilder`, `HirEmitter`, `ScalarReplacePass`, and `WasmFuncEmitter` from `GRANDFATHERED_CEILINGS` and extract shared `HirConstFolder`/`HirEGraphCodec` from `HirEGraphSimplifyPass` before adding any new nodes in `BIP039-P1`, and keep every new `BIP039` file `<= 1,250` LOC.
 
 ---
 
@@ -257,14 +257,15 @@ Replaces expression-local `HirEGraphSimplifyPass` at `-O2`, sharing `org.babblel
 ### 5.5 `HirEmitter` Backend Upgrades (`-O1`+)
 
 1. **`HirSlotAllocator` (~250 LOC) :**
-   - Runs before emitting each frame-scoped function body at `-O1`+, reusing `HirLiveness`.
+   - Adapts the proven JVM-category-segregated linear-scan coloring core (`CAT1_INT`, `CAT1_FLOAT`, `CAT1_REF`, `CAT2_LONG`, `CAT2_DOUBLE`) already extracted in `MirSlotAllocator.java` onto `HirLiveness`, dropping SSA-only rematerialization/stacking/parallel-copy machinery.
+   - Runs before emitting each frame-scoped function body at `-O1`+.
    - Pins function parameters, captured `Cell` vars, and variables live across `Try` exception edges so handler entries never read overwritten slots.
-   - Colors non-overlapping frame `HirVar` live intervals independently per JVM slot category (`CAT1_INT`, `CAT1_FLOAT`, `CAT1_REF`, `CAT2_LONG`, `CAT2_DOUBLE`), preferring the lowest free slot index so hot variables hit 1-byte `iload_0..3`/`dload_0..3`/`aload_0..3` instructions.
+   - Colors non-overlapping frame `HirVar` live intervals preferring the lowest free slot index so hot variables hit 1-byte `iload_0..3`/`dload_0..3`/`aload_0..3` instructions.
 2. **Statement-position `valueNeeded` flag (~100 LOC) :**
-   - Threads `boolean valueNeeded` through `HirEmitter.emitExpr` and `ControlAndOpEmitter`:
+   - Threads `boolean valueNeeded` through `HirEmitter.emitExpr`, `ControlAndOpEmitter`, `LoopEmitter`, and `AssignAndMemberEmitter`:
      - Non-final statements in `Block`/bodies pass `valueNeeded = false`.
-     - `emitWhile` and `emitFor` skip allocating and initializing `resultLocal` when `!valueNeeded` (evaluating and popping side-effecting `break expr` values without storing to a dead local).
-     - `emitVarAssign`, `emitThisFieldAssign`, and `emitJavaFieldAssign` omit `DUP` when `!valueNeeded`, eliminating `DUP; STORE; POP` pairs.
+     - `LoopEmitter.emitWhile` and `LoopEmitter.emitFor` skip allocating and initializing `resultLocal` when `!valueNeeded` (evaluating and popping side-effecting `break expr` values without storing to a dead local).
+     - `AssignAndMemberEmitter.emitVarAssign`, `emitThisFieldAssign`, and `emitJavaFieldAssign` omit `DUP` when `!valueNeeded`, eliminating `DUP; STORE; POP` pairs.
 
 ### 5.6 WebAssembly 3.0 `-O2` Support (`BIP039-D1`, `BIP039-D8`)
 
@@ -274,31 +275,33 @@ Replaces expression-local `HirEGraphSimplifyPass` at `-O2`, sharing `org.babblel
 
 ---
 
-## 6. Incremental Implementation Roadmap (`BIP039-P1`–`P7`)
+## 6. Incremental Implementation Roadmap (`BIP039-I0`, `BIP039-P1`–`P7`)
 
-MIR stays intact throughout `BIP039-P1`–`P5` behind default `-O2`, while unified HIR `-O2` runs under `-Dbabble.hirO2=true` for direct same-commit A/B verification before deletion in `BIP039-P6`.
+`BIP039-I0` clears the four 0-headroom grandfathered `BIP039-P1` blockers first with `src/test/batest` untouched. MIR then stays intact throughout `BIP039-P1`–`P5` behind default `-O2`, while unified HIR `-O2` runs under `-Dbabble.hirO2=true` for direct same-commit A/B verification before deletion in `BIP039-P6`.
 
 ```mermaid
 flowchart LR
-    P1["BIP039-P1\nIrEffect, Narrow,\nConvert/Widen"] --> P2["BIP039-P2\nPredicateReorder,\nFull Licm, Liveness Dce\n(-O1+)"]
+    P0["BIP039-I0\nPure prep refactor\n(HirBuilder, HirEmitter,\nScalarReplace, EGraph, WasmFunc)"] --> P1["BIP039-P1\nIrEffect, Narrow,\nConvert/Widen"]
+    P1 --> P2["BIP039-P2\nPredicateReorder,\nFull Licm, Liveness Dce\n(-O1+)"]
     P1 --> P3["BIP039-P3\nHirSccpPass\n(-O2)"]
     P1 --> P4["BIP039-P4\nHirAeGraphPass\n(GVN/CSE + Alias RLE, -O2)"]
     P2 --> P5["BIP039-P5\nHirSlotAllocator, valueNeeded\n& A/B Benchmark Gate"]
     P3 --> P5
     P4 --> P5
-    P5 --> P6["BIP039-P6\nDeorbit MIR\n(-14.3k LOC)"]
+    P5 --> P6["BIP039-P6\nDeorbit MIR\n(-14.1k LOC)"]
     P6 --> P7["BIP039-P7\nBatest goldens, Wasm -O2,\n6 JaCoCo scopes & docs"]
 ```
 
 | Phase | Scope | Verification Gate |
 |---|---|---|
-| **`BIP039-P1`** | **HIR foundation :** Add `IrEffect`/`AliasClass` + `HirEffectAnalysis`, `HirExpr.Narrow` (with `guardId`), `HirExpr.Convert`, and `HirExpr.Widen` in `HirBuilder` at all `-O` levels ; simplify implicit conversions in `HirEmitter` and `WasmFuncEmitter` ; update `HirVerifier`, `HirRewriter`, `HirCanonicalPrinter`, and `HirPrinter` ; re-bless and manually review `-O0`/`-O1` HIR goldens. | `mvn -B package -PO2` + `WasmBatestTestCase` green; zero behavioral changes. |
+| **`BIP039-I0`** | **Pure pre-`BIP039` structural prep (`periodic-refactor`, zero behavior/IR changes) :** Decompose `HirBuilder` (2,797 → ~950 LOC; extract `HirDeclLowerer`, `HirCallLowerer`, `HirMatchLowerer` with explicit ANTLR/`ScopeAnalysis` bridge allowlist), `HirEmitter` (2,357 → ~1,150 LOC; extract `MethodEntryEmitter`, `FrameVarEmitter`), `ScalarReplacePass` (2,550 → ~1,150 LOC; extract `RecordLayout`/`RecordBetaReducer`, `UnboxedBorrowSpecializer`), `HirEGraphSimplifyPass` (1,821 → ~920 LOC; extract shared `HirConstFolder` & `HirEGraphCodec`), and `WasmFuncEmitter` (2,814 → ~1,200 LOC; extract `WasmControlAndTypeEmitter`, `WasmVarAndDefEmitter`). Remove all 4 grandfathered files from `GRANDFATHERED_CEILINGS`. | `./src/tools/ci_gate.sh --protect-batest --argon`, `audit_file_sizes.py --check-hard-limit`, `git status -- src/test/batest` empty. |
+| **`BIP039-P1`** | **HIR foundation :** Add `IrEffect`/`AliasClass` + `HirEffectAnalysis` (consolidating `HirPurity`), `HirExpr.Narrow` (with `guardId`), `HirExpr.Convert`, and `HirExpr.Widen` in `HirBuilder` at all `-O` levels ; simplify implicit conversions in `HirEmitter` and `WasmFuncEmitter` ; update `HirVerifier`, `HirRewriter`, `HirCanonicalPrinter`, and `HirPrinter` ; re-bless and manually review `-O0`/`-O1` HIR goldens. | `mvn -B package -PO2` + `WasmBatestTestCase` green; zero behavioral changes. |
 | **`BIP039-P2`** | **Linear-time `-O1`+ passes :** Add shared `HirLiveness`, implement `HirPredicateReorderPass`, upgrade `HirLicmPass` (header hoisting + `AliasClass` loop barriers + `guardId` `Narrow` check), and upgrade `HirDcePass` (backward-liveness dead-store and dead-loop-var removal). Wire into `-O1`+. | Full differential parity across `interpret`, `-O0`, `-O1`, `-O2`, and Wasm 3.0; re-bless affected `-O1` HIR goldens. |
-| **`BIP039-P3`** | **Structured SCCP (`-O2`) :** Implement `HirSccpPass` (3-level lattice, reachability, `If`/`Match`/`While`/`For`/`Try`, zero-divisor `Throw`, foldable JDK axioms) behind `-Dbabble.hirO2=true`. | Parity on all `mir_sccp_and_dce.batest.md` cases + full suite under `-Dbabble.hirO2=true`. |
-| **`BIP039-P4`** | **Dominator-scoped `HirAeGraphPass` (`-O2`) :** Implement `AeGraphState`, `AeGraphBuilder`, `AeGraphExtractor`, and `HirAeGraphPass` (all `<= 1,500` LOC) unifying algebraic rules, `Convert`/`Widen`/`CheckCast` folding, GVN/CSE with lazy `$cse` materialization, `idempotent` collapse, and unified store-to-load forwarding behind `-Dbabble.hirO2=true`. | Parity on all `mir_gvn_and_alias_rle.batest.md` & `mir_licm_and_predicates.batest.md` cases + full suite under `-Dbabble.hirO2=true`. |
-| **`BIP039-P5`** | **Backend codegen parity & A/B Benchmark Gate (`BIP039-D9`) :** Implement `HirSlotAllocator` (reusing `HirLiveness`) and `valueNeeded` dead-result suppression in `HirEmitter` / `ControlAndOpEmitter` (active at `-O1`+). Run same-commit A/B benchmarks comparing `-O2` (legacy MIR) vs. `-O2 -Dbabble.hirO2=true` (unified HIR) across `Benchmarks`, Argon render/compile/bytecode size, and Wasm 3.0. | **`BIP039-D9` hard gate :** unified HIR `-O2` matches/beats legacy MIR `-O2` on throughput and bytecode size, strictly faster compile time, byte-identical Argon, 0 divergences across JVM & Wasm. |
-| **`BIP039-P6`** | **Deorbit MIR :** Make unified HIR `-O2` unconditional and remove `-Dbabble.hirO2` ; delete `org.babblelang.ir.mir.*` (18 files, 8,849 LOC), `org.babblelang.opt.mir.*` (8 files, 2,786 LOC), `MirEmitter.java` (2,472 LOC), `MethodEmitContext.mirOverrides`, `IrTier.MIR`, `CliIrDumper` MIR branches, and `MirCanonicalPrinterTestCase`. | Clean build, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `ExamplesTestCase`, byte-identical Argon across `-O0`/`-O1`/`-O2`/Wasm. |
-| **`BIP039-P7`** | **Tests, Wasm `-O2`, JaCoCo scopes & docs :** Enable `WasmBatestTestCase` at `-O2` under `-PO2` ; update `BatestV2Parser`/`BatestV2HarnessTestCase` to require `hir -O0`, `hir -O1`, `hir -O2` (combined headers allowed) ; migrate all 62 `.batest.md` compiler files from `;; mir -O2` to `;; hir -O2` (renaming `mir_*.batest.md` → `opt_*.batest.md`, blessing with `-Dbatest.updateIr=true` and manually reviewing diffs) ; replace `SSA MIR (-O2)` with `Optimizer (-O2)` in `pom.xml` and `BatestCoverageReporter` ; update `BIP014`, `BIP029`, `BIP036` (retiring `BIP036-P4`), `docs/ARCHITECTURE.md`, `AGENTS.md`, `src/test/AGENTS.md`, and `README.md`. | Full `mvn -B package -PO2` (JVM + Wasm `-O1`/`-O2`), `mvn -q verify -Pbatest` (`>= 80%` line & branch on all 6 scopes), `-format -check`, and byte-identical Argon. |
+| **`BIP039-P3`** | **Structured SCCP (`-O2`) :** Implement `HirSccpPass` (reusing `HirConstFolder`: 3-level lattice, reachability, `If`/`Match`/`While`/`For`/`Try`, zero-divisor `Throw`, foldable JDK axioms) behind `-Dbabble.hirO2=true`. | Parity on all `mir_sccp_and_dce.batest.md` cases + full suite under `-Dbabble.hirO2=true`. |
+| **`BIP039-P4`** | **Dominator-scoped `HirAeGraphPass` (`-O2`) :** Implement `AeGraphState`, `AeGraphBuilder`, `AeGraphExtractor`, and `HirAeGraphPass` (all `<= 1,250` LOC, reusing `HirConstFolder` + `HirEGraphCodec`) unifying algebraic rules, `Convert`/`Widen`/`CheckCast` folding, GVN/CSE with lazy `$cse` materialization, `idempotent` collapse, and unified store-to-load forwarding behind `-Dbabble.hirO2=true`. | Parity on all `mir_gvn_and_alias_rle.batest.md` & `mir_licm_and_predicates.batest.md` cases + full suite under `-Dbabble.hirO2=true`. |
+| **`BIP039-P5`** | **Backend codegen parity & A/B Benchmark Gate (`BIP039-D9`) :** Implement `HirSlotAllocator` (adapting `MirSlotAllocator`'s colorer onto `HirLiveness`) and `valueNeeded` dead-result suppression across `HirEmitter`, `ControlAndOpEmitter`, `LoopEmitter`, and `AssignAndMemberEmitter` (active at `-O1`+). Run same-commit A/B benchmarks comparing `-O2` (legacy MIR) vs. `-O2 -Dbabble.hirO2=true` (unified HIR) across `Benchmarks`, Argon render/compile/bytecode size, and Wasm 3.0. | **`BIP039-D9` hard gate :** unified HIR `-O2` matches/beats legacy MIR `-O2` on throughput and bytecode size, strictly faster compile time, byte-identical Argon, 0 divergences across JVM & Wasm. |
+| **`BIP039-P6`** | **Deorbit MIR :** Make unified HIR `-O2` unconditional and remove `-Dbabble.hirO2` ; delete `org.babblelang.ir.mir.*` (18 files, 8,849 LOC), `org.babblelang.opt.mir.*` (8 files, 2,786 LOC), `MirEmitter.java` (647 LOC), `MirSlotAllocator.java` (874 LOC), `MirAbiBridge.java` (758 LOC), `MethodEmitContext.mirOverrides`, `IrTier.MIR`, `CliIrDumper` MIR branches, and `MirCanonicalPrinterTestCase` (retaining shared `JvmOpEmitter` and `IrCanonicalSupport`). | Clean build, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `ExamplesTestCase`, byte-identical Argon across `-O0`/`-O1`/`-O2`/Wasm. |
+| **`BIP039-P7`** | **Tests, Wasm `-O2`, JaCoCo scopes & docs :** Enable `WasmBatestTestCase` at `-O2` under `-PO2` ; update `BatestV2Parser`/`BatestV2HarnessTestCase` to require `hir -O0`, `hir -O1`, `hir -O2` (combined headers allowed) ; migrate all 62 `.batest.md` compiler files from `;; mir -O2` to `;; hir -O2` (renaming `mir_*.batest.md` → `opt_*.batest.md`, blessing with `-Dbatest.updateIr=true` and manually reviewing diffs) ; replace `SSA MIR (-O2)` with `Optimizer (-O2)` in `pom.xml` and `BatestCoverageReporter` ; update `BIP014`, `BIP029`, `BIP036`, `docs/ARCHITECTURE.md`, `AGENTS.md`, `src/test/AGENTS.md`, and `README.md`. | Full `mvn -B package -PO2` (JVM + Wasm `-O1`/`-O2`), `mvn -q verify -Pbatest` (`>= 80%` line & branch on all 6 scopes), `-format -check`, and byte-identical Argon. |
 
 ---
 
@@ -308,14 +311,14 @@ flowchart LR
 
 | Category | Removed LOC | Added LOC | Net LOC |
 |---|---:|---:|---:|
-| `org.babblelang.ir.mir.*` (18 files) → `IrEffect`, `Narrow`, `Convert`/`Widen`, `HirEffectAnalysis` | −8,849 | +850 | **−7,999** |
-| `org.babblelang.opt.mir.*` (8 files) → `HirLiveness`, `HirPredicateReorder`, upgraded `HirLicm`/`HirDce`, `HirSccp`, `HirAeGraph` (3 helpers) | −2,786 | +2,000 | **−786** |
-| `MirEmitter` (2,472) + `mirOverrides` (~180) → `HirSlotAllocator` + `valueNeeded` | −2,652 | +450 | **−2,202** |
-| **Total (`src/main/java`, Spotless AOSP)** | **−14,287** | **+3,300** | **~−10,987** |
+| `org.babblelang.ir.mir.*` (18 files) → `IrEffect`, `Narrow`, `Convert`/`Widen`, `HirEffectAnalysis` (consolidating `HirPurity`) | −8,849 | +700 | **−8,149** |
+| `org.babblelang.opt.mir.*` (8 files) → `HirLiveness`, `HirPredicateReorder`, upgraded `HirLicm`/`HirDce`, `HirSccp`, `HirAeGraph` (sharing `HirConstFolder`/`HirEGraphCodec`) | −2,786 | +1,800 | **−986** |
+| `MirEmitter` (647) + `MirSlotAllocator` (874) + `MirAbiBridge` (758) + `mirOverrides` (~180) → `HirSlotAllocator` + `valueNeeded` | −2,459 | +450 | **−2,009** |
+| **Total (`src/main/java`, Spotless AOSP)** | **−14,094** | **+2,950** | **~−11,144** |
 
 ### 7.2 Synergies with Planned BIPs
 
-- **`BIP036` (Compiler simplification) :** Deletes `MirEmitter.java` (2,472 LOC) outright ahead of `BIP036`, retiring `BIP036-P4` by deletion instead of splitting it, and removes the entire 6-file `MirLowerer` subsystem (5,115 LOC).
+- **`BIP036` (Compiler simplification) :** `BIP039-I0` removes 4 of the 10 remaining grandfathered >2,000-LOC files (`HirBuilder`, `HirEmitter`, `ScalarReplacePass`, `WasmFuncEmitter`), and `BIP039-P6` removes all 29 MIR files (13,914 LOC).
 - **`BIP014-P5` Half B (`aegraph` & `O12` pipeline rewrites) :** `BIP039-P4` delivers the dominator-scoped `aegraph` engine directly on `HIR`; `BIP014-P5` Half B then only adds `O12` pipeline rewrite rules over `std/` combinators (working for both JVM and WebAssembly).
 - **`BIP018-P2` (Class-File API backend) :** Replacing ASM with JDK 25's Class-File API only needs to port **one** emitter (`HirEmitter`), not two (`HirEmitter` + `MirEmitter`).
 - **`BIP025` (WebAssembly 3.0) :** Gains full `-O1` and `-O2` optimization (SCCP, dominator-scoped `aegraph`, GVN/CSE, Alias RLE, header LICM, liveness DCE, Predicate Reordering) with ~50 LOC of Wasm-side changes and continuous `-PO2` CI parity.

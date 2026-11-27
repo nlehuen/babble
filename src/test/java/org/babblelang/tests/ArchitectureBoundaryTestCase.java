@@ -60,6 +60,14 @@ public class ArchitectureBoundaryTestCase {
                     "org/babblelang/analysis/SizeChangeTermination",
                     "org/babblelang/analysis/MatchExhaustiveness");
 
+    private static final Set<String> HIR_BRIDGE_CLASSES =
+            Set.of(
+                    "org/babblelang/ir/hir/HirBuilder",
+                    "org/babblelang/ir/hir/HirDeclLowerer",
+                    "org/babblelang/ir/hir/HirCallLowerer",
+                    "org/babblelang/ir/hir/HirMatchLowerer",
+                    "org/babblelang/compiler/BabbleCompiler");
+
     /**
      * Temporary high-water-mark ceilings for pre-existing {@code src/main} files above {@value
      * #HARD_MAX_LOC} physical LOC. Periodic refactorings may only lower or remove entries; once a
@@ -68,12 +76,8 @@ public class ArchitectureBoundaryTestCase {
      */
     private static final Map<String, Integer> GRANDFATHERED_CEILINGS =
             Map.ofEntries(
-                    Map.entry("src/main/java/org/babblelang/wasm/WasmFuncEmitter.java", 2_814),
-                    Map.entry("src/main/java/org/babblelang/ir/hir/HirBuilder.java", 2_797),
-                    Map.entry("src/main/java/org/babblelang/opt/hir/ScalarReplacePass.java", 2_550),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmCoreEmitter.java", 2_463),
                     Map.entry("src/main/java/org/babblelang/analysis/EffectBodyWalker.java", 2_430),
-                    Map.entry("src/main/java/org/babblelang/compiler/HirEmitter.java", 2_357),
                     Map.entry("src/main/java/org/babblelang/wasm/WasmCallEmitter.java", 2_380),
                     Map.entry("src/main/java/org/babblelang/compiler/CallEmitter.java", 2_195),
                     Map.entry(
@@ -159,8 +163,7 @@ public class ArchitectureBoundaryTestCase {
         List<String> violations = new ArrayList<>();
         for (String name : classes) {
             String top = topLevelClass(name);
-            if (top.equals("org/babblelang/ir/hir/HirBuilder")
-                    || top.equals("org/babblelang/compiler/BabbleCompiler")) {
+            if (HIR_BRIDGE_CLASSES.contains(top)) {
                 continue;
             }
             try (InputStream in = Files.newInputStream(root.resolve(name + ".class"))) {
@@ -187,8 +190,7 @@ public class ArchitectureBoundaryTestCase {
         List<String> violations = new ArrayList<>();
         for (String name : classes) {
             String top = topLevelClass(name);
-            if (top.equals("org/babblelang/ir/hir/HirBuilder")
-                    || top.equals("org/babblelang/compiler/BabbleCompiler")) {
+            if (HIR_BRIDGE_CLASSES.contains(top)) {
                 continue;
             }
             try (InputStream in = Files.newInputStream(root.resolve(name + ".class"))) {

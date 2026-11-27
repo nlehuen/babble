@@ -1,10 +1,8 @@
 package org.babblelang.ir.hir;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,73 +14,69 @@ import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.analysis.ScopeAnalysis;
 import org.babblelang.analysis.SyntaxText;
-import org.babblelang.parser.BabbleBaseVisitor;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
 import org.babblelang.parser.StringLiterals;
-import org.babblelang.runtime.CallSite;
 import org.babblelang.runtime.ClassShape;
-import org.babblelang.runtime.JavaTypes;
 import org.babblelang.runtime.Operators;
-import org.objectweb.asm.Type;
 
 /**
  * Translates an ANTLR4 {@link BabbleParser.FileContext} plus its {@link ScopeAnalysis} and {@link
  * Resolution} side tables into a completely ANTLR-free {@link HirModule} (BIP014-I1, BIP014-D8).
  *
- * <p>This is the single boundary where {@code ParserRuleContext} is inspected by the compiler
- * backend; all downstream optimization passes and bytecode emitters consume {@link HirModule} only.
+ * <p>Coordinates {@link HirDeclLowerer}, {@link HirCallLowerer}, and {@link HirMatchLowerer} as the
+ * sole AST-to-HIR bridge; all downstream optimization passes and bytecode emitters consume {@link
+ * HirModule} only.
  */
 public final class HirBuilder {
-    private final String className;
-    private final String sourceName;
-    private final ScopeAnalysis scopes;
-    private final Resolution resolution;
+    final String className;
+    final String sourceName;
+    final ScopeAnalysis scopes;
+    final Resolution resolution;
+    final HirDeclLowerer declLowerer;
+    final HirCallLowerer callLowerer;
+    final HirMatchLowerer matchLowerer;
 
-    private final Map<String, String> allInterfaceJvmNames = new LinkedHashMap<>();
-    private final Map<String, String> allClassJvmNames = new LinkedHashMap<>();
-    private final Map<String, String> ownInterfaceJvmNames = new LinkedHashMap<>();
-    private final Map<String, String> ownClassJvmNames = new LinkedHashMap<>();
-    private final Map<String, String> localClassJvmNamesById = new LinkedHashMap<>();
-    private final Map<String, Integer> localClassIdsByShapeId = new LinkedHashMap<>();
+    final Map<String, String> allInterfaceJvmNames = new LinkedHashMap<>();
+    final Map<String, String> allClassJvmNames = new LinkedHashMap<>();
+    final Map<String, String> ownInterfaceJvmNames = new LinkedHashMap<>();
+    final Map<String, String> ownClassJvmNames = new LinkedHashMap<>();
+    final Map<String, String> localClassJvmNamesById = new LinkedHashMap<>();
+    final Map<String, Integer> localClassIdsByShapeId = new LinkedHashMap<>();
 
-    private final Map<BabbleParser.InterfaceExpressionContext, Integer> interfaceIds =
+    final Map<BabbleParser.InterfaceExpressionContext, Integer> interfaceIds =
             new IdentityHashMap<>();
-    private final Map<ParserRuleContext, Integer> classIds = new IdentityHashMap<>();
-    private final Map<BabbleParser.FunctionLiteralContext, Integer> functionIds =
+    final Map<ParserRuleContext, Integer> classIds = new IdentityHashMap<>();
+    final Map<BabbleParser.FunctionLiteralContext, Integer> functionIds = new IdentityHashMap<>();
+    final Map<ParserRuleContext, String> preassignedClassNames = new IdentityHashMap<>();
+    final Map<ParserRuleContext, String> compiledClassJvmNames = new IdentityHashMap<>();
+    final Map<ParserRuleContext, List<Class<?>>> classJavaInterfaces = new IdentityHashMap<>();
+    final Map<ParserRuleContext, List<String>> classImplementedJvm = new IdentityHashMap<>();
+    final Map<BabbleParser.FunctionLiteralContext, Integer> methodOwnerClassIds =
             new IdentityHashMap<>();
-    private final Map<ParserRuleContext, String> preassignedClassNames = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, String> compiledClassJvmNames = new IdentityHashMap<>();
-    private final Map<ParserRuleContext, List<Class<?>>> classJavaInterfaces =
+    final Map<BabbleParser.FunctionLiteralContext, String> methodMemberNames =
             new IdentityHashMap<>();
-    private final Map<ParserRuleContext, List<String>> classImplementedJvm =
-            new IdentityHashMap<>();
-    private final Map<BabbleParser.FunctionLiteralContext, Integer> methodOwnerClassIds =
-            new IdentityHashMap<>();
-    private final Map<BabbleParser.FunctionLiteralContext, String> methodMemberNames =
-            new IdentityHashMap<>();
-    private final Map<BabbleParser.FunctionLiteralContext, String> functionJvmNames =
+    final Map<BabbleParser.FunctionLiteralContext, String> functionJvmNames =
             new IdentityHashMap<>();
     private final Map<Resolution.Variable, HirVar> vars = new IdentityHashMap<>();
 
-    private final List<BabbleParser.InterfaceExpressionContext> orderedInterfaces =
-            new ArrayList<>();
-    private final List<ParserRuleContext> orderedClasses = new ArrayList<>();
-    private final List<BabbleParser.FunctionLiteralContext> orderedFunctions = new ArrayList<>();
-    private final Set<HirExpr> fileScopeNameReads =
+    final List<BabbleParser.InterfaceExpressionContext> orderedInterfaces = new ArrayList<>();
+    final List<ParserRuleContext> orderedClasses = new ArrayList<>();
+    final List<BabbleParser.FunctionLiteralContext> orderedFunctions = new ArrayList<>();
+    final Set<HirExpr> fileScopeNameReads =
             java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-    private final Set<HirExpr> nonCyclicImports =
+    final Set<HirExpr> nonCyclicImports =
             java.util.Collections.newSetFromMap(new IdentityHashMap<>());
-    private final Set<HirExpr> publicStaticDefSelects =
+    final Set<HirExpr> publicStaticDefSelects =
             java.util.Collections.newSetFromMap(new IdentityHashMap<>());
 
-    private int nextOwnerId = 1;
-    private int nextVarId = 1;
-    private int interfaceCount = 0;
-    private int classCount = 0;
-    private int functionCount = 0;
+    int nextOwnerId = 1;
+    int nextVarId = 1;
+    int interfaceCount = 0;
+    int classCount = 0;
+    int functionCount = 0;
 
-    private BabbleParser.FunctionLiteralContext currentFunction;
+    BabbleParser.FunctionLiteralContext currentFunction;
 
     private HirBuilder(
             String className,
@@ -94,6 +88,9 @@ public final class HirBuilder {
         this.sourceName = sourceName;
         this.scopes = scopes;
         this.resolution = scopes.resolution();
+        this.declLowerer = new HirDeclLowerer(this);
+        this.callLowerer = new HirCallLowerer(this);
+        this.matchLowerer = new HirMatchLowerer(this);
         if (knownInterfaceJvmNames != null) {
             this.allInterfaceJvmNames.putAll(knownInterfaceJvmNames);
         }
@@ -117,7 +114,7 @@ public final class HirBuilder {
     private HirModule run(BabbleParser.FileContext file) {
         // Pass 1: discover all interfaces, classes/objects, and function literals and assign stable
         // IDs & JVM names.
-        discoverAll(file);
+        declLowerer.discoverAll(file);
 
         // Pass 2: lower top-level statements, functions, classes, and interfaces to ANTLR-free HIR.
         List<HirExpr> topLevel = new ArrayList<>(file.expression().size());
@@ -127,19 +124,19 @@ public final class HirBuilder {
 
         Map<Integer, HirFunction> hirFunctions = new LinkedHashMap<>();
         for (BabbleParser.FunctionLiteralContext fnCtx : orderedFunctions) {
-            HirFunction fn = lowerFunction(fnCtx);
+            HirFunction fn = declLowerer.lowerFunction(fnCtx);
             hirFunctions.put(fn.id(), fn);
         }
 
         Map<Integer, HirClass> hirClasses = new LinkedHashMap<>();
         for (ParserRuleContext clsCtx : orderedClasses) {
-            HirClass cls = lowerClass(clsCtx);
+            HirClass cls = declLowerer.lowerClass(clsCtx);
             hirClasses.put(cls.id(), cls);
         }
 
         Map<Integer, HirInterface> hirInterfaces = new LinkedHashMap<>();
         for (BabbleParser.InterfaceExpressionContext ifaceCtx : orderedInterfaces) {
-            HirInterface iface = lowerInterface(ifaceCtx);
+            HirInterface iface = declLowerer.lowerInterface(ifaceCtx);
             hirInterfaces.put(iface.id(), iface);
         }
 
@@ -157,7 +154,7 @@ public final class HirBuilder {
         String[] topDeclared = scopes.declared(file);
         boolean[] topFinals = scopes.declaredFinals(file);
         Map<String, LoweringTargets.ExportedFunctionTarget> ownExportedFunctions =
-                collectOwnExportedFunctions(
+                declLowerer.collectOwnExportedFunctions(
                         topLevel, hirFunctions, exports, topDeclared, topFinals);
 
         return new HirModule(
@@ -171,7 +168,7 @@ public final class HirBuilder {
                 hirFunctions,
                 hirClasses,
                 hirInterfaces,
-                collectAllTypeHierarchies(),
+                declLowerer.collectAllTypeHierarchies(),
                 allInterfaceJvmNames,
                 allClassJvmNames,
                 ownInterfaceJvmNames,
@@ -182,367 +179,7 @@ public final class HirBuilder {
                 scopes.lowering().wasmImports());
     }
 
-    private Map<String, LoweringTargets.ExportedFunctionTarget> collectOwnExportedFunctions(
-            List<HirExpr> topLevel,
-            Map<Integer, HirFunction> hirFunctions,
-            String[] exports,
-            String[] topDeclared,
-            boolean[] topFinals) {
-        if (exports == null || exports.length == 0) {
-            return Map.of();
-        }
-        Set<String> exportSet = Set.of(exports);
-        Set<String> immutableTopDefs = new LinkedHashSet<>();
-        for (int i = 0; i < topDeclared.length && i < topFinals.length; i++) {
-            if (topFinals[i]) {
-                immutableTopDefs.add(topDeclared[i]);
-            }
-        }
-        Map<String, org.babblelang.analysis.ModuleInterface> importedByKey = new LinkedHashMap<>();
-        java.util.ArrayDeque<org.babblelang.analysis.ModuleInterface> queue =
-                new java.util.ArrayDeque<>();
-        for (org.babblelang.analysis.ModuleInterface mod : scopes.importedModules()) {
-            if (mod != null) {
-                queue.add(mod);
-            }
-        }
-        while (!queue.isEmpty()) {
-            org.babblelang.analysis.ModuleInterface mod = queue.poll();
-            String k = mod.moduleKey() != null ? mod.moduleKey() : mod.name();
-            if (k != null && !importedByKey.containsKey(k)) {
-                importedByKey.put(k, mod);
-                for (org.babblelang.analysis.ModuleInterface dep : mod.dependencies()) {
-                    if (dep != null) {
-                        queue.add(dep);
-                    }
-                }
-            }
-        }
-        String selfKey =
-                scopes.moduleInterface() != null && scopes.moduleInterface().moduleKey() != null
-                        ? scopes.moduleInterface().moduleKey()
-                        : sourceName;
-
-        // Pass 1: direct FunctionRef defs and cross-module ModuleExportGet re-exports.
-        Map<String, LoweringTargets.ExportedFunctionTarget> defTargets = new LinkedHashMap<>();
-        Map<String, String> localAliases = new LinkedHashMap<>();
-        for (HirExpr stmt : topLevel) {
-            HirExpr u = unwrapTransparent(stmt);
-            if (!(u instanceof HirExpr.Def d)
-                    || d.var() != null
-                    || d.target().kind() != LoweringTargets.DefKind.LEXICAL
-                    || !immutableTopDefs.contains(d.name())) {
-                continue;
-            }
-            HirExpr val = unwrapTransparent(d.value());
-            if (val instanceof HirExpr.FunctionRef ref) {
-                HirFunction fn = hirFunctions.get(ref.functionId());
-                if (fn != null && fn.capturedVars().isEmpty() && (fn.hasSpec() || fn.isSpread())) {
-                    defTargets.put(d.name(), buildExportedFunctionTarget(selfKey, d.name(), fn));
-                }
-            } else if (val instanceof HirExpr.ModuleExportGet meg) {
-                String depKey =
-                        meg.target().moduleKey() != null
-                                ? meg.target().moduleKey()
-                                : meg.target().moduleName();
-                org.babblelang.analysis.ModuleInterface depMod =
-                        depKey != null ? importedByKey.get(depKey) : null;
-                if (depMod != null) {
-                    LoweringTargets.ExportedFunctionTarget reexp =
-                            depMod.exportedFunction(meg.target().name());
-                    if (reexp != null) {
-                        defTargets.put(d.name(), reexp);
-                    }
-                }
-            } else if (val instanceof HirExpr.NameRead nr && immutableTopDefs.contains(nr.name())) {
-                localAliases.put(d.name(), nr.name());
-            }
-        }
-        // Pass 2: resolve local immutable alias chains (`def h = fn ...; export def sq = h`).
-        for (Map.Entry<String, String> e : localAliases.entrySet()) {
-            String name = e.getKey();
-            String cur = e.getValue();
-            int steps = 0;
-            while (cur != null
-                    && !defTargets.containsKey(cur)
-                    && localAliases.containsKey(cur)
-                    && steps++ < 16) {
-                cur = localAliases.get(cur);
-            }
-            LoweringTargets.ExportedFunctionTarget target =
-                    cur != null ? defTargets.get(cur) : null;
-            if (target != null) {
-                if (selfKey.equals(target.moduleKey()) && className.equals(target.ownerJvmName())) {
-                    // Local alias to an unexported local helper: publish under this export's own
-                    // name.
-                    defTargets.put(
-                            name,
-                            new LoweringTargets.ExportedFunctionTarget(
-                                    selfKey,
-                                    sourceName,
-                                    name,
-                                    target.ownerJvmName(),
-                                    target.jvmMethodName(),
-                                    target.signature(),
-                                    target.hasMutParam(),
-                                    target.effects()));
-                } else {
-                    defTargets.put(name, target);
-                }
-            }
-        }
-        Map<String, LoweringTargets.ExportedFunctionTarget> result = new LinkedHashMap<>();
-        for (String exp : exportSet) {
-            LoweringTargets.ExportedFunctionTarget t = defTargets.get(exp);
-            if (t != null) {
-                result.put(exp, t);
-            }
-        }
-        return result;
-    }
-
-    private LoweringTargets.ExportedFunctionTarget buildExportedFunctionTarget(
-            String selfKey, String exportName, HirFunction fn) {
-        PrimitiveKind[] paramKinds = new PrimitiveKind[fn.params().size()];
-        boolean hasMutParam = false;
-        for (int i = 0; i < fn.params().size(); i++) {
-            HirParam p = fn.params().get(i);
-            paramKinds[i] = p.kind();
-            if (p.isMut()) {
-                hasMutParam = true;
-            }
-        }
-        LoweringTargets.FunctionSignature sig =
-                new LoweringTargets.FunctionSignature(
-                        paramKinds, fn.returnKind(), fn.optionalParamBits(), fn.restIndex());
-        return new LoweringTargets.ExportedFunctionTarget(
-                selfKey,
-                sourceName,
-                exportName,
-                className,
-                fn.jvmMethodName(),
-                sig,
-                hasMutParam,
-                fn.effects());
-    }
-
-    private static HirExpr unwrapTransparent(HirExpr expr) {
-        while (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
-            expr = b.statements().get(0);
-        }
-        return expr;
-    }
-
-    private Map<String, LoweringTargets.TypeHierarchyInfo> collectAllTypeHierarchies() {
-        Map<String, LoweringTargets.TypeHierarchyInfo> result = new LinkedHashMap<>();
-        java.util.ArrayDeque<String> queue = new java.util.ArrayDeque<>();
-        for (Map.Entry<String, LoweringTargets.TypeHierarchyInfo> e :
-                scopes.hierarchy().typeHierarchies().entrySet()) {
-            result.put(e.getKey(), e.getValue());
-            queue.add(e.getKey());
-        }
-        for (String id : allInterfaceJvmNames.keySet()) {
-            if (!result.containsKey(id)) {
-                LoweringTargets.TypeHierarchyInfo info = scopes.hierarchy().typeHierarchy(id);
-                if (info != null) {
-                    result.put(id, info);
-                    queue.add(id);
-                }
-            }
-        }
-        while (!queue.isEmpty()) {
-            LoweringTargets.TypeHierarchyInfo info = result.get(queue.poll());
-            if (info == null) continue;
-            for (LoweringTargets.ParentRef p : info.directParents()) {
-                String pid = p.babbleTypeId();
-                if (pid != null && !result.containsKey(pid)) {
-                    LoweringTargets.TypeHierarchyInfo pinfo = scopes.hierarchy().typeHierarchy(pid);
-                    if (pinfo != null) {
-                        result.put(pid, pinfo);
-                        queue.add(pid);
-                    }
-                }
-            }
-            for (String ancId : info.allBabbleInterfaceIds()) {
-                if (ancId != null && !result.containsKey(ancId)) {
-                    LoweringTargets.TypeHierarchyInfo ainfo =
-                            scopes.hierarchy().typeHierarchy(ancId);
-                    if (ainfo != null) {
-                        result.put(ancId, ainfo);
-                        queue.add(ancId);
-                    }
-                }
-            }
-        }
-        return result;
-    }
-
-    // ---------------------------------------------------------------- Pass 1: discovery
-
-    private void discoverAll(BabbleParser.FileContext file) {
-        new BabbleBaseVisitor<Void>() {
-            @Override
-            public Void visitInterfaceExpression(BabbleParser.InterfaceExpressionContext ctx) {
-                int id = nextOwnerId++;
-                interfaceIds.put(ctx, id);
-                orderedInterfaces.add(ctx);
-                ClassShape shape = scopes.hierarchy().shape(ctx);
-                if (shape != null) {
-                    String jvmName = className + "$I" + (interfaceCount++) + "$" + shape.name();
-                    ownInterfaceJvmNames.put(shape.id(), jvmName);
-                    allInterfaceJvmNames.put(shape.id(), jvmName);
-                }
-                return super.visitInterfaceExpression(ctx);
-            }
-
-            @Override
-            public Void visitClassExpression(BabbleParser.ClassExpressionContext ctx) {
-                int id = nextOwnerId++;
-                classIds.put(ctx, id);
-                orderedClasses.add(ctx);
-                ClassShape shape = scopes.hierarchy().shape(ctx);
-                if (shape != null && isStaticTopLevelTypeExpr(ctx)) {
-                    String jvmName = className + "$C" + (classCount++) + "$" + shape.name();
-                    ownClassJvmNames.put(shape.id(), jvmName);
-                    allClassJvmNames.put(shape.id(), jvmName);
-                    preassignedClassNames.put(ctx, jvmName);
-                }
-                return super.visitClassExpression(ctx);
-            }
-
-            @Override
-            public Void visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
-                int id = nextOwnerId++;
-                classIds.put(ctx, id);
-                orderedClasses.add(ctx);
-                return super.visitObjectExpression(ctx);
-            }
-
-            @Override
-            public Void visitFunctionLiteral(BabbleParser.FunctionLiteralContext ctx) {
-                int id = nextOwnerId++;
-                functionIds.put(ctx, id);
-                orderedFunctions.add(ctx);
-                return super.visitFunctionLiteral(ctx);
-            }
-        }.visit(file);
-
-        // Compute compiled JVM names and implemented interfaces for every class/object.
-        for (ParserRuleContext clsCtx : orderedClasses) {
-            ClassShape shape = scopes.hierarchy().shape(clsCtx);
-            List<Class<?>> javaIfaces = implementableJavaInterfaces(shape);
-            List<String> implemented = implementedInterfaces(shape, javaIfaces);
-            classJavaInterfaces.put(clsCtx, javaIfaces);
-            classImplementedJvm.put(clsCtx, implemented);
-            String preassigned = preassignedClassNames.get(clsCtx);
-            String name =
-                    preassigned != null
-                            ? preassigned
-                            : className + "$C" + (classCount++) + "$" + shape.name();
-            compiledClassJvmNames.put(clsCtx, name);
-            if (shape != null) {
-                localClassJvmNamesById.put(shape.id(), name);
-                localClassIdsByShapeId.put(shape.id(), classIds.get(clsCtx));
-            }
-        }
-
-        // Assign JVM method names & owning compiled class for every function literal.
-        Map<String, Integer> overloadMemberCounters = new LinkedHashMap<>();
-        for (BabbleParser.FunctionLiteralContext fnCtx : orderedFunctions) {
-            int ownerCls = findCompiledMethodOwnerClassId(fnCtx);
-            methodOwnerClassIds.put(fnCtx, ownerCls);
-            if (ownerCls >= 0) {
-                BabbleParser.DefExpressionContext def = owningMemberDef(fnCtx);
-                String member = def.name.getText();
-                methodMemberNames.put(fnCtx, member);
-                if (def.value instanceof BabbleParser.OverloadExpressionContext) {
-                    int idx =
-                            overloadMemberCounters.merge(ownerCls + ":" + member, 1, Integer::sum)
-                                    - 1;
-                    functionJvmNames.put(fnCtx, "m$" + member + "$" + idx);
-                } else {
-                    functionJvmNames.put(fnCtx, "m$" + member);
-                }
-            } else {
-                String name = ScopeAnalysis.functionName(fnCtx);
-                functionJvmNames.put(
-                        fnCtx, "fn$" + (functionCount++) + (name != null ? "$" + name : ""));
-            }
-        }
-    }
-
-    private static BabbleParser.DefExpressionContext owningMemberDef(
-            BabbleParser.FunctionLiteralContext literal) {
-        ParserRuleContext cur = literal;
-        while (cur.getParent() instanceof BabbleParser.OverloadExpressionContext ov) {
-            cur = ov;
-        }
-        return cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur
-                ? def
-                : null;
-    }
-
-    private void collectOverloadFunctionIds(
-            BabbleParser.OverloadExpressionContext ov, List<Integer> out) {
-        for (BabbleParser.ExpressionContext op : ov.expression()) {
-            if (op instanceof BabbleParser.FunctionLiteralContext lit) {
-                out.add(functionIds.get(lit));
-            } else if (op instanceof BabbleParser.OverloadExpressionContext nested) {
-                collectOverloadFunctionIds(nested, out);
-            } else {
-                out.add(-1);
-            }
-        }
-    }
-
-    private boolean isStaticTopLevelTypeExpr(ParserRuleContext typeExpr) {
-        ParserRuleContext cur = typeExpr;
-        while (cur != null) {
-            ParserRuleContext parent = cur.getParent();
-            if (parent instanceof BabbleParser.FileContext) {
-                return true;
-            }
-            if (parent instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
-                cur = def;
-            } else if (parent instanceof BabbleParser.BlockContext block
-                    && block.getParent() instanceof BabbleParser.BlockExpressionContext blockExpr
-                    && blockExpr.block() == block
-                    && block.expression().size() == 1
-                    && !scopes.opensScope(block)) {
-                cur = blockExpr;
-            } else {
-                return false;
-            }
-        }
-        return false;
-    }
-
-    private int findCompiledMethodOwnerClassId(BabbleParser.FunctionLiteralContext literal) {
-        BabbleParser.DefExpressionContext def = owningMemberDef(literal);
-        if (def == null) {
-            return -1;
-        }
-        LoweringTargets.DefTarget dt = scopes.lowering().defTarget(def);
-        if (dt.kind() != LoweringTargets.DefKind.MEMBER) {
-            return -1;
-        }
-        for (ParserRuleContext p = def.getParent(); p != null; p = p.getParent()) {
-            if (p instanceof BabbleParser.ClassExpressionContext
-                    || p instanceof BabbleParser.ObjectExpressionContext) {
-                ClassShape shape = scopes.hierarchy().shape(p);
-                if (shape != null && !shape.isMethod(dt.index())) {
-                    return -1;
-                }
-                if (compiledClassJvmNames.containsKey(p)) {
-                    return classIds.get(p);
-                }
-                return -1;
-            }
-        }
-        return -1;
-    }
-
-    private int ownerIdOf(ParserRuleContext owner) {
+    int ownerIdOf(ParserRuleContext owner) {
         if (owner == null || owner instanceof BabbleParser.FileContext) {
             return 0;
         }
@@ -561,7 +198,7 @@ public final class HirBuilder {
         return 0;
     }
 
-    private HirVar hirVar(Resolution.Variable v) {
+    HirVar hirVar(Resolution.Variable v) {
         if (v == null) {
             return null;
         }
@@ -590,7 +227,7 @@ public final class HirBuilder {
                 });
     }
 
-    private List<HirVar> hirVars(List<Resolution.Variable> list) {
+    List<HirVar> hirVars(List<Resolution.Variable> list) {
         if (list.isEmpty()) {
             return List.of();
         }
@@ -601,353 +238,13 @@ public final class HirBuilder {
         return result;
     }
 
-    // ---------------------------------------------------------------- Pass 2: declarations
-
-    private HirFunction lowerFunction(BabbleParser.FunctionLiteralContext literal) {
-        BabbleParser.FunctionLiteralContext savedFn = currentFunction;
-        currentFunction = literal;
-        try {
-            int id = functionIds.get(literal);
-            int ownerCls = methodOwnerClassIds.get(literal);
-            String memberName = methodMemberNames.get(literal);
-            String[] paramNames = scopes.calls().parameters(literal);
-            List<BabbleParser.FnParamContext> paramCtxs = literal.fnParameters().fnParam();
-            List<HirParam> params = new ArrayList<>(paramNames.length);
-            for (int i = 0; i < paramNames.length; i++) {
-                BabbleParser.FnParamContext p = paramCtxs.get(i);
-                BabbleParser.ExpressionContext defVal = ScopeAnalysis.paramDefault(p);
-                params.add(
-                        new HirParam(
-                                paramNames[i],
-                                hirVar(resolution.variable(p)),
-                                scopes.lowering().declarationKind(p),
-                                scopes.lowering().numericWideningRank(p),
-                                scopes.lowering().checkedType(p),
-                                -1,
-                                defVal != null ? lowerExpr(defVal) : null,
-                                scopes.lowering().javaSamTarget(p),
-                                scopes.lowering().paramOwnership(p),
-                                ScopeAnalysis.isVar(p),
-                                p.getStart().getLine()));
-            }
-            List<HirExpr> body = new ArrayList<>(literal.functionBlock.expression().size());
-            for (BabbleParser.ExpressionContext e : literal.functionBlock.expression()) {
-                body.add(lowerExpr(e));
-            }
-            if (!body.isEmpty()) {
-                int last = body.size() - 1;
-                body.set(last, wrapJavaSam(body.get(last), literal.functionBlock));
-            }
-            // Note: for a compiled class method, capturedVars are the enclosing class's captured
-            // vars!
-            List<HirVar> captured;
-            if (ownerCls >= 0) {
-                ParserRuleContext ownerClsCtx = findEnclosingClassCtx(literal);
-                captured = hirVars(resolution.captured(ownerClsCtx));
-            } else {
-                captured = hirVars(resolution.captured(literal));
-            }
-            return new HirFunction(
-                    id,
-                    ScopeAnalysis.functionName(literal),
-                    functionJvmNames.get(literal),
-                    ownerCls,
-                    memberName,
-                    resolution.isNamespaceScope(literal),
-                    scopes.declared(literal),
-                    hirVars(resolution.declared(literal)),
-                    captured,
-                    params,
-                    scopes.calls().requiredParameters(literal),
-                    scopes.calls().keywordOnlyStart(literal),
-                    scopes.calls().restIndex(literal),
-                    scopes.lowering().functionReturnKind(literal),
-                    scopes.lowering().numericWideningRank(literal.functionBlock),
-                    scopes.effects().callableEffects(literal),
-                    body,
-                    literal.getStart().getLine());
-        } finally {
-            currentFunction = savedFn;
-        }
-    }
-
-    private HirClass lowerClass(ParserRuleContext ctx) {
-        BabbleParser.FunctionLiteralContext savedFn = currentFunction;
-        currentFunction = null;
-        try {
-            int id = classIds.get(ctx);
-            boolean isObject = ctx instanceof BabbleParser.ObjectExpressionContext;
-            ClassShape shape = scopes.hierarchy().shape(ctx);
-            String jvmName = compiledClassJvmNames.get(ctx);
-            List<String> implementedJvm = classImplementedJvm.get(ctx);
-            List<Class<?>> javaIfaces = classJavaInterfaces.get(ctx);
-
-            List<? extends ParserRuleContext> paramDecls =
-                    ctx instanceof BabbleParser.ClassExpressionContext c
-                                    && c.classParameters() != null
-                            ? c.classParameters().classParam()
-                            : List.of();
-            BabbleParser.BlockContext bodyBlock =
-                    ctx instanceof BabbleParser.ClassExpressionContext c
-                            ? c.classBlock
-                            : ((BabbleParser.ObjectExpressionContext) ctx).createBlock;
-            BabbleParser.TypeListContext typeList =
-                    ctx instanceof BabbleParser.ClassExpressionContext c
-                            ? c.typeList()
-                            : ((BabbleParser.ObjectExpressionContext) ctx).typeList();
-            BabbleParser.BlockContext staticBlk =
-                    ctx instanceof BabbleParser.ClassExpressionContext c ? c.staticBlock : null;
-
-            int count = shape.memberCount();
-            PrimitiveKind[] memberKinds = new PrimitiveKind[count];
-            int[] primDefBits = new int[count];
-            Arrays.fill(memberKinds, PrimitiveKind.NONE);
-            Arrays.fill(primDefBits, -1);
-            if (ctx instanceof BabbleParser.ClassExpressionContext c
-                    && c.classParameters() != null) {
-                for (int p = 0; p < shape.parameters().length; p++) {
-                    int idx = shape.parameterMember(p);
-                    if (idx >= 0 && !shape.isMethod(idx)) {
-                        memberKinds[idx] =
-                                scopes.lowering()
-                                        .declarationKind(c.classParameters().classParam(p));
-                    }
-                }
-            }
-            int bits = 0;
-            for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
-                if (expr instanceof BabbleParser.DefExpressionContext def) {
-                    LoweringTargets.DefTarget dt = scopes.lowering().defTarget(def);
-                    if (dt.kind() == LoweringTargets.DefKind.MEMBER) {
-                        int idx = dt.index();
-                        if (!shape.isMethod(idx)) {
-                            PrimitiveKind pk = scopes.lowering().declarationKind(def);
-                            memberKinds[idx] = pk;
-                            if (pk.isPrimitive()) {
-                                primDefBits[idx] = bits++;
-                            }
-                        }
-                    }
-                }
-            }
-            int primDefCount = bits;
-
-            Map<String, Integer> methodFnIds = new LinkedHashMap<>();
-            Map<String, List<Integer>> overloadMethodFnIds = new LinkedHashMap<>();
-            for (BabbleParser.ExpressionContext expr : bodyBlock.expression()) {
-                if (expr instanceof BabbleParser.DefExpressionContext def) {
-                    LoweringTargets.DefTarget dt = scopes.lowering().defTarget(def);
-                    if (dt.kind() != LoweringTargets.DefKind.MEMBER
-                            || !shape.isMethod(dt.index())) {
-                        continue;
-                    }
-                    if (def.value instanceof BabbleParser.FunctionLiteralContext lit) {
-                        methodFnIds.put(def.name.getText(), functionIds.get(lit));
-                    } else if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
-                        List<Integer> ids = new ArrayList<>();
-                        collectOverloadFunctionIds(ov, ids);
-                        overloadMethodFnIds.put(def.name.getText(), ids);
-                    }
-                }
-            }
-
-            List<HirParam> params = new ArrayList<>(paramDecls.size());
-            String[] paramNames = shape.parameters();
-            for (int i = 0; i < paramDecls.size(); i++) {
-                ParserRuleContext p = paramDecls.get(i);
-                BabbleParser.ExpressionContext defVal = ScopeAnalysis.paramDefault(p);
-                params.add(
-                        new HirParam(
-                                paramNames[i],
-                                hirVar(resolution.variable(p)),
-                                scopes.lowering().declarationKind(p),
-                                scopes.lowering().numericWideningRank(p),
-                                scopes.lowering().checkedType(p),
-                                shape.parameterMember(i),
-                                defVal != null ? lowerExpr(defVal) : null,
-                                scopes.lowering().javaSamTarget(p),
-                                p.getStart().getLine()));
-            }
-
-            List<HirExpr> body = new ArrayList<>(bodyBlock.expression().size());
-            for (BabbleParser.ExpressionContext e : bodyBlock.expression()) {
-                body.add(lowerExpr(e));
-            }
-
-            List<HirVar> declared = hirVars(resolution.declared(ctx));
-            List<HirVar> captured = hirVars(resolution.captured(ctx));
-            boolean fastRecord = isFastRecordClass(shape, declared, captured, params, body);
-
-            return new HirClass(
-                    id,
-                    isObject,
-                    shape,
-                    jvmName,
-                    implementedJvm,
-                    javaIfaces,
-                    declared,
-                    captured,
-                    params,
-                    memberKinds,
-                    primDefBits,
-                    primDefCount,
-                    methodFnIds,
-                    overloadMethodFnIds,
-                    lowerTypeList(typeList),
-                    body,
-                    lowerStaticBlock(staticBlk),
-                    fastRecord,
-                    ctx.getStart().getLine());
-        } finally {
-            currentFunction = savedFn;
-        }
-    }
-
-    private static boolean isFastRecordClass(
-            ClassShape shape,
-            List<HirVar> declared,
-            List<HirVar> captured,
-            List<HirParam> params,
-            List<HirExpr> body) {
-        if (shape == null || !shape.isValue() || !captured.isEmpty() || params.size() > 8) {
-            return false;
-        }
-        for (HirVar v : declared) {
-            if (v.isCaptured()) {
-                return false;
-            }
-        }
-        int slots = 3;
-        for (HirParam p : params) {
-            if (p.samTarget() != null) {
-                return false;
-            }
-            slots += p.kind().slots();
-        }
-        if (slots > 200) {
-            return false;
-        }
-        for (HirExpr stmt : body) {
-            if (!(stmt instanceof HirExpr.Def d)
-                    || d.target().kind() != LoweringTargets.DefKind.MEMBER
-                    || !shape.isMethod(d.target().index())) {
-                return false;
-            }
-            if (d.value() instanceof HirExpr.FunctionRef) {
-                continue;
-            }
-            if (d.value() instanceof HirExpr.MakeOverloadSet mos && !mos.operands().isEmpty()) {
-                for (HirExpr op : mos.operands()) {
-                    if (!(op instanceof HirExpr.FunctionRef)) {
-                        return false;
-                    }
-                }
-                continue;
-            }
-            return false;
-        }
-        return true;
-    }
-
-    private HirInterface lowerInterface(BabbleParser.InterfaceExpressionContext ctx) {
-        BabbleParser.FunctionLiteralContext savedFn = currentFunction;
-        currentFunction = null;
-        try {
-            int id = interfaceIds.get(ctx);
-            ClassShape shape = scopes.hierarchy().shape(ctx);
-            String jvmName = ownInterfaceJvmNames.get(shape.id());
-            List<String> extendedJvm = new ArrayList<>();
-            LoweringTargets.TypeHierarchyInfo info = scopes.hierarchy().typeHierarchy(shape.id());
-            if (info != null) {
-                for (LoweringTargets.ParentRef parent : info.directParents()) {
-                    if (parent.babbleTypeId() != null) {
-                        String parentJvm = allInterfaceJvmNames.get(parent.babbleTypeId());
-                        if (parentJvm != null && !extendedJvm.contains(parentJvm)) {
-                            extendedJvm.add(parentJvm);
-                        }
-                    } else if (parent.javaClass() != null) {
-                        Class<?> jc = parent.javaClass();
-                        if (jc.isInterface() && JavaTypes.isAccessible(jc)) {
-                            String javaInternal = Type.getInternalName(jc);
-                            if (!extendedJvm.contains(javaInternal)) {
-                                extendedJvm.add(javaInternal);
-                            }
-                        }
-                    }
-                }
-            }
-            Map<String, Integer> defaultFnIds = new LinkedHashMap<>();
-            Map<String, List<Integer>> defaultOverloadFnIds = new LinkedHashMap<>();
-            for (BabbleParser.ExpressionContext expr : ctx.interfaceBlock.expression()) {
-                if (expr instanceof BabbleParser.DefExpressionContext def) {
-                    if (def.value instanceof BabbleParser.FunctionLiteralContext lit) {
-                        defaultFnIds.put(def.name.getText(), functionIds.get(lit));
-                    } else if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
-                        List<Integer> ids = new ArrayList<>();
-                        collectOverloadFunctionIds(ov, ids);
-                        defaultOverloadFnIds.put(def.name.getText(), ids);
-                    }
-                }
-            }
-            List<HirExpr> body = new ArrayList<>(ctx.interfaceBlock.expression().size());
-            for (BabbleParser.ExpressionContext e : ctx.interfaceBlock.expression()) {
-                body.add(lowerExpr(e));
-            }
-            return new HirInterface(
-                    id,
-                    shape,
-                    jvmName,
-                    extendedJvm,
-                    defaultFnIds,
-                    defaultOverloadFnIds,
-                    lowerTypeList(ctx.typeList()),
-                    body,
-                    lowerStaticBlock(ctx.staticBlock),
-                    ctx.getStart().getLine());
-        } finally {
-            currentFunction = savedFn;
-        }
-    }
-
-    private HirStaticBlock lowerStaticBlock(BabbleParser.BlockContext block) {
-        if (block == null) {
-            return null;
-        }
-        List<HirExpr> stmts = new ArrayList<>(block.expression().size());
-        for (BabbleParser.ExpressionContext e : block.expression()) {
-            stmts.add(lowerExpr(e));
-        }
-        return new HirStaticBlock(
-                resolution.isNamespaceScope(block), hirVars(resolution.declared(block)), stmts);
-    }
-
-    private List<HirTypeRef> lowerTypeList(BabbleParser.TypeListContext typeList) {
-        if (typeList == null || typeList.type().isEmpty()) {
-            return List.of();
-        }
-        List<HirTypeRef> result = new ArrayList<>(typeList.type().size());
-        for (BabbleParser.TypeContext t : typeList.type()) {
-            result.add(lowerTypeRef(t, t));
-        }
-        return result;
-    }
-
-    private HirTypeRef lowerTypeRef(BabbleParser.TypeContext type, ParserRuleContext occurrence) {
-        List<String> path = ScopeAnalysis.simpleTypePath(ScopeAnalysis.simpleType(type));
-        return new HirTypeRef(
-                type.getStart().getLine(),
-                type.getText(),
-                path,
-                hirVar(resolution.variable(occurrence)));
-    }
-
     // ---------------------------------------------------------------- Pass 2: expressions
 
-    private ExprMeta metaOf(ParserRuleContext ctx) {
+    ExprMeta metaOf(ParserRuleContext ctx) {
         return metaOf(ctx, EffectSet.EMPTY);
     }
 
-    private ExprMeta metaOf(ParserRuleContext ctx, EffectSet effects) {
+    ExprMeta metaOf(ParserRuleContext ctx, EffectSet effects) {
         PrimitiveKind kind = scopes.lowering().expressionKind(ctx);
         boolean imm = kind.isPrimitive() || scopes.lowering().isExpressionDeeplyImmutable(ctx);
         boolean str = scopes.lowering().isExpressionString(ctx);
@@ -965,7 +262,7 @@ public final class HirBuilder {
                 unique);
     }
 
-    private HirExpr lowerExpr(BabbleParser.ExpressionContext ctx) {
+    HirExpr lowerExpr(BabbleParser.ExpressionContext ctx) {
         HirExpr expr = lowerExprCore(ctx);
         LoweringTargets.OverloadSelection sel = scopes.calls().overloadSelection(ctx);
         if (sel != null) {
@@ -985,7 +282,7 @@ public final class HirBuilder {
         return wrapJavaSam(expr, ctx);
     }
 
-    private HirExpr wrapJavaSam(HirExpr expr, ParserRuleContext ctx) {
+    HirExpr wrapJavaSam(HirExpr expr, ParserRuleContext ctx) {
         if (expr == null) {
             return null;
         }
@@ -1094,7 +391,7 @@ public final class HirBuilder {
             }
             CallMetadata.OverloadDispatchTarget ovDispatch = scopes.calls().overloadDispatch(neg);
             if (ovDispatch != null) {
-                return lowerOperatorOverload(
+                return callLowerer.lowerOperatorOverload(
                         neg,
                         neg.operand,
                         neg.operand.getText(),
@@ -1105,7 +402,7 @@ public final class HirBuilder {
             }
             if (scopes.lowering().directMethodTarget(neg) != null) {
                 HirExpr directOp =
-                        tryLowerDirectMethod(
+                        callLowerer.tryLowerDirectMethod(
                                 neg,
                                 neg.operand,
                                 neg.operand.getText(),
@@ -1145,7 +442,7 @@ public final class HirBuilder {
         if (ctx instanceof BabbleParser.BinaryOpContext bin) {
             CallMetadata.OverloadDispatchTarget ovDispatch = scopes.calls().overloadDispatch(bin);
             if (ovDispatch != null) {
-                return lowerOperatorOverload(
+                return callLowerer.lowerOperatorOverload(
                         bin,
                         bin.left,
                         bin.left.getText(),
@@ -1158,7 +455,7 @@ public final class HirBuilder {
                 String opMethod = Operators.method(bin.op.getText());
                 if (opMethod != null) {
                     HirExpr directOp =
-                            tryLowerDirectMethod(
+                            callLowerer.tryLowerDirectMethod(
                                     bin,
                                     bin.left,
                                     bin.left.getText(),
@@ -1298,7 +595,7 @@ public final class HirBuilder {
             return lowerIfExpr(ifWrap.ifExpr(), ifWrap);
         }
         if (ctx instanceof BabbleParser.MatchExpressionContext m) {
-            return lowerMatch(m);
+            return matchLowerer.lowerMatch(m);
         }
         if (ctx instanceof BabbleParser.WhileExpressionContext w) {
             return new HirExpr.While(lowerExpr(w.test), lowerBlock(w.whileBlock, null), metaOf(w));
@@ -1386,7 +683,7 @@ public final class HirBuilder {
             return lowerAssign(assign);
         }
         if (ctx instanceof BabbleParser.CallContext call) {
-            return lowerCall(call);
+            return callLowerer.lowerCall(call);
         }
         if (ctx instanceof BabbleParser.FunctionLiteralContext fn) {
             return new HirExpr.FunctionRef(
@@ -1459,8 +756,7 @@ public final class HirBuilder {
         }
     }
 
-    private HirExpr lowerBlock(
-            BabbleParser.BlockContext block, BabbleParser.BlockExpressionContext outer) {
+    HirExpr lowerBlock(BabbleParser.BlockContext block, BabbleParser.BlockExpressionContext outer) {
         List<HirExpr> stmts = new ArrayList<>(block.expression().size());
         for (BabbleParser.ExpressionContext e : block.expression()) {
             stmts.add(lowerExpr(e));
@@ -1585,196 +881,6 @@ public final class HirBuilder {
                         scopes.lowering().isExpressionString(metaCtx));
         HirExpr.If ifNode = new HirExpr.If(cond, thenBr, elseBr, meta);
         return outer == null ? wrapJavaSam(ifNode, ctx) : ifNode;
-    }
-
-    private HirExpr lowerMatch(BabbleParser.MatchExpressionContext ctx) {
-        HirExpr scrutinee = lowerExpr(ctx.scrutinee);
-        int ownerId = currentFunction != null ? ownerIdOf(currentFunction) : 0;
-        HirVar scrutineeVar =
-                new HirVar(
-                        nextVarId++,
-                        "$match",
-                        Resolution.Variable.Kind.DEFINITION,
-                        ownerId,
-                        scrutinee.meta().kind(),
-                        false,
-                        true,
-                        false,
-                        true,
-                        false,
-                        false);
-        List<HirExpr.MatchArm> arms = new ArrayList<>(ctx.caseClause().size());
-        for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
-            HirPattern pattern = lowerPattern(cc.pattern());
-            List<HirVar> boundVars = hirVars(resolution.declared(cc));
-            HirExpr guard = cc.guard != null ? lowerExpr(cc.guard) : null;
-            HirExpr body = lowerBlock(cc.armBlock, null);
-            int bodyWiden = scopes.lowering().numericWideningRank(cc.armBlock);
-            arms.add(
-                    new HirExpr.MatchArm(
-                            pattern, boundVars, guard, body, bodyWiden, cc.getStart().getLine()));
-        }
-        HirExpr.MatchElse elseArm = null;
-        if (ctx.elseClause() != null) {
-            BabbleParser.ElseClauseContext ec = ctx.elseClause();
-            HirVar elseVar = ec.name != null ? hirVar(resolution.variable(ec)) : null;
-            HirExpr elseBody = lowerBlock(ec.elseBlock, null);
-            int elseWiden = scopes.lowering().numericWideningRank(ec.elseBlock);
-            elseArm = new HirExpr.MatchElse(elseVar, elseBody, elseWiden, ec.getStart().getLine());
-        }
-        boolean exhaustive = scopes.lowering().isMatchExhaustive(ctx);
-        return new HirExpr.Match(scrutinee, scrutineeVar, arms, elseArm, exhaustive, metaOf(ctx));
-    }
-
-    private HirPattern lowerPattern(BabbleParser.PatternContext pat) {
-        List<BabbleParser.AtomicPatternContext> atoms = pat.atomicPattern();
-        if (atoms.size() == 1) {
-            return lowerAtomicPattern(atoms.get(0));
-        }
-        List<HirPattern> alts = new ArrayList<>(atoms.size());
-        for (BabbleParser.AtomicPatternContext atom : atoms) {
-            alts.add(lowerAtomicPattern(atom));
-        }
-        return new HirPattern.Or(alts, pat.getStart().getLine());
-    }
-
-    private HirPattern lowerAtomicPattern(BabbleParser.AtomicPatternContext atom) {
-        int line = atom.getStart().getLine();
-        return switch (atom) {
-            case BabbleParser.ValuePatternContext vp -> {
-                if (vp.expr instanceof BabbleParser.SelectorContext sel
-                        && sel.expression() == null
-                        && "_".equals(sel.ID().getText())) {
-                    yield new HirPattern.Wildcard(line);
-                }
-                var rangeSrc = scopes.lowering().rangePatternSource(vp);
-                if (rangeSrc != null) {
-                    HirExpr lo = lowerExpr(rangeSrc.lo());
-                    HirExpr hi = lowerExpr(rangeSrc.hi());
-                    HirExpr step = rangeSrc.step() != null ? lowerExpr(rangeSrc.step()) : null;
-                    yield new HirPattern.RangeTest(
-                            lo,
-                            hi,
-                            step,
-                            rangeSrc.inclusive(),
-                            rangeSrc.elemKind(),
-                            rangeSrc.stringElement(),
-                            line);
-                }
-                LoweringTargets.PatternConst pc = scopes.lowering().patternConst(vp);
-                if (pc != null) {
-                    yield new HirPattern.Const(
-                            pc.value(), pc.enumClass(), pc.enumConstantName(), pc.kind(), line);
-                }
-                yield new HirPattern.ValueExpr(lowerExpr(vp.expr), line);
-            }
-            case BabbleParser.RelationalPatternContext rp -> {
-                HirExpr.BinaryOp op =
-                        switch (rp.op.getType()) {
-                            case BabbleLexer.LT -> HirExpr.BinaryOp.LT;
-                            case BabbleLexer.LTE -> HirExpr.BinaryOp.LTE;
-                            case BabbleLexer.GT -> HirExpr.BinaryOp.GT;
-                            case BabbleLexer.GTE -> HirExpr.BinaryOp.GTE;
-                            case BabbleLexer.EQ -> HirExpr.BinaryOp.EQ;
-                            case BabbleLexer.NEQ -> HirExpr.BinaryOp.NEQ;
-                            default ->
-                                    throw new IllegalStateException(
-                                            "Unexpected relational op : " + rp.op.getText());
-                        };
-                yield new HirPattern.Relational(
-                        op, lowerExpr(rp.rhs), scopes.lowering().relationalScrutineeKind(rp), line);
-            }
-            case BabbleParser.MembershipPatternContext mp -> {
-                LoweringTargets.MembershipTarget mt = scopes.lowering().membershipTarget(mp);
-                LoweringTargets.MembershipKind kind =
-                        mt != null ? mt.kind() : LoweringTargets.MembershipKind.DYNAMIC;
-                PrimitiveKind elemKind = mt != null ? mt.elemKind() : PrimitiveKind.NONE;
-                yield new HirPattern.Membership(lowerExpr(mp.container), kind, elemKind, line);
-            }
-            case BabbleParser.TypeOrDestructurePatternContext tp -> {
-                if (tp.patternArgs() != null) {
-                    yield lowerDestructurePattern(tp, tp.patternArgs(), line);
-                }
-                yield lowerTypeTest(scopes.lowering().patternTypeTarget(tp), line);
-            }
-            case BabbleParser.BindingPatternContext bp -> {
-                HirVar var = hirVar(resolution.variable(bp));
-                HirPattern inner = null;
-                if (bp.patternArgs() != null) {
-                    inner = lowerDestructurePattern(bp, bp.patternArgs(), line);
-                } else if (bp.patternBindingType() != null) {
-                    inner = lowerTypeTest(scopes.lowering().patternTypeTarget(bp), line);
-                }
-                yield new HirPattern.Bind(var, inner, line);
-            }
-            default -> new HirPattern.Wildcard(line);
-        };
-    }
-
-    private HirPattern.TypeTest lowerTypeTest(LoweringTargets.PatternTypeTarget target, int line) {
-        return new HirPattern.TypeTest(
-                target != null ? target.builtin() : null,
-                target != null ? target.target() : null,
-                target != null ? target.intersectionTargets() : List.of(),
-                target != null ? target.descriptor() : null,
-                line);
-    }
-
-    private HirPattern lowerDestructurePattern(
-            ParserRuleContext owner, BabbleParser.PatternArgsContext args, int line) {
-        LoweringTargets.RecordDestructureTarget rd =
-                scopes.lowering().recordDestructureTarget(owner);
-        if (rd != null) {
-            List<HirPattern> subPats = new ArrayList<>(args.patternArg().size());
-            for (BabbleParser.PatternArgContext arg : args.patternArg()) {
-                subPats.add(lowerPattern(arg.pattern()));
-            }
-            int classId = -1;
-            String jvmName = null;
-            if (!rd.isJavaRecord() && rd.babbleTypeId() != null) {
-                classId = localClassIdsByShapeId.getOrDefault(rd.babbleTypeId(), -1);
-                jvmName =
-                        localClassJvmNamesById.getOrDefault(
-                                rd.babbleTypeId(), allClassJvmNames.get(rd.babbleTypeId()));
-            }
-            return new HirPattern.RecordDestructure(
-                    lowerTypeTest(rd.typeTest(), line),
-                    rd.isJavaRecord(),
-                    classId,
-                    rd.babbleTypeId(),
-                    jvmName,
-                    rd.javaRecordClass(),
-                    Arrays.asList(rd.fieldNames()),
-                    rd.babbleMemberIndices(),
-                    Arrays.asList(rd.fieldKinds()),
-                    Arrays.asList(rd.javaAccessors()),
-                    subPats,
-                    line);
-        }
-        LoweringTargets.SequenceDestructureTarget sd =
-                scopes.lowering().sequenceDestructureTarget(owner);
-        if (sd != null) {
-            List<HirPattern> elemPats = new ArrayList<>(args.patternArg().size());
-            for (BabbleParser.PatternArgContext arg : args.patternArg()) {
-                elemPats.add(lowerPattern(arg.pattern()));
-            }
-            HirVar restVar =
-                    (args.restPattern() != null && args.restPattern().name != null)
-                            ? hirVar(resolution.variable(args.restPattern()))
-                            : null;
-            HirPattern.TypeTest tt =
-                    sd.typeTest() != null ? lowerTypeTest(sd.typeTest(), line) : null;
-            return new HirPattern.SequenceDestructure(
-                    tt,
-                    sd.isArray(),
-                    sd.arrayClass(),
-                    sd.elemKind(),
-                    elemPats,
-                    sd.hasRest(),
-                    restVar,
-                    line);
-        }
-        return lowerTypeTest(scopes.lowering().patternTypeTarget(owner), line);
     }
 
     private HirExpr.NameRead makeNameRead(ParserRuleContext ctx, String name) {
@@ -1942,670 +1048,9 @@ public final class HirBuilder {
                 meta);
     }
 
-    private HirExpr lowerCall(BabbleParser.CallContext ctx) {
-        EffectSet callFx = scopes.effects().callEffects(ctx);
-        ExprMeta meta = metaOf(ctx, callFx);
-        List<BabbleParser.CallParameterContext> params = ctx.callParameters().callParameter();
-        String[] names = SyntaxText.callNames(ctx);
-        LoweringTargets.ArgumentBinding binding = scopes.calls().argumentBinding(ctx);
-        LoweringTargets.SpreadAdapt[] spreadAdapts = scopes.calls().callSpreadAdapts(ctx);
-
-        // 0. Self tail call : a jump back to the start of the function (BIP024)
-        if (scopes.calls().isSelfTailCall(ctx)) {
-            if (currentFunction == null) {
-                throw new IllegalStateException(
-                        "Self tail call outside of a function at line " + ctx.getStart().getLine());
-            }
-            // The analysis never marks a call with spread arguments (BIP024-D4).
-            return new HirExpr.SelfTailCall(
-                    functionIds.get(currentFunction), lowerCallArgs(params, null), binding, meta);
-        }
-
-        // 0b. Unshadowed built-in move(x) / freeze(expr) ownership markers (BIP014-I4)
-        String ownershipCall = scopes.lowering().builtinOwnershipCall(ctx);
-        if (ownershipCall != null && params.size() == 1) {
-            HirExpr arg = lowerExpr(params.get(0).expression());
-            if ("move".equals(ownershipCall)) {
-                HirVar movedVar = arg instanceof HirExpr.VarRead vr ? vr.var() : null;
-                return new HirExpr.Move(movedVar, arg, meta.withUnique(true));
-            }
-            return new HirExpr.Freeze(arg, meta.withFrozen(true));
-        }
-
-        // 0c. Direct fast compiled record constructor call (BIP014-I4)
-        LoweringTargets.RecordNewTarget recordNew = scopes.lowering().recordNewTarget(ctx);
-        if (recordNew != null && binding != null) {
-            Integer localClsId = localClassIdsByShapeId.get(recordNew.classTypeId());
-            String jvmName =
-                    localClsId != null
-                            ? localClassJvmNamesById.get(recordNew.classTypeId())
-                            : allClassJvmNames.get(recordNew.classTypeId());
-            if (jvmName != null) {
-                return new HirExpr.RecordNew(
-                        localClsId != null ? localClsId : -1,
-                        recordNew.classTypeId(),
-                        jvmName,
-                        lowerExpr(ctx.expression()),
-                        recordNew.paramKinds(),
-                        lowerPositionalArgs(params, spreadAdapts),
-                        binding,
-                        meta.withUnique(true));
-            }
-        }
-
-        // 1. Safe call recv?.m(args)
-        if (ctx.expression() instanceof BabbleParser.SelectorContext selector
-                && selector.safe != null) {
-            return new HirExpr.SafeCall(
-                    lowerExpr(selector.expression()),
-                    selector.expression().getText(),
-                    ScopeAnalysis.selectorName(selector),
-                    selector.getStart().getLine(),
-                    scopes.lowering().checkedType(selector),
-                    lowerCallArgs(params, spreadAdapts),
-                    binding,
-                    (binding != null || names == null)
-                            ? scopes.calls().babbleCallSignature(ctx)
-                            : null,
-                    SyntaxText.callSite(ctx, sourceName),
-                    meta);
-        }
-
-        // 2. Array creation or array protocol operation (BIP020-I3)
-        LoweringTargets.ArrayCreationTarget arrCreate = scopes.lowering().arrayCreationTarget(ctx);
-        if (arrCreate != null) {
-            String compInternalName;
-            boolean compIsJavaIface;
-            if (arrCreate.elemKind().isPrimitive()) {
-                compInternalName = null;
-                compIsJavaIface = false;
-            } else if (arrCreate.babbleTypeId() != null) {
-                String base = resolveBabbleJvmName(arrCreate.babbleTypeId());
-                compInternalName =
-                        arrCreate.nestedDims() > 0
-                                ? "[".repeat(arrCreate.nestedDims()) + "L" + base + ";"
-                                : base;
-                compIsJavaIface = false;
-            } else {
-                Class<?> comp =
-                        arrCreate.componentClass() != null
-                                ? arrCreate.componentClass()
-                                : Object.class;
-                compInternalName = Type.getInternalName(comp);
-                compIsJavaIface = comp.isInterface();
-            }
-            boolean babbleIsIface =
-                    arrCreate.babbleTypeId() != null
-                            && allInterfaceJvmNames.containsKey(arrCreate.babbleTypeId());
-            HirArrayElementType elemType =
-                    HirArrayElementType.from(
-                            arrCreate.elemKind(),
-                            arrCreate.babbleTypeId(),
-                            babbleIsIface,
-                            arrCreate.nestedDims(),
-                            arrCreate.componentClass());
-            return new HirExpr.ArrayCreate(
-                    arrCreate.kind(),
-                    arrCreate.elemKind(),
-                    elemType,
-                    compInternalName,
-                    compIsJavaIface,
-                    arrCreate.componentClass(),
-                    lowerPositionalArgs(params, spreadAdapts),
-                    meta);
-        }
-        LoweringTargets.ArrayOpTarget arrOp = scopes.lowering().arrayOpTarget(ctx);
-        if (arrOp != null) {
-            BabbleParser.SelectorContext selector = (BabbleParser.SelectorContext) ctx.expression();
-            return new HirExpr.ArrayOp(
-                    arrOp.kind(),
-                    lowerExpr(selector.expression()),
-                    selector.expression().getText(),
-                    arrOp.elemKind(),
-                    HirArrayElementType.from(
-                            arrOp.elemKind(), null, false, 0, arrOp.componentClass()),
-                    arrOp.arrayClass(),
-                    arrOp.componentClass(),
-                    lowerPositionalArgs(params, spreadAdapts),
-                    meta);
-        }
-
-        // 3. Core collection constructor
-        BabbleParser.ExpressionContext directCallee =
-                ctx.expression() instanceof BabbleParser.TypeApplyContext ta
-                        ? ta.expression()
-                        : ctx.expression();
-        if (directCallee instanceof BabbleParser.CoreCollectionContext cc) {
-            return new HirExpr.CoreCollectionCall(
-                    cc.coreCollectionKeyword().getText(),
-                    lowerCallArgs(params, spreadAdapts),
-                    meta);
-        }
-
-        // 3. Super call super.m(args)
-        if (ctx.expression() instanceof BabbleParser.SelectorContext selector
-                && selector.expression() instanceof BabbleParser.SuperExpressionContext superExpr) {
-            LoweringTargets.SuperTargetInfo info =
-                    (binding != null || names == null)
-                            ? scopes.hierarchy().superTargetInfo(superExpr)
-                            : null;
-            int ownerClsId = -1;
-            if (info != null && !info.ownerIsInterface()) {
-                ParserRuleContext ownerClsCtx =
-                        findEnclosingOwnerClassCtx(superExpr, info.ownerTypeId());
-                if (ownerClsCtx != null && compiledClassJvmNames.containsKey(ownerClsCtx)) {
-                    ownerClsId = classIds.get(ownerClsCtx);
-                }
-            }
-            return new HirExpr.SuperCall(
-                    hirVar(resolution.variable(selector)),
-                    ownerClsId,
-                    ScopeAnalysis.selectorName(selector),
-                    info,
-                    lowerTypeRef(scopes.hierarchy().superTarget(superExpr), superExpr),
-                    lowerCallArgs(params, spreadAdapts),
-                    binding,
-                    SyntaxText.callSite(ctx, sourceName),
-                    meta);
-        }
-
-        // 4. Direct self-recursion via recurse(...)
-        if (ctx.expression() instanceof BabbleParser.RecurseContext recurseCtx
-                && (binding != null || names == null)
-                && currentFunction != null) {
-            Resolution.Variable v = resolution.variable(recurseCtx);
-            if (v != null && v.method() == currentFunction) {
-                int count = scopes.calls().parameters(currentFunction).length;
-                boolean spec = hasSpec(currentFunction);
-                boolean spread = isSpread(currentFunction);
-                boolean arityOk =
-                        binding != null
-                                ? binding.paramCount() == count
-                                : ((spec && params.size() == count)
-                                        || (spread && params.size() <= count));
-                if (arityOk && (spec || spread)) {
-                    return new HirExpr.SelfRecurseCall(
-                            functionIds.get(currentFunction),
-                            lowerPositionalArgs(params, spreadAdapts),
-                            binding,
-                            meta);
-                }
-            }
-        }
-
-        // 4b. Overload set call (resolved directly or via union split, BIP021-I5/I6)
-        CallMetadata.OverloadDispatchTarget ovDispatch = scopes.calls().overloadDispatch(ctx);
-        if (ovDispatch != null) {
-            if (!ovDispatch.isSplit()) {
-                // Overloaded Babble interface method call -> INVOKEINTERFACE bm$<member>$<k>
-                // (BIP021-D13).
-                LoweringTargets.InterfaceCallTarget ovIfaceCall =
-                        (binding != null || names == null)
-                                ? scopes.lowering().interfaceCallTarget(ctx)
-                                : null;
-                if (ovIfaceCall != null) {
-                    String ifaceJvm = allInterfaceJvmNames.get(ovIfaceCall.interfaceTypeId());
-                    LoweringTargets.FunctionSignature ifaceSig = ovIfaceCall.signature();
-                    if (ifaceJvm != null
-                            && ifaceSig != null
-                            && (binding != null
-                                    ? binding.paramCount() == ifaceSig.parameterKinds().length
-                                    : params.size() == ifaceSig.parameterKinds().length)) {
-                        BabbleParser.SelectorContext selector =
-                                (BabbleParser.SelectorContext) ctx.expression();
-                        return new HirExpr.InterfaceCall(
-                                lowerExpr(selector.expression()),
-                                selector.expression().getText(),
-                                selector.getStart().getLine(),
-                                ovIfaceCall.interfaceTypeId(),
-                                ovIfaceCall.memberName(),
-                                ifaceSig,
-                                lowerPositionalArgs(params, spreadAdapts),
-                                binding,
-                                meta);
-                    }
-                }
-                CallMetadata.OverloadCallTarget target = ovDispatch.direct();
-                BabbleParser.FunctionLiteralContext directFn = target.directTarget();
-                int directOwnerCls =
-                        directFn != null ? methodOwnerClassIds.getOrDefault(directFn, -1) : -1;
-                if (directOwnerCls >= 0
-                        && ctx.expression() instanceof BabbleParser.SelectorContext sel
-                        && sel.expression() != null) {
-                    String recvText =
-                            sel.expression() instanceof BabbleParser.ThisExpressionContext
-                                    ? null
-                                    : sel.expression().getText();
-                    return new HirExpr.DirectThisMethodCall(
-                            lowerExpr(sel.expression()),
-                            recvText,
-                            directOwnerCls,
-                            ScopeAnalysis.selectorName(sel),
-                            target.altIndex(),
-                            functionIds.get(directFn),
-                            lowerCallArgs(params, spreadAdapts),
-                            target.binding(),
-                            SyntaxText.callSite(ctx, sourceName),
-                            meta);
-                }
-                HirExpr selectedCallee =
-                        new HirExpr.OverloadSelect(
-                                lowerExpr(ctx.expression()),
-                                target.altIndex(),
-                                target.signatureKey(),
-                                target.exactSet(),
-                                ExprMeta.of(ctx.getStart().getLine(), PrimitiveKind.NONE));
-                if (directFn != null
-                        && !isMemberMethod(directFn)
-                        && target.binding() != null
-                        && target.binding().paramCount()
-                                == scopes.calls().parameters(directFn).length
-                        && (hasSpec(directFn) || isSpread(directFn))) {
-                    return new HirExpr.DirectBabbleCall(
-                            selectedCallee,
-                            functionIds.get(directFn),
-                            lowerPositionalArgs(params, spreadAdapts),
-                            target.binding(),
-                            meta);
-                }
-                return new HirExpr.DynamicCall(
-                        selectedCallee,
-                        lowerCallArgs(params, spreadAdapts),
-                        target.binding(),
-                        target.signature(),
-                        SyntaxText.callSite(ctx, sourceName),
-                        meta);
-            }
-            List<HirExpr.OverloadBranch> hirBranches =
-                    new ArrayList<>(ovDispatch.splitBranches().size());
-            for (CallMetadata.OverloadSplitBranch b : ovDispatch.splitBranches()) {
-                CallMetadata.OverloadCallTarget bt = b.target();
-                int directFnId = -1;
-                if (bt.directTarget() != null
-                        && !isMemberMethod(bt.directTarget())
-                        && bt.binding() != null
-                        && bt.binding().paramCount()
-                                == scopes.calls().parameters(bt.directTarget()).length
-                        && (hasSpec(bt.directTarget()) || isSpread(bt.directTarget()))) {
-                    directFnId = functionIds.get(bt.directTarget());
-                }
-                hirBranches.add(
-                        new HirExpr.OverloadBranch(
-                                b.checks(),
-                                directFnId,
-                                bt.altIndex(),
-                                bt.signatureKey(),
-                                bt.exactSet(),
-                                bt.signature(),
-                                bt.binding(),
-                                b.resultKind()));
-            }
-            return new HirExpr.OverloadDispatch(
-                    lowerExpr(ctx.expression()),
-                    ctx.expression().getText(),
-                    SyntaxText.callSite(ctx, sourceName),
-                    lowerPositionalArgs(params, null),
-                    hirBranches,
-                    meta);
-        }
-
-        // 5. Direct free Babble function call
-        BabbleParser.FunctionLiteralContext targetFn = scopes.calls().babbleCallFunction(ctx);
-        if (targetFn != null
-                && binding != null
-                && binding.paramCount() == scopes.calls().parameters(targetFn).length) {
-            if (hasSpec(targetFn) || isSpread(targetFn)) {
-                return new HirExpr.DirectBabbleCall(
-                        lowerExpr(ctx.expression()),
-                        functionIds.get(targetFn),
-                        lowerPositionalArgs(params, spreadAdapts),
-                        binding,
-                        meta);
-            }
-        }
-
-        // 5b. Direct cross-module exported Babble function call
-        LoweringTargets.ExportedFunctionTarget extFn =
-                scopes.lowering().externalFunctionTarget(ctx);
-        if (extFn != null
-                && binding != null
-                && binding.paramCount() == extFn.signature().parameterKinds().length
-                && (extFn.signature().hasSpec() || extFn.signature().isSpread())) {
-            return new HirExpr.DirectBabbleCall(
-                    lowerExpr(ctx.expression()),
-                    -1,
-                    extFn,
-                    lowerPositionalArgs(params, spreadAdapts),
-                    binding,
-                    meta);
-        }
-
-        // 6. Direct this.m(...) on compiled class
-        if (ctx.expression() instanceof BabbleParser.SelectorContext selector
-                && selector.expression() instanceof BabbleParser.ThisExpressionContext thisExpr) {
-            ParserRuleContext clsCtx = findThisCompiledClassCtx(thisExpr);
-            if (clsCtx != null) {
-                ClassShape shape = scopes.hierarchy().shape(clsCtx);
-                String member = ScopeAnalysis.selectorName(selector);
-                int index = shape.memberIndex(member);
-                if (index >= 0 && shape.isMethod(index)) {
-                    BabbleParser.FunctionLiteralContext methodLit = methodLiteralOf(clsCtx, member);
-                    if (methodLit != null) {
-                        return new HirExpr.DirectThisMethodCall(
-                                lowerExpr(thisExpr),
-                                classIds.get(clsCtx),
-                                member,
-                                functionIds.get(methodLit),
-                                lowerCallArgs(params, spreadAdapts),
-                                binding,
-                                SyntaxText.callSite(ctx, sourceName),
-                                meta);
-                    }
-                }
-            }
-        }
-
-        // 6b. Direct non-this method call recv.m(args) on compiled Babble class/record (BIP014-I4)
-        if (ctx.expression() instanceof BabbleParser.SelectorContext selector
-                && selector.expression() != null
-                && selector.safe == null
-                && scopes.lowering().directMethodTarget(ctx) != null) {
-            HirExpr direct =
-                    tryLowerDirectMethod(
-                            ctx,
-                            selector.expression(),
-                            selector.expression().getText(),
-                            lowerCallArgs(params, spreadAdapts),
-                            binding,
-                            SyntaxText.callSite(ctx, sourceName),
-                            meta);
-            if (direct != null) {
-                return direct;
-            }
-        }
-
-        // 7. Static Babble JVM interface method call
-        LoweringTargets.InterfaceCallTarget ifaceCall =
-                (binding != null || names == null)
-                        ? scopes.lowering().interfaceCallTarget(ctx)
-                        : null;
-        if (ifaceCall != null) {
-            String ifaceJvm = allInterfaceJvmNames.get(ifaceCall.interfaceTypeId());
-            LoweringTargets.FunctionSignature sig = ifaceCall.signature();
-            if (ifaceJvm != null
-                    && sig != null
-                    && (binding != null
-                            ? binding.paramCount() == sig.parameterKinds().length
-                            : params.size() == sig.parameterKinds().length)) {
-                BabbleParser.SelectorContext selector =
-                        (BabbleParser.SelectorContext) ctx.expression();
-                return new HirExpr.InterfaceCall(
-                        lowerExpr(selector.expression()),
-                        selector.expression().getText(),
-                        selector.getStart().getLine(),
-                        ifaceCall.interfaceTypeId(),
-                        ifaceCall.memberName(),
-                        sig,
-                        lowerPositionalArgs(params, spreadAdapts),
-                        binding,
-                        meta);
-            }
-        }
-
-        // 8. Direct Java constructor call
-        LoweringTargets.JavaConstructorTarget javaCtor =
-                scopes.lowering().javaConstructorTarget(ctx);
-        if (javaCtor != null) {
-            return new HirExpr.JavaConstructorCall(
-                    lowerExpr(ctx.expression()),
-                    ctx.expression().getText(),
-                    isPureStaticJavaChain(ctx.expression()),
-                    javaCtor,
-                    lowerPositionalArgs(params, spreadAdapts),
-                    meta);
-        }
-
-        // 9. Direct Java method call
-        LoweringTargets.JavaCallTarget javaCall = scopes.lowering().javaCallTarget(ctx);
-        if (javaCall != null) {
-            BabbleParser.SelectorContext selector = (BabbleParser.SelectorContext) ctx.expression();
-            BabbleParser.ExpressionContext recvExpr = selector.expression();
-            return new HirExpr.JavaMethodCall(
-                    lowerExpr(recvExpr),
-                    recvExpr.getText(),
-                    selector.getStart().getLine(),
-                    javaCall.isStatic() && isPureStaticJavaChain(recvExpr),
-                    javaCall,
-                    lowerPositionalArgs(params, spreadAdapts),
-                    meta);
-        }
-
-        // 10. General dynamic call (including typedCall/typedCallOpt indy when babbleSig != null)
-        HirExpr.DynamicCall dc =
-                new HirExpr.DynamicCall(
-                        lowerExpr(ctx.expression()),
-                        lowerCallArgs(params, spreadAdapts),
-                        binding,
-                        (binding != null || names == null)
-                                ? scopes.calls().babbleCallSignature(ctx)
-                                : null,
-                        SyntaxText.callSite(ctx, sourceName),
-                        meta);
-        if (scopes.isNonCyclicStaticImport(ctx)) {
-            nonCyclicImports.add(dc);
-        }
-        return dc;
-    }
-
-    private HirExpr wrapSpreadAdapt(
-            HirExpr expr, LoweringTargets.SpreadAdapt[] adapts, int index, int line) {
-        if (adapts != null
-                && index < adapts.length
-                && adapts[index] != null
-                && adapts[index].kind() != LoweringTargets.SpreadKind.AS_IS) {
-            return new HirExpr.SpreadAdapt(
-                    expr, adapts[index], ExprMeta.of(line, PrimitiveKind.NONE));
-        }
-        return expr;
-    }
-
-    private List<HirCallArg> lowerCallArgs(
-            List<BabbleParser.CallParameterContext> params, LoweringTargets.SpreadAdapt[] adapts) {
-        if (params.isEmpty()) {
-            return List.of();
-        }
-        List<HirCallArg> result = new ArrayList<>(params.size());
-        for (int i = 0; i < params.size(); i++) {
-            BabbleParser.CallParameterContext p = params.get(i);
-            HirExpr arg =
-                    wrapSpreadAdapt(lowerExpr(p.expression()), adapts, i, p.getStart().getLine());
-            result.add(new HirCallArg(ScopeAnalysis.callParamName(p), arg));
-        }
-        return result;
-    }
-
-    private List<HirExpr> lowerPositionalArgs(
-            List<BabbleParser.CallParameterContext> params, LoweringTargets.SpreadAdapt[] adapts) {
-        if (params.isEmpty()) {
-            return List.of();
-        }
-        List<HirExpr> result = new ArrayList<>(params.size());
-        for (int i = 0; i < params.size(); i++) {
-            BabbleParser.CallParameterContext p = params.get(i);
-            result.add(
-                    wrapSpreadAdapt(lowerExpr(p.expression()), adapts, i, p.getStart().getLine()));
-        }
-        return result;
-    }
-
-    private HirExpr lowerOperatorOverload(
-            ParserRuleContext ctx,
-            BabbleParser.ExpressionContext recvExpr,
-            String recvText,
-            String method,
-            BabbleParser.ExpressionContext argExpr,
-            String argText,
-            CallMetadata.OverloadDispatchTarget ovDispatch) {
-        int ln = ctx.getStart().getLine();
-        CallSite site = SyntaxText.operatorSite(ctx, recvText, method, argText, sourceName);
-        ExprMeta meta = metaOf(ctx);
-        if (!ovDispatch.isSplit()) {
-            CallMetadata.OverloadCallTarget target = ovDispatch.direct();
-            BabbleParser.FunctionLiteralContext directFn = target.directTarget();
-            int directOwnerCls =
-                    directFn != null ? methodOwnerClassIds.getOrDefault(directFn, -1) : -1;
-            List<HirCallArg> callArgs =
-                    argExpr != null ? List.of(new HirCallArg(null, lowerExpr(argExpr))) : List.of();
-            if (directOwnerCls >= 0) {
-                String rt =
-                        recvExpr instanceof BabbleParser.ThisExpressionContext ? null : recvText;
-                return new HirExpr.DirectThisMethodCall(
-                        lowerExpr(recvExpr),
-                        rt,
-                        directOwnerCls,
-                        method,
-                        target.altIndex(),
-                        functionIds.get(directFn),
-                        callArgs,
-                        null,
-                        site,
-                        meta);
-            }
-            if (scopes.lowering().directMethodTarget(ctx) != null) {
-                HirExpr directOp =
-                        tryLowerDirectMethod(ctx, recvExpr, recvText, callArgs, null, site, meta);
-                if (directOp != null) {
-                    return directOp;
-                }
-            }
-            HirExpr memberSelect =
-                    new HirExpr.DynamicSelect(
-                            lowerExpr(recvExpr),
-                            recvText,
-                            method,
-                            false,
-                            ExprMeta.of(ln, PrimitiveKind.NONE));
-            HirExpr selected =
-                    new HirExpr.OverloadSelect(
-                            memberSelect,
-                            target.altIndex(),
-                            target.signatureKey(),
-                            target.exactSet(),
-                            ExprMeta.of(ln, PrimitiveKind.NONE));
-            return new HirExpr.DynamicCall(
-                    selected, callArgs, null, target.signature(), site, meta);
-        }
-        List<HirExpr.OverloadBranch> hirBranches =
-                new ArrayList<>(ovDispatch.splitBranches().size());
-        for (CallMetadata.OverloadSplitBranch b : ovDispatch.splitBranches()) {
-            CallMetadata.OverloadCallTarget bt = b.target();
-            hirBranches.add(
-                    new HirExpr.OverloadBranch(
-                            b.checks(),
-                            -1,
-                            bt.altIndex(),
-                            bt.signatureKey(),
-                            bt.exactSet(),
-                            bt.signature(),
-                            null,
-                            b.resultKind()));
-        }
-        HirExpr memberSelect =
-                new HirExpr.DynamicSelect(
-                        lowerExpr(recvExpr),
-                        recvText,
-                        method,
-                        false,
-                        ExprMeta.of(ln, PrimitiveKind.NONE));
-        List<HirExpr> posArgs = argExpr != null ? List.of(lowerExpr(argExpr)) : List.of();
-        return new HirExpr.OverloadDispatch(
-                memberSelect, recvText + "." + method, site, posArgs, hirBranches, meta);
-    }
-
-    private HirExpr tryLowerDirectMethod(
-            ParserRuleContext site,
-            BabbleParser.ExpressionContext recvExpr,
-            String recvText,
-            List<HirCallArg> callArgs,
-            LoweringTargets.ArgumentBinding binding,
-            CallSite callSite,
-            ExprMeta meta) {
-        LoweringTargets.DirectMethodTarget target = scopes.lowering().directMethodTarget(site);
-        if (target == null) {
-            return null;
-        }
-        String rt = recvExpr instanceof BabbleParser.ThisExpressionContext ? null : recvText;
-        BabbleParser.FunctionLiteralContext directFn = scopes.lowering().directMethodFunction(site);
-        Integer localClsId = localClassIdsByShapeId.get(target.classTypeId());
-        if (localClsId != null && directFn != null && functionIds.containsKey(directFn)) {
-            return new HirExpr.DirectThisMethodCall(
-                    lowerExpr(recvExpr),
-                    rt,
-                    localClsId,
-                    null,
-                    target.classTypeId(),
-                    target.memberName(),
-                    target.overloadAltIndex(),
-                    functionIds.get(directFn),
-                    null,
-                    callArgs,
-                    binding,
-                    callSite,
-                    meta);
-        }
-        String extJvm = allClassJvmNames.get(target.classTypeId());
-        if (extJvm != null && target.signature() != null && target.signature().isSpread()) {
-            return new HirExpr.DirectThisMethodCall(
-                    lowerExpr(recvExpr),
-                    rt,
-                    -1,
-                    extJvm,
-                    target.classTypeId(),
-                    target.memberName(),
-                    target.overloadAltIndex(),
-                    -1,
-                    target.signature(),
-                    callArgs,
-                    binding,
-                    callSite,
-                    meta);
-        }
-        return null;
-    }
-
     // ---------------------------------------------------------------- helpers
 
-    private boolean isSpread(BabbleParser.FunctionLiteralContext literal) {
-        return scopes.calls().parameters(literal).length <= HirFunction.MAX_SPREAD;
-    }
-
-    private boolean hasSpec(BabbleParser.FunctionLiteralContext literal) {
-        if (!isSpread(literal)) {
-            return false;
-        }
-        List<BabbleParser.FnParamContext> fnParams = literal.fnParameters().fnParam();
-        int opt = 0;
-        for (BabbleParser.FnParamContext decl : fnParams) {
-            if (decl.defaultValue != null) {
-                opt++;
-            }
-        }
-        if (opt > 32 || (opt > 0 && fnParams.size() > 32)) {
-            return false;
-        }
-        boolean hasPrimitive = scopes.lowering().functionReturnKind(literal).isPrimitive();
-        int slots = 3 + (opt > 0 ? 1 : 0);
-        for (BabbleParser.FnParamContext decl : fnParams) {
-            PrimitiveKind kind = scopes.lowering().declarationKind(decl);
-            if (kind.isPrimitive()) {
-                hasPrimitive = true;
-            }
-            slots += kind.slots();
-        }
-        return hasPrimitive && slots <= 250;
-    }
-
-    private ParserRuleContext findEnclosingClassCtx(ParserRuleContext at) {
+    ParserRuleContext findEnclosingClassCtx(ParserRuleContext at) {
         for (ParserRuleContext p = at.getParent(); p != null; p = p.getParent()) {
             if (p instanceof BabbleParser.ClassExpressionContext
                     || p instanceof BabbleParser.ObjectExpressionContext) {
@@ -2615,7 +1060,7 @@ public final class HirBuilder {
         return null;
     }
 
-    private ParserRuleContext findEnclosingOwnerClassCtx(ParserRuleContext at, String ownerTypeId) {
+    ParserRuleContext findEnclosingOwnerClassCtx(ParserRuleContext at, String ownerTypeId) {
         for (ParserRuleContext p = at.getParent(); p != null; p = p.getParent()) {
             if (p instanceof BabbleParser.ClassExpressionContext
                     || p instanceof BabbleParser.ObjectExpressionContext) {
@@ -2628,7 +1073,7 @@ public final class HirBuilder {
         return null;
     }
 
-    private ParserRuleContext findThisCompiledClassCtx(ParserRuleContext thisExpression) {
+    ParserRuleContext findThisCompiledClassCtx(ParserRuleContext thisExpression) {
         ParserRuleContext child = thisExpression;
         for (ParserRuleContext p = thisExpression.getParent();
                 p != null;
@@ -2667,23 +1112,7 @@ public final class HirBuilder {
         return index >= 0 && !shape.isMethod(index) ? index : -1;
     }
 
-    private BabbleParser.FunctionLiteralContext methodLiteralOf(
-            ParserRuleContext clsCtx, String member) {
-        BabbleParser.BlockContext body =
-                clsCtx instanceof BabbleParser.ClassExpressionContext c
-                        ? c.classBlock
-                        : ((BabbleParser.ObjectExpressionContext) clsCtx).createBlock;
-        for (BabbleParser.ExpressionContext expression : body.expression()) {
-            if (expression instanceof BabbleParser.DefExpressionContext def
-                    && def.name.getText().equals(member)
-                    && def.value instanceof BabbleParser.FunctionLiteralContext literal) {
-                return literal;
-            }
-        }
-        throw new IllegalStateException("No method " + member);
-    }
-
-    private boolean isPureStaticJavaChain(BabbleParser.ExpressionContext expr) {
+    boolean isPureStaticJavaChain(BabbleParser.ExpressionContext expr) {
         while (expr instanceof BabbleParser.BlockExpressionContext b
                 && b.block().expression().size() == 1
                 && resolution.declared(b.block()).isEmpty()
@@ -2712,7 +1141,7 @@ public final class HirBuilder {
         return false;
     }
 
-    private String resolveBabbleJvmName(String typeId) {
+    String resolveBabbleJvmName(String typeId) {
         String iface = allInterfaceJvmNames.get(typeId);
         if (iface != null) {
             return iface;
@@ -2726,72 +1155,5 @@ public final class HirBuilder {
             return local;
         }
         return "java/lang/Object";
-    }
-
-    private List<Class<?>> implementableJavaInterfaces(ClassShape shape) {
-        if (shape == null) {
-            return List.of();
-        }
-        LoweringTargets.TypeHierarchyInfo info = scopes.hierarchy().typeHierarchy(shape.id());
-        if (info == null) {
-            return List.of();
-        }
-        Set<Class<?>> javaIfaces = new LinkedHashSet<>();
-        for (Class<?> jc : info.allJavaInterfaces()) {
-            collectImplementableJavaInterfaces(jc, javaIfaces);
-        }
-        return List.copyOf(javaIfaces);
-    }
-
-    private List<String> implementedInterfaces(ClassShape shape, List<Class<?>> javaIfaces) {
-        if (shape == null) {
-            return List.of();
-        }
-        LoweringTargets.TypeHierarchyInfo info = scopes.hierarchy().typeHierarchy(shape.id());
-        if (info == null) {
-            return List.of();
-        }
-        List<String> implemented = new ArrayList<>();
-        for (LoweringTargets.ParentRef parent : info.directParents()) {
-            if (parent.babbleTypeId() != null) {
-                String ifaceJvm = allInterfaceJvmNames.get(parent.babbleTypeId());
-                if (ifaceJvm != null && !implemented.contains(ifaceJvm)) {
-                    implemented.add(ifaceJvm);
-                }
-            }
-        }
-        for (Class<?> jc : javaIfaces) {
-            String javaInternal = Type.getInternalName(jc);
-            if (!implemented.contains(javaInternal)) {
-                implemented.add(javaInternal);
-            }
-        }
-        return implemented;
-    }
-
-    private static void collectImplementableJavaInterfaces(Class<?> iface, Set<Class<?>> out) {
-        if (iface == null
-                || !iface.isInterface()
-                || !JavaTypes.isAccessible(iface)
-                || !out.add(iface)) {
-            return;
-        }
-        for (Class<?> parent : iface.getInterfaces()) {
-            collectImplementableJavaInterfaces(parent, out);
-        }
-    }
-
-    private boolean isMemberMethod(BabbleParser.FunctionLiteralContext fn) {
-        ParserRuleContext cur = fn;
-        while ((cur.getParent() instanceof BabbleParser.BlockExpressionContext blk
-                        && blk.block().expression().size() == 1)
-                || cur.getParent() instanceof BabbleParser.OverloadExpressionContext) {
-            cur = cur.getParent();
-        }
-        if (cur.getParent() instanceof BabbleParser.DefExpressionContext def && def.value == cur) {
-            LoweringTargets.DefTarget target = scopes.lowering().defTarget(def);
-            return target != null && target.kind() != LoweringTargets.DefKind.LEXICAL;
-        }
-        return false;
     }
 }
