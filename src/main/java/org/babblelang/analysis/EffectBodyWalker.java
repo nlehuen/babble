@@ -59,6 +59,7 @@ final class EffectBodyWalker {
     boolean hermetic = true;
     boolean deterministic = true;
     boolean nothrow = true;
+    boolean throwsJavaError = false;
     boolean uniqueResult = true;
     boolean terminating;
     boolean deepMutThis = false;
@@ -89,6 +90,7 @@ final class EffectBodyWalker {
         Map<ParserRuleContext, Reachability.Origin> unwindEnv;
         boolean hadLocalThrow;
         boolean hadEscapingThrow;
+        boolean hadEscapingJavaError;
 
         TryFrame(
                 int level,
@@ -796,12 +798,20 @@ final class EffectBodyWalker {
         String assignedName = ScopeAnalysis.assignName(assign);
         if (recv == null) {
             Reachability.Origin rhs = eval(assign.value);
-            if (compoundOp != null) {
-                checkCompoundArithmeticEffects(compoundOp, ec.checker.rawTypeOf(assign), assign);
-            }
             ScopeNode occScope = ec.checker.occurrenceScopeOf(assign);
             Object resolved = ec.checker.resolveNameForEffects(assignedName, occScope);
             MatchEffectAnalyzer.checkCaseVarAssign(this, resolved, assignedName, assign);
+            if (compoundOp != null) {
+                Reachability.Origin lhsOrig =
+                        resolved instanceof ParserRuleContext d
+                                ? env.getOrDefault(d, Reachability.Origin.IMMUTABLE)
+                                : Reachability.Origin.IMMUTABLE;
+                Type lhsType =
+                        resolved instanceof ParserRuleContext d
+                                ? ec.checker.typeOfDeclarationForEffects(d)
+                                : ec.checker.rawTypeOf(assign);
+                checkCompoundAssignEffects(compoundOp, lhsType, lhsOrig, rhs, assign);
+            }
             if (resolved instanceof ParserRuleContext decl) {
                 if (compoundOp != null) {
                     Reachability.Origin cur = env.get(decl);
@@ -865,10 +875,13 @@ final class EffectBodyWalker {
         // Member assignment: `receiver.field = value` (or compound `+=`, etc.)
         Reachability.Origin recvOrig = eval(recv);
         Reachability.Origin rhs = eval(assign.value);
-        if (compoundOp != null) {
-            checkCompoundArithmeticEffects(compoundOp, ec.checker.rawTypeOf(assign), assign);
-        }
         Type recvType = effectiveType(recv);
+        if (compoundOp != null) {
+            Type lhsType = memberTypeForCompoundAssign(recvType, assignedName, assign);
+            Reachability.Origin lhsOrig =
+                    recvOrig.deriveMember(assignedName, ec.javaResolver.isDeeplyImmutable(lhsType));
+            checkCompoundAssignEffects(compoundOp, lhsType, lhsOrig, rhs, assign);
+        }
         if (recvType == Type.ERROR
                 || recvType == Type.ANY
                 || Type.containsNull(recvType)
@@ -900,11 +913,55 @@ final class EffectBodyWalker {
         return rhs;
     }
 
-    void checkCompoundArithmeticEffects(
-            String op, Type resType, BabbleParser.AssignExpressionContext assign) {
+    private Type memberTypeForCompoundAssign(
+            Type recvType, String fieldName, BabbleParser.AssignExpressionContext assign) {
+        Type unwrapped = TypeAlgebra.unwrapFrozen(recvType);
+        List<Type> memberTypes = new ArrayList<>();
+        for (Type m : Type.membersOf(unwrapped)) {
+            if (m instanceof Type.Instance inst) {
+                TypeNode.Member member = ec.checker.findMemberOnNode(inst.node(), fieldName);
+                if (member != null) {
+                    memberTypes.add(ec.checker.memberTypeForEffects(inst.node(), member));
+                }
+            }
+        }
+        if (!memberTypes.isEmpty()) {
+            return memberTypes.size() == 1 ? memberTypes.get(0) : Type.union(memberTypes);
+        }
+        return ec.checker.rawTypeOf(assign);
+    }
+
+    void checkCompoundAssignEffects(
+            String op,
+            Type lhsType,
+            Reachability.Origin lhsOrig,
+            Reachability.Origin rhsOrig,
+            BabbleParser.AssignExpressionContext assign) {
+        Type resType = ec.checker.rawTypeOf(assign);
+        if (resType == Type.ERROR || lhsType == Type.ERROR || hasPriorDiagnostic(assign)) {
+            return;
+        }
+        String opMethod = Operators.method(op);
+        BabbleParser.ExpressionContext recv = ScopeAnalysis.assignReceiver(assign);
+        if (opMethod != null
+                && lhsType != null
+                && applyOperatorMethodEffects(
+                        assign,
+                        opMethod,
+                        recv != null ? recv : assign,
+                        lhsOrig,
+                        lhsType,
+                        assign.value,
+                        rhsOrig)) {
+            return;
+        }
         if ("+".equals(op) && resType == Type.STRING) {
-            applyEffects(ec.javaResolver.toStringProfile(effectiveType(assign.value)));
-        } else if ("//".equals(op)
+            Type rhsType = effectiveType(assign.value);
+            applyEffects(ec.javaResolver.toStringProfile(rhsType));
+            if (rhsType instanceof Type.Array) {
+                recordTargetRead(rhsOrig, rhsType);
+            }
+        } else if (("//".equals(op) || "mod".equals(op) || "%".equals(op))
                 && !(resType instanceof Type.Instance)
                 && !isNonZeroIntegerConstant(assign.value)) {
             nothrow = false;
@@ -1690,217 +1747,11 @@ final class EffectBodyWalker {
     }
 
     Reachability.Origin evalThrow(BabbleParser.ThrowExpressionContext ctx) {
-        stmtHasSideEffect = true;
-        Reachability.Origin orig = eval(ctx.expression());
-        Type exprType = effectiveType(ctx.expression());
-        boolean locallyCaught = false;
-        if (exprType != null && exprType != Type.ERROR && exprType != Type.NOTHING) {
-            for (TryFrame frame : activeTryStack) {
-                for (int i = 0; i < frame.catches.size(); i++) {
-                    BabbleParser.CatchClauseContext cc = frame.catches.get(i);
-                    Type catchType = ec.checker.catchTargetType(cc);
-                    boolean matches;
-                    if (cc.type() == null) {
-                        matches = !TypeChecker.mayBeJavaError(exprType);
-                    } else if (catchType != null && catchType != Type.ERROR) {
-                        matches = ec.checker.isCatchSubtype(exprType, catchType);
-                    } else {
-                        matches = false;
-                    }
-                    if (matches) {
-                        frame.hadLocalThrow = true;
-                        deepestThrowEscapeLevel = Math.min(deepestThrowEscapeLevel, frame.level);
-                        if (orig != Reachability.Origin.IMMUTABLE) {
-                            Reachability.Origin routed = orig.flattenElements();
-                            if (orig.unique && orig.uniqueOwner != null) {
-                                demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
-                                routed = routed.demoteAlias(Reachability.Origin.IMMUTABLE);
-                            }
-                            frame.caughtOrigins[i] =
-                                    frame.caughtOrigins[i] == null
-                                            ? routed
-                                            : frame.caughtOrigins[i].join(routed);
-                        }
-                        locallyCaught = true;
-                        break;
-                    }
-                }
-                if (locallyCaught) {
-                    break;
-                }
-                frame.hadEscapingThrow = true;
-            }
-        }
-        if (!locallyCaught) {
-            nothrow = false;
-            deepestThrowEscapeLevel = -1;
-            if (orig != Reachability.Origin.IMMUTABLE) {
-                if (orig.unique && orig.uniqueOwner != null) {
-                    demoteUniqueOwner(orig.uniqueOwner, Reachability.Origin.IMMUTABLE);
-                }
-                markStoredOrigin(orig, "throw", ctx);
-            }
-        }
-        return Reachability.Origin.IMMUTABLE;
+        return TryEffectAnalyzer.evalThrow(this, ctx);
     }
 
     Reachability.Origin evalTry(BabbleParser.TryExpressionContext ctx) {
-        Map<ParserRuleContext, Reachability.Origin> preEnv = new IdentityHashMap<>(env);
-        List<BabbleParser.CatchClauseContext> catches = ctx.catchClause();
-        int outerFloor = activeTryStack.size();
-        TryFrame frame = new TryFrame(outerFloor, catches, preEnv);
-
-        boolean outerNothrow = nothrow;
-        boolean outerHermetic = hermetic;
-        boolean outerDeterministic = deterministic;
-        int outerEscape = deepestThrowEscapeLevel;
-        nothrow = true;
-        hermetic = true;
-        deterministic = true;
-        deepestThrowEscapeLevel = Integer.MAX_VALUE;
-        activeTryStack.push(frame);
-        Reachability.Origin tryOrig;
-        try {
-            tryOrig = evalBlock(ctx.tryBlock, false);
-        } finally {
-            activeTryStack.pop();
-        }
-        int tryEscape = deepestThrowEscapeLevel;
-        boolean tryHermetic = hermetic;
-        boolean tryDeterministic = deterministic;
-        hermetic = outerHermetic && tryHermetic;
-        deterministic = outerDeterministic && tryDeterministic;
-        Map<ParserRuleContext, Reachability.Origin> afterTry = env;
-        frame.recordUnwindEnv(afterTry, this);
-        boolean tryHadNonLocalThrow = !nothrow || frame.hadEscapingThrow;
-        boolean tryNothrow =
-                nothrow
-                        && !frame.hadLocalThrow
-                        && !frame.hadEscapingThrow
-                        && tryEscape >= outerFloor;
-
-        if (tryNothrow
-                && !catches.isEmpty()
-                && emitDiagnostics
-                && forwardedParams.isEmpty()
-                && pseudoForwarded.isEmpty()
-                && !hasPriorDiagnostic(ctx)) {
-            BabbleParser.CatchClauseContext firstCatch = catches.get(0);
-            String warnMsg = "try block cannot throw; catch clause is unreachable";
-            String warnKey =
-                    firstCatch.getStart().getLine()
-                            + ":"
-                            + firstCatch.getStart().getCharPositionInLine()
-                            + ":WARN:"
-                            + warnMsg;
-            if (reportedMessages.add(warnKey)) {
-                ec.checker.effectWarning(warnMsg, firstCatch);
-            }
-        }
-
-        Map<ParserRuleContext, Reachability.Origin> catchEntryEnv = frame.unwindEnv;
-        Map<ParserRuleContext, Reachability.Origin> finallyEntryEnv =
-                mergeEnvs(catchEntryEnv, afterTry);
-        Type tryType = ec.checker.rawTypeOf(ctx.tryBlock);
-        Map<ParserRuleContext, Reachability.Origin> normalExitEnv =
-                tryType != Type.NOTHING ? afterTry : null;
-        Reachability.Origin resultOrig =
-                tryType != Type.NOTHING ? tryOrig : Reachability.Origin.IMMUTABLE;
-
-        boolean hasExhaustiveCatchAll = false;
-        boolean allCatchesNothrow = true;
-        int propagatedEscape = (tryEscape < outerFloor) ? tryEscape : Integer.MAX_VALUE;
-
-        for (int i = 0; i < catches.size(); i++) {
-            BabbleParser.CatchClauseContext cc = catches.get(i);
-            Type catchType = ec.checker.catchTargetType(cc);
-            if (cc.type() == null || catchesJavaThrowable(catchType)) {
-                hasExhaustiveCatchAll = true;
-            }
-            env = new IdentityHashMap<>(catchEntryEnv);
-            Type boundType = ec.checker.typeOfDeclarationForEffects(cc);
-            Reachability.Origin eOrig;
-            if (boundType != null && ec.javaResolver.isDeeplyImmutable(boundType)) {
-                eOrig = Reachability.Origin.IMMUTABLE;
-            } else {
-                Reachability.Origin localRouted = frame.caughtOrigins[i];
-                if (tryHadNonLocalThrow || localRouted == null) {
-                    Reachability.Origin nonLocal =
-                            (!tryHermetic || !tryDeterministic)
-                                    ? Reachability.Origin.ofExternal(cc, false)
-                                    : new Reachability.Origin(
-                                            Reachability.Origin.EMPTY_BITS,
-                                            false,
-                                            false,
-                                            Set.of(cc),
-                                            new Reachability.PathKey(cc, List.of()));
-                    eOrig =
-                            localRouted == null
-                                    ? nonLocal
-                                    : withLocalAliasKey(localRouted.join(nonLocal), cc, boundType);
-                } else {
-                    eOrig = withLocalAliasKey(localRouted, cc, boundType);
-                }
-            }
-            env.put(cc, eOrig);
-            nothrow = true;
-            deepestThrowEscapeLevel = Integer.MAX_VALUE;
-            Reachability.Origin catchOrig = evalBlock(cc.catchBlock, false);
-            int catchEscape = deepestThrowEscapeLevel;
-            allCatchesNothrow &= nothrow && catchEscape >= outerFloor;
-            if (catchEscape < outerFloor) {
-                propagatedEscape = Math.min(propagatedEscape, catchEscape);
-            }
-            env.remove(cc);
-            Map<ParserRuleContext, Reachability.Origin> afterCatch = env;
-            finallyEntryEnv = mergeEnvs(finallyEntryEnv, afterCatch);
-            Type catchBlockType = ec.checker.rawTypeOf(cc.catchBlock);
-            if (catchBlockType != Type.NOTHING) {
-                normalExitEnv =
-                        normalExitEnv == null ? afterCatch : mergeEnvs(normalExitEnv, afterCatch);
-                resultOrig =
-                        resultOrig == Reachability.Origin.IMMUTABLE
-                                ? catchOrig
-                                : resultOrig.join(catchOrig);
-            }
-        }
-
-        boolean finallyNothrow = true;
-        if (ctx.finallyBlock != null) {
-            env = new IdentityHashMap<>(finallyEntryEnv);
-            nothrow = true;
-            deepestThrowEscapeLevel = Integer.MAX_VALUE;
-            evalBlock(ctx.finallyBlock, false, true);
-            int finEscape = deepestThrowEscapeLevel;
-            finallyNothrow = nothrow && finEscape >= outerFloor;
-            if (finEscape < outerFloor) {
-                propagatedEscape = Math.min(propagatedEscape, finEscape);
-            }
-            ec.pass.analysis.effects().setTryFinallyNothrow(ctx, finallyNothrow);
-        } else {
-            env = normalExitEnv != null ? normalExitEnv : preEnv;
-        }
-
-        boolean tryExprNothrow =
-                tryNothrow
-                        ? finallyNothrow
-                        : (hasExhaustiveCatchAll && allCatchesNothrow && finallyNothrow);
-        nothrow = outerNothrow && tryExprNothrow;
-        deepestThrowEscapeLevel = Math.min(outerEscape, propagatedEscape);
-
-        return resultOrig;
-    }
-
-    private static boolean catchesJavaThrowable(Type catchType) {
-        if (catchType == null || catchType == Type.ERROR) {
-            return false;
-        }
-        for (Type m : TypeChecker.flattenCatchUnion(catchType)) {
-            if (m instanceof Type.JavaInstance ji && ji.type() == Throwable.class) {
-                return true;
-            }
-        }
-        return false;
+        return TryEffectAnalyzer.evalTry(this, ctx);
     }
 
     Reachability.Origin evalBooleanOp(BabbleParser.BooleanOpContext ctx) {
@@ -2052,6 +1903,9 @@ final class EffectBodyWalker {
             applyCallableSummaryEffects(sum);
         } else {
             applyEffects(eff);
+            if (!eff.isNothrow()) {
+                throwsJavaError = true;
+            }
         }
         if (eff.mutThis()) {
             if (containsFrozen(recvType)) {
@@ -2318,6 +2172,9 @@ final class EffectBodyWalker {
 
     void applyCallableSummaryEffects(EffectChecker.CallableSummary summary) {
         applyEffects(summary.effects());
+        if (summary.throwsJavaError()) {
+            throwsJavaError = true;
+        }
         for (Object readOwner : summary.frameReadOwners()) {
             if (readOwner != owner) {
                 if (frameChain.contains(readOwner)) {
