@@ -188,7 +188,7 @@ Expression-oriented `match x case <pattern> [if <guard>] then (...) else (...)` 
 
 The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`, `P6`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
-Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`/`-O2`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical Argon render. The exit criteria below list only what each milestone adds.
+Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`/`-O2`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical render of `examples/raytracer/assets/scene.ppm`. The exit criteria below list only what each milestone adds.
 
 The order follows constraints recorded in the BIPs:
 
@@ -252,7 +252,7 @@ Make Babble safe on several threads in both backends, add effect-verified parall
 - **Spans:** `BIP007`, `BIP018`, `BIP002`, `BIP011`, `BIP016`, `BIP020`
 - **Depends on:** `RM016`, `std/...`, and a parallelism BIP for the `threadsafe` effect and the combinators. A thread-safe `Interpreter` is independent.
 - **Deliverables:**
-  - A thread-safe `Interpreter` (no mutable current-scope field, audited runtime caches), so `examples/raytracer-fable` runs interpreted.
+  - A thread-safe `Interpreter` (no mutable current-scope field, audited runtime caches), so multi-threaded `examples/raytracer/raytracer_jvm.ba` renders run interpreted.
   - `threadsafe` and parallel `std/` combinators (`parallelMap`, `parallelFilter`, `parallelReduce`, `parallelForEach`) over `frozen` or `unique` inputs (`BIP007` §10).
   - `BIP018-P3`: `StructuredTaskScope`-backed combinators and `babble-28`.
   - `BIP018-P4`: `babble-28-preview` with `record`s as value classes (JEP 401).

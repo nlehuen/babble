@@ -1,0 +1,31 @@
+;; Color conversion helpers (gamma-2 encoding, 8-bit RGB packing, PPM formatting).
+
+def math = import("math.ba")
+def Vec3 = import("vec3.ba").Vec3
+def Interval = import("interval.ba").Interval
+
+def intensity: Interval = Interval(0.000, 0.999)
+
+export def linearToGamma = fn (linearComponent: double): double -> (
+    if linearComponent > 0.0 then (
+        math.sqrt(linearComponent)
+    ) else (
+        0.0
+    )
+)
+
+export def toByte = fn (linearComponent: double): int -> (
+    def g: double = linearToGamma(linearComponent)
+    math.toByte(256.0 * intensity.clamp(g))
+)
+
+export def packRgb = fn (r: int, g: int, b: int): int -> (
+    65536 * r + 256 * g + b
+)
+
+export def formatPpm = fn (pixelColor: Vec3): string -> (
+    def ir: int = toByte(pixelColor.x)
+    def ig: int = toByte(pixelColor.y)
+    def ib: int = toByte(pixelColor.z)
+    "" + ir + " " + ig + " " + ib
+)

@@ -1,0 +1,63 @@
+;; Thin JVM-only IO & multi-threaded execution adapter (BufferedImage, ImageIO, Thread).
+;; This is the only module in the raytracer that calls java.* / javax.* APIs.
+
+def color = import("../../core/color.ba")
+def Scene = import("../../core/scene.ba").Scene
+
+;; Renders a Scene into a java.awt.image.BufferedImage.
+;; When threads <= 1, renders inline on the calling thread (compatible with interpret mode).
+;; When threads > 1, worker threads claim scanlines atomically; per-row deterministic RNG
+;; guarantees bit-for-bit identical output regardless of thread count.
+export def renderBufferedImage = fn io (
+    shared scene: Scene,
+    threads: int = 1,
+    seed: int = scene.defaultSeed
+): java.awt.image.BufferedImage -> (
+    def cam = scene.camera
+    def image = java.awt.image.BufferedImage(
+        cam.imageWidth,
+        cam.imageHeight,
+        java.awt.image.BufferedImage.TYPE_INT_RGB
+    )
+    def nextLine = java.util.concurrent.atomic.AtomicInteger()
+    def onPixel = fn io (x: int, y: int, r: int, g: int, b: int): null -> (
+        image.setRGB(x, y, color.packRgb(r, g, b))
+        null
+    )
+
+    def renderLines = fn io (): null -> (
+        var j: int = nextLine.getAndIncrement()
+        while j < cam.imageHeight then (
+            cam.renderRow(j, scene.world, seed, onPixel)
+            j = nextLine.getAndIncrement()
+        )
+        null
+    )
+
+    def start = fn io (n: int): null -> (
+        if n > 1 then (
+            def thread = java.lang.Thread(renderLines)
+            thread.start()
+            recurse(n - 1)
+            thread.join()
+        ) else (
+            renderLines()
+        )
+        null
+    )
+
+    start(threads)
+    image
+)
+
+export def renderPng = fn io (
+    shared scene: Scene,
+    outputPath: string,
+    threads: int = 16,
+    seed: int = scene.defaultSeed
+): long -> (
+    def started: long = java.lang.System.currentTimeMillis()
+    def image = renderBufferedImage(scene, threads, seed)
+    javax.imageio.ImageIO.write(image, "png", java.io.File(outputPath))
+    java.lang.System.currentTimeMillis() - started
+)

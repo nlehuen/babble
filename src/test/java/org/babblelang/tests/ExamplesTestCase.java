@@ -36,11 +36,16 @@ public class ExamplesTestCase {
                 (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         StringWriter errors = new StringWriter();
         engine.getContext().setErrorWriter(errors);
+        Path examplesRoot = Path.of("examples").toAbsolutePath().normalize();
         Path file = script.toAbsolutePath().normalize();
+        Path relative = examplesRoot.relativize(file);
+        Path projectRoot =
+                relative.getNameCount() >= 2
+                        ? examplesRoot.resolve(relative.getName(0))
+                        : file.getParent();
         if (engine.getMode() == BabbleScriptEngine.Mode.COMPILE) {
             List<BabbleScriptEngine.ProgramModule> modules =
-                    engine.compileProgram(
-                            FileModuleSource.rooted(file.getParent()), file.toString());
+                    engine.compileProgram(FileModuleSource.rooted(projectRoot), file.toString());
             Assertions.assertFalse(modules.isEmpty(), script.toString());
         } else {
             engine.getContext()

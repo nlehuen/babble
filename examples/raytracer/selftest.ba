@@ -1,0 +1,138 @@
+;;(
+    Pure-Babble self-verification suite for the unified raytracer core and scenes.
+    Runs identically in interpret, JVM (-O0/-O1/-O2), and WebAssembly 3.0 (wasm-js/wasm-bare).
+;;)
+
+def core = import("core/core.ba")
+def math = core.math
+def color = core.color
+def Vec3 = core.Vec3
+def Ray = core.Ray
+def Interval = core.Interval
+def AABB = core.AABB
+def Rng = core.Rng
+def registry = import("scenes/registry.ba")
+def threeSpheres = import("scenes/three_spheres.ba")
+
+def runTests = fn () -> (
+    ;; 1. Pure-Babble math
+    assert(math.abs(-3.5) == 3.5, "abs failed")
+    assert(math.min(2.0, 5.0) == 2.0 and math.max(2.0, 5.0) == 5.0, "min/max failed")
+    assert(math.abs(math.sqrt(9.0) - 3.0) < 0.000000001, "sqrt(9) failed")
+    assert(math.abs(math.sqrt(2.0) - 1.41421356237) < 0.00000001, "sqrt(2) failed")
+    assert(math.powInt(2.0, 5) == 32.0, "powInt failed")
+    assert(math.abs(math.sin(0.0)) < 0.000000001, "sin(0) failed")
+    assert(math.abs(math.cos(0.0) - 1.0) < 0.000000001, "cos(0) failed")
+    assert(math.abs(math.sin(math.halfPi) - 1.0) < 0.00000001, "sin(pi/2) failed")
+    assert(math.toInt(225.8) == 225 and math.toInt(-42.9) == -42, "toInt failed")
+    assert(math.toByte(0.0) == 0 and math.toByte(128.4) == 128 and math.toByte(300.0) == 255, "toByte failed")
+
+    ;; 2. Vec3 record semantics, operators, and sRGB helper
+    def v1: Vec3 = Vec3(1.0, 2.0, 3.0)
+    def v2: Vec3 = Vec3(1, 2, 3)
+    assert(v1 == v2, "Vec3 structural equality failed")
+    assert(not same(v1, v2), "same() should be false for distinct Vec3 instances")
+    assert(v1 is Vec3 and classof(v1) == Vec3, "is / classof failed on Vec3")
+    assert(v1 + Vec3(4.0, 5.0, 6.0) == Vec3(5.0, 7.0, 9.0), "Vec3.plus failed")
+    assert(v1.dot(Vec3(4.0, 5.0, 6.0)) == 32.0, "Vec3.dot failed")
+    assert(Vec3(1.0, 0.0, 0.0).cross(Vec3(0.0, 1.0, 0.0)) == Vec3(0.0, 0.0, 1.0), "Vec3.cross failed")
+    assert(Vec3(3.0, 4.0, 0.0).length() == 5.0, "Vec3.length failed")
+    assert(Vec3(1.0, -1.0, 0.0).reflect(Vec3(0.0, 1.0, 0.0)) == Vec3(1.0, 1.0, 0.0), "Vec3.reflect failed")
+    assert(Vec3.srgb(0, 255, 0) == Vec3(0.0, 1.0, 0.0), "Vec3.srgb failed")
+
+    ;; 3. Geometries: Sphere, Ellipsoid, RoundCone, SculptedLobe, and interface conformance
+    def r: Ray = Ray(Vec3(0.0, 0.0, 0.0), Vec3(0.0, 0.0, -1.0))
+    def lamMat: core.Material = core.Lambertian(Vec3(0.8, 0.3, 0.3))
+    def sphere: core.Sphere = core.Sphere(Vec3(0.0, 0.0, -1.0), 0.5, lamMat)
+    assert(sphere is core.Hittable and sphere is core.Describable, "Sphere interface conformance failed")
+    assert(sphere.describe() == "<sphere>(r=0.5)", "super(Hittable).describe() failed")
+    assert(lamMat.describe() == "<lambertian>(Vec3(x: 0.8, y: 0.3, z: 0.3))", "super.describe() failed")
+
+    def hit: core.HitRecord? = sphere.hit(r, 0.001, math.infinity)
+    if hit == null then (return assert(false, "Sphere hit failed"))
+    assert(hit.frontFace, "Sphere frontFace failed")
+    assert(math.abs(hit.t - 0.5) < 0.00000001, "Sphere hit t failed")
+    assert(hit.p == Vec3(0.0, 0.0, -0.5), "Sphere hit point failed")
+    assert(hit.normal == Vec3(0.0, 0.0, 1.0), "Sphere outward normal failed")
+
+    def ell: core.Ellipsoid = core.Ellipsoid(Vec3(0.0, 0.0, -2.0), 0.5, 0.5, 0.5, lamMat)
+    def ellHit: core.HitRecord? = ell.hit(r, 0.001, math.infinity)
+    assert(ellHit != null and math.abs(ellHit.t - 1.5) < 0.00000001, "Ellipsoid hit failed")
+
+    def cone: core.RoundCone = core.RoundCone(Vec3(-0.5, 0.0, -2.0), Vec3(0.5, 0.0, -2.0), 0.25, lamMat)
+    def coneHit: core.HitRecord? = cone.hit(r, 0.001, math.infinity)
+    assert(coneHit != null and math.abs(coneHit.t - 1.75) < 0.000001, "RoundCone hit failed")
+
+    def lobeCoeffs: array of double = (array of double).of(0.5, 0.0, 0.0)
+    def inkMat: core.Material = core.Emissive(Vec3.zero)
+    def lobe: core.SculptedLobe = core.SculptedLobe(Vec3(0.1, 0.0, -2.0), 0.5, 1.0, lobeCoeffs, 0.6, lamMat, inkMat, 0.02)
+    def lobeHit: core.HitRecord? = lobe.hit(r, 0.001, math.infinity)
+    assert(lobeHit != null and lobeHit.t > 1.4 and lobeHit.t < 1.7, "SculptedLobe hit failed")
+
+    ;; 4. All 5 core materials: Lambertian, Metal, Dielectric, Emissive, Toon
+    def rng: Rng = Rng(99)
+    def sLam: core.Scatter? = lamMat.scatter(r, hit, rng)
+    assert(sLam != null and sLam.attenuation == Vec3(0.8, 0.3, 0.3) and sLam.scattered != null, "Lambertian scatter failed")
+
+    def metalMat: core.Material = core.Metal(Vec3(0.7, 0.6, 0.5), 0.1)
+    def sMetal: core.Scatter? = metalMat.scatter(r, hit, rng)
+    assert(sMetal != null and sMetal.attenuation == Vec3(0.7, 0.6, 0.5), "Metal scatter failed")
+
+    def glassMat: core.Material = core.Dielectric(1.5)
+    def sGlass: core.Scatter? = glassMat.scatter(r, hit, rng)
+    assert(sGlass != null and sGlass.attenuation == Vec3.one, "Dielectric scatter failed")
+
+    def emMat: core.Material = core.Emissive(Vec3(0.2, 0.4, 0.6))
+    def sEm: core.Scatter? = emMat.scatter(r, hit, rng)
+    assert(sEm != null and sEm.scattered == null and sEm.emission == Vec3(0.2, 0.4, 0.6), "Emissive scatter failed")
+
+    def toonMat: core.Material = core.Toon(Vec3(0.9, 0.5, 0.7), Vec3(0.4, 0.2, 0.3), Vec3(0.0, 0.0, 1.0), 0.0)
+    def sToon: core.Scatter? = toonMat.scatter(r, hit, rng)
+    assert(sToon != null and sToon.scattered == null and sToon.emission == Vec3(0.9, 0.5, 0.7), "Toon scatter failed")
+
+    ;; 5. HittableList, iterables, HOFs, and BVHNode parity
+    def sceneList: core.HittableList = threeSpheres.buildList()
+    assert(sceneList.size() == 5, "threeSpheres size failed")
+    assert(sceneList.countWhere(fn (h: core.Hittable): bool -> (h is core.Sphere)) == 5, "countWhere failed")
+
+    var spheres: int = 0
+    for h in sceneList then (
+        if h is core.Sphere then (spheres += 1)
+    )
+    assert(spheres == 5, "for over HittableList failed")
+
+    def glass: core.Hittable? = for h in sceneList then (
+        if h is core.Sphere and h.mat is core.Dielectric then (break h)
+    )
+    assert(glass != null and glass.describe() == "<sphere>(r=0.5)", "break with value failed")
+
+    def bvh: core.Hittable = core.BVHNode.fromList(sceneList)
+    assert(sceneList.hit(r, 0.001, math.infinity) == bvh.hit(r, 0.001, math.infinity), "BVH and HittableList diverged")
+
+    ;; 6. Color conversion & packing
+    assert(color.formatPpm(Vec3(0.0, 0.25, 1.0)) == "0 128 255", "color.formatPpm failed")
+    assert(color.packRgb(1, 2, 3) == 66051, "color.packRgb failed")
+
+    ;; 7. Scene registry & pure scanline rendering (`fn calling emit`)
+    def coverScene: core.Scene = registry.buildScene("cover", imageWidth: 16, samplesPerPixel: 2, maxDepth: 6, gridRadius: 2)
+    assert(coverScene.camera.imageHeight == 9, "cover aspect ratio failed")
+    var coverPixels: int = 0
+    coverScene.camera.renderRow(4, coverScene.world, coverScene.defaultSeed, fn (x: int, y: int, cr: int, cg: int, cb: int) -> (
+        assert(cr >= 0 and cr <= 255 and cg >= 0 and cg <= 255 and cb >= 0 and cb <= 255, "cover RGB out of range")
+        coverPixels += 1
+    ))
+    assert(coverPixels == 16, "cover renderRow pixel count failed")
+
+    def triScene: core.Scene = registry.buildScene("triceratops", imageWidth: 16, samplesPerPixel: 2, maxDepth: 4)
+    assert(triScene.camera.imageHeight == 16, "triceratops aspect ratio failed")
+    var triPixels: int = 0
+    triScene.camera.renderRow(8, triScene.world, triScene.defaultSeed, fn (x: int, y: int, cr: int, cg: int, cb: int) -> (
+        assert(cr >= 0 and cr <= 255 and cg >= 0 and cg <= 255 and cb >= 0 and cb <= 255, "triceratops RGB out of range")
+        triPixels += 1
+    ))
+    assert(triPixels == 16, "triceratops renderRow pixel count failed")
+
+    "selftest-ok"
+)
+
+runTests()

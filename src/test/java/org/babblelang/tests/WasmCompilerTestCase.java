@@ -918,51 +918,15 @@ public class WasmCompilerTestCase {
     }
 
     @Test
-    public void argonRayTracerMiniSceneMatchesJvmByteForByte(@TempDir Path dir) throws Exception {
+    public void unifiedRayTracerMiniScenesMatchJvmAndWasmByteForByte(@TempDir Path dir)
+            throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
-        Path argonRoot = Path.of("examples/raytracer-argon").toAbsolutePath().normalize();
-        Path miniScript = dir.resolve("argon_mini.ba");
-        String libPath = argonRoot.resolve("lib/raytracer.ba").toString().replace("\\", "/");
-        // Small 16x9 render exercising all 15 unmodified Argon modules (Vec3, Ray, BVH, Sphere,
-        // Materials, Camera, Range, STDOUT)
-        String miniCode =
-                """
-                def raytracer = import("%s")
-                def rng: raytracer.Rng = raytracer.Rng(2026)
-                def worldList: raytracer.HittableList = raytracer.Scenes.finalScene(rng: rng, gridRadius: 2)
-                def world: raytracer.Hittable = raytracer.BVHNode.fromList(worldList)
-                def camera: raytracer.Camera = raytracer.Camera(
-                    aspectRatio: 16.0 / 9.0,
-                    imageWidth: 16,
-                    samplesPerPixel: 2,
-                    maxDepth: 6,
-                    vfov: 20.0,
-                    lookfrom: raytracer.Vec3(13.0, 2.0, 3.0),
-                    lookat: raytracer.Vec3(0.0, 0.0, 0.0),
-                    vup: raytracer.Vec3(0.0, 1.0, 0.0),
-                    defocusAngle: 0.6,
-                    focusDist: 10.0
-                )
-                camera.render(world, rng)
-                """
-                        .formatted(libPath);
-        Files.writeString(miniScript, miniCode, StandardCharsets.UTF_8);
+        Path rtRoot = Path.of("examples/raytracer").toAbsolutePath().normalize();
+        Path ppmEntry = rtRoot.resolve("raytracer_ppm.ba");
 
-        // 1. Run on JVM
-        java.io.StringWriter jvmOut = new java.io.StringWriter();
-        java.io.StringWriter jvmErr = new java.io.StringWriter();
-        int jvmStatus =
-                org.babblelang.Main.run(
-                        new String[] {miniScript.toString()},
-                        new java.io.BufferedReader(new java.io.StringReader("")),
-                        new java.io.PrintWriter(jvmOut),
-                        new java.io.PrintWriter(jvmErr),
-                        false);
-        Assertions.assertEquals(0, jvmStatus, "JVM Argon mini render failed : " + jvmErr);
-
-        // 2. Compile to WebAssembly (wasm-js) and run in V8
-        Path wasmOut = dir.resolve("argon_mini.wasm");
-        Path mjsOut = dir.resolve("argon_mini.mjs");
+        // 1. Compile raytracer_ppm.ba once to WebAssembly 3.0 (wasm-js)
+        Path wasmOut = dir.resolve("raytracer_ppm.wasm");
+        Path mjsOut = dir.resolve("raytracer_ppm.mjs");
         java.io.StringWriter compileErr = new java.io.StringWriter();
         int cmpStatus =
                 org.babblelang.Main.run(
@@ -970,29 +934,96 @@ public class WasmCompilerTestCase {
                             "-compile",
                             "-target",
                             "wasm-js",
-                            miniScript.toString(),
+                            ppmEntry.toString(),
                             "-o",
-                            wasmOut.toString(),
-                            "-root",
-                            "/"
+                            wasmOut.toString()
                         },
                         new java.io.BufferedReader(new java.io.StringReader("")),
                         new java.io.PrintWriter(new java.io.StringWriter()),
                         new java.io.PrintWriter(compileErr),
                         false);
-        Assertions.assertEquals(0, cmpStatus, "Wasm Argon mini compile failed : " + compileErr);
+        Assertions.assertEquals(0, cmpStatus, "Wasm raytracer_ppm compile failed : " + compileErr);
 
-        Process p =
-                new ProcessBuilder("node", mjsOut.toString()).redirectErrorStream(false).start();
-        String wasmStdout = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        String wasmStderr = new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-        int exit = p.waitFor();
-        Assertions.assertEquals(0, exit, "V8 Argon mini render failed : " + wasmStderr);
+        // 2. Verify exact byte-for-byte PPM parity between JVM and V8 on both cover & triceratops
+        String[][] cases = {
+            {"cover", "16", "2", "6", "2", "P3\n16 9\n255\n"},
+            {"triceratops", "16", "4", "4", "1", "P3\n16 16\n255\n"}
+        };
+        for (String[] c : cases) {
+            String scene = c[0];
+            String w = c[1];
+            String spp = c[2];
+            String depth = c[3];
+            String grid = c[4];
+            String expectedHeader = c[5];
 
-        // 3. Exact byte-for-byte PPM parity!
-        Assertions.assertTrue(wasmStdout.startsWith("P3\n16 9\n255\n"), "Expected PPM header");
-        Assertions.assertEquals(
-                jvmOut.toString(), wasmStdout, "Argon mini PPM must match JVM byte-for-byte");
+            java.io.StringWriter jvmOut = new java.io.StringWriter();
+            java.io.StringWriter jvmErr = new java.io.StringWriter();
+            int jvmStatus =
+                    org.babblelang.Main.run(
+                            new String[] {ppmEntry.toString(), scene, w, spp, depth, grid},
+                            new java.io.BufferedReader(new java.io.StringReader("")),
+                            new java.io.PrintWriter(jvmOut),
+                            new java.io.PrintWriter(jvmErr),
+                            false);
+            Assertions.assertEquals(
+                    0, jvmStatus, "JVM " + scene + " mini render failed : " + jvmErr);
+
+            Process p =
+                    new ProcessBuilder("node", mjsOut.toString(), scene, w, spp, depth, grid)
+                            .redirectErrorStream(false)
+                            .start();
+            String wasmStdout =
+                    new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            String wasmStderr =
+                    new String(p.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+            int exit = p.waitFor();
+            Assertions.assertEquals(0, exit, "V8 " + scene + " mini render failed : " + wasmStderr);
+
+            Assertions.assertTrue(
+                    wasmStdout.startsWith(expectedHeader),
+                    "Expected PPM header for " + scene + " : " + expectedHeader);
+            Assertions.assertEquals(
+                    jvmOut.toString(),
+                    wasmStdout,
+                    scene + " mini PPM must match JVM byte-for-byte");
+        }
+
+        // 3. Verify JVM PNG rendering (threads=1 in all modes; threads=4 parity in compiled modes,
+        // since the tree-walking interpreter is single-threaded)
+        Path jvmEntry = rtRoot.resolve("raytracer_jvm.ba");
+        Path png1 = dir.resolve("tri_1t.png");
+        java.io.StringWriter err1 = new java.io.StringWriter();
+        int st1 =
+                org.babblelang.Main.run(
+                        new String[] {
+                            jvmEntry.toString(), "triceratops", png1.toString(), "16", "4", "1"
+                        },
+                        new java.io.BufferedReader(new java.io.StringReader("")),
+                        new java.io.PrintWriter(new java.io.StringWriter()),
+                        new java.io.PrintWriter(err1),
+                        false);
+        Assertions.assertEquals(0, st1, "JVM PNG (1 thread) render failed : " + err1);
+        Assertions.assertTrue(Files.size(png1) > 0, "Expected non-empty PNG output");
+
+        if (!"interpret".equals(System.getProperty("babble.mode"))) {
+            Path png4 = dir.resolve("tri_4t.png");
+            java.io.StringWriter err4 = new java.io.StringWriter();
+            int st4 =
+                    org.babblelang.Main.run(
+                            new String[] {
+                                jvmEntry.toString(), "triceratops", png4.toString(), "16", "4", "4"
+                            },
+                            new java.io.BufferedReader(new java.io.StringReader("")),
+                            new java.io.PrintWriter(new java.io.StringWriter()),
+                            new java.io.PrintWriter(err4),
+                            false);
+            Assertions.assertEquals(0, st4, "JVM PNG (4 threads) render failed : " + err4);
+            Assertions.assertArrayEquals(
+                    Files.readAllBytes(png1),
+                    Files.readAllBytes(png4),
+                    "Multi-threaded JVM render must match single-threaded render byte-for-byte");
+        }
     }
 
     // ---------------------------------------------------------------- BIP025-I4 Host Imports, CLI
@@ -1181,13 +1212,13 @@ public class WasmCompilerTestCase {
     }
 
     @Test
-    public void argonCanvasBrowserDemoCompilesAndRendersWithMockCanvas(@TempDir Path dir)
+    public void unifiedCanvasBrowserDemoCompilesAndRendersWithMockCanvas(@TempDir Path dir)
             throws Exception {
         Assumptions.assumeTrue(NodeWasmRunner.isNodeAvailable(), "Node.js not available");
         Path canvasScript =
-                Path.of("examples/raytracer-argon/wasm_canvas.ba").toAbsolutePath().normalize();
-        Path wasmOut = dir.resolve("wasm_canvas.wasm");
-        Path mjsOut = dir.resolve("wasm_canvas.mjs");
+                Path.of("examples/raytracer/raytracer_wasm.ba").toAbsolutePath().normalize();
+        Path wasmOut = dir.resolve("raytracer_wasm.wasm");
+        Path mjsOut = dir.resolve("raytracer_wasm.mjs");
         java.io.StringWriter compileErr = new java.io.StringWriter();
         int status =
                 org.babblelang.Main.run(
@@ -1203,11 +1234,13 @@ public class WasmCompilerTestCase {
                         new java.io.PrintWriter(new java.io.StringWriter()),
                         new java.io.PrintWriter(compileErr),
                         false);
-        Assertions.assertEquals(0, status, "Argon canvas demo compile failed : " + compileErr);
+        Assertions.assertEquals(0, status, "Unified canvas demo compile failed : " + compileErr);
 
         byte[] wasmBytes = Files.readAllBytes(wasmOut);
         String mjsSource = Files.readString(mjsOut, StandardCharsets.UTF_8);
-        String mockCanvasJs =
+
+        // Cover scene (16x9)
+        String mockCoverJs =
                 """
                 (() => {
                   let pixels = 0;
@@ -1227,12 +1260,42 @@ public class WasmCompilerTestCase {
                   };
                 })()
                 """;
-        NodeWasmRunner.RunOutcome out =
+        NodeWasmRunner.RunOutcome coverOut =
                 NodeWasmRunner.runJs(
-                        wasmBytes, mjsSource, List.of("16", "2", "4", "1"), mockCanvasJs);
-        Assertions.assertTrue(out.ok(), "Argon canvas demo execution failed : " + out.error());
-        Assertions.assertEquals("\"16x9\"", out.resultJson());
-        Assertions.assertEquals("pixels=144,rows=9,bad=0\n", out.stdout());
+                        wasmBytes, mjsSource, List.of("cover", "16", "2", "4", "1"), mockCoverJs);
+        Assertions.assertTrue(
+                coverOut.ok(), "Cover canvas demo execution failed : " + coverOut.error());
+        Assertions.assertEquals("\"16x9\"", coverOut.resultJson());
+        Assertions.assertEquals("pixels=144,rows=9,bad=0\n", coverOut.stdout());
+
+        // Baby Triceratops scene (16x16)
+        String mockTriJs =
+                """
+                (() => {
+                  let pixels = 0;
+                  let rows = 0;
+                  let badRgb = 0;
+                  return {
+                    canvas: {
+                      setPixel: (x, y, r, g, b) => {
+                        pixels++;
+                        if (r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255) badRgb++;
+                      },
+                      present: (row) => {
+                        rows++;
+                        if (row === 15) stdoutChunks.push(`pixels=${pixels},rows=${rows},bad=${badRgb}\\n`);
+                      },
+                    }
+                  };
+                })()
+                """;
+        NodeWasmRunner.RunOutcome triOut =
+                NodeWasmRunner.runJs(
+                        wasmBytes, mjsSource, List.of("triceratops", "16", "2", "4"), mockTriJs);
+        Assertions.assertTrue(
+                triOut.ok(), "Triceratops canvas demo execution failed : " + triOut.error());
+        Assertions.assertEquals("\"16x16\"", triOut.resultJson());
+        Assertions.assertEquals("pixels=256,rows=16,bad=0\n", triOut.stdout());
     }
 
     // ---------------------------------------------------------------- BIP025 Review Regression

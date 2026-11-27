@@ -1,0 +1,74 @@
+;; Book 1 Chapter 14 cover scene ("Where Next?"): 22x22 randomized marble grid + 3 hero spheres.
+
+def Rng = import("../core/rng.ba").Rng
+def Vec3 = import("../core/vec3.ba").Vec3
+def Lambertian = import("../core/materials.ba").Lambertian
+def Metal = import("../core/materials.ba").Metal
+def Dielectric = import("../core/materials.ba").Dielectric
+def Sphere = import("../core/geometry/sphere.ba").Sphere
+def HittableList = import("../core/geometry/hittable_list.ba").HittableList
+def BVHNode = import("../core/geometry/bvh.ba").BVHNode
+def Camera = import("../core/camera.ba").Camera
+def Scene = import("../core/scene.ba").Scene
+
+export def buildList = fn (mut rng: Rng = Rng(2026), gridRadius: int = 11): unique HittableList -> (
+    def world: HittableList = HittableList()
+
+    world.add(Sphere(Vec3(0.0, -1000.0, 0.0), 1000.0, Lambertian(Vec3(0.5, 0.5, 0.5))))
+
+    for a in -gridRadius..<gridRadius then (
+        for b in -gridRadius..<gridRadius then (
+            def chooseMat: double = rng.nextDouble()
+            def center: Vec3 = Vec3(
+                a + 0.9 * rng.nextDouble(),
+                0.2,
+                b + 0.9 * rng.nextDouble()
+            )
+            ;; Keep clear of the big metal sphere
+            if (center - Vec3(4.0, 0.2, 0.0)).length() <= 0.9 then (
+                continue
+            )
+
+            if chooseMat < 0.8 then (
+                def albedo: Vec3 = Vec3.random(rng) * Vec3.random(rng)
+                world.add(Sphere(center, 0.2, Lambertian(albedo)))
+            ) else if chooseMat < 0.95 then (
+                def albedo: Vec3 = Vec3.randomRange(rng, 0.5, 1.0)
+                def fuzz: double = rng.nextRange(0.0, 0.5)
+                world.add(Sphere(center, 0.2, Metal(albedo, fuzz)))
+            ) else (
+                world.add(Sphere(center, 0.2, Dielectric(1.5)))
+            )
+        )
+    )
+
+    world.add(Sphere(Vec3(0.0, 1.0, 0.0), 1.0, Dielectric(1.5)))
+    world.add(Sphere(Vec3(-4.0, 1.0, 0.0), 1.0, Lambertian(Vec3(0.4, 0.2, 0.1))))
+    world.add(Sphere(Vec3(4.0, 1.0, 0.0), 1.0, Metal(Vec3(0.7, 0.6, 0.5), 0.0)))
+
+    world
+)
+
+export def build = fn (
+    imageWidth: int = 400,
+    samplesPerPixel: int = 20,
+    maxDepth: int = 12,
+    gridRadius: int = 11,
+    seed: int = 2026
+): Scene -> (
+    def rng: Rng = Rng(seed)
+    def worldList: HittableList = buildList(rng: rng, gridRadius: gridRadius)
+    def camera: Camera = Camera(
+        aspectRatio: 16.0 / 9.0,
+        imageWidth: imageWidth,
+        samplesPerPixel: samplesPerPixel,
+        maxDepth: maxDepth,
+        vfov: 20.0,
+        lookFrom: Vec3(13.0, 2.0, 3.0),
+        lookAt: Vec3(0.0, 0.0, 0.0),
+        vup: Vec3(0.0, 1.0, 0.0),
+        defocusAngle: 0.6,
+        focusDist: 10.0
+    )
+    Scene("cover", BVHNode.fromList(worldList), camera, seed)
+)

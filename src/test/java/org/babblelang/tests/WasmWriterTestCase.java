@@ -267,21 +267,51 @@ public class WasmWriterTestCase {
                         org.babblelang.analysis.CompilationTarget.WASM_BARE);
         Assertions.assertFalse(bareDiags.isEmpty(), "Expected wasm-bare to reject println");
 
-        // All 15 modules of examples/raytracer-argon must be 100% portable under wasm-js!
-        java.nio.file.Path argonRoot = java.nio.file.Path.of("examples/raytracer-argon");
-        var argonMods =
+        // Pure core/ and scenes/ of examples/raytracer must be 100% portable even under wasm-bare
+        // (zero java.*, zero axiom wasm.*, zero STDOUT/args)!
+        java.nio.file.Path rtRoot = java.nio.file.Path.of("examples/raytracer");
+        var rtSource = org.babblelang.engine.FileModuleSource.rooted(rtRoot);
+        var coreAndScenesMods =
                 engine.compileProgramToHir(
-                        org.babblelang.engine.FileModuleSource.rooted(argonRoot),
-                        argonRoot.resolve("raytracer.ba").toAbsolutePath().normalize().toString(),
-                        org.babblelang.analysis.CompilationTarget.WASM_JS);
-        Assertions.assertEquals(15, argonMods.size());
-        var argonDiags =
+                        rtSource,
+                        rtRoot.resolve("scenes/registry.ba")
+                                .toAbsolutePath()
+                                .normalize()
+                                .toString(),
+                        org.babblelang.analysis.CompilationTarget.WASM_BARE);
+        Assertions.assertTrue(
+                coreAndScenesMods.size() >= 20,
+                "Expected full core + scenes module graph, got " + coreAndScenesMods.size());
+        var bareCoreDiags =
                 org.babblelang.wasm.WasmPortabilityChecker.check(
-                        argonMods.stream()
+                        coreAndScenesMods.stream()
                                 .map(org.babblelang.engine.BabbleScriptEngine.HirProgramModule::hir)
                                 .toList(),
-                        org.babblelang.analysis.CompilationTarget.WASM_JS);
-        Assertions.assertEquals(List.of(), argonDiags, "Argon portability errors : " + argonDiags);
+                        org.babblelang.analysis.CompilationTarget.WASM_BARE);
+        Assertions.assertEquals(
+                List.of(),
+                bareCoreDiags,
+                "Raytracer core/scenes wasm-bare errors : " + bareCoreDiags);
+
+        // Portable PPM and browser canvas entrypoints must be 100% portable under wasm-js!
+        for (String entry : List.of("raytracer_ppm.ba", "raytracer_wasm.ba")) {
+            var mods =
+                    engine.compileProgramToHir(
+                            rtSource,
+                            rtRoot.resolve(entry).toAbsolutePath().normalize().toString(),
+                            org.babblelang.analysis.CompilationTarget.WASM_JS);
+            var diags =
+                    org.babblelang.wasm.WasmPortabilityChecker.check(
+                            mods.stream()
+                                    .map(
+                                            org.babblelang.engine.BabbleScriptEngine
+                                                            .HirProgramModule
+                                                    ::hir)
+                                    .toList(),
+                            org.babblelang.analysis.CompilationTarget.WASM_JS);
+            Assertions.assertEquals(
+                    List.of(), diags, "Raytracer " + entry + " wasm-js errors : " + diags);
+        }
     }
 
     @Test

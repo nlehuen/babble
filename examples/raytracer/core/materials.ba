@@ -1,0 +1,121 @@
+;; Core material library: immutable record materials (Lambertian, Metal, Dielectric, Emissive, Toon).
+
+def math = import("math.ba")
+def Rng = import("rng.ba").Rng
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def HitRecord = import("interfaces.ba").HitRecord
+def Material = import("interfaces.ba").Material
+def Scatter = import("interfaces.ba").Scatter
+
+export def Lambertian = record (albedo: Vec3) implements Material (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): Scatter? -> (
+        var scatterDirection: Vec3 = rec.normal + Vec3.randomUnitVector(rng)
+        if scatterDirection.nearZero() then (
+            scatterDirection = rec.normal
+        )
+        Scatter(this.albedo, Ray(rec.p, scatterDirection))
+    )
+
+    def kind = fn (): string -> ("lambertian")
+
+    def describe = fn (): string -> (
+        super.describe() + "(" + this.albedo + ")"
+    )
+)
+
+export def Metal = record (albedo: Vec3, fuzz: double = 0.0) implements Material (
+    private def clampedFuzz: double
+
+    init (
+        this.clampedFuzz = if this.fuzz < 1.0 then (math.max(0.0, this.fuzz)) else (1.0)
+    )
+
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): Scatter? -> (
+        var reflected: Vec3 = rIn.dir.reflect(rec.normal)
+        reflected = reflected.unit() + Vec3.randomUnitVector(rng) * this.clampedFuzz
+        if reflected.dot(rec.normal) > 0.0 then (
+            Scatter(this.albedo, Ray(rec.p, reflected))
+        ) else (
+            null
+        )
+    )
+
+    def kind = fn (): string -> ("metal")
+
+    def describe = fn (): string -> (
+        super.describe() + "(fuzz=" + this.clampedFuzz + ")"
+    )
+)
+
+export def Dielectric = record (refractionIndex: double) implements Material (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): Scatter? -> (
+        def ri: double = if rec.frontFace then (
+            1.0 / this.refractionIndex
+        ) else (
+            this.refractionIndex
+        )
+        def unitDirection: Vec3 = rIn.dir.unit()
+        def cosTheta: double = math.min((-unitDirection).dot(rec.normal), 1.0)
+        def sinTheta: double = math.sqrt(math.max(0.0, 1.0 - cosTheta * cosTheta))
+        def cannotRefract: bool = ri * sinTheta > 1.0
+        def direction: Vec3 = if cannotRefract or Dielectric.reflectance(cosTheta, ri) > rng.nextDouble() then (
+            unitDirection.reflect(rec.normal)
+        ) else (
+            unitDirection.refract(rec.normal, ri)
+        )
+        Scatter(Vec3.one, Ray(rec.p, direction))
+    )
+
+    def kind = fn (): string -> ("dielectric")
+) static (
+    ;; Schlick's approximation for reflectance
+    def reflectance = fn (cosine: double, refractionIndex: double): double -> (
+        var r0: double = (1.0 - refractionIndex) / (1.0 + refractionIndex)
+        r0 *= r0
+        r0 + (1.0 - r0) * math.powInt(1.0 - cosine, 5)
+    )
+)
+
+;; Emissive / unlit flat material: terminates rays directly with constant radiance.
+;; Serves both as an area light (with color > 1) and as flat ink/highlight shading.
+export def Emissive = record (color: Vec3) implements Material (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): Scatter? -> (
+        Scatter.emit(this.color)
+    )
+
+    def kind = fn (): string -> ("emissive")
+)
+
+;; Stylized 2-band directional cel shading with probabilistic indirect ambient occlusion.
+export def Toon = record (
+    baseColor: Vec3,
+    shadowColor: Vec3,
+    lightDir: Vec3,
+    aoProb: double = 0.08,
+    rampLow: double = -0.25,
+    rampHigh: double = 0.70
+) implements Material (
+    private def ldir: Vec3
+    private def invSpan: double
+
+    init (
+        this.ldir = this.lightDir.unit()
+        this.invSpan = 1.0 / math.max(0.01, this.rampHigh - this.rampLow)
+    )
+
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: Rng): Scatter? -> (
+        def ndotl: double = rec.normal.dot(this.ldir)
+        def t: double = math.max(0.0, math.min(1.0, (ndotl - this.rampLow) * this.invSpan))
+        def shaded: Vec3 = this.shadowColor * (1.0 - t) + this.baseColor * t
+
+        if this.aoProb > 0.0 and rng.nextDouble() < this.aoProb then (
+            var direction: Vec3 = rec.normal + Vec3.randomUnitVector(rng)
+            if direction.nearZero() then (direction = rec.normal)
+            return Scatter(shaded, Ray(rec.p, direction))
+        )
+        Scatter.emit(shaded)
+    )
+
+    def kind = fn (): string -> ("toon")
+)

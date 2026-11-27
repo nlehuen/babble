@@ -1,0 +1,43 @@
+;; Book 1 Chapter 13 scene: hollow glass sphere, matte Lambertian center, brushed metal right.
+
+def Vec3 = import("../core/vec3.ba").Vec3
+def Lambertian = import("../core/materials.ba").Lambertian
+def Metal = import("../core/materials.ba").Metal
+def Dielectric = import("../core/materials.ba").Dielectric
+def Sphere = import("../core/geometry/sphere.ba").Sphere
+def HittableList = import("../core/geometry/hittable_list.ba").HittableList
+def BVHNode = import("../core/geometry/bvh.ba").BVHNode
+def Camera = import("../core/camera.ba").Camera
+def Scene = import("../core/scene.ba").Scene
+
+export def buildList = fn (): unique HittableList -> (
+    def world: HittableList = HittableList()
+    world.add(Sphere(Vec3(0.0, -100.5, -1.0), 100.0, Lambertian(Vec3(0.8, 0.8, 0.0))))
+    world.add(Sphere(Vec3(0.0, 0.0, -1.2), 0.5, Lambertian(Vec3(0.1, 0.2, 0.5))))
+    world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.5, Dielectric(1.50)))
+    world.add(Sphere(Vec3(-1.0, 0.0, -1.0), 0.4, Dielectric(1.00 / 1.50)))
+    world.add(Sphere(Vec3(1.0, 0.0, -1.0), 0.5, Metal(Vec3(0.8, 0.6, 0.2), 1.0)))
+    world
+)
+
+export def build = fn (
+    imageWidth: int = 400,
+    samplesPerPixel: int = 20,
+    maxDepth: int = 12,
+    seed: int = 2026
+): Scene -> (
+    def worldList: HittableList = buildList()
+    def camera: Camera = Camera(
+        aspectRatio: 16.0 / 9.0,
+        imageWidth: imageWidth,
+        samplesPerPixel: samplesPerPixel,
+        maxDepth: maxDepth,
+        vfov: 20.0,
+        lookFrom: Vec3(-2.0, 2.0, 1.0),
+        lookAt: Vec3(0.0, 0.0, -1.0),
+        vup: Vec3(0.0, 1.0, 0.0),
+        defocusAngle: 0.0,
+        focusDist: 3.4
+    )
+    Scene("three-spheres", BVHNode.fromList(worldList), camera, seed)
+)

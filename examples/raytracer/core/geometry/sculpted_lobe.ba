@@ -1,0 +1,178 @@
+;; 3D Fourier-contoured star-convex cushion primitive:
+;;   f(x, y, z) = (r / R(theta))^2 + ((z - cz) / rz)^2 - 1 <= 0
+;; Uses angle-addition recurrence (zero trig calls per ray step) for smooth 3D organic
+;; silhouettes with optional contour ink borders and pastel rim highlight bands.
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+def Material = import("../interfaces.ba").Material
+
+export def SculptedLobe = class (
+    def center: Vec3,
+    def rz: double,
+    def scale: double,
+    def coeffs: array of double,
+    rMax: double,
+    def fillMat: Material,
+    def inkMat: Material,
+    def border: double,
+    def rimWidth: double = 0.0,
+    def rimMat: Material? = null,
+    def openTop: double = 10.0,
+    def openRight: double = 10.0
+) implements Hittable (
+    private def invRz: double
+    private def invScale: double
+    private def kCount: int
+    private def bbox: AABB
+
+    init (
+        this.invRz = 1.0 / this.rz
+        this.invScale = 1.0 / this.scale
+        this.kCount = (this.coeffs.size() - 1) // 2
+        def maxExtent: double = rMax * this.scale
+        this.bbox = AABB(
+            this.center.x - maxExtent, this.center.x + maxExtent,
+            this.center.y - maxExtent, this.center.y + maxExtent,
+            this.center.z - this.rz, this.center.z + this.rz
+        )
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    private def evalR = fn (dx: double, dy: double, rad: double): double -> (
+        if rad < 0.000001 then (return this.coeffs.get(0))
+        def c1: double = dx / rad
+        def s1: double = dy / rad
+        var sum: double = this.coeffs.get(0)
+        var ck: double = c1
+        var sk: double = s1
+        for k in 1..this.kCount then (
+            def idx: int = 2 * k - 1
+            sum += this.coeffs.get(idx) * ck + this.coeffs.get(idx + 1) * sk
+            def nextC: double = ck * c1 - sk * s1
+            def nextS: double = sk * c1 + ck * s1
+            ck = nextC
+            sk = nextS
+        )
+        math.max(0.02, sum)
+    )
+
+    private def evalDR = fn (dx: double, dy: double, rad: double): double -> (
+        if rad < 0.000001 then (return 0.0)
+        def c1: double = dx / rad
+        def s1: double = dy / rad
+        var dSum: double = 0.0
+        var ck: double = c1
+        var sk: double = s1
+        for k in 1..this.kCount then (
+            def idx: int = 2 * k - 1
+            dSum += k * (-this.coeffs.get(idx) * sk + this.coeffs.get(idx + 1) * ck)
+            def nextC: double = ck * c1 - sk * s1
+            def nextS: double = sk * c1 + ck * s1
+            ck = nextC
+            sk = nextS
+        )
+        dSum
+    )
+
+    private def evalF = fn (p: Vec3): double -> (
+        def dx: double = (p.x - this.center.x) * this.invScale
+        def dy: double = (p.y - this.center.y) * this.invScale
+        def dz: double = (p.z - this.center.z) * this.invRz
+        def rad: double = math.sqrt(dx * dx + dy * dy)
+        def R: double = this.evalR(dx, dy, rad)
+        def u: double = rad / R
+        u * u + dz * dz - 1.0
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        if not this.bbox.hit(r, tmin, tmax) then (return null)
+
+        ;; Intersect z-slab [cz - rz, cz + rz]
+        var t0: double = tmin
+        var t1: double = tmax
+        if math.abs(r.dir.z) > 0.0000001 then (
+            def invDz: double = 1.0 / r.dir.z
+            var za: double = (this.center.z - this.rz - r.origin.z) * invDz
+            var zb: double = (this.center.z + this.rz - r.origin.z) * invDz
+            if za > zb then (
+                def tmp: double = za
+                za = zb
+                zb = tmp
+            )
+            if za > t0 then (t0 = za)
+            if zb < t1 then (t1 = zb)
+        )
+        if t1 <= t0 then (return null)
+
+        ;; Bracket first crossing f(tA) > 0 -> f(tB) <= 0 along the slab
+        def steps: int = 8
+        def dt: double = (t1 - t0) / steps
+        var prevT: double = t0
+        var prevF: double = this.evalF(r.at(prevT))
+        if prevF <= 0.0 then (return null)
+
+        var found: bool = false
+        var lo: double = prevT
+        var hi: double = prevT
+        for s in 1..steps then (
+            def curT: double = t0 + s * dt
+            def curF: double = this.evalF(r.at(curT))
+            if curF <= 0.0 then (
+                lo = prevT
+                hi = curT
+                found = true
+                break
+            )
+            prevT = curT
+            prevF = curF
+        )
+        if not found then (return null)
+
+        ;; Refine intersection by 7 bisection steps
+        for b in 0..<7 then (
+            def mid: double = 0.5 * (lo + hi)
+            if this.evalF(r.at(mid)) <= 0.0 then (
+                hi = mid
+            ) else (
+                lo = mid
+            )
+        )
+
+        def hitT: double = 0.5 * (lo + hi)
+        if hitT <= tmin or hitT >= tmax then (return null)
+
+        def p: Vec3 = r.at(hitT)
+        def dx: double = (p.x - this.center.x) * this.invScale
+        def dy: double = (p.y - this.center.y) * this.invScale
+        def rad: double = math.sqrt(dx * dx + dy * dy)
+        def R: double = this.evalR(dx, dy, rad)
+
+        def dR: double = this.evalDR(dx, dy, rad)
+        def ratio: double = dR / R
+        def dPerp: double = (R - rad) / math.sqrt(1.0 + ratio * ratio)
+
+        ;; Smooth 3D surface normal via gradient of f(x, y, z)
+        def nx: double = (dx * this.invScale) / (R * R)
+        def ny: double = (dy * this.invScale) / (R * R)
+        def nz: double = (p.z - this.center.z) * this.invRz * this.invRz
+        def outward: Vec3 = Vec3(nx, ny, nz).unit()
+
+        def rm: Material? = this.rimMat
+        def mat: Material = if this.border > 0.0 and dy < this.openTop and dx < this.openRight and dPerp < this.border then (
+            this.inkMat
+        ) else if this.rimWidth > 0.0 and rm != null and dPerp < this.border + this.rimWidth then (
+            rm
+        ) else (
+            this.fillMat
+        )
+        HitRecord.create(r, p, outward, hitT, mat)
+    )
+
+    def kind = fn (): string -> ("sculpted_lobe")
+)

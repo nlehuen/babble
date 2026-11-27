@@ -19,7 +19,7 @@ import org.babblelang.engine.ModuleSource;
  * A plain warm-up and timing harness comparing interpret, compile -O0, compile -O1 and compile -O2
  * (docs/design/bip001_bytecode-compiler.md §11, docs/design/bip014_optimization-passes.md). Not a
  * test : run its main method from the repository root, with the test class path (it imports the
- * modules of {@code examples/raytracer-argon/lib}).
+ * modules of {@code examples/raytracer}).
  *
  * <p>Arguments : an optional filter on the benchmark names, then optionally the modes to run, among
  * {@code interpret}, {@code O0}, {@code O1} and {@code O2} (all of them by default) ; a mode left
@@ -37,22 +37,23 @@ public final class Benchmarks {
     private static final int RUNS = 20;
 
     /**
-     * A small render of the argon ray tracer's final scene (its 480 marbles behind the BVH, a 64 x
-     * 36 image at 4 samples per pixel) : interface dispatch, records, closures and the numeric
-     * kernels of {@code lib/math.ba} together, as in the full render. Its imports resolve against
+     * A small render of the unified ray tracer's cover scene (its 480 marbles behind the BVH, a 64
+     * x 36 image at 4 samples per pixel) : interface dispatch, records, closures and the numeric
+     * kernels of {@code core/math.ba} together, as in the full render. Its imports resolve against
      * {@link #ARGON_FILE}.
      */
     private static final String ARGON =
             """
-            def raytracer = import("lib/raytracer.ba")
+            def core = import("core/core.ba")
+            def cover = import("scenes/weekend_cover.ba")
             def run = fn (): double -> (
-                def rng: raytracer.Rng = raytracer.Rng(2026)
-                def world: raytracer.Hittable = raytracer.BVHNode.fromList(raytracer.Scenes.finalScene(rng: rng, gridRadius: 11))
-                def cam: raytracer.Camera = raytracer.Camera(aspectRatio: 16.0 / 9.0, imageWidth: 64, samplesPerPixel: 4, maxDepth: 12)
+                def scene: core.Scene = cover.build(imageWidth: 64, samplesPerPixel: 4, maxDepth: 12, gridRadius: 11, seed: 2026)
+                def cam = scene.camera
                 var sum: double = 0.0
-                for j in raytracer.Range(0, cam.imageHeight) then (
-                    for i in raytracer.Range(0, cam.imageWidth) then (
-                        def c: raytracer.Vec3 = cam.renderPixel(i, j, world, rng)
+                for j in 0..<cam.imageHeight then (
+                    def rng: core.Rng = core.Rng.forRow(scene.defaultSeed, j)
+                    for i in 0..<cam.imageWidth then (
+                        def c: core.Vec3 = cam.renderPixel(i, j, scene.world, rng)
                         sum += c.x + c.y + c.z
                     )
                 )
@@ -61,9 +62,9 @@ public final class Benchmarks {
             run()
             """;
 
-    private static final Path ARGON_FILE = Path.of("examples/raytracer-argon/benchmark.ba");
+    private static final Path ARGON_FILE = Path.of("examples/raytracer/benchmark.ba");
 
-    private static final Path ARGON_MAIN = Path.of("examples/raytracer-argon/raytracer.ba");
+    private static final Path ARGON_MAIN = Path.of("examples/raytracer/raytracer_ppm.ba");
     private static final int COMPILE_WARMUP = 10;
     private static final int COMPILE_RUNS = 10;
 
@@ -365,10 +366,9 @@ public final class Benchmarks {
         benches.put(
                 "argon ray tracer : 64x36, 4 samples per pixel",
                 new Bench(ARGON, ARGON_FILE, false, false));
-        // What -O2 costs before the first pixel : the analysis and the passes of its 15 modules.
+        // What -O2 costs before the first pixel : the analysis and the passes of its modules.
         benches.put(
-                "argon ray tracer : compile its 15 modules",
-                new Bench(null, ARGON_MAIN, false, true));
+                "argon ray tracer : compile its modules", new Bench(null, ARGON_MAIN, false, true));
 
         String filter = args.length > 0 ? args[0] : "";
         List<String> modes =

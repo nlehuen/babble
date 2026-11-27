@@ -1,0 +1,27 @@
+;; Pure-Babble PixelSink interface and sequential scanline renderer.
+
+def Scene = import("../core/scene.ba").Scene
+
+export def PixelSink = interface (
+    def begin: fn io (width: int, height: int): null
+    def setPixel: fn io (x: int, y: int, r: int, g: int, b: int): null
+    def endRow = fn io (y: int): null -> (null)
+    def finish = fn io (): null -> (null)
+)
+
+export def renderSequential = fn io (
+    scene: Scene,
+    sink: PixelSink,
+    seed: int = scene.defaultSeed
+): null -> (
+    def cam = scene.camera
+    sink.begin(cam.imageWidth, cam.imageHeight)
+    def onPixel = fn io (x: int, y: int, r: int, g: int, b: int): null -> (
+        sink.setPixel(x, y, r, g, b)
+    )
+    for j in 0..<cam.imageHeight then (
+        cam.renderRow(j, scene.world, seed, onPixel)
+        sink.endRow(j)
+    )
+    sink.finish()
+)

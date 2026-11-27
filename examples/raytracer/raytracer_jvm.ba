@@ -1,0 +1,53 @@
+;;(
+    Unified Babble Ray Tracer — Multi-Threaded JVM PNG Entrypoint
+
+    Uses the pure-Babble core and scene library behind the thin JVM IO adapter
+    (io/jvm/png.ba: multi-threaded scanline workers + BufferedImage + ImageIO PNG).
+    Pass threads=1 to run single-threaded (including under -Dbabble.mode=interpret).
+
+    Usage:
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba [scene] [output.png] [width] [samples] [threads]
+
+    Examples:
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cover demo.png 800 20 16
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba triceratops triceratops.png
+;;)
+
+def registry = import("scenes/registry.ba")
+def png = import("io/jvm/png.ba")
+
+def argStr = fn (index: int, fallback: string): string -> (
+    if index < args.size() then (
+        def raw = args.get(index)
+        if raw != null then (raw) else (fallback)
+    ) else (
+        fallback
+    )
+)
+
+def argInt = fn (index: int, fallback: int): int -> (
+    if index < args.size() then (int(args.get(index))) else (fallback)
+)
+
+def sceneName: string = argStr(0, "cover")
+def defaultOut: string = "examples/raytracer/assets/" + sceneName + ".png"
+def outputPath: string = argStr(1, defaultOut)
+def width: int = argInt(2, 0)
+def samples: int = argInt(3, 0)
+def threads: int = argInt(4, 16)
+
+def scene = registry.buildScene(
+    name: sceneName,
+    imageWidth: width,
+    samplesPerPixel: samples
+)
+def cam = scene.camera
+
+println(
+    "Rendering ", scene.name, " (",
+    cam.imageWidth, "x", cam.imageHeight, ", ",
+    cam.samplesPerPixel, " spp, ",
+    threads, " threads) -> ", outputPath
+)
+def elapsedMs: long = png.renderPng(scene, outputPath, threads)
+println("Wrote ", outputPath, " in ", elapsedMs, " ms")

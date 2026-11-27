@@ -1,0 +1,45 @@
+;; Pure-Babble scene registry dispatching by name (`cover`, `three-spheres`, `triceratops`).
+
+def Scene = import("../core/scene.ba").Scene
+def threeSpheres = import("three_spheres.ba")
+def weekendCover = import("weekend_cover.ba")
+def triceratops = import("triceratops.ba")
+
+def orDefault = fn (value: int, fallback: int): int -> (
+    if value > 0 then (value) else (fallback)
+)
+
+export def buildScene = fn (
+    name: string = "cover",
+    imageWidth: int = 0,
+    samplesPerPixel: int = 0,
+    maxDepth: int = 0,
+    gridRadius: int = 11
+): Scene -> (
+    match name
+        case "cover" | "weekend" then (
+            weekendCover.build(
+                imageWidth: orDefault(imageWidth, 400),
+                samplesPerPixel: orDefault(samplesPerPixel, 20),
+                maxDepth: orDefault(maxDepth, 12),
+                gridRadius: gridRadius
+            )
+        )
+        case "three-spheres" then (
+            threeSpheres.build(
+                imageWidth: orDefault(imageWidth, 400),
+                samplesPerPixel: orDefault(samplesPerPixel, 20),
+                maxDepth: orDefault(maxDepth, 12)
+            )
+        )
+        case "triceratops" then (
+            triceratops.build(
+                imageWidth: orDefault(imageWidth, 160),
+                samplesPerPixel: orDefault(samplesPerPixel, 64),
+                maxDepth: orDefault(maxDepth, 5)
+            )
+        )
+        else (
+            throw exception("Unknown scene : " + name + " (expected cover, three-spheres, or triceratops)")
+        )
+)

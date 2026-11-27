@@ -1,0 +1,19 @@
+;; Thin WebAssembly 3.0 browser canvas adapter (`axiom wasm.canvas.*`, BIP025-D9).
+;; This is the only module in the raytracer that declares Wasm host imports.
+
+axiom wasm.canvas.setPixel: fn io nothrow (x: int, y: int, r: int, g: int, b: int): null
+axiom wasm.canvas.present: fn io nothrow (row: int): null
+
+def PixelSink = import("../sink.ba").PixelSink
+
+export def CanvasSink = class () implements PixelSink (
+    def begin = fn io (width: int, height: int): null -> (null)
+
+    def setPixel = fn io (x: int, y: int, r: int, g: int, b: int): null -> (
+        wasm.canvas.setPixel(x, y, r, g, b)
+    )
+
+    def endRow = fn io (y: int): null -> (
+        wasm.canvas.present(y)
+    )
+)

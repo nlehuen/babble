@@ -1,0 +1,49 @@
+;;(
+    Unified Babble Ray Tracer — WebAssembly 3.0 Browser Canvas Entrypoint (BIP025)
+
+    Compiles the pure-Babble core and all scenes (cover, three-spheres, triceratops)
+    to WebAssembly 3.0 (WasmGC) and streams gamma-corrected RGB pixels row-by-row into
+    an HTML5 <canvas> via the thin io/wasm/canvas.ba adapter.
+
+    Compile:
+        java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js \
+            examples/raytracer/raytracer_wasm.ba \
+            -o examples/raytracer/raytracer_wasm.wasm
+
+    Then serve `examples/raytracer/` over HTTP and open `wasm_canvas.html`.
+;;)
+
+def registry = import("scenes/registry.ba")
+def sink = import("io/sink.ba")
+def CanvasSink = import("io/wasm/canvas.ba").CanvasSink
+
+def argStr = fn (index: int, fallback: string): string -> (
+    if index < args.size() then (
+        def raw = args.get(index)
+        if raw != null then (raw) else (fallback)
+    ) else (
+        fallback
+    )
+)
+
+def argInt = fn (index: int, fallback: int): int -> (
+    if index < args.size() then (int(args.get(index))) else (fallback)
+)
+
+def sceneName: string = argStr(0, "cover")
+def width: int = argInt(1, 200)
+def samples: int = argInt(2, 8)
+def maxDepth: int = argInt(3, 12)
+def gridRadius: int = argInt(4, 3)
+
+def scene = registry.buildScene(
+    name: sceneName,
+    imageWidth: width,
+    samplesPerPixel: samples,
+    maxDepth: maxDepth,
+    gridRadius: gridRadius
+)
+
+sink.renderSequential(scene, CanvasSink())
+
+"" + scene.camera.imageWidth + "x" + scene.camera.imageHeight

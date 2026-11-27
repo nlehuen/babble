@@ -1,0 +1,78 @@
+;; Pure-Babble Bounding Volume Hierarchy (BVH) acceleration structure.
+
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+def emptyHittable = import("../interfaces.ba").emptyHittable
+def HittableList = import("hittable_list.ba").HittableList
+
+export def BVHNode = class (def left: Hittable, def right: Hittable, def bbox: AABB) implements Hittable (
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        if not this.bbox.hit(r, tmin, tmax) then (
+            return null
+        )
+        def hitLeft: HitRecord? = this.left.hit(r, tmin, tmax)
+        def rightTmax: double = if hitLeft != null then (hitLeft.t) else (tmax)
+        def hitRight: HitRecord? = this.right.hit(r, tmin, rightTmax)
+        if hitRight != null then (hitRight) else (hitLeft)
+    )
+
+    def kind = fn (): string -> ("bvh_node")
+) static (
+    def fromList = fn (shared items: HittableList): Hittable -> (
+        this.build(items.toList())
+    )
+
+    ;; Recursively partitions hittables into a balanced BVH tree
+    def build = fn (shared items: list of Hittable): Hittable -> (
+        if items.size() == 0 then (
+            return emptyHittable
+        )
+        if items.size() == 1 then (
+            return items.get(0)
+        )
+        var box: AABB = AABB.empty
+        var cbox: AABB = AABB.empty
+        for item in items then (
+            box = AABB.enclose(box, item.boundingBox())
+            cbox = cbox.expandPoint(item.boundingBox().center())
+        )
+        if items.size() == 2 then (
+            return this(items.get(0), items.get(1), box)
+        )
+        def axis: int = cbox.longestAxis()
+        def splitVal: double = cbox.centroid(axis)
+
+        def left: list of Hittable = list()
+        def right: list of Hittable = list()
+        for item in items then (
+            if item.boundingBox().centroid(axis) < splitVal then (
+                left.add(item)
+            ) else (
+                right.add(item)
+            )
+        )
+
+        ;; Fallback even/odd partition when all centroids coincide
+        if left.size() == 0 or right.size() == 0 then (
+            left.clear()
+            right.clear()
+            var goLeft: bool = true
+            for item in items then (
+                if goLeft then (
+                    left.add(item)
+                ) else (
+                    right.add(item)
+                )
+                goLeft = not goLeft
+            )
+        )
+
+        this(recurse(left), recurse(right), box)
+    )
+)
