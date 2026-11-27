@@ -83,7 +83,41 @@ final class EffectChecker {
             boolean returnKnown,
             BitSet ctorStoredParams,
             boolean[] readParams,
-            boolean readsThis) {
+            boolean readsThis,
+            boolean throwsJavaError) {
+        CallableSummary(
+                EffectSet effects,
+                boolean[] mutParams,
+                boolean[] borrowParams,
+                boolean[] uniqueParams,
+                Set<Object> frameReadOwners,
+                Set<Object> frameWriteOwners,
+                boolean deepMutThis,
+                BitSet returnParams,
+                boolean returnThis,
+                boolean returnExternal,
+                boolean returnKnown,
+                BitSet ctorStoredParams,
+                boolean[] readParams,
+                boolean readsThis) {
+            this(
+                    effects,
+                    mutParams,
+                    borrowParams,
+                    uniqueParams,
+                    frameReadOwners,
+                    frameWriteOwners,
+                    deepMutThis,
+                    returnParams,
+                    returnThis,
+                    returnExternal,
+                    returnKnown,
+                    ctorStoredParams,
+                    readParams,
+                    readsThis,
+                    false);
+        }
+
         CallableSummary(
                 EffectSet effects,
                 boolean[] mutParams,
@@ -111,6 +145,7 @@ final class EffectChecker {
                     returnKnown,
                     ctorStoredParams,
                     new boolean[mutParams.length],
+                    false,
                     false);
         }
 
@@ -247,6 +282,7 @@ final class EffectChecker {
                     && returnExternal == that.returnExternal
                     && returnKnown == that.returnKnown
                     && readsThis == that.readsThis
+                    && throwsJavaError == that.throwsJavaError
                     && Objects.equals(effects, that.effects)
                     && Arrays.equals(mutParams, that.mutParams)
                     && Arrays.equals(borrowParams, that.borrowParams)
@@ -271,7 +307,8 @@ final class EffectChecker {
                             returnExternal,
                             returnKnown,
                             ctorStoredParams,
-                            readsThis);
+                            readsThis,
+                            throwsJavaError);
             result = 31 * result + Arrays.hashCode(mutParams);
             result = 31 * result + Arrays.hashCode(borrowParams);
             result = 31 * result + Arrays.hashCode(uniqueParams);
@@ -1208,7 +1245,8 @@ final class EffectChecker {
                         true,
                         EMPTY_SUMMARY_BITS,
                         analyzer.readParams,
-                        analyzer.readsThis);
+                        analyzer.readsThis,
+                        analyzer.throwsJavaError);
 
         if (analyzer.trackSymbolic && !analyzer.calledCallbacks.isEmpty()) {
             int n = params.size();
@@ -1338,7 +1376,8 @@ final class EffectChecker {
                 false,
                 (BitSet) analyzer.ctorStoredParams.clone(),
                 analyzer.readParams,
-                false);
+                false,
+                analyzer.throwsJavaError);
     }
 
     CallableSummary finalizeSummary(ParserRuleContext callable, CallableSummary raw) {
@@ -1397,7 +1436,8 @@ final class EffectChecker {
                 raw.returnKnown(),
                 raw.ctorStoredParams(),
                 raw.readParams(),
-                raw.readsThis());
+                raw.readsThis(),
+                raw.throwsJavaError());
     }
 
     CallableSummary buildVisibleSummary(ParserRuleContext callable, CallableSummary internal) {
@@ -1484,7 +1524,8 @@ final class EffectChecker {
                 internal.returnKnown(),
                 internal.ctorStoredParams(),
                 internal.readParams(),
-                internal.readsThis());
+                internal.readsThis(),
+                internal.throwsJavaError());
     }
 
     // ================================================================ 8. Verification Pass
@@ -1627,7 +1668,7 @@ final class EffectChecker {
     private void verifyInheritedAxiomContract(
             BabbleParser.FunctionLiteralContext fn, CallableSummary verified) {
         ScopeNode fnScope = pass.scopeNodes.get(fn);
-        if (fnScope == null || fnScope.memberOf == null || fnScope.memberOf.isInterface()) {
+        if (fnScope == null || fnScope.memberOf == null) {
             return;
         }
         String methodName = ScopeAnalysis.functionName(fn);

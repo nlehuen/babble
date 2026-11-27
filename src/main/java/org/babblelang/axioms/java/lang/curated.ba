@@ -107,15 +107,18 @@ axiom java.lang.Math: class (
     def ulp: fn nothrow
 )
 
-;; QUESTIONABLE : assumes Object's own hashCode and toString are pure volatile
 axiom java.lang.Object: class exact (
     def getClass: fn nothrow (): (java.lang.Class of any?)!
-    def hashCode: fn volatile (): int
-    def toString: fn volatile (): string!
 )
 
 ;; QUESTIONABLE : assumes every Object.equals implementation is pure
 axiom java.lang.Object.equals: fn (obj: any?): bool
+
+;; QUESTIONABLE : assumes every Object.hashCode implementation is pure volatile
+axiom java.lang.Object.hashCode: fn volatile (): int
+
+;; QUESTIONABLE : assumes every Object.toString implementation is pure volatile
+axiom java.lang.Object.toString: fn volatile (): string!
 
 axiom java.lang.ProcessBuilder: class notnull (
 )
@@ -183,7 +186,7 @@ axiom java.lang.String: class notnull (
     def new: fn pure
     def format: fn (format: string!, args: (array of any?)!): string!
     def format: fn (l: java.util.Locale?, format: string!, args: (array of any?)!): string!
-    def valueOf: fn (obj: any?): string!
+    def valueOf: fn volatile (obj: any?): string!
 )
 
 axiom java.lang.StringBuffer: class notnull (

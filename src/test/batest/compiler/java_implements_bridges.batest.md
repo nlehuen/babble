@@ -15,7 +15,7 @@ def append = fn io shared (shared v: any?, s: int = -1, e: int = -1): java.lang.
 def length = fn io shared (): int -> (this.b.length())
 def charAt = fn io shared (i: int): any -> (this.b.charAt(i))
 def subSequence = fn io shared (s: int, e: int): CS -> (this.b.subSequence(s, e))
-def toString = fn io shared (): string -> (this.b.toString())
+def toString = fn (): string -> (this.b.toString())
 )
 def mkC = fn io () -> (java.util.function.Consumer(fn io (x: any?) -> (print(x))))
 ```

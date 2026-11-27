@@ -265,7 +265,8 @@ final class SymbolicEffectSummary {
                 base.returnKnown(),
                 base.ctorStoredParams(),
                 readParams,
-                readsThis);
+                readsThis,
+                base.throwsJavaError() || (!combined.isNothrow() && base.effects().isNothrow()));
     }
 
     /**

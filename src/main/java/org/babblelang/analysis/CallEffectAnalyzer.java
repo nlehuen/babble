@@ -1688,7 +1688,8 @@ final class CallEffectAnalyzer {
                 false,
                 EffectChecker.EMPTY_SUMMARY_BITS,
                 rp,
-                true);
+                true,
+                !effects.isNothrow());
     }
 
     private EffectChecker.CallableSummary instantiateSymbolicCall(

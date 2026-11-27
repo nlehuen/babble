@@ -107,6 +107,21 @@ final class JavaEffectResolver {
                 reportRedundantCuratedAxiom(exactMethod, curatedAx);
             }
             if (!curatedAx.inferredEffects()) {
+                // An inherited supertype axiom (e.g. Object.hashCode/toString) is a floor contract:
+                // if a concrete Java subclass overrides the method with strictly stronger proven
+                // bytecode effects (e.g. deterministic hashCode/toString), keep the stronger proof.
+                if (exactMethod != null
+                        && curatedAx.ownerClass() != exactMethod.getDeclaringClass()
+                        && curatedAx.ownerClass().isAssignableFrom(exactMethod.getDeclaringClass())
+                        && hostEffects.bytecodeEffectAnalysis()) {
+                    BytecodeEffectAnalyzer.Result analyzed =
+                            BytecodeEffectAnalyzer.analyzeRaw(
+                                    exactMethod, hostEffects.builtinAxioms());
+                    if (BytecodeEffectAnalyzer.isAtLeastAsStrongAs(
+                            analyzed, curatedAx, exactMethod)) {
+                        return analyzed.toProfile(exactMethod);
+                    }
+                }
                 return curatedAx.toProfile(exactMethod);
             }
         }
