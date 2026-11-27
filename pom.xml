@@ -349,6 +349,7 @@
                                         <exclude>org.babblelang.parser.*</exclude>
                                         <exclude>org.babblelang.batest.*</exclude>
                                         <exclude>org.babblelang.crib.*</exclude>
+                                        <exclude>org.babblelang.devserver.*</exclude>
                                         <exclude>org.babblelang.compiler.*</exclude>
                                         <exclude>org.babblelang.ir.*</exclude>
                                         <exclude>org.babblelang.opt.*</exclude>
@@ -374,6 +375,7 @@
                                         <exclude>org.babblelang.parser.*</exclude>
                                         <exclude>org.babblelang.batest.*</exclude>
                                         <exclude>org.babblelang.crib.*</exclude>
+                                        <exclude>org.babblelang.devserver.*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -396,6 +398,7 @@
                                         <exclude>org.babblelang.parser.*</exclude>
                                         <exclude>org.babblelang.batest.*</exclude>
                                         <exclude>org.babblelang.crib.*</exclude>
+                                        <exclude>org.babblelang.devserver.*</exclude>
                                         <exclude>org.babblelang.opt.*</exclude>
                                     </excludes>
                                 </configuration>
@@ -419,6 +422,7 @@
                                         <exclude>org.babblelang.parser.*</exclude>
                                         <exclude>org.babblelang.batest.*</exclude>
                                         <exclude>org.babblelang.crib.*</exclude>
+                                        <exclude>org.babblelang.devserver.*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -435,6 +439,7 @@
                                         <exclude>org/babblelang/parser/**</exclude>
                                         <exclude>org/babblelang/batest/**</exclude>
                                         <exclude>org/babblelang/crib/**</exclude>
+                                        <exclude>org/babblelang/devserver/**</exclude>
                                         <exclude>org/babblelang/compiler/**</exclude>
                                         <exclude>org/babblelang/ir/**</exclude>
                                         <exclude>org/babblelang/opt/**</exclude>
@@ -454,6 +459,7 @@
                                         <exclude>org/babblelang/parser/**</exclude>
                                         <exclude>org/babblelang/batest/**</exclude>
                                         <exclude>org/babblelang/crib/**</exclude>
+                                        <exclude>org/babblelang/devserver/**</exclude>
                                         <exclude>org/babblelang/engine/impl/*</exclude>
                                         <exclude>org/babblelang/opt/hir/HirSccpPass*</exclude>
                                         <exclude>org/babblelang/opt/hir/HirAeGraphPass*</exclude>
@@ -496,6 +502,7 @@
                                         <exclude>org/babblelang/parser/**</exclude>
                                         <exclude>org/babblelang/batest/**</exclude>
                                         <exclude>org/babblelang/crib/**</exclude>
+                                        <exclude>org/babblelang/devserver/**</exclude>
                                         <exclude>org/babblelang/engine/impl/*</exclude>
                                         <exclude>org/babblelang/opt/**</exclude>
                                         <exclude>org/babblelang/ir/hir/IrEffect*</exclude>

@@ -10,7 +10,9 @@
             examples/raytracer/raytracer_wasm.ba \
             -o examples/raytracer/raytracer_wasm.wasm
 
-    Then serve `examples/raytracer/` over HTTP and open `wasm_canvas.html`.
+    Serve over HTTP (with proper .html/.js/.mjs/.wasm MIME types):
+        java -jar target/babble-1.0-SNAPSHOT.jar -dev-server -d examples/raytracer -p 8080
+    Then open http://127.0.0.1:8080/wasm_canvas.html.
 ;;)
 
 def registry = import("scenes/registry.ba")

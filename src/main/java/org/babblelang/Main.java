@@ -34,6 +34,7 @@ import org.babblelang.repl.TerminalInput;
  * java -jar babble.jar -format [-w] [-l] [-check] [file.ba | directory]...
  *                                                   formats source files (babblefmt, {@link Babblefmt})
  * java -jar babble.jar -crib [options]              starts the isolated HTTP .batest.md runner (BIP041)
+ * java -jar babble.jar -dev-server [options] [dir]  starts a simple HTTP dev server with proper MIME types
  * </pre>
  *
  * A script finds its arguments in {@code args}, a {@code java.util.List} of strings. The mode is
@@ -58,7 +59,9 @@ public final class Main {
             Or : java -jar babble.jar -axioms [-O0|-O1|-O2] <class-or-package>
               Prints what Babble assumes (curated or inferred) about a Java class or package.
             Or : java -jar babble.jar -crib [options]
-              Starts a fast, isolated HTTP .batest.md runner : see java -jar babble.jar -crib -help.\
+              Starts a fast, isolated HTTP .batest.md runner : see java -jar babble.jar -crib -help.
+            Or : java -jar babble.jar -dev-server [options] [directory]
+              Starts a simple HTTP dev server (.html, .js, .mjs, .wasm, ...) : see java -jar babble.jar -dev-server -help.\
             """;
 
     /** The exit statuses : a script that failed, and a command line that can't be used. */
@@ -119,6 +122,10 @@ public final class Main {
         }
         if (args.length > 0 && (args[0].equals("-crib") || args[0].equals("--crib"))) {
             return org.babblelang.crib.CribCli.run(
+                    Arrays.copyOfRange(args, 1, args.length), out, err);
+        }
+        if (args.length > 0 && (args[0].equals("-dev-server") || args[0].equals("--dev-server"))) {
+            return org.babblelang.devserver.DevServerCli.run(
                     Arrays.copyOfRange(args, 1, args.length), out, err);
         }
         boolean keepAlive = false;
