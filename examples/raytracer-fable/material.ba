@@ -11,7 +11,12 @@ export def Scatter = class (
     def attenuation: Vec3,
     def scattered: Ray?,
     def emission: Vec3 = Vec3(0.0, 0.0, 0.0)
-) ()
+) (
+    ;; Pure emission : terminates the ray directly with constant radiance.
+    init (emission: Vec3) -> (
+        this(Vec3(0.0, 0.0, 0.0), null, emission)
+    )
+)
 
 export def Material = interface (
     ;; a Scatter, or null when the ray is absorbed
@@ -71,7 +76,7 @@ export def Dielectric = class (def refractionIndex: double) implements Material 
 ;; Serves both as an area light (with color > 1) and as flat ink/highlight shading.
 export def Emissive = class (def color: Vec3) implements Material (
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
-        Scatter(Vec3(0.0, 0.0, 0.0), null, this.color)
+        Scatter(this.color)
     )
 )
 
@@ -79,13 +84,18 @@ export def Emissive = class (def color: Vec3) implements Material (
 export def Toon = class (
     def baseColor: Vec3,
     def shadowColor: Vec3,
-    def lightDir: Vec3,
+    lightDir: Vec3,
     def aoProb: double = 0.08,
     def rampLow: double = -0.25,
-    def rampHigh: double = 0.70
+    rampHigh: double = 0.70
 ) implements Material (
-    private def ldir: Vec3 = this.lightDir.unit()
-    private def invSpan: double = 1.0 / Math.max(0.01, this.rampHigh - this.rampLow)
+    private def ldir: Vec3
+    private def invSpan: double
+
+    init (
+        this.ldir = lightDir.unit()
+        this.invSpan = 1.0 / Math.max(0.01, rampHigh - this.rampLow)
+    )
 
     def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
         def ndotl: double = rec.normal.dot(this.ldir)
@@ -97,6 +107,6 @@ export def Toon = class (
             if direction.nearZero() then (direction = rec.normal)
             return Scatter(shaded, Ray(rec.p, direction))
         )
-        Scatter(Vec3(0.0, 0.0, 0.0), null, shaded)
+        Scatter(shaded)
     )
 )

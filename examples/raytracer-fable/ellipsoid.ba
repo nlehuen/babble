@@ -20,11 +20,16 @@ export def Ellipsoid = class (
     def rz: double,
     def material: Material
 ) implements hittable.Hittable (
-    private def invRx: double = 1.0 / this.rx
-    private def invRy: double = 1.0 / this.ry
-    private def invRz: double = 1.0 / this.rz
+    private def invRx: double
+    private def invRy: double
+    private def invRz: double
+    private def bbox: AABB
 
-    private def bbox: AABB = (
+    init (
+        this.invRx = 1.0 / this.rx
+        this.invRy = 1.0 / this.ry
+        this.invRz = 1.0 / this.rz
+
         def ux: double = this.u.x * this.rx
         def vx: double = this.v.x * this.ry
         def wx: double = this.w.x * this.rz
@@ -40,11 +45,16 @@ export def Ellipsoid = class (
         def wz: double = this.w.z * this.rz
         def ez: double = Math.sqrt(uz * uz + vz * vz + wz * wz)
 
-        AABB(
+        this.bbox = AABB(
             this.center.x - ex, this.center.x + ex,
             this.center.y - ey, this.center.y + ey,
             this.center.z - ez, this.center.z + ez
         )
+    )
+
+    ;; Secondary constructor for an axis-aligned ellipsoid.
+    init (center: Vec3, rx: double, ry: double, rz: double, material: Material) -> (
+        this(center, Vec3(1.0, 0.0, 0.0), Vec3(0.0, 1.0, 0.0), Vec3(0.0, 0.0, 1.0), rx, ry, rz, material)
     )
 
     def boundingBox = fn (): AABB -> (this.bbox)

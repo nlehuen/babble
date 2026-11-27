@@ -18,23 +18,40 @@ export def RoundCone = class (
     def rb: double,
     def material: Material
 ) implements hittable.Hittable (
-    private def ba: Vec3 = this.pb - this.pa
-    private def len: double = this.ba.length()
-    private def ax: Vec3 = if this.len > 0.000001 then (this.ba / this.len) else (Vec3(0.0, 1.0, 0.0))
-    private def sinA: double = if this.len > 0.000001 then (
-        Math.max(-0.999, Math.min(0.999, (this.ra - this.rb) / this.len))
-    ) else (0.0)
-    private def cosA2: double = 1.0 - this.sinA * this.sinA
-    private def hMin: double = this.ra * this.sinA
-    private def hMax: double = this.len + this.rb * this.sinA
+    private def len: double
+    private def ax: Vec3
+    private def sinA: double
+    private def cosA2: double
+    private def hMin: double
+    private def hMax: double
+    private def bbox: AABB
 
-    private def bbox: AABB = AABB(
-        Math.min(this.pa.x - this.ra, this.pb.x - this.rb),
-        Math.max(this.pa.x + this.ra, this.pb.x + this.rb),
-        Math.min(this.pa.y - this.ra, this.pb.y - this.rb),
-        Math.max(this.pa.y + this.ra, this.pb.y + this.rb),
-        Math.min(this.pa.z - this.ra, this.pb.z - this.rb),
-        Math.max(this.pa.z + this.ra, this.pb.z + this.rb)
+    init (
+        def ba: Vec3 = this.pb - this.pa
+        this.len = ba.length()
+        if this.len > 0.000001 then (
+            this.ax = ba / this.len
+            this.sinA = Math.max(-0.999, Math.min(0.999, (this.ra - this.rb) / this.len))
+        ) else (
+            this.ax = Vec3(0.0, 1.0, 0.0)
+            this.sinA = 0.0
+        )
+        this.cosA2 = 1.0 - this.sinA * this.sinA
+        this.hMin = this.ra * this.sinA
+        this.hMax = this.len + this.rb * this.sinA
+        this.bbox = AABB(
+            Math.min(this.pa.x - this.ra, this.pb.x - this.rb),
+            Math.max(this.pa.x + this.ra, this.pb.x + this.rb),
+            Math.min(this.pa.y - this.ra, this.pb.y - this.rb),
+            Math.max(this.pa.y + this.ra, this.pb.y + this.rb),
+            Math.min(this.pa.z - this.ra, this.pb.z - this.rb),
+            Math.max(this.pa.z + this.ra, this.pb.z + this.rb)
+        )
+    )
+
+    ;; Secondary constructor for a uniform-radius capsule.
+    init (pa: Vec3, pb: Vec3, radius: double, material: Material) -> (
+        this(pa, pb, radius, radius, material)
     )
 
     def boundingBox = fn (): AABB -> (this.bbox)
