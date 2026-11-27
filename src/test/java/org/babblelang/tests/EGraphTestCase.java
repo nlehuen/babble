@@ -4,6 +4,7 @@ import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.ir.egraph.AlgebraicRules;
 import org.babblelang.ir.egraph.EGraph;
 import org.babblelang.ir.egraph.ENode;
+import org.babblelang.ir.egraph.PipelineRules;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -598,5 +599,407 @@ public class EGraphTestCase {
         EGraph.ExtractedTree best = g.extract(filterAfterMap, weighted);
         Assertions.assertEquals(ENode.Op.PIPE_MAP, best.node().op());
         Assertions.assertEquals(ENode.Op.PIPE_FILTER, best.children().get(0).node().op());
+    }
+
+    @Test
+    public void testPipelineRulesR1ThroughR8AndSoundnessBailouts() {
+        // R1 (Stream fusion) + R2 (Filter fusion) + R3 (Cost-based filter reordering)
+        {
+            EGraph g = new EGraph();
+            g.registerCallProps(
+                    "expensive", new EGraph.CallProps(false, false, false, false, false, false));
+            int src =
+                    g.add(ENode.pipeSrc(PipelineRules.srcSpec("src#0", "$e0"), PrimitiveKind.INT));
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int cheapPred = g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, e0, zero));
+            int expPred = g.add(ENode.call("expensive", PrimitiveKind.BOOL, e0));
+
+            int fExp = g.add(ENode.pipeFilter(false, src, expPred));
+            int mat = g.add(ENode.pipeMaterialize("tmp#0", fExp));
+            int fCheap = g.add(ENode.pipeFilter(false, mat, cheapPred));
+            int root = g.add(ENode.pipeForEach("sink#0", fCheap));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            EGraph.ExtractedTree best = g.extract(root, PipelineRules.costModel());
+            Assertions.assertEquals(ENode.Op.PIPE_FOR_EACH, best.node().op());
+            EGraph.ExtractedTree stream = best.children().get(0);
+            Assertions.assertEquals(ENode.Op.PIPE_FILTER, stream.node().op());
+            Assertions.assertEquals(ENode.Op.PIPE_SRC, stream.children().get(0).node().op());
+            EGraph.ExtractedTree pred = stream.children().get(1);
+            Assertions.assertEquals(ENode.Op.AND, pred.node().op());
+            Assertions.assertEquals(
+                    ENode.Op.GT,
+                    pred.children().get(0).node().op(),
+                    "R3 + CostModel must place cheaper predicate on left of AND");
+            Assertions.assertEquals(ENode.Op.CALL, pred.children().get(1).node().op());
+        }
+
+        // R3 soundness bailout: narrow-tagged filter must NOT reorder ahead of its guard
+        {
+            EGraph g = new EGraph();
+            g.registerCallProps(
+                    "expensiveGuard",
+                    new EGraph.CallProps(false, false, false, false, false, false));
+            int src =
+                    g.add(ENode.pipeSrc(PipelineRules.srcSpec("src#0", "$e0"), PrimitiveKind.INT));
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int guardPred = g.add(ENode.call("expensiveGuard", PrimitiveKind.BOOL, e0));
+            int narrowedPred = g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, e0, zero));
+
+            int fGuard = g.add(ENode.pipeFilter(false, src, guardPred));
+            int fNarrow = g.add(ENode.pipeFilter(true, fGuard, narrowedPred));
+            int root = g.add(ENode.pipeForEach("sink#0", fNarrow));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            EGraph.ExtractedTree best = g.extract(root, PipelineRules.costModel());
+            EGraph.ExtractedTree filter = best.children().get(0);
+            Assertions.assertEquals(ENode.Op.PIPE_FILTER, filter.node().op());
+            Assertions.assertEquals(PipelineRules.NARROW_TAG, filter.node().symbol());
+            EGraph.ExtractedTree pred = filter.children().get(1);
+            Assertions.assertEquals(ENode.Op.AND, pred.node().op());
+            Assertions.assertEquals(
+                    ENode.Op.CALL,
+                    pred.children().get(0).node().op(),
+                    "Guard must stay on left of AND when inner/outer filter is narrow-tagged");
+        }
+
+        // R4 Case 4a (binder-independent map-filter push-down) & uncancelled Case 4b
+        // non-duplication
+        {
+            EGraph g = new EGraph();
+            g.registerCallProps(
+                    "enc", new EGraph.CallProps(false, false, false, false, true, true));
+            int src =
+                    g.add(ENode.pipeSrc(PipelineRules.srcSpec("src#0", "$e0"), PrimitiveKind.INT));
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int e1 = g.add(ENode.opaque("$e1", PrimitiveKind.DOUBLE));
+            int encE0 = g.add(ENode.call("enc", PrimitiveKind.DOUBLE, e0));
+            int map = g.add(ENode.pipeMap("$e1", PrimitiveKind.DOUBLE, src, encE0));
+
+            int indepPred =
+                    g.add(
+                            ENode.binary(
+                                    ENode.Op.GT,
+                                    PrimitiveKind.BOOL,
+                                    e0,
+                                    g.add(ENode.constVal(0, PrimitiveKind.INT))));
+            int rootIndep =
+                    g.add(
+                            ENode.pipeForEach(
+                                    "sink#0", g.add(ENode.pipeFilter(false, map, indepPred))));
+
+            int uncancelledPred =
+                    g.add(
+                            ENode.binary(
+                                    ENode.Op.LTE,
+                                    PrimitiveKind.BOOL,
+                                    e1,
+                                    g.add(ENode.constVal(505.0, PrimitiveKind.DOUBLE))));
+            int rootUncancelled =
+                    g.add(
+                            ENode.pipeForEach(
+                                    "sink#1",
+                                    g.add(ENode.pipeFilter(false, map, uncancelledPred))));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            EGraph.ExtractedTree bestIndep = g.extract(rootIndep, PipelineRules.costModel());
+            Assertions.assertEquals(ENode.Op.PIPE_MAP, bestIndep.children().get(0).node().op());
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_FILTER,
+                    bestIndep.children().get(0).children().get(0).node().op());
+
+            EGraph.ExtractedTree bestUncanc = g.extract(rootUncancelled, PipelineRules.costModel());
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_FILTER,
+                    bestUncanc.children().get(0).node().op(),
+                    "Uncancelled Case 4b on opaque PIPE_SRC must not duplicate enc(x)");
+        }
+
+        // R5 (injective distinct push-down) + negative bailouts (non-injective, non-reflexive,
+        // non-binder argument)
+        {
+            EGraph g = new EGraph();
+            g.registerCallProps(
+                    "enc", new EGraph.CallProps(false, false, false, false, true, true));
+            g.registerCallProps(
+                    "clamp", new EGraph.CallProps(true, false, false, false, true, false));
+            int src =
+                    g.add(ENode.pipeSrc(PipelineRules.srcSpec("src#0", "$e0"), PrimitiveKind.INT));
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int encE0 = g.add(ENode.call("enc", PrimitiveKind.DOUBLE, e0));
+            int clampE0 = g.add(ENode.call("clamp", PrimitiveKind.INT, e0));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int encMod =
+                    g.add(
+                            ENode.call(
+                                    "enc",
+                                    PrimitiveKind.DOUBLE,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.MUL, PrimitiveKind.INT, e0, zero))));
+
+            int r5Ok =
+                    g.add(
+                            ENode.pipeDistinct(
+                                    "seen#0",
+                                    g.add(ENode.pipeMap("$e1", PrimitiveKind.DOUBLE, src, encE0))));
+            int r5NonInj =
+                    g.add(
+                            ENode.pipeDistinct(
+                                    "seen#1",
+                                    g.add(ENode.pipeMap("$e2", PrimitiveKind.INT, src, clampE0))));
+            int r5NonBinderArg =
+                    g.add(
+                            ENode.pipeDistinct(
+                                    "seen#2",
+                                    g.add(
+                                            ENode.pipeMap(
+                                                    "$e3", PrimitiveKind.DOUBLE, src, encMod))));
+
+            int anySrc =
+                    g.add(ENode.pipeSrc(PipelineRules.srcSpec("src#1", "$a0"), PrimitiveKind.NONE));
+            int a0 = g.add(ENode.opaque("$a0", PrimitiveKind.NONE));
+            int r5Any =
+                    g.add(
+                            ENode.pipeDistinct(
+                                    "seen#3",
+                                    g.add(
+                                            ENode.pipeMap(
+                                                    "$a1",
+                                                    PrimitiveKind.DOUBLE,
+                                                    anySrc,
+                                                    g.add(
+                                                            ENode.call(
+                                                                    "enc",
+                                                                    PrimitiveKind.DOUBLE,
+                                                                    a0))))));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            EGraph.ExtractedTree bestOk = g.extract(r5Ok, PipelineRules.costModel());
+            Assertions.assertEquals(ENode.Op.PIPE_MAP, bestOk.node().op());
+            Assertions.assertEquals(ENode.Op.PIPE_DISTINCT, bestOk.children().get(0).node().op());
+
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_DISTINCT,
+                    g.extract(r5NonInj, PipelineRules.costModel()).node().op(),
+                    "non-injective map must not push distinct below map");
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_DISTINCT,
+                    g.extract(r5NonBinderArg, PipelineRules.costModel()).node().op(),
+                    "injective call on derived expression must not push distinct below map");
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_DISTINCT,
+                    g.extract(r5Any, PipelineRules.costModel()).node().op(),
+                    "non-reflexive any input must not push distinct below map");
+        }
+
+        // R6 (Range bound clamping: incl/excl, flipped, strict const overflow guard)
+        {
+            EGraph g = new EGraph();
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+            int hundred = g.add(ENode.constVal(100, PrimitiveKind.INT));
+            int ten = g.add(ENode.constVal(10, PrimitiveKind.INT));
+            int fifty = g.add(ENode.constVal(50, PrimitiveKind.INT));
+            int range =
+                    g.add(
+                            ENode.pipeRange(
+                                    PipelineRules.rangeSpec(false, true, "$e0"),
+                                    PrimitiveKind.INT,
+                                    zero,
+                                    hundred));
+            // Both `x >= 10` and `50 > x` (flipped strict const -> x <= 49) in one AND filter
+            int pLo = g.add(ENode.binary(ENode.Op.GTE, PrimitiveKind.BOOL, e0, ten));
+            int pHi = g.add(ENode.binary(ENode.Op.GT, PrimitiveKind.BOOL, fifty, e0));
+            int both = g.add(ENode.binary(ENode.Op.AND, PrimitiveKind.BOOL, pLo, pHi));
+            int clamped = g.add(ENode.pipeFilter(false, range, both));
+
+            // Overflow bailout: `x < Integer.MIN_VALUE` must NOT adjust MIN_VALUE - 1
+            int minVal = g.add(ENode.constVal(Integer.MIN_VALUE, PrimitiveKind.INT));
+            int overflowPred = g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, e0, minVal));
+            int noClamp = g.add(ENode.pipeFilter(false, range, overflowPred));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            EGraph.ExtractedTree bestClamped = g.extract(clamped, PipelineRules.costModel());
+            Assertions.assertEquals(ENode.Op.PIPE_RANGE, bestClamped.node().op());
+            Assertions.assertEquals(10, bestClamped.children().get(0).node().literal());
+            Assertions.assertEquals(49, bestClamped.children().get(1).node().literal());
+
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_FILTER,
+                    g.extract(noClamp, PipelineRules.costModel()).node().op(),
+                    "x < MIN_VALUE must not underflow MIN_VALUE - 1");
+        }
+
+        // R7 (monotone early exit PIPE_TAKE_WHILE + O(1) whole-range PIPE_GUARD_RANGE)
+        {
+            EGraph g = new EGraph();
+            g.registerCallProps(
+                    "mono", new EGraph.CallProps(false, false, false, false, true, false));
+            g.registerCallProps(
+                    "nonMono", new EGraph.CallProps(false, false, false, false, false, true));
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int lo = g.add(ENode.opaque("lo", PrimitiveKind.INT));
+            int hi = g.add(ENode.opaque("hi", PrimitiveKind.INT));
+            int lim = g.add(ENode.opaque("lim", PrimitiveKind.DOUBLE));
+            int monoE0 = g.add(ENode.call("mono", PrimitiveKind.DOUBLE, e0));
+            int nonMonoE0 = g.add(ENode.call("nonMono", PrimitiveKind.DOUBLE, e0));
+
+            int ascRange =
+                    g.add(
+                            ENode.pipeRange(
+                                    PipelineRules.rangeSpec(false, true, "$e0"),
+                                    PrimitiveKind.INT,
+                                    lo,
+                                    hi));
+            int descRange =
+                    g.add(
+                            ENode.pipeRange(
+                                    PipelineRules.rangeSpec(true, true, "$e0"),
+                                    PrimitiveKind.INT,
+                                    hi,
+                                    lo));
+
+            int ascTake =
+                    g.add(
+                            ENode.pipeFilter(
+                                    false,
+                                    ascRange,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.LTE,
+                                                    PrimitiveKind.BOOL,
+                                                    monoE0,
+                                                    lim))));
+            int descTake =
+                    g.add(
+                            ENode.pipeFilter(
+                                    false,
+                                    descRange,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.GTE,
+                                                    PrimitiveKind.BOOL,
+                                                    monoE0,
+                                                    lim))));
+            int ascGuard =
+                    g.add(
+                            ENode.pipeFilter(
+                                    false,
+                                    ascRange,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.GTE,
+                                                    PrimitiveKind.BOOL,
+                                                    monoE0,
+                                                    lim))));
+            int nonMonoFilter =
+                    g.add(
+                            ENode.pipeFilter(
+                                    false,
+                                    ascRange,
+                                    g.add(
+                                            ENode.binary(
+                                                    ENode.Op.LTE,
+                                                    PrimitiveKind.BOOL,
+                                                    nonMonoE0,
+                                                    lim))));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_TAKE_WHILE,
+                    g.extract(ascTake, PipelineRules.costModel()).node().op());
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_TAKE_WHILE,
+                    g.extract(descTake, PipelineRules.costModel()).node().op());
+            EGraph.ExtractedTree bestGuard = g.extract(ascGuard, PipelineRules.costModel());
+            Assertions.assertEquals(ENode.Op.PIPE_GUARD_RANGE, bestGuard.node().op());
+            Assertions.assertEquals(ENode.Op.AND, bestGuard.children().get(2).node().op());
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_FILTER,
+                    g.extract(nonMonoFilter, PipelineRules.costModel()).node().op(),
+                    "non-monotone function must not trigger R7");
+        }
+
+        // R8 (associative pairwise fold) + non-associative bailout
+        {
+            EGraph g = new EGraph();
+            g.registerCallProps(
+                    "combine", new EGraph.CallProps(false, true, false, false, false, false));
+            g.registerCallProps(
+                    "subOp", new EGraph.CallProps(false, false, false, false, false, false));
+            int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+            int range =
+                    g.add(
+                            ENode.pipeRange(
+                                    PipelineRules.rangeSpec(false, false, "$e0"),
+                                    PrimitiveKind.INT,
+                                    g.add(ENode.constVal(0, PrimitiveKind.INT)),
+                                    g.add(ENode.opaque("n", PrimitiveKind.INT))));
+            int assocFold =
+                    g.add(
+                            ENode.pipeFold(
+                                    PipelineRules.foldSpec("combine", "acc"),
+                                    PrimitiveKind.INT,
+                                    range,
+                                    e0));
+            int nonAssocFold =
+                    g.add(
+                            ENode.pipeFold(
+                                    PipelineRules.foldSpec("subOp", "acc"),
+                                    PrimitiveKind.INT,
+                                    range,
+                                    e0));
+
+            g.saturate(PipelineRules.allRules(), 8, 192);
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_FOLD_PAIRWISE,
+                    g.extract(assocFold, PipelineRules.costModel()).node().op());
+            Assertions.assertEquals(
+                    ENode.Op.PIPE_FOLD,
+                    g.extract(nonAssocFold, PipelineRules.costModel()).node().op());
+        }
+    }
+
+    @Test
+    public void testJointFiveStepPipelineSaturation() {
+        // BIP042 §2.5: PIPE_MATERIALIZE -> R1 -> R4(4b) -> AlgebraicRules(mono+inj) -> R6 -> $min
+        EGraph g = new EGraph();
+        g.registerCallProps("encode", new EGraph.CallProps(false, false, false, false, true, true));
+
+        int zero = g.add(ENode.constVal(0, PrimitiveKind.INT));
+        int million = g.add(ENode.constVal(1_000_000, PrimitiveKind.INT));
+        int fifty = g.add(ENode.constVal(50, PrimitiveKind.INT));
+        int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+        int e1 = g.add(ENode.opaque("$e1", PrimitiveKind.DOUBLE));
+
+        int range =
+                g.add(
+                        ENode.pipeRange(
+                                PipelineRules.rangeSpec(false, true, "$e0"),
+                                PrimitiveKind.INT,
+                                zero,
+                                million));
+        int encE0 = g.add(ENode.call("encode", PrimitiveKind.DOUBLE, e0));
+        int mapped = g.add(ENode.pipeMap("$e1", PrimitiveKind.DOUBLE, range, encE0));
+        int mat = g.add(ENode.pipeMaterialize("scores", mapped));
+        int encFifty = g.add(ENode.call("encode", PrimitiveKind.DOUBLE, fifty));
+        int pred = g.add(ENode.binary(ENode.Op.LTE, PrimitiveKind.BOOL, e1, encFifty));
+        int filtered = g.add(ENode.pipeFilter(false, mat, pred));
+        int root = g.add(ENode.pipeForEach("sink#0", filtered));
+
+        g.saturate(PipelineRules.allRules(), 8, 192);
+        EGraph.ExtractedTree best = g.extract(root, PipelineRules.costModel());
+
+        Assertions.assertEquals(ENode.Op.PIPE_FOR_EACH, best.node().op());
+        EGraph.ExtractedTree bestMap = best.children().get(0);
+        Assertions.assertEquals(ENode.Op.PIPE_MAP, bestMap.node().op());
+        Assertions.assertEquals("$e1", bestMap.node().symbol());
+        EGraph.ExtractedTree bestRange = bestMap.children().get(0);
+        Assertions.assertEquals(ENode.Op.PIPE_RANGE, bestRange.node().op());
+        Assertions.assertEquals(0, bestRange.children().get(0).node().literal());
+        Assertions.assertEquals(50, bestRange.children().get(1).node().literal());
     }
 }
