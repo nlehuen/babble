@@ -24,8 +24,28 @@ public final class EGraph {
 
     /** Algebraic properties attached to pure call symbols ({@link ENode.Op#CALL}). */
     public record CallProps(
-            boolean idempotent, boolean associative, boolean commutative, boolean involution) {
-        public static final CallProps NONE = new CallProps(false, false, false, false);
+            boolean idempotent,
+            boolean associative,
+            boolean commutative,
+            boolean involution,
+            boolean monotone,
+            boolean injective) {
+        public CallProps(
+                boolean idempotent, boolean associative, boolean commutative, boolean involution) {
+            this(idempotent, associative, commutative, involution, false, false);
+        }
+
+        public static final CallProps NONE =
+                new CallProps(false, false, false, false, false, false);
+    }
+
+    /**
+     * Monotonic child-weighted cost model for bottom-up {@link #extract(int, CostModel)} ({@code
+     * BIP042-D3}).
+     */
+    @FunctionalInterface
+    public interface CostModel {
+        int cost(ENode node, int[] childCosts);
     }
 
     /** A declarative rewrite rule applied during equality saturation. */
@@ -245,7 +265,11 @@ public final class EGraph {
 
     private ENode tryConstantFold(ENode node) {
         int n = node.arity();
-        if (n == 0 || n > 2 || node.op() == ENode.Op.CALL || node.op() == ENode.Op.OPAQUE) {
+        if (n == 0
+                || n > 2
+                || node.op() == ENode.Op.CALL
+                || node.op() == ENode.Op.OPAQUE
+                || node.op().isPipelineOp()) {
             return null;
         }
         ENode c0 = constOf.get(find(node.child(0)));
@@ -505,6 +529,25 @@ public final class EGraph {
 
     /** Extracts the minimum-cost expression tree rooted at {@code rootId}. */
     public ExtractedTree extract(int rootId, ToIntFunction<ENode> nodeCost) {
+        return extract(
+                rootId,
+                (node, childCosts) -> {
+                    int sum = nodeCost.applyAsInt(node);
+                    for (int c : childCosts) {
+                        sum += c;
+                        if (sum < 0 || sum > 1_000_000) {
+                            return 1_000_000;
+                        }
+                    }
+                    return sum;
+                });
+    }
+
+    /**
+     * Extracts the minimum-cost expression tree rooted at {@code rootId} under a monotonic
+     * child-weighted {@link CostModel} ({@code BIP042-D3}).
+     */
+    public ExtractedTree extract(int rootId, CostModel costModel) {
         rebuild();
         Map<Integer, BestNode> best = new HashMap<>();
         boolean changed = true;
@@ -517,7 +560,7 @@ public final class EGraph {
                     continue;
                 }
                 for (ENode node : classes.get(id)) {
-                    int cost = computeNodeCost(node, best, nodeCost);
+                    int cost = computeNodeCost(node, best, costModel);
                     if (cost < 0) {
                         continue;
                     }
@@ -532,21 +575,24 @@ public final class EGraph {
         return buildTree(find(rootId), best);
     }
 
-    private int computeNodeCost(
-            ENode node, Map<Integer, BestNode> best, ToIntFunction<ENode> nodeCost) {
-        int sum = nodeCost.applyAsInt(node);
-        for (int i = 0; i < node.arity(); i++) {
+    private int computeNodeCost(ENode node, Map<Integer, BestNode> best, CostModel costModel) {
+        int arity = node.arity();
+        int[] childCosts = arity == 0 ? EMPTY_COSTS : new int[arity];
+        for (int i = 0; i < arity; i++) {
             BestNode childBest = best.get(find(node.child(i)));
             if (childBest == null) {
                 return -1;
             }
-            sum += childBest.cost();
-            if (sum < 0 || sum > 1_000_000) {
-                return 1_000_000;
-            }
+            childCosts[i] = childBest.cost();
         }
-        return sum;
+        int total = costModel.cost(node, childCosts);
+        if (total < 0 || total > 1_000_000) {
+            return 1_000_000;
+        }
+        return total;
     }
+
+    private static final int[] EMPTY_COSTS = new int[0];
 
     private boolean isBetter(int cost, ENode candidate, int prevCost, ENode prev) {
         if (cost != prevCost) {
@@ -593,8 +639,14 @@ public final class EGraph {
             case NOT, NEG -> 3;
             case ADD, SUB, MUL, DIV, FLOOR_DIV, MOD, STR_ADD, EQ, NEQ, LT, LTE, GT, GTE, AND, OR ->
                     4;
-            case ITE -> 5;
-            case CALL -> 10;
+            case ITE, PIPE_SRC, PIPE_RANGE, PIPE_FOR_EACH -> 5;
+            case CALL, PIPE_MAP -> 10;
+            case PIPE_TAKE_WHILE -> 12;
+            case PIPE_GUARD_RANGE -> 14;
+            case PIPE_DISTINCT, PIPE_FOLD_PAIRWISE -> 15;
+            case PIPE_FILTER -> 20;
+            case PIPE_FOLD -> 30;
+            case PIPE_MATERIALIZE -> 200;
         };
     }
 }

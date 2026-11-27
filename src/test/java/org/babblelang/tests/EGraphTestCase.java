@@ -514,4 +514,89 @@ public class EGraphTestCase {
             Assertions.assertTrue(g.areEquivalent(recon, a));
         }
     }
+
+    @Test
+    public void testInjectiveAndMonotoneComparisonCancellation() {
+        EGraph g = new EGraph();
+        g.registerCallProps("encode", new EGraph.CallProps(false, false, false, false, true, true));
+        g.registerCallProps("tag", new EGraph.CallProps(false, false, false, false, false, true));
+        g.registerCallProps("clamp", new EGraph.CallProps(true, false, false, false, true, false));
+
+        int a = g.add(ENode.opaque("a", PrimitiveKind.INT));
+        int b = g.add(ENode.opaque("b", PrimitiveKind.INT));
+        int ea = g.add(ENode.call("encode", PrimitiveKind.DOUBLE, a));
+        int eb = g.add(ENode.call("encode", PrimitiveKind.DOUBLE, b));
+        int eqEnc = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, ea, eb));
+        int ltEnc = g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, ea, eb));
+        int lteEnc = g.add(ENode.binary(ENode.Op.LTE, PrimitiveKind.BOOL, ea, eb));
+
+        int ta = g.add(ENode.call("tag", PrimitiveKind.NONE, a));
+        int tb = g.add(ENode.call("tag", PrimitiveKind.NONE, b));
+        int neqTag = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, ta, tb));
+        int ltTag = g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, ta, tb));
+
+        int ca = g.add(ENode.call("clamp", PrimitiveKind.INT, a));
+        int cb = g.add(ENode.call("clamp", PrimitiveKind.INT, b));
+        int eqClamp = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, ca, cb));
+        int lteClamp = g.add(ENode.binary(ENode.Op.LTE, PrimitiveKind.BOOL, ca, cb));
+
+        int eqAB = g.add(ENode.binary(ENode.Op.EQ, PrimitiveKind.BOOL, a, b));
+        int neqAB = g.add(ENode.binary(ENode.Op.NEQ, PrimitiveKind.BOOL, a, b));
+        int ltAB = g.add(ENode.binary(ENode.Op.LT, PrimitiveKind.BOOL, a, b));
+        int lteAB = g.add(ENode.binary(ENode.Op.LTE, PrimitiveKind.BOOL, a, b));
+
+        g.saturate(AlgebraicRules.optimizerRules(), 6, 128);
+
+        Assertions.assertTrue(g.areEquivalent(eqEnc, eqAB));
+        Assertions.assertTrue(g.areEquivalent(ltEnc, ltAB));
+        Assertions.assertTrue(g.areEquivalent(lteEnc, lteAB));
+        Assertions.assertTrue(g.areEquivalent(neqTag, neqAB));
+        Assertions.assertFalse(g.areEquivalent(ltTag, ltAB), "injective alone must not cancel <");
+        Assertions.assertFalse(g.areEquivalent(eqClamp, eqAB), "monotone alone must not cancel ==");
+        Assertions.assertFalse(
+                g.areEquivalent(lteClamp, lteAB), "monotone alone must not cancel <=");
+
+        EGraph.ExtractedTree bestLt = g.extract(ltEnc, EGraph::defaultCost);
+        Assertions.assertEquals(ENode.Op.LT, bestLt.node().op());
+        Assertions.assertEquals("a", bestLt.children().get(0).node().symbol());
+        Assertions.assertEquals("b", bestLt.children().get(1).node().symbol());
+    }
+
+    @Test
+    public void testChildWeightedCostModelExtraction() {
+        EGraph g = new EGraph();
+        int src = g.add(ENode.pipeSrc("src#0", PrimitiveKind.INT));
+        int e0 = g.add(ENode.opaque("$e0", PrimitiveKind.INT));
+        int fCall = g.add(ENode.call("f", PrimitiveKind.INT, e0));
+        int pPred =
+                g.add(
+                        ENode.binary(
+                                ENode.Op.GT,
+                                PrimitiveKind.BOOL,
+                                e0,
+                                g.add(ENode.constVal(0, PrimitiveKind.INT))));
+
+        int mapFirst = g.add(ENode.pipeMap("$e1", PrimitiveKind.INT, src, fCall));
+        int filterAfterMap = g.add(ENode.pipeFilter(false, mapFirst, pPred));
+
+        int filterFirst = g.add(ENode.pipeFilter(false, src, pPred));
+        int mapAfterFilter = g.add(ENode.pipeMap("$e1", PrimitiveKind.INT, filterFirst, fCall));
+
+        g.union(filterAfterMap, mapAfterFilter);
+
+        EGraph.CostModel weighted =
+                (node, cc) ->
+                        switch (node.op()) {
+                            case PIPE_FILTER -> 20 + 2 * cc[0] + cc[1];
+                            case PIPE_MAP -> 10 + cc[0] + cc[1];
+                            default -> {
+                                int s = EGraph.defaultCost(node);
+                                for (int c : cc) s += c;
+                                yield s;
+                            }
+                        };
+        EGraph.ExtractedTree best = g.extract(filterAfterMap, weighted);
+        Assertions.assertEquals(ENode.Op.PIPE_MAP, best.node().op());
+        Assertions.assertEquals(ENode.Op.PIPE_FILTER, best.children().get(0).node().op());
+    }
 }

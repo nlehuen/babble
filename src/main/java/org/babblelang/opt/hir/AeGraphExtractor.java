@@ -622,6 +622,81 @@ final class AeGraphExtractor {
         return false;
     }
 
+    /**
+     * Cross-statement {@code injective} / {@code monotone + injective} comparison cancellation
+     * ({@code BIP042-P1}): rewrites {@code a <op> b} to {@code x <op> y} when both operands come
+     * from the same pure deterministic unary call and both arguments have dominating zero-cost live
+     * values.
+     */
+    static HirExpr.Binary tryCancelUnaryComparison(
+            HirExpr.Binary cur,
+            int leftValId,
+            int rightValId,
+            AeGraphState state,
+            int[] nextVarId,
+            int[] rewrites) {
+        if (!cur.op().isComparison()
+                || cur.meta().checkedType() != null
+                || cur.meta().wideningRank() >= 0) {
+            return null;
+        }
+        AeGraphState.UnaryCallOrigin lo = state.shared.unaryCallOrigins.get(leftValId);
+        AeGraphState.UnaryCallOrigin ro = state.shared.unaryCallOrigins.get(rightValId);
+        if (lo == null || ro == null || !lo.callSymbol().equals(ro.callSymbol())) {
+            return null;
+        }
+        boolean isEq = cur.op() == HirExpr.BinaryOp.EQ || cur.op() == HirExpr.BinaryOp.NEQ;
+        if (!lo.injective() || (!isEq && !lo.monotone())) {
+            return null;
+        }
+        if (lo.argKind() != ro.argKind()) {
+            return null;
+        }
+        PrimitiveKind ak = lo.argKind();
+        boolean typeOk =
+                isEq
+                        ? (ak.isPrimitive() || (lo.argStringType() && ro.argStringType()))
+                        : (ak.isNumeric() || ak == PrimitiveKind.CHAR);
+        if (!typeOk) {
+            return null;
+        }
+        ExprMeta argMetaL =
+                new ExprMeta(
+                        cur.meta().line(),
+                        ak,
+                        -1,
+                        null,
+                        cur.meta().effects(),
+                        true,
+                        lo.argStringType());
+        ExprMeta argMetaR =
+                new ExprMeta(
+                        cur.meta().line(),
+                        ak,
+                        -1,
+                        null,
+                        cur.meta().effects(),
+                        true,
+                        ro.argStringType());
+        HirExpr domL =
+                tryExtractDominating(lo.argValId(), argMetaL, state, nextVarId, rewrites, false);
+        if (domL == null) {
+            return null;
+        }
+        HirExpr domR =
+                tryExtractDominating(ro.argValId(), argMetaR, state, nextVarId, rewrites, false);
+        if (domR == null) {
+            return null;
+        }
+        return new HirExpr.Binary(
+                cur.op(),
+                domL,
+                domR,
+                "",
+                "",
+                cur.meta().withKind(PrimitiveKind.BOOL).withWideningRank(-1));
+    }
+
     static boolean sameVarRead(HirExpr dom, HirExpr.VarRead v) {
         return dom instanceof HirExpr.VarRead dv && dv.var().id() == v.var().id();
     }

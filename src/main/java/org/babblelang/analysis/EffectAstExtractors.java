@@ -556,7 +556,9 @@ final class EffectAstExtractors {
                         fx.has(Effect.IDEMPOTENT),
                         fx.has(Effect.ASSOCIATIVE),
                         fx.has(Effect.COMMUTATIVE),
-                        false);
+                        false,
+                        fx.has(Effect.MONOTONE),
+                        fx.has(Effect.INJECTIVE));
         return new AlgebraicVerifier.Call(
                 symbol, List.copyOf(allArgs), fx, props, resType, resKind);
     }

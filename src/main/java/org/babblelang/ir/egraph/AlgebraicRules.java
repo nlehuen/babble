@@ -25,7 +25,8 @@ public final class AlgebraicRules {
                     AlgebraicRules::integralModRules,
                     AlgebraicRules::booleanRules,
                     AlgebraicRules::stringAssocRules,
-                    AlgebraicRules::callAlgebraicRules);
+                    AlgebraicRules::callAlgebraicRules,
+                    AlgebraicRules::injectiveAndMonotoneRules);
 
     public static final String SYM_MIN = "$min";
     public static final String SYM_MAX = "$max";
@@ -463,6 +464,72 @@ public final class AlgebraicRules {
                 }
             }
         }
+    }
+
+    /**
+     * Sound unary {@code injective} and {@code monotone + injective} comparison cancellation
+     * ({@code BIP042-P1}):
+     *
+     * <ul>
+     *   <li>{@code f(a) == f(b) -> a == b} and {@code f(a) != f(b) -> a != b} when {@code f} is
+     *       {@code injective} and {@code a}, {@code b} share a primitive or guaranteed-{@code
+     *       string} type.
+     *   <li>{@code f(a) <op> f(b) -> a <op> b} for {@code <, <=, >, >=} when {@code f} is both
+     *       {@code monotone} and {@code injective} and {@code a}, {@code b} share an ordered
+     *       numeric or {@code char} primitive type.
+     * </ul>
+     */
+    private static void injectiveAndMonotoneRules(
+            EGraph g, int id, ENode n, EGraph.MatchRecorder out) {
+        if (!isComparisonOp(n.op()) || n.kind() != PrimitiveKind.BOOL) {
+            return;
+        }
+        boolean isEq = n.op() == ENode.Op.EQ || n.op() == ENode.Op.NEQ;
+        for (ENode left : g.nodesIn(n.child(0))) {
+            if (left.op() != ENode.Op.CALL || left.arity() != 1) {
+                continue;
+            }
+            EGraph.CallProps props = g.callProps(left.symbol());
+            if (!props.injective() || (!isEq && !props.monotone())) {
+                continue;
+            }
+            int a = left.child(0);
+            PrimitiveKind ka = inferClassKind(g, a);
+            if (ka == null) {
+                continue;
+            }
+            for (ENode right : g.nodesIn(n.child(1))) {
+                if (right.op() != ENode.Op.CALL
+                        || right.arity() != 1
+                        || !left.symbol().equals(right.symbol())) {
+                    continue;
+                }
+                int b = right.child(0);
+                PrimitiveKind kb = inferClassKind(g, b);
+                if (kb != ka) {
+                    continue;
+                }
+                boolean typeOk =
+                        isEq
+                                ? (ka.isPrimitive() || (g.isReflexiveEq(a) && g.isReflexiveEq(b)))
+                                : (ka.isNumeric() || ka == PrimitiveKind.CHAR);
+                if (typeOk) {
+                    out.addAndUnion(id, ENode.binary(n.op(), PrimitiveKind.BOOL, a, b));
+                }
+            }
+        }
+    }
+
+    private static PrimitiveKind inferClassKind(EGraph g, int classId) {
+        PrimitiveKind found = null;
+        for (ENode node : g.nodesIn(classId)) {
+            if (found == null) {
+                found = node.kind();
+            } else if (found != node.kind()) {
+                return null;
+            }
+        }
+        return found;
     }
 
     // ---------------------------------------------------------------- extended verifier rules
