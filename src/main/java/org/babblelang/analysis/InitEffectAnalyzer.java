@@ -229,12 +229,32 @@ final class InitEffectAnalyzer {
     static Reachability.Origin evalObjectExpression(
             EffectChecker ec, EffectBodyWalker w, BabbleParser.ObjectExpressionContext obj) {
         boolean prevConstructing = w.constructingSelf;
+        BitSet prevCtorStored = (BitSet) w.ctorStoredParams.clone();
         w.constructingSelf = true;
+        w.ctorStoredParams.clear();
         boolean objUnique = true;
+        Reachability.Origin capturedOrigin = Reachability.Origin.IMMUTABLE;
         try {
             for (BabbleParser.ExpressionContext s : obj.createBlock.expression()) {
                 if (s instanceof BabbleParser.DefExpressionContext def) {
-                    if (def.value instanceof BabbleParser.FunctionLiteralContext) {
+                    if (def.value instanceof BabbleParser.FunctionLiteralContext methodLit) {
+                        capturedOrigin =
+                                joinOrigins(
+                                        capturedOrigin,
+                                        collectCapturedOrigin(
+                                                ec,
+                                                w,
+                                                methodLit,
+                                                "object method " + def.name.getText(),
+                                                methodLit));
+                        continue;
+                    }
+                    if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+                        capturedOrigin =
+                                joinOrigins(
+                                        capturedOrigin,
+                                        collectOverloadCaptures(
+                                                ec, w, ov, "object method " + def.name.getText()));
                         continue;
                     }
                     Reachability.Origin init =
@@ -298,13 +318,126 @@ final class InitEffectAnalyzer {
                     w.evalDiscarded(s);
                 }
             }
+            for (int p = w.ctorStoredParams.nextSetBit(0);
+                    p >= 0;
+                    p = w.ctorStoredParams.nextSetBit(p + 1)) {
+                capturedOrigin =
+                        joinOrigins(capturedOrigin, Reachability.Origin.ofParam(p, obj, false));
+            }
         } finally {
             w.constructingSelf = prevConstructing;
+            w.ctorStoredParams.clear();
+            w.ctorStoredParams.or(prevCtorStored);
         }
         boolean imm = ec.javaResolver.isDeeplyImmutable(ec.checker.rawTypeOf(obj));
+        if (capturedOrigin != Reachability.Origin.IMMUTABLE) {
+            Reachability.Origin base =
+                    objUnique
+                            ? Reachability.Origin.ofUnique(obj, null, false)
+                            : Reachability.Origin.ofExternal(obj, false);
+            return base.absorbElement(capturedOrigin);
+        }
         return objUnique
                 ? Reachability.Origin.ofUnique(obj, null, imm)
                 : Reachability.Origin.ofExternal(obj, imm);
+    }
+
+    static Reachability.Origin evalClassExpression(
+            EffectChecker ec, EffectBodyWalker w, BabbleParser.ClassExpressionContext cls) {
+        return collectCapturedOrigin(ec, w, cls, "captured class", cls);
+    }
+
+    static Reachability.Origin evalInterfaceExpression(
+            EffectChecker ec, EffectBodyWalker w, BabbleParser.InterfaceExpressionContext iface) {
+        if (iface.interfaceBlock != null) {
+            for (BabbleParser.ExpressionContext stmt : iface.interfaceBlock.expression()) {
+                if (stmt instanceof BabbleParser.DefExpressionContext def) {
+                    if (def.value instanceof BabbleParser.FunctionLiteralContext methodLit) {
+                        Reachability.Origin cap =
+                                collectCapturedOrigin(
+                                        ec,
+                                        w,
+                                        methodLit,
+                                        "interface method " + def.name.getText(),
+                                        methodLit);
+                        w.markStoredOrigin(cap, "interface method " + def.name.getText(), def);
+                    } else if (def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+                        Reachability.Origin cap =
+                                collectOverloadCaptures(
+                                        ec, w, ov, "interface method " + def.name.getText());
+                        w.markStoredOrigin(cap, "interface method " + def.name.getText(), def);
+                    }
+                }
+            }
+        }
+        return Reachability.Origin.IMMUTABLE;
+    }
+
+    private static Reachability.Origin collectOverloadCaptures(
+            EffectChecker ec,
+            EffectBodyWalker w,
+            BabbleParser.OverloadExpressionContext ov,
+            String destination) {
+        Reachability.Origin acc = Reachability.Origin.IMMUTABLE;
+        for (BabbleParser.ExpressionContext arm : ov.expression()) {
+            Reachability.Origin armOrig =
+                    arm instanceof BabbleParser.FunctionLiteralContext lit
+                            ? collectCapturedOrigin(ec, w, lit, destination, lit)
+                            : w.eval(arm);
+            acc = joinOrigins(acc, armOrig);
+        }
+        return acc;
+    }
+
+    private static Reachability.Origin collectCapturedOrigin(
+            EffectChecker ec,
+            EffectBodyWalker w,
+            ParserRuleContext scopeOwner,
+            String destination,
+            ParserRuleContext site) {
+        Resolution res = ec.pass.analysis.resolution();
+        if (res == null || scopeOwner == null) {
+            return Reachability.Origin.IMMUTABLE;
+        }
+        Reachability.Origin captured = Reachability.Origin.IMMUTABLE;
+        for (Resolution.Variable cap : res.captured(scopeOwner)) {
+            ParserRuleContext decl = cap.declaration();
+            if (decl == null) {
+                continue;
+            }
+            Reachability.Origin orig = w.env.get(decl);
+            if (orig == null && w.paramIndex.containsKey(decl)) {
+                orig =
+                        Reachability.Origin.ofParam(
+                                w.paramIndex.get(decl),
+                                decl,
+                                ec.javaResolver.isDeeplyImmutable(
+                                        ec.checker.typeOfDeclarationForEffects(decl)));
+            } else if (orig == null && w.pseudoForwarded.containsKey(decl)) {
+                orig = Reachability.Origin.ofParam(w.pseudoForwarded.get(decl), decl, false);
+            }
+            if (orig == null) {
+                continue;
+            }
+            if (w.paramIndex.containsKey(decl) || w.pseudoForwarded.containsKey(decl)) {
+                Reachability.Origin flat = orig.flattenElements();
+                Reachability.Origin alias = flat.stripDirectIdentity(false);
+                captured = joinOrigins(captured, alias);
+            } else {
+                w.markStoredOrigin(orig, destination, site);
+            }
+        }
+        return captured;
+    }
+
+    private static Reachability.Origin joinOrigins(Reachability.Origin a, Reachability.Origin b) {
+        if (a == Reachability.Origin.IMMUTABLE) {
+            return b;
+        }
+        if (b == Reachability.Origin.IMMUTABLE) {
+            return a;
+        }
+        return a.join(b);
     }
 
     static Reachability.Origin evalDelegatingThisCall(
@@ -386,6 +519,17 @@ final class InitEffectAnalyzer {
                 ctorFresh
                         ? Reachability.Origin.ofUnique(call, null, imm)
                         : Reachability.Origin.ofExternal(call, imm);
+        if (cv.node().ctx instanceof BabbleParser.ClassExpressionContext clsCtx) {
+            Reachability.Origin clsCaptured =
+                    collectCapturedOrigin(ec, w, clsCtx, "captured class", call);
+            if (clsCaptured != Reachability.Origin.IMMUTABLE) {
+                ctorOrigin =
+                        ctorOrigin == Reachability.Origin.IMMUTABLE
+                                ? Reachability.Origin.ofUnique(call, null, false)
+                                        .absorbElement(clsCaptured)
+                                : ctorOrigin.absorbElement(clsCaptured);
+            }
+        }
         if (cs != null) {
             w.applyEffects(cs.effects());
             List<Type.Parameter> cParams =

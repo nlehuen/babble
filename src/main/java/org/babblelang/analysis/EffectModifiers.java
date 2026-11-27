@@ -792,6 +792,72 @@ final class EffectModifiers {
     }
 
     /**
+     * Whether {@code param} is a callback parameter declared in (or captured into) the {@code
+     * calling} clause of a callable strictly enclosing {@code currentOwner}. Such a parameter may
+     * carry arbitrary caller effects (including {@code io} or throws) despite its pure-looking
+     * parameter type, so an inner callable that does not forward it must treat invoking it as
+     * worst-case {@code io}.
+     */
+    static boolean isEnclosingCallingParam(
+            ParserRuleContext currentOwner, BabbleParser.FnParamContext param) {
+        if (currentOwner == null || param == null || param.ID() == null) {
+            return false;
+        }
+        String name = param.ID().getText();
+        ParserRuleContext declOwner =
+                param.getParent() != null ? param.getParent().getParent() : null;
+        if (declOwner == currentOwner) {
+            return false;
+        }
+        if (declOwner instanceof BabbleParser.FunctionLiteralContext fnDecl
+                && inCallingClause(fnDecl, name)) {
+            return true;
+        }
+        if (declOwner instanceof BabbleParser.InitExpressionContext initDecl
+                && inCallingClause(initDecl, name)) {
+            return true;
+        }
+        for (ParserRuleContext p = currentOwner.getParent(); p != null; p = p.getParent()) {
+            if (p instanceof BabbleParser.FunctionLiteralContext fnEnc
+                    && capturesCallback(fnEnc, param)) {
+                return true;
+            }
+            if (p == declOwner) {
+                break;
+            }
+        }
+        return false;
+    }
+
+    static EffectChecker.CallableSummary unforwardedEnclosingCallingSummary(
+            EffectChecker ec,
+            EffectBodyWalker w,
+            Type.Function fn,
+            BabbleParser.ExpressionContext calleeExpr) {
+        BabbleParser.ExpressionContext unwrapped = EffectBodyWalker.unwrapParens(calleeExpr);
+        if (!(unwrapped instanceof BabbleParser.SelectorContext s) || s.expression() != null) {
+            return null;
+        }
+        Object resolved =
+                ec.checker.resolveNameForEffects(s.ID().getText(), ec.checker.occurrenceScopeOf(s));
+        if (!(resolved instanceof BabbleParser.FnParamContext param)
+                || !isEnclosingCallingParam(w.owner, param)) {
+            return null;
+        }
+        w.stmtHasSideEffect = true;
+        int n = fn.parameters().size();
+        boolean[] mp = new boolean[n];
+        boolean[] bp = new boolean[n];
+        boolean[] up = new boolean[n];
+        for (int i = 0; i < n; i++) {
+            mp[i] = fn.parameters().get(i).mut();
+            bp[i] = fn.parameters().get(i).borrow();
+            up[i] = fn.parameters().get(i).unique();
+        }
+        return new EffectChecker.CallableSummary(EffectSet.IO_DECLARED, mp, bp, up);
+    }
+
+    /**
      * Whether {@code fn}'s calling clause names a callback of an enclosing function (BIP017-D5).
      */
     static boolean capturesCallbacks(BabbleParser.FunctionLiteralContext fn) {
