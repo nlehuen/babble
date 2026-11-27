@@ -464,7 +464,13 @@ final class AeGraphBuilder {
         }
         AeGraphState.ValueKey key;
         if (nr.finalBinding()) {
-            key = new AeGraphState.PureNameReadKey(nr.name(), nr.meta().kind());
+            // A final name (a top-level function, a builtin such as byte or println) is numbered
+            // but never replaced by a dominating var or a $cseN temp : reading it is free, and
+            // backends dispatch calls on the name itself (direct calls, builtin conversions whose
+            // errors quote the call site's argument text).
+            return new Res(
+                    nr,
+                    state.intern(new AeGraphState.PureNameReadKey(nr.name(), nr.meta().kind())));
         } else if (eff.isReadFloatable()) {
             key =
                     new AeGraphState.NameReadKey(

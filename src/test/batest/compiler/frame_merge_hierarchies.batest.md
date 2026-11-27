@@ -352,13 +352,11 @@ fn loopJoin (n:int) -> obj {nothrow}
 ```hir
 ;; hir -O2 fn=loopJoin
 fn loopJoin (n:int) -> obj {nothrow}
-  (block
-    (def $cse0 name(R1))
-    (def cur (record-new R1 0:int))
-    (def i 0:int)
-    (while (<:bool var(i) var(n))
-      (block
-        (set cur (if (==:bool var(i) 0:int) (record-new R1 var(i)) (record-new R2 var(i))))
-        (set i += 1:int)))
-    var(cur))
+  (def cur (record-new R1 0:int))
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
+    (block
+      (set cur (if (==:bool var(i) 0:int) (record-new R1 var(i)) (record-new R2 var(i))))
+      (set i += 1:int)))
+  var(cur)
 ```

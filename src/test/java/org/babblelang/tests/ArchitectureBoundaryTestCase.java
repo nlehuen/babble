@@ -83,7 +83,7 @@ public class ArchitectureBoundaryTestCase {
                     Map.entry("src/main/java/org/babblelang/compiler/CallEmitter.java", 2_195),
                     Map.entry(
                             "src/main/java/org/babblelang/analysis/CallEffectAnalyzer.java",
-                            2_146));
+                            2_082));
 
     private static Path classesDirectory() throws URISyntaxException {
         Path directory =

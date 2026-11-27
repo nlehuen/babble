@@ -287,16 +287,7 @@ final class JavaEffectResolver {
             boolean mut = i < profile.mutParams().length && profile.mutParams()[i];
             boolean borrow = i < profile.borrowParams().length && profile.borrowParams()[i];
             boolean unique = i < profile.uniqueParams().length && profile.uniqueParams()[i];
-            updated.add(
-                    new Type.Parameter(
-                            p.name(),
-                            p.type(),
-                            p.optional(),
-                            p.keywordOnly(),
-                            mut,
-                            borrow,
-                            !borrow && !unique,
-                            unique));
+            updated.add(p.withModes(mut, borrow, !borrow && !unique, unique));
         }
         EffectSet fnEffects =
                 new EffectSet(

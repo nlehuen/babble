@@ -222,10 +222,9 @@ fn f (a:double) -> double {nothrow unique}
 ;; hir -O2 fn=f
 fn f (a:double) -> double {nothrow unique}
   (block
-    (def $cse0 name(geo))
-    (def $cse1 (export var($cse0).bigSq))
-    (def $cse2 (call-fn geo.ba#bigSq var(a)))
-    (+:double var($cse2) var($cse2)))
+    (def $cse0 (export name(geo).bigSq))
+    (def $cse1 (call-fn geo.ba#bigSq var(a)))
+    (+:double var($cse1) var($cse1)))
 ```
 
 ## Non-inlineable cross-module call in a loop (LICM hoisting)
@@ -305,9 +304,8 @@ fn f (a:double) -> double {nothrow unique}
 ;; hir -O2 fn=f
 fn f (a:double) -> double {nothrow unique}
   (block
-    (def $cse0 name(fac))
-    (def $cse1 (*:double var(a) var(a)))
-    (+:double (+:double var($cse1) var($cse1)) (call-fn geo.ba#bigSq var(a))))
+    (def $cse0 (*:double var(a) var(a)))
+    (+:double (+:double var($cse0) var($cse0)) (call-fn geo.ba#bigSq var(a))))
 ```
 
 ## Dynamic-import module keeps export_get conservatively throwing

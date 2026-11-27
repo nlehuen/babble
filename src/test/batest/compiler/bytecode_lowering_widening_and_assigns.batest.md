@@ -31,11 +31,9 @@ fn neg (a:int, b:double, c:obj) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=neg
 fn neg (a:int, b:double, c:obj) -> bool {pure unique}
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (==:bool (neg var(a)) -4:int))
-    (call var($cse0) (==:bool (neg var(b)) -1.5:double))
-    (call var($cse0) (==:bool (neg var(c)) -9:int)))
+  (call name(assert) (==:bool (neg var(a)) -4:int))
+  (call name(assert) (==:bool (neg var(b)) -1.5:double))
+  (call name(assert) (==:bool (neg var(c)) -9:int))
 ```
 
 ## Widening return, as-cast, block/while double widening, and methodless object
@@ -130,13 +128,11 @@ top-level:
   (def b (call (class-ref class)))
   (def d1 (widen[double] (set-name x 5:int)))
   (def d2 (widen[double] (set-name x += 3:int)))
-  (block
-    (def $cse0 name(b))
-    (def d3 (widen[double] (set-field var($cse0).v 7:int)))
-    (def d4 (widen[double] (set-field var($cse0).v 2:int)))
-    (def d5 (widen[double] (set-field var($cse0).v 1:int)))
-    (def d6 (widen[double] (set-field var($cse0).v 2:int)))
-    (call name(assert) (and (and (and (and (and (==:bool name(d1) 5.0:double) (==:bool name(d2) 8.0:double)) (==:bool name(d3) 7.0:double)) (==:bool name(d4) 9.0:double)) (==:bool name(d5) 8.0:double)) (==:bool name(d6) 16.0:double))))
+  (def d3 (widen[double] (set-field name(b).v 7:int)))
+  (def d4 (widen[double] (set-field name(b).v 2:int)))
+  (def d5 (widen[double] (set-field name(b).v 1:int)))
+  (def d6 (widen[double] (set-field name(b).v 2:int)))
+  (call name(assert) (and (and (and (and (and (==:bool name(d1) 5.0:double) (==:bool name(d2) 8.0:double)) (==:bool name(d3) 7.0:double)) (==:bool name(d4) 9.0:double)) (==:bool name(d5) 8.0:double)) (==:bool name(d6) 16.0:double)))
 ```
 
 ## Widening assignments on Java int field
@@ -172,13 +168,10 @@ top-level:
 ;; hir -O2 top-level
 top-level:
   (def dynNum (fn-ref dynNum))
-  (block
-    (def $cse0 name(java))
-    (def st (jnew StreamTokenizer (jnew StringReader "a")))
-    (def $cse1 name(st))
-    (def d7 (widen[double] (set-jfield ttype var($cse1) 4:int)))
-    (def d8 (widen[double] (set-jfield ttype var($cse1) 2:int)))
-    (call name(assert) (and (==:bool name(d7) 4.0:double) (==:bool name(d8) 6.0:double))))
+  (def st (jnew StreamTokenizer (jnew StringReader "a")))
+  (def d7 (widen[double] (set-jfield ttype name(st) 4:int)))
+  (def d8 (widen[double] (set-jfield ttype name(st) 2:int)))
+  (call name(assert) (and (==:bool name(d7) 4.0:double) (==:bool name(d8) 6.0:double)))
 ```
 
 ## Boxed/fallback compound assignments on union local and instance fields
@@ -312,11 +305,9 @@ top-level:
 top-level:
   (def dynNum (fn-ref dynNum))
   (def mkSt (fn-ref mkSt))
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (==:bool (jcall Long.sum 3:long 4:long) 7:long))
-    (call var($cse0) (==:bool (convert[double] (jcall Float.sum 3.0:float 4.0:float)) 7.0:double))
-    (call var($cse0) true:bool)
-    (call var($cse0) true:bool)
-    (call var($cse0) (==:bool (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt)) -1:int)))
+  (call name(assert) (==:bool (jcall Long.sum 3:long 4:long) 7:long))
+  (call name(assert) (==:bool (convert[double] (jcall Float.sum 3.0:float 4.0:float)) 7.0:double))
+  (call name(assert) true:bool)
+  (call name(assert) true:bool)
+  (call name(assert) (==:bool (get-jfield StreamTokenizer.TT_EOF (call-fn mkSt)) -1:int))
 ```

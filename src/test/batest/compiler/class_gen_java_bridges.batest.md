@@ -78,21 +78,18 @@ top-level:
 ```hir
 ;; hir -O2 top-level
 top-level:
-  (block
-    (def $cse0 name(import))
-    (def t (call var($cse0) "org.babblelang.tests"))
-    (def extCalc (call var($cse0) "ext_calc.ba"))
-    (def jFix (call var($cse0) "java_fixtures.ba"))
-    (def jCb (call var($cse0) "java_typed_cb.ba"))
-    (def App null)
-    (def CS null)
-    (def Fmt (iface-ref Fmt))
-    (def addOne (fn-ref addOne))
-    (def fmtInt (fn-ref fmtInt))
-    (def fmtStr (fn-ref fmtStr))
-    (def c (call (export name(extCalc).ExtCalc) 5:int))
-    (def $cse1 name(c))
-    (call name(assert) (and (==:bool (call-method var($cse1).add 3:int) 18:int) (==:bool (call-method var($cse1).add 3:int 2:int) 10:int))))
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def c (call (export name(extCalc).ExtCalc) 5:int))
+  (call name(assert) (and (==:bool (call-method name(c).add 3:int) 18:int) (==:bool (call-method name(c).add 3:int 2:int) 10:int)))
 ```
 
 ## Record with all 8 primitives plus reference and body-declared derived primitive field
@@ -363,26 +360,21 @@ top-level:
 ```hir
 ;; hir -O2 top-level
 top-level:
-  (block
-    (def $cse0 name(import))
-    (def t (call var($cse0) "org.babblelang.tests"))
-    (def extCalc (call var($cse0) "ext_calc.ba"))
-    (def jFix (call var($cse0) "java_fixtures.ba"))
-    (def jCb (call var($cse0) "java_typed_cb.ba"))
-    (def App null)
-    (def CS null)
-    (def Fmt (iface-ref Fmt))
-    (def addOne (fn-ref addOne))
-    (def fmtInt (fn-ref fmtInt))
-    (def fmtStr (fn-ref fmtStr))
-    (def c (call (export name(jCb).Cb)))
-    (def $cse1 name(assert))
-    (def $cse2 name(t))
-    (def $cse3 name(c))
-    (call var($cse1) (==:bool (jcall JavaClassDemo.invokeAcceptInt var($cse3) 4:int) 5:int))
-    (call var($cse1) (==:bool (jcall JavaClassDemo.invokeAcceptDouble var($cse3) 1.5:double) 3.0:double))
-    (call var($cse1) (not (jcall JavaClassDemo.invokeAcceptBool var($cse3) true:bool)))
-    (call var($cse1) (==:bool (jcall JavaClassDemo.invokeAcceptString var($cse3) "ok") "ok!")))
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def c (call (export name(jCb).Cb)))
+  (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptInt name(c) 4:int) 5:int))
+  (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptDouble name(c) 1.5:double) 3.0:double))
+  (call name(assert) (not (jcall JavaClassDemo.invokeAcceptBool name(c) true:bool)))
+  (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptString name(c) "ok") "ok!"))
 ```
 
 ## Java interface bridge : ref-only spread with extra optional param
@@ -552,21 +544,18 @@ top-level:
 ```hir
 ;; hir -O2 top-level
 top-level:
-  (block
-    (def $cse0 name(import))
-    (def t (call var($cse0) "org.babblelang.tests"))
-    (def extCalc (call var($cse0) "ext_calc.ba"))
-    (def jFix (call var($cse0) "java_fixtures.ba"))
-    (def jCb (call var($cse0) "java_typed_cb.ba"))
-    (def App null)
-    (def CS null)
-    (def Fmt (iface-ref Fmt))
-    (def addOne (fn-ref addOne))
-    (def fmtInt (fn-ref fmtInt))
-    (def fmtStr (fn-ref fmtStr))
-    (def a (call (export name(jFix).MyAAT)))
-    (def $cse1 name(a))
-    (call name(assert) (and (==:bool (jcall AnnotatedArrayType.getAnnotatedOwnerType var($cse1)) null) (==:bool (array-op SIZE (nonnull (jcall AnnotatedType.getAnnotations var($cse1)))) 0:int))))
+  (def t (call name(import) "org.babblelang.tests"))
+  (def extCalc (call name(import) "ext_calc.ba"))
+  (def jFix (call name(import) "java_fixtures.ba"))
+  (def jCb (call name(import) "java_typed_cb.ba"))
+  (def App null)
+  (def CS null)
+  (def Fmt (iface-ref Fmt))
+  (def addOne (fn-ref addOne))
+  (def fmtInt (fn-ref fmtInt))
+  (def fmtStr (fn-ref fmtStr))
+  (def a (call (export name(jFix).MyAAT)))
+  (call name(assert) (and (==:bool (jcall AnnotatedArrayType.getAnnotatedOwnerType name(a)) null) (==:bool (array-op SIZE (nonnull (jcall AnnotatedType.getAnnotations name(a)))) 0:int)))
 ```
 
 ## Java default methods with non-matching Babble overload set on Iterator

@@ -199,16 +199,12 @@ top-level:
   (def Buf (class-ref Buf))
   (def mkC (fn-ref mkC))
   (def b (call name(Buf)))
-  (block
-    (def $cse0 name(b))
-    (jcall Formatter.format (jnew Formatter var($cse0)) "%s-%d" (jcall List.toArray (jcall List.of "ok" 7:int)))
-    (call-method var($cse0).append "abcdef" 1:int 4:int)
-    (def cs var($cse0))
-    (def $cse1 name(assert))
-    (def $cse2 name(cs))
-    (call var($cse1) (==:bool (jcall CharSequence.length var($cse2)) 7:int))
-    (call var($cse1) (==:bool (jcall String.valueOf (jcall CharSequence.subSequence var($cse2) 0:int 4:int)) "ok-7"))
-    (call var($cse1) (==:bool (jcall String.valueOf var($cse2)) "ok-7bcd")))
+  (jcall Formatter.format (jnew Formatter name(b)) "%s-%d" (jcall List.toArray (jcall List.of "ok" 7:int)))
+  (call-method name(b).append "abcdef" 1:int 4:int)
+  (def cs name(b))
+  (call name(assert) (==:bool (jcall CharSequence.length name(cs)) 7:int))
+  (call name(assert) (==:bool (jcall String.valueOf (jcall CharSequence.subSequence name(cs) 0:int 4:int)) "ok-7"))
+  (call name(assert) (==:bool (jcall String.valueOf name(cs)) "ok-7bcd"))
 ```
 
 ## Case 6
@@ -245,11 +241,9 @@ interface W
 interface W
   (def forEachRemaining (fn-ref forEachRemaining))
   fn forEachRemaining (a:obj) -> obj {io shared}
-    (block
-      (def $cse0 name(print))
-      (call var($cse0) "<")
-      (super.forEachRemaining var(a))
-      (call var($cse0) ">"))
+    (call name(print) "<")
+    (super.forEachRemaining var(a))
+    (call name(print) ">")
 ```
 
 ## Case 7

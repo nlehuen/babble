@@ -57,12 +57,11 @@ fn checkBool (b:bool) -> bool {pure unique}
 ;; hir -O2 fn=checkBool
 fn checkBool (b:bool) -> bool {pure unique}
   (block
-    (def $cse0 name(assert))
-    (call var($cse0) true:bool)
-    (call var($cse0) true:bool)
-    (call var($cse0) true:bool)
-    (call var($cse0) true:bool)
-    (call var($cse0) true:bool))
+    (call name(assert) true:bool)
+    (call name(assert) true:bool)
+    (call name(assert) true:bool)
+    (call name(assert) true:bool)
+    (call name(assert) true:bool))
 ```
 
 ## Case 2
@@ -100,14 +99,13 @@ fn checkInt (x:int, eAdd0:int, eAddC:int, eMul:int) -> bool {pure unique}
 ;; hir -O2 fn=checkInt
 fn checkInt (x:int, eAdd0:int, eAddC:int, eMul:int) -> bool {pure unique}
   (block
-    (def $cse0 name(assert))
-    (def $cse1 (+:int var(x) var(x)))
-    (call var($cse0) (==:bool var($cse1) var(eAdd0)))
-    (call var($cse0) (==:bool (+:int var($cse1) 8:int) var(eAddC)))
-    (def $cse2 (neg var(x)))
-    (def $cse3 (+:int var(x) var($cse2)))
-    (call var($cse0) (==:bool var($cse3) 0:int))
-    (call var($cse0) (==:bool (+:int (+:int var($cse1) (*:int var(x) 3:int)) (*:int var(x) 6:int)) var(eMul))))
+    (def $cse0 (+:int var(x) var(x)))
+    (call name(assert) (==:bool var($cse0) var(eAdd0)))
+    (call name(assert) (==:bool (+:int var($cse0) 8:int) var(eAddC)))
+    (def $cse1 (neg var(x)))
+    (def $cse2 (+:int var(x) var($cse1)))
+    (call name(assert) (==:bool var($cse2) 0:int))
+    (call name(assert) (==:bool (+:int (+:int var($cse0) (*:int var(x) 3:int)) (*:int var(x) 6:int)) var(eMul))))
 ```
 
 ## Case 3
@@ -145,14 +143,13 @@ fn checkLong (lx:long, eAdd0:long, eAddC:long, eMul:long) -> bool {pure unique}
 ;; hir -O2 fn=checkLong
 fn checkLong (lx:long, eAdd0:long, eAddC:long, eMul:long) -> bool {pure unique}
   (block
-    (def $cse0 name(assert))
-    (def $cse1 (+:long var(lx) var(lx)))
-    (call var($cse0) (==:bool var($cse1) var(eAdd0)))
-    (call var($cse0) (==:bool (+:long var($cse1) 8:long) var(eAddC)))
-    (def $cse2 (neg var(lx)))
-    (def $cse3 (+:long var(lx) var($cse2)))
-    (call var($cse0) (==:bool var($cse3) 0:long))
-    (call var($cse0) (==:bool (+:long (+:long var($cse1) (*:long var(lx) 3:long)) (*:long var(lx) 6:long)) var(eMul))))
+    (def $cse0 (+:long var(lx) var(lx)))
+    (call name(assert) (==:bool var($cse0) var(eAdd0)))
+    (call name(assert) (==:bool (+:long var($cse0) 8:long) var(eAddC)))
+    (def $cse1 (neg var(lx)))
+    (def $cse2 (+:long var(lx) var($cse1)))
+    (call name(assert) (==:bool var($cse2) 0:long))
+    (call name(assert) (==:bool (+:long (+:long var($cse0) (*:long var(lx) 3:long)) (*:long var(lx) 6:long)) var(eMul))))
 ```
 
 ## String reassociation and IEEE-754 preservation (NaN * 0.0 != 0.0, no float/double reassociation)
@@ -187,11 +184,9 @@ fn checkStrIeee (s:obj, d:double, expStr:obj, expNan:bool) -> bool {pure}
 ```hir
 ;; hir -O2 fn=checkStrIeee
 fn checkStrIeee (s:obj, d:double, expStr:obj, expNan:bool) -> bool {pure}
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (==:bool (+:obj var(s) "ab") var(expStr)))
-    (call var($cse0) (==:bool (jcall Double.isNaN (+:double (*:double var(d) 0.0:double) 0.0:double)) var(expNan)))
-    (if var(expNan) (call var($cse0) (jcall Double.isNaN (+:double (+:double var(d) 1.0:double) 2.0:double))) (call var($cse0) (==:bool (+:double (+:double var(d) 1.0:double) 2.0:double) 3.0:double))))
+  (call name(assert) (==:bool (+:obj var(s) "ab") var(expStr)))
+  (call name(assert) (==:bool (jcall Double.isNaN (+:double (*:double var(d) 0.0:double) 0.0:double)) var(expNan)))
+  (if var(expNan) (call name(assert) (jcall Double.isNaN (+:double (+:double var(d) 1.0:double) 2.0:double))) (call name(assert) (==:bool (+:double (+:double var(d) 1.0:double) 2.0:double) 3.0:double)))
 ```
 
 ## Impure operands must not be dropped by * 0 or reordered
@@ -230,10 +225,8 @@ top-level:
   (def bigClamp (fn-ref bigClamp))
   (def tick 0:int)
   (def bump (fn-ref bump))
-  (block
-    (def $cse0 name(bump))
-    (def r (+:int (+:int (+:int (*:int (call-fn bump) 0:int) (*:int 0:int (call-fn bump))) (+:int 1:int (call-fn bump))) (*:int 2:int (call-fn bump))))
-    (call name(assert) (and (==:bool name(r) 12:int) (==:bool name(tick) 4:int))))
+  (def r (+:int (+:int (+:int (*:int (call-fn bump) 0:int) (*:int 0:int (call-fn bump))) (+:int 1:int (call-fn bump))) (*:int 2:int (call-fn bump))))
+  (call name(assert) (and (==:bool name(r) 12:int) (==:bool name(tick) 4:int)))
 ```
 
 ## Non-constant inner RHS does not reassociate; non-matching idempotent calls stay intact
@@ -268,15 +261,13 @@ fn checkNonReassoc (x:int, y:int, s:obj, t:obj) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=checkNonReassoc
 fn checkNonReassoc (x:int, y:int, s:obj, t:obj) -> bool {pure unique}
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (and (and (==:bool (+:int (+:int var(x#1) var(y)) 2:int) 7:int) (==:bool (*:int (*:int var(x#1) var(y)) 3:int) 18:int)) (==:bool (+:obj (+:obj var(s) var(t)) "!") "ab!")))
-    (call var($cse0) (==:bool (block
-          (def x#2
-            (block
-              (def r (if (<:bool var(x#1) 0:int) 0:int var(x#1)))
-              var(r)))
-          (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 2:int)))
+  (call name(assert) (and (and (==:bool (+:int (+:int var(x#1) var(y)) 2:int) 7:int) (==:bool (*:int (*:int var(x#1) var(y)) 3:int) 18:int)) (==:bool (+:obj (+:obj var(s) var(t)) "!") "ab!")))
+  (call name(assert) (==:bool (block
+        (def x#2
+          (block
+            (def r (if (<:bool var(x#1) 0:int) 0:int var(x#1)))
+            var(r)))
+        (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 2:int))
 ```
 
 ## Non-dropping arithmetic identities with impure operands (`e + 0`, `0 + e`, `e - 0`, `e * 1`, `1 * e`)
@@ -315,8 +306,6 @@ top-level:
   (def bigClamp (fn-ref bigClamp))
   (def tick 0:int)
   (def bump (fn-ref bump))
-  (block
-    (def $cse0 name(bump))
-    (def r (+:int (+:int (+:int (+:int (call-fn bump) (call-fn bump)) (call-fn bump)) (call-fn bump)) (call-fn bump)))
-    (call name(assert) (and (==:bool name(r) 15:int) (==:bool name(tick) 5:int))))
+  (def r (+:int (+:int (+:int (+:int (call-fn bump) (call-fn bump)) (call-fn bump)) (call-fn bump)) (call-fn bump)))
+  (call name(assert) (and (==:bool name(r) 15:int) (==:bool name(tick) 5:int)))
 ```

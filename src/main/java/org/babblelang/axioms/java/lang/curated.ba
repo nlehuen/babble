@@ -178,8 +178,10 @@ axiom java.lang.String: class notnull (
     def stripLeading: fn nothrow
     def stripTrailing: fn nothrow
     def toLowerCase: fn nothrow
+    def toLowerCase: fn volatile nothrow (): string!
     def toString: fn nothrow
     def toUpperCase: fn nothrow
+    def toUpperCase: fn volatile nothrow (): string!
     def trim: fn nothrow idempotent foldable (): string!
 ) static (
     def *: fn pure

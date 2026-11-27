@@ -154,8 +154,7 @@ fn RV.run (n:int) -> long {nothrow unique}
         (def hl (widen[long] (block
               (def x var($licm1))
               var(x))))
-        (def $cse0 name(long))
-        (set r += (+:long (+:long (call var($cse0) var(hs)) (call var($cse0) var(hi))) var(hl)))
+        (set r += (+:long (+:long (call name(long) var(hs)) (call name(long) var(hi))) var(hl)))
         (set k += 1:int))))
   var(r)
 ```

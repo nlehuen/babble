@@ -85,24 +85,23 @@ fn run (n:int) -> double {nothrow unique}
 ;; hir -O2 fn=run
 fn run (n:int) -> double {nothrow unique}
   (block
+    (def $sr_acc_0 0.0:double)
+    (def $sr_acc_1 0.0:double)
+    (def $sr_acc_2 0.0:double))
+  (def i 0:int)
+  (while (<:bool var(i) var(n))
     (block
-      (def $sr_acc_0 0.0:double)
-      (def $sr_acc_1 0.0:double)
-      (def $sr_acc_2 0.0:double))
-    (def i 0:int)
-    (while (<:bool var(i) var(n))
       (block
         (block
-          (block
-            (def $sr_$this_0 (+:double var($sr_acc_0) 1.0:double))
-            (def $sr_$this_1 (+:double var($sr_acc_1) 2.0:double))
-            (def $sr_$this_2 (+:double var($sr_acc_2) 3.0:double)))
-          (block
-            (set $sr_acc_0 var($sr_$this_1))
-            (set $sr_acc_1 var($sr_$this_0))
-            (set $sr_acc_2 var($sr_$this_2))))
-        (set i (+:int var(i) 1:int))))
-    (+:double (+:double (*:double var($sr_acc_0) 1.0:double) (*:double var($sr_acc_1) 2.0:double)) (*:double var($sr_acc_2) 3.0:double)))
+          (def $sr_$this_0 (+:double var($sr_acc_0) 1.0:double))
+          (def $sr_$this_1 (+:double var($sr_acc_1) 2.0:double))
+          (def $sr_$this_2 (+:double var($sr_acc_2) 3.0:double)))
+        (block
+          (set $sr_acc_0 var($sr_$this_1))
+          (set $sr_acc_1 var($sr_$this_0))
+          (set $sr_acc_2 var($sr_$this_2))))
+      (set i (+:int var(i) 1:int))))
+  (+:double (+:double (*:double var($sr_acc_0) 1.0:double) (*:double var($sr_acc_1) 2.0:double)) (*:double var($sr_acc_2) 3.0:double))
 ```
 
 ## Direct projection beta-reduction with named/reordered args and widening
@@ -179,12 +178,10 @@ fn run () -> double {io}
 ;; hir -O2 fn=run
 fn run () -> double {io}
   (block
-    (def $cse0 name(emit))
-    (block
-      (call-fn emit "A" 1.0:double)
-      (def $sr_p0 (call-fn emit "B" 2.0:double))
-      (call-fn emit "C" 3.0:double)
-      var($sr_p0)))
+    (call-fn emit "A" 1.0:double)
+    (def $sr_p0 (call-fn emit "B" 2.0:double))
+    (call-fn emit "C" 3.0:double)
+    var($sr_p0))
 ```
 
 ## Conditional if/else record SROA, copy propagation, and self-assignment
@@ -317,12 +314,10 @@ fn run () -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=run
 fn run () -> bool {pure unique}
-  (block
-    (def $cse0 name(Vec3))
-    (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
-    (def b (record-new Vec3 1.0:double 2.0:double 3.0:double))
-    (def xs (core-new list var(a)))
-    (and (and (==:bool var(a) var(b)) (not (call name(same) var(a) var(b)))) (==:bool (jcall List.get var(xs) 0:int) var(b))))
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def xs (core-new list var(a)))
+  (and (and (==:bool var(a) var(b)) (not (call name(same) var(a) var(b)))) (==:bool (jcall List.get var(xs) 0:int) var(b)))
 ```
 
 ## Scalarized record locals inside for and try/catch/finally scopes

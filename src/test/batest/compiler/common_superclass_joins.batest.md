@@ -194,11 +194,9 @@ fn pickList (flag:bool) -> obj {pure unique}
 ```hir
 ;; hir -O2 fn=pickList
 fn pickList (flag:bool) -> obj {pure unique}
-  (block
-    (def $cse0 name(java))
-    (def a (jnew ArrayList))
-    (def b (jnew LinkedList))
-    (if var(flag) var(a) var(b)))
+  (def a (jnew ArrayList))
+  (def b (jnew LinkedList))
+  (if var(flag) var(a) var(b))
 ```
 
 ## Java interface join : List/Set -> Collection

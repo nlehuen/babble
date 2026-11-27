@@ -371,7 +371,18 @@ final class Reachability {
                 return IMMUTABLE;
             }
             Set<PathKey> nextPaths = unionPaths(truncatePaths(paths, directKeys), elementPaths);
-            return derived(Set.of(), nextPaths, Set.of());
+            return projectedOwnership(derived(Set.of(), nextPaths, Set.of()));
+        }
+
+        /**
+         * A projection of a container that absorbed other values as elements (an {@code
+         * Optional.of(a)}, a {@code List.of(a)}) may be one of them, still reachable from where it
+         * came from : it is not unique, though the container is.
+         */
+        private Origin projectedOwnership(Origin projected) {
+            return elementPaths.isEmpty() || !projected.unique
+                    ? projected
+                    : projected.withoutUnique();
         }
 
         Origin deriveIndexedProjection(String indexSeg, boolean immutable) {
@@ -383,7 +394,7 @@ final class Reachability {
             }
             Set<PathKey> base = paths.isEmpty() ? rootPathsFromKeys(directKeys, false) : paths;
             Set<PathKey> nextPaths = unionPaths(appendPaths(base, indexSeg), elementPaths);
-            return derived(Set.of(), nextPaths, Set.of());
+            return projectedOwnership(derived(Set.of(), nextPaths, Set.of()));
         }
 
         Origin stripDirectIdentity(boolean immutable) {

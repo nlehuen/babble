@@ -548,7 +548,7 @@ GC_THREADS="${THREADS_PER_JOB}"
 (( GC_THREADS < 2 )) && GC_THREADS=2
 (( GC_THREADS > 8 )) && GC_THREADS=8
 
-SUREFIRE_JVM_ARGS="-Xmx${HEAP_MB}m -XX:+UseParallelGC -XX:ParallelGCThreads=${GC_THREADS} -Djunit.jupiter.execution.parallel.config.strategy=fixed -Djunit.jupiter.execution.parallel.config.fixed.parallelism=${THREADS_PER_JOB}"
+SUREFIRE_JVM_ARGS="-Xmx${HEAP_MB}m -XX:+UseParallelGC -XX:-OmitStackTraceInFastThrow -XX:ParallelGCThreads=${GC_THREADS} -Djunit.jupiter.execution.parallel.config.strategy=fixed -Djunit.jupiter.execution.parallel.config.fixed.parallelism=${THREADS_PER_JOB}"
 
 START_ALL="$(now_s)"
 LOG_DIR="${REPO_ROOT}/target/ci-local"

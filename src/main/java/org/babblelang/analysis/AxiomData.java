@@ -75,6 +75,7 @@ final class AxiomData {
             JavaNullability.Nullness[] paramNullness,
             JavaNullability.Nullness[] paramElementNullness,
             JavaNullability.Nullness returnNullness,
+            JavaNullability.Nullness returnElementNullness,
             EffectSet effects,
             boolean mutReceiver,
             boolean borrowReceiver,
@@ -116,6 +117,7 @@ final class AxiomData {
                     null,
                     new JavaNullability.Nullness[0],
                     new JavaNullability.Nullness[0],
+                    null,
                     null,
                     effects,
                     mutReceiver,
@@ -976,6 +978,7 @@ final class AxiomData {
         boolean[] sharedParams = new boolean[0];
         String returnDescriptor = null;
         JavaNullability.Nullness returnNullness = null;
+        JavaNullability.Nullness returnElementNullness = null;
         boolean anyParamMut = false;
         boolean anyParamEffectMod = false;
 
@@ -1027,6 +1030,7 @@ final class AxiomData {
             TypeErasure ret = eraseType(retTypeCtx, allTypeVars, classResolver, errors);
             returnDescriptor = ret.descriptor();
             returnNullness = ret.nullness();
+            returnElementNullness = ret.elementNullness();
         }
 
         EffectSet effectSet;
@@ -1078,6 +1082,7 @@ final class AxiomData {
                 paramNullness,
                 paramElementNullness,
                 returnNullness,
+                returnElementNullness,
                 effectSet,
                 mutReceiver,
                 !sharedReceiver,

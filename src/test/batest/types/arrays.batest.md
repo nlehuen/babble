@@ -274,7 +274,7 @@ assert(mat.get(1).get(0) == 3.0 and "" + mat == "[[1.0, 2.0], [3.0, 4.0]]")
 def unsorted = array.of(9, 3, 7, 1)
 java.util.Arrays.sort(unsorted)
 assert(unsorted == array.of(1, 3, 7, 9))
-def fromList: array of string = list("p", "q").toArray((array of string).of())
+def fromList: array of string? = list("p", "q").toArray((array of string?).of())
 assert(fromList == array.of("p", "q"))
 ```
 

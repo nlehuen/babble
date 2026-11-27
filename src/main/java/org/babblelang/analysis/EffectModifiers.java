@@ -746,16 +746,7 @@ final class EffectModifiers {
             Type.Parameter p = params.get(i);
             EffectChecker.ParamMods declared = parseParamMods(decls.get(i), false);
             boolean borrow = !declared.shared() && !declared.unique();
-            result.add(
-                    new Type.Parameter(
-                            p.name(),
-                            p.type(),
-                            p.optional(),
-                            p.keywordOnly(),
-                            p.mut(),
-                            borrow,
-                            p.explicitShared(),
-                            p.unique()));
+            result.add(p.withModes(p.mut(), borrow, p.explicitShared(), p.unique()));
         }
         return result;
     }
@@ -941,16 +932,7 @@ final class EffectModifiers {
             Type.Parameter p = params.get(i);
             EffectChecker.ParamMods declared = parseParamMods(decls.get(i), false);
             boolean borrow = !declared.shared() && !declared.unique();
-            result.add(
-                    new Type.Parameter(
-                            p.name(),
-                            p.type(),
-                            p.optional(),
-                            p.keywordOnly(),
-                            p.mut(),
-                            borrow,
-                            p.explicitShared(),
-                            p.unique()));
+            result.add(p.withModes(p.mut(), borrow, p.explicitShared(), p.unique()));
         }
         return result;
     }

@@ -272,25 +272,22 @@ top-level:
 ;; hir -O2 top-level
 top-level:
   (def s 0:int)
-  (block
-    (def $cse0 name(byte))
-    (for b in (array-new OF (call var($cse0) 1:int) (call var($cse0) 2:int))
-      (block
-        (set-name s += (call name(int) var(b)))))
-    (for z in (array-new OF true:bool false:bool true:bool)
-      (block
-        (if var(z) (box (set-name s += 10:int)))))
-    (def $cse1 name(short))
-    (for sh in (array-new OF (call var($cse1) 3:int) (call var($cse1) 4:int))
-      (block
-        (set-name s += (call name(int) var(sh)))))
-    (for l in (array-new OF 5:long 6:long)
-      (block
-        (set-name s += (call name(int) var(l)))))
-    (for f in (array-new OF 1.0:float 2.0:float)
-      (block
-        (set-name s += (call name(int) var(f)))))
-    (call name(assert) (==:bool name(s) 44:int)))
+  (for b in (array-new OF (call name(byte) 1:int) (call name(byte) 2:int))
+    (block
+      (set-name s += (call name(int) var(b)))))
+  (for z in (array-new OF true:bool false:bool true:bool)
+    (block
+      (if var(z) (box (set-name s += 10:int)))))
+  (for sh in (array-new OF (call name(short) 3:int) (call name(short) 4:int))
+    (block
+      (set-name s += (call name(int) var(sh)))))
+  (for l in (array-new OF 5:long 6:long)
+    (block
+      (set-name s += (call name(int) var(l)))))
+  (for f in (array-new OF 1.0:float 2.0:float)
+    (block
+      (set-name s += (call name(int) var(f)))))
+  (call name(assert) (==:bool name(s) 44:int))
 ```
 
 ## Capturing bool, byte, short, and char for-loop variables in closures
@@ -405,9 +402,7 @@ top-level:
   (for d in (array-new OF 6.0:double)
     (block
       (jcall List.add name(fs) (fn-ref <anon#2>))))
-  (block
-    (def $cse0 name(fs))
-    (call name(assert) (==:bool (+:int (+:int (call (jcall List.get var($cse0) 0:int)) (call (jcall List.get var($cse0) 1:int))) (call (jcall List.get var($cse0) 2:int))) 15:int)))
+  (call name(assert) (==:bool (+:int (+:int (call (jcall List.get name(fs) 0:int)) (call (jcall List.get name(fs) 1:int))) (call (jcall List.get name(fs) 2:int))) 15:int))
 ```
 
 ## Primitive array(from:) for byte, short, float, bool, and char
@@ -435,13 +430,10 @@ top-level:
 ```hir
 ;; hir -O2 top-level
 top-level:
-  (block
-    (def $cse0 name(byte))
-    (def ab (array-new FROM (call (select core-col(list).of) (call var($cse0) 1:int) (call var($cse0) 2:int))))
-    (def $cse1 name(short))
-    (def as_ (array-new FROM (call (select core-col(list).of) (call var($cse1) 3:int) (call var($cse1) 4:int))))
-    (def af (array-new FROM (call (select core-col(list).of) 1.5:float 2.5:float)))
-    (def az (array-new FROM (call (select core-col(list).of) true:bool false:bool)))
-    (def ac (array-new FROM (call (select core-col(list).of) 'x' 'y')))
-    (call name(assert) (and (and (and (and (==:bool (array-op GET name(ab) 1:int) (call var($cse0) 2:int)) (==:bool (array-op GET name(as_) 0:int) (call var($cse1) 3:int))) (==:bool (array-op GET name(af) 1:int) 2.5:float)) (array-op GET name(az) 0:int)) (==:bool (array-op GET name(ac) 1:int) 'y'))))
+  (def ab (array-new FROM (call (select core-col(list).of) (call name(byte) 1:int) (call name(byte) 2:int))))
+  (def as_ (array-new FROM (call (select core-col(list).of) (call name(short) 3:int) (call name(short) 4:int))))
+  (def af (array-new FROM (call (select core-col(list).of) 1.5:float 2.5:float)))
+  (def az (array-new FROM (call (select core-col(list).of) true:bool false:bool)))
+  (def ac (array-new FROM (call (select core-col(list).of) 'x' 'y')))
+  (call name(assert) (and (and (and (and (==:bool (array-op GET name(ab) 1:int) (call name(byte) 2:int)) (==:bool (array-op GET name(as_) 0:int) (call name(short) 3:int))) (==:bool (array-op GET name(af) 1:int) 2.5:float)) (array-op GET name(az) 0:int)) (==:bool (array-op GET name(ac) 1:int) 'y')))
 ```

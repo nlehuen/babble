@@ -61,6 +61,9 @@ public final class CribWorkerPool implements Closeable {
             cmd.add(resolveJavaBinary());
             cmd.add("-Xmx" + config.workerXmx());
             cmd.add("-XX:MaxMetaspaceSize=" + config.workerMetaspace());
+            // A warm worker would otherwise throw message-less preallocated exceptions from hot
+            // sites, a spurious difference for cross-mode error parity.
+            cmd.add("-XX:-OmitStackTraceInFastThrow");
             cmd.add("-Djava.awt.headless=true");
             cmd.add("-cp");
             cmd.add(System.getProperty("java.class.path"));

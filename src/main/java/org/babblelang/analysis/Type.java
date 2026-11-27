@@ -444,6 +444,24 @@ sealed interface Type {
                     newUnique);
         }
 
+        /**
+         * This parameter with its ownership and mutation modes replaced, keeping its name, type,
+         * optionality, keyword-only and {@code rest} flags.
+         */
+        Parameter withModes(
+                boolean newMut, boolean newBorrow, boolean newExplicitShared, boolean newUnique) {
+            return new Parameter(
+                    name,
+                    type,
+                    optional,
+                    keywordOnly,
+                    rest,
+                    newMut,
+                    newBorrow,
+                    newExplicitShared,
+                    newUnique);
+        }
+
         private static String formatRestType(Type t) {
             if (t instanceof Union u) {
                 if (u.members().size() == 2 && u.members().get(1) == NULL) {

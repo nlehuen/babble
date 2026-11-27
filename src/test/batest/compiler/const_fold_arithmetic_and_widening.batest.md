@@ -69,9 +69,7 @@ fn f () -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=f
 fn f () -> bool {pure unique}
-  (block
-    (def $cse0 name(byte))
-    (and (<:bool (call var($cse0) 1:int) (call var($cse0) 2:int)) (<:bool (call name(short) 1:int) (call name(short) 2:int))))
+  (and (<:bool (call name(byte) 1:int) (call name(byte) 2:int)) (<:bool (call name(short) 1:int) (call name(short) 2:int)))
 ```
 
 ## Case 3
@@ -221,8 +219,6 @@ fn f () -> bool {pure unique}
 ;; hir -O2 fn=f
 fn f () -> bool {pure unique}
   (def bs (widen[short] (call name(byte) 3:int)))
-  (block
-    (def $cse0 name(short))
-    (def sl (widen[long] (call var($cse0) 4:int)))
-    (and (and (and (and (and (and (==:bool var(bs) (call var($cse0) 3:int)) true:bool) true:bool) true:bool) true:bool) (==:bool var(sl) 4:long)) (==:bool null null)))
+  (def sl (widen[long] (call name(short) 4:int)))
+  (and (and (and (and (and (and (==:bool var(bs) (call name(short) 3:int)) true:bool) true:bool) true:bool) true:bool) (==:bool var(sl) 4:long)) (==:bool null null))
 ```

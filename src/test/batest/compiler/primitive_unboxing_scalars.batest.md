@@ -35,15 +35,9 @@ fn mix (b:byte, s:short, i:int, l:long, f:float, d:double, c:char, ok:bool) -> d
 ```hir
 ;; hir -O2 fn=mix
 fn mix (b:byte, s:short, i:int, l:long, f:float, d:double, c:char, ok:bool) -> double {nothrow}
-  (block
-    (def $cse0 name(long))
-    (def sl (+:long (+:long (+:long var(l) (call var($cse0) var(i))) (call var($cse0) var(b))) (call var($cse0) var(s))))
-    (def sf (+:float var(f) (call name(float) var(i))))
-    (if (and var(ok) (==:bool var(c) 'A'))
-      (block
-        (def $cse1 name(double))
-        (+:double (+:double (call var($cse1) var(sl)) (call var($cse1) var(sf))) var(d)))
-      0.0:double))
+  (def sl (+:long (+:long (+:long var(l) (call name(long) var(i))) (call name(long) var(b))) (call name(long) var(s))))
+  (def sf (+:float var(f) (call name(float) var(i))))
+  (if (and var(ok) (==:bool var(c) 'A')) (+:double (+:double (call name(double) var(sl)) (call name(double) var(sf))) var(d)) 0.0:double)
 ```
 
 ## Unboxed unary negation and arithmetic on narrow/wide primitives (parameterized against -O1 folding)
@@ -76,9 +70,7 @@ fn negMix (b:byte, s:short, l:long, f:float) -> double {nothrow unique}
   (def ns (neg (convert[int] var(s))))
   (def nl (+:long (neg var(l)) 10:long))
   (def nf (+:float (neg var(f)) 1.5:float))
-  (block
-    (def $cse0 name(double))
-    (+:double (+:double (call var($cse0) (+:int var(nb) var(ns))) (call var($cse0) (+:long var(l) var(nl)))) (call var($cse0) (+:float var(f) var(nf)))))
+  (+:double (+:double (call name(double) (+:int var(nb) var(ns))) (call name(double) (+:long var(l) var(nl)))) (call name(double) (+:float var(f) var(nf))))
 ```
 
 ## Parameterized against -O1 folding to exercise unboxed byte/short truthiness
@@ -108,10 +100,8 @@ fn check (b0:byte, b1:byte, s0:short, s1:short) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=check
 fn check (b0:byte, b1:byte, s0:short, s1:short) -> bool {pure unique}
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (and (==:bool (if var(b0) 1:int 0:int) 0:int) (==:bool (if var(b1) 1:int 0:int) 1:int)))
-    (call var($cse0) (and (==:bool (if var(s0) 1:int 0:int) 0:int) (==:bool (if var(s1) 1:int 0:int) 1:int))))
+  (call name(assert) (and (==:bool (if var(b0) 1:int 0:int) 0:int) (==:bool (if var(b1) 1:int 0:int) 1:int)))
+  (call name(assert) (and (==:bool (if var(s0) 1:int 0:int) 0:int) (==:bool (if var(s1) 1:int 0:int) 1:int)))
 ```
 
 ## Parameterized against -O1 folding to exercise unboxed long/float truthiness
@@ -141,10 +131,8 @@ fn check (l0:long, l1:long, f0:float, f1:float) -> bool {pure unique}
 ```hir
 ;; hir -O2 fn=check
 fn check (l0:long, l1:long, f0:float, f1:float) -> bool {pure unique}
-  (block
-    (def $cse0 name(assert))
-    (call var($cse0) (and (==:bool (if var(l0) 1:int 0:int) 0:int) (==:bool (if var(l1) 1:int 0:int) 1:int)))
-    (call var($cse0) (and (==:bool (if var(f0) 1:int 0:int) 0:int) (==:bool (if var(f1) 1:int 0:int) 1:int))))
+  (call name(assert) (and (==:bool (if var(l0) 1:int 0:int) 0:int) (==:bool (if var(l1) 1:int 0:int) 1:int)))
+  (call name(assert) (and (==:bool (if var(f0) 1:int 0:int) 0:int) (==:bool (if var(f1) 1:int 0:int) 1:int)))
 ```
 
 ## Parameterized against -O1 folding to exercise unboxed primitive comparisons
@@ -193,9 +181,7 @@ class H (b:byte, s:short, l:long, f:float, c:char)
 class H (b:byte, s:short, l:long, f:float, c:char)
   (def sum (fn-ref H.sum))
   fn H.sum (x:long) -> long {nothrow unique}
-    (block
-      (def $cse0 name(long))
-      (+:long (+:long (+:long (get-this-field l) var(x)) (call var($cse0) (get-this-field b))) (call var($cse0) (get-this-field s))))
+    (+:long (+:long (+:long (get-this-field l) var(x)) (call name(long) (get-this-field b))) (call name(long) (get-this-field s)))
 ```
 
 ## Case 9
@@ -275,9 +261,7 @@ fn unwrapAll (b:obj, s:obj, l:obj, f:obj, c:obj) -> obj {pure unique}
   (def ul (nonnull var(l)))
   (def uf (nonnull var(f)))
   (def uc (nonnull var(c)))
-  (block
-    (def $cse0 name(string))
-    (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (call var($cse0) var(ub)) ":") (call var($cse0) var(us))) ":") (call var($cse0) var(ul))) ":") (call var($cse0) var(uf))) ":") (call var($cse0) var(uc))))
+  (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (call name(string) var(ub)) ":") (call name(string) var(us))) ":") (call name(string) var(ul))) ":") (call name(string) var(uf))) ":") (call name(string) var(uc)))
 ```
 
 ## Case 12

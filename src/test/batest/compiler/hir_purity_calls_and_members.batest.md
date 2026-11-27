@@ -150,11 +150,9 @@ fn run () -> int {io}
 ```hir
 ;; hir -O2 fn=run
 fn run () -> int {io}
-  (block
-    (def $cse0 name(java))
-    (select (select var($cse0).lang).Math)
-    (jcall Math.abs -5:int)
-    1:int)
+  (select (select name(java).lang).Math)
+  (jcall Math.abs -5:int)
+  1:int
 ```
 
 ## HirPurity : cross-module DirectThisMethodCall pure, throwing, and volatile paths

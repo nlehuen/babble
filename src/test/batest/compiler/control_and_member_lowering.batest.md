@@ -428,21 +428,16 @@ top-level:
 top-level:
   (def TopErrA (class-ref TopErrA))
   (def TopErrB (class-ref TopErrB))
+  (def dpi (jnew DriverPropertyInfo "k" "v"))
+  (set-jfield required name(dpi) true:bool)
+  (def n 42:int)
+  (def ev (jnew Event null 0:int null))
+  (set-jfield when name(ev) (widen[long] name(n)))
+  (def pf (jnew Float))
   (block
-    (def $cse0 name(java))
-    (def dpi (jnew DriverPropertyInfo "k" "v"))
-    (def $cse2 name(dpi))
-    (set-jfield required var($cse2) true:bool)
-    (def n 42:int)
-    (def ev (jnew Event null 0:int null))
-    (def $cse1 name(n))
-    (def $cse3 name(ev))
-    (set-jfield when var($cse3) (widen[long] var($cse1)))
-    (def pf (jnew Float))
-    (def $cse4 name(pf))
-    (def $cse5 (widen[float] var($cse1)))
-    (set-jfield x var($cse4) var($cse5))
-    (call name(assert) (and (and (get-jfield DriverPropertyInfo.required var($cse2)) (==:bool (get-jfield Event.when var($cse3)) 42:long)) (==:bool var($cse5) 42.0:float))))
+    (def $cse0 (widen[float] name(n)))
+    (set-jfield x name(pf) var($cse0))
+    (call name(assert) (and (and (get-jfield DriverPropertyInfo.required name(dpi)) (==:bool (get-jfield Event.when name(ev)) 42:long)) (==:bool var($cse0) 42.0:float))))
 ```
 
 ## Static Java field non-pure receiver and fallback compound assign with byte RHS
@@ -481,14 +476,11 @@ top-level:
   (def TopErrA (class-ref TopErrA))
   (def TopErrB (class-ref TopErrB))
   (def getS (fn-ref getS))
-  (block
-    (def $cse0 name(getS))
-    (def before (get-jfield SampleHelpers.mutableCounter (call-fn getS)))
-    (def $cse1 name(byte))
-    (set-jfield mutableCounter (call-fn getS) (call var($cse1) 0:int))
-    (def loc 10:int)
-    (set-name loc += (call var($cse1) 5:int))
-    (call name(assert) (and (==:bool (get-jfield SampleHelpers.mutableCounter (call-fn getS)) name(before)) (==:bool name(loc) 15:int))))
+  (def before (get-jfield SampleHelpers.mutableCounter (call-fn getS)))
+  (set-jfield mutableCounter (call-fn getS) (call name(byte) 0:int))
+  (def loc 10:int)
+  (set-name loc += (call name(byte) 5:int))
+  (call name(assert) (and (==:bool (get-jfield SampleHelpers.mutableCounter (call-fn getS)) name(before)) (==:bool name(loc) 15:int)))
 ```
 
 ## External module primitive record field get, array.toString(), and Java interface array set
@@ -524,13 +516,9 @@ top-level:
   (def TopErrB (class-ref TopErrB))
   (def m (call name(import) "ext_rec.ba"))
   (def p (record-new ext_rec$ba$C0$Pt 3:int 4:int))
-  (block
-    (def $cse0 name(p))
-    (def $cse1 name(assert))
-    (call var($cse1) (and (==:bool (get-this-field x) 3:int) (==:bool (get-this-field y) 4:int)))
-    (call var($cse1) (==:bool (array-op TO_STRING (array-new OF 1:int 2:int 3:int)) "[1, 2, 3]"))
-    (def ops (array-new OF (java-sam IntUnaryOperator (fn-ref <anon#0>))))
-    (def $cse2 name(ops))
-    (array-op SET var($cse2) 0:int (java-sam IntUnaryOperator (fn-ref <anon#1>)))
-    (call var($cse1) (==:bool (jcall IntUnaryOperator.applyAsInt (array-op GET var($cse2) 0:int) 5:int) 10:int)))
+  (call name(assert) (and (==:bool (get-this-field x) 3:int) (==:bool (get-this-field y) 4:int)))
+  (call name(assert) (==:bool (array-op TO_STRING (array-new OF 1:int 2:int 3:int)) "[1, 2, 3]"))
+  (def ops (array-new OF (java-sam IntUnaryOperator (fn-ref <anon#0>))))
+  (array-op SET name(ops) 0:int (java-sam IntUnaryOperator (fn-ref <anon#1>)))
+  (call name(assert) (==:bool (jcall IntUnaryOperator.applyAsInt (array-op GET name(ops) 0:int) 5:int) 10:int))
 ```

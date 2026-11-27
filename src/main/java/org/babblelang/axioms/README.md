@@ -12,7 +12,7 @@ Every assumption the analysis, compiler, interpreter, and optimizer make about s
   2. Class words come in fixed order: `exact`, `notnull`, `immutable` (`BIP030` renamed `nullmarked` → `notnull`).
   3. Within `class (...)` and `static (...)`, members are sorted by name (`*` first, then `new`, then alphabetically), then by parameter Java erasures compared as JVM type descriptors.
   4. Effect words come in canonical order (`io`, `...`, `volatile`, `pure`, `mut`, `shared`, `nothrow`, `idempotent`, `commutative`, `associative`, `monotone`, `injective`, `view`, `shallow`, `fresh`, `foldable`, `unique`), where `...` keeps tier-7 bytecode-inferred effects while declaring return/parameter nullability (`BIP030`).
-  5. Every concrete reference type in a Java axiom signature or return type explicitly states `!` (non-null) or `?` (nullable) (unless in a `| null` union); primitives take neither `!` (nullable boxed uses `?`), and type variables distinguish `T` (parametric), `T!` (non-null), and `T?` (nullable).
+  5. Every concrete reference type in a Java axiom signature or return type explicitly states `!` (non-null) or `?` (nullable) (unless in a `| null` union); primitives take neither `!` (nullable boxed uses `?`), and type variables distinguish `T` (parametric), `T!` (non-null), and `T?` (nullable). The element nullness of an array return type is honored too : `(array of T?)!` (`Arrays.copyOf`, `Collection.toArray`, `Stream.toArray`, whose elements may be `null` even in a `class notnull`) types the result's elements nullable, `(array of java.lang.Throwable!)!` non-null (`BIP032` `J3`).
   6. Every `.ba` file is formatter-clean; comments sit directly above an axiom or member.
 
 ## Files

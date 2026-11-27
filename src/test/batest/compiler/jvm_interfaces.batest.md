@@ -504,15 +504,10 @@ top-level:
   (def P1 (iface-ref P1))
   (def P2 (iface-ref P2))
   (def sh (call name(import) "shapes.ba"))
-  (block
-    (def $cse0 name(sh))
-    (def s1 (record-new shapes$ba$C0$Circle 2.0:double))
-    (def t (call (export var($cse0).Tagged) "ok"))
-    (def $cse1 name(s1))
-    (def $cse2 name(assert))
-    (call var($cse2) (and (and (==:bool (call-iface var($cse1).area) 12.0:double) (==:bool (call-iface var($cse1).scale 2.0:double) 24.0:double)) (is var($cse1) shapes$ba$C0$Circle)))
-    (def $cse3 name(t))
-    (call var($cse2) (and (==:bool (call-iface var($cse3).label) "tag:ok") (is var($cse3) shapes$ba$C1$Tagged))))
+  (def s1 (record-new shapes$ba$C0$Circle 2.0:double))
+  (def t (call (export name(sh).Tagged) "ok"))
+  (call name(assert) (and (and (==:bool (call-iface name(s1).area) 12.0:double) (==:bool (call-iface name(s1).scale 2.0:double) 24.0:double)) (is name(s1) shapes$ba$C0$Circle)))
+  (call name(assert) (and (==:bool (call-iface name(t).label) "tag:ok") (is name(t) shapes$ba$C1$Tagged)))
 ```
 
 ## Case 14

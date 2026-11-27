@@ -231,16 +231,11 @@ top-level:
 ;; hir -O2 top-level
 top-level:
   (def Vec (class-ref Vec))
-  (block
-    (def $cse0 name(Vec))
-    (def v (call var($cse0) 10:int))
-    (def c (call var($cse0) 5:int))
-    (set-name c += 3:int)
-    (def $cse1 name(v))
-    (def $cse2 name(assert))
-    (def $cse3 (get-this-field n))
-    (call var($cse2) (and (and (and (==:bool (get-this-field n) -10:int) true:bool) (==:bool (get-this-field n) 12:int)) (==:bool (get-this-field n) 7:int)))
-    (call var($cse2) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int))))
+  (def v (call name(Vec) 10:int))
+  (def c (call name(Vec) 5:int))
+  (set-name c += 3:int)
+  (call name(assert) (and (and (and (==:bool (get-this-field n) -10:int) true:bool) (==:bool (get-this-field n) 12:int)) (==:bool (get-this-field n) 7:int)))
+  (call name(assert) (and (and (==:bool (get-this-field n) 40:int) (==:bool (get-this-field n) 5:int)) (==:bool (get-this-field n) 8:int)))
 ```
 
 ## Non-tail recurse in reference-only function and class method

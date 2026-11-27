@@ -176,11 +176,10 @@ fn run () -> double {io}
 ;; hir -O2 fn=run
 fn run () -> double {io}
   (def log (jnew StringBuilder))
-  (def lm name(m))
   (block
     (export (block
         (jcall StringBuilder.append var(log) "M")
-        var(lm)).ExtVec)
+        name(m)).ExtVec)
     5.0:double)
   (call name(assert) (==:bool (jcall StringBuilder.toString var(log)) "M"))
   7.0:double
@@ -223,14 +222,12 @@ fn run () -> int {pure}
 ```hir
 ;; hir -O2 fn=run
 fn run () -> int {pure}
-  (block
-    (def $cse0 name(Empty))
-    (def e (record-new Empty))
-    (def f
-      (block
-        (def $this (record-new Empty))
-        (get-this-field one)))
-    (if (==:bool var(e) (record-new Empty)) (call var(f)) 0:int))
+  (def e (record-new Empty))
+  (def f
+    (block
+      (def $this (record-new Empty))
+      (get-this-field one)))
+  (if (==:bool var(e) (record-new Empty)) (call var(f)) 0:int)
 ```
 
 ## Inlined method-value projection on fast record disqualifies SROA and borrow unboxing
@@ -270,12 +267,10 @@ fn run () -> int {pure unique}
 ```hir
 ;; hir -O2 fn=run
 fn run () -> int {pure unique}
-  (block
-    (def $cse0 name(Box))
-    (def v (record-new Box 5:int))
-    (+:int (+:int (call (get-this-field inc)) (call (block
-            (def $this (record-new Box 3:int))
-            (get-this-field inc)))) (call-fn useB$unboxed var(v) 2:int)))
+  (def v (record-new Box 5:int))
+  (+:int (+:int (call (get-this-field inc)) (call (block
+          (def $this (record-new Box 3:int))
+          (get-this-field inc)))) (call-fn useB$unboxed var(v) 2:int))
 ```
 
 ## Unboxed borrow call rewrite inside a function alongside non-unboxed and non-qualifying calls
@@ -313,12 +308,9 @@ fn run (a:obj, b:obj) -> double {io}
 ;; hir -O2 fn=run
 fn run (a:obj, b:obj) -> double {io}
   (def lg (jnew StringBuilder))
-  (block
-    (def $cse0 name(heavy))
-    (def $cse1 name(Vec3))
-    (def r (+:double (+:double (+:double (call-fn id (call-fn heavy$unboxed (get-this-field x) (get-this-field y) (get-this-field z) (get-this-field x) (get-this-field y) (get-this-field z))) (call-fn heavy var(b) var(a))) (call-fn heavy (record-new Vec3 3.0:double 1.0:double 2.0:double) var(b))) (call-fn heavy (record-new Vec3 1.0:double 2.0:double 3.0:double) var(b))))
-    (call name(assert) (==:bool (jcall StringBuilder.toString var(lg)) "U"))
-    var(r))
+  (def r (+:double (+:double (+:double (call-fn id (call-fn heavy$unboxed (get-this-field x) (get-this-field y) (get-this-field z) (get-this-field x) (get-this-field y) (get-this-field z))) (call-fn heavy var(b) var(a))) (call-fn heavy (record-new Vec3 3.0:double 1.0:double 2.0:double) var(b))) (call-fn heavy (record-new Vec3 1.0:double 2.0:double 3.0:double) var(b))))
+  (call name(assert) (==:bool (jcall StringBuilder.toString var(lg)) "U"))
+  var(r)
 ```
 
 ## Unboxed borrow call bailouts for captured cell and conditionally initialized record locals
@@ -360,15 +352,12 @@ fn run (fl:bool) -> double {nothrow}
 ```hir
 ;; hir -O2 fn=run
 fn run (fl:bool) -> double {nothrow}
-  (block
-    (def $cse0 name(Vec3))
-    (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
-    (def b (record-new Vec3 1.0:double 0.0:double 0.0:double))
-    (def cap (fn-ref cap))
-    (def $cse1 name(heavy))
-    (def r (+:double (+:double (call-fn heavy var(a) var(b)) (call-fn cap)) 0.0:double))
-    (def c (record-new Vec3 2.0:double 0.0:double 0.0:double))
-    (if var(fl) (+:double var(r) (call-fn heavy var(c) var(b))) var(r)))
+  (def a (record-new Vec3 1.0:double 2.0:double 3.0:double))
+  (def b (record-new Vec3 1.0:double 0.0:double 0.0:double))
+  (def cap (fn-ref cap))
+  (def r (+:double (+:double (call-fn heavy var(a) var(b)) (call-fn cap)) 0.0:double))
+  (def c (record-new Vec3 2.0:double 0.0:double 0.0:double))
+  (if var(fl) (+:double var(r) (call-fn heavy var(c) var(b))) var(r))
 ```
 
 ## Unboxed borrow param disqualifiers : captured cell param and reassigned param
@@ -486,13 +475,14 @@ top-level:
   (def apply (fn-ref apply))
   (def wide (fn-ref wide))
   (def v (record-new Vec3 1.0:double 2.0:double 3.0:double))
-  (block
-    (def $cse0 name(v))
-    (def $cse1 (get-this-field x))
-    (def $cse2 (get-this-field y))
-    (def $cse3 (get-this-field z))
-    (def r (call-fn <anon#0> var($cse1) var($cse2) var($cse3) var($cse1) var($cse2) var($cse3)))
-    (call name(assert) (and (==:bool name(r) 3.0:double) (==:bool (call-fn wide var($cse0) var($cse0) var($cse0)) 6.0:double))))
+  (def r
+    (block
+      (def a name(v))
+      (def $cse0 (get-this-field x))
+      (def $cse1 (get-this-field y))
+      (def $cse2 (get-this-field z))
+      (call-fn <anon#0> var($cse0) var($cse1) var($cse2) var($cse0) var($cse1) var($cse2))))
+  (call name(assert) (and (==:bool name(r) 3.0:double) (==:bool (call-fn wide name(v) name(v) name(v)) 6.0:double)))
 ```
 
 ## Unboxed body rewriting with uninitialized local, move, anonymous catch, and non-flattened param

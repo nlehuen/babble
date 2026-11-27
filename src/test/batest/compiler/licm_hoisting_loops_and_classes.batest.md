@@ -253,11 +253,9 @@ fn Box.run (n:int, b:byte) -> double {pure unique}
   (while (<:bool var(i) var(n))
     (block
       (def l1 (widen[short] var(b)))
-      (def $cse0 name(int))
-      (def l2 (+:int (convert[int] (call name(short) 4:int)) (call var($cse0) var(b))))
-      (def l3 (widen[long] (+:int (call var($cse0) 5:int) 1:int)))
-      (def $cse1 name(double))
-      (set a += (+:double (+:double (+:double (call var($cse1) var(l1)) (call var($cse1) var(l2))) (call var($cse1) var(l3))) (call var($cse1) 4.0:float)))
+      (def l2 (+:int (convert[int] (call name(short) 4:int)) (call name(int) var(b))))
+      (def l3 (widen[long] (+:int (call name(int) 5:int) 1:int)))
+      (set a += (+:double (+:double (+:double (call name(double) var(l1)) (call name(double) var(l2))) (call name(double) var(l3))) (call name(double) 4.0:float)))
       (set i += 1:int)))
   var(a)
 ```

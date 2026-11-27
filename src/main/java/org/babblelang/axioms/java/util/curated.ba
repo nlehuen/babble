@@ -29,10 +29,10 @@ axiom java.util.Arrays: class (
     def copyOf: fn ... (original: (array of float)!, newLength: int): (array of float)!
     def copyOf: fn ... (original: (array of int)!, newLength: int): (array of int)!
     def copyOf: fn ... (original: (array of long)!, newLength: int): (array of long)!
-    def copyOf: fn of T ... (original: (array of T)!, newLength: int): (array of T)!
+    def copyOf: fn of T ... (original: (array of T?)!, newLength: int): (array of T?)!
     def copyOf: fn ... (original: (array of short)!, newLength: int): (array of short)!
     def copyOf: fn ... (original: (array of bool)!, newLength: int): (array of bool)!
-    def copyOfRange: fn of T ... (original: (array of T)!, from: int, to: int): (array of T)!
+    def copyOfRange: fn of T ... (original: (array of T?)!, from: int, to: int): (array of T?)!
     def stream: fn ... (arr: (array of double)!): java.util.stream.DoubleStream!
     def stream: fn ... (arr: (array of int)!): java.util.stream.IntStream!
     def stream: fn ... (arr: (array of long)!): java.util.stream.LongStream!
@@ -62,6 +62,11 @@ axiom java.util.Collection of E: class notnull (
     def removeAll: fn mut shared shallow (c: (java.util.Collection of any?)!): bool
     def retainAll: fn mut shared shallow (c: (java.util.Collection of any?)!): bool
     def size: fn nothrow (): int
+    ;; Elements may be null (a collection of nullable elements, or the null written after the last
+    ;; element when the argument array is longer)
+    def toArray: fn ... (): (array of any?)!
+    def toArray: fn of T ... (generator: (java.util.function.IntFunction of ((array of T?)!))!): (array of T?)!
+    def toArray: fn of T ... (a: (array of T?)!): (array of T?)!
     def toString: fn (): string!
 )
 

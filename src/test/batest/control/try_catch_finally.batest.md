@@ -384,7 +384,7 @@ def info = try (
     )
 ) catch e: java.io.IOException then (
     def sup = e.getSuppressed()
-    "" + e.getMessage() + "|" + sup.size() + "|" + sup.get(0)!.getMessage()
+    "" + e.getMessage() + "|" + sup.size() + "|" + sup.get(0).getMessage()
 )
 assert(info == "primary|1|secondary")
 ```
@@ -471,7 +471,7 @@ def info = try (
         throw java.lang.IllegalStateException("from-fin")
     )
 ) catch e: java.io.IOException then (
-    "" + e.getMessage() + "|" + e.getSuppressed().get(0)!.getMessage()
+    "" + e.getMessage() + "|" + e.getSuppressed().get(0).getMessage()
 )
 assert(info == "from-catch|from-fin")
 ```
