@@ -52,22 +52,22 @@ def srgb = fn (r: int, g: int, b: int): Vec3 -> (
     Vec3(rf * rf, gf * gf, bf * bf)
 )
 
-def colOutline: Vec3 = srgb(60, 18, 80)
+def colOutline: Vec3 = srgb(50, 10, 72)
 def colBody: Vec3 = srgb(172, 68, 143)
 def colBodyShadow: Vec3 = srgb(132, 46, 117)
-def colBodyDeep: Vec3 = srgb(114, 35, 102)
+def colBodyDeep: Vec3 = srgb(104, 36, 106)
 def colFrill: Vec3 = srgb(213, 145, 230)
 def colFrillShadow: Vec3 = srgb(196, 126, 218)
 def colFrillRim: Vec3 = srgb(242, 196, 255)
-def colBelly: Vec3 = srgb(229, 176, 245)
-def colBellyShadow: Vec3 = srgb(189, 133, 209)
+def colBelly: Vec3 = srgb(229, 176, 246)
+def colBellyShadow: Vec3 = srgb(190, 132, 208)
 def colHorn: Vec3 = srgb(255, 232, 174)
 def colHornShadow: Vec3 = srgb(240, 194, 120)
 def colCream: Vec3 = srgb(246, 222, 212)
 def colCreamShadow: Vec3 = srgb(224, 194, 186)
-def colCheek: Vec3 = srgb(236, 104, 116)
-def colPacifier: Vec3 = srgb(176, 242, 56)
-def colPacifierShadow: Vec3 = srgb(134, 210, 30)
+def colCheek: Vec3 = srgb(234, 103, 112)
+def colPacifier: Vec3 = srgb(180, 248, 58)
+def colPacifierShadow: Vec3 = srgb(142, 214, 42)
 def colPacifierDark: Vec3 = srgb(104, 182, 24)
 def colWhite: Vec3 = Vec3(1.0, 1.0, 1.0)
 def colEyeDark: Vec3 = srgb(54, 24, 90)
@@ -342,8 +342,10 @@ def SculptedLobe = class (
     def fillMat: Material,
     def inkMat: Material,
     def border: double,
-    def rimWidth: double,
-    def rimMat: Material
+    def rimWidth: double = 0.0,
+    def rimMat: Material = FlatMaterial(colOutline),
+    def openTop: double = 10.0,
+    def openRight: double = 10.0
 ) implements Hittable (
     private def invRz: double = 1.0 / this.rz
     private def invScale: double = 1.0 / this.scale
@@ -375,6 +377,26 @@ def SculptedLobe = class (
             k += 1
         )
         Math.max(0.02, sum)
+    )
+
+    private def evalDR = fn (dx: double, dy: double, rad: double): double -> (
+        if rad < 0.000001 then (return 0.0)
+        def c1: double = dx / rad
+        def s1: double = dy / rad
+        var dSum: double = 0.0
+        var ck: double = c1
+        var sk: double = s1
+        var k: int = 1
+        while k <= this.kCount then (
+            def idx: int = 2 * k - 1
+            dSum += k * (-this.coeffs.get(idx) * sk + this.coeffs.get(idx + 1) * ck)
+            def nextC: double = ck * c1 - sk * s1
+            def nextS: double = sk * c1 + ck * s1
+            ck = nextC
+            sk = nextS
+            k += 1
+        )
+        dSum
     )
 
     private def evalF = fn (p: Vec3): double -> (
@@ -455,15 +477,19 @@ def SculptedLobe = class (
         def rad: double = Math.sqrt(dx * dx + dy * dy)
         def R: double = this.evalR(dx, dy, rad)
 
+        def dR: double = this.evalDR(dx, dy, rad)
+        def ratio: double = dR / R
+        def dPerp: double = (R - rad) / Math.sqrt(1.0 + ratio * ratio)
+
         ;; Smooth 3D surface normal via gradient of f(x, y, z)
         def nx: double = (dx * this.invScale) / (R * R)
         def ny: double = (dy * this.invScale) / (R * R)
         def nz: double = (p.z - this.center.z) * this.invRz * this.invRz
         def outward: Vec3 = Vec3(nx, ny, nz).unit()
 
-        def mat: Material = if this.border > 0.0 and rad > R - this.border then (
+        def mat: Material = if this.border > 0.0 and dy < this.openTop and dx < this.openRight and dPerp < this.border then (
             this.inkMat
-        ) else if this.rimWidth > 0.0 and rad > R - this.border - this.rimWidth then (
+        ) else if this.rimWidth > 0.0 and dPerp < this.border + this.rimWidth then (
             this.rimMat
         ) else (
             this.fillMat
@@ -487,19 +513,25 @@ def sc = fn (r: double, z: double): double -> (
 
 def lightBody: Vec3 = Vec3(0.20, 0.45, 0.87)
 def lightHead: Vec3 = Vec3(0.05, 0.72, 0.69)
-def lightBelly: Vec3 = Vec3(0.00, 0.78, 0.62)
-def lightHorn: Vec3 = Vec3(-0.45, 0.55, 0.70)
+def lightBelly: Vec3 = Vec3(0.05, -0.92, 0.39)
+def lightLowerBelly: Vec3 = Vec3(0.00, 0.78, 0.62)
+def lightBackLeftLeg: Vec3 = Vec3(-0.68, 0.25, 0.69)
+def lightFrontRightLeg: Vec3 = Vec3(0.68, 0.25, 0.69)
+def lightHorn: Vec3 = Vec3(-0.55, 0.50, 0.67)
 def lightFrill: Vec3 = Vec3(-0.15, 0.40, 0.90)
 
 def matBody = ToonMaterial(colBody, srgb(154, 58, 132), lightBody, 0.05, -0.15, 0.55)
-def matBodyShade = ToonMaterial(colBodyShadow, colBodyDeep, lightBody, 0.05, -0.25, 0.55)
+def matBackLeftLeg = ToonMaterial(colBody, colBodyShadow, lightBackLeftLeg, 0.04, 0.22, 0.58)
+def matFrontRightLeg = ToonMaterial(colBody, colBodyShadow, lightFrontRightLeg, 0.04, 0.22, 0.58)
 def matHead = ToonMaterial(colBody, colBodyShadow, lightHead, 0.04, 0.25, 0.58)
 def matBodyDark = ToonMaterial(colBodyDeep, colBodyDeep, lightBody, 0.08)
 def matFrill = ToonMaterial(colFrill, colFrillShadow, lightFrill, 0.04)
 def matFrillRim = FlatMaterial(colFrillRim)
 def matFrillCrease = FlatMaterial(srgb(156, 86, 178))
-def matBelly = ToonMaterial(colBelly, colBellyShadow, lightBelly, 0.03, 0.28, 0.58)
-def matHorn = ToonMaterial(colHorn, colHornShadow, lightHorn, 0.05)
+def matSoftCrease = FlatMaterial(srgb(96, 30, 102))
+def matBelly = ToonMaterial(colBelly, colBellyShadow, lightBelly, 0.03, 0.08, 0.42)
+def matLowerBelly = ToonMaterial(colBelly, colBellyShadow, lightLowerBelly, 0.03, 0.22, 0.62)
+def matHorn = ToonMaterial(colHorn, colHornShadow, lightHorn, 0.04, 0.22, 0.62)
 def matCream = ToonMaterial(colCream, colCreamShadow, lightHorn, 0.05)
 def matPacifier = ToonMaterial(colPacifier, colPacifierShadow, lightHorn, 0.05)
 def matPacifierDark = FlatMaterial(colPacifierDark)
@@ -571,214 +603,219 @@ def addBezier = fn io (
     null
 )
 
-;; Flat-soled rounded 3D cartoon leg with optional cast-shadow inner side (shadeSide: -1 left, 0 none, +1 right).
-def addFlatLeg = fn io (
-    xTopL: double, xTopR: double, yTop: double,
-    xBotL: double, xBotR: double, soleY: double,
-    z: double, rC: double, shared mat: Material, border: double, zBack: double = 0.05,
-    shadeSide: int = 0
-): null -> (
-    def yBot: double = soleY + rC
-    def xTL: double = xTopL + rC
-    def xTR: double = xTopR - rC
-    def xBL: double = xBotL + rC
-    def xBR: double = xBotR - rC
-    def cols: int = 5
-    var ci: int = 0
-    while ci < cols then (
-        def f: double = ci / double(cols - 1)
-        def xt: double = xTL + (xTR - xTL) * f
-        def xb: double = xBL + (xBR - xBL) * f
-        def useShade: bool = (shadeSide < 0 and ci == 0) or (shadeSide > 0 and ci == cols - 1)
-        def colMat: Material = if useShade then (matBodyShade) else (mat)
-        addCone(xt, yTop, z, xb, yBot, z, rC, rC, colMat, border, zBack)
-        ci += 1
-    )
-    addCone(xBL, yBot, z, xBR, yBot, z, rC, rC, mat, border, zBack)
-    null
-)
-
 def B: double = 0.023
 
-;; --- 1. Tail (fitted to exact 256px tail top/seam/bottom profile) ---
+;; --- 1. Smooth Tapered 3D Tail (upward-sweeping Bezier upper purple + pastel lavender underside) ---
 addBezier(
-    -0.42, -0.14, -0.20, 0.160,
-    -0.555, -0.342, -0.27, 0.088,
-    -0.772, -0.302, -0.33, 0.036,
+    -0.388, -0.099, -0.15, 0.161,
+    -0.592, -0.398, -0.22, 0.075,
+    -0.746, -0.316, -0.27, 0.047,
     6, matBody, B, 0.05
 )
-;; Pastel lavender underside hugging bottom curve of tail
+
+;; Smooth pastel lavender underside hugging bottom curve of tail
 addBezier(
-    -0.45, -0.365, -0.18, 0.060,
-    -0.60, -0.415, -0.25, 0.040,
-    -0.752, -0.355, -0.31, 0.020,
-    5, matBelly, B * 0.9, 0.04
+    -0.498, -0.378, -0.18, 0.054,
+    -0.586, -0.424, -0.23, 0.034,
+    -0.703, -0.388, -0.28, 0.016,
+    5, matLowerBelly, 0.020, 0.04
 )
 
 ;; --- 2. Torso & Smooth Curved Back ---
 addBezier(
-    -0.12, 0.070, -0.13, 0.224,
-    -0.340, 0.092, -0.14, 0.168,
-    -0.465, -0.21, -0.16, 0.126,
+    -0.129, 0.068, -0.13, 0.222,
+    -0.320, 0.096, -0.14, 0.165,
+    -0.440, -0.165, -0.16, 0.130,
     6, matBody, B, 0.06
 )
 addEll(-0.07, -0.14, -0.12, 0.38, 0.325, 0.14, 14.0, matBody, B, 0.06)
 
-;; --- 3. Four Stubby Legs + Flat-Soled Feet + Ivory Toes ---
-;; Back-right leg (darker shaded foot tucked flush behind left edge of front-left leg)
-addCone(-0.134, -0.38, -0.24, -0.134, -0.562, -0.24, 0.072, 0.058, matBodyDark, B * 0.95, 0.04)
+;; --- 3. Four Sculpted 3D Legs + Flush Dome Toes ---
+;; Back-right leg (dark shaded foot tucked flush behind left edge of front-left leg)
+def backRightLegCoeffs: array of double = (array of double).of(
+    0.07211,
+    -0.00106, -0.00795,
+    -0.03061, 0.00192,
+    -0.00829, 0.00487,
+    0.00632, -0.00496
+)
+world.add(SculptedLobe(pt(-0.155, -0.515, -0.08), 0.06, sc(1.0, -0.08), backRightLegCoeffs, 0.16, matBodyDark, matInk, 0.021, 0.0, matInk, 0.08))
 
-;; Back-left leg (inner right side shaded by belly/front leg, sole at y = -0.662)
-addFlatLeg(-0.480, -0.250, -0.36, -0.495, -0.242, -0.662, -0.02, 0.050, matBody, B, 0.05, 1)
-world.add(Ellipsoid.rotatedZ(pt(-0.355, -0.28, 0.00), sc(0.142, 0.00), sc(0.140, 0.00), 0.10, 8.0, matBody))
-;; Crisp tail-to-rump fold crease behind back-left thigh
+;; Back-left leg (smooth silhouette, inner right flank shaded; sits in front of lower belly)
+def backLeftLegCoeffs: array of double = (array of double).of(
+    0.15850,
+    -0.01615, -0.01669,
+    -0.03714, -0.02285,
+    0.02669, -0.00387,
+    -0.00475, 0.02004,
+    -0.00513, -0.00039,
+    0.01390, -0.00451,
+    0.00169, 0.00481,
+    -0.00164, -0.00248
+)
+world.add(SculptedLobe(pt(-0.365, -0.475, 0.08), 0.08, sc(1.0, 0.08), backLeftLegCoeffs, 0.30, matBackLeftLeg, matInk, 0.023, 0.0, matInk, 0.14))
+;; Crisp tail-to-rump fold crease & inner hip crease
+addBezier(-0.518, -0.10, 0.18, 0.009, -0.516, -0.23, 0.18, 0.009, -0.506, -0.35, 0.18, 0.009, 3, matInk, 0.0, 0.0)
+addBezier(-0.410, -0.14, 0.18, 0.009, -0.404, -0.25, 0.18, 0.009, -0.376, -0.35, 0.18, 0.009, 3, matInk, 0.0, 0.0)
+;; 3 flush dome toes along flat sole (exact 320px centroids)
+addEll(-0.401, -0.626, 0.17, 0.034, 0.033, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(-0.337, -0.626, 0.18, 0.038, 0.036, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(-0.284, -0.625, 0.17, 0.033, 0.033, 0.028, 0.0, matCream, 0.016, 0.022)
+
+;; Front-right leg (smooth K=6 full silhouette behind lavender chest + inner left flank shadow)
+def frontRightLegCoeffs: array of double = (array of double).of(
+    0.17512,
+    0.00074, -0.02255,
+    -0.06071, 0.03172,
+    -0.03235, -0.02639,
+    0.01010, -0.00565,
+    0.00466, 0.01265,
+    0.00342, 0.00378
+)
+world.add(SculptedLobe(pt(0.433, -0.467, 0.02), 0.07, sc(1.0, 0.02), frontRightLegCoeffs, 0.31, matFrontRightLeg, matInk, 0.023, 0.0, matInk, 0.24))
+addEll(0.399, -0.652, 0.10, 0.035, 0.034, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(0.469, -0.650, 0.11, 0.038, 0.036, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(0.528, -0.637, 0.10, 0.033, 0.033, 0.028, 0.0, matCream, 0.016, 0.022)
+
+;; Smooth 3D anatomical pastel lavender chest (0.27 px RMS, tucked naturally behind head, shoulder & front-left leg)
+addEll(0.185, -0.282, 0.12, 0.325, 0.235, 0.065, 25.0, matBelly, 0.023, 0.035)
+;; Anatomical front-left shoulder bridge connecting torso smoothly to front-left leg in front of chest
+world.add(Ellipsoid.rotatedZ(pt(-0.02, -0.19, 0.16), sc(0.18, 0.16), sc(0.17, 0.16), 0.065, 12.0, matBody))
+;; Crisp shoulder-to-chest ink contour separating right side of front-left shoulder from lavender chest
+addBezier(0.178, -0.215, 0.28, 0.010, 0.158, -0.300, 0.28, 0.010, 0.132, -0.400, 0.28, 0.010, 3, matInk, 0.0, 0.0)
+
+;; Smooth sweeping curved lower belly crescent (0.13 px RMS, tucked behind back-left & front-left legs)
 addBezier(
-    -0.506, -0.10, 0.10, 0.009,
-    -0.506, -0.23, 0.10, 0.009,
-    -0.500, -0.35, 0.10, 0.009,
-    3, matInk, 0.0, 0.0
-)
-;; Curved inner hip crease
-addBezier(
-    -0.410, -0.14, 0.11, 0.009,
-    -0.404, -0.25, 0.11, 0.009,
-    -0.376, -0.35, 0.11, 0.009,
-    3, matInk, 0.0, 0.0
-)
-;; 3 flush dome toes along flat sole
-addEll(-0.422, -0.625, 0.07, 0.035, 0.034, 0.030, 0.0, matCream, 0.016, 0.025)
-addEll(-0.358, -0.628, 0.08, 0.038, 0.036, 0.030, 0.0, matCream, 0.016, 0.025)
-addEll(-0.296, -0.625, 0.07, 0.033, 0.033, 0.030, 0.0, matCream, 0.016, 0.025)
-
-;; Front-right leg (inner left side shaded by belly, rises up under pacifier, sole at y = -0.688)
-addFlatLeg(0.295, 0.532, -0.20, 0.280, 0.542, -0.688, 0.02, 0.050, matBody, B, 0.05, -1)
-addEll(0.402, -0.650, 0.12, 0.035, 0.034, 0.030, 0.0, matCream, 0.016, 0.025)
-addEll(0.468, -0.652, 0.13, 0.038, 0.036, 0.030, 0.0, matCream, 0.016, 0.025)
-addEll(0.522, -0.643, 0.12, 0.033, 0.033, 0.030, 0.0, matCream, 0.016, 0.025)
-
-;; Sculpted 3D pastel lavender chest (with bottom cel shadow) & lower belly crescent
-def bellyCoeffs: array of double = (array of double).of(
-    0.16687,
-    0.01302, -0.01370,
-    0.00316, 0.02428,
-    0.02849, 0.00415,
-    -0.00539, 0.00725,
-    0.00001, 0.00815
-)
-world.add(SculptedLobe(pt(0.27, -0.33, 0.10), 0.07, sc(1.0, 0.10), bellyCoeffs, 0.25, matBelly, matInk, 0.023, 0.0, matInk))
-;; Sweeping curved lower belly crescent
-addBezier(
-    -0.372, -0.295, 0.04, 0.022,
-    -0.242, -0.415, 0.05, 0.062,
-    -0.088, -0.472, 0.05, 0.056,
-    5, matBelly, 0.021, 0.03
+    -0.361, -0.298, 0.03, 0.014,
+    -0.290, -0.405, 0.04, 0.053,
+    -0.126, -0.434, 0.04, 0.073,
+    5, matLowerBelly, 0.021, 0.03
 )
 
-;; Front-left leg (tapered at top, flared at flat sole y = -0.730, x in [-0.120, +0.178])
-addFlatLeg(-0.142, 0.130, -0.30, -0.120, 0.178, -0.730, 0.22, 0.052, matBody, B, 0.05, 0)
-world.add(Ellipsoid.rotatedZ(pt(-0.01, -0.24, 0.19), sc(0.150, 0.19), sc(0.135, 0.19), 0.06, 12.0, matBody))
-addBezier(
-    -0.144, -0.27, 0.32, 0.009,
-    -0.145, -0.36, 0.32, 0.009,
-    -0.136, -0.46, 0.32, 0.009,
-    2, matInk, 0.0, 0.0
+;; Front-left leg (smooth foreground leg)
+def frontLeftLegCoeffs: array of double = (array of double).of(
+    0.21150,
+    -0.01508, 0.01839,
+    -0.06797, -0.01352,
+    -0.01272, -0.00037,
+    -0.01398, 0.00190,
+    0.00297, -0.00658,
+    0.01774, 0.00519,
+    0.00288, 0.00480,
+    -0.00176, -0.00241
 )
-;; 3 flush dome toes aligned to REF x = 0.00, +0.072, +0.136
-addEll(0.002, -0.690, 0.32, 0.036, 0.036, 0.030, 0.0, matCream, 0.016, 0.025)
-addEll(0.074, -0.694, 0.33, 0.039, 0.038, 0.030, 0.0, matCream, 0.016, 0.025)
-addEll(0.138, -0.684, 0.32, 0.034, 0.034, 0.030, 0.0, matCream, 0.016, 0.025)
+world.add(SculptedLobe(pt(0.005, -0.495, 0.20), 0.10, sc(1.0, 0.20), frontLeftLegCoeffs, 0.34, matBody, matInk, 0.023, 0.0, matInk, 0.19))
+;; Curved shoulder crease on left side of front-left leg
+addBezier(-0.144, -0.27, 0.32, 0.009, -0.145, -0.36, 0.32, 0.009, -0.136, -0.46, 0.32, 0.009, 2, matInk, 0.0, 0.0)
+;; 3 flush dome toes aligned to exact 320px centroids
+addEll(0.001, -0.695, 0.31, 0.036, 0.035, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(0.072, -0.694, 0.32, 0.040, 0.038, 0.028, 0.0, matCream, 0.016, 0.022)
+addEll(0.136, -0.680, 0.31, 0.034, 0.034, 0.028, 0.0, matCream, 0.016, 0.022)
 
-;; --- 4. 3D Sculpted Scalloped Lavender Frill (Multi-seed BFS K=12 + lower-left corner tuck) ---
+;; --- 4. 3D Sculpted Scalloped Lavender Frill (Full multi-seed BFS K=12, 0.23 px RMS) ---
 def frillCoeffs: array of double = (array of double).of(
-    0.40349,
-    -0.00927, 0.07677,
-    0.06227, 0.01294,
-    0.00692, -0.01419,
-    0.00599, 0.00059,
-    0.00869, -0.00539,
-    -0.00387, -0.00015,
-    0.00559, -0.00437,
-    0.00172, -0.00341,
-    -0.00095, 0.00452,
-    -0.00253, -0.00961,
-    0.00315, -0.00172,
-    0.00230, -0.00407
+    0.43578,
+    0.00969, 0.01561,
+    0.02936, -0.00796,
+    -0.00715, -0.00313,
+    0.00708, 0.00412,
+    0.00572, -0.00608,
+    -0.00439, 0.00286,
+    0.00604, -0.00299,
+    0.00052, -0.00338,
+    -0.00100, 0.00591,
+    -0.00169, -0.00923,
+    0.00151, -0.00097,
+    0.00270, -0.00299
 )
-world.add(SculptedLobe(pt(0.28, 0.25, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.55, matFrill, matInk, 0.023, 0.024, matFrillRim))
-;; Rounded lower-left frill lobe extension matching exact corner at (-0.14, +0.02)
-addEll(-0.072, 0.082, 0.065, 0.092, 0.078, 0.045, 8.0, matFrill, 0.022, 0.03)
+world.add(SculptedLobe(pt(0.28, 0.25, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.52, matFrill, matInk, 0.023, 0.024, matFrillRim))
+addEll(-0.082, 0.068, 0.066, 0.064, 0.058, 0.042, 0.0, matFrill, 0.022, 0.03)
 
-;; 9 Flush oval cream osteoderm scallops aligned to exact 256px measured centroids
-addEll(-0.156, 0.051, 0.055, 0.035, 0.028, 0.035, 72.0, matCream, 0.017, 0.025)
-addEll(-0.188, 0.223, 0.055, 0.039, 0.030, 0.035, 85.0, matCream, 0.017, 0.025)
-addEll(-0.168, 0.406, 0.055, 0.041, 0.032, 0.035, 68.0, matCream, 0.017, 0.025)
-addEll(-0.031, 0.605, 0.055, 0.043, 0.030, 0.035, 36.0, matCream, 0.017, 0.025)
-addEll(0.234, 0.715, 0.055, 0.045, 0.032, 0.035, -2.0, matCream, 0.018, 0.025)
-addEll(0.492, 0.660, 0.055, 0.043, 0.030, 0.035, -34.0, matCream, 0.017, 0.025)
-addEll(0.637, 0.531, 0.055, 0.041, 0.030, 0.035, -52.0, matCream, 0.017, 0.025)
-addEll(0.738, 0.379, 0.055, 0.039, 0.030, 0.035, -72.0, matCream, 0.017, 0.025)
-addEll(0.758, 0.156, 0.055, 0.034, 0.026, 0.035, -80.0, matCream, 0.017, 0.025)
+;; 9 Flush oval cream osteoderm scallops aligned to exact 320px measured centroids
+addEll(-0.155, 0.042, 0.055, 0.034, 0.027, 0.035, 72.0, matCream, 0.017, 0.025)
+addEll(-0.184, 0.221, 0.055, 0.039, 0.030, 0.035, 85.0, matCream, 0.017, 0.025)
+addEll(-0.166, 0.404, 0.055, 0.041, 0.031, 0.035, 68.0, matCream, 0.017, 0.025)
+addEll(-0.033, 0.596, 0.055, 0.042, 0.030, 0.035, 36.0, matCream, 0.017, 0.025)
+addEll(0.242, 0.707, 0.055, 0.044, 0.031, 0.035, -2.0, matCream, 0.018, 0.025)
+addEll(0.496, 0.654, 0.055, 0.042, 0.029, 0.035, -34.0, matCream, 0.017, 0.025)
+addEll(0.647, 0.524, 0.055, 0.040, 0.029, 0.035, -52.0, matCream, 0.017, 0.025)
+addEll(0.737, 0.377, 0.055, 0.038, 0.029, 0.035, -72.0, matCream, 0.017, 0.025)
+addEll(0.748, 0.162, 0.055, 0.034, 0.026, 0.035, -76.0, matCream, 0.017, 0.025)
 
 ;; Curved radial fold creases aligned to exact X-ray reference ink lines
 addBezier(-0.10, 0.166, 0.14, 0.008, -0.02, 0.165, 0.14, 0.008, 0.04, 0.166, 0.14, 0.007, 2, matInk, 0.0, 0.0)
 addBezier(-0.065, 0.362, 0.14, 0.008, 0.005, 0.324, 0.14, 0.008, 0.075, 0.286, 0.14, 0.007, 2, matInk, 0.0, 0.0)
-addBezier(0.145, 0.525, 0.14, 0.008, 0.168, 0.475, 0.14, 0.008, 0.185, 0.430, 0.14, 0.007, 2, matFrillCrease, 0.0, 0.0)
-addBezier(0.38, 0.54, 0.13, 0.008, 0.38, 0.47, 0.13, 0.008, 0.38, 0.40, 0.13, 0.007, 2, matFrillCrease, 0.0, 0.0)
-addBezier(0.62, 0.33, 0.13, 0.008, 0.57, 0.30, 0.13, 0.008, 0.52, 0.275, 0.13, 0.007, 2, matFrillCrease, 0.0, 0.0)
+addBezier(0.135, 0.560, 0.14, 0.008, 0.165, 0.490, 0.14, 0.008, 0.195, 0.430, 0.14, 0.007, 2, matSoftCrease, 0.0, 0.0)
+addBezier(0.402, 0.575, 0.13, 0.008, 0.390, 0.485, 0.13, 0.008, 0.382, 0.405, 0.13, 0.007, 2, matSoftCrease, 0.0, 0.0)
+addBezier(0.648, 0.355, 0.13, 0.008, 0.590, 0.322, 0.13, 0.008, 0.530, 0.290, 0.13, 0.007, 2, matSoftCrease, 0.0, 0.0)
 
-;; --- 5. Smooth 3D Sculpted Pear-Shaped Head & Snout (BFS K=6, directional chin shadow) ---
+;; --- 5. Smooth 3D Sculpted Pear-Shaped Head & Snout (BFS K=7, exact forehead bridge) ---
 def headCoeffs: array of double = (array of double).of(
-    0.31291,
-    -0.02349, 0.00624,
-    0.01752, 0.00321,
-    0.00819, -0.01125,
-    0.01289, -0.01628,
-    0.01050, -0.00661,
-    -0.01534, -0.01137
+    0.32691,
+    -0.00854, -0.00060,
+    0.00648, -0.01054,
+    -0.00478, -0.01992,
+    0.00096, -0.01066,
+    0.00853, -0.00113,
+    -0.00010, -0.00901,
+    0.00367, 0.00045
 )
-world.add(SculptedLobe(pt(0.37, 0.08, 0.25), 0.14, sc(1.0, 0.25), headCoeffs, 0.40, matHead, matInk, 0.022, 0.0, matInk))
-;; Curved right-snout fold line separating muzzle from plump right cheek
-addBezier(0.630, 0.025, 0.45, 0.009, 0.642, -0.040, 0.45, 0.009, 0.628, -0.112, 0.45, 0.009, 3, matInk, 0.0, 0.0)
+world.add(SculptedLobe(pt(0.37, 0.08, 0.25), 0.14, sc(1.0, 0.25), headCoeffs, 0.40, matHead, matInk, 0.022))
+addBezier(0.630, 0.032, 0.45, 0.009, 0.648, -0.035, 0.45, 0.009, 0.644, -0.108, 0.45, 0.009, 3, matInk, 0.0, 0.0)
 
-;; --- 6. Three Smooth Curved Cream-Yellow Horns ---
-addBezier(
-    0.186, 0.318, 0.36, 0.075,
-    0.232, 0.398, 0.38, 0.055,
-    0.232, 0.484, 0.39, 0.026,
-    4, matHorn, 0.020, 0.035
+;; --- 6. Three Sculpted 3D Cream-Yellow Horns (plump bases + crisp uniform dark ink) ---
+def leftHornCoeffs: array of double = (array of double).of(
+    0.08650,
+    -0.00603, -0.00549,
+    -0.01938, 0.01834,
+    -0.00115, -0.01042,
+    0.00684, -0.00324,
+    0.00650, 0.00434,
+    -0.00261, 0.00314
 )
-addBezier(
-    0.514, 0.358, 0.35, 0.068,
-    0.562, 0.426, 0.37, 0.052,
-    0.568, 0.498, 0.38, 0.026,
-    4, matHorn, 0.020, 0.035
+world.add(SculptedLobe(pt(0.222, 0.378, 0.36), 0.07, sc(1.0, 0.36), leftHornCoeffs, 0.17, matHorn, matInk, 0.020))
+
+def rightHornCoeffs: array of double = (array of double).of(
+    0.08050,
+    -0.01162, -0.00682,
+    -0.01256, 0.02124,
+    -0.00260, -0.00880,
+    0.00061, -0.00576,
+    0.00504, 0.00007,
+    -0.00174, 0.00627
 )
-addBezier(
-    0.532, 0.060, 0.46, 0.064,
-    0.564, 0.112, 0.49, 0.048,
-    0.574, 0.166, 0.50, 0.025,
-    3, matHorn, 0.019, 0.035
+world.add(SculptedLobe(pt(0.542, 0.408, 0.35), 0.07, sc(1.0, 0.35), rightHornCoeffs, 0.16, matHorn, matInk, 0.020))
+
+def noseHornCoeffs: array of double = (array of double).of(
+    0.07050,
+    -0.00306, -0.01220,
+    -0.00956, 0.01138,
+    -0.00290, -0.00512,
+    0.00197, -0.00001,
+    0.00089, -0.00090,
+    -0.00012, 0.00200
 )
+world.add(SculptedLobe(pt(0.550, 0.100, 0.48), 0.06, sc(1.0, 0.48), noseHornCoeffs, 0.13, matHorn, matInk, 0.019))
 
 ;; --- 7. Eyes, Eyebrows, Cheeks, Nose Bridge, Nostrils, Smile ---
-;; Left eye
-world.add(Ellipsoid.rotatedZ(pt(0.294, 0.134, 0.42), sc(0.054, 0.42), sc(0.064, 0.42), 0.03, 12.0, matInk))
-world.add(Ellipsoid.rotatedZ(pt(0.294, 0.134, 0.44), sc(0.045, 0.44), sc(0.054, 0.44), 0.025, 12.0, matWhite))
-world.add(Ellipsoid.rotatedZ(pt(0.289, 0.124, 0.465), sc(0.037, 0.465), sc(0.044, 0.465), 0.020, 12.0, matEyeDark))
-world.add(Sphere(pt(0.305, 0.146, 0.488), sc(0.014, 0.488), matWhite))
+;; Left eye (large warm dark iris shifted lower-left, crisp white top-right crescent & glint)
+world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.42), sc(0.052, 0.42), sc(0.064, 0.42), 0.03, -6.0, matInk))
+world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.44), sc(0.043, 0.44), sc(0.055, 0.44), 0.025, -6.0, matWhite))
+world.add(Ellipsoid.rotatedZ(pt(0.285, 0.118, 0.465), sc(0.035, 0.465), sc(0.043, 0.465), 0.020, -6.0, matEyeDark))
+world.add(Sphere(pt(0.300, 0.142, 0.488), sc(0.014, 0.488), matWhite))
 
-;; Right eye (tucked behind nose horn)
-world.add(Ellipsoid.rotatedZ(pt(0.514, 0.172, 0.40), sc(0.044, 0.40), sc(0.056, 0.40), 0.028, -4.0, matInk))
-world.add(Ellipsoid.rotatedZ(pt(0.514, 0.172, 0.42), sc(0.035, 0.42), sc(0.047, 0.42), 0.024, -4.0, matWhite))
-world.add(Ellipsoid.rotatedZ(pt(0.510, 0.162, 0.442), sc(0.027, 0.442), sc(0.036, 0.442), 0.018, -4.0, matEyeDark))
-world.add(Sphere(pt(0.520, 0.181, 0.465), sc(0.011, 0.465), matWhite))
+;; Right eye (tucked cleanly behind nose horn)
+world.add(Ellipsoid.rotatedZ(pt(0.506, 0.156, 0.40), sc(0.042, 0.40), sc(0.055, 0.40), 0.028, -4.0, matInk))
+world.add(Ellipsoid.rotatedZ(pt(0.506, 0.156, 0.42), sc(0.033, 0.42), sc(0.046, 0.42), 0.024, -4.0, matWhite))
+world.add(Ellipsoid.rotatedZ(pt(0.499, 0.146, 0.442), sc(0.026, 0.442), sc(0.036, 0.442), 0.018, -4.0, matEyeDark))
+world.add(Sphere(pt(0.512, 0.168, 0.465), sc(0.011, 0.465), matWhite))
 
-;; Nose bridge fold line between left eye and nose horn
-addBezier(0.402, 0.105, 0.44, 0.008, 0.442, 0.122, 0.44, 0.008, 0.480, 0.120, 0.44, 0.008, 2, matInk, 0.0, 0.0)
+;; Soft arched nose bridge fold line between left eye and nose horn
+addBezier(0.395, 0.112, 0.44, 0.008, 0.440, 0.132, 0.44, 0.008, 0.482, 0.130, 0.44, 0.008, 2, matSoftCrease, 0.0, 0.0)
 
 ;; Arched eyebrows
-addBezier(0.242, 0.232, 0.44, 0.011, 0.282, 0.252, 0.45, 0.011, 0.314, 0.242, 0.45, 0.010, 2, matInk, 0.0, 0.0)
-addBezier(0.488, 0.268, 0.42, 0.010, 0.514, 0.280, 0.42, 0.010, 0.540, 0.274, 0.42, 0.009, 2, matInk, 0.0, 0.0)
+addBezier(0.240, 0.232, 0.44, 0.012, 0.282, 0.256, 0.45, 0.012, 0.316, 0.248, 0.45, 0.011, 2, matInk, 0.0, 0.0)
+addBezier(0.486, 0.268, 0.42, 0.011, 0.514, 0.282, 0.42, 0.011, 0.542, 0.274, 0.42, 0.010, 2, matInk, 0.0, 0.0)
 
 ;; Rosy coral-pink cheeks
 world.add(Ellipsoid.rotatedZ(pt(0.232, 0.034, 0.46), sc(0.052, 0.46), sc(0.026, 0.46), 0.02, -4.0, matCheek))
@@ -792,20 +829,22 @@ world.add(Ellipsoid.rotatedZ(pt(0.585, 0.004, 0.47), sc(0.013, 0.47), sc(0.010, 
 addBezier(0.292, -0.052, 0.48, 0.010, 0.354, -0.108, 0.49, 0.010, 0.442, -0.124, 0.50, 0.010, 3, matInk, 0.0, 0.0)
 addBezier(0.268, -0.062, 0.48, 0.009, 0.292, -0.052, 0.48, 0.009, 0.312, -0.032, 0.48, 0.008, 2, matInk, 0.0, 0.0)
 
-;; --- 8. Bright Lime-Green Pacifier (bold cartoon outlines on shield, knob & circular ring) ---
-addEll(0.470, -0.106, 0.52, 0.079, 0.070, 0.032, -18.0, matPacifier, 0.020, 0.035)
-addEll(0.578, -0.096, 0.52, 0.073, 0.066, 0.032, 18.0, matPacifier, 0.020, 0.035)
-;; Shaded inner guard behind the hanging ring
-addEll(0.550, -0.178, 0.54, 0.052, 0.045, 0.025, 0.0, matPacifierDark, 0.017, 0.025)
+;; --- 8. Bright Lime-Green Pacifier (exact 160px aligned kidney shield, knob, inner baseplate & circular ring) ---
+addEll(0.490, -0.118, 0.52, 0.072, 0.076, 0.032, -14.0, matPacifier, 0.020, 0.035)
+addEll(0.598, -0.105, 0.52, 0.068, 0.072, 0.032, 14.0, matPacifier, 0.020, 0.035)
+addEll(0.544, -0.124, 0.525, 0.056, 0.042, 0.030, 0.0, matPacifier, 0.019, 0.035)
+;; Shaded inner guard & neck/jaw backdrop behind the hanging ring (eliminates white hole)
+addEll(0.564, -0.175, 0.54, 0.040, 0.030, 0.024, 0.0, matPacifierDark, 0.016, 0.025)
+world.add(Ellipsoid.rotatedZ(pt(0.564, -0.205, 0.50), sc(0.044, 0.50), sc(0.030, 0.50), 0.02, 0.0, matBodyDark))
 ;; Upright center knob
-addEll(0.548, -0.136, 0.57, 0.046, 0.050, 0.032, 0.0, matPacifier, 0.018, 0.03)
+addEll(0.564, -0.140, 0.57, 0.037, 0.040, 0.030, 0.0, matPacifier, 0.016, 0.03)
 
-;; Circular pacifier ring (16 segments centered at (+0.550, -0.196), r=0.056)
-def ringCx: double = 0.550
-def ringCy: double = -0.196
+;; Circular pacifier ring (16 segments centered at (+0.564, -0.195), r=0.056)
+def ringCx: double = 0.564
+def ringCy: double = -0.195
 def ringZ: double = 0.58
 def ringR: double = 0.056
-def ringTube: double = 0.026
+def ringTube: double = 0.025
 def ringSegs: int = 16
 var ri: int = 0
 while ri < ringSegs then (
@@ -814,7 +853,7 @@ while ri < ringSegs then (
     addCone(
         ringCx + ringR * Math.cos(a0), ringCy + ringR * Math.sin(a0), ringZ,
         ringCx + ringR * Math.cos(a1), ringCy + ringR * Math.sin(a1), ringZ,
-        ringTube, ringTube, matPacifier, 0.015, 0.03
+        ringTube, ringTube, matPacifier, 0.0155, 0.03
     )
     ri += 1
 )
