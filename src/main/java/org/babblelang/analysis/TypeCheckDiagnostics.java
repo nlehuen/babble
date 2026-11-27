@@ -230,6 +230,16 @@ final class TypeCheckDiagnostics {
             } finally {
                 checker.env = saved;
             }
+        } else if (tree instanceof BabbleParser.BlockContext block
+                && block.getParent() instanceof BabbleParser.InitExpressionContext initCtx
+                && initCtx.initBlock == block) {
+            TypeEnv saved = checker.env;
+            checker.env = saved.enterCallable();
+            try {
+                checker.stmt(block);
+            } finally {
+                checker.env = saved;
+            }
         } else if (tree instanceof BabbleParser.ExpressionContext expr
                 && expr.getParent() instanceof BabbleParser.FileContext) {
             checker.stmt(expr);

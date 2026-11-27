@@ -163,7 +163,9 @@ final class EffectBodyWalker {
         this.forwardedParams =
                 owner instanceof BabbleParser.FunctionLiteralContext fn
                         ? EffectModifiers.resolveForwardedParamIndices(fn)
-                        : Set.of();
+                        : owner instanceof BabbleParser.InitExpressionContext init
+                                ? EffectModifiers.resolveForwardedParamIndices(init)
+                                : Set.of();
         this.trackSymbolic =
                 !emitDiagnostics
                         && owner instanceof BabbleParser.FunctionLiteralContext
@@ -473,6 +475,9 @@ final class EffectBodyWalker {
             return;
         }
         for (BabbleParser.ExpressionContext stmt : block.expression()) {
+            if (stmt instanceof BabbleParser.InitExpressionContext) {
+                continue;
+            }
             if (stmt instanceof BabbleParser.DefExpressionContext def
                     && def.value instanceof BabbleParser.FunctionLiteralContext) {
                 // Method declarations don't execute during construction.
@@ -526,38 +531,7 @@ final class EffectBodyWalker {
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.ObjectExpressionContext obj) {
-            // Inline `object (...)` executes its createBlock right here under enclosing
-            // constraints!
-            boolean prevConstructing = constructingSelf;
-            constructingSelf = true;
-            boolean objUnique = true;
-            try {
-                for (BabbleParser.ExpressionContext s : obj.createBlock.expression()) {
-                    if (s instanceof BabbleParser.DefExpressionContext def) {
-                        if (def.value instanceof BabbleParser.FunctionLiteralContext) {
-                            continue;
-                        }
-                        Reachability.Origin init =
-                                def.value != null ? eval(def.value) : Reachability.Origin.IMMUTABLE;
-                        Type defType = ec.checker.typeOfDeclarationForEffects(def);
-                        if (!isUnattachedUniqueOrImmutable(init, defType)) {
-                            objUnique = false;
-                            if (init.unique && init.uniqueOwner != null) {
-                                demoteUniqueOwner(init.uniqueOwner, Reachability.Origin.IMMUTABLE);
-                            }
-                        }
-                        markStoredOrigin(init, "field " + def.name.getText(), def);
-                    } else {
-                        evalDiscarded(s);
-                    }
-                }
-            } finally {
-                constructingSelf = prevConstructing;
-            }
-            boolean imm = ec.javaResolver.isDeeplyImmutable(ec.checker.rawTypeOf(obj));
-            return objUnique
-                    ? Reachability.Origin.ofUnique(obj, null, imm)
-                    : Reachability.Origin.ofExternal(obj, imm);
+            return InitEffectAnalyzer.evalObjectExpression(ec, this, obj);
         }
         if (ctx instanceof BabbleParser.DefExpressionContext def) {
             return evalDef(def);
@@ -1212,12 +1186,18 @@ final class EffectBodyWalker {
         if (borrowParams[p]) {
             borrowParams[p] = false;
         }
-        if (!inferMut && owner instanceof BabbleParser.FunctionLiteralContext) {
+        if (!inferMut
+                && (owner instanceof BabbleParser.FunctionLiteralContext
+                        || owner instanceof BabbleParser.InitExpressionContext)) {
             EffectChecker.ParamMods declared = ec.modifiers.parseParamMods(params.get(p), false);
             if (!declared.shared() && !declared.unique()) {
                 String pName = ScopeAnalysis.paramId(params.get(p)).getText();
-                if (EffectModifiers.inCallingClause(
-                        (BabbleParser.FunctionLiteralContext) owner, pName)) {
+                boolean inCalling =
+                        owner instanceof BabbleParser.FunctionLiteralContext fnOwner
+                                ? EffectModifiers.inCallingClause(fnOwner, pName)
+                                : EffectModifiers.inCallingClause(
+                                        (BabbleParser.InitExpressionContext) owner, pName);
+                if (inCalling) {
                     // calling forwards f's effects only while the call runs: an escaping f
                     // must leave the clause and be shared, whatever calls it later.
                     reportOnce(

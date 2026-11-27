@@ -363,6 +363,81 @@ final class OverloadCallResolver {
     // ---------------------------------------------------------------- overload set calls
     // (BIP021-D11)
 
+    Type overloadedConstructorCall(
+            TypeNode node,
+            List<Type.TypeVar> classVars,
+            List<Type> explicitTypeArgs,
+            List<BabbleParser.CallParameterContext> arguments,
+            BabbleParser.CallContext ctx,
+            Type expected,
+            boolean delegating) {
+        int ctorCount = checker.constructorCount(node);
+        List<Type.Function> alts = new ArrayList<>(ctorCount);
+        for (int k = 0; k < ctorCount; k++) {
+            alts.add(checker.constructorFunctionType(node, k, classVars, explicitTypeArgs));
+        }
+        Type.Overloaded set = new Type.Overloaded(alts);
+        String callName = delegating ? "this" : node.name;
+        int n = arguments.size();
+        String[] argNames = new String[n];
+        boolean[] untypedLambda = new boolean[n];
+        Type[] argTypes = new Type[n];
+        boolean anyError = false;
+        for (int i = 0; i < n; i++) {
+            BabbleParser.CallParameterContext cp = arguments.get(i);
+            argNames[i] = ScopeAnalysis.callParamName(cp);
+            if (!ScopeAnalysis.isSpread(cp)
+                    && cp.expression() instanceof BabbleParser.FunctionLiteralContext lit
+                    && hasUntypedParam(lit)) {
+                untypedLambda[i] = true;
+            } else {
+                argTypes[i] = checker.synth(cp.expression());
+                if (argTypes[i] == Type.ERROR) {
+                    anyError = true;
+                }
+            }
+        }
+        if (anyError) {
+            synthUntypedLambdas(arguments, untypedLambda);
+            return Type.ERROR;
+        }
+        SingleResolution res =
+                resolveOverloadSingle(set, arguments, argNames, argTypes, untypedLambda);
+        if (res.kind() == ResolutionKind.UNIQUE) {
+            int chosen = res.winner().index();
+            solver.checkConstructorVisibility(node, chosen, ctx);
+            checker.recordConstructorCall(ctx, chosen, delegating);
+            return solver.bindSingleConstructor(
+                    node, chosen, classVars, explicitTypeArgs, arguments, ctx, expected);
+        }
+        if (res.kind() == ResolutionKind.AMBIGUOUS_LAMBDA) {
+            checker.warn("Missing type : " + res.untypedParam().ID().getText(), res.untypedParam());
+            return Type.ERROR;
+        }
+        if (res.kind() == ResolutionKind.AMBIGUOUS_SPREAD) {
+            checker.warn(
+                    "Ambiguous call to "
+                            + callName
+                            + " for ("
+                            + formatOverloadArgs(arguments, argTypes, untypedLambda)
+                            + ") : candidates are "
+                            + OverloadSolver.formatCandidates(
+                                    res.tied().stream().map(OverloadCandidate::alt).toList()),
+                    ctx);
+            return Type.ERROR;
+        }
+        synthUntypedLambdas(arguments, untypedLambda);
+        checker.warn(
+                "No applicable overload of "
+                        + callName
+                        + " for ("
+                        + formatOverloadArgs(arguments, argTypes, untypedLambda)
+                        + ") : candidates are "
+                        + OverloadSolver.formatCandidates(set.alternatives()),
+                ctx);
+        return Type.ERROR;
+    }
+
     Type overloadedCall(
             Type.Overloaded set,
             List<BabbleParser.CallParameterContext> arguments,

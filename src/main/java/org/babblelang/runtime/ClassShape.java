@@ -28,6 +28,26 @@ public final class ClassShape {
         INTERFACE
     }
 
+    /**
+     * Static description of one constructor ({@code BIP040}) : primary header constructor or
+     * explicit/secondary {@code init} constructor.
+     */
+    public record ConstructorShape(
+            boolean isPrimary,
+            boolean isPrivate,
+            String[] parameters,
+            int[] parameterMembers,
+            int requiredParameters,
+            int keywordOnlyStart,
+            int restIndex,
+            String[] paramTypes) {
+        public ConstructorShape {
+            parameters = parameters != null ? parameters : new String[0];
+            parameterMembers = parameterMembers != null ? parameterMembers : new int[0];
+            paramTypes = paramTypes != null ? paramTypes : new String[parameters.length];
+        }
+    }
+
     /** A member initialised by a function literal : a method, or an interface default. */
     public static final int METHOD = 1;
 
@@ -49,6 +69,7 @@ public final class ClassShape {
     private final String id;
     private final String[] memberTypes;
     private final String[] staticTypes;
+    private final ConstructorShape[] constructors;
     private final Map<String, Integer> memberIndex = new HashMap<>();
     private final Map<String, Integer> staticIndex = new HashMap<>();
 
@@ -130,6 +151,38 @@ public final class ClassShape {
             String id,
             String[] memberTypes,
             String[] staticTypes) {
+        this(
+                kind,
+                name,
+                members,
+                flags,
+                parameters,
+                parameterMembers,
+                requiredParameters,
+                keywordOnlyStart,
+                statics,
+                staticFlags,
+                id,
+                memberTypes,
+                staticTypes,
+                null);
+    }
+
+    public ClassShape(
+            Kind kind,
+            String name,
+            String[] members,
+            int[] flags,
+            String[] parameters,
+            int[] parameterMembers,
+            int requiredParameters,
+            int keywordOnlyStart,
+            String[] statics,
+            int[] staticFlags,
+            String id,
+            String[] memberTypes,
+            String[] staticTypes,
+            ConstructorShape[] constructors) {
         this.id = id;
         this.memberTypes = memberTypes;
         this.staticTypes = staticTypes;
@@ -143,12 +196,38 @@ public final class ClassShape {
         this.keywordOnlyStart = keywordOnlyStart;
         this.statics = statics;
         this.staticFlags = staticFlags;
+        this.constructors =
+                constructors != null && constructors.length > 0
+                        ? constructors
+                        : new ConstructorShape[] {
+                            new ConstructorShape(
+                                    true,
+                                    false,
+                                    parameters,
+                                    parameterMembers,
+                                    requiredParameters,
+                                    keywordOnlyStart,
+                                    -1,
+                                    new String[parameters.length])
+                        };
         for (int i = 0; i < members.length; i++) {
             memberIndex.put(members[i], i);
         }
         for (int i = 0; i < statics.length; i++) {
             staticIndex.put(statics[i], i);
         }
+    }
+
+    public ConstructorShape[] constructors() {
+        return constructors;
+    }
+
+    public int constructorCount() {
+        return constructors.length;
+    }
+
+    public ConstructorShape constructor(int index) {
+        return constructors[index];
     }
 
     public Kind kind() {
@@ -281,7 +360,79 @@ public final class ClassShape {
                         + typeList(memberTypes)
                         + ";"
                         + typeList(staticTypes);
-        return keywordOnlyStart < parameters.length ? base + ";" + keywordOnlyStart : base;
+        boolean nonTrivialCtors =
+                constructors.length > 1
+                        || (constructors.length == 1
+                                && (!constructors[0].isPrimary()
+                                        || constructors[0].isPrivate()
+                                        || constructors[0].restIndex() >= 0
+                                        || hasNonNull(constructors[0].paramTypes())));
+        if (!nonTrivialCtors) {
+            return keywordOnlyStart < parameters.length ? base + ";" + keywordOnlyStart : base;
+        }
+        return base + ";" + keywordOnlyStart + ";" + encodeConstructors(constructors);
+    }
+
+    private static boolean hasNonNull(String[] arr) {
+        for (String s : arr) {
+            if (s != null) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String encodeConstructors(ConstructorShape[] ctors) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < ctors.length; i++) {
+            if (i > 0) {
+                sb.append('|');
+            }
+            ConstructorShape c = ctors[i];
+            int flags = (c.isPrimary() ? 1 : 0) | (c.isPrivate() ? 2 : 0);
+            sb.append(flags)
+                    .append('~')
+                    .append(c.requiredParameters())
+                    .append('~')
+                    .append(c.keywordOnlyStart())
+                    .append('~')
+                    .append(c.restIndex())
+                    .append('~')
+                    .append(pairs(c.parameters(), c.parameterMembers()))
+                    .append('~')
+                    .append(typeList(c.paramTypes()));
+        }
+        return sb.toString();
+    }
+
+    private static ConstructorShape[] decodeConstructors(String encoded) {
+        if (encoded == null || encoded.isEmpty()) {
+            return null;
+        }
+        String[] entries = encoded.split("\\|", -1);
+        ConstructorShape[] result = new ConstructorShape[entries.length];
+        for (int i = 0; i < entries.length; i++) {
+            String[] f = entries[i].split("~", -1);
+            int flags = Integer.parseInt(f[0]);
+            int req = Integer.parseInt(f[1]);
+            int kw = Integer.parseInt(f[2]);
+            int rest = Integer.parseInt(f[3]);
+            List<String> pNames = new ArrayList<>();
+            List<Integer> pMembers = new ArrayList<>();
+            unpair(f[4], pNames, pMembers);
+            String[] pTypes = decodeTypes(f[5], pNames.size());
+            result[i] =
+                    new ConstructorShape(
+                            (flags & 1) != 0,
+                            (flags & 2) != 0,
+                            pNames.toArray(new String[0]),
+                            ints(pMembers),
+                            req,
+                            kw,
+                            rest,
+                            pTypes);
+        }
+        return result;
     }
 
     private static String typeList(String[] types) {
@@ -330,6 +481,7 @@ public final class ClassShape {
         unpair(parts[4], parameters, parameterMembers);
         unpair(parts[5], statics, staticFlags);
         int kwStart = parts.length > 9 ? Integer.parseInt(parts[9]) : parameters.size();
+        ConstructorShape[] ctors = parts.length > 10 ? decodeConstructors(parts[10]) : null;
         return new ClassShape(
                 Kind.valueOf(parts[0]),
                 parts[1],
@@ -343,7 +495,8 @@ public final class ClassShape {
                 ints(staticFlags),
                 parts[6],
                 decodeTypes(parts[7], members.size()),
-                decodeTypes(parts[8], statics.size()));
+                decodeTypes(parts[8], statics.size()),
+                ctors);
     }
 
     private static void unpair(String encoded, List<String> names, List<Integer> values) {

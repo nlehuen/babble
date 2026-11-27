@@ -63,6 +63,10 @@ public final class CallMetadata {
             new IdentityHashMap<>();
     private final Set<BabbleParser.CallContext> selfTailCalls =
             Collections.newSetFromMap(new IdentityHashMap<>());
+    private final Map<BabbleParser.CallContext, Integer> constructorIndices =
+            new IdentityHashMap<>();
+    private final Map<BabbleParser.CallContext, Boolean> delegatingThisCalls =
+            new IdentityHashMap<>();
 
     CallMetadata() {}
 
@@ -192,5 +196,28 @@ public final class CallMetadata {
      */
     public boolean isSelfTailCall(BabbleParser.CallContext call) {
         return selfTailCalls.contains(call);
+    }
+
+    void setConstructorIndex(BabbleParser.CallContext call, int index, boolean delegating) {
+        constructorIndices.put(call, index);
+        if (delegating) {
+            delegatingThisCalls.put(call, Boolean.TRUE);
+        }
+    }
+
+    /**
+     * Resolved constructor overload index ({@code 0..N-1}) for a Babble constructor call, or {@code
+     * -1}.
+     */
+    public int constructorIndex(BabbleParser.CallContext call) {
+        Integer idx = constructorIndices.get(call);
+        return idx != null ? idx : -1;
+    }
+
+    /**
+     * Whether {@code call} is a {@code this(...)} constructor delegation call inside {@code init}.
+     */
+    public boolean isDelegatingThisCall(BabbleParser.CallContext call) {
+        return Boolean.TRUE.equals(delegatingThisCalls.get(call));
     }
 }

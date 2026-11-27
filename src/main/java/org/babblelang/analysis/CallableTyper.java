@@ -55,6 +55,16 @@ final class CallableTyper {
         if (owner == null || !checker.inFile(owner) || checker.escapingTargets.contains(owner)) {
             return false;
         }
+        if (owner instanceof BabbleParser.InitExpressionContext initCtx) {
+            ScopeNode initScope = checker.scopeOf(initCtx);
+            if (initScope != null
+                    && initScope.type != null
+                    && initScope.type.constructors.size() == 1
+                    && initScope.type.ctx instanceof BabbleParser.ClassExpressionContext cls) {
+                return isInferrableCallable(cls);
+            }
+            return false;
+        }
         if (owner instanceof BabbleParser.ClassExpressionContext cls) {
             TypeNode node = checker.pass.typeNodes.get(cls);
             if (node == null || checker.exportedTypeNodes.contains(node)) {

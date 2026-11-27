@@ -30,6 +30,7 @@ final class CallSolver {
     private final CollectionCallChecker collections;
     private final JavaCallSolver javaCalls;
     private final OverloadCallResolver overloads;
+    private final ConstructorCallSolver constructors;
 
     /** The Java method or constructor each call resolved to (for effects and lowering). */
     private final Map<ParserRuleContext, Method> resolvedMethods =
@@ -49,6 +50,7 @@ final class CallSolver {
         this.collections = new CollectionCallChecker(checker);
         this.javaCalls = new JavaCallSolver(checker, this);
         this.overloads = new OverloadCallResolver(checker, this);
+        this.constructors = new ConstructorCallSolver(checker, this, this.overloads);
     }
 
     /** Forgets what a walk resolved, before the next one. */
@@ -188,52 +190,8 @@ final class CallSolver {
             return instantiateCapturedCallings(result, function.parameters(), arguments);
         }
         if (callee instanceof Type.ClassValue value && !value.node().isInterface()) {
-            TypeNode node = value.node();
-            List<Type.TypeVar> classVars = checker.annotator().typeVarsOf(node);
-            List<Type.Parameter> parameters = checker.constructorParameters(node);
-            List<? extends ParserRuleContext> decls = checker.parameterDecls(node);
-            if (!value.typeArguments().isEmpty()) {
-                Map<Type.TypeVar, Type> env = new HashMap<>();
-                for (int i = 0; i < value.typeArguments().size(); i++) {
-                    env.put(classVars.get(i), value.typeArguments().get(i));
-                }
-                if (parameters != null) {
-                    List<Type.Parameter> substitutedParams = new ArrayList<>(parameters.size());
-                    for (Type.Parameter p : parameters) {
-                        substitutedParams.add(
-                                p.withType(checker.algebra().substitute(p.type(), env)));
-                    }
-                    bind(substitutedParams, decls, arguments, ctx, false);
-                } else if (!arguments.isEmpty()) {
-                    checker.warn(
-                            "Too many parameters : 0 declared, " + arguments.size() + " given",
-                            ctx);
-                    synthAll(arguments);
-                }
-                return new Type.Instance(node, value.typeArguments());
-            }
-            if (classVars.isEmpty()) {
-                if (parameters != null) {
-                    bind(parameters, decls, arguments, ctx, false);
-                }
-                return new Type.Instance(node);
-            }
-            if (parameters == null) {
-                parameters = List.of();
-            }
-            Type patternReturn = new Type.Instance(node, List.copyOf(classVars));
-            return genericBabbleCall(
-                    classVars,
-                    parameters,
-                    decls,
-                    patternReturn,
-                    false,
-                    Set.of(),
-                    node,
-                    arguments,
-                    ctx,
-                    node.name,
-                    expected);
+            return callClassConstructor(
+                    value.node(), value.typeArguments(), arguments, ctx, expected, false);
         }
         if (callee instanceof Type.JavaClassValue value) {
             Class<?> java = value.type();
@@ -354,6 +312,41 @@ final class CallSolver {
         }
         checker.warn(ctx.expression().getText() + " is not callable", ctx);
         return Type.ERROR;
+    }
+
+    Type callClassConstructor(
+            TypeNode node,
+            List<Type> explicitTypeArgs,
+            List<BabbleParser.CallParameterContext> arguments,
+            BabbleParser.CallContext ctx,
+            Type expected,
+            boolean delegating) {
+        return constructors.callClassConstructor(
+                node, explicitTypeArgs, arguments, ctx, expected, delegating);
+    }
+
+    Type callDelegatingConstructor(
+            TypeNode node,
+            List<Type.TypeVar> classVars,
+            BabbleParser.CallContext ctx,
+            Type expected) {
+        return constructors.callDelegatingConstructor(node, classVars, ctx, expected);
+    }
+
+    void checkConstructorVisibility(TypeNode node, int ctorIndex, BabbleParser.CallContext ctx) {
+        constructors.checkConstructorVisibility(node, ctorIndex, ctx);
+    }
+
+    Type bindSingleConstructor(
+            TypeNode node,
+            int ctorIndex,
+            List<Type.TypeVar> classVars,
+            List<Type> explicitTypeArgs,
+            List<BabbleParser.CallParameterContext> arguments,
+            BabbleParser.CallContext ctx,
+            Type expected) {
+        return constructors.bindSingleConstructor(
+                node, ctorIndex, classVars, explicitTypeArgs, arguments, ctx, expected);
     }
 
     /**

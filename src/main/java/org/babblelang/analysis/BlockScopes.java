@@ -39,7 +39,8 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         NONE,
         FUNCTION,
         DEFAULT,
-        CLASS_BODY
+        CLASS_BODY,
+        INIT_BODY
     }
 
     record PendingSuper(
@@ -212,7 +213,19 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
 
     private ScopeNode inScope(
             ScopeNode.Kind kind, ParserRuleContext owner, TypeNode type, Runnable body) {
-        ScopeNode scope = new ScopeNode(kind, scopes.peek(), owner, type);
+        return inScopeWithParent(kind, scopes.peek(), owner, type, body);
+    }
+
+    private ScopeNode inScopeWithParent(
+            ScopeNode.Kind kind,
+            ScopeNode parent,
+            ParserRuleContext owner,
+            TypeNode type,
+            Runnable body) {
+        ScopeNode scope = new ScopeNode(kind, parent, owner, type);
+        if (kind == ScopeNode.Kind.INIT_BODY || kind == ScopeNode.Kind.INIT_BLOCK) {
+            scope.memberOf = type;
+        }
         scopeNodes.put(owner, scope);
         scopes.push(scope);
         try {
@@ -529,7 +542,40 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                         typeName(ctx, "class"),
                         ctx.typeList());
         boolean isValue = value;
+        ScopeNode outerScope = current();
 
+        List<BabbleParser.DefExpressionContext> memberDefs = new ArrayList<>();
+        BabbleParser.InitExpressionContext paramlessInit = null;
+        List<BabbleParser.InitExpressionContext> paramInits = new ArrayList<>();
+        for (BabbleParser.ExpressionContext stmt : ctx.classBlock.expression()) {
+            if (stmt instanceof BabbleParser.DefExpressionContext def) {
+                memberDefs.add(def);
+            } else if (stmt instanceof BabbleParser.InitExpressionContext initCtx) {
+                if (initCtx.fnParameters() == null) {
+                    if (paramlessInit != null) {
+                        throw error("Duplicate init initializer", initCtx);
+                    }
+                    paramlessInit = initCtx;
+                } else {
+                    paramInits.add(initCtx);
+                }
+            } else {
+                throw error(
+                        "Executable statements in a "
+                                + (isValue ? "record" : "class")
+                                + " body must be inside an init block",
+                        stmt);
+            }
+        }
+        boolean hasHeaderParams =
+                ctx.classParameters() != null && !ctx.classParameters().classParam().isEmpty();
+        if (!hasHeaderParams && !isValue && paramlessInit != null && !paramInits.isEmpty()) {
+            throw error(
+                    "Cannot mix parameterless init block with explicit init constructors on an empty class header",
+                    paramlessInit);
+        }
+
+        final BabbleParser.InitExpressionContext primaryInitBlock = paramlessInit;
         inReturnTarget(
                 ReturnTarget.CLASS_BODY,
                 () -> {
@@ -613,8 +659,58 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                                         }
                                     }
                                 }
-                                visitChildren(ctx.classBlock);
+                                for (BabbleParser.DefExpressionContext def : memberDefs) {
+                                    visit(def);
+                                }
+                                if (hasHeaderParams || isValue || paramInits.isEmpty()) {
+                                    type.constructors.add(
+                                            new TypeNode.Constructor(
+                                                    0,
+                                                    true,
+                                                    primaryInitBlock != null
+                                                            && primaryInitBlock.PRIVATE() != null,
+                                                    type.parameters,
+                                                    type.parameterMembers,
+                                                    type.requiredParameters,
+                                                    type.keywordOnlyStart >= 0
+                                                            ? type.keywordOnlyStart
+                                                            : type.parameters.size(),
+                                                    -1,
+                                                    ctx,
+                                                    primaryInitBlock,
+                                                    ScopeAnalysis.paramsOf(ctx)));
+                                }
+                                if (primaryInitBlock != null) {
+                                    inReturnTarget(
+                                            ReturnTarget.INIT_BODY,
+                                            () -> {
+                                                ScopeNode initScope =
+                                                        inScope(
+                                                                ScopeNode.Kind.INIT_BLOCK,
+                                                                primaryInitBlock.initBlock,
+                                                                type,
+                                                                () ->
+                                                                        visitChildren(
+                                                                                primaryInitBlock
+                                                                                        .initBlock));
+                                                scopeNodes.put(primaryInitBlock, initScope);
+                                            });
+                                }
                             });
+                    for (BabbleParser.InitExpressionContext initCtx : paramInits) {
+                        visitParameterizedInit(initCtx, type, outerScope);
+                    }
+                    if (type.constructors.size() == 1 && !type.constructors.get(0).isPrimary) {
+                        TypeNode.Constructor only = type.constructors.get(0);
+                        type.parameters.clear();
+                        type.parameters.addAll(only.parameters);
+                        type.parameterMembers.clear();
+                        for (int i = 0; i < only.parameters.size(); i++) {
+                            type.parameterMembers.add(-1);
+                        }
+                        type.requiredParameters = only.requiredParameters;
+                        type.keywordOnlyStart = only.keywordOnlyStart;
+                    }
                     if (ctx.staticBlock != null) {
                         inScope(
                                 ScopeNode.Kind.STATIC_BODY,
@@ -623,6 +719,13 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                                 () -> visitChildren(ctx.staticBlock));
                     }
                 });
+
+        if (!type.uninitializedFields.isEmpty() && !type.hasAnyInit()) {
+            String first = type.uninitializedFields.iterator().next();
+            throw error(
+                    "Field requires an initializer or an init constructor : " + first,
+                    type.members.get(first).declaration);
+        }
 
         for (TypeNode.Member member : type.members.values()) {
             if (isValue && (member.name.equals("equals") || member.name.equals("hashCode"))) {
@@ -637,9 +740,112 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return null;
     }
 
+    private void visitParameterizedInit(
+            BabbleParser.InitExpressionContext initCtx, TypeNode type, ScopeNode outerScope) {
+        inReturnTarget(
+                ReturnTarget.INIT_BODY,
+                () ->
+                        inScopeWithParent(
+                                ScopeNode.Kind.INIT_BODY,
+                                outerScope,
+                                initCtx,
+                                type,
+                                () -> {
+                                    List<String> parameters = new ArrayList<>();
+                                    List<Integer> paramMembers = new ArrayList<>();
+                                    int required = 0;
+                                    int kwStart =
+                                            ScopeAnalysis.keywordOnlyStart(initCtx.fnParameters());
+                                    int restIndex = -1;
+                                    boolean seenOptional = false;
+                                    List<BabbleParser.FnParamContext> fnParams =
+                                            initCtx.fnParameters().fnParam();
+                                    for (int i = 0; i < fnParams.size(); i++) {
+                                        BabbleParser.FnParamContext parameter = fnParams.get(i);
+                                        if (parameter.type() != null) {
+                                            visit(parameter.type());
+                                        }
+                                        declare(parameter.ID().getSymbol(), parameter, false);
+                                        parameters.add(parameter.ID().getText());
+                                        paramMembers.add(-1);
+                                        if (parameter.rest != null) {
+                                            if (restIndex >= 0
+                                                    || initCtx.fnParameters().kwSep != null) {
+                                                throw error(
+                                                        "More than one variadic parameter : "
+                                                                + parameter.ID().getText(),
+                                                        parameter.ID().getSymbol());
+                                            }
+                                            if (parameter.defaultValue != null) {
+                                                throw error(
+                                                        "Variadic parameter with a default : "
+                                                                + parameter.ID().getText(),
+                                                        parameter.ID().getSymbol());
+                                            }
+                                            restIndex = i;
+                                        } else if (parameter.defaultValue != null) {
+                                            if (i < kwStart) {
+                                                seenOptional = true;
+                                            }
+                                            inReturnTarget(
+                                                    ReturnTarget.DEFAULT,
+                                                    () -> visit(parameter.defaultValue));
+                                        } else {
+                                            if (i < kwStart && seenOptional) {
+                                                throw error(
+                                                        "Required parameter after an optional one : "
+                                                                + parameter.ID().getText(),
+                                                        parameter.ID().getSymbol());
+                                            }
+                                            required++;
+                                        }
+                                    }
+                                    type.constructors.add(
+                                            new TypeNode.Constructor(
+                                                    type.constructors.size(),
+                                                    false,
+                                                    initCtx.PRIVATE() != null,
+                                                    parameters,
+                                                    paramMembers,
+                                                    required,
+                                                    kwStart,
+                                                    restIndex,
+                                                    initCtx,
+                                                    initCtx,
+                                                    fnParams));
+                                    visitChildren(initCtx.initBlock);
+                                }));
+    }
+
     @Override
     public Void visitObjectExpression(BabbleParser.ObjectExpressionContext ctx) {
         TypeNode type = newType(ctx, ClassShape.Kind.OBJECT, "object", ctx.typeList());
+        List<BabbleParser.DefExpressionContext> memberDefs = new ArrayList<>();
+        BabbleParser.InitExpressionContext objInit = null;
+        for (BabbleParser.ExpressionContext stmt : ctx.createBlock.expression()) {
+            if (stmt instanceof BabbleParser.DefExpressionContext def) {
+                memberDefs.add(def);
+            } else if (stmt instanceof BabbleParser.InitExpressionContext initCtx) {
+                if (initCtx.fnParameters() != null) {
+                    throw error(
+                            "object literals cannot have parameterized init constructors", initCtx);
+                }
+                if (initCtx.PRIVATE() != null) {
+                    throw error(
+                            "private is not allowed on object init", initCtx.PRIVATE().getSymbol());
+                }
+                if (objInit != null) {
+                    throw error("Duplicate init initializer", initCtx);
+                }
+                objInit = initCtx;
+            } else {
+                throw error(
+                        "Executable statements in an object body must be inside an init block",
+                        stmt);
+            }
+        }
+        type.objectInit = objInit;
+        final BabbleParser.InitExpressionContext initBlock = objInit;
         inReturnTarget(
                 ReturnTarget.CLASS_BODY,
                 () ->
@@ -647,7 +853,33 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                                 ScopeNode.Kind.CLASS_BODY,
                                 ctx,
                                 type,
-                                () -> visitChildren(ctx.createBlock)));
+                                () -> {
+                                    for (BabbleParser.DefExpressionContext def : memberDefs) {
+                                        visit(def);
+                                    }
+                                    if (initBlock != null) {
+                                        inReturnTarget(
+                                                ReturnTarget.INIT_BODY,
+                                                () -> {
+                                                    ScopeNode initScope =
+                                                            inScope(
+                                                                    ScopeNode.Kind.INIT_BLOCK,
+                                                                    initBlock.initBlock,
+                                                                    type,
+                                                                    () ->
+                                                                            visitChildren(
+                                                                                    initBlock
+                                                                                            .initBlock));
+                                                    scopeNodes.put(initBlock, initScope);
+                                                });
+                                    }
+                                }));
+        if (!type.uninitializedFields.isEmpty() && type.objectInit == null) {
+            String first = type.uninitializedFields.iterator().next();
+            throw error(
+                    "Field requires an initializer or an init constructor : " + first,
+                    type.members.get(first).declaration);
+        }
         return null;
     }
 
@@ -665,6 +897,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                             () -> {
                                 for (BabbleParser.ExpressionContext statement :
                                         ctx.interfaceBlock.expression()) {
+                                    if (statement instanceof BabbleParser.InitExpressionContext) {
+                                        throw error(
+                                                "An interface cannot declare an init constructor",
+                                                statement);
+                                    }
                                     if (!(statement instanceof BabbleParser.DefExpressionContext)) {
                                         throw error(
                                                 "An interface can only declare members", statement);
@@ -681,6 +918,11 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                     }
                 });
         return null;
+    }
+
+    @Override
+    public Void visitInitExpression(BabbleParser.InitExpressionContext ctx) {
+        throw error("init is only allowed in a class, record, or object body", ctx);
     }
 
     /**
@@ -807,9 +1049,13 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
                             ctx.VAR().getSymbol());
                 }
                 if (ctx.value == null) {
-                    throw error(
-                            "Declaration requires an initializer : " + ctx.name.getText(),
-                            ctx.name);
+                    if (ctx.type() == null) {
+                        throw error(
+                                "Uninitialized field requires a type annotation : "
+                                        + ctx.name.getText(),
+                                ctx.name);
+                    }
+                    scope.type.uninitializedFields.add(ctx.name.getText());
                 }
                 TypeNode.Member member =
                         addMember(
@@ -1138,6 +1384,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             case BabbleParser.ObjectExpressionContext ignored -> "object";
             case BabbleParser.TypeAliasExpressionContext ignored -> "type";
             case BabbleParser.AxiomExpressionContext ignored -> "axiom";
+            case BabbleParser.InitExpressionContext ignored -> "init";
             default -> null;
         };
     }
@@ -1148,6 +1395,7 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             case NONE -> throw error("return outside of a function", ctx);
             case DEFAULT -> throw error("return in a parameter default", ctx);
             case CLASS_BODY -> throw error("return in a class body", ctx);
+            case INIT_BODY -> throw error("return in an init constructor", ctx);
             case FUNCTION -> {
                 if (inFinally) {
                     throw error("Cannot return from a finally block", ctx);
@@ -1186,11 +1434,14 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
     // ---------------------------------------------------------------- this, super, members
 
     /**
-     * The scope that gives {@code this} its meaning : a class, object, interface or static body.
+     * The scope that gives {@code this} its meaning : a class, object, init, interface or static
+     * body.
      */
     static ScopeNode thisScope(ScopeNode scope) {
         for (ScopeNode s = scope; s != null; s = s.parent) {
             if (s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.INIT_BLOCK
+                    || s.kind == ScopeNode.Kind.INIT_BODY
                     || s.kind == ScopeNode.Kind.INTERFACE_BODY
                     || s.kind == ScopeNode.Kind.STATIC_BODY) {
                 return s;
@@ -1199,8 +1450,35 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
         return null;
     }
 
+    /**
+     * The directly enclosing {@code init} scope ({@code INIT_BLOCK} or {@code INIT_BODY}), stopping
+     * at any intervening {@code FUNCTION} literal, or {@code null}.
+     */
+    static ScopeNode directInitScope(ScopeNode scope) {
+        for (ScopeNode s = scope; s != null; s = s.parent) {
+            if (s.kind == ScopeNode.Kind.INIT_BLOCK || s.kind == ScopeNode.Kind.INIT_BODY) {
+                return s;
+            }
+            if (s.kind == ScopeNode.Kind.FUNCTION
+                    || s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.STATIC_BODY
+                    || s.kind == ScopeNode.Kind.INTERFACE_BODY
+                    || s.kind == ScopeNode.Kind.FILE) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    static boolean isInDirectInit(ScopeNode scope) {
+        return directInitScope(scope) != null;
+    }
+
     @Override
     public Void visitRecurse(BabbleParser.RecurseContext ctx) {
+        if (returnTarget == ReturnTarget.INIT_BODY) {
+            throw error("recurse cannot be used in an init constructor", ctx);
+        }
         occurrences.add(new Occurrence(ctx, "$recurse", current()));
         return null;
     }
@@ -1212,10 +1490,20 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             throw error("this outside of a class", ctx);
         }
         // A value class under construction must not let "this" escape : outside of its
-        // methods, it may only read fields that are already defined.
+        // methods, it may only read fields, initialize derived fields in init, or delegate via
+        // `this(...)` in a secondary init (checked in detail by FieldInitAnalysis).
         for (ScopeNode s = current();
                 s != null && s.kind != ScopeNode.Kind.FUNCTION;
                 s = s.parent) {
+            if (s.kind == ScopeNode.Kind.INIT_BLOCK || s.kind == ScopeNode.Kind.INIT_BODY) {
+                if (s.type.kind == ClassShape.Kind.VALUE_CLASS
+                        && !isFieldRead(ctx)
+                        && !isFieldAssignTarget(ctx)
+                        && !(s.kind == ScopeNode.Kind.INIT_BODY && isDelegatingThisCall(ctx))) {
+                    throw error("this cannot escape a value class under construction", ctx);
+                }
+                break;
+            }
             if (s.kind == ScopeNode.Kind.CLASS_BODY) {
                 if (s.type.kind == ClassShape.Kind.VALUE_CLASS && !isFieldRead(ctx)) {
                     throw error("this cannot escape a value class under construction", ctx);
@@ -1227,6 +1515,18 @@ public final class BlockScopes extends BabbleBaseVisitor<Void> {
             }
         }
         return null;
+    }
+
+    private static boolean isFieldAssignTarget(BabbleParser.ThisExpressionContext ctx) {
+        return ctx.getParent() instanceof BabbleParser.SelectorContext selector
+                && selector.expression() == ctx
+                && selector.safe == null
+                && selector.getParent() instanceof BabbleParser.AssignExpressionContext assign
+                && assign.lhs == selector;
+    }
+
+    static boolean isDelegatingThisCall(BabbleParser.ThisExpressionContext ctx) {
+        return ctx.getParent() instanceof BabbleParser.CallContext call && call.expression() == ctx;
     }
 
     /** {@code this.x}, not called : or the target of an assignment, reported as read-only later. */

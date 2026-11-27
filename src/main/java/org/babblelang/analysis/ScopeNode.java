@@ -14,6 +14,10 @@ final class ScopeNode {
         FUNCTION,
         /** A class or object body : the constructor's scope. Its defs are members. */
         CLASS_BODY,
+        /** A parameterless {@code init (...)} block inside a class, record, or object body. */
+        INIT_BLOCK,
+        /** A parameterized {@code init (params) -> (...)} constructor scope ({@code BIP040}). */
+        INIT_BODY,
         /** An interface body : its defs are required members or default methods. */
         INTERFACE_BODY,
         /** A static block : its defs are static members of the class or interface value. */

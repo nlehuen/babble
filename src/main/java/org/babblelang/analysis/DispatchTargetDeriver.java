@@ -356,6 +356,7 @@ final class DispatchTargetDeriver {
         if (!safe
                 && callee instanceof Type.ClassValue cv
                 && cv.node().fastRecord
+                && pass.analysis.calls().constructorIndex(call) == 0
                 && binding != null
                 && !binding.hasOmitted()
                 && !binding.hasRest()
@@ -596,10 +597,22 @@ final class DispatchTargetDeriver {
                     fn.parameters(), arguments, restKind, spreadAdapts);
         }
         if (callee instanceof Type.ClassValue cv && !cv.node().isInterface()) {
-            List<Type.Parameter> params = checker.constructorParameters(cv.node());
+            int ctorIdx = pass.analysis.calls().constructorIndex(call);
+            List<Type.Parameter> params = checker.constructorParameters(cv.node(), ctorIdx);
             return params != null
                     ? CallSolver.computeArgumentBinding(params, arguments, restKind, spreadAdapts)
                     : null;
+        }
+        if (pass.analysis.calls().isDelegatingThisCall(call)) {
+            ScopeNode ts = BlockScopes.thisScope(checker.occurrenceScopeOf(call));
+            if (ts != null && ts.type != null) {
+                int ctorIdx = pass.analysis.calls().constructorIndex(call);
+                List<Type.Parameter> params = checker.constructorParameters(ts.type, ctorIdx);
+                return params != null
+                        ? CallSolver.computeArgumentBinding(
+                                params, arguments, restKind, spreadAdapts)
+                        : null;
+            }
         }
         if (callee instanceof Type.Union union) {
             LoweringTargets.ArgumentBinding agreed = null;
