@@ -141,6 +141,7 @@ final class AeGraphState {
         this.knownFields = new HashMap<>(parent.knownFields);
         this.knownJavaFields = new HashMap<>(parent.knownJavaFields);
         this.sharedEpoch = parent.sharedEpoch;
+        this.impureEpoch = parent.impureEpoch;
         this.uniqueEpochs = new HashMap<>(parent.uniqueEpochs);
     }
 

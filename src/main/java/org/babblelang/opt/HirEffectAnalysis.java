@@ -11,6 +11,7 @@ import org.babblelang.analysis.EffectSet;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
 import org.babblelang.ir.hir.ExprMeta;
+import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
@@ -73,6 +74,18 @@ public final class HirEffectAnalysis {
         for (HirExpr s : fn.body()) {
             propagateAliases(s, reassigned, aliases);
         }
+        if (!aliases.isEmpty()) {
+            Set<Integer> escapedUnique = new HashSet<>();
+            for (HirExpr s : fn.body()) {
+                collectEscapedUniqueParams(s, aliases, escapedUnique);
+            }
+            if (!escapedUnique.isEmpty()) {
+                aliases.entrySet()
+                        .removeIf(e ->
+                                e.getValue() instanceof IrEffect.AliasClass.UniqueParam u
+                                        && escapedUnique.contains(u.paramIndex()));
+            }
+        }
         return Map.copyOf(aliases);
     }
 
@@ -112,6 +125,148 @@ public final class HirEffectAnalysis {
                     propagateAliases(child, reassigned, aliases);
                     return child;
                 });
+    }
+
+    private static void collectEscapedUniqueParams(
+            HirExpr expr, Map<Integer, IrEffect.AliasClass> aliases, Set<Integer> escaped) {
+        if (expr == null) {
+            return;
+        }
+        switch (expr) {
+            case HirExpr.VarRead vr -> {
+                if (aliases.get(vr.var().id()) instanceof IrEffect.AliasClass.UniqueParam u) {
+                    escaped.add(u.paramIndex());
+                }
+            }
+            case HirExpr.ThisFieldGet g -> visitNonEscaping(g.receiver(), aliases, escaped);
+            case HirExpr.ThisFieldAssign a -> {
+                visitNonEscaping(a.receiver(), aliases, escaped);
+                collectEscapedUniqueParams(a.value(), aliases, escaped);
+            }
+            case HirExpr.JavaFieldGet g -> visitNonEscaping(g.receiver(), aliases, escaped);
+            case HirExpr.JavaFieldAssign a -> {
+                visitNonEscaping(a.receiver(), aliases, escaped);
+                collectEscapedUniqueParams(a.value(), aliases, escaped);
+            }
+            case HirExpr.ArrayOp op -> {
+                visitNonEscaping(op.receiver(), aliases, escaped);
+                for (HirExpr arg : op.args()) {
+                    collectEscapedUniqueParams(arg, aliases, escaped);
+                }
+            }
+            case HirExpr.Def d -> {
+                if (d.var() != null && aliases.containsKey(d.var().id())) {
+                    visitNonEscaping(d.value(), aliases, escaped);
+                } else {
+                    collectEscapedUniqueParams(d.value(), aliases, escaped);
+                }
+            }
+            case HirExpr.Binary b -> {
+                if (b.op() == HirExpr.BinaryOp.EQ || b.op() == HirExpr.BinaryOp.NEQ) {
+                    visitNonEscaping(b.left(), aliases, escaped);
+                    visitNonEscaping(b.right(), aliases, escaped);
+                } else {
+                    collectEscapedUniqueParams(b.left(), aliases, escaped);
+                    collectEscapedUniqueParams(b.right(), aliases, escaped);
+                }
+            }
+            case HirExpr.Is is -> visitNonEscaping(is.left(), aliases, escaped);
+            case HirExpr.DirectBabbleCall c -> {
+                collectEscapedUniqueParams(c.callee(), aliases, escaped);
+                boolean noEscape = isNonEscapingCall(c.meta());
+                for (HirExpr arg : c.args()) {
+                    if (noEscape) {
+                        visitNonEscaping(arg, aliases, escaped);
+                    } else {
+                        collectEscapedUniqueParams(arg, aliases, escaped);
+                    }
+                }
+            }
+            case HirExpr.DirectThisMethodCall c -> {
+                boolean noEscape = isNonEscapingCall(c.meta());
+                if (noEscape) {
+                    visitNonEscaping(c.receiver(), aliases, escaped);
+                } else {
+                    collectEscapedUniqueParams(c.receiver(), aliases, escaped);
+                }
+                for (HirCallArg arg : c.args()) {
+                    if (noEscape) {
+                        visitNonEscaping(arg.value(), aliases, escaped);
+                    } else {
+                        collectEscapedUniqueParams(arg.value(), aliases, escaped);
+                    }
+                }
+            }
+            case HirExpr.JavaMethodCall c -> {
+                boolean noEscape = isNonEscapingCall(c.meta());
+                if (noEscape) {
+                    visitNonEscaping(c.receiver(), aliases, escaped);
+                } else {
+                    collectEscapedUniqueParams(c.receiver(), aliases, escaped);
+                }
+                for (HirExpr arg : c.args()) {
+                    if (noEscape) {
+                        visitNonEscaping(arg, aliases, escaped);
+                    } else {
+                        collectEscapedUniqueParams(arg, aliases, escaped);
+                    }
+                }
+            }
+            case HirExpr.InterfaceCall c -> {
+                boolean noEscape = isNonEscapingCall(c.meta());
+                if (noEscape) {
+                    visitNonEscaping(c.receiver(), aliases, escaped);
+                } else {
+                    collectEscapedUniqueParams(c.receiver(), aliases, escaped);
+                }
+                for (HirExpr arg : c.args()) {
+                    if (noEscape) {
+                        visitNonEscaping(arg, aliases, escaped);
+                    } else {
+                        collectEscapedUniqueParams(arg, aliases, escaped);
+                    }
+                }
+            }
+            case HirExpr.CoreMethodCall c -> {
+                boolean noEscape = isNonEscapingCall(c.meta());
+                if (noEscape) {
+                    visitNonEscaping(c.receiver(), aliases, escaped);
+                } else {
+                    collectEscapedUniqueParams(c.receiver(), aliases, escaped);
+                }
+                for (HirExpr arg : c.args()) {
+                    if (noEscape) {
+                        visitNonEscaping(arg, aliases, escaped);
+                    } else {
+                        collectEscapedUniqueParams(arg, aliases, escaped);
+                    }
+                }
+            }
+            default ->
+                    HirRewriter.rewriteChildren(
+                            expr,
+                            child -> {
+                                collectEscapedUniqueParams(child, aliases, escaped);
+                                return child;
+                            });
+        }
+    }
+
+    private static void visitNonEscaping(
+            HirExpr expr, Map<Integer, IrEffect.AliasClass> aliases, Set<Integer> escaped) {
+        if (expr == null) {
+            return;
+        }
+        HirExpr cur = unwrapAliasForwarding(expr);
+        if (cur instanceof HirExpr.VarRead) {
+            return;
+        }
+        collectEscapedUniqueParams(cur, aliases, escaped);
+    }
+
+    private static boolean isNonEscapingCall(ExprMeta meta) {
+        return meta.effects().isHermetic()
+                && (meta.kind().isPrimitive() || meta.deeplyImmutable() || meta.frozen());
     }
 
     private static IrEffect.AliasClass staticAliasOf(
@@ -286,37 +441,79 @@ public final class HirEffectAnalysis {
             case HirExpr.RecordReuse ignored -> IrEffect.IMPURE_THROW;
             case HirExpr.DirectBabbleCall c -> {
                 EffectSet fx = c.meta().effects();
+                IrEffect base = callEffect(fx, hasCheck);
+                boolean targetMut = c.externalTarget() != null && c.externalTarget().hasMutParam();
                 if (c.targetFunctionId() >= 0) {
                     HirFunction target = module.function(c.targetFunctionId());
-                    if (target != null
-                            && (!target.effects().isPure() || target.effects().mutThis())) {
-                        yield effectFromEffectSet(target.effects(), hasCheck);
+                    if (target != null) {
+                        if (hasMutParam(target) || target.effects().mutThis()) {
+                            targetMut = true;
+                        }
+                        if (!target.effects().isPure() || target.effects().mutThis()) {
+                            base =
+                                    IrEffect.combine(
+                                            base, effectFromEffectSet(target.effects(), hasCheck));
+                        }
                     }
                 }
-                yield callEffect(fx, hasCheck);
+                if (targetMut && base.kind() == IrEffect.Kind.PURE) {
+                    base =
+                            new IrEffect(
+                                    IrEffect.Kind.WRITE,
+                                    IrEffect.AliasClass.SHARED,
+                                    base.nothrow(),
+                                    base.terminates(),
+                                    base.deterministic());
+                }
+                yield callWriteBarrier(base, null, c.args());
             }
             case HirExpr.DirectThisMethodCall c -> {
                 EffectSet fx = c.meta().effects();
+                IrEffect base = callEffect(fx, hasCheck);
+                boolean targetMut = false;
                 if (c.targetFunctionId() >= 0) {
                     HirFunction target = module.function(c.targetFunctionId());
-                    if (target != null
-                            && (!target.effects().isPure() || target.effects().mutThis())) {
-                        yield effectFromEffectSet(target.effects(), hasCheck);
+                    if (target != null) {
+                        if (hasMutParam(target) || target.effects().mutThis()) {
+                            targetMut = true;
+                        }
+                        if (!target.effects().isPure() || target.effects().mutThis()) {
+                            base =
+                                    IrEffect.combine(
+                                            base, effectFromEffectSet(target.effects(), hasCheck));
+                        }
                     }
                 }
-                yield callEffect(fx, hasCheck);
+                if (targetMut && base.kind() == IrEffect.Kind.PURE) {
+                    base =
+                            new IrEffect(
+                                    IrEffect.Kind.WRITE,
+                                    IrEffect.AliasClass.SHARED,
+                                    base.nothrow(),
+                                    base.terminates(),
+                                    base.deterministic());
+                }
+                yield callWriteBarrierArgs(base, c.receiver(), c.args());
             }
             case HirExpr.JavaMethodCall c -> {
                 EffectSet fx = c.meta().effects();
                 boolean staticOrNonNull =
                         (c.target().isStatic() && c.pureStaticReceiver())
                                 || isNonNull(c.receiver());
-                yield callEffect(fx, hasCheck || !staticOrNonNull);
+                IrEffect base = callEffect(fx, hasCheck || !staticOrNonNull);
+                HirExpr recv = c.target().isStatic() ? null : c.receiver();
+                yield callWriteBarrier(base, recv, c.args());
             }
-            case HirExpr.JavaConstructorCall c -> callEffect(c.meta().effects(), hasCheck);
-            case HirExpr.InterfaceCall c -> callEffect(c.meta().effects(), hasCheck);
-            case HirExpr.CoreMethodCall c -> callEffect(c.meta().effects(), hasCheck);
-            case HirExpr.SelfRecurseCall c -> callEffect(c.meta().effects(), hasCheck);
+            case HirExpr.JavaConstructorCall c ->
+                    callWriteBarrier(callEffect(c.meta().effects(), hasCheck), null, c.args());
+            case HirExpr.InterfaceCall c ->
+                    callWriteBarrier(
+                            callEffect(c.meta().effects(), hasCheck), c.receiver(), c.args());
+            case HirExpr.CoreMethodCall c ->
+                    callWriteBarrier(
+                            callEffect(c.meta().effects(), hasCheck), c.receiver(), c.args());
+            case HirExpr.SelfRecurseCall c ->
+                    callWriteBarrier(callEffect(c.meta().effects(), hasCheck), null, c.args());
             case HirExpr.SelfTailCall ignored -> IrEffect.IMPURE_THROW;
             case HirExpr.CoreCollectionCall ignored -> IrEffect.IMPURE_THROW;
             case HirExpr.SuperCall ignored -> IrEffect.IMPURE_THROW;
@@ -576,6 +773,80 @@ public final class HirEffectAnalysis {
         }
         return new IrEffect(
                 IrEffect.Kind.WRITE, IrEffect.AliasClass.SHARED, nothrow, terminates, det);
+    }
+
+    private static boolean hasMutParam(HirFunction fn) {
+        for (HirParam p : fn.params()) {
+            if (p.isMut()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private IrEffect callWriteBarrier(IrEffect base, HirExpr receiver, List<HirExpr> args) {
+        if (base.kind() != IrEffect.Kind.WRITE) {
+            return base;
+        }
+        IrEffect.AliasClass unique = null;
+        boolean multipleUnique = false;
+        boolean touchesShared = false;
+        if (receiver != null && isMutableRef(receiver)) {
+            IrEffect.AliasClass a = aliasOf(receiver);
+            if (a instanceof IrEffect.AliasClass.UniqueParam) {
+                unique = a;
+            } else if (a instanceof IrEffect.AliasClass.Shared) {
+                touchesShared = true;
+            }
+        }
+        for (HirExpr arg : args) {
+            if (arg == null || !isMutableRef(arg)) {
+                continue;
+            }
+            IrEffect.AliasClass a = aliasOf(arg);
+            if (a instanceof IrEffect.AliasClass.UniqueParam) {
+                if (unique == null) {
+                    unique = a;
+                } else if (!unique.equals(a)) {
+                    multipleUnique = true;
+                }
+            } else if (a instanceof IrEffect.AliasClass.Shared) {
+                touchesShared = true;
+            }
+        }
+        if (unique == null) {
+            return base;
+        }
+        if (multipleUnique || touchesShared) {
+            return new IrEffect(
+                    IrEffect.Kind.IMPURE,
+                    IrEffect.AliasClass.SHARED,
+                    base.nothrow(),
+                    base.terminates(),
+                    base.deterministic());
+        }
+        return new IrEffect(
+                IrEffect.Kind.WRITE,
+                unique,
+                base.nothrow(),
+                base.terminates(),
+                base.deterministic());
+    }
+
+    private IrEffect callWriteBarrierArgs(IrEffect base, HirExpr receiver, List<HirCallArg> args) {
+        if (base.kind() != IrEffect.Kind.WRITE) {
+            return base;
+        }
+        List<HirExpr> vals = new java.util.ArrayList<>(args.size());
+        for (HirCallArg arg : args) {
+            vals.add(arg.value());
+        }
+        return callWriteBarrier(base, receiver, vals);
+    }
+
+    private static boolean isMutableRef(HirExpr expr) {
+        ExprMeta meta = expr.meta();
+        return !meta.kind().isPrimitive() && !meta.deeplyImmutable() && !meta.frozen();
     }
 
     private static boolean isNonZeroIntegerConst(HirExpr expr) {

@@ -1,6 +1,6 @@
-# Soundness regressions : `opt` (`R4`, `R5`) LICM, SCCP, and liveness
+# Soundness regressions : `opt` (`R4`, `R5`) LICM, SCCP, AEGraph, and liveness
 
-Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`) and sister optimizer vectors covering `HirLicmPass`, `HirSccpPass`, `HirLiveness`, and `AeGraphBuilder`.
+Promoted from `BIP032` quarantine (`opt_r4_licm_for_iterable_verify_error.batest.md`, `opt_r5_o2_sccp_compound_assign_order.batest.md`, `opt_r5_o2_sccp_loop_fixpoint_cap.batest.md`, `opt_r5_aegraph_unique_param_mut_rle.batest.md`) and sister optimizer vectors covering `HirLicmPass`, `HirSccpPass`, `HirLiveness`, `HirEffectAnalysis`, and `AeGraphBuilder`.
 
 ## For-loop with mutating iterable and loop-invariant body arithmetic verifies and matches interpret
 
@@ -217,3 +217,65 @@ def whileShift34 = fn (): int -> (
 )
 assert(whileShift34() == 7)
 ```
+
+## Unique parameter field load must not be forwarded across mut call at -O2
+
+```babble
+def Box = class (var v: int) ()
+def bump = fn (mut b: Box) -> (b.v += 10)
+def test = fn (unique b: Box): int -> (
+    def a = b.v
+    bump(b)
+    def c = b.v
+    a * 100 + c
+)
+assert(test(Box(3)) == 313)
+```
+
+## Unique parameter field load must not be forwarded across mut method call at -O2
+
+```babble
+def Box = class (var v: int) (
+    def inc = fn mut () -> (this.v += 10)
+)
+def test = fn (unique b: Box): int -> (
+    def a = b.v
+    b.inc()
+    def c = b.v
+    a * 100 + c
+)
+assert(test(Box(3)) == 313)
+```
+
+## Unique parameter aliased through local record field must not reuse stale load at -O2
+
+```babble
+def Box = class (var v: int) ()
+def Wrap = record (b: Box) ()
+def test = fn io (unique b: Box): int -> (
+    def a = b.v
+    def w = Wrap(b)
+    w.b.v = 99
+    def c = b.v
+    a * 100 + c
+)
+assert(test(Box(3)) == 399)
+```
+
+## Nested branch scope must preserve prior impure memory barrier at -O2
+
+```babble
+def Box = class (var v: int) ()
+def swapWrite = fn (mut a: Box, mut b: Box) -> (
+    a.v = 77
+    b.v = 88
+)
+def test = fn (unique a: Box, mut b: Box, flag: bool): int -> (
+    def first = a.v
+    swapWrite(a, b)
+    def second = if flag then (a.v) else (a.v + 1)
+    first * 100 + second
+)
+assert(test(Box(3), Box(4), true) == 377)
+```
+

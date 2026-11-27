@@ -682,15 +682,17 @@ final class ExpressionTyper {
                                     ? checker.types.getOrDefault(otherwise, Type.ERROR)
                                     : Type.NULL;
                     if (thenType == Type.NOTHING && elseType != Type.NOTHING) {
-                        checker.env =
-                                checker.env.apply(
-                                        checker.narrowing
-                                                .extractRefinement(ifCtx.test)
-                                                .whenFalse());
+                        TypeEnv.Refinement ref = checker.narrowing.extractRefinement(ifCtx.test);
+                        if (otherwise != null) {
+                            ref = ref.without(checker.narrowing.assignedLocals(otherwise));
+                        }
+                        checker.env = checker.env.apply(ref.whenFalse());
                     } else if (elseType == Type.NOTHING && thenType != Type.NOTHING) {
-                        checker.env =
-                                checker.env.apply(
-                                        checker.narrowing.extractRefinement(ifCtx.test).whenTrue());
+                        TypeEnv.Refinement ref =
+                                checker.narrowing
+                                        .extractRefinement(ifCtx.test)
+                                        .without(checker.narrowing.assignedLocals(ifCtx.thenBlock));
+                        checker.env = checker.env.apply(ref.whenTrue());
                     }
                 }
             }

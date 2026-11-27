@@ -2066,7 +2066,8 @@ final class CallEffectAnalyzer {
                     null,
                     Set.of(),
                     out.paths,
-                    out.elementPaths);
+                    out.elementPaths,
+                    out.fieldPaths);
         }
         if (out.owned()) {
             out = out.withoutUnique();
