@@ -1321,7 +1321,7 @@ public class TypeCheckerTestCase {
 
         // Casts with unions/nullables and Java overload resolution.
         assertDiagnostics(
-                "def f = fn (v : any?, n : int?, u : int | string) -> (\n"
+                "def f = fn volatile (v : any?, n : int?, u : int | string) -> (\n"
                         + "  def a : int? = v as int?\n"
                         + "  def b : (int | string) = v as (int | string)\n"
                         + "  def s : string = java.lang.String.valueOf(u)\n"
