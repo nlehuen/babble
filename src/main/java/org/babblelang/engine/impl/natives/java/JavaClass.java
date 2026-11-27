@@ -26,7 +26,13 @@ import org.babblelang.runtime.Values;
  * its public instance fields, after its methods ({@link #value}).
  */
 public class JavaClass implements Scope<Object>, Callable, JavaType {
-    private static final Map<Class<?>, JavaClass> CLASSES = new ConcurrentHashMap<>();
+    private static final ClassValue<JavaClass> CLASSES =
+            new ClassValue<>() {
+                @Override
+                protected JavaClass computeValue(Class<?> type) {
+                    return new JavaClass(type);
+                }
+            };
 
     private final Class<?> clazz;
 
@@ -44,7 +50,7 @@ public class JavaClass implements Scope<Object>, Callable, JavaType {
 
     /** The Babble value of a Java class, as {@code classof} returns it. */
     public static JavaClass of(Class<?> clazz) {
-        return CLASSES.computeIfAbsent(clazz, JavaClass::new);
+        return CLASSES.get(clazz);
     }
 
     @Override

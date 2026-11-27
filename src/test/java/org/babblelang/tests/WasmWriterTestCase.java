@@ -336,8 +336,7 @@ public class WasmWriterTestCase {
                 contains i32.add
                 ```
                 """;
-        var file =
-                org.babblelang.tests.batest.BatestParser.parseString(md, "wasm_sample.batest.md");
+        var file = org.babblelang.batest.BatestParser.parseString(md, "wasm_sample.batest.md");
         Assertions.assertEquals(1, file.cases().size());
         Assertions.assertEquals(1, file.cases().get(0).irExpectations().size());
         Assertions.assertEquals(

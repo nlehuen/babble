@@ -86,6 +86,25 @@ public final class BabbleCompiler {
         return parsed;
     }
 
+    /**
+     * Resolves whether IR and bytecode verification ({@code HirVerifier} + ASM {@code
+     * CheckClassAdapter}) is enabled ({@code BIP041-D7}). Checks the per-engine {@link #VERIFY}
+     * binding before falling back to the {@code babble.verify} system property.
+     */
+    public static boolean resolveVerify(BabbleScriptEngine engine) {
+        Object value = engine != null ? engine.get(VERIFY) : null;
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value != null) {
+            String text = value.toString().trim();
+            if (!text.isEmpty()) {
+                return Boolean.parseBoolean(text);
+            }
+        }
+        return Boolean.getBoolean(VERIFY);
+    }
+
     /** Resolves the IR dump target ({@code "hir"}, {@code "all"}, {@code "true"}, or null). */
     public static String resolveDumpIr(BabbleScriptEngine engine) {
         Object value = engine != null ? engine.get(DUMP_IR) : null;
@@ -237,7 +256,7 @@ public final class BabbleCompiler {
         } catch (ClassNotFoundException e) {
             throw new BabbleException("Cannot load the compiled script", e);
         }
-        if (Boolean.getBoolean(VERIFY)) {
+        if (resolveVerify(engine)) {
             // After loading : the verifier resolves the compiled classes through their loader.
             for (byte[] bytes : classes.values()) {
                 Debugging.verify(bytes, loader);
@@ -352,7 +371,7 @@ public final class BabbleCompiler {
                         knownInterfaceJvmNames,
                         knownClassJvmNames);
         int optLevel = resolveOptLevel(engine);
-        boolean verify = Boolean.getBoolean(VERIFY);
+        boolean verify = resolveVerify(engine);
         String dumpIr = resolveDumpIr(engine);
         org.babblelang.analysis.BuiltinAxioms activeAxioms =
                 engine != null

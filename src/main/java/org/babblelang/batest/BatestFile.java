@@ -1,4 +1,4 @@
-package org.babblelang.tests.batest;
+package org.babblelang.batest;
 
 import java.util.List;
 import java.util.Map;

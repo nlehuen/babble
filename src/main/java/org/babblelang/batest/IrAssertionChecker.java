@@ -1,4 +1,4 @@
-package org.babblelang.tests.batest;
+package org.babblelang.batest;
 
 import java.util.ArrayList;
 import java.util.List;

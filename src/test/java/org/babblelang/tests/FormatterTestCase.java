@@ -6,9 +6,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 import javax.script.ScriptException;
+import org.babblelang.batest.BatestFile;
+import org.babblelang.batest.BatestParser;
 import org.babblelang.format.Formatter;
-import org.babblelang.tests.batest.BatestFile;
-import org.babblelang.tests.batest.BatestParser;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 

@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.babblelang.batest.BatestFile;
 
 /**
  * Thread-safe, guarded IR-only golden updater for {@code -Dbatest.updateIr=true} ({@code

@@ -31,6 +31,7 @@ public class Function implements BabbleFunction {
             Object thiz, ScriptRuntime rt, Object[] args, String[] names, CallSite site) {
         // A self tail call (BIP024) ends an activation with the arguments of the next one.
         while (true) {
+            Interpreter.checkInterrupted();
             Object result = activate(thiz, rt, args, names);
             if (!(result instanceof TailCall next)) {
                 return result;

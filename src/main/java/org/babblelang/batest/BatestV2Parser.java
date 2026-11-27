@@ -1,4 +1,4 @@
-package org.babblelang.tests.batest;
+package org.babblelang.batest;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -26,7 +26,7 @@ import org.babblelang.runtime.LogicalPaths;
  * Everything else outside fences is free Markdown documentation and excluded from Babble
  * code-character budgets.
  */
-final class BatestV2Parser {
+public final class BatestV2Parser {
     private static final Pattern CASE_HEADING = Pattern.compile("^##(?:\\s+(.*))?$");
     private static final Pattern FENCE_OPEN =
             Pattern.compile("^ {0,3}(`{3,})\\s*(\\S+)(?:\\s+(.*))?$");
@@ -35,14 +35,20 @@ final class BatestV2Parser {
 
     private BatestV2Parser() {}
 
-    static BatestFile parseString(String content, String sourceName) {
+    public static BatestFile parseString(String content, String sourceName) {
+        return parseString(content, sourceName, BatestParser.ParseOptions.STRICT);
+    }
+
+    static BatestFile parseString(
+            String content, String sourceName, BatestParser.ParseOptions options) {
+        boolean enforceBudgets = options == null || options.enforceBudgets();
         String normalized = content.replace("\r\n", "\n").replace('\r', '\n');
         String[] lines = normalized.split("\n", -1);
         int lineCount = lines.length;
         if (lineCount > 0 && normalized.endsWith("\n") && lines[lineCount - 1].isEmpty()) {
             lineCount--;
         }
-        if (lineCount > BatestParser.MAX_FILE_LINES) {
+        if (enforceBudgets && lineCount > BatestParser.MAX_FILE_LINES) {
             throw new IllegalArgumentException(
                     "The file "
                             + sourceName
@@ -200,7 +206,7 @@ final class BatestV2Parser {
                                 "preamble",
                                 code,
                                 BatestParser.MAX_PREAMBLE_CODE_CHARS,
-                                attrs.large);
+                                attrs.large || !enforceBudgets);
                     } else if (attrs.modulePath != null) {
                         if (fileModules.containsKey(attrs.modulePath)) {
                             throw new IllegalArgumentException(
@@ -217,7 +223,7 @@ final class BatestV2Parser {
                                 "virtual module '" + attrs.modulePath + "'",
                                 code,
                                 BatestParser.MAX_PREAMBLE_CODE_CHARS,
-                                attrs.large);
+                                attrs.large || !enforceBudgets);
                         fileModules.put(attrs.modulePath, code);
                     } else {
                         throw new IllegalArgumentException(
@@ -236,7 +242,8 @@ final class BatestV2Parser {
                             lineNum,
                             optionsLine,
                             effectiveBodyStartLine,
-                            closeLine);
+                            closeLine,
+                            enforceBudgets);
                 }
                 continue;
             }
@@ -261,7 +268,7 @@ final class BatestV2Parser {
                             sourceName + ":" + lineNum + ": duplicate case name '" + title + "'");
                 }
                 if (activeCase != null) {
-                    cases.add(activeCase.build(sourceName));
+                    cases.add(activeCase.build(sourceName, enforceBudgets));
                 }
                 activeCase = new CaseBuilder(cases.size() + 1, lineNum, title);
             }
@@ -269,7 +276,7 @@ final class BatestV2Parser {
         }
 
         if (activeCase != null) {
-            cases.add(activeCase.build(sourceName));
+            cases.add(activeCase.build(sourceName, enforceBudgets));
         }
         if (cases.isEmpty()) {
             throw new IllegalArgumentException(
@@ -323,7 +330,8 @@ final class BatestV2Parser {
             int headerLine,
             int optionsLine,
             int bodyStartLine,
-            int closeLine) {
+            int closeLine,
+            boolean enforceBudgets) {
         switch (kind) {
             case "babble" -> {
                 BabbleAttrs attrs = parseBabbleAttrs(tokens, sourceName, optionsLine, false);
@@ -344,7 +352,7 @@ final class BatestV2Parser {
                             "virtual module '" + attrs.modulePath + "'",
                             code,
                             BatestParser.MAX_PREAMBLE_CODE_CHARS,
-                            attrs.large);
+                            attrs.large || !enforceBudgets);
                     c.caseModules.put(attrs.modulePath, code);
                 } else if (attrs.session) {
                     if (!c.inputs.isEmpty() && !c.session) {
@@ -829,7 +837,7 @@ final class BatestV2Parser {
             this.name = name;
         }
 
-        BatestFile.BatestCase build(String sourceName) {
+        BatestFile.BatestCase build(String sourceName, boolean enforceBudgets) {
             if (inputs.isEmpty()) {
                 throw new IllegalArgumentException(
                         sourceName
@@ -847,7 +855,7 @@ final class BatestV2Parser {
                                 + ": IR golden blocks are not supported on 'babble session' cases");
             }
             int len = BatestParser.codeLength(String.join("\n", inputs));
-            if (!allowLarge && len >= BatestParser.MAX_CASE_CODE_CHARS) {
+            if (enforceBudgets && !allowLarge && len >= BatestParser.MAX_CASE_CODE_CHARS) {
                 throw new IllegalArgumentException(
                         sourceName
                                 + ":"

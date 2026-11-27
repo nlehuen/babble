@@ -1,4 +1,4 @@
-package org.babblelang.tests.batest;
+package org.babblelang.batest;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -20,15 +20,32 @@ public final class BatestParser {
     public static final int MAX_PREAMBLE_CODE_CHARS = 800;
     public static final int MAX_CASE_CODE_CHARS = 400;
 
+    /**
+     * Parsing options controlling whether readability size budgets are enforced ({@code
+     * BIP041-D4}).
+     */
+    public record ParseOptions(boolean enforceBudgets) {
+        /** Enforces full repository readability budgets (default for {@code src/test/batest/}). */
+        public static final ParseOptions STRICT = new ParseOptions(true);
+
+        /** Relaxes file-line and code-character budgets for exploratory {@code -crib} probes. */
+        public static final ParseOptions RELAXED = new ParseOptions(false);
+    }
+
     private BatestParser() {}
 
     public static BatestFile parse(Path path, String relativePath) throws IOException {
         String content = Files.readString(path, StandardCharsets.UTF_8);
-        return parseString(content, relativePath);
+        return parseString(content, relativePath, ParseOptions.STRICT);
     }
 
     public static BatestFile parseString(String content, String sourceName) {
-        return BatestV2Parser.parseString(content, sourceName);
+        return parseString(content, sourceName, ParseOptions.STRICT);
+    }
+
+    public static BatestFile parseString(String content, String sourceName, ParseOptions options) {
+        return BatestV2Parser.parseString(
+                content, sourceName, options != null ? options : ParseOptions.STRICT);
     }
 
     /**
@@ -43,7 +60,7 @@ public final class BatestParser {
      * Strips Babble line and block comments while preserving string and char literals, then drops
      * lines that become blank and trims trailing line whitespace.
      */
-    static String stripComments(String source) {
+    public static String stripComments(String source) {
         if (source == null || source.isEmpty()) {
             return "";
         }

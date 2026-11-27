@@ -587,7 +587,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         try {
             try {
                 result = widen(ctx.tryBlock, visitBlock(ctx.tryBlock));
-            } catch (ControlFlowSignal control) {
+            } catch (ControlFlowSignal | org.babblelang.engine.ExecutionInterruptedError control) {
                 throw control;
             } catch (Throwable t) {
                 failingAt = last;
@@ -615,7 +615,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                     throw org.babblelang.runtime.Throwables.sneakyThrow(t);
                 }
             }
-        } catch (ControlFlowSignal control) {
+        } catch (ControlFlowSignal | org.babblelang.engine.ExecutionInterruptedError control) {
             throw control;
         } catch (Throwable t) {
             if (primary == null) {
@@ -1182,12 +1182,20 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
     }
 
+    /** Cooperative cancellation point for loop back-edges and tail calls ({@code BIP041-D7}). */
+    static void checkInterrupted() {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new org.babblelang.engine.ExecutionInterruptedError();
+        }
+    }
+
     @Override
     public Object visitWhileExpression(BabbleParser.WhileExpressionContext ctx) {
         last = ctx;
         Object result = null;
         // The body block opens a fresh scope on every iteration.
         while (Truth.test(visit(ctx.test))) {
+            checkInterrupted();
             try {
                 result = widen(ctx.whileBlock, visit(ctx.whileBlock));
             } catch (ContinueException ignored) {
@@ -1222,6 +1230,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         if (rawIter != null && rawIter.getClass().isArray()) {
             int len = java.lang.reflect.Array.getLength(rawIter);
             for (int i = 0; i < len; i++) {
+                checkInterrupted();
                 Object elem = Values.fromJava(java.lang.reflect.Array.get(rawIter, i));
                 try {
                     result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
@@ -1239,6 +1248,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
                             ? i
                             : ((java.lang.Iterable<?>) rawIter).iterator();
             while (it.hasNext()) {
+                checkInterrupted();
                 Object elem = Values.fromJava(it.next());
                 try {
                     result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
@@ -1278,6 +1288,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         }
         if (unwrappedIter instanceof java.util.Iterator<?> it) {
             while (it.hasNext()) {
+                checkInterrupted();
                 Object elem = Values.fromJava(it.next());
                 try {
                     result = runForIteration(ctx, target, loopVar, blockDeclared, elem);
@@ -1296,6 +1307,7 @@ public class Interpreter extends BabbleBaseVisitor<Object> {
         CallSite nextSite =
                 new CallSite(sourceName, ctx.getStart().getLine(), "next", new String[0]);
         while (Truth.test(hasNextFn.call(runtime, new Object[0], null, hasNextSite))) {
+            checkInterrupted();
             Object elem = nextFn.call(runtime, new Object[0], null, nextSite);
             try {
                 result = runForIteration(ctx, target, loopVar, blockDeclared, elem);

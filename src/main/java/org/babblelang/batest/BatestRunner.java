@@ -1,4 +1,4 @@
-package org.babblelang.tests.batest;
+package org.babblelang.batest;
 
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -101,6 +101,15 @@ public final class BatestRunner {
             BatestFile.BatestCase testCase,
             BabbleScriptEngine.Mode mode,
             Integer optLevelOverride) {
+        return runWithIr(file, testCase, mode, optLevelOverride, null);
+    }
+
+    public static RunResult runWithIr(
+            BatestFile file,
+            BatestFile.BatestCase testCase,
+            BabbleScriptEngine.Mode mode,
+            Integer optLevelOverride,
+            Boolean verifyOverride) {
         BabbleScriptEngine engine =
                 (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
         if (mode != null) {
@@ -108,6 +117,9 @@ public final class BatestRunner {
         }
         if (optLevelOverride != null) {
             engine.put(BabbleCompiler.OPT_LEVEL, optLevelOverride);
+        }
+        if (verifyOverride != null) {
+            engine.put(BabbleCompiler.VERIFY, verifyOverride);
         }
 
         Map<String, String> effectiveModules = file.modules();
@@ -163,6 +175,8 @@ public final class BatestRunner {
                             null,
                             null);
             return new RunResult(outcome, capturedIr, activeOpt, isCompile);
+        } catch (org.babblelang.engine.ExecutionInterruptedError interrupted) {
+            throw interrupted;
         } catch (Throwable t) {
             List<String> warnings = extractNormalizedWarnings(err.toString());
             CaseOutcome outcome = classifyFailure(t, warnings, out.toString());
@@ -226,7 +240,7 @@ public final class BatestRunner {
         return failures.isEmpty() ? null : String.join("\n", failures);
     }
 
-    static CaseOutcome classifyFailure(Throwable t, List<String> warnings, String stdout) {
+    public static CaseOutcome classifyFailure(Throwable t, List<String> warnings, String stdout) {
         String normOut = normalizeStdout(stdout);
         String normErr = String.join("\n", warnings);
         if (t instanceof StackOverflowError || t.getCause() instanceof StackOverflowError) {
@@ -344,7 +358,7 @@ public final class BatestRunner {
         return null;
     }
 
-    static List<String> extractNormalizedWarnings(String errorText) {
+    public static List<String> extractNormalizedWarnings(String errorText) {
         if (errorText == null || errorText.isEmpty()) {
             return List.of();
         }
@@ -358,7 +372,7 @@ public final class BatestRunner {
         return warnings;
     }
 
-    static String normalizeStdout(String stdout) {
+    public static String normalizeStdout(String stdout) {
         if (stdout == null || stdout.isEmpty()) {
             return "";
         }
