@@ -1,8 +1,6 @@
 # Generalized algebraic data types : Wikipedia `Expr` example
 
-References : [Wikipedia — Generalized algebraic data type § Overview](https://en.wikipedia.org/wiki/Generalized_algebraic_data_type#Overview), `BIP002` (interfaces and `record`s), `BIP008` (generics), `BIP012` (`of` type application).
-
-In Babble, GADTs are encoded via a parameterized `interface` (`Expr of A`) whose `record` constructors implement specific instantiations of the interface (the object-oriented GADT encoding of Kennedy & Russo, 2005, cited on the Wikipedia page).
+References : [Wikipedia — Generalized algebraic data type § Overview](https://en.wikipedia.org/wiki/Generalized_algebraic_data_type#Overview), `BIP002` (`record`s), `BIP008` (unions and generics), `BIP021` (`overload`), `BIP023` (`type` aliases), `BIP038` (exhaustive `match`).
 
 Quoted from [Wikipedia — Generalized algebraic data type § Overview](https://en.wikipedia.org/wiki/Generalized_algebraic_data_type#Overview) :
 
@@ -36,44 +34,50 @@ Quoted from [Wikipedia — Generalized algebraic data type § Overview](https://
 
 ```babble
 ;; babble preamble
-def List of A = interface (
-    def headOr: fn (d: A): A
-)
-def Nil of A = record () implements List of A (
-    def headOr = fn (d: A): A -> (d)
-)
-def Cons of A = record (head: A, tail: List of A) implements List of A (
-    def headOr = fn (d: A): A -> (this.head)
-)
+def Nil = record () ()
+def Cons of A = record (head: A, tail: Nil | Cons of A) ()
+def List of A = type Nil | Cons of A
 
-def Expr of A = interface (
-    def eval: fn (): A
+def EBool = record (a: bool) ()
+def EInt = record (a: int) ()
+def EEqual = record (a: EInt, b: EInt) ()
+
+def ExprBool = type EBool | EEqual
+def ExprInt = type EInt
+def Expr = type ExprBool | ExprInt
+
+def evalInt = fn (e: ExprInt): int -> (match e case is EInt(def a) then (a))
+def evalBool = fn (e: ExprBool): bool -> (
+    match e
+    case is EBool(def a) then (a)
+    case is EEqual(def a, def b) then (evalInt(a) == evalInt(b))
 )
-def EBool = record (a: bool) implements Expr of bool (
-    def eval = fn (): bool -> (this.a)
+def evalExpr = fn (e: Expr): bool | int -> (
+    match e
+    case def b: ExprBool then (evalBool(b))
+    case def n: ExprInt then (evalInt(n))
 )
-def EInt = record (a: int) implements Expr of int (
-    def eval = fn (): int -> (this.a)
-)
-def EEqual = record (a: Expr of int, b: Expr of int) implements Expr of bool (
-    def eval = fn (): bool -> (this.a.eval() == this.b.eval())
-)
-def eval of A = fn (e: Expr of A): A -> (e.eval())
+def eval = overload (evalBool, evalInt, evalExpr)
 ```
 
 ## Parametric List ADT (non-GADT contrast)
 
 ```babble
-def integers: List of int = Cons(12, Cons(107, Nil of int ()))
-def strings: List of string = Cons("boat", Cons("dock", Nil of string ()))
-assert(integers.headOr(0) == 12 and strings.headOr("") == "boat")
-assert((Nil of int ()).headOr(99) == 99)
+def headOr of A = fn (xs: List of A, d: A): A -> (
+    match xs
+    case is Nil() then (d)
+    case is Cons(def h, _) then (h)
+)
+def integers: List of int = Cons(12, Cons(107, Nil()))
+def strings: List of string = Cons("boat", Cons("dock", Nil()))
+assert(headOr(integers, 0) == 12 and headOr(strings, "") == "boat")
+assert(headOr(Nil(), 99) == 99)
 ```
 
 ## Expr GADT : Wikipedia expr1 and typed evaluation
 
 ```babble
-def expr1: Expr of bool = EEqual(EInt(2), EInt(3))
+def expr1: ExprBool = EEqual(EInt(2), EInt(3))
 def ret: bool = eval(expr1)
 assert(not ret)
 assert(eval(EEqual(EInt(7), EInt(7))))
@@ -82,20 +86,29 @@ def n: int = eval(EInt(42))
 assert(n == 42)
 ```
 
-## Expr GADT : EEqual rejects Expr of bool at compile time
+## Expr union : heterogeneous evaluation returns bool | int
+
+```babble
+def pick = fn (flag: bool): Expr -> (if flag then (EInt(2)) else (EEqual(EInt(2), EInt(3))))
+def a: bool | int = eval(pick(true))
+def b: bool | int = eval(pick(false))
+assert(a == 2 and b == false)
+```
+
+## Expr GADT : EEqual rejects ExprBool at compile time
 
 ```babble
 def bad = EEqual(EBool(true), EInt(3))
 ```
 
 ```error
-Type error : expected Expr(int), got EBool
+Type error : expected EInt, got EBool
 ```
 
-## Expr GADT : eval return type matches Expr type argument
+## Expr GADT : eval return type matches ExprBool
 
 ```babble
-def expr1: Expr of bool = EEqual(EInt(2), EInt(3))
+def expr1: ExprBool = EEqual(EInt(2), EInt(3))
 def bad: int = eval(expr1)
 ```
 
@@ -103,12 +116,12 @@ def bad: int = eval(expr1)
 Type error : expected int, got bool
 ```
 
-## Expr GADT : EBool is not assignable to Expr of int
+## Expr GADT : EBool is not assignable to ExprInt
 
 ```babble
-def bad: Expr of int = EBool(true)
+def bad: ExprInt = EBool(true)
 ```
 
 ```error
-Type error : expected Expr(int), got EBool
+Type error : expected EInt, got EBool
 ```
