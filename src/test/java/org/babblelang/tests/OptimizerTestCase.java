@@ -1208,6 +1208,49 @@ public class OptimizerTestCase {
         }
     }
 
+    @Test
+    public void testO2PipelineFusionZeroListAllocation() throws Exception {
+        String code =
+                ""
+                        + "def encode = fn axiom pure nothrow monotone injective (x : int) : double -> (\n"
+                        + "  def r = x * 10.0 + 5.0\n"
+                        + "  return r\n"
+                        + "  r\n"
+                        + ")\n"
+                        + "def run = fn () : double -> (\n"
+                        + "  def scores = list of double ()\n"
+                        + "  for x in 0..1000000 then ( scores.add(encode(x)) )\n"
+                        + "  var total = 0.0\n"
+                        + "  for s in scores then (\n"
+                        + "    if s <= encode(50) then ( total += s )\n"
+                        + "  )\n"
+                        + "  total\n"
+                        + ")\n"
+                        + "run()\n";
+
+        BabbleScriptEngine engine = newEngine();
+        engine.put(BabbleScriptEngine.MODE, "compile");
+        engine.put(BabbleCompiler.OPT_LEVEL, 2);
+        CompiledBabbleScript cs = (CompiledBabbleScript) engine.compile(code);
+        Assertions.assertEquals(13005.0, ((Number) cs.eval()).doubleValue(), 1e-9);
+
+        ClassNode cn = new ClassNode();
+        new ClassReader(cs.getClassBytes()).accept(cn, 0);
+        String runMethod = findMethod(cn, "$run$spec");
+        List<String> calls = methodCalls(cn, runMethod);
+        Assertions.assertTrue(
+                calls.stream()
+                        .noneMatch(c ->
+                                c.contains("CoreCollections.list")
+                                        || c.contains("ArrayList")
+                                        || c.contains("Iterator")),
+                "Expected -O2 PipelineRewritePass to eliminate all list/iterator allocations in run, got: "
+                        + calls);
+        Assertions.assertFalse(
+                methodOpcodes(cn, runMethod).contains(Opcodes.NEW),
+                "Expected zero NEW allocations in fused -O2 pipeline");
+    }
+
     private static String findMethod(ClassNode cn, String suffix) {
         return cn.methods.stream()
                 .map(m -> m.name)

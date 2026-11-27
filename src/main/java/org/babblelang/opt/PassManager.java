@@ -15,6 +15,7 @@ import org.babblelang.opt.hir.HirPredicateReorderPass;
 import org.babblelang.opt.hir.HirSccpPass;
 import org.babblelang.opt.hir.HirTryNormalize;
 import org.babblelang.opt.hir.InlinePass;
+import org.babblelang.opt.hir.PipelineRewritePass;
 import org.babblelang.opt.hir.ScalarReplacePass;
 
 /**
@@ -23,10 +24,11 @@ import org.babblelang.opt.hir.ScalarReplacePass;
  * <p>At {@code -O0}, runs only mandatory pre-emission normalization ({@link HirTryNormalize}). At
  * {@code -O1}, iterates the fast linear-time HIR Nanopass pipeline up to {@value #MAX_ITERATIONS}
  * rounds; at {@code -O2}, runs the enriched unified HIR pipeline ({@link HirSccpPass} + {@link
- * HirAeGraphPass} + inlining, scalar replacement, FBIP reuse, backward-liveness DCE, LICM, and
- * predicate reordering), stopping early as soon as a full round performs zero rewrites, followed by
- * {@link HirTryNormalize}. Whenever {@code verify} is true ({@code -Dbabble.verify=true}), runs
- * {@link HirVerifier#verify(HirModule)} after every modifying pass.
+ * HirAeGraphPass} + {@link PipelineRewritePass} + inlining, scalar replacement, FBIP reuse,
+ * backward-liveness DCE, LICM, and predicate reordering), stopping early as soon as a full round
+ * performs zero rewrites, followed by {@link HirTryNormalize}. Whenever {@code verify} is true
+ * ({@code -Dbabble.verify=true}), runs {@link HirVerifier#verify(HirModule)} after every modifying
+ * pass.
  */
 public final class PassManager {
     public static final int MAX_ITERATIONS = 3;
@@ -45,6 +47,7 @@ public final class PassManager {
             List.of(
                     new HirSccpPass(),
                     new HirAeGraphPass(),
+                    new PipelineRewritePass(),
                     new InlinePass(),
                     new ScalarReplacePass(),
                     new FbipReusePass(),
