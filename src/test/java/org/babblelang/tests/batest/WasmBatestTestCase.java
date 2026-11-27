@@ -135,7 +135,8 @@ public class WasmBatestTestCase {
         } catch (Throwable t) {
             List<String> warnings = BatestRunner.extractNormalizedWarnings(errWriter.toString());
             BatestRunner.CaseOutcome outcome = BatestRunner.classifyFailure(t, warnings, "");
-            String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
+            String behavioralError =
+                    BatestRunner.evaluateBehavioral(testCase, outcome, BatestFile.Backend.WASM);
             if (behavioralError != null) {
                 Assertions.fail(
                         file.relativePath()
@@ -165,12 +166,14 @@ public class WasmBatestTestCase {
         if (!compiled.ok()) {
             boolean expectsWat =
                     testCase.irExpectations().stream().anyMatch(e -> e.tier() == IrTier.WAT);
-            if (expectsWat) {
+            if (expectsWat || !testCase.wasmOnly().isEmpty()) {
                 Assertions.fail(
                         file.relativePath()
                                 + " :: "
                                 + testCase.displayName()
-                                + " declares wat expectations but failed Wasm portability : "
+                                + " declares "
+                                + (expectsWat ? "wat expectations" : "backend:wasm blocks")
+                                + " but failed Wasm portability : "
                                 + compiled.portabilityErrors());
             }
             // Non-portable (uses java.*, Java interfaces, dynamic import, etc.) — skip cleanly
@@ -182,7 +185,8 @@ public class WasmBatestTestCase {
                 NodeWasmRunner.runJs(compiled.wasmBytes(), compiled.jsGlue(), List.of(), null);
         BatestRunner.CaseOutcome outcome = toCaseOutcome(run, warnings);
 
-        String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
+        String behavioralError =
+                BatestRunner.evaluateBehavioral(testCase, outcome, BatestFile.Backend.WASM);
         if (behavioralError != null) {
             Assertions.fail(
                     file.relativePath()

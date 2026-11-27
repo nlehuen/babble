@@ -4,7 +4,7 @@
 |---|---|
 | **BIP** | 029 |
 | **Date** | 2026-11-23 |
-| **Status** | Implemented (`BIP029-Q1`–`Q10` → `BIP029-D1`–`D10` settled; `BIP029-I1`–`I4` implemented; `IrTier.MIR` / `MirCanonicalPrinter` subsequently retired by [BIP039](bip039_mir-deorbitation.md), which unified compiler IR goldens on `hir -O0`/`-O1`/`-O2` and `wat`) |
+| **Status** | Implemented (`BIP029-Q1`–`Q11` → `BIP029-D1`–`D11` settled; `BIP029-I1`–`I5` implemented; `IrTier.MIR` / `MirCanonicalPrinter` subsequently retired by [BIP039](bip039_mir-deorbitation.md), which unified compiler IR goldens on `hir -O0`/`-O1`/`-O2` and `wat`) |
 | **Depends on** | Systematic `.batest` harness ([bip009_test-coverage.md](bip009_test-coverage.md)), typed `HIR`, `HirPrinter`, `-O0`/`-O1` Nanopass pipeline (`BIP014-I1`–`I2`, `BIP014-I4`, `BIP014-D9`), and planned Tier 2 SSA `MIR` ([bip014_optimization-passes.md](bip014_optimization-passes.md), `BIP014-I3`, `BIP014-P5`), unified E-graph pass ([bip027_tackling-complexity-in-the-compiler.md](bip027_tackling-complexity-in-the-compiler.md), `BIP027-I2`), `HirTryNormalize` ([bip028_exception-handling.md](bip028_exception-handling.md)) |
 | **Scope** | Redesigned, readable, extensible `.batest.md` v2 specification format (named `##` cases, prose documentation, explicit `stdout`/`stderr`/`error` blocks with uniform `DOTALL` `regex` flag, case-scoped virtual modules, `babble session` inputs, extensible IR/artifact blocks); unified compiler IR dumping & observation architecture (`IrTier`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) spanning `HIR` (`-O0`/`-O1`/`-O2`) and upcoming `BIP014-I3` SSA `MIR` (`-O2`, `before`/`after:<Pass>`/`final`); canonical preamble- and ID-independent printers (`HirCanonicalPrinter` and the `MirCanonicalPrinter` contract); 3-JVM/4-JVM Surefire and `-Pbatest` `BatestCoverageReporter` integration; guarded IR-only update mode (`-Dbatest.updateIr=true`); and lossless migration of all 103 existing `.batest` files (`2,060` cases) to `.batest.md` |
 
@@ -179,7 +179,7 @@ Because Markdown renderers (GitHub, Antigravity) hide text after the language na
 - `;; <kind> <options>` for Babble-family blocks (`babble`, `hir`, `mir`)
 - `# <kind> <options>` for output/error blocks (`stdout`, `stderr`, `error`)
 
-Options are space-separated **tokens** (bare flags such as `preamble`, `session`, `regex`, `check`, `-O1`, or `key=value` / `key="quoted value"` pairs). Blocks that need no options omit the directive line completely.
+Options are space-separated **tokens** (bare flags such as `preamble`, `session`, `regex`, `check`, `-O1`, `key=value` / `key="quoted value"` pairs, or the `backend:jvm` / `backend:wasm` selector of outcome blocks, §3.4). Blocks that need no options omit the directive line completely.
 
 | Scope | Block kind + first-line directive | Purpose |
 |---|---|---|
@@ -187,14 +187,14 @@ Options are space-separated **tokens** (bare flags such as `preamble`, `session`
 | **File header / Case** | `babble` + `;; babble module=<path> [large="..."]` | Virtual module `<path>` (`.ba`). Inside a case, scoped to that case only (overrides a file-level module of the same path). |
 | **Case** | `babble` (optional `;; babble large="..."`) | Single-compilation-unit Babble test snippet (`< 400` code chars unless `large="..."`). |
 | **Case** | `babble` + `;; babble session [large="..."]` | Sequential `BabbleSession` input. Multiple session blocks in one case execute in order on the same session (replacing v1's `----------`). Cannot mix plain `babble` and `;; babble session` in the same case. |
-| **Case** | `stdout` (optional `# stdout regex`) | Expected normalized stdout (`context.getWriter()`). When omitted, asserts **nothing** is printed to stdout (`""`). |
-| **Case** | `stderr` (optional `# stderr regex`) | Expected normalized non-fatal stderr (`context.getErrorWriter()`, e.g., `Warning : ...`). When omitted, asserts **nothing** is printed to stderr (`""`). |
-| **Case** | `error` (optional `# error regex`) | Expected fatal compile-time or runtime failure (`Kind.USER_ERROR`, normalized exception message). When omitted, asserts the case **succeeded** (`Kind.OK`). |
+| **Case** | `stdout` (optional `# stdout [regex] [backend:<jvm\|wasm>]`) | Expected normalized stdout (`context.getWriter()`). When omitted, asserts **nothing** is printed to stdout (`""`). |
+| **Case** | `stderr` (optional `# stderr [regex] [backend:<jvm\|wasm>]`) | Expected normalized non-fatal stderr (`context.getErrorWriter()`, e.g., `Warning : ...`). When omitted, asserts **nothing** is printed to stderr (`""`). |
+| **Case** | `error` (optional `# error [regex] [backend:<jvm\|wasm>]`, e.g. `# error backend:wasm`) | Expected fatal compile-time or runtime failure (`Kind.USER_ERROR`, normalized exception message). When omitted, asserts the case **succeeded** (`Kind.OK`). |
 | **Case** | `hir` + `;; hir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical `HIR` assertion verified at `<opt-levels>` (`-O0`, `-O1`, `-O0,-O1`, `-O2`). |
 | **Case** | `mir` + `;; mir <opt-levels> <target> [stage=...] [in=<mod>] [regex\|check]` | Canonical SSA `MIR` assertion (`BIP014-I3`, verified at `-O2`). |
 | **Case** *(reserved)* | `bytecode` / `wat` | Reserved for future bytecode allocation checks (`BIP014-I4` `ScalarReplacePass` / `FbipReusePass`) and `BIP025` WebAssembly text assertions without changing the parser core. |
 
-Unknown block kinds, options on the opening fence line, wrong comment tokens on directive lines, duplicate behavioral blocks (e.g., two `stdout` blocks in one case), duplicate IR targets for the same `(tier, optLevel, stage, module, target)`, or unknown flags/keys fail fast at parse time in `BatestParser` with file and line number.
+Unknown block kinds, options on the opening fence line, wrong comment tokens on directive lines, duplicate behavioral blocks (e.g., two `stdout` blocks in one case, or two blocks of one kind that apply to the same backend), unknown backends (`backend:js`, `backend:-wasm`, `backend:jvm,wasm`), identical `backend:jvm` and `backend:wasm` blocks of one kind, duplicate IR targets for the same `(tier, optLevel, stage, module, target)`, or unknown flags/keys fail fast at parse time in `BatestParser` with file and line number.
 
 ### 3.3 Case Names, Slugs, and Filtering (`BatestFilter`)
 
@@ -229,6 +229,40 @@ When `TypeChecker` fails, [`BabbleScriptEngine.report`](../../src/main/java/org/
 - v1's `~~ ` line prefix is retired.
 - Any `stdout`, `stderr`, `error`, `hir`, or `mir` block carrying the `regex` flag (`# stdout regex`, `# stderr regex`, `# error regex`, `;; hir ... regex`, `;; mir ... regex`) compiles its trimmed body with `Pattern.compile(expected, Pattern.MULTILINE | Pattern.DOTALL)` and checks `matcher(actual).matches()` — so `.*` naturally spans multiple lines by default (and invalid patterns fail at parse time in `BatestParser` naming file and line).
 - Blocks *without* `regex` (and without `check`) perform exact normalized string equality (`expected.equals(actual)`).
+
+### 3.4.1 Backend-scoped outcome blocks (`BIP029-D11`)
+
+A case runs on two **backends** : the **JVM** (`interpret`, `compile -O0`, `-O1`, `-O2`, in `BatestTestCase` and the `-crib` JVM modes) and **WebAssembly 3.0** (`wasm-O1`, `wasm-O2`, in `WasmBatestTestCase` and the `-crib` Wasm modes). Where the two are known to behave differently, a case says so where it lives, with an outcome block per backend instead of one shared block :
+
+````markdown
+## Builtin conversion called through a variable names its operand only on the JVM
+
+```babble
+def conv = byte
+def f = fn (b: byte): byte -> (conv(b + 1))
+println(f(byte(127)))
+```
+
+```error
+# error backend:jvm
+Out of the byte range : b+1 = 128
+```
+
+```error
+# error backend:wasm
+Out of the byte range : byte = 128
+```
+````
+
+* **Selector :** `backend:jvm` or `backend:wasm` on a `stdout`, `stderr` or `error` block (combinable with `regex`). A block without it applies to both backends — the implicit `backend:jvm,wasm`, which is not spelled out. With two backends, negations (`backend:-wasm`) and lists add nothing, so they are rejected ; they can come with a third backend.
+* **One block per backend and kind :** an unscoped block and a scoped one of the same kind overlap, and so do two `backend:wasm` blocks of one kind ; both are parse errors, as are identical `backend:jvm` and `backend:wasm` blocks (write one unscoped block).
+* **Uncovered backend :** a backend no block of a kind covers gets that kind's default (§3.4 table) — `# error backend:wasm` alone means "fails on Wasm, succeeds on the JVM".
+* **Each runner applies its own blocks** (`BatestFile.BatestCase.forBackend`, `BatestRunner.evaluateBehavioral(case, outcome, backend)`).
+* **No stale divergence :** a Wasm run whose outcome also satisfies the JVM's blocks fails with `Backend-specific expectations no longer differ : merge the backend: blocks into one`, so fixing a backend forces the declaration to go.
+* **Portability :** a case declaring `backend:wasm` blocks that the Wasm backend cannot compile fails, as one declaring `wat` blocks does.
+* **`-crib` parity (`BIP041-D2`) :** modes of one backend must still agree on every channel ; JVM-vs-Wasm agreement is checked on the channels without backend-scoped blocks only, so an undeclared divergence is still reported.
+
+`src/test/batest/runtime/backend_divergences.batest.md` collects the known divergences ; `grep -rn 'backend:wasm' src/test/batest` lists every one.
 
 ### 3.5 Readability Budgets & `large="..."`
 
@@ -400,6 +434,8 @@ When `BIP014-I3` implements `org.babblelang.ir.mir` (`MirModule`, `MirFunction`,
 | `compiled-tests` | `compile -O1` | **Checked** | Skipped | **Checked** | Skipped |
 | *(future `BIP014-I3`)* | `compile -O2` | **Checked** | Skipped | Skipped | **Checked** |
 
+Behavioral checks use the blocks that apply to the run's backend (§3.4.1) : the JVM executions above evaluate `backend:jvm` and unscoped blocks, `WasmBatestTestCase` (`wasm-O1`, `wasm-O2`) `backend:wasm` and unscoped blocks.
+
 If a case expects a compile-time error (`error` block) and *also* specifies an IR block that requires compilation to succeed, the IR assertion fails cleanly (`No HIR snapshot captured for target 'fn=f' (compilation failed)`).
 
 ### 5.2 `-Pbatest` & `BatestCoverageReporter` Parity Isolation
@@ -440,9 +476,9 @@ To guarantee zero regressions while introducing `.batest.md`, v1 (`.batest`) and
 
 ---
 
-## 6. Settled Design Decisions (`BIP029-D1`–`D10`)
+## 6. Settled Design Decisions (`BIP029-D1`–`D11`)
 
-All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
+All eleven design questions (`BIP029-Q1`–`Q11`) have been settled:
 
 - **`BIP029-D1` (resolves `BIP029-Q1`) — Constrained Markdown-fenced syntax:** Use `#`/`## <Case Name>` headings, free prose outside fences, and fenced ```` ```<kind> [flags / key=value ...] ```` blocks (zero delimiter collisions with `Babble.g4` or Git conflict markers; lossless escaping via fence length ```` ```` ````).
 - **`BIP029-D2` (resolves `BIP029-Q2`) — `.batest.md` file extension:** Rename test specification files to `.batest.md` so GitHub, VS Code, and IntelliJ render them natively as Markdown with syntax highlighting.
@@ -454,6 +490,7 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 - **`BIP029-D8` (resolves `BIP029-Q8`) — Skip unmatched optimization levels:** IR blocks whose `<opt-levels>` do not include the active run are skipped (so a case may specify only `-O1`, both `-O0` and `-O1`, `-O0,-O1`, or future `-O2` `mir`).
 - **`BIP029-D9` (resolves `BIP029-Q9`) — Guarded `-Dbatest.updateIr=true` fails loudly after writing:** Rewrite only exact-golden `hir`/`mir` blocks on behaviorally-passing verified cases, then fail the test run with a summary of modified files/blocks so CI can never pass silently with auto-blessing enabled.
 - **`BIP029-D10` (resolves `BIP029-Q10`) — Coexistence, full migration to `.batest.md`, v1 retirement, and `OptimizerTestCase` cleanup:** Coexist v1 `.batest` and v2 `.batest.md` parsers in `BIP029-I2` so all 103 existing `.batest` files stay untouched while v2 is proven end-to-end; migrate all 103 `.batest` files (`2,060` cases) to `.batest.md` in `BIP029-I3` and retire the v1 parser once verified; then add compiler HIR goldens and clean up redundant HIR substring checks in [`OptimizerTestCase`](../../src/test/java/org/babblelang/tests/OptimizerTestCase.java) in `BIP029-I4` (keeping API/AOT/bytecode tests in `OptimizerTestCase`).
+- **`BIP029-D11` (resolves `BIP029-Q11`) — Backend-scoped outcome blocks:** A known JVM / WebAssembly 3.0 divergence is declared in the case itself, with `# <kind> backend:jvm` and `# <kind> backend:wasm` outcome blocks (§3.4.1), rather than by skipping the case on Wasm or loosening its expectation with `regex`. A declaration never hides an undeclared divergence (other channels, and the modes of one backend, are still compared) and never outlives its fix (a Wasm outcome satisfying the JVM's blocks fails the case). Only positive selectors exist while there are two backends ; fixing the backend remains the goal.
 
 ---
 
@@ -483,6 +520,11 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 - Clean up redundant HIR substring checks in `OptimizerTestCase` while preserving API (`PassManager`, `-Dbabble.dumpIr`), `babblec` `AOT_CROSS_MODULE`, and ASM bytecode tests (`BIP029-D10`).
 - Update `AGENTS.md`, `docs/ARCHITECTURE.md`, and `docs/design/README.md`, and cross-link `BIP014-I3` to implement `MirModule implements IrDumpable` + `MirCanonicalPrinter` against `BIP029`'s `IrObserver` contract.
 
+### `BIP029-I5` — Backend-scoped outcome blocks
+- `BatestV2Parser` accepts `backend:jvm` / `backend:wasm` on `stdout`, `stderr` and `error` blocks (`OutcomeOptions`) and rejects unknown backends, overlapping blocks of one kind and identical per-backend blocks ; `BatestFile` adds `Backend`, `BackendExpectations`, `BatestCase.jvmOnly`/`wasmOnly`, `forBackend` and `backendScopedChannels` (`BIP029-D11`).
+- `BatestRunner.evaluateBehavioral(case, outcome, backend)` evaluates a backend's blocks and fails a stale Wasm divergence ; `WasmBatestTestCase` and the `-crib` Wasm modes pass `Backend.WASM` and reject `backend:wasm` blocks on non-portable cases ; `CribEvaluator.computeParityDiff` skips the declared channels across backends only.
+- `BatestV2HarnessTestCase` covers parsing, per-backend selection, the uncovered-backend default and the stale check ; `CribServerTestCase` covers parity ; `src/test/batest/runtime/backend_divergences.batest.md` declares the first divergences (builtin conversions and `assert` called through a variable).
+
 ---
 
 ## 8. Acceptance Criteria
@@ -492,3 +534,4 @@ All ten design questions (`BIP029-Q1`–`Q10`) have been settled:
 3. **Explicit outcome soundness:** A case expecting `error` fails if the snippet merely prints that string to stdout and exits normally; a case omitting `stdout` and `stderr` fails if anything is printed to either stream.
 4. **Zero-friction `BIP014-I3` `MIR` readiness:** `org.babblelang.ir` (`IrTier.MIR`, `IrTarget`, `IrDumpable`, `IrSnapshot`, `IrObserver`) and `.batest.md`'s `mir` (`;; mir -O2 ...`) parser/matcher/blesser are ready in place so `BIP014-I3` only has to implement `MirCanonicalPrinter` and emit snapshots from `MirPassManager`.
 5. **Boundaries & full CI parity:** `RuntimeBoundaryTestCase` and `ArchitectureBoundaryTestCase` pass (`org.babblelang.runtime` stays IR-free; `org.babblelang.ir` stays decoupled from the parsed AST); full `mvn -B package` (all 3 Surefire runs) and `mvn -q verify -Pbatest` (all 5 scopes `>= 75%` branch coverage, `0` divergences) pass cleanly under parallel JUnit execution.
+6. **Declared backend divergences:** A `backend:jvm` / `backend:wasm` pair passes in every JVM and Wasm mode and in `-crib` parity, fails once the backends agree again, and an undeclared JVM / Wasm difference still fails `WasmBatestTestCase` and `-crib` parity (`BIP029-D11`).

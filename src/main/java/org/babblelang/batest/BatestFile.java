@@ -1,6 +1,8 @@
 package org.babblelang.batest;
 
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -30,6 +32,33 @@ public record BatestFile(
             Map<String, String> modules,
             List<BatestCase> cases) {
         this(relativePath, Format.V1, preamble, modules, cases);
+    }
+
+    /**
+     * A backend a case runs on ({@code BIP029-D11}) : the JVM (interpret, {@code -O0}, {@code -O1},
+     * {@code -O2}) or WebAssembly 3.0 ({@code wasm-O1}, {@code wasm-O2}).
+     */
+    public enum Backend {
+        JVM,
+        WASM;
+
+        /** The {@code backend:<name>} spelling. */
+        public String spelling() {
+            return name().toLowerCase(Locale.ROOT);
+        }
+    }
+
+    /**
+     * The outcome blocks of one case that apply to a single backend ({@code # stdout backend:wasm},
+     * ...) : {@code null} where the case has none of that kind for the backend.
+     */
+    public record BackendExpectations(
+            TextExpectation stdout, TextExpectation stderr, TextExpectation error) {
+        public static final BackendExpectations NONE = new BackendExpectations(null, null, null);
+
+        public boolean isEmpty() {
+            return stdout == null && stderr == null && error == null;
+        }
     }
 
     /**
@@ -164,7 +193,9 @@ public record BatestFile(
             TextExpectation expectedStdout,
             TextExpectation expectedStderr,
             TextExpectation expectedError,
-            List<IrExpectation> irExpectations) {
+            List<IrExpectation> irExpectations,
+            BackendExpectations jvmOnly,
+            BackendExpectations wasmOnly) {
         /**
          * Legacy v1 marker for regex lines (retired in v2 in favor of the {@code regex} block
          * flag).
@@ -180,6 +211,87 @@ public record BatestFile(
             expectedStdout = expectedStdout != null ? expectedStdout : TextExpectation.EMPTY;
             expectedStderr = expectedStderr != null ? expectedStderr : TextExpectation.EMPTY;
             irExpectations = irExpectations != null ? List.copyOf(irExpectations) : List.of();
+            jvmOnly = jvmOnly != null ? jvmOnly : BackendExpectations.NONE;
+            wasmOnly = wasmOnly != null ? wasmOnly : BackendExpectations.NONE;
+        }
+
+        /** A case without backend-scoped outcome blocks. */
+        public BatestCase(
+                int index,
+                int line,
+                String name,
+                Format format,
+                List<String> inputs,
+                boolean session,
+                Map<String, String> caseModules,
+                String expected,
+                TextExpectation expectedStdout,
+                TextExpectation expectedStderr,
+                TextExpectation expectedError,
+                List<IrExpectation> irExpectations) {
+            this(
+                    index,
+                    line,
+                    name,
+                    format,
+                    inputs,
+                    session,
+                    caseModules,
+                    expected,
+                    expectedStdout,
+                    expectedStderr,
+                    expectedError,
+                    irExpectations,
+                    null,
+                    null);
+        }
+
+        /**
+         * The channels ({@code stdout}, {@code stderr}, {@code error}) this case gives
+         * backend-scoped blocks, where the backends are expected to differ.
+         */
+        public Set<String> backendScopedChannels() {
+            Set<String> channels = new LinkedHashSet<>();
+            if (jvmOnly.stdout() != null || wasmOnly.stdout() != null) channels.add("stdout");
+            if (jvmOnly.stderr() != null || wasmOnly.stderr() != null) channels.add("stderr");
+            if (jvmOnly.error() != null || wasmOnly.error() != null) channels.add("error");
+            return Set.copyOf(channels);
+        }
+
+        /**
+         * This case as {@code backend} sees it ({@code BIP029-D11}) : each channel with
+         * backend-scoped blocks takes the block for {@code backend}, or the channel's default
+         * (empty output, success) when only the other backend has one ; other channels keep their
+         * unscoped block.
+         */
+        public BatestCase forBackend(Backend backend) {
+            if (jvmOnly.isEmpty() && wasmOnly.isEmpty()) {
+                return this;
+            }
+            BackendExpectations own = backend == Backend.JVM ? jvmOnly : wasmOnly;
+            Set<String> scoped = backendScopedChannels();
+            TextExpectation stdout =
+                    scoped.contains("stdout")
+                            ? Objects.requireNonNullElse(own.stdout(), TextExpectation.EMPTY)
+                            : expectedStdout;
+            TextExpectation stderr =
+                    scoped.contains("stderr")
+                            ? Objects.requireNonNullElse(own.stderr(), TextExpectation.EMPTY)
+                            : expectedStderr;
+            TextExpectation error = scoped.contains("error") ? own.error() : expectedError;
+            return new BatestCase(
+                    index,
+                    line,
+                    name,
+                    format,
+                    inputs,
+                    session,
+                    caseModules,
+                    expected,
+                    stdout,
+                    stderr,
+                    error,
+                    irExpectations);
         }
 
         /** Legacy v1 5-argument constructor. */

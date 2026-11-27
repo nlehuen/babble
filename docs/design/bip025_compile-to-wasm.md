@@ -523,6 +523,10 @@ Babble's engineering discipline rests on **continuous differential verification*
    ```
    Byte-for-byte identical output of a 14-module, floating-point-heavy, polymorphic ray tracer (using `record`s, `class`es, `interface`s, closures, `list`s, `for` loops, `while`, `break`, `out = STDOUT`, and `fn calling f`) across JVM and WebAssembly — with **zero edits** to `examples/raytracer-argon/` (`BIP025-D12`) — proves both semantic fidelity and real-world performance.
 
+### 7.2 Known divergences from the JVM
+
+Where Wasm is known to behave differently from the JVM modes, the `.batest.md` case declares it with `# <kind> backend:jvm` and `# <kind> backend:wasm` outcome blocks (`BIP029-D11`, [bip029](bip029_batest-v2-and-ir-goldens.md) §3.4.1) instead of being skipped on Wasm ; the case fails once the backends agree again. `grep -rn 'backend:wasm' src/test/batest` is the authoritative list ; `src/test/batest/runtime/backend_divergences.batest.md` collects them. Today : a builtin conversion or `assert` called through a variable (`def conv = byte ; conv(b + 1)`) quotes the builtin's name instead of its argument's text, because the generic call signature `(self, args, names)` carries no call-site text.
+
 ---
 
 ## 8. Design Decisions (`BIP025-D1`–`D13`)

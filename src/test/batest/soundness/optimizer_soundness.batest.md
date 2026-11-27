@@ -281,6 +281,8 @@ assert(test(Box(3), Box(4), true) == 377)
 
 ## Byte conversion range error names its operand in every mode
 
+Called directly, `byte(...)` quotes its operand on every backend ; called through a variable it still differs on Wasm, a divergence declared in `runtime/backend_divergences.batest.md`.
+
 ```babble
 def f = fn (b: byte): byte -> (byte(b + 1))
 println(f(byte(127)))

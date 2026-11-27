@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.babblelang.analysis.CompilationTarget;
@@ -196,7 +197,7 @@ public final class CribEvaluator {
             boolean parityOk = true;
             String parityDiff = null;
             if (req.parity()) {
-                parityDiff = computeParityDiff(modeVerdicts);
+                parityDiff = computeParityDiff(modeVerdicts, testCase.backendScopedChannels());
                 if (parityDiff != null) {
                     parityOk = false;
                     casePassed = false;
@@ -553,10 +554,13 @@ public final class CribEvaluator {
             if (!compiled.ok()) {
                 boolean expectsWat =
                         testCase.irExpectations().stream().anyMatch(e -> e.tier() == IrTier.WAT);
+                boolean expectsWasmOutcome = !testCase.wasmOnly().isEmpty();
                 long ms = nanosToMs(System.nanoTime() - startNanos);
-                if (expectsWat) {
+                if (expectsWat || expectsWasmOutcome) {
                     String err =
-                            "Case declares wat expectations but failed Wasm portability : "
+                            "Case declares "
+                                    + (expectsWat ? "wat expectations" : "backend:wasm blocks")
+                                    + " but failed Wasm portability : "
                                     + compiled.portabilityErrors();
                     return new ModeExecution(
                             new CribProtocol.ModeVerdict(
@@ -606,7 +610,8 @@ public final class CribEvaluator {
 
             BatestRunner.CaseOutcome outcome = toWasmCaseOutcome(run, warnings);
             List<String> irErrors = new ArrayList<>();
-            String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
+            String behavioralError =
+                    BatestRunner.evaluateBehavioral(testCase, outcome, BatestFile.Backend.WASM);
             if (behavioralError == null && req.checkIr()) {
                 List<BatestFile.IrExpectation> watExps =
                         testCase.irExpectations().stream()
@@ -678,7 +683,8 @@ public final class CribEvaluator {
                     stackTrace(outcome.crash()),
                     ms);
         }
-        String behavioralError = BatestRunner.evaluateBehavioral(testCase, outcome);
+        String behavioralError =
+                BatestRunner.evaluateBehavioral(testCase, outcome, BatestFile.Backend.WASM);
         boolean passed = behavioralError == null && irErrors.isEmpty();
         return new CribProtocol.ModeVerdict(
                 passed ? CribProtocol.STATUS_PASS : CribProtocol.STATUS_FAIL,
@@ -724,6 +730,34 @@ public final class CribEvaluator {
      * {@code null} when every executed mode agrees, or a concise diff description otherwise.
      */
     static String computeParityDiff(Map<String, CribProtocol.ModeVerdict> verdicts) {
+        return computeParityDiff(verdicts, Set.of());
+    }
+
+    /**
+     * The parity divergence across {@code verdicts}, or {@code null}. Channels a case gives
+     * backend-scoped blocks ({@code BIP029-D11}) are expected to differ between the JVM and Wasm :
+     * each backend's modes must still agree among themselves on every channel, while JVM-vs-Wasm
+     * agreement is checked on the other channels only.
+     */
+    static String computeParityDiff(
+            Map<String, CribProtocol.ModeVerdict> verdicts, Set<String> backendScopedChannels) {
+        if (backendScopedChannels.isEmpty()) {
+            return diffOutcomes(verdicts, Set.of());
+        }
+        Map<String, CribProtocol.ModeVerdict> jvm = new LinkedHashMap<>();
+        Map<String, CribProtocol.ModeVerdict> wasm = new LinkedHashMap<>();
+        for (Map.Entry<String, CribProtocol.ModeVerdict> e : verdicts.entrySet()) {
+            (e.getKey().startsWith("wasm") ? wasm : jvm).put(e.getKey(), e.getValue());
+        }
+        String diff = diffOutcomes(jvm, Set.of());
+        if (diff == null) {
+            diff = diffOutcomes(wasm, Set.of());
+        }
+        return diff != null ? diff : diffOutcomes(verdicts, backendScopedChannels);
+    }
+
+    private static String diffOutcomes(
+            Map<String, CribProtocol.ModeVerdict> verdicts, Set<String> ignoredChannels) {
         record OutcomeKey(String kind, String stdout, String stderr, String error) {}
 
         Map<OutcomeKey, List<String>> groups = new LinkedHashMap<>();
@@ -735,7 +769,13 @@ public final class CribEvaluator {
                     || v.kind() == null) {
                 continue;
             }
-            OutcomeKey key = new OutcomeKey(v.kind(), v.stdout(), v.stderr(), v.error());
+            boolean ignoreError = ignoredChannels.contains("error");
+            OutcomeKey key =
+                    new OutcomeKey(
+                            ignoreError ? null : v.kind(),
+                            ignoredChannels.contains("stdout") ? null : v.stdout(),
+                            ignoredChannels.contains("stderr") ? null : v.stderr(),
+                            ignoreError ? null : v.error());
             groups.computeIfAbsent(key, k -> new ArrayList<>()).add(e.getKey());
         }
         if (groups.size() <= 1) {

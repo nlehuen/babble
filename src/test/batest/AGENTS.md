@@ -149,6 +149,7 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
   - `stdout` (optional `# stdout regex`) — expected normalized stdout (default `""`).
   - `stderr` (optional `# stderr regex`) — expected normalized non-fatal stderr such as `Warning : ...` (default `""`).
   - `error` (optional `# error regex`) — expected fatal compile-time or runtime error (`Kind.USER_ERROR`; omitting `error` asserts `Kind.OK`).
+  - `backend:jvm` / `backend:wasm` on any of these three (`# error backend:wasm`, combinable with `regex`, `BIP029-D11`) scopes the block to one backend : the JVM modes (interpret, `-O0`, `-O1`, `-O2`) or WebAssembly (`wasm-O1`, `wasm-O2`). Unscoped blocks apply to both. At most one block of a kind may apply to each backend, a backend no block of a kind covers gets that kind's default, and a Wasm run that also satisfies the JVM's blocks fails (the divergence is gone : merge the blocks). Use it only to declare a known divergence, in `runtime/backend_divergences.batest.md` or next to the feature ; `-crib` then skips that channel when comparing the backends.
   - The `regex` flag compiles the block body with `Pattern.MULTILINE | Pattern.DOTALL` and matches the whole channel (`matcher(actual).matches()`), so `.*` spans multiple lines automatically. Use `regex` only for text that varies with JDK version, never to loosen a Babble message.
 - **IR golden & check blocks (`BIP029`, `BIP039`)** :
   - Open with ```` ```hir ```` or ```` ```wat ```` and put the directive on line 1 : `;; <hir|wat> <opt-levels> <target> [stage=<before|final|before,final|after:PassName>] [in=<module.ba>] [regex|check]`.
@@ -171,6 +172,7 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
 - [ ] **Flag `;; QUESTIONABLE` behavior** : annotate doubtful passing behavior with `;; QUESTIONABLE : <reason>` and report it explicitly.
 - [ ] **Size budgets** : file <= 1,000 lines; preamble & virtual modules < 800 code chars; cases < 400 code chars; every `large="..."` override is justified.
 - [ ] **Silent `assert(...)`** : happy-path cases omit `stdout`/`stderr`/`error` unless directly testing output or warnings.
+- [ ] **Backend divergences** : every `backend:` block pair documents a real, explained JVM / WebAssembly difference (fixing the backend is preferred), and no case loosens an expectation with `regex` to paper over one.
 - [ ] **Negative-case precision** : every `error` case fails for the intended reason and cannot pass by printing text to `stdout`.
 - [ ] **Determinism & SLL hygiene** : passes `ParserGrammarTestCase` pure SLL and has no unimplemented `RM###` references.
 
