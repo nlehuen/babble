@@ -389,6 +389,19 @@ public final class HirLicmPass implements HirPass {
                 checkOperandsInvariant(f.operand(), modified, ok);
                 return;
             }
+            case HirExpr.Narrow n -> {
+                // Conservative in P1: guardId loop-local check is upgraded in BIP039-P2.
+                ok[0] = false;
+                return;
+            }
+            case HirExpr.Convert cv -> {
+                checkOperandsInvariant(cv.operand(), modified, ok);
+                return;
+            }
+            case HirExpr.Widen w -> {
+                checkOperandsInvariant(w.operand(), modified, ok);
+                return;
+            }
             case HirExpr.Block b -> {
                 if (b.opensNamespaceScope() || !b.declaredVars().isEmpty()) {
                     ok[0] = false;

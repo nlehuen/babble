@@ -528,6 +528,12 @@ public final class WasmFuncEmitter {
             case HirExpr.TypeApply t -> emitBoxed(t.inner());
             case HirExpr.Move m -> emitAndWiden(m.operand());
             case HirExpr.Freeze f -> emitAndWiden(f.operand());
+            case HirExpr.Narrow n -> emitAndWiden(n.operand());
+            case HirExpr.Convert cv -> emitAs(cv.operand(), cv.targetKind());
+            case HirExpr.Widen w -> {
+                emitAndWiden(w.operand());
+                widenStackRank(w.wideningRank(), w.meta().line());
+            }
             case HirExpr.SelfRecurseCall c -> calls.emitSelfRecurseCall(c);
             case HirExpr.SelfTailCall c -> calls.emitSelfTailCall(c);
             case HirExpr.DirectBabbleCall c -> calls.emitDirectBabbleCall(c);

@@ -146,6 +146,11 @@ public record HirFunction(
     }
 
     public HirFunction withParamsAndBody(List<HirParam> newParams, List<HirExpr> newBody) {
+        return withParamsBodyAndWideningRank(newParams, newBody, bodyWideningRank);
+    }
+
+    public HirFunction withParamsBodyAndWideningRank(
+            List<HirParam> newParams, List<HirExpr> newBody, int newBodyWideningRank) {
         return new HirFunction(
                 id,
                 name,
@@ -161,7 +166,7 @@ public record HirFunction(
                 keywordOnlyStart,
                 restIndex,
                 returnKind,
-                bodyWideningRank,
+                newBodyWideningRank,
                 effects,
                 newBody,
                 line);

@@ -310,7 +310,7 @@ fn run (d:double, f:bool) -> double {nothrow unique}
   (def k 0:int)
   (while (<:bool var(k) 2:int)
     (block
-      (set a += (+:double (+:double (+:double (call-fn bigImpl var(d)) (call-fn bigSink (+:double (block (neg var(d))) (block (if var(f) (block 1.0:double) (block 2.0:double)))))) (call-fn bigOpt (if var(f) (block var(d))))) (call var(loc) var(d))))
+      (set a += (+:double (+:double (+:double (call-fn bigImpl var(d)) (call-fn bigSink (+:double (block (neg var(d))) (block (if var(f) (block 1.0:double) (block 2.0:double)))))) (call-fn bigOpt (if var(f) (box (block var(d)))))) (call var(loc) var(d))))
       (set k += 1:int)))
   var(a)
 ```
@@ -331,7 +331,7 @@ fn run (d:double, f:bool) -> double {nothrow unique}
         (set a += (+:double (+:double (+:double var($licm0) (block
                   (def x#1 (+:double (neg var(d)) (if var(f) 1.0:double 2.0:double)))
                   var(x#1))) (block
-                (def x#2 (if var(f) var(d)))
+                (def x#2 (if var(f) (box var(d))))
                 (def r (if (==:bool var(x#2) null) 0.0:double 1.0:double))
                 var(r))) (call var(loc) var(d))))
         (set k += 1:int))))
@@ -469,7 +469,7 @@ fn run (b:byte) -> int {nothrow unique}
   (def k 0:int)
   (while (<:bool var(k) 2:int)
     (block
-      (set a += (+:int (call-fn tS var(mf) (call-fn bigByte var(b))) (call-fn tI var(mf) (call-fn bigByte var(b)))))
+      (set a += (+:int (call-fn tS var(mf) (widen[short] (call-fn bigByte var(b)))) (call-fn tI var(mf) (widen[int] (call-fn bigByte var(b))))))
       (set mf (not var(mf)))
       (set k += 1:int)))
   var(a)
@@ -482,14 +482,16 @@ fn run (b:byte) -> int {nothrow unique}
   (def mf true:bool)
   (def k 0:int)
   (block
-    (def $licm0 (block var(b)))
-    (def $licm1 (block var(b)))
+    (def $licm0 var(b))
+    (def $licm1 var(b))
     (while (<:bool var(k) 2:int)
       (block
         (set a += (+:int (block
-              (def r#1 (if var(mf) (call name(int) var($licm0)) 0:int))
+              (def v#1 (widen[short] var($licm0)))
+              (def r#1 (if var(mf) (call name(int) var(v#1)) 0:int))
               var(r#1)) (block
-              (def r#2 (if var(mf) var($licm1) 0:int))
+              (def v#2 (widen[int] var($licm1)))
+              (def r#2 (if var(mf) var(v#2) 0:int))
               var(r#2))))
         (set mf (not var(mf)))
         (set k += 1:int))))
@@ -503,38 +505,38 @@ fn run(v0: byte) -> int:
     v1: int = const 0
     v2: bool = const true
     v3: int = const 0
-    v4: short = convert.short v0
-    v5: int = convert.int v0
-    v6: any = const null
-    br bb1(v6, v3, v1, v2)
-  bb1(v7: any, v8: int, v9: int, v10: bool):
-    v11: int = const 2
-    v12: bool = lt v8, v11 {pure}
-    br_if v12, bb3, bb2
+    v4: any = const null
+    br bb1(v4, v3, v1, v2)
+  bb1(v5: any, v6: int, v7: int, v8: bool):
+    v9: int = const 2
+    v10: bool = lt v6, v9 {pure}
+    br_if v10, bb3, bb2
   bb2:
-    ret v9
+    ret v7
   bb3:
-    br_if v10, bb5, bb4
+    v11: short = convert.short v0
+    br_if v8, bb5, bb4
   bb4:
-    v13: int = const 0
-    br bb6(v13)
+    v12: int = const 0
+    br bb6(v12)
   bb5:
-    v14: any = name_read int {pure}
-    v15: int = opaque.DynamicCall(v14, v4) {impure}
-    br bb6(v15)
-  bb6(v16: int):
-    br_if v10, bb8, bb7
+    v13: any = name_read int {pure}
+    v14: int = opaque.DynamicCall(v13, v11) {impure}
+    br bb6(v14)
+  bb6(v15: int):
+    v16: int = convert.int v0
+    br_if v8, bb8, bb7
   bb7:
     v17: int = const 0
     br bb9(v17)
   bb8:
-    br bb9(v5)
+    br bb9(v16)
   bb9(v18: int):
-    v19: int = add v16, v18 {pure}
-    v20: int = add v9, v19 {pure}
-    v21: bool = not v10 {pure}
+    v19: int = add v15, v18 {pure}
+    v20: int = add v7, v19 {pure}
+    v21: bool = not v8 {pure}
     v22: int = const 1
-    v23: int = add v8, v22 {pure}
+    v23: int = add v6, v22 {pure}
     v24: any = convert.any v23
     br bb1(v24, v23, v20, v21)
 ```
@@ -546,8 +548,8 @@ fn run(v0: byte) -> int:
     v1: int = const 0
     v2: bool = const true
     v3: short = convert.short v0
-    v4: int = convert.int v0
-    v5: any = name_read int {pure}
+    v4: any = name_read int {pure}
+    v5: int = convert.int v0
     br bb1(v1, v1, v2)
   bb1(v6: int, v7: int, v8: bool):
     v9: int = const 2
@@ -560,14 +562,14 @@ fn run(v0: byte) -> int:
   bb4:
     br bb6(v1)
   bb5:
-    v11: int = opaque.DynamicCall(v5, v3) {impure}
+    v11: int = opaque.DynamicCall(v4, v3) {impure}
     br bb6(v11)
   bb6(v12: int):
     br_if v8, bb8, bb7
   bb7:
     br bb9(v1)
   bb8:
-    br bb9(v4)
+    br bb9(v5)
   bb9(v13: int):
     v14: int = add v12, v13 {pure}
     v15: int = add v7, v14 {pure}
@@ -597,7 +599,7 @@ fn run (i:int) -> long {nothrow unique}
   (def k 0:int)
   (while (<:bool var(k) 2:int)
     (block
-      (set a += (+:long (call-fn tL var(mf) (call-fn bigInt var(i))) (block (+:long var(ml) (call-fn bigInt var(i))))))
+      (set a += (+:long (call-fn tL var(mf) (widen[long] (call-fn bigInt var(i)))) (block (+:long var(ml) (convert[long] (call-fn bigInt var(i)))))))
       (set mf (not var(mf)))
       (set ml += 1:long)
       (set k += 1:int)))
@@ -612,13 +614,14 @@ fn run (i:int) -> long {nothrow unique}
   (def ml 1:long)
   (def k 0:int)
   (block
-    (def $licm0 (block var(i)))
+    (def $licm0 var(i))
     (def $licm1 var(i))
     (while (<:bool var(k) 2:int)
       (block
         (set a += (+:long (block
-              (def r (if var(mf) var($licm0) 0:long))
-              var(r)) (+:long var(ml) var($licm1))))
+              (def v (widen[long] var($licm0)))
+              (def r (if var(mf) var(v) 0:long))
+              var(r)) (+:long var(ml) (convert[long] var($licm1)))))
         (set mf (not var(mf)))
         (set ml += 1:long)
         (set k += 1:int))))
@@ -633,38 +636,38 @@ fn run(v0: int) -> long:
     v2: bool = const true
     v3: long = const 1L
     v4: int = const 0
-    v5: long = convert.long v0
-    v6: any = const null
-    br bb1(v6, v4, v1, v2, v3)
-  bb1(v7: any, v8: int, v9: long, v10: bool, v11: long):
-    v12: int = const 2
-    v13: bool = lt v8, v12 {pure}
-    br_if v13, bb3, bb2
+    v5: any = const null
+    br bb1(v5, v4, v1, v2, v3)
+  bb1(v6: any, v7: int, v8: long, v9: bool, v10: long):
+    v11: int = const 2
+    v12: bool = lt v7, v11 {pure}
+    br_if v12, bb3, bb2
   bb2:
-    ret v9
+    ret v8
   bb3:
-    v14: any = convert.any v9
-    br_if v10, bb5, bb4
+    v13: any = convert.any v8
+    v14: long = convert.long v0
+    br_if v9, bb5, bb4
   bb4:
     v15: long = const 0L
     br bb6(v15)
   bb5:
-    br bb6(v5)
+    br bb6(v14)
   bb6(v16: long):
     v17: long = convert.long v0
-    v18: long = add v11, v17 {pure}
+    v18: long = add v10, v17 {pure}
     v19: long = add v16, v18 {pure}
     v20: any = convert.any v19
-    v21: any = add v14, v20 {impure}
+    v21: any = add v13, v20 {impure}
     v22: long = convert.long v21
-    v23: bool = not v10 {pure}
-    v24: any = convert.any v11
+    v23: bool = not v9 {pure}
+    v24: any = convert.any v10
     v25: long = const 1L
     v26: any = convert.any v25
     v27: any = add v24, v26 {impure}
     v28: long = convert.long v27
     v29: int = const 1
-    v30: int = add v8, v29 {pure}
+    v30: int = add v7, v29 {pure}
     v31: any = convert.any v30
     br bb1(v31, v30, v22, v23, v28)
 ```

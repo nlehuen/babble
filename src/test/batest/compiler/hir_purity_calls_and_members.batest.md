@@ -532,7 +532,7 @@ fn run (k:int) -> int {io}
     (block
       name(fUninit)
       (def u null)
-      (set u (+:int var(k) 1:int))
+      (set u (box (+:int var(k) 1:int)))
       (nonnull var(u))))
   (def u2 (call-fn cl))
   (def u3

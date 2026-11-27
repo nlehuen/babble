@@ -41,7 +41,7 @@ fn run (n:int, b:byte, f:bool) -> double {io}
       (set a += (+:double (block (as (call name(byte) 2:int) double|double|)) (block
             (def t (+:int (call name(int) var(b)) 1:int))
             (call name(double) var(t)))))
-      (if (and var(f) false:bool) (block (set a += (call name(double) (call-fn bump)))))
+      (if (and var(f) false:bool) (box (block (set a += (call name(double) (call-fn bump))))))
       (set i += 1:int)))
   var(a)
 ```
@@ -58,7 +58,7 @@ fn run (n:int, b:byte, f:bool) -> double {io}
       (set a += (+:double (as (call name(byte) 2:int) double|double|) (block
             (def t (+:int (call name(int) var(b)) 1:int))
             (call name(double) var(t)))))
-      (if (and var(f) false:bool) (set a += (call name(double) (call-fn bump))))
+      (if (and var(f) false:bool) (box (set a += (call name(double) (call-fn bump)))))
       (set i += 1:int)))
   var(a)
 ```
@@ -177,9 +177,9 @@ fn RV.run (n:int) -> long {nothrow unique}
   (def k 0:int)
   (while (<:bool var(k) var(n))
     (block
-      (def hs (call-fn bigByte (get-this-field a)))
-      (def hi (call-fn bigByte (get-this-field a)))
-      (def hl (call-fn bigInt (get-this-field i)))
+      (def hs (widen[short] (call-fn bigByte (get-this-field a))))
+      (def hi (widen[int] (call-fn bigByte (get-this-field a))))
+      (def hl (widen[long] (call-fn bigInt (get-this-field i))))
       (set r += (+:long (+:long (call name(long) var(hs)) (call name(long) var(hi))) var(hl)))
       (set k += 1:int)))
   var(r)
@@ -205,9 +205,9 @@ fn RV.run (n:int) -> long {nothrow unique}
         var(x#3)))
     (while (<:bool var(k) var(n))
       (block
-        (def hs var($licm0))
-        (def hi var($licm1))
-        (def hl var($licm2))
+        (def hs (widen[short] var($licm0)))
+        (def hi (widen[int] var($licm1)))
+        (def hl (widen[long] var($licm2)))
         (set r += (+:long (+:long (call name(long) var(hs)) (call name(long) var(hi))) var(hl)))
         (set k += 1:int))))
   var(r)
@@ -308,8 +308,8 @@ fn RV.run (n:int) -> double {nothrow unique}
   (def k 0:int)
   (while (<:bool var(k) var(n))
     (block
-      (def hf (call-fn bigInt (get-this-field i)))
-      (def hd (call-fn bigFloat (get-this-field fl)))
+      (def hf (widen[float] (call-fn bigInt (get-this-field i))))
+      (def hd (widen[double] (call-fn bigFloat (get-this-field fl))))
       (set r += (+:double (call name(double) var(hf)) var(hd)))
       (set k += 1:int)))
   var(r)
@@ -331,8 +331,8 @@ fn RV.run (n:int) -> double {nothrow unique}
         var(x#2)))
     (while (<:bool var(k) var(n))
       (block
-        (def hf var($licm0))
-        (def hd var($licm1))
+        (def hf (widen[float] var($licm0)))
+        (def hd (widen[double] var($licm1)))
         (set r += (+:double (call name(double) var(hf)) var(hd)))
         (set k += 1:int))))
   var(r)

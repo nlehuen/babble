@@ -289,7 +289,7 @@ assert(fByteShort(true) and fWide(true))
 fn fByteShort (b:bool) -> bool {nothrow idempotent unique}
   (def x 1:byte)
   (def y 2:short)
-  (and (and var(b) (block (<:bool var(x) var(y)))) (block (>:bool var(y) var(x))))
+  (and (and var(b) (block (<:bool (convert[short] var(x)) var(y)))) (block (>:bool var(y) (convert[short] var(x)))))
 ```
 
 ```hir
@@ -512,13 +512,13 @@ assert(nChar('a', 'b') and nDbl(2.0, 1.0) and nMix(2, 3))
 ```hir
 ;; hir -O0 fn=nMix
 fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
-  (and (not (block (<:bool var(a) 1.5:double))) (not (block (<:bool var(b) 1.5:double))))
+  (and (not (block (<:bool (convert[double] var(a)) 1.5:double))) (not (block (<:bool (convert[double] var(b)) 1.5:double))))
 ```
 
 ```hir
 ;; hir -O1 fn=nMix
 fn nMix (a:int, b:int) -> bool {nothrow commutative unique}
-  (and (>=:bool var(a) 1.5:double) (>=:bool var(b) 1.5:double))
+  (and (>=:bool (convert[double] var(a)) 1.5:double) (>=:bool (convert[double] var(b)) 1.5:double))
 ```
 
 ```mir

@@ -217,10 +217,28 @@ public final class HirPurity {
                         && isPureNothrowTerminating(g.receiver(), module, visitingFns)
                         && (g.receiver() instanceof HirExpr.ThisRef
                                 || g.receiver() instanceof HirExpr.RecordNew
-                                || g.receiver() instanceof HirExpr.VarRead);
+                                || g.receiver() instanceof HirExpr.VarRead
+                                || g.receiver() instanceof HirExpr.Narrow);
             }
             case HirExpr.Move m -> isPureNothrowTerminating(m.operand(), module, visitingFns);
             case HirExpr.Freeze f -> isPureNothrowTerminating(f.operand(), module, visitingFns);
+            case HirExpr.Narrow n -> isPureNothrowTerminating(n.operand(), module, visitingFns);
+            case HirExpr.Convert cv -> {
+                PrimitiveKind from = cv.operand().meta().kind();
+                PrimitiveKind to = cv.targetKind();
+                boolean safe =
+                        from == to
+                                || to == PrimitiveKind.NONE
+                                || (from.isPrimitive()
+                                        && to.isPrimitive()
+                                        && from.numericRank() >= 0
+                                        && to.numericRank() >= 0
+                                        && from.numericRank() <= to.numericRank());
+                yield safe && isPureNothrowTerminating(cv.operand(), module, visitingFns);
+            }
+            case HirExpr.Widen w ->
+                    w.operand().meta().kind().isPrimitive()
+                            && isPureNothrowTerminating(w.operand(), module, visitingFns);
             case HirExpr.RecordNew r -> {
                 boolean classRefOk =
                         isPureNothrowTerminating(r.classRef(), module, visitingFns)
@@ -241,7 +259,8 @@ public final class HirPurity {
                 if (c.receiverText() != null
                         && !(c.receiver() instanceof HirExpr.ThisRef
                                 || c.receiver() instanceof HirExpr.RecordNew
-                                || c.receiver() instanceof HirExpr.VarRead)) {
+                                || c.receiver() instanceof HirExpr.VarRead
+                                || c.receiver() instanceof HirExpr.Narrow)) {
                     yield false;
                 }
                 if (c.targetFunctionId() >= 0) {
@@ -273,7 +292,8 @@ public final class HirPurity {
                         && fx.terminating()
                         && (c.receiver() instanceof HirExpr.ThisRef
                                 || c.receiver() instanceof HirExpr.RecordNew
-                                || c.receiver() instanceof HirExpr.VarRead);
+                                || c.receiver() instanceof HirExpr.VarRead
+                                || c.receiver() instanceof HirExpr.Narrow);
             }
             default -> false;
         };

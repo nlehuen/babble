@@ -204,7 +204,7 @@ fn guardedLate (f:bool) -> int {nothrow unique}
   (def o 0:int)
   (try
     (block
-      (if var(f) (block (set o name(lv))))
+      (if var(f) (box (block (set o name(lv)))))
       (if (not var(f)) (block (throw (jnew BabbleException "x"))))
       (set o += name(lv)))
     (catch e
@@ -218,7 +218,7 @@ fn guardedLate (f:bool) -> int {nothrow unique}
   (def o 0:int)
   (try
     (block
-      (if var(f) (set o name(lv)))
+      (if var(f) (box (set o name(lv))))
       (if (not var(f)) (throw (jnew BabbleException "x")))
       (set o += name(lv)))
     (catch e

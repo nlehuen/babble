@@ -27,7 +27,7 @@ fn run (b:byte, sh:short, s:obj) -> int {io}
   (def r1
     (block
       (def $try0 name(addSh))
-      (def $try1 var(b))
+      (def $try1 (widen[short] var(b)))
       (def $try2
         (try
           (block
@@ -37,7 +37,7 @@ fn run (b:byte, sh:short, s:obj) -> int {io}
       (call-fn addSh var($try1) var($try2))))
   (def r2
     (block
-      (def $try3 var(sh))
+      (def $try3 (convert[int] var(sh)))
       (def $try4
         (block
           (try
@@ -55,7 +55,7 @@ fn run (b:byte, sh:short, s:obj) -> int {io}
   (def r1
     (block
       (def $try0 name(addSh))
-      (def $try1 var(b))
+      (def $try1 (widen[short] var(b)))
       (def $try2
         (try
           (block
@@ -65,7 +65,7 @@ fn run (b:byte, sh:short, s:obj) -> int {io}
       (call-fn addSh var($try1) var($try2))))
   (def r2
     (block
-      (def $try3 var(sh))
+      (def $try3 (convert[int] var(sh)))
       (def $try4
         (try
           (block
@@ -98,19 +98,19 @@ fn run(v0: byte, v1: short, v2: any) -> int:
     br bb4(v12)
   bb4(v13: short):
     v14: int = call addSh(v4, v13) {impure}
+    v15: int = convert.int v1
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v15: any = name_read parse {pure}
-    v16: int = call parse(v2) {impure}
-    br bb8(v16)
-  bb6(v17: any) [handler]:
+    v16: any = name_read parse {pure}
+    v17: int = call parse(v2) {impure}
+    br bb8(v17)
+  bb6(v18: any) [handler]:
     br bb7
   bb7:
-    v18: int = const 1
-    br bb8(v18)
-  bb8(v19: int):
-    v20: int = convert.int v1
-    v21: int = add v20, v19 {pure}
+    v19: int = const 1
+    br bb8(v19)
+  bb8(v20: int):
+    v21: int = add v15, v20 {pure}
     v22: int = add v14, v21 {pure}
     ret v22
 ```
@@ -128,7 +128,7 @@ assert(run(4, "5") == 9L and run(4, "x") == 5L)
 ;; hir -O0 fn=run
 fn run (n:int, s:obj) -> long {io}
   (block
-    (def $try0 var(n))
+    (def $try0 (convert[long] var(n)))
     (def $try1
       (block
         (try
@@ -143,7 +143,7 @@ fn run (n:int, s:obj) -> long {io}
 ;; hir -O1 fn=run
 fn run (n:int, s:obj) -> long {io}
   (block
-    (def $try0 var(n))
+    (def $try0 (convert[long] var(n)))
     (def $try1
       (try
         (block
@@ -157,21 +157,21 @@ fn run (n:int, s:obj) -> long {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int, v1: any) -> long:
   bb0:
+    v2: long = convert.long v0
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = name_read long {pure}
-    v3: any = name_read parse {pure}
-    v4: int = call parse(v1) {impure}
-    v5: long = opaque.DynamicCall(v2, v4) {impure}
-    br bb4(v5)
-  bb2(v6: any) [handler]:
+    v3: any = name_read long {pure}
+    v4: any = name_read parse {pure}
+    v5: int = call parse(v1) {impure}
+    v6: long = opaque.DynamicCall(v3, v5) {impure}
+    br bb4(v6)
+  bb2(v7: any) [handler]:
     br bb3
   bb3:
-    v7: long = const 1L
-    br bb4(v7)
-  bb4(v8: long):
-    v9: long = convert.long v0
-    v10: long = add v9, v8 {pure}
+    v8: long = const 1L
+    br bb4(v8)
+  bb4(v9: long):
+    v10: long = add v2, v9 {pure}
     ret v10
 ```
 
@@ -191,7 +191,7 @@ assert(run(4, "5") == 18.0 and run(4, "x") == 10.0)
 fn run (n:int, s:obj) -> double {io}
   (def r4
     (block
-      (def $try0 var(n))
+      (def $try0 (convert[float] var(n)))
       (def $try1
         (block
           (try
@@ -202,7 +202,7 @@ fn run (n:int, s:obj) -> double {io}
       (+:float var($try0) var($try1))))
   (def r5
     (block
-      (def $try2 var(n))
+      (def $try2 (convert[double] var(n)))
       (def $try3
         (block
           (try
@@ -219,7 +219,7 @@ fn run (n:int, s:obj) -> double {io}
 fn run (n:int, s:obj) -> double {io}
   (def r4
     (block
-      (def $try0 var(n))
+      (def $try0 (convert[float] var(n)))
       (def $try1
         (try
           (block
@@ -229,7 +229,7 @@ fn run (n:int, s:obj) -> double {io}
       (+:float var($try0) var($try1))))
   (def r5
     (block
-      (def $try2 var(n))
+      (def $try2 (convert[double] var(n)))
       (def $try3
         (try
           (block
@@ -244,36 +244,36 @@ fn run (n:int, s:obj) -> double {io}
 ;; mir -O2 fn=run stage=before,final
 fn run(v0: int, v1: any) -> double:
   bb0:
+    v2: float = convert.float v0
     br bb1
   bb1 [unwind: BabbleException -> bb2]:
-    v2: any = name_read float {pure}
-    v3: any = name_read parse {pure}
-    v4: int = call parse(v1) {impure}
-    v5: float = opaque.DynamicCall(v2, v4) {impure}
-    br bb4(v5)
-  bb2(v6: any) [handler]:
+    v3: any = name_read float {pure}
+    v4: any = name_read parse {pure}
+    v5: int = call parse(v1) {impure}
+    v6: float = opaque.DynamicCall(v3, v5) {impure}
+    br bb4(v6)
+  bb2(v7: any) [handler]:
     br bb3
   bb3:
-    v7: float = const 1.0f
-    br bb4(v7)
-  bb4(v8: float):
-    v9: float = convert.float v0
-    v10: float = add v9, v8 {pure}
+    v8: float = const 1.0f
+    br bb4(v8)
+  bb4(v9: float):
+    v10: float = add v2, v9 {pure}
+    v11: double = convert.double v0
     br bb5
   bb5 [unwind: BabbleException -> bb6]:
-    v11: any = name_read double {pure}
-    v12: any = name_read parse {pure}
-    v13: int = call parse(v1) {impure}
-    v14: double = opaque.DynamicCall(v11, v13) {impure}
-    br bb8(v14)
-  bb6(v15: any) [handler]:
+    v12: any = name_read double {pure}
+    v13: any = name_read parse {pure}
+    v14: int = call parse(v1) {impure}
+    v15: double = opaque.DynamicCall(v12, v14) {impure}
+    br bb8(v15)
+  bb6(v16: any) [handler]:
     br bb7
   bb7:
-    v16: double = const 1.0
-    br bb8(v16)
-  bb8(v17: double):
-    v18: double = convert.double v0
-    v19: double = add v18, v17 {pure}
+    v17: double = const 1.0
+    br bb8(v17)
+  bb8(v18: double):
+    v19: double = add v11, v18 {pure}
     v20: any = name_read double {pure}
     v21: double = opaque.DynamicCall(v20, v10) {impure}
     v22: double = add v21, v19 {pure}

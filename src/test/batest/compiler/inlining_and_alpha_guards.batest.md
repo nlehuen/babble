@@ -238,7 +238,7 @@ top-level:
   (def pick (fn-ref pick))
   (def smallIface (fn-ref smallIface))
   (def smallBlkCell (fn-ref smallBlkCell))
-  (call name(assert) (and (==:bool (call-fn smallIface 1:int) 1:int) (==:bool (call-fn smallBlkCell 4:int) 5:int)))
+  (call name(assert) (and (==:bool (call-fn smallIface (box 1:int)) 1:int) (==:bool (call-fn smallBlkCell 4:int) 5:int)))
 ```
 
 ```mir
@@ -358,9 +358,9 @@ fn run (b:byte, i:int, f:float) -> bool {pure unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (b:byte, i:int, f:float) -> bool {pure unique}
-  (and (and (and (and (and (and (and (==:bool (block var(b)) (call name(short) 2:int)) (==:bool (block
+  (and (and (and (and (and (and (and (==:bool (widen[short] var(b)) (call name(short) 2:int)) (==:bool (block
                     (def x (call name(byte) 3:int))
-                    var(x)) (call name(short) 3:int))) (==:bool (+:long var(i) 1:long) 5:long)) true:bool) (==:bool (+:float var(i) 1.5:float) 5.5:float)) true:bool) (==:bool (+:double var(f) 0.5:double) 2.0:double)) true:bool)
+                    (widen[short] var(x))) (call name(short) 3:int))) (==:bool (+:long (convert[long] var(i)) 1:long) 5:long)) true:bool) (==:bool (+:float (convert[float] var(i)) 1.5:float) 5.5:float)) true:bool) (==:bool (+:double (convert[double] var(f)) 0.5:double) 2.0:double)) true:bool)
 ```
 
 ```mir
@@ -516,14 +516,14 @@ assert(run(3) == 6.0)
 ```hir
 ;; hir -O0 fn=run
 fn run (p:int) -> double {nothrow monotone unique}
-  (def d (call-fn idI var(p)))
+  (def d (widen[double] (call-fn idI var(p))))
   (+:double var(d) (call name(double) (call-fn idR var(p))))
 ```
 
 ```hir
 ;; hir -O1 fn=run
 fn run (p:int) -> double {nothrow monotone unique}
-  (def d var(p))
+  (def d (widen[double] var(p)))
   (+:double var(d) (call name(double) var(p)))
 ```
 

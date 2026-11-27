@@ -135,9 +135,9 @@ assert(check(2, -2, "a", "a") == 5 and check(0, 1, "a", "b") == 2)
 ;; hir -O0 fn=check
 fn check (x:int, y:int, s1:obj, s2:obj) -> int {nothrow unique}
   (def r 0:int)
-  (if (neg var(x)) (block (set r += 1:int)))
-  (if (+:int var(x) var(y)) (block (set r += 2:int)))
-  (if (==:bool var(s1) var(s2)) (block (set r += 4:int)))
+  (if (neg var(x)) (box (block (set r += 1:int))))
+  (if (+:int var(x) var(y)) (box (block (set r += 2:int))))
+  (if (==:bool var(s1) var(s2)) (box (block (set r += 4:int))))
   var(r)
 ```
 
@@ -145,9 +145,9 @@ fn check (x:int, y:int, s1:obj, s2:obj) -> int {nothrow unique}
 ;; hir -O1 fn=check
 fn check (x:int, y:int, s1:obj, s2:obj) -> int {nothrow unique}
   (def r 0:int)
-  (if (neg var(x)) (set r += 1:int))
-  (if (+:int var(x) var(y)) (set r += 2:int))
-  (if (==:bool var(s1) var(s2)) (set r += 4:int))
+  (if (neg var(x)) (box (set r += 1:int)))
+  (if (+:int var(x) var(y)) (box (set r += 2:int)))
+  (if (==:bool var(s1) var(s2)) (box (set r += 4:int)))
   var(r)
 ```
 
@@ -246,12 +246,12 @@ assert(check(0L, 5L, 0.0f, 1.5f, 0.0, 2.5) == 21)
 ;; hir -O0 fn=check
 fn check (l0:long, l1:long, f0:float, f1:float, d0:double, d1:double) -> int {nothrow unique}
   (def r 0:int)
-  (if (not var(l0)) (block (set r += 1:int)))
-  (if (not var(l1)) (block (set r += 2:int)))
-  (if (not var(f0)) (block (set r += 4:int)))
-  (if (not var(f1)) (block (set r += 8:int)))
-  (if (not var(d0)) (block (set r += 16:int)))
-  (if (not var(d1)) (block (set r += 32:int)))
+  (if (not var(l0)) (box (block (set r += 1:int))))
+  (if (not var(l1)) (box (block (set r += 2:int))))
+  (if (not var(f0)) (box (block (set r += 4:int))))
+  (if (not var(f1)) (box (block (set r += 8:int))))
+  (if (not var(d0)) (box (block (set r += 16:int))))
+  (if (not var(d1)) (box (block (set r += 32:int))))
   var(r)
 ```
 
@@ -259,12 +259,12 @@ fn check (l0:long, l1:long, f0:float, f1:float, d0:double, d1:double) -> int {no
 ;; hir -O1 fn=check
 fn check (l0:long, l1:long, f0:float, f1:float, d0:double, d1:double) -> int {nothrow unique}
   (def r 0:int)
-  (if (not var(l0)) (set r += 1:int))
-  (if (not var(l1)) (set r += 2:int))
-  (if (not var(f0)) (set r += 4:int))
-  (if (not var(f1)) (set r += 8:int))
-  (if (not var(d0)) (set r += 16:int))
-  (if (not var(d1)) (set r += 32:int))
+  (if (not var(l0)) (box (set r += 1:int)))
+  (if (not var(l1)) (box (set r += 2:int)))
+  (if (not var(f0)) (box (set r += 4:int)))
+  (if (not var(f1)) (box (set r += 8:int)))
+  (if (not var(d0)) (box (set r += 16:int)))
+  (if (not var(d1)) (box (set r += 32:int)))
   var(r)
 ```
 
@@ -766,9 +766,9 @@ top-level:
   (set-jfield required name(dpi) true:bool)
   (def n 42:int)
   (def ev (jnew Event null 0:int null))
-  (set-jfield when name(ev) name(n))
+  (set-jfield when name(ev) (widen[long] name(n)))
   (def pf (jnew Float))
-  (set-jfield x name(pf) name(n))
+  (set-jfield x name(pf) (widen[float] name(n)))
   (call name(assert) (and (and (get-jfield DriverPropertyInfo.required name(dpi)) (==:bool (get-jfield Event.when name(ev)) 42:long)) (==:bool (get-jfield Float.x name(pf)) 42.0:float)))
 ```
 

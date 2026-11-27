@@ -362,6 +362,40 @@ public final class HirVerifier {
             }
             case HirExpr.Move m -> verifyExpr(module, m.operand(), inFunction, loopDepth);
             case HirExpr.Freeze f -> verifyExpr(module, f.operand(), inFunction, loopDepth);
+            case HirExpr.Narrow n -> {
+                if (n.narrowKind() == null) {
+                    throw new IllegalStateException("HirVerifier : null Narrow kind");
+                }
+                verifyExpr(module, n.operand(), inFunction, loopDepth);
+                PrimitiveKind opKind = n.operand().meta().kind();
+                if (n.meta().kind() != opKind && opKind != PrimitiveKind.NONE) {
+                    throw new IllegalStateException(
+                            "HirVerifier : Narrow kind mismatch "
+                                    + n.meta().kind()
+                                    + " vs "
+                                    + opKind);
+                }
+            }
+            case HirExpr.Convert cv -> {
+                if (cv.targetKind() == null) {
+                    throw new IllegalStateException("HirVerifier : null Convert targetKind");
+                }
+                verifyExpr(module, cv.operand(), inFunction, loopDepth);
+                if (cv.meta().kind() != cv.targetKind()) {
+                    throw new IllegalStateException(
+                            "HirVerifier : Convert meta kind "
+                                    + cv.meta().kind()
+                                    + " != targetKind "
+                                    + cv.targetKind());
+                }
+            }
+            case HirExpr.Widen w -> {
+                if (w.wideningRank() < 1 || w.wideningRank() > 5) {
+                    throw new IllegalStateException(
+                            "HirVerifier : invalid Widen rank " + w.wideningRank());
+                }
+                verifyExpr(module, w.operand(), inFunction, loopDepth);
+            }
         }
     }
 

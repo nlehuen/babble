@@ -227,7 +227,7 @@ fn run (n:int, x:int) -> double {nothrow unique}
     (block
       (def s (core-new list 1:int))
       (def r (array-new OF 1:int 2:int))
-      (set a += (+:double (call name(double) (+:int (call-fn bm (move var(s))) (call-fn bf (freeze var(r))))) (call-fn bigSink (block (+:int var(x) 1:int)))))
+      (set a += (+:double (call name(double) (+:int (call-fn bm (move var(s))) (call-fn bf (freeze var(r))))) (call-fn bigSink (widen[double] (block (+:int var(x) 1:int))))))
       (set i += 1:int)))
   var(a)
 ```
@@ -240,7 +240,7 @@ fn run (n:int, x:int) -> double {nothrow unique}
   (block
     (def $licm0
       (block
-        (def x#2 (block (+:int var(x#1) 1:int)))
+        (def x#2 (widen[double] (+:int var(x#1) 1:int)))
         var(x#2)))
     (while (<:bool var(i) var(n))
       (block

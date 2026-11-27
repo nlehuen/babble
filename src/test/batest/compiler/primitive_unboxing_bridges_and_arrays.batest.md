@@ -99,9 +99,9 @@ class C
   (def a (fn-ref C.a))
   (def b (fn-ref C.b))
   fn C.a (x:obj) -> int {pure}
-    (if (is var(x) int) (block var(x)) (block (call name(int) var(x))))
+    (if (is var(x) int) (block (narrow.is[int] var(x))) (block (call name(int) var(x))))
   fn C.b (x:obj) -> double {nothrow}
-    (if (is var(x) int) (block (call name(double) var(x))) (block var(x)))
+    (if (is var(x) int) (block (call name(double) (narrow.is[int] var(x)))) (block var(x)))
 ```
 
 ```hir
@@ -110,9 +110,9 @@ class C
   (def a (fn-ref C.a))
   (def b (fn-ref C.b))
   fn C.a (x:obj) -> int {pure}
-    (if (is var(x) int) var(x) (call name(int) var(x)))
+    (if (is var(x) int) (narrow.is[int] var(x)) (call name(int) var(x)))
   fn C.b (x:obj) -> double {nothrow}
-    (if (is var(x) int) (call name(double) var(x)) var(x))
+    (if (is var(x) int) (call name(double) (narrow.is[int] var(x))) var(x))
 ```
 
 ```mir
@@ -196,9 +196,9 @@ class C
   (def g (fn-ref C.g))
   (def h (fn-ref C.h))
   fn C.g (x:obj=10.0:double) -> bool {nothrow unique}
-    (and (<>:bool var(x) null) (==:bool var(x) 10.0:double))
+    (and (<>:bool var(x) null) (==:bool (narrow.nonnull var(x)) 10.0:double))
   fn C.h (x:obj) -> bool {nothrow unique}
-    (and (<>:bool var(x) null) (==:bool var(x) 5.0:double))
+    (and (<>:bool var(x) null) (==:bool (narrow.nonnull var(x)) 5.0:double))
 ```
 
 ```mir
@@ -299,7 +299,7 @@ top-level:
       (set-name s += (call name(int) var(b)))))
   (for z in (array-new OF true:bool false:bool true:bool)
     (block
-      (if var(z) (block (set-name s += 10:int)))))
+      (if var(z) (box (block (set-name s += 10:int))))))
   (for sh in (array-new OF (call name(short) 3:int) (call name(short) 4:int))
     (block
       (set-name s += (call name(int) var(sh)))))
@@ -321,7 +321,7 @@ top-level:
       (set-name s += (call name(int) var(b)))))
   (for z in (array-new OF true:bool false:bool true:bool)
     (block
-      (if var(z) (set-name s += 10:int))))
+      (if var(z) (box (set-name s += 10:int)))))
   (for sh in (array-new OF (call name(short) 3:int) (call name(short) 4:int))
     (block
       (set-name s += (call name(int) var(sh)))))

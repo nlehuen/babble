@@ -247,10 +247,10 @@ fn sumRef (cs:obj, ps:obj, ts:obj) -> int {nothrow unique}
   (def r 0:int)
   (for c in var(cs)
     (block
-      (if (==:bool var(c) 'a') (block (set r += 1:int)))))
+      (if (==:bool var(c) 'a') (box (block (set r += 1:int))))))
   (for p in var(ps)
     (block
-      (if var(p) (block (set r += 2:int)))))
+      (if var(p) (box (block (set r += 2:int))))))
   (for t in var(ts)
     (block
       (set r += (jcall String.length var(t)))))
@@ -263,10 +263,10 @@ fn sumRef (cs:obj, ps:obj, ts:obj) -> int {nothrow unique}
   (def r 0:int)
   (for c in var(cs)
     (block
-      (if (==:bool var(c) 'a') (set r += 1:int))))
+      (if (==:bool var(c) 'a') (box (set r += 1:int)))))
   (for p in var(ps)
     (block
-      (if var(p) (set r += 2:int))))
+      (if var(p) (box (set r += 2:int)))))
   (for t in var(ts)
     (block
       (set r += (jcall String.length var(t)))))

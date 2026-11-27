@@ -42,7 +42,7 @@ assert(run(3, 4) == 11.5)
 ;; hir -O0 fn=run
 fn run (n:int, k:int) -> double {pure unique}
   (def w1 (get-this-field b))
-  (def w2 (+:double (get-this-field a) 1.5:double))
+  (def w2 (+:double (convert[double] (get-this-field a)) 1.5:double))
   (def bx (get-this-field v))
   (+:double (+:double var(w1) var(w2)) (call name(double) (as var(bx) int|int|)))
 ```
@@ -50,9 +50,9 @@ fn run (n:int, k:int) -> double {pure unique}
 ```hir
 ;; hir -O1 fn=run
 fn run (n:int, k:int) -> double {pure unique}
-  (def w1 var(k))
-  (def w2 (+:double var(n) 1.5:double))
-  (def bx (block var(n)))
+  (def w1 (widen[double] var(k)))
+  (def w2 (+:double (convert[double] var(n)) 1.5:double))
+  (def bx (box var(n)))
   (+:double (+:double var(w1) var(w2)) (call name(double) (as var(bx) int|int|)))
 ```
 
@@ -825,10 +825,10 @@ fn work (a:obj, b:obj) -> double {nothrow unique}
   (def xs (core-new list var(a)))
   (def h (record-new Holder (core-new list 1:int) 2:int))
   (def h2 (move var(h)))
-  (set tmp (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int (get-this-field count) (jcall List.size var(xs))))))
+  (set tmp (box (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int (get-this-field count) (jcall List.size var(xs)))))))
   (try
     (block
-      (if (<:bool (nonnull var(tmp)) 0.0:double) (block (call name(assert) false:bool)))
+      (if (<:bool (nonnull var(tmp)) 0.0:double) (box (block (call name(assert) false:bool))))
       (nonnull var(tmp)))
     (catch _
       0.0:double))
@@ -844,10 +844,10 @@ fn work (a:obj, b:obj) -> double {nothrow unique}
     (def $sr_h_0 (core-new list 1:int))
     (def $sr_h_1 2:int))
   (block (def $sr_h2_1 var($sr_h_1)))
-  (set tmp (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int var($sr_h2_1) (jcall List.size var(xs))))))
+  (set tmp (box (+:double (+:double (get-this-field x) (get-this-field y)) (call name(double) (+:int var($sr_h2_1) (jcall List.size var(xs)))))))
   (try
     (block
-      (if (<:bool (nonnull var(tmp)) 0.0:double) (call name(assert) false:bool))
+      (if (<:bool (nonnull var(tmp)) 0.0:double) (box (call name(assert) false:bool)))
       (nonnull var(tmp)))
     (catch _
       0.0:double))

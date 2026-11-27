@@ -123,8 +123,8 @@ assert(negMix(byte(2), short(3), 100L, 2.5f) == 6.5)
 ```hir
 ;; hir -O0,-O1 fn=negMix
 fn negMix (b:byte, s:short, l:long, f:float) -> double {nothrow unique}
-  (def nb (neg var(b)))
-  (def ns (neg var(s)))
+  (def nb (neg (convert[int] var(b))))
+  (def ns (neg (convert[int] var(s))))
   (def nl (+:long (neg var(l)) 10:long))
   (def nf (+:float (neg var(f)) 1.5:float))
   (+:double (+:double (call name(double) (+:int var(nb) var(ns))) (call name(double) (+:long var(l) var(nl)))) (call name(double) (+:float var(f) var(nf))))

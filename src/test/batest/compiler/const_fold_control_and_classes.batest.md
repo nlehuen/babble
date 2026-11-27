@@ -27,8 +27,8 @@ assert(recCount(4) == 4)
 ```hir
 ;; hir -O0 fn=checkMisc
 fn checkMisc (opt:obj) -> bool {pure unique}
-  (def l1 (and true:bool var(opt)))
-  (def l2 (or false:bool var(opt)))
+  (def l1 (box (and true:bool var(opt))))
+  (def l2 (box (or false:bool var(opt))))
   (def nn (not (block (not var(opt)))))
   (and (and (block (==:bool var(l1) true:bool)) (block (==:bool var(l2) true:bool))) var(nn))
 ```
@@ -36,8 +36,8 @@ fn checkMisc (opt:obj) -> bool {pure unique}
 ```hir
 ;; hir -O1 fn=checkMisc
 fn checkMisc (opt:obj) -> bool {pure unique}
-  (def l1 (and true:bool var(opt)))
-  (def l2 (or false:bool var(opt)))
+  (def l1 (box (and true:bool var(opt))))
+  (def l2 (box (or false:bool var(opt))))
   (def nn (not (not var(opt))))
   (and (and (==:bool var(l1) true:bool) (==:bool var(l2) true:bool)) var(nn))
 ```
@@ -144,7 +144,7 @@ fn f () -> bool {nothrow unique}
   (while false:bool
     (block (set x += 1:int)))
   (def negOk (and (==:bool (neg (block (+:int 1:int 2:int))) -3:int) (==:bool (neg (block (+:double 1.5:double 2.5:double))) -4.0:double)))
-  (def cmpOk (and (and (and (and (block (<:bool 1:int 2:long)) (block (<:bool 1:long 2.5:double))) (not (block (<:bool 3:int 2:int)))) (not (block (==:bool 3:int 4:int)))) (not (block (>=:bool 2:int 3:int)))))
+  (def cmpOk (and (and (and (and (block (<:bool (convert[long] 1:int) 2:long)) (block (<:bool (convert[double] 1:long) 2.5:double))) (not (block (<:bool 3:int 2:int)))) (not (block (==:bool 3:int 4:int)))) (not (block (>=:bool 2:int 3:int)))))
   (and (and (==:bool var(x) 0:int) var(negOk)) var(cmpOk))
 ```
 
@@ -291,14 +291,14 @@ assert(check(4.0, " a "))
 ```hir
 ;; hir -O0 fn=check
 fn check (x:double, s:obj) -> bool {nothrow unique}
-  (def d (+:double (block (if true:bool (block 5:int) (block 6:int))) var(x)))
+  (def d (+:double (convert[double] (block (if true:bool (block 5:int) (block 6:int)))) var(x)))
   (and (and (==:bool (jcall Math.sqrt var(x)) 2.0:double) (==:bool (jcall String.trim var(s)) "a")) (==:bool var(d) 9.0:double))
 ```
 
 ```hir
 ;; hir -O1 fn=check
 fn check (x:double, s:obj) -> bool {nothrow unique}
-  (def d (+:double 5:int var(x)))
+  (def d (+:double 5.0:double var(x)))
   (and (and (==:bool (jcall Math.sqrt var(x)) 2.0:double) (==:bool (jcall String.trim var(s)) "a")) (==:bool var(d) 9.0:double))
 ```
 
@@ -306,31 +306,30 @@ fn check (x:double, s:obj) -> bool {nothrow unique}
 ;; mir -O2 fn=check stage=before
 fn check(v0: double, v1: any) -> bool:
   bb0:
-    v2: int = const 5
-    v3: double = convert.double v2
-    v4: double = add v3, v0 {pure}
-    v5: double = call_java Math.sqrt(v0) {pure}
-    v6: double = const 2.0
-    v7: bool = eq v5, v6 {pure}
-    v8: bool = const false
-    br_if v7, bb1, bb2(v8)
+    v2: double = const 5.0
+    v3: double = add v2, v0 {pure}
+    v4: double = call_java Math.sqrt(v0) {pure}
+    v5: double = const 2.0
+    v6: bool = eq v4, v5 {pure}
+    v7: bool = const false
+    br_if v6, bb1, bb2(v7)
   bb1:
-    v9: any = call_java v1.trim() {impure}
-    v10: any = checkcast v9 <string|string|>
-    v11: any = const "a"
-    v12: any = eq v10, v11 {pure}
+    v8: any = call_java v1.trim() {impure}
+    v9: any = checkcast v8 <string|string|>
+    v10: any = const "a"
+    v11: any = eq v9, v10 {pure}
+    v12: bool = not v11 {pure}
     v13: bool = not v12 {pure}
-    v14: bool = not v13 {pure}
-    br bb2(v14)
-  bb2(v15: bool):
-    v16: bool = const false
-    br_if v15, bb3, bb4(v16)
+    br bb2(v13)
+  bb2(v14: bool):
+    v15: bool = const false
+    br_if v14, bb3, bb4(v15)
   bb3:
-    v17: double = const 9.0
-    v18: bool = eq v4, v17 {pure}
-    br bb4(v18)
-  bb4(v19: bool):
-    ret v19
+    v16: double = const 9.0
+    v17: bool = eq v3, v16 {pure}
+    br bb4(v17)
+  bb4(v18: bool):
+    ret v18
 ```
 
 ```mir
@@ -760,18 +759,18 @@ assert(widenIf(2, 0.5) == 8.5)
 ```hir
 ;; hir -O0 fn=widenIf
 fn widenIf (p:int, x:double) -> double {nothrow unique}
-  (def a (+:double (block (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int)))) var(x)))
-  (def b (if true:bool (block var(p)) (block 1.5:double)))
-  (def c (if true:bool (block (+:int var(p) 1:int)) (block 1.5:double)))
+  (def a (+:double (convert[double] (block (if true:bool (block (+:int var(p) 1:int)) (block (+:int var(p) 2:int))))) var(x)))
+  (def b (if true:bool (widen[double] (block var(p))) (block 1.5:double)))
+  (def c (if true:bool (widen[double] (block (+:int var(p) 1:int))) (block 1.5:double)))
   (+:double (+:double var(a) var(b)) var(c))
 ```
 
 ```hir
 ;; hir -O1 fn=widenIf
 fn widenIf (p:int, x:double) -> double {nothrow unique}
-  (def a (+:double (+:int var(p) 1:int) var(x)))
-  (def b (if true:bool (block var(p)) 1.5:double))
-  (def c (if true:bool (block (+:int var(p) 1:int)) 1.5:double))
+  (def a (+:double (convert[double] (+:int var(p) 1:int)) var(x)))
+  (def b (widen[double] var(p)))
+  (def c (widen[double] (+:int var(p) 1:int)))
   (+:double (+:double var(a) var(b)) var(c))
 ```
 
@@ -783,29 +782,13 @@ fn widenIf(v0: int, v1: double) -> double:
     v3: int = add v0, v2 {pure}
     v4: double = convert.double v3
     v5: double = add v4, v1 {pure}
-    v6: bool = const true
-    br_if v6, bb2, bb1
-  bb1:
-    v7: double = const 1.5
-    br bb3(v7)
-  bb2:
-    v8: double = convert.double v0
-    br bb3(v8)
-  bb3(v9: double):
-    v10: bool = const true
-    br_if v10, bb5, bb4
-  bb4:
-    v11: double = const 1.5
-    br bb6(v11)
-  bb5:
-    v12: int = const 1
-    v13: int = add v0, v12 {pure}
-    v14: double = convert.double v13
-    br bb6(v14)
-  bb6(v15: double):
-    v16: double = add v5, v9 {pure}
-    v17: double = add v16, v15 {pure}
-    ret v17
+    v6: double = convert.double v0
+    v7: int = const 1
+    v8: int = add v0, v7 {pure}
+    v9: double = convert.double v8
+    v10: double = add v5, v6 {pure}
+    v11: double = add v10, v9 {pure}
+    ret v11
 ```
 
 ```mir
@@ -816,18 +799,10 @@ fn widenIf(v0: int, v1: double) -> double:
     v3: int = add v0, v2 {pure}
     v4: double = convert.double v3
     v5: double = add v4, v1 {pure}
-    br bb1
-  bb1:
     v6: double = convert.double v0
-    br bb2(v6)
-  bb2(v7: double):
-    br bb3
-  bb3:
-    br bb4(v4)
-  bb4(v8: double):
-    v9: double = add v5, v7 {pure}
-    v10: double = add v9, v8 {pure}
-    ret v10
+    v7: double = add v5, v6 {pure}
+    v8: double = add v7, v4 {pure}
+    ret v8
 ```
 
 ## String concatenation exceeding MAX_FOLDED_STRING_LENGTH stays unfolded

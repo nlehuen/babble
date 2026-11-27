@@ -1139,9 +1139,14 @@ final class MirControlFlowLowerer {
     }
 
     private static HirExpr unwrapTransparent(HirExpr expr) {
-        while (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
-            expr = b.statements().get(0);
+        while (true) {
+            if (expr instanceof HirExpr.Block b && b.isTransparentSingleExpr()) {
+                expr = b.statements().get(0);
+            } else if (expr instanceof HirExpr.Narrow n) {
+                expr = n.operand();
+            } else {
+                return expr;
+            }
         }
-        return expr;
     }
 }

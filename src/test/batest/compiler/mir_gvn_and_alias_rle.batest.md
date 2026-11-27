@@ -107,7 +107,7 @@ assert(absTwice(-3.5, (array of int).of(1, 2, 3)) == 9.5)
 fn absTwice (x:double, xs:obj) -> double {nothrow unique}
   (def a (jcall Math.abs var(x)))
   (def b (jcall Math.abs var(a)))
-  (+:double (+:double var(b) (array-op SIZE var(xs))) (array-op SIZE var(xs)))
+  (+:double (+:double var(b) (convert[double] (array-op SIZE var(xs)))) (convert[double] (array-op SIZE var(xs))))
 ```
 
 ```hir
@@ -115,7 +115,7 @@ fn absTwice (x:double, xs:obj) -> double {nothrow unique}
 fn absTwice (x:double, xs:obj) -> double {nothrow unique}
   (def a (jcall Math.abs var(x)))
   (def b (jcall Math.abs var(a)))
-  (+:double (+:double var(b) (array-op SIZE var(xs))) (array-op SIZE var(xs)))
+  (+:double (+:double var(b) (convert[double] (array-op SIZE var(xs)))) (convert[double] (array-op SIZE var(xs))))
 ```
 
 ```mir
@@ -318,14 +318,14 @@ fn gvnCalls (a:int, b:int) -> int {nothrow unique}
       (def x
         (block
           (def r#2 var(a#1))
-          (if (<:bool var(r#2) 0:int) (set r#2 0:int))
-          (if (>:bool var(r#2) 10:int) (set r#2 10:int))
+          (if (<:bool var(r#2) 0:int) (box (set r#2 0:int)))
+          (if (>:bool var(r#2) 10:int) (box (set r#2 10:int)))
           (def a#3 (-:int (+:int var(r#2) 1:int) 1:int))
           (def b#3 var(a#3))
           (if (<:bool var(b#3) 0:int) 0:int var(b#3))))
       (def r#1 var(x))
-      (if (<:bool var(r#1) 0:int) (set r#1 0:int))
-      (if (>:bool var(r#1) 10:int) (set r#1 10:int))
+      (if (<:bool var(r#1) 0:int) (box (set r#1 0:int)))
+      (if (>:bool var(r#1) 10:int) (box (set r#1 10:int)))
       (def a#2 (-:int (+:int var(r#1) 1:int) 1:int))
       (def b#2 var(a#2))
       (if (<:bool var(b#2) 0:int) 0:int var(b#2))))
@@ -489,7 +489,7 @@ assert(condWrite(true, Box(3)) == 13 and condWrite(false, Box(3)) == 6)
 ;; hir -O0 fn=condWrite
 fn condWrite (flag:bool, b:obj) -> int {nothrow unique}
   (def before (get-this-field v))
-  (if var(flag) (block (set-field var(b).v 10:int)))
+  (if var(flag) (box (block (set-field var(b).v 10:int))))
   (+:int var(before) (get-this-field v))
 ```
 
@@ -497,7 +497,7 @@ fn condWrite (flag:bool, b:obj) -> int {nothrow unique}
 ;; hir -O1 fn=condWrite
 fn condWrite (flag:bool, b:obj) -> int {nothrow unique}
   (def before (get-this-field v))
-  (if var(flag) (set-field var(b).v 10:int))
+  (if var(flag) (box (set-field var(b).v 10:int)))
   (+:int var(before) (get-this-field v))
 ```
 
@@ -552,25 +552,25 @@ assert(roundTrip(5, 2.5) == 13.5 and 1.0 / ((fn (d: double): double -> (def a: a
 ```hir
 ;; hir -O0 fn=roundTrip
 fn roundTrip (x:int, d:double) -> double {pure unique}
-  (def a var(x))
-  (def b var(x))
-  (def c var(d))
+  (def a (box var(x)))
+  (def b (box var(x)))
+  (def c (box var(d)))
   (def r1 (as var(a) int|int|))
-  (def r2 (if (<>:bool var(b) null) (block (+:int var(b) 1:int)) (block 0:int)))
-  (def r3 (if (is var(c) double) (block var(c)) (block 0.0:double)))
-  (+:double var(r3) (block (+:int var(r1) var(r2))))
+  (def r2 (if (<>:bool var(b) null) (block (+:int (narrow.nonnull var(b)) 1:int)) (block 0:int)))
+  (def r3 (if (is var(c) double) (block (narrow.is[double] var(c))) (block 0.0:double)))
+  (+:double var(r3) (convert[double] (block (+:int var(r1) var(r2)))))
 ```
 
 ```hir
 ;; hir -O1 fn=roundTrip
 fn roundTrip (x:int, d:double) -> double {pure unique}
-  (def a var(x))
-  (def b var(x))
-  (def c var(d))
+  (def a (box var(x)))
+  (def b (box var(x)))
+  (def c (box var(d)))
   (def r1 (as var(a) int|int|))
-  (def r2 (if (<>:bool var(b) null) (+:int var(b) 1:int) 0:int))
-  (def r3 (if (is var(c) double) var(c) 0.0:double))
-  (+:double var(r3) (+:int var(r1) var(r2)))
+  (def r2 (if (<>:bool var(b) null) (+:int (narrow.nonnull var(b)) 1:int) 0:int))
+  (def r3 (if (is var(c) double) (narrow.is[double] var(c)) 0.0:double))
+  (+:double var(r3) (convert[double] (+:int var(r1) var(r2))))
 ```
 
 ```mir
@@ -657,14 +657,14 @@ assert(rbCheck(list(42)) == 42 and rbNarrow(7, null) == 7 and rbNarrow(null, 3.5
 ;; hir -O0 fn=rbCheck
 fn rbCheck (xs:obj) -> obj {pure unique}
   (def y (jcall List.get var(xs) 0:int))
-  var(y)
+  (box var(y))
 ```
 
 ```hir
 ;; hir -O1 fn=rbCheck
 fn rbCheck (xs:obj) -> obj {pure unique}
   (def y (jcall List.get var(xs) 0:int))
-  var(y)
+  (box var(y))
 ```
 
 ```mir
@@ -788,7 +788,7 @@ assert(Holder("init").setAndRead(5) == 15)
 fn Holder.setAndRead (x:int) -> int {nothrow mut}
   (set-this-field v var(x))
   (def cur (get-this-field v))
-  (if (is var(cur) int) (block (+:int var(cur) 10:int)) (block 0:int))
+  (if (is var(cur) int) (block (+:int (narrow.is[int] var(cur)) 10:int)) (block 0:int))
 ```
 
 ```hir
@@ -796,7 +796,7 @@ fn Holder.setAndRead (x:int) -> int {nothrow mut}
 fn Holder.setAndRead (x:int) -> int {nothrow mut}
   (set-this-field v var(x))
   (def cur (get-this-field v))
-  (if (is var(cur) int) (+:int var(cur) 10:int) 0:int)
+  (if (is var(cur) int) (+:int (narrow.is[int] var(cur)) 10:int) 0:int)
 ```
 
 ```mir
@@ -856,16 +856,16 @@ var bad = false ; try (nc("oops")) catch e: exception then (bad = true) ; assert
 ```hir
 ;; hir -O0 fn=lossy
 fn lossy (x:int) -> double {nothrow monotone injective unique}
-  (def f var(x))
-  (def d var(f))
+  (def f (widen[float] var(x)))
+  (def d (widen[double] var(f)))
   var(d)
 ```
 
 ```hir
 ;; hir -O1 fn=lossy
 fn lossy (x:int) -> double {nothrow monotone injective unique}
-  (def f var(x))
-  (def d var(f))
+  (def f (widen[float] var(x)))
+  (def d (widen[double] var(f)))
   var(d)
 ```
 

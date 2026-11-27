@@ -597,6 +597,21 @@ public final class HirRewriter {
                 HirExpr no = transform.apply(f.operand());
                 yield no == f.operand() ? f : new HirExpr.Freeze(no, f.meta());
             }
+            case HirExpr.Narrow n -> {
+                HirExpr no = transform.apply(n.operand());
+                yield no == n.operand()
+                        ? n
+                        : new HirExpr.Narrow(
+                                no, n.narrowKind(), n.guardId(), n.targetDesc(), n.meta());
+            }
+            case HirExpr.Convert cv -> {
+                HirExpr no = transform.apply(cv.operand());
+                yield no == cv.operand() ? cv : new HirExpr.Convert(no, cv.targetKind(), cv.meta());
+            }
+            case HirExpr.Widen w -> {
+                HirExpr no = transform.apply(w.operand());
+                yield no == w.operand() ? w : new HirExpr.Widen(no, w.wideningRank(), w.meta());
+            }
         };
     }
 

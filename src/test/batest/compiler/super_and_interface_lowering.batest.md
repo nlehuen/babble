@@ -88,13 +88,13 @@ assert(ci.plusBase(5) == 25.0)
 ;; hir -O0 fn=plusBase
 fn plusBase (k:int) -> double {pure}
   (def mul 2:int)
-  (+:int (*:int (call-iface this.base) var(mul)) var(k))
+  (widen[double] (+:int (*:int (call-iface this.base) var(mul)) var(k)))
 ```
 
 ```hir
 ;; hir -O1 fn=plusBase
 fn plusBase (k:int) -> double {pure}
-  (+:int (*:int (call-iface this.base) 2:int) var(k))
+  (widen[double] (+:int (*:int (call-iface this.base) 2:int) var(k)))
 ```
 
 ```mir
@@ -127,7 +127,7 @@ assert(C1().calc(4) == 5)
 interface IBase
   (def calc (fn-ref calc))
   fn calc (x:int) -> obj {pure}
-    (*:int var(x) 0:int)
+    (box (*:int var(x) 0:int))
 ```
 
 ```hir
@@ -135,7 +135,7 @@ interface IBase
 interface IBase
   (def calc (fn-ref calc))
   fn calc (x:int) -> obj {pure}
-    0:int
+    (box 0:int)
 ```
 
 ```mir
@@ -275,14 +275,14 @@ fn r () -> double {nothrow unique}
 ```hir
 ;; hir -O0 fn=DS.getAsDouble
 fn DS.getAsDouble () -> obj {nothrow unique}
-  (call-fn dyn 3.5:double)
+  (call-fn dyn (box 3.5:double))
 ```
 
 ```hir
 ;; hir -O1 fn=DS.getAsDouble
 fn DS.getAsDouble () -> obj {nothrow unique}
   (block
-    (def v 3.5:double)
+    (def v (box 3.5:double))
     var(v))
 ```
 
@@ -346,7 +346,7 @@ assert(i2d.applyAsDouble(2) == 2.5)
 class I2D
   (def applyAsDouble (fn-ref I2D.applyAsDouble))
   fn I2D.applyAsDouble (i:int) -> double {nothrow monotone unique}
-    (+:double var(i) 0.5:double)
+    (+:double (convert[double] var(i)) 0.5:double)
 ```
 
 ```mir

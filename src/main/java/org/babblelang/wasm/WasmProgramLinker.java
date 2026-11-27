@@ -915,6 +915,9 @@ public final class WasmProgramLinker {
             case HirExpr.NonNull n -> walkExpr(n.operand(), visitor);
             case HirExpr.Move m -> walkExpr(m.operand(), visitor);
             case HirExpr.Freeze f -> walkExpr(f.operand(), visitor);
+            case HirExpr.Narrow n -> walkExpr(n.operand(), visitor);
+            case HirExpr.Convert cv -> walkExpr(cv.operand(), visitor);
+            case HirExpr.Widen w -> walkExpr(w.operand(), visitor);
             case HirExpr.JavaMethodCall c -> {
                 walkExpr(c.receiver(), visitor);
                 for (HirExpr a : c.args()) walkExpr(a, visitor);
@@ -1362,6 +1365,9 @@ public final class WasmProgramLinker {
             case HirExpr.NonNull n -> collectOverloadMetas(n.operand(), out);
             case HirExpr.Move m -> collectOverloadMetas(m.operand(), out);
             case HirExpr.Freeze f -> collectOverloadMetas(f.operand(), out);
+            case HirExpr.Narrow n -> collectOverloadMetas(n.operand(), out);
+            case HirExpr.Convert cv -> collectOverloadMetas(cv.operand(), out);
+            case HirExpr.Widen w -> collectOverloadMetas(w.operand(), out);
             case HirExpr.JavaMethodCall c -> {
                 collectOverloadMetas(c.receiver(), out);
                 for (HirExpr a : c.args()) collectOverloadMetas(a, out);

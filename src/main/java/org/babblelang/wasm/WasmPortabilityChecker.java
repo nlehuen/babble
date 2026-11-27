@@ -641,6 +641,9 @@ public final class WasmPortabilityChecker {
             }
             case HirExpr.Move m -> checkExpr(m.operand(), target, topLevelDefined, out);
             case HirExpr.Freeze f -> checkExpr(f.operand(), target, topLevelDefined, out);
+            case HirExpr.Narrow n -> checkExpr(n.operand(), target, topLevelDefined, out);
+            case HirExpr.Convert cv -> checkExpr(cv.operand(), target, topLevelDefined, out);
+            case HirExpr.Widen w -> checkExpr(w.operand(), target, topLevelDefined, out);
             case HirExpr.Match m -> {
                 checkExpr(m.scrutinee(), target, topLevelDefined, out);
                 for (HirExpr.MatchArm arm : m.arms()) {

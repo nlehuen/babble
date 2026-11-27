@@ -150,6 +150,12 @@ public final class HirBuilder {
                 nonCyclicImports,
                 publicStaticDefSelects);
 
+        // Pass 4: BIP039-D3 zero-cost guard narrowing anchors.
+        HirNarrowAnnotator.annotate(topLevel, hirFunctions, hirClasses, hirInterfaces);
+
+        // Pass 5: BIP039-D4 explicit Widen and Convert materialization.
+        HirConvertMaterializer.materialize(topLevel, hirFunctions, hirClasses, hirInterfaces);
+
         String[] exports = scopes.exports();
         String[] topDeclared = scopes.declared(file);
         boolean[] topFinals = scopes.declaredFinals(file);

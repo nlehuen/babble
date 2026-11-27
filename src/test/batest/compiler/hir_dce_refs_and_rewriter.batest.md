@@ -248,7 +248,7 @@ fn run (s:obj, n:int) -> int {pure unique}
   (def ov (overload (block
         (call name(discard) 1:int)
         (fn-ref <anon#0>)) (fn-ref ov)))
-  (+:int (+:int (block (if (<>:bool var(l1) null) (block var(l1)) (block 0:int))) (block (if (<>:bool var(l2) null) (block var(l2)) (block 0:int)))) (call-fn <anon#0> var(n)))
+  (+:int (+:int (block (if (<>:bool var(l1) null) (block (narrow.nonnull var(l1))) (block 0:int))) (block (if (<>:bool var(l2) null) (block (narrow.nonnull var(l2))) (block 0:int)))) (call-fn <anon#0> var(n)))
 ```
 
 ```hir
@@ -257,7 +257,7 @@ fn run (s:obj, n:int) -> int {pure unique}
   (def l1 (safe-call var(s)?.length))
   (def l2 (safe-call (safe-call var(s)?.substring 1:int)?.length))
   (def ov (overload (fn-ref <anon#0>) (fn-ref ov)))
-  (+:int (+:int (if (<>:bool var(l1) null) var(l1) 0:int) (if (<>:bool var(l2) null) var(l2) 0:int)) (+:int var(n) 1:int))
+  (+:int (+:int (if (<>:bool var(l1) null) (narrow.nonnull var(l1)) 0:int) (if (<>:bool var(l2) null) (narrow.nonnull var(l2)) 0:int)) (+:int var(n) 1:int))
 ```
 
 ```mir

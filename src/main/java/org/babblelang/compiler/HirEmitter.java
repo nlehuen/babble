@@ -391,6 +391,9 @@ final class HirEmitter {
             case HirExpr.RecordReuse r -> 1 + countNodes(r.target()) + countList(r.args());
             case HirExpr.Move m -> 1 + countNodes(m.operand());
             case HirExpr.Freeze f -> 1 + countNodes(f.operand());
+            case HirExpr.Narrow n -> countNodes(n.operand());
+            case HirExpr.Convert cv -> 1 + countNodes(cv.operand());
+            case HirExpr.Widen w -> 1 + countNodes(w.operand());
         };
     }
 
@@ -586,6 +589,12 @@ final class HirEmitter {
             case HirExpr.RecordReuse r -> calls.emitRecordReuse(r);
             case HirExpr.Move m -> emitAndWiden(m.operand());
             case HirExpr.Freeze f -> emitAndWiden(f.operand());
+            case HirExpr.Narrow n -> emitAndWiden(n.operand());
+            case HirExpr.Convert cv -> emitAs(cv.operand(), cv.targetKind());
+            case HirExpr.Widen w -> {
+                emitAndWiden(w.operand());
+                widenStackRank(w.wideningRank());
+            }
         }
     }
 

@@ -324,7 +324,7 @@ fn run (f:bool) -> int {io}
             (call-fn getOpt var(f)))
           (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
             null)))?.length))
-  (+:int var(a) (block (if (<>:bool var(b) null) (block var(b)) (block 0:int))))
+  (+:int var(a) (block (if (<>:bool var(b) null) (block (narrow.nonnull var(b))) (block 0:int))))
 ```
 
 ```hir
@@ -341,7 +341,7 @@ fn run (f:bool) -> int {io}
           (call-fn getOpt var(f)))
         (catch _:java|org.babblelang.runtime.BabbleException|org.babblelang.runtime.BabbleException
           null))?.length))
-  (+:int var(a) (if (<>:bool var(b) null) var(b) 0:int))
+  (+:int var(a) (if (<>:bool var(b) null) (narrow.nonnull var(b)) 0:int))
 ```
 
 ```mir
