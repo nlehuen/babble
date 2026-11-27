@@ -510,6 +510,9 @@ final class MethodEntryEmitter {
                 }
                 toDeclare = filtered;
             }
+            if (mirFn == null && emitter.cacheNameReadsInBodies) {
+                HirSlotAllocator.allocate(fn, ctx);
+            }
             for (HirVar variable : emitter.declareVariables(toDeclare)) {
                 if (variable.kind() == Resolution.Variable.Kind.THIS && variable.used()) {
                     mv.visitVarInsn(ALOAD, ctx.thizLocal);

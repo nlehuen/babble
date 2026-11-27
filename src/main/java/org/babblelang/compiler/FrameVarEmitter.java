@@ -50,7 +50,9 @@ final class FrameVarEmitter {
         MethodVisitor mv = ctx.mv;
         for (HirVar variable : variables) {
             PrimitiveKind vk = variable.primitiveKind();
-            int slot = ctx.newLocal(variable.cell() ? PrimitiveKind.NONE : vk);
+            Integer pre =
+                    ctx.preallocatedSlots != null ? ctx.preallocatedSlots.get(variable.id()) : null;
+            int slot = pre != null ? pre : ctx.newLocal(variable.cell() ? PrimitiveKind.NONE : vk);
             ctx.slots.put(variable.id(), slot);
             if (!variable.cell()
                     && vk.isPrimitive()
@@ -68,6 +70,9 @@ final class FrameVarEmitter {
                     mv.visitMethodInsn(INVOKESTATIC, cc, "undefined", "()L" + cc + ";", false);
                     mv.visitVarInsn(ASTORE, slot);
                     publishHidden(variable);
+                } else if (pre != null) {
+                    // Non-cell colorable locals are definitely initialized before any read; omit
+                    // redundant prologue zero/UNDEFINED stores (matches MirEmitter).
                 } else if (vk.isPrimitive()) {
                     emitDefaultValueOn(mv, vk);
                     storeKindOn(mv, vk, slot);
@@ -214,6 +219,15 @@ final class FrameVarEmitter {
     }
 
     void storeVariable(HirVar variable, boolean definition, PrimitiveKind vk, int lineNumber) {
+        storeVariable(variable, definition, vk, lineNumber, true);
+    }
+
+    void storeVariable(
+            HirVar variable,
+            boolean definition,
+            PrimitiveKind vk,
+            int lineNumber,
+            boolean valueNeeded) {
         MethodEmitContext ctx = emitter.ctx;
         MethodVisitor mv = ctx.mv;
         if (variable.cell()) {
@@ -235,7 +249,12 @@ final class FrameVarEmitter {
                         "(" + desc + "Ljava/lang/String;)" + desc,
                         false);
             }
-            ctx.stackKind = vk;
+            if (!valueNeeded) {
+                popOn(mv, vk);
+                ctx.stackKind = PrimitiveKind.NONE;
+            } else {
+                ctx.stackKind = vk;
+            }
             return;
         }
         int slot = ctx.slots.get(variable.id());
@@ -253,12 +272,14 @@ final class FrameVarEmitter {
                             INVOKESTATIC, FRAMES, "checkDefined", "(ZLjava/lang/String;)V", false);
                 }
             }
-            dupOn(mv, vk);
+            if (valueNeeded) {
+                dupOn(mv, vk);
+            }
             storeKindOn(mv, vk, slot);
             if (definition && variable.capturedByValue()) {
                 publishHidden(variable);
             }
-            ctx.stackKind = vk;
+            ctx.stackKind = valueNeeded ? vk : PrimitiveKind.NONE;
             return;
         }
         if (!definition && variable.mayBeUndefined() && !variable.definitelyDefined()) {
@@ -272,7 +293,9 @@ final class FrameVarEmitter {
                     "(Ljava/lang/Object;Ljava/lang/String;)V",
                     false);
         }
-        mv.visitInsn(DUP);
+        if (valueNeeded) {
+            mv.visitInsn(DUP);
+        }
         mv.visitVarInsn(ASTORE, slot);
         if (definition && variable.capturedByValue()) {
             publishHidden(variable);

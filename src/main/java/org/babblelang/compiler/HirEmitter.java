@@ -475,7 +475,16 @@ final class HirEmitter {
     }
 
     void storeVariable(HirVar variable, boolean definition, PrimitiveKind vk, int lineNumber) {
-        frameVars.storeVariable(variable, definition, vk, lineNumber);
+        frameVars.storeVariable(variable, definition, vk, lineNumber, true);
+    }
+
+    void storeVariable(
+            HirVar variable,
+            boolean definition,
+            PrimitiveKind vk,
+            int lineNumber,
+            boolean valueNeeded) {
+        frameVars.storeVariable(variable, definition, vk, lineNumber, valueNeeded);
     }
 
     void loadName(String name, boolean finalAndDefined, int lineNumber) {
@@ -505,10 +514,56 @@ final class HirEmitter {
         }
         int last = statements.size() - 1;
         for (int i = 0; i < last; i++) {
-            emitExpr(statements.get(i));
-            popOn(ctx.mv, ctx.stackKind);
+            emitStmt(statements.get(i));
         }
         emitAndWiden(statements.get(last));
+    }
+
+    /** Emits every statement in {@code statements} in void position (no value left on stack). */
+    void statementsVoid(List<HirExpr> statements) {
+        for (HirExpr stmt : statements) {
+            emitStmt(stmt);
+        }
+        ctx.stackKind = PrimitiveKind.NONE;
+    }
+
+    /**
+     * Emits {@code expr} in statement (void) position, omitting unused DUP/POP and loop result
+     * slots.
+     */
+    void emitStmt(HirExpr expr) {
+        if (ctx.mirOverrides != null && ctx.mirOverrides.containsKey(expr)) {
+            emitExpr(expr);
+            popOn(ctx.mv, ctx.stackKind);
+            return;
+        }
+        ctx.stackKind = PrimitiveKind.NONE;
+        switch (expr) {
+            case HirExpr.Const ignored -> {}
+            case HirExpr.Def d -> assigns.emitDef(d, false);
+            case HirExpr.VarAssign a -> assigns.emitVarAssign(a, false);
+            case HirExpr.ThisFieldAssign a -> assigns.emitThisFieldAssign(a, false);
+            case HirExpr.JavaFieldAssign a -> assigns.emitJavaFieldAssignExpr(a, false);
+            case HirExpr.While w -> controlOps.loops.emitWhile(w, false);
+            case HirExpr.For f -> controlOps.loops.emitFor(f, false);
+            case HirExpr.Block b -> controlOps.emitBlock(b, false);
+            case HirExpr.If i -> controlOps.emitIf(i, false);
+            case HirExpr.Move m -> emitStmt(m.operand());
+            case HirExpr.Freeze f -> emitStmt(f.operand());
+            case HirExpr.Narrow n -> emitStmt(n.operand());
+            case HirExpr.Convert cv
+                    when cv.targetKind() == PrimitiveKind.NONE && cv.meta().checkedType() == null ->
+                    emitStmt(cv.operand());
+            case HirExpr.Widen w
+                    when w.operand().meta().kind().isPrimitive()
+                            && w.meta().checkedType() == null ->
+                    emitStmt(w.operand());
+            default -> {
+                emitExpr(expr);
+                popOn(ctx.mv, ctx.stackKind);
+            }
+        }
+        ctx.stackKind = PrimitiveKind.NONE;
     }
 
     void emitExpr(HirExpr expr) {

@@ -340,9 +340,11 @@ final class AeGraphBuilder {
             return forwarded;
         }
         IrEffect eff = fx.shallowEffectOf(cur);
+        boolean hasKnownField =
+                (cur.classId() >= 0 && cur.memberIndex() >= 0)
+                        || (cur.externalClassJvmName() != null && cur.memberName() != null);
         boolean eligible =
-                cur.classId() >= 0
-                        && cur.memberIndex() >= 0
+                hasKnownField
                         && cur.meta().checkedType() == null
                         && cur.meta().wideningRank() < 0
                         && (eff.isPureFloatable()
@@ -356,7 +358,13 @@ final class AeGraphBuilder {
         int epoch = state.effectiveMemEpochFor(eff.alias());
         AeGraphState.ValueKey key =
                 new AeGraphState.FieldKey(
-                        recv.valId(), cur.classId(), cur.memberIndex(), cur.meta().kind(), epoch);
+                        recv.valId(),
+                        cur.classId(),
+                        cur.externalClassJvmName(),
+                        cur.memberIndex(),
+                        cur.memberName(),
+                        cur.meta().kind(),
+                        epoch);
         return finishValueNumbered(cur, key, eff, state);
     }
 
@@ -730,11 +738,7 @@ final class AeGraphBuilder {
     }
 
     private Res visitDirectBabbleCall(HirExpr.DirectBabbleCall dc, AeGraphState state) {
-        HirExpr newCallee = dc.callee();
-        if (!(dc.callee() instanceof HirExpr.NameRead nr
-                && HirPurity.isDefinitelyInitializedTopLevelFn(nr.name(), module))) {
-            newCallee = visit(dc.callee(), state).expr();
-        }
+        HirExpr newCallee = visit(dc.callee(), state).expr();
         List<Integer> argIds = new ArrayList<>(dc.args().size());
         List<HirExpr> newArgs = null;
         for (int i = 0; i < dc.args().size(); i++) {

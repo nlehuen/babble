@@ -93,6 +93,8 @@ final class MethodEmitContext {
     List<Runnable> deferred;
     Map<Integer, Integer> slots;
     Map<Integer, Integer> definedSlots;
+    Map<Integer, Integer> preallocatedSlots;
+    final java.util.Set<Integer> initializedSlots = new java.util.HashSet<>();
     PrimitiveKind stackKind = PrimitiveKind.NONE;
     PrimitiveKind methodReturnKind = PrimitiveKind.NONE;
     List<HirVar> capturedVariables = List.of();
@@ -138,6 +140,8 @@ final class MethodEmitContext {
         this.deferred = new ArrayList<>();
         this.slots = new HashMap<>();
         this.definedSlots = new HashMap<>();
+        this.preallocatedSlots = null;
+        this.initializedSlots.clear();
         this.stackKind = PrimitiveKind.NONE;
         this.methodReturnKind = PrimitiveKind.NONE;
         this.capturedVariables = captured != null ? captured : List.of();
