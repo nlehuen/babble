@@ -1,10 +1,11 @@
 # Build Once, Fan Out, Then Gate CI workflow for Babble:
+#   0. changes       (1 runner)  : checks whether all changed files live under docs/ or root README.md; if so, skips build/tests/batest
 #   1. build         (1 runner)  : compiles src/main + src/test and packages jars once, uploads target/
 #   2. unit-tests    (1 runner)  : downloads target/ and runs src/test/java (excluding batest runners) across interpret, -O1, -O0
 #   3. batest        (6 runners) : downloads target/, runs -Pbatest 4-mode JVM specs (interpret, -O1, -O0, -O2 with JaCoCo)
 #                                  and Wasm 3.0 parity for -Dbatest.shard=<N>/6, and uploads per-shard JaCoCo .exec + outcomes
 #   4. batest-report (1 runner)  : merges JaCoCo .exec and outcomes-*.jsonl across all 6 shards and enforces 4-way parity + >= 80% 6-scope coverage gate
-#   5. ci            (1 runner)  : single required status-check gate aggregating build, unit-tests, batest, and batest-report
+#   5. ci            (1 runner)  : single required status-check gate aggregating changes, build, unit-tests, batest, and batest-report
 
 name: Java CI with Maven
 
@@ -19,8 +20,57 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs_only: ${{ steps.filter.outputs.docs_only }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+    - name: Check changed paths
+      id: filter
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PUSH_BEFORE_SHA: ${{ github.event.before }}
+      run: |
+        set -euo pipefail
+        BASE=""
+        if [ "$EVENT_NAME" = "pull_request" ]; then
+          BASE="$PR_BASE_SHA"
+        elif [ -n "$PUSH_BEFORE_SHA" ] && [ "$PUSH_BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+          BASE="$PUSH_BEFORE_SHA"
+        fi
+        if [ -z "$BASE" ] || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+          echo "Base commit unavailable; running full CI."
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        CHANGED=$(git diff --name-only "$BASE" HEAD)
+        if [ -z "$CHANGED" ]; then
+          echo "No changed files detected; running full CI."
+          echo "docs_only=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+        DOCS_ONLY=true
+        while IFS= read -r path; do
+          [ -z "$path" ] && continue
+          case "$path" in
+            docs/*|README.md) ;;
+            *) DOCS_ONLY=false; break ;;
+          esac
+        done <<< "$CHANGED"
+        echo "Changed files:"
+        echo "$CHANGED"
+        echo "docs_only=$DOCS_ONLY"
+        echo "docs_only=$DOCS_ONLY" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -168,21 +218,32 @@ jobs:
 
   ci:
     name: CI Gate
-    needs: [build, unit-tests, batest, batest-report]
+    needs: [changes, build, unit-tests, batest, batest-report]
     if: always()
     runs-on: ubuntu-latest
     steps:
     - name: Check upstream jobs
       env:
+        CHANGES_RESULT: ${{ needs.changes.result }}
+        DOCS_ONLY: ${{ needs.changes.outputs.docs_only }}
         BUILD_RESULT: ${{ needs.build.result }}
         UNIT_TESTS_RESULT: ${{ needs.unit-tests.result }}
         BATEST_RESULT: ${{ needs.batest.result }}
         BATEST_REPORT_RESULT: ${{ needs.batest-report.result }}
       run: |
+        echo "changes:       $CHANGES_RESULT (docs_only=$DOCS_ONLY)"
         echo "build:         $BUILD_RESULT"
         echo "unit-tests:    $UNIT_TESTS_RESULT"
         echo "batest:        $BATEST_RESULT"
         echo "batest-report: $BATEST_REPORT_RESULT"
+        if [ "$CHANGES_RESULT" != "success" ]; then
+          echo "::error::Change detection failed."
+          exit 1
+        fi
+        if [ "$DOCS_ONLY" = "true" ]; then
+          echo "Docs-only change detected — skipping build, unit tests, and batest."
+          exit 0
+        fi
         if [ "$BUILD_RESULT" != "success" ] || [ "$UNIT_TESTS_RESULT" != "success" ] || [ "$BATEST_RESULT" != "success" ] || [ "$BATEST_REPORT_RESULT" != "success" ]; then
           echo "::error::One or more CI jobs failed."
           exit 1
