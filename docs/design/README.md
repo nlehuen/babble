@@ -75,7 +75,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 
 | BIP | Title | Date | Status | Summary |
 |---|---|---|---|---|
-| **BIP014** | [Compiler optimization passes](bip014_optimization-passes.md) | 2026-11-19 | Partially implemented | `HIR` and the `-O1` optimizer (`RM010`), the e-graph core (`RM012`), `record` optimizations (`RM013`), and unified `HIR` `-O2` (`BIP039`, retiring legacy SSA `MIR`) landed. Only `BIP014-P5` Half B (`O12` pipeline rewrites over `HirAeGraphPass`) remains (`RM015`). |
+| **BIP014** | [Compiler optimization passes](bip014_optimization-passes.md) | 2026-11-19 | Partially implemented | `HIR` and the `-O1` optimizer (`RM010`), the e-graph core (`RM012`), `record` optimizations (`RM013`), and unified `HIR` `-O2` (`BIP039`, retiring legacy SSA `MIR`) landed. Only `BIP014-P5` Half B (`O12` E-graph pipeline & algebraic loop rewrites, specified independently of `std/...` in [BIP042](bip042_egraph-pipeline-rewrites.md)) remains (`RM015`). |
 | **BIP015** | [Down with the ants](bip015_down-with-the-ants.md) | 2026-11-19 | Draft (`BIP015-Q1`–`Q8` open) | Whether to keep ANTLR4, put a Babble-owned AST behind it, or replace it, for example with a hand-written parser. Decided first in `RM014`. |
 | **BIP018** | [Tracking Java improvements](bip018_tracking-java-improvements.md) | 2026-11-20 | Decided (`BIP018-P0`–`P4` planned) | Babble editions that track JDK LTS releases, a multi-module split, a Class-File API backend and `babblec -target N`. `BIP018-P0` (CI legs) can land at any time (`RM025`); the rest starts once `BIP014` is complete (`RM016`, `RM017`). |
 | **BIP026** | [Multiline strings and string templates](bip026_multiline-strings-and-string-templates.md) | 2026-11-22 | Partially implemented | Multiline and raw strings landed (`BIP026-I1`). String templates (`t"..."`, lazy placeholders, evaluation policies) are open (`BIP026-Q4`–`Q10` → `BIP026-P2`–`P5`, `RM014`). |
@@ -83,6 +83,7 @@ It handles single references, sub-phases, ranges (splitting them when only part 
 | **BIP033** | [Tensors as core types with dimensional safety](bip033_tensors.md) | 2026-11-25 | Decided (`BIP033-P1`–`P6` planned) | Core `float16`/`bfloat16` scalars and immutable `tensor of (DType, ...)` types with static/symbolic/dynamic/labeled shapes, E-graph algebraic dim solving, scalar + labeled-subset broadcasting, `matmul`/`einsum`, `unique` FBIP reuse, and a `java.base` strided runtime behind `TensorBackend` SPI (with a compiled-region hook for optional StableHLO/XLA PJRT backends) (`RM023`). |
 | **BIP035** | [`babblebabble` : a Babble interpreter written in Babble](bip035_babblebabble.md) | 2026-11-25 | Draft (`BIP035-Q1`–`Q11` open ; `BIP035-P1`–`P6` planned) | First-class pure-Babble interpreter in `src/main/babble/babblebabble/` (zero `java.*` core, hand-written lexer/Pratt parser/evaluator, `Mode.BABBLEBABBLE`) integrated with `DifferentialTestCase` and `BatestTestCase`, targeting byte-identical Argon, meta-circular "`babblebabblebabble`", and `BIP025` Wasm playground compilation (`RM022`). |
 | **BIP036** | [Compiler simplification, front-end data model and god-class splits](bip036_compiler-simplification-and-god-class-splits.md) | 2026-11-25 | Decided (`BIP036-P1`, `P6`–`P9` remaining; `P2`/`P4` retired by `BIP039`; `P3`/`P5` splits landed) | A lifetime-separated front-end data model (`FileFacts`, single-source `SlotInference`, fresh-per-walk `TypingPass`, `DiagnosticSink`) that retires `TypeChecker.resetPass()`, pure splits of the remaining oversized classes (`EffectBodyWalker`, `CallEffectAnalyzer`, `EffectAstExtractors`, `CallEmitter`, `WasmCoreEmitter`, `WasmCallEmitter`, `WasmObjectSystem`, `AxiomData`), a repository-wide 1,500-line ceiling, and clean seams ahead of `BIP015` Option 2 (`RM020`). |
+| **BIP042** | [E-Graph pipeline & algebraic loop rewrites](bip042_egraph-pipeline-rewrites.md) | 2026-11-27 | Decided (`BIP042-D1`–`D8` settled ; `BIP042-P1`–`P4` planned) | Specifies `BIP014-P5` Half B (`O12`) independently of a standard library via Lift → Saturate → Extract → Lower over `org.babblelang.ir.egraph` (`injective`/`monotone` `AlgebraicRules`, cross-statement `HirAeGraphPass` cancellation, 11-op `PIPE_*` E-node dialect, monotonic selectivity-weighted `EGraph.CostModel`, declarative `PipelineRules` `R1`–`R8`, and `PipelineRewritePass` at `-O2` for JVM and WebAssembly 3.0) with a clean lifting seam for future `std/` combinators (`RM015`). |
 
 ## Milestones done
 
@@ -186,23 +187,23 @@ Expression-oriented `match x case <pattern> [if <guard>] then (...) else (...)` 
 
 ## Roadmap
 
-The milestones below sequence what remains: `BIP014-P5` (Half B), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`, `P6`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
+The milestones below sequence what remains: `BIP014-P5` (Half B, specified in [BIP042](bip042_egraph-pipeline-rewrites.md) `BIP042-P1`–`P4`), `BIP015-Q1`–`Q8`, `BIP018-P0`–`P4`, `BIP026-P2`–`P5`, `BIP032-P1`–`P4`, `BIP033-P1`–`P6`, `BIP035-Q1`–`Q11` / `BIP035-P1`–`P6`, and `BIP036-P1`, `P6`–`P9`. Work that no BIP specifies yet is in the [backlog](#backlog-awaiting-a-bip); a milestone that needs one of those items starts by writing its BIP.
 
 Every milestone ends with `mvn -B package -PO2` green in all execution modes (`interpret`, `-O0`, `-O1`, `-O2`, `wasm-js -O1`/`-O2`), `ParserGrammarTestCase`, `RuntimeBoundaryTestCase`, `ArchitectureBoundaryTestCase`, `AxiomsTestCase`, `-format -check`, the `-Pbatest` coverage gate, and a byte-identical render of `examples/raytracer/assets/scene.ppm`. The exit criteria below list only what each milestone adds.
 
 The order follows constraints recorded in the BIPs:
 
 - **Simplify before large front-end work.** `BIP036` (`RM020`) retires `TypeChecker`'s mutable blackboard and splits every god class under 1,500 lines, giving `BIP015` Option 2 and large front-end additions (`BIP033`) clean seams.
-- **Harden soundness early.** `BIP032` (`RM021`) can run now, catching type, effect, ownership, optimizer and Wasm escapes before `BIP014-P5` pipeline rewrites (`RM015`) and `RM017` parallelism rely on stronger static guarantees.
+- **Harden soundness early.** `BIP032` (`RM021`) can run now, catching type, effect, ownership, optimizer and Wasm escapes before `BIP014-P5` / `BIP042` pipeline rewrites (`RM015`) and `RM017` parallelism rely on stronger static guarantees.
 - **Safety nets at any time.** The JDK 25 and 27 CI legs (`BIP018-P0`, `RM025`, exempt from `BIP018-D4`) and a thread-safe `Interpreter` depend on nothing.
-- **The standard library is on the critical path.** `RM015` gives `BIP014-P5` Half B something to rewrite, completing `BIP014`, which opens `BIP018-P1` onward (`RM016`, `BIP018-D4`), on which `RM017` parallelism builds. Written in Babble, `std/...` builds on landed ranges (`RM019`) and `match` (`RM024`).
+- **Completing `BIP014` is decoupled from `std/...`.** [BIP042](bip042_egraph-pipeline-rewrites.md) specifies `BIP014-P5` Half B (`O12`) via E-graph Lift → Saturate → Extract → Lower directly over existing `for`/`list`/`set`/`CountedRangeLoop` HIR independently of a standard library, so `BIP042-P1`–`P4` can complete `BIP014` and open `BIP018-P1` onward (`RM016`, `BIP018-D4`) without waiting on a `std/...` BIP. Written in Babble, `std/...` (`BIP005-D5`) can follow separately and plug into `BIP042`'s `HirPipelineLifter` seam.
 - **Choose the parser before string templates.** `BIP026-P2` splits `Babble.g4` into lexer modes, so `BIP015` is settled first (`RM014`). Neither is on the critical path to `BIP018`, so `RM014` can run alongside `RM015`.
 - **Tensors and `babblebabble` are independent.** `BIP033` (`RM023`) is a predicate-free grammar addition independent of `BIP015` and `BIP018` (plugging into `BIP018` SIMD/FFM and optional StableHLO/XLA PJRT region backends later via its `TensorBackend` SPI); `BIP035` (`RM022`) builds on the landed `BIP025` Wasm backend and `BIP034` bindings as an independent differential oracle and symbolic benchmark.
 
 | Milestone | Slice | Remaining BIP work | Prerequisites | Notes |
 |---|---|---|---|---|
 | **RM014** | Front-end decision & string templates | `BIP015-Q1`–`Q8` (and the migration it picks); `BIP026-Q4`–`Q10` → `BIP026-P2`–`P5` | `RM012` (`RM020` recommended ahead of `BIP015` Option 2) | Can run alongside `RM015`. A parser migration, if chosen, lands before `BIP026-P2`. |
-| **RM015** | Standard library & pipeline rewrites | `BIP014-P5` (Half B) | `RM013`, `RM019`, `RM024`; a standard library BIP | Completes `BIP014`, which opens `BIP018-P1` (`RM016`). |
+| **RM015** | E-graph pipeline rewrites (and optional `std/...`) | `BIP014-P5` (Half B) / `BIP042-P1`–`P4` | `RM013`, `RM019`, `RM024` | `BIP042` completes `BIP014` independently of `std/...`, opening `BIP018-P1` (`RM016`). A standard library BIP (`std/...` + `BIP005-D5`) can land separately and plug into `BIP042`. |
 | **RM016** | `Babble 21` & `Babble 25` editions | `BIP018-P1`–`P2` | `RM015`, `RM025` | |
 | **RM017** | Verified parallelism, `Babble 28` & Valhalla | `BIP018-P3`–`P4`, `BIP007` §10 | `RM016`; a parallelism BIP | A thread-safe `Interpreter` can land any time before. |
 | **RM020** | Compiler simplification & god-class splits | `BIP036-P1`, `P6`–`P9` (`P2`/`P4` retired by `BIP039`; `P3`/`P5` splits landed) | `RM013`, `RM018` | Can run now; shrinks the blast radius of `RM014` (`BIP015` Option 2) and `RM023`. |
@@ -223,16 +224,17 @@ Settle [BIP015](bip015_down-with-the-ants.md) before the lexer-mode split, then 
   - `BIP026-P5`: constant folding and `StringConcatFactory` lowering of direct `.render()` calls at `-O1`.
 - **Exit criteria:** template specifications and effect tests, no `Template` allocation on a direct `.render()`, and the coverage gate extended to the parser if ANTLR4 goes (`BIP015-Q8`).
 
-### RM015 — Standard library & pipeline rewrites
+### RM015 — E-graph pipeline rewrites (`BIP042`) & future standard library
 
-Give `BIP014-P5` something to rewrite: an effect-annotated `std/...` library of higher-order combinators, written with ranges (`RM019`) and `match` (`RM024`). This completes `BIP014`.
+Complete `BIP014-P5` Half B (`O12`) via [BIP042](bip042_egraph-pipeline-rewrites.md) independently of introducing `std/...`, unlocking `BIP018-P1` (`RM016`). A dedicated standard library BIP (`babble.path` + `std/...` combinators plugging into `BIP042`'s `HirPipelineLifter` seam) can land separately.
 
-- **Spans:** `BIP014`, `BIP005`, `BIP006`, `BIP007`, `BIP011`, `BIP016`, `BIP017`, `BIP031`, `BIP038`, `BIP039`
-- **Depends on:** `RM013`, `RM019`, `RM024`, and a standard library BIP covering `std/...` and the module search path (`BIP005-D5`).
+- **Spans:** `BIP042`, `BIP014`, `BIP007`, `BIP011`, `BIP013`, `BIP016`, `BIP017`, `BIP025`, `BIP027`, `BIP029`, `BIP031`, `BIP034`, `BIP039`
+- **Depends on:** `RM013`, `RM018`, `RM019`, `RM024` (all landed).
 - **Deliverables:**
-  - The standard library: `babble.path` search roots and `std/...` modules (`map`, `filter`, `flatMap`, `reduce`, `groupBy`, `zip`, `forEach`, range combinators, math and I/O helpers) with effect and algebraic contracts.
-  - `BIP014-P5` Half B: `PipelineRewritePass` (`O12`) over unified structured `HIR`'s `HirAeGraphPass` (`BIP039`) for filter fusion, push-downs, `monotone` range pruning and `associative` fold reassociation.
-- **Exit criteria:** `std/...` specifications, `babble.path` tests in `FileModulesTestCase` and `BabblecTestCase`, an `OptimizerTestCase` per rewrite, and benchmarks of fused pipelines.
+  - `BIP042-P1`–`P2`: shared `EGraph` `injective`/`monotone` algebraic rules (`-O1`/`-O2`), cross-statement `HirAeGraphPass` cancellation (`-O2`), 11-op `PIPE_*` E-node dialect, monotonic selectivity-weighted `EGraph.CostModel`, and declarative `PipelineRules` (`R1`–`R8`).
+  - `BIP042-P3`–`P4`: `HirPipelineLifter`, `HirPipelineLowerer`, and `PipelineRewritePass` (`O12`) at `-O2` (shared across JVM and WebAssembly 3.0), completing `BIP014-P5` → `BIP014-I5`.
+  - *(Decoupled follow-up BIP)* Standard library: `babble.path` search roots (`BIP005-D5`) and `std/...` modules (`map`, `filter`, `flatMap`, `reduce`, `groupBy`, `zip`, `forEach`, range combinators, math and I/O helpers) lifting directly into `BIP042`'s `PIPE_*` E-nodes.
+- **Exit criteria:** `EGraphTestCase` rules & cost-model tests, `src/test/batest/compiler/` HIR golden suites for `injective`/`monotone` cancellation and all `R1`–`R8` rewrites (4 JVM modes + Wasm 3.0), `OptimizerTestCase` zero-allocation bytecode verification, `>= 80%` JaCoCo coverage in `Optimizer (-O2)`, and `Benchmarks` fused-pipeline timings.
 
 ### RM016 — `Babble 21` & `Babble 25` editions
 

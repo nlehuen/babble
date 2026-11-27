@@ -978,7 +978,7 @@ Language features :
 
 Implementation features :
 
-- [ ] deeper effect- and ownership-driven optimizations (`BIP014-P5` Half B : `O12` pipeline rewrites over `HirAeGraphPass` for `std/...`).
+- [ ] deeper effect- and ownership-driven optimizations (`BIP014-P5` Half B : `O12` E-graph pipeline & algebraic loop rewrites, specified in [BIP042](docs/design/bip042_egraph-pipeline-rewrites.md)).
 - [ ] a Maven goal for ahead-of-time compilation.
 
 TODO : lessons from the ray tracer
