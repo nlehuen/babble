@@ -709,45 +709,38 @@ work here too : `java -Dbabble.mode=interpret -jar …`.
 Ray tracing demo
 ----------------
 
-[examples/raytracer-fable](examples/raytracer-fable/raytracer.ba) is a port of
-[_Ray Tracing in One Weekend_](https://raytracing.github.io/books/RayTracingInOneWeekend.html)
-to Babble : vectors as a record, spheres and materials as classes implementing
-interfaces, a bounding volume hierarchy, a camera with depth of field, and the final scene
-of the book. It is split into modules along the files of the book (`rtweekend.ba`,
-`vec3.ba`, `ray.ba`, `aabb.ba`, `hittable.ba`, `sphere.ba`, `hittable_list.ba`, `bvh.ba`,
-`material.ba`, `camera.ba`), and `raytracer.ba` is its main. This image was rendered by it, in
-compiled mode :
+[examples/raytracer](examples/raytracer/README.md) is a unified ray tracer written maximally in
+**pure Babble** — math (`core/math.ba`), deterministic per-scanline RNG (`core/rng.ba`), vectors,
+rays, flat AABBs, BVH, five immutable `record` materials (`Lambertian`, `Metal`, `Dielectric`,
+`Emissive`, `Toon`), four analytic/implicit 3D geometries (`Sphere`, oriented `Ellipsoid`, tapered
+`RoundCone` + Bezier tubes, Fourier-contoured `SculptedLobe`), and three pure scenes
+(*Weekend Cover*, *Three Spheres*, and *Baby Triceratops*) — with only a thin target-specific IO
+layer bridging to the JVM (`io/jvm/png.ba`) or WebAssembly (`io/wasm/canvas.ba`).
 
-![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer-fable/demo.png)
+![The final scene of Ray Tracing in One Weekend, rendered by Babble](examples/raytracer/assets/scene.png)
 
-It is all Babble, using the JDK for maths, random numbers, threads and the PNG file : there is
-no Java code of its own, and no launcher. To render the image again, build the jar and hand it
-the script :
+All scenes render **byte-for-byte identically** across `interpret`, compiled JVM (single- or
+multi-threaded), ahead-of-time jars, WebAssembly 3.0 on Node.js, and WebAssembly 3.0 in the browser.
+To render a multi-threaded PNG on the JVM, build the jar and run `raytracer_jvm.ba` :
 
 ```
 mvn package
-java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/raytracer.ba
+java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba cover scene.png 800 20 16
+java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_jvm.ba triceratops triceratops.png
 ```
 
-[examples/raytracer-argon](examples/raytracer-argon/README.md) is another port of the same book,
-which uses no Java at all : it has its own square root, trigonometry and random numbers, and a
-bounding volume hierarchy. It is split into modules too, in its `lib/` directory. Either ray
-tracer can also be compiled ahead of time into a jar of its own (see *Building and running*) :
+For portable PPM output (`raytracer_ppm.ba`), the exact same script runs on the JVM, compiles
+ahead of time into a standalone jar (`babblec`), or compiles directly to **WebAssembly 3.0**
+(`WasmGC`) for Node.js — producing the exact same `examples/raytracer/assets/scene.ppm` byte for
+byte (and [examples/raytracer/wasm_canvas.html](examples/raytracer/wasm_canvas.html) renders any of
+the three scenes live to an HTML `<canvas>`) :
 
 ```
-java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer-argon/raytracer.ba -o argon.jar
-java -jar argon.jar > scene.ppm
-```
+java -jar target/babble-1.0-SNAPSHOT.jar -compile examples/raytracer/raytracer_ppm.ba -o raytracer.jar
+java -jar raytracer.jar > scene.ppm
 
-`argon.jar` is 300 KB for its 15 modules and the runtime, and renders the same image, byte for
-byte, in about the same minute as through the engine : a jar saves the start-up, not the work.
-Because `raytracer-argon` uses no Java APIs, it also compiles directly to **WebAssembly 3.0** (`WasmGC`)
-and renders the exact same `scene.ppm` byte for byte in Node.js (or live to an HTML `<canvas>` via
-[examples/raytracer-argon/wasm_canvas.html](examples/raytracer-argon/wasm_canvas.html)) :
-
-```
-java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer-argon/raytracer.ba -o argon.wasm
-node argon.mjs > scene.ppm
+java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer/raytracer_ppm.ba -o raytracer.wasm
+node raytracer.mjs > scene.ppm
 ```
 
 Building and running
@@ -964,7 +957,7 @@ Implementation features :
 - [x] [JSR 223](http://www.jcp.org/en/jsr/detail?id=223) support : `javax.script` compatible API.
 - [x] interactive mode : a read-eval-print loop over sessions, in both modes and with the type checker, with line editing, history and completion on a terminal, `:type` and `:load` (see [BIP004](docs/design/bip004_repl.md)).
 - [x] command line : `java -jar babble.jar [-O0|-O1|-O2] script.ba arguments...` runs a script, and `-keep-alive` continues in the interactive mode.
-- [x] ahead-of-time compilation : `-compile [-O0|-O1|-O2] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)), or with `-target wasm-js` / `-target wasm-bare` (plus optional `-wasm-opt`) compiles directly from target-neutral `HIR` to WebAssembly 3.0 (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, `return_call` tail calls, closed-world interface bitsets & itables, strictly immutable `record` structs and `BIP034` header `def` fields, `Cell`-free value captures, portable strings/arrays/collections, and `axiom wasm.<mod>.<name>` host imports) with zero new Maven dependencies, `-O1`/`-O2` `.batest.md` parity + `wat` goldens, and byte-identical `examples/raytracer-argon/scene.ppm` rendering on Node.js V8 and browser `<canvas>` (see [BIP025](docs/design/bip025_compile-to-wasm.md) and [BIP039](docs/design/bip039_mir-deorbitation.md)).
+- [x] ahead-of-time compilation : `-compile [-O0|-O1|-O2] script.ba` writes a jar of the program and the modules it imports, which runs on a plain JRE (see [BIP006](docs/design/bip006_module-sources-and-aot.md)), or with `-target wasm-js` / `-target wasm-bare` (plus optional `-wasm-opt`) compiles directly from target-neutral `HIR` to WebAssembly 3.0 (`WasmGC`, typed function references, `try_table`/`exnref` exceptions, `return_call` tail calls, closed-world interface bitsets & itables, strictly immutable `record` structs and `BIP034` header `def` fields, `Cell`-free value captures, portable strings/arrays/collections, and `axiom wasm.<mod>.<name>` host imports) with zero new Maven dependencies, `-O1`/`-O2` `.batest.md` parity + `wat` goldens, and byte-identical `examples/raytracer/assets/scene.ppm` rendering on Node.js V8 and browser `<canvas>` (see [BIP025](docs/design/bip025_compile-to-wasm.md) and [BIP039](docs/design/bip039_mir-deorbitation.md)).
 - [x] syntax errors that say what was unexpected, and where.
 - [x] a code formatter : `java -jar babble.jar -format`.
 - [x] a fast, isolated HTTP `.batest.md` runner : `java -jar babble.jar -crib` serves `POST /crib?<options>`, `GET /health`, and `POST /recycle` over `jdk.httpserver` backed by a warm, poison-audited, killable worker JVM pool (~10–50 ms per 4-mode verified trial with automatic cross-mode parity diffing and optional isolated `wasm-O1`/`wasm-O2` execution; see [BIP041](docs/design/bip041_crib-server.md)).
@@ -989,7 +982,7 @@ Implementation features :
 TODO : lessons from the ray tracer
 ----------------------------------
 
-Writing [the ray tracer](examples/raytracer-fable/raytracer.ba) showed where Babble gets in the way. In rough
+Writing [the ray tracer](examples/raytracer/README.md) showed where Babble gets in the way. In rough
 order of how much each would improve that code :
 
 - [x] unary minus : `-x` and `-1.0` had to be written `0 - x` and `0 - 1.0`.
@@ -998,7 +991,7 @@ order of how much each would improve that code :
   method calls, so `list.get(0).size()` or `Runtime.getRuntime().availableProcessors()` failed with
   `Not a scope`. This is why the ray tracer had its own linked list. Any Java object now has its
   methods, however it was obtained, and the type checker follows chained calls : the ray tracer
-  uses a `java.util.ArrayList`.
+  uses pure-Babble `list of Hittable` (and `java.util.ArrayList` works directly too).
 - [x] static fields of Java classes : `java.lang.Math.PI` or `BufferedImage.TYPE_INT_RGB` were
   not reachable, so the ray tracer computed π as `Math.acos(0 - 1)` and passed a bare `1`. They
   are now, with their types, as are the public fields of Java objects.
@@ -1008,7 +1001,7 @@ order of how much each would improve that code :
 - [x] `else if`, without nesting a block : `else ( if … then ( … ) else ( … ) )`.
 - [x] `break` (`break expr`) and `continue` in `while` and `for` loops (`RM009`, [BIP013](docs/design/bip013_iterators.md)).
 - [x] compound assignment : `+=`, `-=`, `*=`, `/=`, on variables and members, calling operator
-  methods on instances. The ray tracers' counters and accumulators use them.
+  methods on instances. The ray tracer's counters and accumulators use them.
 - [x] number conversions : `int(x)` and `double(x)`, instead of
   `Math.toIntExact(Math.round(Math.floor(x)))` or a binary decomposition in Babble.
 - [x] line continuation before `.` and `?.`, to break long method chains across lines : a line may start
@@ -1019,11 +1012,11 @@ order of how much each would improve that code :
   `Syntax error : unexpected 'object'`, at its line and column.
 - [x] command-line launcher : a `main` class in the jar to run a `.ba` file, with script arguments,
   instead of a launcher per project : `java -jar target/babble-1.0-SNAPSHOT.jar script.ba arguments...`,
-  see *Building and running*. The ray tracers run that way, and their launchers are gone.
+  see *Building and running*. The ray tracer runs that way, and its launchers are gone.
 - [ ] thread safety : the ray tracer found a race in the Java member caches, now fixed, but nothing
   tests scripts running on several threads. And the interpreter cannot run a script's functions
-  on several threads at all, since it keeps the current scope in a field : the fable ray tracer
-  only renders in compiled mode.
+  on several threads at all, since it keeps the current scope in a field : multi-threaded
+  `raytracer_jvm.ba` renders (`threads > 1`) only run in compiled mode.
 - [x] unboxed arithmetic for typed code : `RM001` lowers non-nullable `int`, `double`, and `bool` locals,
   closure cells, class fields, arithmetic, comparisons, `$spec` calls, and statically resolved Java calls
   directly to primitive/direct bytecode (`argon` drops from 59.3 s to 46.1 s; cross-object `obj.x` unboxing

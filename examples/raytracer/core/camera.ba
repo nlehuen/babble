@@ -1,0 +1,145 @@
+;; Positionable thin-lens Camera with antialiasing, depth of field, pluggable Background,
+;; and pure effect-polymorphic scanline rendering (BIP017 `fn calling emit`).
+
+def math = import("math.ba")
+def Rng = import("rng.ba").Rng
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def HitRecord = import("interfaces.ba").HitRecord
+def Hittable = import("interfaces.ba").Hittable
+def Scatter = import("interfaces.ba").Scatter
+def Background = import("background.ba").Background
+def SkyBackground = import("background.ba").SkyBackground
+def color = import("color.ba")
+
+export def Camera = class (
+    def aspectRatio: double = 16.0 / 9.0,
+    def imageWidth: int = 400,
+    def samplesPerPixel: int = 10,
+    def maxDepth: int = 10,
+    def vfov: double = 20.0,
+    def lookFrom: Vec3 = Vec3(13.0, 2.0, 3.0),
+    def lookAt: Vec3 = Vec3(0.0, 0.0, 0.0),
+    def vup: Vec3 = Vec3(0.0, 1.0, 0.0),
+    def defocusAngle: double = 0.6,
+    def focusDist: double = 10.0,
+    def background: Background = SkyBackground()
+) (
+    def imageHeight: int
+    private def pixelSamplesScale: double
+    private def center: Vec3
+
+    ;; Orthonormal camera basis vectors (u, v, w)
+    def w: Vec3
+    def u: Vec3
+    def v: Vec3
+
+    ;; Pixel delta vectors and upper-left pixel location
+    private def pixelDeltaU: Vec3
+    private def pixelDeltaV: Vec3
+    def pixel00Loc: Vec3
+
+    ;; Defocus disk basis vectors
+    private def defocusDiskU: Vec3
+    private def defocusDiskV: Vec3
+
+    init (
+        this.imageHeight = math.maxInt(1, math.toInt(this.imageWidth / this.aspectRatio))
+        this.pixelSamplesScale = 1.0 / this.samplesPerPixel
+        this.center = this.lookFrom
+
+        ;; Viewport dimensions
+        def theta: double = math.degreesToRadians(this.vfov)
+        def h: double = math.tan(theta / 2.0)
+        def viewportHeight: double = 2.0 * h * this.focusDist
+        def viewportWidth: double = viewportHeight * (1.0 * this.imageWidth / this.imageHeight)
+
+        ;; Orthonormal camera basis vectors (u, v, w)
+        this.w = (this.lookFrom - this.lookAt).unit()
+        this.u = this.vup.cross(this.w).unit()
+        this.v = this.w.cross(this.u)
+
+        ;; Viewport edge and pixel delta vectors
+        def viewportU: Vec3 = this.u * viewportWidth
+        def viewportV: Vec3 = -this.v * viewportHeight
+        this.pixelDeltaU = viewportU / (1.0 * this.imageWidth)
+        this.pixelDeltaV = viewportV / (1.0 * this.imageHeight)
+
+        ;; Upper-left pixel location
+        def viewportUpperLeft: Vec3 = this.center - this.w * this.focusDist -
+            viewportU / 2.0 - viewportV / 2.0
+        this.pixel00Loc = viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
+
+        ;; Defocus disk basis vectors
+        def defocusRadius: double = this.focusDist * math.tan(math.degreesToRadians(this.defocusAngle / 2.0))
+        this.defocusDiskU = this.u * defocusRadius
+        this.defocusDiskV = this.v * defocusRadius
+    )
+
+    private def sampleSquare = fn (mut rng: Rng): Vec3 -> (
+        Vec3(rng.nextDouble() - 0.5, rng.nextDouble() - 0.5, 0.0)
+    )
+
+    private def defocusDiskSample = fn (mut rng: Rng): Vec3 -> (
+        def p: Vec3 = Vec3.randomInUnitDisk(rng)
+        this.center + this.defocusDiskU * p.x + this.defocusDiskV * p.y
+    )
+
+    def getRay = fn (i: int, j: int, mut rng: Rng): Ray -> (
+        def offset: Vec3 = this.sampleSquare(rng)
+        def pixelSample: Vec3 = this.pixel00Loc +
+            this.pixelDeltaU * (i + offset.x) +
+            this.pixelDeltaV * (j + offset.y)
+        def rayOrigin: Vec3 = if this.defocusAngle <= 0.0 then (
+            this.center
+        ) else (
+            this.defocusDiskSample(rng)
+        )
+        Ray(rayOrigin, pixelSample - rayOrigin)
+    )
+
+    ;; Recursive path tracer supporting scattering, emission, and pluggable backgrounds
+    def rayColor = fn (r: Ray, depth: int, world: Hittable, mut rng: Rng): Vec3 -> (
+        if depth <= 0 then (
+            return Vec3.zero
+        )
+        def rec: HitRecord? = world.hit(r, 0.001, math.infinity)
+        if rec != null then (
+            def scatter: Scatter? = rec.mat.scatter(r, rec, rng)
+            if scatter == null then (
+                return Vec3.zero
+            )
+            def nextRay: Ray? = scatter.scattered
+            if nextRay == null then (
+                return scatter.emission
+            )
+            return scatter.emission + scatter.attenuation * recurse(nextRay, depth - 1, world, rng)
+        )
+        this.background.sample(r)
+    )
+
+    def renderPixel = fn (i: int, j: int, world: Hittable, mut rng: Rng): Vec3 -> (
+        var pixelColor: Vec3 = Vec3.zero
+        for sample in 0..<this.samplesPerPixel then (
+            def r: Ray = this.getRay(i, j, rng)
+            pixelColor += this.rayColor(r, this.maxDepth, world, rng)
+        )
+        pixelColor * this.pixelSamplesScale
+    )
+
+    ;; Renders one scanline deterministically from (seed, j) and streams gamma-2 8-bit RGB
+    ;; triples to `emit`. Pure when `emit` is pure, `io` when `emit` is `io` (BIP017).
+    def renderRow = fn calling emit (
+        j: int,
+        world: Hittable,
+        seed: int,
+        emit: fn (x: int, y: int, r: int, g: int, b: int): any?
+    ): null -> (
+        def rng: Rng = Rng.forRow(seed, j)
+        for i in 0..<this.imageWidth then (
+            def c: Vec3 = this.renderPixel(i, j, world, rng)
+            emit(i, j, color.toByte(c.x), color.toByte(c.y), color.toByte(c.z))
+        )
+        null
+    )
+)

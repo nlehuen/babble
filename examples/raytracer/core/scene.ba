@@ -1,0 +1,11 @@
+;; Immutable bundle of a rendered scene: name, world acceleration structure, camera, and seed.
+
+def Hittable = import("interfaces.ba").Hittable
+def Camera = import("camera.ba").Camera
+
+export def Scene = record (
+    name: string,
+    world: Hittable,
+    camera: Camera,
+    defaultSeed: int = 2026
+) ()

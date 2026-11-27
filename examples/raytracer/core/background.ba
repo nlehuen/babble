@@ -1,0 +1,26 @@
+;; Scene backgrounds evaluated when a ray misses all geometry.
+
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+
+export def Background = interface (
+    def sample: fn (r: Ray): Vec3
+)
+
+;; Vertical gradient sky (Ray Tracing in One Weekend default).
+export def SkyBackground = class (
+    def bottom: Vec3 = Vec3.one,
+    def top: Vec3 = Vec3(0.5, 0.7, 1.0)
+) implements Background (
+    def sample = fn (r: Ray): Vec3 -> (
+        def a: double = 0.5 * (r.dir.unit().y + 1.0)
+        this.bottom * (1.0 - a) + this.top * a
+    )
+)
+
+;; Uniform solid-color backdrop (e.g. white studio cyclorama or black night sky).
+export def SolidBackground = class (def color: Vec3) implements Background (
+    def sample = fn (r: Ray): Vec3 -> (
+        this.color
+    )
+)

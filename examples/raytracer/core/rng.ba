@@ -1,0 +1,34 @@
+;; Deterministic 32-bit LCG pseudo-random number generator (pure Babble, zero java.util.Random).
+;; Exploits Babble's 32-bit signed integer wrap-around on int * int + int, yielding bit-for-bit
+;; identical sequences across interpreter, JVM (single- and multi-threaded), and WebAssembly 3.0.
+
+export def Rng = class (private var seed: int = 1337) (
+    def nextInt = fn mut (): int -> (
+        this.seed = this.seed * 1664525 + 1013904223
+        this.seed
+    )
+
+    def nextDouble = fn mut (): double -> (
+        def s: int = this.nextInt()
+        def u: double = if s < 0 then (
+            s + 2147483648.0
+        ) else (
+            s
+        )
+        u / 2147483648.0
+    )
+
+    def nextRange = fn mut (minVal: double, maxVal: double): double -> (
+        minVal + (maxVal - minVal) * this.nextDouble()
+    )
+) static (
+    ;; Per-scanline deterministic RNG: decorrelates adjacent rows via 3 LCG warm-up steps
+    ;; so single-threaded and multi-threaded renders match pixel-for-pixel on every target.
+    def forRow = fn (seed: int, row: int): unique Rng -> (
+        def rng: Rng = this(seed + row * 1000003)
+        rng.nextInt()
+        rng.nextInt()
+        rng.nextInt()
+        rng
+    )
+)

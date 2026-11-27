@@ -23,8 +23,8 @@
 #   --batest-only        Run only the 4-mode JVM + Wasm batest and coverage gate (skip unit tests).
 #   --skip-wasm          Skip WasmBatestTestCase and WasmCompilerTestCase (useful on host Node != 22).
 #   --protect-batest     Fail if src/test/batest has any working-tree or branch diff vs origin/master.
-#   --argon              Also compile and render examples/raytracer-argon and check byte-for-byte
-#                        identity against examples/raytracer-argon/scene.ppm.
+#   --argon, --raytracer Also compile and render examples/raytracer/raytracer_ppm.ba and check
+#                        byte-for-byte identity against examples/raytracer/assets/scene.ppm.
 #   --format-apply       Run `mvn spotless:apply` before the build gate.
 #   --jobs <N>           Max concurrent Maven test JVMs (default: auto from CPU count, up to 8).
 #   --threads <T>        JUnit Jupiter threads per test JVM (default: auto = CPUS / jobs).
@@ -111,7 +111,7 @@ while [[ $# -gt 0 ]]; do
             FORWARD_ARGS+=("$1")
             shift
             ;;
-        --argon)
+        --argon|--raytracer)
             RUN_ARGON=1
             FORWARD_ARGS+=("$1")
             shift
@@ -493,9 +493,9 @@ run_job_cmd() {
         argon)
             (
                 java -jar target/babble-1.0-SNAPSHOT.jar -compile \
-                    examples/raytracer-argon/raytracer.ba -o "${LOG_DIR}/argon.jar"
-                java -jar "${LOG_DIR}/argon.jar" > "${LOG_DIR}/argon.ppm"
-                cmp -s "${LOG_DIR}/argon.ppm" examples/raytracer-argon/scene.ppm
+                    examples/raytracer/raytracer_ppm.ba -o "${LOG_DIR}/raytracer.jar"
+                java -jar "${LOG_DIR}/raytracer.jar" > "${LOG_DIR}/raytracer.ppm"
+                cmp -s "${LOG_DIR}/raytracer.ppm" examples/raytracer/assets/scene.ppm
             ) >"${log}" 2>&1 || rc=$?
             ;;
         *)

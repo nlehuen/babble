@@ -1,0 +1,17 @@
+;; Portable ASCII P3 PPM pixel sink (works across interpret, JVM, AOT jar, and Wasm Node.js).
+
+def PixelSink = import("sink.ba").PixelSink
+
+export def PpmSink = class (def out: java.lang.Appendable = STDOUT) implements PixelSink (
+    def begin = fn io (width: int, height: int): null -> (
+        println("P3", to: this.out)
+        println(width, " ", height, to: this.out)
+        println(255, to: this.out)
+        null
+    )
+
+    def setPixel = fn io (x: int, y: int, r: int, g: int, b: int): null -> (
+        println("" + r + " " + g + " " + b, to: this.out)
+        null
+    )
+)

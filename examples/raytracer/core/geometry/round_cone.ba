@@ -1,0 +1,174 @@
+;; Analytic sphere-swept tapered capsule (RoundCone) and quadratic 3D Bezier tube builder.
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+def Material = import("../interfaces.ba").Material
+def HittableList = import("hittable_list.ba").HittableList
+
+;; Tapered capsule from pa (radius ra) to pb (radius rb), composed of a lateral cone
+;; frustum seamlessly capped by spheres at both endpoints.
+export def RoundCone = class (
+    def pa: Vec3,
+    def pb: Vec3,
+    def ra: double,
+    def rb: double,
+    def mat: Material
+) implements Hittable (
+    private def len: double
+    private def ax: Vec3
+    private def sinA: double
+    private def cosA2: double
+    private def hMin: double
+    private def hMax: double
+    private def bbox: AABB
+
+    init (
+        def ba: Vec3 = this.pb - this.pa
+        this.len = ba.length()
+        if this.len > 0.000001 then (
+            this.ax = ba / this.len
+            this.sinA = math.max(-0.999, math.min(0.999, (this.ra - this.rb) / this.len))
+        ) else (
+            this.ax = Vec3(0.0, 1.0, 0.0)
+            this.sinA = 0.0
+        )
+        this.cosA2 = 1.0 - this.sinA * this.sinA
+        this.hMin = this.ra * this.sinA
+        this.hMax = this.len + this.rb * this.sinA
+        this.bbox = AABB(
+            math.min(this.pa.x - this.ra, this.pb.x - this.rb),
+            math.max(this.pa.x + this.ra, this.pb.x + this.rb),
+            math.min(this.pa.y - this.ra, this.pb.y - this.rb),
+            math.max(this.pa.y + this.ra, this.pb.y + this.rb),
+            math.min(this.pa.z - this.ra, this.pb.z - this.rb),
+            math.max(this.pa.z + this.ra, this.pb.z + this.rb)
+        )
+    )
+
+    ;; Secondary constructor for a uniform-radius capsule.
+    init (pa: Vec3, pb: Vec3, radius: double, mat: Material) -> (
+        this(pa, pb, radius, radius, mat)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def dirLen: double = r.dir.length()
+        def invDirLen: double = 1.0 / dirLen
+        def rd: Vec3 = r.dir * invDirLen
+        def tminL: double = tmin * dirLen
+        var bestT: double = tmax * dirLen
+        var bestNormal: Vec3 = Vec3(0.0, 1.0, 0.0)
+        var found: bool = false
+
+        def oa: Vec3 = r.origin - this.pa
+
+        ;; 1. Tapered cone lateral surface
+        if this.len > 0.000001 and this.cosA2 > 0.000001 then (
+            def h0: double = oa.dot(this.ax)
+            def hd: double = rd.dot(this.ax)
+            def qa: double = this.cosA2 - hd * hd
+            def qb: double = this.cosA2 * oa.dot(rd) - h0 * hd + this.ra * this.sinA * hd
+            def qc: double = this.cosA2 * oa.dot(oa) - h0 * h0 + 2.0 * this.ra * this.sinA * h0 - this.ra * this.ra
+
+            if math.abs(qa) > 0.00000001 then (
+                def disc: double = qb * qb - qa * qc
+                if disc >= 0.0 then (
+                    def sq: double = math.sqrt(disc)
+                    def t1: double = (-qb - sq) / qa
+                    if t1 > tminL and t1 < bestT then (
+                        def hh1: double = h0 + t1 * hd
+                        if hh1 >= this.hMin and hh1 <= this.hMax then (
+                            bestT = t1
+                            def p1: Vec3 = oa + rd * t1
+                            bestNormal = (p1 * this.cosA2 - this.ax * (hh1 - this.ra * this.sinA)).unit()
+                            found = true
+                        )
+                    )
+                    def t2: double = (-qb + sq) / qa
+                    if t2 > tminL and t2 < bestT then (
+                        def hh2: double = h0 + t2 * hd
+                        if hh2 >= this.hMin and hh2 <= this.hMax then (
+                            bestT = t2
+                            def p2: Vec3 = oa + rd * t2
+                            bestNormal = (p2 * this.cosA2 - this.ax * (hh2 - this.ra * this.sinA)).unit()
+                            found = true
+                        )
+                    )
+                )
+            )
+        )
+
+        ;; 2. Sphere cap at pa
+        def ba1: double = oa.dot(rd)
+        def ca1: double = oa.dot(oa) - this.ra * this.ra
+        def da1: double = ba1 * ba1 - ca1
+        if da1 >= 0.0 then (
+            def sqa: double = math.sqrt(da1)
+            var ta: double = -ba1 - sqa
+            if ta <= tminL or ta >= bestT then (ta = -ba1 + sqa)
+            if ta > tminL and ta < bestT then (
+                bestT = ta
+                bestNormal = (oa + rd * ta) / this.ra
+                found = true
+            )
+        )
+
+        ;; 3. Sphere cap at pb
+        def ob: Vec3 = r.origin - this.pb
+        def bb1: double = ob.dot(rd)
+        def cb1: double = ob.dot(ob) - this.rb * this.rb
+        def db1: double = bb1 * bb1 - cb1
+        if db1 >= 0.0 then (
+            def sqb: double = math.sqrt(db1)
+            var tb: double = -bb1 - sqb
+            if tb <= tminL or tb >= bestT then (tb = -bb1 + sqb)
+            if tb > tminL and tb < bestT then (
+                bestT = tb
+                bestNormal = (ob + rd * tb) / this.rb
+                found = true
+            )
+        )
+
+        if not found then (return null)
+        def worldT: double = bestT * invDirLen
+        HitRecord.create(r, r.at(worldT), bestNormal, worldT, this.mat)
+    )
+
+    def kind = fn (): string -> ("round_cone")
+) static (
+    def capsule = fn (pa: Vec3, pb: Vec3, radius: double, mat: Material): RoundCone -> (
+        this(pa, pb, radius, radius, mat)
+    )
+)
+
+;; Appends a smooth chain of tapered RoundCones sampled along a quadratic 3D Bezier curve
+;; with quadratically interpolated radii (p0/r0 -> p1/r1 -> p2/r2).
+export def addQuadraticBezierTube = fn (
+    mut target: HittableList,
+    p0: Vec3,
+    r0: double,
+    p1: Vec3,
+    r1: double,
+    p2: Vec3,
+    r2: double,
+    segments: int,
+    shared mat: Material
+): null -> (
+    for i in 0..<segments then (
+        def t0: double = i / double(segments)
+        def t1: double = (i + 1) / double(segments)
+        def u0: double = 1.0 - t0
+        def u1: double = 1.0 - t1
+        def a: Vec3 = p0 * (u0 * u0) + p1 * (2.0 * u0 * t0) + p2 * (t0 * t0)
+        def ar: double = u0 * u0 * r0 + 2.0 * u0 * t0 * r1 + t0 * t0 * r2
+        def b: Vec3 = p0 * (u1 * u1) + p1 * (2.0 * u1 * t1) + p2 * (t1 * t1)
+        def br: double = u1 * u1 * r0 + 2.0 * u1 * t1 * r1 + t1 * t1 * r2
+        target.add(RoundCone(a, b, ar, br, mat))
+    )
+    null
+)

@@ -1,0 +1,32 @@
+;; Facade module re-exporting the entire pure-Babble raytracer core library.
+
+export def math = import("math.ba")
+export def Rng = import("rng.ba").Rng
+export def Vec3 = import("vec3.ba").Vec3
+export def Ray = import("ray.ba").Ray
+export def Interval = import("interval.ba").Interval
+export def AABB = import("aabb.ba").AABB
+export def Describable = import("interfaces.ba").Describable
+export def Scatter = import("interfaces.ba").Scatter
+export def Material = import("interfaces.ba").Material
+export def HitRecord = import("interfaces.ba").HitRecord
+export def Hittable = import("interfaces.ba").Hittable
+export def emptyHittable = import("interfaces.ba").emptyHittable
+export def color = import("color.ba")
+export def Background = import("background.ba").Background
+export def SkyBackground = import("background.ba").SkyBackground
+export def SolidBackground = import("background.ba").SolidBackground
+export def Lambertian = import("materials.ba").Lambertian
+export def Metal = import("materials.ba").Metal
+export def Dielectric = import("materials.ba").Dielectric
+export def Emissive = import("materials.ba").Emissive
+export def Toon = import("materials.ba").Toon
+export def Sphere = import("geometry/sphere.ba").Sphere
+export def Ellipsoid = import("geometry/ellipsoid.ba").Ellipsoid
+export def RoundCone = import("geometry/round_cone.ba").RoundCone
+export def addQuadraticBezierTube = import("geometry/round_cone.ba").addQuadraticBezierTube
+export def SculptedLobe = import("geometry/sculpted_lobe.ba").SculptedLobe
+export def HittableList = import("geometry/hittable_list.ba").HittableList
+export def BVHNode = import("geometry/bvh.ba").BVHNode
+export def Camera = import("camera.ba").Camera
+export def Scene = import("scene.ba").Scene

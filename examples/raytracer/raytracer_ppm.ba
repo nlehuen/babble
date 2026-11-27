@@ -1,0 +1,48 @@
+;;(
+    Unified Babble Ray Tracer — Portable PPM Entrypoint
+
+    100% pure Babble (zero java.*, zero axiom wasm.*). Runs identically across:
+      - Interpreted mode (-Dbabble.mode=interpret)
+      - Compiled JVM (-O0, -O1, -O2) and AOT jar (-compile)
+      - WebAssembly 3.0 on Node.js (-compile -target wasm-js)
+
+    Usage:
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer/raytracer_ppm.ba [scene] [width] [samples] [maxDepth] [gridRadius] > scene.ppm
+        java -jar target/babble-1.0-SNAPSHOT.jar -compile -target wasm-js examples/raytracer/raytracer_ppm.ba -o raytracer.wasm
+        node raytracer.mjs [scene] [width] [samples] [maxDepth] [gridRadius] > scene.ppm
+
+    Scenes: cover (default), three-spheres, triceratops.
+;;)
+
+def registry = import("scenes/registry.ba")
+def sink = import("io/sink.ba")
+def PpmSink = import("io/ppm.ba").PpmSink
+
+def argStr = fn (index: int, fallback: string): string -> (
+    if index < args.size() then (
+        def raw = args.get(index)
+        if raw != null then (raw) else (fallback)
+    ) else (
+        fallback
+    )
+)
+
+def argInt = fn (index: int, fallback: int): int -> (
+    if index < args.size() then (int(args.get(index))) else (fallback)
+)
+
+def sceneName: string = argStr(0, "cover")
+def width: int = argInt(1, 0)
+def samples: int = argInt(2, 0)
+def maxDepth: int = argInt(3, 0)
+def gridRadius: int = argInt(4, 11)
+
+def scene = registry.buildScene(
+    name: sceneName,
+    imageWidth: width,
+    samplesPerPixel: samples,
+    maxDepth: maxDepth,
+    gridRadius: gridRadius
+)
+
+sink.renderSequential(scene, PpmSink())

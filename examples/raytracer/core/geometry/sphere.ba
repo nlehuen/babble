@@ -1,0 +1,59 @@
+;; Analytic 3D sphere primitive.
+
+def math = import("../math.ba")
+def Vec3 = import("../vec3.ba").Vec3
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def Describable = import("../interfaces.ba").Describable
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+def Material = import("../interfaces.ba").Material
+
+export def Sphere = class (def center: Vec3, def radius: double, def mat: Material) implements Hittable, Describable (
+    private def radiusSq: double
+    private def invRadius: double
+    private def bbox: AABB
+
+    init (
+        this.radiusSq = this.radius * this.radius
+        this.invRadius = 1.0 / this.radius
+        def r: double = math.abs(this.radius)
+        this.bbox = AABB(
+            this.center.x - r, this.center.x + r,
+            this.center.y - r, this.center.y + r,
+            this.center.z - r, this.center.z + r
+        )
+    )
+
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def oc: Vec3 = this.center - r.origin
+        def a: double = r.dir.lengthSquared()
+        def h: double = r.dir.dot(oc)
+        def c: double = oc.lengthSquared() - this.radiusSq
+        def discriminant: double = h * h - a * c
+        if discriminant < 0.0 then (
+            return null
+        )
+        def sqrtd: double = math.sqrt(discriminant)
+        var root: double = (h - sqrtd) / a
+        if root <= tmin or tmax <= root then (
+            root = (h + sqrtd) / a
+            if root <= tmin or tmax <= root then (
+                return null
+            )
+        )
+        def p: Vec3 = r.at(root)
+        def outwardNormal: Vec3 = (p - this.center) * this.invRadius
+        HitRecord.create(r, p, outwardNormal, root, this.mat)
+    )
+
+    def kind = fn (): string -> ("sphere")
+
+    def describe = fn (): string -> (
+        super(Hittable).describe() + "(r=" + this.radius + ")"
+    )
+)

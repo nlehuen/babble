@@ -1,0 +1,76 @@
+;; Pure-Babble hittable container over `list of Hittable`.
+
+def Ray = import("../ray.ba").Ray
+def AABB = import("../aabb.ba").AABB
+def HitRecord = import("../interfaces.ba").HitRecord
+def Hittable = import("../interfaces.ba").Hittable
+
+export def HittableList = class () implements Hittable (
+    private def items: list of Hittable = list()
+    private var bbox: AABB = AABB.empty
+
+    def size = fn (): int -> (
+        this.items.size()
+    )
+
+    def add = fn mut (shared item: Hittable) -> (
+        this.items.add(item)
+        this.bbox = AABB.enclose(this.bbox, item.boundingBox())
+    )
+
+    def clear = fn mut () -> (
+        this.items.clear()
+        this.bbox = AABB.empty
+    )
+
+    def get = fn (index: int): Hittable -> (
+        this.items.get(index)
+    )
+
+    ;; A copy of the hittables, in the order they were added
+    def toList = fn (): list of Hittable -> (
+        list(from: this.items)
+    )
+
+    ;; Iterable: `for item in list then (...)`
+    def iterator = fn () -> (
+        this.items.iterator()
+    )
+
+    def boundingBox = fn (): AABB -> (
+        this.bbox
+    )
+
+    ;; Higher-order iteration over all hittables in the list
+    def forEach = fn calling f (f: fn (item: Hittable): any?) -> (
+        for item in this.items then (
+            f(item)
+        )
+    )
+
+    ;; Higher-order predicate counter using a closure over a mutable local
+    def countWhere = fn calling pred (pred: fn (item: Hittable): bool): int -> (
+        var matched: int = 0
+        this.forEach(fn (item: Hittable) -> (
+            if pred(item) then (
+                matched += 1
+            )
+        ))
+        matched
+    )
+
+    def hit = fn (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        var closestRecord: HitRecord? = null
+        var closestSoFar: double = tmax
+        for item in this.items then (
+            def tempRec: HitRecord? = item.hit(r, tmin, closestSoFar)
+            if tempRec != null then (
+                closestSoFar = tempRec.t
+                closestRecord = tempRec
+            )
+        )
+        closestRecord
+    )
+
+    def kind = fn (): string -> ("hittable_list")
+)

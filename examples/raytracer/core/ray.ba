@@ -1,0 +1,9 @@
+;; 3D ray with origin and direction.
+
+def Vec3 = import("vec3.ba").Vec3
+
+export def Ray = record (origin: Vec3, dir: Vec3) (
+    def at = fn (t: double): Vec3 -> (
+        this.origin + this.dir * t
+    )
+)
