@@ -403,6 +403,8 @@ Because `BatestTestCase` automatically discovers every `.batest.md` file under `
   * Mode-independent suites (`TypeAlgebraPropertyTestCase`, `EffectLatticePropertyTestCase`, `AxiomSoundnessTestCase`, and `EscapeSmokeTestCase` which internally runs all 4 modes) execute **once** per Maven build — gated to run on the default leg (or when invoked standalone via `-Dtest=...`), avoiding 3–4× redundant runs across `default-test`, `compiled-tests`, `compiled-tests-O0`, and `compiled-tests-O2`:
     * Tier 3 white-box property sweeps: `<= 2s` total.
     * `EscapeSmokeTestCase` (full Layer 1 combinatorial matrix + bounded fixed-seed sweep of Layers 2 and 3): `<= 5s` total wall time, zero flakiness.
+* **Fast interactive adversarial trials via `-crib` ([BIP041](bip041_crib-server.md)):**
+  * During manual or LLM-driven red-team campaigns and shrinking loops, start `java -jar target/babble-1.0-SNAPSHOT.jar -crib --port 7331` once after `mvn package` and post candidate `.batest.md` probes directly to `POST http://127.0.0.1:7331/crib?modes=interpret,O0,O1,O2` (or `modes=all`) for ~10–50 ms isolated warm-JVM trials with `verify=true`, automatic cross-mode parity diffing (`S0`), and automatic worker kill/respawn on hangs, `System.exit`, or JVM-global poisoning.
 * **Opt-in deep/soak profile `-Pescape`:**
   * Configured in `pom.xml` via `exec-maven-plugin` (`EscapeSoakRunner`, matching `mvn -q exec:java@batest-report -Pbatest` so soak fuzzing runs cleanly in a dedicated JVM without Surefire's multi-execution duplication or parallel-test contention):
     ```bash

@@ -26,7 +26,7 @@ import org.junit.jupiter.api.TestInstance;
 
 /**
  * End-to-end HTTP, CLI, parity, Wasm, and adversarial isolation tests for {@code -crib} ({@code
- * BIP041-P1}–{@code P4}).
+ * BIP041-I1}–{@code P4}).
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class CribServerTestCase {
