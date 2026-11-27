@@ -7,6 +7,7 @@ import org.babblelang.ir.IrTier;
 import org.babblelang.ir.hir.HirModule;
 import org.babblelang.ir.hir.HirVerifier;
 import org.babblelang.opt.hir.FbipReusePass;
+import org.babblelang.opt.hir.HirAeGraphPass;
 import org.babblelang.opt.hir.HirDcePass;
 import org.babblelang.opt.hir.HirEGraphSimplifyPass;
 import org.babblelang.opt.hir.HirLicmPass;
@@ -42,7 +43,7 @@ public final class PassManager {
     private static final List<HirPass> O2_HIR_PASSES =
             List.of(
                     new HirSccpPass(),
-                    new HirEGraphSimplifyPass(),
+                    new HirAeGraphPass(),
                     new InlinePass(),
                     new ScalarReplacePass(),
                     new FbipReusePass(),
