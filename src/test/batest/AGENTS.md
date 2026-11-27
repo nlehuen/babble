@@ -58,6 +58,8 @@ Each `.batest.md` file should test **one coherent aspect of the language** and l
 | `compiler/` | JVM interface lowering, Java bridges, HIR optimizer passes & IR goldens, bytecode edge cases |
 | `caches/` | Polymorphic and megamorphic `invokedynamic` inline caches |
 | `runtime/` | Shared runtime helpers and boundary edge cases |
+| `soundness/` | Permanent CI regressions promoted from `BIP032` adversarial soundness campaigns |
+| `jailbreaks/` | **Quarantined** unfixed `BIP032` jailbreaks — explicitly excluded from normal CI (`BatestTestCase`, `WasmBatestTestCase`, `FormatterTestCase`, `ParserGrammarTestCase`); reproduce & verify only inside isolated `-crib` (`BIP041`) |
 
 Name new files after the language feature (`types/type_aliases.batest.md`, `control/for_loops.batest.md`), not after implementation phases (`*_p1.batest.md`), grab-bag buckets (`*_edges.batest.md`), or numbered chunks (`*_1.batest.md`, `*_2.batest.md`).
 

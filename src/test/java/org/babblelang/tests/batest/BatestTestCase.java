@@ -126,8 +126,28 @@ public class BatestTestCase {
         }
     }
 
-    static boolean isBatestFile(Path p) {
-        return p.getFileName().toString().endsWith(".batest.md");
+    public static final String JAILBREAKS_DIR = "jailbreaks";
+
+    /**
+     * Returns {@code true} if {@code path} lives under {@code src/test/batest/jailbreaks/} ({@code
+     * BIP032} quarantined unfixed jailbreaks, explicitly excluded from normal CI {@code batest},
+     * Wasm, formatter, and grammar runners).
+     */
+    public static boolean isQuarantinedJailbreak(Path path) {
+        if (path == null) {
+            return false;
+        }
+        Path normalized = path.toAbsolutePath().normalize();
+        Path root = BATEST_ROOT.toAbsolutePath().normalize();
+        if (!normalized.startsWith(root)) {
+            return false;
+        }
+        Path rel = root.relativize(normalized);
+        return rel.getNameCount() > 0 && JAILBREAKS_DIR.equals(rel.getName(0).toString());
+    }
+
+    public static boolean isBatestFile(Path p) {
+        return p.getFileName().toString().endsWith(".batest.md") && !isQuarantinedJailbreak(p);
     }
 
     private static Path prepareRecordFile(String recordDir, String mode) throws IOException {

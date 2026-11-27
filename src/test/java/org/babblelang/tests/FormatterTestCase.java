@@ -528,7 +528,12 @@ public class FormatterTestCase {
         Path batestRoot = Path.of("src/test/batest");
         try (Stream<Path> stream = Files.walk(batestRoot)) {
             for (Path file :
-                    stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
+                    stream.filter(p -> p.toString().endsWith(".batest.md"))
+                            .filter(p ->
+                                    !org.babblelang.tests.batest.BatestTestCase
+                                            .isQuarantinedJailbreak(p))
+                            .sorted()
+                            .toList()) {
                 String relative = batestRoot.relativize(file).toString();
                 BatestFile parsed = BatestParser.parse(file, relative);
                 if (parsed.preamble() != null && !parsed.preamble().isBlank()) {
