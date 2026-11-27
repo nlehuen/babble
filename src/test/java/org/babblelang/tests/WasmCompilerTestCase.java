@@ -1490,16 +1490,18 @@ public class WasmCompilerTestCase {
                 assert("a,b,c".split(",", 2) == (array of string).of("a", "b,c"))
                 assert("".split(",") == (array of string).of(""))
 
-                ;; Self-referential collection cycle formatting
+                ;; Self-referential collection cycle formatting (2-node cycle respects mut exclusivity)
                 def cyc: list of any = list()
-                def holder = list(cyc)
-                cyc.add(holder.get(0))
-                assert(string(cyc) == "[(this Collection)]")
+                def cyc2: list of any = list()
+                cyc.add(cyc2)
+                cyc2.add(cyc)
+                assert(string(cyc) == "[[(this Collection)]]")
 
                 def cm: map of (string, any) = map()
-                def mholder = list(cm)
-                cm.put("self", mholder.get(0))
-                assert(string(cm) == "{self=(this Map)}")
+                def cm2: map of (string, any) = map()
+                cm.put("next", cm2)
+                cm2.put("self", cm)
+                assert(string(cm) == "{next={self=(this Map)}}")
 
                 ;; Array format recovers depth after element toString throws
                 def Boom = class () (
