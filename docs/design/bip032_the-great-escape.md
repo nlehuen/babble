@@ -372,7 +372,7 @@ Every mutated program that *compiles* is immediately executed against Tier 1 + T
 
 ### 7.4 Layer 3 — Corpus / EMI mutator (`CorpusEmiMutator`)
 
-Loads existing valid `.batest.md` and `.ba` programs from `src/test/batest/` and `src/test/babble/` and applies semantics-preserving and boundary-probing transformations:
+Loads existing valid `.batest.md` and `.ba` programs from `src/test/batest/` and `examples/` and applies semantics-preserving and boundary-probing transformations:
 
 * **Dead-code & guard wrapping (EMI):** wraps sub-expressions in opaque false-branch `if`, single-iteration `while`/`for`, `try (...) finally (0)`, or helper functions (both pure and `fn calling f`) to stress `InlinePass`, `ScalarReplacePass`, `FbipReusePass`, `HirPredicateReorderPass`, `HirLicmPass`, `HirDcePass`, `HirEGraphSimplifyPass`, and unified `HIR` `-O2` passes (`HirSccpPass`, `HirAeGraphPass`, `HirSlotAllocator`) across both JVM and WebAssembly 3.0 backends.
 * **Contract-strengthening probes:** on pure/helper functions in real tests, opportunistically adds `nothrow`, `unique`, or `freeze(...)` and checks whether accepted mutations break any Tier 1/Tier 2 oracle.
@@ -636,7 +636,7 @@ A separate remediation session (human or defender agent) drains `src/test/batest
 ### `BIP032-P3` — Random AST generator, adversarial/EMI mutators, delta-minimizer & `-Pescape` profile
 
 * **Deliverables:**
-  1. Implement Layer 2 (`TypeEffectAstGenerator` + `AdversarialMutators`) and Layer 3 (`CorpusEmiMutator` over `src/test/batest/` and `src/test/babble/`).
+  1. Implement Layer 2 (`TypeEffectAstGenerator` + `AdversarialMutators`) and Layer 3 (`CorpusEmiMutator` over `src/test/batest/` and `examples/`).
   2. Implement `EscapeMinimizer` (parse-tree-guided hierarchical `ddmin` preserving the exact failure signature and emitting valid `.batest.md` v2 files obeying `BatestParser` budgets).
   3. Add deterministic bounded smoke runs of Layers 2 and 3 to `EscapeSmokeTestCase` (total `EscapeSmokeTestCase` runtime `<= 5s`).
   4. Add the opt-in `-Pescape` Maven profile (`exec-maven-plugin` `escape-soak` invoking `EscapeSoakRunner`) to `pom.xml` with `-Descape.seconds`, `-Descape.seed`, `-Descape.surfaces`, and `-Descape.outDir`.
