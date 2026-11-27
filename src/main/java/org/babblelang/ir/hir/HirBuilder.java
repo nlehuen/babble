@@ -944,7 +944,11 @@ public final class HirBuilder {
                 ClassShape shape = clsCtx != null ? scopes.hierarchy().shape(clsCtx) : null;
                 if (shape != null) {
                     immutableField = shape.isValue() || !shape.isMutable(fieldIdx);
-                    defDefined = shape.isHeaderParameterMember(fieldIdx);
+                    defDefined =
+                            shape.isHeaderParameterMember(fieldIdx)
+                                    || (immutableField
+                                            && isInsideMethodOfClass(thisExpr, clsCtx)
+                                            && scopes.lowering().isAllDefFieldsFinalSafe(clsCtx));
                 }
             }
             return new HirExpr.ThisFieldGet(
@@ -1118,6 +1122,15 @@ public final class HirBuilder {
     private int thisCompiledClassIdAt(ParserRuleContext thisExpression) {
         ParserRuleContext cls = findThisCompiledClassCtx(thisExpression);
         return cls != null ? classIds.get(cls) : -1;
+    }
+
+    private static boolean isInsideMethodOfClass(ParserRuleContext expr, ParserRuleContext clsCtx) {
+        for (ParserRuleContext p = expr.getParent(); p != null && p != clsCtx; p = p.getParent()) {
+            if (p instanceof BabbleParser.FunctionLiteralContext) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private int compiledFieldIndex(ParserRuleContext thisExpression, String member) {

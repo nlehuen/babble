@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import org.babblelang.analysis.PrimitiveKind;
 import org.babblelang.analysis.Resolution;
+import org.babblelang.ir.hir.HirCallArg;
 import org.babblelang.ir.hir.HirClass;
 import org.babblelang.ir.hir.HirExpr;
 import org.babblelang.ir.hir.HirFunction;
@@ -82,6 +83,49 @@ public final class HirDcePass implements HirPass {
                             cls.params(),
                             ex -> dceExpr(ex, Set.of(), null, modFx, module, rewrites));
             List<HirExpr> nb = dceBody(cls.body(), null, modFx, module, rewrites);
+            List<org.babblelang.ir.hir.HirConstructor> newCtors = cls.constructors();
+            boolean ctorsChanged = false;
+            if (!cls.constructors().isEmpty()) {
+                List<org.babblelang.ir.hir.HirConstructor> rewritten =
+                        new ArrayList<>(cls.constructors().size());
+                for (org.babblelang.ir.hir.HirConstructor ctor : cls.constructors()) {
+                    List<HirParam> cnp =
+                            HirRewriter.rewriteParams(
+                                    ctor.params(),
+                                    ex -> dceExpr(ex, Set.of(), null, modFx, module, rewrites));
+                    List<HirExpr> cnPre =
+                            dceBody(ctor.preDelegateBody(), null, modFx, module, rewrites);
+                    List<HirCallArg> cnArgs = ctor.delegateArgs();
+                    boolean argsChanged = false;
+                    if (!cnArgs.isEmpty()) {
+                        List<HirCallArg> rebuiltArgs = new ArrayList<>(cnArgs.size());
+                        for (HirCallArg a : cnArgs) {
+                            HirExpr nv =
+                                    dceExpr(a.value(), Set.of(), null, modFx, module, rewrites);
+                            if (nv != a.value()) {
+                                argsChanged = true;
+                            }
+                            rebuiltArgs.add(nv == a.value() ? a : new HirCallArg(a.name(), nv));
+                        }
+                        if (argsChanged) {
+                            cnArgs = rebuiltArgs;
+                        }
+                    }
+                    List<HirExpr> cnBody = dceBody(ctor.body(), null, modFx, module, rewrites);
+                    if (cnp != ctor.params()
+                            || cnPre != ctor.preDelegateBody()
+                            || argsChanged
+                            || cnBody != ctor.body()) {
+                        ctorsChanged = true;
+                        rewritten.add(ctor.withBodies(cnp, cnPre, cnArgs, cnBody));
+                    } else {
+                        rewritten.add(ctor);
+                    }
+                }
+                if (ctorsChanged) {
+                    newCtors = rewritten;
+                }
+            }
             HirStaticBlock ns = cls.staticBlock();
             if (ns != null) {
                 List<HirExpr> nsb = dceBody(ns.body(), null, modFx, module, rewrites);
@@ -89,9 +133,9 @@ public final class HirDcePass implements HirPass {
                     ns = ns.withBody(nsb);
                 }
             }
-            if (np != cls.params() || nb != cls.body() || ns != cls.staticBlock()) {
+            if (np != cls.params() || nb != cls.body() || ctorsChanged || ns != cls.staticBlock()) {
                 changed = true;
-                cls = cls.withBodyAndStatic(np, nb, ns);
+                cls = cls.withBodyAndStatic(np, nb, newCtors, ns);
             }
             newClasses.put(e.getKey(), cls);
         }

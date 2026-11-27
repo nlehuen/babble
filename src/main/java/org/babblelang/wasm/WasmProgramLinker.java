@@ -712,6 +712,14 @@ public final class WasmProgramLinker {
                                 for (HirParam p : hc.params())
                                     if (p.defaultValue() != null) work.add(p.defaultValue());
                                 work.addAll(hc.body());
+                                for (org.babblelang.ir.hir.HirConstructor ctor :
+                                        hc.constructors()) {
+                                    for (HirParam p : ctor.params())
+                                        if (p.defaultValue() != null) work.add(p.defaultValue());
+                                    work.addAll(ctor.preDelegateBody());
+                                    for (var a : ctor.delegateArgs()) work.add(a.value());
+                                    work.addAll(ctor.body());
+                                }
                                 if (hc.staticBlock() != null) work.addAll(hc.staticBlock().body());
                             }
                         } else if (e instanceof HirExpr.InterfaceExpr ie
@@ -775,6 +783,12 @@ public final class WasmProgramLinker {
         for (HirClass c : hm.classes().values()) {
             for (HirParam p : c.params()) walkExpr(p.defaultValue(), visitor);
             for (HirExpr e : c.body()) walkExpr(e, visitor);
+            for (org.babblelang.ir.hir.HirConstructor ctor : c.constructors()) {
+                for (HirParam p : ctor.params()) walkExpr(p.defaultValue(), visitor);
+                for (HirExpr e : ctor.preDelegateBody()) walkExpr(e, visitor);
+                for (var a : ctor.delegateArgs()) walkExpr(a.value(), visitor);
+                for (HirExpr e : ctor.body()) walkExpr(e, visitor);
+            }
             if (c.staticBlock() != null) {
                 for (HirExpr e : c.staticBlock().body()) walkExpr(e, visitor);
             }
@@ -1212,6 +1226,12 @@ public final class WasmProgramLinker {
             for (HirClass c : hm.classes().values()) {
                 for (HirParam p : c.params()) collectOverloadMetas(p.defaultValue(), out);
                 for (HirExpr e : c.body()) collectOverloadMetas(e, out);
+                for (org.babblelang.ir.hir.HirConstructor ctor : c.constructors()) {
+                    for (HirParam p : ctor.params()) collectOverloadMetas(p.defaultValue(), out);
+                    for (HirExpr e : ctor.preDelegateBody()) collectOverloadMetas(e, out);
+                    for (var a : ctor.delegateArgs()) collectOverloadMetas(a.value(), out);
+                    for (HirExpr e : ctor.body()) collectOverloadMetas(e, out);
+                }
                 if (c.staticBlock() != null) {
                     for (HirExpr e : c.staticBlock().body()) collectOverloadMetas(e, out);
                 }

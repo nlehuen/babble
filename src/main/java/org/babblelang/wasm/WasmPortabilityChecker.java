@@ -331,6 +331,16 @@ public final class WasmPortabilityChecker {
                 }
             }
             checkList(cls.body(), target, topLevelDefined, out);
+            for (org.babblelang.ir.hir.HirConstructor ctor : cls.constructors()) {
+                for (HirParam p : ctor.params()) {
+                    if (p.defaultValue() != null) {
+                        checkExpr(p.defaultValue(), target, topLevelDefined, out);
+                    }
+                }
+                checkList(ctor.preDelegateBody(), target, topLevelDefined, out);
+                checkCallArgs(ctor.delegateArgs(), target, topLevelDefined, out);
+                checkList(ctor.body(), target, topLevelDefined, out);
+            }
             if (cls.staticBlock() != null) {
                 checkList(cls.staticBlock().body(), target, topLevelDefined, out);
             }

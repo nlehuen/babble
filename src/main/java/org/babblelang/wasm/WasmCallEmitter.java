@@ -561,21 +561,8 @@ public final class WasmCallEmitter {
             return;
         }
         // 1d. Direct typed constructor call for immutable non-capturing classes (`RangeCursor(a,
-        // b)`, `Sphere(...)`).
-        WasmObjectSystem.ClassInfo directCtorCls =
-                fe.members().resolveDirectImmutableClass(call.callee());
-        if (directCtorCls != null && canDirectCtorDispatch(directCtorCls, call)) {
-            fe.members()
-                    .emitBoundParams(
-                            directCtorCls.hir.params(),
-                            directCtorCls.ctorHasOptMask,
-                            false,
-                            null,
-                            call.args(),
-                            call.binding(),
-                            call.meta().line());
-            ctx.code.call(directCtorCls.directCtorIdx);
-            ctx.stackKind = PrimitiveKind.NONE;
+        // b)`, `Sphere(...)`, or `this(...)` inside a static method).
+        if (fe.constructors().tryEmitDirectConstructorCall(call)) {
             return;
         }
         // 2. General indirect call via $FnBase.genericCall (honoring static ArgumentBinding if
@@ -630,50 +617,6 @@ public final class WasmCallEmitter {
 
     private boolean isShadowedInNsScopes(String name) {
         return fe.isShadowedInNsScope(name);
-    }
-
-    private static boolean canDirectCtorDispatch(
-            WasmObjectSystem.ClassInfo ci, HirExpr.DynamicCall call) {
-        if (ci.hir.isObject() || ci.hasCaptures || ci.hasCapturingIfaces) {
-            return false;
-        }
-        List<HirParam> params = ci.hir.params();
-        int optCount = 0;
-        for (HirParam p : params) {
-            if (p.defaultValue() != null) optCount++;
-        }
-        LoweringTargets.ArgumentBinding binding = call.binding();
-        if (binding != null) {
-            if (binding.hasRest() || binding.paramCount() != params.size()) {
-                return false;
-            }
-            if (optCount > 0 && !ci.ctorHasOptMask) {
-                for (int p = 0; p < params.size(); p++) {
-                    if (p >= binding.paramToArg().length || binding.paramToArg()[p] < 0) {
-                        return false;
-                    }
-                }
-            }
-            return true;
-        }
-        List<HirCallArg> args = call.args();
-        if (args.size() > params.size()) {
-            return false;
-        }
-        if (optCount > 0 && !ci.ctorHasOptMask && args.size() < params.size()) {
-            return false;
-        }
-        for (HirCallArg a : args) {
-            if (a.name() != null || a.value() instanceof HirExpr.SpreadAdapt) {
-                return false;
-            }
-        }
-        for (int p = args.size(); p < params.size(); p++) {
-            if (params.get(p).defaultValue() == null) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static boolean canDirectStaticDispatch(

@@ -30,6 +30,7 @@ public final class WasmFuncEmitter {
         public final int optMaskLocal; // -1 if no optMask param
         public final int selfFnLocal; // -1 if not allocated
         public int thisLocal = -1; // >= 0 inside class/interface methods & constructors
+        public int[] stagedFieldLocals; // non-null during local-staged root constructor phase
         public WasmObjectSystem.ClassInfo
                 ownerClass; // non-null inside class methods & constructors
         public int ifaceCapLocal = -1; // >= 0 inside capturing interface default methods
@@ -121,6 +122,7 @@ public final class WasmFuncEmitter {
     private final WasmArrayOpsGen arrOps;
     private final WasmCallEmitter calls;
     private final WasmMemberEmitter members;
+    private final WasmConstructorEmitter constructors;
     private final WasmCoreEmitter core;
     private final WasmMatchEmitter matchEmitter;
     private final WasmVarAndDefEmitter varDefs;
@@ -135,6 +137,7 @@ public final class WasmFuncEmitter {
         this.arrOps = linker.arrays();
         this.calls = calls;
         this.members = new WasmMemberEmitter(linker, this, calls);
+        this.constructors = new WasmConstructorEmitter(linker, this);
         this.core = new WasmCoreEmitter(linker);
         this.core.setFuncEmitter(this);
         this.matchEmitter = new WasmMatchEmitter(linker, this);
@@ -167,12 +170,16 @@ public final class WasmFuncEmitter {
         return members;
     }
 
+    public WasmConstructorEmitter constructors() {
+        return constructors;
+    }
+
     public WasmCoreEmitter core() {
         return core;
     }
 
     public void emitClassConstructorBody(WasmObjectSystem.ClassInfo ci) {
-        members.emitClassConstructorBody(ci);
+        constructors.emitClassConstructors(ci);
     }
 
     // ---------------------------------------------------------------- entry points
@@ -497,18 +504,7 @@ public final class WasmFuncEmitter {
             case HirExpr.VarAssign a -> varDefs.emitVarAssign(a);
             case HirExpr.NameAssign a -> varDefs.emitNameAssign(a);
             case HirExpr.ThisFieldGet g -> members.emitThisFieldGet(g);
-            case HirExpr.ThisFieldInit a ->
-                    members.emitThisFieldAssign(
-                            new HirExpr.ThisFieldAssign(
-                                    new HirExpr.ThisRef(null, a.classId(), a.meta()),
-                                    a.classId(),
-                                    a.memberIndex(),
-                                    a.memberName(),
-                                    null,
-                                    a.value(),
-                                    "this." + a.memberName(),
-                                    "",
-                                    a.meta()));
+            case HirExpr.ThisFieldInit a -> constructors.emitThisFieldInit(a);
             case HirExpr.ThisFieldAssign a -> members.emitThisFieldAssign(a);
             case HirExpr.DynamicFieldAssign a -> members.emitDynamicFieldAssign(a);
             case HirExpr.ArrayCreate ac -> arrOps.emitArrayCreate(this, ac);

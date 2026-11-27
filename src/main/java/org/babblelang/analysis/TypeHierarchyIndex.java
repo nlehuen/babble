@@ -164,7 +164,11 @@ final class TypeHierarchyIndex {
                                     ? pass.analysis.lowering().declarationKind(member.declaration)
                                     : PrimitiveKind.NONE;
                     node.memberKinds.put(member.name, fk);
-                    if (node.parameterMembers.contains(member.index)) {
+                    if (node.parameterMembers.contains(member.index)
+                            || (!member.isMutable()
+                                    && pass.analysis
+                                            .lowering()
+                                            .isAllDefFieldsFinalSafe(node.ctx))) {
                         node.definiteFields.add(member.name);
                     }
                 } else if (!member.isOverload
