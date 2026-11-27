@@ -1,0 +1,844 @@
+;;(
+    Baby Triceratops in Babble, rendered with the fable ray tracer.
+
+    Approximates examples/raytracer-fable/triceratops.jpg at 160x160 using genuine 3D
+    primitives (Sphere, rotated Ellipsoid, tapered RoundCone, 3D Bezier chains, and
+    Fourier-contoured 3D SculptedLobe cushions) accelerated by BVHNode and shaded with
+    inset 3D outline shells, directional studio cel lighting, and Monte Carlo ambient
+    occlusion, without modifying any of the existing fable renderer modules.
+
+    Run from the root of the repository (after "mvn package") :
+        java -jar target/babble-1.0-SNAPSHOT.jar examples/raytracer-fable/triceratops.ba [output.png]
+;;)
+
+;; ---------------------------------------------------------------- Settings
+
+def defaultOutput: string = "examples/raytracer-fable/triceratops_render.png"
+def output: string = if args.size() > 0 then (
+    def arg0 = args.get(0)
+    if arg0 != null then (arg0) else (defaultOutput)
+) else (defaultOutput)
+
+def imageWidth: int = 160
+def samplesPerPixel: int = 32
+def maxDepth: int = 5
+def threads: int = 16
+
+;; ---------------------------------------------------------------- Modules
+
+def rtweekend = import("rtweekend.ba")
+def Math = rtweekend.Math
+def degreesToRadians = rtweekend.degreesToRadians
+def Vec3 = import("vec3.ba").Vec3
+def Ray = import("ray.ba").Ray
+def AABB = import("aabb.ba").AABB
+def hittable = import("hittable.ba")
+def Hittable = hittable.Hittable
+def HitRecord = hittable.HitRecord
+def Sphere = import("sphere.ba").Sphere
+def HittableList = import("hittable_list.ba").HittableList
+def BVHNode = import("bvh.ba").BVHNode
+def material = import("material.ba")
+def Material = material.Material
+def Scatter = material.Scatter
+def Camera = import("camera.ba").Camera
+
+;; ---------------------------------------------------------------- Colors (sRGB -> gamma-2 linear)
+
+def srgb = fn (r: int, g: int, b: int): Vec3 -> (
+    def rf: double = r / 255.0
+    def gf: double = g / 255.0
+    def bf: double = b / 255.0
+    Vec3(rf * rf, gf * gf, bf * bf)
+)
+
+def colOutline: Vec3 = srgb(60, 18, 80)
+def colBody: Vec3 = srgb(172, 68, 143)
+def colBodyShadow: Vec3 = srgb(132, 46, 117)
+def colBodyDeep: Vec3 = srgb(114, 35, 102)
+def colFrill: Vec3 = srgb(213, 145, 230)
+def colFrillShadow: Vec3 = srgb(196, 126, 218)
+def colFrillRim: Vec3 = srgb(242, 196, 255)
+def colBelly: Vec3 = srgb(229, 176, 245)
+def colBellyShadow: Vec3 = srgb(189, 133, 209)
+def colHorn: Vec3 = srgb(255, 232, 174)
+def colHornShadow: Vec3 = srgb(240, 194, 120)
+def colCream: Vec3 = srgb(246, 222, 212)
+def colCreamShadow: Vec3 = srgb(224, 194, 186)
+def colCheek: Vec3 = srgb(236, 104, 116)
+def colPacifier: Vec3 = srgb(176, 242, 56)
+def colPacifierShadow: Vec3 = srgb(134, 210, 30)
+def colPacifierDark: Vec3 = srgb(104, 182, 24)
+def colWhite: Vec3 = Vec3(1.0, 1.0, 1.0)
+def colEyeDark: Vec3 = srgb(54, 24, 90)
+
+;; ---------------------------------------------------------------- Studio backdrop & materials
+
+;; Redirects escaped rays straight down (y = -1) from outside the scene so camera.ba's sky
+;; evaluates to a = 0 -> exact pure white (1, 1, 1), without modifying camera.ba.
+def StudioLight = class () implements Material (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
+        Scatter(Vec3(1.0, 1.0, 1.0), Ray(Vec3(0.0, -10000.0, 0.0), Vec3(0.0, -1.0, 0.0)))
+    )
+)
+
+def StudioWorld = class (def scene: Hittable, def backdrop: Material) implements Hittable (
+    private def bbox: AABB = AABB(-2000.0, 2000.0, -2000.0, 2000.0, -2000.0, 2000.0)
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        if r.origin.y < -5000.0 then (return null)
+        def rec: HitRecord? = this.scene.hit(r, tmin, tmax)
+        if rec <> null then (return rec)
+        HitRecord(r, r.at(1000.0), 1000.0, -r.direction.unit(), this.backdrop)
+    )
+)
+
+;; 3D cartoon material : 2-band directional studio cel shading and probabilistic indirect AO.
+def ToonMaterial = class (
+    def baseColor: Vec3,
+    def shadowColor: Vec3,
+    def lightDir: Vec3,
+    def aoProb: double = 0.08,
+    def rampLow: double = -0.25,
+    def rampHigh: double = 0.70
+) implements Material (
+    private def ldir: Vec3 = this.lightDir.unit()
+    private def invSpan: double = 1.0 / Math.max(0.01, this.rampHigh - this.rampLow)
+
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
+        def isPrimary: bool = rIn.origin.z > 5.0
+        def ndotl: double = rec.normal.dot(this.ldir)
+        def t: double = Math.max(0.0, Math.min(1.0, (ndotl - this.rampLow) * this.invSpan))
+        def shaded: Vec3 = this.shadowColor * (1.0 - t) + this.baseColor * t
+
+        if isPrimary and rng.nextDouble() < this.aoProb then (
+            var direction: Vec3 = rec.normal + Vec3.randomUnit(rng)
+            if direction.nearZero() then (direction = rec.normal)
+            return Scatter(shaded, Ray(rec.p, direction))
+        )
+        Scatter(shaded, Ray(Vec3(0.0, -10000.0, 0.0), Vec3(0.0, -1.0, 0.0)))
+    )
+)
+
+;; Flat ink/highlight material for outline shells and crisp facial details.
+def FlatMaterial = class (def color: Vec3) implements Material (
+    def scatter = fn (rIn: Ray, rec: HitRecord, mut rng: java.util.Random): Scatter? -> (
+        Scatter(this.color, Ray(Vec3(0.0, -10000.0, 0.0), Vec3(0.0, -1.0, 0.0)))
+    )
+)
+
+;; ---------------------------------------------------------------- 3D Analytic Primitives
+
+;; Oriented 3D ellipsoid with exact tight AABB and quadratic ray intersection.
+def Ellipsoid = class (
+    def center: Vec3,
+    def u: Vec3,
+    def v: Vec3,
+    def w: Vec3,
+    def rx: double,
+    def ry: double,
+    def rz: double,
+    def material: Material
+) implements Hittable (
+    private def invRx: double = 1.0 / this.rx
+    private def invRy: double = 1.0 / this.ry
+    private def invRz: double = 1.0 / this.rz
+
+    private def bbox: AABB = (
+        def ux: double = this.u.x * this.rx
+        def vx: double = this.v.x * this.ry
+        def wx: double = this.w.x * this.rz
+        def ex: double = Math.sqrt(ux * ux + vx * vx + wx * wx)
+
+        def uy: double = this.u.y * this.rx
+        def vy: double = this.v.y * this.ry
+        def wy: double = this.w.y * this.rz
+        def ey: double = Math.sqrt(uy * uy + vy * vy + wy * wy)
+
+        def uz: double = this.u.z * this.rx
+        def vz: double = this.v.z * this.ry
+        def wz: double = this.w.z * this.rz
+        def ez: double = Math.sqrt(uz * uz + vz * vz + wz * wz)
+
+        AABB(
+            this.center.x - ex, this.center.x + ex,
+            this.center.y - ey, this.center.y + ey,
+            this.center.z - ez, this.center.z + ez
+        )
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def oc: Vec3 = r.origin - this.center
+        def ox: double = oc.dot(this.u) * this.invRx
+        def oy: double = oc.dot(this.v) * this.invRy
+        def oz: double = oc.dot(this.w) * this.invRz
+
+        def dx: double = r.direction.dot(this.u) * this.invRx
+        def dy: double = r.direction.dot(this.v) * this.invRy
+        def dz: double = r.direction.dot(this.w) * this.invRz
+
+        def a: double = dx * dx + dy * dy + dz * dz
+        def h: double = -(ox * dx + oy * dy + oz * dz)
+        def c: double = ox * ox + oy * oy + oz * oz - 1.0
+
+        def disc: double = h * h - a * c
+        if disc < 0.0 then (return null)
+
+        def sqrtd: double = Math.sqrt(disc)
+        var root: double = (h - sqrtd) / a
+        if root <= tmin or tmax <= root then (
+            root = (h + sqrtd) / a
+            if root <= tmin or tmax <= root then (return null)
+        )
+
+        def lx: double = ox + root * dx
+        def ly: double = oy + root * dy
+        def lz: double = oz + root * dz
+
+        def nx: double = lx * this.invRx
+        def ny: double = ly * this.invRy
+        def nz: double = lz * this.invRz
+        def outward: Vec3 = (this.u * nx + this.v * ny + this.w * nz).unit()
+
+        HitRecord(r, r.at(root), root, outward, this.material)
+    )
+) static (
+    def rotatedZ = fn (center: Vec3, rx: double, ry: double, rz: double, angleDeg: double, mat: Material): Ellipsoid -> (
+        def rad: double = degreesToRadians(angleDeg)
+        def ca: double = Math.cos(rad)
+        def sa: double = Math.sin(rad)
+        this(center, Vec3(ca, sa, 0.0), Vec3(-sa, ca, 0.0), Vec3(0.0, 0.0, 1.0), rx, ry, rz, mat)
+    )
+)
+
+;; Analytic sphere-swept tapered capsule (rounded cone) from pa (ra) to pb (rb).
+def RoundCone = class (
+    def pa: Vec3,
+    def pb: Vec3,
+    def ra: double,
+    def rb: double,
+    def material: Material
+) implements Hittable (
+    private def ba: Vec3 = this.pb - this.pa
+    private def len: double = this.ba.length()
+    private def ax: Vec3 = if this.len > 0.000001 then (this.ba / this.len) else (Vec3(0.0, 1.0, 0.0))
+    private def sinA: double = if this.len > 0.000001 then (
+        Math.max(-0.999, Math.min(0.999, (this.ra - this.rb) / this.len))
+    ) else (0.0)
+    private def cosA2: double = 1.0 - this.sinA * this.sinA
+    private def hMin: double = this.ra * this.sinA
+    private def hMax: double = this.len + this.rb * this.sinA
+
+    private def bbox: AABB = AABB(
+        Math.min(this.pa.x - this.ra, this.pb.x - this.rb),
+        Math.max(this.pa.x + this.ra, this.pb.x + this.rb),
+        Math.min(this.pa.y - this.ra, this.pb.y - this.rb),
+        Math.max(this.pa.y + this.ra, this.pb.y + this.rb),
+        Math.min(this.pa.z - this.ra, this.pb.z - this.rb),
+        Math.max(this.pa.z + this.ra, this.pb.z + this.rb)
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        def dirLen: double = r.direction.length()
+        def invDirLen: double = 1.0 / dirLen
+        def rd: Vec3 = r.direction * invDirLen
+        def tminL: double = tmin * dirLen
+        var bestT: double = tmax * dirLen
+        var bestNormal: Vec3 = Vec3(0.0, 1.0, 0.0)
+        var found: bool = false
+
+        def oa: Vec3 = r.origin - this.pa
+
+        ;; 1. Tapered cone lateral surface
+        if this.len > 0.000001 and this.cosA2 > 0.000001 then (
+            def h0: double = oa.dot(this.ax)
+            def hd: double = rd.dot(this.ax)
+            def qa: double = this.cosA2 - hd * hd
+            def qb: double = this.cosA2 * oa.dot(rd) - h0 * hd + this.ra * this.sinA * hd
+            def qc: double = this.cosA2 * oa.dot(oa) - h0 * h0 + 2.0 * this.ra * this.sinA * h0 - this.ra * this.ra
+
+            if Math.abs(qa) > 0.00000001 then (
+                def disc: double = qb * qb - qa * qc
+                if disc >= 0.0 then (
+                    def sq: double = Math.sqrt(disc)
+                    def t1: double = (-qb - sq) / qa
+                    if t1 > tminL and t1 < bestT then (
+                        def hh1: double = h0 + t1 * hd
+                        if hh1 >= this.hMin and hh1 <= this.hMax then (
+                            bestT = t1
+                            def p1: Vec3 = oa + rd * t1
+                            bestNormal = (p1 * this.cosA2 - this.ax * (hh1 - this.ra * this.sinA)).unit()
+                            found = true
+                        )
+                    )
+                    def t2: double = (-qb + sq) / qa
+                    if t2 > tminL and t2 < bestT then (
+                        def hh2: double = h0 + t2 * hd
+                        if hh2 >= this.hMin and hh2 <= this.hMax then (
+                            bestT = t2
+                            def p2: Vec3 = oa + rd * t2
+                            bestNormal = (p2 * this.cosA2 - this.ax * (hh2 - this.ra * this.sinA)).unit()
+                            found = true
+                        )
+                    )
+                )
+            )
+        )
+
+        ;; 2. Sphere cap at pa
+        def ba1: double = oa.dot(rd)
+        def ca1: double = oa.dot(oa) - this.ra * this.ra
+        def da1: double = ba1 * ba1 - ca1
+        if da1 >= 0.0 then (
+            def sqa: double = Math.sqrt(da1)
+            var ta: double = -ba1 - sqa
+            if ta <= tminL or ta >= bestT then (ta = -ba1 + sqa)
+            if ta > tminL and ta < bestT then (
+                bestT = ta
+                bestNormal = (oa + rd * ta) / this.ra
+                found = true
+            )
+        )
+
+        ;; 3. Sphere cap at pb
+        def ob: Vec3 = r.origin - this.pb
+        def bb1: double = ob.dot(rd)
+        def cb1: double = ob.dot(ob) - this.rb * this.rb
+        def db1: double = bb1 * bb1 - cb1
+        if db1 >= 0.0 then (
+            def sqb: double = Math.sqrt(db1)
+            var tb: double = -bb1 - sqb
+            if tb <= tminL or tb >= bestT then (tb = -bb1 + sqb)
+            if tb > tminL and tb < bestT then (
+                bestT = tb
+                bestNormal = (ob + rd * tb) / this.rb
+                found = true
+            )
+        )
+
+        if not found then (return null)
+        def worldT: double = bestT * invDirLen
+        HitRecord(r, r.at(worldT), worldT, bestNormal, this.material)
+    )
+)
+
+;; 3D Fourier-contoured star-convex cushion :
+;;   f(x, y, z) = (r / R(theta))^2 + ((z - cz) / rz)^2 - 1 <= 0
+;; Uses angle-addition recurrence (zero trig calls per ray step) for smooth 3D organic
+;; silhouettes (scalloped frill, pear-shaped head, curved belly) with uniform contour ink
+;; and optional pastel rim highlight bands.
+def SculptedLobe = class (
+    def center: Vec3,
+    def rz: double,
+    def scale: double,
+    def coeffs: array of double,
+    def rMax: double,
+    def fillMat: Material,
+    def inkMat: Material,
+    def border: double,
+    def rimWidth: double,
+    def rimMat: Material
+) implements Hittable (
+    private def invRz: double = 1.0 / this.rz
+    private def invScale: double = 1.0 / this.scale
+    private def maxExtent: double = this.rMax * this.scale
+    private def kCount: int = (this.coeffs.size() - 1) // 2
+    private def bbox: AABB = AABB(
+        this.center.x - this.maxExtent, this.center.x + this.maxExtent,
+        this.center.y - this.maxExtent, this.center.y + this.maxExtent,
+        this.center.z - this.rz, this.center.z + this.rz
+    )
+
+    def boundingBox = fn (): AABB -> (this.bbox)
+
+    private def evalR = fn (dx: double, dy: double, rad: double): double -> (
+        if rad < 0.000001 then (return this.coeffs.get(0))
+        def c1: double = dx / rad
+        def s1: double = dy / rad
+        var sum: double = this.coeffs.get(0)
+        var ck: double = c1
+        var sk: double = s1
+        var k: int = 1
+        while k <= this.kCount then (
+            def idx: int = 2 * k - 1
+            sum += this.coeffs.get(idx) * ck + this.coeffs.get(idx + 1) * sk
+            def nextC: double = ck * c1 - sk * s1
+            def nextS: double = sk * c1 + ck * s1
+            ck = nextC
+            sk = nextS
+            k += 1
+        )
+        Math.max(0.02, sum)
+    )
+
+    private def evalF = fn (p: Vec3): double -> (
+        def dx: double = (p.x - this.center.x) * this.invScale
+        def dy: double = (p.y - this.center.y) * this.invScale
+        def dz: double = (p.z - this.center.z) * this.invRz
+        def rad: double = Math.sqrt(dx * dx + dy * dy)
+        def R: double = this.evalR(dx, dy, rad)
+        def u: double = rad / R
+        u * u + dz * dz - 1.0
+    )
+
+    def hit = fn shared (r: Ray, tmin: double, tmax: double): HitRecord? -> (
+        if not this.bbox.hit(r, tmin, tmax) then (return null)
+
+        ;; Intersect z-slab [cz - rz, cz + rz]
+        var t0: double = tmin
+        var t1: double = tmax
+        if Math.abs(r.direction.z) > 0.0000001 then (
+            def invDz: double = 1.0 / r.direction.z
+            var za: double = (this.center.z - this.rz - r.origin.z) * invDz
+            var zb: double = (this.center.z + this.rz - r.origin.z) * invDz
+            if za > zb then (
+                def tmp: double = za
+                za = zb
+                zb = tmp
+            )
+            if za > t0 then (t0 = za)
+            if zb < t1 then (t1 = zb)
+        )
+        if t1 <= t0 then (return null)
+
+        ;; Bracket first crossing f(tA) > 0 -> f(tB) <= 0 along the slab
+        def steps: int = 8
+        def dt: double = (t1 - t0) / steps
+        var prevT: double = t0
+        var prevF: double = this.evalF(r.at(prevT))
+        if prevF <= 0.0 then (return null)
+
+        var found: bool = false
+        var lo: double = prevT
+        var hi: double = prevT
+        var s: int = 1
+        while s <= steps then (
+            def curT: double = t0 + s * dt
+            def curF: double = this.evalF(r.at(curT))
+            if curF <= 0.0 then (
+                lo = prevT
+                hi = curT
+                found = true
+                s = steps + 1
+            ) else (
+                prevT = curT
+                prevF = curF
+                s += 1
+            )
+        )
+        if not found then (return null)
+
+        ;; Refine intersection by 7 bisection steps
+        var b: int = 0
+        while b < 7 then (
+            def mid: double = 0.5 * (lo + hi)
+            if this.evalF(r.at(mid)) <= 0.0 then (
+                hi = mid
+            ) else (
+                lo = mid
+            )
+            b += 1
+        )
+
+        def hitT: double = 0.5 * (lo + hi)
+        if hitT <= tmin or hitT >= tmax then (return null)
+
+        def p: Vec3 = r.at(hitT)
+        def dx: double = (p.x - this.center.x) * this.invScale
+        def dy: double = (p.y - this.center.y) * this.invScale
+        def rad: double = Math.sqrt(dx * dx + dy * dy)
+        def R: double = this.evalR(dx, dy, rad)
+
+        ;; Smooth 3D surface normal via gradient of f(x, y, z)
+        def nx: double = (dx * this.invScale) / (R * R)
+        def ny: double = (dy * this.invScale) / (R * R)
+        def nz: double = (p.z - this.center.z) * this.invRz * this.invRz
+        def outward: Vec3 = Vec3(nx, ny, nz).unit()
+
+        def mat: Material = if this.border > 0.0 and rad > R - this.border then (
+            this.inkMat
+        ) else if this.rimWidth > 0.0 and rad > R - this.border - this.rimWidth then (
+            this.rimMat
+        ) else (
+            this.fillMat
+        )
+        HitRecord(r, p, hitT, outward, mat)
+    )
+)
+
+;; ---------------------------------------------------------------- Scene Construction Helpers
+
+;; Maps desired screen position (sx, sy) in [-1, 1]^2 at 3D depth z into world coordinates
+;; for a camera at (0, 0, 10) with half-height 1.0 at z = 0.
+def pt = fn (sx: double, sy: double, z: double): Vec3 -> (
+    def k: double = (10.0 - z) / 10.0
+    Vec3(sx * k, sy * k, z)
+)
+
+def sc = fn (r: double, z: double): double -> (
+    r * (10.0 - z) / 10.0
+)
+
+def lightBody: Vec3 = Vec3(0.20, 0.45, 0.87)
+def lightHead: Vec3 = Vec3(0.05, 0.72, 0.69)
+def lightBelly: Vec3 = Vec3(0.00, 0.78, 0.62)
+def lightHorn: Vec3 = Vec3(-0.45, 0.55, 0.70)
+def lightFrill: Vec3 = Vec3(-0.15, 0.40, 0.90)
+
+def matBody = ToonMaterial(colBody, srgb(154, 58, 132), lightBody, 0.05, -0.15, 0.55)
+def matBodyShade = ToonMaterial(colBodyShadow, colBodyDeep, lightBody, 0.05, -0.25, 0.55)
+def matHead = ToonMaterial(colBody, colBodyShadow, lightHead, 0.04, 0.25, 0.58)
+def matBodyDark = ToonMaterial(colBodyDeep, colBodyDeep, lightBody, 0.08)
+def matFrill = ToonMaterial(colFrill, colFrillShadow, lightFrill, 0.04)
+def matFrillRim = FlatMaterial(colFrillRim)
+def matFrillCrease = FlatMaterial(srgb(156, 86, 178))
+def matBelly = ToonMaterial(colBelly, colBellyShadow, lightBelly, 0.03, 0.28, 0.58)
+def matHorn = ToonMaterial(colHorn, colHornShadow, lightHorn, 0.05)
+def matCream = ToonMaterial(colCream, colCreamShadow, lightHorn, 0.05)
+def matPacifier = ToonMaterial(colPacifier, colPacifierShadow, lightHorn, 0.05)
+def matPacifierDark = FlatMaterial(colPacifierDark)
+def matCheek = FlatMaterial(colCheek)
+def matWhite = FlatMaterial(colWhite)
+def matEyeDark = FlatMaterial(colEyeDark)
+def matInk = FlatMaterial(colOutline)
+
+def world = HittableList()
+
+;; Inset 3D outline shell helpers
+def addEll = fn io (sx: double, sy: double, z: double, rx: double, ry: double, rz: double, deg: double, shared mat: Material, border: double, zBack: double = 0.04): null -> (
+    def irx: double = Math.max(0.004, rx - border)
+    def iry: double = Math.max(0.004, ry - border)
+    world.add(Ellipsoid.rotatedZ(pt(sx, sy, z), sc(irx, z), sc(iry, z), rz, deg, mat))
+    if border > 0.0 then (
+        def zb: double = z - zBack
+        world.add(Ellipsoid.rotatedZ(pt(sx, sy, zb), sc(rx, zb), sc(ry, zb), rz, deg, matInk))
+    )
+    null
+)
+
+def addSph = fn io (sx: double, sy: double, z: double, r: double, shared mat: Material, border: double, zBack: double = 0.03): null -> (
+    def ir: double = Math.max(0.004, r - border)
+    world.add(Sphere(pt(sx, sy, z), sc(ir, z), mat))
+    if border > 0.0 then (
+        def zb: double = z - zBack
+        world.add(Sphere(pt(sx, sy, zb), sc(r, zb), matInk))
+    )
+    null
+)
+
+def addCone = fn io (sx1: double, sy1: double, z1: double, sx2: double, sy2: double, z2: double, r1: double, r2: double, shared mat: Material, border: double, zBack: double = 0.04): null -> (
+    def ir1: double = Math.max(0.004, r1 - border)
+    def ir2: double = Math.max(0.004, r2 - border)
+    world.add(RoundCone(pt(sx1, sy1, z1), pt(sx2, sy2, z2), sc(ir1, z1), sc(ir2, z2), mat))
+    if border > 0.0 then (
+        def zb1: double = z1 - zBack
+        def zb2: double = z2 - zBack
+        world.add(RoundCone(pt(sx1, sy1, zb1), pt(sx2, sy2, zb2), sc(r1, zb1), sc(r2, zb2), matInk))
+    )
+    null
+)
+
+;; Smooth quadratic 3D Bezier chain of tapered RoundCones with optional inset outline hull.
+def addBezier = fn io (
+    x0: double, y0: double, z0: double, r0: double,
+    x1: double, y1: double, z1: double, r1: double,
+    x2: double, y2: double, z2: double, r2: double,
+    segs: int, shared mat: Material, border: double, zBack: double = 0.04
+): null -> (
+    var i: int = 0
+    while i < segs then (
+        def t0: double = i / double(segs)
+        def t1: double = (i + 1) / double(segs)
+        def u0: double = 1.0 - t0
+        def u1: double = 1.0 - t1
+        def ax: double = u0 * u0 * x0 + 2.0 * u0 * t0 * x1 + t0 * t0 * x2
+        def ay: double = u0 * u0 * y0 + 2.0 * u0 * t0 * y1 + t0 * t0 * y2
+        def az: double = u0 * u0 * z0 + 2.0 * u0 * t0 * z1 + t0 * t0 * z2
+        def ar: double = u0 * u0 * r0 + 2.0 * u0 * t0 * r1 + t0 * t0 * r2
+        def bx: double = u1 * u1 * x0 + 2.0 * u1 * t1 * x1 + t1 * t1 * x2
+        def by: double = u1 * u1 * y0 + 2.0 * u1 * t1 * y1 + t1 * t1 * y2
+        def bz: double = u1 * u1 * z0 + 2.0 * u1 * t1 * z1 + t1 * t1 * z2
+        def br: double = u1 * u1 * r0 + 2.0 * u1 * t1 * r1 + t1 * t1 * r2
+        addCone(ax, ay, az, bx, by, bz, ar, br, mat, border, zBack)
+        i += 1
+    )
+    null
+)
+
+;; Flat-soled rounded 3D cartoon leg with optional cast-shadow inner side (shadeSide: -1 left, 0 none, +1 right).
+def addFlatLeg = fn io (
+    xTopL: double, xTopR: double, yTop: double,
+    xBotL: double, xBotR: double, soleY: double,
+    z: double, rC: double, shared mat: Material, border: double, zBack: double = 0.05,
+    shadeSide: int = 0
+): null -> (
+    def yBot: double = soleY + rC
+    def xTL: double = xTopL + rC
+    def xTR: double = xTopR - rC
+    def xBL: double = xBotL + rC
+    def xBR: double = xBotR - rC
+    def cols: int = 5
+    var ci: int = 0
+    while ci < cols then (
+        def f: double = ci / double(cols - 1)
+        def xt: double = xTL + (xTR - xTL) * f
+        def xb: double = xBL + (xBR - xBL) * f
+        def useShade: bool = (shadeSide < 0 and ci == 0) or (shadeSide > 0 and ci == cols - 1)
+        def colMat: Material = if useShade then (matBodyShade) else (mat)
+        addCone(xt, yTop, z, xb, yBot, z, rC, rC, colMat, border, zBack)
+        ci += 1
+    )
+    addCone(xBL, yBot, z, xBR, yBot, z, rC, rC, mat, border, zBack)
+    null
+)
+
+def B: double = 0.023
+
+;; --- 1. Tail (fitted to exact 256px tail top/seam/bottom profile) ---
+addBezier(
+    -0.42, -0.14, -0.20, 0.160,
+    -0.555, -0.342, -0.27, 0.088,
+    -0.772, -0.302, -0.33, 0.036,
+    6, matBody, B, 0.05
+)
+;; Pastel lavender underside hugging bottom curve of tail
+addBezier(
+    -0.45, -0.365, -0.18, 0.060,
+    -0.60, -0.415, -0.25, 0.040,
+    -0.752, -0.355, -0.31, 0.020,
+    5, matBelly, B * 0.9, 0.04
+)
+
+;; --- 2. Torso & Smooth Curved Back ---
+addBezier(
+    -0.12, 0.070, -0.13, 0.224,
+    -0.340, 0.092, -0.14, 0.168,
+    -0.465, -0.21, -0.16, 0.126,
+    6, matBody, B, 0.06
+)
+addEll(-0.07, -0.14, -0.12, 0.38, 0.325, 0.14, 14.0, matBody, B, 0.06)
+
+;; --- 3. Four Stubby Legs + Flat-Soled Feet + Ivory Toes ---
+;; Back-right leg (darker shaded foot tucked flush behind left edge of front-left leg)
+addCone(-0.134, -0.38, -0.24, -0.134, -0.562, -0.24, 0.072, 0.058, matBodyDark, B * 0.95, 0.04)
+
+;; Back-left leg (inner right side shaded by belly/front leg, sole at y = -0.662)
+addFlatLeg(-0.480, -0.250, -0.36, -0.495, -0.242, -0.662, -0.02, 0.050, matBody, B, 0.05, 1)
+world.add(Ellipsoid.rotatedZ(pt(-0.355, -0.28, 0.00), sc(0.142, 0.00), sc(0.140, 0.00), 0.10, 8.0, matBody))
+;; Crisp tail-to-rump fold crease behind back-left thigh
+addBezier(
+    -0.506, -0.10, 0.10, 0.009,
+    -0.506, -0.23, 0.10, 0.009,
+    -0.500, -0.35, 0.10, 0.009,
+    3, matInk, 0.0, 0.0
+)
+;; Curved inner hip crease
+addBezier(
+    -0.410, -0.14, 0.11, 0.009,
+    -0.404, -0.25, 0.11, 0.009,
+    -0.376, -0.35, 0.11, 0.009,
+    3, matInk, 0.0, 0.0
+)
+;; 3 flush dome toes along flat sole
+addEll(-0.422, -0.625, 0.07, 0.035, 0.034, 0.030, 0.0, matCream, 0.016, 0.025)
+addEll(-0.358, -0.628, 0.08, 0.038, 0.036, 0.030, 0.0, matCream, 0.016, 0.025)
+addEll(-0.296, -0.625, 0.07, 0.033, 0.033, 0.030, 0.0, matCream, 0.016, 0.025)
+
+;; Front-right leg (inner left side shaded by belly, rises up under pacifier, sole at y = -0.688)
+addFlatLeg(0.295, 0.532, -0.20, 0.280, 0.542, -0.688, 0.02, 0.050, matBody, B, 0.05, -1)
+addEll(0.402, -0.650, 0.12, 0.035, 0.034, 0.030, 0.0, matCream, 0.016, 0.025)
+addEll(0.468, -0.652, 0.13, 0.038, 0.036, 0.030, 0.0, matCream, 0.016, 0.025)
+addEll(0.522, -0.643, 0.12, 0.033, 0.033, 0.030, 0.0, matCream, 0.016, 0.025)
+
+;; Sculpted 3D pastel lavender chest (with bottom cel shadow) & lower belly crescent
+def bellyCoeffs: array of double = (array of double).of(
+    0.16687,
+    0.01302, -0.01370,
+    0.00316, 0.02428,
+    0.02849, 0.00415,
+    -0.00539, 0.00725,
+    0.00001, 0.00815
+)
+world.add(SculptedLobe(pt(0.27, -0.33, 0.10), 0.07, sc(1.0, 0.10), bellyCoeffs, 0.25, matBelly, matInk, 0.023, 0.0, matInk))
+;; Sweeping curved lower belly crescent
+addBezier(
+    -0.372, -0.295, 0.04, 0.022,
+    -0.242, -0.415, 0.05, 0.062,
+    -0.088, -0.472, 0.05, 0.056,
+    5, matBelly, 0.021, 0.03
+)
+
+;; Front-left leg (tapered at top, flared at flat sole y = -0.730, x in [-0.120, +0.178])
+addFlatLeg(-0.142, 0.130, -0.30, -0.120, 0.178, -0.730, 0.22, 0.052, matBody, B, 0.05, 0)
+world.add(Ellipsoid.rotatedZ(pt(-0.01, -0.24, 0.19), sc(0.150, 0.19), sc(0.135, 0.19), 0.06, 12.0, matBody))
+addBezier(
+    -0.144, -0.27, 0.32, 0.009,
+    -0.145, -0.36, 0.32, 0.009,
+    -0.136, -0.46, 0.32, 0.009,
+    2, matInk, 0.0, 0.0
+)
+;; 3 flush dome toes aligned to REF x = 0.00, +0.072, +0.136
+addEll(0.002, -0.690, 0.32, 0.036, 0.036, 0.030, 0.0, matCream, 0.016, 0.025)
+addEll(0.074, -0.694, 0.33, 0.039, 0.038, 0.030, 0.0, matCream, 0.016, 0.025)
+addEll(0.138, -0.684, 0.32, 0.034, 0.034, 0.030, 0.0, matCream, 0.016, 0.025)
+
+;; --- 4. 3D Sculpted Scalloped Lavender Frill (Multi-seed BFS K=12 + lower-left corner tuck) ---
+def frillCoeffs: array of double = (array of double).of(
+    0.40349,
+    -0.00927, 0.07677,
+    0.06227, 0.01294,
+    0.00692, -0.01419,
+    0.00599, 0.00059,
+    0.00869, -0.00539,
+    -0.00387, -0.00015,
+    0.00559, -0.00437,
+    0.00172, -0.00341,
+    -0.00095, 0.00452,
+    -0.00253, -0.00961,
+    0.00315, -0.00172,
+    0.00230, -0.00407
+)
+world.add(SculptedLobe(pt(0.28, 0.25, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.55, matFrill, matInk, 0.023, 0.024, matFrillRim))
+;; Rounded lower-left frill lobe extension matching exact corner at (-0.14, +0.02)
+addEll(-0.072, 0.082, 0.065, 0.092, 0.078, 0.045, 8.0, matFrill, 0.022, 0.03)
+
+;; 9 Flush oval cream osteoderm scallops aligned to exact 256px measured centroids
+addEll(-0.156, 0.051, 0.055, 0.035, 0.028, 0.035, 72.0, matCream, 0.017, 0.025)
+addEll(-0.188, 0.223, 0.055, 0.039, 0.030, 0.035, 85.0, matCream, 0.017, 0.025)
+addEll(-0.168, 0.406, 0.055, 0.041, 0.032, 0.035, 68.0, matCream, 0.017, 0.025)
+addEll(-0.031, 0.605, 0.055, 0.043, 0.030, 0.035, 36.0, matCream, 0.017, 0.025)
+addEll(0.234, 0.715, 0.055, 0.045, 0.032, 0.035, -2.0, matCream, 0.018, 0.025)
+addEll(0.492, 0.660, 0.055, 0.043, 0.030, 0.035, -34.0, matCream, 0.017, 0.025)
+addEll(0.637, 0.531, 0.055, 0.041, 0.030, 0.035, -52.0, matCream, 0.017, 0.025)
+addEll(0.738, 0.379, 0.055, 0.039, 0.030, 0.035, -72.0, matCream, 0.017, 0.025)
+addEll(0.758, 0.156, 0.055, 0.034, 0.026, 0.035, -80.0, matCream, 0.017, 0.025)
+
+;; Curved radial fold creases aligned to exact X-ray reference ink lines
+addBezier(-0.10, 0.166, 0.14, 0.008, -0.02, 0.165, 0.14, 0.008, 0.04, 0.166, 0.14, 0.007, 2, matInk, 0.0, 0.0)
+addBezier(-0.065, 0.362, 0.14, 0.008, 0.005, 0.324, 0.14, 0.008, 0.075, 0.286, 0.14, 0.007, 2, matInk, 0.0, 0.0)
+addBezier(0.145, 0.525, 0.14, 0.008, 0.168, 0.475, 0.14, 0.008, 0.185, 0.430, 0.14, 0.007, 2, matFrillCrease, 0.0, 0.0)
+addBezier(0.38, 0.54, 0.13, 0.008, 0.38, 0.47, 0.13, 0.008, 0.38, 0.40, 0.13, 0.007, 2, matFrillCrease, 0.0, 0.0)
+addBezier(0.62, 0.33, 0.13, 0.008, 0.57, 0.30, 0.13, 0.008, 0.52, 0.275, 0.13, 0.007, 2, matFrillCrease, 0.0, 0.0)
+
+;; --- 5. Smooth 3D Sculpted Pear-Shaped Head & Snout (BFS K=6, directional chin shadow) ---
+def headCoeffs: array of double = (array of double).of(
+    0.31291,
+    -0.02349, 0.00624,
+    0.01752, 0.00321,
+    0.00819, -0.01125,
+    0.01289, -0.01628,
+    0.01050, -0.00661,
+    -0.01534, -0.01137
+)
+world.add(SculptedLobe(pt(0.37, 0.08, 0.25), 0.14, sc(1.0, 0.25), headCoeffs, 0.40, matHead, matInk, 0.022, 0.0, matInk))
+;; Curved right-snout fold line separating muzzle from plump right cheek
+addBezier(0.630, 0.025, 0.45, 0.009, 0.642, -0.040, 0.45, 0.009, 0.628, -0.112, 0.45, 0.009, 3, matInk, 0.0, 0.0)
+
+;; --- 6. Three Smooth Curved Cream-Yellow Horns ---
+addBezier(
+    0.186, 0.318, 0.36, 0.075,
+    0.232, 0.398, 0.38, 0.055,
+    0.232, 0.484, 0.39, 0.026,
+    4, matHorn, 0.020, 0.035
+)
+addBezier(
+    0.514, 0.358, 0.35, 0.068,
+    0.562, 0.426, 0.37, 0.052,
+    0.568, 0.498, 0.38, 0.026,
+    4, matHorn, 0.020, 0.035
+)
+addBezier(
+    0.532, 0.060, 0.46, 0.064,
+    0.564, 0.112, 0.49, 0.048,
+    0.574, 0.166, 0.50, 0.025,
+    3, matHorn, 0.019, 0.035
+)
+
+;; --- 7. Eyes, Eyebrows, Cheeks, Nose Bridge, Nostrils, Smile ---
+;; Left eye
+world.add(Ellipsoid.rotatedZ(pt(0.294, 0.134, 0.42), sc(0.054, 0.42), sc(0.064, 0.42), 0.03, 12.0, matInk))
+world.add(Ellipsoid.rotatedZ(pt(0.294, 0.134, 0.44), sc(0.045, 0.44), sc(0.054, 0.44), 0.025, 12.0, matWhite))
+world.add(Ellipsoid.rotatedZ(pt(0.289, 0.124, 0.465), sc(0.037, 0.465), sc(0.044, 0.465), 0.020, 12.0, matEyeDark))
+world.add(Sphere(pt(0.305, 0.146, 0.488), sc(0.014, 0.488), matWhite))
+
+;; Right eye (tucked behind nose horn)
+world.add(Ellipsoid.rotatedZ(pt(0.514, 0.172, 0.40), sc(0.044, 0.40), sc(0.056, 0.40), 0.028, -4.0, matInk))
+world.add(Ellipsoid.rotatedZ(pt(0.514, 0.172, 0.42), sc(0.035, 0.42), sc(0.047, 0.42), 0.024, -4.0, matWhite))
+world.add(Ellipsoid.rotatedZ(pt(0.510, 0.162, 0.442), sc(0.027, 0.442), sc(0.036, 0.442), 0.018, -4.0, matEyeDark))
+world.add(Sphere(pt(0.520, 0.181, 0.465), sc(0.011, 0.465), matWhite))
+
+;; Nose bridge fold line between left eye and nose horn
+addBezier(0.402, 0.105, 0.44, 0.008, 0.442, 0.122, 0.44, 0.008, 0.480, 0.120, 0.44, 0.008, 2, matInk, 0.0, 0.0)
+
+;; Arched eyebrows
+addBezier(0.242, 0.232, 0.44, 0.011, 0.282, 0.252, 0.45, 0.011, 0.314, 0.242, 0.45, 0.010, 2, matInk, 0.0, 0.0)
+addBezier(0.488, 0.268, 0.42, 0.010, 0.514, 0.280, 0.42, 0.010, 0.540, 0.274, 0.42, 0.009, 2, matInk, 0.0, 0.0)
+
+;; Rosy coral-pink cheeks
+world.add(Ellipsoid.rotatedZ(pt(0.232, 0.034, 0.46), sc(0.052, 0.46), sc(0.026, 0.46), 0.02, -4.0, matCheek))
+world.add(Ellipsoid.rotatedZ(pt(0.640, 0.082, 0.43), sc(0.034, 0.43), sc(0.022, 0.43), 0.02, 10.0, matCheek))
+
+;; Nostrils
+world.add(Ellipsoid.rotatedZ(pt(0.462, -0.006, 0.49), sc(0.015, 0.49), sc(0.011, 0.49), 0.012, -25.0, matInk))
+world.add(Ellipsoid.rotatedZ(pt(0.585, 0.004, 0.47), sc(0.013, 0.47), sc(0.010, 0.47), 0.012, 20.0, matInk))
+
+;; Curved smile arc + cute cheek dimple tick at left corner
+addBezier(0.292, -0.052, 0.48, 0.010, 0.354, -0.108, 0.49, 0.010, 0.442, -0.124, 0.50, 0.010, 3, matInk, 0.0, 0.0)
+addBezier(0.268, -0.062, 0.48, 0.009, 0.292, -0.052, 0.48, 0.009, 0.312, -0.032, 0.48, 0.008, 2, matInk, 0.0, 0.0)
+
+;; --- 8. Bright Lime-Green Pacifier (bold cartoon outlines on shield, knob & circular ring) ---
+addEll(0.470, -0.106, 0.52, 0.079, 0.070, 0.032, -18.0, matPacifier, 0.020, 0.035)
+addEll(0.578, -0.096, 0.52, 0.073, 0.066, 0.032, 18.0, matPacifier, 0.020, 0.035)
+;; Shaded inner guard behind the hanging ring
+addEll(0.550, -0.178, 0.54, 0.052, 0.045, 0.025, 0.0, matPacifierDark, 0.017, 0.025)
+;; Upright center knob
+addEll(0.548, -0.136, 0.57, 0.046, 0.050, 0.032, 0.0, matPacifier, 0.018, 0.03)
+
+;; Circular pacifier ring (16 segments centered at (+0.550, -0.196), r=0.056)
+def ringCx: double = 0.550
+def ringCy: double = -0.196
+def ringZ: double = 0.58
+def ringR: double = 0.056
+def ringTube: double = 0.026
+def ringSegs: int = 16
+var ri: int = 0
+while ri < ringSegs then (
+    def a0: double = degreesToRadians(ri * 360.0 / ringSegs)
+    def a1: double = degreesToRadians((ri + 1) * 360.0 / ringSegs)
+    addCone(
+        ringCx + ringR * Math.cos(a0), ringCy + ringR * Math.sin(a0), ringZ,
+        ringCx + ringR * Math.cos(a1), ringCy + ringR * Math.sin(a1), ringZ,
+        ringTube, ringTube, matPacifier, 0.015, 0.03
+    )
+    ri += 1
+)
+
+;; ---------------------------------------------------------------- Render
+
+def bvh: Hittable = BVHNode.fromList(world)
+def studio: Hittable = StudioWorld(bvh, StudioLight())
+
+def camera = Camera(
+    aspectRatio: 1.0,
+    imageWidth: imageWidth,
+    samplesPerPixel: samplesPerPixel,
+    maxDepth: maxDepth,
+    vfov: 11.421186274995679,
+    lookFrom: Vec3(0.0, 0.0, 10.0),
+    lookAt: Vec3(0.0, 0.0, 0.0),
+    vup: Vec3(0.0, 1.0, 0.0),
+    defocusAngle: 0.0,
+    focusDist: 10.0
+)
+
+def started = java.lang.System.currentTimeMillis()
+def image = camera.render(studio, threads)
+javax.imageio.ImageIO.write(image, "png", java.io.File(output))
+def elapsedMs = java.lang.System.currentTimeMillis() - started
+println("Rendered ", output, " (", camera.imageWidth, "x", camera.imageHeight, ", ", samplesPerPixel, " spp) in ", elapsedMs, " ms")
