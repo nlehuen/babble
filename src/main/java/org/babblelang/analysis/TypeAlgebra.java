@@ -77,6 +77,27 @@ final class TypeAlgebra {
          * function type comes from).
          */
         default void derived(Type.Function from, Type.Function to) {}
+
+        /**
+         * Whether type parameter {@code paramIndex} of Babble type {@code node} is sound to treat
+         * covariantly in the given access mode ({@code readOnly = true} for {@code borrow} / {@code
+         * frozen}).
+         */
+        default boolean isBabbleParamCovariant(TypeNode node, int paramIndex, boolean readOnly) {
+            return readOnly || node.kind == org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS;
+        }
+
+        /**
+         * Whether type parameter {@code paramIndex} of Java class/interface {@code raw} is sound to
+         * treat covariantly in the given access mode ({@code readOnly = true} for {@code borrow} /
+         * {@code frozen}).
+         */
+        default boolean isJavaParamCovariant(Class<?> raw, int paramIndex, boolean readOnly) {
+            return readOnly
+                    || raw == java.util.Optional.class
+                    || raw == java.util.Map.Entry.class
+                    || raw == org.babblelang.runtime.Range.class;
+        }
     }
 
     private record RelationKey(
@@ -489,20 +510,20 @@ final class TypeAlgebra {
                     && Type.numericRank(sub) < Type.numericRank(sup)) {
                 return true;
             }
-            RelateMode argMode =
-                    (mode != RelateMode.RUNTIME_EXACT
-                                    && !borrowCovariant
-                                    && isMutableParameterized(sup))
-                            ? RelateMode.INVARIANT_ARG
-                            : RelateMode.SUBTYPE;
             if (sup instanceof Type.JavaInstance java) {
                 Type projected = projectToJava(sub, java.type());
                 if (projected instanceof Type.JavaInstance proj) {
                     if (proj.typeArguments().size() != java.typeArguments().size()) {
                         return java.type().isAssignableFrom(proj.type());
                     }
-                    return argumentsRelate(
-                            proj.typeArguments(), java.typeArguments(), argMode, store, active);
+                    return javaArgumentsRelate(
+                            java.type(),
+                            proj.typeArguments(),
+                            java.typeArguments(),
+                            mode,
+                            borrowCovariant,
+                            store,
+                            active);
                 }
                 if (projected != null) {
                     return true;
@@ -555,7 +576,7 @@ final class TypeAlgebra {
                         mode == RelateMode.RUNTIME_EXACT
                                 ? RelateMode.RUNTIME_EXACT
                                 : RelateMode.SUBTYPE;
-                if (!relate(se, te, elemMode, store, active, false, false)) {
+                if (!relate(se, te, elemMode, store, active, borrowCovariant, false)) {
                     return false;
                 }
                 if (mode == RelateMode.RUNTIME_EXACT || borrowCovariant) {
@@ -595,10 +616,12 @@ final class TypeAlgebra {
                     return false;
                 }
                 return proj.typeArguments().size() != target.typeArguments().size()
-                        || argumentsRelate(
+                        || babbleArgumentsRelate(
+                                target.node(),
                                 proj.typeArguments(),
                                 target.typeArguments(),
-                                argMode,
+                                mode,
+                                borrowCovariant,
                                 store,
                                 active);
             }
@@ -708,26 +731,44 @@ final class TypeAlgebra {
                 || type instanceof Type.JavaInstance java && java.type().isInterface();
     }
 
-    private static boolean isMutableParameterized(Type type) {
-        if (type instanceof Type.JavaInstance java) {
-            return java.type() != java.util.Optional.class
-                    && java.type() != java.util.Map.Entry.class
-                    && java.type() != org.babblelang.runtime.Range.class;
-        }
-        if (type instanceof Type.Instance inst) {
-            return inst.node().kind != org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS;
-        }
-        return false;
-    }
-
-    private boolean argumentsRelate(
+    private boolean javaArgumentsRelate(
+            Class<?> raw,
             List<Type> subArgs,
             List<Type> supArgs,
-            RelateMode mode,
+            RelateMode outerMode,
+            boolean borrowCovariant,
             ConstraintStore store,
             Set<RelationKey> active) {
         for (int i = 0; i < supArgs.size(); i++) {
-            if (!relate(subArgs.get(i), supArgs.get(i), mode, store, active, false, false)) {
+            boolean cov =
+                    outerMode == RelateMode.RUNTIME_EXACT
+                            || env.isJavaParamCovariant(raw, i, borrowCovariant);
+            RelateMode argMode = cov ? RelateMode.SUBTYPE : RelateMode.INVARIANT_ARG;
+            boolean nestedBorrow = cov && borrowCovariant && outerMode != RelateMode.RUNTIME_EXACT;
+            if (!relate(
+                    subArgs.get(i), supArgs.get(i), argMode, store, active, nestedBorrow, false)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean babbleArgumentsRelate(
+            TypeNode node,
+            List<Type> subArgs,
+            List<Type> supArgs,
+            RelateMode outerMode,
+            boolean borrowCovariant,
+            ConstraintStore store,
+            Set<RelationKey> active) {
+        for (int i = 0; i < supArgs.size(); i++) {
+            boolean cov =
+                    outerMode == RelateMode.RUNTIME_EXACT
+                            || env.isBabbleParamCovariant(node, i, borrowCovariant);
+            RelateMode argMode = cov ? RelateMode.SUBTYPE : RelateMode.INVARIANT_ARG;
+            boolean nestedBorrow = cov && borrowCovariant && outerMode != RelateMode.RUNTIME_EXACT;
+            if (!relate(
+                    subArgs.get(i), supArgs.get(i), argMode, store, active, nestedBorrow, false)) {
                 return false;
             }
         }
