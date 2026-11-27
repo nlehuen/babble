@@ -1127,6 +1127,14 @@ final class EffectChecker {
             BabbleParser.FunctionLiteralContext fn,
             CallableSummary current,
             boolean emitDiagnostics) {
+        return analyzeFunctionBody(fn, current, emitDiagnostics, emitDiagnostics);
+    }
+
+    private CallableSummary analyzeFunctionBody(
+            BabbleParser.FunctionLiteralContext fn,
+            CallableSummary current,
+            boolean emitDiagnostics,
+            boolean verifyCasePurity) {
         ParsedPrefix prefix = parseFunctionPrefix(fn, false);
         List<BabbleParser.FnParamContext> params = fn.fnParameters().fnParam();
         boolean untyped = modifiers.isCompletelyUntyped(fn);
@@ -1150,7 +1158,8 @@ final class EffectChecker {
                         borrowThis,
                         prefix,
                         activeFrameChain(fn),
-                        emitDiagnostics);
+                        emitDiagnostics,
+                        verifyCasePurity);
 
         // Parameter defaults execute when omitted at call sites.
         for (BabbleParser.FnParamContext p : params) {
@@ -1519,9 +1528,9 @@ final class EffectChecker {
                 }
             }
             if (prefix.axiom()) {
-                // Axiom body is trusted for effect guarantees, but still check static mut
-                // exclusivity inside it!
-                recomputeSummary(fn, summaries.get(fn), false);
+                // Axiom body is trusted for effect guarantees, but still enforce case-expression
+                // purity.
+                analyzeFunctionBody(fn, summaries.get(fn), false, true);
                 return;
             }
             // Re-run body analysis with emitDiagnostics = true to report undeclared mut, borrow

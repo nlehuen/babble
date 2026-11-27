@@ -111,6 +111,7 @@ final class EffectBodyWalker {
     final List<ActiveForLoop> activeForIterables = new ArrayList<>();
     final Deque<Reachability.Origin[]> loopBreakOrigins = new ArrayDeque<>();
     final Deque<TryFrame> activeTryStack = new ArrayDeque<>();
+    final Deque<MatchEffectAnalyzer.CasePureFrame> casePureStack = new ArrayDeque<>();
     int deepestThrowEscapeLevel = Integer.MAX_VALUE;
     final Set<Integer> forwardedParams;
 
@@ -128,6 +129,7 @@ final class EffectBodyWalker {
     final boolean[] readParams;
 
     boolean readsThis = false;
+    final boolean verifyCasePurity;
 
     EffectBodyWalker(
             EffectChecker ec,
@@ -143,6 +145,38 @@ final class EffectBodyWalker {
             EffectChecker.ParsedPrefix declaredPrefix,
             Set<BabbleParser.FunctionLiteralContext> frameChain,
             boolean emitDiagnostics) {
+        this(
+                ec,
+                owner,
+                ownerScope,
+                params,
+                inferMut,
+                mutParams,
+                borrowParams,
+                uniqueParams,
+                mutThis,
+                borrowThis,
+                declaredPrefix,
+                frameChain,
+                emitDiagnostics,
+                emitDiagnostics);
+    }
+
+    EffectBodyWalker(
+            EffectChecker ec,
+            ParserRuleContext owner,
+            ScopeNode ownerScope,
+            List<? extends ParserRuleContext> params,
+            boolean inferMut,
+            boolean[] mutParams,
+            boolean[] borrowParams,
+            boolean[] uniqueParams,
+            boolean mutThis,
+            boolean borrowThis,
+            EffectChecker.ParsedPrefix declaredPrefix,
+            Set<BabbleParser.FunctionLiteralContext> frameChain,
+            boolean emitDiagnostics,
+            boolean verifyCasePurity) {
         this.ec = ec;
         this.calls = new CallEffectAnalyzer(ec, this);
         this.owner = owner;
@@ -158,6 +192,7 @@ final class EffectBodyWalker {
         this.declaredPrefix = declaredPrefix;
         this.frameChain = frameChain;
         this.emitDiagnostics = emitDiagnostics;
+        this.verifyCasePurity = verifyCasePurity;
         this.terminating =
                 !ec.cyclicCallables.contains(owner) || ec.scpTerminatingCallables.contains(owner);
         this.forwardedParams =
@@ -351,6 +386,17 @@ final class EffectBodyWalker {
 
     void reportOnce(String msg, ParserRuleContext at) {
         if (!emitDiagnostics) {
+            return;
+        }
+        String key =
+                at.getStart().getLine() + ":" + at.getStart().getCharPositionInLine() + ":" + msg;
+        if (reportedMessages.add(key)) {
+            ec.checker.effectDiagnostic(msg, at);
+        }
+    }
+
+    void reportCasePureOnce(String msg, ParserRuleContext at) {
+        if (!verifyCasePurity) {
             return;
         }
         String key =
@@ -560,7 +606,7 @@ final class EffectBodyWalker {
             return evalIf(ifCtx);
         }
         if (ctx instanceof BabbleParser.MatchExpressionContext matchCtx) {
-            return evalMatch(matchCtx);
+            return MatchEffectAnalyzer.evalMatch(this, matchCtx);
         }
         if (ctx instanceof BabbleParser.WhileExpressionContext whileCtx) {
             return evalWhile(whileCtx);
@@ -579,7 +625,12 @@ final class EffectBodyWalker {
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.NegateContext neg) {
-            eval(neg.operand);
+            Reachability.Origin opOrig = eval(neg.operand);
+            Type opType = effectiveType(neg.operand);
+            if (opType != Type.ERROR && !hasPriorDiagnostic(neg)) {
+                applyOperatorMethodEffects(
+                        neg, Operators.NEGATE, neg.operand, opOrig, opType, null, null);
+            }
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.BinaryOpContext bin) {
@@ -630,6 +681,7 @@ final class EffectBodyWalker {
         }
         if (ctx instanceof BabbleParser.ReturnExpressionContext ret) {
             stmtHasSideEffect = true;
+            MatchEffectAnalyzer.checkCaseControlFlow(this, ret, "return");
             Reachability.Origin val =
                     ret.expression() != null
                             ? eval(ret.expression())
@@ -639,6 +691,7 @@ final class EffectBodyWalker {
         }
         if (ctx instanceof BabbleParser.BreakExpressionContext brk) {
             stmtHasSideEffect = true;
+            MatchEffectAnalyzer.checkCaseControlFlow(this, brk, "break");
             Reachability.Origin val =
                     brk.expression() != null
                             ? eval(brk.expression())
@@ -651,6 +704,7 @@ final class EffectBodyWalker {
         }
         if (ctx instanceof BabbleParser.ContinueExpressionContext) {
             stmtHasSideEffect = true;
+            MatchEffectAnalyzer.checkCaseControlFlow(this, ctx, "continue");
             return Reachability.Origin.IMMUTABLE;
         }
         if (ctx instanceof BabbleParser.ThrowExpressionContext throwCtx) {
@@ -684,7 +738,8 @@ final class EffectBodyWalker {
             // Local variable in this function (or top-level binding when verifying top-level
             // file/static block)!
             Reachability.Origin localOrig =
-                    owner instanceof BabbleParser.FunctionLiteralContext
+                    (owner instanceof BabbleParser.FunctionLiteralContext
+                                    || !casePureStack.isEmpty())
                             ? bindLocalOrigin(def, init, defType)
                             : (ec.javaResolver.isDeeplyImmutable(defType)
                                     ? Reachability.Origin.IMMUTABLE
@@ -746,6 +801,7 @@ final class EffectBodyWalker {
             }
             ScopeNode occScope = ec.checker.occurrenceScopeOf(assign);
             Object resolved = ec.checker.resolveNameForEffects(assignedName, occScope);
+            MatchEffectAnalyzer.checkCaseVarAssign(this, resolved, assignedName, assign);
             if (resolved instanceof ParserRuleContext decl) {
                 if (compoundOp != null) {
                     Reachability.Origin cur = env.get(decl);
@@ -775,7 +831,8 @@ final class EffectBodyWalker {
                     Reachability.Origin next =
                             compoundOp != null
                                     ? Reachability.Origin.IMMUTABLE
-                                    : (owner instanceof BabbleParser.FunctionLiteralContext
+                                    : ((owner instanceof BabbleParser.FunctionLiteralContext
+                                                    || !casePureStack.isEmpty())
                                             ? bindLocalOrigin(decl, rhs, dType)
                                             : withLocalAliasKey(rhs, decl, dType));
                     env.put(decl, next);
@@ -817,6 +874,9 @@ final class EffectBodyWalker {
                 || Type.containsNull(recvType)
                 || Type.isCoreScalar(recvType)
                 || recvType instanceof Type.Function) {
+            if (recvType != Type.ERROR) {
+                MatchEffectAnalyzer.checkCaseFieldAssign(this, assignedName, assign);
+            }
             return rhs;
         }
         if (recvType instanceof Type.JavaClassValue
@@ -831,6 +891,7 @@ final class EffectBodyWalker {
             return rhs;
         }
         if (constructingSelf && InitEffectAnalyzer.isDirectThisExpr(recv)) {
+            MatchEffectAnalyzer.checkCaseConstructingFieldAssign(this, recv, assignedName, assign);
             return InitEffectAnalyzer.recordConstructingFieldStore(
                     this, rhs, effectiveType(assign.value), assignedName, assign);
         }
@@ -1025,6 +1086,7 @@ final class EffectBodyWalker {
                 && effectiveType(expr) == Type.ERROR) {
             return;
         }
+        MatchEffectAnalyzer.checkCaseTargetMutation(this, target, reason, at, shallow);
         if (!activeForIterables.isEmpty()) {
             boolean reported = false;
             for (ActiveForLoop loop : activeForIterables) {
@@ -1378,268 +1440,6 @@ final class EffectBodyWalker {
 
         env = mergeEnvs(afterThen, afterElse);
         return thenOrig.join(elseOrig);
-    }
-
-    Reachability.Origin evalMatch(BabbleParser.MatchExpressionContext ctx) {
-        Reachability.Origin scrutOrig = eval(ctx.scrutinee);
-        Type scrutType = effectiveType(ctx.scrutinee);
-        if (ctx.elseClause() == null
-                && MatchExhaustiveness.containsExternalClosedJavaType(scrutType)) {
-            // Runtime defense-in-depth throw if external Java enum/sealed adds a variant (BIP038
-            // §5.3).
-            nothrow = false;
-        }
-        Reachability.Origin activeScrutOrig = scrutOrig;
-        Map<ParserRuleContext, Reachability.Origin> fallthroughEnv = new IdentityHashMap<>(env);
-        List<Map<ParserRuleContext, Reachability.Origin>> armEnvs = new ArrayList<>();
-        Reachability.Origin resultOrig = null;
-
-        for (BabbleParser.CaseClauseContext cc : ctx.caseClause()) {
-            env = new IdentityHashMap<>(fallthroughEnv);
-            ParserRuleContext topUniqueBind =
-                    evalPatternEffects(cc.pattern(), activeScrutOrig, scrutType, true);
-            if (cc.guard != null) {
-                eval(cc.guard);
-                // If a guarded arm's guard moved a consumed unique scrutinee binding, it is no
-                // longer unique downstream.
-                if (topUniqueBind != null) {
-                    Reachability.Origin afterGuard = env.get(topUniqueBind);
-                    if (afterGuard != null && afterGuard.moved) {
-                        activeScrutOrig = Reachability.Origin.MOVED;
-                    }
-                }
-            }
-            // Any moves/effects in pattern or guard apply to later arms too.
-            fallthroughEnv = new IdentityHashMap<>(env);
-            if (topUniqueBind != null) {
-                fallthroughEnv.remove(topUniqueBind);
-            }
-            Reachability.Origin armOrig = eval(cc.armBlock);
-            armEnvs.add(env);
-            resultOrig = resultOrig == null ? armOrig : resultOrig.join(armOrig);
-        }
-        if (ctx.elseClause() != null) {
-            env = new IdentityHashMap<>(fallthroughEnv);
-            BabbleParser.ElseClauseContext ecNode = ctx.elseClause();
-            if (ecNode.name != null) {
-                env.put(ecNode, bindPatternOrigin(ecNode, activeScrutOrig, true));
-            }
-            Reachability.Origin elseOrig = eval(ecNode.elseBlock);
-            armEnvs.add(env);
-            resultOrig = resultOrig == null ? elseOrig : resultOrig.join(elseOrig);
-        } else {
-            armEnvs.add(fallthroughEnv);
-        }
-        Map<ParserRuleContext, Reachability.Origin> merged = armEnvs.get(0);
-        for (int i = 1; i < armEnvs.size(); i++) {
-            merged = mergeEnvs(merged, armEnvs.get(i));
-        }
-        env = merged;
-        return resultOrig != null ? resultOrig : Reachability.Origin.IMMUTABLE;
-    }
-
-    private Reachability.Origin bindPatternOrigin(
-            ParserRuleContext decl, Reachability.Origin sourceOrig, boolean isTopLevel) {
-        Type boundType = ec.checker.typeOfDeclarationForEffects(decl);
-        if (boundType == null || ec.javaResolver.isDeeplyImmutable(boundType)) {
-            return Reachability.Origin.IMMUTABLE;
-        }
-        if (sourceOrig.moved) {
-            return Reachability.Origin.MOVED;
-        }
-        // Consuming scrutinee (`match move(x)` or fresh construction): uniqueOwner == null
-        // transfers @UNIQUE to top-level bindings.
-        if (isTopLevel && sourceOrig.unique && sourceOrig.uniqueOwner == null) {
-            return new Reachability.Origin(
-                    (BitSet) sourceOrig.params.clone(),
-                    sourceOrig.aliasesThis,
-                    sourceOrig.external,
-                    true,
-                    sourceOrig.elements(),
-                    false,
-                    decl,
-                    Set.of(decl),
-                    new Reachability.PathKey(decl, List.of()));
-        }
-        // Borrowing scrutinee (`match x`) or nested destructured field (`is R(def f)`):
-        // inherit @BORROWED provenance pointing back to scrutinee without stealing uniqueness or
-        // demoting `x` (BIP038-D9).
-        Reachability.Origin flat = sourceOrig.flattenElements();
-        Set<Object> keys = new HashSet<>(flat.directKeys);
-        keys.add(decl);
-        return new Reachability.Origin(
-                (BitSet) flat.params.clone(),
-                flat.aliasesThis,
-                flat.external,
-                false,
-                null,
-                false,
-                null,
-                Set.copyOf(keys),
-                new Reachability.PathKey(decl, List.of()));
-    }
-
-    private ParserRuleContext evalPatternEffects(
-            BabbleParser.PatternContext pat,
-            Reachability.Origin scrutOrig,
-            Type scrutType,
-            boolean isTopLevel) {
-        ParserRuleContext topUniqueBind = null;
-        for (BabbleParser.AtomicPatternContext atom : pat.atomicPattern()) {
-            switch (atom) {
-                case BabbleParser.ValuePatternContext vp -> {
-                    if (BlockScopes.isWildcardExpr(vp.expr)) {
-                        continue;
-                    }
-                    LoweringMetadata.RangePatternSource rps = ec.checker.matchRangePattern(vp);
-                    if (rps != null) {
-                        eval(rps.lo());
-                        eval(rps.hi());
-                        if (rps.step() != null) {
-                            eval(rps.step());
-                            if (!isPositiveIntegerConstant(rps.step())) {
-                                nothrow = false;
-                            }
-                        }
-                        if (rps.elemKind() == PrimitiveKind.NONE && !rps.stringElement()) {
-                            Type elem = Type.withoutNull(scrutType);
-                            applyEffects(ec.javaResolver.comparisonProfile(elem, elem));
-                        }
-                    } else {
-                        eval(vp.expr);
-                    }
-                }
-                case BabbleParser.RelationalPatternContext rp -> {
-                    eval(rp.rhs);
-                    Type rhsType = effectiveType(rp.rhs);
-                    String op = rp.op.getText();
-                    if ("==".equals(op) || "!=".equals(op)) {
-                        applyEffects(ec.javaResolver.equalityProfile(scrutType, rhsType));
-                    } else {
-                        applyEffects(
-                                ec.javaResolver.comparisonProfile(
-                                        Type.withoutNull(scrutType), rhsType));
-                    }
-                }
-                case BabbleParser.MembershipPatternContext mp -> {
-                    Reachability.Origin contOrig = eval(mp.container);
-                    Type contType = effectiveType(mp.container);
-                    LoweringTargets.MembershipTarget mt = ec.checker.matchMembershipTarget(mp);
-                    if (mt != null) {
-                        switch (mt.kind()) {
-                            case DYNAMIC -> {
-                                recordTargetRead(contOrig, contType);
-                                deterministic = false;
-                                nothrow = false;
-                            }
-                            case ARRAY -> recordTargetRead(contOrig, contType);
-                            case COLLECTION -> {
-                                recordTargetRead(contOrig, contType);
-                                Type unwrapped = TypeAlgebra.unwrapFrozen(contType);
-                                Class<?> cls =
-                                        unwrapped instanceof Type.JavaInstance ji
-                                                ? ji.type()
-                                                : java.util.Collection.class;
-                                applyEffects(
-                                        ec.javaResolver
-                                                .resolveJavaMethodProfile(
-                                                        cls,
-                                                        "contains",
-                                                        JavaEffectResolver.lookupPublicMethod(
-                                                                cls, "contains", Object.class))
-                                                .effects());
-                            }
-                            case MAP -> {
-                                recordTargetRead(contOrig, contType);
-                                Type unwrapped = TypeAlgebra.unwrapFrozen(contType);
-                                Class<?> cls =
-                                        unwrapped instanceof Type.JavaInstance ji
-                                                ? ji.type()
-                                                : java.util.Map.class;
-                                applyEffects(
-                                        ec.javaResolver
-                                                .resolveJavaMethodProfile(
-                                                        cls,
-                                                        "containsKey",
-                                                        JavaEffectResolver.lookupPublicMethod(
-                                                                cls, "containsKey", Object.class))
-                                                .effects());
-                            }
-                            case RANGE -> {}
-                        }
-                    }
-                }
-                case BabbleParser.BindingPatternContext bp -> {
-                    Reachability.Origin bound = bindPatternOrigin(bp, scrutOrig, isTopLevel);
-                    env.put(bp, bound);
-                    if (isTopLevel && bound.unique && bound.uniqueOwner == bp) {
-                        topUniqueBind = bp;
-                    }
-                    if (bp.patternArgs() != null) {
-                        evalPatternArgsEffects(bp, bp.patternArgs(), scrutOrig, scrutType);
-                    }
-                }
-                case BabbleParser.TypeOrDestructurePatternContext tp -> {
-                    if (tp.patternArgs() != null) {
-                        evalPatternArgsEffects(tp, tp.patternArgs(), scrutOrig, scrutType);
-                    }
-                }
-                default -> {}
-            }
-        }
-        return topUniqueBind;
-    }
-
-    private void evalPatternArgsEffects(
-            ParserRuleContext owner,
-            BabbleParser.PatternArgsContext args,
-            Reachability.Origin scrutOrig,
-            Type scrutType) {
-        MatchTyper.RecordDestructureInfo recInfo = ec.checker.matchRecordDestructure(owner);
-        MatchTyper.SequenceDestructureInfo seqInfo = ec.checker.matchSequenceDestructure(owner);
-        if (recInfo != null && recInfo.isJavaRecord()) {
-            for (java.lang.reflect.Method acc : recInfo.javaAccessors()) {
-                applyEffects(
-                        ec.javaResolver
-                                .resolveJavaMethodProfile(
-                                        acc.getDeclaringClass(), acc.getName(), acc)
-                                .effects());
-            }
-        }
-        if (seqInfo != null) {
-            recordTargetRead(scrutOrig, scrutType);
-        }
-        List<BabbleParser.PatternArgContext> argList = args.patternArg();
-        for (int i = 0; i < argList.size(); i++) {
-            Type subType = Type.NULLABLE_ANY;
-            if (recInfo != null && i < recInfo.fieldTypes().size()) {
-                subType = recInfo.fieldTypes().get(i);
-            } else if (seqInfo != null) {
-                subType = seqInfo.elemType();
-            }
-            evalPatternEffects(argList.get(i).pattern(), scrutOrig, subType, false);
-        }
-        if (args.restPattern() != null && args.restPattern().name != null) {
-            BabbleParser.RestPatternContext rp = args.restPattern();
-            Reachability.Provenance elemProv = Reachability.Provenance.EMPTY;
-            if (seqInfo != null && !ec.javaResolver.isDeeplyImmutable(seqInfo.elemType())) {
-                Reachability.Origin flat = scrutOrig.flattenElements();
-                elemProv =
-                        new Reachability.Provenance(flat.params, flat.aliasesThis, flat.external);
-            }
-            env.put(
-                    rp,
-                    new Reachability.Origin(
-                            Reachability.Origin.EMPTY_BITS,
-                            false,
-                            false,
-                            true,
-                            elemProv,
-                            false,
-                            rp,
-                            Set.of(rp),
-                            new Reachability.PathKey(rp, List.of())));
-        }
     }
 
     Reachability.Origin evalWhile(BabbleParser.WhileExpressionContext ctx) {
@@ -2121,6 +1921,12 @@ final class EffectBodyWalker {
         if (res == Type.ERROR || lt == Type.ERROR || rt == Type.ERROR || hasPriorDiagnostic(bin)) {
             return Reachability.Origin.IMMUTABLE;
         }
+        String opMethod = Operators.method(op);
+        if (opMethod != null
+                && applyOperatorMethodEffects(
+                        bin, opMethod, bin.left, leftOrig, lt, bin.right, rightOrig)) {
+            return Reachability.Origin.IMMUTABLE;
+        }
         switch (op) {
             case "+" -> {
                 if (res == Type.STRING && (lt == Type.STRING || rt == Type.STRING)) {
@@ -2158,6 +1964,132 @@ final class EffectBodyWalker {
             }
         }
         return Reachability.Origin.IMMUTABLE;
+    }
+
+    private boolean applyOperatorMethodEffects(
+            ParserRuleContext at,
+            String methodName,
+            BabbleParser.ExpressionContext recvExpr,
+            Reachability.Origin recvOrig,
+            Type recvType,
+            BabbleParser.ExpressionContext argExpr,
+            Reachability.Origin argOrig) {
+        Type unwrapped = TypeAlgebra.unwrapFrozen(recvType);
+        List<Type.Instance> insts = new ArrayList<>();
+        for (Type m : Type.membersOf(unwrapped)) {
+            if (!(m instanceof Type.Instance inst)) {
+                return false;
+            }
+            insts.add(inst);
+        }
+        if (insts.isEmpty()) {
+            return false;
+        }
+        TypeChecker.ResolvedOverloadCall roc = ec.checker.resolvedOverloadCalls().get(at);
+        if (roc != null && !roc.isSplit() && roc.altType() != null) {
+            boolean iface = insts.size() == 1 && insts.get(0).node().isInterface();
+            applyOperatorFnEffects(
+                    at,
+                    methodName,
+                    roc.altType(),
+                    iface ? null : roc.directTarget(),
+                    recvExpr,
+                    recvOrig,
+                    recvType,
+                    argExpr,
+                    argOrig);
+            return true;
+        }
+        for (Type.Instance inst : insts) {
+            TypeNode.Member member = ec.checker.findMemberOnNode(inst.node(), methodName);
+            if (member == null) {
+                continue;
+            }
+            boolean iface = inst.node().isInterface();
+            Type mt = ec.checker.memberTypeForEffects(inst.node(), member);
+            if (mt instanceof Type.Function tf) {
+                BabbleParser.FunctionLiteralContext lit =
+                        iface
+                                ? null
+                                : (member.function != null
+                                        ? member.function
+                                        : ec.checker.literalOf(tf));
+                applyOperatorFnEffects(
+                        at, methodName, tf, lit, recvExpr, recvOrig, recvType, argExpr, argOrig);
+            } else if (mt instanceof Type.Overloaded ov) {
+                for (Type.Function tf : ov.alternatives()) {
+                    BabbleParser.FunctionLiteralContext lit =
+                            iface ? null : ec.checker.literalOf(tf);
+                    applyOperatorFnEffects(
+                            at,
+                            methodName,
+                            tf,
+                            lit,
+                            recvExpr,
+                            recvOrig,
+                            recvType,
+                            argExpr,
+                            argOrig);
+                }
+            }
+        }
+        return true;
+    }
+
+    private void applyOperatorFnEffects(
+            ParserRuleContext at,
+            String methodName,
+            Type.Function tf,
+            BabbleParser.FunctionLiteralContext lit,
+            BabbleParser.ExpressionContext recvExpr,
+            Reachability.Origin recvOrig,
+            Type recvType,
+            BabbleParser.ExpressionContext argExpr,
+            Reachability.Origin argOrig) {
+        EffectChecker.CallableSummary sum = lit != null ? ec.summaries.get(lit) : null;
+        EffectSet eff = sum != null ? sum.effects() : tf.effects();
+        if (sum != null) {
+            applyCallableSummaryEffects(sum);
+        } else {
+            applyEffects(eff);
+        }
+        if (eff.mutThis()) {
+            if (containsFrozen(recvType)) {
+                reportOnce("Cannot call mut method " + methodName + " on frozen value", at);
+            }
+            recordTargetMutation(
+                    recvOrig,
+                    recvExpr,
+                    "operator method " + methodName,
+                    at,
+                    sum == null || !sum.deepMutThis());
+        }
+        if (sum != null && sum.readsThis()) {
+            recordTargetRead(recvOrig, recvType);
+        }
+        if (!eff.borrowThis()) {
+            markStoredOrigin(recvOrig, "operator method " + methodName, at);
+        }
+        if (argExpr != null && !tf.parameters().isEmpty()) {
+            boolean mutP =
+                    sum != null
+                            ? (sum.mutParams().length > 0 && sum.mutParams()[0])
+                            : tf.parameters().get(0).mut();
+            boolean borrowP =
+                    sum != null
+                            ? (sum.borrowParams().length > 0 && sum.borrowParams()[0])
+                            : tf.parameters().get(0).borrow();
+            boolean readP = sum != null && sum.readParams().length > 0 && sum.readParams()[0];
+            if (mutP) {
+                recordTargetMutation(argOrig, argExpr, "operator method " + methodName, at, false);
+            }
+            if (readP) {
+                recordTargetRead(argOrig, effectiveType(argExpr));
+            }
+            if (!borrowP) {
+                markStoredOrigin(argOrig, "operator method " + methodName, at);
+            }
+        }
     }
 
     Reachability.Origin evalRange(BabbleParser.RangeExpressionContext range) {
@@ -2397,6 +2329,7 @@ final class EffectBodyWalker {
         }
         for (Object writeOwner : summary.frameWriteOwners()) {
             stmtHasSideEffect = true;
+            MatchEffectAnalyzer.checkCaseFrameWrite(this, null);
             if (writeOwner != owner) {
                 if (frameChain.contains(writeOwner)) {
                     frameWriteOwners.add(writeOwner);

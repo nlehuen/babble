@@ -96,6 +96,7 @@ final class CallEffectAnalyzer {
                             lit != null ? ec.summaries.get(lit) : null;
                     if (innerSum != null && !innerSum.frameWriteOwners().isEmpty()) {
                         w.stmtHasSideEffect = true;
+                        MatchEffectAnalyzer.checkCaseFrameWrite(w, argExprs[i]);
                     }
                 }
             }
@@ -157,6 +158,7 @@ final class CallEffectAnalyzer {
                 return Reachability.Origin.ofExternal(
                         call, ec.javaResolver.isDeeplyImmutable(resType));
             }
+            MatchEffectAnalyzer.checkCaseConsume(w, decl, "move", argExprs[0]);
             if (orig.moved) {
                 return Reachability.Origin.ofUnique(
                         call, null, ec.javaResolver.isDeeplyImmutable(resType));
@@ -191,6 +193,7 @@ final class CallEffectAnalyzer {
             if (!orig.moved) {
                 if (orig.unique) {
                     if (orig.uniqueOwner instanceof ParserRuleContext decl) {
+                        MatchEffectAnalyzer.checkCaseConsume(w, decl, "freeze", argExprs[0]);
                         if (w.paramIndex.containsKey(decl)
                                 && w.borrowParams[w.paramIndex.get(decl)]) {
                             w.reportOnce(
@@ -1071,6 +1074,7 @@ final class CallEffectAnalyzer {
                 } else if (!borrowP
                         && argOrigins[i].unique
                         && argOrigins[i].uniqueOwner instanceof ParserRuleContext decl) {
+                    MatchEffectAnalyzer.checkCaseConsume(w, decl, "consume", argExprs[i]);
                     if (w.paramIndex.containsKey(decl) && w.borrowParams[w.paramIndex.get(decl)]) {
                         w.reportOnce(
                                 "Cannot move borrowed parameter " + argExprs[i].getText(),
@@ -1444,6 +1448,7 @@ final class CallEffectAnalyzer {
             BabbleParser.ExpressionContext argExpr = argExprs[i];
             if (isForwardedParamExpr(argExpr)) {
                 w.stmtHasSideEffect = true;
+                MatchEffectAnalyzer.checkCaseForwardedCallback(w, argExpr);
                 continue;
             }
             Type argType = w.effectiveType(argExpr);
@@ -1528,6 +1533,7 @@ final class CallEffectAnalyzer {
         // (BIP017-D1).
         if (isForwardedParamExpr(calleeExpr)) {
             w.stmtHasSideEffect = true;
+            MatchEffectAnalyzer.checkCaseForwardedCallback(w, calleeExpr);
             int n = fn.parameters().size();
             boolean[] mp = new boolean[n];
             boolean[] bp = new boolean[n];
@@ -1924,6 +1930,7 @@ final class CallEffectAnalyzer {
                     } else if (!borrowP
                             && effectiveArgOrig.unique
                             && effectiveArgOrig.uniqueOwner instanceof ParserRuleContext decl) {
+                        MatchEffectAnalyzer.checkCaseConsume(w, decl, "consume", argExprs[i]);
                         if (w.paramIndex.containsKey(decl)
                                 && w.borrowParams[w.paramIndex.get(decl)]) {
                             w.reportOnce(
