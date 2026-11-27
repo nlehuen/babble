@@ -33,7 +33,22 @@ public final class ENode {
         OR,
         STR_ADD,
         ITE,
-        CALL
+        CALL,
+        PIPE_SRC,
+        PIPE_RANGE,
+        PIPE_MATERIALIZE,
+        PIPE_FILTER,
+        PIPE_MAP,
+        PIPE_DISTINCT,
+        PIPE_TAKE_WHILE,
+        PIPE_GUARD_RANGE,
+        PIPE_FOR_EACH,
+        PIPE_FOLD,
+        PIPE_FOLD_PAIRWISE;
+
+        public boolean isPipelineOp() {
+            return ordinal() >= PIPE_SRC.ordinal();
+        }
     }
 
     private static final int[] EMPTY = new int[0];
@@ -112,6 +127,63 @@ public final class ENode {
 
     public static ENode call(String symbol, PrimitiveKind kind, int... args) {
         return new ENode(Op.CALL, symbol, null, kind, args);
+    }
+
+    public static ENode pipeSrc(String srcId, PrimitiveKind elemKind) {
+        return new ENode(Op.PIPE_SRC, srcId, null, elemKind, EMPTY);
+    }
+
+    public static ENode pipeRange(String rangeSpec, PrimitiveKind elemKind, int lo, int hi) {
+        return new ENode(Op.PIPE_RANGE, rangeSpec, null, elemKind, new int[] {lo, hi});
+    }
+
+    public static ENode pipeMaterialize(String tmpId, int stream) {
+        return new ENode(Op.PIPE_MATERIALIZE, tmpId, null, PrimitiveKind.NONE, new int[] {stream});
+    }
+
+    public static ENode pipeFilter(boolean narrowed, int stream, int pred) {
+        return new ENode(
+                Op.PIPE_FILTER,
+                narrowed ? "narrow" : "",
+                null,
+                PrimitiveKind.NONE,
+                new int[] {stream, pred});
+    }
+
+    public static ENode pipeMap(String outBinder, PrimitiveKind outKind, int stream, int expr) {
+        return new ENode(Op.PIPE_MAP, outBinder, null, outKind, new int[] {stream, expr});
+    }
+
+    public static ENode pipeDistinct(String setId, int stream) {
+        return new ENode(Op.PIPE_DISTINCT, setId, null, PrimitiveKind.NONE, new int[] {stream});
+    }
+
+    public static ENode pipeTakeWhile(int stream, int pred) {
+        return new ENode(
+                Op.PIPE_TAKE_WHILE, "", null, PrimitiveKind.NONE, new int[] {stream, pred});
+    }
+
+    public static ENode pipeGuardRange(int rangeStream, int pred, int guardCond) {
+        return new ENode(
+                Op.PIPE_GUARD_RANGE,
+                "",
+                null,
+                PrimitiveKind.NONE,
+                new int[] {rangeStream, pred, guardCond});
+    }
+
+    public static ENode pipeForEach(String sinkId, int stream) {
+        return new ENode(Op.PIPE_FOR_EACH, sinkId, null, PrimitiveKind.NONE, new int[] {stream});
+    }
+
+    public static ENode pipeFold(String foldSpec, PrimitiveKind accKind, int stream, int elemExpr) {
+        return new ENode(Op.PIPE_FOLD, foldSpec, null, accKind, new int[] {stream, elemExpr});
+    }
+
+    public static ENode pipeFoldPairwise(
+            String foldSpec, PrimitiveKind accKind, int stream, int elemExpr) {
+        return new ENode(
+                Op.PIPE_FOLD_PAIRWISE, foldSpec, null, accKind, new int[] {stream, elemExpr});
     }
 
     public Op op() {

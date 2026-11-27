@@ -34,8 +34,12 @@ final class AeGraphState {
         /** Primitive e-class -> safe boxed source for {@code box(unbox(x)) -> x}. */
         final Map<Integer, UnboxedOrigin> unboxedOrigins = new HashMap<>();
 
-        /** Unary idempotent call result e-class -> call key for {@code f(f(x)) -> f(x)}. */
-        final Map<Integer, IdemOrigin> idemOrigins = new HashMap<>();
+        /**
+         * Unary algebraic call result e-class -> origin metadata for {@code f(f(x)) -> f(x)} and
+         * cross-statement {@code injective}/{@code monotone} comparison cancellation ({@code
+         * BIP042-P1}).
+         */
+        final Map<Integer, UnaryCallOrigin> unaryCallOrigins = new HashMap<>();
 
         /** Constant value recorded for a constant e-class. */
         final Map<Integer, HirExpr.Const> constExprs = new HashMap<>();
@@ -64,7 +68,14 @@ final class AeGraphState {
 
     record UnboxedOrigin(PrimitiveKind primKind, int sourceValId, HirExpr safeBoxedExpr) {}
 
-    record IdemOrigin(String callSymbol, int argValId) {}
+    record UnaryCallOrigin(
+            String callSymbol,
+            int argValId,
+            PrimitiveKind argKind,
+            boolean argStringType,
+            boolean idempotent,
+            boolean monotone,
+            boolean injective) {}
 
     /** A dominating variable binding for an e-class, valid only while {@code varEpoch} matches. */
     record VarBinding(HirVar var, int epoch, PrimitiveKind kind) {}

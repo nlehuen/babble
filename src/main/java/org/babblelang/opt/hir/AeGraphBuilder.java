@@ -631,6 +631,13 @@ final class AeGraphBuilder {
             rewrites[0]++;
             return visit(folded, state);
         }
+        HirExpr.Binary canceled =
+                AeGraphExtractor.tryCancelUnaryComparison(
+                        cur, l.valId(), r.valId(), state, nextVarId, rewrites);
+        if (canceled != null) {
+            rewrites[0]++;
+            return visit(canceled, state);
+        }
         HirExpr alg = AeGraphExtractor.tryAlgebraicAndIdentity(cur, module);
         if (alg != null) {
             rewrites[0]++;
@@ -700,9 +707,12 @@ final class AeGraphBuilder {
         }
         IrEffect eff = fx.shallowEffectOf(cur);
         Method m = cur.target().method();
-        boolean idem = HirEGraphCodec.isIdempotentJavaEligible(cur, module);
-        String idemSym =
-                idem
+        boolean algUnary = HirEGraphCodec.isAlgebraicUnaryJavaEligible(cur, module);
+        boolean idem = algUnary && HirPurity.isIdempotentCall(cur, module);
+        boolean mono = algUnary && HirPurity.isMonotoneCall(cur, module);
+        boolean inj = algUnary && HirPurity.isInjectiveCall(cur, module);
+        String unarySym =
+                algUnary
                         ? ((cur.target().isStatic() ? "jstatic#" : "jinst#")
                                 + m.getDeclaringClass().getName()
                                 + "."
@@ -710,16 +720,18 @@ final class AeGraphBuilder {
                                 + ":"
                                 + m.getParameterCount())
                         : null;
-        int idemArgId = idem ? (cur.target().isStatic() ? argIds.get(0) : recv.valId()) : -1;
+        int unaryArgId = algUnary ? (cur.target().isStatic() ? argIds.get(0) : recv.valId()) : -1;
+        HirExpr unaryArgExpr =
+                algUnary ? (cur.target().isStatic() ? cur.args().get(0) : cur.receiver()) : null;
         if (idem && eff.isPureFloatable()) {
-            AeGraphState.IdemOrigin io = state.shared.idemOrigins.get(idemArgId);
-            if (io != null && idemSym.equals(io.callSymbol())) {
+            AeGraphState.UnaryCallOrigin io = state.shared.unaryCallOrigins.get(unaryArgId);
+            if (io != null && io.idempotent() && unarySym.equals(io.callSymbol())) {
                 HirExpr dom =
                         AeGraphExtractor.tryExtractDominating(
-                                idemArgId, cur.meta(), state, nextVarId, rewrites, false);
+                                unaryArgId, cur.meta(), state, nextVarId, rewrites, false);
                 if (dom != null) {
                     rewrites[0]++;
-                    return new Res(dom, idemArgId);
+                    return new Res(dom, unaryArgId);
                 }
             }
         }
@@ -734,14 +746,35 @@ final class AeGraphBuilder {
             AeGraphState.ValueKey key =
                     new AeGraphState.CallJavaKey(recvId, m, cur.meta().kind(), canonArgs);
             Res res = finishValueNumbered(cur, key, eff, state);
-            if (idem) {
-                state.shared.idemOrigins.putIfAbsent(
-                        res.valId(), new AeGraphState.IdemOrigin(idemSym, idemArgId));
+            if (algUnary && unaryArgExpr != null) {
+                state.shared.unaryCallOrigins.putIfAbsent(
+                        res.valId(),
+                        new AeGraphState.UnaryCallOrigin(
+                                unarySym,
+                                unaryArgId,
+                                unaryArgExpr.meta().kind(),
+                                unaryArgExpr.meta().stringType(),
+                                idem,
+                                mono,
+                                inj));
             }
             return res;
         }
         noteEffect(eff, state);
-        return new Res(cur, state.internFresh());
+        int freshId = state.internFresh();
+        if (algUnary && unaryArgExpr != null) {
+            state.shared.unaryCallOrigins.putIfAbsent(
+                    freshId,
+                    new AeGraphState.UnaryCallOrigin(
+                            unarySym,
+                            unaryArgId,
+                            unaryArgExpr.meta().kind(),
+                            unaryArgExpr.meta().stringType(),
+                            idem,
+                            mono,
+                            inj));
+        }
+        return new Res(cur, freshId);
     }
 
     private Res visitDirectBabbleCall(HirExpr.DirectBabbleCall dc, AeGraphState state) {
@@ -773,17 +806,20 @@ final class AeGraphBuilder {
             return visit(alg, state);
         }
         IrEffect eff = fx.shallowEffectOf(cur);
-        boolean idem = HirEGraphCodec.isIdempotentBabbleEligible(cur, module);
-        String idemSym =
-                idem
+        boolean algUnary = HirEGraphCodec.isAlgebraicUnaryBabbleEligible(cur, module);
+        boolean idem = algUnary && HirPurity.isIdempotentCall(cur, module);
+        boolean mono = algUnary && HirPurity.isMonotoneCall(cur, module);
+        boolean inj = algUnary && HirPurity.isInjectiveCall(cur, module);
+        String unarySym =
+                algUnary
                         ? (cur.externalTarget() != null
                                 ? "babble-ext#" + cur.externalTarget().canonicalKey()
                                 : "babble#" + cur.targetFunctionId())
                         : null;
         if (idem && eff.isPureFloatable()) {
             int argId = argIds.get(0);
-            AeGraphState.IdemOrigin io = state.shared.idemOrigins.get(argId);
-            if (io != null && idemSym.equals(io.callSymbol())) {
+            AeGraphState.UnaryCallOrigin io = state.shared.unaryCallOrigins.get(argId);
+            if (io != null && io.idempotent() && unarySym.equals(io.callSymbol())) {
                 HirExpr dom =
                         AeGraphExtractor.tryExtractDominating(
                                 argId, cur.meta(), state, nextVarId, rewrites, false);
@@ -807,14 +843,37 @@ final class AeGraphBuilder {
                     new AeGraphState.CallBabbleKey(
                             cur.targetFunctionId(), extKey, cur.meta().kind(), canonArgs);
             Res res = finishValueNumbered(cur, key, eff, state);
-            if (idem) {
-                state.shared.idemOrigins.putIfAbsent(
-                        res.valId(), new AeGraphState.IdemOrigin(idemSym, argIds.get(0)));
+            if (algUnary) {
+                HirExpr a0 = cur.args().get(0);
+                state.shared.unaryCallOrigins.putIfAbsent(
+                        res.valId(),
+                        new AeGraphState.UnaryCallOrigin(
+                                unarySym,
+                                argIds.get(0),
+                                a0.meta().kind(),
+                                a0.meta().stringType(),
+                                idem,
+                                mono,
+                                inj));
             }
             return res;
         }
         noteEffect(eff, state);
-        return new Res(cur, state.internFresh());
+        int freshId = state.internFresh();
+        if (algUnary) {
+            HirExpr a0 = cur.args().get(0);
+            state.shared.unaryCallOrigins.putIfAbsent(
+                    freshId,
+                    new AeGraphState.UnaryCallOrigin(
+                            unarySym,
+                            argIds.get(0),
+                            a0.meta().kind(),
+                            a0.meta().stringType(),
+                            idem,
+                            mono,
+                            inj));
+        }
+        return new Res(cur, freshId);
     }
 
     private Res visitDirectThisMethodCall(HirExpr.DirectThisMethodCall mc, AeGraphState state) {

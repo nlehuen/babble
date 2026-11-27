@@ -173,20 +173,29 @@ final class HirEGraphCodec {
                 }
             }
             if (expr instanceof HirExpr.DirectBabbleCall c
-                    && isIdempotentBabbleEligible(c, module)) {
+                    && isAlgebraicUnaryBabbleEligible(c, module)) {
                 String sym =
                         c.externalTarget() != null
                                 ? "babble-ext#" + c.externalTarget().canonicalKey()
                                 : "babble#" + c.targetFunctionId();
                 callTemplates.putIfAbsent(sym, c);
-                graph.registerCallProps(sym, new EGraph.CallProps(true, false, false, false));
+                graph.registerCallProps(
+                        sym,
+                        new EGraph.CallProps(
+                                HirPurity.isIdempotentCall(c, module),
+                                false,
+                                false,
+                                false,
+                                HirPurity.isMonotoneCall(c, module),
+                                HirPurity.isInjectiveCall(c, module)));
                 int id = graph.add(ENode.call(sym, c.meta().kind(), lower(c.args().get(0))));
                 if (c.meta().stringType()) {
                     graph.markReflexiveEq(id);
                 }
                 return id;
             }
-            if (expr instanceof HirExpr.JavaMethodCall c && isIdempotentJavaEligible(c, module)) {
+            if (expr instanceof HirExpr.JavaMethodCall c
+                    && isAlgebraicUnaryJavaEligible(c, module)) {
                 Method m = c.target().method();
                 String sym =
                         (c.target().isStatic() ? "jstatic#" : "jinst#")
@@ -196,7 +205,15 @@ final class HirEGraphCodec {
                                 + ":"
                                 + m.getParameterCount();
                 callTemplates.putIfAbsent(sym, c);
-                graph.registerCallProps(sym, new EGraph.CallProps(true, false, false, false));
+                graph.registerCallProps(
+                        sym,
+                        new EGraph.CallProps(
+                                HirPurity.isIdempotentCall(c, module),
+                                false,
+                                false,
+                                false,
+                                HirPurity.isMonotoneCall(c, module),
+                                HirPurity.isInjectiveCall(c, module)));
                 int child = c.target().isStatic() ? lower(c.args().get(0)) : lower(c.receiver());
                 int id = graph.add(ENode.call(sym, c.meta().kind(), child));
                 if (c.meta().stringType()) {
@@ -247,10 +264,11 @@ final class HirEGraphCodec {
                 }
             }
             if (expr instanceof HirExpr.DirectBabbleCall c
-                    && isIdempotentBabbleEligible(c, module)) {
+                    && isAlgebraicUnaryBabbleEligible(c, module)) {
                 return 10 + treeCost(c.args().get(0));
             }
-            if (expr instanceof HirExpr.JavaMethodCall c && isIdempotentJavaEligible(c, module)) {
+            if (expr instanceof HirExpr.JavaMethodCall c
+                    && isAlgebraicUnaryJavaEligible(c, module)) {
                 return 10 + treeCost(c.target().isStatic() ? c.args().get(0) : c.receiver());
             }
             return 2;
@@ -395,13 +413,25 @@ final class HirEGraphCodec {
     }
 
     static boolean isIdempotentBabbleEligible(HirExpr.DirectBabbleCall c, HirModule module) {
+        return isUnaryBabbleCallShape(c, module) && HirPurity.isIdempotentCall(c, module);
+    }
+
+    static boolean isAlgebraicUnaryBabbleEligible(HirExpr.DirectBabbleCall c, HirModule module) {
+        if (!isUnaryBabbleCallShape(c, module)) {
+            return false;
+        }
+        if (HirPurity.isIdempotentCall(c, module)) {
+            return true;
+        }
+        return (HirPurity.isMonotoneCall(c, module) || HirPurity.isInjectiveCall(c, module))
+                && HirPurity.isPureNothrowTerminating(c, module);
+    }
+
+    private static boolean isUnaryBabbleCallShape(HirExpr.DirectBabbleCall c, HirModule module) {
         if (c.args().size() != 1
                 || c.meta().checkedType() != null
                 || c.meta().wideningRank() >= 0
                 || (c.binding() != null && !c.binding().isIdentityPositional())) {
-            return false;
-        }
-        if (!HirPurity.isIdempotentCall(c, module)) {
             return false;
         }
         return HirPurity.isPureNothrowTerminating(c.callee(), module)
@@ -419,11 +449,27 @@ final class HirEGraphCodec {
     }
 
     static boolean isIdempotentJavaEligible(HirExpr.JavaMethodCall c, HirModule module) {
-        if (c.meta().wideningRank() >= 0 || !HirPurity.isIdempotentCall(c, module)) {
+        return isUnaryJavaCallShape(c, true) && HirPurity.isIdempotentCall(c, module);
+    }
+
+    static boolean isAlgebraicUnaryJavaEligible(HirExpr.JavaMethodCall c, HirModule module) {
+        if (isIdempotentJavaEligible(c, module)) {
+            return true;
+        }
+        return isUnaryJavaCallShape(c, false)
+                && (HirPurity.isMonotoneCall(c, module) || HirPurity.isInjectiveCall(c, module))
+                && c.meta().isNothrow()
+                && c.meta().isTerminating();
+    }
+
+    private static boolean isUnaryJavaCallShape(
+            HirExpr.JavaMethodCall c, boolean allowWhitelistedStrCheck) {
+        if (c.meta().wideningRank() >= 0) {
             return false;
         }
         boolean isWhitelistedStr =
-                c.target().method().getDeclaringClass() == String.class
+                allowWhitelistedStrCheck
+                        && c.target().method().getDeclaringClass() == String.class
                         && BuiltinAxioms.current().isFoldable(c.target().method());
         if (c.meta().checkedType() != null
                 && !(isWhitelistedStr && HirPurity.isStringCheckedType(c.meta().checkedType()))) {
