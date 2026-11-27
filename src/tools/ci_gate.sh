@@ -376,7 +376,7 @@ fi
 
 if [[ "${FORMAT_APPLY}" -eq 1 ]]; then
     banner "Pre-build : Applying Spotless Java formatting"
-    "${MVN_BASE[@]}" -q spotless:apply
+    "${MVN_BASE[@]}" -q com.diffplug.spotless:spotless-maven-plugin:apply
 fi
 
 # ------------------------------------------------------------------ Phase 1: build once + hygiene
@@ -406,6 +406,10 @@ if [[ "${SKIP_WASM}" -eq 1 ]]; then
     UNIT_EXCLUDES="${UNIT_EXCLUDES},!WasmCompilerTestCase"
 fi
 
+SUREFIRE_PLUGIN="org.apache.maven.plugins:maven-surefire-plugin"
+JACOCO_PLUGIN="org.jacoco:jacoco-maven-plugin"
+EXEC_PLUGIN="org.codehaus.mojo:exec-maven-plugin"
+
 run_job_cmd() {
     local job="$1"
     local log="${LOG_DIR}/${job}.log"
@@ -414,74 +418,74 @@ run_job_cmd() {
     rc=0
     case "${job}" in
         unit-interpret)
-            "${MVN_BASE[@]}" surefire:test@default-test \
+            "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@default-test" \
                 -Dtest="${UNIT_EXCLUDES}" \
                 -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             ;;
         unit-compile)
-            "${MVN_BASE[@]}" surefire:test@compiled-tests \
+            "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@compiled-tests" \
                 -Dtest="${UNIT_EXCLUDES}" \
                 -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             ;;
         unit-compile-O0)
-            "${MVN_BASE[@]}" surefire:test@compiled-tests-O0 \
+            "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@compiled-tests-O0" \
                 -Dtest="${UNIT_EXCLUDES}" \
                 -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             ;;
         batest-interpret)
             if [[ "${FAST_MODE}" -eq 1 || -n "${BATEST_FILTER}" ]]; then
-                "${MVN_BASE[@]}" surefire:test@default-test \
+                "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@default-test" \
                     -Dtest=BatestTestCase \
                     -Dbatest.filter="${BATEST_FILTER}" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             else
                 "${MVN_BASE[@]}" -Pbatest \
-                    jacoco:prepare-agent@prepare-agent-interpret \
-                    surefire:test@default-test \
+                    "${JACOCO_PLUGIN}:prepare-agent@prepare-agent-interpret" \
+                    "${SUREFIRE_PLUGIN}:test@default-test" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             fi
             ;;
         batest-compile)
             if [[ "${FAST_MODE}" -eq 1 || -n "${BATEST_FILTER}" ]]; then
-                "${MVN_BASE[@]}" surefire:test@compiled-tests \
+                "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@compiled-tests" \
                     -Dtest=BatestTestCase \
                     -Dbatest.filter="${BATEST_FILTER}" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             else
                 "${MVN_BASE[@]}" -Pbatest \
-                    jacoco:prepare-agent@prepare-agent-compile \
-                    surefire:test@compiled-tests \
+                    "${JACOCO_PLUGIN}:prepare-agent@prepare-agent-compile" \
+                    "${SUREFIRE_PLUGIN}:test@compiled-tests" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             fi
             ;;
         batest-compile-O0)
             if [[ "${FAST_MODE}" -eq 1 || -n "${BATEST_FILTER}" ]]; then
-                "${MVN_BASE[@]}" surefire:test@compiled-tests-O0 \
+                "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@compiled-tests-O0" \
                     -Dtest=BatestTestCase \
                     -Dbatest.filter="${BATEST_FILTER}" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             else
                 "${MVN_BASE[@]}" -Pbatest \
-                    jacoco:prepare-agent@prepare-agent-compile-O0 \
-                    surefire:test@compiled-tests-O0 \
+                    "${JACOCO_PLUGIN}:prepare-agent@prepare-agent-compile-O0" \
+                    "${SUREFIRE_PLUGIN}:test@compiled-tests-O0" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             fi
             ;;
         batest-compile-O2)
             if [[ "${FAST_MODE}" -eq 1 || -n "${BATEST_FILTER}" ]]; then
-                "${MVN_BASE[@]}" -PO2 surefire:test@compiled-tests-O2 \
+                "${MVN_BASE[@]}" -PO2 "${SUREFIRE_PLUGIN}:test@compiled-tests-O2" \
                     -Dtest=BatestTestCase \
                     -Dbatest.filter="${BATEST_FILTER}" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             else
                 "${MVN_BASE[@]}" -Pbatest \
-                    jacoco:prepare-agent@prepare-agent-compile-O2 \
-                    surefire:test@compiled-tests-O2 \
+                    "${JACOCO_PLUGIN}:prepare-agent@prepare-agent-compile-O2" \
+                    "${SUREFIRE_PLUGIN}:test@compiled-tests-O2" \
                     -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
             fi
             ;;
         wasm-batest)
-            "${MVN_BASE[@]}" surefire:test@compiled-tests \
+            "${MVN_BASE[@]}" "${SUREFIRE_PLUGIN}:test@compiled-tests" \
                 -Dtest=WasmBatestTestCase \
                 -Dbatest.filter="${BATEST_FILTER}" \
                 -Dsurefire.jvmArgs="${SUREFIRE_JVM_ARGS}" >"${log}" 2>&1 || rc=$?
@@ -563,12 +567,12 @@ if [[ "${RUN_REPORT}" -eq 1 ]]; then
     P3_START="$(now_s)"
     REPORT_LOG="${LOG_DIR}/batest-report.log"
     if "${MVN_BASE[@]}" -Pbatest \
-        jacoco:report@report-interpret \
-        jacoco:report@report-compile \
-        jacoco:report@report-opt \
-        jacoco:report@report-compile-O0 \
-        jacoco:report@report-opt-O2 \
-        exec:java@batest-report >"${REPORT_LOG}" 2>&1; then
+        "${JACOCO_PLUGIN}:report@report-interpret" \
+        "${JACOCO_PLUGIN}:report@report-compile" \
+        "${JACOCO_PLUGIN}:report@report-opt" \
+        "${JACOCO_PLUGIN}:report@report-compile-O0" \
+        "${JACOCO_PLUGIN}:report@report-opt-O2" \
+        "${EXEC_PLUGIN}:java@batest-report" >"${REPORT_LOG}" 2>&1; then
         REPORT_RC=0
     else
         REPORT_RC=$?
