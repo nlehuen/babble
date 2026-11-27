@@ -46,6 +46,7 @@ public class ArchitectureBoundaryTestCase {
                     "org/babblelang/analysis/PrimitiveKind",
                     "org/babblelang/analysis/LoweringTargets",
                     "org/babblelang/analysis/TypeAlgebra",
+                    "org/babblelang/analysis/TypeVariance",
                     "org/babblelang/analysis/JavaTypeBridge",
                     "org/babblelang/analysis/TypeDisplay",
                     "org/babblelang/analysis/OverloadSolver",

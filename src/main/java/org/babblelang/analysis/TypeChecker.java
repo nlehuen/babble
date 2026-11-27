@@ -244,6 +244,30 @@ final class TypeChecker {
     boolean checkingEffects;
     BabbleParser.FileContext file;
     private TypedModuleSummary builtSummary;
+    final TypeVariance variance =
+            new TypeVariance(
+                    new TypeVariance.Lookup() {
+                        @Override
+                        public List<Type.TypeVar> typeParameters(TypeNode node) {
+                            return annotator.typeVarsOf(node);
+                        }
+
+                        @Override
+                        public Type parentType(TypeNode node, int index) {
+                            return annotator.parentAnnotation(node, index);
+                        }
+
+                        @Override
+                        public Type memberType(TypeNode owner, TypeNode.Member member) {
+                            return varianceMemberType(owner, member);
+                        }
+
+                        @Override
+                        public boolean isJavaMethodMut(
+                                Class<?> owner, java.lang.reflect.Method method) {
+                            return isJavaMethodMutForVariance(owner, method);
+                        }
+                    });
     final TypeAlgebra algebra =
             new TypeAlgebra(
                     new TypeAlgebra.Env() {
@@ -286,7 +310,76 @@ final class TypeChecker {
                                 functionLiterals.put(to, literal);
                             }
                         }
+
+                        @Override
+                        public boolean isBabbleParamCovariant(
+                                TypeNode node, int paramIndex, boolean readOnly) {
+                            return variance.isBabbleParamCovariant(node, paramIndex, readOnly);
+                        }
+
+                        @Override
+                        public boolean isJavaParamCovariant(
+                                Class<?> raw, int paramIndex, boolean readOnly) {
+                            return variance.isJavaParamCovariant(raw, paramIndex, readOnly);
+                        }
                     });
+
+    private Type varianceMemberType(TypeNode owner, TypeNode.Member member) {
+        if (!isLocal(member.declaration)) {
+            Type imported = owner != null ? imported().memberType(owner, member.name) : null;
+            return imported != null ? imported : Type.ERROR;
+        }
+        if (!inFile(member.declaration) && pass.session != null) {
+            Type frozen = pass.session.memberTypes.get(member.declaration);
+            if (frozen != null) {
+                return frozen;
+            }
+        }
+        Type declared = annotator.declaredType(member.declaration);
+        if (declared != null) {
+            return declared;
+        }
+        if (ScopeAnalysis.isParamDecl(member.declaration)) {
+            return typeOfDeclaration(member.declaration);
+        }
+        if (member.function != null) {
+            Type cached = types.get(member.function);
+            if (cached != null) {
+                return cached;
+            }
+            return inProgress.contains(member.declaration) ? null : synth(member.function);
+        }
+        if (member.isOverload
+                && member.declaration instanceof BabbleParser.DefExpressionContext def
+                && def.value instanceof BabbleParser.OverloadExpressionContext ov) {
+            Type cached = types.get(ov);
+            if (cached != null) {
+                return cached;
+            }
+            return inProgress.contains(def) ? null : synth(ov);
+        }
+        if (member.declaration instanceof BabbleParser.DefExpressionContext def) {
+            return inferredMembers.get(def);
+        }
+        return Type.ERROR;
+    }
+
+    private boolean isJavaMethodMutForVariance(Class<?> owner, java.lang.reflect.Method method) {
+        if (method.isAnnotationPresent(org.babblelang.effects.Mut.class)) {
+            return true;
+        }
+        AxiomData.MemberAxiom ax =
+                pass.hostEffects.builtinAxioms().methodAxiom(owner, method.getName(), method);
+        if (ax != null && !ax.inferredEffects()) {
+            return ax.effects().mutThis();
+        }
+        if (pass.hostEffects.bytecodeEffectAnalysis()) {
+            return BytecodeEffectAnalyzer.analyze(method, pass.hostEffects.builtinAxioms())
+                    .effects()
+                    .mutThis();
+        }
+        return false;
+    }
 
     /** Deep immutability, by mode crossing (BIP027-I5) : what the effect checker also asks. */
     private final ModalKindTable modalKinds =
