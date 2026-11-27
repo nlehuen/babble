@@ -388,7 +388,13 @@ public final class HirTryNormalize {
                     List<HirCallArg> na = s.hoistCallArgPrefix(c.args(), lastTry);
                     yield s.wrap(
                             new HirExpr.DynamicCall(
-                                    nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta()),
+                                    nc,
+                                    na,
+                                    c.binding(),
+                                    c.babbleSig(),
+                                    c.callSite(),
+                                    c.constructorIndex(),
+                                    c.meta()),
                             c.meta());
                 }
                 yield c;

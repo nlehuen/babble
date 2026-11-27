@@ -19,6 +19,7 @@ import org.babblelang.runtime.ClassShape;
 final class FieldInitAnalysis {
     private final BlockScopes pass;
     private final TypeChecker checker;
+    private BitSet suppressedMissing;
 
     private FieldInitAnalysis(BlockScopes pass, TypeChecker checker) {
         this.pass = pass;
@@ -86,10 +87,15 @@ final class FieldInitAnalysis {
                 continue;
             }
             DelegationScan scan = scanDelegation(node, ctor, initCtx.initBlock);
+            if (scan.hasInvalid) {
+                ctor.delegateIndex = -2;
+                continue;
+            }
             if (scan.hasMixedPaths) {
                 checker.warn(
                         "Constructor must either delegate on all paths or initialize fields directly",
                         initCtx);
+                ctor.delegateIndex = -2;
                 continue;
             }
             if (scan.delegates) {
@@ -118,6 +124,9 @@ final class FieldInitAnalysis {
 
         // Phase 3: definite-assignment & single-assignment check for each constructor.
         for (TypeNode.Constructor ctor : node.constructors) {
+            if (ctor.delegateIndex == -2) {
+                continue;
+            }
             if (ctor.delegateIndex >= 0) {
                 // Delegating constructor: pre-delegation statements cannot reference `this`;
                 // post-delegation statements see all fields already initialized (`DA = ALL`, `DU =
@@ -133,6 +142,7 @@ final class FieldInitAnalysis {
                     BitSet du = fm.initialDu();
                     boolean[] thisUsedBeforeAll = {false};
                     boolean[] defFinalSafe = {true};
+                    this.suppressedMissing = new BitSet(fm.count);
                     InitState end =
                             walkBlock(
                                     node,
@@ -145,8 +155,11 @@ final class FieldInitAnalysis {
                                     thisUsedBeforeAll,
                                     defFinalSafe);
                     if (!end.unreachable) {
-                        checkAllAssigned(node, fm, end.da, ctor.initBlock);
+                        BitSet effectiveDa = (BitSet) end.da.clone();
+                        effectiveDa.or(this.suppressedMissing);
+                        checkAllAssigned(node, fm, effectiveDa, ctor.initBlock);
                     }
+                    this.suppressedMissing = null;
                     ctor.allDefFieldsFinalSafe = defFinalSafe[0] && !thisUsedBeforeAll[0];
                 } else {
                     // Header/inline-only constructor (no `init` block): safe unless inline
@@ -250,6 +263,7 @@ final class FieldInitAnalysis {
     private record DelegationScan(
             boolean delegates,
             boolean hasMixedPaths,
+            boolean hasInvalid,
             BabbleParser.CallContext delegateCall,
             int delegateStmtIndex,
             boolean hasPostDelegateStatements,
@@ -309,7 +323,7 @@ final class FieldInitAnalysis {
             }
         }
         if (foundInvalid) {
-            return new DelegationScan(false, false, null, -1, false, null);
+            return new DelegationScan(false, false, true, null, -1, false, null);
         }
         if (topDelegate != null) {
             for (int i = 0; i < topIndex; i++) {
@@ -319,12 +333,13 @@ final class FieldInitAnalysis {
             return new DelegationScan(
                     true,
                     false,
+                    false,
                     topDelegate,
                     topIndex,
                     hasPost,
                     hasPost ? stmts.get(topIndex + 1) : null);
         }
-        return new DelegationScan(false, false, null, -1, false, null);
+        return new DelegationScan(false, false, false, null, -1, false, null);
     }
 
     private void checkDelegatingBody(
@@ -665,6 +680,9 @@ final class FieldInitAnalysis {
                                     checker.warn(
                                             "Cannot assign to def field in a loop : " + name,
                                             assign.lhs);
+                                    if (suppressedMissing != null) {
+                                        suppressedMissing.set(bit);
+                                    }
                                 } else if (!afterRhs.du.get(bit)) {
                                     defFinalSafe[0] = false;
                                     if (node.kind == ClassShape.Kind.VALUE_CLASS

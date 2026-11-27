@@ -440,7 +440,13 @@ final class EffectBodyWalker {
         terminating = prevTerminating && terminating;
         stmtHasSideEffect = prevSideEffect || stmtHasSideEffect || !stmtPure;
         stmtHasError = prevError || hadError;
-        if (stmtPure && stmtNothrow && stmtTerminating && !hadError && !hasPriorDiagnostic(stmt)) {
+        if (stmtPure
+                && stmtNothrow
+                && stmtTerminating
+                && !hadError
+                && !hasPriorDiagnostic(stmt)
+                && !(unwrapParens(stmt) instanceof BabbleParser.CallContext cc
+                        && ec.pass.analysis.calls().isDelegatingThisCall(cc))) {
             Type stmtType = ec.checker.rawTypeOf(stmt);
             if (stmtType != Type.ERROR) {
                 reportOnce("Unused pure expression", stmt);
@@ -702,7 +708,8 @@ final class EffectBodyWalker {
                 || owner instanceof BabbleParser.BlockContext) {
             return declFn == null;
         }
-        return false;
+        return InitEffectAnalyzer.isInitOwnedLocal(
+                owner, decl, declFn, enclosingFunctionOfDecl(owner));
     }
 
     Reachability.Origin withLocalAliasKey(Reachability.Origin base, Object localKey, Type type) {
@@ -816,6 +823,10 @@ final class EffectBodyWalker {
             }
             markStoredOrigin(rhs, "static member " + assignedName, assign);
             return rhs;
+        }
+        if (constructingSelf && InitEffectAnalyzer.isDirectThisExpr(recv)) {
+            return InitEffectAnalyzer.recordConstructingFieldStore(
+                    this, rhs, effectiveType(assign.value), assignedName, assign);
         }
         recordTargetMutation(recvOrig, recv, "field assignment ." + assignedName, assign, true);
         markStoredIntoTarget(recvOrig, rhs, effectiveType(assign.value), assignedName, assign);

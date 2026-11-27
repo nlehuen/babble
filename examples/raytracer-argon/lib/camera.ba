@@ -24,36 +24,56 @@ export def Camera = class (
     def defocusAngle: double = 0.6,
     def focusDist: double = 10.0
 ) (
-    def imageHeight: int = math.maxInt(1, math.toInt(this.imageWidth / this.aspectRatio))
-    private def pixelSamplesScale: double = 1.0 / this.samplesPerPixel
-    private def center: Vec3 = this.lookfrom
-
-    ;; Viewport dimensions
-    private def theta: double = math.degreesToRadians(this.vfov)
-    private def h: double = math.tan(this.theta / 2.0)
-    private def viewportHeight: double = 2.0 * this.h * this.focusDist
-    private def viewportWidth: double = this.viewportHeight * (1.0 * this.imageWidth / this.imageHeight)
+    def imageHeight: int
+    private def pixelSamplesScale: double
+    private def center: Vec3
 
     ;; Orthonormal camera basis vectors (u, v, w)
-    def w: Vec3 = (this.lookfrom - this.lookat).unit()
-    def u: Vec3 = this.vup.cross(this.w).unit()
-    def v: Vec3 = this.w.cross(this.u)
+    def w: Vec3
+    def u: Vec3
+    def v: Vec3
 
-    ;; Viewport edge and pixel delta vectors
-    private def viewportU: Vec3 = this.u * this.viewportWidth
-    private def viewportV: Vec3 = -this.v * this.viewportHeight
-    private def pixelDeltaU: Vec3 = this.viewportU / (1.0 * this.imageWidth)
-    private def pixelDeltaV: Vec3 = this.viewportV / (1.0 * this.imageHeight)
-
-    ;; Upper-left pixel location
-    private def viewportUpperLeft: Vec3 = this.center - this.w * this.focusDist -
-        this.viewportU / 2.0 - this.viewportV / 2.0
-    def pixel00Loc: Vec3 = this.viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
+    ;; Pixel delta vectors and upper-left pixel location
+    private def pixelDeltaU: Vec3
+    private def pixelDeltaV: Vec3
+    def pixel00Loc: Vec3
 
     ;; Defocus disk basis vectors
-    private def defocusRadius: double = this.focusDist * math.tan(math.degreesToRadians(this.defocusAngle / 2.0))
-    private def defocusDiskU: Vec3 = this.u * this.defocusRadius
-    private def defocusDiskV: Vec3 = this.v * this.defocusRadius
+    private def defocusDiskU: Vec3
+    private def defocusDiskV: Vec3
+
+    init (
+        this.imageHeight = math.maxInt(1, math.toInt(this.imageWidth / this.aspectRatio))
+        this.pixelSamplesScale = 1.0 / this.samplesPerPixel
+        this.center = this.lookfrom
+
+        ;; Viewport dimensions (constructor-local temporaries, never stored as fields)
+        def theta: double = math.degreesToRadians(this.vfov)
+        def h: double = math.tan(theta / 2.0)
+        def viewportHeight: double = 2.0 * h * this.focusDist
+        def viewportWidth: double = viewportHeight * (1.0 * this.imageWidth / this.imageHeight)
+
+        ;; Orthonormal camera basis vectors (u, v, w)
+        this.w = (this.lookfrom - this.lookat).unit()
+        this.u = this.vup.cross(this.w).unit()
+        this.v = this.w.cross(this.u)
+
+        ;; Viewport edge and pixel delta vectors
+        def viewportU: Vec3 = this.u * viewportWidth
+        def viewportV: Vec3 = -this.v * viewportHeight
+        this.pixelDeltaU = viewportU / (1.0 * this.imageWidth)
+        this.pixelDeltaV = viewportV / (1.0 * this.imageHeight)
+
+        ;; Upper-left pixel location
+        def viewportUpperLeft: Vec3 = this.center - this.w * this.focusDist -
+            viewportU / 2.0 - viewportV / 2.0
+        this.pixel00Loc = viewportUpperLeft + (this.pixelDeltaU + this.pixelDeltaV) * 0.5
+
+        ;; Defocus disk basis vectors
+        def defocusRadius: double = this.focusDist * math.tan(math.degreesToRadians(this.defocusAngle / 2.0))
+        this.defocusDiskU = this.u * defocusRadius
+        this.defocusDiskV = this.v * defocusRadius
+    )
 
     private def sampleSquare = fn (mut rng: Rng): Vec3 -> (
         Vec3(rng.nextDouble() - 0.5, rng.nextDouble() - 0.5, 0.0)

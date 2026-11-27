@@ -660,7 +660,13 @@ final class HirTreeRewrite {
                 yield (nc == c.callee() && na == c.args())
                         ? c
                         : new HirExpr.DynamicCall(
-                                nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta());
+                                nc,
+                                na,
+                                c.binding(),
+                                c.babbleSig(),
+                                c.callSite(),
+                                c.constructorIndex(),
+                                c.meta());
             }
             case HirExpr.MakeOverloadSet m -> {
                 List<HirExpr> no = rewriteList(m.operands(), fn);
@@ -1007,7 +1013,13 @@ final class HirTreeRewrite {
                             meta);
             case HirExpr.DynamicCall c ->
                     new HirExpr.DynamicCall(
-                            c.callee(), c.args(), c.binding(), c.babbleSig(), c.callSite(), meta);
+                            c.callee(),
+                            c.args(),
+                            c.binding(),
+                            c.babbleSig(),
+                            c.callSite(),
+                            c.constructorIndex(),
+                            meta);
             case HirExpr.MakeOverloadSet m ->
                     new HirExpr.MakeOverloadSet(m.operands(), m.metas(), meta);
             case HirExpr.OverloadSelect s ->

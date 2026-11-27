@@ -146,8 +146,7 @@ final class CallEffectAnalyzer {
             }
             if (w.constructingSelf && InitEffectAnalyzer.isDirectThisExpr(argExprs[0])) {
                 w.reportOnce("Cannot move or consume this inside init", argExprs[0]);
-                return Reachability.Origin.ofExternal(
-                        call, ec.javaResolver.isDeeplyImmutable(resType));
+                return Reachability.Origin.IMMUTABLE;
             }
             ParserRuleContext decl = w.resolveOwnedLocalDecl(argExprs[0]);
             Reachability.Origin orig = argOrigins[0];

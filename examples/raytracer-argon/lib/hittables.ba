@@ -13,11 +13,17 @@ def emptyHittable = import("interfaces.ba").emptyHittable
 ;; 2.8 Sphere & Pure-Babble HittableList + BVHNode
 ;; ------------------------------------------------------------------------
 export def Sphere = class (def center: Vec3, def radius: double, def mat: Material) implements Hittable, Describable (
-    private def radiusSq: double = this.radius * this.radius
-    private def invRadius: double = 1.0 / this.radius
-    private def rAbs: double = math.abs(this.radius)
-    private def rVec: Vec3 = Vec3(this.rAbs, this.rAbs, this.rAbs)
-    private def bbox: AABB = AABB.fromPoints(this.center - this.rVec, this.center + this.rVec)
+    private def radiusSq: double
+    private def invRadius: double
+    private def bbox: AABB
+
+    init (
+        this.radiusSq = this.radius * this.radius
+        this.invRadius = 1.0 / this.radius
+        def rAbs: double = math.abs(this.radius)
+        def rVec: Vec3 = Vec3(rAbs, rAbs, rAbs)
+        this.bbox = AABB.fromPoints(this.center - rVec, this.center + rVec)
+    )
 
     def boundingBox = fn (): AABB -> (
         this.bbox

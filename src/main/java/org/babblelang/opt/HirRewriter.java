@@ -544,7 +544,13 @@ public final class HirRewriter {
                 yield (nc == c.callee() && na == c.args())
                         ? c
                         : new HirExpr.DynamicCall(
-                                nc, na, c.binding(), c.babbleSig(), c.callSite(), c.meta());
+                                nc,
+                                na,
+                                c.binding(),
+                                c.babbleSig(),
+                                c.callSite(),
+                                c.constructorIndex(),
+                                c.meta());
             }
             case HirExpr.MakeOverloadSet m -> {
                 List<HirExpr> no = rewriteList(m.operands(), transform);
