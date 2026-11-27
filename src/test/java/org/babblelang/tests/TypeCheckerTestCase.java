@@ -1792,7 +1792,8 @@ public class TypeCheckerTestCase {
                     (BabbleScriptEngine) BabbleScriptEngineFactory.INSTANCE.getScriptEngine();
             scriptEngine.put(
                     BabbleScriptEngine.MODULE_SOURCE,
-                    org.babblelang.engine.FileModuleSource.rooted(file.getParent()));
+                    org.babblelang.engine.FileModuleSource.rooted(
+                            ExamplesTestCase.projectRoot(file)));
             scriptEngine.getContext().setErrorWriter(errors);
             scriptEngine.getContext().setWriter(new StringWriter());
             scriptEngine
