@@ -1222,6 +1222,8 @@ public final class BatestCoverageReporter {
     static Scope scopeOf(String qualifiedClass) {
         if (qualifiedClass.startsWith("org.babblelang.parser.")
                 || qualifiedClass.startsWith("org.babblelang.format.")
+                || qualifiedClass.startsWith("org.babblelang.batest.")
+                || qualifiedClass.startsWith("org.babblelang.crib.")
                 || EXCLUDED_CLASSES.contains(qualifiedClass)) {
             return Scope.EXCLUDED;
         }

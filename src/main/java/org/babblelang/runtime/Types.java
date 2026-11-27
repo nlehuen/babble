@@ -287,15 +287,50 @@ public final class Types {
         return result.toString();
     }
 
-    /** The type a descriptor describes, parsed once. */
+    /** Cap on cached parsed type descriptors to prevent unbounded growth in long-lived JVMs. */
+    private static final int MAX_CACHED_DESCRIPTORS = 4_096;
+
+    /**
+     * The type a descriptor describes, parsed once (skipping ephemeral nominal {@code T<N>} IDs).
+     */
     public static Type parse(String descriptor) {
+        if (isEphemeralNominal(descriptor)) {
+            return doParse(descriptor);
+        }
         Type cached = PARSED.get(descriptor);
         if (cached != null) {
             return cached;
         }
         Type parsed = doParse(descriptor);
+        if (PARSED.size() >= MAX_CACHED_DESCRIPTORS) {
+            return parsed;
+        }
         Type existing = PARSED.putIfAbsent(descriptor, parsed);
         return existing != null ? existing : parsed;
+    }
+
+    /**
+     * Nominal descriptors of non-module scripts embed a monotonically increasing {@code T<N>} ID
+     * ({@code babble|<Name>|T17}). Caching them globally would leak memory across long-running
+     * {@code -crib} trials ({@code BIP041-D7}).
+     */
+    private static boolean isEphemeralNominal(String descriptor) {
+        int idx = descriptor.indexOf("|T");
+        while (idx >= 0) {
+            int p = idx + 2;
+            if (p < descriptor.length() && Character.isDigit(descriptor.charAt(p))) {
+                while (p < descriptor.length() && Character.isDigit(descriptor.charAt(p))) {
+                    p++;
+                }
+                if (p == descriptor.length()
+                        || descriptor.charAt(p) == ','
+                        || descriptor.charAt(p) == '%') {
+                    return true;
+                }
+            }
+            idx = descriptor.indexOf("|T", idx + 2);
+        }
+        return false;
     }
 
     private static Type doParse(String descriptor) {

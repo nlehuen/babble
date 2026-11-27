@@ -12,9 +12,9 @@ import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
 import org.antlr.v4.runtime.atn.PredictionMode;
 import org.antlr.v4.runtime.misc.ParseCancellationException;
+import org.babblelang.batest.BatestFile;
 import org.babblelang.parser.BabbleLexer;
 import org.babblelang.parser.BabbleParser;
-import org.babblelang.tests.batest.BatestFile;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -74,7 +74,7 @@ public class ParserGrammarTestCase extends BabbleTestBase {
             for (Path file :
                     stream.filter(p -> p.toString().endsWith(".batest.md")).sorted().toList()) {
                 BatestFile parsed =
-                        org.babblelang.tests.batest.BatestParser.parse(
+                        org.babblelang.batest.BatestParser.parse(
                                 file, batestRoot.relativize(file).toString());
                 String preamble =
                         parsed.preamble() != null && !parsed.preamble().isBlank()

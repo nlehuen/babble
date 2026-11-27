@@ -5,7 +5,6 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /** Facts about Java types that the interop needs. */
 public final class JavaTypes {
@@ -36,7 +35,26 @@ public final class JavaTypes {
                     Long.class, List.of(Float.class, Double.class),
                     Float.class, List.of(Double.class));
 
-    private static final Map<Class<?>, Method> FUNCTIONAL_METHODS = new ConcurrentHashMap<>();
+    private static final ClassValue<Method> FUNCTIONAL_METHODS =
+            new ClassValue<>() {
+                @Override
+                protected Method computeValue(Class<?> type) {
+                    List<Method> methods = abstractMethods(type);
+                    // The same method can be inherited through several superinterfaces.
+                    Method single = null;
+                    for (Method m : methods) {
+                        if (single == null) {
+                            single = m;
+                        } else if (!(single.getName().equals(m.getName())
+                                && single.getParameterCount() == m.getParameterCount())) {
+                            return NONE;
+                        } else if (isMoreSpecific(m, single)) {
+                            single = m;
+                        }
+                    }
+                    return single == null ? NONE : single;
+                }
+            };
     private static final Method NONE;
 
     static {
@@ -226,25 +244,7 @@ public final class JavaTypes {
         if (!type.isInterface()) {
             return null;
         }
-        Method method =
-                FUNCTIONAL_METHODS.computeIfAbsent(
-                        type,
-                        t -> {
-                            List<Method> methods = abstractMethods(t);
-                            // The same method can be inherited through several superinterfaces.
-                            Method single = null;
-                            for (Method m : methods) {
-                                if (single == null) {
-                                    single = m;
-                                } else if (!(single.getName().equals(m.getName())
-                                        && single.getParameterCount() == m.getParameterCount())) {
-                                    return NONE;
-                                } else if (isMoreSpecific(m, single)) {
-                                    single = m;
-                                }
-                            }
-                            return single == null ? NONE : single;
-                        });
+        Method method = FUNCTIONAL_METHODS.get(type);
         return method == NONE ? null : method;
     }
 
