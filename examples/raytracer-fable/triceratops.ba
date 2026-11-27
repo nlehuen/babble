@@ -639,7 +639,7 @@ def backRightLegCoeffs: array of double = (array of double).of(
     -0.00829, 0.00487,
     0.00632, -0.00496
 )
-world.add(SculptedLobe(pt(-0.155, -0.515, -0.08), 0.06, sc(1.0, -0.08), backRightLegCoeffs, 0.16, matBodyDark, matInk, 0.021, 0.0, matInk, 0.08))
+world.add(SculptedLobe(pt(-0.147, -0.515, -0.08), 0.06, sc(1.0, -0.08), backRightLegCoeffs, 0.16, matBodyDark, matInk, 0.021, 0.0, matInk, 0.08))
 
 ;; Back-left leg (smooth silhouette, inner right flank shaded; sits in front of lower belly)
 def backLeftLegCoeffs: array of double = (array of double).of(
@@ -653,7 +653,7 @@ def backLeftLegCoeffs: array of double = (array of double).of(
     0.00169, 0.00481,
     -0.00164, -0.00248
 )
-world.add(SculptedLobe(pt(-0.365, -0.475, 0.08), 0.08, sc(1.0, 0.08), backLeftLegCoeffs, 0.30, matBackLeftLeg, matInk, 0.023, 0.0, matInk, 0.14))
+world.add(SculptedLobe(pt(-0.357, -0.475, 0.08), 0.08, sc(1.0, 0.08), backLeftLegCoeffs, 0.30, matBackLeftLeg, matInk, 0.023, 0.0, matInk, 0.14))
 ;; Crisp tail-to-rump fold crease & inner hip crease
 addBezier(-0.518, -0.10, 0.18, 0.009, -0.516, -0.23, 0.18, 0.009, -0.506, -0.35, 0.18, 0.009, 3, matInk, 0.0, 0.0)
 addBezier(-0.410, -0.14, 0.18, 0.009, -0.404, -0.25, 0.18, 0.009, -0.376, -0.35, 0.18, 0.009, 3, matInk, 0.0, 0.0)
@@ -672,15 +672,15 @@ def frontRightLegCoeffs: array of double = (array of double).of(
     0.00466, 0.01265,
     0.00342, 0.00378
 )
-world.add(SculptedLobe(pt(0.433, -0.467, 0.02), 0.07, sc(1.0, 0.02), frontRightLegCoeffs, 0.31, matFrontRightLeg, matInk, 0.023, 0.0, matInk, 0.24))
+world.add(SculptedLobe(pt(0.425, -0.467, 0.02), 0.07, sc(1.0, 0.02), frontRightLegCoeffs, 0.31, matFrontRightLeg, matInk, 0.023, 0.0, matInk, 0.24))
 addEll(0.399, -0.652, 0.10, 0.035, 0.034, 0.028, 0.0, matCream, 0.016, 0.022)
 addEll(0.469, -0.650, 0.11, 0.038, 0.036, 0.028, 0.0, matCream, 0.016, 0.022)
 addEll(0.528, -0.637, 0.10, 0.033, 0.033, 0.028, 0.0, matCream, 0.016, 0.022)
 
 ;; Smooth 3D anatomical pastel lavender chest (0.27 px RMS, tucked naturally behind head, shoulder & front-left leg)
-addEll(0.185, -0.282, 0.12, 0.325, 0.235, 0.065, 25.0, matBelly, 0.023, 0.035)
+addEll(0.185, -0.282, 0.12, 0.325, 0.245, 0.065, 23.0, matBelly, 0.023, 0.035)
 ;; Anatomical front-left shoulder bridge connecting torso smoothly to front-left leg in front of chest
-world.add(Ellipsoid.rotatedZ(pt(-0.02, -0.19, 0.16), sc(0.18, 0.16), sc(0.17, 0.16), 0.065, 12.0, matBody))
+world.add(Ellipsoid.rotatedZ(pt(-0.02, -0.2, 0.16), sc(0.18, 0.16), sc(0.17, 0.16), 0.065, 12.0, matBody))
 ;; Crisp shoulder-to-chest ink contour separating right side of front-left shoulder from lavender chest
 addBezier(0.178, -0.215, 0.28, 0.010, 0.158, -0.300, 0.28, 0.010, 0.132, -0.400, 0.28, 0.010, 3, matInk, 0.0, 0.0)
 
@@ -704,7 +704,7 @@ def frontLeftLegCoeffs: array of double = (array of double).of(
     0.00288, 0.00480,
     -0.00176, -0.00241
 )
-world.add(SculptedLobe(pt(0.005, -0.495, 0.20), 0.10, sc(1.0, 0.20), frontLeftLegCoeffs, 0.34, matBody, matInk, 0.023, 0.0, matInk, 0.19))
+world.add(SculptedLobe(pt(0.005, -0.495, 0.20), 0.10, sc(1.0, 0.20), frontLeftLegCoeffs, 0.34, matBody, matInk, 0.02, 0.0, matInk, 0.19))
 ;; Curved shoulder crease on left side of front-left leg
 addBezier(-0.144, -0.27, 0.32, 0.009, -0.145, -0.36, 0.32, 0.009, -0.136, -0.46, 0.32, 0.009, 2, matInk, 0.0, 0.0)
 ;; 3 flush dome toes aligned to exact 320px centroids
@@ -728,8 +728,8 @@ def frillCoeffs: array of double = (array of double).of(
     0.00151, -0.00097,
     0.00270, -0.00299
 )
-world.add(SculptedLobe(pt(0.28, 0.25, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.52, matFrill, matInk, 0.023, 0.024, matFrillRim))
-addEll(-0.082, 0.068, 0.066, 0.064, 0.058, 0.042, 0.0, matFrill, 0.022, 0.03)
+world.add(SculptedLobe(pt(0.28, 0.254, 0.07), 0.06, sc(1.0, 0.07), frillCoeffs, 0.52, matFrill, matInk, 0.023, 0.018, matFrillRim))
+addEll(-0.082, 0.068, 0.066, 0.064, 0.062, 0.042, 0.0, matFrill, 0.022, 0.03)
 
 ;; 9 Flush oval cream osteoderm scallops aligned to exact 320px measured centroids
 addEll(-0.155, 0.042, 0.055, 0.034, 0.027, 0.035, 72.0, matCream, 0.017, 0.025)
@@ -799,15 +799,15 @@ world.add(SculptedLobe(pt(0.550, 0.100, 0.48), 0.06, sc(1.0, 0.48), noseHornCoef
 
 ;; --- 7. Eyes, Eyebrows, Cheeks, Nose Bridge, Nostrils, Smile ---
 ;; Left eye (large warm dark iris shifted lower-left, crisp white top-right crescent & glint)
-world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.42), sc(0.052, 0.42), sc(0.064, 0.42), 0.03, -6.0, matInk))
-world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.44), sc(0.043, 0.44), sc(0.055, 0.44), 0.025, -6.0, matWhite))
+world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.42), sc(0.052, 0.42), sc(0.069, 0.42), 0.03, -6.0, matInk))
+world.add(Ellipsoid.rotatedZ(pt(0.292, 0.130, 0.44), sc(0.048, 0.44), sc(0.055, 0.44), 0.025, -6.0, matWhite))
 world.add(Ellipsoid.rotatedZ(pt(0.285, 0.118, 0.465), sc(0.035, 0.465), sc(0.043, 0.465), 0.020, -6.0, matEyeDark))
 world.add(Sphere(pt(0.300, 0.142, 0.488), sc(0.014, 0.488), matWhite))
 
 ;; Right eye (tucked cleanly behind nose horn)
 world.add(Ellipsoid.rotatedZ(pt(0.506, 0.156, 0.40), sc(0.042, 0.40), sc(0.055, 0.40), 0.028, -4.0, matInk))
-world.add(Ellipsoid.rotatedZ(pt(0.506, 0.156, 0.42), sc(0.033, 0.42), sc(0.046, 0.42), 0.024, -4.0, matWhite))
-world.add(Ellipsoid.rotatedZ(pt(0.499, 0.146, 0.442), sc(0.026, 0.442), sc(0.036, 0.442), 0.018, -4.0, matEyeDark))
+world.add(Ellipsoid.rotatedZ(pt(0.512, 0.156, 0.42), sc(0.033, 0.42), sc(0.046, 0.42), 0.024, -4.0, matWhite))
+world.add(Ellipsoid.rotatedZ(pt(0.499, 0.146, 0.442), sc(0.026, 0.442), sc(0.031, 0.442), 0.018, -4.0, matEyeDark))
 world.add(Sphere(pt(0.512, 0.168, 0.465), sc(0.011, 0.465), matWhite))
 
 ;; Soft arched nose bridge fold line between left eye and nose horn
@@ -830,7 +830,7 @@ addBezier(0.292, -0.052, 0.48, 0.010, 0.354, -0.108, 0.49, 0.010, 0.442, -0.124,
 addBezier(0.268, -0.062, 0.48, 0.009, 0.292, -0.052, 0.48, 0.009, 0.312, -0.032, 0.48, 0.008, 2, matInk, 0.0, 0.0)
 
 ;; --- 8. Bright Lime-Green Pacifier (exact 160px aligned kidney shield, knob, inner baseplate & circular ring) ---
-addEll(0.490, -0.118, 0.52, 0.072, 0.076, 0.032, -14.0, matPacifier, 0.020, 0.035)
+addEll(0.482, -0.118, 0.52, 0.072, 0.07, 0.032, -14.0, matPacifier, 0.020, 0.035)
 addEll(0.598, -0.105, 0.52, 0.068, 0.072, 0.032, 14.0, matPacifier, 0.020, 0.035)
 addEll(0.544, -0.124, 0.525, 0.056, 0.042, 0.030, 0.0, matPacifier, 0.019, 0.035)
 ;; Shaded inner guard & neck/jaw backdrop behind the hanging ring (eliminates white hole)
