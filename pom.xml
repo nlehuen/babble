@@ -388,9 +388,9 @@
                                     <excludes>
                                         <exclude>org/babblelang/parser/**</exclude>
                                         <exclude>org/babblelang/engine/impl/*</exclude>
-                                        <exclude>org/babblelang/ir/mir/**</exclude>
-                                        <exclude>org/babblelang/opt/mir/**</exclude>
-                                        <exclude>org/babblelang/compiler/Mir*</exclude>
+                                        <exclude>org/babblelang/opt/hir/HirSccpPass*</exclude>
+                                        <exclude>org/babblelang/opt/hir/HirAeGraphPass*</exclude>
+                                        <exclude>org/babblelang/opt/hir/AeGraph*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -406,9 +406,13 @@
                                     <includes>
                                         <include>org/babblelang/opt/**</include>
                                         <include>org/babblelang/ir/egraph/**</include>
+                                        <include>org/babblelang/ir/hir/IrEffect*</include>
+                                        <include>org/babblelang/compiler/HirSlotAllocator*</include>
                                     </includes>
                                     <excludes>
-                                        <exclude>org/babblelang/opt/mir/**</exclude>
+                                        <exclude>org/babblelang/opt/hir/HirSccpPass*</exclude>
+                                        <exclude>org/babblelang/opt/hir/HirAeGraphPass*</exclude>
+                                        <exclude>org/babblelang/opt/hir/AeGraph*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
@@ -425,24 +429,24 @@
                                         <exclude>org/babblelang/parser/**</exclude>
                                         <exclude>org/babblelang/engine/impl/*</exclude>
                                         <exclude>org/babblelang/opt/**</exclude>
-                                        <exclude>org/babblelang/ir/mir/**</exclude>
-                                        <exclude>org/babblelang/compiler/Mir*</exclude>
+                                        <exclude>org/babblelang/ir/hir/IrEffect*</exclude>
+                                        <exclude>org/babblelang/compiler/HirSlotAllocator*</exclude>
                                     </excludes>
                                 </configuration>
                             </execution>
                             <execution>
-                                <id>report-mir</id>
+                                <id>report-opt-O2</id>
                                 <phase>verify</phase>
                                 <goals>
                                     <goal>report</goal>
                                 </goals>
                                 <configuration>
                                     <dataFile>${project.build.directory}/jacoco-compile-O2.exec</dataFile>
-                                    <outputDirectory>${project.build.directory}/site/jacoco-mir</outputDirectory>
+                                    <outputDirectory>${project.build.directory}/site/jacoco-opt-O2</outputDirectory>
                                     <includes>
-                                        <include>org/babblelang/ir/mir/**</include>
-                                        <include>org/babblelang/opt/mir/**</include>
-                                        <include>org/babblelang/compiler/Mir*</include>
+                                        <include>org/babblelang/opt/hir/HirSccpPass*</include>
+                                        <include>org/babblelang/opt/hir/HirAeGraphPass*</include>
+                                        <include>org/babblelang/opt/hir/AeGraph*</include>
                                     </includes>
                                 </configuration>
                             </execution>
@@ -588,7 +592,7 @@
                                 </configuration>
                             </execution>
                             <!-- Run compiled-tests-O2 with its own isolated JaCoCo agent (jacoco-compile-O2.exec)
-                                 for SSA MIR lowering, MIR passes, and MirEmitter coverage + 4-mode parity. -->
+                                 for unified HIR -O2 passes (HirSccpPass, HirAeGraphPass) coverage + 4-mode parity. -->
                             <execution>
                                 <id>compiled-tests-O2</id>
                                 <goals>
@@ -675,8 +679,8 @@
                                             <value>${project.build.directory}/site/jacoco-opt/jacoco.xml</value>
                                         </systemProperty>
                                         <systemProperty>
-                                            <key>batest.jacocoMir</key>
-                                            <value>${project.build.directory}/site/jacoco-mir/jacoco.xml</value>
+                                            <key>batest.jacocoOptO2</key>
+                                            <value>${project.build.directory}/site/jacoco-opt-O2/jacoco.xml</value>
                                         </systemProperty>
                                     </systemProperties>
                                 </configuration>

@@ -61,9 +61,29 @@ top-level:
   (call name(assert) (and (and (and (and (==:bool (convert[double] (get-jfield Float.x name(pf))) 3.0:double) (==:bool (convert[double] (get-jfield Float.y name(pf))) 4.0:double)) (==:bool (get-jfield Point.x name(pt)) 12:int)) (==:bool (get-jfield Point.y name(pt)) 12:int)) (==:bool (get-jfield Rectangle.width name(rect)) 15:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (block
+    (def $cse1 name(java))
+    (def pf (jnew Float))
+    (def $cse0 name(pf))
+    (set-jfield x var($cse0) (jcall Float.valueOf 3.0:float))
+    (set-jfield y var($cse0) (jcall Float.valueOf 4.0:float))
+    (def pt (jnew Point 1:int 2:int))
+    (def $cse2 name(pt))
+    (set-jfield x var($cse2) 5:int)
+    (set-jfield x var($cse2) 3:int)
+    (set-jfield x var($cse2) 2:int)
+    (set-jfield x var($cse2) 4:int)
+    (set-jfield y var($cse2) 2:int)
+    (set-jfield y var($cse2) 3:int)
+    (def rect (jnew Rectangle))
+    (def $cse3 name(rect))
+    (set-jfield width var($cse3) 10:int)
+    (set-jfield width var($cse3) 5:int)
+    (call name(assert) (and (and (and (and (==:bool (convert[double] (get-jfield Float.x var($cse0))) 3.0:double) (==:bool (convert[double] (get-jfield Float.y var($cse0))) 4.0:double)) (==:bool (get-jfield Point.x var($cse2)) 12:int)) (==:bool (get-jfield Point.y var($cse2)) 12:int)) (==:bool (get-jfield Rectangle.width var($cse3)) 15:int))))
 ```
 
 ## Java double instance field assign and compound assign (int, double, and union RHS)
@@ -113,9 +133,27 @@ top-level:
   (call name(assert) (and (==:bool (get-jfield StreamTokenizer.nval name(st)) 3.0:double) (==:bool (get-jfield StreamTokenizer.ttype name(st)) 24:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (block
+    (def $cse0 name(java))
+    (def st (jnew StreamTokenizer (jnew StringReader "x")))
+    (def $cse1 name(st))
+    (set-jfield nval var($cse1) 3.0:double)
+    (set-jfield nval var($cse1) 2:int)
+    (set-jfield nval var($cse1) 1.5:double)
+    (set-jfield nval var($cse1) 2.0:double)
+    (set-jfield nval var($cse1) 7:int)
+    (set-jfield nval var($cse1) (block
+        (def v (box 2:int))
+        var(v)))
+    (set-jfield ttype var($cse1) 10:int)
+    (set-jfield ttype var($cse1) 5:int)
+    (set-jfield ttype var($cse1) 3:int)
+    (set-jfield ttype var($cse1) 2:int)
+    (call name(assert) (and (==:bool (get-jfield StreamTokenizer.nval var($cse1)) 3.0:double) (==:bool (get-jfield StreamTokenizer.ttype var($cse1)) 24:int))))
 ```
 
 ## Java Point2D.Double and Rectangle2D.Double compound ops
@@ -168,9 +206,28 @@ top-level:
   (call name(assert) (and (==:bool (get-jfield Double.x name(pd)) 12.0:double) (==:bool (get-jfield Double.y name(pd)) 5.0:double)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (block
+    (def $cse1 name(java))
+    (def r (jnew Double 1.0:double 2.0:double 3.0:double 4.0:double))
+    (def $cse0 name(r))
+    (set-jfield x var($cse0) 2.0:double)
+    (set-jfield y var($cse0) 0.5:double)
+    (set-jfield width var($cse0) 2.0:double)
+    (set-jfield height var($cse0) 2.0:double)
+    (def pd (jnew Double 10.0:double 20.0:double))
+    (def $cse2 name(pd))
+    (set-jfield x var($cse2) 2.0:double)
+    (set-jfield x var($cse2) 4.0:double)
+    (set-jfield x var($cse2) 3.0:double)
+    (set-jfield x var($cse2) 2.0:double)
+    (set-jfield y var($cse2) 5.0:double)
+    (def $cse3 name(assert))
+    (call var($cse3) (and (and (and (==:bool (get-jfield Double.x var($cse0)) 3.0:double) (==:bool (get-jfield Double.y var($cse0)) 1.5:double)) (==:bool (get-jfield Double.width var($cse0)) 6.0:double)) (==:bool (get-jfield Double.height var($cse0)) 2.0:double)))
+    (call var($cse3) (and (==:bool (get-jfield Double.x var($cse2)) 12.0:double) (==:bool (get-jfield Double.y var($cse2)) 5.0:double))))
 ```
 
 ## Java String and typed Object field assign and compound assign
@@ -198,9 +255,22 @@ top-level:
   (call name(assert) (and (and (==:bool (get-jfield JavaClassDemo.nonNullLabel name(demo)) "ab") (==:bool (get-jfield Insets.top (nonnull (get-jfield GridBagConstraints.insets name(gbc)))) 1:int)) (==:bool (get-jfield GridBagConstraints.weightx name(gbc)) 3.0:double)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def demo (jnew JavaClassDemo))
+  (block
+    (def $cse0 name(demo))
+    (set-jfield nonNullLabel var($cse0) "a")
+    (set-jfield nonNullLabel var($cse0) "b")
+    (def $cse1 name(java))
+    (def gbc (jnew GridBagConstraints))
+    (def $cse2 name(gbc))
+    (set-jfield insets var($cse2) (jnew Insets 1:int 2:int 3:int 4:int))
+    (set-jfield weightx var($cse2) 2.0:double)
+    (set-jfield weightx var($cse2) 1:int)
+    (call name(assert) (and (and (==:bool (get-jfield JavaClassDemo.nonNullLabel var($cse0)) "ab") (==:bool (get-jfield Insets.top (nonnull (get-jfield GridBagConstraints.insets var($cse2)))) 1:int)) (==:bool (get-jfield GridBagConstraints.weightx var($cse2)) 3.0:double))))
 ```
 
 ## Java untyped Object field assign (String and boxed int)
@@ -224,9 +294,17 @@ top-level:
   (call name(assert) (and (==:bool name(s) "ok") (==:bool (get-jfield Event.arg name(ev)) 42:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def ev (jnew Event null 0:int null))
+  (block
+    (def $cse0 name(ev))
+    (set-jfield arg var($cse0) "ok")
+    (def s "ok")
+    (set-jfield arg var($cse0) 42:int)
+    (call name(assert) (and (==:bool name(s) "ok") (==:bool (get-jfield Event.arg var($cse0)) 42:int))))
 ```
 
 ## Static Java field assign and compound assign
@@ -258,9 +336,21 @@ top-level:
   (call name(assert) (==:bool name(after) 24:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def dynNum (fn-ref dynNum))
+  (def HF (select (select (call name(import) "org.babblelang.tests").EffectsTestCase).HostFixtures))
+  (block
+    (def $cse0 name(HF))
+    (def saved (get-jfield HostFixtures.mutableStatic var($cse0)))
+    (set-jfield mutableStatic var($cse0) 10:int)
+    (set-jfield mutableStatic var($cse0) 5:int)
+    (set-jfield mutableStatic var($cse0) 3:int)
+    (set-jfield mutableStatic var($cse0) 2:int)
+    (def after (get-jfield HostFixtures.mutableStatic var($cse0)))
+    (set-jfield mutableStatic var($cse0) name(saved))
+    (call name(assert) (==:bool name(after) 24:int)))
 ```
 
 ## emitJavaMethodCall exception catch handler
@@ -315,17 +405,12 @@ fn fwd () -> int {nothrow unique}
   (call-fn g)
 ```
 
-```mir
-;; mir -O2 fn=fwd stage=before,final
-fn fwd() -> int:
-  bb0:
-    v0: any = opaque.FunctionRef(g) {read:shared}
-    v1: any = name_read java {pure}
-    v2: any = opaque.DynamicSelect(v1.lang) {impure}
-    v3: any = opaque.DynamicSelect(v2.Math) {impure}
-    slot_init M, v3 {write:shared,throws}
-    v4: int = call g() {impure}
-    ret v4
+```hir
+;; hir -O2 fn=fwd
+fn fwd () -> int {nothrow unique}
+  (def g (fn-ref g))
+  (def M (select (select name(java).lang).Math))
+  (call-fn g)
 ```
 
 ## Empty for, try, and catch blocks plus local move expression
@@ -350,16 +435,12 @@ fn run () -> int {nothrow unique}
   (get-this-field v)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run() -> int:
-  bb0:
-    v0: any = name_read Box {pure}
-    v1: int = const 4
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = move v2
-    v4: int = load_field v3.v {read:frozen}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run () -> int {nothrow unique}
+  (def a (call name(Box) 4:int))
+  (def b (move var(a)))
+  (get-this-field v)
 ```
 
 ## resolveBabbleJvmName for Babble interface array, function-local class array, and union array
@@ -384,24 +465,12 @@ fn mkLocal () -> int {pure unique}
   (+:int (get-this-field v) (get-this-field v))
 ```
 
-```mir
-;; mir -O2 fn=mkLocal stage=before,final
-fn mkLocal() -> int:
-  bb0:
-    v0: any = opaque.ClassExpr(L) {impure}
-    v1: int = const 3
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: int = const 4
-    v4: any = opaque.DynamicCall(v0, v3) {impure}
-    v5: any = opaque.ArrayCreate(v2, v4) {impure}
-    v6: int = const 0
-    v7: any = array_get v5[v6] {read:shared,throws}
-    v8: int = load_field v7.v {read:frozen,throws}
-    v9: int = const 1
-    v10: any = array_get v5[v9] {read:shared,throws}
-    v11: int = load_field v10.v {read:frozen,throws}
-    v12: int = add v8, v11 {pure}
-    ret v12
+```hir
+;; hir -O2 fn=mkLocal
+fn mkLocal () -> int {pure unique}
+  (def L (class-ref L))
+  (def la (array-new OF (call var(L) 3:int) (call var(L) 4:int)))
+  (+:int (get-this-field v) (get-this-field v))
 ```
 
 ## Nested else-if widening and typed rest without reorder plus reordered named args
@@ -425,48 +494,10 @@ fn pick (a:bool, b:bool) -> double {nothrow}
   (if var(a) 1.0:double (if var(b) 2.0:double 3.5:double))
 ```
 
-```mir
-;; mir -O2 fn=pick stage=before
-fn pick(v0: bool, v1: bool) -> double:
-  bb0:
-    br_if v0, bb5, bb1
-  bb1:
-    br_if v1, bb3, bb2
-  bb2:
-    v2: double = const 3.5
-    br bb4(v2)
-  bb3:
-    v3: double = const 2.0
-    br bb4(v3)
-  bb4(v4: double):
-    br bb6(v4)
-  bb5:
-    v5: double = const 1.0
-    br bb6(v5)
-  bb6(v6: double):
-    ret v6
-```
-
-```mir
-;; mir -O2 fn=pick
-fn pick(v0: bool, v1: bool) -> double:
-  bb0:
-    br_if v0, bb5, bb1
-  bb1:
-    br_if v1, bb3, bb2
-  bb2:
-    v2: double = const 3.5
-    br bb4(v2)
-  bb3:
-    v3: double = const 2.0
-    br bb4(v3)
-  bb4(v4: double):
-    br bb6(v4)
-  bb5:
-    v5: double = const 1.0
-    br bb6(v5)
-  bb6(v6: double):
-    ret v6
+```hir
+;; hir -O2 fn=pick
+fn pick (a:bool, b:bool) -> double {nothrow}
+  (if var(a) 1.0:double (if var(b) 2.0:double 3.5:double))
 ```
 
 ## Contextual long and float literals widened to double
@@ -484,12 +515,10 @@ fn toD (a:double, b:double) -> double {nothrow commutative monotone unique}
   (+:double var(a) var(b))
 ```
 
-```mir
-;; mir -O2 fn=toD stage=before,final
-fn toD(v0: double, v1: double) -> double:
-  bb0:
-    v2: double = add v0, v1 {pure}
-    ret v2
+```hir
+;; hir -O2 fn=toD
+fn toD (a:double, b:double) -> double {nothrow commutative monotone unique}
+  (+:double var(a) var(b))
 ```
 
 ## Non-spread 9-parameter class method lowers via METHOD_DESCRIPTOR
@@ -511,20 +540,12 @@ class Big
     (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int var(a) var(b)) var(c)) var(d)) var(e)) var(f)) var(g)) var(h)) var(i))
 ```
 
-```mir
-;; mir -O2 class=Big stage=before,final
-class Big:
-  fn Big.sum9(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: int) -> int:
-    bb0:
-      v9: int = add v0, v1 {pure}
-      v10: int = add v9, v2 {pure}
-      v11: int = add v10, v3 {pure}
-      v12: int = add v11, v4 {pure}
-      v13: int = add v12, v5 {pure}
-      v14: int = add v13, v6 {pure}
-      v15: int = add v14, v7 {pure}
-      v16: int = add v15, v8 {pure}
-      ret v16
+```hir
+;; hir -O2 class=Big
+class Big
+  (def sum9 (fn-ref Big.sum9))
+  fn Big.sum9 (a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, i:int) -> int {nothrow unique}
+    (+:int (+:int (+:int (+:int (+:int (+:int (+:int (+:int var(a) var(b)) var(c)) var(d)) var(e)) var(f)) var(g)) var(h)) var(i))
 ```
 
 ## Non-spread 9-parameter function with rest parameter uses Arguments.binder with restIndex
@@ -548,58 +569,14 @@ fn sumRest (a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, xs:obj) -> i
   var(t)
 ```
 
-```mir
-;; mir -O2 fn=sumRest stage=before
-fn sumRest(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: any) -> int:
-  bb0:
-    v9: int = add v0, v1 {pure}
-    v10: int = add v9, v2 {pure}
-    v11: int = add v10, v3 {pure}
-    v12: int = add v11, v4 {pure}
-    v13: int = add v12, v5 {pure}
-    v14: int = add v13, v6 {pure}
-    v15: int = add v14, v7 {pure}
-    v16: any = for_init.java_iterable v8
-    v17: any = const null
-    br bb1(v17, v15)
-  bb1(v18: any, v19: int):
-    v20: bool = for_has_next v16
-    br_if v20, bb3, bb2
-  bb2:
-    ret v19
-  bb3:
-    v21: any = for_next v16
-    v22: any = checkcast v21 <int|int|>
-    v23: int = convert.int v22
-    v24: int = add v19, v23 {pure}
-    v25: any = convert.any v24
-    br bb1(v25, v24)
-```
-
-```mir
-;; mir -O2 fn=sumRest
-fn sumRest(v0: int, v1: int, v2: int, v3: int, v4: int, v5: int, v6: int, v7: int, v8: any) -> int:
-  bb0:
-    v9: int = add v0, v1 {pure}
-    v10: int = add v9, v2 {pure}
-    v11: int = add v10, v3 {pure}
-    v12: int = add v11, v4 {pure}
-    v13: int = add v12, v5 {pure}
-    v14: int = add v13, v6 {pure}
-    v15: int = add v14, v7 {pure}
-    v16: any = for_init.java_iterable v8
-    br bb1(v15)
-  bb1(v17: int):
-    v18: bool = for_has_next v16
-    br_if v18, bb3, bb2
-  bb2:
-    ret v17
-  bb3:
-    v19: any = for_next v16
-    v20: any = checkcast v19 <int|int|>
-    v21: int = convert.int v20
-    v22: int = add v17, v21 {pure}
-    br bb1(v22)
+```hir
+;; hir -O2 fn=sumRest
+fn sumRest (a:int, b:int, c:int, d:int, e:int, f:int, g:int, h:int, xs:obj) -> int {nothrow unique}
+  (def t (+:int (+:int (+:int (+:int (+:int (+:int (+:int var(a) var(b)) var(c)) var(d)) var(e)) var(f)) var(g)) var(h)))
+  (for x in var(xs)
+    (block
+      (set t += var(x))))
+  var(t)
 ```
 
 ## Specialized function with widened boxed optional parameter default
@@ -623,24 +600,10 @@ fn f (x:int, d:obj=1:int) -> double {nothrow unique}
   (+:double (call name(double) var(x)) (if (is var(d) double) (narrow.is[double] var(d)) 0.0:double))
 ```
 
-```mir
-;; mir -O2 fn=f stage=before,final
-fn f(v0: int, v1: any) -> double:
-  bb0:
-    v2: any = name_read double {pure}
-    v3: double = opaque.DynamicCall(v2, v0) {impure}
-    v4: any = is v1 <double>
-    br_if v4, bb2, bb1
-  bb1:
-    v5: double = const 0.0
-    br bb3(v5)
-  bb2:
-    v6: any = narrow.is v1 <double>
-    v7: double = convert.double v6
-    br bb3(v7)
-  bb3(v8: double):
-    v9: double = add v3, v8 {pure}
-    ret v9
+```hir
+;; hir -O2 fn=f
+fn f (x:int, d:obj=1:int) -> double {nothrow unique}
+  (+:double (call name(double) var(x)) (if (is var(d) double) (narrow.is[double] var(d)) 0.0:double))
 ```
 
 ## Variadic function and bound method adapted to Java SAM exercise maxArity restIndex branch
@@ -666,14 +629,12 @@ class C
     (+:int var(x) 10:int)
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.m(v0: int, v1: any) -> int:
-    bb0:
-      v2: int = const 10
-      v3: int = add v0, v2 {pure}
-      ret v3
+```hir
+;; hir -O2 class=C
+class C
+  (def m (fn-ref C.m))
+  fn C.m (x:int, xs:obj) -> int {nothrow unique}
+    (+:int var(x) 10:int)
 ```
 
 ## CompiledBabbleScript.lineOf falls back when thrown exception has empty stack trace

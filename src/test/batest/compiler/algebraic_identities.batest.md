@@ -53,40 +53,16 @@ fn checkBool (b:bool) -> bool {pure unique}
   (call name(assert) true:bool)
 ```
 
-```mir
-;; mir -O2 fn=checkBool stage=before
-fn checkBool(v0: bool) -> bool:
-  bb0:
-    v1: any = name_read assert {pure}
-    v2: bool = const true
-    v3: bool = opaque.DynamicCall(v1, v2) {impure}
-    v4: any = name_read assert {pure}
-    v5: bool = const true
-    v6: bool = opaque.DynamicCall(v4, v5) {impure}
-    v7: any = name_read assert {pure}
-    v8: bool = const true
-    v9: bool = opaque.DynamicCall(v7, v8) {impure}
-    v10: any = name_read assert {pure}
-    v11: bool = const true
-    v12: bool = opaque.DynamicCall(v10, v11) {impure}
-    v13: any = name_read assert {pure}
-    v14: bool = const true
-    v15: bool = opaque.DynamicCall(v13, v14) {impure}
-    ret v15
-```
-
-```mir
-;; mir -O2 fn=checkBool
-fn checkBool(v0: bool) -> bool:
-  bb0:
-    v1: any = name_read assert {pure}
-    v2: bool = const true
-    v3: bool = opaque.DynamicCall(v1, v2) {impure}
-    v4: bool = opaque.DynamicCall(v1, v2) {impure}
-    v5: bool = opaque.DynamicCall(v1, v2) {impure}
-    v6: bool = opaque.DynamicCall(v1, v2) {impure}
-    v7: bool = opaque.DynamicCall(v1, v2) {impure}
-    ret v7
+```hir
+;; hir -O2 fn=checkBool
+fn checkBool (b:bool) -> bool {pure unique}
+  (block
+    (def $cse0 name(assert))
+    (call var($cse0) true:bool)
+    (call var($cse0) true:bool)
+    (call var($cse0) true:bool)
+    (call var($cse0) true:bool)
+    (call var($cse0) true:bool))
 ```
 
 ## Case 2
@@ -120,65 +96,18 @@ fn checkInt (x:int, eAdd0:int, eAddC:int, eMul:int) -> bool {pure unique}
   (call name(assert) (==:bool (+:int (+:int (+:int var(x) var(x)) (*:int var(x) 3:int)) (*:int var(x) 6:int)) var(eMul)))
 ```
 
-```mir
-;; mir -O2 fn=checkInt stage=before
-fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: int = add v0, v0 {pure}
-    v6: bool = eq v5, v1 {pure}
-    v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: any = name_read assert {pure}
-    v9: int = add v0, v0 {pure}
-    v10: int = const 8
-    v11: int = add v9, v10 {pure}
-    v12: bool = eq v11, v2 {pure}
-    v13: bool = opaque.DynamicCall(v8, v12) {impure}
-    v14: any = name_read assert {pure}
-    v15: int = neg v0 {pure}
-    v16: int = add v0, v15 {pure}
-    v17: int = const 0
-    v18: bool = eq v16, v17 {pure}
-    v19: bool = opaque.DynamicCall(v14, v18) {impure}
-    v20: any = name_read assert {pure}
-    v21: int = add v0, v0 {pure}
-    v22: int = const 3
-    v23: int = mul v0, v22 {pure}
-    v24: int = add v21, v23 {pure}
-    v25: int = const 6
-    v26: int = mul v0, v25 {pure}
-    v27: int = add v24, v26 {pure}
-    v28: bool = eq v27, v3 {pure}
-    v29: bool = opaque.DynamicCall(v20, v28) {impure}
-    ret v29
-```
-
-```mir
-;; mir -O2 fn=checkInt
-fn checkInt(v0: int, v1: int, v2: int, v3: int) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: int = add v0, v0 {pure}
-    v6: bool = eq v5, v1 {pure}
-    v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: int = const 8
-    v9: int = add v5, v8 {pure}
-    v10: bool = eq v9, v2 {pure}
-    v11: bool = opaque.DynamicCall(v4, v10) {impure}
-    v12: int = neg v0 {pure}
-    v13: int = add v0, v12 {pure}
-    v14: int = const 0
-    v15: bool = eq v13, v14 {pure}
-    v16: bool = opaque.DynamicCall(v4, v15) {impure}
-    v17: int = const 3
-    v18: int = mul v0, v17 {pure}
-    v19: int = add v5, v18 {pure}
-    v20: int = const 6
-    v21: int = mul v0, v20 {pure}
-    v22: int = add v19, v21 {pure}
-    v23: bool = eq v22, v3 {pure}
-    v24: bool = opaque.DynamicCall(v4, v23) {impure}
-    ret v24
+```hir
+;; hir -O2 fn=checkInt
+fn checkInt (x:int, eAdd0:int, eAddC:int, eMul:int) -> bool {pure unique}
+  (block
+    (def $cse0 name(assert))
+    (def $cse1 (+:int var(x) var(x)))
+    (call var($cse0) (==:bool var($cse1) var(eAdd0)))
+    (call var($cse0) (==:bool (+:int var($cse1) 8:int) var(eAddC)))
+    (def $cse2 (neg var(x)))
+    (def $cse3 (+:int var(x) var($cse2)))
+    (call var($cse0) (==:bool var($cse3) 0:int))
+    (call var($cse0) (==:bool (+:int (+:int var($cse1) (*:int var(x) 3:int)) (*:int var(x) 6:int)) var(eMul))))
 ```
 
 ## Case 3
@@ -212,65 +141,18 @@ fn checkLong (lx:long, eAdd0:long, eAddC:long, eMul:long) -> bool {pure unique}
   (call name(assert) (==:bool (+:long (+:long (+:long var(lx) var(lx)) (*:long var(lx) 3:long)) (*:long var(lx) 6:long)) var(eMul)))
 ```
 
-```mir
-;; mir -O2 fn=checkLong stage=before
-fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: long = add v0, v0 {pure}
-    v6: bool = eq v5, v1 {pure}
-    v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: any = name_read assert {pure}
-    v9: long = add v0, v0 {pure}
-    v10: long = const 8L
-    v11: long = add v9, v10 {pure}
-    v12: bool = eq v11, v2 {pure}
-    v13: bool = opaque.DynamicCall(v8, v12) {impure}
-    v14: any = name_read assert {pure}
-    v15: long = neg v0 {pure}
-    v16: long = add v0, v15 {pure}
-    v17: long = const 0L
-    v18: bool = eq v16, v17 {pure}
-    v19: bool = opaque.DynamicCall(v14, v18) {impure}
-    v20: any = name_read assert {pure}
-    v21: long = add v0, v0 {pure}
-    v22: long = const 3L
-    v23: long = mul v0, v22 {pure}
-    v24: long = add v21, v23 {pure}
-    v25: long = const 6L
-    v26: long = mul v0, v25 {pure}
-    v27: long = add v24, v26 {pure}
-    v28: bool = eq v27, v3 {pure}
-    v29: bool = opaque.DynamicCall(v20, v28) {impure}
-    ret v29
-```
-
-```mir
-;; mir -O2 fn=checkLong
-fn checkLong(v0: long, v1: long, v2: long, v3: long) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: long = add v0, v0 {pure}
-    v6: bool = eq v5, v1 {pure}
-    v7: bool = opaque.DynamicCall(v4, v6) {impure}
-    v8: long = const 8L
-    v9: long = add v5, v8 {pure}
-    v10: bool = eq v9, v2 {pure}
-    v11: bool = opaque.DynamicCall(v4, v10) {impure}
-    v12: long = neg v0 {pure}
-    v13: long = add v0, v12 {pure}
-    v14: long = const 0L
-    v15: bool = eq v13, v14 {pure}
-    v16: bool = opaque.DynamicCall(v4, v15) {impure}
-    v17: long = const 3L
-    v18: long = mul v0, v17 {pure}
-    v19: long = add v5, v18 {pure}
-    v20: long = const 6L
-    v21: long = mul v0, v20 {pure}
-    v22: long = add v19, v21 {pure}
-    v23: bool = eq v22, v3 {pure}
-    v24: bool = opaque.DynamicCall(v4, v23) {impure}
-    ret v24
+```hir
+;; hir -O2 fn=checkLong
+fn checkLong (lx:long, eAdd0:long, eAddC:long, eMul:long) -> bool {pure unique}
+  (block
+    (def $cse0 name(assert))
+    (def $cse1 (+:long var(lx) var(lx)))
+    (call var($cse0) (==:bool var($cse1) var(eAdd0)))
+    (call var($cse0) (==:bool (+:long var($cse1) 8:long) var(eAddC)))
+    (def $cse2 (neg var(lx)))
+    (def $cse3 (+:long var(lx) var($cse2)))
+    (call var($cse0) (==:bool var($cse3) 0:long))
+    (call var($cse0) (==:bool (+:long (+:long var($cse1) (*:long var(lx) 3:long)) (*:long var(lx) 6:long)) var(eMul))))
 ```
 
 ## String reassociation and IEEE-754 preservation (NaN * 0.0 != 0.0, no float/double reassociation)
@@ -302,82 +184,14 @@ fn checkStrIeee (s:obj, d:double, expStr:obj, expNan:bool) -> bool {pure}
   (if var(expNan) (call name(assert) (jcall Double.isNaN (+:double (+:double var(d) 1.0:double) 2.0:double))) (call name(assert) (==:bool (+:double (+:double var(d) 1.0:double) 2.0:double) 3.0:double)))
 ```
 
-```mir
-;; mir -O2 fn=checkStrIeee stage=before
-fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: any = const "ab"
-    v6: any = strcat v0, v5 {pure}
-    v7: any = eq v6, v2 {pure}
-    v8: bool = opaque.DynamicCall(v4, v7) {impure}
-    v9: any = name_read assert {pure}
-    v10: double = const 0.0
-    v11: double = mul v1, v10 {pure}
-    v12: double = const 0.0
-    v13: double = add v11, v12 {pure}
-    v14: bool = call_java Double.isNaN(v13) {pure}
-    v15: bool = eq v14, v3 {pure}
-    v16: bool = opaque.DynamicCall(v9, v15) {impure}
-    br_if v3, bb2, bb1
-  bb1:
-    v17: any = name_read assert {pure}
-    v18: double = const 1.0
-    v19: double = add v1, v18 {pure}
-    v20: double = const 2.0
-    v21: double = add v19, v20 {pure}
-    v22: double = const 3.0
-    v23: bool = eq v21, v22 {pure}
-    v24: bool = opaque.DynamicCall(v17, v23) {impure}
-    br bb3(v24)
-  bb2:
-    v25: any = name_read assert {pure}
-    v26: double = const 1.0
-    v27: double = add v1, v26 {pure}
-    v28: double = const 2.0
-    v29: double = add v27, v28 {pure}
-    v30: bool = call_java Double.isNaN(v29) {pure}
-    v31: bool = opaque.DynamicCall(v25, v30) {impure}
-    br bb3(v31)
-  bb3(v32: bool):
-    ret v32
-```
-
-```mir
-;; mir -O2 fn=checkStrIeee
-fn checkStrIeee(v0: any, v1: double, v2: any, v3: bool) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: any = const "ab"
-    v6: any = strcat v0, v5 {pure}
-    v7: any = eq v6, v2 {pure}
-    v8: bool = opaque.DynamicCall(v4, v7) {impure}
-    v9: double = const 0.0
-    v10: double = mul v1, v9 {pure}
-    v11: double = add v10, v9 {pure}
-    v12: bool = call_java Double.isNaN(v11) {pure}
-    v13: bool = eq v12, v3 {pure}
-    v14: bool = opaque.DynamicCall(v4, v13) {impure}
-    br_if v3, bb2, bb1
-  bb1:
-    v15: double = const 1.0
-    v16: double = add v1, v15 {pure}
-    v17: double = const 2.0
-    v18: double = add v16, v17 {pure}
-    v19: double = const 3.0
-    v20: bool = eq v18, v19 {pure}
-    v21: bool = opaque.DynamicCall(v4, v20) {impure}
-    br bb3(v21)
-  bb2:
-    v22: double = const 1.0
-    v23: double = add v1, v22 {pure}
-    v24: double = const 2.0
-    v25: double = add v23, v24 {pure}
-    v26: bool = call_java Double.isNaN(v25) {pure}
-    v27: bool = opaque.DynamicCall(v4, v26) {impure}
-    br bb3(v27)
-  bb3(v28: bool):
-    ret v28
+```hir
+;; hir -O2 fn=checkStrIeee
+fn checkStrIeee (s:obj, d:double, expStr:obj, expNan:bool) -> bool {pure}
+  (block
+    (def $cse0 name(assert))
+    (call var($cse0) (==:bool (+:obj var(s) "ab") var(expStr)))
+    (call var($cse0) (==:bool (jcall Double.isNaN (+:double (*:double var(d) 0.0:double) 0.0:double)) var(expNan)))
+    (if var(expNan) (call var($cse0) (jcall Double.isNaN (+:double (+:double var(d) 1.0:double) 2.0:double))) (call var($cse0) (==:bool (+:double (+:double var(d) 1.0:double) 2.0:double) 3.0:double))))
 ```
 
 ## Impure operands must not be dropped by * 0 or reordered
@@ -409,9 +223,17 @@ top-level:
   (call name(assert) (and (==:bool name(r) 12:int) (==:bool name(tick) 4:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def clamp (fn-ref clamp))
+  (def bigClamp (fn-ref bigClamp))
+  (def tick 0:int)
+  (def bump (fn-ref bump))
+  (block
+    (def $cse0 name(bump))
+    (def r (+:int (+:int (+:int (*:int (call-fn bump) 0:int) (*:int 0:int (call-fn bump))) (+:int 1:int (call-fn bump))) (*:int 2:int (call-fn bump))))
+    (call name(assert) (and (==:bool name(r) 12:int) (==:bool name(tick) 4:int))))
 ```
 
 ## Non-constant inner RHS does not reassociate; non-matching idempotent calls stay intact
@@ -443,114 +265,18 @@ fn checkNonReassoc (x:int, y:int, s:obj, t:obj) -> bool {pure unique}
         (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 2:int))
 ```
 
-```mir
-;; mir -O2 fn=checkNonReassoc stage=before
-fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: int = add v0, v1 {pure}
-    v6: int = const 2
-    v7: int = add v5, v6 {pure}
-    v8: int = const 7
-    v9: bool = eq v7, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb1, bb2(v10)
-  bb1:
-    v11: int = mul v0, v1 {pure}
-    v12: int = const 3
-    v13: int = mul v11, v12 {pure}
-    v14: int = const 18
-    v15: bool = eq v13, v14 {pure}
-    br bb2(v15)
-  bb2(v16: bool):
-    v17: bool = const false
-    br_if v16, bb3, bb4(v17)
-  bb3:
-    v18: any = strcat v2, v3 {pure}
-    v19: any = const "!"
-    v20: any = strcat v18, v19 {pure}
-    v21: any = const "ab!"
-    v22: any = eq v20, v21 {pure}
-    v23: bool = not v22 {pure}
-    v24: bool = not v23 {pure}
-    br bb4(v24)
-  bb4(v25: bool):
-    v26: bool = opaque.DynamicCall(v4, v25) {impure}
-    v27: any = name_read assert {pure}
-    v28: int = const 0
-    v29: bool = lt v0, v28 {pure}
-    br_if v29, bb6, bb5
-  bb5:
-    br bb7(v0)
-  bb6:
-    v30: int = const 0
-    br bb7(v30)
-  bb7(v31: int):
-    v32: int = const 0
-    v33: bool = lt v31, v32 {pure}
-    br_if v33, bb9, bb8
-  bb8:
-    br bb10(v31)
-  bb9:
-    v34: int = const 0
-    br bb10(v34)
-  bb10(v35: int):
-    v36: int = const 2
-    v37: bool = eq v35, v36 {pure}
-    v38: bool = opaque.DynamicCall(v27, v37) {impure}
-    ret v38
-```
-
-```mir
-;; mir -O2 fn=checkNonReassoc
-fn checkNonReassoc(v0: int, v1: int, v2: any, v3: any) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    v5: int = add v0, v1 {pure}
-    v6: int = const 2
-    v7: int = add v5, v6 {pure}
-    v8: int = const 7
-    v9: bool = eq v7, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb1, bb2(v10)
-  bb1:
-    v11: int = mul v0, v1 {pure}
-    v12: int = const 3
-    v13: int = mul v11, v12 {pure}
-    v14: int = const 18
-    v15: bool = eq v13, v14 {pure}
-    br bb2(v15)
-  bb2(v16: bool):
-    br_if v16, bb3, bb4(v10)
-  bb3:
-    v17: any = strcat v2, v3 {pure}
-    v18: any = const "!"
-    v19: any = strcat v17, v18 {pure}
-    v20: any = const "ab!"
-    v21: any = eq v19, v20 {pure}
-    v22: bool = not v21 {pure}
-    v23: bool = not v22 {pure}
-    br bb4(v23)
-  bb4(v24: bool):
-    v25: bool = opaque.DynamicCall(v4, v24) {impure}
-    v26: int = const 0
-    v27: bool = lt v0, v26 {pure}
-    br_if v27, bb6, bb5
-  bb5:
-    br bb7(v0)
-  bb6:
-    br bb7(v26)
-  bb7(v28: int):
-    v29: bool = lt v28, v26 {pure}
-    br_if v29, bb9, bb8
-  bb8:
-    br bb10(v28)
-  bb9:
-    br bb10(v26)
-  bb10(v30: int):
-    v31: bool = eq v30, v6 {pure}
-    v32: bool = opaque.DynamicCall(v4, v31) {impure}
-    ret v32
+```hir
+;; hir -O2 fn=checkNonReassoc
+fn checkNonReassoc (x:int, y:int, s:obj, t:obj) -> bool {pure unique}
+  (block
+    (def $cse0 name(assert))
+    (call var($cse0) (and (and (==:bool (+:int (+:int var(x#1) var(y)) 2:int) 7:int) (==:bool (*:int (*:int var(x#1) var(y)) 3:int) 18:int)) (==:bool (+:obj (+:obj var(s) var(t)) "!") "ab!")))
+    (call var($cse0) (==:bool (block
+          (def x#2
+            (block
+              (def r (if (<:bool var(x#1) 0:int) 0:int var(x#1)))
+              var(r)))
+          (if (<:bool var(x#2) 0:int) 0:int var(x#2))) 2:int)))
 ```
 
 ## Non-dropping arithmetic identities with impure operands (`e + 0`, `0 + e`, `e - 0`, `e * 1`, `1 * e`)
@@ -582,7 +308,15 @@ top-level:
   (call name(assert) (and (==:bool name(r) 15:int) (==:bool name(tick) 5:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def clamp (fn-ref clamp))
+  (def bigClamp (fn-ref bigClamp))
+  (def tick 0:int)
+  (def bump (fn-ref bump))
+  (block
+    (def $cse0 name(bump))
+    (def r (+:int (+:int (+:int (+:int (call-fn bump) (call-fn bump)) (call-fn bump)) (call-fn bump)) (call-fn bump)))
+    (call name(assert) (and (==:bool name(r) 15:int) (==:bool name(tick) 5:int))))
 ```

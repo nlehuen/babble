@@ -8,9 +8,9 @@ This file is the authoritative guide for authoring, organizing, and verifying te
 
 A single `.batest.md` case automatically verifies:
 
-1. **All 4 JVM execution modes** (`interpret`, `compile -O0`, `compile -O1`, and `compile -O2` under `-PO2`/`-Pbatest`) with `HirVerifier`, `MirVerifier`, and ASM `CheckClassAdapter`.
-2. **WebAssembly 3.0 parity** (`WasmBatestTestCase`, `wasm-js -O1`) for every portable case, plus optional `wat` golden checks (`BIP025-I5`).
-3. **Canonical compiler IR invariants** (`hir -O0`, `hir -O1`, `mir -O2` `before`/`final`/`after:<Pass>`) verifying inferred types, effects, algebraic properties, optimizations, and lowering (`BIP029`).
+1. **All 4 JVM execution modes** (`interpret`, `compile -O0`, `compile -O1`, and `compile -O2` under `-PO2`/`-Pbatest`) with `HirVerifier` and ASM `CheckClassAdapter`.
+2. **WebAssembly 3.0 parity** (`WasmBatestTestCase`, `wasm-js -O1` and `-O2`) for every portable case, plus optional `wat` golden checks (`BIP025-I5`, `BIP039`).
+3. **Canonical compiler IR invariants** (`hir -O0`, `hir -O1`, `hir -O2` `before`/`final`/`after:<Pass>`) verifying inferred types, effects, algebraic properties, optimizations, and lowering (`BIP029`, `BIP039`).
 4. **Grammar & formatter hygiene** — pure `PredictionMode.SLL` parsing (`ParserGrammarTestCase`) and idempotent formatting (`FormatterTestCase`).
 5. **6-scope JaCoCo coverage gating** (`>= 80%` line and `>= 80%` branch across interpreter, `-O0`, `-O1`, `-O2`, shared front end, and shared runtime via `mvn -q verify -Pbatest`).
 
@@ -24,7 +24,7 @@ Add or extend JUnit tests under `src/test/java/` **only for invariants that `.ba
 | **Exact `line:column` & multi-diagnostic goldens** | `.batest.md` normalizes line coordinates and stops on the first fatal error; exact coordinate tables and multi-error recovery need Java goldens | `TypeCheckerTestCase`, `ResolverTestCase` |
 | **Formatter exact layout & CLI** | Exact whitespace/newline layout goldens and `-format` CLI flags (`-w`, `-l`, `-check`) | `FormatterTestCase`, `BabblefmtTestCase` |
 | **CLI, AOT (`babblec`), REPL terminal, filesystem modules & examples** | Spawning fresh JREs/jars, real paths/symlinks, JLine terminal completion/transcripts, `ModuleSource` call recording, compiling `examples/` | `MainTestCase`, `BabblecTestCase`, `ReplTestCase`, `TerminalInputTestCase`, `FileModulesTestCase`, `ModuleSourcesTestCase`, `ExamplesTestCase` |
-| **Internal data structures, axioms, printers, Wasm writer & architecture boundaries** | Direct Java API unit tests (`EGraph`, `TypeAlgebra`, `EffectCore`, `ModalKinds`, `JavaTypeBridge`, `RangeRuntimeTestCase`, `HirCanonicalPrinter`, `MirCanonicalPrinter`, `BytecodeEffectAnalyzer`, `AxiomsTestCase`, `AxiomCheckerTestCase`, `WasmWriterTestCase`, `InterpreterNamespaceTest`, `ArchitectureBoundaryTestCase`, `RuntimeBoundaryTestCase`, `tests/batest/*`) | `org.babblelang.analysis.*`, `org.babblelang.tests.*`, `org.babblelang.tests.batest.*` |
+| **Internal data structures, axioms, printers, Wasm writer & architecture boundaries** | Direct Java API unit tests (`EGraph`, `TypeAlgebra`, `EffectCore`, `ModalKinds`, `JavaTypeBridge`, `RangeRuntimeTestCase`, `HirCanonicalPrinter`, `BytecodeEffectAnalyzer`, `AxiomsTestCase`, `AxiomCheckerTestCase`, `WasmWriterTestCase`, `InterpreterNamespaceTest`, `ArchitectureBoundaryTestCase`, `RuntimeBoundaryTestCase`, `tests/batest/*`) | `org.babblelang.analysis.*`, `org.babblelang.tests.*`, `org.babblelang.tests.batest.*` |
 
 When writing an ASM/reflection or Java-API test, **keep it strictly focused on the JVM/API assertion** — do not duplicate 3-mode behavioral parity loops or runtime error matrices that belong in `.batest.md`.
 
@@ -63,7 +63,7 @@ Prefer **narrow tests first** while iterating; run the full multi-JVM Maven pass
 mvn -q test -Dtest=BatestTestCase -Dbatest.filter=types/arrays.batest.md
 mvn -q test -PO2 -Dtest=BatestTestCase,WasmBatestTestCase -Dbatest.filter=compiler/jvm_interfaces.batest.md
 
-# Bless stale exact-golden HIR/MIR blocks after intentional changes, then inspect git diff and re-run without flag
+# Bless stale exact-golden HIR blocks after intentional changes, then inspect git diff and re-run without flag
 mvn -q test -PO2 -Dtest=BatestTestCase -Dbatest.filter=compiler/jvm_interfaces.batest.md -Dbatest.updateIr=true
 
 # Single Java JUnit class or method

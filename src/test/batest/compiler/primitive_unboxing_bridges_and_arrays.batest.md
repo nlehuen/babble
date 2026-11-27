@@ -21,12 +21,12 @@ class BB
     var(x)
 ```
 
-```mir
-;; mir -O2 class=BB stage=before,final
-class BB:
-  fn BB.id(v0: byte) -> byte:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 class=BB
+class BB
+  (def id (fn-ref BB.id))
+  fn BB.id (x:byte) -> byte {nothrow idempotent monotone injective unique}
+    var(x)
 ```
 
 ## Generic Babble interface bridge unboxing for long and float
@@ -47,12 +47,12 @@ class LB
     var(x)
 ```
 
-```mir
-;; mir -O2 class=LB stage=before,final
-class LB:
-  fn LB.id(v0: long) -> long:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 class=LB
+class LB
+  (def id (fn-ref LB.id))
+  fn LB.id (x:long) -> long {nothrow idempotent monotone injective unique}
+    var(x)
 ```
 
 ## Generic Babble interface bridge unboxing for bool and char
@@ -73,12 +73,12 @@ class ZB
     var(x)
 ```
 
-```mir
-;; mir -O2 class=ZB stage=before,final
-class ZB:
-  fn ZB.id(v0: bool) -> bool:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 class=ZB
+class ZB
+  (def id (fn-ref ZB.id))
+  fn ZB.id (x:bool) -> bool {nothrow idempotent monotone injective unique}
+    var(x)
 ```
 
 ## Babble interface bridge primitive adaptation across int, double, and boxed unions
@@ -115,37 +115,15 @@ class C
     (if (is var(x) int) (call name(double) (narrow.is[int] var(x))) var(x))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.a(v0: any) -> int:
-    bb0:
-      v1: any = is v0 <int>
-      br_if v1, bb2, bb1
-    bb1:
-      v2: any = name_read int {pure}
-      v3: int = opaque.DynamicCall(v2, v0) {impure}
-      br bb3(v3)
-    bb2:
-      v4: any = narrow.is v0 <int>
-      v5: int = convert.int v4
-      br bb3(v5)
-    bb3(v6: int):
-      ret v6
-  fn C.b(v0: any) -> double:
-    bb0:
-      v1: any = is v0 <int>
-      br_if v1, bb2, bb1
-    bb1:
-      v2: double = convert.double v0
-      br bb3(v2)
-    bb2:
-      v3: any = narrow.is v0 <int>
-      v4: any = name_read double {pure}
-      v5: double = opaque.DynamicCall(v4, v3) {impure}
-      br bb3(v5)
-    bb3(v6: double):
-      ret v6
+```hir
+;; hir -O2 class=C
+class C
+  (def a (fn-ref C.a))
+  (def b (fn-ref C.b))
+  fn C.a (x:obj) -> int {pure}
+    (if (is var(x) int) (narrow.is[int] var(x)) (call name(int) var(x)))
+  fn C.b (x:obj) -> double {nothrow}
+    (if (is var(x) int) (call name(double) (narrow.is[int] var(x))) var(x))
 ```
 
 ## Optional union bridge null-guard adaptation into primitive double and default float
@@ -167,15 +145,12 @@ class C
     (+:double var(x) (call name(double) var(fl)))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.f(v0: double, v1: float) -> double:
-    bb0:
-      v2: any = name_read double {pure}
-      v3: double = opaque.DynamicCall(v2, v1) {impure}
-      v4: double = add v0, v3 {pure}
-      ret v4
+```hir
+;; hir -O2 class=C
+class C
+  (def f (fn-ref C.f))
+  fn C.f (x:double=10.0:double, fl:float=1.5:float) -> double {nothrow monotone unique}
+    (+:double var(x) (call name(double) var(fl)))
 ```
 
 ## Optional union bridge null-guard adaptation and non-optional boxed widening into nullable double
@@ -201,41 +176,15 @@ class C
     (and (<>:bool var(x) null) (==:bool (narrow.nonnull var(x)) 5.0:double))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.g(v0: any) -> bool:
-    bb0:
-      v1: any = const null
-      v2: any = neq v0, v1 {pure,throws}
-      v3: bool = not v2 {pure}
-      v4: bool = not v3 {pure}
-      v5: bool = const false
-      br_if v4, bb1, bb2(v5)
-    bb1:
-      v6: any = narrow.nonnull v0 <non-null>
-      v7: double = convert.double v6
-      v8: double = const 10.0
-      v9: bool = eq v7, v8 {pure}
-      br bb2(v9)
-    bb2(v10: bool):
-      ret v10
-  fn C.h(v0: any) -> bool:
-    bb0:
-      v1: any = const null
-      v2: any = neq v0, v1 {pure,throws}
-      v3: bool = not v2 {pure}
-      v4: bool = not v3 {pure}
-      v5: bool = const false
-      br_if v4, bb1, bb2(v5)
-    bb1:
-      v6: any = narrow.nonnull v0 <non-null>
-      v7: double = convert.double v6
-      v8: double = const 5.0
-      v9: bool = eq v7, v8 {pure}
-      br bb2(v9)
-    bb2(v10: bool):
-      ret v10
+```hir
+;; hir -O2 class=C
+class C
+  (def g (fn-ref C.g))
+  (def h (fn-ref C.h))
+  fn C.g (x:obj=10.0:double) -> bool {nothrow unique}
+    (and (<>:bool var(x) null) (==:bool (narrow.nonnull var(x)) 10.0:double))
+  fn C.h (x:obj) -> bool {nothrow unique}
+    (and (<>:bool var(x) null) (==:bool (narrow.nonnull var(x)) 5.0:double))
 ```
 
 ## Java bridge primitive and reference arguments widened into nullable numeric Babble params
@@ -255,27 +204,12 @@ class PInt
     (==:bool var(x) 7:long)
 ```
 
-```mir
-;; mir -O2 class=PInt stage=before
-class PInt:
-  fn PInt.test(v0: any) -> bool:
-    bb0:
-      v1: long = const 7L
-      v2: any = convert.any v1
-      v3: any = eq v0, v2 {pure,throws}
-      v4: bool = convert.bool v3
-      ret v4
-```
-
-```mir
-;; mir -O2 class=PInt
-class PInt:
-  fn PInt.test(v0: any) -> bool:
-    bb0:
-      v1: any = const 7L
-      v2: any = eq v0, v1 {pure,throws}
-      v3: bool = convert.bool v2
-      ret v3
+```hir
+;; hir -O2 class=PInt
+class PInt
+  (def test (fn-ref PInt.test))
+  fn PInt.test (x:obj) -> bool {nothrow unique}
+    (==:bool var(x) 7:long)
 ```
 
 ## Array for-loops over byte, bool, short, long, and float arrays
@@ -334,9 +268,29 @@ top-level:
   (call name(assert) (==:bool name(s) 44:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def s 0:int)
+  (block
+    (def $cse0 name(byte))
+    (for b in (array-new OF (call var($cse0) 1:int) (call var($cse0) 2:int))
+      (block
+        (set-name s += (call name(int) var(b)))))
+    (for z in (array-new OF true:bool false:bool true:bool)
+      (block
+        (if var(z) (box (set-name s += 10:int)))))
+    (def $cse1 name(short))
+    (for sh in (array-new OF (call var($cse1) 3:int) (call var($cse1) 4:int))
+      (block
+        (set-name s += (call name(int) var(sh)))))
+    (for l in (array-new OF 5:long 6:long)
+      (block
+        (set-name s += (call name(int) var(l)))))
+    (for f in (array-new OF 1.0:float 2.0:float)
+      (block
+        (set-name s += (call name(int) var(f)))))
+    (call name(assert) (==:bool name(s) 44:int)))
 ```
 
 ## Capturing bool, byte, short, and char for-loop variables in closures
@@ -373,9 +327,27 @@ top-level:
   (call name(assert) (==:bool name(s) 71:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def s 0:int)
+  (for z in (array-new OF true:bool)
+    (block
+      (def g#1 (fn-ref g#1))
+      (set-name s += (call-fn g#1))))
+  (for b in (array-new OF (call name(byte) 2:int))
+    (block
+      (def g#2 (fn-ref g#2))
+      (set-name s += (call-fn g#2))))
+  (for h in (array-new OF (call name(short) 3:int))
+    (block
+      (def g#3 (fn-ref g#3))
+      (set-name s += (call-fn g#3))))
+  (for c in (array-new OF 'A')
+    (block
+      (def g#4 (fn-ref g#4))
+      (set-name s += (call-fn g#4))))
+  (call name(assert) (==:bool name(s) 71:int))
 ```
 
 ## Capturing long, float, and double for-loop variables in closures
@@ -420,9 +392,22 @@ top-level:
   (call name(assert) (==:bool (+:int (+:int (call (jcall List.get name(fs) 0:int)) (call (jcall List.get name(fs) 1:int))) (call (jcall List.get name(fs) 2:int))) 15:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def fs (call (type-apply core-col(list))))
+  (for l in (array-new OF 4:long)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#0>))))
+  (for f in (array-new OF 5.0:float)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#1>))))
+  (for d in (array-new OF 6.0:double)
+    (block
+      (jcall List.add name(fs) (fn-ref <anon#2>))))
+  (block
+    (def $cse0 name(fs))
+    (call name(assert) (==:bool (+:int (+:int (call (jcall List.get var($cse0) 0:int)) (call (jcall List.get var($cse0) 1:int))) (call (jcall List.get var($cse0) 2:int))) 15:int)))
 ```
 
 ## Primitive array(from:) for byte, short, float, bool, and char
@@ -447,7 +432,16 @@ top-level:
   (call name(assert) (and (and (and (and (==:bool (array-op GET name(ab) 1:int) (call name(byte) 2:int)) (==:bool (array-op GET name(as_) 0:int) (call name(short) 3:int))) (==:bool (array-op GET name(af) 1:int) 2.5:float)) (array-op GET name(az) 0:int)) (==:bool (array-op GET name(ac) 1:int) 'y')))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (block
+    (def $cse0 name(byte))
+    (def ab (array-new FROM (call (select core-col(list).of) (call var($cse0) 1:int) (call var($cse0) 2:int))))
+    (def $cse1 name(short))
+    (def as_ (array-new FROM (call (select core-col(list).of) (call var($cse1) 3:int) (call var($cse1) 4:int))))
+    (def af (array-new FROM (call (select core-col(list).of) 1.5:float 2.5:float)))
+    (def az (array-new FROM (call (select core-col(list).of) true:bool false:bool)))
+    (def ac (array-new FROM (call (select core-col(list).of) 'x' 'y')))
+    (call name(assert) (and (and (and (and (==:bool (array-op GET name(ab) 1:int) (call var($cse0) 2:int)) (==:bool (array-op GET name(as_) 0:int) (call var($cse1) 3:int))) (==:bool (array-op GET name(af) 1:int) 2.5:float)) (array-op GET name(az) 0:int)) (==:bool (array-op GET name(ac) 1:int) 'y'))))
 ```

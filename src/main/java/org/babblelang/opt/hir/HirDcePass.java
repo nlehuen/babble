@@ -25,7 +25,7 @@ import org.babblelang.opt.PassContext;
 
 /**
  * {@code O4} — Structured Backward-Liveness Dead-Code and Dead-Store Elimination ({@code
- * BIP014-I2}, {@code BIP039-P2}).
+ * BIP014-I2}, {@code BIP039-I2}).
  *
  * <ul>
  *   <li>Uses {@link HirLiveness} and {@link HirEffectAnalysis} on frame-scoped functions to

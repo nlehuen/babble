@@ -1,6 +1,6 @@
 # Ranges, Counted Loops, and Floored Division Lowering and Optimization
 
-References : `BIP031`, `org.babblelang.opt.hir.{HirEGraphSimplifyPass,HirDcePass}`, `org.babblelang.opt.mir.SccpPass`, `org.babblelang.ir.mir.MirLowerer`.
+References : `BIP031`, `BIP039`, `org.babblelang.opt.hir.{HirEGraphSimplifyPass,HirConstFolder,HirDcePass,HirSccpPass,HirAeGraphPass}`.
 
 ## Floored mod and integer division constant folding and algebraic identities
 
@@ -28,36 +28,13 @@ fn arith (x:int) -> int {nothrow unique}
   (+:int (+:int var(id) -1:int) (neg var(x)))
 ```
 
-```mir
-;; mir -O2 fn=arith stage=before
-fn arith(v0: int) -> int:
-  bb0:
-    v1: int = const 5
-    v2: int = mod v0, v1 {pure}
-    v3: int = add v0, v2 {pure}
-    v4: int = const 1
-    v5: int = add v3, v4 {pure}
-    v6: int = const -1
-    v7: int = add v5, v6 {pure}
-    v8: int = neg v0 {pure}
-    v9: int = add v7, v8 {pure}
-    ret v9
-```
-
-```mir
-;; mir -O2 fn=arith
-fn arith(v0: int) -> int:
-  bb0:
-    v1: int = const 5
-    v2: int = mod v0, v1 {pure}
-    v3: int = add v0, v2 {pure}
-    v4: int = const 1
-    v5: int = add v3, v4 {pure}
-    v6: int = const -1
-    v7: int = add v5, v6 {pure}
-    v8: int = neg v0 {pure}
-    v9: int = add v7, v8 {pure}
-    ret v9
+```hir
+;; hir -O2 fn=arith
+fn arith (x:int) -> int {nothrow unique}
+  (block
+    (def $cse0 (mod:int var(x) 5:int))
+    (def id (+:int (+:int var(x) var($cse0)) 1:int))
+    (+:int (+:int var(id) -1:int) (neg var(x))))
 ```
 
 ## Zero-divisor throw folding and dead-code pruning
@@ -90,22 +67,10 @@ fn divZero (x:int) -> int {pure unique}
   (+:int var(q) 999:int)
 ```
 
-```mir
-;; mir -O2 fn=divZero stage=before
-fn divZero(v0: int) -> int:
-  bb0:
-    v1: any = const "/ by zero"
-    v2: any = new_java ArithmeticException(v1) {impure}
-    rethrow v2
-```
-
-```mir
-;; mir -O2 fn=divZero
-fn divZero(v0: int) -> int:
-  bb0:
-    v1: any = const "/ by zero"
-    v2: any = new_java ArithmeticException(v1) {impure}
-    rethrow v2
+```hir
+;; hir -O2 fn=divZero
+fn divZero (x:int) -> int {pure unique}
+  (def q (throw (jnew ArithmeticException "/ by zero")))
 ```
 
 ## Counted range for loop lowering without allocation
@@ -139,56 +104,14 @@ fn sumTo (n:int) -> int {nothrow unique}
   var(acc)
 ```
 
-```mir
-;; mir -O2 fn=sumTo stage=before
-fn sumTo(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 0
-    v3: any = const null
-    v4: bool = lt v2, v0 {pure}
-    br_if v4, bb1, bb5(v3, v1)
-  bb1:
-    v5: int = const 1
-    v6: int = sub v0, v5 {pure}
-    br bb2(v3, v2, v1)
-  bb2(v7: any, v8: int, v9: int):
-    v10: int = add v9, v8 {pure}
-    v11: any = convert.any v10
-    br bb3
-  bb3:
-    v12: bool = eq v8, v6 {pure}
-    br_if v12, bb5(v11, v10), bb4
-  bb4:
-    v13: int = const 1
-    v14: int = add v8, v13 {pure}
-    br bb2(v11, v14, v10)
-  bb5(v15: any, v16: int):
-    ret v16
-```
-
-```mir
-;; mir -O2 fn=sumTo
-fn sumTo(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = lt v1, v0 {pure}
-    br_if v2, bb1, bb5(v1)
-  bb1:
-    v3: int = const 1
-    v4: int = sub v0, v3 {pure}
-    br bb2(v1, v1)
-  bb2(v5: int, v6: int):
-    v7: int = add v6, v5 {pure}
-    br bb3
-  bb3:
-    v8: bool = eq v5, v4 {pure}
-    br_if v8, bb5(v7), bb4
-  bb4:
-    v9: int = add v5, v3 {pure}
-    br bb2(v9, v7)
-  bb5(v10: int):
-    ret v10
+```hir
+;; hir -O2 fn=sumTo
+fn sumTo (n:int) -> int {nothrow unique}
+  (def acc 0:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set acc += var(i))))
+  var(acc)
 ```
 
 ## Stepped and reversed counted range for loop lowering
@@ -222,59 +145,14 @@ fn sumRevStep (n:int) -> int {nothrow unique}
   var(acc)
 ```
 
-```mir
-;; mir -O2 fn=sumRevStep stage=before
-fn sumRevStep(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 3
-    v3: any = const null
-    v4: bool = lt v2, v0 {pure}
-    br_if v4, bb1, bb5(v3, v1)
-  bb1:
-    v5: int = const 5
-    v6: bool = const false
-    v7: int = call_java Range.lastIntElement(v2, v0, v6, v5) {pure}
-    br bb2(v3, v7, v1)
-  bb2(v8: any, v9: int, v10: int):
-    v11: int = add v10, v9 {pure}
-    v12: any = convert.any v11
-    br bb3
-  bb3:
-    v13: bool = eq v9, v2 {pure}
-    br_if v13, bb5(v12, v11), bb4
-  bb4:
-    v14: int = const 5
-    v15: int = sub v9, v14 {pure}
-    br bb2(v12, v15, v11)
-  bb5(v16: any, v17: int):
-    ret v17
-```
-
-```mir
-;; mir -O2 fn=sumRevStep
-fn sumRevStep(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 3
-    v3: bool = lt v2, v0 {pure}
-    br_if v3, bb1, bb5(v1)
-  bb1:
-    v4: int = const 5
-    v5: bool = const false
-    v6: int = call_java Range.lastIntElement(v2, v0, v5, v4) {pure}
-    br bb2(v6, v1)
-  bb2(v7: int, v8: int):
-    v9: int = add v8, v7 {pure}
-    br bb3
-  bb3:
-    v10: bool = eq v7, v2 {pure}
-    br_if v10, bb5(v9), bb4
-  bb4:
-    v11: int = sub v7, v4 {pure}
-    br bb2(v11, v9)
-  bb5(v12: int):
-    ret v12
+```hir
+;; hir -O2 fn=sumRevStep
+fn sumRevStep (n:int) -> int {nothrow unique}
+  (def acc 0:int)
+  (for-range i ..< 3:int var(n) step 5:int reversed
+    (block
+      (set acc += var(i))))
+  var(acc)
 ```
 
 ## Inline range contains deforestation and metadata folding
@@ -302,56 +180,10 @@ fn checkRange (x:int) -> bool {nothrow unique}
   (and (and (<=:bool 3:int var(x)) (<:bool var(x) 20:int)) (==:bool (mod:int (-:int var(x) 3:int) 5:int) 0:int))
 ```
 
-```mir
-;; mir -O2 fn=checkRange stage=before
-fn checkRange(v0: int) -> bool:
-  bb0:
-    v1: int = const 3
-    v2: bool = lte v1, v0 {pure}
-    v3: bool = const false
-    br_if v2, bb1, bb2(v3)
-  bb1:
-    v4: int = const 20
-    v5: bool = lt v0, v4 {pure}
-    br bb2(v5)
-  bb2(v6: bool):
-    v7: bool = const false
-    br_if v6, bb3, bb4(v7)
-  bb3:
-    v8: int = const 3
-    v9: int = sub v0, v8 {pure}
-    v10: int = const 5
-    v11: int = mod v9, v10 {pure}
-    v12: int = const 0
-    v13: bool = eq v11, v12 {pure}
-    br bb4(v13)
-  bb4(v14: bool):
-    ret v14
-```
-
-```mir
-;; mir -O2 fn=checkRange
-fn checkRange(v0: int) -> bool:
-  bb0:
-    v1: int = const 3
-    v2: bool = lte v1, v0 {pure}
-    v3: bool = const false
-    br_if v2, bb1, bb2(v3)
-  bb1:
-    v4: int = const 20
-    v5: bool = lt v0, v4 {pure}
-    br bb2(v5)
-  bb2(v6: bool):
-    br_if v6, bb3, bb4(v3)
-  bb3:
-    v7: int = sub v0, v1 {pure}
-    v8: int = const 5
-    v9: int = mod v7, v8 {pure}
-    v10: int = const 0
-    v11: bool = eq v9, v10 {pure}
-    br bb4(v11)
-  bb4(v12: bool):
-    ret v12
+```hir
+;; hir -O2 fn=checkRange
+fn checkRange (x:int) -> bool {nothrow unique}
+  (and (and (<=:bool 3:int var(x)) (<:bool var(x) 20:int)) (==:bool (mod:int (-:int var(x) 3:int) 5:int) 0:int))
 ```
 
 ## Dead pure range and terminating counted loop elimination
@@ -385,18 +217,159 @@ fn dropPure (n:int) -> int {nothrow unique}
   42:int
 ```
 
-```mir
-;; mir -O2 fn=dropPure stage=before
-fn dropPure(v0: int) -> int:
-  bb0:
-    v1: int = const 42
-    ret v1
+```hir
+;; hir -O2 fn=dropPure
+fn dropPure (n:int) -> int {nothrow unique}
+  42:int
 ```
 
-```mir
-;; mir -O2 fn=dropPure
-fn dropPure(v0: int) -> int:
-  bb0:
-    v1: int = const 42
-    ret v1
+## Range start and end constant folding across scalar kinds
+
+```babble
+def bounds = fn (): bool -> (
+    def a = (1..10).start() + (1..10).end() == 11
+    def b = (10l..20l).start() + (10l..20l).end() == 30l
+    def c = ('a'..'z').start() == 'a' and ('a'..'z').end() == 'z'
+    def d = (1.5..4.5).start() + (1.5..4.5).end() == 6.0
+    a and b and c and d
+)
+assert(bounds())
+```
+
+```hir
+;; hir -O0 fn=bounds
+fn bounds () -> bool {nothrow unique}
+  (def a (==:bool (+:int (jcall IntRange.startInt (block (range .. 1:int 10:int))) (jcall IntRange.endInt (block (range .. 1:int 10:int)))) 11:int))
+  (def b (==:bool (+:long (jcall LongRange.startLong (block (range .. 10:long 20:long))) (jcall LongRange.endLong (block (range .. 10:long 20:long)))) 30:long))
+  (def c (and (==:bool (jcall CharRange.startChar (block (range .. 'a' 'z'))) 'a') (==:bool (jcall CharRange.endChar (block (range .. 'a' 'z'))) 'z')))
+  (def d (==:bool (+:double (jcall DoubleRange.startDouble (block (range .. 1.5:double 4.5:double))) (jcall DoubleRange.endDouble (block (range .. 1.5:double 4.5:double)))) 6.0:double))
+  (and (and (and var(a) var(b)) var(c)) var(d))
+```
+
+```hir
+;; hir -O1 fn=bounds
+fn bounds () -> bool {nothrow unique}
+  true:bool
+```
+
+```hir
+;; hir -O2 fn=bounds
+fn bounds () -> bool {nothrow unique}
+  true:bool
+```
+
+## Range isEmpty and stepped long contains folding
+
+```babble
+def checkEmpty = fn (x: long): bool -> (
+    def a = not (1..5).isEmpty() and (5..<5).isEmpty() and not (1l..5l).isEmpty() and (5l..<5l).isEmpty()
+    def b = not ('a'..'z').isEmpty() and ('z'..'a').isEmpty() and ('a'..<'a').isEmpty() and (2.0..1.0).isEmpty()
+    a and b and (0l..<100l).step(5l).contains(x)
+)
+assert(checkEmpty(15l) and not checkEmpty(14l))
+```
+
+```hir
+;; hir -O0 fn=checkEmpty
+fn checkEmpty (x:long) -> bool {nothrow unique}
+  (def a (and (and (and (not (jcall Range.isEmpty (block (range .. 1:int 5:int)))) (jcall Range.isEmpty (block (range ..< 5:int 5:int)))) (not (jcall Range.isEmpty (block (range .. 1:long 5:long))))) (jcall Range.isEmpty (block (range ..< 5:long 5:long)))))
+  (def b (and (and (and (not (jcall Range.isEmpty (block (range .. 'a' 'z')))) (jcall Range.isEmpty (block (range .. 'z' 'a')))) (jcall Range.isEmpty (block (range ..< 'a' 'a')))) (jcall Range.isEmpty (block (range .. 2.0:double 1.0:double)))))
+  (and (and var(a) var(b)) (jcall LongRange.containsLong (jcall LongRange.step (block (range ..< 0:long 100:long)) 5:long) var(x)))
+```
+
+```hir
+;; hir -O1 fn=checkEmpty
+fn checkEmpty (x:long) -> bool {nothrow unique}
+  (and (and (<=:bool 0:long var(x)) (<:bool var(x) 100:long)) (==:bool (mod:long var(x) 5:long) 0:long))
+```
+
+```hir
+;; hir -O2 fn=checkEmpty
+fn checkEmpty (x:long) -> bool {nothrow unique}
+  (and (and (<=:bool 0:long var(x)) (<:bool var(x) 100:long)) (==:bool (mod:long var(x) 5:long) 0:long))
+```
+
+## Long floored division folding and same-leaf if collapse
+
+```babble
+def longOps = fn (flag: bool, x: int): long -> (
+    def c = (-7l // 3l) + (-7l mod 3l) + (10l // 3l) + (10l mod 3l)
+    def same1 = if flag then (x) else (x)
+    def same2 = if flag then (4) else (4)
+    c + same1 + same2
+)
+assert(longOps(true, 10) == 17l and longOps(false, 10) == 17l)
+```
+
+```hir
+;; hir -O0 fn=longOps
+fn longOps (flag:bool, x:int) -> long {nothrow unique}
+  (def c (+:long (+:long (+:long (block (//:long -7:long 3:long)) (block (mod:long -7:long 3:long))) (block (//:long 10:long 3:long))) (block (mod:long 10:long 3:long))))
+  (def same1 (if var(flag) (block var(x)) (block var(x))))
+  (def same2 (if var(flag) (block 4:int) (block 4:int)))
+  (+:long (+:long var(c) (convert[long] var(same1))) (convert[long] var(same2)))
+```
+
+```hir
+;; hir -O1 fn=longOps
+fn longOps (flag:bool, x:int) -> long {nothrow unique}
+  (def same1 (if var(flag) var(x) var(x)))
+  (def same2 (if var(flag) 4:int 4:int))
+  (+:long (+:long (convert[long] var(same1)) 3:long) (convert[long] var(same2)))
+```
+
+```hir
+;; hir -O2 fn=longOps
+fn longOps (flag:bool, x:int) -> long {nothrow unique}
+  (def same1 (if var(flag) var(x) var(x)))
+  (block
+    (def $cse0 (convert[long] var(same1)))
+    (+:long var($cse0) 7:long))
+```
+
+## Impure zero-divisor preserves side effect before throwing
+
+```babble
+var ticks = 0
+def bump = fn io (): int -> (ticks += 1 ; ticks)
+def runDiv = fn io (): int -> (
+    def z = 0
+    try (bump() // z) catch : java.lang.ArithmeticException then (-1)
+)
+assert(runDiv() == -1 and ticks == 1)
+```
+
+```hir
+;; hir -O0 fn=runDiv
+fn runDiv () -> int {io}
+  (def z 0:int)
+  (try
+    (block
+      (//:int (call-fn bump) var(z)))
+    (catch _:java|java.lang.ArithmeticException|java.lang.ArithmeticException
+      -1:int))
+```
+
+```hir
+;; hir -O1 fn=runDiv
+fn runDiv () -> int {io}
+  (try
+    (block
+      (block
+        (call-fn bump)
+        (throw (jnew ArithmeticException "/ by zero"))))
+    (catch _:java|java.lang.ArithmeticException|java.lang.ArithmeticException
+      -1:int))
+```
+
+```hir
+;; hir -O2 fn=runDiv
+fn runDiv () -> int {io}
+  (try
+    (block
+      (block
+        (call-fn bump)
+        (throw (jnew ArithmeticException "/ by zero"))))
+    (catch _:java|java.lang.ArithmeticException|java.lang.ArithmeticException
+      -1:int))
 ```

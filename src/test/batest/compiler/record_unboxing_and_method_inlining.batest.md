@@ -53,94 +53,20 @@ fn heavy (a:obj, b:obj) -> double {nothrow unique}
   (+:double (+:double var(d1) var(d2)) var(d3))
 ```
 
-```mir
-;; mir -O2 fn=heavy stage=before
-fn heavy(v0: any, v1: any) -> double:
-  bb0:
-    v2: double = load_field v0.x {read:frozen}
-    v3: double = load_field v1.x {read:frozen}
-    v4: double = mul v2, v3 {pure}
-    v5: double = load_field v0.y {read:frozen}
-    v6: double = load_field v1.y {read:frozen}
-    v7: double = mul v5, v6 {pure}
-    v8: double = add v4, v7 {pure}
-    v9: double = load_field v0.z {read:frozen}
-    v10: double = load_field v1.z {read:frozen}
-    v11: double = mul v9, v10 {pure}
-    v12: double = add v8, v11 {pure}
-    v13: double = load_field v0.x {read:frozen}
-    v14: double = const 1.0
-    v15: double = add v13, v14 {pure}
-    v16: double = load_field v1.x {read:frozen}
-    v17: double = mul v15, v16 {pure}
-    v18: double = load_field v0.y {read:frozen}
-    v19: double = const 2.0
-    v20: double = add v18, v19 {pure}
-    v21: double = load_field v1.y {read:frozen}
-    v22: double = mul v20, v21 {pure}
-    v23: double = add v17, v22 {pure}
-    v24: double = load_field v0.z {read:frozen}
-    v25: double = const 3.0
-    v26: double = add v24, v25 {pure}
-    v27: double = load_field v1.z {read:frozen}
-    v28: double = mul v26, v27 {pure}
-    v29: double = add v23, v28 {pure}
-    v30: double = load_field v0.x {read:frozen}
-    v31: double = load_field v0.y {read:frozen}
-    v32: double = sub v30, v31 {pure}
-    v33: double = load_field v1.x {read:frozen}
-    v34: double = load_field v1.y {read:frozen}
-    v35: double = sub v33, v34 {pure}
-    v36: double = mul v32, v35 {pure}
-    v37: double = load_field v0.y {read:frozen}
-    v38: double = load_field v0.z {read:frozen}
-    v39: double = sub v37, v38 {pure}
-    v40: double = load_field v1.y {read:frozen}
-    v41: double = load_field v1.z {read:frozen}
-    v42: double = sub v40, v41 {pure}
-    v43: double = mul v39, v42 {pure}
-    v44: double = add v36, v43 {pure}
-    v45: double = add v12, v29 {pure}
-    v46: double = add v45, v44 {pure}
-    ret v46
-```
-
-```mir
-;; mir -O2 fn=heavy
-fn heavy(v0: any, v1: any) -> double:
-  bb0:
-    v2: double = load_field v0.x {read:frozen}
-    v3: double = load_field v1.x {read:frozen}
-    v4: double = mul v2, v3 {pure}
-    v5: double = load_field v0.y {read:frozen}
-    v6: double = load_field v1.y {read:frozen}
-    v7: double = mul v5, v6 {pure}
-    v8: double = add v4, v7 {pure}
-    v9: double = load_field v0.z {read:frozen}
-    v10: double = load_field v1.z {read:frozen}
-    v11: double = mul v9, v10 {pure}
-    v12: double = add v8, v11 {pure}
-    v13: double = const 1.0
-    v14: double = add v2, v13 {pure}
-    v15: double = mul v14, v3 {pure}
-    v16: double = const 2.0
-    v17: double = add v5, v16 {pure}
-    v18: double = mul v17, v6 {pure}
-    v19: double = add v15, v18 {pure}
-    v20: double = const 3.0
-    v21: double = add v9, v20 {pure}
-    v22: double = mul v21, v10 {pure}
-    v23: double = add v19, v22 {pure}
-    v24: double = sub v2, v5 {pure}
-    v25: double = sub v3, v6 {pure}
-    v26: double = mul v24, v25 {pure}
-    v27: double = sub v5, v9 {pure}
-    v28: double = sub v6, v10 {pure}
-    v29: double = mul v27, v28 {pure}
-    v30: double = add v26, v29 {pure}
-    v31: double = add v12, v23 {pure}
-    v32: double = add v31, v30 {pure}
-    ret v32
+```hir
+;; hir -O2 fn=heavy
+fn heavy (a:obj, b:obj) -> double {nothrow unique}
+  (block
+    (def $cse0 (get-this-field x))
+    (def $cse1 (get-this-field x))
+    (def $cse2 (get-this-field y))
+    (def $cse3 (get-this-field y))
+    (def $cse4 (get-this-field z))
+    (def $cse5 (get-this-field z))
+    (def d1 (+:double (+:double (*:double var($cse0) var($cse1)) (*:double var($cse2) var($cse3))) (*:double var($cse4) var($cse5))))
+    (def d2 (+:double (+:double (*:double (+:double var($cse0) 1.0:double) var($cse1)) (*:double (+:double var($cse2) 2.0:double) var($cse3))) (*:double (+:double var($cse4) 3.0:double) var($cse5))))
+    (def d3 (+:double (*:double (-:double var($cse0) var($cse2)) (-:double var($cse1) var($cse3))) (*:double (-:double var($cse2) var($cse4)) (-:double var($cse3) var($cse5)))))
+    (+:double (+:double var(d1) var(d2)) var(d3)))
 ```
 
 ## Borrow param that escapes inside callee must not break $unboxed analysis
@@ -178,25 +104,15 @@ fn run () -> double {pure unique}
     (+:double (+:double (get-this-field x) var($sr_b_1)) var($sr_b_2)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run() -> double:
-  bb0:
-    v0: any = name_read Vec3 {pure}
-    v1: double = const 2.0
-    v2: double = const 3.0
-    v3: double = const 4.0
-    v4: any = record_new Vec3[v0](v1, v2, v3) {pure}
-    v5: double = const 6.0
-    v6: double = const 7.0
-    v7: any = opaque.CoreCollectionCall(list, v4) {impure}
-    v8: int = const 0
-    v9: any = call_java v7.get(v8) {impure}
-    v10: any = checkcast v9 <babble|Vec3>
-    v11: double = load_field v10.x {read:frozen,throws}
-    v12: double = add v11, v5 {pure}
-    v13: double = add v12, v6 {pure}
-    ret v13
+```hir
+;; hir -O2 fn=run
+fn run () -> double {pure unique}
+  (block
+    (def $cse0 name(Vec3))
+    (def a (record-new Vec3 2.0:double 3.0:double 4.0:double))
+    (block
+      (def xs (core-new list var(a)))
+      (+:double (+:double (get-this-field x) 6.0:double) 7.0:double)))
 ```
 
 ## Borrow-lambda higher-order devirtualization and inlining
@@ -221,32 +137,12 @@ fn run (x:int) -> int {nothrow unique}
     (+:int (*:int var(v) 2:int) 1:int))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 2
-    v2: int = mul v0, v1 {pure}
-    v3: int = const 1
-    v4: int = add v2, v3 {pure}
-    v5: int = const 2
-    v6: int = mul v4, v5 {pure}
-    v7: int = const 1
-    v8: int = add v6, v7 {pure}
-    ret v8
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 2
-    v2: int = mul v0, v1 {pure}
-    v3: int = const 1
-    v4: int = add v2, v3 {pure}
-    v5: int = mul v4, v1 {pure}
-    v6: int = add v5, v3 {pure}
-    ret v6
+```hir
+;; hir -O2 fn=run
+fn run (x:int) -> int {nothrow unique}
+  (block
+    (def v (+:int (*:int var(x) 2:int) 1:int))
+    (+:int (*:int var(v) 2:int) 1:int))
 ```
 
 ## Cross-module record construction, field access, operator & method direct dispatch
@@ -290,38 +186,12 @@ fn run (n:int) -> double {nothrow unique}
   (+:double (+:double (+:double var($sr_c_0) var($sr_c_1)) (+:double (*:double var($sr_c_0) var($sr_c_0)) (*:double var($sr_c_1) var($sr_c_1)))) (call name(double) var(n)))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> double:
-  bb0:
-    v1: double = const 3.0
-    v2: double = const 4.0
-    v3: double = const 1.0
-    v4: double = const 2.0
-    v5: double = neg v3 {pure}
-    v6: double = neg v4 {pure}
-    v7: double = add v1, v5 {pure}
-    v8: double = add v2, v6 {pure}
-    v9: double = add v7, v8 {pure}
-    v10: double = mul v7, v7 {pure}
-    v11: double = mul v8, v8 {pure}
-    v12: double = add v10, v11 {pure}
-    v13: double = add v9, v12 {pure}
-    v14: any = name_read double {pure}
-    v15: double = opaque.DynamicCall(v14, v0) {impure}
-    v16: double = add v13, v15 {pure}
-    ret v16
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> double:
-  bb0:
-    v1: double = const 12.0
-    v2: any = name_read double {pure}
-    v3: double = opaque.DynamicCall(v2, v0) {impure}
-    v4: double = add v1, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (n:int) -> double {nothrow unique}
+  (block
+    (block (def $sr_b_1 -2.0:double))
+    (+:double 12.0:double (call name(double) var(n))))
 ```
 
 ## Overloaded operator methods on a compiled record
@@ -361,15 +231,14 @@ fn run (x:int) -> int {nothrow unique}
   var($sr_b_0)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 3
-    v2: int = add v0, v1 {pure}
-    v3: int = const 4
-    v4: int = add v2, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (x:int) -> int {nothrow unique}
+  (block
+    (block
+      (def $sr_$this_0 (+:int var(x) 3:int))
+      (def $sr_b_0 (+:int var($sr_$this_0) 4:int)))
+    var($sr_b_0))
 ```
 
 ## Unboxed borrow entry point with local vars, for-loop, try, and non-record scalar param
@@ -424,133 +293,26 @@ fn heavyLoop (a:obj, s:int) -> double {nothrow unique}
       0.0:double))
 ```
 
-```mir
-;; mir -O2 fn=heavyLoop stage=before
-fn heavyLoop(v0: any, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: double = load_field v0.x {read:frozen}
-    v4: double = load_field v0.y {read:frozen}
-    v5: double = load_field v0.z {read:frozen}
-    v6: double = mul v4, v5 {pure}
-    v7: double = load_field v0.x {read:frozen}
-    v8: double = load_field v0.y {read:frozen}
-    v9: double = load_field v0.z {read:frozen}
-    v10: int = const 1
-    v11: int = const 2
-    v12: any = opaque.CoreCollectionCall(list, v10, v11) {impure}
-    v13: any = for_init.java_iterable v12
-    v14: any = const null
-    br bb1(v14, v2)
-  bb1(v15: any, v16: double):
-    v17: bool = for_has_next v13
-    br_if v17, bb11, bb2
-  bb2:
-    br bb3
-  bb3 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v18: int = const 0
-    v19: bool = lt v1, v18 {pure}
-    br_if v19, bb5, bb4
-  bb4 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v20: any = const null
-    br bb6(v20)
-  bb5 [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v21: any = name_read assert {pure}
-    v22: bool = const false
-    v23: bool = opaque.DynamicCall(v21, v22) {impure}
-    v24: any = convert.any v23
-    br bb6(v24)
-  bb6(v25: any) [unwind: ThrownException -> bb8, Exception -> bb7]:
-    v26: double = load_field v0.x {read:frozen}
-    v27: double = load_field v0.y {read:frozen}
-    v28: double = mul v26, v27 {pure}
-    v29: double = load_field v0.z {read:frozen}
-    v30: double = mul v28, v29 {pure}
-    v31: double = add v16, v30 {pure}
-    br bb10(v31)
-  bb7(v32: any) [handler]:
-    br bb9(v32)
-  bb8(v33: any) [handler]:
-    v34: any = unwrap_thrown v33
-    br bb9(v34)
-  bb9(v35: any):
-    v36: double = const 0.0
-    br bb10(v36)
-  bb10(v37: double):
-    ret v37
-  bb11:
-    v38: any = for_next v13
-    v39: any = checkcast v38 <int|int|>
-    v40: int = convert.int v39
-    v41: any = name_read double {pure}
-    v42: double = opaque.DynamicCall(v41, v40) {impure}
-    v43: double = add v3, v42 {pure}
-    v44: any = name_read double {pure}
-    v45: double = opaque.DynamicCall(v44, v1) {impure}
-    v46: double = mul v43, v45 {pure}
-    v47: double = add v46, v6 {pure}
-    v48: double = add v16, v47 {pure}
-    v49: double = add v48, v7 {pure}
-    v50: double = sub v49, v8 {pure}
-    v51: double = add v50, v9 {pure}
-    v52: any = convert.any v51
-    br bb1(v52, v51)
-```
-
-```mir
-;; mir -O2 fn=heavyLoop
-fn heavyLoop(v0: any, v1: int) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: double = load_field v0.x {read:frozen}
-    v4: double = load_field v0.y {read:frozen}
-    v5: double = load_field v0.z {read:frozen}
-    v6: double = mul v4, v5 {pure}
-    v7: int = const 1
-    v8: int = const 2
-    v9: any = opaque.CoreCollectionCall(list, v7, v8) {impure}
-    v10: any = for_init.java_iterable v9
-    v11: any = name_read double {pure}
-    br bb1(v2)
-  bb1(v12: double):
-    v13: bool = for_has_next v10
-    br_if v13, bb9, bb2
-  bb2 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v14: int = const 0
-    v15: bool = lt v1, v14 {pure}
-    br_if v15, bb3, bb4
-  bb3 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v16: any = name_read assert {pure}
-    v17: bool = const false
-    v18: bool = opaque.DynamicCall(v16, v17) {impure}
-    br bb4
-  bb4 [unwind: ThrownException -> bb6, Exception -> bb5]:
-    v19: double = mul v3, v4 {pure}
-    v20: double = mul v19, v5 {pure}
-    v21: double = add v12, v20 {pure}
-    br bb8(v21)
-  bb5(v22: any) [handler]:
-    br bb7
-  bb6(v23: any) [handler]:
-    br bb7
-  bb7:
-    br bb8(v2)
-  bb8(v24: double):
-    ret v24
-  bb9:
-    v25: any = for_next v10
-    v26: any = checkcast v25 <int|int|>
-    v27: int = convert.int v26
-    v28: double = opaque.DynamicCall(v11, v27) {impure}
-    v29: double = add v3, v28 {pure}
-    v30: double = opaque.DynamicCall(v11, v1) {impure}
-    v31: double = mul v29, v30 {pure}
-    v32: double = add v31, v6 {pure}
-    v33: double = add v12, v32 {pure}
-    v34: double = add v33, v3 {pure}
-    v35: double = sub v34, v4 {pure}
-    v36: double = add v35, v5 {pure}
-    br bb1(v36)
+```hir
+;; hir -O2 fn=heavyLoop
+fn heavyLoop (a:obj, s:int) -> double {nothrow unique}
+  (def acc 0.0:double)
+  (block
+    (def $licm0 (get-this-field x))
+    (def $licm1 (get-this-field y))
+    (def $licm2 (get-this-field z))
+    (for k in (core-new list 1:int 2:int)
+      (block
+        (block
+          (def $cse0 name(double))
+          (def t (+:double (*:double (+:double var($licm0) (call var($cse0) var(k))) (call var($cse0) var(s))) (*:double var($licm1) var($licm2))))
+          (set acc (+:double (-:double (+:double (+:double var(acc) var(t)) var($licm0)) var($licm1)) var($licm2)))))))
+  (try
+    (block
+      (if (<:bool var(s) 0:int) (box (call name(assert) false:bool)))
+      (+:double var(acc) (*:double (*:double (get-this-field x) (get-this-field y)) (get-this-field z))))
+    (catch e
+      0.0:double))
 ```
 
 ## Non-record compiled class method inlining vs named-arg call & self-recursive borrow fn
@@ -581,58 +343,13 @@ fn run () -> double {nothrow unique}
   (+:double (call name(double) (+:int (call-method var(c).add b=3:int a=2:int) (+:int (get-this-field x) 3:int))) (call-fn rec (record-new Vec3 1.0:double 2.0:double 0.0:double) 3:int))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run() -> double:
-  bb0:
-    v0: any = name_read C {pure}
-    v1: int = const 10
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = name_read double {pure}
-    v4: int = const 3
-    v5: int = const 2
-    v6: int = call_method v2.add(v4, v5) {pure!}
-    v7: int = load_field v2.x {read:frozen}
-    v8: int = const 3
-    v9: int = add v7, v8 {pure}
-    v10: int = add v6, v9 {pure}
-    v11: double = opaque.DynamicCall(v3, v10) {impure}
-    v12: any = name_read rec {pure}
-    v13: any = name_read Vec3 {pure}
-    v14: double = const 1.0
-    v15: double = const 2.0
-    v16: double = const 0.0
-    v17: any = record_new Vec3[v13](v14, v15, v16) {pure}
-    v18: int = const 3
-    v19: double = call rec(v17, v18) {pure!}
-    v20: double = add v11, v19 {pure}
-    ret v20
-```
-
-```mir
-;; mir -O2 fn=run
-fn run() -> double:
-  bb0:
-    v0: any = name_read C {pure}
-    v1: int = const 10
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: any = name_read double {pure}
-    v4: int = const 3
-    v5: int = const 2
-    v6: int = call_method v2.add(v4, v5) {pure!}
-    v7: int = load_field v2.x {read:frozen}
-    v8: int = add v7, v4 {pure}
-    v9: int = add v6, v8 {pure}
-    v10: double = opaque.DynamicCall(v3, v9) {impure}
-    v11: any = name_read rec {pure}
-    v12: any = name_read Vec3 {pure}
-    v13: double = const 1.0
-    v14: double = const 2.0
-    v15: double = const 0.0
-    v16: any = record_new Vec3[v12](v13, v14, v15) {pure}
-    v17: double = call rec(v16, v4) {pure!}
-    v18: double = add v10, v17 {pure}
-    ret v18
+```hir
+;; hir -O2 fn=run
+fn run () -> double {nothrow unique}
+  (def c (call name(C) 10:int))
+  (block
+    (def $cse0 (get-this-field x))
+    (+:double (call name(double) (+:int (call-method var(c).add b=3:int a=2:int) (+:int var($cse0) 3:int))) (call-fn rec (record-new Vec3 1.0:double 2.0:double 0.0:double) 3:int)))
 ```
 
 ## Class method inlining with constructor statements : safe this.field init vs leaking this
@@ -664,20 +381,12 @@ fn r () -> int {nothrow unique}
       (get-this-field y)) (call-method (call name(Leak) 5:int).get))
 ```
 
-```mir
-;; mir -O2 fn=r stage=before,final
-fn r() -> int:
-  bb0:
-    v0: any = name_read Safe {pure}
-    v1: int = const 4
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: int = load_field v2.y {read:frozen,throws}
-    v4: any = name_read Leak {pure}
-    v5: int = const 5
-    v6: any = opaque.DynamicCall(v4, v5) {impure}
-    v7: int = call_method v6.get() {pure}
-    v8: int = add v3, v7 {pure}
-    ret v8
+```hir
+;; hir -O2 fn=r
+fn r () -> int {nothrow unique}
+  (+:int (block
+      (def $this (call name(Safe) 4:int))
+      (get-this-field y)) (call-method (call name(Leak) 5:int).get))
 ```
 
 ## Inlining with parameter reassignment, widening read, for loop, and move inside callee
@@ -720,103 +429,22 @@ fn r () -> double {nothrow unique}
       (+:double (convert[double] var(x#2)) 0.5:double)))
 ```
 
-```mir
-;; mir -O2 fn=r stage=before
-fn r() -> double:
-  bb0:
-    v0: int = const 3
-    v1: int = const 0
-    v2: int = const 1
-    v3: int = const 2
-    v4: any = opaque.CoreCollectionCall(list, v2, v3) {impure}
-    v5: any = for_init.java_iterable v4
-    v6: any = const null
-    br bb1(v6, v1)
-  bb1(v7: any, v8: int):
-    v9: bool = for_has_next v5
-    br_if v9, bb6, bb2
-  bb2:
-    v10: int = add v0, v8 {pure}
-    v11: double = convert.double v10
-    v12: double = const 0.5
-    v13: double = add v11, v12 {pure}
-    v14: int = const 1
-    v15: int = const 0
-    v16: int = const 1
-    v17: int = const 2
-    v18: any = opaque.CoreCollectionCall(list, v16, v17) {impure}
-    v19: any = for_init.java_iterable v18
-    v20: any = const null
-    br bb3(v20, v15)
-  bb3(v21: any, v22: int):
-    v23: bool = for_has_next v19
-    br_if v23, bb5, bb4
-  bb4:
-    v24: int = add v14, v22 {pure}
-    v25: double = convert.double v24
-    v26: double = const 0.5
-    v27: double = add v25, v26 {pure}
-    v28: double = add v13, v27 {pure}
-    ret v28
-  bb5:
-    v29: any = for_next v19
-    v30: any = checkcast v29 <int|int|>
-    v31: int = convert.int v30
-    v32: int = add v22, v31 {pure}
-    v33: any = convert.any v32
-    br bb3(v33, v32)
-  bb6:
-    v34: any = for_next v5
-    v35: any = checkcast v34 <int|int|>
-    v36: int = convert.int v35
-    v37: int = add v8, v36 {pure}
-    v38: any = convert.any v37
-    br bb1(v38, v37)
-```
-
-```mir
-;; mir -O2 fn=r
-fn r() -> double:
-  bb0:
-    v0: int = const 3
-    v1: int = const 0
-    v2: int = const 1
-    v3: int = const 2
-    v4: any = opaque.CoreCollectionCall(list, v2, v3) {impure}
-    v5: any = for_init.java_iterable v4
-    br bb1(v1)
-  bb1(v6: int):
-    v7: bool = for_has_next v5
-    br_if v7, bb6, bb2
-  bb2:
-    v8: int = add v0, v6 {pure}
-    v9: double = convert.double v8
-    v10: double = const 0.5
-    v11: double = add v9, v10 {pure}
-    v12: any = opaque.CoreCollectionCall(list, v2, v3) {impure}
-    v13: any = for_init.java_iterable v12
-    br bb3(v1)
-  bb3(v14: int):
-    v15: bool = for_has_next v13
-    br_if v15, bb5, bb4
-  bb4:
-    v16: int = add v2, v14 {pure}
-    v17: double = convert.double v16
-    v18: double = add v17, v10 {pure}
-    v19: double = add v11, v18 {pure}
-    ret v19
-  bb5:
-    v20: any = for_next v13
-    v21: any = checkcast v20 <int|int|>
-    v22: int = convert.int v21
-    v23: int = add v14, v22 {pure}
-    br bb3(v23)
-  bb6:
-    v24: any = for_next v5
-    v25: any = checkcast v24 <int|int|>
-    v26: int = convert.int v25
-    v27: int = add v6, v26 {pure}
-    br bb1(v27)
+```hir
+;; hir -O2 fn=r
+fn r () -> double {nothrow unique}
+  (+:double (block
+      (def s#1 0:int)
+      (for k#1 in (core-new list 1:int 2:int)
+        (block
+          (set s#1 (+:int var(s#1) var(k#1)))))
+      (set x#1 (+:int var(s#1) 3:int))
+      (+:double (convert[double] var(x#1)) 0.5:double)) (block
+      (def s#2 0:int)
+      (for k#2 in (core-new list 1:int 2:int)
+        (block
+          (set s#2 (+:int var(s#2) var(k#2)))))
+      (set x#2 (+:int var(s#2) 1:int))
+      (+:double (convert[double] var(x#2)) 0.5:double)))
 ```
 
 ## Inlining with capturing borrow lambda and receiver var reassigned in call arg
@@ -859,51 +487,19 @@ fn r () -> int {nothrow unique}
       (call var(f) 3:int 2:int)))
 ```
 
-```mir
-;; mir -O2 fn=r stage=before
-fn r() -> int:
-  bb0:
-    v0: any = name_read Box {pure}
-    v1: int = const 10
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: int = const 5
-    slot_init k, v3 {write:shared}
-    v4: any = name_read Box {pure}
-    v5: int = const 20
-    v6: any = opaque.DynamicCall(v4, v5) {impure}
-    v7: int = const 1
-    v8: int = load_field v2.v {read:frozen}
-    v9: int = add v8, v7 {pure}
-    v10: int = load_field v6.v {read:frozen}
-    v11: int = add v9, v10 {pure}
-    v12: any = opaque.FunctionRef(<anon>) {read:shared}
-    v13: int = const 3
-    v14: int = const 2
-    v15: int = opaque.DynamicCall(v12, v13, v14) {impure}
-    v16: int = add v11, v15 {pure}
-    ret v16
-```
-
-```mir
-;; mir -O2 fn=r
-fn r() -> int:
-  bb0:
-    v0: any = name_read Box {pure}
-    v1: int = const 10
-    v2: any = opaque.DynamicCall(v0, v1) {impure}
-    v3: int = const 5
-    slot_init k, v3 {write:shared}
-    v4: int = const 20
-    v5: any = opaque.DynamicCall(v0, v4) {impure}
-    v6: int = const 1
-    v7: int = load_field v2.v {read:frozen}
-    v8: int = add v7, v6 {pure}
-    v9: int = load_field v5.v {read:frozen}
-    v10: int = add v8, v9 {pure}
-    v11: any = opaque.FunctionRef(<anon>) {read:shared}
-    v12: int = const 3
-    v13: int = const 2
-    v14: int = opaque.DynamicCall(v11, v12, v13) {impure}
-    v15: int = add v10, v14 {pure}
-    ret v15
+```hir
+;; hir -O2 fn=r
+fn r () -> int {nothrow unique}
+  (block
+    (def $cse0 name(Box))
+    (def b (call var($cse0) 10:int))
+    (def k 5:int)
+    (+:int (+:int (block
+          (def $this var(b))
+          (block
+            (set b (call var($cse0) 20:int))
+            1:int)
+          (+:int (get-this-field v) 1:int)) (get-this-field v)) (block
+        (def f (fn-ref <anon#0>))
+        (call var(f) 3:int 2:int))))
 ```

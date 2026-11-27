@@ -194,16 +194,4 @@ public record IrEffect(
         }
         return AliasClass.SHARED;
     }
-
-    /** Compact tag for IR dumps. */
-    public String canonicalTag() {
-        String base =
-                switch (kind) {
-                    case PURE -> "pure";
-                    case READ -> "read:" + alias;
-                    case WRITE -> "write:" + alias;
-                    case IMPURE -> "impure";
-                };
-        return nothrow ? base : base + "!";
-    }
 }

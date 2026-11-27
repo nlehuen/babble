@@ -567,7 +567,7 @@ if [[ "${RUN_REPORT}" -eq 1 ]]; then
         jacoco:report@report-compile \
         jacoco:report@report-opt \
         jacoco:report@report-compile-O0 \
-        jacoco:report@report-mir \
+        jacoco:report@report-opt-O2 \
         exec:java@batest-report >"${REPORT_LOG}" 2>&1; then
         REPORT_RC=0
     else

@@ -20,44 +20,14 @@ record Vec3 (x:double, y:double, z:double)
     (+:double (+:double (*:double (get-this-field x) (get-this-field x)) (*:double (get-this-field y) (get-this-field y))) (*:double (get-this-field z) (get-this-field z)))
 ```
 
-```mir
-;; mir -O2 fn=Vec3.lenSq stage=before
-fn Vec3.lenSq() -> double:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: double = load_field v0.x {read:frozen}
-    v2: any = slot_read this {pure}
-    v3: double = load_field v2.x {read:frozen}
-    v4: double = mul v1, v3 {pure}
-    v5: any = slot_read this {pure}
-    v6: double = load_field v5.y {read:frozen}
-    v7: any = slot_read this {pure}
-    v8: double = load_field v7.y {read:frozen}
-    v9: double = mul v6, v8 {pure}
-    v10: double = add v4, v9 {pure}
-    v11: any = slot_read this {pure}
-    v12: double = load_field v11.z {read:frozen}
-    v13: any = slot_read this {pure}
-    v14: double = load_field v13.z {read:frozen}
-    v15: double = mul v12, v14 {pure}
-    v16: double = add v10, v15 {pure}
-    ret v16
-```
-
-```mir
-;; mir -O2 fn=Vec3.lenSq
-fn Vec3.lenSq() -> double:
-  bb0:
-    v0: any = slot_read this {pure}
-    v1: double = load_field v0.x {read:frozen}
-    v2: double = mul v1, v1 {pure}
-    v3: double = load_field v0.y {read:frozen}
-    v4: double = mul v3, v3 {pure}
-    v5: double = add v2, v4 {pure}
-    v6: double = load_field v0.z {read:frozen}
-    v7: double = mul v6, v6 {pure}
-    v8: double = add v5, v7 {pure}
-    ret v8
+```hir
+;; hir -O2 fn=Vec3.lenSq
+fn Vec3.lenSq () -> double {nothrow unique}
+  (block
+    (def $cse0 (get-this-field x))
+    (def $cse1 (get-this-field y))
+    (def $cse2 (get-this-field z))
+    (+:double (+:double (*:double var($cse0) var($cse0)) (*:double var($cse1) var($cse1))) (*:double var($cse2) var($cse2))))
 ```
 
 ```wat
@@ -91,40 +61,10 @@ fn sumTail (n:int, acc:long) -> long {nothrow}
   (if (<=:bool var(n) 0:int) var(acc) (tail-call sumTail (-:int var(n) 1:int) (+:long var(acc) (convert[long] var(n)))))
 ```
 
-```mir
-;; mir -O2 fn=sumTail stage=before
-fn sumTail(v0: int, v1: long) -> long:
-  bb0:
-    v2: int = const 0
-    v3: bool = lte v0, v2 {pure}
-    br_if v3, bb2, bb1
-  bb1:
-    v4: int = const 1
-    v5: int = sub v0, v4 {pure}
-    v6: long = convert.long v0
-    v7: long = add v1, v6 {pure}
-    tail_call sumTail(v5, v7)
-  bb2:
-    br bb3
-  bb3:
-    ret v1
-```
-
-```mir
-;; mir -O2 fn=sumTail
-fn sumTail(v0: int, v1: long) -> long:
-  bb0:
-    v2: int = const 0
-    v3: bool = lte v0, v2 {pure}
-    br_if v3, bb2, bb1
-  bb1:
-    v4: int = const 1
-    v5: int = sub v0, v4 {pure}
-    v6: long = convert.long v0
-    v7: long = add v1, v6 {pure}
-    tail_call sumTail(v5, v7)
-  bb2:
-    ret v1
+```hir
+;; hir -O2 fn=sumTail
+fn sumTail (n:int, acc:long) -> long {nothrow}
+  (if (<=:bool var(n) 0:int) var(acc) (tail-call sumTail (-:int var(n) 1:int) (+:long var(acc) (convert[long] var(n)))))
 ```
 
 ```wat
@@ -159,12 +99,10 @@ fn isBoth (x:obj) -> bool {nothrow unique}
   (is var(x) A&B)
 ```
 
-```mir
-;; mir -O2 fn=isBoth stage=before,final
-fn isBoth(v0: any) -> bool:
-  bb0:
-    v1: bool = is v0 <inter|A & B|babble%7CA,babble%7CB>
-    ret v1
+```hir
+;; hir -O2 fn=isBoth
+fn isBoth (x:obj) -> bool {nothrow unique}
+  (is var(x) A&B)
 ```
 
 ```wat
@@ -192,12 +130,10 @@ fn runSole (s:obj, k:int) -> int {pure unique}
   (call-iface var(s).compute var(k))
 ```
 
-```mir
-;; mir -O2 fn=runSole stage=before,final
-fn runSole(v0: any, v1: int) -> int:
-  bb0:
-    v2: int = call_iface v0.compute(v1) {pure,throws}
-    ret v2
+```hir
+;; hir -O2 fn=runSole
+fn runSole (s:obj, k:int) -> int {pure unique}
+  (call-iface var(s).compute var(k))
 ```
 
 ```wat
@@ -253,83 +189,15 @@ fn safeFinally (boom:bool) -> int {io}
       (set-name cleanup (+:int name(cleanup) 1:int))))
 ```
 
-```mir
-;; mir -O2 fn=safeFinally stage=before
-fn safeFinally(v0: bool) -> int:
-  bb0:
-    br bb1
-  bb1 [unwind: * -> bb7]:
-    br_if v0, bb6, bb2
-  bb2 [unwind: * -> bb7]:
-    v1: any = const null
-    br bb3
-  bb3 [unwind: * -> bb7]:
-    v2: int = const 10
-    br bb4
-  bb4:
-    v3: any = name_read cleanup {read:shared}
-    v4: int = convert.int v3
-    v5: int = const 1
-    v6: int = add v4, v5 {pure}
-    v7: any = convert.any v6
-    v8: any = name_assign cleanup, v7 {write:shared,throws}
-    v9: any = checkcast v8 <int|int|>
-    br bb5
-  bb5:
-    ret v2
-  bb6 [unwind: * -> bb7]:
-    v10: any = const "boom"
-    v11: any = new_java BabbleException(v10) {pure!}
-    rethrow v11
-  bb7(v12: any) [handler]:
-    br bb8
-  bb8:
-    v13: any = name_read cleanup {read:shared}
-    v14: int = convert.int v13
-    v15: int = const 1
-    v16: int = add v14, v15 {pure}
-    v17: any = convert.any v16
-    v18: any = name_assign cleanup, v17 {write:shared,throws}
-    v19: any = checkcast v18 <int|int|>
-    rethrow v12
-```
-
-```mir
-;; mir -O2 fn=safeFinally
-fn safeFinally(v0: bool) -> int:
-  bb0:
-    br bb1
-  bb1 [unwind: * -> bb6]:
-    br_if v0, bb5, bb2
-  bb2 [unwind: * -> bb6]:
-    v1: int = const 10
-    br bb3
-  bb3:
-    v2: any = name_read cleanup {read:shared}
-    v3: int = convert.int v2
-    v4: int = const 1
-    v5: int = add v3, v4 {pure}
-    v6: any = convert.any v5
-    v7: any = name_assign cleanup, v6 {write:shared,throws}
-    v8: any = checkcast v7 <int|int|>
-    br bb4
-  bb4:
-    ret v1
-  bb5 [unwind: * -> bb6]:
-    v9: any = const "boom"
-    v10: any = new_java BabbleException(v9) {pure!}
-    rethrow v10
-  bb6(v11: any) [handler]:
-    br bb7
-  bb7:
-    v12: any = name_read cleanup {read:shared}
-    v13: int = convert.int v12
-    v14: int = const 1
-    v15: int = add v13, v14 {pure}
-    v16: any = convert.any v15
-    v17: any = name_assign cleanup, v16 {write:shared,throws}
-    v18: any = checkcast v17 <int|int|>
-    rethrow v11
+```hir
+;; hir -O2 fn=safeFinally
+fn safeFinally (boom:bool) -> int {io}
+  (try
+    (block
+      (if var(boom) (throw (jnew BabbleException "boom")))
+      10:int)
+    (finally
+      (set-name cleanup (+:int name(cleanup) 1:int))))
 ```
 
 ```wat
@@ -357,27 +225,10 @@ fn pow2DivMod (x:int) -> int {nothrow unique}
   (+:int (//:int var(x) 8:int) (mod:int var(x) 8:int))
 ```
 
-```mir
-;; mir -O2 fn=pow2DivMod stage=before
-fn pow2DivMod(v0: int) -> int:
-  bb0:
-    v1: int = const 8
-    v2: int = floordiv v0, v1 {pure}
-    v3: int = const 8
-    v4: int = mod v0, v3 {pure}
-    v5: int = add v2, v4 {pure}
-    ret v5
-```
-
-```mir
-;; mir -O2 fn=pow2DivMod
-fn pow2DivMod(v0: int) -> int:
-  bb0:
-    v1: int = const 8
-    v2: int = floordiv v0, v1 {pure}
-    v3: int = mod v0, v1 {pure}
-    v4: int = add v2, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=pow2DivMod
+fn pow2DivMod (x:int) -> int {nothrow unique}
+  (+:int (//:int var(x) 8:int) (mod:int var(x) 8:int))
 ```
 
 ```wat
@@ -419,56 +270,14 @@ fn sumCounted (n:int) -> int {nothrow unique}
   var(acc)
 ```
 
-```mir
-;; mir -O2 fn=sumCounted stage=before
-fn sumCounted(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 0
-    v3: any = const null
-    v4: bool = lt v2, v0 {pure}
-    br_if v4, bb1, bb5(v3, v1)
-  bb1:
-    v5: int = const 1
-    v6: int = sub v0, v5 {pure}
-    br bb2(v3, v2, v1)
-  bb2(v7: any, v8: int, v9: int):
-    v10: int = add v9, v8 {pure}
-    v11: any = convert.any v10
-    br bb3
-  bb3:
-    v12: bool = eq v8, v6 {pure}
-    br_if v12, bb5(v11, v10), bb4
-  bb4:
-    v13: int = const 1
-    v14: int = add v8, v13 {pure}
-    br bb2(v11, v14, v10)
-  bb5(v15: any, v16: int):
-    ret v16
-```
-
-```mir
-;; mir -O2 fn=sumCounted
-fn sumCounted(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = lt v1, v0 {pure}
-    br_if v2, bb1, bb5(v1)
-  bb1:
-    v3: int = const 1
-    v4: int = sub v0, v3 {pure}
-    br bb2(v1, v1)
-  bb2(v5: int, v6: int):
-    v7: int = add v6, v5 {pure}
-    br bb3
-  bb3:
-    v8: bool = eq v5, v4 {pure}
-    br_if v8, bb5(v7), bb4
-  bb4:
-    v9: int = add v5, v3 {pure}
-    br bb2(v9, v7)
-  bb5(v10: int):
-    ret v10
+```hir
+;; hir -O2 fn=sumCounted
+fn sumCounted (n:int) -> int {nothrow unique}
+  (def acc 0:int)
+  (for-range i ..< 0:int var(n)
+    (block
+      (set acc += var(i))))
+  var(acc)
 ```
 
 ```wat

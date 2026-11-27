@@ -34,15 +34,12 @@ class GG
     (+:obj (super.deep) ":gg")
 ```
 
-```mir
-;; mir -O2 class=GG stage=before,final
-class GG:
-  fn GG.deep() -> any:
-    bb0:
-      v0: any = opaque.SuperCall(deep) {impure}
-      v1: any = const ":gg"
-      v2: any = strcat v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=GG
+class GG
+  (def deep (fn-ref GG.deep))
+  fn GG.deep () -> obj {nothrow unique}
+    (+:obj (super.deep) ":gg")
 ```
 
 ## Sub-interface extending Java IntPredicate with default method and is check
@@ -63,14 +60,12 @@ interface SubP
     (>:bool var(x) 0:int)
 ```
 
-```mir
-;; mir -O2 interface=SubP stage=before,final
-interface SubP:
-  fn test(v0: int) -> bool:
-    bb0:
-      v1: int = const 0
-      v2: bool = gt v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=SubP
+interface SubP
+  (def test (fn-ref test))
+  fn test (x:int) -> bool {pure}
+    (>:bool var(x) 0:int)
 ```
 
 ## InterfaceGen default method calling own default with int->double widening
@@ -97,17 +92,10 @@ fn plusBase (k:int) -> double {pure}
   (widen[double] (+:int (*:int (call-iface this.base) 2:int) var(k)))
 ```
 
-```mir
-;; mir -O2 fn=plusBase stage=before,final
-fn plusBase(v0: int) -> double:
-  bb0:
-    v1: any = slot_read this {pure}
-    v2: int = call_iface v1.base() {pure,throws}
-    v3: int = const 2
-    v4: int = mul v2, v3 {pure}
-    v5: int = add v4, v0 {pure}
-    v6: double = convert.double v5
-    ret v6
+```hir
+;; hir -O2 fn=plusBase
+fn plusBase (k:int) -> double {pure}
+  (widen[double] (+:int (*:int (call-iface this.base) 2:int) var(k)))
 ```
 
 ## InterfaceGen signature adaptation bridge inherited through intermediate interface
@@ -138,23 +126,12 @@ interface IBase
     (box 0:int)
 ```
 
-```mir
-;; mir -O2 interface=IBase stage=before
-interface IBase:
-  fn calc(v0: int) -> any:
-    bb0:
-      v1: int = const 0
-      v2: any = convert.any v1
-      ret v2
-```
-
-```mir
-;; mir -O2 interface=IBase
-interface IBase:
-  fn calc(v0: int) -> any:
-    bb0:
-      v1: any = const 0
-      ret v1
+```hir
+;; hir -O2 interface=IBase
+interface IBase
+  (def calc (fn-ref calc))
+  fn calc (x:int) -> obj {pure}
+    (box 0:int)
 ```
 
 ## super call inside Babble interface default method, inside nested lambda in class, and with positional assig...
@@ -178,20 +155,11 @@ fn C2.run (x:int) -> int {nothrow unique}
   (+:int (call-fn inner) (super.calc (set x (+:int var(x) 1:int))))
 ```
 
-```mir
-;; mir -O2 fn=C2.run stage=before,final
-fn C2.run() -> int:
-  bb0:
-    v0: any = opaque.FunctionRef(inner) {read:shared}
-    v1: int = call inner() {impure}
-    v2: int = slot_read x {read:shared,throws}
-    v3: int = const 1
-    v4: int = add v2, v3 {pure}
-    slot_write x, v4 {write:shared,throws}
-    v5: any = opaque.SuperCall(calc, v4) {impure}
-    v6: int = convert.int v5
-    v7: int = add v1, v6 {pure}
-    ret v7
+```hir
+;; hir -O2 fn=C2.run
+fn C2.run (x:int) -> int {nothrow unique}
+  (def inner (fn-ref inner))
+  (+:int (call-fn inner) (super.calc (set x (+:int var(x) 1:int))))
 ```
 
 ## Safe-navigation call on nullable Babble receiver with super default call through intermediate interface
@@ -212,17 +180,12 @@ class C (v:int)
     (+:int (super.greet var(x)) (get-this-field v))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.greet(v0: int) -> int:
-    bb0:
-      v1: any = opaque.SuperCall(greet, v0) {impure}
-      v2: int = convert.int v1
-      v3: any = slot_read this {pure}
-      v4: int = load_field v3.v {read:frozen}
-      v5: int = add v2, v4 {pure}
-      ret v5
+```hir
+;; hir -O2 class=C
+class C (v:int)
+  (def greet (fn-ref C.greet))
+  fn C.greet (x:int) -> int {nothrow unique}
+    (+:int (super.greet var(x)) (get-this-field v))
 ```
 
 ## Safe-navigation call on nullable Java receiver
@@ -242,9 +205,13 @@ top-level:
   (call name(assert) (and (==:bool (safe-call name(s1)?.length) 3:int) (==:bool (safe-call name(s2)?.length) null)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Vec (class-ref Vec))
+  (def s1 (jnew StringBuilder "abc"))
+  (def s2 null)
+  (call name(assert) (and (==:bool (safe-call name(s1)?.length) 3:int) (==:bool (safe-call name(s2)?.length) null)))
 ```
 
 ## emitReturnToJava double->void POP2 on Runnable and Object->double on DoubleSupplier
@@ -286,21 +253,12 @@ fn DS.getAsDouble () -> obj {nothrow unique}
     var(v))
 ```
 
-```mir
-;; mir -O2 fn=DS.getAsDouble stage=before
-fn DS.getAsDouble() -> any:
-  bb0:
-    v0: double = const 3.5
-    v1: any = convert.any v0
-    ret v1
-```
-
-```mir
-;; mir -O2 fn=DS.getAsDouble
-fn DS.getAsDouble() -> any:
-  bb0:
-    v0: any = const 3.5
-    ret v0
+```hir
+;; hir -O2 fn=DS.getAsDouble
+fn DS.getAsDouble () -> obj {nothrow unique}
+  (block
+    (def v (box 3.5:double))
+    var(v))
 ```
 
 ## Java primitive bridge args : DoublePredicate and IntPredicate
@@ -321,14 +279,12 @@ class DP
     (>:bool var(d) 0.0:double)
 ```
 
-```mir
-;; mir -O2 class=DP stage=before,final
-class DP:
-  fn DP.test(v0: double) -> bool:
-    bb0:
-      v1: double = const 0.0
-      v2: bool = gt v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=DP
+class DP
+  (def test (fn-ref DP.test))
+  fn DP.test (d:double) -> bool {nothrow unique}
+    (>:bool var(d) 0.0:double)
 ```
 
 ## Java primitive bridge args : IntToDoubleFunction
@@ -349,15 +305,12 @@ class I2D
     (+:double (convert[double] var(i)) 0.5:double)
 ```
 
-```mir
-;; mir -O2 class=I2D stage=before,final
-class I2D:
-  fn I2D.applyAsDouble(v0: int) -> double:
-    bb0:
-      v1: double = convert.double v0
-      v2: double = const 0.5
-      v3: double = add v1, v2 {pure}
-      ret v3
+```hir
+;; hir -O2 class=I2D
+class I2D
+  (def applyAsDouble (fn-ref I2D.applyAsDouble))
+  fn I2D.applyAsDouble (i:int) -> double {nothrow monotone unique}
+    (+:double (convert[double] var(i)) 0.5:double)
 ```
 
 ## super call to interface default with optional primitive param (class method, sub-interface, nested lambda)
@@ -383,19 +336,15 @@ class C
     (call-fn <anon#0>)
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.dir(v0: int) -> int:
-    bb0:
-      v1: any = opaque.SuperCall(add, v0) {impure}
-      v2: int = convert.int v1
-      ret v2
-  fn C.lam() -> int:
-    bb0:
-      v0: any = opaque.FunctionRef(<anon>) {read:shared}
-      v1: int = call <anon>() {impure}
-      ret v1
+```hir
+;; hir -O2 class=C
+class C
+  (def dir (fn-ref C.dir))
+  (def lam (fn-ref C.lam))
+  fn C.dir (x:int) -> int {nothrow unique}
+    (super.add var(x))
+  fn C.lam (x:int) -> int {nothrow unique}
+    (call-fn <anon#0>)
 ```
 
 ## super call to overloaded interface default with union-typed positional and named arguments
@@ -422,19 +371,15 @@ class C
     (super.calc x=var(u))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.pos(v0: any) -> int:
-    bb0:
-      v1: any = opaque.SuperCall(calc, v0) {impure}
-      v2: int = convert.int v1
-      ret v2
-  fn C.nam(v0: any) -> int:
-    bb0:
-      v1: any = opaque.SuperCall(calc, v0) {impure}
-      v2: int = convert.int v1
-      ret v2
+```hir
+;; hir -O2 class=C
+class C
+  (def pos (fn-ref C.pos))
+  (def nam (fn-ref C.nam))
+  fn C.pos (u:obj) -> int {nothrow unique}
+    (super.calc var(u))
+  fn C.nam (u:obj) -> int {nothrow unique}
+    (super.calc x=var(u))
 ```
 
 ## Diamond Java interfaces (Closeable + AutoCloseable) and non-top-level block class expressions
@@ -454,11 +399,9 @@ class Res
   fn Res.close () -> obj {nothrow unique}
 ```
 
-```mir
-;; mir -O2 class=Res stage=before,final
-class Res:
-  fn Res.close() -> any:
-    bb0:
-      v0: any = const null
-      ret v0
+```hir
+;; hir -O2 class=Res
+class Res
+  (def close (fn-ref Res.close))
+  fn Res.close () -> obj {nothrow unique}
 ```

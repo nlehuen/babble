@@ -76,23 +76,13 @@ class Impl (bias:double)
     (if var(neg) (neg var(v)) var(v))
 ```
 
-```mir
-;; mir -O2 class=Impl stage=before,final
-class Impl:
-  fn Impl.calc(v0: int, v1: double, v2: bool) -> double:
-    bb0:
-      v3: double = convert.double v0
-      v4: double = add v3, v1 {pure}
-      v5: double = slot_read bias {pure}
-      v6: double = add v4, v5 {pure}
-      br_if v2, bb2, bb1
-    bb1:
-      br bb3(v6)
-    bb2:
-      v7: double = neg v6 {pure}
-      br bb3(v7)
-    bb3(v8: double):
-      ret v8
+```hir
+;; hir -O2 class=Impl
+class Impl (bias:double)
+  (def calc (fn-ref Impl.calc))
+  fn Impl.calc (a:int, b:double, neg:bool) -> double {nothrow}
+    (def v (+:double (+:double (convert[double] var(a)) var(b)) var(bias)))
+    (if var(neg) (neg var(v)) var(v))
 ```
 
 ## Multi-evaluation closure-capturing interface factory : each BabbleInterface keeps its own captured cell
@@ -122,16 +112,12 @@ class C (m:int)
     (*:int (super.add var(x)) var(m))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.run(v0: int) -> int:
-    bb0:
-      v1: any = opaque.SuperCall(add, v0) {impure}
-      v2: int = convert.int v1
-      v3: int = slot_read m {pure}
-      v4: int = mul v2, v3 {pure}
-      ret v4
+```hir
+;; hir -O2 class=C
+class C (m:int)
+  (def run (fn-ref C.run))
+  fn C.run (x:int) -> int {nothrow unique}
+    (*:int (super.add var(x)) var(m))
 ```
 
 ## Diamond inheritance (JVMS 5.4.3.3 bridge conflict prevention)
@@ -154,14 +140,12 @@ interface Base
     (+:int var(x) 1:int)
 ```
 
-```mir
-;; mir -O2 interface=Base stage=before,final
-interface Base:
-  fn id(v0: int) -> int:
-    bb0:
-      v1: int = const 1
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=Base
+interface Base
+  (def id (fn-ref id))
+  fn id (x:int) -> int {pure}
+    (+:int var(x) 1:int)
 ```
 
 ## Sibling abstract + default resolution
@@ -184,14 +168,12 @@ interface DefB
     (*:int var(x) 3:int)
 ```
 
-```mir
-;; mir -O2 interface=DefB stage=before,final
-interface DefB:
-  fn f(v0: int) -> int:
-    bb0:
-      v1: int = const 3
-      v2: int = mul v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=DefB
+interface DefB
+  (def f (fn-ref f))
+  fn f (x:int) -> int {pure}
+    (*:int var(x) 3:int)
 ```
 
 ## Re-abstracted default method hidden along one branch and supplied along a sibling branch
@@ -220,10 +202,10 @@ interface ReAbstracted
   (def val)
 ```
 
-```mir
-;; mir -O2 interface=ReAbstracted stage=before,final
-interface ReAbstracted:
-  (no default methods)
+```hir
+;; hir -O2 interface=ReAbstracted
+interface ReAbstracted
+  (def val)
 ```
 
 ## Case 7
@@ -248,18 +230,15 @@ class IBox (v:int)
     (+:int var(x) var(v))
 ```
 
-```mir
-;; mir -O2 class=IBox stage=before,final
-class IBox:
-  fn IBox.get() -> int:
-    bb0:
-      v0: int = slot_read v {pure}
-      ret v0
-  fn IBox.xf(v0: int) -> int:
-    bb0:
-      v1: int = slot_read v {pure}
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=IBox
+class IBox (v:int)
+  (def get (fn-ref IBox.get))
+  (def xf (fn-ref IBox.xf))
+  fn IBox.get () -> int {nothrow unique}
+    var(v)
+  fn IBox.xf (x:int) -> int {nothrow injective unique}
+    (+:int var(x) var(v))
 ```
 
 ## Case 8
@@ -284,18 +263,15 @@ class DBox (v:double)
     (+:double var(x) var(v))
 ```
 
-```mir
-;; mir -O2 class=DBox stage=before,final
-class DBox:
-  fn DBox.get() -> double:
-    bb0:
-      v0: double = slot_read v {pure}
-      ret v0
-  fn DBox.xf(v0: double) -> double:
-    bb0:
-      v1: double = slot_read v {pure}
-      v2: double = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=DBox
+class DBox (v:double)
+  (def get (fn-ref DBox.get))
+  (def xf (fn-ref DBox.xf))
+  fn DBox.get () -> double {nothrow unique}
+    var(v)
+  fn DBox.xf (x:double) -> double {nothrow monotone unique}
+    (+:double var(x) var(v))
 ```
 
 ## If-expression of ints widened to double and passed to a primitive-double interface receiver
@@ -358,9 +334,22 @@ top-level:
   (call name(assert) (==:bool (call-iface name(sink).accept (widen[double] name(boxedIntExpr))) 6.0:double))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def TakeDouble (iface-ref TakeDouble))
+  (def Sink (class-ref Sink))
+  (def sink (call name(Sink)))
+  (def cond true:bool)
+  (def boxedIntExpr (if name(cond) 3:int 4:int))
+  (call name(assert) (==:bool (call-iface name(sink).accept (widen[double] name(boxedIntExpr))) 6.0:double))
 ```
 
 ## Interface override adding optional defaulted parameters and dispatch through base signature
@@ -383,13 +372,12 @@ class C
     (+:int var(x) var(s))
 ```
 
-```mir
-;; mir -O2 class=C stage=before,final
-class C:
-  fn C.apply(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=C
+class C
+  (def apply (fn-ref C.apply))
+  fn C.apply (x:int, s:int=25:int) -> int {nothrow commutative associative unique}
+    (+:int var(x) var(s))
 ```
 
 ## Field-holding-function implementation and super default call
@@ -416,16 +404,12 @@ class NsImpl (d:int)
     (+:int (super.base var(x)) var(d))
 ```
 
-```mir
-;; mir -O2 class=NsImpl stage=before,final
-class NsImpl:
-  fn NsImpl.run(v0: int) -> int:
-    bb0:
-      v1: any = opaque.SuperCall(base, v0) {impure}
-      v2: int = convert.int v1
-      v3: int = slot_read d {pure}
-      v4: int = add v2, v3 {pure}
-      ret v4
+```hir
+;; hir -O2 class=NsImpl
+class NsImpl (d:int)
+  (def run (fn-ref NsImpl.run))
+  fn NsImpl.run (x:int) -> int {nothrow unique}
+    (+:int (super.base var(x)) var(d))
 ```
 
 ## Nested lambdas calling super.m() and super(Parent).m() in interface defaults and class methods
@@ -457,15 +441,12 @@ class CC (b:int)
     (call-fn <anon#0> 1:int)
 ```
 
-```mir
-;; mir -O2 class=CC stage=before,final
-class CC:
-  fn CC.sc() -> int:
-    bb0:
-      v0: any = opaque.FunctionRef(<anon>) {read:shared}
-      v1: int = const 1
-      v2: int = call <anon>(v1) {impure}
-      ret v2
+```hir
+;; hir -O2 class=CC
+class CC (b:int)
+  (def sc (fn-ref CC.sc))
+  fn CC.sc (x:int) -> int {pure unique}
+    (call-fn <anon#0> 1:int)
 ```
 
 ## Case 13
@@ -512,9 +493,26 @@ top-level:
   (call name(assert) (and (==:bool (call-iface name(t).label) "tag:ok") (is name(t) shapes$ba$C1$Tagged)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def sh (call name(import) "shapes.ba"))
+  (block
+    (def $cse0 name(sh))
+    (def s1 (record-new shapes$ba$C0$Circle 2.0:double))
+    (def t (call (export var($cse0).Tagged) "ok"))
+    (def $cse1 name(s1))
+    (def $cse2 name(assert))
+    (call var($cse2) (and (and (==:bool (call-iface var($cse1).area) 12.0:double) (==:bool (call-iface var($cse1).scale 2.0:double) 24.0:double)) (is var($cse1) shapes$ba$C0$Circle)))
+    (def $cse3 name(t))
+    (call var($cse2) (and (==:bool (call-iface var($cse3).label) "tag:ok") (is var($cse3) shapes$ba$C1$Tagged))))
 ```
 
 ## Case 14
@@ -540,22 +538,15 @@ class Rect (w:double, h:double)
     (+:double (super.scale var(f)) 1.0:double)
 ```
 
-```mir
-;; mir -O2 class=Rect stage=before,final
-class Rect:
-  fn Rect.area() -> double:
-    bb0:
-      v0: double = slot_read w {pure}
-      v1: double = slot_read h {pure}
-      v2: double = mul v0, v1 {pure}
-      ret v2
-  fn Rect.scale(v0: double) -> double:
-    bb0:
-      v1: any = opaque.SuperCall(scale, v0) {impure}
-      v2: double = convert.double v1
-      v3: double = const 1.0
-      v4: double = add v2, v3 {pure}
-      ret v4
+```hir
+;; hir -O2 class=Rect
+class Rect (w:double, h:double)
+  (def area (fn-ref Rect.area))
+  (def scale (fn-ref Rect.scale))
+  fn Rect.area () -> double {nothrow unique}
+    (*:double var(w) var(h))
+  fn Rect.scale (f:double) -> double {pure unique}
+    (+:double (super.scale var(f)) 1.0:double)
 ```
 
 ## Forward reference on `is` target resolves as a static type (BIP012-D8)
@@ -596,9 +587,19 @@ top-level:
   (call name(assert) (and (not name(check)) (is (call name(Later)) Later)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def Box (iface-ref Box))
+  (def Unary (iface-ref Unary))
+  (def Opt (iface-ref Opt))
+  (def Op (iface-ref Op))
+  (def Calc (iface-ref Calc))
+  (def P1 (iface-ref P1))
+  (def P2 (iface-ref P2))
+  (def check (is 1:int Later))
+  (def Later (class-ref Later))
+  (call name(assert) (and (not name(check)) (is (call name(Later)) Later)))
 ```
 
 ## Inherited default method with widened/adapted signature in sub-interface (emitInheritedDefaultInvoke)
@@ -626,10 +627,10 @@ interface Other
   (def calc)
 ```
 
-```mir
-;; mir -O2 interface=Other stage=before,final
-interface Other:
-  (no default methods)
+```hir
+;; hir -O2 interface=Other
+interface Other
+  (def calc)
 ```
 
 ## Static as cast to plain Babble class and Babble interface
@@ -657,20 +658,16 @@ fn castNamed (x:obj) -> obj {pure}
   (as var(x) babble|Named)
 ```
 
-```mir
-;; mir -O2 fn=castBox stage=before,final
-fn castBox(v0: any) -> any:
-  bb0:
-    v1: any = checkcast v0 <babble|Holder>
-    ret v1
+```hir
+;; hir -O2 fn=castBox
+fn castBox (x:obj) -> obj {pure}
+  (as var(x) babble|Holder)
 ```
 
-```mir
-;; mir -O2 fn=castNamed stage=before,final
-fn castNamed(v0: any) -> any:
-  bb0:
-    v1: any = checkcast v0 <babble|Named>
-    ret v1
+```hir
+;; hir -O2 fn=castNamed
+fn castNamed (x:obj) -> obj {pure}
+  (as var(x) babble|Named)
 ```
 
 ## Multi-hop cross-module interface extends propagation
@@ -708,15 +705,13 @@ class Impl
     3:int
 ```
 
-```mir
-;; mir -O2 class=Impl stage=before,final
-class Impl:
-  fn Impl.x() -> int:
-    bb0:
-      v0: int = const 2
-      ret v0
-  fn Impl.z() -> int:
-    bb0:
-      v0: int = const 3
-      ret v0
+```hir
+;; hir -O2 class=Impl
+class Impl
+  (def x (fn-ref Impl.x))
+  (def z (fn-ref Impl.z))
+  fn Impl.x () -> int {nothrow unique}
+    2:int
+  fn Impl.z () -> int {nothrow unique}
+    3:int
 ```

@@ -57,93 +57,20 @@ fn recWhile (n:int) -> int {nothrow unique}
   var(s)
 ```
 
-```mir
-;; mir -O2 fn=recWhile stage=before
-fn recWhile(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 0
-    v3: any = const null
-    br bb1(v3, v1, v2)
-  bb1(v4: any, v5: int, v6: int):
-    v7: int = const 1
-    v8: bool = lt v5, v7 {pure}
-    br_if v8, bb3, bb2
-  bb2:
-    ret v6
-  bb3:
-    v9: int = const 0
-    v10: any = const null
-    br bb4(v10, v9)
-  bb4(v11: any, v12: int):
-    v13: int = const 2
-    v14: bool = lt v12, v13 {pure}
-    br_if v14, bb9, bb5
-  bb5:
-    v15: int = const 0
-    v16: bool = gt v0, v15 {pure}
-    br_if v16, bb7, bb6
-  bb6:
-    v17: any = const null
-    br bb8(v17, v6)
-  bb7:
-    v18: int = const 1
-    v19: int = sub v0, v18 {pure}
-    v20: int = call_self recWhile(v19) {pure!}
-    v21: int = const 1
-    v22: int = add v20, v21 {pure}
-    v23: int = add v6, v22 {pure}
-    v24: any = convert.any v23
-    br bb8(v24, v23)
-  bb8(v25: any, v26: int):
-    v27: int = add v26, v12 {pure}
-    v28: int = const 1
-    v29: int = add v5, v28 {pure}
-    v30: any = convert.any v29
-    br bb1(v30, v29, v27)
-  bb9:
-    v31: int = const 1
-    v32: int = add v12, v31 {pure}
-    v33: any = convert.any v32
-    br bb4(v33, v32)
-```
-
-```mir
-;; mir -O2 fn=recWhile
-fn recWhile(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = gt v0, v1 {pure}
-    v3: int = const 1
-    v4: int = sub v0, v3 {pure}
-    br bb1(v1, v1)
-  bb1(v5: int, v6: int):
-    v7: bool = lt v5, v3 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v6
-  bb3:
-    br bb4(v1)
-  bb4(v8: int):
-    v9: int = const 2
-    v10: bool = lt v8, v9 {pure}
-    br_if v10, bb9, bb5
-  bb5:
-    br_if v2, bb7, bb6
-  bb6:
-    br bb8(v6)
-  bb7:
-    v11: int = call_self recWhile(v4) {pure!}
-    v12: int = add v11, v3 {pure}
-    v13: int = add v6, v12 {pure}
-    br bb8(v13)
-  bb8(v14: int):
-    v15: int = add v14, v8 {pure}
-    v16: int = add v5, v3 {pure}
-    br bb1(v16, v15)
-  bb9:
-    v17: int = add v8, v3 {pure}
-    br bb4(v17)
+```hir
+;; hir -O2 fn=recWhile
+fn recWhile (n:int) -> int {nothrow unique}
+  (def i 0:int)
+  (def s 0:int)
+  (while (<:bool var(i) 1:int)
+    (block
+      (def j 0:int)
+      (while (<:bool var(j) 2:int)
+        (set j += 1:int))
+      (if (>:bool var(n) 0:int) (box (set s += (+:int (self-recurse recWhile (-:int var(n) 1:int)) 1:int))))
+      (set s += var(j))
+      (set i += 1:int)))
+  var(s)
 ```
 
 ## HirLicmPass.checkOperandsInvariant & HirPurity.isDeterministic : Logic, Unary.NOT, Block, and ArrayOp.SIZE
@@ -197,101 +124,26 @@ fn run (f:bool, i:int, arr:obj) -> int {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: bool, v1: int, v2: any) -> int:
-  bb0:
-    v3: int = const 0
-    v4: int = const 0
-    v5: bool = const false
-    br_if v0, bb1, bb2(v5)
-  bb1:
-    v6: int = const 0
-    v7: bool = gt v1, v6 {pure}
-    br bb2(v7)
-  bb2(v8: bool):
-    br_if v8, bb4, bb3
-  bb3:
-    v9: int = const 0
-    br bb5(v9)
-  bb4:
-    v10: int = const 1
-    br bb5(v10)
-  bb5(v11: int):
-    v12: bool = not v0 {pure}
-    br_if v12, bb7, bb6
-  bb6:
-    v13: int = const 0
-    br bb8(v13)
-  bb7:
-    v14: int = const 1
-    br bb8(v14)
-  bb8(v15: int):
-    v16: int = add v11, v15 {pure}
-    v17: int = const 2
-    v18: int = add v1, v17 {pure}
-    v19: int = add v16, v18 {pure}
-    v20: any = const null
-    br bb9(v20, v4, v3)
-  bb9(v21: any, v22: int, v23: int):
-    v24: int = const 2
-    v25: bool = lt v22, v24 {pure}
-    br_if v25, bb11, bb10
-  bb10:
-    ret v23
-  bb11:
-    v26: int = array_len v2 {read:frozen,throws}
-    v27: int = add v19, v26 {pure}
-    v28: int = add v23, v27 {pure}
-    v29: int = const 1
-    v30: int = add v22, v29 {pure}
-    v31: any = convert.any v30
-    br bb9(v31, v30, v28)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: bool, v1: int, v2: any) -> int:
-  bb0:
-    v3: int = const 0
-    v4: bool = const false
-    br_if v0, bb1, bb2(v4)
-  bb1:
-    v5: bool = gt v1, v3 {pure}
-    br bb2(v5)
-  bb2(v6: bool):
-    br_if v6, bb4, bb3
-  bb3:
-    br bb5(v3)
-  bb4:
-    v7: int = const 1
-    br bb5(v7)
-  bb5(v8: int):
-    v9: bool = not v0 {pure}
-    br_if v9, bb7, bb6
-  bb6:
-    br bb8(v3)
-  bb7:
-    v10: int = const 1
-    br bb8(v10)
-  bb8(v11: int):
-    v12: int = add v8, v11 {pure}
-    v13: int = const 2
-    v14: int = add v1, v13 {pure}
-    v15: int = add v12, v14 {pure}
-    br bb9(v3, v3)
-  bb9(v16: int, v17: int):
-    v18: bool = lt v16, v13 {pure}
-    br_if v18, bb11, bb10
-  bb10:
-    ret v17
-  bb11:
-    v19: int = array_len v2 {read:frozen,throws}
-    v20: int = add v15, v19 {pure}
-    v21: int = add v17, v20 {pure}
-    v22: int = const 1
-    v23: int = add v16, v22 {pure}
-    br bb9(v23, v21)
+```hir
+;; hir -O2 fn=run
+fn run (f:bool, i:int, arr:obj) -> int {nothrow unique}
+  (def a 0:int)
+  (def k 0:int)
+  (while (<:bool var(k) 2:int)
+    (block
+      (set a += (+:int (+:int (+:int (block
+                (def b#1 (and var(f) (>:bool var(i) 0:int)))
+                (def r#1 (if var(b#1) 1:int 0:int))
+                var(r#1)) (block
+                (def b#2 (not var(f)))
+                (def r#2 (if var(b#2) 1:int 0:int))
+                var(r#2))) (block
+              (def x#1 (+:int var(i) 2:int))
+              var(x#1))) (block
+            (def x#2 (array-op SIZE var(arr)))
+            var(x#2))))
+      (set k += 1:int)))
+  var(a)
 ```
 
 ## HirLicmPass.checkOperandsInvariant : Block with declaredVars, As (checked & unchecked), NameRead, and Const...
@@ -347,81 +199,27 @@ fn run (b:byte, raw:obj) -> double {pure unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: byte, v1: any) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: any = name_read topRO {pure}
-    v5: any = widen#2 v4
-    v6: int = convert.int v5
-    v7: any = const null
-    br bb1(v7, v3, v2)
-  bb1(v8: any, v9: int, v10: double):
-    v11: int = const 2
-    v12: bool = lt v9, v11 {pure}
-    br_if v12, bb3, bb2
-  bb2:
-    ret v10
-  bb3:
-    v13: any = convert.any v0
-    v14: any = checkcast v13 <double|double|>
-    v15: any = widen#5 v14
-    v16: double = convert.double v15
-    v17: any = name_read double {pure}
-    v18: any = name_read int {pure}
-    v19: int = opaque.DynamicCall(v18, v0) {impure}
-    v20: int = add v6, v19 {pure}
-    v21: any = checkcast v1 <int|int|>
-    v22: any = widen#2 v21
-    v23: int = convert.int v22
-    v24: int = add v20, v23 {pure}
-    v25: int = const 2
-    v26: int = add v24, v25 {pure}
-    v27: double = opaque.DynamicCall(v17, v26) {impure}
-    v28: double = add v16, v27 {pure}
-    v29: double = add v10, v28 {pure}
-    v30: int = const 1
-    v31: int = add v9, v30 {pure}
-    v32: any = convert.any v31
-    br bb1(v32, v31, v29)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: byte, v1: any) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: int = const 0
-    v4: any = name_read topRO {pure}
-    v5: any = widen#2 v4
-    v6: int = convert.int v5
-    v7: any = convert.any v0
-    v8: any = name_read double {pure}
-    v9: any = name_read int {pure}
-    br bb1(v3, v2)
-  bb1(v10: int, v11: double):
-    v12: int = const 2
-    v13: bool = lt v10, v12 {pure}
-    br_if v13, bb3, bb2
-  bb2:
-    ret v11
-  bb3:
-    v14: any = checkcast v7 <double|double|>
-    v15: double = convert.double v14
-    v16: int = opaque.DynamicCall(v9, v0) {impure}
-    v17: int = add v6, v16 {pure}
-    v18: any = checkcast v1 <int|int|>
-    v19: int = convert.int v18
-    v20: int = add v17, v19 {pure}
-    v21: int = add v20, v12 {pure}
-    v22: double = opaque.DynamicCall(v8, v21) {impure}
-    v23: double = add v15, v22 {pure}
-    v24: double = add v11, v23 {pure}
-    v25: int = const 1
-    v26: int = add v10, v25 {pure}
-    br bb1(v26, v24)
+```hir
+;; hir -O2 fn=run
+fn run (b:byte, raw:obj) -> double {pure unique}
+  (def a 0.0:double)
+  (def k 0:int)
+  (while (<:bool var(k) 2:int)
+    (block
+      (set a += (+:double (block
+            (def x#1 (as var(b) double|double|))
+            var(x#1)) (call name(double) (+:int (+:int (+:int (block
+                    (def x#2 name(topRO))
+                    var(x#2)) (block
+                    (def x#3
+                      (block
+                        (def t (call name(int) var(b)))
+                        var(t)))
+                    var(x#3))) (block
+                  (def x#4 (as var(raw) int|int|))
+                  var(x#4))) 2:int))))
+      (set k += 1:int)))
+  var(a)
 ```
 
 ## HirLicmPass : local non-capturing fn (DirectBabbleCall with VarRead callee) and non-value class ThisFieldGet
@@ -464,52 +262,18 @@ fn C.run (n:int) -> int {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=C.run stage=before
-fn C.run(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 0
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
-    v5: any = slot_read this {pure}
-    v6: int = load_field v5.v {read:frozen}
-    v7: int = add v4, v6 {pure}
-    v8: any = const null
-    br bb1(v8, v2, v1)
-  bb1(v9: any, v10: int, v11: int):
-    v12: bool = lt v10, v0 {pure}
-    br_if v12, bb3, bb2
-  bb2:
-    ret v11
-  bb3:
-    v13: int = add v11, v7 {pure}
-    v14: int = const 1
-    v15: int = add v10, v14 {pure}
-    v16: any = convert.any v15
-    br bb1(v16, v15, v13)
-```
-
-```mir
-;; mir -O2 fn=C.run
-fn C.run(v0: int) -> int:
-  bb0:
-    v1: int = const 0
-    v2: int = const 1
-    v3: int = add v0, v2 {pure}
-    v4: any = slot_read this {pure}
-    v5: int = load_field v4.v {read:frozen}
-    v6: int = add v3, v5 {pure}
-    br bb1(v1, v1)
-  bb1(v7: int, v8: int):
-    v9: bool = lt v7, v0 {pure}
-    br_if v9, bb3, bb2
-  bb2:
-    ret v8
-  bb3:
-    v10: int = add v8, v6 {pure}
-    v11: int = add v7, v2 {pure}
-    br bb1(v11, v10)
+```hir
+;; hir -O2 fn=C.run
+fn C.run (n:int) -> int {nothrow unique}
+  (def a 0:int)
+  (def k 0:int)
+  (block
+    (def $licm0 (+:int (+:int var(n) 1:int) (get-this-field v)))
+    (while (<:bool var(k) var(n))
+      (block
+        (set a += var($licm0))
+        (set k += 1:int))))
+  var(a)
 ```
 
 ## LICM / HirPurity : loop-invariant as, TypeApply, array.size(), and pure overloaded helper
@@ -548,66 +312,14 @@ fn run (x:obj, arr:obj) -> int {pure unique}
   var(acc)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any, v1: any) -> int:
-  bb0:
-    v2: int = const 0
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v2, v3)
-  bb1(v5: any, v6: int, v7: int):
-    v8: int = const 4
-    v9: bool = lt v6, v8 {pure}
-    br_if v9, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v10: any = checkcast v0 <int|int|>
-    v11: int = convert.int v10
-    v12: any = name_read id {pure}
-    v13: any = checkcast v0 <int|int|>
-    v14: int = opaque.DynamicCall(v12, v13) {impure}
-    v15: int = add v11, v14 {pure}
-    v16: int = array_len v1 {read:frozen,throws}
-    v17: int = add v15, v16 {pure}
-    v18: int = const 3
-    v19: int = add v17, v18 {pure}
-    v20: int = const 3
-    v21: int = add v19, v20 {pure}
-    v22: int = add v7, v21 {pure}
-    v23: int = const 1
-    v24: int = add v6, v23 {pure}
-    v25: any = convert.any v24
-    br bb1(v25, v24, v22)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any, v1: any) -> int:
-  bb0:
-    v2: int = const 0
-    v3: any = name_read id {pure}
-    br bb1(v2, v2)
-  bb1(v4: int, v5: int):
-    v6: int = const 4
-    v7: bool = lt v4, v6 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v5
-  bb3:
-    v8: any = checkcast v0 <int|int|>
-    v9: int = convert.int v8
-    v10: any = checkcast v0 <int|int|>
-    v11: int = opaque.DynamicCall(v3, v10) {impure}
-    v12: int = add v9, v11 {pure}
-    v13: int = array_len v1 {read:frozen,throws}
-    v14: int = add v12, v13 {pure}
-    v15: int = const 3
-    v16: int = add v14, v15 {pure}
-    v17: int = add v16, v15 {pure}
-    v18: int = add v5, v17 {pure}
-    v19: int = const 1
-    v20: int = add v4, v19 {pure}
-    br bb1(v20, v18)
+```hir
+;; hir -O2 fn=run
+fn run (x:obj, arr:obj) -> int {pure unique}
+  (def i 0:int)
+  (def acc 0:int)
+  (while (<:bool var(i) 4:int)
+    (block
+      (set acc += (+:int (+:int (+:int (+:int (as var(x) int|int|) (call (type-apply name(id)) (as var(x) int|int|))) (array-op SIZE var(arr))) 3:int) 3:int))
+      (set i += 1:int)))
+  var(acc)
 ```

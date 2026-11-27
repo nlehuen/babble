@@ -72,17 +72,14 @@ interface SubOv
     var(s)
 ```
 
-```mir
-;; mir -O2 interface=SubOv stage=before,final
-interface SubOv:
-  fn f(v0: int) -> int:
-    bb0:
-      v1: int = const 1
-      v2: int = add v0, v1 {pure}
-      ret v2
-  fn f(v0: any) -> any:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 interface=SubOv
+interface SubOv
+  (def f (overload (fn-ref f#1) (fn-ref f#2)))
+  fn f (x:int) -> int {pure}
+    (+:int var(x) 1:int)
+  fn f (s:obj) -> obj {pure}
+    var(s)
 ```
 
 ## InterfaceGen : sub-interface overriding overloaded parent with covariant overloaded defaults
@@ -106,19 +103,14 @@ interface SO
     (+:obj var(s) "!")
 ```
 
-```mir
-;; mir -O2 interface=SO stage=before,final
-interface SO:
-  fn f(v0: int) -> int:
-    bb0:
-      v1: int = const 2
-      v2: int = add v0, v1 {pure}
-      ret v2
-  fn f(v0: any) -> any:
-    bb0:
-      v1: any = const "!"
-      v2: any = strcat v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=SO
+interface SO
+  (def f (overload (fn-ref f#1) (fn-ref f#2)))
+  fn f (x:int) -> int {pure}
+    (+:int var(x) 2:int)
+  fn f (s:obj) -> obj {pure}
+    (+:obj var(s) "!")
 ```
 
 ## InterfaceGen : sub-interface optional-mask forwarding from required parent
@@ -138,13 +130,12 @@ interface SReq
     (+:int var(x) var(y))
 ```
 
-```mir
-;; mir -O2 interface=SReq stage=before,final
-interface SReq:
-  fn f(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=SReq
+interface SReq
+  (def f (fn-ref f))
+  fn f (x:int, y:int=10:int) -> int {pure}
+    (+:int var(x) var(y))
 ```
 
 ## InterfaceGen : sub-interface optional-mask forwarding from optional parent
@@ -164,13 +155,12 @@ interface SOpt
     (+:int var(x) var(y))
 ```
 
-```mir
-;; mir -O2 interface=SOpt stage=before,final
-interface SOpt:
-  fn f(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=SOpt
+interface SOpt
+  (def f (fn-ref f))
+  fn f (x:int, y:int=10:int) -> int {pure}
+    (+:int var(x) var(y))
 ```
 
 ## InterfaceGen : spread-optional interface default emits ARGUMENTS.MISSING
@@ -190,13 +180,12 @@ interface SS
     (+:obj var(x) var(z))
 ```
 
-```mir
-;; mir -O2 interface=SS stage=before,final
-interface SS:
-  fn f(v0: any, v1: any) -> any:
-    bb0:
-      v2: any = strcat v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=SS
+interface SS
+  (def f (fn-ref f))
+  fn f (x:obj, z:obj="!") -> obj {pure}
+    (+:obj var(x) var(z))
 ```
 
 ## InterfaceGen : rest-parameter interface default implementing fixed 2-arg parent
@@ -220,48 +209,16 @@ interface SR
     var(s)
 ```
 
-```mir
-;; mir -O2 interface=SR stage=before
-interface SR:
-  fn f(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      v3: any = const null
-      br bb1(v3, v1)
-    bb1(v4: any, v5: int):
-      v6: bool = for_has_next v2
-      br_if v6, bb3, bb2
-    bb2:
-      ret v5
-    bb3:
-      v7: any = for_next v2
-      v8: any = checkcast v7 <int|int|>
-      v9: int = convert.int v8
-      v10: int = add v5, v9 {pure}
-      v11: any = convert.any v10
-      br bb1(v11, v10)
-```
-
-```mir
-;; mir -O2 interface=SR
-interface SR:
-  fn f(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      br bb1(v1)
-    bb1(v3: int):
-      v4: bool = for_has_next v2
-      br_if v4, bb3, bb2
-    bb2:
-      ret v3
-    bb3:
-      v5: any = for_next v2
-      v6: any = checkcast v5 <int|int|>
-      v7: int = convert.int v6
-      v8: int = add v3, v7 {pure}
-      br bb1(v8)
+```hir
+;; hir -O2 interface=SR
+interface SR
+  (def f (fn-ref f))
+  fn f (xs:obj) -> int {pure}
+    (def s 0:int)
+    (for x in var(xs)
+      (block
+        (set s += var(x))))
+    var(s)
 ```
 
 ## BridgeHelpers : superHelper with optional mask
@@ -280,15 +237,12 @@ class COpt
     (+:int (super.f var(x)) var(y))
 ```
 
-```mir
-;; mir -O2 class=COpt stage=before,final
-class COpt:
-  fn COpt.f(v0: int, v1: int) -> int:
-    bb0:
-      v2: any = opaque.SuperCall(f, v0) {impure}
-      v3: int = convert.int v2
-      v4: int = add v3, v1 {pure}
-      ret v4
+```hir
+;; hir -O2 class=COpt
+class COpt
+  (def f (fn-ref COpt.f))
+  fn COpt.f (x:int, y:int=10:int) -> int {nothrow unique}
+    (+:int (super.f var(x)) var(y))
 ```
 
 ## BridgeHelpers : diamond findDefaultInInterface revisit skips visited base
@@ -310,13 +264,12 @@ interface Prov
     7:int
 ```
 
-```mir
-;; mir -O2 interface=Prov stage=before,final
-interface Prov:
-  fn m() -> int:
-    bb0:
-      v0: int = const 7
-      ret v0
+```hir
+;; hir -O2 interface=Prov
+interface Prov
+  (def m (fn-ref m))
+  fn m () -> int {pure}
+    7:int
 ```
 
 ## BridgeHelpers : emitInheritedDefaultInvoke optional mask forwarding
@@ -338,13 +291,12 @@ interface P
     (+:int var(x) var(y))
 ```
 
-```mir
-;; mir -O2 interface=P stage=before,final
-interface P:
-  fn f(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=P
+interface P
+  (def f (fn-ref f))
+  fn f (x:int, y:int=10:int) -> int {pure}
+    (+:int var(x) var(y))
 ```
 
 ## BridgeHelpers : emitInheritedDefaultInvoke dynamic fallback for arity mismatch
@@ -365,13 +317,12 @@ interface P1
     (+:int var(x) var(y))
 ```
 
-```mir
-;; mir -O2 interface=P1 stage=before,final
-interface P1:
-  fn f(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=P1
+interface P1
+  (def f (fn-ref f))
+  fn f (x:int, y:int=10:int) -> int {pure}
+    (+:int var(x) var(y))
 ```
 
 ## BridgeHelpers : emitInheritedDefaultInvoke dynamic fallback for overloaded defaults
@@ -394,16 +345,12 @@ interface PO
     (+:obj var(s) "!")
 ```
 
-```mir
-;; mir -O2 interface=PO stage=before,final
-interface PO:
-  fn f(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
-  fn f(v0: any) -> any:
-    bb0:
-      v1: any = const "!"
-      v2: any = strcat v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 interface=PO
+interface PO
+  (def f (overload (fn-ref f#1) (fn-ref f#2)))
+  fn f (x:int, y:int=5:int) -> int {pure}
+    (+:int var(x) var(y))
+  fn f (s:obj) -> obj {pure}
+    (+:obj var(s) "!")
 ```

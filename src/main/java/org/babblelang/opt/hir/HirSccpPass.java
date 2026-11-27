@@ -24,7 +24,7 @@ import org.babblelang.runtime.Truth;
 
 /**
  * Structured Sparse Conditional Constant Propagation ({@code HirSccpPass}) over typed {@link
- * HirModule} ({@code BIP039-D6}, {@code BIP039-P3}).
+ * HirModule} ({@code BIP039-D6}, {@code BIP039-I3}).
  *
  * <p>Propagates scalar constants across reassigned locals, conditional branches, {@code match}
  * expressions, loops (via monotonic fixed-point widening), and {@code try/catch/finally} blocks,

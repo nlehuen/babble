@@ -4,7 +4,7 @@ This guide applies to all `.batest.md` specification files under `src/test/bates
 
 ## Why small, readable cases matter : multi-backend oracle plus manual review
 
-Every `.batest.md` case is checked automatically by a **multi-backend execution oracle** — `interpret`, `compile -O0`, `compile -O1`, `compile -O2` (under `-PO2` and `-Pbatest`, with `HirVerifier`, `MirVerifier`, and ASM's `CheckClassAdapter`, plus any `hir`/`mir` IR golden blocks matching the active optimization level), and **WebAssembly 3.0** (`WasmBatestTestCase`, `wasm-js -O1`, plus `wat` blocks for portable cases) — matched against its expected `stdout`, `stderr`, and `error` blocks, and checked for pure-`SLL` parsing (`ParserGrammarTestCase`) and idempotent formatting (`FormatterTestCase`).
+Every `.batest.md` case is checked automatically by a **multi-backend execution oracle** — `interpret`, `compile -O0`, `compile -O1`, `compile -O2` (under `-PO2` and `-Pbatest`, with `HirVerifier` and ASM's `CheckClassAdapter`, plus any `hir` IR golden blocks matching the active optimization level), and **WebAssembly 3.0** (`WasmBatestTestCase`, `wasm-js -O1` and `-O2`, plus `wat` blocks for portable cases) — matched against its expected `stdout`, `stderr`, and `error` blocks, and checked for pure-`SLL` parsing (`ParserGrammarTestCase`) and idempotent formatting (`FormatterTestCase`).
 
 That automated oracle catches regressions and disagreements *between* backends, **not** shared bugs where the interpreter and compiler make the same mistake, or tests whose expectations were silently wrong from the start. We therefore require a **4th level of verification : manual validation by a human or an LLM reviewer**.
 
@@ -18,7 +18,7 @@ All three readability budgets are **enforced automatically by [`BatestParser`](.
 - **Preamble** (`;; babble preamble`) and each **virtual module** (`;; babble module=<path>`) : strictly **< 800 characters** of Babble code (comments excluded).
 - **Each test case** (combined `babble` / `;; babble session` code inside a `##` section) : strictly **< 400 characters** of Babble code (comments excluded).
 
-**Markdown prose outside fences, non-Babble blocks (`stdout`, `stderr`, `error`, `hir`, `mir`), and Babble comments (`;; ...` and `;;( ... ;;)`) do not count toward the character budgets** (though all lines in the file count toward the 1,000-line file limit).
+**Markdown prose outside fences, non-Babble blocks (`stdout`, `stderr`, `error`, `hir`, `wat`), and Babble comments (`;; ...` and `;;( ... ;;)`) do not count toward the character budgets** (though all lines in the file count toward the 1,000-line file limit).
 
 When you hit a limit :
 - **File > 1,000 lines** : split the file into cohesive, descriptively named feature files (each `< 1,000` lines).
@@ -139,7 +139,7 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
 - **Fenced blocks and first-line option directives** ([`BatestV2Parser`](../java/org/babblelang/tests/batest/BatestV2Parser.java)) :
   - Open with 3+ backticks and **only the block kind** (```` ```<kind> ````) and close with at least the same number of backticks. Use 4+ backticks if a block body contains ```` ``` ````.
   - Because Markdown renderers (GitHub, Antigravity) hide text after the language name on the opening fence line, **block options are placed on the first line inside the block** as `<comment> <kind> <options>` (options on the opening fence line are rejected) :
-    - `;; <kind> <options>` for Babble-family blocks (`babble`, `hir`, `mir`).
+    - `;; <kind> <options>` for Babble-family blocks (`babble`, `hir`, `wat`).
     - `# <kind> <options>` for output/error blocks (`stdout`, `stderr`, `error`).
   - `babble` with `;; babble preamble [large="..."]` (file header only, at most one).
   - `babble` with `;; babble module=<path> [large="..."]` (file header or case-scoped; overrides file-level module of the same path).
@@ -148,13 +148,13 @@ Instead of printing colon-delimited strings and pinning a `stdout` block, assert
   - `stderr` (optional `# stderr regex`) — expected normalized non-fatal stderr such as `Warning : ...` (default `""`).
   - `error` (optional `# error regex`) — expected fatal compile-time or runtime error (`Kind.USER_ERROR`; omitting `error` asserts `Kind.OK`).
   - The `regex` flag compiles the block body with `Pattern.MULTILINE | Pattern.DOTALL` and matches the whole channel (`matcher(actual).matches()`), so `.*` spans multiple lines automatically. Use `regex` only for text that varies with JDK version, never to loosen a Babble message.
-- **IR golden & check blocks (`BIP029`)** :
-  - Open with ```` ```hir ```` or ```` ```mir ```` and put the directive on line 1 : `;; <hir|mir> <opt-levels> <target> [stage=<before|final|before,final|after:PassName>] [in=<module.ba>] [regex|check]`.
-  - `<opt-levels>` : `-O0`, `-O1`, `-O0,-O1`, or `-O2`. Blocks whose opt-levels do not match the active run are skipped.
+- **IR golden & check blocks (`BIP029`, `BIP039`)** :
+  - Open with ```` ```hir ```` or ```` ```wat ```` and put the directive on line 1 : `;; <hir|wat> <opt-levels> <target> [stage=<before|final|before,final|after:PassName>] [in=<module.ba>] [regex|check]`.
+  - `<opt-levels>` : `-O0`, `-O1`, `-O2`, or comma-separated combinations (`-O0,-O1`, `-O1,-O2`, `-O0,-O1,-O2`). Blocks whose opt-levels do not match the active run are skipped.
   - `<target>` : `fn=<name>`, `fn=<Type>.<method>`, `class=<name>`, `record=<name>`, `interface=<name>`, `top-level`, or `module`.
-  - Default mode compares exact canonical IR (`HirCanonicalPrinter` / `MirCanonicalPrinter`, preamble-independent and locally renumbered). `check` mode evaluates line predicates (`contains <s>`, `!contains <s>`, `count <N> <s>`, `regex <pat>`) and is only allowed when the actual canonical IR dump has at least `batest.minDumpSizeForUsingPartialChecks` lines (default `30`, `0` disables); shorter dumps must use exact goldens for readability.
-  - Every non-error, non-session case under `src/test/batest/compiler/` must include at least one `hir` expectation applicable to `-O0`, at least one `hir` applicable to `-O1`, at least one `mir -O2` expectation matching `stage=before`, and at least one `mir -O2` expectation matching `stage=final` (enforced by `BatestV2Parser` and `BatestV2HarnessTestCase`; use `hir -O0,-O1` when canonical HIR is identical at both levels, and `mir -O2 ... stage=before,final` when pre- and post-pass MIR are identical).
-  - Update stale exact-golden IR blocks safely after intentional optimizer/printer changes with `-Dbatest.updateIr=true` (rewrites only exact IR block bodies below their `;; hir`/`;; mir` directive on behaviorally-passing verified cases and fails loudly afterward so CI can never pass with blessing enabled).
+  - Default mode compares exact canonical IR (`HirCanonicalPrinter` / `WatPrinter`, preamble-independent and locally renumbered). `check` mode evaluates line predicates (`contains <s>`, `!contains <s>`, `count <N> <s>`, `regex <pat>`) and is only allowed when the actual canonical IR dump has at least `batest.minDumpSizeForUsingPartialChecks` lines (default `30`, `0` disables); shorter dumps must use exact goldens for readability.
+  - Every non-error, non-session case under `src/test/batest/compiler/` must include at least one `hir` expectation applicable to `-O0`, at least one `hir` applicable to `-O1`, and at least one `hir` applicable to `-O2` (enforced by `BatestV2Parser` and `BatestV2HarnessTestCase`; combined headers such as `hir -O0,-O1` or `hir -O1,-O2` are allowed when canonical HIR is identical across levels).
+  - Update stale exact-golden IR blocks safely after intentional optimizer/printer changes with `-Dbatest.updateIr=true` (rewrites only exact IR block bodies below their `;; hir` directive on behaviorally-passing verified cases and fails loudly afterward so CI can never pass with blessing enabled).
 - **Error normalization and `Kind`** ([`BatestRunner`](../java/org/babblelang/tests/batest/BatestRunner.java)) :
   - Wrapper prefixes (`BabbleException:`, `ScriptException:`), trailing `in <src> at line number N`, embedded line coordinates, dynamic type IDs (`expected T#, got T#`), OS-locale `FileNotFoundException` reasons (`(<OS error>)`), JDK 22+ reflective receiver wording, and `InvocationTargetException` wrappers are normalized; `StackOverflowError` becomes `Stack overflow`.
   - `INTERNAL_CRASH` (`VerifyError`, uncaught internal NPE/ISE) fails unconditionally.

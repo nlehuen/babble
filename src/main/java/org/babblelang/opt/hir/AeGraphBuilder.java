@@ -21,7 +21,7 @@ import org.babblelang.opt.HirRewriter;
 
 /**
  * Dominator-preorder AEGraph builder and simplifier over structured {@link HirExpr} trees ({@code
- * BIP039-D6}, {@code BIP039-P4}).
+ * BIP039-D6}, {@code BIP039-I4}).
  *
  * <p>Unifies algebraic E-graph simplification, dominator-scoped GVN/CSE (with commutative operand
  * canonicalization, idempotent call collapsing, {@code ArrayOp.SIZE} CSE, and lazy {@code $cseN}
@@ -896,8 +896,33 @@ final class AeGraphBuilder {
             rewrites[0]++;
             return visitConst(c, state);
         }
+        boolean prefixPure = true;
+        Set<Integer> localIds = null;
+        if (!nb.declaredVars().isEmpty()) {
+            localIds = new HashSet<>(nb.declaredVars().size());
+            for (HirVar dv : nb.declaredVars()) {
+                if (!dv.cell()) {
+                    localIds.add(dv.id());
+                }
+            }
+        }
+        for (int i = 0; i < nb.statements().size() - 1; i++) {
+            HirExpr st = nb.statements().get(i);
+            if (st instanceof HirExpr.Def d
+                    && d.var() != null
+                    && localIds != null
+                    && localIds.contains(d.var().id())
+                    && (d.value() == null || fx.effectOf(d.value()).isPureFloatable())) {
+                continue;
+            }
+            if (!fx.effectOf(st).isPureFloatable()) {
+                prefixPure = false;
+                break;
+            }
+        }
         int resId =
-                (lastVal[0] >= 0
+                (prefixPure
+                                && lastVal[0] >= 0
                                 && nb.innerWideningRank() < 0
                                 && nb.meta().wideningRank() < 0
                                 && !nb.statements().isEmpty()
@@ -1196,6 +1221,13 @@ final class AeGraphBuilder {
 
     private Res finishValueNumbered(
             HirExpr cur, AeGraphState.ValueKey key, IrEffect eff, AeGraphState state) {
+        IrEffect fullEff = fx.effectOf(cur);
+        boolean subtreeSafe =
+                fullEff.kind() == IrEffect.Kind.PURE || fullEff.kind() == IrEffect.Kind.READ;
+        if (!subtreeSafe) {
+            noteEffect(eff, state);
+            return new Res(cur, state.internFresh());
+        }
         Integer existing = state.lookup(key);
         if (existing != null) {
             HirExpr dom =
@@ -1215,10 +1247,11 @@ final class AeGraphBuilder {
                         && currentStmtIndex >= 0
                         && AeGraphExtractor.isWorthCse(cur)
                         && !AeGraphExtractor.containsNarrow(cur)
-                        && (eff.isPureFloatable() || !currentStmtHasPriorEffect);
+                        && (fullEff.isPureFloatable() || !currentStmtHasPriorEffect);
         if (safeToHoist) {
             state.registerCseCandidate(
-                    new AeGraphState.CseCandidate(id, cur, currentScope, currentStmtIndex, eff));
+                    new AeGraphState.CseCandidate(
+                            id, cur, currentScope, currentStmtIndex, fullEff));
         }
         noteEffect(eff, state);
         return new Res(cur, id);

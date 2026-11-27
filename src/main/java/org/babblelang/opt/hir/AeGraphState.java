@@ -16,7 +16,7 @@ import org.babblelang.ir.hir.IrEffect;
 /**
  * Lexical-dominator scoped value-numbering state, variable epochs, alias-partition memory epochs,
  * store-to-load forwarding table, and boxing/idempotence origin metadata for {@link HirAeGraphPass}
- * ({@code BIP039-D6}, {@code BIP039-P4}).
+ * ({@code BIP039-D6}, {@code BIP039-I4}).
  */
 final class AeGraphState {
     /** Per-function shared counter and global origin metadata (monotonically grows per fn). */

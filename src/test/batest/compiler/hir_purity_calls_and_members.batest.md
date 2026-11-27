@@ -64,82 +64,19 @@ fn run (n:int) -> int {io}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = const 2
-    v3: any = new_java Point(v1, v2) {pure}
-    v4: int = const 0
-    v5: int = const 0
-    v6: any = const "ab"
-    v7: any = const "ab"
-    v8: bool = call_java v6.equals(v7) {pure}
-    v9: any = const null
-    br bb1(v9, v5, v4)
-  bb1(v10: any, v11: int, v12: int):
-    v13: bool = lt v11, v0 {pure}
-    br_if v13, bb3, bb2
-  bb2:
-    ret v12
-  bb3:
-    v14: bool = const false
-    br_if v8, bb4, bb5(v14)
-  bb4:
-    v15: any = const "ab"
-    v16: bool = call_java v15.equals(v3) {pure!}
-    v17: bool = not v16 {pure}
-    br bb5(v17)
-  bb5(v18: bool):
-    br_if v18, bb7, bb6
-  bb6:
-    v19: int = const 0
-    br bb8(v19)
-  bb7:
-    v20: int = const 1
-    br bb8(v20)
-  bb8(v21: int):
-    v22: int = add v12, v21 {pure}
-    v23: int = const 1
-    v24: int = add v11, v23 {pure}
-    v25: any = convert.any v24
-    br bb1(v25, v24, v22)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = const 2
-    v3: any = new_java Point(v1, v2) {pure}
-    v4: int = const 0
-    v5: any = const "ab"
-    v6: bool = call_java v5.equals(v5) {pure}
-    br bb1(v4, v4)
-  bb1(v7: int, v8: int):
-    v9: bool = lt v7, v0 {pure}
-    br_if v9, bb3, bb2
-  bb2:
-    ret v8
-  bb3:
-    v10: bool = const false
-    br_if v6, bb4, bb5(v10)
-  bb4:
-    v11: bool = call_java v5.equals(v3) {pure!}
-    v12: bool = not v11 {pure}
-    br bb5(v12)
-  bb5(v13: bool):
-    br_if v13, bb7, bb6
-  bb6:
-    br bb8(v4)
-  bb7:
-    br bb8(v1)
-  bb8(v14: int):
-    v15: int = add v8, v14 {pure}
-    v16: int = add v7, v1 {pure}
-    br bb1(v16, v15)
+```hir
+;; hir -O2 fn=run
+fn run (n:int) -> int {io}
+  (def pt (jnew Point 1:int 2:int))
+  (def a 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (jcall String.equals "ab" "ab"))
+    (while (<:bool var(i) var(n))
+      (block
+        (set a += (if (and var($licm0) (not (jcall String.equals "ab" var(pt)))) 1:int 0:int))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirPurity : CoreExceptionRef, boxed Integer arithmetic, and char-vs-nullable equality
@@ -171,25 +108,11 @@ fn run (ji:int, chOpt:obj) -> int {nothrow unique}
   1:int
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int, v1: any) -> int:
-  bb0:
-    v2: char = const 'a'
-    v3: any = convert.any v2
-    v4: any = eq v3, v1 {pure,throws}
-    v5: int = const 1
-    ret v5
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int, v1: any) -> int:
-  bb0:
-    v2: any = const 'a'
-    v3: any = eq v2, v1 {pure,throws}
-    v4: int = const 1
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (ji:int, chOpt:obj) -> int {nothrow unique}
+  (==:bool 'a' var(chOpt))
+  1:int
 ```
 
 ## HirPurity : OverloadSelect and non-pure-static JavaMethodCall receivers
@@ -224,39 +147,14 @@ fn run () -> int {io}
   1:int
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run() -> int:
-  bb0:
-    v0: any = name_read java {pure}
-    v1: any = opaque.DynamicSelect(v0.lang) {impure}
-    v2: any = opaque.DynamicSelect(v1.Math) {impure}
-    v3: any = name_read bump {pure}
-    v4: int = call bump() {impure}
-    v5: any = name_read java {pure}
-    v6: any = opaque.DynamicSelect(v5.lang) {impure}
-    v7: any = opaque.DynamicSelect(v6.Math) {impure}
-    v8: int = const -5
-    v9: int = call_java v7.abs(v8) {impure}
-    v10: int = const 1
-    ret v10
-```
-
-```mir
-;; mir -O2 fn=run
-fn run() -> int:
-  bb0:
-    v0: any = name_read java {pure}
-    v1: any = opaque.DynamicSelect(v0.lang) {impure}
-    v2: any = opaque.DynamicSelect(v1.Math) {impure}
-    v3: any = name_read bump {pure}
-    v4: int = call bump() {impure}
-    v5: any = opaque.DynamicSelect(v0.lang) {impure}
-    v6: any = opaque.DynamicSelect(v5.Math) {impure}
-    v7: int = const -5
-    v8: int = call_java v6.abs(v7) {impure}
-    v9: int = const 1
-    ret v9
+```hir
+;; hir -O2 fn=run
+fn run () -> int {io}
+  (block
+    (def $cse0 name(java))
+    (select (select var($cse0).lang).Math)
+    (jcall Math.abs -5:int)
+    1:int)
 ```
 
 ## HirPurity : cross-module DirectThisMethodCall pure, throwing, and volatile paths
@@ -302,53 +200,19 @@ fn run (er:obj) -> int {volatile unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any) -> int:
-  bb0:
-    v1: int = call_method v0.getThrow() {pure,throws}
-    v2: int = const 0
-    v3: int = const 0
-    v4: int = call_method v0.getPure() {pure}
-    v5: any = const null
-    br bb1(v5, v3, v2)
-  bb1(v6: any, v7: int, v8: int):
-    v9: int = const 2
-    v10: bool = lt v7, v9 {pure}
-    br_if v10, bb3, bb2
-  bb2:
-    ret v8
-  bb3:
-    v11: int = call_method v0.getVol() {pure!}
-    v12: int = add v4, v11 {pure}
-    v13: int = add v8, v12 {pure}
-    v14: int = const 1
-    v15: int = add v7, v14 {pure}
-    v16: any = convert.any v15
-    br bb1(v16, v15, v13)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any) -> int:
-  bb0:
-    v1: int = call_method v0.getThrow() {pure,throws}
-    v2: int = const 0
-    v3: int = call_method v0.getPure() {pure}
-    br bb1(v2, v2)
-  bb1(v4: int, v5: int):
-    v6: int = const 2
-    v7: bool = lt v4, v6 {pure}
-    br_if v7, bb3, bb2
-  bb2:
-    ret v5
-  bb3:
-    v8: int = call_method v0.getVol() {pure!}
-    v9: int = add v3, v8 {pure}
-    v10: int = add v5, v9 {pure}
-    v11: int = const 1
-    v12: int = add v4, v11 {pure}
-    br bb1(v12, v10)
+```hir
+;; hir -O2 fn=run
+fn run (er:obj) -> int {volatile unique}
+  (call-method var(er).getThrow)
+  (def a 0:int)
+  (def i 0:int)
+  (block
+    (def $licm0 (call-method var(er).getPure))
+    (while (<:bool var(i) 2:int)
+      (block
+        (set a += (+:int var($licm0) (call-method var(er).getVol)))
+        (set i += 1:int))))
+  var(a)
 ```
 
 ## HirPurity : InterfaceCall on ThisRef, RecordNew, call result, and impure method
@@ -382,31 +246,12 @@ fn run (vi:obj) -> int {io}
   1:int
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any) -> int:
-  bb0:
-    v1: any = name_read R {pure}
-    v2: int = const 1
-    v3: any = record_new R[v1](v2) {pure}
-    v4: any = opaque.DynamicSelect(v3.b) {impure}
-    v5: int = opaque.DynamicCall(v4) {impure}
-    v6: int = call_iface v0.imp() {impure}
-    v7: int = const 1
-    ret v7
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any) -> int:
-  bb0:
-    v1: any = name_read R {pure}
-    v2: int = const 1
-    v3: any = record_new R[v1](v2) {pure}
-    v4: any = opaque.DynamicSelect(v3.b) {impure}
-    v5: int = opaque.DynamicCall(v4) {impure}
-    v6: int = call_iface v0.imp() {impure}
-    ret v2
+```hir
+;; hir -O2 fn=run
+fn run (vi:obj) -> int {io}
+  (call (select (record-new R 1:int).b))
+  (call-iface var(vi).imp)
+  1:int
 ```
 
 ## HirPurity : body-field ThisFieldGet, call-result record receiver, and local RecordNew
@@ -444,38 +289,16 @@ fn run () -> int {nothrow unique}
   1:int
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run() -> int:
-  bb0:
-    v0: any = opaque.ClassExpr(LR) {impure}
-    v1: int = const 1
-    v2: any = name_read R {pure}
-    v3: int = const 3
-    v4: any = opaque.DynamicCall(v2, v3) {impure}
-    v5: int = load_field v4.x {read:frozen,throws}
-    v6: any = name_read R {pure}
-    v7: int = const 3
-    v8: any = opaque.DynamicCall(v6, v7) {impure}
-    v9: int = load_field v8.y {read:frozen,throws}
-    v10: int = load_field v8.x {read:frozen}
-    v11: int = const 1
-    ret v11
-```
-
-```mir
-;; mir -O2 fn=run
-fn run() -> int:
-  bb0:
-    v0: any = opaque.ClassExpr(LR) {impure}
-    v1: int = const 1
-    v2: any = name_read R {pure}
-    v3: int = const 3
-    v4: any = opaque.DynamicCall(v2, v3) {impure}
-    v5: int = load_field v4.x {read:frozen,throws}
-    v6: any = opaque.DynamicCall(v2, v3) {impure}
-    v7: int = load_field v6.y {read:frozen,throws}
-    ret v1
+```hir
+;; hir -O2 fn=run
+fn run () -> int {nothrow unique}
+  (class-ref LR)
+  (block
+    (def $cse0 (call name(R) 3:int))
+    (block
+      (get-this-field y)
+      (get-this-field x))
+    1:int)
 ```
 
 ## HirPurity : uninitialized Def, captured cell local, capturing closure, Move, and late RecordNew
@@ -524,58 +347,25 @@ fn run (k:int) -> int {io}
     (set u (box (+:int var(k) 1:int)))
     (nonnull var(u)))
   (def u2 (call-fn cl))
-  (block
-    (def cap 1:int)
-    (def c2 (fn-ref c2))
-    (call-fn c2))
   (core-new list 2:int)
   var(u2)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    slot_init outer, v0 {write:shared}
-    v1: any = opaque.FunctionRef(cl) {read:shared}
-    v2: any = name_read LateR {pure,throws}
-    v3: int = const 1
-    v4: any = name_read fUninit {pure,throws}
-    v5: int = const 1
-    v6: int = add v0, v5 {pure}
-    v7: any = convert.any v6
-    v8: int = nonnull v7
-    v9: int = call cl() {impure}
-    slot_decl cap
-    v10: int = const 1
-    slot_init cap, v10 {write:shared}
-    v11: any = opaque.FunctionRef(c2) {read:shared}
-    v12: int = call c2() {impure}
-    v13: int = const 2
-    v14: any = opaque.CoreCollectionCall(list, v13) {impure}
-    ret v9
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    slot_init outer, v0 {write:shared}
-    v1: any = opaque.FunctionRef(cl) {read:shared}
-    v2: any = name_read LateR {pure,throws}
-    v3: int = const 1
-    v4: any = name_read fUninit {pure,throws}
-    v5: int = add v0, v3 {pure}
-    v6: any = convert.any v5
-    v7: int = nonnull v6
-    v8: int = call cl() {impure}
-    slot_decl cap
-    slot_init cap, v3 {write:shared}
-    v9: any = opaque.FunctionRef(c2) {read:shared}
-    v10: int = call c2() {impure}
-    v11: int = const 2
-    v12: any = opaque.CoreCollectionCall(list, v11) {impure}
-    ret v8
+```hir
+;; hir -O2 fn=run
+fn run (k:int) -> int {io}
+  (def outer var(k))
+  (def cl (fn-ref cl))
+  (block
+    name(LateR)
+    (def $sr_u0_0 1:int))
+  (block
+    name(fUninit)
+    (set u (box (+:int var(k) 1:int)))
+    (nonnull var(u)))
+  (def u2 (call-fn cl))
+  (core-new list 2:int)
+  var(u2)
 ```
 
 ## HirPurity : non-inlined calling method with frame-local mutating closure is not dead code
@@ -596,15 +386,10 @@ fn Bag.countAbove (p:obj) -> int {nothrow unique}
   var(m)
 ```
 
-```mir
-;; mir -O2 fn=Bag.countAbove stage=before,final
-fn Bag.countAbove() -> int:
-  bb0:
-    v0: int = const 0
-    slot_init m, v0 {write:shared}
-    v1: any = slot_read this {pure}
-    v2: any = opaque.FunctionRef(<anon>) {read:shared}
-    v3: any = call_method v1.visit(v2) {impure}
-    v4: int = slot_read m {read:shared}
-    ret v4
+```hir
+;; hir -O2 fn=Bag.countAbove
+fn Bag.countAbove (p:obj) -> int {nothrow unique}
+  (def m 0:int)
+  (call-method this.visit (fn-ref <anon#0>))
+  var(m)
 ```

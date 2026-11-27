@@ -62,9 +62,20 @@ top-level:
   (call name(assert) (and (and (==:bool (jcall Map.size name(sm)) 2:int) (==:bool (jcall SortedMap.firstKey name(sm)) "a")) (==:bool (jcall Map.get name(sm) "b") 2:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def ss (core-new sortedset from=(core-new list 3:int 1:int 2:int)))
+  (def sm (core-new sortedmap from=(core-new map (core-new entry "b" 2:int) (core-new entry "a" 1:int))))
+  (block
+    (def $cse0 name(ss))
+    (def $cse1 name(assert))
+    (call var($cse1) (and (and (==:bool (jcall Set.size var($cse0)) 3:int) (==:bool (jcall SortedSet.first var($cse0)) 1:int)) (==:bool (jcall SortedSet.last var($cse0)) 3:int)))
+    (def $cse2 name(sm))
+    (call var($cse1) (and (and (==:bool (jcall Map.size var($cse2)) 2:int) (==:bool (jcall SortedMap.firstKey var($cse2)) "a")) (==:bool (jcall Map.get var($cse2) "b") 2:int))))
 ```
 
 ## Core sortedset and sortedmap from-plus-comparator in both argument orders
@@ -94,9 +105,24 @@ top-level:
   (call name(assert) (and (and (and (==:bool (jcall SortedSet.first name(ss1)) 3:int) (==:bool (jcall SortedSet.first name(ss2)) 3:int)) (==:bool (jcall SortedMap.firstKey name(sm1)) "c")) (==:bool (jcall SortedMap.firstKey name(sm2)) "c")))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def xs (core-new list 1:int 3:int 2:int))
+  (def m (core-new map (core-new entry "a" 1:int) (core-new entry "c" 3:int) (core-new entry "b" 2:int)))
+  (block
+    (def $cse0 name(revInt))
+    (def $cse1 name(xs))
+    (def ss1 (core-new sortedset from=var($cse1) comparator=(java-sam Comparator var($cse0))))
+    (def ss2 (core-new sortedset comparator=(java-sam Comparator var($cse0)) from=var($cse1)))
+    (def $cse2 name(revStr))
+    (def $cse3 name(m))
+    (def sm1 (core-new sortedmap from=var($cse3) comparator=(java-sam Comparator var($cse2))))
+    (def sm2 (core-new sortedmap comparator=(java-sam Comparator var($cse2)) from=var($cse3)))
+    (call name(assert) (and (and (and (==:bool (jcall SortedSet.first name(ss1)) 3:int) (==:bool (jcall SortedSet.first name(ss2)) 3:int)) (==:bool (jcall SortedMap.firstKey name(sm1)) "c")) (==:bool (jcall SortedMap.firstKey name(sm2)) "c"))))
 ```
 
 ## Cross-module direct overloaded operator, optional spec method, and >8-param fallback
@@ -141,18 +167,37 @@ top-level:
         (def $this#2 name(v))
         (def o (record-new ext_ops$ba$C0$Vec 3:int))
         (+:int (get-this-field x) (get-this-field x))) 13:int))
-  (call name(assert) (and (==:bool (call-method name(v).inc 2:int) 17:int) (==:bool (block
+  (call name(assert) (and (==:bool (block
           (def $this#3 name(v))
-          (+:int (get-this-field x) 3:int)) 13:int)))
+          (+:int (get-this-field x) 3:int)) 13:int) (==:bool (call-method name(v).inc 2:int) 17:int)))
   (call name(assert) (==:bool (block
         (def $this#4 name(v))
         (+:obj "v:" (get-this-field x))) "v:10"))
   (call name(assert) (==:bool (call (select name(v).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (block
+    (def $cse0 name(import))
+    (def tests (call var($cse0) "org.babblelang.tests"))
+    (def revInt (fn-ref revInt))
+    (def revStr (fn-ref revStr))
+    (def m (call var($cse0) "ext_ops.ba"))
+    (def $cse3 name(m))
+    (def $cse4 (export var($cse3).Vec))
+    (def v (record-new ext_ops$ba$C0$Vec 10:int))
+    (def $cse1 name(assert))
+    (def $cse2 name(v))
+    (def $cse5 (get-this-field x))
+    (call var($cse1) (==:bool (+:int var($cse5) 5:int) 15:int))
+    (call var($cse1) (==:bool (block
+          (def o (record-new ext_ops$ba$C0$Vec 3:int))
+          (+:int var($cse5) (get-this-field x))) 13:int))
+    (call var($cse1) (and (==:bool (+:int var($cse5) 3:int) 13:int) (==:bool (call-method var($cse2).inc 2:int) 17:int)))
+    (call var($cse1) (==:bool (+:obj "v:" var($cse5)) "v:10"))
+    (call var($cse1) (==:bool (call (select var($cse2).sum9) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 55:int)))
 ```
 
 ## Cross-module definite and non-definite field reads plus transitive interface hierarchy
@@ -191,9 +236,21 @@ top-level:
   (call name(assert) (and (and (==:bool (select name(lb).init) 1:int) (==:bool (select name(lb).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (block
+    (def $cse0 name(import))
+    (def tests (call var($cse0) "org.babblelang.tests"))
+    (def revInt (fn-ref revInt))
+    (def revStr (fn-ref revStr))
+    (def eo (call var($cse0) "ext_ops.ba"))
+    (def hm (call var($cse0) "hier_mid.ba"))
+    (def $cse1 name(eo))
+    (def lb (call (export var($cse1).LateBox)))
+    (def Impl (class-ref Impl))
+    (def $cse2 name(lb))
+    (call name(assert) (and (and (==:bool (select var($cse2).init) 1:int) (==:bool (select var($cse2).late) 42:int)) (==:bool (call (select (call name(Impl)).a2)) 3:int))))
 ```
 
 ## Dynamic function-typed call with >8 arguments (positional and named)
@@ -214,52 +271,10 @@ fn call9 (g:obj) -> int {pure unique}
   (+:int (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int i=10:int))
 ```
 
-```mir
-;; mir -O2 fn=call9 stage=before
-fn call9(v0: any) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = const 2
-    v3: int = const 3
-    v4: int = const 4
-    v5: int = const 5
-    v6: int = const 6
-    v7: int = const 7
-    v8: int = const 8
-    v9: int = const 9
-    v10: int = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
-    v11: int = const 1
-    v12: int = const 2
-    v13: int = const 3
-    v14: int = const 4
-    v15: int = const 5
-    v16: int = const 6
-    v17: int = const 7
-    v18: int = const 8
-    v19: int = const 10
-    v20: int = opaque.DynamicCall(v0, v11, v12, v13, v14, v15, v16, v17, v18, v19) {impure}
-    v21: int = add v10, v20 {pure}
-    ret v21
-```
-
-```mir
-;; mir -O2 fn=call9
-fn call9(v0: any) -> int:
-  bb0:
-    v1: int = const 1
-    v2: int = const 2
-    v3: int = const 3
-    v4: int = const 4
-    v5: int = const 5
-    v6: int = const 6
-    v7: int = const 7
-    v8: int = const 8
-    v9: int = const 9
-    v10: int = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v9) {impure}
-    v11: int = const 10
-    v12: int = opaque.DynamicCall(v0, v1, v2, v3, v4, v5, v6, v7, v8, v11) {impure}
-    v13: int = add v10, v12 {pure}
-    ret v13
+```hir
+;; hir -O2 fn=call9
+fn call9 (g:obj) -> int {pure unique}
+  (+:int (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) (call var(g) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int i=10:int))
 ```
 
 ## Overload direct >8-param alternative and anonymous inline overload call
@@ -297,9 +312,20 @@ top-level:
         6:int) 6:int))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (def tests (call name(import) "org.babblelang.tests"))
+  (def revInt (fn-ref revInt))
+  (def revStr (fn-ref revStr))
+  (def big (overload (fn-ref big#1) (fn-ref big#2)))
+  (block
+    (def $cse0 name(big))
+    (def $cse1 name(assert))
+    (call var($cse1) (and (==:bool (call (overload-select #0 var($cse0)) 1:int 2:int 3:int 4:int 5:int 6:int 7:int 8:int 9:int) 10:int) true:bool))
+    (call var($cse1) (==:bool (block
+          (overload-select #0 (overload (fn-ref <anon#0>) (fn-ref <anon#1>)))
+          6:int) 6:int)))
 ```
 
 ## Union-split overload dispatch with optional primitive and reference defaults
@@ -319,13 +345,10 @@ fn run (u:obj) -> obj {nothrow unique}
   (overload-dispatch name(f) var(u))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: any) -> any:
-  bb0:
-    v1: any = name_read f {pure}
-    v2: any = opaque.OverloadDispatch(v1, v0) {impure}
-    ret v2
+```hir
+;; hir -O2 fn=run
+fn run (u:obj) -> obj {nothrow unique}
+  (overload-dispatch name(f) var(u))
 ```
 
 ## Union-split overload dispatch with rest parameters on reference and primitive branches
@@ -345,13 +368,10 @@ fn runG (u:obj) -> obj {nothrow unique}
   (overload-dispatch name(g) var(u))
 ```
 
-```mir
-;; mir -O2 fn=runG stage=before,final
-fn runG(v0: any) -> any:
-  bb0:
-    v1: any = name_read g {pure}
-    v2: any = opaque.OverloadDispatch(v1, v0) {impure}
-    ret v2
+```hir
+;; hir -O2 fn=runG
+fn runG (u:obj) -> obj {nothrow unique}
+  (overload-dispatch name(g) var(u))
 ```
 
 ## Union-split overloaded class method exercising rest and trailing optional params
@@ -373,13 +393,10 @@ fn run (bx:obj, u:obj) -> obj {nothrow unique}
   (overload-dispatch (select var(bx).m) var(u))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: any, v1: any) -> any:
-  bb0:
-    v2: any = opaque.DynamicSelect(v0.m) {impure}
-    v3: any = opaque.OverloadDispatch(v2, v1) {impure}
-    ret v3
+```hir
+;; hir -O2 fn=run
+fn run (bx:obj, u:obj) -> obj {nothrow unique}
+  (overload-dispatch (select var(bx).m) var(u))
 ```
 
 ## Union-split overloaded class method with middle omitted optional param
@@ -401,14 +418,10 @@ fn run (bx:obj, u:obj) -> obj {nothrow unique}
   (overload-dispatch (select var(bx).m) var(u) 10:int)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: any, v1: any) -> any:
-  bb0:
-    v2: any = opaque.DynamicSelect(v0.m) {impure}
-    v3: int = const 10
-    v4: any = opaque.OverloadDispatch(v2, v1, v3) {impure}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (bx:obj, u:obj) -> obj {nothrow unique}
+  (overload-dispatch (select var(bx).m) var(u) 10:int)
 ```
 
 ## Overloaded interface method with named arg, omitted optional arg, and safe call
@@ -435,17 +448,14 @@ interface IOv
     (jcall String.length var(s))
 ```
 
-```mir
-;; mir -O2 interface=IOv stage=before,final
-interface IOv:
-  fn calc(v0: int, v1: int) -> int:
-    bb0:
-      v2: int = add v0, v1 {pure}
-      ret v2
-  fn calc(v0: any) -> int:
-    bb0:
-      v1: int = call_java v0.length() {pure,throws}
-      ret v1
+```hir
+;; hir -O2 interface=IOv
+interface IOv
+  (def calc (overload (fn-ref calc#1) (fn-ref calc#2)))
+  fn calc (x:int, step:int=10:int) -> int {pure}
+    (+:int var(x) var(step))
+  fn calc (s:obj) -> int {pure}
+    (jcall String.length var(s))
 ```
 
 ## Overloaded interface operator method
@@ -469,18 +479,14 @@ interface IOv
     (jcall String.length var(s))
 ```
 
-```mir
-;; mir -O2 interface=IOv stage=before,final
-interface IOv:
-  fn plus(v0: int) -> int:
-    bb0:
-      v1: int = const 1
-      v2: int = add v0, v1 {pure}
-      ret v2
-  fn plus(v0: any) -> int:
-    bb0:
-      v1: int = call_java v0.length() {pure,throws}
-      ret v1
+```hir
+;; hir -O2 interface=IOv
+interface IOv
+  (def plus (overload (fn-ref plus#1) (fn-ref plus#2)))
+  fn plus (n:int) -> int {pure}
+    (+:int var(n) 1:int)
+  fn plus (s:obj) -> int {pure}
+    (jcall String.length var(s))
 ```
 
 ## Non-accessible Java SAM spread into Iterable (asIterableByName)
@@ -503,56 +509,14 @@ fn takeIt (xs:obj) -> int {io}
   var(n)
 ```
 
-```mir
-;; mir -O2 fn=takeIt stage=before
-fn takeIt(v0: any) -> int:
-  bb0:
-    v1: int = const 0
-    v2: any = for_init.java_iterable v0
-    v3: any = const null
-    br bb1(v3, v1)
-  bb1(v4: any, v5: int):
-    v6: bool = for_has_next v2
-    br_if v6, bb3, bb2
-  bb2:
-    ret v5
-  bb3:
-    v7: any = for_next v2
-    v8: any = checkcast v7 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
-    v9: any = name_read tests {pure}
-    v10: any = opaque.DynamicSelect(v9.JavaClassDemo) {impure}
-    v11: any = opaque.DynamicSelect(v10.invokeHiddenSam) {impure}
-    v12: int = const 4
-    v13: any = opaque.DynamicCall(v11, v8, v12) {impure}
-    v14: int = convert.int v13
-    v15: int = add v5, v14 {pure}
-    v16: any = convert.any v15
-    br bb1(v16, v15)
-```
-
-```mir
-;; mir -O2 fn=takeIt
-fn takeIt(v0: any) -> int:
-  bb0:
-    v1: int = const 0
-    v2: any = for_init.java_iterable v0
-    v3: any = name_read tests {pure}
-    br bb1(v1)
-  bb1(v4: int):
-    v5: bool = for_has_next v2
-    br_if v5, bb3, bb2
-  bb2:
-    ret v4
-  bb3:
-    v6: any = for_next v2
-    v7: any = checkcast v6 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
-    v8: any = opaque.DynamicSelect(v3.JavaClassDemo) {impure}
-    v9: any = opaque.DynamicSelect(v8.invokeHiddenSam) {impure}
-    v10: int = const 4
-    v11: any = opaque.DynamicCall(v9, v7, v10) {impure}
-    v12: int = convert.int v11
-    v13: int = add v4, v12 {pure}
-    br bb1(v13)
+```hir
+;; hir -O2 fn=takeIt
+fn takeIt (xs:obj) -> int {io}
+  (def n 0:int)
+  (for x in var(xs)
+    (block
+      (set n += (call (select (select name(tests).JavaClassDemo).invokeHiddenSam) var(x) 4:int))))
+  var(n)
 ```
 
 ## Non-accessible Java SAM spread into List (asListByName)
@@ -571,20 +535,10 @@ fn takeL (xs:obj) -> int {io}
   (call (select (select name(tests).JavaClassDemo).invokeHiddenSam) (jcall List.get var(xs) 0:int) 5:int)
 ```
 
-```mir
-;; mir -O2 fn=takeL stage=before,final
-fn takeL(v0: any) -> int:
-  bb0:
-    v1: any = name_read tests {pure}
-    v2: any = opaque.DynamicSelect(v1.JavaClassDemo) {impure}
-    v3: any = opaque.DynamicSelect(v2.invokeHiddenSam) {impure}
-    v4: int = const 0
-    v5: any = call_java v0.get(v4) {impure}
-    v6: any = checkcast v5 <java|org.babblelang.tests.JavaClassDemo$HiddenIntSam|org.babblelang.tests.JavaClassDemo$HiddenIntSam>
-    v7: int = const 5
-    v8: any = opaque.DynamicCall(v3, v6, v7) {impure}
-    v9: int = convert.int v8
-    ret v9
+```hir
+;; hir -O2 fn=takeL
+fn takeL (xs:obj) -> int {io}
+  (call (select (select name(tests).JavaClassDemo).invokeHiddenSam) (jcall List.get var(xs) 0:int) 5:int)
 ```
 
 ## Non-accessible Java SAM spread into Object-erased array
@@ -603,19 +557,10 @@ fn takeArr (xs:obj) -> int {io}
   (call (select (select name(tests).JavaClassDemo).invokeHiddenSerializable) (array-op GET var(xs) 0:int) 6:int)
 ```
 
-```mir
-;; mir -O2 fn=takeArr stage=before,final
-fn takeArr(v0: any) -> int:
-  bb0:
-    v1: any = name_read tests {pure}
-    v2: any = opaque.DynamicSelect(v1.JavaClassDemo) {impure}
-    v3: any = opaque.DynamicSelect(v2.invokeHiddenSerializable) {impure}
-    v4: int = const 0
-    v5: any = array_get v0[v4] {read:shared,throws}
-    v6: int = const 6
-    v7: any = opaque.DynamicCall(v3, v5, v6) {impure}
-    v8: int = convert.int v7
-    ret v8
+```hir
+;; hir -O2 fn=takeArr
+fn takeArr (xs:obj) -> int {io}
+  (call (select (select name(tests).JavaClassDemo).invokeHiddenSerializable) (array-op GET var(xs) 0:int) 6:int)
 ```
 
 ## Non-accessible Java SAM spread into hidden-marker list
@@ -634,10 +579,8 @@ fn takeMk (xs:obj) -> int {nothrow unique}
   (jcall List.size var(xs))
 ```
 
-```mir
-;; mir -O2 fn=takeMk stage=before,final
-fn takeMk(v0: any) -> int:
-  bb0:
-    v1: int = call_java v0.size() {pure,throws}
-    ret v1
+```hir
+;; hir -O2 fn=takeMk
+fn takeMk (xs:obj) -> int {nothrow unique}
+  (jcall List.size var(xs))
 ```

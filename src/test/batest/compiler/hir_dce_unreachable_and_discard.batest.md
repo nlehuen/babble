@@ -52,15 +52,11 @@ fn run () -> int {io}
   (return 8:int)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run() -> int:
-  bb0:
-    v0: any = name_read step {pure,throws}
-    v1: any = const "A"
-    v2: int = call step(v1) {impure}
-    v3: int = const 8
-    ret v3
+```hir
+;; hir -O2 fn=run
+fn run () -> int {io}
+  (call-fn step "A")
+  (return 8:int)
 ```
 
 ## HirDcePass : unreachable code after continue and break in a for loop
@@ -108,74 +104,16 @@ fn run (xs:obj) -> int {io}
   var(total)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any) -> int:
-  bb0:
-    v1: int = const 0
-    v2: any = for_init.java_iterable v0
-    v3: any = const null
-    br bb1(v3, v1)
-  bb1(v4: any, v5: int):
-    v6: bool = for_has_next v2
-    br_if v6, bb2, bb8(v4)
-  bb2:
-    v7: any = for_next v2
-    v8: any = checkcast v7 <int|int|>
-    v9: int = convert.int v8
-    v10: int = const 0
-    v11: bool = lt v9, v10 {pure}
-    br_if v11, bb9, bb3
-  bb3:
-    v12: any = const null
-    br bb4
-  bb4:
-    v13: int = const 10
-    v14: bool = gt v9, v13 {pure}
-    br_if v14, bb7, bb5
-  bb5:
-    v15: any = const null
-    br bb6
-  bb6:
-    v16: int = add v5, v9 {pure}
-    v17: any = convert.any v16
-    br bb1(v17, v16)
-  bb7:
-    v18: any = const null
-    br bb8(v18)
-  bb8(v19: any):
-    ret v5
-  bb9:
-    br bb1(v4, v5)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any) -> int:
-  bb0:
-    v1: int = const 0
-    v2: any = for_init.java_iterable v0
-    br bb1(v1)
-  bb1(v3: int):
-    v4: bool = for_has_next v2
-    br_if v4, bb2, bb5
-  bb2:
-    v5: any = for_next v2
-    v6: any = checkcast v5 <int|int|>
-    v7: int = convert.int v6
-    v8: bool = lt v7, v1 {pure}
-    br_if v8, bb6, bb3
-  bb3:
-    v9: int = const 10
-    v10: bool = gt v7, v9 {pure}
-    br_if v10, bb5, bb4
-  bb4:
-    v11: int = add v3, v7 {pure}
-    br bb1(v11)
-  bb5:
-    ret v3
-  bb6:
-    br bb1(v3)
+```hir
+;; hir -O2 fn=run
+fn run (xs:obj) -> int {io}
+  (def total 0:int)
+  (for x in var(xs)
+    (block
+      (if (<:bool var(x) 0:int) (box (continue)))
+      (if (>:bool var(x) 10:int) (box (break)))
+      (set total += var(x))))
+  var(total)
 ```
 
 ## HirDcePass & HirPurity : dead CoreCollectionRef, FunctionRef, TypeApply, As, and recursive-by-name bindings
@@ -209,26 +147,11 @@ fn run (x:int) -> int {pure unique}
   (+:int var(x) 1:int)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = convert.any v0
-    v2: any = checkcast v1 <double|double|>
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
-    ret v4
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = convert.any v0
-    v2: any = checkcast v1 <double|double|>
-    v3: int = const 1
-    v4: int = add v0, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=run
+fn run (x:int) -> int {pure unique}
+  (as var(x) double|double|)
+  (+:int var(x) 1:int)
 ```
 
 ## HirDcePass & HirPurity : dead pure-local Block with nested Block + finite-collection for loop
@@ -262,12 +185,10 @@ fn run (xs:obj, p:int) -> int {nothrow unique}
   (jcall List.size var(xs))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: any, v1: int) -> int:
-  bb0:
-    v2: int = call_java v0.size() {pure,throws}
-    ret v2
+```hir
+;; hir -O2 fn=run
+fn run (xs:obj, p:int) -> int {nothrow unique}
+  (jcall List.size var(xs))
 ```
 
 ## HirPurity : dead mutable-arg call and throwing/non-terminating for loop stay preserved
@@ -308,58 +229,17 @@ fn run (b:obj, xs:obj) -> int {unique}
   (get-this-field v)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: any, v1: any) -> int:
-  bb0:
-    v2: int = const 1
-    v3: any = opaque.DynamicFieldAssign(v0.v +=, v2) {impure}
-    v4: int = load_field v0.v {read:shared,throws}
-    v5: any = for_init.java_iterable v1
-    v6: any = const null
-    br bb1(v6)
-  bb1(v7: any):
-    v8: bool = for_has_next v5
-    br_if v8, bb3, bb2
-  bb2:
-    v9: int = load_field v0.v {read:shared,throws}
-    ret v9
-  bb3:
-    v10: any = for_next v5
-    v11: any = checkcast v10 <int|int|>
-    v12: int = convert.int v11
-    v13: any = name_read assert {pure}
-    v14: int = const 0
-    v15: bool = gt v12, v14 {pure}
-    v16: bool = opaque.DynamicCall(v13, v15) {impure}
-    v17: any = convert.any v12
-    br bb1(v17)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: any, v1: any) -> int:
-  bb0:
-    v2: int = const 1
-    v3: any = opaque.DynamicFieldAssign(v0.v +=, v2) {impure}
-    v4: int = load_field v0.v {read:shared,throws}
-    v5: any = for_init.java_iterable v1
-    v6: any = name_read assert {pure}
-    br bb1
-  bb1:
-    v7: bool = for_has_next v5
-    br_if v7, bb3, bb2
-  bb2:
-    v8: int = load_field v0.v {read:shared,throws}
-    ret v8
-  bb3:
-    v9: any = for_next v5
-    v10: any = checkcast v9 <int|int|>
-    v11: int = convert.int v10
-    v12: int = const 0
-    v13: bool = gt v11, v12 {pure}
-    v14: bool = opaque.DynamicCall(v6, v13) {impure}
-    br bb1
+```hir
+;; hir -O2 fn=run
+fn run (b:obj, xs:obj) -> int {unique}
+  (block
+    (set-field var(b).v 1:int)
+    (get-this-field v))
+  (for x in var(xs)
+    (block
+      (call name(assert) (>:bool var(x) 0:int))
+      var(x)))
+  (get-this-field v)
 ```
 
 ## HirDcePass : unused uninitialized def and fn/class param defaults with dead code
@@ -390,12 +270,10 @@ fn fnDef (a:int=3:int, b:int=7:int) -> int {nothrow commutative associative uniq
   (+:int var(a) var(b))
 ```
 
-```mir
-;; mir -O2 fn=fnDef stage=before,final
-fn fnDef(v0: int, v1: int) -> int:
-  bb0:
-    v2: int = add v0, v1 {pure}
-    ret v2
+```hir
+;; hir -O2 fn=fnDef
+fn fnDef (a:int=3:int, b:int=7:int) -> int {nothrow commutative associative unique}
+  (+:int var(a) var(b))
 ```
 
 ## HirDcePass : unreachable code after throw is eliminated
@@ -426,35 +304,11 @@ fn afterThrow (b:bool) -> int {io}
   1:int
 ```
 
-```mir
-;; mir -O2 fn=afterThrow stage=before
-fn afterThrow(v0: bool) -> int:
-  bb0:
-    br_if v0, bb3, bb1
-  bb1:
-    v1: any = const null
-    br bb2
-  bb2:
-    v2: int = const 1
-    ret v2
-  bb3:
-    v3: any = const "boom"
-    v4: any = new_java BabbleException(v3) {pure!}
-    rethrow v4
-```
-
-```mir
-;; mir -O2 fn=afterThrow
-fn afterThrow(v0: bool) -> int:
-  bb0:
-    br_if v0, bb2, bb1
-  bb1:
-    v1: int = const 1
-    ret v1
-  bb2:
-    v2: any = const "boom"
-    v3: any = new_java BabbleException(v2) {pure!}
-    rethrow v3
+```hir
+;; hir -O2 fn=afterThrow
+fn afterThrow (b:bool) -> int {io}
+  (if var(b) (throw (jnew BabbleException "boom")))
+  1:int
 ```
 
 ## HirDcePass : named discard argument stays preserved
@@ -471,15 +325,11 @@ fn runNamed (x:int) -> int {nothrow unique}
   var(x)
 ```
 
-```mir
-;; mir -O2 fn=runNamed stage=before,final
-fn runNamed(v0: int) -> int:
-  bb0:
-    v1: any = name_read discard {pure}
-    v2: int = const 1
-    v3: int = add v0, v2 {pure}
-    v4: any = opaque.DynamicCall(v1, v3) {impure}
-    ret v0
+```hir
+;; hir -O2 fn=runNamed
+fn runNamed (x:int) -> int {nothrow unique}
+  (call name(discard) value=(+:int var(x) 1:int))
+  var(x)
 ```
 
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (1-arg)
@@ -497,13 +347,10 @@ fn run (x:int) -> int {io}
   (call name(discard) var(x))
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read discard {read:shared}
-    v2: int = opaque.DynamicCall(v1, v0) {impure}
-    ret v2
+```hir
+;; hir -O2 fn=run
+fn run (x:int) -> int {io}
+  (call name(discard) var(x))
 ```
 
 ## HirDcePass : top-level reassigned discard shadowing via DynamicCall (2-arg)
@@ -521,12 +368,8 @@ fn run (x:int) -> int {io}
   (call name(discard) var(x) 3:int)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before,final
-fn run(v0: int) -> int:
-  bb0:
-    v1: any = name_read discard {read:shared}
-    v2: int = const 3
-    v3: int = opaque.DynamicCall(v1, v0, v2) {impure}
-    ret v3
+```hir
+;; hir -O2 fn=run
+fn run (x:int) -> int {io}
+  (call name(discard) var(x) 3:int)
 ```

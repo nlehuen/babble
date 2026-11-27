@@ -32,79 +32,18 @@ fn mix (b:byte, s:short, i:int, l:long, f:float, d:double, c:char, ok:bool) -> d
   (if (and var(ok) (==:bool var(c) 'A')) (+:double (+:double (call name(double) var(sl)) (call name(double) var(sf))) var(d)) 0.0:double)
 ```
 
-```mir
-;; mir -O2 fn=mix stage=before
-fn mix(v0: byte, v1: short, v2: int, v3: long, v4: float, v5: double, v6: char, v7: bool) -> double:
-  bb0:
-    v8: any = name_read long {pure}
-    v9: long = opaque.DynamicCall(v8, v2) {impure}
-    v10: long = add v3, v9 {pure}
-    v11: any = name_read long {pure}
-    v12: long = opaque.DynamicCall(v11, v0) {impure}
-    v13: long = add v10, v12 {pure}
-    v14: any = name_read long {pure}
-    v15: long = opaque.DynamicCall(v14, v1) {impure}
-    v16: long = add v13, v15 {pure}
-    v17: any = name_read float {pure}
-    v18: float = opaque.DynamicCall(v17, v2) {impure}
-    v19: float = add v4, v18 {pure}
-    v20: bool = const false
-    br_if v7, bb1, bb2(v20)
-  bb1:
-    v21: char = const 'A'
-    v22: bool = eq v6, v21 {pure}
-    br bb2(v22)
-  bb2(v23: bool):
-    br_if v23, bb4, bb3
-  bb3:
-    v24: double = const 0.0
-    br bb5(v24)
-  bb4:
-    v25: any = name_read double {pure}
-    v26: double = opaque.DynamicCall(v25, v16) {impure}
-    v27: any = name_read double {pure}
-    v28: double = opaque.DynamicCall(v27, v19) {impure}
-    v29: double = add v26, v28 {pure}
-    v30: double = add v29, v5 {pure}
-    br bb5(v30)
-  bb5(v31: double):
-    ret v31
-```
-
-```mir
-;; mir -O2 fn=mix
-fn mix(v0: byte, v1: short, v2: int, v3: long, v4: float, v5: double, v6: char, v7: bool) -> double:
-  bb0:
-    v8: any = name_read long {pure}
-    v9: long = opaque.DynamicCall(v8, v2) {impure}
-    v10: long = add v3, v9 {pure}
-    v11: long = opaque.DynamicCall(v8, v0) {impure}
-    v12: long = add v10, v11 {pure}
-    v13: long = opaque.DynamicCall(v8, v1) {impure}
-    v14: long = add v12, v13 {pure}
-    v15: any = name_read float {pure}
-    v16: float = opaque.DynamicCall(v15, v2) {impure}
-    v17: float = add v4, v16 {pure}
-    v18: bool = const false
-    br_if v7, bb1, bb2(v18)
-  bb1:
-    v19: char = const 'A'
-    v20: bool = eq v6, v19 {pure}
-    br bb2(v20)
-  bb2(v21: bool):
-    br_if v21, bb4, bb3
-  bb3:
-    v22: double = const 0.0
-    br bb5(v22)
-  bb4:
-    v23: any = name_read double {pure}
-    v24: double = opaque.DynamicCall(v23, v14) {impure}
-    v25: double = opaque.DynamicCall(v23, v17) {impure}
-    v26: double = add v24, v25 {pure}
-    v27: double = add v26, v5 {pure}
-    br bb5(v27)
-  bb5(v28: double):
-    ret v28
+```hir
+;; hir -O2 fn=mix
+fn mix (b:byte, s:short, i:int, l:long, f:float, d:double, c:char, ok:bool) -> double {nothrow}
+  (block
+    (def $cse0 name(long))
+    (def sl (+:long (+:long (+:long var(l) (call var($cse0) var(i))) (call var($cse0) var(b))) (call var($cse0) var(s))))
+    (def sf (+:float var(f) (call name(float) var(i))))
+    (if (and var(ok) (==:bool var(c) 'A'))
+      (block
+        (def $cse1 name(double))
+        (+:double (+:double (call var($cse1) var(sl)) (call var($cse1) var(sf))) var(d)))
+      0.0:double))
 ```
 
 ## Unboxed unary negation and arithmetic on narrow/wide primitives (parameterized against -O1 folding)
@@ -130,58 +69,16 @@ fn negMix (b:byte, s:short, l:long, f:float) -> double {nothrow unique}
   (+:double (+:double (call name(double) (+:int var(nb) var(ns))) (call name(double) (+:long var(l) var(nl)))) (call name(double) (+:float var(f) var(nf))))
 ```
 
-```mir
-;; mir -O2 fn=negMix stage=before
-fn negMix(v0: byte, v1: short, v2: long, v3: float) -> double:
-  bb0:
-    v4: int = convert.int v0
-    v5: int = neg v4 {pure}
-    v6: int = convert.int v1
-    v7: int = neg v6 {pure}
-    v8: long = neg v2 {pure}
-    v9: long = const 10L
-    v10: long = add v8, v9 {pure}
-    v11: float = neg v3 {pure}
-    v12: float = const 1.5f
-    v13: float = add v11, v12 {pure}
-    v14: any = name_read double {pure}
-    v15: int = add v5, v7 {pure}
-    v16: double = opaque.DynamicCall(v14, v15) {impure}
-    v17: any = name_read double {pure}
-    v18: long = add v2, v10 {pure}
-    v19: double = opaque.DynamicCall(v17, v18) {impure}
-    v20: double = add v16, v19 {pure}
-    v21: any = name_read double {pure}
-    v22: float = add v3, v13 {pure}
-    v23: double = opaque.DynamicCall(v21, v22) {impure}
-    v24: double = add v20, v23 {pure}
-    ret v24
-```
-
-```mir
-;; mir -O2 fn=negMix
-fn negMix(v0: byte, v1: short, v2: long, v3: float) -> double:
-  bb0:
-    v4: int = convert.int v0
-    v5: int = neg v4 {pure}
-    v6: int = convert.int v1
-    v7: int = neg v6 {pure}
-    v8: long = neg v2 {pure}
-    v9: long = const 10L
-    v10: long = add v8, v9 {pure}
-    v11: float = neg v3 {pure}
-    v12: float = const 1.5f
-    v13: float = add v11, v12 {pure}
-    v14: any = name_read double {pure}
-    v15: int = add v5, v7 {pure}
-    v16: double = opaque.DynamicCall(v14, v15) {impure}
-    v17: long = add v2, v10 {pure}
-    v18: double = opaque.DynamicCall(v14, v17) {impure}
-    v19: double = add v16, v18 {pure}
-    v20: float = add v3, v13 {pure}
-    v21: double = opaque.DynamicCall(v14, v20) {impure}
-    v22: double = add v19, v21 {pure}
-    ret v22
+```hir
+;; hir -O2 fn=negMix
+fn negMix (b:byte, s:short, l:long, f:float) -> double {nothrow unique}
+  (def nb (neg (convert[int] var(b))))
+  (def ns (neg (convert[int] var(s))))
+  (def nl (+:long (neg var(l)) 10:long))
+  (def nf (+:float (neg var(f)) 1.5:float))
+  (block
+    (def $cse0 name(double))
+    (+:double (+:double (call var($cse0) (+:int var(nb) var(ns))) (call var($cse0) (+:long var(l) var(nl)))) (call var($cse0) (+:float var(f) var(nf)))))
 ```
 
 ## Parameterized against -O1 folding to exercise unboxed byte/short truthiness
@@ -208,120 +105,13 @@ fn check (b0:byte, b1:byte, s0:short, s1:short) -> bool {pure unique}
   (call name(assert) (and (==:bool (if var(s0) 1:int 0:int) 0:int) (==:bool (if var(s1) 1:int 0:int) 1:int)))
 ```
 
-```mir
-;; mir -O2 fn=check stage=before
-fn check(v0: byte, v1: byte, v2: short, v3: short) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    br_if v0, bb2, bb1
-  bb1:
-    v5: int = const 0
-    br bb3(v5)
-  bb2:
-    v6: int = const 1
-    br bb3(v6)
-  bb3(v7: int):
-    v8: int = const 0
-    v9: bool = eq v7, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb4, bb8(v10)
-  bb4:
-    br_if v1, bb6, bb5
-  bb5:
-    v11: int = const 0
-    br bb7(v11)
-  bb6:
-    v12: int = const 1
-    br bb7(v12)
-  bb7(v13: int):
-    v14: int = const 1
-    v15: bool = eq v13, v14 {pure}
-    br bb8(v15)
-  bb8(v16: bool):
-    v17: bool = opaque.DynamicCall(v4, v16) {impure}
-    v18: any = name_read assert {pure}
-    br_if v2, bb10, bb9
-  bb9:
-    v19: int = const 0
-    br bb11(v19)
-  bb10:
-    v20: int = const 1
-    br bb11(v20)
-  bb11(v21: int):
-    v22: int = const 0
-    v23: bool = eq v21, v22 {pure}
-    v24: bool = const false
-    br_if v23, bb12, bb16(v24)
-  bb12:
-    br_if v3, bb14, bb13
-  bb13:
-    v25: int = const 0
-    br bb15(v25)
-  bb14:
-    v26: int = const 1
-    br bb15(v26)
-  bb15(v27: int):
-    v28: int = const 1
-    v29: bool = eq v27, v28 {pure}
-    br bb16(v29)
-  bb16(v30: bool):
-    v31: bool = opaque.DynamicCall(v18, v30) {impure}
-    ret v31
-```
-
-```mir
-;; mir -O2 fn=check
-fn check(v0: byte, v1: byte, v2: short, v3: short) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    br_if v0, bb2, bb1
-  bb1:
-    v5: int = const 0
-    br bb3(v5)
-  bb2:
-    v6: int = const 1
-    br bb3(v6)
-  bb3(v7: int):
-    v8: int = const 0
-    v9: bool = eq v7, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb4, bb8(v10)
-  bb4:
-    br_if v1, bb6, bb5
-  bb5:
-    br bb7(v8)
-  bb6:
-    v11: int = const 1
-    br bb7(v11)
-  bb7(v12: int):
-    v13: int = const 1
-    v14: bool = eq v12, v13 {pure}
-    br bb8(v14)
-  bb8(v15: bool):
-    v16: bool = opaque.DynamicCall(v4, v15) {impure}
-    br_if v2, bb10, bb9
-  bb9:
-    br bb11(v8)
-  bb10:
-    v17: int = const 1
-    br bb11(v17)
-  bb11(v18: int):
-    v19: bool = eq v18, v8 {pure}
-    br_if v19, bb12, bb16(v10)
-  bb12:
-    br_if v3, bb14, bb13
-  bb13:
-    br bb15(v8)
-  bb14:
-    v20: int = const 1
-    br bb15(v20)
-  bb15(v21: int):
-    v22: int = const 1
-    v23: bool = eq v21, v22 {pure}
-    br bb16(v23)
-  bb16(v24: bool):
-    v25: bool = opaque.DynamicCall(v4, v24) {impure}
-    ret v25
+```hir
+;; hir -O2 fn=check
+fn check (b0:byte, b1:byte, s0:short, s1:short) -> bool {pure unique}
+  (block
+    (def $cse0 name(assert))
+    (call var($cse0) (and (==:bool (if var(b0) 1:int 0:int) 0:int) (==:bool (if var(b1) 1:int 0:int) 1:int)))
+    (call var($cse0) (and (==:bool (if var(s0) 1:int 0:int) 0:int) (==:bool (if var(s1) 1:int 0:int) 1:int))))
 ```
 
 ## Parameterized against -O1 folding to exercise unboxed long/float truthiness
@@ -348,120 +138,13 @@ fn check (l0:long, l1:long, f0:float, f1:float) -> bool {pure unique}
   (call name(assert) (and (==:bool (if var(f0) 1:int 0:int) 0:int) (==:bool (if var(f1) 1:int 0:int) 1:int)))
 ```
 
-```mir
-;; mir -O2 fn=check stage=before
-fn check(v0: long, v1: long, v2: float, v3: float) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    br_if v0, bb2, bb1
-  bb1:
-    v5: int = const 0
-    br bb3(v5)
-  bb2:
-    v6: int = const 1
-    br bb3(v6)
-  bb3(v7: int):
-    v8: int = const 0
-    v9: bool = eq v7, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb4, bb8(v10)
-  bb4:
-    br_if v1, bb6, bb5
-  bb5:
-    v11: int = const 0
-    br bb7(v11)
-  bb6:
-    v12: int = const 1
-    br bb7(v12)
-  bb7(v13: int):
-    v14: int = const 1
-    v15: bool = eq v13, v14 {pure}
-    br bb8(v15)
-  bb8(v16: bool):
-    v17: bool = opaque.DynamicCall(v4, v16) {impure}
-    v18: any = name_read assert {pure}
-    br_if v2, bb10, bb9
-  bb9:
-    v19: int = const 0
-    br bb11(v19)
-  bb10:
-    v20: int = const 1
-    br bb11(v20)
-  bb11(v21: int):
-    v22: int = const 0
-    v23: bool = eq v21, v22 {pure}
-    v24: bool = const false
-    br_if v23, bb12, bb16(v24)
-  bb12:
-    br_if v3, bb14, bb13
-  bb13:
-    v25: int = const 0
-    br bb15(v25)
-  bb14:
-    v26: int = const 1
-    br bb15(v26)
-  bb15(v27: int):
-    v28: int = const 1
-    v29: bool = eq v27, v28 {pure}
-    br bb16(v29)
-  bb16(v30: bool):
-    v31: bool = opaque.DynamicCall(v18, v30) {impure}
-    ret v31
-```
-
-```mir
-;; mir -O2 fn=check
-fn check(v0: long, v1: long, v2: float, v3: float) -> bool:
-  bb0:
-    v4: any = name_read assert {pure}
-    br_if v0, bb2, bb1
-  bb1:
-    v5: int = const 0
-    br bb3(v5)
-  bb2:
-    v6: int = const 1
-    br bb3(v6)
-  bb3(v7: int):
-    v8: int = const 0
-    v9: bool = eq v7, v8 {pure}
-    v10: bool = const false
-    br_if v9, bb4, bb8(v10)
-  bb4:
-    br_if v1, bb6, bb5
-  bb5:
-    br bb7(v8)
-  bb6:
-    v11: int = const 1
-    br bb7(v11)
-  bb7(v12: int):
-    v13: int = const 1
-    v14: bool = eq v12, v13 {pure}
-    br bb8(v14)
-  bb8(v15: bool):
-    v16: bool = opaque.DynamicCall(v4, v15) {impure}
-    br_if v2, bb10, bb9
-  bb9:
-    br bb11(v8)
-  bb10:
-    v17: int = const 1
-    br bb11(v17)
-  bb11(v18: int):
-    v19: bool = eq v18, v8 {pure}
-    br_if v19, bb12, bb16(v10)
-  bb12:
-    br_if v3, bb14, bb13
-  bb13:
-    br bb15(v8)
-  bb14:
-    v20: int = const 1
-    br bb15(v20)
-  bb15(v21: int):
-    v22: int = const 1
-    v23: bool = eq v21, v22 {pure}
-    br bb16(v23)
-  bb16(v24: bool):
-    v25: bool = opaque.DynamicCall(v4, v24) {impure}
-    ret v25
+```hir
+;; hir -O2 fn=check
+fn check (l0:long, l1:long, f0:float, f1:float) -> bool {pure unique}
+  (block
+    (def $cse0 name(assert))
+    (call var($cse0) (and (==:bool (if var(l0) 1:int 0:int) 0:int) (==:bool (if var(l1) 1:int 0:int) 1:int)))
+    (call var($cse0) (and (==:bool (if var(f0) 1:int 0:int) 0:int) (==:bool (if var(f1) 1:int 0:int) 1:int))))
 ```
 
 ## Parameterized against -O1 folding to exercise unboxed primitive comparisons
@@ -479,86 +162,10 @@ fn check (b0:byte, b1:byte, s0:short, s1:short, l1:long, f1:float, c0:char, c1:c
   (call name(assert) (and (and (and (and (and (<:bool var(b0) var(b1)) (>:bool var(s1) var(s0))) (>:bool var(l1) 5000000000:long)) (>=:bool var(f1) 1.5:float)) (<:bool var(c0) var(c1))) (==:bool var(c0) 'a')))
 ```
 
-```mir
-;; mir -O2 fn=check stage=before
-fn check(v0: byte, v1: byte, v2: short, v3: short, v4: long, v5: float, v6: char, v7: char) -> bool:
-  bb0:
-    v8: any = name_read assert {pure}
-    v9: bool = lt v0, v1 {pure}
-    v10: bool = const false
-    br_if v9, bb1, bb2(v10)
-  bb1:
-    v11: bool = gt v3, v2 {pure}
-    br bb2(v11)
-  bb2(v12: bool):
-    v13: bool = const false
-    br_if v12, bb3, bb4(v13)
-  bb3:
-    v14: long = const 5000000000L
-    v15: bool = gt v4, v14 {pure}
-    br bb4(v15)
-  bb4(v16: bool):
-    v17: bool = const false
-    br_if v16, bb5, bb6(v17)
-  bb5:
-    v18: float = const 1.5f
-    v19: bool = gte v5, v18 {pure}
-    br bb6(v19)
-  bb6(v20: bool):
-    v21: bool = const false
-    br_if v20, bb7, bb8(v21)
-  bb7:
-    v22: bool = lt v6, v7 {pure}
-    br bb8(v22)
-  bb8(v23: bool):
-    v24: bool = const false
-    br_if v23, bb9, bb10(v24)
-  bb9:
-    v25: char = const 'a'
-    v26: bool = eq v6, v25 {pure}
-    br bb10(v26)
-  bb10(v27: bool):
-    v28: bool = opaque.DynamicCall(v8, v27) {impure}
-    ret v28
-```
-
-```mir
-;; mir -O2 fn=check
-fn check(v0: byte, v1: byte, v2: short, v3: short, v4: long, v5: float, v6: char, v7: char) -> bool:
-  bb0:
-    v8: any = name_read assert {pure}
-    v9: bool = lt v0, v1 {pure}
-    v10: bool = const false
-    br_if v9, bb1, bb2(v10)
-  bb1:
-    v11: bool = gt v3, v2 {pure}
-    br bb2(v11)
-  bb2(v12: bool):
-    br_if v12, bb3, bb4(v10)
-  bb3:
-    v13: long = const 5000000000L
-    v14: bool = gt v4, v13 {pure}
-    br bb4(v14)
-  bb4(v15: bool):
-    br_if v15, bb5, bb6(v10)
-  bb5:
-    v16: float = const 1.5f
-    v17: bool = gte v5, v16 {pure}
-    br bb6(v17)
-  bb6(v18: bool):
-    br_if v18, bb7, bb8(v10)
-  bb7:
-    v19: bool = lt v6, v7 {pure}
-    br bb8(v19)
-  bb8(v20: bool):
-    br_if v20, bb9, bb10(v10)
-  bb9:
-    v21: char = const 'a'
-    v22: bool = eq v6, v21 {pure}
-    br bb10(v22)
-  bb10(v23: bool):
-    v24: bool = opaque.DynamicCall(v8, v23) {impure}
-    ret v24
+```hir
+;; hir -O2 fn=check
+fn check (b0:byte, b1:byte, s0:short, s1:short, l1:long, f1:float, c0:char, c1:char) -> bool {pure unique}
+  (call name(assert) (and (and (and (and (and (<:bool var(b0) var(b1)) (>:bool var(s1) var(s0))) (>:bool var(l1) 5000000000:long)) (>=:bool var(f1) 1.5:float)) (<:bool var(c0) var(c1))) (==:bool var(c0) 'a')))
 ```
 
 ## Case 8
@@ -581,43 +188,14 @@ class H (b:byte, s:short, l:long, f:float, c:char)
     (+:long (+:long (+:long (get-this-field l) var(x)) (call name(long) (get-this-field b))) (call name(long) (get-this-field s)))
 ```
 
-```mir
-;; mir -O2 class=H stage=before
-class H:
-  fn H.sum(v0: long) -> long:
-    bb0:
-      v1: any = slot_read this {pure}
-      v2: long = load_field v1.l {read:shared,throws}
-      v3: long = add v2, v0 {pure}
-      v4: any = name_read long {pure}
-      v5: any = slot_read this {pure}
-      v6: byte = load_field v5.b {read:shared,throws}
-      v7: long = opaque.DynamicCall(v4, v6) {impure}
-      v8: long = add v3, v7 {pure}
-      v9: any = name_read long {pure}
-      v10: any = slot_read this {pure}
-      v11: short = load_field v10.s {read:shared,throws}
-      v12: long = opaque.DynamicCall(v9, v11) {impure}
-      v13: long = add v8, v12 {pure}
-      ret v13
-```
-
-```mir
-;; mir -O2 class=H
-class H:
-  fn H.sum(v0: long) -> long:
-    bb0:
-      v1: any = slot_read this {pure}
-      v2: long = load_field v1.l {read:shared,throws}
-      v3: long = add v2, v0 {pure}
-      v4: any = name_read long {pure}
-      v5: byte = load_field v1.b {read:shared,throws}
-      v6: long = opaque.DynamicCall(v4, v5) {impure}
-      v7: long = add v3, v6 {pure}
-      v8: short = load_field v1.s {read:shared,throws}
-      v9: long = opaque.DynamicCall(v4, v8) {impure}
-      v10: long = add v7, v9 {pure}
-      ret v10
+```hir
+;; hir -O2 class=H
+class H (b:byte, s:short, l:long, f:float, c:char)
+  (def sum (fn-ref H.sum))
+  fn H.sum (x:long) -> long {nothrow unique}
+    (block
+      (def $cse0 name(long))
+      (+:long (+:long (+:long (get-this-field l) var(x)) (call var($cse0) (get-this-field b))) (call var($cse0) (get-this-field s))))
 ```
 
 ## Case 9
@@ -641,14 +219,10 @@ fn runScaler (sc:obj) -> double {pure unique}
   (call-iface var(sc).scale 5:long 2.5:float)
 ```
 
-```mir
-;; mir -O2 fn=runScaler stage=before,final
-fn runScaler(v0: any) -> double:
-  bb0:
-    v1: long = const 5L
-    v2: float = const 2.5f
-    v3: double = call_iface v0.scale(v1, v2) {pure,throws}
-    ret v3
+```hir
+;; hir -O2 fn=runScaler
+fn runScaler (sc:obj) -> double {pure unique}
+  (call-iface var(sc).scale 5:long 2.5:float)
 ```
 
 ## Case 10
@@ -666,15 +240,10 @@ fn op (x:long) -> long {nothrow injective unique}
   (+:long (*:long var(x) 3:long) 1:long)
 ```
 
-```mir
-;; mir -O2 fn=op stage=before,final
-fn op(v0: long) -> long:
-  bb0:
-    v1: long = const 3L
-    v2: long = mul v0, v1 {pure}
-    v3: long = const 1L
-    v4: long = add v2, v3 {pure}
-    ret v4
+```hir
+;; hir -O2 fn=op
+fn op (x:long) -> long {nothrow injective unique}
+  (+:long (*:long var(x) 3:long) 1:long)
 ```
 
 ## Case 11
@@ -698,65 +267,17 @@ fn unwrapAll (b:obj, s:obj, l:obj, f:obj, c:obj) -> obj {pure unique}
   (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (call name(string) var(ub)) ":") (call name(string) var(us))) ":") (call name(string) var(ul))) ":") (call name(string) var(uf))) ":") (call name(string) var(uc)))
 ```
 
-```mir
-;; mir -O2 fn=unwrapAll stage=before
-fn unwrapAll(v0: any, v1: any, v2: any, v3: any, v4: any) -> any:
-  bb0:
-    v5: byte = nonnull v0
-    v6: short = nonnull v1
-    v7: long = nonnull v2
-    v8: float = nonnull v3
-    v9: char = nonnull v4
-    v10: any = name_read string {pure}
-    v11: any = opaque.DynamicCall(v10, v5) {impure}
-    v12: any = const ":"
-    v13: any = strcat v11, v12 {pure}
-    v14: any = name_read string {pure}
-    v15: any = opaque.DynamicCall(v14, v6) {impure}
-    v16: any = strcat v13, v15 {pure}
-    v17: any = const ":"
-    v18: any = strcat v16, v17 {pure}
-    v19: any = name_read string {pure}
-    v20: any = opaque.DynamicCall(v19, v7) {impure}
-    v21: any = strcat v18, v20 {pure}
-    v22: any = const ":"
-    v23: any = strcat v21, v22 {pure}
-    v24: any = name_read string {pure}
-    v25: any = opaque.DynamicCall(v24, v8) {impure}
-    v26: any = strcat v23, v25 {pure}
-    v27: any = const ":"
-    v28: any = strcat v26, v27 {pure}
-    v29: any = name_read string {pure}
-    v30: any = opaque.DynamicCall(v29, v9) {impure}
-    v31: any = strcat v28, v30 {pure}
-    ret v31
-```
-
-```mir
-;; mir -O2 fn=unwrapAll
-fn unwrapAll(v0: any, v1: any, v2: any, v3: any, v4: any) -> any:
-  bb0:
-    v5: byte = nonnull v0
-    v6: short = nonnull v1
-    v7: long = nonnull v2
-    v8: float = nonnull v3
-    v9: char = nonnull v4
-    v10: any = name_read string {pure}
-    v11: any = opaque.DynamicCall(v10, v5) {impure}
-    v12: any = const ":"
-    v13: any = strcat v11, v12 {pure}
-    v14: any = opaque.DynamicCall(v10, v6) {impure}
-    v15: any = strcat v13, v14 {pure}
-    v16: any = strcat v15, v12 {pure}
-    v17: any = opaque.DynamicCall(v10, v7) {impure}
-    v18: any = strcat v16, v17 {pure}
-    v19: any = strcat v18, v12 {pure}
-    v20: any = opaque.DynamicCall(v10, v8) {impure}
-    v21: any = strcat v19, v20 {pure}
-    v22: any = strcat v21, v12 {pure}
-    v23: any = opaque.DynamicCall(v10, v9) {impure}
-    v24: any = strcat v22, v23 {pure}
-    ret v24
+```hir
+;; hir -O2 fn=unwrapAll
+fn unwrapAll (b:obj, s:obj, l:obj, f:obj, c:obj) -> obj {pure unique}
+  (def ub (nonnull var(b)))
+  (def us (nonnull var(s)))
+  (def ul (nonnull var(l)))
+  (def uf (nonnull var(f)))
+  (def uc (nonnull var(c)))
+  (block
+    (def $cse0 name(string))
+    (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (+:obj (call var($cse0) var(ub)) ":") (call var($cse0) var(us))) ":") (call var($cse0) var(ul))) ":") (call var($cse0) var(uf))) ":") (call var($cse0) var(uc))))
 ```
 
 ## Case 12
@@ -774,10 +295,8 @@ fn capParams (b:byte, s:short, l:long, f:float, c:char) -> obj {nothrow}
   (fn-ref <anon#0>)
 ```
 
-```mir
-;; mir -O2 fn=capParams stage=before,final
-fn capParams() -> any:
-  bb0:
-    v0: any = opaque.FunctionRef(<anon>) {read:shared}
-    ret v0
+```hir
+;; hir -O2 fn=capParams
+fn capParams (b:byte, s:short, l:long, f:float, c:char) -> obj {nothrow}
+  (fn-ref <anon#0>)
 ```

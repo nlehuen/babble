@@ -15,7 +15,7 @@ import org.babblelang.ir.hir.HirVar;
 
 /**
  * Shared backward {@link BitSet} liveness analysis over non-captured frame {@link HirVar}s inside a
- * structured {@link HirFunction} ({@code BIP039-D6}, {@code BIP039-P2}, {@code BIP039-P5}).
+ * structured {@link HirFunction} ({@code BIP039-D6}, {@code BIP039-I2}, {@code BIP039-I5}).
  *
  * <p>Reused by {@code HirDcePass} (dead-store &amp; dead loop-carried variable elimination) and
  * {@code HirSlotAllocator} (JVM-category-segregated local slot coloring).

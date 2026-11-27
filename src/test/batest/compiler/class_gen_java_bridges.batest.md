@@ -75,9 +75,24 @@ top-level:
   (call name(assert) (and (==:bool (call-method name(c).add 3:int) 18:int) (==:bool (call-method name(c).add 3:int 2:int) 10:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (block
+    (def $cse0 name(import))
+    (def t (call var($cse0) "org.babblelang.tests"))
+    (def extCalc (call var($cse0) "ext_calc.ba"))
+    (def jFix (call var($cse0) "java_fixtures.ba"))
+    (def jCb (call var($cse0) "java_typed_cb.ba"))
+    (def App null)
+    (def CS null)
+    (def Fmt (iface-ref Fmt))
+    (def addOne (fn-ref addOne))
+    (def fmtInt (fn-ref fmtInt))
+    (def fmtStr (fn-ref fmtStr))
+    (def c (call (export name(extCalc).ExtCalc) 5:int))
+    (def $cse1 name(c))
+    (call name(assert) (and (==:bool (call-method var($cse1).add 3:int) 18:int) (==:bool (call-method var($cse1).add 3:int 2:int) 10:int))))
 ```
 
 ## Record with all 8 primitives plus reference and body-declared derived primitive field
@@ -98,10 +113,10 @@ record R (b:byte, s:short, i:int, l:long, f:float, d:double, z:bool, c:char, u:o
   (def k (*:int (get-this-field i) 2:int))
 ```
 
-```mir
-;; mir -O2 record=R stage=before,final
-record R:
-  (no methods)
+```hir
+;; hir -O2 record=R
+record R (b:byte, s:short, i:int, l:long, f:float, d:double, z:bool, c:char, u:obj)
+  (def k (*:int (get-this-field i) 2:int))
 ```
 
 ## Babble interface bridge fallback : non-literal overload alt and overload-holding field
@@ -127,10 +142,10 @@ class FieldOv (ov:obj)
   (def f var(ov))
 ```
 
-```mir
-;; mir -O2 class=FieldOv stage=before,final
-class FieldOv:
-  (no methods)
+```hir
+;; hir -O2 class=FieldOv
+class FieldOv (ov:obj)
+  (def f var(ov))
 ```
 
 ## Babble interface bridge : 0-arg field fallback and ref-only spread with extra optional param
@@ -158,13 +173,12 @@ class SC
     (+:obj var(x) var(suf))
 ```
 
-```mir
-;; mir -O2 class=SC stage=before,final
-class SC:
-  fn SC.op(v0: any, v1: any) -> any:
-    bb0:
-      v2: any = strcat v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=SC
+class SC
+  (def op (fn-ref SC.op))
+  fn SC.op (x:obj, suf:obj="!") -> obj {nothrow associative unique}
+    (+:obj var(x) var(suf))
 ```
 
 ## Babble interface bridge : variadic rest parameter packing on mismatched restIndex
@@ -194,48 +208,16 @@ class VarC
     var(acc)
 ```
 
-```mir
-;; mir -O2 class=VarC stage=before
-class VarC:
-  fn VarC.sum(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      v3: any = const null
-      br bb1(v3, v1)
-    bb1(v4: any, v5: int):
-      v6: bool = for_has_next v2
-      br_if v6, bb3, bb2
-    bb2:
-      ret v5
-    bb3:
-      v7: any = for_next v2
-      v8: any = checkcast v7 <int|int|>
-      v9: int = convert.int v8
-      v10: int = add v5, v9 {pure}
-      v11: any = convert.any v10
-      br bb1(v11, v10)
-```
-
-```mir
-;; mir -O2 class=VarC
-class VarC:
-  fn VarC.sum(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      br bb1(v1)
-    bb1(v3: int):
-      v4: bool = for_has_next v2
-      br_if v4, bb3, bb2
-    bb2:
-      ret v3
-    bb3:
-      v5: any = for_next v2
-      v6: any = checkcast v5 <int|int|>
-      v7: int = convert.int v6
-      v8: int = add v3, v7 {pure}
-      br bb1(v8)
+```hir
+;; hir -O2 class=VarC
+class VarC
+  (def sum (fn-ref VarC.sum))
+  fn VarC.sum (xs:obj) -> int {nothrow unique}
+    (def acc 0:int)
+    (for v in var(xs)
+      (block
+        (set acc += var(v))))
+    var(acc)
 ```
 
 ## Babble interface bridge : rest method implementing fixed 2-arg interface
@@ -261,48 +243,16 @@ class RestC
     var(s)
 ```
 
-```mir
-;; mir -O2 class=RestC stage=before
-class RestC:
-  fn RestC.join(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      v3: any = const null
-      br bb1(v3, v1)
-    bb1(v4: any, v5: int):
-      v6: bool = for_has_next v2
-      br_if v6, bb3, bb2
-    bb2:
-      ret v5
-    bb3:
-      v7: any = for_next v2
-      v8: any = checkcast v7 <int|int|>
-      v9: int = convert.int v8
-      v10: int = add v5, v9 {pure}
-      v11: any = convert.any v10
-      br bb1(v11, v10)
-```
-
-```mir
-;; mir -O2 class=RestC
-class RestC:
-  fn RestC.join(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      br bb1(v1)
-    bb1(v3: int):
-      v4: bool = for_has_next v2
-      br_if v4, bb3, bb2
-    bb2:
-      ret v3
-    bb3:
-      v5: any = for_next v2
-      v6: any = checkcast v5 <int|int|>
-      v7: int = convert.int v6
-      v8: int = add v3, v7 {pure}
-      br bb1(v8)
+```hir
+;; hir -O2 class=RestC
+class RestC
+  (def join (fn-ref RestC.join))
+  fn RestC.join (xs:obj) -> int {nothrow unique}
+    (def s 0:int)
+    (for x in var(xs)
+      (block
+        (set s += var(x))))
+    var(s)
 ```
 
 ## Java varargs interface bridge : Babble class implementing VarArgsSink with rest parameter
@@ -331,48 +281,16 @@ class SumSink
     var(acc)
 ```
 
-```mir
-;; mir -O2 class=SumSink stage=before
-class SumSink:
-  fn SumSink.sum(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      v3: any = const null
-      br bb1(v3, v1)
-    bb1(v4: any, v5: int):
-      v6: bool = for_has_next v2
-      br_if v6, bb3, bb2
-    bb2:
-      ret v5
-    bb3:
-      v7: any = for_next v2
-      v8: any = checkcast v7 <int|int|>
-      v9: int = convert.int v8
-      v10: int = add v5, v9 {pure}
-      v11: any = convert.any v10
-      br bb1(v11, v10)
-```
-
-```mir
-;; mir -O2 class=SumSink
-class SumSink:
-  fn SumSink.sum(v0: any) -> int:
-    bb0:
-      v1: int = const 0
-      v2: any = for_init.java_iterable v0
-      br bb1(v1)
-    bb1(v3: int):
-      v4: bool = for_has_next v2
-      br_if v4, bb3, bb2
-    bb2:
-      ret v3
-    bb3:
-      v5: any = for_next v2
-      v6: any = checkcast v5 <int|int|>
-      v7: int = convert.int v6
-      v8: int = add v3, v7 {pure}
-      br bb1(v8)
+```hir
+;; hir -O2 class=SumSink
+class SumSink
+  (def sum (fn-ref SumSink.sum))
+  fn SumSink.sum (xs:obj) -> int {nothrow unique}
+    (def acc 0:int)
+    (for x in var(xs)
+      (block
+        (set acc += var(x))))
+    var(acc)
 ```
 
 ## Java covariant and generic bridge methods : StringCriterion and CovariantSupplier
@@ -404,13 +322,12 @@ class HiSup
     "hi"
 ```
 
-```mir
-;; mir -O2 class=HiSup stage=before,final
-class HiSup:
-  fn HiSup.get() -> any:
-    bb0:
-      v0: any = const "hi"
-      ret v0
+```hir
+;; hir -O2 class=HiSup
+class HiSup
+  (def get (fn-ref HiSup.get))
+  fn HiSup.get () -> obj {nothrow unique}
+    "hi"
 ```
 
 ## Java interface with boxed wrapper parameters : TypedCallback
@@ -443,9 +360,29 @@ top-level:
   (call name(assert) (==:bool (jcall JavaClassDemo.invokeAcceptString name(c) "ok") "ok!"))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (block
+    (def $cse0 name(import))
+    (def t (call var($cse0) "org.babblelang.tests"))
+    (def extCalc (call var($cse0) "ext_calc.ba"))
+    (def jFix (call var($cse0) "java_fixtures.ba"))
+    (def jCb (call var($cse0) "java_typed_cb.ba"))
+    (def App null)
+    (def CS null)
+    (def Fmt (iface-ref Fmt))
+    (def addOne (fn-ref addOne))
+    (def fmtInt (fn-ref fmtInt))
+    (def fmtStr (fn-ref fmtStr))
+    (def c (call (export name(jCb).Cb)))
+    (def $cse1 name(assert))
+    (def $cse2 name(t))
+    (def $cse3 name(c))
+    (call var($cse1) (==:bool (jcall JavaClassDemo.invokeAcceptInt var($cse3) 4:int) 5:int))
+    (call var($cse1) (==:bool (jcall JavaClassDemo.invokeAcceptDouble var($cse3) 1.5:double) 3.0:double))
+    (call var($cse1) (not (jcall JavaClassDemo.invokeAcceptBool var($cse3) true:bool)))
+    (call var($cse1) (==:bool (jcall JavaClassDemo.invokeAcceptString var($cse3) "ok") "ok!")))
 ```
 
 ## Java interface bridge : ref-only spread with extra optional param
@@ -466,13 +403,12 @@ class Tag
     (+:obj var(s) var(suf))
 ```
 
-```mir
-;; mir -O2 class=Tag stage=before,final
-class Tag:
-  fn Tag.apply(v0: any, v1: any) -> any:
-    bb0:
-      v2: any = strcat v0, v1 {pure}
-      ret v2
+```hir
+;; hir -O2 class=Tag
+class Tag
+  (def apply (fn-ref Tag.apply))
+  fn Tag.apply (s:obj, suf:obj="!") -> obj {nothrow associative unique}
+    (+:obj var(s) var(suf))
 ```
 
 ## Java interface void bridge discarding 2-slot double return with POP2
@@ -495,18 +431,13 @@ class WideVoid (n:int)
     2.5:double
 ```
 
-```mir
-;; mir -O2 class=WideVoid stage=before,final
-class WideVoid:
-  fn WideVoid.run() -> double:
-    bb0:
-      v0: any = slot_read this {pure}
-      v1: int = load_field v0.n {read:shared,throws}
-      v2: int = const 1
-      v3: int = add v1, v2 {pure}
-      store_field v0.n, v3 {write:shared,throws}
-      v4: double = const 2.5
-      ret v4
+```hir
+;; hir -O2 class=WideVoid
+class WideVoid (n:int)
+  (def run (fn-ref WideVoid.run))
+  fn WideVoid.run () -> double {nothrow mut unique}
+    (set-this-field n += 1:int)
+    2.5:double
 ```
 
 ## Java interface inherited Babble defaults returning byte and short
@@ -535,12 +466,12 @@ interface IS
     var(x)
 ```
 
-```mir
-;; mir -O2 interface=IS stage=before,final
-interface IS:
-  fn apply(v0: short) -> short:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 interface=IS
+interface IS
+  (def apply (fn-ref apply))
+  fn apply (x:short) -> short {pure}
+    var(x)
 ```
 
 ## Java interface inherited Babble defaults returning float and 0-arg long
@@ -569,13 +500,12 @@ interface IL
     42:long
 ```
 
-```mir
-;; mir -O2 interface=IL stage=before,final
-interface IL:
-  fn getAsLong() -> long:
-    bb0:
-      v0: long = const 42L
-      ret v0
+```hir
+;; hir -O2 interface=IL
+interface IL
+  (def getAsLong (fn-ref getAsLong))
+  fn getAsLong () -> long {pure}
+    42:long
 ```
 
 ## Java re-abstracted default method : AnnotatedType and AnnotatedArrayType
@@ -619,9 +549,24 @@ top-level:
   (call name(assert) (and (==:bool (jcall AnnotatedArrayType.getAnnotatedOwnerType name(a)) null) (==:bool (array-op SIZE (nonnull (jcall AnnotatedType.getAnnotations name(a)))) 0:int)))
 ```
 
-```mir
-;; mir -O2 top-level stage=before,final
-top-level ; [not-lowered: top-level]
+```hir
+;; hir -O2 top-level
+top-level:
+  (block
+    (def $cse0 name(import))
+    (def t (call var($cse0) "org.babblelang.tests"))
+    (def extCalc (call var($cse0) "ext_calc.ba"))
+    (def jFix (call var($cse0) "java_fixtures.ba"))
+    (def jCb (call var($cse0) "java_typed_cb.ba"))
+    (def App null)
+    (def CS null)
+    (def Fmt (iface-ref Fmt))
+    (def addOne (fn-ref addOne))
+    (def fmtInt (fn-ref fmtInt))
+    (def fmtStr (fn-ref fmtStr))
+    (def a (call (export name(jFix).MyAAT)))
+    (def $cse1 name(a))
+    (call name(assert) (and (==:bool (jcall AnnotatedArrayType.getAnnotatedOwnerType var($cse1)) null) (==:bool (array-op SIZE (nonnull (jcall AnnotatedType.getAnnotations var($cse1)))) 0:int))))
 ```
 
 ## Java default methods with non-matching Babble overload set on Iterator
@@ -650,23 +595,20 @@ class OvIter
     var(s)
 ```
 
-```mir
-;; mir -O2 class=OvIter stage=before,final
-class OvIter:
-  fn OvIter.hasNext() -> bool:
-    bb0:
-      v0: bool = const false
-      ret v0
-  fn OvIter.next() -> int:
-    bb0:
-      v0: int = const 0
-      ret v0
-  fn OvIter.remove(v0: int) -> int:
-    bb0:
-      ret v0
-  fn OvIter.remove(v0: any) -> any:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 class=OvIter
+class OvIter
+  (def hasNext (fn-ref OvIter.hasNext))
+  (def next (fn-ref OvIter.next))
+  (def remove (overload (fn-ref OvIter.remove#1) (fn-ref OvIter.remove#2)))
+  fn OvIter.hasNext () -> bool {nothrow unique}
+    false:bool
+  fn OvIter.next () -> int {nothrow unique}
+    0:int
+  fn OvIter.remove (n:int) -> int {nothrow idempotent monotone injective unique}
+    var(n)
+  fn OvIter.remove (s:obj) -> obj {nothrow idempotent monotone injective unique}
+    var(s)
 ```
 
 ## Java default methods with single-method arity mismatch on Iterator
@@ -697,24 +639,21 @@ class ArityIter
     1:int
 ```
 
-```mir
-;; mir -O2 class=ArityIter stage=before,final
-class ArityIter:
-  fn ArityIter.hasNext() -> bool:
-    bb0:
-      v0: bool = const false
-      ret v0
-  fn ArityIter.next() -> int:
-    bb0:
-      v0: int = const 0
-      ret v0
-  fn ArityIter.remove(v0: int) -> int:
-    bb0:
-      ret v0
-  fn ArityIter.forEachRemaining() -> int:
-    bb0:
-      v0: int = const 1
-      ret v0
+```hir
+;; hir -O2 class=ArityIter
+class ArityIter
+  (def hasNext (fn-ref ArityIter.hasNext))
+  (def next (fn-ref ArityIter.next))
+  (def remove (fn-ref ArityIter.remove))
+  (def forEachRemaining (fn-ref ArityIter.forEachRemaining))
+  fn ArityIter.hasNext () -> bool {nothrow unique}
+    false:bool
+  fn ArityIter.next () -> int {nothrow unique}
+    0:int
+  fn ArityIter.remove (n:int) -> int {nothrow idempotent monotone injective unique}
+    var(n)
+  fn ArityIter.forEachRemaining () -> int {nothrow unique}
+    1:int
 ```
 
 ## Inherited overloaded Babble default on Java Iterator skips unmatched Java default
@@ -737,15 +676,14 @@ interface MixIter
     var(s)
 ```
 
-```mir
-;; mir -O2 interface=MixIter stage=before,final
-interface MixIter:
-  fn remove(v0: int) -> int:
-    bb0:
-      ret v0
-  fn remove(v0: any) -> any:
-    bb0:
-      ret v0
+```hir
+;; hir -O2 interface=MixIter
+interface MixIter
+  (def remove (overload (fn-ref remove#1) (fn-ref remove#2)))
+  fn remove (n:int) -> int {pure}
+    var(n)
+  fn remove (s:obj) -> obj {pure}
+    var(s)
 ```
 
 ## Inherited overloaded Babble default on Java Appendable invokes OVERLOAD_SET.memberOf
@@ -774,19 +712,14 @@ interface OvApp
     this
 ```
 
-```mir
-;; mir -O2 interface=OvApp stage=before,final
-interface OvApp:
-  fn append(v0: char) -> any:
-    bb0:
-      v1: any = slot_read this {pure}
-      ret v1
-  fn append(v0: any) -> any:
-    bb0:
-      v1: any = slot_read this {pure}
-      ret v1
-  fn append(v0: any, v1: int, v2: int) -> any:
-    bb0:
-      v3: any = slot_read this {pure}
-      ret v3
+```hir
+;; hir -O2 interface=OvApp
+interface OvApp
+  (def append (overload (fn-ref append#1) (fn-ref append#2) (fn-ref append#3)))
+  fn append (c:char) -> obj {pure}
+    this
+  fn append (s:obj) -> obj {pure}
+    this
+  fn append (s:obj, i:int, j:int) -> obj {pure}
+    this
 ```

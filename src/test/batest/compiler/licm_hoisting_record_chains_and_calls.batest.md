@@ -58,89 +58,20 @@ fn RV.run (n:int) -> double {pure unique}
   var(r)
 ```
 
-```mir
-;; mir -O2 fn=RV.run stage=before
-fn RV.run(v0: int) -> double:
-  bb0:
-    v1: double = const 0.0
-    v2: int = const 0
-    v3: any = const "  "
-    v4: any = slot_read this {pure}
-    v5: any = load_field v4.s {read:frozen}
-    v6: any = strcat v3, v5 {pure}
-    v7: any = const "  "
-    v8: any = strcat v6, v7 {pure}
-    v9: any = slot_read this {pure}
-    v10: byte = load_field v9.a {read:frozen}
-    v11: any = slot_read this {pure}
-    v12: double = load_field v11.d {read:frozen}
-    v13: double = const 1.0
-    v14: double = add v12, v13 {pure}
-    v15: double = const 2.0
-    v16: double = div v14, v15 {pure}
-    v17: any = const null
-    br bb1(v17, v2, v1)
-  bb1(v18: any, v19: int, v20: double):
-    v21: bool = lt v19, v0 {pure}
-    br_if v21, bb3, bb2
-  bb2:
-    ret v20
-  bb3:
-    v22: any = name_read double {pure}
-    v23: any = call_java v8.trim() {impure}
-    v24: any = checkcast v23 <string|string|>
-    v25: int = call_java v24.length() {pure,throws}
-    v26: double = opaque.DynamicCall(v22, v25) {impure}
-    v27: any = convert.any v10
-    v28: any = checkcast v27 <double|double|>
-    v29: double = convert.double v28
-    v30: double = add v26, v29 {pure}
-    v31: double = add v30, v16 {pure}
-    v32: double = add v20, v31 {pure}
-    v33: int = const 1
-    v34: int = add v19, v33 {pure}
-    v35: any = convert.any v34
-    br bb1(v35, v34, v32)
-```
-
-```mir
-;; mir -O2 fn=RV.run
-fn RV.run(v0: int) -> double:
-  bb0:
-    v1: double = const 0.0
-    v2: int = const 0
-    v3: any = const "  "
-    v4: any = slot_read this {pure}
-    v5: any = load_field v4.s {read:frozen}
-    v6: any = strcat v3, v5 {pure}
-    v7: any = strcat v6, v3 {pure}
-    v8: byte = load_field v4.a {read:frozen}
-    v9: double = load_field v4.d {read:frozen}
-    v10: double = const 1.0
-    v11: double = add v9, v10 {pure}
-    v12: double = const 2.0
-    v13: double = div v11, v12 {pure}
-    v14: any = name_read double {pure}
-    v15: any = convert.any v8
-    br bb1(v2, v1)
-  bb1(v16: int, v17: double):
-    v18: bool = lt v16, v0 {pure}
-    br_if v18, bb3, bb2
-  bb2:
-    ret v17
-  bb3:
-    v19: any = call_java v7.trim() {impure}
-    v20: any = checkcast v19 <string|string|>
-    v21: int = call_java v20.length() {pure,throws}
-    v22: double = opaque.DynamicCall(v14, v21) {impure}
-    v23: any = checkcast v15 <double|double|>
-    v24: double = convert.double v23
-    v25: double = add v22, v24 {pure}
-    v26: double = add v25, v13 {pure}
-    v27: double = add v17, v26 {pure}
-    v28: int = const 1
-    v29: int = add v16, v28 {pure}
-    br bb1(v29, v27)
+```hir
+;; hir -O2 fn=RV.run
+fn RV.run (n:int) -> double {pure unique}
+  (def r 0.0:double)
+  (def k 0:int)
+  (block
+    (def $licm0 (+:obj (+:obj "  " (get-this-field s)) "  "))
+    (def $licm1 (get-this-field a))
+    (def $licm2 (/:double (+:double (get-this-field d) 1.0:double) 2.0:double))
+    (while (<:bool var(k) var(n))
+      (block
+        (set r += (+:double (+:double (call name(double) (jcall String.length (jcall String.trim var($licm0)))) (as var($licm1) double|double|)) var($licm2)))
+        (set k += 1:int))))
+  var(r)
 ```
 
 ## Record-based LICM : bigSink over As + Logic
@@ -190,105 +121,23 @@ fn RV.run (n:int) -> double {pure unique}
   var(r)
 ```
 
-```mir
-;; mir -O2 fn=RV.run stage=before
-fn RV.run(v0: int) -> double:
-  bb0:
-    v1: double = const 0.0
-    v2: int = const 0
-    v3: any = slot_read this {pure}
-    v4: byte = load_field v3.a {read:frozen}
-    v5: any = slot_read this {pure}
-    v6: bool = load_field v5.f {read:frozen}
-    v7: any = slot_read this {pure}
-    v8: int = load_field v7.i {read:frozen}
-    v9: int = const 0
-    v10: bool = gt v8, v9 {pure}
-    v11: any = slot_read this {pure}
-    v12: bool = load_field v11.f {read:frozen}
-    v13: bool = not v12 {pure}
-    v14: any = const null
-    br bb1(v14, v2, v1)
-  bb1(v15: any, v16: int, v17: double):
-    v18: bool = lt v16, v0 {pure}
-    br_if v18, bb3, bb2
-  bb2:
-    ret v17
-  bb3:
-    v19: any = convert.any v4
-    v20: any = checkcast v19 <double|double|>
-    v21: double = convert.double v20
-    v22: bool = const true
-    br_if v13, bb7(v22), bb4
-  bb4:
-    v23: bool = const false
-    br_if v6, bb5, bb6(v23)
-  bb5:
-    br bb6(v10)
-  bb6(v24: bool):
-    br bb7(v24)
-  bb7(v25: bool):
-    br_if v25, bb9, bb8
-  bb8:
-    v26: double = const 2.0
-    br bb10(v26)
-  bb9:
-    v27: double = const 1.0
-    br bb10(v27)
-  bb10(v28: double):
-    v29: double = add v21, v28 {pure}
-    v30: double = add v17, v29 {pure}
-    v31: int = const 1
-    v32: int = add v16, v31 {pure}
-    v33: any = convert.any v32
-    br bb1(v33, v32, v30)
-```
-
-```mir
-;; mir -O2 fn=RV.run
-fn RV.run(v0: int) -> double:
-  bb0:
-    v1: double = const 0.0
-    v2: int = const 0
-    v3: any = slot_read this {pure}
-    v4: byte = load_field v3.a {read:frozen}
-    v5: bool = load_field v3.f {read:frozen}
-    v6: int = load_field v3.i {read:frozen}
-    v7: bool = gt v6, v2 {pure}
-    v8: bool = not v5 {pure}
-    v9: any = convert.any v4
-    br bb1(v2, v1)
-  bb1(v10: int, v11: double):
-    v12: bool = lt v10, v0 {pure}
-    br_if v12, bb3, bb2
-  bb2:
-    ret v11
-  bb3:
-    v13: any = checkcast v9 <double|double|>
-    v14: double = convert.double v13
-    v15: bool = const true
-    br_if v8, bb7(v15), bb4
-  bb4:
-    v16: bool = const false
-    br_if v5, bb5, bb6(v16)
-  bb5:
-    br bb6(v7)
-  bb6(v17: bool):
-    br bb7(v17)
-  bb7(v18: bool):
-    br_if v18, bb9, bb8
-  bb8:
-    v19: double = const 2.0
-    br bb10(v19)
-  bb9:
-    v20: double = const 1.0
-    br bb10(v20)
-  bb10(v21: double):
-    v22: double = add v14, v21 {pure}
-    v23: double = add v11, v22 {pure}
-    v24: int = const 1
-    v25: int = add v10, v24 {pure}
-    br bb1(v25, v23)
+```hir
+;; hir -O2 fn=RV.run
+fn RV.run (n:int) -> double {pure unique}
+  (def r 0.0:double)
+  (def k 0:int)
+  (block
+    (def $licm0 (get-this-field f))
+    (def $licm1 (get-this-field a))
+    (def $licm2 (>:bool (get-this-field i) 0:int))
+    (while (<:bool var(k) var(n))
+      (block
+        (set r +=
+          (block
+            (def x (+:double (as var($licm1) double|double|) (if (or (and var($licm0) var($licm2)) (not var($licm0))) 1.0:double 2.0:double)))
+            var(x)))
+        (set k += 1:int))))
+  var(r)
 ```
 
 ## Non-inlineable DirectBabbleCall hoisting : implicit return, optional param, and local fn alias
@@ -338,115 +187,24 @@ fn run (d:double, f:bool) -> double {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: double, v1: bool) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: any = name_read bigSink {pure}
-    v4: int = const 0
-    v5: double = call_java Math.sin(v0) {pure}
-    v6: any = const null
-    br bb1(v6, v4, v2)
-  bb1(v7: any, v8: int, v9: double):
-    v10: int = const 2
-    v11: bool = lt v8, v10 {pure}
-    br_if v11, bb3, bb2
-  bb2:
-    ret v9
-  bb3:
-    v12: double = neg v0 {pure}
-    br_if v1, bb5, bb4
-  bb4:
-    v13: double = const 2.0
-    br bb6(v13)
-  bb5:
-    v14: double = const 1.0
-    br bb6(v14)
-  bb6(v15: double):
-    v16: double = add v12, v15 {pure}
-    v17: double = add v5, v16 {pure}
-    br_if v1, bb8, bb7
-  bb7:
-    v18: any = const null
-    br bb9(v18)
-  bb8:
-    v19: any = convert.any v0
-    br bb9(v19)
-  bb9(v20: any):
-    v21: any = widen#5 v20
-    v22: any = const null
-    v23: any = eq v21, v22 {pure,throws}
-    br_if v23, bb11, bb10
-  bb10:
-    v24: any = narrow.nonnull v21 <non-null>
-    v25: double = const 1.0
-    br bb12(v25)
-  bb11:
-    v26: double = const 0.0
-    br bb12(v26)
-  bb12(v27: double):
-    v28: double = add v17, v27 {pure}
-    v29: double = opaque.DynamicCall(v3, v0) {impure}
-    v30: double = add v28, v29 {pure}
-    v31: double = add v9, v30 {pure}
-    v32: int = const 1
-    v33: int = add v8, v32 {pure}
-    v34: any = convert.any v33
-    br bb1(v34, v33, v31)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: double, v1: bool) -> double:
-  bb0:
-    v2: double = const 0.0
-    v3: any = name_read bigSink {pure}
-    v4: int = const 0
-    v5: double = call_java Math.sin(v0) {pure}
-    v6: any = const null
-    v7: double = neg v0 {pure}
-    v8: any = convert.any v0
-    br bb1(v4, v2)
-  bb1(v9: int, v10: double):
-    v11: int = const 2
-    v12: bool = lt v9, v11 {pure}
-    br_if v12, bb3, bb2
-  bb2:
-    ret v10
-  bb3:
-    br_if v1, bb5, bb4
-  bb4:
-    v13: double = const 2.0
-    br bb6(v13)
-  bb5:
-    v14: double = const 1.0
-    br bb6(v14)
-  bb6(v15: double):
-    v16: double = add v7, v15 {pure}
-    v17: double = add v5, v16 {pure}
-    br_if v1, bb8, bb7
-  bb7:
-    br bb9(v6)
-  bb8:
-    br bb9(v8)
-  bb9(v18: any):
-    v19: any = widen#5 v18
-    v20: any = eq v19, v6 {pure,throws}
-    br_if v20, bb11, bb10
-  bb10:
-    v21: double = const 1.0
-    br bb12(v21)
-  bb11:
-    br bb12(v2)
-  bb12(v22: double):
-    v23: double = add v17, v22 {pure}
-    v24: double = opaque.DynamicCall(v3, v0) {impure}
-    v25: double = add v23, v24 {pure}
-    v26: double = add v10, v25 {pure}
-    v27: int = const 1
-    v28: int = add v9, v27 {pure}
-    br bb1(v28, v26)
+```hir
+;; hir -O2 fn=run
+fn run (d:double, f:bool) -> double {nothrow unique}
+  (def a 0.0:double)
+  (def loc name(bigSink))
+  (def k 0:int)
+  (block
+    (def $licm0 (jcall Math.sin var(d)))
+    (while (<:bool var(k) 2:int)
+      (block
+        (set a += (+:double (+:double (+:double var($licm0) (block
+                  (def x#1 (+:double (neg var(d)) (if var(f) 1.0:double 2.0:double)))
+                  var(x#1))) (block
+                (def x#2 (if var(f) (box var(d))))
+                (def r (if (==:bool var(x#2) null) 0.0:double 1.0:double))
+                var(r))) (call var(loc) var(d))))
+        (set k += 1:int))))
+  var(a)
 ```
 
 ## Hoisting widened non-inlineable calls passed to multi-arg functions (short/int)
@@ -498,85 +256,24 @@ fn run (b:byte) -> int {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: byte) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = const true
-    v3: int = const 0
-    v4: any = const null
-    br bb1(v4, v3, v1, v2)
-  bb1(v5: any, v6: int, v7: int, v8: bool):
-    v9: int = const 2
-    v10: bool = lt v6, v9 {pure}
-    br_if v10, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v11: short = convert.short v0
-    br_if v8, bb5, bb4
-  bb4:
-    v12: int = const 0
-    br bb6(v12)
-  bb5:
-    v13: any = name_read int {pure}
-    v14: int = opaque.DynamicCall(v13, v11) {impure}
-    br bb6(v14)
-  bb6(v15: int):
-    v16: int = convert.int v0
-    br_if v8, bb8, bb7
-  bb7:
-    v17: int = const 0
-    br bb9(v17)
-  bb8:
-    br bb9(v16)
-  bb9(v18: int):
-    v19: int = add v15, v18 {pure}
-    v20: int = add v7, v19 {pure}
-    v21: bool = not v8 {pure}
-    v22: int = const 1
-    v23: int = add v6, v22 {pure}
-    v24: any = convert.any v23
-    br bb1(v24, v23, v20, v21)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: byte) -> int:
-  bb0:
-    v1: int = const 0
-    v2: bool = const true
-    v3: short = convert.short v0
-    v4: any = name_read int {pure}
-    v5: int = convert.int v0
-    br bb1(v1, v1, v2)
-  bb1(v6: int, v7: int, v8: bool):
-    v9: int = const 2
-    v10: bool = lt v6, v9 {pure}
-    br_if v10, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    br_if v8, bb5, bb4
-  bb4:
-    br bb6(v1)
-  bb5:
-    v11: int = opaque.DynamicCall(v4, v3) {impure}
-    br bb6(v11)
-  bb6(v12: int):
-    br_if v8, bb8, bb7
-  bb7:
-    br bb9(v1)
-  bb8:
-    br bb9(v5)
-  bb9(v13: int):
-    v14: int = add v12, v13 {pure}
-    v15: int = add v7, v14 {pure}
-    v16: bool = not v8 {pure}
-    v17: int = const 1
-    v18: int = add v6, v17 {pure}
-    br bb1(v18, v15, v16)
+```hir
+;; hir -O2 fn=run
+fn run (b:byte) -> int {nothrow unique}
+  (def a 0:int)
+  (def mf true:bool)
+  (def k 0:int)
+  (while (<:bool var(k) 2:int)
+    (block
+      (set a += (+:int (block
+            (def v#1 (widen[short] var(b)))
+            (def r#1 (if var(mf) (call name(int) var(v#1)) 0:int))
+            var(r#1)) (block
+            (def v#2 (widen[int] var(b)))
+            (def r#2 (if var(mf) var(v#2) 0:int))
+            var(r#2))))
+      (set mf (not var(mf)))
+      (set k += 1:int)))
+  var(a)
 ```
 
 ## Hoisting widened non-inlineable calls passed to multi-arg functions (long) and mixed with mutated long
@@ -628,85 +325,21 @@ fn run (i:int) -> long {nothrow unique}
   var(a)
 ```
 
-```mir
-;; mir -O2 fn=run stage=before
-fn run(v0: int) -> long:
-  bb0:
-    v1: long = const 0L
-    v2: bool = const true
-    v3: long = const 1L
-    v4: int = const 0
-    v5: any = const null
-    br bb1(v5, v4, v1, v2, v3)
-  bb1(v6: any, v7: int, v8: long, v9: bool, v10: long):
-    v11: int = const 2
-    v12: bool = lt v7, v11 {pure}
-    br_if v12, bb3, bb2
-  bb2:
-    ret v8
-  bb3:
-    v13: any = convert.any v8
-    v14: long = convert.long v0
-    br_if v9, bb5, bb4
-  bb4:
-    v15: long = const 0L
-    br bb6(v15)
-  bb5:
-    br bb6(v14)
-  bb6(v16: long):
-    v17: long = convert.long v0
-    v18: long = add v10, v17 {pure}
-    v19: long = add v16, v18 {pure}
-    v20: any = convert.any v19
-    v21: any = add v13, v20 {impure}
-    v22: long = convert.long v21
-    v23: bool = not v9 {pure}
-    v24: any = convert.any v10
-    v25: long = const 1L
-    v26: any = convert.any v25
-    v27: any = add v24, v26 {impure}
-    v28: long = convert.long v27
-    v29: int = const 1
-    v30: int = add v7, v29 {pure}
-    v31: any = convert.any v30
-    br bb1(v31, v30, v22, v23, v28)
-```
-
-```mir
-;; mir -O2 fn=run
-fn run(v0: int) -> long:
-  bb0:
-    v1: long = const 0L
-    v2: bool = const true
-    v3: long = const 1L
-    v4: int = const 0
-    v5: long = convert.long v0
-    br bb1(v4, v1, v2, v3)
-  bb1(v6: int, v7: long, v8: bool, v9: long):
-    v10: int = const 2
-    v11: bool = lt v6, v10 {pure}
-    br_if v11, bb3, bb2
-  bb2:
-    ret v7
-  bb3:
-    v12: any = convert.any v7
-    br_if v8, bb5, bb4
-  bb4:
-    br bb6(v1)
-  bb5:
-    br bb6(v5)
-  bb6(v13: long):
-    v14: long = add v9, v5 {pure}
-    v15: long = add v13, v14 {pure}
-    v16: any = convert.any v15
-    v17: any = add v12, v16 {impure}
-    v18: long = convert.long v17
-    v19: bool = not v8 {pure}
-    v20: any = convert.any v9
-    v21: any = const 1L
-    v22: any = add v20, v21 {impure}
-    v23: long = convert.long v22
-    v24: int = const 1
-    v25: int = add v6, v24 {pure}
-    br bb1(v25, v18, v19, v23)
+```hir
+;; hir -O2 fn=run
+fn run (i:int) -> long {nothrow unique}
+  (def a 0:long)
+  (def mf true:bool)
+  (def ml 1:long)
+  (def k 0:int)
+  (while (<:bool var(k) 2:int)
+    (block
+      (set a += (+:long (block
+            (def v (widen[long] var(i)))
+            (def r (if var(mf) var(v) 0:long))
+            var(r)) (+:long var(ml) (convert[long] var(i)))))
+      (set mf (not var(mf)))
+      (set ml += 1:long)
+      (set k += 1:int)))
+  var(a)
 ```
