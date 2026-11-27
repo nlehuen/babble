@@ -558,3 +558,61 @@ def f = fn (): int -> (
 )
 assert(f() == 12)
 ```
+
+## Mutating a mut parameter or mut this inside a guard is rejected
+
+```babble
+def f = fn (mut b: Box): int -> (
+    match b.v
+    case 1 if (b.v = 2; false) then (0)
+    else (b.v)
+)
+```
+
+```error
+Case expression must be pure : cannot perform field assignment .v
+```
+
+## Mutating this inside fn mut guard is rejected
+
+```babble
+def C = class () (
+    var v: int = 1
+    def m = fn mut (): int -> (
+        match this.v
+        case 1 if (this.v = 2; false) then (0)
+        else (this.v)
+    )
+)
+```
+
+```error
+Case expression must be pure : cannot perform field assignment .v
+```
+
+## Deep mutation of guard-local list holding outer object is rejected
+
+```babble
+def mutFirst = fn (mut xs: list of Box) -> (xs.get(0).v = 9)
+def f = fn io (): int -> (
+    def b = Box()
+    match b.v
+    case 1 if (def t = list(b); mutFirst(t); false) then (0)
+    else (b.v)
+)
+```
+
+```error
+Case expression must be pure : cannot perform mut parameter xs
+```
+
+## Unattached fresh container and confined object init inside guard are allowed
+
+```babble
+def f = fn (n: int): int -> (
+    match n
+    case <> 0 if (list(1, 2).add(n); object (var a: int = 1; init (this.a = n)).a > 5) then (1)
+    else (0)
+)
+assert(f(9) == 1 and f(2) == 0 and f(0) == 0)
+```
