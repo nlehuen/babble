@@ -228,8 +228,10 @@ final class JavaEffectResolver {
     }
 
     EffectChecker.JavaCallProfile resolveJavaMethodForCallableSatisfies(
-            Type.JavaMethod jm, int arity) {
-        Method exact = JavaTypeBridge.uniqueArityMethod(jm.owner(), jm.name(), arity);
+            Type.JavaMethod jm, List<Type.Parameter> targetParams) {
+        Method exact =
+                JavaTypeBridge.resolveMethodForTarget(
+                        jm.owner(), jm.name(), targetParams, checker::assignable);
         return resolveJavaMethodProfile(jm.owner(), jm.name(), exact);
     }
 

@@ -665,8 +665,7 @@ final class EffectChecker {
         boolean borrowRest;
         if (from instanceof Type.JavaMethod jm) {
             JavaCallProfile profile =
-                    javaResolver.resolveJavaMethodForCallableSatisfies(
-                            jm, target.parameters().size());
+                    javaResolver.resolveJavaMethodForCallableSatisfies(jm, target.parameters());
             effects = profile.effects();
             mutParams = profile.mutParams();
             borrowParams = profile.borrowParams();
