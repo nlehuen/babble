@@ -95,6 +95,10 @@ final class ImportedSummaries {
         return find(s -> s.constructorSummaries.get(node), s -> s.constructorSummary(node));
     }
 
+    List<TypedModuleSummary.ConstructorSignature> constructorSignatures(TypeNode node) {
+        return find(s -> s.constructorSignatures.get(node), s -> s.constructorSignatures(node));
+    }
+
     TypedModuleSummary.CallableEffectTemplate callableTemplate(Type.Function fn) {
         return find(s -> s.callableTemplates.get(fn), s -> s.callableTemplate(fn));
     }

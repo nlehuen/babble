@@ -132,12 +132,22 @@ final class CallEffectAnalyzer {
             return Reachability.Origin.ofExternal(call, ec.javaResolver.isDeeplyImmutable(resType));
         }
         if (calleeType == OperatorTypes.DISCARD_FUNCTION) {
+            if (w.constructingSelf
+                    && argExprs.length == 1
+                    && InitEffectAnalyzer.isDirectThisExpr(argExprs[0])) {
+                w.reportOnce("Cannot move or consume this inside init", argExprs[0]);
+            }
             w.stmtHasSideEffect = true;
             return Reachability.Origin.IMMUTABLE;
         }
         if (calleeType == OperatorTypes.MOVE_FUNCTION) {
             if (argExprs.length != 1) {
                 return Reachability.Origin.IMMUTABLE;
+            }
+            if (w.constructingSelf && InitEffectAnalyzer.isDirectThisExpr(argExprs[0])) {
+                w.reportOnce("Cannot move or consume this inside init", argExprs[0]);
+                return Reachability.Origin.ofExternal(
+                        call, ec.javaResolver.isDeeplyImmutable(resType));
             }
             ParserRuleContext decl = w.resolveOwnedLocalDecl(argExprs[0]);
             Reachability.Origin orig = argOrigins[0];
@@ -171,6 +181,10 @@ final class CallEffectAnalyzer {
         }
         if (calleeType == OperatorTypes.FREEZE_FUNCTION) {
             if (argExprs.length != 1) {
+                return Reachability.Origin.IMMUTABLE;
+            }
+            if (w.constructingSelf && InitEffectAnalyzer.isDirectThisExpr(argExprs[0])) {
+                w.reportOnce("Cannot move or consume this inside init", argExprs[0]);
                 return Reachability.Origin.IMMUTABLE;
             }
             Reachability.Origin orig = argOrigins[0];
@@ -290,56 +304,17 @@ final class CallEffectAnalyzer {
                     resType);
         }
 
+        // 4a. Delegating constructor call `this(...)` inside `init` (BIP040-D5)
+        if (call instanceof BabbleParser.CallContext cc
+                && ec.pass.analysis.calls().isDelegatingThisCall(cc)) {
+            return InitEffectAnalyzer.evalDelegatingThisCall(
+                    ec, w, this, cc, calleeExpr, args, argExprs, argOrigins);
+        }
+
         // 4. Babble class constructor call `Point(1, 2)`
         if (calleeType instanceof Type.ClassValue cv && !cv.node().isInterface()) {
-            EffectChecker.CallableSummary cs = ec.constructorSummary(cv.node());
-            boolean imm = ec.javaResolver.isDeeplyImmutable(resType);
-            boolean ctorHermetic = cs != null && cs.effects().isHermetic();
-            Reachability.Origin ctorOrigin =
-                    ctorHermetic
-                            ? Reachability.Origin.ofUnique(call, null, imm)
-                            : Reachability.Origin.ofExternal(call, imm);
-            if (cs != null) {
-                w.applyEffects(cs.effects());
-                List<Type.Parameter> cParams = ec.checker.constructorParamsForEffects(cv.node());
-                for (int i = 0; i < args.size(); i++) {
-                    int pIdx = ec.checker.parameterIndexForArg(cParams, args, args.get(i));
-                    boolean storedInSelf = pIdx >= 0 && cs.ctorStoredParams().get(pIdx);
-                    boolean borrowed =
-                            pIdx >= 0 && pIdx < cs.borrowParams().length && cs.borrowParams()[pIdx];
-                    boolean uniqueP =
-                            pIdx >= 0 && pIdx < cs.uniqueParams().length && cs.uniqueParams()[pIdx];
-                    if ((storedInSelf || !borrowed)
-                            && !uniqueP
-                            && !w.isUnattachedUniqueOrImmutable(
-                                    argOrigins[i], w.effectiveType(argExprs[i]))) {
-                        if (argOrigins[i].owned() && argOrigins[i].uniqueOwner != null) {
-                            w.demoteUniqueOwner(
-                                    argOrigins[i].uniqueOwner, Reachability.Origin.IMMUTABLE);
-                        }
-                        if (ctorHermetic && !imm) {
-                            ctorOrigin = ctorOrigin.absorbElement(argOrigins[i]);
-                        }
-                    }
-                }
-                applyBabbleArgEffects(
-                        call,
-                        calleeExpr,
-                        cParams,
-                        cs.mutParams(),
-                        cs.borrowParams(),
-                        cs.uniqueParams(),
-                        null,
-                        Reachability.Origin.IMMUTABLE,
-                        false,
-                        false,
-                        true,
-                        ctorHermetic,
-                        args,
-                        argExprs,
-                        argOrigins);
-            }
-            return ctorOrigin;
+            return InitEffectAnalyzer.evalClassConstructorCall(
+                    ec, w, this, cv, call, calleeExpr, args, argExprs, argOrigins, resType);
         }
 
         // 5. Babble `recurse(...)`
@@ -1454,7 +1429,7 @@ final class CallEffectAnalyzer {
         return false;
     }
 
-    private void applyForwardedCallbackEffects(
+    void applyForwardedCallbackEffects(
             ParserRuleContext call,
             Type.Function hof,
             BabbleParser.ExpressionContext receiverExpr,
@@ -1790,7 +1765,7 @@ final class CallEffectAnalyzer {
         return ec.checker.literalOf(fn);
     }
 
-    private Reachability.Origin[] applyBabbleArgEffects(
+    Reachability.Origin[] applyBabbleArgEffects(
             ParserRuleContext call,
             BabbleParser.ExpressionContext calleeExpr,
             List<Type.Parameter> calleeParams,
@@ -1921,32 +1896,37 @@ final class CallEffectAnalyzer {
             boolean uniqueP = pIdx >= 0 && pIdx < calleeUnique.length && calleeUnique[pIdx];
             argIsExclusive[i] = mutP;
             if (uniqueP && !effectiveArgOrig.moved) {
-                String pName =
-                        pIdx >= 0 && pIdx < calleeParams.size()
-                                ? calleeParams.get(pIdx).name()
-                                : ("#" + i);
-                if (!copiedSpread
-                        && w.containsFrozen(argType)
-                        && effectiveArgOrig == argOrigins[i]) {
-                    w.reportOnce(
-                            "Argument for unique parameter " + pName + " cannot be frozen",
-                            argExprs[i]);
-                } else if (!effectiveArgOrig.unique
-                        && effectiveArgOrig != Reachability.Origin.IMMUTABLE
-                        && !ec.javaResolver.isDeeplyImmutable(argType)
-                        && argType != Type.ERROR) {
-                    w.reportOnce(
-                            "Argument for unique parameter " + pName + " must be unique",
-                            argExprs[i]);
-                } else if (!borrowP
-                        && effectiveArgOrig.unique
-                        && effectiveArgOrig.uniqueOwner instanceof ParserRuleContext decl) {
-                    if (w.paramIndex.containsKey(decl) && w.borrowParams[w.paramIndex.get(decl)]) {
+                if (w.constructingSelf && InitEffectAnalyzer.isDirectThisExpr(argExprs[i])) {
+                    w.reportOnce("Cannot move or consume this inside init", argExprs[i]);
+                } else {
+                    String pName =
+                            pIdx >= 0 && pIdx < calleeParams.size()
+                                    ? calleeParams.get(pIdx).name()
+                                    : ("#" + i);
+                    if (!copiedSpread
+                            && w.containsFrozen(argType)
+                            && effectiveArgOrig == argOrigins[i]) {
                         w.reportOnce(
-                                "Cannot move borrowed parameter " + argExprs[i].getText(),
+                                "Argument for unique parameter " + pName + " cannot be frozen",
                                 argExprs[i]);
-                    } else {
-                        w.env.put(decl, Reachability.Origin.MOVED);
+                    } else if (!effectiveArgOrig.unique
+                            && effectiveArgOrig != Reachability.Origin.IMMUTABLE
+                            && !ec.javaResolver.isDeeplyImmutable(argType)
+                            && argType != Type.ERROR) {
+                        w.reportOnce(
+                                "Argument for unique parameter " + pName + " must be unique",
+                                argExprs[i]);
+                    } else if (!borrowP
+                            && effectiveArgOrig.unique
+                            && effectiveArgOrig.uniqueOwner instanceof ParserRuleContext decl) {
+                        if (w.paramIndex.containsKey(decl)
+                                && w.borrowParams[w.paramIndex.get(decl)]) {
+                            w.reportOnce(
+                                    "Cannot move borrowed parameter " + argExprs[i].getText(),
+                                    argExprs[i]);
+                        } else {
+                            w.env.put(decl, Reachability.Origin.MOVED);
+                        }
                     }
                 }
             }

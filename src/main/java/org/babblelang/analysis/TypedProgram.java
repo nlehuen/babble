@@ -111,8 +111,17 @@ final class TypedProgram {
     }
 
     List<Type.Parameter> constructorParamsForEffects(TypeNode node) {
-        List<Type.Parameter> params = checker.constructorParameters(node);
+        return constructorParamsForEffects(node, 0);
+    }
+
+    List<Type.Parameter> constructorParamsForEffects(TypeNode node, int ctorIndex) {
+        List<Type.Parameter> params = checker.constructorParameters(node, ctorIndex);
         return params != null ? params : List.of();
+    }
+
+    int resolvedConstructorIndexForEffects(BabbleParser.CallContext call) {
+        Integer idx = checker.resolvedConstructorIndex(call);
+        return idx != null ? idx : 0;
     }
 
     TypeChecker.ForIterableInfo forIterableInfo(BabbleParser.ForExpressionContext ctx) {
@@ -239,7 +248,16 @@ final class TypedProgram {
     // ---------------------------------------------------------------- other files
 
     EffectChecker.CallableSummary remoteConstructorSummary(TypeNode node) {
-        return checker.imported().constructorSummary(node);
+        return remoteConstructorSummary(node, 0);
+    }
+
+    EffectChecker.CallableSummary remoteConstructorSummary(TypeNode node, int ctorIndex) {
+        List<TypedModuleSummary.ConstructorSignature> sigs =
+                checker.imported().constructorSignatures(node);
+        if (sigs != null && ctorIndex >= 0 && ctorIndex < sigs.size()) {
+            return sigs.get(ctorIndex).summary();
+        }
+        return ctorIndex == 0 ? checker.imported().constructorSummary(node) : null;
     }
 
     TypedModuleSummary.CallableEffectTemplate remoteCallableTemplate(Type.Function fn) {

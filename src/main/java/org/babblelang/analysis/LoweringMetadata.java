@@ -105,6 +105,8 @@ public final class LoweringMetadata {
             recordDestructureTargets = new IdentityHashMap<>();
     private final Map<ParserRuleContext, LoweringTargets.SequenceDestructureTarget>
             sequenceDestructureTargets = new IdentityHashMap<>();
+    private final Map<BabbleParser.AssignExpressionContext, Integer> thisFieldInitMembers =
+            new IdentityHashMap<>();
 
     /**
      * AST-level range-membership pattern decomposition for {@code case lo..hi} / {@code
@@ -197,6 +199,16 @@ public final class LoweringMetadata {
     public LoweringTargets.MembershipTarget membershipTarget(
             BabbleParser.MembershipPatternContext ctx) {
         return membershipTargets.get(ctx);
+    }
+
+    void markThisFieldInit(BabbleParser.AssignExpressionContext assign, int memberIndex) {
+        thisFieldInitMembers.put(assign, memberIndex);
+    }
+
+    /** Member index initialized by {@code this.field = expr} inside {@code init}, or {@code -1}. */
+    public int thisFieldInitMember(BabbleParser.AssignExpressionContext assign) {
+        Integer idx = thisFieldInitMembers.get(assign);
+        return idx != null ? idx : -1;
     }
 
     void setRelationalScrutineeKind(BabbleParser.RelationalPatternContext ctx, PrimitiveKind kind) {

@@ -731,16 +731,24 @@ final class TypeChecks {
                     throw new AnalysisException(
                             "Cannot assign to def member : " + access.member(), line);
                 }
-            } else if (access.assignment() && thisScope.kind == ScopeNode.Kind.CLASS_BODY) {
+            } else if (access.assignment()
+                    && (thisScope.kind == ScopeNode.Kind.CLASS_BODY
+                            || thisScope.kind == ScopeNode.Kind.INIT_BLOCK
+                            || thisScope.kind == ScopeNode.Kind.INIT_BODY)) {
                 TypeNode.Member member = thisScope.type.members.get(access.member());
                 if (member != null && member.isMethod()) {
                     throw new AnalysisException("Cannot assign method : " + access.member(), line);
                 }
+                boolean inDirectInit = BlockScopes.isInDirectInit(access.scope());
+                boolean isUninitializedField =
+                        inDirectInit
+                                && thisScope.type.uninitializedFields.contains(access.member());
                 if (thisScope.type.kind == ClassShape.Kind.VALUE_CLASS) {
-                    throw new AnalysisException(
-                            "Value members are read-only : " + access.member(), line);
-                }
-                if (member != null && !member.isMutable()) {
+                    if (!isUninitializedField) {
+                        throw new AnalysisException(
+                                "Value members are read-only : " + access.member(), line);
+                    }
+                } else if (member != null && !member.isMutable() && !isUninitializedField) {
                     throw new AnalysisException(
                             "Cannot assign to def member : " + access.member(), line);
                 }

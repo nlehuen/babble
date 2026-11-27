@@ -52,6 +52,7 @@ final class ExpressionTyper {
             case BabbleParser.MatchExpressionContext c ->
                     checker.matchTyper.typeMatch(c, expected, role);
             case BabbleParser.DefExpressionContext c -> visitDefExpression(c, expected, role);
+            case BabbleParser.InitExpressionContext c -> visitInitExpression(c);
             case BabbleParser.WhileExpressionContext c -> visitWhileExpression(c, expected, role);
             case BabbleParser.TypeAliasExpressionContext c -> visitTypeAlias(c);
             case BabbleParser.AxiomExpressionContext c -> {
@@ -188,6 +189,9 @@ final class ExpressionTyper {
             return Type.NULL;
         }
         Type declared = ctx.type() != null ? checker.annotator.declaredType(ctx) : null;
+        if (kind == LoweringTargets.DefKind.MEMBER && ctx.value == null) {
+            return declared != null ? declared : Type.ERROR;
+        }
         Type value = ctx.value != null ? checker.check(ctx.value, declared) : Type.NULL;
         ParserRuleContext errorSite = ctx.value != null ? ctx.value : ctx;
         if (declared != null) {
@@ -401,10 +405,34 @@ final class ExpressionTyper {
 
     private Type visitClassExpression(
             BabbleParser.ClassExpressionContext ctx, Type expected, TypeChecker.Role role) {
-        if (ctx.classParameters() != null) {
-            checker.constructorParameters(checker.pass.typeNodes.get(ctx));
+        TypeNode node = checker.pass.typeNodes.get(ctx);
+        if (node != null) {
+            for (int i = 0; i < node.constructors.size(); i++) {
+                checker.constructorParameters(node, i);
+            }
+            checker.checkConstructorOverloadConflicts(node);
         }
-        return new Type.ClassValue(checker.pass.typeNodes.get(ctx));
+        return new Type.ClassValue(node);
+    }
+
+    private Type visitInitExpression(BabbleParser.InitExpressionContext ctx) {
+        ScopeNode initScope = checker.scopeOf(ctx);
+        if (initScope != null && initScope.type != null) {
+            for (TypeNode.Constructor c : initScope.type.constructors) {
+                if (c.ctx == ctx) {
+                    checker.constructorParameters(initScope.type, c.index);
+                    break;
+                }
+            }
+        }
+        TypeEnv saved = checker.env;
+        checker.env = saved.enterCallable();
+        try {
+            checker.stmt(ctx.initBlock);
+        } finally {
+            checker.env = saved;
+        }
+        return Type.NULL;
     }
 
     private Type visitInterfaceExpression(
@@ -562,6 +590,25 @@ final class ExpressionTyper {
                 checker.synth(argument.expression());
             }
             return result == Type.ERROR ? Type.ERROR : Type.nullable(result);
+        }
+        if (ctx.expression() instanceof BabbleParser.ThisExpressionContext thisExpr) {
+            ScopeNode initScope = BlockScopes.directInitScope(checker.occurrenceScopeOf(thisExpr));
+            if (initScope != null && initScope.kind == ScopeNode.Kind.INIT_BODY) {
+                TypeNode node = initScope.type;
+                List<Type.TypeVar> vars = checker.annotator.typeVarsOf(node);
+                Type classVal =
+                        vars.isEmpty()
+                                ? new Type.ClassValue(node)
+                                : new Type.ClassValue(node, List.copyOf(vars));
+                checker.types.put(thisExpr, classVal);
+                Type result =
+                        checker.callSolver.callDelegatingConstructor(node, vars, ctx, expected);
+                for (BabbleParser.CallParameterContext argument :
+                        ctx.callParameters().callParameter()) {
+                    checker.synth(argument.expression());
+                }
+                return result;
+            }
         }
         Type callee = checker.synth(ctx.expression(), TypeChecker.Role.CALLEE);
         ModuleInterface module = checker.pass.modules.get(ctx);

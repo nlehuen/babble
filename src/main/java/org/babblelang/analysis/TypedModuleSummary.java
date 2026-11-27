@@ -43,8 +43,20 @@ final class TypedModuleSummary {
             AxiomData.AxiomTable axioms,
             Map<ParserRuleContext, EffectChecker.CallableSummary> callableSummaries) {}
 
+    /** AST-free summary of one constructor overload ({@code BIP040}). */
+    record ConstructorSignature(
+            boolean isPrimary,
+            boolean isPrivate,
+            List<Type.Parameter> params,
+            EffectChecker.CallableSummary summary) {
+        ConstructorSignature {
+            params = params != null ? List.copyOf(params) : List.of();
+        }
+    }
+
     static final TypedModuleSummary EMPTY =
             new TypedModuleSummary(
+                    Map.of(),
                     Map.of(),
                     Map.of(),
                     Map.of(),
@@ -63,6 +75,7 @@ final class TypedModuleSummary {
     private final Map<TypeNode, Map<String, Type>> memberTypes;
     private final Map<TypeNode, List<Type.Parameter>> constructorParams;
     private final Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries;
+    private final Map<TypeNode, List<ConstructorSignature>> constructorSignatures;
     private final Map<Type.Function, CallableEffectTemplate> callableTemplates;
     private final AxiomData.AxiomTable exportedAxioms;
     private final Session session;
@@ -75,6 +88,7 @@ final class TypedModuleSummary {
             Map<TypeNode, Map<String, Type>> memberTypes,
             Map<TypeNode, List<Type.Parameter>> constructorParams,
             Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries,
+            Map<TypeNode, List<ConstructorSignature>> constructorSignatures,
             Map<Type.Function, CallableEffectTemplate> callableTemplates,
             AxiomData.AxiomTable exportedAxioms,
             Session session) {
@@ -86,6 +100,8 @@ final class TypedModuleSummary {
         this.memberTypes = memberTypes != null ? memberTypes : Map.of();
         this.constructorParams = constructorParams != null ? constructorParams : Map.of();
         this.constructorSummaries = constructorSummaries != null ? constructorSummaries : Map.of();
+        this.constructorSignatures =
+                constructorSignatures != null ? constructorSignatures : Map.of();
         this.callableTemplates = callableTemplates != null ? callableTemplates : Map.of();
         this.exportedAxioms = exportedAxioms != null ? exportedAxioms : AxiomData.AxiomTable.EMPTY;
     }
@@ -118,6 +134,7 @@ final class TypedModuleSummary {
         Map<TypeNode, Map<String, Type>> memberTypes = new IdentityHashMap<>();
         Map<TypeNode, List<Type.Parameter>> constructorParams = new IdentityHashMap<>();
         Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new IdentityHashMap<>();
+        Map<TypeNode, List<ConstructorSignature>> constructorSignatures = new IdentityHashMap<>();
         for (TypeNode node : pass.types) {
             List<Type.TypeVar> vars = checker.annotator().typeVarsOf(node);
             if (!vars.isEmpty()) {
@@ -147,16 +164,30 @@ final class TypedModuleSummary {
                 memberTypes.put(node, Map.copyOf(members));
             }
             if (node.ctx instanceof BabbleParser.ClassExpressionContext) {
-                List<Type.Parameter> params = checker.constructorParameters(node);
+                List<Type.Parameter> params = checker.constructorParameters(node, 0);
                 if (params != null) {
                     constructorParams.put(node, List.copyOf(params));
                 }
                 if (checker.effectChecker != null) {
                     EffectChecker.CallableSummary cs =
-                            checker.effectChecker.constructorSummary(node);
+                            checker.effectChecker.constructorSummary(node, 0);
                     if (cs != null) {
                         constructorSummaries.put(node, cs);
                     }
+                }
+                int ctorCount = node.constructors.size();
+                if (ctorCount > 0) {
+                    List<ConstructorSignature> sigs = new ArrayList<>(ctorCount);
+                    for (int ci = 0; ci < ctorCount; ci++) {
+                        TypeNode.Constructor c = node.constructors.get(ci);
+                        List<Type.Parameter> cp = checker.constructorParameters(node, ci);
+                        EffectChecker.CallableSummary csum =
+                                checker.effectChecker != null
+                                        ? checker.effectChecker.constructorSummary(node, ci)
+                                        : null;
+                        sigs.add(new ConstructorSignature(c.isPrimary, c.isPrivate, cp, csum));
+                    }
+                    constructorSignatures.put(node, List.copyOf(sigs));
                 }
             }
         }
@@ -196,6 +227,7 @@ final class TypedModuleSummary {
                 memberTypes,
                 constructorParams,
                 constructorSummaries,
+                constructorSignatures,
                 callableTemplates,
                 checker.exportedAxioms(),
                 pass.session == null
@@ -292,6 +324,10 @@ final class TypedModuleSummary {
         return constructorSummaries.get(node);
     }
 
+    List<ConstructorSignature> constructorSignatures(TypeNode node) {
+        return constructorSignatures.get(node);
+    }
+
     CallableEffectTemplate callableTemplate(Type.Function fn) {
         return callableTemplates.get(fn);
     }
@@ -318,6 +354,10 @@ final class TypedModuleSummary {
 
     Map<TypeNode, EffectChecker.CallableSummary> constructorSummariesMap() {
         return constructorSummaries;
+    }
+
+    Map<TypeNode, List<ConstructorSignature>> constructorSignaturesMap() {
+        return constructorSignatures;
     }
 
     Map<Type.Function, CallableEffectTemplate> callableTemplatesMap() {

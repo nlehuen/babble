@@ -176,6 +176,8 @@ final class TypeChecker {
             new IdentityHashMap<>();
     final Map<ParserRuleContext, ResolvedOverloadCall> resolvedOverloadCalls =
             new IdentityHashMap<>();
+    final Map<BabbleParser.CallContext, Integer> resolvedConstructorIndices =
+            new IdentityHashMap<>();
     final Map<ParserRuleContext, LoweringTargets.JavaSamTarget> samTargets =
             new IdentityHashMap<>();
     final Map<BabbleParser.ForExpressionContext, LoweringTargets.JavaSamTarget> forElemSamTargets =
@@ -207,6 +209,15 @@ final class TypeChecker {
 
     void recordResolvedOverloadCall(ParserRuleContext ctx, ResolvedOverloadCall call) {
         resolvedOverloadCalls.put(ctx, call);
+    }
+
+    void recordConstructorCall(BabbleParser.CallContext ctx, int ctorIndex, boolean delegating) {
+        resolvedConstructorIndices.put(ctx, ctorIndex);
+        pass.analysis.calls().setConstructorIndex(ctx, ctorIndex, delegating);
+    }
+
+    Integer resolvedConstructorIndex(BabbleParser.CallContext ctx) {
+        return resolvedConstructorIndices.get(ctx);
     }
 
     final CallSolver callSolver = new CallSolver(this);
@@ -530,6 +541,7 @@ final class TypeChecker {
                     }
                     members.checkInterfaces();
                     checkMissingTypes(file);
+                    FieldInitAnalysis.run(pass, file, this);
                     modalKinds.setCaching(true);
                     effectChecker.verify(file);
                     modalKinds.setCaching(false);
@@ -597,6 +609,7 @@ final class TypeChecker {
         overloadAltLiterals.clear();
         overloadSelections.clear();
         resolvedOverloadCalls.clear();
+        resolvedConstructorIndices.clear();
         samTargets.clear();
         forElemSamTargets.clear();
         asSamTargets.clear();
@@ -1329,37 +1342,135 @@ final class TypeChecker {
     }
 
     static List<? extends ParserRuleContext> parameterDecls(TypeNode node) {
+        return parameterDecls(node, 0);
+    }
+
+    static List<? extends ParserRuleContext> parameterDecls(TypeNode node, int ctorIndex) {
+        if (node == null) {
+            return null;
+        }
+        if (ctorIndex >= 0 && ctorIndex < node.constructors.size()) {
+            return node.constructors.get(ctorIndex).paramDecls;
+        }
         return node.ctx instanceof BabbleParser.ClassExpressionContext cls
                         && cls.classParameters() != null
                 ? cls.classParameters().classParam()
                 : null;
     }
 
-    /**
-     * A class's constructor parameters, or null when they are another file's that can't be typed.
-     */
+    int constructorCount(TypeNode node) {
+        if (node == null) {
+            return 0;
+        }
+        if (!node.constructors.isEmpty()) {
+            return node.constructors.size();
+        }
+        List<TypedModuleSummary.ConstructorSignature> sigs = imported().constructorSignatures(node);
+        if (sigs != null && !sigs.isEmpty()) {
+            return sigs.size();
+        }
+        return 1;
+    }
+
+    boolean constructorIsPrivate(TypeNode node, int ctorIndex) {
+        if (node == null || ctorIndex < 0) {
+            return false;
+        }
+        if (ctorIndex < node.constructors.size()) {
+            return node.constructors.get(ctorIndex).isPrivate;
+        }
+        List<TypedModuleSummary.ConstructorSignature> sigs = imported().constructorSignatures(node);
+        if (sigs != null && ctorIndex < sigs.size()) {
+            return sigs.get(ctorIndex).isPrivate();
+        }
+        return false;
+    }
+
+    /** A class's primary/index-0 constructor parameters, or empty when none. */
     List<Type.Parameter> constructorParameters(TypeNode node) {
+        return constructorParameters(node, 0);
+    }
+
+    /** Parameters of constructor {@code ctorIndex} of {@code node} ({@code BIP040}). */
+    List<Type.Parameter> constructorParameters(TypeNode node, int ctorIndex) {
         if (node == null) {
             return List.of();
         }
         if (!(node.ctx instanceof BabbleParser.ClassExpressionContext cls) || !isLocal(cls)) {
-            List<Type.Parameter> imported = imported().constructorParams(node);
-            return imported != null ? imported : List.of();
-        }
-        if (cls.classParameters() == null) {
+            List<TypedModuleSummary.ConstructorSignature> sigs =
+                    imported().constructorSignatures(node);
+            if (sigs != null && ctorIndex >= 0 && ctorIndex < sigs.size()) {
+                return sigs.get(ctorIndex).params();
+            }
+            if (ctorIndex == 0) {
+                List<Type.Parameter> imported = imported().constructorParams(node);
+                return imported != null ? imported : List.of();
+            }
             return List.of();
         }
-        ScopeNode scope = scopeOf(cls);
-        EffectChecker.CallableSummary cs =
-                (effectChecker != null && node != null)
-                        ? effectChecker.constructorSummary(node)
+        TypeNode.Constructor ctor =
+                ctorIndex >= 0 && ctorIndex < node.constructors.size()
+                        ? node.constructors.get(ctorIndex)
                         : null;
-        List<BabbleParser.ClassParamContext> decls = cls.classParameters().classParam();
-        int kwStart = ScopeAnalysis.keywordOnlyStart(cls.classParameters());
+        if (ctor == null || ctor.isPrimary) {
+            if (cls.classParameters() == null) {
+                return List.of();
+            }
+            ScopeNode scope = scopeOf(cls);
+            EffectChecker.CallableSummary cs =
+                    effectChecker != null
+                            ? effectChecker.constructorSummary(node, Math.max(0, ctorIndex))
+                            : null;
+            List<BabbleParser.ClassParamContext> decls = cls.classParameters().classParam();
+            int kwStart = ScopeAnalysis.keywordOnlyStart(cls.classParameters());
+            List<Type.Parameter> result = new ArrayList<>(decls.size());
+            for (int i = 0; i < decls.size(); i++) {
+                BabbleParser.ClassParamContext parameter = decls.get(i);
+                Type type = parameterType(parameter, scope);
+                if (parameter.defaultValue != null && !types.containsKey(parameter.defaultValue)) {
+                    Type actual = check(parameter.defaultValue, type != Type.ERROR ? type : null);
+                    if (type != Type.ERROR) {
+                        subsumes(parameter.defaultValue, null, actual, type);
+                        coerceSam(parameter.defaultValue, actual, type);
+                    }
+                }
+                EffectChecker.ParamMods pm =
+                        effectChecker != null
+                                ? effectChecker.parseParamMods(parameter, checkingEffects)
+                                : EffectChecker.ParamMods.NONE;
+                boolean mut =
+                        cs != null && i < cs.mutParams().length ? cs.mutParams()[i] : pm.mut();
+                boolean borrow =
+                        cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : false;
+                boolean unique =
+                        cs != null && i < cs.uniqueParams().length
+                                ? cs.uniqueParams()[i]
+                                : pm.unique();
+                result.add(
+                        new Type.Parameter(
+                                parameter.ID().getText(),
+                                type,
+                                parameter.defaultValue != null,
+                                i >= kwStart,
+                                mut,
+                                borrow,
+                                pm.shared(),
+                                unique));
+            }
+            return result;
+        }
+        // Parameterized `init (params) -> (...)` constructor:
+        BabbleParser.InitExpressionContext initCtx = ctor.initBlock;
+        ScopeNode scope = scopeOf(initCtx);
+        EffectChecker.CallableSummary cs =
+                effectChecker != null ? effectChecker.constructorSummary(node, ctorIndex) : null;
+        List<BabbleParser.FnParamContext> decls = initCtx.fnParameters().fnParam();
+        int kwStart = ScopeAnalysis.keywordOnlyStart(initCtx.fnParameters());
         List<Type.Parameter> result = new ArrayList<>(decls.size());
         for (int i = 0; i < decls.size(); i++) {
-            BabbleParser.ClassParamContext parameter = decls.get(i);
-            Type type = parameterType(parameter, scope);
+            BabbleParser.FnParamContext parameter = decls.get(i);
+            boolean rest = ScopeAnalysis.isParamRest(parameter);
+            Type type = rest ? restElementType(parameter, scope) : parameterType(parameter, scope);
             if (parameter.defaultValue != null && !types.containsKey(parameter.defaultValue)) {
                 Type actual = check(parameter.defaultValue, type != Type.ERROR ? type : null);
                 if (type != Type.ERROR) {
@@ -1369,11 +1480,14 @@ final class TypeChecker {
             }
             EffectChecker.ParamMods pm =
                     effectChecker != null
-                            ? effectChecker.parseParamMods(parameter, checkingEffects)
+                            ? effectChecker.parseParamMods(
+                                    parameter, checkingEffects && inFile(initCtx))
                             : EffectChecker.ParamMods.NONE;
             boolean mut = cs != null && i < cs.mutParams().length ? cs.mutParams()[i] : pm.mut();
             boolean borrow =
-                    cs != null && i < cs.borrowParams().length ? cs.borrowParams()[i] : false;
+                    cs != null && i < cs.borrowParams().length
+                            ? cs.borrowParams()[i]
+                            : (!pm.shared() && !pm.unique());
             boolean unique =
                     cs != null && i < cs.uniqueParams().length ? cs.uniqueParams()[i] : pm.unique();
             result.add(
@@ -1382,12 +1496,70 @@ final class TypeChecker {
                             type,
                             parameter.defaultValue != null,
                             i >= kwStart,
+                            rest,
                             mut,
                             borrow,
                             pm.shared(),
                             unique));
         }
         return result;
+    }
+
+    Type.Function constructorFunctionType(
+            TypeNode node,
+            int ctorIndex,
+            List<Type.TypeVar> classVars,
+            List<Type> explicitTypeArgs) {
+        List<Type.Parameter> params = constructorParameters(node, ctorIndex);
+        Type result;
+        List<Type.TypeVar> freeVars;
+        if (explicitTypeArgs != null && !explicitTypeArgs.isEmpty()) {
+            Map<Type.TypeVar, Type> env = new HashMap<>();
+            for (int i = 0; i < explicitTypeArgs.size() && i < classVars.size(); i++) {
+                env.put(classVars.get(i), explicitTypeArgs.get(i));
+            }
+            List<Type.Parameter> substituted = new ArrayList<>(params.size());
+            for (Type.Parameter p : params) {
+                substituted.add(p.withType(algebra.substitute(p.type(), env)));
+            }
+            params = substituted;
+            freeVars = List.of();
+            result = new Type.Instance(node, explicitTypeArgs);
+        } else if (classVars.isEmpty()) {
+            freeVars = List.of();
+            result = new Type.Instance(node);
+        } else {
+            freeVars = classVars;
+            result = new Type.Instance(node, List.copyOf(classVars));
+        }
+        EffectChecker.CallableSummary cs =
+                effectChecker != null ? effectChecker.constructorSummary(node, ctorIndex) : null;
+        EffectSet effs = cs != null ? cs.effects() : EffectSet.EMPTY;
+        Set<Integer> forwarded = Set.of();
+        if (ctorIndex >= 0
+                && ctorIndex < node.constructors.size()
+                && node.constructors.get(ctorIndex).initBlock != null) {
+            forwarded =
+                    TypeAnnotations.resolveForwardedParams(
+                            node.constructors.get(ctorIndex).initBlock.effectPrefix(), params);
+        }
+        return new Type.Function(freeVars, params, result, effs, forwarded, Set.of());
+    }
+
+    void checkConstructorOverloadConflicts(TypeNode node) {
+        if (node == null || node.constructors.size() < 2) {
+            return;
+        }
+        List<Type.TypeVar> classVars = annotator.typeVarsOf(node);
+        List<Type.Function> alts = new ArrayList<>(node.constructors.size());
+        for (int i = 0; i < node.constructors.size(); i++) {
+            alts.add(constructorFunctionType(node, i, classVars, List.of()));
+        }
+        String err = OverloadSolver.checkWellFormed(algebra, node.name, alts);
+        if (err != null) {
+            ParserRuleContext at = node.constructors.get(1).ctx;
+            warn(err, at != null ? at : node.ctx);
+        }
     }
 
     Type parameterType(ParserRuleContext parameter, ScopeNode scope) {

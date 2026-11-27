@@ -541,13 +541,20 @@ final class MemberTypes {
             checker.warn("Cannot assign method : " + name, at);
             return null;
         }
+        boolean allowInitWrite =
+                own
+                        && ownerNode != null
+                        && at instanceof BabbleParser.AssignExpressionContext assign
+                        && BlockScopes.isInDirectInit(checker.scopeOf(assign))
+                        && ownerNode.uninitializedFields.contains(name);
         if (ownerNode != null
                 && ownerNode.kind == org.babblelang.runtime.ClassShape.Kind.VALUE_CLASS
-                && receiver instanceof Type.Instance) {
+                && receiver instanceof Type.Instance
+                && !allowInitWrite) {
             checker.warn("Value members are read-only : " + name, at);
             return null;
         }
-        if (!member.isMutable()) {
+        if (!member.isMutable() && !allowInitWrite) {
             checker.warn("Cannot assign to def member : " + name, at);
             return null;
         }

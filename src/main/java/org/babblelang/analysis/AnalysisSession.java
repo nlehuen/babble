@@ -58,6 +58,8 @@ public final class AnalysisSession {
     final Map<TypeNode, Map<String, Type>> typeMemberTypes = new HashMap<>();
     final Map<TypeNode, List<Type.Parameter>> constructorParams = new HashMap<>();
     final Map<TypeNode, EffectChecker.CallableSummary> constructorSummaries = new HashMap<>();
+    final Map<TypeNode, List<TypedModuleSummary.ConstructorSignature>> constructorSignatures =
+            new HashMap<>();
     final Map<Type.Function, TypedModuleSummary.CallableEffectTemplate> callableTemplates =
             new IdentityHashMap<>();
     final Map<ParserRuleContext, Object> staticSingletons = new HashMap<>();
@@ -91,6 +93,7 @@ public final class AnalysisSession {
             typeMemberTypes.putAll(summary.memberTypesMap());
             constructorParams.putAll(summary.constructorParamsMap());
             constructorSummaries.putAll(summary.constructorSummariesMap());
+            constructorSignatures.putAll(summary.constructorSignaturesMap());
             callableTemplates.putAll(summary.callableTemplatesMap());
             TypedModuleSummary.Session input = summary.session();
             if (input != null) {

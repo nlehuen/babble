@@ -19,7 +19,8 @@ final class EffectModifiers {
     enum ParseContext {
         FUNCTION_LITERAL,
         FUNCTION_TYPE,
-        INTERFACE_METHOD
+        INTERFACE_METHOD,
+        INIT
     }
 
     private final EffectChecker ec;
@@ -135,6 +136,53 @@ final class EffectModifiers {
         }
         if (ec.checker.inFile(ctx)) {
             ec.fnPrefixes.put(ctx, parsed);
+        }
+        return parsed;
+    }
+
+    EffectChecker.ParsedPrefix parseInitPrefix(
+            BabbleParser.InitExpressionContext ctx, boolean isValue, boolean reportErrors) {
+        if (!reportErrors) {
+            EffectChecker.ParsedPrefix cached = ec.initPrefixes.get(ctx);
+            if (cached != null) {
+                return cached;
+            }
+        }
+        boolean hasMutParam = false;
+        boolean hasAnyParamMod = false;
+        if (ctx.fnParameters() != null) {
+            for (BabbleParser.FnParamContext param : ctx.fnParameters().fnParam()) {
+                EffectChecker.ParamMods pm = parseParamMods(param, reportErrors);
+                hasMutParam |= pm.mut();
+                hasAnyParamMod |= pm.mut() || pm.shared() || pm.unique();
+            }
+        }
+        List<Token> words =
+                ctx.effectPrefix() != null ? effectPrefixTokens(ctx.effectPrefix()) : List.of();
+        EffectChecker.ParsedPrefix parsed =
+                parseWords(
+                        words,
+                        ParseContext.INIT,
+                        true,
+                        hasMutParam,
+                        hasAnyParamMod,
+                        false,
+                        ctx,
+                        reportErrors);
+        if (reportErrors) {
+            if (parsed.mutThis()) {
+                ec.checker.effectDiagnostic(
+                        "mut is not allowed on init : constructing this is always allowed", ctx);
+            }
+            if (isValue && parsed.io()) {
+                ec.checker.effectDiagnostic("Record init cannot be io", ctx);
+            }
+            if (isValue && parsed.explicitVolatile()) {
+                ec.checker.effectDiagnostic("Record init cannot be volatile", ctx);
+            }
+        }
+        if (ec.checker.inFile(ctx)) {
+            ec.initPrefixes.put(ctx, parsed);
         }
         return parsed;
     }
@@ -408,7 +456,10 @@ final class EffectModifiers {
             if (s.kind == ScopeNode.Kind.FUNCTION && s.memberOf != null) {
                 return !s.staticMethod;
             }
-            if (s.kind == ScopeNode.Kind.CLASS_BODY || s.kind == ScopeNode.Kind.INTERFACE_BODY) {
+            if (s.kind == ScopeNode.Kind.CLASS_BODY
+                    || s.kind == ScopeNode.Kind.INTERFACE_BODY
+                    || s.kind == ScopeNode.Kind.INIT_BLOCK
+                    || s.kind == ScopeNode.Kind.INIT_BODY) {
                 return true;
             }
             if (s.kind == ScopeNode.Kind.STATIC_BODY) {
@@ -760,10 +811,18 @@ final class EffectModifiers {
     }
 
     static boolean inCallingClause(BabbleParser.FunctionLiteralContext fn, String name) {
-        if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
+        return inCallingClause(fn.effectPrefix(), name);
+    }
+
+    static boolean inCallingClause(BabbleParser.InitExpressionContext init, String name) {
+        return inCallingClause(init.effectPrefix(), name);
+    }
+
+    static boolean inCallingClause(BabbleParser.EffectPrefixContext prefix, String name) {
+        if (prefix == null || prefix.callingClause() == null) {
             return false;
         }
-        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
+        for (org.antlr.v4.runtime.tree.TerminalNode id : prefix.callingClause().ID()) {
             if (name.equals(id.getText())) {
                 return true;
             }
@@ -775,9 +834,22 @@ final class EffectModifiers {
         if (fn.effectPrefix() == null || fn.effectPrefix().callingClause() == null) {
             return Set.of();
         }
-        List<BabbleParser.FnParamContext> fnParams = fn.fnParameters().fnParam();
+        return resolveForwardedParamIndices(fn.effectPrefix(), fn.fnParameters().fnParam());
+    }
+
+    static Set<Integer> resolveForwardedParamIndices(BabbleParser.InitExpressionContext init) {
+        if (init.effectPrefix() == null
+                || init.effectPrefix().callingClause() == null
+                || init.fnParameters() == null) {
+            return Set.of();
+        }
+        return resolveForwardedParamIndices(init.effectPrefix(), init.fnParameters().fnParam());
+    }
+
+    private static Set<Integer> resolveForwardedParamIndices(
+            BabbleParser.EffectPrefixContext prefix, List<BabbleParser.FnParamContext> fnParams) {
         Set<Integer> indices = new java.util.LinkedHashSet<>();
-        for (org.antlr.v4.runtime.tree.TerminalNode id : fn.effectPrefix().callingClause().ID()) {
+        for (org.antlr.v4.runtime.tree.TerminalNode id : prefix.callingClause().ID()) {
             String name = id.getText();
             for (int i = 0; i < fnParams.size(); i++) {
                 if (name.equals(fnParams.get(i).ID().getText())) {
@@ -787,5 +859,33 @@ final class EffectModifiers {
             }
         }
         return indices.isEmpty() ? Set.of() : Set.copyOf(indices);
+    }
+
+    List<Type.Parameter> declaredBorrows(
+            BabbleParser.InitExpressionContext init, List<Type.Parameter> params) {
+        if (init.fnParameters() == null) {
+            return params;
+        }
+        List<BabbleParser.FnParamContext> decls = init.fnParameters().fnParam();
+        if (decls.size() != params.size()) {
+            return params;
+        }
+        List<Type.Parameter> result = new ArrayList<>(params.size());
+        for (int i = 0; i < params.size(); i++) {
+            Type.Parameter p = params.get(i);
+            EffectChecker.ParamMods declared = parseParamMods(decls.get(i), false);
+            boolean borrow = !declared.shared() && !declared.unique();
+            result.add(
+                    new Type.Parameter(
+                            p.name(),
+                            p.type(),
+                            p.optional(),
+                            p.keywordOnly(),
+                            p.mut(),
+                            borrow,
+                            p.explicitShared(),
+                            p.unique()));
+        }
+        return result;
     }
 }

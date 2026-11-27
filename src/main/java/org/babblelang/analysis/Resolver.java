@@ -18,7 +18,11 @@ import org.babblelang.parser.BabbleParser;
 final class Resolver {
     /** Scopes compiled into a method of their own. */
     private static final Set<ScopeNode.Kind> METHODS =
-            EnumSet.of(ScopeNode.Kind.FILE, ScopeNode.Kind.FUNCTION, ScopeNode.Kind.CLASS_BODY);
+            EnumSet.of(
+                    ScopeNode.Kind.FILE,
+                    ScopeNode.Kind.FUNCTION,
+                    ScopeNode.Kind.CLASS_BODY,
+                    ScopeNode.Kind.INIT_BODY);
 
     private final BlockScopes pass;
     private final Resolution resolution = new Resolution();
@@ -90,6 +94,23 @@ final class Resolver {
             bind(pending.ctx(), firstName(target), pending.scope());
             bind(pending.ctx().getParent(), "this", pending.scope());
         }
+        // Any outer lexical variable captured by a parameterized `init (...) -> (...)` must also be
+        // carried by the enclosing class's captured array (`BabbleClass.captured()`).
+        for (TypeNode type : pass.types) {
+            if (type.ctx instanceof BabbleParser.ClassExpressionContext cls) {
+                for (TypeNode.Constructor ctor : type.constructors) {
+                    if (!ctor.isPrimary && ctor.ctx != null) {
+                        Set<Resolution.Variable> initCaps = resolution.captured.get(ctor.ctx);
+                        if (initCaps != null && !initCaps.isEmpty()) {
+                            resolution
+                                    .captured
+                                    .computeIfAbsent(cls, k -> new LinkedHashSet<>())
+                                    .addAll(initCaps);
+                        }
+                    }
+                }
+            }
+        }
         return resolution;
     }
 
@@ -125,6 +146,7 @@ final class Resolver {
         }
         boolean hasThis =
                 scope.kind == ScopeNode.Kind.CLASS_BODY
+                        || scope.kind == ScopeNode.Kind.INIT_BODY
                         || scope.kind == ScopeNode.Kind.STATIC_BODY
                         || scope.kind == ScopeNode.Kind.FUNCTION && scope.memberOf != null;
         if (hasThis) {
@@ -162,6 +184,7 @@ final class Resolver {
             } else if (s.names.containsKey(name)
                     || name.equals("this")
                             && (s.kind == ScopeNode.Kind.CLASS_BODY
+                                    || s.kind == ScopeNode.Kind.INIT_BODY
                                     || s.kind == ScopeNode.Kind.STATIC_BODY
                                     || s.kind == ScopeNode.Kind.FUNCTION && s.memberOf != null)
                     || name.equals("$recurse") && s.kind == ScopeNode.Kind.FUNCTION) {

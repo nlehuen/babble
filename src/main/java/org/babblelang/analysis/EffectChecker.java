@@ -401,6 +401,8 @@ final class EffectChecker {
 
     final Map<BabbleParser.FunctionLiteralContext, ParsedPrefix> fnPrefixes =
             new IdentityHashMap<>();
+    final Map<BabbleParser.InitExpressionContext, ParsedPrefix> initPrefixes =
+            new IdentityHashMap<>();
     final Map<ParserRuleContext, ParamMods> paramModsMap = new IdentityHashMap<>();
     final Set<ParseTree> validatedTypeTrees = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -681,17 +683,25 @@ final class EffectChecker {
     }
 
     CallableSummary constructorSummary(TypeNode node) {
-        if (node.ctx instanceof BabbleParser.ClassExpressionContext cls) {
-            CallableSummary local = visibleSummaries.get(cls);
-            if (local != null) {
-                return local;
-            }
-            CallableSummary internal = summaries.get(cls);
-            if (internal != null) {
-                return internal;
+        return constructorSummary(node, 0);
+    }
+
+    CallableSummary constructorSummary(TypeNode node, int ctorIndex) {
+        if (node != null && ctorIndex >= 0 && ctorIndex < node.constructors.size()) {
+            TypeNode.Constructor ctor = node.constructors.get(ctorIndex);
+            ParserRuleContext key = ctor.isPrimary ? node.ctx : ctor.initBlock;
+            if (key != null) {
+                CallableSummary local = visibleSummaries.get(key);
+                if (local != null) {
+                    return local;
+                }
+                CallableSummary internal = summaries.get(key);
+                if (internal != null) {
+                    return internal;
+                }
             }
         }
-        return checker.remoteConstructorSummary(node);
+        return checker.remoteConstructorSummary(node, ctorIndex);
     }
 
     // ================================================================ 5. Frame-Local Closure
@@ -861,6 +871,9 @@ final class EffectChecker {
             out.add(fn);
         } else if (tree instanceof BabbleParser.ClassExpressionContext cls) {
             out.add(cls);
+        } else if (tree instanceof BabbleParser.InitExpressionContext init
+                && init.fnParameters() != null) {
+            out.add(init);
         }
         for (int i = 0; i < tree.getChildCount(); i++) {
             collectCallables(tree.getChild(i), out);
@@ -912,8 +925,19 @@ final class EffectChecker {
                             false);
             return new CallableSummary(set, mutParams, borrowParams, uniqueParams);
         }
+        if (callable instanceof BabbleParser.InitExpressionContext init) {
+            return InitEffectAnalyzer.initialInitSummary(this, init);
+        }
         // ClassExpressionContext constructor:
         BabbleParser.ClassExpressionContext cls = (BabbleParser.ClassExpressionContext) callable;
+        TypeNode clsNode = pass.typeNodes.get(cls);
+        boolean clsIsValue = clsNode != null && clsNode.kind == ClassShape.Kind.VALUE_CLASS;
+        if (clsNode != null
+                && !clsNode.constructors.isEmpty()
+                && clsNode.constructors.get(0).isPrimary
+                && clsNode.constructors.get(0).initBlock != null) {
+            modifiers.parseInitPrefix(clsNode.constructors.get(0).initBlock, clsIsValue, true);
+        }
         List<BabbleParser.ClassParamContext> params =
                 cls.classParameters() != null ? cls.classParameters().classParam() : List.of();
         int n = params.size();
@@ -976,7 +1000,9 @@ final class EffectChecker {
             Set<ParserRuleContext> out) {
         if (tree != owner
                 && (tree instanceof BabbleParser.FunctionLiteralContext
-                        || tree instanceof BabbleParser.ClassExpressionContext)) {
+                        || tree instanceof BabbleParser.ClassExpressionContext
+                        || (tree instanceof BabbleParser.InitExpressionContext initTree
+                                && initTree.fnParameters() != null))) {
             if (tree instanceof BabbleParser.FunctionLiteralContext innerFn
                     && frameLocalOwner.containsKey(innerFn)) {
                 out.add(innerFn);
@@ -984,6 +1010,20 @@ final class EffectChecker {
             return;
         }
         if (tree instanceof BabbleParser.CallContext call) {
+            if (pass.analysis.calls().isDelegatingThisCall(call)) {
+                ScopeNode ownerScope = checker.scopeOf(owner);
+                TypeNode ownerNode = ownerScope != null ? ownerScope.type : null;
+                int targetIdx = checker.resolvedConstructorIndexForEffects(call);
+                if (ownerNode != null
+                        && targetIdx >= 0
+                        && targetIdx < ownerNode.constructors.size()) {
+                    TypeNode.Constructor target = ownerNode.constructors.get(targetIdx);
+                    ParserRuleContext key = target.isPrimary ? ownerNode.ctx : target.initBlock;
+                    if (key != null && callableSet.contains(key)) {
+                        out.add(key);
+                    }
+                }
+            }
             if (call.expression() instanceof BabbleParser.SelectorContext sel
                     && sel.expression() == null) {
                 Object resolved =
@@ -1009,10 +1049,16 @@ final class EffectChecker {
                             out.add(lit);
                         }
                     }
-                } else if (m instanceof Type.ClassValue cv
-                        && cv.node().ctx instanceof BabbleParser.ClassExpressionContext cls
-                        && callableSet.contains(cls)) {
-                    out.add(cls);
+                } else if (m instanceof Type.ClassValue cv) {
+                    int ctorIdx = checker.resolvedConstructorIndexForEffects(call);
+                    ParserRuleContext key = cv.node().ctx;
+                    if (ctorIdx >= 0 && ctorIdx < cv.node().constructors.size()) {
+                        TypeNode.Constructor c = cv.node().constructors.get(ctorIdx);
+                        key = c.isPrimary ? cv.node().ctx : c.initBlock;
+                    }
+                    if (key != null && callableSet.contains(key)) {
+                        out.add(key);
+                    }
                 }
             }
             for (BabbleParser.CallParameterContext arg : call.callParameters().callParameter()) {
@@ -1069,6 +1115,9 @@ final class EffectChecker {
             ParserRuleContext callable, CallableSummary current, boolean emitDiagnostics) {
         if (callable instanceof BabbleParser.FunctionLiteralContext fn) {
             return analyzeFunctionBody(fn, current, emitDiagnostics);
+        }
+        if (callable instanceof BabbleParser.InitExpressionContext init) {
+            return InitEffectAnalyzer.analyzeInitBody(this, init, current, emitDiagnostics);
         }
         return analyzeConstructorBody(
                 (BabbleParser.ClassExpressionContext) callable, current, emitDiagnostics);
@@ -1191,19 +1240,28 @@ final class EffectChecker {
                 cls.classParameters() != null ? cls.classParameters().classParam() : List.of();
         boolean[] mutParams = current.mutParams().clone();
         boolean[] borrowParams = current.borrowParams().clone();
+        TypeNode.Constructor primaryCtor =
+                node != null && !node.constructors.isEmpty() && node.constructors.get(0).isPrimary
+                        ? node.constructors.get(0)
+                        : null;
+        BabbleParser.InitExpressionContext primaryInit =
+                primaryCtor != null ? primaryCtor.initBlock : null;
         ParsedPrefix pseudoPrefix =
-                isValue
-                        ? new ParsedPrefix(
-                                EnumSet.of(Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC),
-                                false,
-                                false,
-                                false,
-                                false,
-                                false,
-                                false,
-                                false,
-                                true)
-                        : ParsedPrefix.EMPTY;
+                primaryInit != null
+                        ? modifiers.parseInitPrefix(primaryInit, isValue, false)
+                        : isValue
+                                ? new ParsedPrefix(
+                                        EnumSet.of(
+                                                Effect.PURE, Effect.HERMETIC, Effect.DETERMINISTIC),
+                                        false,
+                                        false,
+                                        false,
+                                        false,
+                                        false,
+                                        false,
+                                        false,
+                                        true)
+                                : ParsedPrefix.EMPTY;
 
         EffectBodyWalker analyzer =
                 new EffectBodyWalker(
@@ -1216,7 +1274,7 @@ final class EffectChecker {
                         borrowParams,
                         current.uniqueParams(),
                         true, // constructor initializes its own fresh `this` fields!
-                        false,
+                        true,
                         pseudoPrefix,
                         Set.of(),
                         emitDiagnostics);
@@ -1234,6 +1292,9 @@ final class EffectChecker {
             }
         }
         analyzer.evalClassBody(cls.classBlock);
+        if (primaryInit != null) {
+            analyzer.evalBlock(primaryInit.initBlock, false, true);
+        }
         if (cls.staticBlock != null) {
             // Static block runs once at class definition time; checked separately in verify(), not
             // per construction.
@@ -1249,9 +1310,11 @@ final class EffectChecker {
         if (analyzer.nothrow) {
             nextEffects.add(Effect.NOTHROW);
         }
-        boolean ctorUnique = analyzer.hermetic && analyzer.ctorStoredParams.isEmpty();
+        boolean ctorUnique =
+                analyzer.hermetic && analyzer.borrowThis && analyzer.ctorStoredParams.isEmpty();
         EffectSet nextSet =
-                EffectSet.ofInferred(nextEffects, false, true, ctorUnique, analyzer.terminating);
+                EffectSet.ofInferred(
+                        nextEffects, false, analyzer.borrowThis, ctorUnique, analyzer.terminating);
         return new CallableSummary(
                 nextSet,
                 analyzer.mutParams,
@@ -1517,12 +1580,26 @@ final class EffectChecker {
             return;
         }
 
+        if (callable instanceof BabbleParser.InitExpressionContext init) {
+            InitEffectAnalyzer.verifyInit(this, init);
+            return;
+        }
+
         // ClassExpressionContext:
         BabbleParser.ClassExpressionContext cls = (BabbleParser.ClassExpressionContext) callable;
         CallableSummary converged = summaries.get(cls);
-        recomputeSummary(cls, converged, true);
+        CallableSummary verified = finalizeSummary(cls, recomputeSummary(cls, converged, true));
         TypeNode node = pass.typeNodes.get(cls);
-        if (node != null && node.kind == ClassShape.Kind.VALUE_CLASS) {
+        boolean isValue = node != null && node.kind == ClassShape.Kind.VALUE_CLASS;
+        BabbleParser.InitExpressionContext primaryInit =
+                node != null && !node.constructors.isEmpty() && node.constructors.get(0).isPrimary
+                        ? node.constructors.get(0).initBlock
+                        : null;
+        if (primaryInit != null) {
+            ParsedPrefix prefix = modifiers.parseInitPrefix(primaryInit, isValue, false);
+            InitEffectAnalyzer.verifyInitContract(
+                    this, primaryInit, node, isValue, prefix, verified);
+        } else if (isValue) {
             if (!converged.effects().isPure()) {
                 checker.effectDiagnostic(
                         "value class " + node.name + " constructor must be pure", cls);
